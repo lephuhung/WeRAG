@@ -44,7 +44,7 @@ func stringValue(p *string) string {
 // ListToolCatalog returns the tools an endpoint can expose, grouped.
 //
 // @Summary      Lấy danh mục công cụ của điểm cuối MCP
-// @Description  Trả về danh sách công cụ có thể chọn, nhóm và lựa chọn mặc định cho điểm cuối MCP của không gian làm việc
+// @Description  Trả về danh sách công cụ có thể chọn, nhóm và lựa chọn mặc định cho điểm cuối MCP của tổ chức
 // @Tags         Điểm cuối MCP
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}  "Danh mục công cụ"
@@ -66,7 +66,7 @@ func (h *MCPEndpointHandler) ListToolCatalog(c *gin.Context) {
 // CreateMCPEndpoint creates an endpoint and returns it with the one-time token.
 //
 // @Summary      Tạo điểm cuối MCP
-// @Description  Phát hành một điểm cuối MCP cho không gian làm việc hiện tại; token trong phản hồi chỉ trả về một lần
+// @Description  Phát hành một điểm cuối MCP cho tổ chức hiện tại; token trong phản hồi chỉ trả về một lần
 // @Tags         Điểm cuối MCP
 // @Accept       json
 // @Produce      json

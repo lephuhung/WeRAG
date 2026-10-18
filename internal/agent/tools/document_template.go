@@ -528,7 +528,7 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 			return saved
 		}
 		out.Asked[field] = stated
-		need(fmt.Sprintf("Xác nhận %s: hồ sơ đơn vị ghi «%s», bạn ghi «%s» (gửi lại «%s» nếu vẫn dùng)", label, saved, stated, stated))
+		need(fmt.Sprintf("Xác nhận %s: hồ sơ tổ chức ghi «%s», bạn ghi «%s» (gửi lại «%s» nếu vẫn dùng)", label, saved, stated, stated))
 		return saved
 	}
 	agency := pick("agency_name", "cơ quan ban hành", profile.AgencyName, d.AgencyName)
@@ -567,7 +567,7 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 	}
 	// a value being confirmed is not asked for again
 	if agency == "" && guessAgency == "" {
-		need("Tên cơ quan ban hành (đơn vị chưa có hồ sơ: quản trị đơn vị cập nhật tại Cài đặt › Hồ sơ đơn vị)")
+		need("Tên cơ quan ban hành (tổ chức chưa có hồ sơ: quản trị tổ chức cập nhật tại Cài đặt › Hồ sơ tổ chức)")
 	}
 	if abbr == "" {
 		need("Tên viết tắt của cơ quan (dùng trong số ký hiệu, ví dụ SNV)")

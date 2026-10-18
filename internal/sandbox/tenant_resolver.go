@@ -166,7 +166,7 @@ func (r *tenantSandboxResolver) Resolve(
 	resolved, err := r.deps.Loader.Load(ctx, tenantID, configID)
 	if err != nil {
 		return nil, fmt.Errorf(
-			"sandbox: load workspace %d config %q: %w", tenantID, configID, err)
+			"sandbox: load organization %d config %q: %w", tenantID, configID, err)
 	}
 	if !resolved.Found {
 		return nil, fmt.Errorf("%w: %s", ErrSandboxConfigNotFound, configID)

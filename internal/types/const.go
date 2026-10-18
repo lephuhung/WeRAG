@@ -77,7 +77,7 @@ const (
 	// declared there could only be referred to by its raw string value.
 	EmbedChannelContextKey ContextKey = "EmbedChannel"
 	// MCPEndpointContextKey stores the authenticated *MCPEndpoint on the
-	// request context of a call arriving on the workspace MCP server surface.
+	// request context of a call arriving on the organization MCP server surface.
 	// Declared here for the same reason as EmbedChannelContextKey.
 	MCPEndpointContextKey ContextKey = "MCPEndpoint"
 	// LangfuseTraceContextKey carries the active Langfuse *Trace across the

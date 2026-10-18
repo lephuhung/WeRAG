@@ -169,15 +169,15 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 		// Note: RetrieverEngines is left empty - system will use defaults
 		// from RETRIEVE_DRIVER env.
 		tenant := &types.Tenant{
-			Name:        fmt.Sprintf("%s's Workspace", secutils.SanitizeForLog(req.Username)),
-			Description: "Default workspace",
+			Name:        fmt.Sprintf("%s's Organization", secutils.SanitizeForLog(req.Username)),
+			Description: "Default organization",
 			Status:      "active",
 		}
 
 		createdTenant, err = s.tenantService.CreateTenant(ctx, tenant)
 		if err != nil {
-			logger.Errorf(ctx, "Failed to create workspace")
-			return nil, errors.New("failed to create workspace")
+			logger.Errorf(ctx, "Failed to create organization")
+			return nil, errors.New("failed to create organization")
 		}
 	}
 
@@ -217,7 +217,7 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 				user.ID, createdTenant.ID, err)
 			_ = s.userRepo.DeleteUser(ctx, user.ID)
 			_ = s.tenantService.DeleteTenant(ctx, createdTenant.ID)
-			return nil, errors.New("failed to finalise workspace administration")
+			return nil, errors.New("failed to finalise organization administration")
 		}
 	}
 
@@ -1202,13 +1202,13 @@ func (s *userService) SwitchTenant(
 		return nil, errors.New("user is required")
 	}
 	if targetTenantID == 0 {
-		return nil, errors.New("target workspace ID is required")
+		return nil, errors.New("target organization ID is required")
 	}
 
 	// Verify membership unless the caller is a SuperAdmin.
 	if !user.IsSystemAdmin {
 		if s.memberService == nil {
-			return nil, errors.New("workspace membership service unavailable")
+			return nil, errors.New("organization membership service unavailable")
 		}
 		member, err := s.memberService.GetMembership(ctx, user.ID, targetTenantID)
 		if err != nil {
@@ -1221,7 +1221,7 @@ func (s *userService) SwitchTenant(
 
 	tenant, err := s.tenantService.GetTenantByID(ctx, targetTenantID)
 	if err != nil {
-		return nil, fmt.Errorf("load target workspace: %w", err)
+		return nil, fmt.Errorf("load target organization: %w", err)
 	}
 	// A configuration profile is not a workspace anyone works in.
 	if tenant.IsConfigProfile() {
@@ -1254,7 +1254,7 @@ func (s *userService) SwitchTenant(
 
 	return &types.LoginResponse{
 		Success:      true,
-		Message:      "Workspace switched",
+		Message:      "Organization switched",
 		User:         user,
 		ActiveTenant: tenant,
 		Memberships:  memberships,

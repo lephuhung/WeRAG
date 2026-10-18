@@ -67,7 +67,7 @@ func ReapOrphanSandboxes(ctx context.Context, deps OrphanReaperDeps) (int, error
 	summaries, err := deps.Client.List(ctx, configSandboxFilter(deps.TenantID, deps.ConfigID))
 	if err != nil {
 		return 0, fmt.Errorf(
-			"sandbox: list workspace %d config %q sandboxes: %w",
+			"sandbox: list organization %d config %q sandboxes: %w",
 			deps.TenantID, NormalizeConfigID(deps.ConfigID), err)
 	}
 

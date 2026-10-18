@@ -191,7 +191,7 @@ func IsValidWikiPageStatus(status string) bool {
 type WikiPage struct {
 	// Unique identifier (UUID)
 	ID string `json:"id" gorm:"type:varchar(36);primaryKey"`
-	// Workspace ID for multi-workspace isolation
+	// Organization ID for multi-organization isolation
 	TenantID uint64 `json:"tenant_id" gorm:"index"`
 	// Knowledge base this page belongs to
 	KnowledgeBaseID string `json:"knowledge_base_id" gorm:"type:varchar(36);index"`

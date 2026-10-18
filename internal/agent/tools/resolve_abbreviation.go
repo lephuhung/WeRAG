@@ -240,7 +240,7 @@ func (t *ResolveAbbreviationTool) suggest(
 	status := "pending_review"
 	output := fmt.Sprintf(
 		"Recorded suggestion %q → %q (or it was already pending). The meaning applies to the "+
-			"current request; for the shared dictionary it stays pending until a workspace "+
+			"current request; for the shared dictionary it stays pending until an organization "+
 			"Owner or SuperAdmin approves it — tell the user so.",
 		row.ShortForm, row.FullForm)
 	if row.IsActive {

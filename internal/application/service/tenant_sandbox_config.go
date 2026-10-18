@@ -1102,7 +1102,7 @@ func (s *TenantSandboxConfigService) Update(
 		return nil, err
 	}
 	if types.IsSandboxWorkspacePolicyRow(entity) {
-		return nil, apperrors.NewBadRequestError("workspace policy cannot be edited here")
+		return nil, apperrors.NewBadRequestError("the organization-wide sandbox policy cannot be edited here")
 	}
 	if in.Config != nil && strings.TrimSpace(in.Config.SandboxType) != "" {
 		if err := validateNamedSandboxBackend(in.Config); err != nil {
@@ -1189,7 +1189,7 @@ func (s *TenantSandboxConfigService) Delete(
 		return apperrors.NewNotFoundError("sandbox config not found")
 	}
 	if types.IsSandboxWorkspacePolicyRow(entity) {
-		return apperrors.NewBadRequestError("workspace policy cannot be deleted here")
+		return apperrors.NewBadRequestError("the organization-wide sandbox policy cannot be deleted here")
 	}
 	summaries, listErr := s.listSandboxes(ctx, entity.Config, tenantID, id)
 	if listErr != nil {

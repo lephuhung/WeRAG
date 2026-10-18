@@ -62,9 +62,9 @@ type Tenant struct {
 	// Business
 	Business string `yaml:"business"            json:"business"`
 	// Kind is TenantKindWorkspace for a real unit, or TenantKindConfigProfile
-	// for a hidden configuration-only row that workspaces inherit from.
+	// for a hidden configuration-only row that organizations inherit from.
 	Kind string `yaml:"kind"                json:"kind"                gorm:"default:'workspace'"`
-	// ConfigProfileID is the configuration profile a workspace inherits its
+	// ConfigProfileID is the configuration profile an organization inherits its
 	// models, agents, engines and settings from. Nil on profiles.
 	ConfigProfileID *uint64 `yaml:"config_profile_id"   json:"config_profile_id,omitempty"`
 	// DefaultEmbeddingModelID / DefaultSummaryModelID are set on a profile:
@@ -75,9 +75,9 @@ type Tenant struct {
 	StorageQuota int64 `yaml:"storage_quota"       json:"storage_quota"       gorm:"default:10737418240"`
 	// Storage used (Bytes)
 	StorageUsed int64 `yaml:"storage_used"        json:"storage_used"        gorm:"default:0"`
-	// Global Context configuration for this workspace (default for all sessions)
+	// Global Context configuration for this organization (default for all sessions)
 	ContextConfig *ContextConfig `yaml:"context_config"      json:"context_config"      gorm:"type:jsonb"`
-	// Global WebSearch configuration for this workspace
+	// Global WebSearch configuration for this organization
 	WebSearchConfig *WebSearchConfig `yaml:"web_search_config"   json:"web_search_config"   gorm:"type:jsonb"`
 	// Parser engine config overrides (OCR endpoint, API key, etc.). Used when parsing documents; overrides env.
 	ParserEngineConfig *ParserEngineConfig `yaml:"parser_engine_config" json:"parser_engine_config" gorm:"type:jsonb"`
@@ -85,13 +85,13 @@ type Tenant struct {
 	Credentials *CredentialsConfig `yaml:"credentials" json:"credentials" gorm:"type:jsonb"`
 	// Storage engine config: parameters for Local and MinIO. Used for document/file storage and docreader.
 	StorageEngineConfig *StorageEngineConfig `yaml:"storage_engine_config" json:"storage_engine_config" gorm:"type:jsonb"`
-	// DefaultStorageBackendID is the workspace default concrete storage instance.
+	// DefaultStorageBackendID is the organization default concrete storage instance.
 	DefaultStorageBackendID *string `yaml:"default_storage_backend_id" json:"default_storage_backend_id,omitempty" gorm:"column:default_storage_backend_id;type:varchar(36)"`
 	// Chat history config: knowledge base configuration for indexing and searching chat messages via vector search
 	ChatHistoryConfig *ChatHistoryConfig `yaml:"chat_history_config" json:"chat_history_config" gorm:"type:jsonb"`
 	// Retrieval config: global search/retrieval parameters shared by knowledge search and message search
 	RetrievalConfig *RetrievalConfig `yaml:"retrieval_config" json:"retrieval_config" gorm:"type:jsonb"`
-	// Memory config: workspace switch for cross-session long-term memory
+	// Memory config: organization switch for cross-session long-term memory
 	MemoryConfig *MemoryConfig `yaml:"memory_config" json:"memory_config" gorm:"type:jsonb"`
 	// API principal config: controls how X-API-Key requests map to terminal principals.
 	APIPrincipalConfig *APIPrincipalConfig `yaml:"api_principal_config" json:"-" gorm:"type:jsonb"`
@@ -473,19 +473,19 @@ type TenantSandboxConfig struct {
 	// any installed skills must be rebuilt from the new one.
 	DesktopEnabled bool `json:"desktop_enabled,omitempty"`
 
-	// AllowPrivateEndpoints permits this workspace config to reach RFC1918 or
+	// AllowPrivateEndpoints permits this organization's sandbox config to reach RFC1918 or
 	// loopback cluster endpoints. Link-local/cloud-metadata addresses remain
 	// blocked. It is explicit in the UI instead of hidden in process env.
 	AllowPrivateEndpoints bool `json:"allow_private_endpoints,omitempty"`
 
 	// EnvVars are additional environment variables injected into every
-	// sandbox created for this tenant. 🔒 Values are encrypted at rest.
+	// sandbox created for this organization. 🔒 Values are encrypted at rest.
 	// These become visible to all scripts running in the tenant's
 	// sandboxes — do not place secrets here that scripts must not access.
 	EnvVars map[string]string `json:"env_vars,omitempty"`
 
 	// VolumeMount configures an optional shared volume mounted into every
-	// sandbox created for this tenant. Currently used for tenant-installed
+	// sandbox created for this organization. Currently used for tenant-installed
 	// skills, but the configuration itself is skill-agnostic and can serve
 	// any volume-mount use case (shared datasets, pre-installed toolchains,
 	// etc.).
@@ -621,7 +621,7 @@ type DockerSandboxConfig struct {
 // intentionally skill-agnostic so it can serve other volume-based use cases
 // in the future.
 type VolumeMountConfig struct {
-	// Enabled toggles the volume mount for this tenant.
+	// Enabled toggles the volume mount for this organization.
 	Enabled bool `json:"enabled"`
 
 	// MountPath is the sandbox-internal path where the volume is mounted.
@@ -640,7 +640,7 @@ type VolumeMountConfig struct {
 	VolumeName string `json:"volume_name,omitempty"`
 
 	// VolumeOwnerFingerprint = sha256(provider + APIKey + APIURL).
-	// Used to detect when the tenant switched to a different backend or
+	// Used to detect when the organization switched to a different backend or
 	// API key, at which point the volume is no longer reachable and must
 	// be recreated.
 	VolumeOwnerFingerprint string `json:"volume_owner_fingerprint,omitempty"`

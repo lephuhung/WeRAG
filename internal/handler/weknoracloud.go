@@ -27,7 +27,7 @@ type weKnoraCloudCredentialsRequest struct {
 //
 // SaveCredentials godoc
 // @Summary      Lưu thông tin xác thực WeKnoraCloud
-// @Description  Lưu APPID/APPSECRET vào cấu hình đơn vị hiện tại (không tự tạo mô hình)
+// @Description  Lưu APPID/APPSECRET vào cấu hình tổ chức hiện tại (không tự tạo mô hình)
 // @Tags         WeKnoraCloud
 // @Accept       json
 // @Produce      json
@@ -57,7 +57,7 @@ func (h *WeKnoraCloudHandler) SaveCredentials(c *gin.Context) {
 //
 // Status godoc
 // @Summary      Kiểm tra trạng thái thông tin xác thực WeKnoraCloud
-// @Description  Kiểm tra thông tin xác thực WeKnoraCloud của đơn vị hiện tại còn nguyên vẹn không; needs_reinit=true nghĩa là cần lưu lại
+// @Description  Kiểm tra thông tin xác thực WeKnoraCloud của tổ chức hiện tại còn nguyên vẹn không; needs_reinit=true nghĩa là cần lưu lại
 // @Tags         WeKnoraCloud
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}  "Trạng thái thông tin xác thực"

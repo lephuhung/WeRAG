@@ -52,8 +52,8 @@ handler: `CreateKnowledgeBase` · `knowledgebase.go`
 | `type` | string |  | Type of the knowledge base (document, faq, etc.) |
 | `is_temporary` | boolean |  | Whether this knowledge base is temporary (ephemeral) and should be hidden from UI |
 | `description` | string |  | Description of the knowledge base |
-| `tenant_id` | number |  | Workspace ID |
-| `creator_id` | string |  | CreatorID records the user ID of whoever originally created the KB. Used by the workspace-level RBAC middleware to let Contributors edit their own KBs without granting them access  |
+| `tenant_id` | number |  | Organization ID |
+| `creator_id` | string |  | CreatorID records the user ID of whoever originally created the KB. Used by the organization-level RBAC middleware to let Contributors edit their own KBs without granting them access  |
 | `visibility` | KBVisibility |  | Visibility controls the read/search scope of this knowledge base. See KBVisibility constants. Rows predating migration 000107 read back as 'tenant' via the column default. |
 | `org_id` | number |  | OrgID binds the knowledge base to a tenant org when Visibility is 'org'. Must reference a tenant_orgs row of the same tenant; nil for all other visibilities. |
 | `chunking_config` | ChunkingConfig |  | Chunking configuration |
@@ -62,10 +62,10 @@ handler: `CreateKnowledgeBase` · `knowledgebase.go`
 | `summary_model_id` | string |  | Summary model ID |
 | `vlm_config` | VLMConfig |  | VLM config |
 | `asr_config` | ASRConfig |  | ASR config (Automatic Speech Recognition) |
-| `storage_provider_config` | StorageProviderConfig |  | Storage provider config (new): only stores provider selection; credentials from workspace StorageEngineConfig |
+| `storage_provider_config` | StorageProviderConfig |  | Storage provider config (new): only stores provider selection; credentials from organization StorageEngineConfig |
 | `storage_backend_id` | string |  | StorageBackendID binds this KB to one concrete storage instance. The legacy provider field remains readable during migration only. |
 | `storage_config` | StorageConfig |  | Deprecated: legacy COS config column. Kept for backward compatibility with old data. |
-| `vector_store_id` | string |  | VectorStoreID references the VectorStore this knowledge base is bound to. When nil, the KB falls back to the workspace's effective engines derived from the RETRIEVE_DRIVER environm |
+| `vector_store_id` | string |  | VectorStoreID references the VectorStore this knowledge base is bound to. When nil, the KB falls back to the organization's effective engines derived from the RETRIEVE_DRIVER environm |
 | `extract_config` | ExtractConfig |  | Extract config |
 | `faq_config` | FAQConfig |  | FAQConfig stores FAQ specific configuration such as indexing strategy |
 | `question_generation_config` | QuestionGenerationConfig |  | QuestionGenerationConfig stores question generation configuration for document knowledge bases |
@@ -74,7 +74,7 @@ handler: `CreateKnowledgeBase` · `knowledgebase.go`
 | `generated_profile` | KnowledgeBaseProfile |  | GeneratedProfile is the machine-generated description: a gist, merged topics, typical questions and the aggregate snapshot they came from. It never overwrites the user-authored Des |
 | `wiki_config` | WikiConfig |  | WikiConfig stores wiki-specific configuration (only for wiki type knowledge bases) |
 | `indexing_strategy` | IndexingStrategy |  | IndexingStrategy controls which indexing pipelines are active for this knowledge base. Pipelines: vector search, keyword search, wiki generation, knowledge graph extraction. |
-| `is_pinned` | boolean |  | IsPinned and PinnedAt are computed per-caller from user_kb_pins (see migration 000050). They used to be stored on the row itself, which made pinning a workspace-wide ordering decis |
+| `is_pinned` | boolean |  | IsPinned and PinnedAt are computed per-caller from user_kb_pins (see migration 000050). They used to be stored on the row itself, which made pinning an organization-wide ordering decis |
 | `pinned_at` | string(time) |  | PinnedAt records when the current caller pinned this knowledge base; nil when they have not. |
 | `created_at` | string(time) |  | Creation time of the knowledge base |
 | `updated_at` | string(time) |  | Last updated time of the knowledge base |
@@ -84,7 +84,7 @@ handler: `CreateKnowledgeBase` · `knowledgebase.go`
 | `is_processing` | boolean |  | IsProcessing indicates if there is a processing import task (for FAQ type knowledge bases) |
 | `processing_count` | number |  | ProcessingCount indicates the number of knowledge items being processed (for document type knowledge bases) |
 | `share_count` | number |  | ShareCount indicates the number of organizations this knowledge base is shared with (not stored in database) |
-| `creator_name` | string |  | CreatorName is the display name (username/email) of the user referenced by CreatorID. It is batch-filled by list handlers only and never persisted; empty means the creator could not be resolved (deleted user, legacy rows with empty CreatorID, etc.). The frontend uses it for the mine-vs-workspace badge on cards. |
+| `creator_name` | string |  | CreatorName is the display name (username/email) of the user referenced by CreatorID. It is batch-filled by list handlers only and never persisted; empty means the creator could not be resolved (deleted user, legacy rows with empty CreatorID, etc.). The frontend uses it for the mine-vs-organization badge on cards. |
 
 **Response**:
 ```json
@@ -383,7 +383,7 @@ handler: `GetKnowledge` · `knowledge.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `id` | string | yes | Unique identifier of the knowledge |
-| `tenant_id` | number | yes | Workspace ID |
+| `tenant_id` | number | yes | Organization ID |
 | `knowledge_base_id` | string | yes | ID of the knowledge base |
 | `tags` | *KnowledgeTag[] | yes | Tags holds the tags associated with this knowledge (populated on query, not persisted directly). |
 | `type` | string | yes | Type of the knowledge |
@@ -460,7 +460,7 @@ handler: `CancelKnowledgeParse` · `knowledge.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `id` | string | yes | Unique identifier of the knowledge |
-| `tenant_id` | number | yes | Workspace ID |
+| `tenant_id` | number | yes | Organization ID |
 | `knowledge_base_id` | string | yes | ID of the knowledge base |
 | `tags` | *KnowledgeTag[] | yes | Tags holds the tags associated with this knowledge (populated on query, not persisted directly). |
 | `type` | string | yes | Type of the knowledge |
@@ -576,7 +576,7 @@ handler: `GetKnowledgeBatch` · `knowledge.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `id` | string | yes | Unique identifier of the knowledge |
-| `tenant_id` | number | yes | Workspace ID |
+| `tenant_id` | number | yes | Organization ID |
 | `knowledge_base_id` | string | yes | ID of the knowledge base |
 | `tags` | *KnowledgeTag[] | yes | Tags holds the tags associated with this knowledge (populated on query, not persisted directly). |
 | `type` | string | yes | Type of the knowledge |
@@ -678,7 +678,7 @@ handler: `UpdateKnowledge` · `knowledge.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `id` | string | yes | Unique identifier of the knowledge |
-| `tenant_id` | number | yes | Workspace ID |
+| `tenant_id` | number | yes | Organization ID |
 | `knowledge_base_id` | string | yes | ID of the knowledge base |
 | `tags` | *KnowledgeTag[] | yes | Tags holds the tags associated with this knowledge (populated on query, not persisted directly). |
 | `type` | string | yes | Type of the knowledge |
@@ -729,7 +729,7 @@ handler: `UpdateKnowledge` · `knowledge.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `id` | string | yes | Unique identifier of the knowledge |
-| `tenant_id` | number | yes | Workspace ID |
+| `tenant_id` | number | yes | Organization ID |
 | `knowledge_base_id` | string | yes | ID of the knowledge base |
 | `tags` | *KnowledgeTag[] | yes | Tags holds the tags associated with this knowledge (populated on query, not persisted directly). |
 | `type` | string | yes | Type of the knowledge |
@@ -773,7 +773,7 @@ handler: `RegenerateKnowledgeSummary` · `knowledge.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `id` | string | yes | Unique identifier of the knowledge |
-| `tenant_id` | number | yes | Workspace ID |
+| `tenant_id` | number | yes | Organization ID |
 | `knowledge_base_id` | string | yes | ID of the knowledge base |
 | `tags` | *KnowledgeTag[] | yes | Tags holds the tags associated with this knowledge (populated on query, not persisted directly). |
 | `type` | string | yes | Type of the knowledge |
@@ -823,7 +823,7 @@ handler: `GetChunkByIDOnly` · `chunk.go`
 |---|---|---|---|
 | `id` | string | yes | Unique identifier of the chunk, using UUID format |
 | `seq_id` | number | yes | SeqID is an auto-increment integer ID for external API usage (FAQ entries) |
-| `tenant_id` | number | yes | Tenant ID, used for multi-tenant isolation |
+| `tenant_id` | number | yes | Organization ID, used for multi-organization isolation |
 | `knowledge_id` | string | yes | ID of the parent knowledge, associated with the Knowledge model |
 | `knowledge_base_id` | string | yes | ID of the knowledge base, for quick location |
 | `tag_id` | string | yes | Optional tag ID for categorization within a knowledge base (used for FAQ) |
@@ -940,7 +940,7 @@ handler: `CreateTag` · `tag.go`
 |---|---|---|---|
 | `id` | string | yes | Unique identifier of the tag (UUID) |
 | `seq_id` | number | yes | SeqID is an auto-increment integer ID for external API usage |
-| `tenant_id` | number | yes | Workspace ID |
+| `tenant_id` | number | yes | Organization ID |
 | `knowledge_base_id` | string | yes | Knowledge base ID that this tag belongs to |
 | `name` | string | yes | Tag name, unique within the same knowledge base |
 | `color` | string | yes | Optional display color |
@@ -969,7 +969,7 @@ handler: `UpdateTag` · `tag.go`
 |---|---|---|---|
 | `id` | string | yes | Unique identifier of the tag (UUID) |
 | `seq_id` | number | yes | SeqID is an auto-increment integer ID for external API usage |
-| `tenant_id` | number | yes | Workspace ID |
+| `tenant_id` | number | yes | Organization ID |
 | `knowledge_base_id` | string | yes | Knowledge base ID that this tag belongs to |
 | `name` | string | yes | Tag name, unique within the same knowledge base |
 | `color` | string | yes | Optional display color |
@@ -1622,7 +1622,7 @@ handler: `PreviewChunking` · `chunker_debug.go`
 | `question_generation_config` | QuestionGenerationConfig |  |  |
 | `graph_enabled` | boolean |  |  |
 | `extract_config` | ExtractConfig |  |  |
-| `parser_engine_overrides` | map[string]string |  | ParserEngineOverrides passes key-value configuration to docreader parsers (e.g. pdf_force_scanned=true). Merged with workspace-level overrides in the parse pipeline; per-upload val |
+| `parser_engine_overrides` | map[string]string |  | ParserEngineOverrides passes key-value configuration to docreader parsers (e.g. pdf_force_scanned=true). Merged with organization-level overrides in the parse pipeline; per-upload val |
 
 #### `KnowledgeProfile`
 | field | type | req | notes |

@@ -108,7 +108,7 @@ func EmbedVisitorIDFromContext(ctx context.Context) string {
 }
 
 // EmbedSessionPrincipal identifies a single embed visitor chat session.
-// MCPEndpointPrincipal identifies calls made through a workspace MCP
+// MCPEndpointPrincipal identifies calls made through an organization MCP
 // endpoint. Sessions and messages created by the ask tool are owned by it.
 func MCPEndpointPrincipal(tenantID uint64, endpointID string) Principal {
 	return Principal{

@@ -1349,7 +1349,7 @@ func (h *KnowledgeHandler) DeleteKnowledge(c *gin.Context) {
 	effectiveTenantID, _ := effCtx.Value(types.TenantIDContextKey).(uint64)
 	if effectiveTenantID == 0 {
 		logger.Error(ctx, "Effective tenant ID missing after access validation")
-		c.Error(errors.NewInternalServerError("workspace context unavailable"))
+		c.Error(errors.NewInternalServerError("organization context unavailable"))
 		return
 	}
 
@@ -1655,13 +1655,13 @@ type GetKnowledgeBatchRequest struct {
 
 // GetKnowledgeBatch godoc
 // @Summary      Lấy nhiều tài liệu
-// @Description  Lấy nhiều mục tài liệu theo danh sách ID. kb_id tuỳ chọn: khi truyền sẽ kiểm tra quyền theo kho tri thức đó và dùng để xác định đơn vị của kho tri thức chia sẻ; agent_id tuỳ chọn: truyền khi dùng trợ lý chia sẻ, backend truy vấn theo đơn vị của trợ lý (dùng để khôi phục tệp trong kho tri thức chia sẻ sau khi tải lại trang)
+// @Description  Lấy nhiều mục tài liệu theo danh sách ID. kb_id tuỳ chọn: khi truyền sẽ kiểm tra quyền theo kho tri thức đó và dùng để xác định tổ chức của kho tri thức chia sẻ; agent_id tuỳ chọn: truyền khi dùng trợ lý chia sẻ, backend truy vấn theo tổ chức của trợ lý (dùng để khôi phục tệp trong kho tri thức chia sẻ sau khi tải lại trang)
 // @Tags         Tài liệu
 // @Accept       json
 // @Produce      json
 // @Param        ids       query     []string  true   "Danh sách ID tài liệu"
 // @Param        kb_id     query     string   false  "Tuỳ chọn, ID kho tri thức (xác định phạm vi khi dùng kho tri thức chia sẻ)"
-// @Param        agent_id  query     string   false  "Tuỳ chọn, ID trợ lý chia sẻ (lấy chi tiết tệp theo đơn vị của trợ lý)"
+// @Param        agent_id  query     string   false  "Tuỳ chọn, ID trợ lý chia sẻ (lấy chi tiết tệp theo tổ chức của trợ lý)"
 // @Success      200       {object}  map[string]interface{}  "Danh sách tài liệu"
 // @Failure      400       {object}  errors.AppError        "tham số yêu cầu không hợp lệ"
 // @Security     Bearer
@@ -2041,7 +2041,7 @@ type knowledgeTagBatchRequest struct {
 
 // UpdateKnowledgeTagBatch godoc
 // @Summary      Cập nhật thẻ cho nhiều tài liệu
-// @Description  Cập nhật thẻ của nhiều mục tài liệu. kb_id tuỳ chọn: khi truyền sẽ kiểm tra quyền sửa theo kho tri thức đó và dùng để xác định đơn vị của kho tri thức chia sẻ
+// @Description  Cập nhật thẻ của nhiều mục tài liệu. kb_id tuỳ chọn: khi truyền sẽ kiểm tra quyền sửa theo kho tri thức đó và dùng để xác định tổ chức của kho tri thức chia sẻ
 // @Tags         Tài liệu
 // @Accept       json
 // @Produce      json

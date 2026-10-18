@@ -174,7 +174,7 @@ type AgentConfig struct {
 	// rendered into runtime_context as a retrieval hint).
 	QuestionOrigin *QuestionOrigin `json:"-"`
 	// WritableKBIDs are the SearchTargets KBs this caller may modify (its own
-	// workspace's, or shared to it as editor+). Search targets only need read
+	// organization's, or shared to it as editor+). Search targets only need read
 	// access, so tools that write (wiki pages and issues) are limited to this
 	// set; empty means read-only. Runtime only, derived per turn.
 	WritableKBIDs []string `json:"-"`

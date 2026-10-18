@@ -314,7 +314,7 @@ func (s *mcpEndpointService) validateKnowledgeBases(
 		caller.TenantID = tenantID
 	}
 	if caller.TenantID != tenantID {
-		return nil, apperrors.NewForbiddenError("caller does not belong to this workspace")
+		return nil, apperrors.NewForbiddenError("caller does not belong to this organization")
 	}
 	out := make([]string, 0, len(ids))
 	seen := map[string]struct{}{}

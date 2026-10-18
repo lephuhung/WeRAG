@@ -118,7 +118,7 @@ func (e *EvaluationService) EvaluationResult(ctx context.Context, taskID string)
 
 	if tenantID != detail.Task.TenantID {
 		logger.Error(ctx, "Tenant ID mismatch")
-		return nil, errors.New("tenant ID does not match")
+		return nil, errors.New("organization ID does not match")
 	}
 
 	logger.Info(ctx, "Evaluation result retrieved successfully")

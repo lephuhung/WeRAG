@@ -173,8 +173,8 @@ var registry = map[string]settingSpec{
 		Default:  "create_personal",
 		Enum:     []string{"create_personal", "tenantless"},
 		Category: "auth",
-		Description: "Chính sách đơn vị mặc định sau khi đăng ký công khai thành công. create_personal = tự tạo đơn vị cá nhân và đặt làm Owner; " +
-			"tenantless = chỉ tạo người dùng, chờ nhận lời mời hoặc tự tạo đơn vị. Thay đổi chỉ ảnh hưởng người dùng đăng ký mới.",
+		Description: "Chính sách tổ chức mặc định sau khi đăng ký công khai thành công. create_personal = tự tạo tổ chức cá nhân và đặt làm Owner; " +
+			"tenantless = chỉ tạo người dùng, chờ nhận lời mời hoặc tự tạo tổ chức. Thay đổi chỉ ảnh hưởng người dùng đăng ký mới.",
 	},
 	"auth.complex_password_enabled": {
 		Type:     "bool",
@@ -235,7 +235,7 @@ var registry = map[string]settingSpec{
 		EnvName:  "WEKNORA_TENANT_MAX_OWNED_PER_USER",
 		Default:  int64(10),
 		Category: "tenant",
-		Description: "Số đơn vị tối đa mỗi người dùng không phải SuperAdmin được tự tạo. Đọc trực tiếp mỗi lần tạo đơn vị, " +
+		Description: "Số tổ chức tối đa mỗi người dùng không phải SuperAdmin được tự tạo. Đọc trực tiếp mỗi lần tạo tổ chức, " +
 			"có hiệu lực ngay sau khi thay đổi. 0 = dùng mặc định tích hợp 10; số âm = bỏ hoàn toàn giới hạn (không khuyến nghị khi triển khai công khai).",
 	},
 	"tenant.self_service_creation_enabled": {
@@ -243,7 +243,7 @@ var registry = map[string]settingSpec{
 		EnvName:  "WEKNORA_TENANT_SELF_SERVICE_CREATION_ENABLED",
 		Default:  true,
 		Category: "tenant",
-		Description: "Cho phép người dùng không phải SuperAdmin tự tạo đơn vị hay không. Khi tắt, người dùng thường chỉ tham gia đơn vị có sẵn qua lời mời; " +
+		Description: "Cho phép người dùng không phải SuperAdmin tự tạo tổ chức hay không. Khi tắt, người dùng thường chỉ tham gia tổ chức có sẵn qua lời mời; " +
 			"SuperAdmin vẫn tạo được. Có hiệu lực ngay sau khi thay đổi.",
 	},
 	// tenant.default_storage_quota_gb is the default storage quota (in GB)
@@ -258,8 +258,8 @@ var registry = map[string]settingSpec{
 		EnvName:  "WEKNORA_TENANT_DEFAULT_STORAGE_QUOTA_GB",
 		Default:  int64(10),
 		Category: "tenant",
-		Description: "Hạn mức lưu trữ (GB) cấp mặc định khi tạo đơn vị mới, gồm vector, tệp gốc, văn bản, chỉ mục... " +
-			"Chỉ đọc lúc tạo; thay đổi chỉ áp dụng cho đơn vị tạo sau đó, không ghi lại cho đơn vị đã có. " +
+		Description: "Hạn mức lưu trữ (GB) cấp mặc định khi tạo tổ chức mới, gồm vector, tệp gốc, văn bản, chỉ mục... " +
+			"Chỉ đọc lúc tạo; thay đổi chỉ áp dụng cho tổ chức tạo sau đó, không ghi lại cho tổ chức đã có. " +
 			"0 hoặc số âm = dùng mặc định tích hợp 10GB.",
 	},
 	// tenant.auto_create_api_key restores the legacy behaviour where creating
@@ -275,9 +275,9 @@ var registry = map[string]settingSpec{
 		EnvName:  "WEKNORA_TENANT_AUTO_CREATE_API_KEY",
 		Default:  false,
 		Category: "tenant",
-		Description: "Khi tạo đơn vị có tự sinh một API key toàn quyền (full_access) và trả token dạng rõ trong phản hồi của API tạo hay không. " +
-			"Dùng để tương thích hành vi cũ \"tạo đơn vị là cấp API key mặc định\" (công tắc quay lui cho thay đổi phá vỡ tương thích). " +
-			"Đọc trực tiếp mỗi lần tạo đơn vị, có hiệu lực ngay. Mặc định false (không tự tạo, phải tạo tường minh trong quản lý API key).",
+		Description: "Khi tạo tổ chức có tự sinh một API key toàn quyền (full_access) và trả token dạng rõ trong phản hồi của API tạo hay không. " +
+			"Dùng để tương thích hành vi cũ \"tạo tổ chức là cấp API key mặc định\" (công tắc quay lui cho thay đổi phá vỡ tương thích). " +
+			"Đọc trực tiếp mỗi lần tạo tổ chức, có hiệu lực ngay. Mặc định false (không tự tạo, phải tạo tường minh trong quản lý API key).",
 	},
 	// tenant.auto_accept_invitation: invite = auto-join switch (default false).
 	"tenant.auto_accept_invitation": {
@@ -285,7 +285,7 @@ var registry = map[string]settingSpec{
 		EnvName:  "WEKNORA_TENANT_AUTO_ACCEPT_INVITATION",
 		Default:  false,
 		Category: "tenant",
-		Description: "Công tắc toàn cục: khi bật, lúc quản trị đơn vị mời người dùng đã đăng ký qua email, " +
+		Description: "Công tắc toàn cục: khi bật, lúc quản trị tổ chức mời người dùng đã đăng ký qua email, " +
 			"người được mời sẽ được thêm ngay (ghi thẳng quan hệ thành viên), không cần chấp nhận trong hộp thư và không tạo bản ghi lời mời chờ. " +
 			"Khi tắt giữ nguyên luồng \"gửi lời mời → người được mời xác nhận trong hộp thư\". Đọc trực tiếp mỗi lần mời, có hiệu lực ngay. Mặc định false.",
 	},
@@ -383,8 +383,8 @@ var registry = map[string]settingSpec{
 		EnvName:  "",
 		Default:  true,
 		Category: "memory",
-		Description: "Công tắc tổng bộ nhớ dài hạn cấp nền tảng. Khi tắt, bộ nhớ dài hạn của mọi đơn vị và mọi người dùng dừng ngay, " +
-			"cài đặt bộ nhớ của cá nhân và đơn vị được giữ nhưng không có tác dụng. Có hiệu lực ngay sau khi thay đổi.",
+		Description: "Công tắc tổng bộ nhớ dài hạn cấp nền tảng. Khi tắt, bộ nhớ dài hạn của mọi tổ chức và mọi người dùng dừng ngay, " +
+			"cài đặt bộ nhớ của cá nhân và tổ chức được giữ nhưng không có tác dụng. Có hiệu lực ngay sau khi thay đổi.",
 	},
 	// memory.config is the platform-wide memory configuration (on/off,
 	// write mode, extraction and embedding models, budgets). It replaces the
@@ -395,8 +395,8 @@ var registry = map[string]settingSpec{
 		EnvName:  "",
 		Default:  map[string]any{"enabled": true},
 		Category: "memory",
-		Description: "Platform-wide long-term memory configuration (same fields as the former workspace " +
-			"memory config). Every workspace and user inherits it; edits apply immediately.",
+		Description: "Platform-wide long-term memory configuration (same fields as the former organization " +
+			"memory config). Every organization and user inherits it; edits apply immediately.",
 	},
 	// usage.enforce turns the usage-package pre-flight check on: a turn
 	// is refused (HTTP 429) when the workspace or person has no current
@@ -413,7 +413,7 @@ var registry = map[string]settingSpec{
 		Default:  map[string]any{},
 		Category: "chat",
 		Description: "Cỡ chữ (quốc hiệu, tiêu ngữ, cơ quan, …) và lề trang (le_tren, le_duoi, le_trai, le_phai, mm) mặc định của văn bản mẫu NĐ30 tạo từ chat, " +
-			"trong khoảng NĐ30 cho phép. Đơn vị có thể ghi đè trong Hồ sơ đơn vị. Có hiệu lực từ văn bản tạo tiếp theo.",
+			"trong khoảng NĐ30 cho phép. Tổ chức có thể ghi đè trong Hồ sơ tổ chức. Có hiệu lực từ văn bản tạo tiếp theo.",
 	},
 	types.UsageEnforceSettingKey: {
 		Type:     "bool",

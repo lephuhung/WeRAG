@@ -107,7 +107,7 @@ func (s *WebSearchService) resolveProvider(
 	if providerID != "" {
 		tenantID, ok := types.TenantIDFromContext(ctx)
 		if !ok {
-			return nil, fmt.Errorf("workspace ID not found in context")
+			return nil, fmt.Errorf("organization ID not found in context")
 		}
 
 		entity, err := s.providerRepo.GetByID(ctx, tenantID, providerID)

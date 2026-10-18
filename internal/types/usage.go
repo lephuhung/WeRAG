@@ -7,7 +7,7 @@ import (
 
 // Usage metering (usage packages, phase 1).
 //
-// Every chat turn is counted twice: once for the workspace that owns the
+// Every chat turn is counted twice: once for the organization that owns the
 // session (scope "tenant") and once for the person who asked (scope
 // "user"). Counters are bucketed by Vietnam calendar day and month so a
 // package can later say "N questions per day" or "M tokens per month"
@@ -21,7 +21,7 @@ const (
 	// over its whole life, in the single period UsagePeriodAll. Only the
 	// per-session caps read it (types.UsageFeatureSessionMaxTurns/Tokens);
 	// every aggregate over usage_counters filters by scope_type, so these
-	// rows never add into workspace or person totals.
+	// rows never add into organization or person totals.
 	UsageScopeSession = "session"
 	// UsagePeriodAll is the period key of lifetime counters (session scope).
 	UsagePeriodAll = "all"
@@ -95,7 +95,7 @@ type UsageIncrement struct {
 	Delta     int64
 }
 
-// UsageTenantScopeID is the scope_id of a workspace counter.
+// UsageTenantScopeID is the scope_id of an organization counter.
 func UsageTenantScopeID(tenantID uint64) string { return strconv.FormatUint(tenantID, 10) }
 
 // UsagePeriodTotals are the metrics of one scope in one period.
@@ -138,7 +138,7 @@ type UsageScopeSummary struct {
 }
 
 // UsageSummary answers GET /me/usage: the caller's own counters and their
-// current workspace's. Either part is nil when the caller has no such scope
+// current organization's. Either part is nil when the caller has no such scope
 // (machine principals have no user scope; tenantless humans no tenant).
 type UsageSummary struct {
 	Timezone string             `json:"timezone"`
@@ -153,7 +153,7 @@ type UsageSummary struct {
 }
 
 // UsageStats is the platform-wide slice of the SystemAdmin dashboard:
-// every workspace's counters summed for today and this month.
+// every organization's counters summed for today and this month.
 type UsageStats struct {
 	Timezone string            `json:"timezone"`
 	Today    UsagePeriodTotals `json:"today"`

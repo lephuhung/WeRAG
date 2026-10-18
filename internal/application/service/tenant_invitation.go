@@ -32,7 +32,7 @@ var (
 	// ErrAlreadyMember is returned by Create when the invitee is
 	// already an active member of the tenant; sending an invite would
 	// be a no-op at best and a confusing UX at worst.
-	ErrAlreadyMember = errors.New("user is already an active member of the tenant")
+	ErrAlreadyMember = errors.New("user is already an active member of the organization")
 
 	// ErrInvitationNotPending is returned by Accept / Decline / Revoke
 	// when the row exists but has already been finalised. Maps to 409.

@@ -864,7 +864,7 @@ definitions:
         description: |-
           ===== Chat Attachment Parsing Settings =====
           ChatParserEngineRules selects parser engines for session-scoped chat
-          attachments by file type. Takes precedence over the tenant-level
+          attachments by file type. Takes precedence over the organization-level
           ParserEngineConfig.ChatParserEngineRules; an explicit per-request
           parser_engine still overrides both.
         items:
@@ -954,7 +954,7 @@ definitions:
       image_storage_provider:
         description: |-
           Storage provider for image uploads: "local", "minio", "cos", "tos", "s3", "oss", "ks3".
-          Empty means use the global/workspace default provider.
+          Empty means use the global/organization default provider.
         type: string
       image_upload_enabled:
         description: |-
@@ -1017,8 +1017,8 @@ definitions:
       memory_enabled:
         description: |-
           Whether this agent may read the user's long-term memory. Nil inherits
-          the workspace setting; false opts a single agent out of memory even when
-          the workspace has it on. There is no "on" that overrides the workspace.
+          the organization setting; false opts a single agent out of memory even when
+          the organization has it on. There is no "on" that overrides the organization.
         type: boolean
       model_id:
         description: |-
@@ -1075,7 +1075,7 @@ definitions:
       sandbox_config_id:
         description: |-
           ===== Sandbox Settings =====
-          SandboxConfigID selects which workspace sandbox config this agent's
+          SandboxConfigID selects which organization sandbox config this agent's
           skill scripts run on. Empty means sandbox execution is disabled.
 
           This references the LOGICAL config, never a specific revision: keeping
@@ -1126,7 +1126,7 @@ definitions:
         description: Vector retrieval threshold
         type: number
       vlm_model_id:
-        description: VLM model ID for image analysis (optional, falls back to workspace-level
+        description: VLM model ID for image analysis (optional, falls back to organization-level
           VLM)
         type: string
       web_fetch_enabled:
@@ -1152,7 +1152,7 @@ definitions:
       web_search_provider_id:
         description: |-
           WebSearchProviderID references a specific WebSearchProviderEntity.
-          If empty, the workspace's default provider (is_default=true) is used.
+          If empty, the organization's default provider (is_default=true) is used.
         type: string
     type: object
   github_com_Tencent_WeKnora_internal_types.DockerSandboxConfig:
@@ -1656,16 +1656,16 @@ definitions:
       creator_id:
         description: |-
           CreatorID records the user ID of whoever originally created the KB.
-          Used by the workspace-level RBAC middleware to let Contributors edit
+          Used by the organization-level RBAC middleware to let Contributors edit
           their own KBs without granting them access to everyone else's.
           Nullable for backward compatibility with rows created before the
-          RBAC migration backfilled the column to the workspace Owner.
+          RBAC migration backfilled the column to the organization Owner.
         type: string
       creator_name:
         description: |-
           CreatorName là tên hiển thị của người dùng ứng với CreatorID (username / email...),
           chỉ được handler điền hàng loạt khi liệt kê, không lưu DB; rỗng nghĩa là không xác định được người tạo (người dùng đã bị xóa,
-          dữ liệu cũ không có CreatorID...). Frontend dùng nó để phân biệt mine / workspace trên huy hiệu nguồn của thẻ.
+          dữ liệu cũ không có CreatorID...). Frontend dùng nó để phân biệt mine / organization trên huy hiệu nguồn của thẻ.
         type: string
       deleted_at:
         allOf:
@@ -1710,7 +1710,7 @@ definitions:
         description: |-
           IsPinned and PinnedAt are computed per-caller from user_kb_pins
           (see migration 000050). They used to be stored on the row itself,
-          which made pinning a workspace-wide ordering decision gated behind
+          which made pinning an organization-wide ordering decision gated behind
           the kb-edit RBAC guard. The columns are still present in legacy
           schemas for rollback safety but are no longer read or written by
           the application — both fields are tagged `gorm:"-"` so GORM
@@ -1732,7 +1732,7 @@ definitions:
         allOf:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.KBMemberDefault'
         description: |-
-          MemberDefault decides what active members of the owner tenant may do
+          MemberDefault decides what active members of the owner organization may do
           on a 'tenant'-visibility KB: 'view' or 'contribute' (migration 000148).
       name:
         description: Name of the knowledge base
@@ -1740,8 +1740,8 @@ definitions:
       owner_tenant_id:
         description: |-
           OwnerTenantID is the authorization owner of this knowledge base:
-          a nonzero tenant ID means tenant-owned, 0 means platform-owned
-          (no tenant owner). TenantID above stays the immutable
+          a nonzero organization ID means organization-owned, 0 means platform-owned
+          (no organization owner). TenantID above stays the immutable
           data-scope/execution partition for documents and indexes and is
           never rewritten by a public/tenant scope transition. Rows
           predating migration 000113 backfill this column from tenant_id.
@@ -1751,7 +1751,7 @@ definitions:
         type: integer
       owner_tenant_name:
         description: |-
-          OwnerTenantName is the owning workspace's display name, filled on
+          OwnerTenantName is the owning organization's display name, filled on
           published-catalog rows so readers see which unit published them.
         type: string
       pinned_at:
@@ -1775,7 +1775,7 @@ definitions:
         description: QuestionGenerationConfig stores question generation configuration
           for document knowledge bases
       share_count:
-        description: ShareCount indicates the number of live tenant access grants
+        description: ShareCount indicates the number of live organization access grants
           on this knowledge base (not stored in database)
         type: integer
       storage_backend_id:
@@ -1792,11 +1792,11 @@ definitions:
         allOf:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.StorageProviderConfig'
         description: 'Storage provider config (new): only stores provider selection;
-          credentials from workspace StorageEngineConfig'
+          credentials from organization StorageEngineConfig'
       subscribed_by_me:
         description: |-
           SubscribedByMe / SubscribedByTenant are computed per caller for
-          published KBs: whether the caller, or their whole tenant, has put
+          published KBs: whether the caller, or their whole organization, has put
           the KB into the default retrieval scope.
         type: boolean
       subscribed_by_tenant:
@@ -1805,7 +1805,7 @@ definitions:
         description: Summary model ID
         type: string
       tenant_id:
-        description: Workspace ID
+        description: Organization ID
         type: integer
       type:
         description: Type of the knowledge base (document, faq, etc.)
@@ -1816,7 +1816,7 @@ definitions:
       vector_store_id:
         description: |-
           VectorStoreID references the VectorStore this knowledge base is bound to.
-          When nil, the KB falls back to the workspace's effective engines derived from
+          When nil, the KB falls back to the organization's effective engines derived from
           the RETRIEVE_DRIVER environment variable (env store flow).
           This field is set once at creation time and must not be modified afterwards;
           enforcement lives at the GORM layer (`<-:create`) plus the service-layer
@@ -2019,7 +2019,7 @@ definitions:
           type: string
         description: |-
           ParserEngineOverrides passes key-value configuration to docreader parsers
-          (e.g. pdf_force_scanned=true). Merged with workspace-level overrides in the
+          (e.g. pdf_force_scanned=true). Merged with organization-level overrides in the
           parse pipeline; per-upload values take priority on conflict.
         type: object
       parser_engine_rules:
@@ -2100,15 +2100,15 @@ definitions:
         allOf:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.Tenant'
         description: |-
-          ActiveTenant is the workspace whose ID is encoded in the issued JWT;
+          ActiveTenant is the organization whose ID is encoded in the issued JWT;
           future requests are scoped to it until the client calls /auth/switch-tenant.
-          Defaults to the user's home workspace on a fresh login.
+          Defaults to the user's home organization on a fresh login.
       memberships:
         description: |-
-          Memberships lists every workspace the user can authenticate into,
+          Memberships lists every organization the user can authenticate into,
           along with their role in each. Always populated (length 1 for users
-          who only belong to their home workspace) so frontends can render a
-          workspace switcher without a follow-up request. Serialised without
+          who only belong to their home organization) so frontends can render an
+          organization switcher without a follow-up request. Serialised without
           omitempty so the field is always present as a JSON array (possibly
           empty) — the "always populated" contract relies on the server side
           guaranteeing a non-nil slice.
@@ -2225,7 +2225,7 @@ definitions:
       id:
         type: string
       is_builtin:
-        description: Whether this is a builtin MCP service (visible to all workspaces)
+        description: Whether this is a builtin MCP service (visible to all organizations)
         type: boolean
       name:
         type: string
@@ -2348,14 +2348,14 @@ definitions:
       embedding_model_id:
         description: |-
           EmbeddingModelID is the single model used to score memory against a
-          question. It is pinned per workspace: knowledge bases each have their
+          question. It is pinned per organization: knowledge bases each have their
           own embedding model, and grabbing whichever one happens to be listed
           first would mix incomparable vector spaces. Blank means semantic recall
           is off and matching stays lexical.
         type: string
       enabled:
         description: |-
-          Enabled is on for workspaces that never saved a config (see
+          Enabled is on for organizations that never saved a config (see
           DefaultMemoryConfig); once an admin saves, the stored value wins.
         type: boolean
       extract_delay_seconds:
@@ -2366,7 +2366,7 @@ definitions:
         type: integer
       extract_instructions:
         description: |-
-          ExtractInstructions are workspace-specific rules appended to the
+          ExtractInstructions are organization-specific rules appended to the
           distillation prompt, for policies the product cannot guess ("never record
           customer names", "always note the environment a question is about").
         type: string
@@ -3464,7 +3464,7 @@ definitions:
           permanent would make "no session references this config" never true.
         type: string
       tenant_id:
-        description: Workspace ID
+        description: Organization ID
         type: integer
       title:
         description: Title
@@ -3805,13 +3805,13 @@ definitions:
           and searching chat messages via vector search'
       config_profile_id:
         description: |-
-          ConfigProfileID is the configuration profile a workspace inherits its
+          ConfigProfileID is the configuration profile an organization inherits its
           models, agents, engines and settings from. Nil on profiles.
         type: integer
       context_config:
         allOf:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.ContextConfig'
-        description: Global Context configuration for this workspace (default for
+        description: Global Context configuration for this organization (default for
           all sessions)
       created_at:
         description: Creation time
@@ -3827,8 +3827,8 @@ definitions:
           the models a new knowledge base gets when created without them.
         type: string
       default_storage_backend_id:
-        description: DefaultStorageBackendID is the workspace default concrete storage
-          instance.
+        description: DefaultStorageBackendID is the organization default concrete
+          storage instance.
         type: string
       default_summary_model_id:
         type: string
@@ -3845,12 +3845,12 @@ definitions:
       kind:
         description: |-
           Kind is TenantKindWorkspace for a real unit, or TenantKindConfigProfile
-          for a hidden configuration-only row that workspaces inherit from.
+          for a hidden configuration-only row that organizations inherit from.
         type: string
       memory_config:
         allOf:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.MemoryConfig'
-        description: 'Memory config: workspace switch for cross-session long-term
+        description: 'Memory config: organization switch for cross-session long-term
           memory'
       name:
         description: Name
@@ -3890,7 +3890,7 @@ definitions:
       web_search_config:
         allOf:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.WebSearchConfig'
-        description: Global WebSearch configuration for this workspace
+        description: Global WebSearch configuration for this organization
     type: object
   github_com_Tencent_WeKnora_internal_types.TenantRole:
     enum:
@@ -3906,7 +3906,7 @@ definitions:
     properties:
       allow_private_endpoints:
         description: |-
-          AllowPrivateEndpoints permits this workspace config to reach RFC1918 or
+          AllowPrivateEndpoints permits this organization's sandbox config to reach RFC1918 or
           loopback cluster endpoints. Link-local/cloud-metadata addresses remain
           blocked. It is explicit in the UI instead of hidden in process env.
         type: boolean
@@ -3933,7 +3933,7 @@ definitions:
         additionalProperties:
           type: string
         description: "EnvVars are additional environment variables injected into every\nsandbox
-          created for this tenant. \U0001F512 Values are encrypted at rest.\nThese
+          created for this organization. \U0001F512 Values are encrypted at rest.\nThese
           become visible to all scripts running in the tenant's\nsandboxes — do not
           place secrets here that scripts must not access."
         type: object
@@ -3978,7 +3978,7 @@ definitions:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.VolumeMountConfig'
         description: |-
           VolumeMount configures an optional shared volume mounted into every
-          sandbox created for this tenant. Currently used for tenant-installed
+          sandbox created for this organization. Currently used for tenant-installed
           skills, but the configuration itself is skill-agnostic and can serve
           any volume-mount use case (shared datasets, pre-installed toolchains,
           etc.).
@@ -4234,7 +4234,8 @@ definitions:
         description: Avatar URL of the user
         type: string
       can_access_all_tenants:
-        description: Whether the user can access all workspaces (cross-workspace access)
+        description: Whether the user can access all organizations (cross-organization
+          access)
         type: boolean
       created_at:
         description: Creation time of the user
@@ -4253,7 +4254,7 @@ definitions:
         description: Whether the user is active
         type: boolean
       is_system_admin:
-        description: Whether the user is a system administrator (independent of workspace
+        description: Whether the user is a system administrator (independent of organization
           roles)
         type: boolean
       preferences:
@@ -4268,7 +4269,7 @@ definitions:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.Tenant'
         description: Association relationship, not stored in the database
       tenant_id:
-        description: Workspace ID that the user belongs to
+        description: Organization ID that the user belongs to
         type: integer
       two_factor_enabled:
         description: Whether TOTP two-factor authentication is enforced at login.
@@ -4319,13 +4320,13 @@ definitions:
         type: string
       last_active_tenant_id:
         description: |-
-          LastActiveTenantID remembers the last workspace the user actively
+          LastActiveTenantID remembers the last organization the user actively
           switched into, so a fresh login (new device, cleared browser, new
-          refresh token) lands them back in that workspace instead of always
-          bouncing to their home workspace. Written by the SPA's preferences
+          refresh token) lands them back in that organization instead of always
+          bouncing to their home organization. Written by the SPA's preferences
           PUT and by service-level SwitchTenant (including when switching
           home, which stores the home ID). Login / RefreshToken validate that
-          the workspace still exists and the user still has an active membership
+          the organization still exists and the user still has an active membership
           (or is a SuperAdmin) before honouring this preference; an
           invalid pointer is best-effort cleared and the user falls back to
           home. Refresh JWT claims have no tenant_id, so RefreshToken
@@ -4335,7 +4336,7 @@ definitions:
           *0   = "clear preference" sentinel for the partial-update endpoint
                  (UpdateUserPreferences turns this into nil). Otherwise treat
                  a stored *0 the same as nil.
-          *N   = preferred workspace id.
+          *N   = preferred organization id.
         type: integer
       oidc_only_login:
         description: |-
@@ -4396,7 +4397,7 @@ definitions:
   github_com_Tencent_WeKnora_internal_types.VolumeMountConfig:
     properties:
       enabled:
-        description: Enabled toggles the volume mount for this tenant.
+        description: Enabled toggles the volume mount for this organization.
         type: boolean
       mount_path:
         description: |-
@@ -4419,7 +4420,7 @@ definitions:
       volume_owner_fingerprint:
         description: |-
           VolumeOwnerFingerprint = sha256(provider + APIKey + APIURL).
-          Used to detect when the tenant switched to a different backend or
+          Used to detect when the organization switched to a different backend or
           API key, at which point the volume is no longer reachable and must
           be recreated.
         type: string
@@ -4484,7 +4485,7 @@ definitions:
         description: Unique identifier (UUID, auto-generated)
         type: string
       is_default:
-        description: Whether this is the default provider for the workspace
+        description: Whether this is the default provider for the organization
         type: boolean
       name:
         description: User-friendly name, e.g., "Production Bing Search"
@@ -4499,7 +4500,7 @@ definitions:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.WebSearchProviderType'
         description: 'Provider type: bing, google, duckduckgo, tavily'
       tenant_id:
-        description: Workspace ID for scoping
+        description: Organization ID for scoping
         type: integer
       updated_at:
         type: string
@@ -4926,7 +4927,7 @@ definitions:
         description: One-line summary for index listing
         type: string
       tenant_id:
-        description: Workspace ID for multi-workspace isolation
+        description: Organization ID for multi-organization isolation
         type: integer
       title:
         description: Human-readable title
@@ -5570,9 +5571,9 @@ definitions:
         type: array
       model_id:
         description: |-
-          ModelID selects a chat (KnowledgeQA) model of the workspace; empty or
-          "default" uses the workspace default chat model, so integrations follow
-          whatever model the workspace is switched to.
+          ModelID selects a chat (KnowledgeQA) model of the organization; empty or
+          "default" uses the organization default chat model, so integrations follow
+          whatever model the organization is switched to.
         type: string
       temperature:
         type: number
@@ -5935,7 +5936,7 @@ definitions:
     type: object
   internal_handler.RuntimeWorkerPool:
     description: Return every row in the system_settings table (system-scope, not
-      workspace-scoped). SystemAdmin only.
+      organization-scoped). SystemAdmin only.
     properties:
       active:
         description: live workers assigned to this pool
@@ -6181,15 +6182,15 @@ definitions:
         allOf:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.KBMemberDefault'
         description: |-
-          MemberDefault (optional): view | contribute — what owner-tenant
-          members may do on a 'tenant' KB. Owner Tenant Admin or SuperAdmin.
+          MemberDefault (optional): view | contribute — what owner-organization
+          members may do on a 'tenant' KB. Owner Organization Admin or SuperAdmin.
       target_tenant_id:
         type: integer
       visibility:
         allOf:
         - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.KBVisibility'
         description: |-
-          Visibility: tenant | restricted | published (owner Tenant Admin or
+          Visibility: tenant | restricted | published (owner Organization Admin or
           SuperAdmin) or public (SuperAdmin). Optional when only
           member_default changes.
     type: object
@@ -6537,9 +6538,9 @@ definitions:
       last_active_tenant_id:
         description: |-
           LastActiveTenantID lets clients persist "after a fresh login,
-          drop me back into this workspace" across devices. The SPA sends
-          this after every tenant switch; POST /auth/switch-tenant records
-          the same preference server-side. Send a positive workspace id to
+          drop me back into this organization" across devices. The SPA sends
+          this after every organization switch; POST /auth/switch-tenant records
+          the same preference server-side. Send a positive organization id to
           set / replace, or 0 to clear. Membership is validated at next
           login, not here. Nil = field omitted from the PATCH and stays
           untouched.
@@ -7050,7 +7051,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: Lấy mọi trợ lý của đơn vị hiện tại (gồm cả trợ lý tích hợp sẵn)
+      description: Lấy mọi trợ lý của tổ chức hiện tại (gồm cả trợ lý tích hợp sẵn)
       produces:
       - application/json
       responses:
@@ -7593,7 +7594,7 @@ paths:
       consumes:
       - application/json
       description: |-
-        Theo token trong liên kết mời, trả về ngữ cảnh lời mời (tên đơn vị / vai trò / thời hạn)
+        Theo token trong liên kết mời, trả về ngữ cảnh lời mời (tên tổ chức / vai trò / thời hạn)
         để trang đăng ký hiển thị. Không cần xác thực; token không hợp lệ hoặc đã thu hồi trả về 410.
         Dùng POST + body thay vì GET + path để token không lọt vào access log / lịch sử trình duyệt / tracing.
       parameters:
@@ -7726,7 +7727,7 @@ paths:
       - multipart/form-data
       description: |-
         Accepts one multipart image (png/jpg/webp/gif, ≤5MB), stores it
-        via the tenant's file service and records the returned
+        via the organization's file service and records the returned
         provider path on the caller's profile. Clients render it back
         through the authenticated /files proxy.
       parameters:
@@ -7962,7 +7963,7 @@ paths:
       - application/json
       description: |-
         Hoàn tất đăng ký bằng token liên kết mời do Owner tạo, bỏ qua chặn của chế độ invite_only.
-        Người đăng ký tự điền email (không gắn với token); đăng ký xong tự động vào đơn vị tương ứng.
+        Người đăng ký tự điền email (không gắn với token); đăng ký xong tự động vào tổ chức tương ứng.
       parameters:
       - description: yêu cầu đăng ký qua lời mời
         in: body
@@ -7997,11 +7998,11 @@ paths:
       consumes:
       - application/json
       description: |-
-        Cấp lại access token cho người dùng hiện tại trên đơn vị đích; người dùng phải là thành viên active của đơn vị đó (trừ SuperAdmin liên đơn vị).
-        Chuyển thành công sẽ ghi đơn vị đích vào tuỳ chọn "đơn vị hoạt động gần nhất"; lần đăng nhập và refresh sau đều rơi vào đơn vị này (refresh JWT không chứa tenant_id).
+        Cấp lại access token cho người dùng hiện tại trên tổ chức đích; người dùng phải là thành viên active của tổ chức đó (trừ SuperAdmin liên tổ chức).
+        Chuyển thành công sẽ ghi tổ chức đích vào tuỳ chọn "tổ chức hoạt động gần nhất"; lần đăng nhập và refresh sau đều rơi vào tổ chức này (refresh JWT không chứa tenant_id).
         Tuỳ chọn này ở cấp tài khoản: một lần chuyển sẽ đổi điểm đến của đăng nhập/refresh trên mọi thiết bị. Ghi tuỳ chọn thất bại thì cả lần chuyển thất bại, không phát token mới.
       parameters:
-      - description: yêu cầu chuyển đơn vị
+      - description: yêu cầu chuyển tổ chức
         in: body
         name: request
         required: true
@@ -8024,13 +8025,13 @@ paths:
           schema:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
         "403":
-          description: không phải thành viên của đơn vị này hoặc ghi tuỳ chọn thất
+          description: không phải thành viên của tổ chức này hoặc ghi tuỳ chọn thất
             bại
           schema:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: Chuyển đơn vị đang hoạt động
+      summary: Chuyển tổ chức đang hoạt động
       tags:
       - Xác thực
   /auth/validate:
@@ -8078,7 +8079,7 @@ paths:
             type: object
       security:
       - Bearer: []
-      summary: My orders and, for a workspace admin, the workspace's
+      summary: My orders and, for an organization admin, the organization's
       tags:
       - Thanh toán
     post:
@@ -8099,7 +8100,7 @@ paths:
             type: object
       security:
       - Bearer: []
-      summary: Place an order for the workspace or for oneself
+      summary: Place an order for the organization or for oneself
       tags:
       - Thanh toán
   /billing/orders/{code}:
@@ -8137,7 +8138,7 @@ paths:
             type: object
       security:
       - Bearer: []
-      summary: Cancel a pending order of mine / of my workspace
+      summary: Cancel a pending order of mine / of my organization
       tags:
       - Thanh toán
   /billing/plans:
@@ -8468,7 +8469,7 @@ paths:
         attached: documents outside the 29 văn bản hành chính get
         the technical layout checks only), segmenter (auto | heuristic) and
         evaluate=true (judge the format data against the document-type
-        skills with the workspace chat model, thinking on; ~1 min).
+        skills with the organization chat model, thinking on; ~1 min).
         Returns every rule with pass/fail/warn/skip, the measured
         value, the offending lines, the format data and, with
         evaluate, the written evaluation.
@@ -9299,7 +9300,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: Lấy mọi kho tri thức của đơn vị hiện tại; hoặc khi truyền agent_id
+      description: Lấy mọi kho tri thức của tổ chức hiện tại; hoặc khi truyền agent_id
         (trợ lý chia sẻ), kiểm tra quyền rồi trả về phạm vi kho tri thức mà trợ lý
         đó được cấu hình (dùng cho @ nhắc)
       parameters:
@@ -9483,8 +9484,8 @@ paths:
   /knowledge-bases/{id}/activity:
     get:
       description: Trả về các thay đổi quan trọng và tác vụ nền của kho tri thức.
-        Chỉ người tạo kho tri thức hoặc quản trị viên đơn vị sở hữu được đọc; đơn
-        vị được chia sẻ không đọc được.
+        Chỉ người tạo kho tri thức hoặc quản trị viên tổ chức sở hữu được đọc; tổ
+        chức được chia sẻ không đọc được.
       parameters:
       - description: Knowledge BaseID
         in: path
@@ -10689,7 +10690,7 @@ paths:
       - Kho tri thức
     post:
       description: Adds a published KB to the default retrieval scope of the caller,
-        or of the whole workspace with scope=tenant (Tenant Admin only).
+        or of the whole organization with scope=tenant (Organization Admin only).
       parameters:
       - description: Knowledge base ID
         in: path
@@ -10884,7 +10885,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: 'Explicit human SuperAdmin only. Moves a tenant-owned (tenant/restricted/published)
+      description: 'Explicit human SuperAdmin only. Moves an organization-owned (tenant/restricted/published)
         or platform public KB to target_tenant_id without widening its scope: restricted
         stays restricted (only the target''s Admins and SuperAdmins read it until
         the target shares it), tenant stays tenant, published is withdrawn to tenant
@@ -10897,7 +10898,7 @@ paths:
         name: id
         required: true
         type: string
-      - description: Target tenant
+      - description: Target organization
         in: body
         name: request
         required: true
@@ -11028,7 +11029,7 @@ paths:
       description: Trả về một trang KB công khai của nền tảng (owner_tenant_id=0 và
         visibility=public) kèm metadata total/page/page_size. Chỉ người dùng đã xác
         thực gọi được; ẩn danh 401, API key 403. SuperAdmin là người thật không có
-        ngữ cảnh đơn vị vẫn gọi được.
+        ngữ cảnh tổ chức vẫn gọi được.
       parameters:
       - description: số trang (bắt đầu từ 1, mặc định 1)
         in: query
@@ -11407,10 +11408,10 @@ paths:
       consumes:
       - application/json
       description: 'Lấy nhiều mục tài liệu theo danh sách ID. kb_id tuỳ chọn: khi
-        truyền sẽ kiểm tra quyền theo kho tri thức đó và dùng để xác định đơn vị của
-        kho tri thức chia sẻ; agent_id tuỳ chọn: truyền khi dùng trợ lý chia sẻ, backend
-        truy vấn theo đơn vị của trợ lý (dùng để khôi phục tệp trong kho tri thức
-        chia sẻ sau khi tải lại trang)'
+        truyền sẽ kiểm tra quyền theo kho tri thức đó và dùng để xác định tổ chức
+        của kho tri thức chia sẻ; agent_id tuỳ chọn: truyền khi dùng trợ lý chia sẻ,
+        backend truy vấn theo tổ chức của trợ lý (dùng để khôi phục tệp trong kho
+        tri thức chia sẻ sau khi tải lại trang)'
       parameters:
       - collectionFormat: csv
         description: Danh sách ID tài liệu
@@ -11425,7 +11426,7 @@ paths:
         in: query
         name: kb_id
         type: string
-      - description: Tuỳ chọn, ID trợ lý chia sẻ (lấy chi tiết tệp theo đơn vị của
+      - description: Tuỳ chọn, ID trợ lý chia sẻ (lấy chi tiết tệp theo tổ chức của
           trợ lý)
         in: query
         name: agent_id
@@ -11746,7 +11747,7 @@ paths:
       consumes:
       - application/json
       description: 'Cập nhật thẻ của nhiều mục tài liệu. kb_id tuỳ chọn: khi truyền
-        sẽ kiểm tra quyền sửa theo kho tri thức đó và dùng để xác định đơn vị của
+        sẽ kiểm tra quyền sửa theo kho tri thức đó và dùng để xác định tổ chức của
         kho tri thức chia sẻ'
       parameters:
       - description: Yêu cầu cập nhật thẻ (updates bắt buộc, kb_id tuỳ chọn)
@@ -12548,7 +12549,7 @@ paths:
       consumes:
       - application/json
       description: |-
-        Runs one text completion on the workspace default chat model
+        Runs one text completion on the organization default chat model
         (or model_id). Model credentials stay server-side.
       parameters:
       - description: messages
@@ -12576,7 +12577,7 @@ paths:
       security:
       - Bearer: []
       - ApiKeyAuth: []
-      summary: Chat completion with a workspace chat model
+      summary: Chat completion with an organization chat model
       tags:
       - Mô hình
   /mcp-endpoints:
@@ -12598,8 +12599,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Phát hành một điểm cuối MCP cho không gian làm việc hiện tại; token
-        trong phản hồi chỉ trả về một lần
+      description: Phát hành một điểm cuối MCP cho tổ chức hiện tại; token trong phản
+        hồi chỉ trả về một lần
       parameters:
       - description: 'Cấu hình điểm cuối: name, description, enabled, knowledge_base_ids,
           tools...'
@@ -12751,7 +12752,7 @@ paths:
   /mcp-endpoints/tools:
     get:
       description: Trả về danh sách công cụ có thể chọn, nhóm và lựa chọn mặc định
-        cho điểm cuối MCP của không gian làm việc
+        cho điểm cuối MCP của tổ chức
       produces:
       - application/json
       responses:
@@ -12770,8 +12771,8 @@ paths:
     get:
       consumes:
       - application/json
-      description: Lấy tất cả dịch vụ MCP của không gian làm việc hiện tại (kèm số
-        công cụ đã lưu trong danh mục)
+      description: Lấy tất cả dịch vụ MCP của tổ chức hiện tại (kèm số công cụ đã
+        lưu trong danh mục)
       produces:
       - application/json
       responses:
@@ -13030,7 +13031,7 @@ paths:
       - application/json
       description: Kết nối upstream rõ ràng và thay thế nguyên tử toàn bộ danh mục.
         Dịch vụ OAuth ghi ảnh chụp của người dùng hiện tại, Viewer trở lên gọi được;
-        xác thực tĩnh ghi ảnh chụp dùng chung của đơn vị, cần Admin.
+        xác thực tĩnh ghi ảnh chụp dùng chung của tổ chức, cần Admin.
       parameters:
       - description: ID dịch vụ MCP
         in: path
@@ -13319,9 +13320,9 @@ paths:
       - Dịch vụ MCP
   /me/env-vars:
     get:
-      description: List every sandbox config of this workspace with the caller's own
-        config-wide variables and the credentials its skills declared, each reporting
-        whether it is unset, filled in workspace-wide, or filled in by the caller.
+      description: List every sandbox config of this organization with the caller's
+        own config-wide variables and the credentials its skills declared, each reporting
+        whether it is unset, filled in organization-wide, or filled in by the caller.
         Values are never returned.
       produces:
       - application/json
@@ -13404,8 +13405,8 @@ paths:
     delete:
       consumes:
       - application/json
-      description: Remove the caller's own value. The workspace-wide value, if there
-        is one, applies again afterwards.
+      description: Remove the caller's own value. The organization-wide value, if
+        there is one, applies again afterwards.
       parameters:
       - description: Skill and variable name
         in: body
@@ -13434,7 +13435,7 @@ paths:
       consumes:
       - application/json
       description: Store the caller's own value for one variable the skill declared.
-        It overrides the workspace-wide value for this caller only, and is injected
+        It overrides the organization-wide value for this caller only, and is injected
         only into executions that name this skill.
       parameters:
       - description: Skill, variable name and value
@@ -13534,7 +13535,8 @@ paths:
       consumes:
       - application/json
       description: Người dùng đã đăng nhập dùng token của liên kết mời chia sẻ để
-        tham gia đơn vị, không tạo tài khoản mới; lũy đẳng với người đã là thành viên.
+        tham gia tổ chức, không tạo tài khoản mới; lũy đẳng với người đã là thành
+        viên.
       parameters:
       - description: Token lời mời
         in: body
@@ -13556,7 +13558,7 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: Tham gia đơn vị qua liên kết chia sẻ
+      summary: Tham gia tổ chức qua liên kết chia sẻ
       tags:
       - Lời mời của tôi
   /me/invitations/pending-count:
@@ -13580,7 +13582,7 @@ paths:
     get:
       description: |-
         Questions and LLM tokens used today and this month, for the
-        caller and for the caller's current workspace.
+        caller and for the caller's current organization.
       produces:
       - application/json
       responses:
@@ -13850,7 +13852,7 @@ paths:
       - Bộ nhớ
   /memory/settings:
     get:
-      description: Trả về trạng thái bật/tắt bộ nhớ đã gộp (cấp đơn vị + cấp cá nhân)
+      description: Trả về trạng thái bật/tắt bộ nhớ đã gộp (cấp tổ chức + cấp cá nhân)
         và số mục bộ nhớ
       produces:
       - application/json
@@ -14143,7 +14145,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: Lấy toàn bộ mô hình của đơn vị hiện tại
+      description: Lấy toàn bộ mô hình của tổ chức hiện tại
       produces:
       - application/json
       responses:
@@ -14314,7 +14316,7 @@ paths:
       - Mô hình
   /models/weknoracloud/status:
     get:
-      description: Kiểm tra thông tin xác thực WeKnoraCloud của đơn vị hiện tại còn
+      description: Kiểm tra thông tin xác thực WeKnoraCloud của tổ chức hiện tại còn
         nguyên vẹn không; needs_reinit=true nghĩa là cần lưu lại
       produces:
       - application/json
@@ -14337,7 +14339,7 @@ paths:
       - WeKnoraCloud
   /sandbox-configs:
     get:
-      description: List workspace sandbox backend configs with credentials masked.
+      description: List organization sandbox backend configs with credentials masked.
       produces:
       - application/json
       responses:
@@ -14360,8 +14362,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create a named workspace sandbox backend config. Credentials are
-        masked in the response.
+      description: Create a named organization sandbox backend config. Credentials
+        are masked in the response.
       parameters:
       - description: Sandbox backend config
         in: body
@@ -14431,7 +14433,8 @@ paths:
       tags:
       - Sandbox
     get:
-      description: Retrieve a workspace sandbox backend config with credentials masked.
+      description: Retrieve an organization sandbox backend config with credentials
+        masked.
       parameters:
       - description: Sandbox config ID
         in: path
@@ -14713,7 +14716,7 @@ paths:
     patch:
       consumes:
       - application/json
-      description: Show or hide an installed skill and set the workspace-wide values
+      description: Show or hide an installed skill and set the organization-wide values
         of the environment variables it declared. Either field may be sent, or both.
         The files stay in the image either way; removal is a separate flow.
       parameters:
@@ -15019,8 +15022,8 @@ paths:
     get:
       consumes:
       - application/json
-      description: Lấy danh sách cuộc trò chuyện của không gian làm việc hiện tại,
-        hỗ trợ phân trang, tìm theo từ khoá, lọc theo nguồn/trợ lý
+      description: Lấy danh sách cuộc trò chuyện của tổ chức hiện tại, hỗ trợ phân
+        trang, tìm theo từ khoá, lọc theo nguồn/trợ lý
       parameters:
       - description: Số trang
         in: query
@@ -15821,7 +15824,7 @@ paths:
       consumes:
       - application/json
       description: Xoá hàng loạt cuộc trò chuyện theo danh sách ID, hoặc đặt delete_all=true
-        để xoá toàn bộ cuộc trò chuyện của không gian làm việc hiện tại
+        để xoá toàn bộ cuộc trò chuyện của tổ chức hiện tại
       parameters:
       - description: Yêu cầu xoá hàng loạt
         in: body
@@ -15917,7 +15920,7 @@ paths:
       - Kỹ năng
   /skills/catalog:
     get:
-      description: Returns every skill definition in this workspace and which sandbox
+      description: Returns every skill definition in this organization and which sandbox
         configs it is installed on.
       produces:
       - application/json
@@ -15930,7 +15933,7 @@ paths:
       security:
       - Bearer: []
       - ApiKeyAuth: []
-      summary: List workspace skills
+      summary: List organization skills
       tags:
       - Kỹ năng
     post:
@@ -15947,7 +15950,7 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      summary: Add a skill to the workspace catalog
+      summary: Add a skill to the organization catalog
       tags:
       - Kỹ năng
   /skills/catalog/{id}:
@@ -16037,8 +16040,8 @@ paths:
       - Kỹ năng
   /storage-backends:
     get:
-      description: List all storage backend instances for the current workspace, with
-        credentials masked. The workspace default backend id is returned alongside
+      description: List all storage backend instances for the current organization,
+        with credentials masked. The organization default backend id is returned alongside
         the list.
       produces:
       - application/json
@@ -16062,7 +16065,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: Register a new object/file storage instance for the current workspace.
+      description: Register a new object/file storage instance for the current organization.
         The configuration is validated and a connectivity test is run before the backend
         is persisted.
       parameters:
@@ -16101,7 +16104,7 @@ paths:
       - Lưu trữ
   /storage-backends/{id}:
     delete:
-      description: Soft-delete a storage backend. A backend that is the workspace
+      description: Soft-delete a storage backend. A backend that is the organization
         default, still bound to knowledge bases, environment-sourced, or a legacy
         alias cannot be deleted.
       parameters:
@@ -16138,7 +16141,7 @@ paths:
       tags:
       - Lưu trữ
     get:
-      description: Retrieve a single storage backend by ID for the current workspace.
+      description: Retrieve a single storage backend by ID for the current organization.
         Credentials are masked.
       parameters:
       - description: Storage backend ID
@@ -16218,7 +16221,7 @@ paths:
       - Lưu trữ
   /storage-backends/{id}/default:
     put:
-      description: Mark a storage backend as the workspace default. Only an active
+      description: Mark a storage backend as the organization default. Only an active
         backend can become the default. New knowledge bases without an explicit binding
         use the default.
       parameters:
@@ -16345,8 +16348,8 @@ paths:
       - Lưu trữ
   /system/admin/api-keys:
     get:
-      description: Lists non-workspace API keys. Full tokens are always masked. Human
-        SystemAdmin only.
+      description: Lists non-organization API keys. Full tokens are always masked.
+        Human SystemAdmin only.
       produces:
       - application/json
       responses:
@@ -16363,8 +16366,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: Creates a capability-scoped key that may target any workspace through
-        X-Tenant-ID. The plaintext token is returned once. Human SystemAdmin only.
+      description: Creates a capability-scoped key that may target any organization
+        through X-Tenant-ID. The plaintext token is returned once. Human SystemAdmin
+        only.
       parameters:
       - description: Platform API key
         in: body
@@ -16800,7 +16804,7 @@ paths:
   /system/admin/stats/processing:
     get:
       description: |-
-        Pending/processing/finalizing documents across every tenant,
+        Pending/processing/finalizing documents across every organization,
         oldest first, plus the number of documents failed in 24h.
       parameters:
       - description: Max rows (1-200, default 50)
@@ -16825,11 +16829,11 @@ paths:
       consumes:
       - application/json
       description: |-
-        SystemAdmin only. Creates the workspace and makes the named
-        (or newly created) user its Tenant Admin. The calling
+        SystemAdmin only. Creates the organization and makes the named
+        (or newly created) user its Organization Admin. The calling
         SystemAdmin does not become a member.
       parameters:
-      - description: Workspace and admin
+      - description: Organization and admin
         in: body
         name: request
         required: true
@@ -16842,7 +16846,7 @@ paths:
           description: Created
           schema:
             $ref: '#/definitions/internal_handler.ProvisionTenantResponse'
-      summary: Create a workspace with its Tenant Admin
+      summary: Create an organization with its Organization Admin
       tags:
       - Quản trị hệ thống
   /system/admin/tenants/{tenant_id}:
@@ -16850,10 +16854,10 @@ paths:
       consumes:
       - application/json
       description: |-
-        SystemAdmin only. Changes the name and/or description of a
-        workspace the caller does not need to belong to.
+        SystemAdmin only. Changes the name and/or description of an
+        organization the caller does not need to belong to.
       parameters:
-      - description: Workspace ID
+      - description: Organization ID
         in: path
         name: tenant_id
         required: true
@@ -16872,13 +16876,13 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      summary: Rename any workspace
+      summary: Rename any organization
       tags:
       - Quản trị hệ thống
   /system/admin/tenants/{tenant_id}/members:
     get:
       parameters:
-      - description: Workspace ID
+      - description: Organization ID
         in: path
         name: tenant_id
         required: true
@@ -16889,7 +16893,7 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      summary: List the members of any workspace
+      summary: List the members of any organization
       tags:
       - Quản trị hệ thống
     post:
@@ -16897,9 +16901,9 @@ paths:
       - application/json
       description: |-
         SystemAdmin only. Adds an existing or new user to the
-        workspace with the given role (admin or member).
+        organization with the given role (admin or member).
       parameters:
-      - description: Workspace ID
+      - description: Organization ID
         in: path
         name: tenant_id
         required: true
@@ -16918,13 +16922,13 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      summary: Add a user to any workspace
+      summary: Add a user to any organization
       tags:
       - Quản trị hệ thống
   /system/admin/tenants/{tenant_id}/members/{user_id}:
     delete:
       parameters:
-      - description: Workspace ID
+      - description: Organization ID
         in: path
         name: tenant_id
         required: true
@@ -16940,20 +16944,20 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      summary: Remove a user from any workspace
+      summary: Remove a user from any organization
       tags:
       - Quản trị hệ thống
     put:
       consumes:
       - application/json
       description: |-
-        Change a user's role inside any tenant (SystemAdmin only).
+        Change a user's role inside any organization (SystemAdmin only).
         Unlike PUT /tenants/:id/members/:user_id this does not require
-        the caller to be Admin of the target tenant — the route group
+        the caller to be Admin of the target organization — the route group
         already gates on SystemAdmin. The "last admin" invariant is
         still enforced by the service layer.
       parameters:
-      - description: Tenant ID
+      - description: Organization ID
         in: path
         name: tenant_id
         required: true
@@ -16997,7 +17001,7 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      summary: Update a user's workspace role
+      summary: Update a user's organization role
       tags:
       - Quản trị hệ thống
   /system/admin/tenants/apply-default-storage-quota:
@@ -17006,8 +17010,8 @@ paths:
         Reads the current value of `tenant.default_storage_quota_gb`
         (3-tier resolver: DB > ENV > default) and writes that many
         GiB into storage_quota for every row in tenants. Bypasses
-        the per-workspace PUT whitelist, which forbids storage_quota
-        edits by workspace Admins. SystemAdmin only.
+        the per-organization PUT whitelist, which forbids storage_quota
+        edits by organization Admins. SystemAdmin only.
         Idempotent — running twice with the same setting is a no-op.
       produces:
       - application/json
@@ -17022,7 +17026,7 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      summary: Apply the default storage quota to every existing workspace
+      summary: Apply the default storage quota to every existing organization
       tags:
       - Quản trị hệ thống
   /system/admin/usage/orders:
@@ -17297,7 +17301,7 @@ paths:
             type: object
       security:
       - Bearer: []
-      summary: Attach a plan to a workspace or person
+      summary: Attach a plan to an organization or person
       tags:
       - Gói sử dụng
   /system/admin/usage/subscriptions/{id}:
@@ -17424,7 +17428,7 @@ paths:
             type: object
       security:
       - Bearer: []
-      summary: Every workspace with its subscription and usage
+      summary: Every organization with its subscription and usage
       tags:
       - Gói sử dụng
   /system/admin/users:
@@ -17473,7 +17477,7 @@ paths:
         When `password` is omitted or null, a cryptographically random
         password is generated (OIDC-style crypto/rand + base64url)
         and returned once in the response body. Any provided value,
-        including empty string, is policy-checked. Tenant provisioning
+        including empty string, is policy-checked. Organization provisioning
         follows the shared auth.default_tenant_mode policy.
       parameters:
       - description: User creation request
@@ -17870,12 +17874,12 @@ paths:
     get:
       consumes:
       - application/json
-      description: Lấy danh sách đơn vị người dùng hiện tại truy cập được
+      description: Lấy danh sách tổ chức người dùng hiện tại truy cập được
       produces:
       - application/json
       responses:
         "200":
-          description: 'Tenant workspaceList '
+          description: Organization list
           schema:
             additionalProperties: true
             type: object
@@ -17885,20 +17889,20 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: Lấy danh sách đơn vị
+      summary: Lấy danh sách tổ chức
       tags:
-      - Đơn vị
+      - Tổ chức
     post:
       consumes:
       - application/json
       description: |-
-        Tạo đơn vị mới. Mọi người dùng đã đăng nhập đều có thể gọi để lập không gian làm việc mới của mình,
-        người gọi tự động trở thành Owner của đơn vị đó. Siêu quản trị liên đơn vị vẫn có thể
-        tạo đơn vị bất kỳ qua endpoint này như trước.
+        Tạo tổ chức mới. Mọi người dùng đã đăng nhập đều có thể gọi để lập tổ chức mới của mình,
+        người gọi tự động trở thành Owner của tổ chức đó. Siêu quản trị liên tổ chức vẫn có thể
+        tạo tổ chức bất kỳ qua endpoint này như trước.
         Khi tenant.auto_create_api_key (hoặc WEKNORA_TENANT_AUTO_CREATE_API_KEY)
         được bật, hệ thống tự tạo một API Key full_access và trả token dạng rõ trong trường data.api_key của phản hồi.
       parameters:
-      - description: Thông tin đơn vị
+      - description: Thông tin tổ chức
         in: body
         name: request
         required: true
@@ -17908,7 +17912,7 @@ paths:
       - application/json
       responses:
         "201":
-          description: Đơn vị đã tạo (có thể kèm api_key)
+          description: Tổ chức đã tạo (có thể kèm api_key)
           schema:
             additionalProperties: true
             type: object
@@ -17918,16 +17922,16 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: Create Tenant workspace
+      summary: Create organization
       tags:
-      - Đơn vị
+      - Tổ chức
   /tenants/{id}:
     delete:
       consumes:
       - application/json
-      description: Xoá đơn vị chỉ định
+      description: Xoá tổ chức chỉ định
       parameters:
-      - description: Tenant workspaceID
+      - description: Organization ID
         in: path
         name: id
         required: true
@@ -17946,15 +17950,15 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: Delete Tenant workspace
+      summary: Delete organization
       tags:
-      - Đơn vị
+      - Tổ chức
     get:
       consumes:
       - application/json
-      description: Lấy chi tiết đơn vị theo ID
+      description: Lấy chi tiết tổ chức theo ID
       parameters:
-      - description: Tenant workspaceID
+      - description: Organization ID
         in: path
         name: id
         required: true
@@ -17963,7 +17967,7 @@ paths:
       - application/json
       responses:
         "200":
-          description: 'Tenant workspaceDetails '
+          description: Organization details
           schema:
             additionalProperties: true
             type: object
@@ -17972,26 +17976,26 @@ paths:
           schema:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
         "404":
-          description: Không tìm thấy đơn vị
+          description: Không tìm thấy tổ chức
           schema:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
       - ApiKeyAuth: []
-      summary: Lấy chi tiết đơn vị
+      summary: Lấy chi tiết tổ chức
       tags:
-      - Đơn vị
+      - Tổ chức
     put:
       consumes:
       - application/json
-      description: Cập nhật thông tin đơn vị
+      description: Cập nhật thông tin tổ chức
       parameters:
-      - description: Tenant workspaceID
+      - description: Organization ID
         in: path
         name: id
         required: true
         type: integer
-      - description: Thông tin đơn vị
+      - description: Thông tin tổ chức
         in: body
         name: request
         required: true
@@ -18001,7 +18005,7 @@ paths:
       - application/json
       responses:
         "200":
-          description: Đơn vị sau khi cập nhật
+          description: Tổ chức sau khi cập nhật
           schema:
             additionalProperties: true
             type: object
@@ -18011,9 +18015,9 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: Update Tenant workspace
+      summary: Update organization
       tags:
-      - Đơn vị
+      - Tổ chức
   /tenants/{id}/api-principal-config:
     get:
       consumes:
@@ -18021,7 +18025,7 @@ paths:
       description: Trả về cấu hình cách yêu cầu X-API-Key được ánh xạ thành Principal
         cuối (Owner)
       parameters:
-      - description: Tenant workspaceID
+      - description: Organization ID
         in: path
         name: id
         required: true
@@ -18044,16 +18048,16 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: Lấy cấu hình định danh người dùng cho API Key của đơn vị
+      summary: Lấy cấu hình định danh người dùng cho API Key của tổ chức
       tags:
-      - Đơn vị
+      - Tổ chức
     put:
       consumes:
       - application/json
       description: Cấu hình cách yêu cầu X-API-Key được ánh xạ thành Principal cuối
         (Owner)
       parameters:
-      - description: Tenant workspaceID
+      - description: Organization ID
         in: path
         name: id
         required: true
@@ -18082,17 +18086,17 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: Cập nhật cấu hình định danh người dùng cho API Key của đơn vị
+      summary: Cập nhật cấu hình định danh người dùng cho API Key của tổ chức
       tags:
-      - Đơn vị
+      - Tổ chức
   /tenants/{id}/api-principal-test-token:
     post:
       consumes:
       - application/json
-      description: Dùng khoá HMAC đã lưu của đơn vị để ký JWT ngắn hạn cho người dùng
-        bên ngoài (Owner)
+      description: Dùng khoá HMAC đã lưu của tổ chức để ký JWT ngắn hạn cho người
+        dùng bên ngoài (Owner)
       parameters:
-      - description: Tenant workspaceID
+      - description: Organization ID
         in: path
         name: id
         required: true
@@ -18123,14 +18127,14 @@ paths:
       - Bearer: []
       summary: Sinh JWT thử nghiệm cho API Playground
       tags:
-      - Đơn vị
+      - Tổ chức
   /tenants/{id}/audit-log:
     get:
-      description: 'Trả về các sự kiện kiểm toán gần đây của đơn vị, sắp xếp id giảm
+      description: 'Trả về các sự kiện kiểm toán gần đây của tổ chức, sắp xếp id giảm
         dần. Phân trang con trỏ: dùng next_cursor của phản hồi trước làm after_id
         cho yêu cầu tiếp theo.'
       parameters:
-      - description: Tenant workspaceID
+      - description: Organization ID
         in: path
         name: id
         required: true
@@ -18170,15 +18174,15 @@ paths:
       security:
       - Bearer: []
       - ApiKeyAuth: []
-      summary: Lấy nhật ký kiểm toán của đơn vị
+      summary: Lấy nhật ký kiểm toán của tổ chức
       tags:
       - Nhật ký kiểm toán
   /tenants/{id}/invitations:
     get:
-      description: Liệt kê lời mời đang chờ / lịch sử theo đơn vị. Khi query include_terminal=true
+      description: Liệt kê lời mời đang chờ / lịch sử theo tổ chức. Khi query include_terminal=true
         thì kèm accepted/declined/revoked/expired.
       parameters:
-      - description: Tenant workspace ID
+      - description: Organization ID
         in: path
         name: id
         required: true
@@ -18207,17 +18211,18 @@ paths:
             type: object
       security:
       - Bearer: []
-      summary: Liệt kê lời mời của đơn vị
+      summary: Liệt kê lời mời của tổ chức
       tags:
-      - Lời mời đơn vị
+      - Lời mời tổ chức
     post:
       consumes:
       - application/json
-      description: Owner mời người dùng đã đăng ký vào đơn vị qua email. Khi bật tenant.auto_accept_invitation,
-        người được mời tự động tham gia ngay (phản hồi là cấu trúc thành viên); nếu
-        không, họ phải chấp nhận tại /me/invitations mới thành thành viên.
+      description: Owner mời người dùng đã đăng ký vào tổ chức qua email. Khi bật
+        tenant.auto_accept_invitation, người được mời tự động tham gia ngay (phản
+        hồi là cấu trúc thành viên); nếu không, họ phải chấp nhận tại /me/invitations
+        mới thành thành viên.
       parameters:
-      - description: Tenant workspace ID
+      - description: Organization ID
         in: path
         name: id
         required: true
@@ -18238,15 +18243,15 @@ paths:
             type: object
       security:
       - Bearer: []
-      summary: Gửi lời mời vào đơn vị
+      summary: Gửi lời mời vào tổ chức
       tags:
-      - Lời mời đơn vị
+      - Lời mời tổ chức
   /tenants/{id}/invitations/{inv_id}:
     delete:
       description: Owner hủy một lời mời còn pending; dòng đã accepted/declined/revoked/expired
         không thu hồi được nữa.
       parameters:
-      - description: Tenant workspace ID
+      - description: Organization ID
         in: path
         name: id
         required: true
@@ -18268,16 +18273,16 @@ paths:
       - Bearer: []
       summary: Thu hồi lời mời đang chờ
       tags:
-      - Lời mời đơn vị
+      - Lời mời tổ chức
   /tenants/{id}/invite-links:
     post:
       consumes:
       - application/json
       description: |-
-        Tạo một liên kết mời dùng nhiều lần: ai có liên kết đều có thể đăng ký và tham gia đơn vị hiện tại.
+        Tạo một liên kết mời dùng nhiều lần: ai có liên kết đều có thể đăng ký và tham gia tổ chức hiện tại.
         Liên kết có hiệu lực cho đến khi hết hạn hoặc bị thu hồi.
       parameters:
-      - description: Tenant workspace ID
+      - description: Organization ID
         in: path
         name: id
         required: true
@@ -18300,13 +18305,13 @@ paths:
       - Bearer: []
       summary: Tạo liên kết mời dùng chung
       tags:
-      - Lời mời đơn vị
+      - Lời mời tổ chức
   /tenants/{id}/leave:
     post:
-      description: Người gọi chủ động rời đơn vị hiện tại. Tương đương gọi RemoveMember
+      description: Người gọi chủ động rời tổ chức hiện tại. Tương đương gọi RemoveMember
         với user_id của chính mình,
       parameters:
-      - description: Tenant workspace ID
+      - description: Organization ID
         in: path
         name: id
         required: true
@@ -18321,15 +18326,15 @@ paths:
             type: object
       security:
       - Bearer: []
-      summary: Rời đơn vị hiện tại
+      summary: Rời tổ chức hiện tại
       tags:
-      - Thành viên đơn vị
+      - Thành viên tổ chức
   /tenants/{id}/members:
     get:
-      description: Trả về theo trang các thành viên active của đơn vị hiện tại (kèm
+      description: Trả về theo trang các thành viên active của tổ chức hiện tại (kèm
         vai trò, email, ảnh đại diện); hỗ trợ q để lọc theo email/tên người dùng
       parameters:
-      - description: Tenant workspace ID
+      - description: Organization ID
         in: path
         name: id
         required: true
@@ -18358,14 +18363,14 @@ paths:
             type: object
       security:
       - Bearer: []
-      summary: Liệt kê thành viên đơn vị
+      summary: Liệt kê thành viên tổ chức
       tags:
-      - Thành viên đơn vị
+      - Thành viên tổ chức
     post:
       consumes:
       - application/json
       parameters:
-      - description: Tenant workspace ID
+      - description: Organization ID
         in: path
         name: id
         required: true
@@ -18386,15 +18391,15 @@ paths:
             type: object
       security:
       - Bearer: []
-      summary: Thêm trực tiếp thành viên đơn vị (đường thêm thẳng)
+      summary: Thêm trực tiếp thành viên tổ chức (đường thêm thẳng)
       tags:
-      - Thành viên đơn vị
+      - Thành viên tổ chức
   /tenants/{id}/members/{user_id}:
     delete:
-      description: Owner gỡ một thành viên khỏi đơn vị hiện tại (xoá mềm hàng tenant_members);
+      description: Owner gỡ một thành viên khỏi tổ chức hiện tại (xoá mềm hàng tenant_members);
         không được gỡ Owner cuối cùng
       parameters:
-      - description: Tenant workspace ID
+      - description: Organization ID
         in: path
         name: id
         required: true
@@ -18414,16 +18419,16 @@ paths:
             type: object
       security:
       - Bearer: []
-      summary: Gỡ thành viên đơn vị
+      summary: Gỡ thành viên tổ chức
       tags:
-      - Thành viên đơn vị
+      - Thành viên tổ chức
     put:
       consumes:
       - application/json
-      description: Owner đổi vai trò của một thành viên trong đơn vị hiện tại; không
+      description: Owner đổi vai trò của một thành viên trong tổ chức hiện tại; không
         được hạ cấp Owner cuối cùng
       parameters:
-      - description: Tenant workspace ID
+      - description: Organization ID
         in: path
         name: id
         required: true
@@ -18449,13 +18454,13 @@ paths:
             type: object
       security:
       - Bearer: []
-      summary: Đổi vai trò thành viên đơn vị
+      summary: Đổi vai trò thành viên tổ chức
       tags:
-      - Thành viên đơn vị
+      - Thành viên tổ chức
   /tenants/{id}/usage:
     get:
       parameters:
-      - description: workspace id
+      - description: organization id
         in: path
         name: id
         required: true
@@ -18468,15 +18473,15 @@ paths:
             type: object
       security:
       - Bearer: []
-      summary: The workspace's usage package
+      summary: The organization's usage package
       tags:
-      - Đơn vị
+      - Tổ chức
   /tenants/{id}/usage/seats:
     post:
       consumes:
       - application/json
       parameters:
-      - description: workspace id
+      - description: organization id
         in: path
         name: id
         required: true
@@ -18495,13 +18500,13 @@ paths:
             type: object
       security:
       - Bearer: []
-      summary: Give a member a seat of the workspace package
+      summary: Give a member a seat of the organization package
       tags:
-      - Đơn vị
+      - Tổ chức
   /tenants/{id}/usage/seats/{user_id}:
     delete:
       parameters:
-      - description: workspace id
+      - description: organization id
         in: path
         name: id
         required: true
@@ -18521,17 +18526,17 @@ paths:
       - Bearer: []
       summary: Take a member's seat back
       tags:
-      - Đơn vị
+      - Tổ chức
   /tenants/all:
     get:
       consumes:
       - application/json
-      description: Lấy tất cả đơn vị trong hệ thống (cần quyền truy cập liên đơn vị)
+      description: Lấy tất cả tổ chức trong hệ thống (cần quyền truy cập liên tổ chức)
       produces:
       - application/json
       responses:
         "200":
-          description: Danh sách tất cả đơn vị
+          description: Danh sách tất cả tổ chức
           schema:
             additionalProperties: true
             type: object
@@ -18541,13 +18546,13 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError'
       security:
       - Bearer: []
-      summary: Lấy danh sách tất cả đơn vị
+      summary: Lấy danh sách tất cả tổ chức
       tags:
-      - Đơn vị
+      - Tổ chức
   /tenants/directory:
     get:
-      description: Every workspace's id and name, for choosing which unit to share
-        a knowledge base with. Human callers only.
+      description: Every organization's id and name, for choosing which organization
+        to share a knowledge base with. Human callers only.
       produces:
       - application/json
       responses:
@@ -18558,14 +18563,14 @@ paths:
             type: object
       security:
       - Bearer: []
-      summary: List workspace names
+      summary: List organization names
       tags:
-      - Đơn vị
+      - Tổ chức
   /tenants/kv/{key}:
     get:
       consumes:
       - application/json
-      description: Lấy cấu hình KV cấp đơn vị (hỗ trợ web-search-config, prompt-templates,
+      description: Lấy cấu hình KV cấp tổ chức (hỗ trợ web-search-config, prompt-templates,
         parser-engine-config, storage-engine-config, chat-history-config, retrieval-config)
       parameters:
       - description: Tên khoá cấu hình
@@ -18588,13 +18593,13 @@ paths:
       security:
       - Bearer: []
       - ApiKeyAuth: []
-      summary: Lấy cấu hình KV của đơn vị
+      summary: Lấy cấu hình KV của tổ chức
       tags:
-      - Đơn vị
+      - Tổ chức
     put:
       consumes:
       - application/json
-      description: Cập nhật cấu hình KV cấp đơn vị (hỗ trợ web-search-config, parser-engine-config,
+      description: Cập nhật cấu hình KV cấp tổ chức (hỗ trợ web-search-config, parser-engine-config,
         storage-engine-config, chat-history-config, retrieval-config)
       parameters:
       - description: Tên khoá cấu hình
@@ -18623,9 +18628,9 @@ paths:
       security:
       - Bearer: []
       - ApiKeyAuth: []
-      summary: Update Tenant workspaceKVConfiguration
+      summary: Update organization KV configuration
       tags:
-      - Đơn vị
+      - Tổ chức
   /tenants/kv/prompt-templates:
     get:
       consumes:
@@ -18648,12 +18653,12 @@ paths:
       - ApiKeyAuth: []
       summary: Lấy mẫu prompt
       tags:
-      - Đơn vị
+      - Tổ chức
   /tenants/kv/web-search-config:
     get:
       consumes:
       - application/json
-      description: Lấy cấu hình tìm kiếm web của đơn vị
+      description: Lấy cấu hình tìm kiếm web của tổ chức
       produces:
       - application/json
       responses:
@@ -18669,20 +18674,20 @@ paths:
       security:
       - Bearer: []
       - ApiKeyAuth: []
-      summary: Lấy cấu hình tìm kiếm web của đơn vị
+      summary: Lấy cấu hình tìm kiếm web của tổ chức
       tags:
-      - Đơn vị
+      - Tổ chức
   /tenants/search:
     get:
       consumes:
       - application/json
-      description: Tìm kiếm đơn vị theo trang (cần quyền truy cập liên đơn vị)
+      description: Tìm kiếm tổ chức theo trang (cần quyền truy cập liên tổ chức)
       parameters:
       - description: Từ khoá tìm kiếm
         in: query
         name: keyword
         type: string
-      - description: Lọc theo ID đơn vị
+      - description: Lọc theo ID tổ chức
         in: query
         name: tenant_id
         type: integer
@@ -18711,13 +18716,13 @@ paths:
       security:
       - Bearer: []
       - ApiKeyAuth: []
-      summary: Tìm kiếm đơn vị
+      summary: Tìm kiếm tổ chức
       tags:
-      - Đơn vị
+      - Tổ chức
   /user/favorites:
     get:
-      description: Lists this user's starred resources in the current workspace for
-        a given type
+      description: Lists this user's starred resources in the current organization
+        for a given type
       parameters:
       - description: Resource type (kb | agent)
         in: query
@@ -18774,8 +18779,8 @@ paths:
       - Người dùng
   /vector-stores:
     get:
-      description: List all vector stores for the current workspace, including environment-configured
-        and user-created stores
+      description: List all vector stores for the current organization, including
+        environment-configured and user-created stores
       produces:
       - application/json
       responses:
@@ -18798,7 +18803,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: Create a new vector store configuration for the current workspace
+      description: Create a new vector store configuration for the current organization
       parameters:
       - description: Vector store configuration
         in: body
@@ -19288,7 +19293,7 @@ paths:
     post:
       consumes:
       - application/json
-      description: Lưu APPID/APPSECRET vào cấu hình đơn vị hiện tại (không tự tạo
+      description: Lưu APPID/APPSECRET vào cấu hình tổ chức hiện tại (không tự tạo
         mô hình)
       parameters:
       - description: '{app_id, app_secret}'
@@ -19319,8 +19324,9 @@ paths:
       - WeKnoraCloud
 securityDefinitions:
   ApiKeyAuth:
-    description: 'API Key authentication: Tenant Key accesses the corresponding workspace;
-      Platform Key requires X-Tenant-ID header when invoking workspace APIs'
+    description: 'API Key authentication: Organization Key accesses the corresponding
+      organization; Platform Key requires X-Tenant-ID header when invoking organization
+      APIs'
     in: header
     name: X-API-Key
     type: apiKey

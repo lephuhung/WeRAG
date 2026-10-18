@@ -75,7 +75,7 @@ type CustomAgent struct {
 	Avatar string `yaml:"avatar" json:"avatar" gorm:"type:varchar(64)"`
 	// Whether this is a built-in agent (normal mode / agent mode)
 	IsBuiltin bool `yaml:"is_builtin" json:"is_builtin" gorm:"default:false"`
-	// Tenant ID (composite primary key with ID)
+	// Organization ID (composite primary key with ID)
 	TenantID uint64 `yaml:"tenant_id" json:"tenant_id" gorm:"primaryKey"`
 	// Created by user ID
 	CreatedBy string `yaml:"created_by" json:"created_by" gorm:"type:varchar(36)"`
@@ -181,7 +181,7 @@ type CustomAgentConfig struct {
 	SelectedSkills []string `yaml:"selected_skills" json:"selected_skills"`
 
 	// ===== Sandbox Settings =====
-	// SandboxConfigID selects which workspace sandbox config this agent's
+	// SandboxConfigID selects which organization sandbox config this agent's
 	// skill scripts run on. Empty means sandbox execution is disabled.
 	//
 	// This references the LOGICAL config, never a specific revision: keeping
@@ -205,14 +205,14 @@ type CustomAgentConfig struct {
 	// ===== Image Upload / Multimodal Settings =====
 	// Whether image upload is enabled for this agent (default: false)
 	ImageUploadEnabled bool `yaml:"image_upload_enabled" json:"image_upload_enabled"`
-	// VLM model ID for image analysis (optional, falls back to workspace-level VLM)
+	// VLM model ID for image analysis (optional, falls back to organization-level VLM)
 	VLMModelID string `yaml:"vlm_model_id" json:"vlm_model_id"`
 	// Whether audio upload (ASR transcription) is enabled for this agent (default: false)
 	AudioUploadEnabled bool `yaml:"audio_upload_enabled" json:"audio_upload_enabled"`
 	// ASR model ID for audio transcription (optional)
 	ASRModelID string `yaml:"asr_model_id" json:"asr_model_id"`
 	// Storage provider for image uploads: "local", "minio", "cos", "tos", "s3", "oss", "ks3".
-	// Empty means use the global/workspace default provider.
+	// Empty means use the global/organization default provider.
 	ImageStorageProvider string `yaml:"image_storage_provider" json:"image_storage_provider"`
 
 	// ===== File Type Restriction Settings =====
@@ -223,7 +223,7 @@ type CustomAgentConfig struct {
 
 	// ===== Chat Attachment Parsing Settings =====
 	// ChatParserEngineRules selects parser engines for session-scoped chat
-	// attachments by file type. Takes precedence over the tenant-level
+	// attachments by file type. Takes precedence over the organization-level
 	// ParserEngineConfig.ChatParserEngineRules; an explicit per-request
 	// parser_engine still overrides both.
 	ChatParserEngineRules []ParserEngineRule `yaml:"chat_parser_engine_rules" json:"chat_parser_engine_rules,omitempty"`
@@ -264,7 +264,7 @@ type CustomAgentConfig struct {
 	// Maximum web search results
 	WebSearchMaxResults int `yaml:"web_search_max_results" json:"web_search_max_results"`
 	// WebSearchProviderID references a specific WebSearchProviderEntity.
-	// If empty, the workspace's default provider (is_default=true) is used.
+	// If empty, the organization's default provider (is_default=true) is used.
 	WebSearchProviderID string `yaml:"web_search_provider_id" json:"web_search_provider_id,omitempty"`
 	// Whether to auto-fetch full page content for reranked web search results
 	WebFetchEnabled bool `yaml:"web_fetch_enabled" json:"web_fetch_enabled"`
@@ -277,8 +277,8 @@ type CustomAgentConfig struct {
 	// Number of history turns to keep in context. Quick-answer only; smart-reasoning sizes history by context window
 	HistoryTurns int `yaml:"history_turns" json:"history_turns"`
 	// Whether this agent may read the user's long-term memory. Nil inherits
-	// the workspace setting; false opts a single agent out of memory even when
-	// the workspace has it on. There is no "on" that overrides the workspace.
+	// the organization setting; false opts a single agent out of memory even when
+	// the organization has it on. There is no "on" that overrides the organization.
 	MemoryEnabled *bool `yaml:"memory_enabled" json:"memory_enabled,omitempty"`
 
 	// ===== Retrieval Strategy Settings (for both modes) =====

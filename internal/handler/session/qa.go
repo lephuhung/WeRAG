@@ -804,7 +804,7 @@ func (h *Handler) setupSSEStream(reqCtx *qaRequestContext, generateTitle bool, m
 			baseCtx = context.WithValue(baseCtx, types.TenantInfoContextKey, tenant)
 			logger.Infof(
 				reqCtx.ctx,
-				"Using effective tenant %d for cross-workspace run (model/KB/MCP)",
+				"Using effective tenant %d for cross-organization run (model/KB/MCP)",
 				reqCtx.effectiveTenantID,
 			)
 		}

@@ -190,11 +190,11 @@ type KnowledgeBase struct {
 	IsTemporary bool `yaml:"is_temporary"            json:"is_temporary"            gorm:"default:false"`
 	// Description of the knowledge base
 	Description string `yaml:"description"             json:"description"`
-	// Workspace ID
+	// Organization ID
 	TenantID uint64 `yaml:"tenant_id"               json:"tenant_id"`
 	// OwnerTenantID is the authorization owner of this knowledge base:
-	// a nonzero tenant ID means tenant-owned, 0 means platform-owned
-	// (no tenant owner). TenantID above stays the immutable
+	// a nonzero organization ID means organization-owned, 0 means platform-owned
+	// (no organization owner). TenantID above stays the immutable
 	// data-scope/execution partition for documents and indexes and is
 	// never rewritten by a public/tenant scope transition. Rows
 	// predating migration 000113 backfill this column from tenant_id.
@@ -203,16 +203,16 @@ type KnowledgeBase struct {
 	// PostgreSQL and by ValidateOwnership in Go (SQLite/test path).
 	OwnerTenantID uint64 `yaml:"owner_tenant_id"         json:"owner_tenant_id"         gorm:"not null;default:0"`
 	// CreatorID records the user ID of whoever originally created the KB.
-	// Used by the workspace-level RBAC middleware to let Contributors edit
+	// Used by the organization-level RBAC middleware to let Contributors edit
 	// their own KBs without granting them access to everyone else's.
 	// Nullable for backward compatibility with rows created before the
-	// RBAC migration backfilled the column to the workspace Owner.
+	// RBAC migration backfilled the column to the organization Owner.
 	CreatorID string `yaml:"creator_id"              json:"creator_id"              gorm:"type:varchar(36);index"`
 	// Visibility controls the read/search scope of this knowledge base.
 	// See KBVisibility constants. Rows predating migration 000107 read
 	// back as 'tenant' via the column default.
 	Visibility KBVisibility `yaml:"visibility"           json:"visibility"              gorm:"type:varchar(16);not null;default:'tenant'"`
-	// MemberDefault decides what active members of the owner tenant may do
+	// MemberDefault decides what active members of the owner organization may do
 	// on a 'tenant'-visibility KB: 'view' or 'contribute' (migration 000148).
 	MemberDefault KBMemberDefault `yaml:"member_default"       json:"member_default"          gorm:"type:varchar(16);not null;default:'contribute'"`
 	// Chunking configuration
@@ -227,7 +227,7 @@ type KnowledgeBase struct {
 	VLMConfig VLMConfig `yaml:"vlm_config"              json:"vlm_config"              gorm:"type:json"`
 	// ASR config (Automatic Speech Recognition)
 	ASRConfig ASRConfig `yaml:"asr_config"              json:"asr_config"              gorm:"type:json"`
-	// Storage provider config (new): only stores provider selection; credentials from workspace StorageEngineConfig
+	// Storage provider config (new): only stores provider selection; credentials from organization StorageEngineConfig
 	StorageProviderConfig *StorageProviderConfig `yaml:"storage_provider_config" json:"storage_provider_config"  gorm:"column:storage_provider_config;type:jsonb"`
 	// StorageBackendID binds this KB to one concrete storage instance. The
 	// legacy provider field remains readable during migration only.
@@ -235,7 +235,7 @@ type KnowledgeBase struct {
 	// Deprecated: legacy COS config column. Kept for backward compatibility with old data.
 	StorageConfig StorageConfig `yaml:"-" json:"storage_config" gorm:"column:cos_config;type:json"`
 	// VectorStoreID references the VectorStore this knowledge base is bound to.
-	// When nil, the KB falls back to the workspace's effective engines derived from
+	// When nil, the KB falls back to the organization's effective engines derived from
 	// the RETRIEVE_DRIVER environment variable (env store flow).
 	// This field is set once at creation time and must not be modified afterwards;
 	// enforcement lives at the GORM layer (`<-:create`) plus the service-layer
@@ -263,7 +263,7 @@ type KnowledgeBase struct {
 	IndexingStrategy IndexingStrategy `yaml:"indexing_strategy"       json:"indexing_strategy"       gorm:"column:indexing_strategy;type:json"`
 	// IsPinned and PinnedAt are computed per-caller from user_kb_pins
 	// (see migration 000050). They used to be stored on the row itself,
-	// which made pinning a workspace-wide ordering decision gated behind
+	// which made pinning an organization-wide ordering decision gated behind
 	// the kb-edit RBAC guard. The columns are still present in legacy
 	// schemas for rollback safety but are no longer read or written by
 	// the application — both fields are tagged `gorm:"-"` so GORM
@@ -271,11 +271,11 @@ type KnowledgeBase struct {
 	// after enriching with the caller's pin set.
 	IsPinned bool `yaml:"is_pinned"               json:"is_pinned"               gorm:"-"`
 	// SubscribedByMe / SubscribedByTenant are computed per caller for
-	// published KBs: whether the caller, or their whole tenant, has put
+	// published KBs: whether the caller, or their whole organization, has put
 	// the KB into the default retrieval scope.
 	SubscribedByMe     bool `yaml:"subscribed_by_me"     json:"subscribed_by_me,omitempty"     gorm:"-"`
 	SubscribedByTenant bool `yaml:"subscribed_by_tenant" json:"subscribed_by_tenant,omitempty" gorm:"-"`
-	// OwnerTenantName is the owning workspace's display name, filled on
+	// OwnerTenantName is the owning organization's display name, filled on
 	// published-catalog rows so readers see which unit published them.
 	OwnerTenantName string `yaml:"owner_tenant_name" json:"owner_tenant_name,omitempty" gorm:"-"`
 	// PinnedAt records when the current caller pinned this knowledge
@@ -295,11 +295,11 @@ type KnowledgeBase struct {
 	IsProcessing bool `yaml:"is_processing"           json:"is_processing"           gorm:"-"`
 	// ProcessingCount indicates the number of knowledge items being processed (for document type knowledge bases)
 	ProcessingCount int64 `yaml:"processing_count"        json:"processing_count"        gorm:"-"`
-	// ShareCount indicates the number of live tenant access grants on this knowledge base (not stored in database)
+	// ShareCount indicates the number of live organization access grants on this knowledge base (not stored in database)
 	ShareCount int64 `yaml:"share_count"             json:"share_count"             gorm:"-"`
 	// CreatorName là tên hiển thị của người dùng ứng với CreatorID (username / email...),
 	// chỉ được handler điền hàng loạt khi liệt kê, không lưu DB; rỗng nghĩa là không xác định được người tạo (người dùng đã bị xóa,
-	// dữ liệu cũ không có CreatorID...). Frontend dùng nó để phân biệt mine / workspace trên huy hiệu nguồn của thẻ.
+	// dữ liệu cũ không có CreatorID...). Frontend dùng nó để phân biệt mine / organization trên huy hiệu nguồn của thẻ.
 	CreatorName string `yaml:"-"                       json:"creator_name,omitempty"  gorm:"-"`
 	// AccessSource names the access.DecideKB rule that lets the caller
 	// view this KB (superadmin, tenant_admin, tenant_scope, public,

@@ -476,7 +476,7 @@ type skillPatchRequest struct {
 
 // Patch godoc
 // @Summary      Update an installed skill
-// @Description  Show or hide an installed skill and set the workspace-wide values of the environment variables it declared. Either field may be sent, or both. The files stay in the image either way; removal is a separate flow.
+// @Description  Show or hide an installed skill and set the organization-wide values of the environment variables it declared. Either field may be sent, or both. The files stay in the image either way; removal is a separate flow.
 // @Tags         Sandbox
 // @Accept       json
 // @Produce      json

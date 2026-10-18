@@ -176,7 +176,7 @@ var (
 	// ErrPendingNotFound is returned when Resolve is called with an unknown id.
 	ErrPendingNotFound = errors.New("tool approval pending not found")
 	// ErrTenantMismatch is returned when Resolve tenant does not match the pending request.
-	ErrTenantMismatch = errors.New("workspace mismatch for tool approval")
+	ErrTenantMismatch = errors.New("organization mismatch for tool approval")
 	// ErrAlreadyResolved is returned when Resolve loses the race against a
 	// timeout / cancellation: the waiter is still in the map but its decision
 	// channel was already consumed by the timer/ctx branch.

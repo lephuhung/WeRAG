@@ -18,14 +18,14 @@ import (
 var ErrEnvVarNotFound = errors.New("env var not found")
 
 // SkillEnvVar is one environment variable a skill needs, as declared by the
-// installer agent, optionally carrying the workspace-wide value an admin
+// installer agent, optionally carrying the organization-wide value an admin
 // supplied. Everything except Value stays plaintext in the column so the UI can
 // render the declaration even when SYSTEM_AES_KEY is unavailable.
 type SkillEnvVar struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Required    bool   `json:"required,omitempty"`
-	// Value is the workspace-wide admin value. It is AES-GCM encrypted at rest
+	// Value is the organization-wide admin value. It is AES-GCM encrypted at rest
 	// by SkillEnvVars.Value and decrypted by SkillEnvVars.Scan. json:"-" makes
 	// it unserialisable by construction: the column round-trip goes through
 	// skillEnvVarRow, so no response body can carry it by forgetting to strip
@@ -130,7 +130,7 @@ func (v *SkillEnvVars) Scan(value interface{}) error {
 //
 // It is keyed by principal rather than user id because the IM path puts a
 // synthetic "system-<tenantID>" account in the user id, which would make every
-// IM user of a workspace share a single credential.
+// IM user of an organization share a single credential.
 type TenantUserEnvVar struct {
 	ID       string `gorm:"type:varchar(36);primaryKey"`
 	TenantID uint64 `gorm:"uniqueIndex:uq_user_env_var,priority:1;index:idx_user_env_var_skill,priority:1;index:idx_user_env_var_config,priority:1"`

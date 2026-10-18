@@ -25,13 +25,13 @@ type UserPreferences struct {
 	// BrowserSearchInstructions customizes browser search for this user. Nil/empty uses the platform default.
 	BrowserSearchInstructions *string `json:"browser_search_instructions,omitempty"`
 
-	// LastActiveTenantID remembers the last workspace the user actively
+	// LastActiveTenantID remembers the last organization the user actively
 	// switched into, so a fresh login (new device, cleared browser, new
-	// refresh token) lands them back in that workspace instead of always
-	// bouncing to their home workspace. Written by the SPA's preferences
+	// refresh token) lands them back in that organization instead of always
+	// bouncing to their home organization. Written by the SPA's preferences
 	// PUT and by service-level SwitchTenant (including when switching
 	// home, which stores the home ID). Login / RefreshToken validate that
-	// the workspace still exists and the user still has an active membership
+	// the organization still exists and the user still has an active membership
 	// (or is a SuperAdmin) before honouring this preference; an
 	// invalid pointer is best-effort cleared and the user falls back to
 	// home. Refresh JWT claims have no tenant_id, so RefreshToken
@@ -41,7 +41,7 @@ type UserPreferences struct {
 	// *0   = "clear preference" sentinel for the partial-update endpoint
 	//        (UpdateUserPreferences turns this into nil). Otherwise treat
 	//        a stored *0 the same as nil.
-	// *N   = preferred workspace id.
+	// *N   = preferred organization id.
 	LastActiveTenantID *uint64 `json:"last_active_tenant_id,omitempty"`
 
 	// OidcOnlyLogin is set server-side when an account is auto-provisioned
@@ -106,13 +106,13 @@ type User struct {
 	PasswordHash string `json:"-"          gorm:"type:varchar(255);not null"`
 	// Avatar URL of the user
 	Avatar string `json:"avatar"     gorm:"type:varchar(500)"`
-	// Workspace ID that the user belongs to
+	// Organization ID that the user belongs to
 	TenantID uint64 `json:"tenant_id"  gorm:"index"`
 	// Whether the user is active
 	IsActive bool `json:"is_active"  gorm:"default:true"`
-	// Whether the user can access all workspaces (cross-workspace access)
+	// Whether the user can access all organizations (cross-organization access)
 	CanAccessAllTenants bool `json:"can_access_all_tenants" gorm:"default:false"`
-	// Whether the user is a system administrator (independent of workspace roles)
+	// Whether the user is a system administrator (independent of organization roles)
 	IsSystemAdmin bool `json:"is_system_admin" gorm:"default:false;index"`
 	// Per-user UI/feature preferences.
 	// Stored as JSON (jsonb on Postgres, TEXT on SQLite) via the
@@ -262,14 +262,14 @@ type LoginResponse struct {
 	// two_factor_code set. No tokens are issued in that response.
 	TwoFactorRequired bool  `json:"two_factor_required,omitempty"`
 	User              *User `json:"user,omitempty"`
-	// ActiveTenant is the workspace whose ID is encoded in the issued JWT;
+	// ActiveTenant is the organization whose ID is encoded in the issued JWT;
 	// future requests are scoped to it until the client calls /auth/switch-tenant.
-	// Defaults to the user's home workspace on a fresh login.
+	// Defaults to the user's home organization on a fresh login.
 	ActiveTenant *Tenant `json:"active_tenant,omitempty"`
-	// Memberships lists every workspace the user can authenticate into,
+	// Memberships lists every organization the user can authenticate into,
 	// along with their role in each. Always populated (length 1 for users
-	// who only belong to their home workspace) so frontends can render a
-	// workspace switcher without a follow-up request. Serialised without
+	// who only belong to their home organization) so frontends can render an
+	// organization switcher without a follow-up request. Serialised without
 	// omitempty so the field is always present as a JSON array (possibly
 	// empty) — the "always populated" contract relies on the server side
 	// guaranteeing a non-nil slice.

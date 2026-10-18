@@ -77,7 +77,7 @@ const (
 	// {key, value_type, old_value, new_value} — sensitive values are
 	// redacted server-side before logging when is_secret=true (P3+;
 	// for now no setting is marked secret). Audit rows always have
-	// tenant_id=0 because the change is system-scope, not workspace-scoped.
+	// tenant_id=0 because the change is system-scope, not organization-scoped.
 	AuditActionSystemSettingChanged AuditAction = "system.setting_changed"
 
 	// AuditActionSystemAdminPromoted fires when a SystemAdmin grants
@@ -111,15 +111,15 @@ const (
 	// TenantID=0 (system-scope).
 	AuditActionSystemUserCreated AuditAction = "system.user_created"
 	// AuditActionSystemTenantProvisioned fires when a SystemAdmin creates a
-	// workspace together with its first Tenant Admin. Details carry
+	// organization together with its first Tenant Admin. Details carry
 	// tenant_id, tenant_name and whether the admin account was created.
 	AuditActionSystemTenantProvisioned AuditAction = "system.tenant_provisioned"
 	// AuditActionSystemTenantUpdated fires when a SystemAdmin renames a
-	// workspace or changes its description. Details carry tenant_id and the
+	// organization or changes its description. Details carry tenant_id and the
 	// old/new name.
 	AuditActionSystemTenantUpdated AuditAction = "system.tenant_updated"
 	// AuditActionSystemTenantMemberAdded / Removed fire when a SystemAdmin
-	// changes the membership of a workspace it does not belong to.
+	// changes the membership of an organization it does not belong to.
 	AuditActionSystemTenantMemberAdded   AuditAction = "system.tenant_member_added"
 	AuditActionSystemTenantMemberRemoved AuditAction = "system.tenant_member_removed"
 	AuditActionSystemAPIKeyCreated       AuditAction = "system.api_key_created"
@@ -139,7 +139,7 @@ const (
 
 	// Model lifecycle actions. Emitted by modelService on every catalog
 	// mutation. Model config is platform-owned (SystemAdmin / platform keys
-	// only), but the row is recorded against the model's tenant so workspace
+	// only), but the row is recorded against the model's tenant so organization
 	// audit feeds still show what changed in their catalog; built-in models
 	// (shared catalog) log to tenant_id=0 — the system feed. Details carry
 	// {model_id, name, type, is_builtin} and, for credential events, only

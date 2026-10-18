@@ -31,7 +31,7 @@ const CAPABILITIES: { id: TenantAPIKeyCapability; labelEn: string; labelVi: stri
   { id: "message_history", labelEn: "Message history", labelVi: "Lịch sử tin nhắn" },
   { id: "manage_models", labelEn: "Manage models", labelVi: "Quản lý mô hình" },
   { id: "manage_members", labelEn: "Manage members", labelVi: "Quản lý thành viên" },
-  { id: "manage_tenant_settings", labelEn: "Manage workspace settings", labelVi: "Quản lý cài đặt không gian" },
+  { id: "manage_tenant_settings", labelEn: "Manage organization settings", labelVi: "Quản lý cài đặt tổ chức" },
 ];
 
 function fmtDate(v?: string): string {

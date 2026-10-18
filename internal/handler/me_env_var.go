@@ -66,7 +66,7 @@ func respondEnvVarError(c *gin.Context, err error) {
 
 // List godoc
 // @Summary      List my environment variables
-// @Description  List every sandbox config of this workspace with the caller's own config-wide variables and the credentials its skills declared, each reporting whether it is unset, filled in workspace-wide, or filled in by the caller. Values are never returned.
+// @Description  List every sandbox config of this organization with the caller's own config-wide variables and the credentials its skills declared, each reporting whether it is unset, filled in organization-wide, or filled in by the caller. Values are never returned.
 // @Tags         Tài khoản của tôi
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}  "One group per sandbox config"
@@ -84,7 +84,7 @@ func (h *MeEnvVarHandler) List(c *gin.Context) {
 
 // SetSkill godoc
 // @Summary      Set one of my skill credentials
-// @Description  Store the caller's own value for one variable the skill declared. It overrides the workspace-wide value for this caller only, and is injected only into executions that name this skill.
+// @Description  Store the caller's own value for one variable the skill declared. It overrides the organization-wide value for this caller only, and is injected only into executions that name this skill.
 // @Tags         Tài khoản của tôi
 // @Accept       json
 // @Produce      json
@@ -107,7 +107,7 @@ func (h *MeEnvVarHandler) SetSkill(c *gin.Context) {
 
 // DeleteSkill godoc
 // @Summary      Delete one of my skill credentials
-// @Description  Remove the caller's own value. The workspace-wide value, if there is one, applies again afterwards.
+// @Description  Remove the caller's own value. The organization-wide value, if there is one, applies again afterwards.
 // @Tags         Tài khoản của tôi
 // @Accept       json
 // @Produce      json

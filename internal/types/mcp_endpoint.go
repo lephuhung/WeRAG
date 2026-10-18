@@ -8,12 +8,12 @@ import (
 	"gorm.io/gorm"
 )
 
-// MCPEndpoint is one workspace-owned MCP server surface that external MCP
+// MCPEndpoint is one organization-owned MCP server surface that external MCP
 // clients (Claude Desktop, Cursor, VS Code Copilot, ...) can connect to over
-// Streamable HTTP. A workspace may publish any number of endpoints; each one
+// Streamable HTTP. An organization may publish any number of endpoints; each one
 // carries its own bearer token, knowledge-base scope and tool allowlist, so a
 // single WeKnora deployment can serve several narrowly scoped MCP servers
-// without running a separate process per workspace.
+// without running a separate process per organization.
 //
 // The endpoint is the unit of trust: everything a connected client may do is
 // derived from this row (see MCPEndpointScope), and the token authenticates
@@ -32,14 +32,14 @@ type MCPEndpoint struct {
 	// "mcp_ab12…" next to an endpoint without revealing the secret.
 	TokenHint string `json:"token_hint" gorm:"type:varchar(16);not null;default:''"`
 	// KnowledgeBaseIDs bounds every knowledge-facing tool. Empty means every
-	// knowledge base the workspace owns or has been granted at call time.
+	// knowledge base the organization owns or has been granted at call time.
 	KnowledgeBaseIDs StringArray `json:"knowledge_base_ids" gorm:"type:jsonb;not null;default:'[]'"`
 	// Tools is the allowlist of MCP tool names this endpoint exposes. Names
 	// must come from the MCP endpoint tool catalog; unknown names are dropped
 	// on write.
 	Tools StringArray `json:"tools" gorm:"type:jsonb;not null;default:'[]'"`
 	// DefaultAgentID is the agent used by the ask tool when the caller does
-	// not name one. Empty falls back to the workspace's builtin agent.
+	// not name one. Empty falls back to the organization's builtin agent.
 	DefaultAgentID     string         `json:"default_agent_id"      gorm:"type:varchar(36);not null;default:''"`
 	RateLimitPerMinute int            `json:"rate_limit_per_minute" gorm:"not null;default:60"`
 	LastUsedAt         *time.Time     `json:"last_used_at,omitempty"`
@@ -91,7 +91,7 @@ func (e *MCPEndpoint) HasTool(name string) bool {
 }
 
 // RestrictsKnowledgeBases reports whether the endpoint pins an explicit
-// knowledge-base allowlist rather than inheriting the whole workspace.
+// knowledge-base allowlist rather than inheriting the whole organization.
 func (e *MCPEndpoint) RestrictsKnowledgeBases() bool {
 	return e != nil && len(e.KnowledgeBaseIDs) > 0
 }

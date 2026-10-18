@@ -24,14 +24,14 @@ const (
 	WebSearchProviderTypeSearxng    WebSearchProviderType = "searxng"
 )
 
-// WebSearchProviderEntity represents a configured web search provider instance for a workspace.
+// WebSearchProviderEntity represents a configured web search provider instance for an organization.
 // This is a CRUD entity stored in the database, similar to the Model entity.
-// Each workspace can create multiple provider configurations (e.g., "Production Bing", "Test Google").
+// Each organization can create multiple provider configurations (e.g., "Production Bing", "Test Google").
 // Agents reference these by ID.
 type WebSearchProviderEntity struct {
 	// Unique identifier (UUID, auto-generated)
 	ID string `yaml:"id" json:"id" gorm:"type:varchar(36);primaryKey"`
-	// Workspace ID for scoping
+	// Organization ID for scoping
 	TenantID uint64 `yaml:"tenant_id" json:"tenant_id"`
 	// User-friendly name, e.g., "Production Bing Search"
 	Name string `yaml:"name" json:"name" gorm:"type:varchar(255);not null"`
@@ -41,7 +41,7 @@ type WebSearchProviderEntity struct {
 	Description string `yaml:"description" json:"description" gorm:"type:text"`
 	// Provider-specific parameters (API key, engine ID, etc.) stored as encrypted JSON
 	Parameters WebSearchProviderParameters `yaml:"parameters" json:"parameters" gorm:"type:json"`
-	// Whether this is the default provider for the workspace
+	// Whether this is the default provider for the organization
 	IsDefault bool `yaml:"is_default" json:"is_default" gorm:"default:false"`
 	// Timestamps
 	CreatedAt time.Time      `yaml:"created_at" json:"created_at"`

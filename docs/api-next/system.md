@@ -1039,9 +1039,9 @@ handler: `InstallGuidance` · `sandbox_skill.go`
 | `default_timeout_sec` | number |  | ── shared config (applies across backends) ─── DefaultTimeoutSec is the per-execution timeout in seconds. 0 uses the program's built-in default. |
 | `terminal_idle_disconnect_sec` | number |  | TerminalIdleDisconnectSec is how long an interactive terminal or desktop may go without user activity before WeKnora closes the connection so the sandbox can pause on its provider  |
 | `desktop_enabled` | boolean |  | DesktopEnabled declares that this config's base template is a desktop image (XFCE + x11vnc + websockify). It is NOT a second template: a config has exactly one boot target, and ski |
-| `allow_private_endpoints` | boolean |  | AllowPrivateEndpoints permits this workspace config to reach RFC1918 or loopback cluster endpoints. Link-local/cloud-metadata addresses remain blocked. It is explicit in the UI ins |
-| `env_vars` | map[string]string |  | EnvVars are additional environment variables injected into every sandbox created for this tenant. 🔒 Values are encrypted at rest. These become visible to all scripts running in the |
-| `volume_mount` | VolumeMountConfig |  | VolumeMount configures an optional shared volume mounted into every sandbox created for this tenant. Currently used for tenant-installed skills, but the configuration itself is ski |
+| `allow_private_endpoints` | boolean |  | AllowPrivateEndpoints permits this organization's sandbox config to reach RFC1918 or loopback cluster endpoints. Link-local/cloud-metadata addresses remain blocked. It is explicit in the UI ins |
+| `env_vars` | map[string]string |  | EnvVars are additional environment variables injected into every sandbox created for this organization. 🔒 Values are encrypted at rest. These become visible to all scripts running in the |
+| `volume_mount` | VolumeMountConfig |  | VolumeMount configures an optional shared volume mounted into every sandbox created for this organization. Currently used for tenant-installed skills, but the configuration itself is ski |
 | `skill_image` | SkillImageConfig |  | SkillImage points at the snapshot that carries this config's installed skills. Empty means "use the base template". Written only by the skill install/remove path: MergeSandboxConfi |
 | `skill_rollout` | string |  | SkillRollout decides whether sessions that already hold a sandbox of this config rebuild after a skill install or removal. Empty and SkillRolloutNextTurn rebuild on the next chat t |
 | `network` | SandboxNetworkPolicy |  | Network is the outbound/inbound network policy applied to every sandbox created from this config — chat sessions, skill installs and deep connectivity probes alike. nil and the zer |
@@ -1068,6 +1068,6 @@ handler: `InstallGuidance` · `sandbox_skill.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `browser_search_instructions` | string |  | BrowserSearchInstructions customizes browser search for this user. Nil/empty uses the platform default. |
-| `last_active_tenant_id` | number |  | LastActiveTenantID remembers the last workspace the user actively switched into, so a fresh login (new device, cleared browser, new refresh token) lands them back in that workspace |
+| `last_active_tenant_id` | number |  | LastActiveTenantID remembers the last organization the user actively switched into, so a fresh login (new device, cleared browser, new refresh token) lands them back in that organization |
 | `oidc_only_login` | boolean |  | OidcOnlyLogin is set server-side when an account is auto-provisioned via OIDC with a random password the user never received. The profile UI hides self-service password rotation un |
 | `language` | string |  | Language is the UI locale this user last picked (e.g. "en", "vi"). Persisted so the choice follows the account across browsers and devices instead of living in one browser's localS |

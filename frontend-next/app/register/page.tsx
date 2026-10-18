@@ -98,7 +98,7 @@ function RegisterForm() {
       <Orb color="peach" size={520} className="-top-40 right-[-100px]" />
       <div className="relative w-full max-w-[400px]">
         <div className="display-lg mb-2 text-center">
-          {token ? `Join ${tenantName ?? "workspace"}` : "Create account"}
+          {token ? `Join ${tenantName ?? "organization"}` : "Create account"}
         </div>
         <p className="body-sm mb-10 text-center text-muted">
           {token
@@ -117,7 +117,7 @@ function RegisterForm() {
               disabled={busy}
               onClick={() => void joinWithSession()}
             >
-              {busy ? "Joining…" : "Join workspace"}
+              {busy ? "Joining…" : "Join organization"}
             </button>
             <button
               type="button"
@@ -155,7 +155,7 @@ function RegisterForm() {
           </label>
           {error && <p className="body-sm mb-4 text-error">{error}</p>}
           <button type="submit" className="btn btn-primary w-full" disabled={busy}>
-            {busy ? "Creating…" : token ? "Join workspace" : "Register"}
+            {busy ? "Creating…" : token ? "Join organization" : "Register"}
           </button>
         </form>
         )}

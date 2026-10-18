@@ -32,12 +32,12 @@ func billingScope(c *gin.Context, scopeType string) (string, bool) {
 	switch scopeType {
 	case types.UsageScopeTenant:
 		if !types.IsSystemAdminFromContext(ctx) && !types.CallerFromContext(ctx).Role.IsTenantAdmin() {
-			c.Error(apperrors.NewForbiddenError("only a workspace admin can buy a package for the workspace"))
+			c.Error(apperrors.NewForbiddenError("only an organization admin can buy a package for the organization"))
 			return "", false
 		}
 		tenantID, ok := types.TenantIDFromContext(ctx)
 		if !ok || tenantID == 0 {
-			c.Error(apperrors.NewBadRequestError("no current workspace"))
+			c.Error(apperrors.NewBadRequestError("no current organization"))
 			return "", false
 		}
 		return strconv.FormatUint(tenantID, 10), true
@@ -125,7 +125,7 @@ func (h *UsageBillingHandler) Quote(c *gin.Context) {
 }
 
 // CreateOrder godoc
-// @Summary      Place an order for the workspace or for oneself
+// @Summary      Place an order for the organization or for oneself
 // @Tags         Thanh toán
 // @Accept       json
 // @Param        body body types.UsageQuoteRequest true "what to buy"
@@ -152,7 +152,7 @@ func (h *UsageBillingHandler) CreateOrder(c *gin.Context) {
 }
 
 // ListOrders godoc
-// @Summary      My orders and, for a workspace admin, the workspace's
+// @Summary      My orders and, for an organization admin, the organization's
 // @Tags         Thanh toán
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
@@ -213,7 +213,7 @@ func (h *UsageBillingHandler) GetOrder(c *gin.Context) {
 }
 
 // CancelOrder godoc
-// @Summary      Cancel a pending order of mine / of my workspace
+// @Summary      Cancel a pending order of mine / of my organization
 // @Tags         Thanh toán
 // @Param        code path string true "order code"
 // @Success      200 {object} map[string]interface{}

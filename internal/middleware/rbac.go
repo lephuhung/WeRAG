@@ -112,7 +112,7 @@ func RequireRole(min types.TenantRole, cfg *config.Config) gin.HandlerFunc {
 			_ = svc.LogDenied(ctx, c, tenantID, uid, string(role), min)
 		}
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Forbidden: insufficient workspace role",
+			"error": "Forbidden: insufficient organization role",
 		})
 		c.Abort()
 	}
@@ -188,7 +188,7 @@ func RequireTenantAdmin(cfg *config.Config) gin.HandlerFunc {
 			_ = svc.LogDenied(ctx, c, tenantID, uid, string(role), types.TenantRoleAdmin)
 		}
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Forbidden: tenant admin required",
+			"error": "Forbidden: organization admin required",
 		})
 		c.Abort()
 	}
@@ -246,7 +246,7 @@ func RequireTenantAdminOrUploader(lookup UploaderLookup, cfg *config.Config) gin
 			_ = svc.LogDenied(ctx, c, caller.TenantID, caller.UserID, string(caller.Role), types.TenantRoleAdmin)
 		}
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Forbidden: only a tenant admin or the uploader may change this document",
+			"error": "Forbidden: only an organization admin or the uploader may change this document",
 		})
 		c.Abort()
 	}

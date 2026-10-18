@@ -25,23 +25,23 @@ var (
 	// finalised. Maps to 409.
 	ErrGrantNotPending = errors.New("access grant is no longer pending")
 	// ErrGrantSelfTarget: a tenant cannot grant its own KB to itself.
-	ErrGrantSelfTarget = errors.New("cannot request access to a knowledge base your tenant owns")
+	ErrGrantSelfTarget = errors.New("cannot request access to a knowledge base your organization owns")
 )
 
 // ErrGrantDisabled: the request/approve flow is retired. Tenant-wide grants
 // are issued only by the owning tenant's admin or a SuperAdmin
 // (GrantTenantAccess); a tenant can no longer ask for access.
-var ErrGrantDisabled = errors.New("access requests are retired; the owning tenant grants access directly")
+var ErrGrantDisabled = errors.New("access requests are retired; the owning organization grants access directly")
 
 // ErrGrantNotManager: the caller is neither a Tenant Admin of the KB's
 // owning tenant nor a SuperAdmin.
-var ErrGrantNotManager = errors.New("only the owning tenant's admin or a system admin may share this knowledge base")
+var ErrGrantNotManager = errors.New("only the owning organization's admin or a system admin may share this knowledge base")
 
 // ErrGrantPlatformKB: platform-owned KBs are public and need no grant.
 var ErrGrantPlatformKB = errors.New("platform knowledge bases are readable by everyone and cannot be granted")
 
 // ErrGrantTenantNotFound: the grantee tenant does not exist.
-var ErrGrantTenantNotFound = errors.New("grantee tenant not found")
+var ErrGrantTenantNotFound = errors.New("grantee organization not found")
 
 // kbAccessGrantService implements interfaces.KBAccessGrantService. Route
 // gates (admin on the grantee side for requests, admin/owner on the owner

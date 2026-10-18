@@ -35,11 +35,11 @@ type auditLogListResponse struct {
 }
 
 // ListTenantAuditLog godoc
-// @Summary      Lấy nhật ký kiểm toán của đơn vị
-// @Description  Trả về các sự kiện kiểm toán gần đây của đơn vị, sắp xếp id giảm dần. Phân trang con trỏ: dùng next_cursor của phản hồi trước làm after_id cho yêu cầu tiếp theo.
+// @Summary      Lấy nhật ký kiểm toán của tổ chức
+// @Description  Trả về các sự kiện kiểm toán gần đây của tổ chức, sắp xếp id giảm dần. Phân trang con trỏ: dùng next_cursor của phản hồi trước làm after_id cho yêu cầu tiếp theo.
 // @Tags         Nhật ký kiểm toán
 // @Produce      json
-// @Param        id        path   string  true   "Tenant workspaceID"
+// @Param        id        path   string  true   "Organization ID"
 // @Param        after_id  query  int     false  "Con trỏ: trả về bản ghi có id nhỏ hơn giá trị này (mặc định bắt đầu từ mới nhất)"
 // @Param        limit     query  int     false  "Kích thước trang, 1-100, mặc định 50"
 // @Param        action    query  string  false  "Lọc chính xác theo action (ví dụ rbac.member_added / rbac.access_denied)"
@@ -111,7 +111,7 @@ func (h *AuditLogHandler) ListTenantAuditLog(c *gin.Context) {
 // an owner-tenant check so organization-shared consumers cannot inspect source
 // workspace actors or configuration history.
 // @Summary      Lấy lịch sử hoạt động của kho tri thức
-// @Description  Trả về các thay đổi quan trọng và tác vụ nền của kho tri thức. Chỉ người tạo kho tri thức hoặc quản trị viên đơn vị sở hữu được đọc; đơn vị được chia sẻ không đọc được.
+// @Description  Trả về các thay đổi quan trọng và tác vụ nền của kho tri thức. Chỉ người tạo kho tri thức hoặc quản trị viên tổ chức sở hữu được đọc; tổ chức được chia sẻ không đọc được.
 // @Tags         Kho tri thức
 // @Produce      json
 // @Param        id        path   string  true   "Knowledge BaseID"
@@ -134,7 +134,7 @@ func (h *AuditLogHandler) ListKnowledgeBaseActivity(c *gin.Context) {
 	}
 	callerTenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if callerTenantID == 0 || access.KnowledgeBase.TenantID != callerTenantID {
-		c.Error(errors.NewForbiddenError("knowledge base activity is only available in the owner workspace"))
+		c.Error(errors.NewForbiddenError("knowledge base activity is only available in the owner organization"))
 		return
 	}
 	actorID, _ := types.UserIDFromContext(ctx)

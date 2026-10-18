@@ -11,7 +11,7 @@ import (
 
 // DocumentTemplateFontSizesSettingKey is the system setting holding the
 // platform-wide font sizes of the NĐ30 templates drafted from chat; a
-// workspace may override them (TenantTemplateStyle).
+// organization may override them (TenantTemplateStyle).
 const DocumentTemplateFontSizesSettingKey = "document_template.font_sizes"
 
 // TemplateFontSizeSpec is one setting of a template that can be chosen, with
@@ -49,7 +49,7 @@ var TemplateFontSizeSpecs = []TemplateFontSizeSpec{
 }
 
 // TemplateFontSizes maps a component key to its size in points. A key left
-// out takes the next level's size (workspace → platform → NĐ30 default).
+// out takes the next level's size (organization → platform → NĐ30 default).
 type TemplateFontSizes map[string]int
 
 // ErrTemplateFontSizesInvalid wraps every validation failure.
@@ -112,7 +112,7 @@ func PlatformTemplateFontSizes(ctx context.Context, settings interface {
 }
 
 // ResolveTemplateFontSizes gives every component its size: the NĐ30
-// default, overridden by the platform's, overridden by the workspace's.
+// default, overridden by the platform's, overridden by the organization's.
 func ResolveTemplateFontSizes(platform, tenant TemplateFontSizes) TemplateFontSizes {
 	out := make(TemplateFontSizes, len(TemplateFontSizeSpecs))
 	for _, s := range TemplateFontSizeSpecs {
@@ -128,7 +128,7 @@ func ResolveTemplateFontSizes(platform, tenant TemplateFontSizes) TemplateFontSi
 	return out
 }
 
-// TenantTemplateStyle is a workspace's override of the template font sizes.
+// TenantTemplateStyle is an organization's override of the template font sizes.
 type TenantTemplateStyle struct {
 	TenantID  uint64    `json:"tenant_id" gorm:"primaryKey"`
 	FontSizes JSON      `json:"font_sizes" gorm:"type:jsonb"`

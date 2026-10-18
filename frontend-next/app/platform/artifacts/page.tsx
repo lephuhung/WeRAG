@@ -252,7 +252,7 @@ function ArtifactsInner() {
     <div ref={scrollRootRef} className="flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-8 sm:py-10 lg:px-12">
         <div className="mb-6">
-          <div className="caption-uppercase mb-3 text-muted">Workspace</div>
+          <div className="caption-uppercase mb-3 text-muted">{t("settingsNav.groups.workspace")}</div>
           <h1 className="display-xl">{t("nav.artifacts")}</h1>
           <p className="mt-3 max-w-[520px] text-body">{t("artifactLibrary.subtitle")}</p>
         </div>

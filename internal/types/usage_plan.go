@@ -11,10 +11,10 @@ import (
 // Usage packages (phase 2): plans, subscriptions, seats.
 //
 // A plan is a named bundle of limits that SuperAdmin edits at runtime. A
-// subscription attaches a plan to a scope — a workspace or a person — for
-// a period. Workspace subscriptions run in one of two modes: "pool"
-// (everyone draws from the workspace's counters) or "seat" (the
-// workspace buys N seats, each seat holder has their own counters and a
+// subscription attaches a plan to a scope — an organization or a person — for
+// a period. Organization subscriptions run in one of two modes: "pool"
+// (everyone draws from the organization's counters) or "seat" (the
+// organization buys N seats, each seat holder has their own counters and a
 // Tenant Admin assigns the seats). Without an active subscription a turn
 // is refused once enforcement is switched on.
 
@@ -38,7 +38,7 @@ const (
 
 	// UsageEnforceSettingKey is the system_settings switch that turns the
 	// pre-flight check on. Off by default so a deployment can assign
-	// subscriptions to its workspaces before anyone is refused.
+	// subscriptions to its organizations before anyone is refused.
 	UsageEnforceSettingKey = "usage.enforce"
 )
 
@@ -205,7 +205,7 @@ type UsageLimitStatus struct {
 }
 
 // UsageEntitlement is what governs a caller's turns right now: the
-// subscription found for the workspace (source "tenant") or, failing
+// subscription found for the organization (source "tenant") or, failing
 // that, for the person (source "user"), with its limits and consumption.
 type UsageEntitlement struct {
 	Source         string `json:"source"`
@@ -274,8 +274,8 @@ type UsageSubscriptionView struct {
 	SeatsUsed int64              `json:"seats_used"`
 }
 
-// UsageTenantOverview lists one workspace next to its subscription so the
-// admin page can assign plans to workspaces that have none.
+// UsageTenantOverview lists one organization next to its subscription so the
+// admin page can assign plans to organizations that have none.
 type UsageTenantOverview struct {
 	TenantID     uint64                 `json:"tenant_id"`
 	TenantName   string                 `json:"tenant_name"`
@@ -284,7 +284,7 @@ type UsageTenantOverview struct {
 	Today        UsagePeriodTotals      `json:"today"`
 }
 
-// UsageTenantUsage is what a workspace's members see of its package: the
+// UsageTenantUsage is what an organization's members see of its package: the
 // subscription with consumption, and in seat mode who holds a seat.
 type UsageTenantUsage struct {
 	Enforced     bool                   `json:"enforced"`

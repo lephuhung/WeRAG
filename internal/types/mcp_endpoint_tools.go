@@ -59,7 +59,7 @@ const (
 type MCPEndpointToolDefinition struct {
 	Name  string               `json:"name"`
 	Group MCPEndpointToolGroup `json:"group"`
-	// Destructive marks tools that mutate or delete workspace content; the UI
+	// Destructive marks tools that mutate or delete organization content; the UI
 	// leaves them unchecked by default and the server requires the ingest
 	// capability for them.
 	Destructive bool `json:"destructive"`

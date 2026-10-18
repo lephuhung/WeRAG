@@ -101,7 +101,7 @@ func (p OutboundURLPolicy) Validate(raw string) error {
 	if lower == "localhost" || strings.HasSuffix(lower, ".localhost") {
 		if !p.AllowPrivate {
 			return fmt.Errorf(
-				"%w: host %q is loopback; enable private endpoints for this workspace config",
+				"%w: host %q is loopback; enable private endpoints for this organization's sandbox config",
 				ErrUnsafeOutboundURL, host,
 			)
 		}
@@ -163,7 +163,7 @@ func (p OutboundURLPolicy) checkIP(ip net.IP) error {
 		// self-hosted shape rather than an exception.
 		if !p.AllowPrivate {
 			return fmt.Errorf(
-				"%w: address %s is private; enable private endpoints for this workspace config",
+				"%w: address %s is private; enable private endpoints for this organization's sandbox config",
 				ErrUnsafeOutboundURL, ip,
 			)
 		}

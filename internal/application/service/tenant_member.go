@@ -44,17 +44,17 @@ func isDuplicateMembership(err error) bool {
 var (
 	// ErrMembershipNotFound is returned when no active membership row
 	// matches the (user, tenant) pair the caller requested.
-	ErrMembershipNotFound = errors.New("tenant membership not found")
+	ErrMembershipNotFound = errors.New("organization membership not found")
 
 	// ErrMembershipAlreadyExists is returned by AddMember when the
 	// (user, tenant) pair already has an active membership.
-	ErrMembershipAlreadyExists = errors.New("tenant membership already exists")
+	ErrMembershipAlreadyExists = errors.New("organization membership already exists")
 
 	// ErrInvalidTenantRole is returned when the caller passes a role
 	// value that cannot be normalized to the admin/member model.
 	// The owner role is always rejected for new assignments; legacy
 	// contributor/viewer/unknown values are normalized to member instead.
-	ErrInvalidTenantRole = errors.New("invalid tenant role")
+	ErrInvalidTenantRole = errors.New("invalid organization role")
 
 	// ErrOwnerRoleRetired is returned when a caller attempts to assign
 	// the retired owner role. Persisted owner rows were converted to
@@ -72,7 +72,7 @@ var (
 	// ErrLastAdmin is returned when an operation would leave the tenant
 	// without an active Admin. Demoting the last Admin or removing them
 	// is forbidden; another Admin must exist first.
-	ErrLastAdmin = errors.New("cannot demote or remove the last active admin of the tenant")
+	ErrLastAdmin = errors.New("cannot demote or remove the last active admin of the organization")
 
 	// ErrLastOwner is retained for backward compatibility with callers
 	// that map the legacy sentinel (e.g. system admin transfer flows).
@@ -81,7 +81,7 @@ var (
 	// migration.
 	//
 	// Deprecated: compare with ErrLastAdmin instead.
-	ErrLastOwner = errors.New("cannot demote or remove the last active owner of the tenant")
+	ErrLastOwner = errors.New("cannot demote or remove the last active owner of the organization")
 )
 
 const (

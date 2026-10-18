@@ -178,7 +178,7 @@ func NewValidationError(message string) *AppError {
 func NewTenantNotFoundError() *AppError {
 	return &AppError{
 		Code:     ErrTenantNotFound,
-		Message:  "không tìm thấy đơn vị",
+		Message:  "không tìm thấy tổ chức",
 		HTTPCode: http.StatusNotFound,
 	}
 }
@@ -187,7 +187,7 @@ func NewTenantNotFoundError() *AppError {
 func NewTenantAlreadyExistsError() *AppError {
 	return &AppError{
 		Code:     ErrTenantAlreadyExists,
-		Message:  "đơn vị đã tồn tại",
+		Message:  "tổ chức đã tồn tại",
 		HTTPCode: http.StatusConflict,
 	}
 }
@@ -196,7 +196,7 @@ func NewTenantAlreadyExistsError() *AppError {
 func NewTenantInactiveError() *AppError {
 	return &AppError{
 		Code:     ErrTenantInactive,
-		Message:  "đơn vị đã bị vô hiệu hóa",
+		Message:  "tổ chức đã bị vô hiệu hóa",
 		HTTPCode: http.StatusForbidden,
 	}
 }
@@ -206,7 +206,7 @@ func NewTenantInactiveError() *AppError {
 func NewTenantCreationDisabledError() *AppError {
 	return &AppError{
 		Code:     ErrTenantCreationDisabled,
-		Message:  "đã tắt tự tạo đơn vị; hãy tham gia đơn vị qua lời mời",
+		Message:  "đã tắt tự tạo tổ chức; hãy tham gia tổ chức qua lời mời",
 		HTTPCode: http.StatusForbidden,
 	}
 }

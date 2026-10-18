@@ -20,7 +20,7 @@ func (s *messageService) LatestContextSummary(
 ) (string, time.Time, error) {
 	tenantID, ok := sessionTenantIDForLookup(ctx)
 	if !ok {
-		return "", time.Time{}, errors.New("workspace ID not found in context")
+		return "", time.Time{}, errors.New("organization ID not found in context")
 	}
 	session, err := loadSessionForRead(ctx, s.sessionRepo, tenantID, sessionUserIDForLookup(ctx), sessionID)
 	if err != nil {

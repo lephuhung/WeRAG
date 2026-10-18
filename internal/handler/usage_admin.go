@@ -135,7 +135,7 @@ func (h *UsageAdminHandler) ListSubscriptions(c *gin.Context) {
 }
 
 // CreateSubscription godoc
-// @Summary      Attach a plan to a workspace or person
+// @Summary      Attach a plan to an organization or person
 // @Tags         Gói sử dụng
 // @Accept       json
 // @Param        subscription body types.UsageSubscription true "subscription"
@@ -196,7 +196,7 @@ func (h *UsageAdminHandler) DeleteSubscription(c *gin.Context) {
 }
 
 // TenantOverview godoc
-// @Summary      Every workspace with its subscription and usage
+// @Summary      Every organization with its subscription and usage
 // @Tags         Gói sử dụng
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer

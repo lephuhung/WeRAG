@@ -19,7 +19,7 @@ All endpoints are under `/api/v1`. Paths inside each module doc are written as t
 | Mechanism | Header | Used by |
 |---|---|---|
 | JWT Bearer | `Authorization: Bearer <token>` | all authenticated web calls |
-| Tenant scope | `X-Tenant-ID: <tenant-id>` | authenticated calls, when a tenant is selected |
+| Organization scope | `X-Tenant-ID: <tenant-id>` | authenticated calls, when an organization is selected |
 | Embed token | `Authorization: Embed <token>` | `/api/v1/embed/*` visitor endpoints (anonymous) |
 | Embed session | `X-Embed-Session`, `X-Embed-Visitor` | embed endpoints that carry a signed visitor session |
 
@@ -27,7 +27,7 @@ Tokens live in `localStorage`:
 
 - `weknora_token` — access token
 - `weknora_refresh_token` — refresh token
-- `weknora_selected_tenant_id` — current tenant id
+- `weknora_selected_tenant_id` — current organization id
 
 On `401`, `api-client.ts` performs a single shared refresh:
 `POST /api/v1/auth/refresh` with `{ refreshToken }` → `{ access_token, refresh_token? }`, then
@@ -82,7 +82,7 @@ Notes:
 | Domain | Module | Endpoints |
 |---|---|---|
 | [Authentication](auth.md) | `auth.ts` | login, register, OIDC, refresh, preferences |
-| [Tenants & Workspace Config](tenants.md) | `tenants.ts` | tenant CRUD, members, KV config dispatch |
+| [Organizations & Their Configuration](tenants.md) | `tenants.ts` | organization CRUD, members, KV config dispatch |
 | [Initialization](initialization.md) | `initialization.ts` | bootstrap, remote-init, system status |
 | [Knowledge](knowledge.md) | `knowledge.ts` | knowledge bases, documents, chunks, tags, FAQ, search |
 | [Wiki](wiki.md) | `wiki.ts` | wiki pages, folders, links |

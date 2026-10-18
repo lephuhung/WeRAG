@@ -225,7 +225,7 @@ func TestDocumentTemplateLetterAndProfileConflict(t *testing.T) {
 	in := templateInput(model, "cong-van", said...)
 	out, _ := PrepareDocumentTemplate(context.Background(), in)
 	missing := strings.Join(out.Data["missing_fields"].([]string), "\n")
-	if out.Ready || !strings.Contains(missing, "hồ sơ đơn vị ghi «Huế», bạn ghi «Thừa Thiên Huế»") {
+	if out.Ready || !strings.Contains(missing, "hồ sơ tổ chức ghi «Huế», bạn ghi «Thừa Thiên Huế»") {
 		t.Fatalf("a conflict with the profile is asked: %+v", out.Data)
 	}
 	// asked once: the user's value stands the next time

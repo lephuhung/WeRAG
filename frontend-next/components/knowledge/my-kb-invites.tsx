@@ -119,7 +119,7 @@ export function MyKBInvites({ onAccepted }: { onAccepted?: () => void }) {
             <div key={inv.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm">
               <div className="min-w-0">
                 <span className="font-medium text-ink truncate">{inv.kb_name || inv.kb_id}</span>
-                <span className="caption text-muted ml-2">from workspace {inv.owner_tenant_id}</span>
+                <span className="caption text-muted ml-2">from organization {inv.owner_tenant_id}</span>
               </div>
               <button
                 type="button"

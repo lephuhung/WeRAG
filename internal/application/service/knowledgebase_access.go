@@ -114,14 +114,14 @@ func withKBWriteTenantInfo(
 		return ctx, nil
 	}
 	if tenants == nil {
-		return ctx, apperrors.NewServiceUnavailableError("không lấy được đơn vị sở hữu kho tri thức")
+		return ctx, apperrors.NewServiceUnavailableError("không lấy được tổ chức sở hữu kho tri thức")
 	}
 	tenant, err := tenants.GetTenantByID(ctx, kb.TenantID)
 	if err != nil {
 		return ctx, err
 	}
 	if tenant == nil || tenant.ID != kb.TenantID {
-		return ctx, apperrors.NewNotFoundError("không tìm thấy đơn vị sở hữu kho tri thức")
+		return ctx, apperrors.NewNotFoundError("không tìm thấy tổ chức sở hữu kho tri thức")
 	}
 	return context.WithValue(ctx, types.TenantInfoContextKey, tenant), nil
 }

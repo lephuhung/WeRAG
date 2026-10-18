@@ -896,7 +896,7 @@ func buildExtractionPrompt(
 	}
 
 	if instructions != "" {
-		builder.WriteString("\nWorkspace rules (follow these in addition to the above):\n<rules>\n")
+		builder.WriteString("\nPlatform rules (follow these in addition to the above):\n<rules>\n")
 		builder.WriteString(instructions)
 		builder.WriteString("\n</rules>\n")
 	}
@@ -955,7 +955,7 @@ func (s *Service) workspaceChatModelID(ctx context.Context) string {
 		if model.Status != "" && model.Status != types.ModelStatusActive {
 			continue
 		}
-		logger.Infof(ctx, "memory: no extraction model configured, using workspace model %s", model.ID)
+		logger.Infof(ctx, "memory: no extraction model configured, using organization model %s", model.ID)
 		return model.ID
 	}
 	return ""
@@ -1040,7 +1040,7 @@ func (s *Service) callExtractionModel(
 		// enabled memory feature that has learned nothing.
 		return extractionResponse{}, fmt.Errorf(
 			"no chat model available for memory extraction; " +
-				"configure one under workspace memory settings")
+				"configure one under platform memory settings")
 	}
 	chatModel, err := s.modelService.GetChatModel(ctx, modelID)
 	if err != nil {

@@ -56,7 +56,7 @@ func (h *DocumentFormatHandler) ListTypes(c *gin.Context) {
 // @Description  attached: documents outside the 29 văn bản hành chính get
 // @Description  the technical layout checks only), segmenter (auto | heuristic) and
 // @Description  evaluate=true (judge the format data against the document-type
-// @Description  skills with the workspace chat model, thinking on; ~1 min).
+// @Description  skills with the organization chat model, thinking on; ~1 min).
 // @Description  Returns every rule with pass/fail/warn/skip, the measured
 // @Description  value, the offending lines, the format data and, with
 // @Description  evaluate, the written evaluation.

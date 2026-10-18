@@ -43,7 +43,7 @@ handler: `CreateSession` · `handler.go`
 | `id` | string | yes | ID |
 | `title` | string | yes | Title |
 | `description` | string | yes | Description |
-| `tenant_id` | number | yes | Workspace ID |
+| `tenant_id` | number | yes | Organization ID |
 | `user_id` | string |  | UserID is the owner scope for this session. WeKnora user UUIDs, API external-user principals, and embed visitor principals all use this column. |
 | `is_pinned` | boolean | yes | IsPinned indicates whether the session is pinned in the list. |
 | `pinned_at` | string(time) |  | PinnedAt records when the session was pinned; nil when not pinned. |
@@ -71,7 +71,7 @@ handler: `GetSession` · `handler.go`
 | `id` | string | yes | ID |
 | `title` | string | yes | Title |
 | `description` | string | yes | Description |
-| `tenant_id` | number | yes | Workspace ID |
+| `tenant_id` | number | yes | Organization ID |
 | `user_id` | string |  | UserID is the owner scope for this session. WeKnora user UUIDs, API external-user principals, and embed visitor principals all use this column. |
 | `is_pinned` | boolean | yes | IsPinned indicates whether the session is pinned in the list. |
 | `pinned_at` | string(time) |  | PinnedAt records when the session was pinned; nil when not pinned. |
@@ -95,7 +95,7 @@ handler: `UpdateSession` · `handler.go`
 | `id` | string |  | ID |
 | `title` | string |  | Title |
 | `description` | string |  | Description |
-| `tenant_id` | number |  | Workspace ID |
+| `tenant_id` | number |  | Organization ID |
 | `user_id` | string |  | UserID is the owner scope for this session. WeKnora user UUIDs, API external-user principals, and embed visitor principals all use this column. |
 | `is_pinned` | boolean |  | IsPinned indicates whether the session is pinned in the list. |
 | `pinned_at` | string(time) |  | PinnedAt records when the session was pinned; nil when not pinned. |
@@ -118,7 +118,7 @@ handler: `UpdateSession` · `handler.go`
 | `id` | string | yes | ID |
 | `title` | string | yes | Title |
 | `description` | string | yes | Description |
-| `tenant_id` | number | yes | Workspace ID |
+| `tenant_id` | number | yes | Organization ID |
 | `user_id` | string |  | UserID is the owner scope for this session. WeKnora user UUIDs, API external-user principals, and embed visitor principals all use this column. |
 | `is_pinned` | boolean | yes | IsPinned indicates whether the session is pinned in the list. |
 | `pinned_at` | string(time) |  | PinnedAt records when the session was pinned; nil when not pinned. |

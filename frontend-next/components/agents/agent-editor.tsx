@@ -769,7 +769,7 @@ export function AgentEditorModal({
                 <span className="caption mb-2 block text-muted">Choose Knowledge Bases</span>
                 <div className="max-h-[220px] overflow-y-auto space-y-1.5 rounded-[12px] border border-hairline p-2">
                   {kbs.length === 0 ? (
-                    <p className="caption text-muted p-2">No knowledge bases found in workspace.</p>
+                    <p className="caption text-muted p-2">No knowledge bases found in this organization.</p>
                   ) : (
                     kbs.map((k) => (
                       <label

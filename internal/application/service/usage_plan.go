@@ -464,10 +464,10 @@ func (s *usagePlanService) tenantSeatSubscription(ctx context.Context, tenantID 
 		return nil, err
 	}
 	if sub == nil {
-		return nil, apperrors.NewNotFoundError("the workspace has no usage package")
+		return nil, apperrors.NewNotFoundError("the organization has no usage package")
 	}
 	if sub.Mode != types.UsageModeSeat {
-		return nil, apperrors.NewBadRequestError("the workspace package is not in seat mode")
+		return nil, apperrors.NewBadRequestError("the organization package is not in seat mode")
 	}
 	return sub, nil
 }
@@ -480,7 +480,7 @@ func (s *usagePlanService) AssignTenantSeat(ctx context.Context, tenantID uint64
 	if s.members != nil {
 		m, err := s.members.Get(ctx, userID, tenantID)
 		if err != nil || m == nil || m.Status != types.TenantMemberStatusActive {
-			return apperrors.NewBadRequestError("the account is not an active member of the workspace")
+			return apperrors.NewBadRequestError("the account is not an active member of the organization")
 		}
 	}
 	return s.AssignSeat(ctx, sub.ID, userID, assignedBy)

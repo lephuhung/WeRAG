@@ -18,7 +18,7 @@ type UsageCounterRepository interface {
 	SumByPeriod(ctx context.Context, scopeType, periodKey string) ([]*types.UsageCounter, error)
 	// DeleteScope removes every counter row of one scope. Only lifetime
 	// scopes are reset this way (a session whose messages were cleared);
-	// workspace and person rows are history and never deleted.
+	// organization and person rows are history and never deleted.
 	DeleteScope(ctx context.Context, scopeType, scopeID string) error
 	// AddMessageUsage marks messageID's token usage as counted and applies
 	// increments in one transaction, reporting whether this call counted
@@ -31,7 +31,7 @@ type UsageCounterRepository interface {
 // Recording is best-effort: a metering failure is logged and never fails
 // the chat turn that triggered it.
 type UsageMeter interface {
-	// RecordQuestion counts one question for the workspace, for the person
+	// RecordQuestion counts one question for the organization, for the person
 	// when userID is a real one, and for the session when sessionID is set.
 	RecordQuestion(ctx context.Context, tenantID uint64, userID, sessionID string)
 	// RecordMessageUsage folds an assistant message's token usage into the
@@ -46,9 +46,9 @@ type UsageMeter interface {
 	// were cleared: the per-session caps then count from the new start.
 	ResetSession(ctx context.Context, sessionID string)
 	// Summary returns today's and this month's counters for the person and
-	// the workspace.
+	// the organization.
 	Summary(ctx context.Context, tenantID uint64, userID string) (*types.UsageSummary, error)
-	// PlatformTotals sums every workspace for today and this month.
+	// PlatformTotals sums every organization for today and this month.
 	PlatformTotals(ctx context.Context) (*types.UsageStats, error)
 }
 
@@ -125,20 +125,20 @@ type UsagePlanService interface {
 	CreateSubscription(ctx context.Context, sub *types.UsageSubscription) (*types.UsageSubscriptionView, error)
 	UpdateSubscription(ctx context.Context, sub *types.UsageSubscription) (*types.UsageSubscriptionView, error)
 	DeleteSubscription(ctx context.Context, id string) error
-	// TenantOverview lists every workspace with its subscription and usage.
+	// TenantOverview lists every organization with its subscription and usage.
 	TenantOverview(ctx context.Context) ([]*types.UsageTenantOverview, error)
 
 	ListSeats(ctx context.Context, subscriptionID string) ([]*types.UsageSeat, error)
 	AssignSeat(ctx context.Context, subscriptionID, userID, assignedBy string) error
 	RevokeSeat(ctx context.Context, subscriptionID, userID string) error
 
-	// TenantUsage is the workspace-facing view: its active subscription
+	// TenantUsage is the organization-facing view: its active subscription
 	// with consumption and its seats. Enforced mirrors usage.enforce.
 	TenantUsage(ctx context.Context, tenantID uint64) (*types.UsageTenantUsage, error)
-	// AssignTenantSeat gives an active member of the workspace a seat of
-	// the workspace's seat-mode subscription (Tenant Admin action).
+	// AssignTenantSeat gives an active member of the organization a seat of
+	// the organization's seat-mode subscription (Tenant Admin action).
 	AssignTenantSeat(ctx context.Context, tenantID uint64, userID, assignedBy string) error
-	// RevokeTenantSeat takes a seat of the workspace's subscription back.
+	// RevokeTenantSeat takes a seat of the organization's subscription back.
 	RevokeTenantSeat(ctx context.Context, tenantID uint64, userID string) error
 }
 

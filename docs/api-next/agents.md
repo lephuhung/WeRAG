@@ -34,13 +34,13 @@ handler: `GetAgent` · `custom_agent.go`
 | `description` | string | yes | Description of the agent |
 | `avatar` | string | yes | Avatar/Icon of the agent (emoji or icon name) |
 | `is_builtin` | boolean | yes | Whether this is a built-in agent (normal mode / agent mode) |
-| `tenant_id` | number | yes | Tenant ID (composite primary key with ID) |
+| `tenant_id` | number | yes | Organization ID (composite primary key with ID) |
 | `created_by` | string | yes | Created by user ID |
 | `config` | CustomAgentConfig | yes | Agent configuration |
 | `created_at` | string(time) | yes | Timestamps |
 | `updated_at` | string(time) | yes |  |
 | `deleted_at` | DeletedAt | yes |  |
-| `creator_name` | string |  | CreatorName is batch-filled by the list handler before returning, same role as KnowledgeBase.CreatorName: lets list cards distinguish "created by me" vs "created by another workspace member". Not persisted; may be empty for built-in agents and legacy rows. |
+| `creator_name` | string |  | CreatorName is batch-filled by the list handler before returning, same role as KnowledgeBase.CreatorName: lets list cards distinguish "created by me" vs "created by another organization member". Not persisted; may be empty for built-in agents and legacy rows. |
 
 ---
 ### `createAgent` — `POST /agents`
@@ -67,13 +67,13 @@ handler: `CreateAgent` · `custom_agent.go`
 | `description` | string | yes | Description of the agent |
 | `avatar` | string | yes | Avatar/Icon of the agent (emoji or icon name) |
 | `is_builtin` | boolean | yes | Whether this is a built-in agent (normal mode / agent mode) |
-| `tenant_id` | number | yes | Tenant ID (composite primary key with ID) |
+| `tenant_id` | number | yes | Organization ID (composite primary key with ID) |
 | `created_by` | string | yes | Created by user ID |
 | `config` | CustomAgentConfig | yes | Agent configuration |
 | `created_at` | string(time) | yes | Timestamps |
 | `updated_at` | string(time) | yes |  |
 | `deleted_at` | DeletedAt | yes |  |
-| `creator_name` | string |  | CreatorName is batch-filled by the list handler before returning, same role as KnowledgeBase.CreatorName: lets list cards distinguish "created by me" vs "created by another workspace member". Not persisted; may be empty for built-in agents and legacy rows. |
+| `creator_name` | string |  | CreatorName is batch-filled by the list handler before returning, same role as KnowledgeBase.CreatorName: lets list cards distinguish "created by me" vs "created by another organization member". Not persisted; may be empty for built-in agents and legacy rows. |
 
 ---
 ### `updateAgent` — `PUT /agents/:id`
@@ -100,13 +100,13 @@ handler: `UpdateAgent` · `custom_agent.go`
 | `description` | string | yes | Description of the agent |
 | `avatar` | string | yes | Avatar/Icon of the agent (emoji or icon name) |
 | `is_builtin` | boolean | yes | Whether this is a built-in agent (normal mode / agent mode) |
-| `tenant_id` | number | yes | Tenant ID (composite primary key with ID) |
+| `tenant_id` | number | yes | Organization ID (composite primary key with ID) |
 | `created_by` | string | yes | Created by user ID |
 | `config` | CustomAgentConfig | yes | Agent configuration |
 | `created_at` | string(time) | yes | Timestamps |
 | `updated_at` | string(time) | yes |  |
 | `deleted_at` | DeletedAt | yes |  |
-| `creator_name` | string |  | CreatorName is batch-filled by the list handler before returning, same role as KnowledgeBase.CreatorName: lets list cards distinguish "created by me" vs "created by another workspace member". Not persisted; may be empty for built-in agents and legacy rows. |
+| `creator_name` | string |  | CreatorName is batch-filled by the list handler before returning, same role as KnowledgeBase.CreatorName: lets list cards distinguish "created by me" vs "created by another organization member". Not persisted; may be empty for built-in agents and legacy rows. |
 
 ---
 ### `deleteAgent` — `DELETE /agents/:id`
@@ -134,13 +134,13 @@ handler: `CopyAgent` · `custom_agent.go`
 | `description` | string | yes | Description of the agent |
 | `avatar` | string | yes | Avatar/Icon of the agent (emoji or icon name) |
 | `is_builtin` | boolean | yes | Whether this is a built-in agent (normal mode / agent mode) |
-| `tenant_id` | number | yes | Tenant ID (composite primary key with ID) |
+| `tenant_id` | number | yes | Organization ID (composite primary key with ID) |
 | `created_by` | string | yes | Created by user ID |
 | `config` | CustomAgentConfig | yes | Agent configuration |
 | `created_at` | string(time) | yes | Timestamps |
 | `updated_at` | string(time) | yes |  |
 | `deleted_at` | DeletedAt | yes |  |
-| `creator_name` | string |  | CreatorName is batch-filled by the list handler before returning, same role as KnowledgeBase.CreatorName: lets list cards distinguish "created by me" vs "created by another workspace member". Not persisted; may be empty for built-in agents and legacy rows. |
+| `creator_name` | string |  | CreatorName is batch-filled by the list handler before returning, same role as KnowledgeBase.CreatorName: lets list cards distinguish "created by me" vs "created by another organization member". Not persisted; may be empty for built-in agents and legacy rows. |
 
 ---
 ### `getPlaceholders` — `GET /agents/placeholders`
@@ -343,18 +343,18 @@ handler: `WeChatPollQRCodeStatus` · `wechat_qrcode.go`
 | `mcp_auth_wait_timeout` | number |  | MCPAuthWaitTimeout is how many seconds to wait for in-conversation OAuth authorization before skipping. <=0 uses the gate's configured timeout. |
 | `skills_selection_mode` | string | yes | ===== Skills Settings (only for smart-reasoning mode) ===== Skills selection mode: "all" = all installed skills, "selected" = specific skills, "none" = no skills |
 | `selected_skills` | string[] | yes | Selected skill names (only used when SkillsSelectionMode is "selected") |
-| `sandbox_config_id` | string |  | ===== Sandbox Settings ===== SandboxConfigID selects which workspace sandbox config this agent's skill scripts run on. Empty means sandbox execution is disabled. This references th |
+| `sandbox_config_id` | string |  | ===== Sandbox Settings ===== SandboxConfigID selects which organization sandbox config this agent's skill scripts run on. Empty means sandbox execution is disabled. This references th |
 | `kb_selection_mode` | string | yes | ===== Knowledge Base Settings ===== Knowledge base selection mode: "all" = all KBs, "selected" = specific KBs, "none" = no KB |
 | `knowledge_bases` | string[] | yes | Associated knowledge base IDs (only used when KBSelectionMode is "selected") |
 | `retrieve_kb_only_when_mentioned` | boolean | yes | Whether to retrieve knowledge base only when explicitly mentioned with @ (default: false) When true, knowledge base retrieval only happens if user explicitly mentions KB/files with |
 | `retain_retrieval_history` | boolean | yes | Whether to retain retrieval history across turns |
 | `image_upload_enabled` | boolean | yes | ===== Image Upload / Multimodal Settings ===== Whether image upload is enabled for this agent (default: false) |
-| `vlm_model_id` | string | yes | VLM model ID for image analysis (optional, falls back to workspace-level VLM) |
+| `vlm_model_id` | string | yes | VLM model ID for image analysis (optional, falls back to organization-level VLM) |
 | `audio_upload_enabled` | boolean | yes | Whether audio upload (ASR transcription) is enabled for this agent (default: false) |
 | `asr_model_id` | string | yes | ASR model ID for audio transcription (optional) |
-| `image_storage_provider` | string | yes | Storage provider for image uploads: "local", "minio", "cos", "tos", "s3", "oss", "ks3". Empty means use the global/workspace default provider. |
+| `image_storage_provider` | string | yes | Storage provider for image uploads: "local", "minio", "cos", "tos", "s3", "oss", "ks3". Empty means use the global/organization default provider. |
 | `supported_file_types` | string[] | yes | ===== File Type Restriction Settings ===== Supported file types for this agent (e.g., ["csv", "xlsx", "xls"]) Empty means all file types are supported When set, only files with mat |
-| `chat_parser_engine_rules` | ParserEngineRule[] |  | ===== Chat Attachment Parsing Settings ===== ChatParserEngineRules selects parser engines for session-scoped chat attachments by file type. Takes precedence over the tenant-level P |
+| `chat_parser_engine_rules` | ParserEngineRule[] |  | ===== Chat Attachment Parsing Settings ===== ChatParserEngineRules selects parser engines for session-scoped chat attachments by file type. Takes precedence over the organization-level P |
 | `attachment_image_understanding` | boolean | yes | AttachmentImageUnderstanding enables VLM OCR fallback for image-only / scanned documents (PDF/PPT whose pages are images). Disabled by default because it materially increases parse |
 | `attachment_ocr_max_pages` | number |  | AttachmentOCRMaxPages caps how many pages of a scanned / image-only document this agent sends to the VLM for OCR. 0 falls back to the global default (WEKNORA_CHAT_ATTACHMENT_OCR_MA |
 | `attachment_parse_wait_timeout_sec` | number |  | AttachmentParseWaitTimeoutSec bounds, in seconds, how long a chat turn waits for this agent's still-parsing attachments before proceeding with only the finished ones. 0 falls back  |
@@ -364,12 +364,12 @@ handler: `WeChatPollQRCodeStatus` · `wechat_qrcode.go`
 | `faq_score_boost` | number | yes | FAQ score boost multiplier - FAQ results score multiplied by this factor |
 | `web_search_enabled` | boolean | yes | ===== Web Search Settings ===== Whether web search is enabled |
 | `web_search_max_results` | number | yes | Maximum web search results |
-| `web_search_provider_id` | string |  | WebSearchProviderID references a specific WebSearchProviderEntity. If empty, the workspace's default provider (is_default=true) is used. |
+| `web_search_provider_id` | string |  | WebSearchProviderID references a specific WebSearchProviderEntity. If empty, the organization's default provider (is_default=true) is used. |
 | `web_fetch_enabled` | boolean | yes | Whether to auto-fetch full page content for reranked web search results |
 | `web_fetch_top_n` | number |  | Max number of pages to fetch after rerank (default: 3) |
 | `multi_turn_enabled` | boolean | yes | ===== Multi-turn Conversation Settings ===== Whether multi-turn conversation is enabled |
 | `history_turns` | number | yes | Number of history turns to keep in context. Quick-answer only; smart-reasoning sizes history by context window |
-| `memory_enabled` | boolean |  | Whether this agent may read the user's long-term memory. Nil inherits the workspace setting; false opts a single agent out of memory even when the workspace has it on. There is no  |
+| `memory_enabled` | boolean |  | Whether this agent may read the user's long-term memory. Nil inherits the organization setting; false opts a single agent out of memory even when the organization has it on. There is no  |
 | `embedding_top_k` | number | yes | ===== Retrieval Strategy Settings (for both modes) ===== Embedding/Vector retrieval top K |
 | `keyword_threshold` | number | yes | Keyword retrieval threshold |
 | `vector_threshold` | number | yes | Vector retrieval threshold |

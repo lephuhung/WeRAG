@@ -214,17 +214,17 @@ func (h *TenantHandler) resolveMaxOwnedTenantsPerUser(ctx context.Context) int {
 }
 
 // CreateTenant godoc
-// @Summary      Create Tenant workspace
-// @Description  Tạo đơn vị mới. Mọi người dùng đã đăng nhập đều có thể gọi để lập không gian làm việc mới của mình,
-// @Description  người gọi tự động trở thành Owner của đơn vị đó. Siêu quản trị liên đơn vị vẫn có thể
-// @Description  tạo đơn vị bất kỳ qua endpoint này như trước.
+// @Summary      Create organization
+// @Description  Tạo tổ chức mới. Mọi người dùng đã đăng nhập đều có thể gọi để lập tổ chức mới của mình,
+// @Description  người gọi tự động trở thành Owner của tổ chức đó. Siêu quản trị liên tổ chức vẫn có thể
+// @Description  tạo tổ chức bất kỳ qua endpoint này như trước.
 // @Description  Khi tenant.auto_create_api_key (hoặc WEKNORA_TENANT_AUTO_CREATE_API_KEY)
 // @Description  được bật, hệ thống tự tạo một API Key full_access và trả token dạng rõ trong trường data.api_key của phản hồi.
-// @Tags         Đơn vị
+// @Tags         Tổ chức
 // @Accept       json
 // @Produce      json
-// @Param        request  body      handler.createTenantRequest  true  "Thông tin đơn vị"
-// @Success      201      {object}  map[string]interface{}  "Đơn vị đã tạo (có thể kèm api_key)"
+// @Param        request  body      handler.createTenantRequest  true  "Thông tin tổ chức"
+// @Success      201      {object}  map[string]interface{}  "Tổ chức đã tạo (có thể kèm api_key)"
 // @Failure      400      {object}  errors.AppError         "Tham số không hợp lệ"
 // @Security     Bearer
 // @Router       /tenants [post]
@@ -298,7 +298,7 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 			memberships, listErr := h.memberService.ListByUser(ctx, caller.ID)
 			if listErr != nil {
 				logger.Errorf(ctx, "Failed to count owned tenants for user %s: %v", caller.ID, listErr)
-				c.Error(errors.NewInternalServerError("Failed to validate workspace quota").WithDetails(listErr.Error()))
+				c.Error(errors.NewInternalServerError("Failed to validate organization quota").WithDetails(listErr.Error()))
 				return
 			}
 			ownedCount := 0
@@ -314,7 +314,7 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 					caller.ID, ownedCount, cap,
 				)
 				c.Error(errors.NewTooManyRequestsError(
-					"reached self-service workspace quota; contact an administrator to raise the limit",
+					"reached self-service organization quota; contact an administrator to raise the limit",
 				))
 				return
 			}
@@ -355,11 +355,11 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 	if err != nil {
 		// Check if this is an application-specific error
 		if appErr, ok := errors.IsAppError(err); ok {
-			logger.Error(ctx, "Failed to create workspace: application error", appErr)
+			logger.Error(ctx, "Failed to create organization: application error", appErr)
 			c.Error(appErr)
 		} else {
 			logger.ErrorWithFields(ctx, err, nil)
-			c.Error(errors.NewInternalServerError("Failed to create workspace").WithDetails(err.Error()))
+			c.Error(errors.NewInternalServerError("Failed to create organization").WithDetails(err.Error()))
 		}
 		return
 	}
@@ -383,7 +383,7 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 					createdTenant.ID, delErr,
 				)
 			}
-			c.Error(errors.NewInternalServerError("Failed to finalise workspace administration").WithDetails(err.Error()))
+			c.Error(errors.NewInternalServerError("Failed to finalise organization administration").WithDetails(err.Error()))
 			return
 		}
 
@@ -425,7 +425,7 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 						)
 					}
 					c.Error(errors.NewTooManyRequestsError(
-						"reached self-service workspace quota; contact an administrator to raise the limit",
+						"reached self-service organization quota; contact an administrator to raise the limit",
 					))
 					return
 				}
@@ -445,7 +445,7 @@ func (h *TenantHandler) CreateTenant(c *gin.Context) {
 				_ = h.memberService.RemoveMember(ctx, caller.ID, createdTenant.ID)
 			}
 			_ = h.service.DeleteTenant(ctx, createdTenant.ID)
-			c.Error(errors.NewInternalServerError("Failed to finalise default workspace").WithDetails(err.Error()))
+			c.Error(errors.NewInternalServerError("Failed to finalise default organization").WithDetails(err.Error()))
 			return
 		}
 	}
@@ -533,15 +533,15 @@ func (h *TenantHandler) autoCreateTenantAPIKey(ctx context.Context) bool {
 }
 
 // GetTenant godoc
-// @Summary      Lấy chi tiết đơn vị
-// @Description  Lấy chi tiết đơn vị theo ID
-// @Tags         Đơn vị
+// @Summary      Lấy chi tiết tổ chức
+// @Description  Lấy chi tiết tổ chức theo ID
+// @Tags         Tổ chức
 // @Accept       json
 // @Produce      json
-// @Param        id   path      int  true  "Tenant workspaceID"
-// @Success      200  {object}  map[string]interface{}  "Tenant workspaceDetails "
+// @Param        id   path      int  true  "Organization ID"
+// @Success      200  {object}  map[string]interface{}  "Organization details"
 // @Failure      400  {object}  errors.AppError         "Tham số không hợp lệ"
-// @Failure      404  {object}  errors.AppError         "Không tìm thấy đơn vị"
+// @Failure      404  {object}  errors.AppError         "Không tìm thấy tổ chức"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /tenants/{id} [get]
@@ -550,19 +550,19 @@ func (h *TenantHandler) GetTenant(c *gin.Context) {
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		logger.Errorf(ctx, "Invalid workspace ID: %s", secutils.SanitizeForLog(c.Param("id")))
-		c.Error(errors.NewBadRequestError("Invalid workspace ID"))
+		logger.Errorf(ctx, "Invalid organization ID: %s", secutils.SanitizeForLog(c.Param("id")))
+		c.Error(errors.NewBadRequestError("Invalid organization ID"))
 		return
 	}
 
 	tenant, err := h.service.GetTenantByID(ctx, id)
 	if err != nil {
 		if appErr, ok := errors.IsAppError(err); ok {
-			logger.Error(ctx, "Failed to retrieve workspace: application error", appErr)
+			logger.Error(ctx, "Failed to retrieve organization: application error", appErr)
 			c.Error(appErr)
 		} else {
 			logger.ErrorWithFields(ctx, err, nil)
-			c.Error(errors.NewInternalServerError("Failed to retrieve workspace").WithDetails(err.Error()))
+			c.Error(errors.NewInternalServerError("Failed to retrieve organization").WithDetails(err.Error()))
 		}
 		return
 	}
@@ -574,14 +574,14 @@ func (h *TenantHandler) GetTenant(c *gin.Context) {
 }
 
 // UpdateTenant godoc
-// @Summary      Update Tenant workspace
-// @Description  Cập nhật thông tin đơn vị
-// @Tags         Đơn vị
+// @Summary      Update organization
+// @Description  Cập nhật thông tin tổ chức
+// @Tags         Tổ chức
 // @Accept       json
 // @Produce      json
-// @Param        id       path      int           true  "Tenant workspaceID"
-// @Param        request  body      types.Tenant  true  "Thông tin đơn vị"
-// @Success      200      {object}  map[string]interface{}  "Đơn vị sau khi cập nhật"
+// @Param        id       path      int           true  "Organization ID"
+// @Param        request  body      types.Tenant  true  "Thông tin tổ chức"
+// @Success      200      {object}  map[string]interface{}  "Tổ chức sau khi cập nhật"
 // @Failure      400      {object}  errors.AppError         "Tham số không hợp lệ"
 // @Security     Bearer
 // @Router       /tenants/{id} [put]
@@ -592,8 +592,8 @@ func (h *TenantHandler) UpdateTenant(c *gin.Context) {
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		logger.Errorf(ctx, "Invalid workspace ID: %s", secutils.SanitizeForLog(c.Param("id")))
-		c.Error(errors.NewBadRequestError("Invalid workspace ID"))
+		logger.Errorf(ctx, "Invalid organization ID: %s", secutils.SanitizeForLog(c.Param("id")))
+		c.Error(errors.NewBadRequestError("Invalid organization ID"))
 		return
 	}
 
@@ -621,7 +621,7 @@ func (h *TenantHandler) UpdateTenant(c *gin.Context) {
 			c.Error(appErr)
 		} else {
 			logger.ErrorWithFields(ctx, err, nil)
-			c.Error(errors.NewInternalServerError("Failed to load workspace").WithDetails(err.Error()))
+			c.Error(errors.NewInternalServerError("Failed to load organization").WithDetails(err.Error()))
 		}
 		return
 	}
@@ -643,11 +643,11 @@ func (h *TenantHandler) UpdateTenant(c *gin.Context) {
 	updatedTenant, err := h.service.UpdateTenant(ctx, existing)
 	if err != nil {
 		if appErr, ok := errors.IsAppError(err); ok {
-			logger.Error(ctx, "Failed to update workspace: application error", appErr)
+			logger.Error(ctx, "Failed to update organization: application error", appErr)
 			c.Error(appErr)
 		} else {
 			logger.ErrorWithFields(ctx, err, nil)
-			c.Error(errors.NewInternalServerError("Failed to update workspace").WithDetails(err.Error()))
+			c.Error(errors.NewInternalServerError("Failed to update organization").WithDetails(err.Error()))
 		}
 		return
 	}
@@ -668,7 +668,7 @@ func (h *TenantHandler) ListAPIKeys(c *gin.Context) {
 	ctx := c.Request.Context()
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.Error(errors.NewBadRequestError("Invalid workspace ID"))
+		c.Error(errors.NewBadRequestError("Invalid organization ID"))
 		return
 	}
 	keys, err := h.apiKeyService.ListAPIKeys(ctx, id)
@@ -687,7 +687,7 @@ func (h *TenantHandler) CreateAPIKey(c *gin.Context) {
 	ctx := c.Request.Context()
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.Error(errors.NewBadRequestError("Invalid workspace ID"))
+		c.Error(errors.NewBadRequestError("Invalid organization ID"))
 		return
 	}
 	var req tenantAPIKeyCreateRequest
@@ -735,7 +735,7 @@ func (h *TenantHandler) UpdateAPIKey(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenantID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || tenantID == 0 {
-		c.Error(errors.NewBadRequestError("Invalid workspace ID"))
+		c.Error(errors.NewBadRequestError("Invalid organization ID"))
 		return
 	}
 	keyID, err := strconv.ParseUint(c.Param("key_id"), 10, 64)
@@ -773,7 +773,7 @@ func (h *TenantHandler) DeleteAPIKey(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenantID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.Error(errors.NewBadRequestError("Invalid workspace ID"))
+		c.Error(errors.NewBadRequestError("Invalid organization ID"))
 		return
 	}
 	keyID, err := strconv.ParseUint(c.Param("key_id"), 10, 64)
@@ -874,7 +874,7 @@ func validateTenantAPIKeyKnowledgeBaseIDsWithLookup(
 			return errors.NewValidationError("knowledge_base_ids contains an unknown knowledge base")
 		}
 		if kb.TenantID != tenantID {
-			return errors.NewForbiddenError("knowledge_base_ids contains a knowledge base outside this workspace")
+			return errors.NewForbiddenError("knowledge_base_ids contains a knowledge base outside this organization")
 		}
 	}
 	return nil
@@ -898,12 +898,12 @@ func apiPrincipalConfigForResponse(cfg *types.APIPrincipalConfig) apiPrincipalCo
 }
 
 // GetAPIPrincipalConfig godoc
-// @Summary      Lấy cấu hình định danh người dùng cho API Key của đơn vị
+// @Summary      Lấy cấu hình định danh người dùng cho API Key của tổ chức
 // @Description  Trả về cấu hình cách yêu cầu X-API-Key được ánh xạ thành Principal cuối (Owner)
-// @Tags         Đơn vị
+// @Tags         Tổ chức
 // @Accept       json
 // @Produce      json
-// @Param        id   path      int  true  "Tenant workspaceID"
+// @Param        id   path      int  true  "Organization ID"
 // @Success      200  {object}  map[string]interface{}  "API principal Configuration "
 // @Failure      400  {object}  errors.AppError         "Tham số không hợp lệ"
 // @Failure      403  {object}  errors.AppError         "Không có quyền"
@@ -913,7 +913,7 @@ func (h *TenantHandler) GetAPIPrincipalConfig(c *gin.Context) {
 	ctx := c.Request.Context()
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.Error(errors.NewBadRequestError("Invalid workspace ID"))
+		c.Error(errors.NewBadRequestError("Invalid organization ID"))
 		return
 	}
 	tenant, err := h.service.GetTenantByID(ctx, id)
@@ -921,7 +921,7 @@ func (h *TenantHandler) GetAPIPrincipalConfig(c *gin.Context) {
 		if appErr, ok := errors.IsAppError(err); ok {
 			c.Error(appErr)
 		} else {
-			c.Error(errors.NewInternalServerError("Failed to load workspace").WithDetails(err.Error()))
+			c.Error(errors.NewInternalServerError("Failed to load organization").WithDetails(err.Error()))
 		}
 		return
 	}
@@ -932,12 +932,12 @@ func (h *TenantHandler) GetAPIPrincipalConfig(c *gin.Context) {
 }
 
 // UpdateAPIPrincipalConfig godoc
-// @Summary      Cập nhật cấu hình định danh người dùng cho API Key của đơn vị
+// @Summary      Cập nhật cấu hình định danh người dùng cho API Key của tổ chức
 // @Description  Cấu hình cách yêu cầu X-API-Key được ánh xạ thành Principal cuối (Owner)
-// @Tags         Đơn vị
+// @Tags         Tổ chức
 // @Accept       json
 // @Produce      json
-// @Param        id       path      int                           true  "Tenant workspaceID"
+// @Param        id       path      int                           true  "Organization ID"
 // @Param        request  body      handler.apiPrincipalConfigRequest  true  "API principal Configuration "
 // @Success      200      {object}  map[string]interface{}        "Cấu hình sau khi cập nhật"
 // @Failure      400      {object}  errors.AppError               "Tham số không hợp lệ"
@@ -948,7 +948,7 @@ func (h *TenantHandler) UpdateAPIPrincipalConfig(c *gin.Context) {
 	ctx := c.Request.Context()
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.Error(errors.NewBadRequestError("Invalid workspace ID"))
+		c.Error(errors.NewBadRequestError("Invalid organization ID"))
 		return
 	}
 	var req apiPrincipalConfigRequest
@@ -971,7 +971,7 @@ func (h *TenantHandler) UpdateAPIPrincipalConfig(c *gin.Context) {
 		if appErr, ok := errors.IsAppError(err); ok {
 			c.Error(appErr)
 		} else {
-			c.Error(errors.NewInternalServerError("Failed to load workspace").WithDetails(err.Error()))
+			c.Error(errors.NewInternalServerError("Failed to load organization").WithDetails(err.Error()))
 		}
 		return
 	}
@@ -1021,11 +1021,11 @@ func (h *TenantHandler) UpdateAPIPrincipalConfig(c *gin.Context) {
 
 // CreateAPIPrincipalTestToken godoc
 // @Summary      Sinh JWT thử nghiệm cho API Playground
-// @Description  Dùng khoá HMAC đã lưu của đơn vị để ký JWT ngắn hạn cho người dùng bên ngoài (Owner)
-// @Tags         Đơn vị
+// @Description  Dùng khoá HMAC đã lưu của tổ chức để ký JWT ngắn hạn cho người dùng bên ngoài (Owner)
+// @Tags         Tổ chức
 // @Accept       json
 // @Produce      json
-// @Param        id       path      int                                  true  "Tenant workspaceID"
+// @Param        id       path      int                                  true  "Organization ID"
 // @Param        request  body      handler.apiPrincipalTestTokenRequest true  "Tham số token thử nghiệm"
 // @Success      200      {object}  map[string]interface{}               "JWT ngắn hạn"
 // @Failure      400      {object}  errors.AppError                      "Tham số không hợp lệ"
@@ -1036,7 +1036,7 @@ func (h *TenantHandler) CreateAPIPrincipalTestToken(c *gin.Context) {
 	ctx := c.Request.Context()
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		c.Error(errors.NewBadRequestError("Invalid workspace ID"))
+		c.Error(errors.NewBadRequestError("Invalid organization ID"))
 		return
 	}
 
@@ -1057,7 +1057,7 @@ func (h *TenantHandler) CreateAPIPrincipalTestToken(c *gin.Context) {
 		if appErr, ok := errors.IsAppError(err); ok {
 			c.Error(appErr)
 		} else {
-			c.Error(errors.NewInternalServerError("Failed to load workspace").WithDetails(err.Error()))
+			c.Error(errors.NewInternalServerError("Failed to load organization").WithDetails(err.Error()))
 		}
 		return
 	}
@@ -1124,12 +1124,12 @@ func validateAPIPrincipalExternalUserID(id string) error {
 }
 
 // DeleteTenant godoc
-// @Summary      Delete Tenant workspace
-// @Description  Xoá đơn vị chỉ định
-// @Tags         Đơn vị
+// @Summary      Delete organization
+// @Description  Xoá tổ chức chỉ định
+// @Tags         Tổ chức
 // @Accept       json
 // @Produce      json
-// @Param        id   path      int  true  "Tenant workspaceID"
+// @Param        id   path      int  true  "Organization ID"
 // @Success      200  {object}  map[string]interface{}  "Xoá thành công"
 // @Failure      400  {object}  errors.AppError         "Tham số không hợp lệ"
 // @Security     Bearer
@@ -1141,8 +1141,8 @@ func (h *TenantHandler) DeleteTenant(c *gin.Context) {
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		logger.Errorf(ctx, "Invalid workspace ID: %s", secutils.SanitizeForLog(c.Param("id")))
-		c.Error(errors.NewBadRequestError("Invalid workspace ID"))
+		logger.Errorf(ctx, "Invalid organization ID: %s", secutils.SanitizeForLog(c.Param("id")))
+		c.Error(errors.NewBadRequestError("Invalid organization ID"))
 		return
 	}
 
@@ -1154,37 +1154,37 @@ func (h *TenantHandler) DeleteTenant(c *gin.Context) {
 		// or delete first.
 		var depErr *repository.TenantKBDependencyError
 		if stderrors.As(err, &depErr) {
-			logger.Warnf(ctx, "Workspace deletion blocked by knowledge base %s, ID: %d",
+			logger.Warnf(ctx, "Organization deletion blocked by knowledge base %s, ID: %d",
 				secutils.SanitizeForLog(depErr.KnowledgeBaseID), id)
 			c.Error(errors.NewConflictError(
-				fmt.Sprintf("Workspace cannot be deleted while knowledge base %q still uses it", depErr.KnowledgeBaseID),
+				fmt.Sprintf("Organization cannot be deleted while knowledge base %q still uses it", depErr.KnowledgeBaseID),
 			).WithDetails(fmt.Sprintf("knowledge_base_id=%s", depErr.KnowledgeBaseID)))
 			return
 		}
 		if appErr, ok := errors.IsAppError(err); ok {
-			logger.Error(ctx, "Failed to delete workspace: application error", appErr)
+			logger.Error(ctx, "Failed to delete organization: application error", appErr)
 			c.Error(appErr)
 		} else {
 			logger.ErrorWithFields(ctx, err, nil)
-			c.Error(errors.NewInternalServerError("Failed to delete workspace").WithDetails(err.Error()))
+			c.Error(errors.NewInternalServerError("Failed to delete organization").WithDetails(err.Error()))
 		}
 		return
 	}
 
-	logger.Infof(ctx, "Workspace deleted successfully, ID: %d", id)
+	logger.Infof(ctx, "Organization deleted successfully, ID: %d", id)
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"message": "Workspace deleted successfully",
+		"message": "Organization deleted successfully",
 	})
 }
 
 // ListTenants godoc
-// @Summary      Lấy danh sách đơn vị
-// @Description  Lấy danh sách đơn vị người dùng hiện tại truy cập được
-// @Tags         Đơn vị
+// @Summary      Lấy danh sách tổ chức
+// @Description  Lấy danh sách tổ chức người dùng hiện tại truy cập được
+// @Tags         Tổ chức
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "Tenant workspaceList "
+// @Success      200  {object}  map[string]interface{}  "Organization list"
 // @Failure      500  {object}  errors.AppError         "Lỗi hệ thống"
 // @Security     Bearer
 // @Router       /tenants [get]
@@ -1206,12 +1206,12 @@ func (h *TenantHandler) ListTenants(c *gin.Context) {
 }
 
 // ListAllTenants godoc
-// @Summary      Lấy danh sách tất cả đơn vị
-// @Description  Lấy tất cả đơn vị trong hệ thống (cần quyền truy cập liên đơn vị)
-// @Tags         Đơn vị
+// @Summary      Lấy danh sách tất cả tổ chức
+// @Description  Lấy tất cả tổ chức trong hệ thống (cần quyền truy cập liên tổ chức)
+// @Tags         Tổ chức
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "Danh sách tất cả đơn vị"
+// @Success      200  {object}  map[string]interface{}  "Danh sách tất cả tổ chức"
 // @Failure      403  {object}  errors.AppError         "Không có quyền"
 // @Security     Bearer
 // @Router       /tenants/all [get]
@@ -1225,11 +1225,11 @@ func (h *TenantHandler) ListAllTenants(c *gin.Context) {
 	if err != nil {
 		// Check if this is an application-specific error
 		if appErr, ok := errors.IsAppError(err); ok {
-			logger.Error(ctx, "Failed to retrieve all workspaces list: application error", appErr)
+			logger.Error(ctx, "Failed to retrieve all organizations list: application error", appErr)
 			c.Error(appErr)
 		} else {
 			logger.ErrorWithFields(ctx, err, nil)
-			c.Error(errors.NewInternalServerError("Failed to retrieve all workspaces list").WithDetails(err.Error()))
+			c.Error(errors.NewInternalServerError("Failed to retrieve all organizations list").WithDetails(err.Error()))
 		}
 		return
 	}
@@ -1243,13 +1243,13 @@ func (h *TenantHandler) ListAllTenants(c *gin.Context) {
 }
 
 // SearchTenants godoc
-// @Summary      Tìm kiếm đơn vị
-// @Description  Tìm kiếm đơn vị theo trang (cần quyền truy cập liên đơn vị)
-// @Tags         Đơn vị
+// @Summary      Tìm kiếm tổ chức
+// @Description  Tìm kiếm tổ chức theo trang (cần quyền truy cập liên tổ chức)
+// @Tags         Tổ chức
 // @Accept       json
 // @Produce      json
 // @Param        keyword    query     string  false  "Từ khoá tìm kiếm"
-// @Param        tenant_id  query     int     false  "Lọc theo ID đơn vị"
+// @Param        tenant_id  query     int     false  "Lọc theo ID tổ chức"
 // @Param        page       query     int     false  "Số trang"  default(1)
 // @Param        page_size  query     int     false  "Số mục mỗi trang"  default(20)
 // @Success      200        {object}  map[string]interface{}  "Kết quả tìm kiếm"
@@ -1295,11 +1295,11 @@ func (h *TenantHandler) SearchTenants(c *gin.Context) {
 	if err != nil {
 		// Check if this is an application-specific error
 		if appErr, ok := errors.IsAppError(err); ok {
-			logger.Error(ctx, "Failed to search workspaces: application error", appErr)
+			logger.Error(ctx, "Failed to search organizations: application error", appErr)
 			c.Error(appErr)
 		} else {
 			logger.ErrorWithFields(ctx, err, nil)
-			c.Error(errors.NewInternalServerError("Failed to search workspaces").WithDetails(err.Error()))
+			c.Error(errors.NewInternalServerError("Failed to search organizations").WithDetails(err.Error()))
 		}
 		return
 	}
@@ -1316,9 +1316,9 @@ func (h *TenantHandler) SearchTenants(c *gin.Context) {
 }
 
 // GetTenantKV godoc
-// @Summary      Lấy cấu hình KV của đơn vị
-// @Description  Lấy cấu hình KV cấp đơn vị (hỗ trợ web-search-config, prompt-templates, parser-engine-config, storage-engine-config, chat-history-config, retrieval-config)
-// @Tags         Đơn vị
+// @Summary      Lấy cấu hình KV của tổ chức
+// @Description  Lấy cấu hình KV cấp tổ chức (hỗ trợ web-search-config, prompt-templates, parser-engine-config, storage-engine-config, chat-history-config, retrieval-config)
+// @Tags         Tổ chức
 // @Accept       json
 // @Produce      json
 // @Param        key  path      string  true  "Tên khoá cấu hình"
@@ -1369,9 +1369,9 @@ func (h *TenantHandler) GetTenantKV(c *gin.Context) {
 }
 
 // UpdateTenantKV godoc
-// @Summary      Update Tenant workspaceKVConfiguration
-// @Description  Cập nhật cấu hình KV cấp đơn vị (hỗ trợ web-search-config, parser-engine-config, storage-engine-config, chat-history-config, retrieval-config)
-// @Tags         Đơn vị
+// @Summary      Update organization KV configuration
+// @Description  Cập nhật cấu hình KV cấp tổ chức (hỗ trợ web-search-config, parser-engine-config, storage-engine-config, chat-history-config, retrieval-config)
+// @Tags         Tổ chức
 // @Accept       json
 // @Produce      json
 // @Param        key      path      string  true  "Tên khoá cấu hình"
@@ -1454,8 +1454,8 @@ func (h *TenantHandler) updateTenantWebSearchConfigInternal(c *gin.Context) {
 
 	tenant, _ := types.TenantInfoFromContext(ctx)
 	if tenant == nil {
-		logger.Error(ctx, "Workspace is empty")
-		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		logger.Error(ctx, "Organization is empty")
+		c.Error(errors.NewBadRequestError("Organization is empty"))
 		return
 	}
 
@@ -1471,11 +1471,11 @@ func (h *TenantHandler) updateTenantWebSearchConfigInternal(c *gin.Context) {
 	updatedTenant, err := h.service.UpdateTenant(ctx, tenant)
 	if err != nil {
 		if appErr, ok := errors.IsAppError(err); ok {
-			logger.Error(ctx, "Failed to update workspace: application error", appErr)
+			logger.Error(ctx, "Failed to update organization: application error", appErr)
 			c.Error(appErr)
 		} else {
 			logger.ErrorWithFields(ctx, err, nil)
-			c.Error(errors.NewInternalServerError("Failed to update workspace web search config").WithDetails(err.Error()))
+			c.Error(errors.NewInternalServerError("Failed to update organization web search config").WithDetails(err.Error()))
 		}
 		return
 	}
@@ -1487,9 +1487,9 @@ func (h *TenantHandler) updateTenantWebSearchConfigInternal(c *gin.Context) {
 }
 
 // GetTenantWebSearchConfig godoc
-// @Summary      Lấy cấu hình tìm kiếm web của đơn vị
-// @Description  Lấy cấu hình tìm kiếm web của đơn vị
-// @Tags         Đơn vị
+// @Summary      Lấy cấu hình tìm kiếm web của tổ chức
+// @Description  Lấy cấu hình tìm kiếm web của tổ chức
+// @Tags         Tổ chức
 // @Accept       json
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}  "Cấu hình tìm kiếm web"
@@ -1503,8 +1503,8 @@ func (h *TenantHandler) GetTenantWebSearchConfig(c *gin.Context) {
 	// Get tenant
 	tenant, _ := types.TenantInfoFromContext(ctx)
 	if tenant == nil {
-		logger.Error(ctx, "Workspace is empty")
-		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		logger.Error(ctx, "Organization is empty")
+		c.Error(errors.NewBadRequestError("Organization is empty"))
 		return
 	}
 
@@ -1520,8 +1520,8 @@ func (h *TenantHandler) GetTenantParserEngineConfig(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenant, _ := types.TenantInfoFromContext(ctx)
 	if tenant == nil {
-		logger.Error(ctx, "Workspace is empty")
-		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		logger.Error(ctx, "Organization is empty")
+		c.Error(errors.NewBadRequestError("Organization is empty"))
 		return
 	}
 	data := types.ParserEngineConfigForResponse(tenant.ParserEngineConfig, true)
@@ -1545,8 +1545,8 @@ func (h *TenantHandler) updateTenantParserEngineConfigInternal(c *gin.Context) {
 	}
 	tenant, _ := types.TenantInfoFromContext(ctx)
 	if tenant == nil {
-		logger.Error(ctx, "Workspace is empty")
-		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		logger.Error(ctx, "Organization is empty")
+		c.Error(errors.NewBadRequestError("Organization is empty"))
 		return
 	}
 	merged := types.MergeParserEngineConfigForUpdate(&cfg, tenant.ParserEngineConfig)
@@ -1561,7 +1561,7 @@ func (h *TenantHandler) updateTenantParserEngineConfigInternal(c *gin.Context) {
 			c.Error(appErr)
 		} else {
 			logger.ErrorWithFields(ctx, err, nil)
-			c.Error(errors.NewInternalServerError("Failed to update workspace parser engine config").WithDetails(err.Error()))
+			c.Error(errors.NewInternalServerError("Failed to update organization parser engine config").WithDetails(err.Error()))
 		}
 		return
 	}
@@ -1577,8 +1577,8 @@ func (h *TenantHandler) GetTenantStorageEngineConfig(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenant, _ := types.TenantInfoFromContext(ctx)
 	if tenant == nil {
-		logger.Error(ctx, "Workspace is empty")
-		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		logger.Error(ctx, "Organization is empty")
+		c.Error(errors.NewBadRequestError("Organization is empty"))
 		return
 	}
 	data := types.StorageEngineConfigForResponse(tenant.StorageEngineConfig, true)
@@ -1615,8 +1615,8 @@ func (h *TenantHandler) updateTenantStorageEngineConfigInternal(c *gin.Context) 
 	cfg.DefaultProvider = provider
 	tenant, _ := types.TenantInfoFromContext(ctx)
 	if tenant == nil {
-		logger.Error(ctx, "Workspace is empty")
-		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		logger.Error(ctx, "Organization is empty")
+		c.Error(errors.NewBadRequestError("Organization is empty"))
 		return
 	}
 	merged := types.MergeStorageEngineConfigForUpdate(&cfg, tenant.StorageEngineConfig)
@@ -1627,7 +1627,7 @@ func (h *TenantHandler) updateTenantStorageEngineConfigInternal(c *gin.Context) 
 			c.Error(appErr)
 		} else {
 			logger.ErrorWithFields(ctx, err, nil)
-			c.Error(errors.NewInternalServerError("Failed to update workspace storage engine config").WithDetails(err.Error()))
+			c.Error(errors.NewInternalServerError("Failed to update organization storage engine config").WithDetails(err.Error()))
 		}
 		return
 	}
@@ -1641,7 +1641,7 @@ func (h *TenantHandler) updateTenantStorageEngineConfigInternal(c *gin.Context) 
 // GetPromptTemplates godoc
 // @Summary      Lấy mẫu prompt
 // @Description  Lấy danh sách mẫu prompt cấu hình trong hệ thống
-// @Tags         Đơn vị
+// @Tags         Tổ chức
 // @Accept       json
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}  "Prompt templateConfiguration "
@@ -1684,8 +1684,8 @@ func (h *TenantHandler) GetTenantChatHistoryConfig(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenant, _ := types.TenantInfoFromContext(ctx)
 	if tenant == nil {
-		logger.Error(ctx, "Workspace is empty")
-		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		logger.Error(ctx, "Organization is empty")
+		c.Error(errors.NewBadRequestError("Organization is empty"))
 		return
 	}
 	data := tenant.ChatHistoryConfig
@@ -1727,8 +1727,8 @@ func (h *TenantHandler) updateTenantChatHistoryConfigInternal(c *gin.Context) {
 
 	tenant, _ := types.TenantInfoFromContext(ctx)
 	if tenant == nil {
-		logger.Error(ctx, "Workspace is empty")
-		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		logger.Error(ctx, "Organization is empty")
+		c.Error(errors.NewBadRequestError("Organization is empty"))
 		return
 	}
 
@@ -1826,8 +1826,8 @@ func (h *TenantHandler) GetTenantRetrievalConfig(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenant, _ := types.TenantInfoFromContext(ctx)
 	if tenant == nil {
-		logger.Error(ctx, "Workspace is empty")
-		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		logger.Error(ctx, "Organization is empty")
+		c.Error(errors.NewBadRequestError("Organization is empty"))
 		return
 	}
 	data := tenant.RetrievalConfig
@@ -1875,8 +1875,8 @@ func (h *TenantHandler) updateTenantRetrievalConfigInternal(c *gin.Context) {
 
 	tenant, _ := types.TenantInfoFromContext(ctx)
 	if tenant == nil {
-		logger.Error(ctx, "Workspace is empty")
-		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		logger.Error(ctx, "Organization is empty")
+		c.Error(errors.NewBadRequestError("Organization is empty"))
 		return
 	}
 
@@ -1903,8 +1903,8 @@ func (h *TenantHandler) GetTenantMemoryConfig(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenant, _ := types.TenantInfoFromContext(ctx)
 	if tenant == nil {
-		logger.Error(ctx, "Workspace is empty")
-		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		logger.Error(ctx, "Organization is empty")
+		c.Error(errors.NewBadRequestError("Organization is empty"))
 		return
 	}
 	data := h.platformMemoryConfig(ctx)
@@ -1974,8 +1974,8 @@ func (h *TenantHandler) updateTenantMemoryConfigInternal(c *gin.Context) {
 
 	tenant, _ := types.TenantInfoFromContext(ctx)
 	if tenant == nil {
-		logger.Error(ctx, "Workspace is empty")
-		c.Error(errors.NewBadRequestError("Workspace is empty"))
+		logger.Error(ctx, "Organization is empty")
+		c.Error(errors.NewBadRequestError("Organization is empty"))
 		return
 	}
 
@@ -2072,9 +2072,9 @@ type TenantDirectoryEntry struct {
 }
 
 // ListTenantDirectory godoc
-// @Summary      List workspace names
-// @Description  Every workspace's id and name, for choosing which unit to share a knowledge base with. Human callers only.
-// @Tags         Đơn vị
+// @Summary      List organization names
+// @Description  Every organization's id and name, for choosing which organization to share a knowledge base with. Human callers only.
+// @Tags         Tổ chức
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
@@ -2082,13 +2082,13 @@ type TenantDirectoryEntry struct {
 func (h *TenantHandler) ListTenantDirectory(c *gin.Context) {
 	ctx := c.Request.Context()
 	if !access.IsAuthenticatedHuman(ctx, types.CallerFromContext(ctx)) {
-		c.Error(errors.NewForbiddenError("the workspace directory is for signed-in users"))
+		c.Error(errors.NewForbiddenError("the organization directory is for signed-in users"))
 		return
 	}
 	tenants, err := h.service.ListTenants(ctx)
 	if err != nil {
 		logger.Errorf(ctx, "ListTenantDirectory: %v", err)
-		c.Error(errors.NewInternalServerError("failed to list workspaces"))
+		c.Error(errors.NewInternalServerError("failed to list organizations"))
 		return
 	}
 	items := make([]TenantDirectoryEntry, 0, len(tenants))

@@ -89,7 +89,7 @@ func (r *knowledgeRepository) AddKnowledgeTagRelations(
 			return err
 		}
 		if knowledgeCount != 1 {
-			return fmt.Errorf("knowledge %s does not belong to tenant %d and knowledge base %s", knowledgeID, tenantID, kbID)
+			return fmt.Errorf("knowledge %s does not belong to organization %d and knowledge base %s", knowledgeID, tenantID, kbID)
 		}
 
 		var tagCount int64
@@ -99,7 +99,7 @@ func (r *knowledgeRepository) AddKnowledgeTagRelations(
 			return err
 		}
 		if tagCount != int64(len(unique)) {
-			return fmt.Errorf("one or more tags do not belong to tenant %d and knowledge base %s", tenantID, kbID)
+			return fmt.Errorf("one or more tags do not belong to organization %d and knowledge base %s", tenantID, kbID)
 		}
 
 		now := time.Now()

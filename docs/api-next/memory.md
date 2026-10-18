@@ -15,10 +15,10 @@ handler: `GetSettings` · `memory.go`
 `data` is `MemorySettings`:
 | field | type | req | notes |
 |---|---|---|---|
-| `workspace_enabled` | boolean | yes | WorkspaceEnabled is the admin switch on the workspace. |
-| `user_enabled` | boolean | yes | UserEnabled is the caller's own opt out. Meaningless while the workspace switch is off, but still reported so the toggle keeps its position when an admin turns the workspace back o |
+| `workspace_enabled` | boolean | yes | WorkspaceEnabled is the admin switch on the organization. |
+| `user_enabled` | boolean | yes | UserEnabled is the caller's own opt out. Meaningless while the organization switch is off, but still reported so the toggle keeps its position when an admin turns the organization back o |
 | `effective` | boolean | yes | Effective is what actually happens: WorkspaceEnabled && UserEnabled. |
-| `write_mode` | string | yes | WriteMode is the workspace write mode. |
+| `write_mode` | string | yes | WriteMode is the organization write mode. |
 | `item_count` | number | yes | ItemCount is how many active memories the caller currently has. |
 | `max_items` | number | yes | MaxItems is the capacity cap after which the lowest ranked are archived. |
 
@@ -39,10 +39,10 @@ handler: `UpdateSettings` · `memory.go`
 `data` is `MemorySettings`:
 | field | type | req | notes |
 |---|---|---|---|
-| `workspace_enabled` | boolean | yes | WorkspaceEnabled is the admin switch on the workspace. |
-| `user_enabled` | boolean | yes | UserEnabled is the caller's own opt out. Meaningless while the workspace switch is off, but still reported so the toggle keeps its position when an admin turns the workspace back o |
+| `workspace_enabled` | boolean | yes | WorkspaceEnabled is the admin switch on the organization. |
+| `user_enabled` | boolean | yes | UserEnabled is the caller's own opt out. Meaningless while the organization switch is off, but still reported so the toggle keeps its position when an admin turns the organization back o |
 | `effective` | boolean | yes | Effective is what actually happens: WorkspaceEnabled && UserEnabled. |
-| `write_mode` | string | yes | WriteMode is the workspace write mode. |
+| `write_mode` | string | yes | WriteMode is the organization write mode. |
 | `item_count` | number | yes | ItemCount is how many active memories the caller currently has. |
 | `max_items` | number | yes | MaxItems is the capacity cap after which the lowest ranked are archived. |
 
@@ -360,15 +360,15 @@ handler: `updateTenantMemoryConfigInternal` · `tenant.go`
 **Body** `MemoryConfig`:
 | field | type | req | notes |
 |---|---|---|---|
-| `enabled` | boolean |  | Enabled is on for workspaces that never saved a config (see DefaultMemoryConfig); once an admin saves, the stored value wins. |
+| `enabled` | boolean |  | Enabled is on for organizations that never saved a config (see DefaultMemoryConfig); once an admin saves, the stored value wins. |
 | `write_mode` | string |  | WriteMode is MemoryWriteExplicitOnly or MemoryWriteAuto. |
 | `extract_model_id` | string |  | ExtractModelID is the model used by the background extraction task. Empty means "use the model the conversation itself used", which is what the settings UI promises, so the extract |
 | `max_items` | number |  | MaxItems caps active items per subject. 0 means DefaultMemoryMaxItems. |
 | `extract_delay_seconds` | number |  | ExtractDelaySeconds is how long a finished turn waits before distillation runs. Waiting lets one model call cover the several messages a user usually sends in a row. 0 means the de |
 | `extract_min_interval_seconds` | number |  | ExtractMinIntervalSeconds is the floor between two distillation runs for the same person, and exists purely to bound cost. It never drops a turn: a turn arriving inside the interva |
-| `extract_instructions` | string |  | ExtractInstructions are workspace-specific rules appended to the distillation prompt, for policies the product cannot guess ("never record customer names", "always note the environ |
+| `extract_instructions` | string |  | ExtractInstructions are organization-specific rules appended to the distillation prompt, for policies the product cannot guess ("never record customer names", "always note the environ |
 | `interest_threshold` | number |  | InterestThreshold is how many separate conversations must touch a topic before it becomes a stored interest. 0 means the default. Setting it to 1 records every topic on first sight |
-| `embedding_model_id` | string |  | EmbeddingModelID is the single model used to score memory against a question. It is pinned per workspace: knowledge bases each have their own embedding model, and grabbing whicheve |
+| `embedding_model_id` | string |  | EmbeddingModelID is the single model used to score memory against a question. It is pinned per organization: knowledge bases each have their own embedding model, and grabbing whicheve |
 | `vector_recall` | boolean |  | VectorRecall adds semantic similarity to memory recall. Nil means on when an embedding model is reachable. Lexical matching alone cannot find a memory the user has re-worded, which |
 | `retrieval_conditioning` | boolean |  | RetrievalConditioning lets memory shape retrieval — query rewriting and per-document ranking — rather than only being appended to the answer prompt. This is where memory earns its  |
 
@@ -379,15 +379,15 @@ handler: `updateTenantMemoryConfigInternal` · `tenant.go`
 `data` is `MemoryConfig`:
 | field | type | req | notes |
 |---|---|---|---|
-| `enabled` | boolean | yes | Enabled is on for workspaces that never saved a config (see DefaultMemoryConfig); once an admin saves, the stored value wins. |
+| `enabled` | boolean | yes | Enabled is on for organizations that never saved a config (see DefaultMemoryConfig); once an admin saves, the stored value wins. |
 | `write_mode` | string | yes | WriteMode is MemoryWriteExplicitOnly or MemoryWriteAuto. |
 | `extract_model_id` | string | yes | ExtractModelID is the model used by the background extraction task. Empty means "use the model the conversation itself used", which is what the settings UI promises, so the extract |
 | `max_items` | number | yes | MaxItems caps active items per subject. 0 means DefaultMemoryMaxItems. |
 | `extract_delay_seconds` | number | yes | ExtractDelaySeconds is how long a finished turn waits before distillation runs. Waiting lets one model call cover the several messages a user usually sends in a row. 0 means the de |
 | `extract_min_interval_seconds` | number | yes | ExtractMinIntervalSeconds is the floor between two distillation runs for the same person, and exists purely to bound cost. It never drops a turn: a turn arriving inside the interva |
-| `extract_instructions` | string | yes | ExtractInstructions are workspace-specific rules appended to the distillation prompt, for policies the product cannot guess ("never record customer names", "always note the environ |
+| `extract_instructions` | string | yes | ExtractInstructions are organization-specific rules appended to the distillation prompt, for policies the product cannot guess ("never record customer names", "always note the environ |
 | `interest_threshold` | number | yes | InterestThreshold is how many separate conversations must touch a topic before it becomes a stored interest. 0 means the default. Setting it to 1 records every topic on first sight |
-| `embedding_model_id` | string | yes | EmbeddingModelID is the single model used to score memory against a question. It is pinned per workspace: knowledge bases each have their own embedding model, and grabbing whicheve |
+| `embedding_model_id` | string | yes | EmbeddingModelID is the single model used to score memory against a question. It is pinned per organization: knowledge bases each have their own embedding model, and grabbing whicheve |
 | `vector_recall` | boolean | yes | VectorRecall adds semantic similarity to memory recall. Nil means on when an embedding model is reachable. Lexical matching alone cannot find a memory the user has re-worded, which |
 | `retrieval_conditioning` | boolean | yes | RetrievalConditioning lets memory shape retrieval — query rewriting and per-document ranking — rather than only being appended to the answer prompt. This is where memory earns its  |
 

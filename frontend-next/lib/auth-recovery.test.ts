@@ -123,6 +123,18 @@ describe("loadWithStaleTenantRecovery on tenant-header 400 (issue 1)", () => {
     }, true);
     assert.equal(outcome.kind, "ok");
     assert.deepEqual(seen, [false, true]);
+  });
+
+  it("treats the organization wording of the deleted-tenant 400 the same way", async () => {
+    const seen: boolean[] = [];
+    const outcome = await loadWithStaleTenantRecovery(async (skipTenant: boolean) => {
+      seen.push(skipTenant);
+      if (!skipTenant)
+        throw new ApiError(400, "Invalid target organization ID", { error: "Invalid target organization ID" });
+      return { user: "u1" };
+    }, true);
+    assert.equal(outcome.kind, "ok");
+    assert.deepEqual(seen, [false, true]);
     assert.equal(outcome.kind === "ok" && outcome.recoveredFromStaleTenant, true);
   });
 
@@ -162,8 +174,8 @@ describe("loadWithStaleTenantRecovery on tenant-header 400 (issue 1)", () => {
 describe("TENANT_MEMBERSHIP_REQUIRED (stale home tenant guest)", () => {
   // internal/middleware/auth.go: valid session, tenant without membership.
   const membershipRequired = () =>
-    new ApiError(403, "Forbidden: not a member of the target workspace", {
-      error: "Forbidden: not a member of the target workspace",
+    new ApiError(403, "Forbidden: not a member of the target organization", {
+      error: "Forbidden: not a member of the target organization",
       code: "TENANT_MEMBERSHIP_REQUIRED",
     });
 

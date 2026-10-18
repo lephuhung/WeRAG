@@ -32,7 +32,7 @@ func writeResourceIDs(ids []string) ([]string, error) {
 func writeExecutionTenant(ctx context.Context) (uint64, error) {
 	tenant, ok := types.TenantIDFromContext(ctx)
 	if !ok || tenant == 0 {
-		return 0, apperrors.NewUnauthorizedError("workspace context unavailable")
+		return 0, apperrors.NewUnauthorizedError("organization context unavailable")
 	}
 	return tenant, nil
 }

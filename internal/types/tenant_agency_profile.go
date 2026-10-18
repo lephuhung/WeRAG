@@ -8,10 +8,10 @@ import (
 	"unicode/utf8"
 )
 
-// TenantAgencyProfile is the issuing agency of a workspace (one đơn vị), as
+// TenantAgencyProfile is the issuing agency of an organization (one đơn vị), as
 // the header and signature block of its documents need it. A document drafted
 // from chat (prepare_document_template) takes these values from here, never
-// from the model; the workspace's admin or a SuperAdmin edits them.
+// from the model; the organization's admin or a SuperAdmin edits them.
 type TenantAgencyProfile struct {
 	TenantID uint64 `json:"tenant_id" gorm:"primaryKey"`
 	// ParentAgency is the cơ quan chủ quản ("UBND TỈNH THỪA THIÊN HUẾ"),

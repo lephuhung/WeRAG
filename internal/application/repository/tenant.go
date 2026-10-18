@@ -15,7 +15,7 @@ import (
 
 var (
 	ErrTenantNotFound         = errors.New("tenant not found")
-	ErrTenantHasKnowledgeBase = errors.New("tenant has associated knowledge bases")
+	ErrTenantHasKnowledgeBase = errors.New("organization has associated knowledge bases")
 )
 
 // TenantKBDependencyError rejects a tenant deletion while an active
@@ -30,7 +30,7 @@ type TenantKBDependencyError struct {
 }
 
 func (e *TenantKBDependencyError) Error() string {
-	return fmt.Sprintf("tenant %d cannot be deleted: knowledge base %q still uses it as data scope",
+	return fmt.Sprintf("organization %d cannot be deleted: knowledge base %q still uses it as data scope",
 		e.TenantID, e.KnowledgeBaseID)
 }
 

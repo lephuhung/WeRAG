@@ -50,7 +50,7 @@ type invitationLookupRequest struct {
 
 // LookupInvitationByToken godoc
 // @Summary      Giải mã token của liên kết mời dùng chung
-// @Description  Theo token trong liên kết mời, trả về ngữ cảnh lời mời (tên đơn vị / vai trò / thời hạn)
+// @Description  Theo token trong liên kết mời, trả về ngữ cảnh lời mời (tên tổ chức / vai trò / thời hạn)
 // @Description  để trang đăng ký hiển thị. Không cần xác thực; token không hợp lệ hoặc đã thu hồi trả về 410.
 // @Description  Dùng POST + body thay vì GET + path để token không lọt vào access log / lịch sử trình duyệt / tracing.
 // @Tags         Xác thực
@@ -108,7 +108,7 @@ func (h *AuthHandler) LookupInvitationByToken(c *gin.Context) {
 // RegisterByInvite godoc
 // @Summary      Đăng ký bằng liên kết mời dùng chung
 // @Description  Hoàn tất đăng ký bằng token liên kết mời do Owner tạo, bỏ qua chặn của chế độ invite_only.
-// @Description  Người đăng ký tự điền email (không gắn với token); đăng ký xong tự động vào đơn vị tương ứng.
+// @Description  Người đăng ký tự điền email (không gắn với token); đăng ký xong tự động vào tổ chức tương ứng.
 // @Tags         Xác thực
 // @Accept       json
 // @Produce      json
@@ -166,7 +166,7 @@ func (h *AuthHandler) RegisterByInvite(c *gin.Context) {
 	// existing account via /me/invitations once we wire that path.
 	if existing, _ := h.userService.GetUserByEmail(ctx, req.Email); existing != nil {
 		c.Error(apperrors.NewConflictError(
-			"this email already has an account; please log in to join the workspace"))
+			"this email already has an account; please log in to join the organization"))
 		return
 	}
 

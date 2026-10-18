@@ -210,8 +210,8 @@ func (s *messageService) GetRecentMessagesBySession(ctx context.Context,
 
 	tenantID, ok := sessionTenantIDForLookup(ctx)
 	if !ok {
-		logger.Error(ctx, "Workspace ID not found in context for session lookup")
-		return nil, errors.New("workspace ID not found in context")
+		logger.Error(ctx, "Organization ID not found in context for session lookup")
+		return nil, errors.New("organization ID not found in context")
 	}
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
 	_, err := loadSessionForRead(ctx, s.sessionRepo, tenantID, sessionUserIDForLookup(ctx), sessionID)
@@ -244,8 +244,8 @@ func (s *messageService) GetMessagesBySessionBeforeTime(ctx context.Context,
 
 	tenantID, ok := sessionTenantIDForLookup(ctx)
 	if !ok {
-		logger.Error(ctx, "Workspace ID not found in context for session lookup")
-		return nil, errors.New("workspace ID not found in context")
+		logger.Error(ctx, "Organization ID not found in context for session lookup")
+		return nil, errors.New("organization ID not found in context")
 	}
 	logger.Infof(ctx, "Checking if session exists, tenant ID: %d", tenantID)
 	_, err := loadSessionForRead(ctx, s.sessionRepo, tenantID, sessionUserIDForLookup(ctx), sessionID)
@@ -526,7 +526,7 @@ func (s *messageService) chatHistoryBinding(ctx context.Context, create bool) *t
 		EmbeddingModelID: platform.EmbeddingModelID,
 	})
 	if err != nil {
-		logger.Warnf(ctx, "chat history: cannot create knowledge base for workspace %d: %v", tenant.ID, err)
+		logger.Warnf(ctx, "chat history: cannot create knowledge base for organization %d: %v", tenant.ID, err)
 		return nil
 	}
 	current.ChatHistoryConfig = &types.ChatHistoryConfig{
@@ -535,10 +535,10 @@ func (s *messageService) chatHistoryBinding(ctx context.Context, create bool) *t
 		KnowledgeBaseID:  kb.ID,
 	}
 	if _, err := s.tenantService.UpdateTenant(ctx, current); err != nil {
-		logger.Warnf(ctx, "chat history: cannot record knowledge base %s for workspace %d: %v", kb.ID, tenant.ID, err)
+		logger.Warnf(ctx, "chat history: cannot record knowledge base %s for organization %d: %v", kb.ID, tenant.ID, err)
 		return nil
 	}
-	logger.Infof(ctx, "chat history: created knowledge base %s for workspace %d", kb.ID, tenant.ID)
+	logger.Infof(ctx, "chat history: created knowledge base %s for organization %d", kb.ID, tenant.ID)
 	return current.ChatHistoryConfig
 }
 

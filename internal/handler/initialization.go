@@ -372,7 +372,7 @@ func (h *InitializationHandler) UpdateKBConfig(c *gin.Context) {
 			return
 		}
 	} else if kbStorageBindingChanged(kb, req.StorageBackendID, req.StorageProvider) {
-		_ = c.Error(errors.NewForbiddenError("chỉ đơn vị sở hữu kho tri thức mới được sửa cấu hình lưu trữ"))
+		_ = c.Error(errors.NewForbiddenError("chỉ tổ chức sở hữu kho tri thức mới được sửa cấu hình lưu trữ"))
 		return
 	}
 
@@ -632,7 +632,7 @@ func (h *InitializationHandler) getKnowledgeBaseForInitialization(ctx context.Co
 	// without this check it could repoint the owner's models at its own
 	// endpoint and key.
 	if kb.TenantID != types.CallerFromContext(ctx).TenantID {
-		return nil, errors.NewForbiddenError("chỉ đơn vị sở hữu kho tri thức mới được khởi tạo kho tri thức")
+		return nil, errors.NewForbiddenError("chỉ tổ chức sở hữu kho tri thức mới được khởi tạo kho tri thức")
 	}
 	return kb, nil
 }
@@ -1850,7 +1850,7 @@ func (h *InitializationHandler) CheckRemoteModel(c *gin.Context) {
 	appID, appSecret, ok := h.resolveTenantWeKnoraCloudCreds(ctx)
 	if !ok {
 		logger.Error(ctx, "Tenant info not found")
-		c.Error(errors.NewBadRequestError("không tìm thấy thông tin đơn vị"))
+		c.Error(errors.NewBadRequestError("không tìm thấy thông tin tổ chức"))
 		return
 	}
 
@@ -1907,7 +1907,7 @@ func (h *InitializationHandler) TestEmbeddingModel(c *gin.Context) {
 	appID, appSecret, ok := h.resolveTenantWeKnoraCloudCreds(ctx)
 	if !ok {
 		logger.Error(ctx, "Tenant info not found")
-		c.Error(errors.NewBadRequestError("không tìm thấy thông tin đơn vị"))
+		c.Error(errors.NewBadRequestError("không tìm thấy thông tin tổ chức"))
 		return
 	}
 
@@ -2059,7 +2059,7 @@ func (h *InitializationHandler) CheckRerankModel(c *gin.Context) {
 	appID, appSecret, ok := h.resolveTenantWeKnoraCloudCreds(ctx)
 	if !ok {
 		logger.Error(ctx, "Tenant info not found")
-		c.Error(errors.NewBadRequestError("không tìm thấy thông tin đơn vị"))
+		c.Error(errors.NewBadRequestError("không tìm thấy thông tin tổ chức"))
 		return
 	}
 

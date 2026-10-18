@@ -334,7 +334,7 @@ func (s *StorageBackendService) EffectiveDefaultID(ctx context.Context, tenant *
 
 func (s *StorageBackendService) ResolveBackend(ctx context.Context, tenant *types.Tenant, backendID, provider string) (*types.StorageBackend, error) {
 	if tenant == nil {
-		return nil, fmt.Errorf("workspace context missing")
+		return nil, fmt.Errorf("organization context missing")
 	}
 	tenant = s.hydrateTenantStorage(ctx, tenant)
 	backendID = strings.TrimSpace(backendID)
@@ -366,7 +366,7 @@ func (s *StorageBackendService) ResolveBackend(ctx context.Context, tenant *type
 
 func (s *StorageBackendService) ResolveFileService(ctx context.Context, tenant *types.Tenant, backendID, provider, localBaseDir string) (interfaces.FileService, string, error) {
 	if tenant == nil {
-		return nil, "", fmt.Errorf("workspace context missing")
+		return nil, "", fmt.Errorf("organization context missing")
 	}
 	tenant = s.hydrateTenantStorage(ctx, tenant)
 	backend, err := s.ResolveBackend(ctx, tenant, backendID, provider)

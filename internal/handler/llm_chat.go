@@ -28,11 +28,11 @@ type LLMChatMessage struct {
 	Content string `json:"content"`
 }
 
-// LLMChatRequest asks a workspace chat model for one completion.
+// LLMChatRequest asks an organization chat model for one completion.
 type LLMChatRequest struct {
-	// ModelID selects a chat (KnowledgeQA) model of the workspace; empty or
-	// "default" uses the workspace default chat model, so integrations follow
-	// whatever model the workspace is switched to.
+	// ModelID selects a chat (KnowledgeQA) model of the organization; empty or
+	// "default" uses the organization default chat model, so integrations follow
+	// whatever model the organization is switched to.
 	ModelID     string           `json:"model_id"`
 	Messages    []LLMChatMessage `json:"messages"`
 	Temperature *float64         `json:"temperature"`
@@ -103,8 +103,8 @@ func selectChatModel(models []*types.Model, id string) *types.Model {
 }
 
 // LLMChat godoc
-// @Summary      Chat completion with a workspace chat model
-// @Description  Runs one text completion on the workspace default chat model
+// @Summary      Chat completion with an organization chat model
+// @Description  Runs one text completion on the organization default chat model
 // @Description  (or model_id). Model credentials stay server-side.
 // @Tags         Mô hình
 // @Accept       json
@@ -136,9 +136,9 @@ func (h *ModelHandler) LLMChat(c *gin.Context) {
 	selected := selectChatModel(models, strings.TrimSpace(req.ModelID))
 	if selected == nil {
 		if req.ModelID == "" || req.ModelID == "default" {
-			_ = c.Error(errors.NewBadRequestError("Configure an active chat model for this workspace"))
+			_ = c.Error(errors.NewBadRequestError("Configure an active chat model for this organization"))
 		} else {
-			_ = c.Error(errors.NewBadRequestError("model_id is not an active chat model of this workspace"))
+			_ = c.Error(errors.NewBadRequestError("model_id is not an active chat model of this organization"))
 		}
 		return
 	}

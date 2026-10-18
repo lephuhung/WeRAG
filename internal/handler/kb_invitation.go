@@ -161,9 +161,9 @@ func kbInviteHTTPError(err error) error {
 			HTTPCode: http.StatusGone,
 		}
 	case stderrors.Is(err, service.ErrKBInviteNotOwnerAdmin):
-		return apperrors.NewForbiddenError("only a tenant admin of the owning tenant can manage kb invitations")
+		return apperrors.NewForbiddenError("only an organization admin of the owning organization can manage kb invitations")
 	case stderrors.Is(err, service.ErrKBInviteRecipientNotMember):
-		return apperrors.NewBadRequestError("recipient must be an active member of the recipient workspace")
+		return apperrors.NewBadRequestError("recipient must be an active member of the recipient organization")
 	default:
 		logger.ErrorWithFields(context.Background(), err, nil)
 		return apperrors.NewInternalServerError("internal error")

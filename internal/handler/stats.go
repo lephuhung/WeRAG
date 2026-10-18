@@ -52,7 +52,7 @@ func (h *StatsHandler) GetSystemStats(c *gin.Context) {
 
 // ListProcessingDocuments godoc
 // @Summary      Documents in the ingest pipeline
-// @Description  Pending/processing/finalizing documents across every tenant,
+// @Description  Pending/processing/finalizing documents across every organization,
 // @Description  oldest first, plus the number of documents failed in 24h.
 // @Tags         Quản trị hệ thống
 // @Produce      json

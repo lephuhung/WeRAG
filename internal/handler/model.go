@@ -78,7 +78,7 @@ func (h *ModelHandler) CreateModel(c *gin.Context) {
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
 		logger.Error(ctx, "Tenant ID is empty")
-		c.Error(errors.NewBadRequestError("Workspace ID cannot be empty"))
+		c.Error(errors.NewBadRequestError("Organization ID cannot be empty"))
 		return
 	}
 
@@ -170,7 +170,7 @@ func (h *ModelHandler) GetModel(c *gin.Context) {
 
 // ListModels godoc
 // @Summary      Lấy danh sách mô hình
-// @Description  Lấy toàn bộ mô hình của đơn vị hiện tại
+// @Description  Lấy toàn bộ mô hình của tổ chức hiện tại
 // @Tags         Mô hình
 // @Accept       json
 // @Produce      json
@@ -187,7 +187,7 @@ func (h *ModelHandler) ListModels(c *gin.Context) {
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
 	if tenantID == 0 {
 		logger.Error(ctx, "Tenant ID is empty")
-		c.Error(errors.NewBadRequestError("Workspace ID cannot be empty"))
+		c.Error(errors.NewBadRequestError("Organization ID cannot be empty"))
 		return
 	}
 

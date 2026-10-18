@@ -39,7 +39,7 @@ Một số endpoint cũ trả `{"success":false,"message":"…"}` không có `er
 |---|---|---|---|---|
 | 1000 | 400 | `NewBadRequestError(msg)` | theo ngữ cảnh | Tham số sai, body không hợp lệ, trạng thái không cho phép thao tác |
 | 1001 | 401 | `NewUnauthorizedError(msg)` | theo ngữ cảnh | Chưa đăng nhập, token hết hạn hoặc bị thu hồi |
-| 1002 | 403 | `NewForbiddenError(msg)` | theo ngữ cảnh | Đã đăng nhập nhưng không có quyền (RBAC, khác đơn vị, không phải chủ sở hữu) |
+| 1002 | 403 | `NewForbiddenError(msg)` | theo ngữ cảnh | Đã đăng nhập nhưng không có quyền (RBAC, khác tổ chức, không phải chủ sở hữu) |
 | 1003 | 404 | `NewNotFoundError(msg)` | theo ngữ cảnh | Tài nguyên không tồn tại hoặc không thuộc phạm vi người gọi |
 | 1004 | 405 | — | | Dự phòng |
 | 1005 | 409 | `NewConflictError(msg)` | theo ngữ cảnh | Trùng tên, phiên bản thay đổi, **lượt trả lời trước còn đang chạy** (chat) |
@@ -49,16 +49,16 @@ Một số endpoint cũ trả `{"success":false,"message":"…"}` không có `er
 | 1009 | 504 | — | | Hết thời gian chờ dịch vụ phụ thuộc |
 | 1010 | 400 | `NewValidationError(msg)` | theo ngữ cảnh | Dữ liệu đúng cú pháp nhưng sai ràng buộc nghiệp vụ |
 
-### 2.2 Đơn vị / không gian làm việc (2000–2005)
+### 2.2 Tổ chức (2000–2005)
 
 | Code | HTTP | Hàm tạo | Thông báo |
 |---|---|---|---|
-| 2000 | 404 | `NewTenantNotFoundError()` | không tìm thấy đơn vị |
-| 2001 | 409 | `NewTenantAlreadyExistsError()` | đơn vị đã tồn tại |
-| 2002 | 403 | `NewTenantInactiveError()` | đơn vị đã bị vô hiệu hóa |
-| 2003 | 400 | — | tên đơn vị là bắt buộc |
-| 2004 | 400 | — | trạng thái đơn vị không hợp lệ |
-| 2005 | 403 | `NewTenantCreationDisabledError()` | đã tắt tự tạo đơn vị; hãy tham gia đơn vị qua lời mời |
+| 2000 | 404 | `NewTenantNotFoundError()` | không tìm thấy tổ chức |
+| 2001 | 409 | `NewTenantAlreadyExistsError()` | tổ chức đã tồn tại |
+| 2002 | 403 | `NewTenantInactiveError()` | tổ chức đã bị vô hiệu hóa |
+| 2003 | 400 | — | tên tổ chức là bắt buộc |
+| 2004 | 400 | — | trạng thái tổ chức không hợp lệ |
+| 2005 | 403 | `NewTenantCreationDisabledError()` | đã tắt tự tạo tổ chức; hãy tham gia tổ chức qua lời mời |
 
 ### 2.3 Cấu hình trợ lý (2100–2103)
 
@@ -81,9 +81,9 @@ Một số endpoint cũ trả `{"success":false,"message":"…"}` không có `er
 
 | `reason` | Ý nghĩa | Khóa i18n frontend |
 |---|---|---|
-| `no_subscription` | Đơn vị hoặc tài khoản chưa có gói | `chat.err.usage.noSubscription` |
+| `no_subscription` | Tổ chức hoặc tài khoản chưa có gói | `chat.err.usage.noSubscription` |
 | `expired` | Gói đã hết hạn | `chat.err.usage.expired` |
-| `no_seat` | Tài khoản chưa được cấp chỗ trong gói của đơn vị | `chat.err.usage.noSeat` |
+| `no_seat` | Tài khoản chưa được cấp chỗ trong gói của tổ chức | `chat.err.usage.noSeat` |
 | `limit_exhausted` | Hết hạn mức của kỳ | `chat.err.usage.limit` |
 | `session_limit` | Cuộc trò chuyện chạm trần của gói; client mời mở phiên mới kèm tóm tắt (`POST /sessions/:id/continue`) | `chat.err.usage.sessionLimit` |
 
@@ -117,7 +117,7 @@ trong `frontend-next/lib/api/chat-errors.ts` (Word add-in dùng bản sao qua `n
 4. Lỗi nghiệp vụ lặp lại ở nhiều nơi (ví dụ "lượt trước còn đang chạy") đáng có mã riêng trong dải 2xxx
    để client phân nhánh mà không phải so khớp chuỗi. Khi thêm mã mới: thêm hằng vào `internal/errors/errors.go`,
    hàm tạo kèm thông báo mặc định tiếng Việt, cập nhật bảng ở đây và khóa i18n ở frontend (mục 4).
-5. Thuật ngữ thống nhất: kho tri thức, đơn vị, cuộc trò chuyện, trợ lý, mô hình, đoạn (chunk), thẻ, tài liệu,
+5. Thuật ngữ thống nhất: kho tri thức, tổ chức, cuộc trò chuyện, trợ lý, mô hình, đoạn (chunk), thẻ, tài liệu,
    người dùng, thành viên, gói sử dụng, bộ nhớ, kho vector.
 6. Không còn thông báo tiếng Trung trong `internal/`; `rg -P '\p{Han}' internal --glob '!*_test.go'` phải rỗng
    trừ dữ liệu xử lý văn bản (dấu câu, bảng chuyển đổi trong `internal/textconv`).

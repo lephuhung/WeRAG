@@ -72,7 +72,7 @@ type ModelUsageResource struct {
 	Bindings []ModelUsageBinding `json:"bindings"`
 }
 
-// ModelUsageMemory describes workspace-level long-term-memory model pins.
+// ModelUsageMemory describes organization-level long-term-memory model pins.
 type ModelUsageMemory struct {
 	Bindings []ModelUsageBinding `json:"bindings"`
 }
@@ -182,7 +182,7 @@ type Model struct {
 	// GORM's struct tag is documented to match so AutoMigrate paths
 	// produce the same shape.
 	ID string `yaml:"id"          json:"id"          gorm:"type:varchar(64);primaryKey"`
-	// Workspace ID
+	// Organization ID
 	TenantID uint64 `yaml:"tenant_id"   json:"tenant_id"`
 	// Name of the model
 	Name string `yaml:"name"        json:"name"`

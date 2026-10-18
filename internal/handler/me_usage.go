@@ -26,7 +26,7 @@ func NewMeUsageHandler(meter interfaces.UsageMeter, guard interfaces.UsageGuard)
 // Get godoc
 // @Summary      My usage counters
 // @Description  Questions and LLM tokens used today and this month, for the
-// @Description  caller and for the caller's current workspace.
+// @Description  caller and for the caller's current organization.
 // @Tags         Tài khoản của tôi
 // @Produce      json
 // @Success      200 {object} map[string]interface{}

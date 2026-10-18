@@ -131,7 +131,7 @@ function LoginForm() {
         <div className="mb-6 flex justify-center">
           <BrandLogo size={68} priority />
         </div>
-        <p className="body-sm mb-8 text-center text-muted">Sign in to your knowledge workspace</p>
+        <p className="body-sm mb-8 text-center text-muted">Sign in to your organization's knowledge base</p>
 
         <form className="card p-6 sm:p-8" onSubmit={submit}>
           <label className="mb-4 block">

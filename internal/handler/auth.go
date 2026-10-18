@@ -691,9 +691,9 @@ func (h *AuthHandler) GetCurrentUser(c *gin.Context) {
 type updateMyPreferencesRequest struct {
 	BrowserSearchInstructions *string `json:"browser_search_instructions" binding:"omitempty,max=4000"`
 	// LastActiveTenantID lets clients persist "after a fresh login,
-	// drop me back into this workspace" across devices. The SPA sends
-	// this after every tenant switch; POST /auth/switch-tenant records
-	// the same preference server-side. Send a positive workspace id to
+	// drop me back into this organization" across devices. The SPA sends
+	// this after every organization switch; POST /auth/switch-tenant records
+	// the same preference server-side. Send a positive organization id to
 	// set / replace, or 0 to clear. Membership is validated at next
 	// login, not here. Nil = field omitted from the PATCH and stays
 	// untouched.
@@ -923,17 +923,17 @@ func (h *AuthHandler) GetAuthConfig(c *gin.Context) {
 }
 
 // SwitchTenant godoc
-// @Summary      Chuyển đơn vị đang hoạt động
-// @Description  Cấp lại access token cho người dùng hiện tại trên đơn vị đích; người dùng phải là thành viên active của đơn vị đó (trừ SuperAdmin liên đơn vị).
-// @Description  Chuyển thành công sẽ ghi đơn vị đích vào tuỳ chọn "đơn vị hoạt động gần nhất"; lần đăng nhập và refresh sau đều rơi vào đơn vị này (refresh JWT không chứa tenant_id).
+// @Summary      Chuyển tổ chức đang hoạt động
+// @Description  Cấp lại access token cho người dùng hiện tại trên tổ chức đích; người dùng phải là thành viên active của tổ chức đó (trừ SuperAdmin liên tổ chức).
+// @Description  Chuyển thành công sẽ ghi tổ chức đích vào tuỳ chọn "tổ chức hoạt động gần nhất"; lần đăng nhập và refresh sau đều rơi vào tổ chức này (refresh JWT không chứa tenant_id).
 // @Description  Tuỳ chọn này ở cấp tài khoản: một lần chuyển sẽ đổi điểm đến của đăng nhập/refresh trên mọi thiết bị. Ghi tuỳ chọn thất bại thì cả lần chuyển thất bại, không phát token mới.
 // @Tags         Xác thực
 // @Accept       json
 // @Produce      json
-// @Param        request  body      object{tenant_id=integer,refresh_token=string}  true  "yêu cầu chuyển đơn vị"
+// @Param        request  body      object{tenant_id=integer,refresh_token=string}  true  "yêu cầu chuyển tổ chức"
 // @Success      200      {object}  types.LoginResponse
 // @Failure      400      {object}  errors.AppError  "tham số không hợp lệ"
-// @Failure      403      {object}  errors.AppError  "không phải thành viên của đơn vị này hoặc ghi tuỳ chọn thất bại"
+// @Failure      403      {object}  errors.AppError  "không phải thành viên của tổ chức này hoặc ghi tuỳ chọn thất bại"
 // @Security     Bearer
 // @Router       /auth/switch-tenant [post]
 //
@@ -948,7 +948,7 @@ func (h *AuthHandler) SwitchTenant(c *gin.Context) {
 		RefreshToken string `json:"refresh_token"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		appErr := errors.NewValidationError("Invalid workspace switch request").WithDetails(err.Error())
+		appErr := errors.NewValidationError("Invalid organization switch request").WithDetails(err.Error())
 		c.Error(appErr)
 		return
 	}
@@ -963,7 +963,7 @@ func (h *AuthHandler) SwitchTenant(c *gin.Context) {
 	resp, err := h.userService.SwitchTenant(ctx, user, req.TenantID, req.RefreshToken)
 	if err != nil {
 		logger.Errorf(ctx, "SwitchTenant failed user=%s target=%d: %v", user.ID, req.TenantID, err)
-		appErr := errors.NewForbiddenError("workspace switch failed").WithDetails(err.Error())
+		appErr := errors.NewForbiddenError("organization switch failed").WithDetails(err.Error())
 		c.Error(appErr)
 		return
 	}

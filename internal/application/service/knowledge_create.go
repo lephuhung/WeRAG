@@ -1216,7 +1216,7 @@ func (s *knowledgeService) bindContentResources(
 			continue
 		}
 		if resource.TenantID != tenantID {
-			logger.Warnf(ctx, "Skip binding cross-workspace resource %s to knowledge %s", ref, knowledgeID)
+			logger.Warnf(ctx, "Skip binding cross-organization resource %s to knowledge %s", ref, knowledgeID)
 			continue
 		}
 		if err := s.resourceCatalog.Bind(

@@ -15,8 +15,8 @@ import (
 )
 
 // ListCatalog godoc
-// @Summary      List workspace skills
-// @Description  Returns every skill definition in this workspace and which sandbox configs it is installed on.
+// @Summary      List organization skills
+// @Description  Returns every skill definition in this organization and which sandbox configs it is installed on.
 // @Tags         Kỹ năng
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}
@@ -37,7 +37,7 @@ func (h *SkillHandler) ListCatalog(c *gin.Context) {
 }
 
 // RegisterCatalog godoc
-// @Summary      Add a skill to the workspace catalog
+// @Summary      Add a skill to the organization catalog
 // @Description  Records a skill without installing it. Send a zip as multipart field "file", or JSON {"source":"..."}.
 // @Tags         Kỹ năng
 // @Accept       json

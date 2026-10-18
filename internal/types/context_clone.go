@@ -21,8 +21,8 @@ import "sort"
 // false is a valid, meaningful answer — it means "deliberately does not
 // survive a detach" — and is not the same as being absent.
 var contextCloneAcrossDetach = map[ContextKey]bool{
-	// Caller identity and workspace scope. Background work runs as the same
-	// principal in the same workspace, so all of this has to survive; a
+	// Caller identity and organization scope. Background work runs as the same
+	// principal in the same organization, so all of this has to survive; a
 	// detached goroutine that loses its tenant reads another tenant's rows or
 	// none at all.
 	TenantIDContextKey:    true,

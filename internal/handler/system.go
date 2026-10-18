@@ -113,7 +113,7 @@ type platformAPIKeyCreateRequest struct {
 
 // ListPlatformAPIKeys godoc
 // @Summary      List platform API keys
-// @Description  Lists non-workspace API keys. Full tokens are always masked. Human SystemAdmin only.
+// @Description  Lists non-organization API keys. Full tokens are always masked. Human SystemAdmin only.
 // @Tags         Quản trị hệ thống
 // @Produce      json
 // @Success      200 {object} map[string]interface{}
@@ -136,7 +136,7 @@ func (h *SystemHandler) ListPlatformAPIKeys(c *gin.Context) {
 
 // CreatePlatformAPIKey godoc
 // @Summary      Create a platform API key
-// @Description  Creates a capability-scoped key that may target any workspace through X-Tenant-ID. The plaintext token is returned once. Human SystemAdmin only.
+// @Description  Creates a capability-scoped key that may target any organization through X-Tenant-ID. The plaintext token is returned once. Human SystemAdmin only.
 // @Tags         Quản trị hệ thống
 // @Accept       json
 // @Produce      json
@@ -1213,16 +1213,16 @@ func (h *SystemHandler) ListSystemUsers(c *gin.Context) {
 }
 
 // UpdateSystemUserRole godoc
-// @Summary      Update a user's workspace role
-// @Description  Change a user's role inside any tenant (SystemAdmin only).
+// @Summary      Update a user's organization role
+// @Description  Change a user's role inside any organization (SystemAdmin only).
 // @Description  Unlike PUT /tenants/:id/members/:user_id this does not require
-// @Description  the caller to be Admin of the target tenant — the route group
+// @Description  the caller to be Admin of the target organization — the route group
 // @Description  already gates on SystemAdmin. The "last admin" invariant is
 // @Description  still enforced by the service layer.
 // @Tags         Quản trị hệ thống
 // @Accept       json
 // @Produce      json
-// @Param        tenant_id  path  string                  true  "Tenant ID"
+// @Param        tenant_id  path  string                  true  "Organization ID"
 // @Param        user_id    path  string                  true  "User ID"
 // @Param        request    body  updateMemberRoleRequest true  "Target role"
 // @Success      200  {object}  map[string]interface{}
@@ -1364,7 +1364,7 @@ type CreateSystemUserResponse struct {
 // @Description  When `password` is omitted or null, a cryptographically random
 // @Description  password is generated (OIDC-style crypto/rand + base64url)
 // @Description  and returned once in the response body. Any provided value,
-// @Description  including empty string, is policy-checked. Tenant provisioning
+// @Description  including empty string, is policy-checked. Organization provisioning
 // @Description  follows the shared auth.default_tenant_mode policy.
 // @Tags         Quản trị hệ thống
 // @Accept       json
@@ -1453,7 +1453,7 @@ func (h *SystemHandler) CreateSystemUser(c *gin.Context) {
 // ListSystemSettings godoc
 // @Summary      List all system settings
 // @Description  Return every row in the system_settings table (system-scope,
-// @Description  not workspace-scoped). SystemAdmin only.
+// @Description  not organization-scoped). SystemAdmin only.
 // @Tags         Quản trị hệ thống
 // @Produce      json
 // @Success      200 {array} types.SystemSetting "list of settings"
@@ -2120,12 +2120,12 @@ func (h *SystemHandler) GetSystemUITheme(c *gin.Context) {
 }
 
 // ApplyDefaultStorageQuotaToAllTenants godoc
-// @Summary      Apply the default storage quota to every existing workspace
+// @Summary      Apply the default storage quota to every existing organization
 // @Description  Reads the current value of `tenant.default_storage_quota_gb`
 // @Description  (3-tier resolver: DB > ENV > default) and writes that many
 // @Description  GiB into storage_quota for every row in tenants. Bypasses
-// @Description  the per-workspace PUT whitelist, which forbids storage_quota
-// @Description  edits by workspace Admins. SystemAdmin only.
+// @Description  the per-organization PUT whitelist, which forbids storage_quota
+// @Description  edits by organization Admins. SystemAdmin only.
 // @Description  Idempotent — running twice with the same setting is a no-op.
 // @Tags         Quản trị hệ thống
 // @Produce      json

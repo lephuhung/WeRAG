@@ -127,14 +127,14 @@ func writeTenantMemberTargetError(c *gin.Context, err error) {
 }
 
 // ProvisionTenant godoc
-// @Summary      Create a workspace with its Tenant Admin
-// @Description  SystemAdmin only. Creates the workspace and makes the named
-// @Description  (or newly created) user its Tenant Admin. The calling
+// @Summary      Create an organization with its Organization Admin
+// @Description  SystemAdmin only. Creates the organization and makes the named
+// @Description  (or newly created) user its Organization Admin. The calling
 // @Description  SystemAdmin does not become a member.
 // @Tags         Quản trị hệ thống
 // @Accept       json
 // @Produce      json
-// @Param        request body ProvisionTenantRequest true "Workspace and admin"
+// @Param        request body ProvisionTenantRequest true "Organization and admin"
 // @Success      201  {object}  ProvisionTenantResponse
 // @Router       /system/admin/tenants [post]
 func (h *SystemHandler) ProvisionTenant(c *gin.Context) {
@@ -179,7 +179,7 @@ func (h *SystemHandler) ProvisionTenant(c *gin.Context) {
 			return
 		}
 		logger.Errorf(ctx, "ProvisionTenant: create tenant: %v", err)
-		c.Error(apperrors.NewInternalServerError("failed to create workspace").WithDetails(err.Error()))
+		c.Error(apperrors.NewInternalServerError("failed to create organization").WithDetails(err.Error()))
 		return
 	}
 
@@ -191,7 +191,7 @@ func (h *SystemHandler) ProvisionTenant(c *gin.Context) {
 		if delErr := h.tenantSvc.DeleteTenant(ctx, createdTenant.ID); delErr != nil {
 			logger.Errorf(ctx, "ProvisionTenant: rollback tenant %d: %v", createdTenant.ID, delErr)
 		}
-		c.Error(apperrors.NewInternalServerError("failed to assign workspace admin").WithDetails(err.Error()))
+		c.Error(apperrors.NewInternalServerError("failed to assign organization admin").WithDetails(err.Error()))
 		return
 	}
 
@@ -220,13 +220,13 @@ func parseSystemTenantID(c *gin.Context) (uint64, bool) {
 }
 
 // UpdateSystemTenant godoc
-// @Summary      Rename any workspace
-// @Description  SystemAdmin only. Changes the name and/or description of a
-// @Description  workspace the caller does not need to belong to.
+// @Summary      Rename any organization
+// @Description  SystemAdmin only. Changes the name and/or description of an
+// @Description  organization the caller does not need to belong to.
 // @Tags         Quản trị hệ thống
 // @Accept       json
 // @Produce      json
-// @Param        tenant_id path string true "Workspace ID"
+// @Param        tenant_id path string true "Organization ID"
 // @Param        request body UpdateSystemTenantRequest true "Fields to change"
 // @Success      200  {object}  map[string]interface{}
 // @Router       /system/admin/tenants/{tenant_id} [put]
@@ -243,7 +243,7 @@ func (h *SystemHandler) UpdateSystemTenant(c *gin.Context) {
 	}
 	tenant, err := h.tenantSvc.GetTenantByID(ctx, tenantID)
 	if err != nil || tenant == nil || tenant.IsConfigProfile() {
-		c.Error(apperrors.NewNotFoundError("workspace not found"))
+		c.Error(apperrors.NewNotFoundError("organization not found"))
 		return
 	}
 	oldName := tenant.Name
@@ -265,7 +265,7 @@ func (h *SystemHandler) UpdateSystemTenant(c *gin.Context) {
 			return
 		}
 		logger.Errorf(ctx, "UpdateSystemTenant: tenant %d: %v", tenantID, err)
-		c.Error(apperrors.NewInternalServerError("failed to update workspace").WithDetails(err.Error()))
+		c.Error(apperrors.NewInternalServerError("failed to update organization").WithDetails(err.Error()))
 		return
 	}
 	h.emitAdminAudit(ctx, types.AuditActionSystemTenantUpdated, nil, map[string]any{
@@ -277,13 +277,13 @@ func (h *SystemHandler) UpdateSystemTenant(c *gin.Context) {
 }
 
 // AddSystemTenantMember godoc
-// @Summary      Add a user to any workspace
+// @Summary      Add a user to any organization
 // @Description  SystemAdmin only. Adds an existing or new user to the
-// @Description  workspace with the given role (admin or member).
+// @Description  organization with the given role (admin or member).
 // @Tags         Quản trị hệ thống
 // @Accept       json
 // @Produce      json
-// @Param        tenant_id path string true "Workspace ID"
+// @Param        tenant_id path string true "Organization ID"
 // @Param        request body AddSystemTenantMemberRequest true "User and role"
 // @Success      201  {object}  map[string]interface{}
 // @Router       /system/admin/tenants/{tenant_id}/members [post]
@@ -308,7 +308,7 @@ func (h *SystemHandler) AddSystemTenantMember(c *gin.Context) {
 	}
 	// A configuration profile has no members.
 	if tenant, err := h.tenantSvc.GetTenantByID(ctx, tenantID); err != nil || tenant == nil || tenant.IsConfigProfile() {
-		c.Error(apperrors.NewNotFoundError("workspace not found"))
+		c.Error(apperrors.NewNotFoundError("organization not found"))
 		return
 	}
 
@@ -321,7 +321,7 @@ func (h *SystemHandler) AddSystemTenantMember(c *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrMembershipAlreadyExists):
-			c.Error(apperrors.NewConflictError("user is already a member of this workspace"))
+			c.Error(apperrors.NewConflictError("user is already a member of this organization"))
 		case errors.Is(err, service.ErrInvalidTenantRole), errors.Is(err, service.ErrOwnerRoleRetired):
 			c.Error(apperrors.NewValidationError(err.Error()))
 		default:
@@ -345,9 +345,9 @@ func (h *SystemHandler) AddSystemTenantMember(c *gin.Context) {
 }
 
 // RemoveSystemTenantMember godoc
-// @Summary      Remove a user from any workspace
+// @Summary      Remove a user from any organization
 // @Tags         Quản trị hệ thống
-// @Param        tenant_id path string true "Workspace ID"
+// @Param        tenant_id path string true "Organization ID"
 // @Param        user_id   path string true "User ID"
 // @Success      200  {object}  map[string]interface{}
 // @Router       /system/admin/tenants/{tenant_id}/members/{user_id} [delete]
@@ -385,9 +385,9 @@ func (h *SystemHandler) RemoveSystemTenantMember(c *gin.Context) {
 }
 
 // ListSystemTenantMembers godoc
-// @Summary      List the members of any workspace
+// @Summary      List the members of any organization
 // @Tags         Quản trị hệ thống
-// @Param        tenant_id path string true "Workspace ID"
+// @Param        tenant_id path string true "Organization ID"
 // @Success      200  {object}  map[string]interface{}
 // @Router       /system/admin/tenants/{tenant_id}/members [get]
 func (h *SystemHandler) ListSystemTenantMembers(c *gin.Context) {

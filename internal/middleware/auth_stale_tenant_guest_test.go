@@ -87,7 +87,7 @@ func TestStaleTenantGuest(t *testing.T) {
 			}
 			_ = json.Unmarshal(w.Body.Bytes(), &body)
 			if w.Code != http.StatusForbidden || body.Code != "TENANT_MEMBERSHIP_REQUIRED" ||
-				body.Error != "Forbidden: not a member of the target workspace" {
+				body.Error != "Forbidden: not a member of the target organization" {
 				t.Errorf("%s: %s %s = %d %s, want 403 TENANT_MEMBERSHIP_REQUIRED", name, rt.method, rt.path, w.Code, w.Body.String())
 			}
 		}

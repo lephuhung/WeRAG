@@ -47,12 +47,12 @@ func MCPEndpointAuth(svc interfaces.MCPEndpointService, tenantSvc interfaces.Ten
 		}
 		tenant, err := tenantSvc.GetTenantByID(c.Request.Context(), ep.TenantID)
 		if err != nil || tenant == nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "workspace unavailable"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "organization unavailable"})
 			c.Abort()
 			return
 		}
 		if strings.EqualFold(tenant.Status, "inactive") || strings.EqualFold(tenant.Status, "disabled") {
-			c.JSON(http.StatusForbidden, gin.H{"error": "workspace inactive"})
+			c.JSON(http.StatusForbidden, gin.H{"error": "organization inactive"})
 			c.Abort()
 			return
 		}

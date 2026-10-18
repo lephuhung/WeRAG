@@ -72,7 +72,7 @@ func ListConfigSandboxes(
 	summaries, err := client.List(ctx, configSandboxFilter(tenantID, configID))
 	if err != nil {
 		return nil, fmt.Errorf(
-			"sandbox: list workspace %d config %q sandboxes: %w",
+			"sandbox: list organization %d config %q sandboxes: %w",
 			tenantID, NormalizeConfigID(configID), err)
 	}
 	return summaries, nil

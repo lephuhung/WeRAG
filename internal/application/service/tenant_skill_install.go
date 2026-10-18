@@ -1649,7 +1649,7 @@ func (s *TenantSkillService) startMaintenanceSession(
 		return nil, nil, errors.New("sandbox resolver returned nil manager")
 	}
 	if mgr.GetType() == sandbox.SandboxTypeDisabled {
-		return nil, nil, errors.New("sandbox execution is disabled for this workspace")
+		return nil, nil, errors.New("sandbox execution is disabled for this organization")
 	}
 	sess, err := s.sessions.CreateSession(ctx, &types.Session{
 		TenantID:        tenantID,
@@ -2238,7 +2238,7 @@ func (s *TenantSkillService) resolveInstallerModel(
 				return model, nil
 			}
 			logger.Warnf(ctx,
-				"[skill] installer agent model %s is unusable (%v); falling back to the workspace default",
+				"[skill] installer agent model %s is unusable (%v); falling back to the organization default",
 				modelID, err)
 		}
 	}
@@ -2258,7 +2258,7 @@ func (s *TenantSkillService) resolveInstallerModel(
 			return s.models.GetChatModel(ctx, model.ID)
 		}
 	}
-	return nil, fmt.Errorf("workspace %d has no active chat model for skill installer", tenantID)
+	return nil, fmt.Errorf("organization %d has no active chat model for skill installer", tenantID)
 }
 
 func (s *TenantSkillService) writeManifestEntry(

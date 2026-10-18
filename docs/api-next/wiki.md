@@ -121,7 +121,7 @@ handler: `MovePage` · `wiki_page.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `id` | string | yes | Unique identifier (UUID) |
-| `tenant_id` | number | yes | Workspace ID for multi-workspace isolation |
+| `tenant_id` | number | yes | Organization ID for multi-organization isolation |
 | `knowledge_base_id` | string | yes | Knowledge base this page belongs to |
 | `slug` | string | yes | URL-friendly slug for addressing, e.g. "entity/acme-corp", "concept/rag" Unique within a knowledge base |
 | `title` | string | yes | Human-readable title |
@@ -157,7 +157,7 @@ handler: `CreatePage` · `wiki_page.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `id` | string |  | Unique identifier (UUID) |
-| `tenant_id` | number |  | Workspace ID for multi-workspace isolation |
+| `tenant_id` | number |  | Organization ID for multi-organization isolation |
 | `knowledge_base_id` | string |  | Knowledge base this page belongs to |
 | `slug` | string |  | URL-friendly slug for addressing, e.g. "entity/acme-corp", "concept/rag" Unique within a knowledge base |
 | `title` | string |  | Human-readable title |
@@ -188,7 +188,7 @@ handler: `CreatePage` · `wiki_page.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `id` | string | yes | Unique identifier (UUID) |
-| `tenant_id` | number | yes | Workspace ID for multi-workspace isolation |
+| `tenant_id` | number | yes | Organization ID for multi-organization isolation |
 | `knowledge_base_id` | string | yes | Knowledge base this page belongs to |
 | `slug` | string | yes | URL-friendly slug for addressing, e.g. "entity/acme-corp", "concept/rag" Unique within a knowledge base |
 | `title` | string | yes | Human-readable title |
@@ -222,7 +222,7 @@ handler: `CreatePage` · `wiki_page.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `id` | string | yes | Unique identifier (UUID) |
-| `tenant_id` | number | yes | Workspace ID for multi-workspace isolation |
+| `tenant_id` | number | yes | Organization ID for multi-organization isolation |
 | `knowledge_base_id` | string | yes | Knowledge base this page belongs to |
 | `slug` | string | yes | URL-friendly slug for addressing, e.g. "entity/acme-corp", "concept/rag" Unique within a knowledge base |
 | `title` | string | yes | Human-readable title |
@@ -267,7 +267,7 @@ handler: `CreatePage` · `wiki_page.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `id` | string | yes | Unique identifier (UUID) |
-| `tenant_id` | number | yes | Workspace ID for multi-workspace isolation |
+| `tenant_id` | number | yes | Organization ID for multi-organization isolation |
 | `knowledge_base_id` | string | yes | Knowledge base this page belongs to |
 | `slug` | string | yes | URL-friendly slug for addressing, e.g. "entity/acme-corp", "concept/rag" Unique within a knowledge base |
 | `title` | string | yes | Human-readable title |
@@ -343,7 +343,7 @@ handler: `RevertPage` · `wiki_page.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `id` | string | yes | Unique identifier (UUID) |
-| `tenant_id` | number | yes | Workspace ID for multi-workspace isolation |
+| `tenant_id` | number | yes | Organization ID for multi-organization isolation |
 | `knowledge_base_id` | string | yes | Knowledge base this page belongs to |
 | `slug` | string | yes | URL-friendly slug for addressing, e.g. "entity/acme-corp", "concept/rag" Unique within a knowledge base |
 | `title` | string | yes | Human-readable title |
@@ -442,7 +442,7 @@ handler: `SearchPages` · `wiki_page.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `id` | string | yes | Unique identifier (UUID) |
-| `tenant_id` | number | yes | Workspace ID for multi-workspace isolation |
+| `tenant_id` | number | yes | Organization ID for multi-organization isolation |
 | `knowledge_base_id` | string | yes | Knowledge base this page belongs to |
 | `slug` | string | yes | URL-friendly slug for addressing, e.g. "entity/acme-corp", "concept/rag" Unique within a knowledge base |
 | `title` | string | yes | Human-readable title |

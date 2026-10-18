@@ -80,7 +80,7 @@ func resolveTenantSandboxForConfig(
 		disabled, err := policy.WorkspaceScriptsDisabled(ctx, tenantID)
 		if err != nil {
 			logger.Warnf(ctx,
-				"[sandbox] failed to read workspace sandbox policy for %d: %v",
+				"[sandbox] failed to read organization sandbox policy for %d: %v",
 				tenantID, err)
 		} else if disabled {
 			return sandbox.NewDisabledManager(), nil
@@ -96,7 +96,7 @@ func resolveTenantSandboxForConfig(
 	// ③ Named config: must not silently fall back to another backend.
 	if tenantID == 0 {
 		return nil, fmt.Errorf(
-			"sandbox: resolve config %q: missing workspace context", configID)
+			"sandbox: resolve config %q: missing organization context", configID)
 	}
 	if resolver == nil {
 		return nil, fmt.Errorf(
@@ -105,7 +105,7 @@ func resolveTenantSandboxForConfig(
 	mgr, err := resolver.Resolve(ctx, tenantID, configID)
 	if err != nil {
 		logger.Warnf(ctx,
-			"[sandbox] failed to resolve config %q for workspace %d: %v",
+			"[sandbox] failed to resolve config %q for organization %d: %v",
 			configID, tenantID, err)
 		return nil, err
 	}

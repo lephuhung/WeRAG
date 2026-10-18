@@ -17,7 +17,7 @@ import (
 var (
 	// ErrTenantInfoMissing is returned when the factory needs a tenant from
 	// context (synchronous, unbound KB path) and none is present.
-	ErrTenantInfoMissing = errors.New("tenant info not found in context")
+	ErrTenantInfoMissing = errors.New("organization info not found in context")
 
 	// ErrVectorStoreNotFound is returned when the store does not exist for the
 	// tenant. Async workers should treat this as non-retryable: no amount of

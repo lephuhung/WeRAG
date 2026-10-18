@@ -8,7 +8,7 @@ import (
 	"github.com/hibiken/asynq"
 )
 
-// MemoryScope is the resolved (workspace, principal) pair a memory operation
+// MemoryScope is the resolved (organization, principal) pair a memory operation
 // runs under. It is always derived from the request context so no caller can
 // address another user's memory by passing an id.
 type MemoryScope struct {
@@ -250,7 +250,7 @@ type MemoryRecall struct {
 // different answers, and collapsing both into an empty slice would have the
 // agent report a blank memory store to someone who simply disabled it.
 type MemorySearchResult struct {
-	// Available is false when memory is off at any level — workspace, user or
+	// Available is false when memory is off at any level — organization, user or
 	// the agent handling this request.
 	Available bool
 	// Items are the matches, most relevant first.
@@ -300,7 +300,7 @@ type MemoryService interface {
 	// admitted. Like Recall it performs no LLM call and never errors.
 	SearchMemory(ctx context.Context, query string, limit int) MemorySearchResult
 	// MemoryAvailable reports whether this request may read memory at all:
-	// the workspace switch, the user's own opt out and the agent's preference
+	// the organization switch, the user's own opt out and the agent's preference
 	// combined.
 	//
 	// Read paths do not need this — Recall and SearchMemory already degrade on

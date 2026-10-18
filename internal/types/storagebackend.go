@@ -23,7 +23,7 @@ const (
 	StorageBackendStatusDisabled = "disabled"
 )
 
-// StorageBackend is one concrete file/object storage instance. A workspace may
+// StorageBackend is one concrete file/object storage instance. An organization may
 // register multiple instances of the same provider and bind each knowledge base
 // to a different instance.
 type StorageBackend struct {
@@ -230,7 +230,7 @@ func NewStorageBackendResponse(backend *StorageBackend) StorageBackend {
 	return out
 }
 
-// StorageBackendFromLegacy projects one provider entry from the old workspace
+// StorageBackendFromLegacy projects one provider entry from the old organization
 // singleton JSON into the multi-instance model.
 func StorageBackendFromLegacy(tenantID uint64, provider string, legacy *StorageEngineConfig) *StorageBackend {
 	if legacy == nil {
@@ -258,7 +258,7 @@ func StorageBackendFromLegacy(tenantID uint64, provider string, legacy *StorageE
 }
 
 // StorageBackendFromEnvironment snapshots the process-wide storage backend for
-// a workspace. The row is read-only in the UI and keeps env-only deployments
+// an organization. The row is read-only in the UI and keeps env-only deployments
 // on the same instance-resolution path as user-managed backends.
 func StorageBackendFromEnvironment(tenantID uint64) *StorageBackend {
 	provider := strings.ToLower(strings.TrimSpace(os.Getenv("STORAGE_TYPE")))

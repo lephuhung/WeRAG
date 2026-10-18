@@ -1043,7 +1043,7 @@ func resolveStorageProviderPending(db *gorm.DB) {
 func migrateLegacyStorageBackends(db *gorm.DB) {
 	var tenants []*types.Tenant
 	if err := db.Find(&tenants).Error; err != nil {
-		logger.Warnf(context.Background(), "Failed to load workspaces for storage backend migration: %v", err)
+		logger.Warnf(context.Background(), "Failed to load organizations for storage backend migration: %v", err)
 		return
 	}
 	if len(tenants) == 0 {
@@ -1111,7 +1111,7 @@ func migrateLegacyStorageBackends(db *gorm.DB) {
 				continue
 			}
 			if err := db.Create(backend).Error; err != nil {
-				logger.Warnf(context.Background(), "Failed to migrate %s storage for workspace %d: %v", provider, tenant.ID, err)
+				logger.Warnf(context.Background(), "Failed to migrate %s storage for organization %d: %v", provider, tenant.ID, err)
 				continue
 			}
 			backendIDs[provider] = backend.ID
@@ -1119,7 +1119,7 @@ func migrateLegacyStorageBackends(db *gorm.DB) {
 		if tenant.DefaultStorageBackendID == nil {
 			if id := backendIDs[defaultProvider]; id != "" {
 				if err := db.Model(&types.Tenant{}).Where("id = ?", tenant.ID).Update("default_storage_backend_id", id).Error; err != nil {
-					logger.Warnf(context.Background(), "Failed to set default storage backend for workspace %d: %v", tenant.ID, err)
+					logger.Warnf(context.Background(), "Failed to set default storage backend for organization %d: %v", tenant.ID, err)
 				}
 			}
 		}

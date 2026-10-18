@@ -154,7 +154,7 @@ export async function listAllTenants(): Promise<{
   try {
     return await apiGet("/api/v1/tenants/all");
   } catch (error) {
-    return { success: false, message: errMsg(error, "Failed to list workspaces") };
+    return { success: false, message: errMsg(error, "Failed to list organizations") };
   }
 }
 
@@ -244,7 +244,7 @@ export async function updateTenant(
   try {
     return await apiPut(`/api/v1/tenants/${tenantId}`, payload);
   } catch (error) {
-    return { success: false, message: errMsg(error, "Failed to update workspace") };
+    return { success: false, message: errMsg(error, "Failed to update organization") };
   }
 }
 
@@ -255,7 +255,7 @@ export async function deleteTenant(
   try {
     return await apiDel(`/api/v1/tenants/${tenantId}`);
   } catch (error) {
-    return { success: false, message: errMsg(error, "Failed to delete workspace") };
+    return { success: false, message: errMsg(error, "Failed to delete organization") };
   }
 }
 
@@ -278,8 +278,8 @@ export async function createTenant(payload: {
       success: false,
       message:
         payloadErr === 2005
-          ? "Workspace creation is disabled on this deployment"
-          : errMsg(error, "Failed to create workspace"),
+          ? "Organization creation is disabled on this deployment"
+          : errMsg(error, "Failed to create organization"),
     };
   }
 }
@@ -294,7 +294,7 @@ export async function searchTenants(params: SearchTenantsParams = {}): Promise<S
     const queryString = queryParams.toString();
     return await apiGet(`/api/v1/tenants/search${queryString ? "?" + queryString : ""}`);
   } catch (error) {
-    return { success: false, message: errMsg(error, "Failed to search workspaces") };
+    return { success: false, message: errMsg(error, "Failed to search organizations") };
   }
 }
 

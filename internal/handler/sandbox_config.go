@@ -216,7 +216,7 @@ func respondSandboxConfigServiceError(c *gin.Context, err error) {
 
 // List godoc
 // @Summary      List sandbox configs
-// @Description  List workspace sandbox backend configs with credentials masked.
+// @Description  List organization sandbox backend configs with credentials masked.
 // @Tags         Sandbox
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}   "Sandbox configs and defaults"
@@ -269,7 +269,7 @@ func (h *SandboxConfigHandler) SetWorkspacePolicy(c *gin.Context) {
 
 // Create godoc
 // @Summary      Create sandbox config
-// @Description  Create a named workspace sandbox backend config. Credentials are masked in the response.
+// @Description  Create a named organization sandbox backend config. Credentials are masked in the response.
 // @Tags         Sandbox
 // @Accept       json
 // @Produce      json
@@ -301,7 +301,7 @@ func (h *SandboxConfigHandler) Create(c *gin.Context) {
 
 // Get godoc
 // @Summary      Get sandbox config
-// @Description  Retrieve a workspace sandbox backend config with credentials masked.
+// @Description  Retrieve an organization sandbox backend config with credentials masked.
 // @Tags         Sandbox
 // @Produce      json
 // @Param        id   path      string  true  "Sandbox config ID"

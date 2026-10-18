@@ -17,7 +17,7 @@ import (
 func subscriptionCaller(ctx context.Context) (types.Caller, error) {
 	caller := types.CallerFromContext(ctx)
 	if caller.TenantID == 0 || !access.IsAuthenticatedHuman(ctx, caller) {
-		return caller, apperrors.NewForbiddenError("subscriptions need a signed-in member of a workspace")
+		return caller, apperrors.NewForbiddenError("subscriptions need a signed-in member of an organization")
 	}
 	return caller, nil
 }
@@ -29,7 +29,7 @@ func subscriptionSubject(caller types.Caller, tenantWide bool) (string, error) {
 		return caller.UserID, nil
 	}
 	if !caller.Role.IsTenantAdmin() {
-		return "", apperrors.NewForbiddenError("only a tenant admin may subscribe the whole workspace")
+		return "", apperrors.NewForbiddenError("only an organization admin may subscribe the whole organization")
 	}
 	return "", nil
 }
@@ -56,7 +56,7 @@ func (s *knowledgeBaseService) SubscribeKnowledgeBase(ctx context.Context, kbID 
 		return apperrors.NewBadRequestError("only published knowledge bases can be subscribed")
 	}
 	if kb.OwnerTenantID == caller.TenantID {
-		return apperrors.NewBadRequestError("your workspace already searches its own knowledge bases")
+		return apperrors.NewBadRequestError("your organization already searches its own knowledge bases")
 	}
 	return s.subscriptionRepo.Subscribe(ctx, &types.KBSubscription{
 		ID:        uuid.NewString(),

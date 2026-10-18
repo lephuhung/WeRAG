@@ -178,7 +178,7 @@ func classifyFactoryError(
 			"vector store is currently unavailable")
 	case errors.Is(err, retriever.ErrTenantInfoMissing):
 		return apperrors.NewVectorStoreBindingInvalidError(
-			"tenant information missing in context")
+			"organization information missing in context")
 	default:
 		return err
 	}
@@ -232,7 +232,7 @@ func (s *knowledgeBaseService) authorizeKBAccess(
 				"kb_tenant_id":     kb.TenantID,
 				"kb_id":            kb.ID,
 				"reason":           "tenant lacks viewer permission for foreign-tenant KB",
-			}, "search scope rejected: unauthorized foreign-tenant KB")
+			}, "search scope rejected: unauthorized KB of another organization")
 			return apperrors.NewNotFoundError("knowledge base not found")
 		}
 	}

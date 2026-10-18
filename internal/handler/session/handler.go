@@ -283,7 +283,7 @@ func (h *Handler) GetSession(c *gin.Context) {
 
 // GetSessionsByTenant godoc
 // @Summary      Lấy danh sách cuộc trò chuyện
-// @Description  Lấy danh sách cuộc trò chuyện của không gian làm việc hiện tại, hỗ trợ phân trang, tìm theo từ khoá, lọc theo nguồn/trợ lý
+// @Description  Lấy danh sách cuộc trò chuyện của tổ chức hiện tại, hỗ trợ phân trang, tìm theo từ khoá, lọc theo nguồn/trợ lý
 // @Tags         Cuộc trò chuyện
 // @Accept       json
 // @Produce      json
@@ -499,7 +499,7 @@ type batchDeleteRequest struct {
 
 // BatchDeleteSessions godoc
 // @Summary      Xoá hàng loạt cuộc trò chuyện
-// @Description  Xoá hàng loạt cuộc trò chuyện theo danh sách ID, hoặc đặt delete_all=true để xoá toàn bộ cuộc trò chuyện của không gian làm việc hiện tại
+// @Description  Xoá hàng loạt cuộc trò chuyện theo danh sách ID, hoặc đặt delete_all=true để xoá toàn bộ cuộc trò chuyện của tổ chức hiện tại
 // @Tags         Cuộc trò chuyện
 // @Accept       json
 // @Produce      json

@@ -13,7 +13,7 @@ import (
 )
 
 // Where the value a skill would actually receive comes from. The three states
-// are distinct on purpose: "the workspace filled this in for everybody" and "I
+// are distinct on purpose: "the organization filled this in for everybody" and "I
 // filled this in for myself" lead to different actions, and neither is "nobody
 // has filled this in".
 const (
@@ -82,7 +82,7 @@ func (s *UserEnvService) caller(ctx context.Context) (uint64, types.Principal, e
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok || tenantID == 0 {
 		return 0, types.Principal{}, apperrors.NewUnauthorizedError(
-			"workspace context is required to access environment variables")
+			"organization context is required to access environment variables")
 	}
 	principal, ok := types.PrincipalFromContext(ctx)
 	if !ok {
@@ -436,7 +436,7 @@ func (s *UserEnvService) visibleConfigID(
 	}
 	if cfg == nil {
 		return "", apperrors.NewBadRequestError(
-			fmt.Sprintf("sandbox config %s is not available in this workspace", configID))
+			fmt.Sprintf("sandbox config %s is not available in this organization", configID))
 	}
 	return cfg.ID, nil
 }
@@ -465,7 +465,7 @@ func (s *UserEnvService) findVisibleSkill(
 	// One message for "not yours", "not installed" and "not usable": which of
 	// the three it is would itself be a disclosure.
 	return nil, apperrors.NewBadRequestError(
-		fmt.Sprintf("skill %s is not available in this workspace", skillID))
+		fmt.Sprintf("skill %s is not available in this organization", skillID))
 }
 
 // skillAcceptsUserEnvs reports whether a skill is one the agent can actually

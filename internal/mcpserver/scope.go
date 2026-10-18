@@ -86,7 +86,7 @@ func (s *Server) scopedKBContext(
 	if kb.TenantID != caller.TenantID && s.tenantService != nil {
 		owner, err := s.tenantService.GetTenantByID(ctx, kb.TenantID)
 		if err != nil || owner == nil {
-			return ctx, fmt.Errorf("the workspace owning knowledge base %q is unavailable", kb.ID)
+			return ctx, fmt.Errorf("the organization owning knowledge base %q is unavailable", kb.ID)
 		}
 		scoped = context.WithValue(scoped, types.TenantInfoContextKey, owner)
 	}

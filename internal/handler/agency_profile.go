@@ -74,7 +74,7 @@ func (h *AgencyProfileHandler) UpdateAgencyProfile(c *gin.Context) {
 	saved, err := h.repo.Save(ctx, p, req.Version)
 	switch {
 	case stderrors.Is(err, interfaces.ErrAgencyProfileVersion):
-		c.Error(errors.NewConflictError("Hồ sơ đơn vị vừa được người khác cập nhật; hãy tải lại rồi sửa."))
+		c.Error(errors.NewConflictError("Hồ sơ tổ chức vừa được người khác cập nhật; hãy tải lại rồi sửa."))
 		return
 	case err != nil:
 		logger.Errorf(ctx, "save agency profile: %v", err)

@@ -6,7 +6,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-// MCPEndpointRepository persists workspace MCP endpoints.
+// MCPEndpointRepository persists organization MCP endpoints.
 type MCPEndpointRepository interface {
 	Create(ctx context.Context, ep *types.MCPEndpoint) error
 	GetByID(ctx context.Context, id string) (*types.MCPEndpoint, error)
@@ -29,7 +29,7 @@ type MCPEndpointUpdate struct {
 	RateLimitPerMinute *int
 }
 
-// MCPEndpointService manages the lifecycle of workspace MCP endpoints and
+// MCPEndpointService manages the lifecycle of organization MCP endpoints and
 // resolves bearer tokens for the MCP server surface.
 type MCPEndpointService interface {
 	// Create stores a new endpoint and returns it together with the one-time

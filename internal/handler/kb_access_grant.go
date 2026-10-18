@@ -175,7 +175,7 @@ func (h *KBAccessGrantHandler) revoke(c *gin.Context, caller types.Caller, grant
 func (h *KBAccessGrantHandler) RequestAccessDisabled(c *gin.Context) {
 	c.Error(&apperrors.AppError{
 		Code:     apperrors.ErrNotFound,
-		Message:  "kb access requests are retired; ask the owning workspace admin to grant access",
+		Message:  "kb access requests are retired; ask the owning organization admin to grant access",
 		HTTPCode: http.StatusGone,
 	})
 }
@@ -184,7 +184,7 @@ func (h *KBAccessGrantHandler) RequestAccessDisabled(c *gin.Context) {
 func (h *KBAccessGrantHandler) ReviewDisabled(c *gin.Context) {
 	c.Error(&apperrors.AppError{
 		Code:     apperrors.ErrNotFound,
-		Message:  "kb access request review is retired; the owning workspace grants access directly",
+		Message:  "kb access request review is retired; the owning organization grants access directly",
 		HTTPCode: http.StatusGone,
 	})
 }
@@ -226,7 +226,7 @@ func grantHTTPError(err error) error {
 	case stderrors.Is(err, service.ErrGrantDisabled):
 		return &apperrors.AppError{
 			Code:     apperrors.ErrNotFound,
-			Message:  "kb access requests are retired; ask the owning workspace admin to grant access",
+			Message:  "kb access requests are retired; ask the owning organization admin to grant access",
 			HTTPCode: http.StatusGone,
 		}
 	case stderrors.Is(err, service.ErrGrantNotFound):
@@ -236,7 +236,7 @@ func grantHTTPError(err error) error {
 	case stderrors.Is(err, service.ErrGrantNotPending):
 		return apperrors.NewConflictError("access grant is no longer pending")
 	case stderrors.Is(err, service.ErrGrantSelfTarget):
-		return apperrors.NewBadRequestError("cannot grant a knowledge base to the tenant that owns it")
+		return apperrors.NewBadRequestError("cannot grant a knowledge base to the organization that owns it")
 	case stderrors.Is(err, service.ErrGrantNotManager):
 		return apperrors.NewForbiddenError(err.Error())
 	case stderrors.Is(err, service.ErrGrantPlatformKB):

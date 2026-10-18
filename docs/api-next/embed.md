@@ -140,7 +140,7 @@ handler: `GetEmbedChunk` · `embed_channel.go`
 |---|---|---|---|
 | `id` | string | yes | Unique identifier of the chunk, using UUID format |
 | `seq_id` | number | yes | SeqID is an auto-increment integer ID for external API usage (FAQ entries) |
-| `tenant_id` | number | yes | Tenant ID, used for multi-tenant isolation |
+| `tenant_id` | number | yes | Organization ID, used for multi-organization isolation |
 | `knowledge_id` | string | yes | ID of the parent knowledge, associated with the Knowledge model |
 | `knowledge_base_id` | string | yes | ID of the knowledge base, for quick location |
 | `tag_id` | string | yes | Optional tag ID for categorization within a knowledge base (used for FAQ) |

@@ -30,7 +30,7 @@ func NewMemoryHandler(memoryService interfaces.MemoryService) *MemoryHandler {
 
 // GetSettings godoc
 // @Summary      Lấy cài đặt bộ nhớ của tôi
-// @Description  Trả về trạng thái bật/tắt bộ nhớ đã gộp (cấp đơn vị + cấp cá nhân) và số mục bộ nhớ
+// @Description  Trả về trạng thái bật/tắt bộ nhớ đã gộp (cấp tổ chức + cấp cá nhân) và số mục bộ nhớ
 // @Tags         Bộ nhớ
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}  "Cài đặt bộ nhớ"

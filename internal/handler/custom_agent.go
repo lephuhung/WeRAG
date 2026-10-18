@@ -213,7 +213,7 @@ func (h *CustomAgentHandler) GetAgent(c *gin.Context) {
 
 // ListAgents godoc
 // @Summary      Lấy danh sách trợ lý
-// @Description  Lấy mọi trợ lý của đơn vị hiện tại (gồm cả trợ lý tích hợp sẵn)
+// @Description  Lấy mọi trợ lý của tổ chức hiện tại (gồm cả trợ lý tích hợp sẵn)
 // @Tags         Trợ lý
 // @Accept       json
 // @Produce      json
@@ -732,7 +732,7 @@ func (h *CustomAgentHandler) validateAgentSandboxConfig(
 	}
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok {
-		return errors.NewUnauthorizedError("Missing workspace context")
+		return errors.NewUnauthorizedError("Missing organization context")
 	}
 	stored, err := h.sandboxConfigs.Get(ctx, tenantID, configID)
 	if err != nil {

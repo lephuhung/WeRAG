@@ -542,7 +542,7 @@ func (s *knowledgeService) GetOwningKBCreatorID(ctx context.Context, knowledgeID
 	// minimal and tenant-scoped.
 	tenantID, ok := ctx.Value(types.TenantIDContextKey).(uint64)
 	if !ok {
-		return "", werrors.NewUnauthorizedError("Workspace ID not found in context")
+		return "", werrors.NewUnauthorizedError("Organization ID not found in context")
 	}
 	knowledge, err := s.repo.GetKnowledgeByID(ctx, tenantID, knowledgeID)
 	if err != nil {
@@ -1077,7 +1077,7 @@ func (s *knowledgeService) SearchKnowledge(ctx context.Context, keyword string, 
 	caller := types.CallerFromContext(ctx)
 	tenantID := caller.TenantID
 	if tenantID == 0 {
-		return nil, false, 0, werrors.NewUnauthorizedError("Workspace ID not found in context")
+		return nil, false, 0, werrors.NewUnauthorizedError("Organization ID not found in context")
 	}
 	ctx = types.WithExecutionTenant(ctx, tenantID)
 

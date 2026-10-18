@@ -24,7 +24,7 @@ import (
 )
 
 // ErrInvalidTenantID represents an error for invalid tenant ID
-var ErrInvalidTenantID = errors.New("invalid tenant ID")
+var ErrInvalidTenantID = errors.New("invalid organization ID")
 
 const kbTaskCleanupTimeout = 5 * time.Second
 
@@ -188,7 +188,7 @@ func (s *knowledgeBaseService) CreateKnowledgeBase(ctx context.Context,
 		// deleted/missing tenant instead of orphaning the row; surface
 		// that as 404 so callers don't read it as an infra failure.
 		if errors.Is(err, repository.ErrTenantNotFound) {
-			return nil, apperrors.NewNotFoundError("workspace not found")
+			return nil, apperrors.NewNotFoundError("organization not found")
 		}
 		return nil, err
 	}
@@ -207,7 +207,7 @@ func (s *knowledgeBaseService) applyAndValidateStorageBackend(ctx context.Contex
 	}
 	tenant, _ := types.TenantInfoFromContext(ctx)
 	if tenant == nil {
-		return apperrors.NewBadRequestError("workspace context missing")
+		return apperrors.NewBadRequestError("organization context missing")
 	}
 	id := ""
 	if kb.StorageBackendID != nil {
@@ -384,7 +384,7 @@ func (s *knowledgeBaseService) CreatePublicKnowledgeBase(ctx context.Context,
 	// SuperAdmin's workspace: file storage and resource registration need a
 	// real tenant, and tenant 0 is rejected there.
 	if caller.TenantID == 0 {
-		return nil, apperrors.NewBadRequestError("select a workspace before creating a public knowledge base")
+		return nil, apperrors.NewBadRequestError("select an organization before creating a public knowledge base")
 	}
 	if kb.ID == "" {
 		kb.ID = uuid.New().String()
@@ -407,7 +407,7 @@ func (s *knowledgeBaseService) CreatePublicKnowledgeBase(ctx context.Context,
 	// used. Tenant-scoped backend bindings and the active tenant's
 	// defaults are never consulted here.
 	if kb.StorageBackendID != nil && strings.TrimSpace(*kb.StorageBackendID) != "" {
-		return nil, apperrors.NewBadRequestError("public knowledge bases cannot bind a tenant storage backend")
+		return nil, apperrors.NewBadRequestError("public knowledge bases cannot bind an organization storage backend")
 	}
 	kb.StorageBackendID = nil
 	provider := strings.ToLower(strings.TrimSpace(kb.GetStorageProvider()))
@@ -645,7 +645,7 @@ func (s *knowledgeBaseService) SetKnowledgeBaseVisibility(
 			if caller.TenantID == 0 {
 				return nil, apperrors.NewUnauthorizedError("Unauthorized")
 			}
-			return nil, apperrors.NewForbiddenError("only the owning tenant's admin may change this knowledge base's scope")
+			return nil, apperrors.NewForbiddenError("only the owning organization's admin may change this knowledge base's scope")
 		}
 		if kb.Visibility == visibility {
 			return kb, nil
@@ -668,12 +668,12 @@ func (s *knowledgeBaseService) SetKnowledgeBaseVisibility(
 	}
 	if kb.Visibility == types.KBVisibilityPublished || visibility == types.KBVisibilityPublished ||
 		kb.Visibility == types.KBVisibilityRestricted || visibility == types.KBVisibilityRestricted {
-		return nil, apperrors.NewBadRequestError("move the knowledge base to tenant scope first")
+		return nil, apperrors.NewBadRequestError("move the knowledge base to organization scope first")
 	}
 	switch {
 	case kb.Visibility == types.KBVisibilityPublic && visibility == types.KBVisibilityPublic:
 		if targetTenantID != 0 {
-			return nil, apperrors.NewBadRequestError("target tenant must be omitted when keeping public scope")
+			return nil, apperrors.NewBadRequestError("target organization must be omitted when keeping public scope")
 		}
 		return kb, nil
 	case kb.Visibility == types.KBVisibilityTenant && visibility == types.KBVisibilityTenant:
@@ -687,7 +687,7 @@ func (s *knowledgeBaseService) SetKnowledgeBaseVisibility(
 		return nil, errOwnerChangeUseTransfer()
 	case kb.Visibility == types.KBVisibilityTenant && visibility == types.KBVisibilityPublic:
 		if targetTenantID != 0 {
-			return nil, apperrors.NewBadRequestError("target tenant must be omitted when publishing to public scope")
+			return nil, apperrors.NewBadRequestError("target organization must be omitted when publishing to public scope")
 		}
 		kb.OwnerTenantID = 0
 		kb.Visibility = types.KBVisibilityPublic
@@ -723,14 +723,14 @@ func (s *knowledgeBaseService) SetKnowledgeBaseMemberDefault(
 		return nil, apperrors.NewNotFoundError("knowledge base not found")
 	}
 	if kb.OwnerTenantID == 0 {
-		return nil, apperrors.NewBadRequestError("member_default applies to tenant-owned knowledge bases only")
+		return nil, apperrors.NewBadRequestError("member_default applies to organization-owned knowledge bases only")
 	}
 	caller := types.CallerFromContext(ctx)
 	if !access.CanManageKBSharing(ctx, caller, kb.OwnerTenantID) {
 		if caller.TenantID == 0 {
 			return nil, apperrors.NewUnauthorizedError("Unauthorized")
 		}
-		return nil, apperrors.NewForbiddenError("only the owning tenant's admin may change member access")
+		return nil, apperrors.NewForbiddenError("only the owning organization's admin may change member access")
 	}
 	if kb.MemberDefault == memberDefault {
 		return kb, nil
@@ -795,7 +795,7 @@ func (s *knowledgeBaseService) persistKBScope(
 // visibility endpoint.
 func errOwnerChangeUseTransfer() error {
 	return apperrors.NewBadRequestError(
-		"changing the owner tenant is not a visibility change; use POST /knowledge-bases/:id/transfer-owner")
+		"changing the owner organization is not a visibility change; use POST /knowledge-bases/:id/transfer-owner")
 }
 
 // TransferKnowledgeBaseOwner moves a KB to targetTenantID. Explicit human
@@ -845,28 +845,28 @@ func (s *knowledgeBaseService) TransferKnowledgeBaseOwner(
 		return nil, apperrors.NewBadRequestError("knowledge base scope does not allow an owner transfer")
 	}
 	if targetTenantID == kb.OwnerTenantID {
-		return nil, apperrors.NewBadRequestError("the knowledge base already belongs to this tenant")
+		return nil, apperrors.NewBadRequestError("the knowledge base already belongs to this organization")
 	}
 	// The destination must exist before the row is touched so a typo
 	// leaves the previous owner/visibility intact.
 	if s.tenantRepo == nil {
-		return nil, apperrors.NewInternalServerError("tenant service unavailable")
+		return nil, apperrors.NewInternalServerError("organization service unavailable")
 	}
 	target, terr := s.tenantRepo.GetTenantByID(ctx, targetTenantID)
 	if terr != nil {
 		if errors.Is(terr, repository.ErrTenantNotFound) {
-			return nil, apperrors.NewNotFoundError("target tenant not found")
+			return nil, apperrors.NewNotFoundError("target organization not found")
 		}
 		return nil, terr
 	}
 	if target == nil {
-		return nil, apperrors.NewNotFoundError("target tenant not found")
+		return nil, apperrors.NewNotFoundError("target organization not found")
 	}
 	if target.IsConfigProfile() {
-		return nil, apperrors.NewBadRequestError("target tenant is a configuration profile, not a workspace")
+		return nil, apperrors.NewBadRequestError("the target is a configuration profile, not an organization")
 	}
 	if !isActiveTenantStatus(target.Status) {
-		return nil, apperrors.NewBadRequestError("target tenant is not active")
+		return nil, apperrors.NewBadRequestError("target organization is not active")
 	}
 	oldScope := newKBScopeOf(kb)
 	result := &types.KBOwnerTransferResult{

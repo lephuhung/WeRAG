@@ -71,7 +71,7 @@ func (h *CustomAgentHandler) AgentCreatorLookup(c *gin.Context) (string, error) 
 	ctx := c.Request.Context()
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok {
-		return "", errors.New("workspace context missing")
+		return "", errors.New("organization context missing")
 	}
 	agent, err := h.service.GetAgentByID(ctx, id)
 	if err != nil {
@@ -154,7 +154,7 @@ func (h *ChunkHandler) KBCreatorLookupFromChunkIDParam(c *gin.Context) (string, 
 	ctx := c.Request.Context()
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok {
-		return "", errors.New("workspace context missing")
+		return "", errors.New("organization context missing")
 	}
 	chunk, err := h.service.GetChunkByIDOnly(ctx, chunkID)
 	if err != nil {
@@ -199,7 +199,7 @@ func resolveKBCreatorByKBID(
 	ctx := c.Request.Context()
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok {
-		return "", errors.New("workspace context missing")
+		return "", errors.New("organization context missing")
 	}
 	kb, err := kbService.GetKnowledgeBaseByID(ctx, kbID)
 	if err != nil {
@@ -232,7 +232,7 @@ func resolveKBCreatorByKnowledgeID(
 		// Same fail-closed reasoning as KBCreatorLookup: no tenant
 		// context means auth didn't complete, and we'd rather have the
 		// caller see a 503 than a silent fail-open.
-		return "", errors.New("workspace context missing")
+		return "", errors.New("organization context missing")
 	}
 	creatorID, err := kgService.GetOwningKBCreatorID(ctx, knowledgeID)
 	if err != nil {
@@ -267,7 +267,7 @@ func resolveKnowledgeUploader(c *gin.Context, kgService interfaces.KnowledgeServ
 	ctx := c.Request.Context()
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok {
-		return "", errors.New("workspace context missing")
+		return "", errors.New("organization context missing")
 	}
 	knowledge, err := kgService.GetKnowledgeByIDOnly(ctx, knowledgeID)
 	if err != nil {

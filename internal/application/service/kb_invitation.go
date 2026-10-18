@@ -24,10 +24,10 @@ var (
 	ErrKBInviteExpired       = errors.New("kb invitation has expired")
 	ErrKBInviteForbidden     = errors.New("only the invited recipient can accept this invitation")
 	ErrKBInviteTokenInvalid  = errors.New("kb invitation token is invalid or has been revoked")
-	ErrKBInviteNotOwnerAdmin = errors.New("only a tenant admin of the owning tenant can manage kb invitations")
+	ErrKBInviteNotOwnerAdmin = errors.New("only an organization admin of the owning organization can manage kb invitations")
 	// ErrKBInviteRecipientNotMember is returned at issuance when the
 	// named recipient holds no active membership in recipient_tenant_id.
-	ErrKBInviteRecipientNotMember = errors.New("recipient must be an active member of the recipient workspace")
+	ErrKBInviteRecipientNotMember = errors.New("recipient must be an active member of the recipient organization")
 )
 
 // kbInvitationService implements interfaces.KBInvitationService.

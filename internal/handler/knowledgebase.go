@@ -532,7 +532,7 @@ func (h *KnowledgeBaseHandler) GetKnowledgeBase(c *gin.Context) {
 
 // ListKnowledgeBases godoc
 // @Summary      Lấy danh sách kho tri thức
-// @Description  Lấy mọi kho tri thức của đơn vị hiện tại; hoặc khi truyền agent_id (trợ lý chia sẻ), kiểm tra quyền rồi trả về phạm vi kho tri thức mà trợ lý đó được cấu hình (dùng cho @ nhắc)
+// @Description  Lấy mọi kho tri thức của tổ chức hiện tại; hoặc khi truyền agent_id (trợ lý chia sẻ), kiểm tra quyền rồi trả về phạm vi kho tri thức mà trợ lý đó được cấu hình (dùng cho @ nhắc)
 // @Tags         Kho tri thức
 // @Accept       json
 // @Produce      json
@@ -613,7 +613,7 @@ func (h *KnowledgeBaseHandler) ListKnowledgeBases(c *gin.Context) {
 
 // ListPublicCatalog godoc
 // @Summary      Danh mục kho tri thức công khai của nền tảng
-// @Description  Trả về một trang KB công khai của nền tảng (owner_tenant_id=0 và visibility=public) kèm metadata total/page/page_size. Chỉ người dùng đã xác thực gọi được; ẩn danh 401, API key 403. SuperAdmin là người thật không có ngữ cảnh đơn vị vẫn gọi được.
+// @Description  Trả về một trang KB công khai của nền tảng (owner_tenant_id=0 và visibility=public) kèm metadata total/page/page_size. Chỉ người dùng đã xác thực gọi được; ẩn danh 401, API key 403. SuperAdmin là người thật không có ngữ cảnh tổ chức vẫn gọi được.
 // @Tags         Kho tri thức
 // @Produce      json
 // @Param        page       query     int     false  "số trang (bắt đầu từ 1, mặc định 1)"
@@ -674,7 +674,7 @@ func (h *KnowledgeBaseHandler) ListPublicCatalog(c *gin.Context) {
 
 // SubscribeKnowledgeBase godoc
 // @Summary      Subscribe to a published knowledge base
-// @Description  Adds a published KB to the default retrieval scope of the caller, or of the whole workspace with scope=tenant (Tenant Admin only).
+// @Description  Adds a published KB to the default retrieval scope of the caller, or of the whole organization with scope=tenant (Organization Admin only).
 // @Tags         Kho tri thức
 // @Param        id     path   string  true   "Knowledge base ID"
 // @Param        scope  query  string  false  "me (default) or tenant"
@@ -943,13 +943,13 @@ func (h *KnowledgeBaseHandler) UpdateKnowledgeBase(c *gin.Context) {
 // visibility = tenant | public. target_tenant_id carries the destination
 // tenant for public→tenant transfers and must be omitted otherwise.
 type UpdateKnowledgeBaseVisibilityRequest struct {
-	// Visibility: tenant | restricted | published (owner Tenant Admin or
+	// Visibility: tenant | restricted | published (owner Organization Admin or
 	// SuperAdmin) or public (SuperAdmin). Optional when only
 	// member_default changes.
 	Visibility     types.KBVisibility `json:"visibility"`
 	TargetTenantID uint64             `json:"target_tenant_id"`
-	// MemberDefault (optional): view | contribute — what owner-tenant
-	// members may do on a 'tenant' KB. Owner Tenant Admin or SuperAdmin.
+	// MemberDefault (optional): view | contribute — what owner-organization
+	// members may do on a 'tenant' KB. Owner Organization Admin or SuperAdmin.
 	MemberDefault *types.KBMemberDefault `json:"member_default"`
 }
 
@@ -1027,12 +1027,12 @@ type TransferKnowledgeBaseOwnerResponse struct {
 
 // TransferKnowledgeBaseOwner godoc
 // @Summary      Transfer knowledge base owner
-// @Description  Explicit human SuperAdmin only. Moves a tenant-owned (tenant/restricted/published) or platform public KB to target_tenant_id without widening its scope: restricted stays restricted (only the target's Admins and SuperAdmins read it until the target shares it), tenant stays tenant, published is withdrawn to tenant (withdrawn_from_published=true), platform public becomes tenant. Data-scope tenant_id and member_default are kept; every invitation and tenant grant is revoked (revoked_reason owner_changed).
+// @Description  Explicit human SuperAdmin only. Moves an organization-owned (tenant/restricted/published) or platform public KB to target_tenant_id without widening its scope: restricted stays restricted (only the target's Admins and SuperAdmins read it until the target shares it), tenant stays tenant, published is withdrawn to tenant (withdrawn_from_published=true), platform public becomes tenant. Data-scope tenant_id and member_default are kept; every invitation and tenant grant is revoked (revoked_reason owner_changed).
 // @Tags         Kho tri thức
 // @Accept       json
 // @Produce      json
 // @Param        id       path      string                             true  "Knowledge Base ID"
-// @Param        request  body      TransferKnowledgeBaseOwnerRequest  true  "Target tenant"
+// @Param        request  body      TransferKnowledgeBaseOwnerRequest  true  "Target organization"
 // @Success      200      {object}  map[string]interface{}
 // @Failure      400      {object}  errors.AppError
 // @Failure      403      {object}  errors.AppError

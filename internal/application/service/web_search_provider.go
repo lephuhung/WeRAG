@@ -24,7 +24,7 @@ func NewWebSearchProviderService(repo interfaces.WebSearchProviderRepository) in
 // CreateProvider creates a new web search provider configuration.
 func (s *webSearchProviderService) CreateProvider(ctx context.Context, provider *types.WebSearchProviderEntity) error {
 	if provider.TenantID == 0 {
-		return fmt.Errorf("tenant ID is required")
+		return fmt.Errorf("organization ID is required")
 	}
 
 	if !isValidProviderType(provider.Provider) {
@@ -48,7 +48,7 @@ func (s *webSearchProviderService) CreateProvider(ctx context.Context, provider 
 // UpdateProvider updates an existing provider.
 func (s *webSearchProviderService) UpdateProvider(ctx context.Context, provider *types.WebSearchProviderEntity) error {
 	if provider.TenantID == 0 {
-		return fmt.Errorf("tenant ID is required")
+		return fmt.Errorf("organization ID is required")
 	}
 
 	// Validate provider type if set

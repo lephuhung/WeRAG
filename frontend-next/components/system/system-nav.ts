@@ -50,7 +50,7 @@ const workspaceGroups: SystemNavGroup[] = WORKSPACE_NAV_GROUPS.map((g) => ({
 export const SYSTEM_TABS: SystemTab[] = [
   {
     key: "workspace",
-    label: "Workspace",
+    label: "Organization",
     labelKey: "systemNav.workspace",
     href: W,
     groups: workspaceGroups,

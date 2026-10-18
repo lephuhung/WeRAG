@@ -13,7 +13,7 @@ type KnowledgeProcessOverrides struct {
 	GraphEnabled             *bool                     `json:"graph_enabled,omitempty"`
 	ExtractConfig            *ExtractConfig            `json:"extract_config,omitempty"`
 	// ParserEngineOverrides passes key-value configuration to docreader parsers
-	// (e.g. pdf_force_scanned=true). Merged with workspace-level overrides in the
+	// (e.g. pdf_force_scanned=true). Merged with organization-level overrides in the
 	// parse pipeline; per-upload values take priority on conflict.
 	ParserEngineOverrides map[string]string `json:"parser_engine_overrides,omitempty"`
 }
@@ -22,7 +22,7 @@ type KnowledgeProcessOverrides struct {
 // publishes via the system_settings key "knowledge.parse_defaults". When
 // Enabled is true the embedded overrides replace whatever per-upload or
 // per-document overrides were supplied — every ingestion path resolves
-// against these values merged over the KB-level defaults, so workspace
+// against these values merged over the KB-level defaults, so organization
 // admins can upload without configuring parse settings themselves.
 // The JSON shape is {"enabled": bool, ...KnowledgeProcessOverrides} so the
 // exact payload the upload dialog emits is reusable verbatim.

@@ -163,7 +163,7 @@ func (g *usageGuard) sessionStatus(
 // usageDenial turns an entitlement into the 429 the caller gets, or nil.
 func usageDenial(ent *types.UsageEntitlement, userID string) error {
 	if ent == nil {
-		return apperrors.NewTooManyRequestsError("no usage package covers this workspace or account").
+		return apperrors.NewTooManyRequestsError("no usage package covers this organization or account").
 			WithDetails(types.UsageDenial{Reason: types.UsageDenialNoSubscription})
 	}
 	if ent.Expired {
@@ -172,7 +172,7 @@ func usageDenial(ent *types.UsageEntitlement, userID string) error {
 	}
 	realUser := userID != "" && !types.IsSyntheticUserID(userID)
 	if ent.Mode == types.UsageModeSeat && realUser && !ent.HasSeat {
-		return apperrors.NewTooManyRequestsError("no seat of the workspace package is assigned to this account").
+		return apperrors.NewTooManyRequestsError("no seat of the organization package is assigned to this account").
 			WithDetails(types.UsageDenial{Reason: types.UsageDenialNoSeat})
 	}
 	for _, lim := range ent.Limits {

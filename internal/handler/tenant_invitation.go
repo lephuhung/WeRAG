@@ -195,11 +195,11 @@ func (h *TenantInvitationHandler) hydrateTenants(c *gin.Context, invs []*types.T
 }
 
 // ListTenantInvitations godoc
-// @Summary      Liệt kê lời mời của đơn vị
-// @Description  Liệt kê lời mời đang chờ / lịch sử theo đơn vị. Khi query include_terminal=true thì kèm accepted/declined/revoked/expired.
-// @Tags         Lời mời đơn vị
+// @Summary      Liệt kê lời mời của tổ chức
+// @Description  Liệt kê lời mời đang chờ / lịch sử theo tổ chức. Khi query include_terminal=true thì kèm accepted/declined/revoked/expired.
+// @Tags         Lời mời tổ chức
 // @Produce      json
-// @Param        id                path   string  true   "Tenant workspace ID"
+// @Param        id                path   string  true   "Organization ID"
 // @Param        include_terminal  query  bool    false  "Có gồm các dòng ở trạng thái kết thúc không (mặc định false)"
 // @Param        page              query  int     false  "Số trang (bắt đầu từ 1)"  default(1)
 // @Param        page_size         query  int     false  "Số mục mỗi trang"  default(20)
@@ -254,12 +254,12 @@ func (h *TenantInvitationHandler) ListTenantInvitations(c *gin.Context) {
 }
 
 // CreateInvitation godoc
-// @Summary      Gửi lời mời vào đơn vị
-// @Description  Owner mời người dùng đã đăng ký vào đơn vị qua email. Khi bật tenant.auto_accept_invitation, người được mời tự động tham gia ngay (phản hồi là cấu trúc thành viên); nếu không, họ phải chấp nhận tại /me/invitations mới thành thành viên.
-// @Tags         Lời mời đơn vị
+// @Summary      Gửi lời mời vào tổ chức
+// @Description  Owner mời người dùng đã đăng ký vào tổ chức qua email. Khi bật tenant.auto_accept_invitation, người được mời tự động tham gia ngay (phản hồi là cấu trúc thành viên); nếu không, họ phải chấp nhận tại /me/invitations mới thành thành viên.
+// @Tags         Lời mời tổ chức
 // @Accept       json
 // @Produce      json
-// @Param        id       path  string                   true  "Tenant workspace ID"
+// @Param        id       path  string                   true  "Organization ID"
 // @Param        request  body  createInvitationRequest  true  "Yêu cầu mời"
 // @Success      201  {object}  map[string]interface{}
 // @Security     Bearer
@@ -382,7 +382,7 @@ func (h *TenantInvitationHandler) autoAcceptInvitationAndRespond(
 				"auto_accept: member added but default tenant update failed: user=%s tenant=%d err=%v",
 				user.ID, tenantID, updateErr)
 			c.Error(apperrors.NewInternalServerError(
-				"member added but default workspace update failed").WithDetails(updateErr.Error()))
+				"member added but default organization update failed").WithDetails(updateErr.Error()))
 			return
 		}
 	}
@@ -392,9 +392,9 @@ func (h *TenantInvitationHandler) autoAcceptInvitationAndRespond(
 // RevokeInvitation godoc
 // @Summary      Thu hồi lời mời đang chờ
 // @Description  Owner hủy một lời mời còn pending; dòng đã accepted/declined/revoked/expired không thu hồi được nữa.
-// @Tags         Lời mời đơn vị
+// @Tags         Lời mời tổ chức
 // @Produce      json
-// @Param        id      path  string  true  "Tenant workspace ID"
+// @Param        id      path  string  true  "Organization ID"
 // @Param        inv_id  path  string  true  "ID lời mời"
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
@@ -565,7 +565,7 @@ func (h *TenantInvitationHandler) AcceptMyInvitation(c *gin.Context) {
 		if updateErr := h.userService.UpdateUser(ctx, user); updateErr != nil {
 			logger.Errorf(ctx, "AcceptMyInvitation failed to set default tenant: user=%s tenant=%d err=%v",
 				caller, member.TenantID, updateErr)
-			c.Error(apperrors.NewInternalServerError("invitation accepted but default workspace update failed").WithDetails(updateErr.Error()))
+			c.Error(apperrors.NewInternalServerError("invitation accepted but default organization update failed").WithDetails(updateErr.Error()))
 			return
 		}
 	}
@@ -590,8 +590,8 @@ type acceptInvitationByTokenRequest struct {
 }
 
 // AcceptMyInvitationByToken godoc
-// @Summary      Tham gia đơn vị qua liên kết chia sẻ
-// @Description  Người dùng đã đăng nhập dùng token của liên kết mời chia sẻ để tham gia đơn vị, không tạo tài khoản mới; lũy đẳng với người đã là thành viên.
+// @Summary      Tham gia tổ chức qua liên kết chia sẻ
+// @Description  Người dùng đã đăng nhập dùng token của liên kết mời chia sẻ để tham gia tổ chức, không tạo tài khoản mới; lũy đẳng với người đã là thành viên.
 // @Tags         Lời mời của tôi
 // @Accept       json
 // @Produce      json
@@ -642,7 +642,7 @@ func (h *TenantInvitationHandler) AcceptMyInvitationByToken(c *gin.Context) {
 		if updateErr := h.userService.UpdateUser(ctx, user); updateErr != nil {
 			logger.Errorf(ctx, "AcceptMyInvitationByToken failed to set default tenant: user=%s tenant=%d err=%v",
 				caller, member.TenantID, updateErr)
-			c.Error(apperrors.NewInternalServerError("invitation accepted but default workspace update failed").WithDetails(updateErr.Error()))
+			c.Error(apperrors.NewInternalServerError("invitation accepted but default organization update failed").WithDetails(updateErr.Error()))
 			return
 		}
 	}

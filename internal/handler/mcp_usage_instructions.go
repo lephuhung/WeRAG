@@ -34,7 +34,7 @@ func (h *MCPServiceHandler) GenerateMCPUsageInstructions(c *gin.Context) {
 	defer cancel()
 	tenant := c.GetUint64(types.TenantIDContextKey.String())
 	if tenant == 0 {
-		_ = c.Error(errors.NewBadRequestError("Workspace ID cannot be empty"))
+		_ = c.Error(errors.NewBadRequestError("Organization ID cannot be empty"))
 		return
 	}
 	var req struct {

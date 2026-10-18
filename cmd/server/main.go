@@ -19,7 +19,7 @@
 // @securityDefinitions.apikey ApiKeyAuth
 // @in header
 // @name X-API-Key
-// @description API Key authentication: Tenant Key accesses the corresponding workspace; Platform Key requires X-Tenant-ID header when invoking workspace APIs
+// @description API Key authentication: Organization Key accesses the corresponding organization; Platform Key requires X-Tenant-ID header when invoking organization APIs
 package main
 
 import (

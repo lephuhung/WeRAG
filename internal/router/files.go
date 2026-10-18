@@ -196,7 +196,7 @@ func newGatedFileServeHandler(
 
 		tenant, _ := c.Request.Context().Value(types.TenantInfoContextKey).(*types.Tenant)
 		if tenant == nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: workspace context missing"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: organization context missing"})
 			return
 		}
 		reference := filePath
@@ -525,7 +525,7 @@ func fileAccessError(c *gin.Context, err error) bool {
 	case errors.Is(err, access.ErrNotFound):
 		c.Status(http.StatusNotFound)
 	case errors.Is(err, access.ErrUnauthorized):
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: workspace context missing"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: organization context missing"})
 	case errors.Is(err, access.ErrForbidden):
 		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: file not accessible from this resource"})
 	default:
@@ -715,7 +715,7 @@ func servePresignedPreview(
 
 			tenant, _ := ctx.Value(types.TenantInfoContextKey).(*types.Tenant)
 			if tenant == nil {
-				c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: workspace context missing"})
+				c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized: organization context missing"})
 				return
 			}
 
@@ -738,7 +738,7 @@ func servePresignedPreview(
 				c.JSON(http.StatusBadRequest, gin.H{
 					"error":    err.Error(),
 					"provider": provider,
-					"hint":     "workspace storage config is missing or incomplete for this provider",
+					"hint":     "organization storage config is missing or incomplete for this provider",
 				})
 				return
 			}

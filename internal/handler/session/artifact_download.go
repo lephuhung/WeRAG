@@ -209,7 +209,7 @@ func (h *Handler) DownloadMessageArtifact(c *gin.Context) {
 	if h.tenantService != nil {
 		tenant, lookupErr := h.tenantService.GetTenantByID(ctx, file.OwnerTenantID)
 		if lookupErr != nil || tenant == nil {
-			_ = c.Error(errors.NewNotFoundError("artifact workspace unavailable"))
+			_ = c.Error(errors.NewNotFoundError("artifact organization unavailable"))
 			return
 		}
 		backendID, providerPath, scoped := types.ParseStorageBackendPath(file.Path)

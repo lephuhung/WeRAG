@@ -104,7 +104,7 @@ func (h *SystemHandler) CheckSandboxConfig(c *gin.Context) {
 	}
 	tenant, _ := types.TenantInfoFromContext(c.Request.Context())
 	if tenant == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "thiếu thông tin đơn vị"})
+		c.JSON(http.StatusBadRequest, gin.H{"code": 1, "msg": "thiếu thông tin tổ chức"})
 		return
 	}
 

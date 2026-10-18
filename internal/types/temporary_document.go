@@ -102,7 +102,7 @@ type TemporaryDocumentTaskPayload struct {
 }
 
 type TemporaryDocumentCreateOptions struct {
-	// ResourceTenantID is the verified agent source workspace used to resolve
+	// ResourceTenantID is the verified agent source organization used to resolve
 	// parser/model dependencies. The document itself remains owned by TenantID.
 	ResourceTenantID uint64 `json:"resource_tenant_id,omitempty"`
 	ASRModelID       string `json:"asr_model_id,omitempty"`

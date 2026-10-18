@@ -333,7 +333,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Lấy mọi trợ lý của đơn vị hiện tại (gồm cả trợ lý tích hợp sẵn)",
+                "description": "Lấy mọi trợ lý của tổ chức hiện tại (gồm cả trợ lý tích hợp sẵn)",
                 "consumes": [
                     "application/json"
                 ],
@@ -1161,7 +1161,7 @@ const docTemplate = `{
         },
         "/auth/invitations/lookup": {
             "post": {
-                "description": "Theo token trong liên kết mời, trả về ngữ cảnh lời mời (tên đơn vị / vai trò / thời hạn)\nđể trang đăng ký hiển thị. Không cần xác thực; token không hợp lệ hoặc đã thu hồi trả về 410.\nDùng POST + body thay vì GET + path để token không lọt vào access log / lịch sử trình duyệt / tracing.",
+                "description": "Theo token trong liên kết mời, trả về ngữ cảnh lời mời (tên tổ chức / vai trò / thời hạn)\nđể trang đăng ký hiển thị. Không cần xác thực; token không hợp lệ hoặc đã thu hồi trả về 410.\nDùng POST + body thay vì GET + path để token không lọt vào access log / lịch sử trình duyệt / tracing.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1366,7 +1366,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Accepts one multipart image (png/jpg/webp/gif, ≤5MB), stores it\nvia the tenant's file service and records the returned\nprovider path on the caller's profile. Clients render it back\nthrough the authenticated /files proxy.",
+                "description": "Accepts one multipart image (png/jpg/webp/gif, ≤5MB), stores it\nvia the organization's file service and records the returned\nprovider path on the caller's profile. Clients render it back\nthrough the authenticated /files proxy.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -1703,7 +1703,7 @@ const docTemplate = `{
         },
         "/auth/register-by-invite": {
             "post": {
-                "description": "Hoàn tất đăng ký bằng token liên kết mời do Owner tạo, bỏ qua chặn của chế độ invite_only.\nNgười đăng ký tự điền email (không gắn với token); đăng ký xong tự động vào đơn vị tương ứng.",
+                "description": "Hoàn tất đăng ký bằng token liên kết mời do Owner tạo, bỏ qua chặn của chế độ invite_only.\nNgười đăng ký tự điền email (không gắn với token); đăng ký xong tự động vào tổ chức tương ứng.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1760,7 +1760,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Cấp lại access token cho người dùng hiện tại trên đơn vị đích; người dùng phải là thành viên active của đơn vị đó (trừ SuperAdmin liên đơn vị).\nChuyển thành công sẽ ghi đơn vị đích vào tuỳ chọn \"đơn vị hoạt động gần nhất\"; lần đăng nhập và refresh sau đều rơi vào đơn vị này (refresh JWT không chứa tenant_id).\nTuỳ chọn này ở cấp tài khoản: một lần chuyển sẽ đổi điểm đến của đăng nhập/refresh trên mọi thiết bị. Ghi tuỳ chọn thất bại thì cả lần chuyển thất bại, không phát token mới.",
+                "description": "Cấp lại access token cho người dùng hiện tại trên tổ chức đích; người dùng phải là thành viên active của tổ chức đó (trừ SuperAdmin liên tổ chức).\nChuyển thành công sẽ ghi tổ chức đích vào tuỳ chọn \"tổ chức hoạt động gần nhất\"; lần đăng nhập và refresh sau đều rơi vào tổ chức này (refresh JWT không chứa tenant_id).\nTuỳ chọn này ở cấp tài khoản: một lần chuyển sẽ đổi điểm đến của đăng nhập/refresh trên mọi thiết bị. Ghi tuỳ chọn thất bại thì cả lần chuyển thất bại, không phát token mới.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1770,10 +1770,10 @@ const docTemplate = `{
                 "tags": [
                     "Xác thực"
                 ],
-                "summary": "Chuyển đơn vị đang hoạt động",
+                "summary": "Chuyển tổ chức đang hoạt động",
                 "parameters": [
                     {
-                        "description": "yêu cầu chuyển đơn vị",
+                        "description": "yêu cầu chuyển tổ chức",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -1804,7 +1804,7 @@ const docTemplate = `{
                         }
                     },
                     "403": {
-                        "description": "không phải thành viên của đơn vị này hoặc ghi tuỳ chọn thất bại",
+                        "description": "không phải thành viên của tổ chức này hoặc ghi tuỳ chọn thất bại",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -1879,7 +1879,7 @@ const docTemplate = `{
                 "tags": [
                     "Thanh toán"
                 ],
-                "summary": "My orders and, for a workspace admin, the workspace's",
+                "summary": "My orders and, for an organization admin, the organization's",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -1902,7 +1902,7 @@ const docTemplate = `{
                 "tags": [
                     "Thanh toán"
                 ],
-                "summary": "Place an order for the workspace or for oneself",
+                "summary": "Place an order for the organization or for oneself",
                 "parameters": [
                     {
                         "description": "what to buy",
@@ -1966,7 +1966,7 @@ const docTemplate = `{
                 "tags": [
                     "Thanh toán"
                 ],
-                "summary": "Cancel a pending order of mine / of my workspace",
+                "summary": "Cancel a pending order of mine / of my organization",
                 "parameters": [
                     {
                         "type": "string",
@@ -2495,7 +2495,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Multipart upload: file (.docx), optional document_type\n(auto by default), scope (auto | full | technical |\nattached: documents outside the 29 văn bản hành chính get\nthe technical layout checks only), segmenter (auto | heuristic) and\nevaluate=true (judge the format data against the document-type\nskills with the workspace chat model, thinking on; ~1 min).\nReturns every rule with pass/fail/warn/skip, the measured\nvalue, the offending lines, the format data and, with\nevaluate, the written evaluation.",
+                "description": "Multipart upload: file (.docx), optional document_type\n(auto by default), scope (auto | full | technical |\nattached: documents outside the 29 văn bản hành chính get\nthe technical layout checks only), segmenter (auto | heuristic) and\nevaluate=true (judge the format data against the document-type\nskills with the organization chat model, thinking on; ~1 min).\nReturns every rule with pass/fail/warn/skip, the measured\nvalue, the offending lines, the format data and, with\nevaluate, the written evaluation.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -3807,7 +3807,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Lấy mọi kho tri thức của đơn vị hiện tại; hoặc khi truyền agent_id (trợ lý chia sẻ), kiểm tra quyền rồi trả về phạm vi kho tri thức mà trợ lý đó được cấu hình (dùng cho @ nhắc)",
+                "description": "Lấy mọi kho tri thức của tổ chức hiện tại; hoặc khi truyền agent_id (trợ lý chia sẻ), kiểm tra quyền rồi trả về phạm vi kho tri thức mà trợ lý đó được cấu hình (dùng cho @ nhắc)",
                 "consumes": [
                     "application/json"
                 ],
@@ -3993,7 +3993,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Trả về một trang KB công khai của nền tảng (owner_tenant_id=0 và visibility=public) kèm metadata total/page/page_size. Chỉ người dùng đã xác thực gọi được; ẩn danh 401, API key 403. SuperAdmin là người thật không có ngữ cảnh đơn vị vẫn gọi được.",
+                "description": "Trả về một trang KB công khai của nền tảng (owner_tenant_id=0 và visibility=public) kèm metadata total/page/page_size. Chỉ người dùng đã xác thực gọi được; ẩn danh 401, API key 403. SuperAdmin là người thật không có ngữ cảnh tổ chức vẫn gọi được.",
                 "produces": [
                     "application/json"
                 ],
@@ -4276,7 +4276,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Trả về các thay đổi quan trọng và tác vụ nền của kho tri thức. Chỉ người tạo kho tri thức hoặc quản trị viên đơn vị sở hữu được đọc; đơn vị được chia sẻ không đọc được.",
+                "description": "Trả về các thay đổi quan trọng và tác vụ nền của kho tri thức. Chỉ người tạo kho tri thức hoặc quản trị viên tổ chức sở hữu được đọc; tổ chức được chia sẻ không đọc được.",
                 "produces": [
                     "application/json"
                 ],
@@ -6082,7 +6082,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Adds a published KB to the default retrieval scope of the caller, or of the whole workspace with scope=tenant (Tenant Admin only).",
+                "description": "Adds a published KB to the default retrieval scope of the caller, or of the whole organization with scope=tenant (Organization Admin only).",
                 "tags": [
                     "Kho tri thức"
                 ],
@@ -6420,7 +6420,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Explicit human SuperAdmin only. Moves a tenant-owned (tenant/restricted/published) or platform public KB to target_tenant_id without widening its scope: restricted stays restricted (only the target's Admins and SuperAdmins read it until the target shares it), tenant stays tenant, published is withdrawn to tenant (withdrawn_from_published=true), platform public becomes tenant. Data-scope tenant_id and member_default are kept; every invitation and tenant grant is revoked (revoked_reason owner_changed).",
+                "description": "Explicit human SuperAdmin only. Moves an organization-owned (tenant/restricted/published) or platform public KB to target_tenant_id without widening its scope: restricted stays restricted (only the target's Admins and SuperAdmins read it until the target shares it), tenant stays tenant, published is withdrawn to tenant (withdrawn_from_published=true), platform public becomes tenant. Data-scope tenant_id and member_default are kept; every invitation and tenant grant is revoked (revoked_reason owner_changed).",
                 "consumes": [
                     "application/json"
                 ],
@@ -6440,7 +6440,7 @@ const docTemplate = `{
                         "required": true
                     },
                     {
-                        "description": "Target tenant",
+                        "description": "Target organization",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -6668,7 +6668,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Lấy nhiều mục tài liệu theo danh sách ID. kb_id tuỳ chọn: khi truyền sẽ kiểm tra quyền theo kho tri thức đó và dùng để xác định đơn vị của kho tri thức chia sẻ; agent_id tuỳ chọn: truyền khi dùng trợ lý chia sẻ, backend truy vấn theo đơn vị của trợ lý (dùng để khôi phục tệp trong kho tri thức chia sẻ sau khi tải lại trang)",
+                "description": "Lấy nhiều mục tài liệu theo danh sách ID. kb_id tuỳ chọn: khi truyền sẽ kiểm tra quyền theo kho tri thức đó và dùng để xác định tổ chức của kho tri thức chia sẻ; agent_id tuỳ chọn: truyền khi dùng trợ lý chia sẻ, backend truy vấn theo tổ chức của trợ lý (dùng để khôi phục tệp trong kho tri thức chia sẻ sau khi tải lại trang)",
                 "consumes": [
                     "application/json"
                 ],
@@ -6699,7 +6699,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Tuỳ chọn, ID trợ lý chia sẻ (lấy chi tiết tệp theo đơn vị của trợ lý)",
+                        "description": "Tuỳ chọn, ID trợ lý chia sẻ (lấy chi tiết tệp theo tổ chức của trợ lý)",
                         "name": "agent_id",
                         "in": "query"
                     }
@@ -7190,7 +7190,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Cập nhật thẻ của nhiều mục tài liệu. kb_id tuỳ chọn: khi truyền sẽ kiểm tra quyền sửa theo kho tri thức đó và dùng để xác định đơn vị của kho tri thức chia sẻ",
+                "description": "Cập nhật thẻ của nhiều mục tài liệu. kb_id tuỳ chọn: khi truyền sẽ kiểm tra quyền sửa theo kho tri thức đó và dùng để xác định tổ chức của kho tri thức chia sẻ",
                 "consumes": [
                     "application/json"
                 ],
@@ -8773,7 +8773,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Runs one text completion on the workspace default chat model\n(or model_id). Model credentials stay server-side.",
+                "description": "Runs one text completion on the organization default chat model\n(or model_id). Model credentials stay server-side.",
                 "consumes": [
                     "application/json"
                 ],
@@ -8783,7 +8783,7 @@ const docTemplate = `{
                 "tags": [
                     "Mô hình"
                 ],
-                "summary": "Chat completion with a workspace chat model",
+                "summary": "Chat completion with an organization chat model",
                 "parameters": [
                     {
                         "description": "messages",
@@ -8854,7 +8854,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Phát hành một điểm cuối MCP cho không gian làm việc hiện tại; token trong phản hồi chỉ trả về một lần",
+                "description": "Phát hành một điểm cuối MCP cho tổ chức hiện tại; token trong phản hồi chỉ trả về một lần",
                 "consumes": [
                     "application/json"
                 ],
@@ -8904,7 +8904,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Trả về danh sách công cụ có thể chọn, nhóm và lựa chọn mặc định cho điểm cuối MCP của không gian làm việc",
+                "description": "Trả về danh sách công cụ có thể chọn, nhóm và lựa chọn mặc định cho điểm cuối MCP của tổ chức",
                 "produces": [
                     "application/json"
                 ],
@@ -9125,7 +9125,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Lấy tất cả dịch vụ MCP của không gian làm việc hiện tại (kèm số công cụ đã lưu trong danh mục)",
+                "description": "Lấy tất cả dịch vụ MCP của tổ chức hiện tại (kèm số công cụ đã lưu trong danh mục)",
                 "consumes": [
                     "application/json"
                 ],
@@ -9565,7 +9565,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Kết nối upstream rõ ràng và thay thế nguyên tử toàn bộ danh mục. Dịch vụ OAuth ghi ảnh chụp của người dùng hiện tại, Viewer trở lên gọi được; xác thực tĩnh ghi ảnh chụp dùng chung của đơn vị, cần Admin.",
+                "description": "Kết nối upstream rõ ràng và thay thế nguyên tử toàn bộ danh mục. Dịch vụ OAuth ghi ảnh chụp của người dùng hiện tại, Viewer trở lên gọi được; xác thực tĩnh ghi ảnh chụp dùng chung của tổ chức, cần Admin.",
                 "consumes": [
                     "application/json"
                 ],
@@ -9976,7 +9976,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "List every sandbox config of this workspace with the caller's own config-wide variables and the credentials its skills declared, each reporting whether it is unset, filled in workspace-wide, or filled in by the caller. Values are never returned.",
+                "description": "List every sandbox config of this organization with the caller's own config-wide variables and the credentials its skills declared, each reporting whether it is unset, filled in organization-wide, or filled in by the caller. Values are never returned.",
                 "produces": [
                     "application/json"
                 ],
@@ -10099,7 +10099,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Store the caller's own value for one variable the skill declared. It overrides the workspace-wide value for this caller only, and is injected only into executions that name this skill.",
+                "description": "Store the caller's own value for one variable the skill declared. It overrides the organization-wide value for this caller only, and is injected only into executions that name this skill.",
                 "consumes": [
                     "application/json"
                 ],
@@ -10143,7 +10143,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Remove the caller's own value. The workspace-wide value, if there is one, applies again afterwards.",
+                "description": "Remove the caller's own value. The organization-wide value, if there is one, applies again afterwards.",
                 "consumes": [
                     "application/json"
                 ],
@@ -10223,7 +10223,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Người dùng đã đăng nhập dùng token của liên kết mời chia sẻ để tham gia đơn vị, không tạo tài khoản mới; lũy đẳng với người đã là thành viên.",
+                "description": "Người dùng đã đăng nhập dùng token của liên kết mời chia sẻ để tham gia tổ chức, không tạo tài khoản mới; lũy đẳng với người đã là thành viên.",
                 "consumes": [
                     "application/json"
                 ],
@@ -10233,7 +10233,7 @@ const docTemplate = `{
                 "tags": [
                     "Lời mời của tôi"
                 ],
-                "summary": "Tham gia đơn vị qua liên kết chia sẻ",
+                "summary": "Tham gia tổ chức qua liên kết chia sẻ",
                 "parameters": [
                     {
                         "description": "Token lời mời",
@@ -10365,7 +10365,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Questions and LLM tokens used today and this month, for the\ncaller and for the caller's current workspace.",
+                "description": "Questions and LLM tokens used today and this month, for the\ncaller and for the caller's current organization.",
                 "produces": [
                     "application/json"
                 ],
@@ -10784,7 +10784,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Trả về trạng thái bật/tắt bộ nhớ đã gộp (cấp đơn vị + cấp cá nhân) và số mục bộ nhớ",
+                "description": "Trả về trạng thái bật/tắt bộ nhớ đã gộp (cấp tổ chức + cấp cá nhân) và số mục bộ nhớ",
                 "produces": [
                     "application/json"
                 ],
@@ -11237,7 +11237,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Lấy toàn bộ mô hình của đơn vị hiện tại",
+                "description": "Lấy toàn bộ mô hình của tổ chức hiện tại",
                 "consumes": [
                     "application/json"
                 ],
@@ -11362,7 +11362,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Kiểm tra thông tin xác thực WeKnoraCloud của đơn vị hiện tại còn nguyên vẹn không; needs_reinit=true nghĩa là cần lưu lại",
+                "description": "Kiểm tra thông tin xác thực WeKnoraCloud của tổ chức hiện tại còn nguyên vẹn không; needs_reinit=true nghĩa là cần lưu lại",
                 "produces": [
                     "application/json"
                 ],
@@ -11550,7 +11550,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "List workspace sandbox backend configs with credentials masked.",
+                "description": "List organization sandbox backend configs with credentials masked.",
                 "produces": [
                     "application/json"
                 ],
@@ -11584,7 +11584,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Create a named workspace sandbox backend config. Credentials are masked in the response.",
+                "description": "Create a named organization sandbox backend config. Credentials are masked in the response.",
                 "consumes": [
                     "application/json"
                 ],
@@ -11640,7 +11640,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Retrieve a workspace sandbox backend config with credentials masked.",
+                "description": "Retrieve an organization sandbox backend config with credentials masked.",
                 "produces": [
                     "application/json"
                 ],
@@ -12109,7 +12109,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Show or hide an installed skill and set the workspace-wide values of the environment variables it declared. Either field may be sent, or both. The files stay in the image either way; removal is a separate flow.",
+                "description": "Show or hide an installed skill and set the organization-wide values of the environment variables it declared. Either field may be sent, or both. The files stay in the image either way; removal is a separate flow.",
                 "consumes": [
                     "application/json"
                 ],
@@ -12562,7 +12562,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Lấy danh sách cuộc trò chuyện của không gian làm việc hiện tại, hỗ trợ phân trang, tìm theo từ khoá, lọc theo nguồn/trợ lý",
+                "description": "Lấy danh sách cuộc trò chuyện của tổ chức hiện tại, hỗ trợ phân trang, tìm theo từ khoá, lọc theo nguồn/trợ lý",
                 "consumes": [
                     "application/json"
                 ],
@@ -12679,7 +12679,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Xoá hàng loạt cuộc trò chuyện theo danh sách ID, hoặc đặt delete_all=true để xoá toàn bộ cuộc trò chuyện của không gian làm việc hiện tại",
+                "description": "Xoá hàng loạt cuộc trò chuyện theo danh sách ID, hoặc đặt delete_all=true để xoá toàn bộ cuộc trò chuyện của tổ chức hiện tại",
                 "consumes": [
                     "application/json"
                 ],
@@ -13961,14 +13961,14 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Returns every skill definition in this workspace and which sandbox configs it is installed on.",
+                "description": "Returns every skill definition in this organization and which sandbox configs it is installed on.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Kỹ năng"
                 ],
-                "summary": "List workspace skills",
+                "summary": "List organization skills",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -13991,7 +13991,7 @@ const docTemplate = `{
                 "tags": [
                     "Kỹ năng"
                 ],
-                "summary": "Add a skill to the workspace catalog",
+                "summary": "Add a skill to the organization catalog",
                 "responses": {
                     "201": {
                         "description": "Created",
@@ -14139,7 +14139,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "List all storage backend instances for the current workspace, with credentials masked. The workspace default backend id is returned alongside the list.",
+                "description": "List all storage backend instances for the current organization, with credentials masked. The organization default backend id is returned alongside the list.",
                 "produces": [
                     "application/json"
                 ],
@@ -14173,7 +14173,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Register a new object/file storage instance for the current workspace. The configuration is validated and a connectivity test is run before the backend is persisted.",
+                "description": "Register a new object/file storage instance for the current organization. The configuration is validated and a connectivity test is run before the backend is persisted.",
                 "consumes": [
                     "application/json"
                 ],
@@ -14320,7 +14320,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Retrieve a single storage backend by ID for the current workspace. Credentials are masked.",
+                "description": "Retrieve a single storage backend by ID for the current organization. Credentials are masked.",
                 "produces": [
                     "application/json"
                 ],
@@ -14436,7 +14436,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Soft-delete a storage backend. A backend that is the workspace default, still bound to knowledge bases, environment-sourced, or a legacy alias cannot be deleted.",
+                "description": "Soft-delete a storage backend. A backend that is the organization default, still bound to knowledge bases, environment-sourced, or a legacy alias cannot be deleted.",
                 "produces": [
                     "application/json"
                 ],
@@ -14493,7 +14493,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Mark a storage backend as the workspace default. Only an active backend can become the default. New knowledge bases without an explicit binding use the default.",
+                "description": "Mark a storage backend as the organization default. Only an active backend can become the default. New knowledge bases without an explicit binding use the default.",
                 "produces": [
                     "application/json"
                 ],
@@ -14598,7 +14598,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Lists non-workspace API keys. Full tokens are always masked. Human SystemAdmin only.",
+                "description": "Lists non-organization API keys. Full tokens are always masked. Human SystemAdmin only.",
                 "produces": [
                     "application/json"
                 ],
@@ -14622,7 +14622,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Creates a capability-scoped key that may target any workspace through X-Tenant-ID. The plaintext token is returned once. Human SystemAdmin only.",
+                "description": "Creates a capability-scoped key that may target any organization through X-Tenant-ID. The plaintext token is returned once. Human SystemAdmin only.",
                 "consumes": [
                     "application/json"
                 ],
@@ -15240,7 +15240,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Pending/processing/finalizing documents across every tenant,\noldest first, plus the number of documents failed in 24h.",
+                "description": "Pending/processing/finalizing documents across every organization,\noldest first, plus the number of documents failed in 24h.",
                 "produces": [
                     "application/json"
                 ],
@@ -15269,7 +15269,7 @@ const docTemplate = `{
         },
         "/system/admin/tenants": {
             "post": {
-                "description": "SystemAdmin only. Creates the workspace and makes the named\n(or newly created) user its Tenant Admin. The calling\nSystemAdmin does not become a member.",
+                "description": "SystemAdmin only. Creates the organization and makes the named\n(or newly created) user its Organization Admin. The calling\nSystemAdmin does not become a member.",
                 "consumes": [
                     "application/json"
                 ],
@@ -15279,10 +15279,10 @@ const docTemplate = `{
                 "tags": [
                     "Quản trị hệ thống"
                 ],
-                "summary": "Create a workspace with its Tenant Admin",
+                "summary": "Create an organization with its Organization Admin",
                 "parameters": [
                     {
-                        "description": "Workspace and admin",
+                        "description": "Organization and admin",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -15303,14 +15303,14 @@ const docTemplate = `{
         },
         "/system/admin/tenants/apply-default-storage-quota": {
             "post": {
-                "description": "Reads the current value of ` + "`" + `tenant.default_storage_quota_gb` + "`" + `\n(3-tier resolver: DB \u003e ENV \u003e default) and writes that many\nGiB into storage_quota for every row in tenants. Bypasses\nthe per-workspace PUT whitelist, which forbids storage_quota\nedits by workspace Admins. SystemAdmin only.\nIdempotent — running twice with the same setting is a no-op.",
+                "description": "Reads the current value of ` + "`" + `tenant.default_storage_quota_gb` + "`" + `\n(3-tier resolver: DB \u003e ENV \u003e default) and writes that many\nGiB into storage_quota for every row in tenants. Bypasses\nthe per-organization PUT whitelist, which forbids storage_quota\nedits by organization Admins. SystemAdmin only.\nIdempotent — running twice with the same setting is a no-op.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Quản trị hệ thống"
                 ],
-                "summary": "Apply the default storage quota to every existing workspace",
+                "summary": "Apply the default storage quota to every existing organization",
                 "responses": {
                     "200": {
                         "description": "{ affected: int64, quota_bytes: int64 }",
@@ -15331,7 +15331,7 @@ const docTemplate = `{
         },
         "/system/admin/tenants/{tenant_id}": {
             "put": {
-                "description": "SystemAdmin only. Changes the name and/or description of a\nworkspace the caller does not need to belong to.",
+                "description": "SystemAdmin only. Changes the name and/or description of an\norganization the caller does not need to belong to.",
                 "consumes": [
                     "application/json"
                 ],
@@ -15341,11 +15341,11 @@ const docTemplate = `{
                 "tags": [
                     "Quản trị hệ thống"
                 ],
-                "summary": "Rename any workspace",
+                "summary": "Rename any organization",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Workspace ID",
+                        "description": "Organization ID",
                         "name": "tenant_id",
                         "in": "path",
                         "required": true
@@ -15376,11 +15376,11 @@ const docTemplate = `{
                 "tags": [
                     "Quản trị hệ thống"
                 ],
-                "summary": "List the members of any workspace",
+                "summary": "List the members of any organization",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Workspace ID",
+                        "description": "Organization ID",
                         "name": "tenant_id",
                         "in": "path",
                         "required": true
@@ -15397,7 +15397,7 @@ const docTemplate = `{
                 }
             },
             "post": {
-                "description": "SystemAdmin only. Adds an existing or new user to the\nworkspace with the given role (admin or member).",
+                "description": "SystemAdmin only. Adds an existing or new user to the\norganization with the given role (admin or member).",
                 "consumes": [
                     "application/json"
                 ],
@@ -15407,11 +15407,11 @@ const docTemplate = `{
                 "tags": [
                     "Quản trị hệ thống"
                 ],
-                "summary": "Add a user to any workspace",
+                "summary": "Add a user to any organization",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Workspace ID",
+                        "description": "Organization ID",
                         "name": "tenant_id",
                         "in": "path",
                         "required": true
@@ -15439,7 +15439,7 @@ const docTemplate = `{
         },
         "/system/admin/tenants/{tenant_id}/members/{user_id}": {
             "put": {
-                "description": "Change a user's role inside any tenant (SystemAdmin only).\nUnlike PUT /tenants/:id/members/:user_id this does not require\nthe caller to be Admin of the target tenant — the route group\nalready gates on SystemAdmin. The \"last admin\" invariant is\nstill enforced by the service layer.",
+                "description": "Change a user's role inside any organization (SystemAdmin only).\nUnlike PUT /tenants/:id/members/:user_id this does not require\nthe caller to be Admin of the target organization — the route group\nalready gates on SystemAdmin. The \"last admin\" invariant is\nstill enforced by the service layer.",
                 "consumes": [
                     "application/json"
                 ],
@@ -15449,11 +15449,11 @@ const docTemplate = `{
                 "tags": [
                     "Quản trị hệ thống"
                 ],
-                "summary": "Update a user's workspace role",
+                "summary": "Update a user's organization role",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Tenant ID",
+                        "description": "Organization ID",
                         "name": "tenant_id",
                         "in": "path",
                         "required": true
@@ -15517,11 +15517,11 @@ const docTemplate = `{
                 "tags": [
                     "Quản trị hệ thống"
                 ],
-                "summary": "Remove a user from any workspace",
+                "summary": "Remove a user from any organization",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Workspace ID",
+                        "description": "Organization ID",
                         "name": "tenant_id",
                         "in": "path",
                         "required": true
@@ -15968,7 +15968,7 @@ const docTemplate = `{
                 "tags": [
                     "Gói sử dụng"
                 ],
-                "summary": "Attach a plan to a workspace or person",
+                "summary": "Attach a plan to an organization or person",
                 "parameters": [
                     {
                         "description": "subscription",
@@ -16183,7 +16183,7 @@ const docTemplate = `{
                 "tags": [
                     "Gói sử dụng"
                 ],
-                "summary": "Every workspace with its subscription and usage",
+                "summary": "Every organization with its subscription and usage",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -16246,7 +16246,7 @@ const docTemplate = `{
         },
         "/system/admin/users/create": {
             "post": {
-                "description": "Provision a new local user account (SystemAdmin only).\nWhen ` + "`" + `password` + "`" + ` is omitted or null, a cryptographically random\npassword is generated (OIDC-style crypto/rand + base64url)\nand returned once in the response body. Any provided value,\nincluding empty string, is policy-checked. Tenant provisioning\nfollows the shared auth.default_tenant_mode policy.",
+                "description": "Provision a new local user account (SystemAdmin only).\nWhen ` + "`" + `password` + "`" + ` is omitted or null, a cryptographically random\npassword is generated (OIDC-style crypto/rand + base64url)\nand returned once in the response body. Any provided value,\nincluding empty string, is policy-checked. Organization provisioning\nfollows the shared auth.default_tenant_mode policy.",
                 "consumes": [
                     "application/json"
                 ],
@@ -16810,7 +16810,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Lấy danh sách đơn vị người dùng hiện tại truy cập được",
+                "description": "Lấy danh sách tổ chức người dùng hiện tại truy cập được",
                 "consumes": [
                     "application/json"
                 ],
@@ -16818,12 +16818,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
-                "summary": "Lấy danh sách đơn vị",
+                "summary": "Lấy danh sách tổ chức",
                 "responses": {
                     "200": {
-                        "description": "Tenant workspaceList ",
+                        "description": "Organization list",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -16843,7 +16843,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Tạo đơn vị mới. Mọi người dùng đã đăng nhập đều có thể gọi để lập không gian làm việc mới của mình,\nngười gọi tự động trở thành Owner của đơn vị đó. Siêu quản trị liên đơn vị vẫn có thể\ntạo đơn vị bất kỳ qua endpoint này như trước.\nKhi tenant.auto_create_api_key (hoặc WEKNORA_TENANT_AUTO_CREATE_API_KEY)\nđược bật, hệ thống tự tạo một API Key full_access và trả token dạng rõ trong trường data.api_key của phản hồi.",
+                "description": "Tạo tổ chức mới. Mọi người dùng đã đăng nhập đều có thể gọi để lập tổ chức mới của mình,\nngười gọi tự động trở thành Owner của tổ chức đó. Siêu quản trị liên tổ chức vẫn có thể\ntạo tổ chức bất kỳ qua endpoint này như trước.\nKhi tenant.auto_create_api_key (hoặc WEKNORA_TENANT_AUTO_CREATE_API_KEY)\nđược bật, hệ thống tự tạo một API Key full_access và trả token dạng rõ trong trường data.api_key của phản hồi.",
                 "consumes": [
                     "application/json"
                 ],
@@ -16851,12 +16851,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
-                "summary": "Create Tenant workspace",
+                "summary": "Create organization",
                 "parameters": [
                     {
-                        "description": "Thông tin đơn vị",
+                        "description": "Thông tin tổ chức",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -16867,7 +16867,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "201": {
-                        "description": "Đơn vị đã tạo (có thể kèm api_key)",
+                        "description": "Tổ chức đã tạo (có thể kèm api_key)",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -16889,7 +16889,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Lấy tất cả đơn vị trong hệ thống (cần quyền truy cập liên đơn vị)",
+                "description": "Lấy tất cả tổ chức trong hệ thống (cần quyền truy cập liên tổ chức)",
                 "consumes": [
                     "application/json"
                 ],
@@ -16897,12 +16897,12 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
-                "summary": "Lấy danh sách tất cả đơn vị",
+                "summary": "Lấy danh sách tất cả tổ chức",
                 "responses": {
                     "200": {
-                        "description": "Danh sách tất cả đơn vị",
+                        "description": "Danh sách tất cả tổ chức",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -16924,14 +16924,14 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Every workspace's id and name, for choosing which unit to share a knowledge base with. Human callers only.",
+                "description": "Every organization's id and name, for choosing which organization to share a knowledge base with. Human callers only.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
-                "summary": "List workspace names",
+                "summary": "List organization names",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -16961,7 +16961,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
                 "summary": "Lấy mẫu prompt",
                 "responses": {
@@ -16991,7 +16991,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Lấy cấu hình tìm kiếm web của đơn vị",
+                "description": "Lấy cấu hình tìm kiếm web của tổ chức",
                 "consumes": [
                     "application/json"
                 ],
@@ -16999,9 +16999,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
-                "summary": "Lấy cấu hình tìm kiếm web của đơn vị",
+                "summary": "Lấy cấu hình tìm kiếm web của tổ chức",
                 "responses": {
                     "200": {
                         "description": "Cấu hình tìm kiếm web",
@@ -17029,7 +17029,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Lấy cấu hình KV cấp đơn vị (hỗ trợ web-search-config, prompt-templates, parser-engine-config, storage-engine-config, chat-history-config, retrieval-config)",
+                "description": "Lấy cấu hình KV cấp tổ chức (hỗ trợ web-search-config, prompt-templates, parser-engine-config, storage-engine-config, chat-history-config, retrieval-config)",
                 "consumes": [
                     "application/json"
                 ],
@@ -17037,9 +17037,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
-                "summary": "Lấy cấu hình KV của đơn vị",
+                "summary": "Lấy cấu hình KV của tổ chức",
                 "parameters": [
                     {
                         "type": "string",
@@ -17074,7 +17074,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Cập nhật cấu hình KV cấp đơn vị (hỗ trợ web-search-config, parser-engine-config, storage-engine-config, chat-history-config, retrieval-config)",
+                "description": "Cập nhật cấu hình KV cấp tổ chức (hỗ trợ web-search-config, parser-engine-config, storage-engine-config, chat-history-config, retrieval-config)",
                 "consumes": [
                     "application/json"
                 ],
@@ -17082,9 +17082,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
-                "summary": "Update Tenant workspaceKVConfiguration",
+                "summary": "Update organization KV configuration",
                 "parameters": [
                     {
                         "type": "string",
@@ -17130,7 +17130,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Tìm kiếm đơn vị theo trang (cần quyền truy cập liên đơn vị)",
+                "description": "Tìm kiếm tổ chức theo trang (cần quyền truy cập liên tổ chức)",
                 "consumes": [
                     "application/json"
                 ],
@@ -17138,9 +17138,9 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
-                "summary": "Tìm kiếm đơn vị",
+                "summary": "Tìm kiếm tổ chức",
                 "parameters": [
                     {
                         "type": "string",
@@ -17150,7 +17150,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Lọc theo ID đơn vị",
+                        "description": "Lọc theo ID tổ chức",
                         "name": "tenant_id",
                         "in": "query"
                     },
@@ -17196,7 +17196,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Lấy chi tiết đơn vị theo ID",
+                "description": "Lấy chi tiết tổ chức theo ID",
                 "consumes": [
                     "application/json"
                 ],
@@ -17204,13 +17204,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
-                "summary": "Lấy chi tiết đơn vị",
+                "summary": "Lấy chi tiết tổ chức",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Tenant workspaceID",
+                        "description": "Organization ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -17218,7 +17218,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Tenant workspaceDetails ",
+                        "description": "Organization details",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -17231,7 +17231,7 @@ const docTemplate = `{
                         }
                     },
                     "404": {
-                        "description": "Không tìm thấy đơn vị",
+                        "description": "Không tìm thấy tổ chức",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
                         }
@@ -17244,7 +17244,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Cập nhật thông tin đơn vị",
+                "description": "Cập nhật thông tin tổ chức",
                 "consumes": [
                     "application/json"
                 ],
@@ -17252,19 +17252,19 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
-                "summary": "Update Tenant workspace",
+                "summary": "Update organization",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Tenant workspaceID",
+                        "description": "Organization ID",
                         "name": "id",
                         "in": "path",
                         "required": true
                     },
                     {
-                        "description": "Thông tin đơn vị",
+                        "description": "Thông tin tổ chức",
                         "name": "request",
                         "in": "body",
                         "required": true,
@@ -17275,7 +17275,7 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Đơn vị sau khi cập nhật",
+                        "description": "Tổ chức sau khi cập nhật",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -17295,7 +17295,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Xoá đơn vị chỉ định",
+                "description": "Xoá tổ chức chỉ định",
                 "consumes": [
                     "application/json"
                 ],
@@ -17303,13 +17303,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
-                "summary": "Delete Tenant workspace",
+                "summary": "Delete organization",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Tenant workspaceID",
+                        "description": "Organization ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -17347,13 +17347,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
-                "summary": "Lấy cấu hình định danh người dùng cho API Key của đơn vị",
+                "summary": "Lấy cấu hình định danh người dùng cho API Key của tổ chức",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Tenant workspaceID",
+                        "description": "Organization ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -17395,13 +17395,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
-                "summary": "Cập nhật cấu hình định danh người dùng cho API Key của đơn vị",
+                "summary": "Cập nhật cấu hình định danh người dùng cho API Key của tổ chức",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Tenant workspaceID",
+                        "description": "Organization ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -17446,7 +17446,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Dùng khoá HMAC đã lưu của đơn vị để ký JWT ngắn hạn cho người dùng bên ngoài (Owner)",
+                "description": "Dùng khoá HMAC đã lưu của tổ chức để ký JWT ngắn hạn cho người dùng bên ngoài (Owner)",
                 "consumes": [
                     "application/json"
                 ],
@@ -17454,13 +17454,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
                 "summary": "Sinh JWT thử nghiệm cho API Playground",
                 "parameters": [
                     {
                         "type": "integer",
-                        "description": "Tenant workspaceID",
+                        "description": "Organization ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -17508,18 +17508,18 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Trả về các sự kiện kiểm toán gần đây của đơn vị, sắp xếp id giảm dần. Phân trang con trỏ: dùng next_cursor của phản hồi trước làm after_id cho yêu cầu tiếp theo.",
+                "description": "Trả về các sự kiện kiểm toán gần đây của tổ chức, sắp xếp id giảm dần. Phân trang con trỏ: dùng next_cursor của phản hồi trước làm after_id cho yêu cầu tiếp theo.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Nhật ký kiểm toán"
                 ],
-                "summary": "Lấy nhật ký kiểm toán của đơn vị",
+                "summary": "Lấy nhật ký kiểm toán của tổ chức",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Tenant workspaceID",
+                        "description": "Organization ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -17578,18 +17578,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Liệt kê lời mời đang chờ / lịch sử theo đơn vị. Khi query include_terminal=true thì kèm accepted/declined/revoked/expired.",
+                "description": "Liệt kê lời mời đang chờ / lịch sử theo tổ chức. Khi query include_terminal=true thì kèm accepted/declined/revoked/expired.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Lời mời đơn vị"
+                    "Lời mời tổ chức"
                 ],
-                "summary": "Liệt kê lời mời của đơn vị",
+                "summary": "Liệt kê lời mời của tổ chức",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Tenant workspace ID",
+                        "description": "Organization ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -17631,7 +17631,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Owner mời người dùng đã đăng ký vào đơn vị qua email. Khi bật tenant.auto_accept_invitation, người được mời tự động tham gia ngay (phản hồi là cấu trúc thành viên); nếu không, họ phải chấp nhận tại /me/invitations mới thành thành viên.",
+                "description": "Owner mời người dùng đã đăng ký vào tổ chức qua email. Khi bật tenant.auto_accept_invitation, người được mời tự động tham gia ngay (phản hồi là cấu trúc thành viên); nếu không, họ phải chấp nhận tại /me/invitations mới thành thành viên.",
                 "consumes": [
                     "application/json"
                 ],
@@ -17639,13 +17639,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Lời mời đơn vị"
+                    "Lời mời tổ chức"
                 ],
-                "summary": "Gửi lời mời vào đơn vị",
+                "summary": "Gửi lời mời vào tổ chức",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Tenant workspace ID",
+                        "description": "Organization ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -17683,13 +17683,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Lời mời đơn vị"
+                    "Lời mời tổ chức"
                 ],
                 "summary": "Thu hồi lời mời đang chờ",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Tenant workspace ID",
+                        "description": "Organization ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -17720,7 +17720,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Tạo một liên kết mời dùng nhiều lần: ai có liên kết đều có thể đăng ký và tham gia đơn vị hiện tại.\nLiên kết có hiệu lực cho đến khi hết hạn hoặc bị thu hồi.",
+                "description": "Tạo một liên kết mời dùng nhiều lần: ai có liên kết đều có thể đăng ký và tham gia tổ chức hiện tại.\nLiên kết có hiệu lực cho đến khi hết hạn hoặc bị thu hồi.",
                 "consumes": [
                     "application/json"
                 ],
@@ -17728,13 +17728,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Lời mời đơn vị"
+                    "Lời mời tổ chức"
                 ],
                 "summary": "Tạo liên kết mời dùng chung",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Tenant workspace ID",
+                        "description": "Organization ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -17767,18 +17767,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Người gọi chủ động rời đơn vị hiện tại. Tương đương gọi RemoveMember với user_id của chính mình,",
+                "description": "Người gọi chủ động rời tổ chức hiện tại. Tương đương gọi RemoveMember với user_id của chính mình,",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Thành viên đơn vị"
+                    "Thành viên tổ chức"
                 ],
-                "summary": "Rời đơn vị hiện tại",
+                "summary": "Rời tổ chức hiện tại",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Tenant workspace ID",
+                        "description": "Organization ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -17802,18 +17802,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Trả về theo trang các thành viên active của đơn vị hiện tại (kèm vai trò, email, ảnh đại diện); hỗ trợ q để lọc theo email/tên người dùng",
+                "description": "Trả về theo trang các thành viên active của tổ chức hiện tại (kèm vai trò, email, ảnh đại diện); hỗ trợ q để lọc theo email/tên người dùng",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Thành viên đơn vị"
+                    "Thành viên tổ chức"
                 ],
-                "summary": "Liệt kê thành viên đơn vị",
+                "summary": "Liệt kê thành viên tổ chức",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Tenant workspace ID",
+                        "description": "Organization ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -17862,13 +17862,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Thành viên đơn vị"
+                    "Thành viên tổ chức"
                 ],
-                "summary": "Thêm trực tiếp thành viên đơn vị (đường thêm thẳng)",
+                "summary": "Thêm trực tiếp thành viên tổ chức (đường thêm thẳng)",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Tenant workspace ID",
+                        "description": "Organization ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -17901,7 +17901,7 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Owner đổi vai trò của một thành viên trong đơn vị hiện tại; không được hạ cấp Owner cuối cùng",
+                "description": "Owner đổi vai trò của một thành viên trong tổ chức hiện tại; không được hạ cấp Owner cuối cùng",
                 "consumes": [
                     "application/json"
                 ],
@@ -17909,13 +17909,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Thành viên đơn vị"
+                    "Thành viên tổ chức"
                 ],
-                "summary": "Đổi vai trò thành viên đơn vị",
+                "summary": "Đổi vai trò thành viên tổ chức",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Tenant workspace ID",
+                        "description": "Organization ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -17953,18 +17953,18 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Owner gỡ một thành viên khỏi đơn vị hiện tại (xoá mềm hàng tenant_members); không được gỡ Owner cuối cùng",
+                "description": "Owner gỡ một thành viên khỏi tổ chức hiện tại (xoá mềm hàng tenant_members); không được gỡ Owner cuối cùng",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Thành viên đơn vị"
+                    "Thành viên tổ chức"
                 ],
-                "summary": "Gỡ thành viên đơn vị",
+                "summary": "Gỡ thành viên tổ chức",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Tenant workspace ID",
+                        "description": "Organization ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -17996,13 +17996,13 @@ const docTemplate = `{
                     }
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
-                "summary": "The workspace's usage package",
+                "summary": "The organization's usage package",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "workspace id",
+                        "description": "organization id",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -18030,13 +18030,13 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
-                "summary": "Give a member a seat of the workspace package",
+                "summary": "Give a member a seat of the organization package",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "workspace id",
+                        "description": "organization id",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -18070,13 +18070,13 @@ const docTemplate = `{
                     }
                 ],
                 "tags": [
-                    "Đơn vị"
+                    "Tổ chức"
                 ],
                 "summary": "Take a member's seat back",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "workspace id",
+                        "description": "organization id",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -18102,7 +18102,7 @@ const docTemplate = `{
         },
         "/user/favorites": {
             "get": {
-                "description": "Lists this user's starred resources in the current workspace for a given type",
+                "description": "Lists this user's starred resources in the current organization for a given type",
                 "tags": [
                     "Người dùng"
                 ],
@@ -18196,7 +18196,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "List all vector stores for the current workspace, including environment-configured and user-created stores",
+                "description": "List all vector stores for the current organization, including environment-configured and user-created stores",
                 "produces": [
                     "application/json"
                 ],
@@ -18230,7 +18230,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Create a new vector store configuration for the current workspace",
+                "description": "Create a new vector store configuration for the current organization",
                 "consumes": [
                     "application/json"
                 ],
@@ -18994,7 +18994,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Lưu APPID/APPSECRET vào cấu hình đơn vị hiện tại (không tự tạo mô hình)",
+                "description": "Lưu APPID/APPSECRET vào cấu hình tổ chức hiện tại (không tự tạo mô hình)",
                 "consumes": [
                     "application/json"
                 ],
@@ -20069,7 +20069,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "chat_parser_engine_rules": {
-                    "description": "===== Chat Attachment Parsing Settings =====\nChatParserEngineRules selects parser engines for session-scoped chat\nattachments by file type. Takes precedence over the tenant-level\nParserEngineConfig.ChatParserEngineRules; an explicit per-request\nparser_engine still overrides both.",
+                    "description": "===== Chat Attachment Parsing Settings =====\nChatParserEngineRules selects parser engines for session-scoped chat\nattachments by file type. Takes precedence over the organization-level\nParserEngineConfig.ChatParserEngineRules; an explicit per-request\nparser_engine still overrides both.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.ParserEngineRule"
@@ -20144,7 +20144,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "image_storage_provider": {
-                    "description": "Storage provider for image uploads: \"local\", \"minio\", \"cos\", \"tos\", \"s3\", \"oss\", \"ks3\".\nEmpty means use the global/workspace default provider.",
+                    "description": "Storage provider for image uploads: \"local\", \"minio\", \"cos\", \"tos\", \"s3\", \"oss\", \"ks3\".\nEmpty means use the global/organization default provider.",
                     "type": "string"
                 },
                 "image_upload_enabled": {
@@ -20201,7 +20201,7 @@ const docTemplate = `{
                     }
                 },
                 "memory_enabled": {
-                    "description": "Whether this agent may read the user's long-term memory. Nil inherits\nthe workspace setting; false opts a single agent out of memory even when\nthe workspace has it on. There is no \"on\" that overrides the workspace.",
+                    "description": "Whether this agent may read the user's long-term memory. Nil inherits\nthe organization setting; false opts a single agent out of memory even when\nthe organization has it on. There is no \"on\" that overrides the organization.",
                     "type": "boolean"
                 },
                 "model_id": {
@@ -20257,7 +20257,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "sandbox_config_id": {
-                    "description": "===== Sandbox Settings =====\nSandboxConfigID selects which workspace sandbox config this agent's\nskill scripts run on. Empty means sandbox execution is disabled.\n\nThis references the LOGICAL config, never a specific revision: keeping\nthe indirection here is what would let credential rotation happen\nwithout re-pointing every agent (see the spec's §4.8).",
+                    "description": "===== Sandbox Settings =====\nSandboxConfigID selects which organization sandbox config this agent's\nskill scripts run on. Empty means sandbox execution is disabled.\n\nThis references the LOGICAL config, never a specific revision: keeping\nthe indirection here is what would let credential rotation happen\nwithout re-pointing every agent (see the spec's §4.8).",
                     "type": "string"
                 },
                 "selected_skills": {
@@ -20303,7 +20303,7 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "vlm_model_id": {
-                    "description": "VLM model ID for image analysis (optional, falls back to workspace-level VLM)",
+                    "description": "VLM model ID for image analysis (optional, falls back to organization-level VLM)",
                     "type": "string"
                 },
                 "web_fetch_enabled": {
@@ -20327,7 +20327,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "web_search_provider_id": {
-                    "description": "WebSearchProviderID references a specific WebSearchProviderEntity.\nIf empty, the workspace's default provider (is_default=true) is used.",
+                    "description": "WebSearchProviderID references a specific WebSearchProviderEntity.\nIf empty, the organization's default provider (is_default=true) is used.",
                     "type": "string"
                 }
             }
@@ -20962,11 +20962,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "creator_id": {
-                    "description": "CreatorID records the user ID of whoever originally created the KB.\nUsed by the workspace-level RBAC middleware to let Contributors edit\ntheir own KBs without granting them access to everyone else's.\nNullable for backward compatibility with rows created before the\nRBAC migration backfilled the column to the workspace Owner.",
+                    "description": "CreatorID records the user ID of whoever originally created the KB.\nUsed by the organization-level RBAC middleware to let Contributors edit\ntheir own KBs without granting them access to everyone else's.\nNullable for backward compatibility with rows created before the\nRBAC migration backfilled the column to the organization Owner.",
                     "type": "string"
                 },
                 "creator_name": {
-                    "description": "CreatorName là tên hiển thị của người dùng ứng với CreatorID (username / email...),\nchỉ được handler điền hàng loạt khi liệt kê, không lưu DB; rỗng nghĩa là không xác định được người tạo (người dùng đã bị xóa,\ndữ liệu cũ không có CreatorID...). Frontend dùng nó để phân biệt mine / workspace trên huy hiệu nguồn của thẻ.",
+                    "description": "CreatorName là tên hiển thị của người dùng ứng với CreatorID (username / email...),\nchỉ được handler điền hàng loạt khi liệt kê, không lưu DB; rỗng nghĩa là không xác định được người tạo (người dùng đã bị xóa,\ndữ liệu cũ không có CreatorID...). Frontend dùng nó để phân biệt mine / organization trên huy hiệu nguồn của thẻ.",
                     "type": "string"
                 },
                 "deleted_at": {
@@ -21030,7 +21030,7 @@ const docTemplate = `{
                     ]
                 },
                 "is_pinned": {
-                    "description": "IsPinned and PinnedAt are computed per-caller from user_kb_pins\n(see migration 000050). They used to be stored on the row itself,\nwhich made pinning a workspace-wide ordering decision gated behind\nthe kb-edit RBAC guard. The columns are still present in legacy\nschemas for rollback safety but are no longer read or written by\nthe application — both fields are tagged ` + "`" + `gorm:\"-\"` + "`" + ` so GORM\nignores them on every CRUD call and the list handler stamps them\nafter enriching with the caller's pin set.",
+                    "description": "IsPinned and PinnedAt are computed per-caller from user_kb_pins\n(see migration 000050). They used to be stored on the row itself,\nwhich made pinning an organization-wide ordering decision gated behind\nthe kb-edit RBAC guard. The columns are still present in legacy\nschemas for rollback safety but are no longer read or written by\nthe application — both fields are tagged ` + "`" + `gorm:\"-\"` + "`" + ` so GORM\nignores them on every CRUD call and the list handler stamps them\nafter enriching with the caller's pin set.",
                     "type": "boolean"
                 },
                 "is_processing": {
@@ -21046,7 +21046,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "member_default": {
-                    "description": "MemberDefault decides what active members of the owner tenant may do\non a 'tenant'-visibility KB: 'view' or 'contribute' (migration 000148).",
+                    "description": "MemberDefault decides what active members of the owner organization may do\non a 'tenant'-visibility KB: 'view' or 'contribute' (migration 000148).",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.KBMemberDefault"
@@ -21058,11 +21058,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "owner_tenant_id": {
-                    "description": "OwnerTenantID is the authorization owner of this knowledge base:\na nonzero tenant ID means tenant-owned, 0 means platform-owned\n(no tenant owner). TenantID above stays the immutable\ndata-scope/execution partition for documents and indexes and is\nnever rewritten by a public/tenant scope transition. Rows\npredating migration 000113 backfill this column from tenant_id.\nThe owner/visibility invariant (public \u003c=\u003e owner 0, tenant \u003c=\u003e\nowner \u003e 0) is enforced by migration 000113's CHECK constraint on\nPostgreSQL and by ValidateOwnership in Go (SQLite/test path).",
+                    "description": "OwnerTenantID is the authorization owner of this knowledge base:\na nonzero organization ID means organization-owned, 0 means platform-owned\n(no organization owner). TenantID above stays the immutable\ndata-scope/execution partition for documents and indexes and is\nnever rewritten by a public/tenant scope transition. Rows\npredating migration 000113 backfill this column from tenant_id.\nThe owner/visibility invariant (public \u003c=\u003e owner 0, tenant \u003c=\u003e\nowner \u003e 0) is enforced by migration 000113's CHECK constraint on\nPostgreSQL and by ValidateOwnership in Go (SQLite/test path).",
                     "type": "integer"
                 },
                 "owner_tenant_name": {
-                    "description": "OwnerTenantName is the owning workspace's display name, filled on\npublished-catalog rows so readers see which unit published them.",
+                    "description": "OwnerTenantName is the owning organization's display name, filled on\npublished-catalog rows so readers see which unit published them.",
                     "type": "string"
                 },
                 "pinned_at": {
@@ -21090,7 +21090,7 @@ const docTemplate = `{
                     ]
                 },
                 "share_count": {
-                    "description": "ShareCount indicates the number of live tenant access grants on this knowledge base (not stored in database)",
+                    "description": "ShareCount indicates the number of live organization access grants on this knowledge base (not stored in database)",
                     "type": "integer"
                 },
                 "storage_backend_id": {
@@ -21106,7 +21106,7 @@ const docTemplate = `{
                     ]
                 },
                 "storage_provider_config": {
-                    "description": "Storage provider config (new): only stores provider selection; credentials from workspace StorageEngineConfig",
+                    "description": "Storage provider config (new): only stores provider selection; credentials from organization StorageEngineConfig",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.StorageProviderConfig"
@@ -21114,7 +21114,7 @@ const docTemplate = `{
                     ]
                 },
                 "subscribed_by_me": {
-                    "description": "SubscribedByMe / SubscribedByTenant are computed per caller for\npublished KBs: whether the caller, or their whole tenant, has put\nthe KB into the default retrieval scope.",
+                    "description": "SubscribedByMe / SubscribedByTenant are computed per caller for\npublished KBs: whether the caller, or their whole organization, has put\nthe KB into the default retrieval scope.",
                     "type": "boolean"
                 },
                 "subscribed_by_tenant": {
@@ -21125,7 +21125,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tenant_id": {
-                    "description": "Workspace ID",
+                    "description": "Organization ID",
                     "type": "integer"
                 },
                 "type": {
@@ -21137,7 +21137,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "vector_store_id": {
-                    "description": "VectorStoreID references the VectorStore this knowledge base is bound to.\nWhen nil, the KB falls back to the workspace's effective engines derived from\nthe RETRIEVE_DRIVER environment variable (env store flow).\nThis field is set once at creation time and must not be modified afterwards;\nenforcement lives at the GORM layer (` + "`" + `\u003c-:create` + "`" + `) plus the service-layer\nKB update path, which omits this field from its update DTO.",
+                    "description": "VectorStoreID references the VectorStore this knowledge base is bound to.\nWhen nil, the KB falls back to the organization's effective engines derived from\nthe RETRIEVE_DRIVER environment variable (env store flow).\nThis field is set once at creation time and must not be modified afterwards;\nenforcement lives at the GORM layer (` + "`" + `\u003c-:create` + "`" + `) plus the service-layer\nKB update path, which omits this field from its update DTO.",
                     "type": "string"
                 },
                 "visibility": {
@@ -21417,7 +21417,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "parser_engine_overrides": {
-                    "description": "ParserEngineOverrides passes key-value configuration to docreader parsers\n(e.g. pdf_force_scanned=true). Merged with workspace-level overrides in the\nparse pipeline; per-upload values take priority on conflict.",
+                    "description": "ParserEngineOverrides passes key-value configuration to docreader parsers\n(e.g. pdf_force_scanned=true). Merged with organization-level overrides in the\nparse pipeline; per-upload values take priority on conflict.",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
@@ -21529,7 +21529,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "active_tenant": {
-                    "description": "ActiveTenant is the workspace whose ID is encoded in the issued JWT;\nfuture requests are scoped to it until the client calls /auth/switch-tenant.\nDefaults to the user's home workspace on a fresh login.",
+                    "description": "ActiveTenant is the organization whose ID is encoded in the issued JWT;\nfuture requests are scoped to it until the client calls /auth/switch-tenant.\nDefaults to the user's home organization on a fresh login.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.Tenant"
@@ -21537,7 +21537,7 @@ const docTemplate = `{
                     ]
                 },
                 "memberships": {
-                    "description": "Memberships lists every workspace the user can authenticate into,\nalong with their role in each. Always populated (length 1 for users\nwho only belong to their home workspace) so frontends can render a\nworkspace switcher without a follow-up request. Serialised without\nomitempty so the field is always present as a JSON array (possibly\nempty) — the \"always populated\" contract relies on the server side\nguaranteeing a non-nil slice.",
+                    "description": "Memberships lists every organization the user can authenticate into,\nalong with their role in each. Always populated (length 1 for users\nwho only belong to their home organization) so frontends can render an\norganization switcher without a follow-up request. Serialised without\nomitempty so the field is always present as a JSON array (possibly\nempty) — the \"always populated\" contract relies on the server side\nguaranteeing a non-nil slice.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.Membership"
@@ -21684,7 +21684,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "is_builtin": {
-                    "description": "Whether this is a builtin MCP service (visible to all workspaces)",
+                    "description": "Whether this is a builtin MCP service (visible to all organizations)",
                     "type": "boolean"
                 },
                 "name": {
@@ -21846,11 +21846,11 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "embedding_model_id": {
-                    "description": "EmbeddingModelID is the single model used to score memory against a\nquestion. It is pinned per workspace: knowledge bases each have their\nown embedding model, and grabbing whichever one happens to be listed\nfirst would mix incomparable vector spaces. Blank means semantic recall\nis off and matching stays lexical.",
+                    "description": "EmbeddingModelID is the single model used to score memory against a\nquestion. It is pinned per organization: knowledge bases each have their\nown embedding model, and grabbing whichever one happens to be listed\nfirst would mix incomparable vector spaces. Blank means semantic recall\nis off and matching stays lexical.",
                     "type": "string"
                 },
                 "enabled": {
-                    "description": "Enabled is on for workspaces that never saved a config (see\nDefaultMemoryConfig); once an admin saves, the stored value wins.",
+                    "description": "Enabled is on for organizations that never saved a config (see\nDefaultMemoryConfig); once an admin saves, the stored value wins.",
                     "type": "boolean"
                 },
                 "extract_delay_seconds": {
@@ -21858,7 +21858,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "extract_instructions": {
-                    "description": "ExtractInstructions are workspace-specific rules appended to the\ndistillation prompt, for policies the product cannot guess (\"never record\ncustomer names\", \"always note the environment a question is about\").",
+                    "description": "ExtractInstructions are organization-specific rules appended to the\ndistillation prompt, for policies the product cannot guess (\"never record\ncustomer names\", \"always note the environment a question is about\").",
                     "type": "string"
                 },
                 "extract_min_interval_seconds": {
@@ -23134,7 +23134,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tenant_id": {
-                    "description": "Workspace ID",
+                    "description": "Organization ID",
                     "type": "integer"
                 },
                 "title": {
@@ -23564,11 +23564,11 @@ const docTemplate = `{
                     ]
                 },
                 "config_profile_id": {
-                    "description": "ConfigProfileID is the configuration profile a workspace inherits its\nmodels, agents, engines and settings from. Nil on profiles.",
+                    "description": "ConfigProfileID is the configuration profile an organization inherits its\nmodels, agents, engines and settings from. Nil on profiles.",
                     "type": "integer"
                 },
                 "context_config": {
-                    "description": "Global Context configuration for this workspace (default for all sessions)",
+                    "description": "Global Context configuration for this organization (default for all sessions)",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.ContextConfig"
@@ -23592,7 +23592,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "default_storage_backend_id": {
-                    "description": "DefaultStorageBackendID is the workspace default concrete storage instance.",
+                    "description": "DefaultStorageBackendID is the organization default concrete storage instance.",
                     "type": "string"
                 },
                 "default_summary_model_id": {
@@ -23615,11 +23615,11 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "kind": {
-                    "description": "Kind is TenantKindWorkspace for a real unit, or TenantKindConfigProfile\nfor a hidden configuration-only row that workspaces inherit from.",
+                    "description": "Kind is TenantKindWorkspace for a real unit, or TenantKindConfigProfile\nfor a hidden configuration-only row that organizations inherit from.",
                     "type": "string"
                 },
                 "memory_config": {
-                    "description": "Memory config: workspace switch for cross-session long-term memory",
+                    "description": "Memory config: organization switch for cross-session long-term memory",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.MemoryConfig"
@@ -23679,7 +23679,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "web_search_config": {
-                    "description": "Global WebSearch configuration for this workspace",
+                    "description": "Global WebSearch configuration for this organization",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.WebSearchConfig"
@@ -23705,7 +23705,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "allow_private_endpoints": {
-                    "description": "AllowPrivateEndpoints permits this workspace config to reach RFC1918 or\nloopback cluster endpoints. Link-local/cloud-metadata addresses remain\nblocked. It is explicit in the UI instead of hidden in process env.",
+                    "description": "AllowPrivateEndpoints permits this organization's sandbox config to reach RFC1918 or\nloopback cluster endpoints. Link-local/cloud-metadata addresses remain\nblocked. It is explicit in the UI instead of hidden in process env.",
                     "type": "boolean"
                 },
                 "cube": {
@@ -23726,7 +23726,7 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.E2BSandboxConfig"
                 },
                 "env_vars": {
-                    "description": "EnvVars are additional environment variables injected into every\nsandbox created for this tenant. 🔒 Values are encrypted at rest.\nThese become visible to all scripts running in the tenant's\nsandboxes — do not place secrets here that scripts must not access.",
+                    "description": "EnvVars are additional environment variables injected into every\nsandbox created for this organization. 🔒 Values are encrypted at rest.\nThese become visible to all scripts running in the tenant's\nsandboxes — do not place secrets here that scripts must not access.",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
@@ -23761,7 +23761,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "volume_mount": {
-                    "description": "VolumeMount configures an optional shared volume mounted into every\nsandbox created for this tenant. Currently used for tenant-installed\nskills, but the configuration itself is skill-agnostic and can serve\nany volume-mount use case (shared datasets, pre-installed toolchains,\netc.).",
+                    "description": "VolumeMount configures an optional shared volume mounted into every\nsandbox created for this organization. Currently used for tenant-installed\nskills, but the configuration itself is skill-agnostic and can serve\nany volume-mount use case (shared datasets, pre-installed toolchains,\netc.).",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.VolumeMountConfig"
@@ -24130,7 +24130,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "can_access_all_tenants": {
-                    "description": "Whether the user can access all workspaces (cross-workspace access)",
+                    "description": "Whether the user can access all organizations (cross-organization access)",
                     "type": "boolean"
                 },
                 "created_at": {
@@ -24158,7 +24158,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "is_system_admin": {
-                    "description": "Whether the user is a system administrator (independent of workspace roles)",
+                    "description": "Whether the user is a system administrator (independent of organization roles)",
                     "type": "boolean"
                 },
                 "preferences": {
@@ -24178,7 +24178,7 @@ const docTemplate = `{
                     ]
                 },
                 "tenant_id": {
-                    "description": "Workspace ID that the user belongs to",
+                    "description": "Organization ID that the user belongs to",
                     "type": "integer"
                 },
                 "two_factor_enabled": {
@@ -24245,7 +24245,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "last_active_tenant_id": {
-                    "description": "LastActiveTenantID remembers the last workspace the user actively\nswitched into, so a fresh login (new device, cleared browser, new\nrefresh token) lands them back in that workspace instead of always\nbouncing to their home workspace. Written by the SPA's preferences\nPUT and by service-level SwitchTenant (including when switching\nhome, which stores the home ID). Login / RefreshToken validate that\nthe workspace still exists and the user still has an active membership\n(or is a SuperAdmin) before honouring this preference; an\ninvalid pointer is best-effort cleared and the user falls back to\nhome. Refresh JWT claims have no tenant_id, so RefreshToken\nre-resolves from this field.\n\nnil  = no preference (use user.TenantID, i.e. home)\n*0   = \"clear preference\" sentinel for the partial-update endpoint\n       (UpdateUserPreferences turns this into nil). Otherwise treat\n       a stored *0 the same as nil.\n*N   = preferred workspace id.",
+                    "description": "LastActiveTenantID remembers the last organization the user actively\nswitched into, so a fresh login (new device, cleared browser, new\nrefresh token) lands them back in that organization instead of always\nbouncing to their home organization. Written by the SPA's preferences\nPUT and by service-level SwitchTenant (including when switching\nhome, which stores the home ID). Login / RefreshToken validate that\nthe organization still exists and the user still has an active membership\n(or is a SuperAdmin) before honouring this preference; an\ninvalid pointer is best-effort cleared and the user falls back to\nhome. Refresh JWT claims have no tenant_id, so RefreshToken\nre-resolves from this field.\n\nnil  = no preference (use user.TenantID, i.e. home)\n*0   = \"clear preference\" sentinel for the partial-update endpoint\n       (UpdateUserPreferences turns this into nil). Otherwise treat\n       a stored *0 the same as nil.\n*N   = preferred organization id.",
                     "type": "integer"
                 },
                 "oidc_only_login": {
@@ -24304,7 +24304,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "enabled": {
-                    "description": "Enabled toggles the volume mount for this tenant.",
+                    "description": "Enabled toggles the volume mount for this organization.",
                     "type": "boolean"
                 },
                 "mount_path": {
@@ -24324,7 +24324,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "volume_owner_fingerprint": {
-                    "description": "VolumeOwnerFingerprint = sha256(provider + APIKey + APIURL).\nUsed to detect when the tenant switched to a different backend or\nAPI key, at which point the volume is no longer reachable and must\nbe recreated.",
+                    "description": "VolumeOwnerFingerprint = sha256(provider + APIKey + APIURL).\nUsed to detect when the organization switched to a different backend or\nAPI key, at which point the volume is no longer reachable and must\nbe recreated.",
                     "type": "string"
                 }
             }
@@ -24411,7 +24411,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "is_default": {
-                    "description": "Whether this is the default provider for the workspace",
+                    "description": "Whether this is the default provider for the organization",
                     "type": "boolean"
                 },
                 "name": {
@@ -24435,7 +24435,7 @@ const docTemplate = `{
                     ]
                 },
                 "tenant_id": {
-                    "description": "Workspace ID for scoping",
+                    "description": "Organization ID for scoping",
                     "type": "integer"
                 },
                 "updated_at": {
@@ -24946,7 +24946,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "tenant_id": {
-                    "description": "Workspace ID for multi-workspace isolation",
+                    "description": "Organization ID for multi-organization isolation",
                     "type": "integer"
                 },
                 "title": {
@@ -25873,7 +25873,7 @@ const docTemplate = `{
                     }
                 },
                 "model_id": {
-                    "description": "ModelID selects a chat (KnowledgeQA) model of the workspace; empty or\n\"default\" uses the workspace default chat model, so integrations follow\nwhatever model the workspace is switched to.",
+                    "description": "ModelID selects a chat (KnowledgeQA) model of the organization; empty or\n\"default\" uses the organization default chat model, so integrations follow\nwhatever model the organization is switched to.",
                     "type": "string"
                 },
                 "temperature": {
@@ -26379,7 +26379,7 @@ const docTemplate = `{
             }
         },
         "internal_handler.RuntimeWorkerPool": {
-            "description": "Return every row in the system_settings table (system-scope, not workspace-scoped). SystemAdmin only.",
+            "description": "Return every row in the system_settings table (system-scope, not organization-scoped). SystemAdmin only.",
             "type": "object",
             "properties": {
                 "active": {
@@ -26721,7 +26721,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "member_default": {
-                    "description": "MemberDefault (optional): view | contribute — what owner-tenant\nmembers may do on a 'tenant' KB. Owner Tenant Admin or SuperAdmin.",
+                    "description": "MemberDefault (optional): view | contribute — what owner-organization\nmembers may do on a 'tenant' KB. Owner Organization Admin or SuperAdmin.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.KBMemberDefault"
@@ -26732,7 +26732,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "visibility": {
-                    "description": "Visibility: tenant | restricted | published (owner Tenant Admin or\nSuperAdmin) or public (SuperAdmin). Optional when only\nmember_default changes.",
+                    "description": "Visibility: tenant | restricted | published (owner Organization Admin or\nSuperAdmin) or public (SuperAdmin). Optional when only\nmember_default changes.",
                     "allOf": [
                         {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.KBVisibility"
@@ -27229,7 +27229,7 @@ const docTemplate = `{
                     "maxLength": 35
                 },
                 "last_active_tenant_id": {
-                    "description": "LastActiveTenantID lets clients persist \"after a fresh login,\ndrop me back into this workspace\" across devices. The SPA sends\nthis after every tenant switch; POST /auth/switch-tenant records\nthe same preference server-side. Send a positive workspace id to\nset / replace, or 0 to clear. Membership is validated at next\nlogin, not here. Nil = field omitted from the PATCH and stays\nuntouched.",
+                    "description": "LastActiveTenantID lets clients persist \"after a fresh login,\ndrop me back into this organization\" across devices. The SPA sends\nthis after every organization switch; POST /auth/switch-tenant records\nthe same preference server-side. Send a positive organization id to\nset / replace, or 0 to clear. Membership is validated at next\nlogin, not here. Nil = field omitted from the PATCH and stays\nuntouched.",
                     "type": "integer"
                 },
                 "province_id": {
@@ -27625,7 +27625,7 @@ const docTemplate = `{
     },
     "securityDefinitions": {
         "ApiKeyAuth": {
-            "description": "API Key authentication: Tenant Key accesses the corresponding workspace; Platform Key requires X-Tenant-ID header when invoking workspace APIs",
+            "description": "API Key authentication: Organization Key accesses the corresponding organization; Platform Key requires X-Tenant-ID header when invoking organization APIs",
             "type": "apiKey",
             "name": "X-API-Key",
             "in": "header"

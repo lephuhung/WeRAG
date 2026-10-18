@@ -50,7 +50,7 @@ function tenantHeaderErrorMessage(error: unknown): string | null {
  * out or trigger a pointless retry. */
 function isTenantHeaderRejection(message: string | null): boolean {
   if (!message) return false;
-  return /x-tenant-id|target workspace|invalid[^a-z0-9]+tenant|tenant[^a-z0-9]+invalid|unknown tenant|tenant not found|no tenant|not[^a-z0-9]+member|membership/i.test(
+  return /x-tenant-id|target (?:workspace|organization)|invalid[^a-z0-9]+tenant|tenant[^a-z0-9]+invalid|invalid[^a-z0-9]+organization|organization[^a-z0-9]+invalid|unknown tenant|tenant not found|organization not found|no tenant|no organization|not[^a-z0-9]+member|membership/i.test(
     message,
   );
 }

@@ -75,23 +75,23 @@ type updateMemberRoleRequest struct {
 func parseTenantIDFromPath(c *gin.Context) (uint64, bool) {
 	raw := strings.TrimSpace(c.Param("id"))
 	if raw == "" {
-		c.Error(apperrors.NewValidationError("workspace id is required"))
+		c.Error(apperrors.NewValidationError("organization id is required"))
 		return 0, false
 	}
 	v, err := strconv.ParseUint(raw, 10, 64)
 	if err != nil || v == 0 {
-		c.Error(apperrors.NewValidationError("workspace id must be a positive integer"))
+		c.Error(apperrors.NewValidationError("organization id must be a positive integer"))
 		return 0, false
 	}
 	return v, true
 }
 
 // ListMembers godoc
-// @Summary      Liệt kê thành viên đơn vị
-// @Description  Trả về theo trang các thành viên active của đơn vị hiện tại (kèm vai trò, email, ảnh đại diện); hỗ trợ q để lọc theo email/tên người dùng
-// @Tags         Thành viên đơn vị
+// @Summary      Liệt kê thành viên tổ chức
+// @Description  Trả về theo trang các thành viên active của tổ chức hiện tại (kèm vai trò, email, ảnh đại diện); hỗ trợ q để lọc theo email/tên người dùng
+// @Tags         Thành viên tổ chức
 // @Produce      json
-// @Param        id         path   string  true   "Tenant workspace ID"
+// @Param        id         path   string  true   "Organization ID"
 // @Param        q          query  string  false  "Lọc gần đúng theo email/tên người dùng"
 // @Param        page       query  int     false  "Số trang (bắt đầu từ 1)"  default(1)
 // @Param        page_size  query  int     false  "Số mục mỗi trang (tối đa 100)"  default(20)
@@ -164,7 +164,7 @@ func (h *TenantMemberHandler) ListMembers(c *gin.Context) {
 }
 
 // AddMember godoc
-// @Summary      Thêm trực tiếp thành viên đơn vị (đường thêm thẳng)
+// @Summary      Thêm trực tiếp thành viên tổ chức (đường thêm thẳng)
 // @Description
 //
 //	Owner thêm thẳng người dùng theo email làm thành viên active của đơn vị hiện tại.
@@ -180,10 +180,10 @@ func (h *TenantMemberHandler) ListMembers(c *gin.Context) {
 //	chủ động chấp nhận tại /me/invitations rồi mới ghi hàng tenant_members (tiếp theo PR #1303).
 //	Đường này và đường invitations cùng tồn tại, không thay thế nhau.
 //
-// @Tags         Thành viên đơn vị
+// @Tags         Thành viên tổ chức
 // @Accept       json
 // @Produce      json
-// @Param        id        path  string                 true  "Tenant workspace ID"
+// @Param        id        path  string                 true  "Organization ID"
 // @Param        request   body  addMemberRequest       true  "Yêu cầu mời"
 // @Success      201  {object}  map[string]interface{}
 // @Security     Bearer
@@ -311,12 +311,12 @@ func addMemberAndRespond(
 }
 
 // UpdateMemberRole godoc
-// @Summary      Đổi vai trò thành viên đơn vị
-// @Description  Owner đổi vai trò của một thành viên trong đơn vị hiện tại; không được hạ cấp Owner cuối cùng
-// @Tags         Thành viên đơn vị
+// @Summary      Đổi vai trò thành viên tổ chức
+// @Description  Owner đổi vai trò của một thành viên trong tổ chức hiện tại; không được hạ cấp Owner cuối cùng
+// @Tags         Thành viên tổ chức
 // @Accept       json
 // @Produce      json
-// @Param        id       path  string                  true  "Tenant workspace ID"
+// @Param        id       path  string                  true  "Organization ID"
 // @Param        user_id  path  string                  true  "ID người dùng"
 // @Param        request  body  updateMemberRoleRequest true  "Vai trò đích"
 // @Success      200  {object}  map[string]interface{}
@@ -372,11 +372,11 @@ func (h *TenantMemberHandler) UpdateMemberRole(c *gin.Context) {
 }
 
 // RemoveMember godoc
-// @Summary      Gỡ thành viên đơn vị
-// @Description  Owner gỡ một thành viên khỏi đơn vị hiện tại (xoá mềm hàng tenant_members); không được gỡ Owner cuối cùng
-// @Tags         Thành viên đơn vị
+// @Summary      Gỡ thành viên tổ chức
+// @Description  Owner gỡ một thành viên khỏi tổ chức hiện tại (xoá mềm hàng tenant_members); không được gỡ Owner cuối cùng
+// @Tags         Thành viên tổ chức
 // @Produce      json
-// @Param        id       path  string  true  "Tenant workspace ID"
+// @Param        id       path  string  true  "Organization ID"
 // @Param        user_id  path  string  true  "ID người dùng"
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
@@ -411,15 +411,15 @@ func (h *TenantMemberHandler) RemoveMember(c *gin.Context) {
 }
 
 // LeaveTenant godoc
-// @Summary      Rời đơn vị hiện tại
-// @Description  Người gọi chủ động rời đơn vị hiện tại. Tương đương gọi RemoveMember với user_id của chính mình,
+// @Summary      Rời tổ chức hiện tại
+// @Description  Người gọi chủ động rời tổ chức hiện tại. Tương đương gọi RemoveMember với user_id của chính mình,
 //
 //	nhưng không cần quyền Admin — người không phải Admin cũng tự rời được. Admin cuối cùng vẫn không được rời
 //	(phải nâng thành viên khác lên Admin trước), do tầng service chặn bằng ErrLastAdmin.
 //
-// @Tags         Thành viên đơn vị
+// @Tags         Thành viên tổ chức
 // @Produce      json
-// @Param        id  path  string  true  "Tenant workspace ID"
+// @Param        id  path  string  true  "Organization ID"
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
 // @Router       /tenants/{id}/leave [post]
@@ -438,13 +438,13 @@ func (h *TenantMemberHandler) LeaveTenant(c *gin.Context) {
 	if err := h.memberService.RemoveMember(ctx, caller, tenantID); err != nil {
 		switch {
 		case errors.Is(err, service.ErrMembershipNotFound):
-			c.Error(apperrors.NewNotFoundError("you are not a member of this workspace"))
+			c.Error(apperrors.NewNotFoundError("you are not a member of this organization"))
 		case errors.Is(err, service.ErrLastAdmin):
 			c.Error(apperrors.NewConflictError(err.Error()))
 		default:
 			logger.Errorf(ctx, "LeaveTenant failed: user=%s tenant=%d err=%v",
 				caller, tenantID, err)
-			c.Error(apperrors.NewInternalServerError("failed to leave workspace").WithDetails(err.Error()))
+			c.Error(apperrors.NewInternalServerError("failed to leave organization").WithDetails(err.Error()))
 		}
 		return
 	}

@@ -89,7 +89,7 @@ export function InviteMemberModal({
   };
 
   return (
-    <Modal open={open} title="Invite to Workspace" onClose={onClose}>
+    <Modal open={open} title="Invite to Organization" onClose={onClose}>
       <div className="space-y-5">
         {/* Tabs */}
         <div className="flex border-b border-hairline pb-2 gap-4">

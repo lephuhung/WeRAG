@@ -80,7 +80,7 @@ type Session struct {
 	Title string `json:"title"`
 	// Description
 	Description string `json:"description"`
-	// Workspace ID
+	// Organization ID
 	TenantID uint64 `json:"tenant_id"   gorm:"index"`
 	// UserID is the owner scope for this session. WeKnora user UUIDs, API
 	// external-user principals, and embed visitor principals all use this column.

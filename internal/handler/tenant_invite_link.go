@@ -56,12 +56,12 @@ type createInviteLinkRequest struct {
 
 // CreateInviteLink godoc
 // @Summary      Tạo liên kết mời dùng chung
-// @Description  Tạo một liên kết mời dùng nhiều lần: ai có liên kết đều có thể đăng ký và tham gia đơn vị hiện tại.
+// @Description  Tạo một liên kết mời dùng nhiều lần: ai có liên kết đều có thể đăng ký và tham gia tổ chức hiện tại.
 // @Description  Liên kết có hiệu lực cho đến khi hết hạn hoặc bị thu hồi.
-// @Tags         Lời mời đơn vị
+// @Tags         Lời mời tổ chức
 // @Accept       json
 // @Produce      json
-// @Param        id       path  string                   true  "Tenant workspace ID"
+// @Param        id       path  string                   true  "Organization ID"
 // @Param        request  body  createInviteLinkRequest  true  "cấu hình liên kết mời"
 // @Success      201  {object}  map[string]interface{}
 // @Security     Bearer

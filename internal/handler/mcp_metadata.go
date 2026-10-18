@@ -31,7 +31,7 @@ func (h *MCPServiceHandler) GetMCPMetadata(c *gin.Context) { h.mcpMetadata(c, fa
 
 // RefreshMCPMetadata godoc
 // @Summary      Đồng bộ danh mục công cụ MCP
-// @Description  Kết nối upstream rõ ràng và thay thế nguyên tử toàn bộ danh mục. Dịch vụ OAuth ghi ảnh chụp của người dùng hiện tại, Viewer trở lên gọi được; xác thực tĩnh ghi ảnh chụp dùng chung của đơn vị, cần Admin.
+// @Description  Kết nối upstream rõ ràng và thay thế nguyên tử toàn bộ danh mục. Dịch vụ OAuth ghi ảnh chụp của người dùng hiện tại, Viewer trở lên gọi được; xác thực tĩnh ghi ảnh chụp dùng chung của tổ chức, cần Admin.
 // @Tags         Dịch vụ MCP
 // @Accept       json
 // @Produce      json
@@ -52,7 +52,7 @@ func (h *MCPServiceHandler) mcpMetadata(c *gin.Context, refresh bool) {
 	ctx := c.Request.Context()
 	tenant := c.GetUint64(types.TenantIDContextKey.String())
 	if tenant == 0 {
-		_ = c.Error(errors.NewBadRequestError("Workspace ID cannot be empty"))
+		_ = c.Error(errors.NewBadRequestError("Organization ID cannot be empty"))
 		return
 	}
 	svc, ok := h.mcpServiceService.(interfaces.MCPMetadataService)

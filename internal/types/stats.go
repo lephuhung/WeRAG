@@ -13,7 +13,7 @@ type AccountStats struct {
 	InactiveUsers int64 `json:"inactive_users"`
 	// SystemAdmins counts users holding the system-admin flag.
 	SystemAdmins int64 `json:"system_admins"`
-	// TotalTenants is the number of workspaces.
+	// TotalTenants is the number of organizations.
 	TotalTenants int64 `json:"total_tenants"`
 	// NewUsersLast30d counts users created in the trailing 30 days.
 	NewUsersLast30d int64 `json:"new_users_last_30d"`
@@ -106,7 +106,7 @@ type SystemStats struct {
 	// PublicKBs lists every platform-public knowledge base with its
 	// document counts, largest first.
 	PublicKBs []PublicKBDocumentCount `json:"public_kbs"`
-	// Usage sums every workspace's questions and tokens for today and
+	// Usage sums every organization's questions and tokens for today and
 	// this month (Vietnam calendar).
 	Usage UsageStats `json:"usage"`
 }

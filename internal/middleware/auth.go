@@ -492,7 +492,7 @@ func authenticateJWTUser(
 			return true
 		}
 		c.JSON(http.StatusConflict, gin.H{
-			"error": "Workspace required",
+			"error": "Organization required",
 			"code":  "TENANT_REQUIRED",
 		})
 		c.Abort()
@@ -507,7 +507,7 @@ func authenticateJWTUser(
 		if err != nil || tenant == nil {
 			logger.Warnf(ctx, "[auth] tenant lookup failed: tenant=%d user=%s err=%v", targetTenantID, user.ID, err)
 			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Unauthorized: invalid workspace",
+				"error": "Unauthorized: invalid organization",
 			})
 			c.Abort()
 			return false
@@ -516,8 +516,8 @@ func authenticateJWTUser(
 	// A configuration profile holds shared settings only; nobody signs in to
 	// it. SuperAdmin configuration routes reach it through their own scope.
 	if tenant.IsConfigProfile() {
-		logger.Warnf(ctx, "[auth] refused configuration profile as workspace: tenant=%d user=%s", targetTenantID, user.ID)
-		c.JSON(http.StatusForbidden, gin.H{"error": "Forbidden: not a workspace"})
+		logger.Warnf(ctx, "[auth] refused configuration profile as organization: tenant=%d user=%s", targetTenantID, user.ID)
+		c.JSON(http.StatusForbidden, gin.H{"error": "Forbidden: not an organization"})
 		c.Abort()
 		return false
 	}
@@ -570,7 +570,7 @@ func authenticateJWTUser(
 		}
 		logger.Warnf(ctx, "User %s has no active membership in tenant %d", user.ID, targetTenantID)
 		c.JSON(http.StatusForbidden, gin.H{
-			"error": "Forbidden: not a member of the target workspace",
+			"error": "Forbidden: not a member of the target organization",
 			"code":  "TENANT_MEMBERSHIP_REQUIRED",
 		})
 		c.Abort()
@@ -604,7 +604,7 @@ func authenticateJWTUser(
 //
 // Returns ok=false when the response has already been written (malformed
 // header, inaccessible or missing target tenant). targetTenantID == 0 with
-// ok=true means "authenticated but no usable workspace" — the caller decides
+// ok=true means "authenticated but no usable organization" — the caller decides
 // between tenantless routes and TENANT_REQUIRED.
 func resolveTargetTenant(
 	c *gin.Context,
@@ -639,7 +639,7 @@ func resolveTargetTenant(
 		if !IsTenantAccessible(ctx, user, parsedTenantID, memberService, cfg) {
 			logger.Warnf(ctx, "User %s attempted to access tenant %d without permission", user.ID, parsedTenantID)
 			c.JSON(http.StatusForbidden, gin.H{
-				"error": "Forbidden: insufficient permissions to access target workspace",
+				"error": "Forbidden: insufficient permissions to access target organization",
 			})
 			c.Abort()
 			return 0, nil, false, false
@@ -648,7 +648,7 @@ func resolveTargetTenant(
 		targetTenant, err := tenantService.GetTenantByID(ctx, parsedTenantID)
 		if err != nil || targetTenant == nil {
 			logger.Warnf(ctx, "Error getting target tenant by ID: %v, tenantID: %d", err, parsedTenantID)
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid target workspace ID"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid target organization ID"})
 			c.Abort()
 			return 0, nil, false, false
 		}
@@ -715,7 +715,7 @@ func authenticateAPIKeyRequest(
 		if tenantHeader == "" {
 			if !isPlatformTenantOptionalAPI(c.Request.URL.Path, c.Request.Method) {
 				c.JSON(http.StatusConflict, gin.H{
-					"error": "Workspace required: platform API keys must send X-Tenant-ID",
+					"error": "Organization required: platform API keys must send X-Tenant-ID",
 					"code":  "TENANT_REQUIRED",
 				})
 				c.Abort()
@@ -747,7 +747,7 @@ func authenticateAPIKeyRequest(
 			}
 			if requestedTenantID != tenantID {
 				c.JSON(http.StatusForbidden, gin.H{
-					"error": "Forbidden: workspace API key cannot switch workspaces",
+					"error": "Forbidden: organization API key cannot switch organizations",
 				})
 				c.Abort()
 				return false
@@ -973,7 +973,7 @@ func verifyExternalUserJWT(tokenString string, tenantID uint64, secret string) (
 		return "", errors.New("token not yet valid")
 	}
 	if got := principalTenantIDFromClaims(claims); got != tenantID {
-		return "", fmt.Errorf("workspace mismatch: got %d want %d", got, tenantID)
+		return "", fmt.Errorf("organization mismatch: got %d want %d", got, tenantID)
 	}
 	sub, _ := claims["sub"].(string)
 	sub = strings.TrimSpace(sub)

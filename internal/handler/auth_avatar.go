@@ -38,7 +38,7 @@ func sniffAvatarExt(data []byte) string {
 // UploadMyAvatar godoc
 // @Summary      Upload avatar for the current user
 // @Description  Accepts one multipart image (png/jpg/webp/gif, ≤5MB), stores it
-// @Description  via the tenant's file service and records the returned
+// @Description  via the organization's file service and records the returned
 // @Description  provider path on the caller's profile. Clients render it back
 // @Description  through the authenticated /files proxy.
 // @Tags         Xác thực

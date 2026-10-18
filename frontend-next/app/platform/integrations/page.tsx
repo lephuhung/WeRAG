@@ -36,7 +36,7 @@ const TABS: { id: Tab; labelEn: string; labelVi: string; descEn: string; descVi:
   { id: "claw", labelEn: "Claw skills", labelVi: "Kỹ năng Claw", descEn: "Publish skills the agent sandbox can install.", descVi: "Công bố kỹ năng để sandbox cài đặt." },
   { id: "im", labelEn: "Instant messaging", labelVi: "Tin nhắn tức thời", descEn: "Bring the agent into IM channels.", descVi: "Đưa trợ lý vào các kênh tin nhắn." },
   { id: "api", labelEn: "HTTP API", labelVi: "HTTP API", descEn: "Serve RAG answers to your own product.", descVi: "Cung cấp câu trả lời RAG cho sản phẩm của bạn." },
-  { id: "mcp", labelEn: "MCP server", labelVi: "MCP server", descEn: "Expose the workspace as an MCP tool source.", descVi: "Cung cấp không gian làm việc như nguồn công cụ MCP." },
+  { id: "mcp", labelEn: "MCP server", labelVi: "MCP server", descEn: "Expose the organization's knowledge bases as an MCP tool source.", descVi: "Cung cấp kho tri thức của tổ chức như nguồn công cụ MCP." },
 ];
 
 function ConnectionBanner() {
@@ -83,7 +83,7 @@ export default function Integrations() {
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-[900px] px-4 py-6 sm:px-8 sm:py-10 lg:px-12">
-        <div className="caption-uppercase mb-3 text-muted">Workspace</div>
+        <div className="caption-uppercase mb-3 text-muted">{t("settingsNav.groups.workspace")}</div>
         <h1 className="display-xl mb-10">{t("integrations.title")}</h1>
 
         <ConnectionBanner />

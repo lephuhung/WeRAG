@@ -28,7 +28,7 @@ All chat streaming endpoints use **Server-Sent Events** (`Accept: text/event-str
 | `query` | string | user message text |
 | `agent_enabled` | boolean | defaults to `Boolean(agentId)` |
 | `agent_id` | string | only when a non-builtin agent is selected |
-| `agent_source_tenant_id` | number \| string | tenant that owns a shared agent |
+| `agent_source_tenant_id` | number \| string | organization that owns a shared agent |
 | `knowledge_base_ids` | string[] | KB scope override |
 | `knowledge_ids` | string[] | restrict to specific documents |
 | `tag_ids` | string[] | tag scope |

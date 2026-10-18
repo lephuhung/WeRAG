@@ -13,7 +13,7 @@ import (
 
 // TenantAPIKey is a revocable machine credential. Tenant-scoped and platform
 // keys intentionally share one table; platform keys have tenant_id=NULL and
-// choose a target workspace per request. KeyHash is used for authentication
+// choose a target organization per request. KeyHash is used for authentication
 // lookup; APIKey is stored encrypted when SYSTEM_AES_KEY is set.
 type TenantAPIKey struct {
 	ID               uint64          `json:"id" gorm:"primaryKey;autoIncrement"`

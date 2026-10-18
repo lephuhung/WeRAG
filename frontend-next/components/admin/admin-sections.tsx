@@ -55,7 +55,7 @@ export const ADMIN_GROUPS: AdminSectionGroup[] = [
     key: "admin",
     labelKey: "systemNav.admin",
     items: [
-      { key: "tenants", labelKey: "systemNav.tenants", fallback: "Units", icon: IconOrg, render: () => <AdminTenantsPage />, route: `${SYS}/admin/tenants` },
+      { key: "tenants", labelKey: "systemNav.tenants", fallback: "Organizations", icon: IconOrg, render: () => <AdminTenantsPage />, route: `${SYS}/admin/tenants` },
       { key: "users", labelKey: "systemNav.users", fallback: "Users", icon: IconUser, render: () => <AdminUsersPage />, route: `${SYS}/admin/users` },
       { key: "logs", labelKey: "systemNav.logs", fallback: "Audit logs", icon: IconDocReader, render: () => <AdminLogsPage />, route: `${SYS}/admin/logs` },
       { key: "legal-documents", labelKey: "systemNav.legalDocuments", fallback: "Legal documents", icon: IconFileSearch, render: () => <AdminLegalDocumentsPage />, route: `${SYS}/admin/legal-documents` },

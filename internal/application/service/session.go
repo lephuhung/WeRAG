@@ -237,7 +237,7 @@ func (s *sessionService) CreateSession(ctx context.Context, session *types.Sessi
 	// Validate tenant ID
 	if session.TenantID == 0 {
 		logger.Error(ctx, "Failed to create session: tenant ID cannot be empty")
-		return nil, stderrors.New("tenant ID is required")
+		return nil, stderrors.New("organization ID is required")
 	}
 
 	logger.Infof(ctx, "Creating session, tenant ID: %d", session.TenantID)
@@ -311,7 +311,7 @@ func (s *sessionService) GetSessionByID(ctx context.Context, tenantID uint64, id
 		return nil, stderrors.New("session id is required")
 	}
 	if tenantID == 0 {
-		return nil, stderrors.New("workspace id is required")
+		return nil, stderrors.New("organization id is required")
 	}
 	return s.sessionRepo.GetByID(ctx, tenantID, id)
 }
@@ -390,7 +390,7 @@ func (s *sessionService) ListSessions(
 	if types.SessionListSourceRequiresAdmin(query.Source) {
 		if !callerIsTenantAdminOrSuperAdmin(ctx) {
 			return nil, apperrors.NewForbiddenError(
-				"listing channel sessions requires tenant admin role",
+				"listing channel sessions requires organization admin role",
 			)
 		}
 		query.UserID = ""

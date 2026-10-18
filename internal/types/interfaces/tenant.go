@@ -61,11 +61,11 @@ type TenantRepository interface {
 	// BulkSetStorageQuota — see TenantService.BulkSetStorageQuota.
 	BulkSetStorageQuota(ctx context.Context, quotaBytes int64) (int64, error)
 	// GetDefaultConfigProfile returns the configuration profile new
-	// workspaces inherit from, or (nil, nil) when none exists.
+	// organizations inherit from, or (nil, nil) when none exists.
 	GetDefaultConfigProfile(ctx context.Context) (*types.Tenant, error)
 	// SyncProfileSettings copies a configuration profile's inherited
-	// settings onto every workspace that inherits from it (or onto one
-	// workspace when workspaceID is non-zero). Returns the rows updated.
+	// settings onto every organization that inherits from it (or onto one
+	// organization when workspaceID is non-zero). Returns the rows updated.
 	SyncProfileSettings(ctx context.Context, profileID, workspaceID uint64) (int64, error)
 }
 

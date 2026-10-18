@@ -39,12 +39,12 @@ handler: `GetProvider` · `web_search_provider.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `id` | string | yes | Unique identifier (UUID, auto-generated) |
-| `tenant_id` | number | yes | Workspace ID for scoping |
+| `tenant_id` | number | yes | Organization ID for scoping |
 | `name` | string | yes | User-friendly name, e.g., "Production Bing Search" |
 | `provider` | WebSearchProviderType | yes | Provider type: bing, google, duckduckgo, tavily |
 | `description` | string | yes | Description |
 | `parameters` | WebSearchProviderParameters | yes | Provider-specific parameters (API key, engine ID, etc.) stored as encrypted JSON |
-| `is_default` | boolean | yes | Whether this is the default provider for the workspace |
+| `is_default` | boolean | yes | Whether this is the default provider for the organization |
 | `created_at` | string(time) | yes | Timestamps |
 | `updated_at` | string(time) | yes |  |
 | `deleted_at` | DeletedAt | yes |  |
@@ -66,12 +66,12 @@ handler: `UpdateProvider` · `web_search_provider.go`
 | field | type | req | notes |
 |---|---|---|---|
 | `id` | string | yes | Unique identifier (UUID, auto-generated) |
-| `tenant_id` | number | yes | Workspace ID for scoping |
+| `tenant_id` | number | yes | Organization ID for scoping |
 | `name` | string | yes | User-friendly name, e.g., "Production Bing Search" |
 | `provider` | WebSearchProviderType | yes | Provider type: bing, google, duckduckgo, tavily |
 | `description` | string | yes | Description |
 | `parameters` | WebSearchProviderParameters | yes | Provider-specific parameters (API key, engine ID, etc.) stored as encrypted JSON |
-| `is_default` | boolean | yes | Whether this is the default provider for the workspace |
+| `is_default` | boolean | yes | Whether this is the default provider for the organization |
 | `created_at` | string(time) | yes | Timestamps |
 | `updated_at` | string(time) | yes |  |
 | `deleted_at` | DeletedAt | yes |  |

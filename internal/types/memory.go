@@ -178,7 +178,7 @@ func MemoryAllowedForAgent(ctx context.Context) bool {
 }
 
 // ApplyAgentMemoryPreference threads an agent's memory switch into ctx. A nil
-// preference inherits the workspace setting.
+// preference inherits the organization setting.
 func ApplyAgentMemoryPreference(ctx context.Context, enabled *bool) context.Context {
 	if enabled != nil && !*enabled {
 		return WithMemoryDisabled(ctx)
@@ -187,7 +187,7 @@ func ApplyAgentMemoryPreference(ctx context.Context, enabled *bool) context.Cont
 }
 
 // MemorySubject is one memory space: a single principal inside a single
-// workspace. Scope is always derived from the request context, never from a
+// organization. Scope is always derived from the request context, never from a
 // client-supplied id.
 type MemorySubject struct {
 	ID string `json:"id" gorm:"primaryKey;type:varchar(36)"`
@@ -198,7 +198,7 @@ type MemorySubject struct {
 	// SubjectID is Principal.StorageID(), so IM users, embed visitors and API
 	// external users each get their own space without needing an account.
 	SubjectID string `json:"subject_id" gorm:"type:varchar(512);not null;uniqueIndex:idx_memory_subjects_scope,priority:2"`
-	// Enabled is the per-user opt out. The workspace switch lives on
+	// Enabled is the per-user opt out. The organization switch lives on
 	// Tenant.MemoryConfig and takes precedence over it.
 	Enabled bool `json:"enabled" gorm:"not null;default:true"`
 	// BlockText is the rendered profile/preference block. It is recomputed on
@@ -332,11 +332,11 @@ type MemoryItem struct {
 
 func (MemoryItem) TableName() string { return "memory_items" }
 
-// MemoryConfig is the workspace-level memory switch, stored as JSONB on
-// tenants. It is deliberately small: everything a workspace admin can decide
+// MemoryConfig is the organization-level memory switch, stored as JSONB on
+// tenants. It is deliberately small: everything an organization admin can decide
 // fits in four fields.
 type MemoryConfig struct {
-	// Enabled is on for workspaces that never saved a config (see
+	// Enabled is on for organizations that never saved a config (see
 	// DefaultMemoryConfig); once an admin saves, the stored value wins.
 	Enabled bool `json:"enabled"`
 	// WriteMode is MemoryWriteExplicitOnly or MemoryWriteAuto.
@@ -357,7 +357,7 @@ type MemoryConfig struct {
 	// a turn arriving inside the interval is queued and picked up by the next
 	// run. 0 means the default.
 	ExtractMinIntervalSeconds int `json:"extract_min_interval_seconds"`
-	// ExtractInstructions are workspace-specific rules appended to the
+	// ExtractInstructions are organization-specific rules appended to the
 	// distillation prompt, for policies the product cannot guess ("never record
 	// customer names", "always note the environment a question is about").
 	ExtractInstructions string `json:"extract_instructions"`
@@ -366,7 +366,7 @@ type MemoryConfig struct {
 	// records every topic on first sight, which is usually too noisy.
 	InterestThreshold int `json:"interest_threshold"`
 	// EmbeddingModelID is the single model used to score memory against a
-	// question. It is pinned per workspace: knowledge bases each have their
+	// question. It is pinned per organization: knowledge bases each have their
 	// own embedding model, and grabbing whichever one happens to be listed
 	// first would mix incomparable vector spaces. Blank means semantic recall
 	// is off and matching stays lexical.
@@ -425,7 +425,7 @@ func (c *MemoryConfig) EffectiveInterestThreshold() int {
 	return c.InterestThreshold
 }
 
-// MaxMemoryExtractInstructionsRunes bounds the custom prompt so one workspace
+// MaxMemoryExtractInstructionsRunes bounds the custom prompt so one organization
 // cannot turn every distillation call into a large prompt.
 const MaxMemoryExtractInstructionsRunes = 1000
 
@@ -540,14 +540,14 @@ func (c *MemoryConfig) AutoExtractEnabled() bool {
 	return c != nil && c.Enabled && c.WriteMode == MemoryWriteAuto
 }
 
-// MemoryEnabled reports whether the workspace switch is on.
+// MemoryEnabled reports whether the organization switch is on.
 func (c *MemoryConfig) MemoryEnabled() bool {
 	return c != nil && c.Enabled
 }
 
 // MemoryConfigSettingKey is the system_settings key holding the platform-wide
 // memory configuration. The SuperAdmin configures memory once for every
-// workspace; tenants inherit it and users have no switch of their own.
+// organization; tenants inherit it and users have no switch of their own.
 const MemoryConfigSettingKey = "memory.config"
 
 // ParseMemoryConfig decodes a stored platform memory configuration and
@@ -1013,21 +1013,21 @@ func WrapMemoryForPrompt(block, recall string) string {
 }
 
 // MemorySettings is the effective, already-merged memory state for one user.
-// The UI renders this directly rather than merging a workspace setting with a
+// The UI renders this directly rather than merging an organization setting with a
 // user setting itself, so "why is my memory off" has exactly one answer.
 type MemorySettings struct {
 	// PlatformEnabled is the SuperAdmin platform-wide kill switch. When
 	// false, memory is off for everyone regardless of the other switches.
 	PlatformEnabled bool `json:"platform_enabled"`
-	// WorkspaceEnabled is the admin switch on the workspace.
+	// WorkspaceEnabled is the admin switch on the organization.
 	WorkspaceEnabled bool `json:"workspace_enabled"`
 	// UserEnabled is the caller's own opt out. Meaningless while the
-	// workspace switch is off, but still reported so the toggle keeps its
-	// position when an admin turns the workspace back on.
+	// organization switch is off, but still reported so the toggle keeps its
+	// position when an admin turns the organization back on.
 	UserEnabled bool `json:"user_enabled"`
 	// Effective is what actually happens: WorkspaceEnabled && UserEnabled.
 	Effective bool `json:"effective"`
-	// WriteMode is the workspace write mode.
+	// WriteMode is the organization write mode.
 	WriteMode string `json:"write_mode"`
 	// ItemCount is how many active memories the caller currently has.
 	ItemCount int `json:"item_count"`

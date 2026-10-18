@@ -7,7 +7,7 @@ import (
 
 // Usage packages, billing: promo codes and orders.
 //
-// A buyer (a Tenant Admin for the workspace, anyone for themselves) picks
+// A buyer (a Tenant Admin for the organization, anyone for themselves) picks
 // a plan, a number of months and, in seat mode, a number of seats, may
 // apply a promo code and gets a quote. Creating the order freezes the
 // quote; the buyer pays by bank transfer with the order code as transfer

@@ -35,8 +35,8 @@ func (s *tenantService) CreateTenant(ctx context.Context, tenant *types.Tenant) 
 	logger.Info(ctx, "Start creating tenant")
 
 	if tenant.Name == "" {
-		logger.Error(ctx, "Workspace name cannot be empty")
-		return nil, errors.New("workspace name cannot be empty")
+		logger.Error(ctx, "Organization name cannot be empty")
+		return nil, errors.New("organization name cannot be empty")
 	}
 
 	logger.Infof(ctx, "Creating tenant, name: %s", tenant.Name)
@@ -118,8 +118,8 @@ func (s *tenantService) createDefaultStorageBackend(ctx context.Context, tenant 
 // GetTenantByID retrieves a tenant by their ID
 func (s *tenantService) GetTenantByID(ctx context.Context, id uint64) (*types.Tenant, error) {
 	if id == 0 {
-		logger.Error(ctx, "Workspace ID cannot be 0")
-		return nil, errors.New("tenant ID cannot be 0")
+		logger.Error(ctx, "Organization ID cannot be 0")
+		return nil, errors.New("organization ID cannot be 0")
 	}
 
 	tenant, err := s.repo.GetTenantByID(ctx, id)
@@ -153,8 +153,8 @@ func (s *tenantService) ListTenants(ctx context.Context) ([]*types.Tenant, error
 // UpdateTenant updates an existing tenant's information
 func (s *tenantService) UpdateTenant(ctx context.Context, tenant *types.Tenant) (*types.Tenant, error) {
 	if tenant.ID == 0 {
-		logger.Error(ctx, "Workspace ID cannot be 0")
-		return nil, errors.New("tenant ID cannot be 0")
+		logger.Error(ctx, "Organization ID cannot be 0")
+		return nil, errors.New("organization ID cannot be 0")
 	}
 
 	logger.Infof(ctx, "Updating tenant, ID: %d, name: %s", tenant.ID, tenant.Name)
@@ -184,7 +184,7 @@ func (s *tenantService) UpdateTenant(ctx context.Context, tenant *types.Tenant) 
 			logger.ErrorWithFields(ctx, err, map[string]interface{}{"profile_id": tenant.ID})
 			return nil, err
 		}
-		logger.Infof(ctx, "Configuration profile %d synced to %d workspace(s)", tenant.ID, synced)
+		logger.Infof(ctx, "Configuration profile %d synced to %d organization(s)", tenant.ID, synced)
 	}
 
 	logger.Infof(ctx, "Tenant updated successfully, ID: %d", tenant.ID)
@@ -196,8 +196,8 @@ func (s *tenantService) DeleteTenant(ctx context.Context, id uint64) error {
 	logger.Info(ctx, "Start deleting tenant")
 
 	if id == 0 {
-		logger.Error(ctx, "Workspace ID cannot be 0")
-		return errors.New("tenant ID cannot be 0")
+		logger.Error(ctx, "Organization ID cannot be 0")
+		return errors.New("organization ID cannot be 0")
 	}
 
 	logger.Infof(ctx, "Deleting tenant, ID: %d", id)
@@ -230,7 +230,7 @@ func (s *tenantService) DeleteTenant(ctx context.Context, id uint64) error {
 		return err
 	}
 
-	logger.Infof(ctx, "Workspace deleted successfully, ID: %d", id)
+	logger.Infof(ctx, "Organization deleted successfully, ID: %d", id)
 	return nil
 }
 
@@ -378,7 +378,7 @@ func (s *tenantService) validateStorageBucketUniqueness(ctx context.Context, ten
 		oldB := oldBuckets[p]
 		if b != oldB { // User is trying to change their bucket name or set a new one
 			if usedByOthers[p] != nil && usedByOthers[p][b] {
-				return werrors.NewBadRequestError("tên bucket \"" + b + "\" đã được đơn vị khác sử dụng, vui lòng dùng tên khác để bảo đảm cách ly dữ liệu")
+				return werrors.NewBadRequestError("tên bucket \"" + b + "\" đã được tổ chức khác sử dụng, vui lòng dùng tên khác để bảo đảm cách ly dữ liệu")
 			}
 		}
 	}
