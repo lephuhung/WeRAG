@@ -20,6 +20,8 @@ Lưu ý:
 
 ## Thuế giá trị gia tăng (GTGT)
 
+Văn bản bản gốc dẫn cho phương pháp tính thuế GTGT: Luật Thuế giá trị gia tăng 48/2024/QH15 (hiệu lực: tra cứu trước khi dùng).
+
 Hai phương pháp:
 
 | Phương pháp | Cách tính | Phù hợp |
@@ -67,7 +69,7 @@ Ví dụ số học (không phải mức luật định): nếu r bằng một p
 | Quyết toán TNDN | Hàng năm | Thời hạn sau kết thúc năm tài chính: tra hiện hành |
 | TNCN | Hàng tháng/quý + quyết toán | Tùy số lượng lao động |
 | Lệ phí môn bài | Đầu năm | Hạn nộp: tra hiện hành |
-| BHXH | Hàng tháng | Khi có lao động thuộc đối tượng |
+| BHXH | Hàng tháng | Khi có lao động thuộc đối tượng (bản gốc dẫn Luật Bảo hiểm xã hội 41/2024/QH15; tra KB) |
 
 Lịch cụ thể có thể thay đổi; luôn kiểm tra thông báo của cơ quan thuế.
 

@@ -1,16 +1,21 @@
 # Documents the opc-vn-business-law pack relies on, from references/00-legal-status.md
 # of the source skill (status column dropped: validity comes only from legal_documents;
 # run POST /api/v1/system/domain-packs/opc-vn-business-law/reconcile to check them).
+# articles: provisions the pack cites (optional); where each number is cited is
+# computed at load from SKILL.md, references/ and assets/ (never written here).
 documents:
   - number: 59/2020/QH14
     title: Luật Doanh nghiệp
     used_for: loại hình doanh nghiệp, cơ cấu quản trị, điều lệ, người đại diện theo pháp luật
+    articles: ["Điều 12", "Điều 24", "Điều 79", "Điều 85", "Điều 86", "Điều 87", "Điều 202"]
   - number: 88/2015/QH13
     title: Luật Kế toán
     used_for: kế toán trưởng, người làm kế toán, sổ sách, chứng từ, báo cáo
+    articles: ["Điều 49", "Điều 50", "Điều 52", "Điều 53", "Điều 54"]
   - number: 174/2016/NĐ-CP
     title: Nghị định quy định chi tiết một số điều của Luật Kế toán
     used_for: kế toán trưởng, phụ trách kế toán ở doanh nghiệp siêu nhỏ
+    articles: ["Điều 20"]
   - number: 133/2016/TT-BTC
     title: Thông tư hướng dẫn chế độ kế toán doanh nghiệp nhỏ và vừa
     used_for: chế độ kế toán doanh nghiệp nhỏ và vừa
@@ -23,6 +28,7 @@ documents:
   - number: 80/2021/NĐ-CP
     title: Nghị định quy định chi tiết một số điều của Luật Hỗ trợ doanh nghiệp nhỏ và vừa
     used_for: tiêu chí siêu nhỏ, nhỏ, vừa; hỗ trợ hộ kinh doanh chuyển đổi
+    articles: ["Điều 5"]
   - number: 67/2025/QH15
     title: Luật Thuế thu nhập doanh nghiệp
     used_for: thuế suất thuế thu nhập doanh nghiệp
@@ -41,3 +47,4 @@ documents:
   - number: 22/2023/QH15
     title: Luật Đấu thầu
     used_for: ưu đãi doanh nghiệp nhỏ và vừa trong mua sắm công
+    articles: ["Điều 10 khoản 2 điểm đ"]

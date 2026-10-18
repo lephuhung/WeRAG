@@ -15,7 +15,7 @@ import (
 // with tax declared on profit. It is the fixed-formula tool of the
 // opc-vn-business-law domain pack (docs/domain-pack-standard.md §4.1):
 // selectable per agent, never in the default allowlist.
-const ToolCompareTaxMethods = "compare_tax_methods"
+const ToolCompareTaxMethods = opcvn.ToolCompareTaxMethods
 
 var compareTaxMethodsTool = BaseTool{
 	name:        ToolCompareTaxMethods,
@@ -47,11 +47,21 @@ var compareTaxMethodsTool = BaseTool{
 // CompareTaxMethodsTool wraps opcvn.CompareTaxMethods for the agent.
 type CompareTaxMethodsTool struct {
 	BaseTool
+	// formulaBlock is the "Công thức áp dụng" text rendered from the pack's
+	// formulas.yaml (domainpacks.Registry.FormulaBlock): the formulas are
+	// written once, there, never repeated in Go.
+	formulaBlock string
 }
 
 // NewCompareTaxMethodsTool creates the tool; it needs no service.
 func NewCompareTaxMethodsTool() *CompareTaxMethodsTool {
 	return &CompareTaxMethodsTool{BaseTool: compareTaxMethodsTool}
+}
+
+// WithFormulaBlock sets the formulas text appended to every result.
+func (t *CompareTaxMethodsTool) WithFormulaBlock(block string) *CompareTaxMethodsTool {
+	t.formulaBlock = strings.TrimSpace(block)
+	return t
 }
 
 // compareTaxArgs are the four parameters in schema order.
@@ -98,9 +108,13 @@ func (t *CompareTaxMethodsTool) Execute(_ context.Context, args json.RawMessage)
 	if err != nil {
 		return t.fail("Lỗi: " + err.Error())
 	}
+	output := result.Render()
+	if t.formulaBlock != "" {
+		output += "\n" + t.formulaBlock + "\n"
+	}
 	return &types.ToolResult{
 		Success: true,
-		Output:  result.Render(),
+		Output:  output,
 		Data: map[string]interface{}{
 			"doanh_thu":           result.Revenue,
 			"loi_nhuan":           result.Profit,

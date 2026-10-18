@@ -91,8 +91,8 @@ func CompareTaxMethods(in TaxInput) (*TaxComparison, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !finite(in.TaxRate) || in.TaxRate <= 0 || in.TaxRate > 1 {
-		return nil, errors.New("Thuế suất phải trong khoảng (0, 1], ví dụ 0.2 cho 20%")
+	if err := checkTaxRate(in.TaxRate); err != nil {
+		return nil, err
 	}
 
 	out := &TaxComparison{
@@ -184,6 +184,14 @@ func FormatPercent(fraction float64, decimals int) string {
 		s = strings.TrimRight(strings.TrimRight(s, "0"), ".")
 	}
 	return strings.Replace(s, ".", ",", 1) + "%"
+}
+
+// checkTaxRate accepts a tax rate as a fraction in (0, 1].
+func checkTaxRate(rate float64) error {
+	if !finite(rate) || rate <= 0 || rate > 1 {
+		return errors.New("Thuế suất phải trong khoảng (0, 1], ví dụ 0.2 cho 20%")
+	}
+	return nil
 }
 
 func finite(v float64) bool {

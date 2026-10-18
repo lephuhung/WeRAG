@@ -99,3 +99,18 @@ func TestCompareTaxMethodsIsSelectableButNotDefault(t *testing.T) {
 		t.Errorf("all four parameters are required, got %v", schema.Required)
 	}
 }
+
+func TestCompareTaxMethodsToolAppendsFormulaBlock(t *testing.T) {
+	block := "Công thức áp dụng:\n- Thuế kê khai: Thuế = Lợi nhuận × Thuế suất (căn cứ: 67/2025/QH15)"
+	res, err := NewCompareTaxMethodsTool().WithFormulaBlock(block).Execute(context.Background(),
+		json.RawMessage(`{"doanh_thu":8000000000,"loi_nhuan":1200000000,"ty_le_doanh_thu":1.5,"thue_suat":0.2}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(strings.TrimSpace(res.Output), block) {
+		t.Errorf("formula block not appended:\n%s", res.Output)
+	}
+	if strings.Index(res.Output, "Giả định:") > strings.Index(res.Output, "Công thức áp dụng:") {
+		t.Error("the assumptions come before the formulas")
+	}
+}
