@@ -201,3 +201,18 @@ func TestRewriteProposesOneVersionUnlessOptionsRequested(t *testing.T) {
 		t.Fatalf("snapshots: %v", ws.snapshots)
 	}
 }
+
+// "2 phương án" answered with three versions: the extra one is dropped so
+// the card matches the request (seen 2/2 runs of the rewrite_variants
+// scenario on 2026-10-18).
+func TestRewriteDropsVersionsBeyondTheRequestedCount(t *testing.T) {
+	ws := newFakeWorkspace(testCongVan(t, nd30Margins))
+	ctx := types.WithUserQuery(selectionCtx(proposalP8), "Đề xuất 2 phương án viết lại đoạn này")
+	res := runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "s"),
+		`{"options_requested":true,"edits":[{"paragraph":8,"old":"năm 2026","new":"năm 2027"}],"variants":["năm 2028","trong năm 2027"],"labels":["Phương án 1","Phương án 2","Phương án 3"]}`)
+	vs := proposalVariants(t, res)
+	if !res.Success || len(vs) != 2 || vs[0].New != "năm 2027" || vs[1].New != "năm 2028" ||
+		!strings.Contains(res.Output, "Đề xuất 2 phương án") || strings.Contains(res.Output, "trong năm 2027") {
+		t.Fatalf("versions: %+v\n%s", vs, res.Output)
+	}
+}

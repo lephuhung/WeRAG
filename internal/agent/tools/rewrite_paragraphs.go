@@ -252,6 +252,13 @@ func (t *RewriteParagraphsTool) Execute(ctx context.Context, args json.RawMessag
 		in.OptionsRequested = true
 		if got := len(in.Variants) + 1; got < n {
 			return &types.ToolResult{Success: false, Error: errFewerVersions(n, got)}, nil
+		} else if got > n {
+			// "2 phương án" with three versions sent: the extra ones are
+			// dropped rather than shown (the card must match the request)
+			in.Variants = in.Variants[:n-1]
+			if len(in.Labels) > n {
+				in.Labels = in.Labels[:n]
+			}
 		}
 	}
 	variantsIgnored := false
