@@ -116,6 +116,18 @@ func (r *legalRequestRepository) Get(ctx context.Context, id string) (*types.Leg
 	return &row, nil
 }
 
+func (r *legalRequestRepository) ListByNumberKey(
+	ctx context.Context, numberKey string,
+) ([]*types.LegalDocumentRequest, error) {
+	var rows []*types.LegalDocumentRequest
+	if strings.TrimSpace(numberKey) == "" {
+		return rows, nil
+	}
+	err := r.db.WithContext(ctx).Where("number_key = ?", numberKey).
+		Order("first_requested_at").Order("id").Find(&rows).Error
+	return rows, err
+}
+
 func (r *legalRequestRepository) List(
 	ctx context.Context, status string, offset, limit int,
 ) ([]*types.LegalDocumentRequest, int64, error) {

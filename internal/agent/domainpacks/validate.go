@@ -272,8 +272,15 @@ func checkSkill(pack *Pack, dir string, data []byte) []error {
 			m.ReviewBy.Format(dateLayout), maxReviewMonths, m.AsOf.Format(dateLayout))
 	}
 	for i, draft := range m.DraftDocuments {
-		if strings.TrimSpace(draft.Title) == "" || strings.TrimSpace(draft.Version) == "" || draft.Date.IsZero() {
-			fail("metadata.draft_documents[%d] needs title, version and date", i)
+		switch {
+		case strings.TrimSpace(draft.Title) == "" || strings.TrimSpace(draft.Version) == "":
+			fail("metadata.draft_documents[%d] needs title and version", i)
+		case draft.Date.IsZero() && !draft.VersionUnknown():
+			// a date is only left out when the source does not know which
+			// draft it is; inventing one would be cited as the draft's date
+			fail("metadata.draft_documents[%d] needs a date unless its version is %q", i, DraftVersionUnknown)
+		case !draft.Date.IsZero() && draft.VersionUnknown():
+			fail("metadata.draft_documents[%d]: version %q must not carry a date", i, DraftVersionUnknown)
 		}
 	}
 

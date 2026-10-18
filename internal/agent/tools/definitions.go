@@ -168,6 +168,11 @@ func AvailableToolDefinitions() []AvailableTool {
 			Label:       "Tạo hình minh họa",
 			Description: "Tạo hình minh họa bằng mô hình sinh ảnh (dịch vụ MCP generate_image, ví dụ Qwen-Image); người dùng bấm để chèn vào tài liệu",
 		},
+		{
+			Name:        ToolCompareTaxMethods,
+			Label:       "So sánh phương pháp thuế TNDN",
+			Description: "Tính thuế TNDN theo % doanh thu và theo lợi nhuận kê khai, kèm điểm hòa vốn và giả định (gói chuyên môn opc-vn-business-law)",
+		},
 	}
 }
 

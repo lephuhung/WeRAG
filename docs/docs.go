@@ -16526,6 +16526,40 @@ const docTemplate = `{
                 }
             }
         },
+        "/system/domain-packs/{name}/reconcile": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Tra từng số hiệu trong catalogue.yaml của gói theo\nlegal_documents.number_key: found (một văn bản, kèm\nstatus_note khi danh mục ghi hết hiệu lực hoặc bị thay thế),\nmissing (không có; ghi một yêu cầu bổ sung văn bản nguồn\ndetail.origin = pack:\u003ctên gói\u003e, không trùng yêu cầu đã có) hoặc ambiguous\n(nhiều văn bản cùng số hiệu). Không sửa legal_documents.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Đối chiếu danh mục của gói chuyên môn",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tên gói chuyên môn",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Kết quả đối chiếu",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileResult"
+                        }
+                    }
+                }
+            }
+        },
         "/system/info": {
             "get": {
                 "description": "Lấy phiên bản hệ thống, thông tin bản dựng và cấu hình engine",
@@ -16579,9 +16613,209 @@ const docTemplate = `{
                 }
             }
         },
+        "/system/legal-drafts": {
+            "get": {
+                "description": "status is fetching, ocr, ready, reviewing, approved, failed\nor all (default); newest change first, without OCR text.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "List OCR drafts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Draft status or all",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Items and total",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-drafts/{id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "One OCR draft with its raw OCR text and request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Draft ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The draft",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes a draft that was not approved (the PDF stays\nstored); its requests go back to \"requested\".",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Discard an OCR draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Draft ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-drafts/{id}/approve": {
+            "post": {
+                "description": "Converts the draft's current text to vbpl-style HTML (prov-*\nmarkup), checks it with the vbpl converter and ingests it into\nthe public knowledge base like a portal page\n(source_format pdf_reviewed). 400 when the structure check\nstill blocks or the converter reads another article count.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Approve a reviewed draft and ingest it",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Draft ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Target knowledge base",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.ApproveLegalDraftRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "draft, request, result, knowledge_id, articles",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-drafts/{id}/open": {
+            "post": {
+                "description": "The first call builds the draft's .docx and opens it in a\nhidden document-assistant session of the platform\norganization owned by the caller; later calls return the same\nids. The session routes (/sessions/{session_id}/documents/\n{document_id}/...) are called with X-Tenant-ID = tenant_id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Open an OCR draft in the editor",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Draft ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "draft, editor, session_id, document_id, tenant_id, pdf_url",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-drafts/{id}/structure": {
+            "get": {
+                "description": "Saves the open editor, reads the draft's current text and\nreports its Phần/Chương/Mục/Điều tree, articles, khoản/điểm\ncounts and warnings; ready_to_approve is false while a\nblocking warning remains.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Check the legal structure of a draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Draft ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Structure report",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/system/legal-requests": {
             "get": {
-                "description": "Pages the requests to add legal documents, most recently\nrequested first. status is requested (default), added,\nrejected or all; counts holds the total per status.",
+                "description": "Pages the requests to add legal documents, most recently\nrequested first. status is requested (default), fetched,\nreviewing, added, rejected or all; counts holds the total per\nstatus; an item's draft is the OCR draft of a scanned PDF.",
                 "produces": [
                     "application/json"
                 ],
@@ -16592,7 +16826,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "requested, added, rejected or all",
+                        "description": "requested, fetched, reviewing, added, rejected or all",
                         "name": "status",
                         "in": "query"
                     },
@@ -16642,7 +16876,7 @@ const docTemplate = `{
         },
         "/system/legal-requests/{id}": {
             "put": {
-                "description": "action \"ingest\" fetches the document from vbpl.vn into the\npublic knowledge base knowledge_base_id (same code as the MCP\ntool legal_ingest_document); allow_pdf lets it use the\nportal's original PDF scan (OCR) when there is no HTML full\ntext, otherwise such a document answers 400 and its portal\navailability is stored as detail.portal; \"reject\" keeps note as the\nreason users see; \"added\" records a document added by hand.",
+                "description": "action \"ingest\" fetches the document's HTML full text from\nvbpl.vn into the public knowledge base knowledge_base_id (same\ncode as the MCP tool legal_ingest_document); a document vbpl.vn\nhas only as a scanned PDF answers 400 (it goes through a\nreviewed OCR draft: POST /system/legal-requests/{id}/fetch) and\nits portal availability is stored as detail.portal; \"reject\" keeps note as the\nreason users see; \"added\" records a document added by hand.",
                 "consumes": [
                     "application/json"
                 ],
@@ -16674,6 +16908,36 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "Updated item",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-requests/{id}/fetch": {
+            "post": {
+                "description": "For a document vbpl.vn has only as a scanned PDF: downloads\nthe PDF and OCRs it into a draft (up to 20 pages while the\nrequest waits, longer scans in the background: status \"ocr\").\nAn existing draft is returned as it is; a failed one is\nfetched again. 400 when vbpl.vn has the HTML full text (ingest\nit directly) or no full text at all.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Fetch a request's scanned PDF into an OCR draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The draft",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -20674,6 +20938,172 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackReconcileAmbiguous": {
+            "type": "object",
+            "properties": {
+                "documents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileDocument"
+                    }
+                },
+                "number": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "used_for": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackReconcileDocument": {
+            "type": "object",
+            "properties": {
+                "doc_type": {
+                    "type": "string"
+                },
+                "document_number": {
+                    "type": "string"
+                },
+                "effective_on": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "expired_on": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "held_in_kb": {
+                    "description": "HeldInKB: a public knowledge base holds the full text (an approved\nlegal identity link, or an ingested copy not linked yet).",
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "issuer": {
+                    "type": "string"
+                },
+                "request": {
+                    "description": "Request is the request to add the full text when no KB holds it.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileRequest"
+                        }
+                    ]
+                },
+                "status": {
+                    "type": "string"
+                },
+                "status_note": {
+                    "description": "StatusNote is set when the catalogue holds the document expired,\nreplaced, suspended, not yet in force or amended: what the pack says\nabout it needs checking.",
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackReconcileError": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "number": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackReconcileFound": {
+            "type": "object",
+            "properties": {
+                "document": {
+                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileDocument"
+                },
+                "number": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "used_for": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackReconcileMissing": {
+            "type": "object",
+            "properties": {
+                "number": {
+                    "type": "string"
+                },
+                "request": {
+                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileRequest"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "used_for": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackReconcileRequest": {
+            "type": "object",
+            "properties": {
+                "created": {
+                    "description": "Created is true when this reconcile recorded it, false when an\nexisting one (any status) was found and left as it was.",
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackReconcileResult": {
+            "type": "object",
+            "properties": {
+                "ambiguous": {
+                    "description": "Ambiguous: several catalogue rows share the number (số hiệu is not\nunique); the SuperAdmin decides which one the pack means.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileAmbiguous"
+                    }
+                },
+                "errors": {
+                    "description": "Errors lists the numbers whose check failed; the others are still\nreported, so one bad row does not hide the rest.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileError"
+                    }
+                },
+                "found": {
+                    "description": "Found: exactly one catalogue row has the number.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileFound"
+                    }
+                },
+                "missing": {
+                    "description": "Missing: no catalogue row has it; a legal document request was\nrecorded (or an existing one is reported).",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileMissing"
+                    }
+                },
+                "pack": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_Tencent_WeKnora_internal_types.E2BHostRule": {
             "type": "object",
             "properties": {
@@ -21731,10 +22161,6 @@ const docTemplate = `{
                 "action": {
                     "description": "Action is \"ingest\" (fetch from vbpl.vn into KnowledgeBaseID), \"reject\"\nor \"added\" (added by hand).",
                     "type": "string"
-                },
-                "allow_pdf": {
-                    "description": "AllowPDF lets \"ingest\" use the portal's original PDF (a scan, OCRed by\nthe KB's pdf parser) when vbpl.vn has no HTML full text.",
-                    "type": "boolean"
                 },
                 "knowledge_base_id": {
                     "type": "string"
@@ -25551,6 +25977,14 @@ const docTemplate = `{
                     "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.TenantRole"
                 },
                 "user_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handler.ApproveLegalDraftRequest": {
+            "type": "object",
+            "properties": {
+                "knowledge_base_id": {
                     "type": "string"
                 }
             }

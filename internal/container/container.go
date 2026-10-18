@@ -607,6 +607,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		}
 		return registry, nil
 	}))
+	// SuperAdmin check of a pack's catalogue against legal_documents
+	must(container.Provide(service.NewDomainPackReconciler))
+	must(container.Provide(handler.NewDomainPackReconcileHandler))
 	must(container.Provide(handler.NewCustomAgentHandler))
 	must(container.Provide(handler.NewUserResourceFavoriteHandler))
 	must(container.Provide(func(s *service.TenantSkillService) *handler.SkillHandler {

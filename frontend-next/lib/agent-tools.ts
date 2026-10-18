@@ -16,7 +16,8 @@ export type ToolGroupKey =
   | "wiki_issue"
   | "data"
   | "document"
-  | "illustration";
+  | "illustration"
+  | "calc";
 
 /** What a tool needs before it actually runs (shown as a hint). */
 export type ToolNeed = "kb" | "document" | "imageService";
@@ -38,6 +39,7 @@ export const TOOL_GROUPS: ToolGroupKey[] = [
   "data",
   "document",
   "illustration",
+  "calc",
 ];
 
 export const AGENT_TOOLS: AgentToolDef[] = [
@@ -76,6 +78,9 @@ export const AGENT_TOOLS: AgentToolDef[] = [
 
   { name: "draw_diagram", group: "illustration" },
   { name: "generate_illustration", group: "illustration", needs: "imageService" },
+
+  // fixed-formula tools of domain packs (docs/domain-pack-standard.md §4.1)
+  { name: "compare_tax_methods", group: "calc" },
 ];
 
 const KNOWN = new Set(AGENT_TOOLS.map((t) => t.name));

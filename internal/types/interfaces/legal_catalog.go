@@ -156,6 +156,9 @@ type LegalRequestRepository interface {
 	Record(ctx context.Context, req *types.LegalDocumentRequest) (*types.LegalDocumentRequest, error)
 	// Get returns one request, or nil when absent.
 	Get(ctx context.Context, id string) (*types.LegalDocumentRequest, error)
+	// ListByNumberKey returns every request (any status, any catalogue
+	// id) recorded for a number key, oldest first.
+	ListByNumberKey(ctx context.Context, numberKey string) ([]*types.LegalDocumentRequest, error)
 	// List pages requests of a status ("" = all), newest last request first.
 	List(ctx context.Context, status string, offset, limit int) ([]*types.LegalDocumentRequest, int64, error)
 	// Decide sets the status of one request with the decision fields.

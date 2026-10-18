@@ -73,11 +73,21 @@ type Metadata struct {
 	DraftDocuments []DraftDocument `yaml:"draft_documents"`
 }
 
-// DraftDocument is one draft the pack talks about.
+// DraftVersionUnknown is the version of a draft whose round and date the
+// source does not give; such a draft has no date.
+const DraftVersionUnknown = "chưa rõ lần dự thảo"
+
+// DraftDocument is one draft the pack talks about. Date is required unless
+// Version is DraftVersionUnknown, and then it is absent.
 type DraftDocument struct {
 	Title   string `yaml:"title"`
 	Version string `yaml:"version"`
 	Date    Date   `yaml:"date"`
+}
+
+// VersionUnknown reports whether the source does not say which draft it is.
+func (d DraftDocument) VersionUnknown() bool {
+	return strings.EqualFold(strings.TrimSpace(d.Version), DraftVersionUnknown)
 }
 
 // ParseManifest reads a pack's SKILL.md: the generic skill parser (name,

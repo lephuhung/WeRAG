@@ -1269,6 +1269,130 @@ definitions:
       template_id:
         type: string
     type: object
+  github_com_Tencent_WeKnora_internal_types.DomainPackReconcileAmbiguous:
+    properties:
+      documents:
+        items:
+          $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileDocument'
+        type: array
+      number:
+        type: string
+      title:
+        type: string
+      used_for:
+        type: string
+    type: object
+  github_com_Tencent_WeKnora_internal_types.DomainPackReconcileDocument:
+    properties:
+      doc_type:
+        type: string
+      document_number:
+        type: string
+      effective_on:
+        description: YYYY-MM-DD
+        type: string
+      expired_on:
+        description: YYYY-MM-DD
+        type: string
+      held_in_kb:
+        description: |-
+          HeldInKB: a public knowledge base holds the full text (an approved
+          legal identity link, or an ingested copy not linked yet).
+        type: boolean
+      id:
+        type: string
+      issuer:
+        type: string
+      request:
+        allOf:
+        - $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileRequest'
+        description: Request is the request to add the full text when no KB holds
+          it.
+      status:
+        type: string
+      status_note:
+        description: |-
+          StatusNote is set when the catalogue holds the document expired,
+          replaced, suspended, not yet in force or amended: what the pack says
+          about it needs checking.
+        type: string
+      title:
+        type: string
+    type: object
+  github_com_Tencent_WeKnora_internal_types.DomainPackReconcileError:
+    properties:
+      error:
+        type: string
+      number:
+        type: string
+    type: object
+  github_com_Tencent_WeKnora_internal_types.DomainPackReconcileFound:
+    properties:
+      document:
+        $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileDocument'
+      number:
+        type: string
+      title:
+        type: string
+      used_for:
+        type: string
+    type: object
+  github_com_Tencent_WeKnora_internal_types.DomainPackReconcileMissing:
+    properties:
+      number:
+        type: string
+      request:
+        $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileRequest'
+      title:
+        type: string
+      used_for:
+        type: string
+    type: object
+  github_com_Tencent_WeKnora_internal_types.DomainPackReconcileRequest:
+    properties:
+      created:
+        description: |-
+          Created is true when this reconcile recorded it, false when an
+          existing one (any status) was found and left as it was.
+        type: boolean
+      id:
+        type: string
+      status:
+        type: string
+    type: object
+  github_com_Tencent_WeKnora_internal_types.DomainPackReconcileResult:
+    properties:
+      ambiguous:
+        description: |-
+          Ambiguous: several catalogue rows share the number (số hiệu is not
+          unique); the SuperAdmin decides which one the pack means.
+        items:
+          $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileAmbiguous'
+        type: array
+      errors:
+        description: |-
+          Errors lists the numbers whose check failed; the others are still
+          reported, so one bad row does not hide the rest.
+        items:
+          $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileError'
+        type: array
+      found:
+        description: 'Found: exactly one catalogue row has the number.'
+        items:
+          $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileFound'
+        type: array
+      missing:
+        description: |-
+          Missing: no catalogue row has it; a legal document request was
+          recorded (or an existing one is reported).
+        items:
+          $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileMissing'
+        type: array
+      pack:
+        type: string
+      version:
+        type: string
+    type: object
   github_com_Tencent_WeKnora_internal_types.E2BHostRule:
     properties:
       headers:
@@ -2075,11 +2199,6 @@ definitions:
           Action is "ingest" (fetch from vbpl.vn into KnowledgeBaseID), "reject"
           or "added" (added by hand).
         type: string
-      allow_pdf:
-        description: |-
-          AllowPDF lets "ingest" use the portal's original PDF (a scan, OCRed by
-          the KB's pdf parser) when vbpl.vn has no HTML full text.
-        type: boolean
       knowledge_base_id:
         type: string
       knowledge_id:
@@ -5200,6 +5319,11 @@ definitions:
         type: string
     required:
     - role
+    type: object
+  internal_handler.ApproveLegalDraftRequest:
+    properties:
+      knowledge_base_id:
+        type: string
     type: object
   internal_handler.BatchDeleteKnowledgeRequest:
     properties:
@@ -17728,6 +17852,33 @@ paths:
       summary: Kết nối lại dịch vụ phân tích tài liệu
       tags:
       - Hệ thống
+  /system/domain-packs/{name}/reconcile:
+    post:
+      description: |-
+        Tra từng số hiệu trong catalogue.yaml của gói theo
+        legal_documents.number_key: found (một văn bản, kèm
+        status_note khi danh mục ghi hết hiệu lực hoặc bị thay thế),
+        missing (không có; ghi một yêu cầu bổ sung văn bản nguồn
+        detail.origin = pack:<tên gói>, không trùng yêu cầu đã có) hoặc ambiguous
+        (nhiều văn bản cùng số hiệu). Không sửa legal_documents.
+      parameters:
+      - description: Tên gói chuyên môn
+        in: path
+        name: name
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Kết quả đối chiếu
+          schema:
+            $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileResult'
+      security:
+      - Bearer: []
+      summary: Đối chiếu danh mục của gói chuyên môn
+      tags:
+      - Rà soát pháp lý
   /system/info:
     get:
       consumes:
@@ -17765,14 +17916,166 @@ paths:
       summary: Search the legal catalogue
       tags:
       - Rà soát pháp lý
+  /system/legal-drafts:
+    get:
+      description: |-
+        status is fetching, ocr, ready, reviewing, approved, failed
+        or all (default); newest change first, without OCR text.
+      parameters:
+      - description: Draft status or all
+        in: query
+        name: status
+        type: string
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Items and total
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List OCR drafts
+      tags:
+      - Rà soát pháp lý
+  /system/legal-drafts/{id}:
+    delete:
+      description: |-
+        Deletes a draft that was not approved (the PDF stays
+        stored); its requests go back to "requested".
+      parameters:
+      - description: Draft ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: success
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Discard an OCR draft
+      tags:
+      - Rà soát pháp lý
+    get:
+      parameters:
+      - description: Draft ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: The draft
+          schema:
+            additionalProperties: true
+            type: object
+      summary: One OCR draft with its raw OCR text and request
+      tags:
+      - Rà soát pháp lý
+  /system/legal-drafts/{id}/approve:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Converts the draft's current text to vbpl-style HTML (prov-*
+        markup), checks it with the vbpl converter and ingests it into
+        the public knowledge base like a portal page
+        (source_format pdf_reviewed). 400 when the structure check
+        still blocks or the converter reads another article count.
+      parameters:
+      - description: Draft ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Target knowledge base
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.ApproveLegalDraftRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: draft, request, result, knowledge_id, articles
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Approve a reviewed draft and ingest it
+      tags:
+      - Rà soát pháp lý
+  /system/legal-drafts/{id}/open:
+    post:
+      description: |-
+        The first call builds the draft's .docx and opens it in a
+        hidden document-assistant session of the platform
+        organization owned by the caller; later calls return the same
+        ids. The session routes (/sessions/{session_id}/documents/
+        {document_id}/...) are called with X-Tenant-ID = tenant_id.
+      parameters:
+      - description: Draft ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: draft, editor, session_id, document_id, tenant_id, pdf_url
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Open an OCR draft in the editor
+      tags:
+      - Rà soát pháp lý
+  /system/legal-drafts/{id}/structure:
+    get:
+      description: |-
+        Saves the open editor, reads the draft's current text and
+        reports its Phần/Chương/Mục/Điều tree, articles, khoản/điểm
+        counts and warnings; ready_to_approve is false while a
+        blocking warning remains.
+      parameters:
+      - description: Draft ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Structure report
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Check the legal structure of a draft
+      tags:
+      - Rà soát pháp lý
   /system/legal-requests:
     get:
       description: |-
         Pages the requests to add legal documents, most recently
-        requested first. status is requested (default), added,
-        rejected or all; counts holds the total per status.
+        requested first. status is requested (default), fetched,
+        reviewing, added, rejected or all; counts holds the total per
+        status; an item's draft is the OCR draft of a scanned PDF.
       parameters:
-      - description: requested, added, rejected or all
+      - description: requested, fetched, reviewing, added, rejected or all
         in: query
         name: status
         type: string
@@ -17800,12 +18103,12 @@ paths:
       consumes:
       - application/json
       description: |-
-        action "ingest" fetches the document from vbpl.vn into the
-        public knowledge base knowledge_base_id (same code as the MCP
-        tool legal_ingest_document); allow_pdf lets it use the
-        portal's original PDF scan (OCR) when there is no HTML full
-        text, otherwise such a document answers 400 and its portal
-        availability is stored as detail.portal; "reject" keeps note as the
+        action "ingest" fetches the document's HTML full text from
+        vbpl.vn into the public knowledge base knowledge_base_id (same
+        code as the MCP tool legal_ingest_document); a document vbpl.vn
+        has only as a scanned PDF answers 400 (it goes through a
+        reviewed OCR draft: POST /system/legal-requests/{id}/fetch) and
+        its portal availability is stored as detail.portal; "reject" keeps note as the
         reason users see; "added" records a document added by hand.
       parameters:
       - description: Request ID
@@ -17828,6 +18131,32 @@ paths:
             additionalProperties: true
             type: object
       summary: Ingest, reject or close a legal document request
+      tags:
+      - Rà soát pháp lý
+  /system/legal-requests/{id}/fetch:
+    post:
+      description: |-
+        For a document vbpl.vn has only as a scanned PDF: downloads
+        the PDF and OCRs it into a draft (up to 20 pages while the
+        request waits, longer scans in the background: status "ocr").
+        An existing draft is returned as it is; a failed one is
+        fetched again. 400 when vbpl.vn has the HTML full text (ingest
+        it directly) or no full text at all.
+      parameters:
+      - description: Request ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: The draft
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Fetch a request's scanned PDF into an OCR draft
       tags:
       - Rà soát pháp lý
   /system/legal-requests/{id}/portal-check:
