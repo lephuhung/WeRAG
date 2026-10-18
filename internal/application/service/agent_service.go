@@ -12,6 +12,7 @@ import (
 	legalskillassets "github.com/Tencent/WeKnora/examples/skills"
 	"github.com/Tencent/WeKnora/internal/agent"
 	"github.com/Tencent/WeKnora/internal/agent/approval"
+	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/agent/skills"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/application/repository"
@@ -130,6 +131,9 @@ type agentService struct {
 	documentWorkspaces interfaces.DocumentWorkspaceService
 	// spelling: the verifier model and the users' verdicts of check_spelling
 	spelling spellingSupport
+	// domainPacks are the packs shipped in this build (SetDomainPacks);
+	// nil offers none.
+	domainPacks *domainpacks.Registry
 }
 
 // NewAgentService creates a new agent service
@@ -287,6 +291,7 @@ func (s *agentService) CreateAgentEngine(
 	if fn := s.legalHistoryFunc(kbIDs); fn != nil {
 		engine.SetLegalHistory(fn)
 	}
+	s.setDomainFooter(ctx, engine, config)
 	if s.documentWorkspaces != nil && s.documentWorkspaces.DocumentsEnabled() {
 		docs := s.documentWorkspaces
 		engine.SetSourceEditNote(func(ctx context.Context, query string) string {
@@ -712,6 +717,7 @@ func (s *agentService) initializeSkillsManager(
 		skillsConfig.AllowedSkills = config.AllowedSkills
 	}
 	skillsManager := skills.NewManager(skillsConfig, sandboxMgr).WithBuiltinSource(builtins)
+	s.attachDomainPacks(ctx, skillsManager, config)
 	if config.SkillsEnabled && !sandboxUnavailable {
 		if source := s.tenantSkillSource(ctx, config); source != nil {
 			skillsManager.WithTenantSource(source)

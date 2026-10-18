@@ -50,6 +50,7 @@ type AgentEngine struct {
 	imageDescriber       ImageDescriberFunc      // VLM function for describing images in tool results (optional)
 	legalHistory         LegalHistoryFunc        // appends the amendment history of cited legal provisions (optional)
 	sourceEditNote       SourceEditNoteFunc      // appends the read-only note of an edit asked of a source document (optional)
+	domainFooter         DomainFooterFunc        // appends the domain packs' footer, last block of the answer (optional)
 	tokenEstimator       *agenttoken.Estimator   // Token estimator for context window management, calibrated
 	rawEstimator         *agenttoken.Estimator   // Same tokenizer at scale 1, for measuring the calibration
 	compactor            *compaction.Compactor   // Summarizes older history to fit the context window (nil = disabled)
@@ -951,6 +952,7 @@ func (e *AgentEngine) runReActIteration(
 		e.appendLegalHistory(ctx, state, sessionID, verdict.answerID)
 		e.appendWikiCaveat(ctx, state, sessionID, verdict.answerID)
 		e.appendSourceEditNote(ctx, state, sessionID, verdict.answerID, query)
+		e.appendDomainFooter(ctx, state, sessionID, verdict.answerID)
 		e.closeAnswerStream(ctx, sessionID, verdict.answerID)
 		return iterOutcomeBreak, nil
 	}

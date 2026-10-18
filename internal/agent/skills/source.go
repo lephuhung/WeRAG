@@ -30,3 +30,11 @@ type imageSkillSource interface {
 }
 
 var _ imageSkillSource = (*TenantSkillSource)(nil)
+
+// ReadOnlySource is an application-provided source whose skills are
+// instructions and reference files only (the domain packs). Has decides
+// ownership of a name, which makes the skill read-only to the manager.
+type ReadOnlySource interface {
+	SkillSource
+	Has(name string) bool
+}

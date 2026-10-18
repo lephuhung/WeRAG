@@ -586,6 +586,8 @@ func (s *sessionService) buildAgentConfig(
 
 	// Configure skills based on CustomAgentConfig
 	s.configureSkillsFromAgent(ctx, agentConfig, customAgent)
+	// Domain packs do not depend on the skill picker or the sandbox.
+	agentConfig.DomainPacks = append([]string(nil), customAgent.Config.DomainPacks...)
 
 	// Then add the skills installed into the sandbox config this run boots.
 	//
@@ -731,7 +733,8 @@ func mergeResolvedTagKnowledgeIDs(
 // @mention must still be able to read and execute it. Mentioning a skill only
 // prioritizes it, it never revokes access to the agent's configured set.
 //
-// Built-in legal skills remain eligible even when tenant skills are disabled.
+// Built-in legal skills and the agent's domain packs remain eligible even
+// when tenant skills are disabled.
 func applyPerRequestSkillScope(
 	ctx context.Context,
 	agentConfig *types.AgentConfig,
@@ -750,7 +753,7 @@ func applyPerRequestSkillScope(
 	}
 	var pinned []string
 	for _, name := range dedupPreservingOrder(requested) {
-		if skills.IsBuiltinName(name) || eligibleTenant[name] {
+		if skills.IsBuiltinName(name) || slices.Contains(agentConfig.DomainPacks, name) || eligibleTenant[name] {
 			pinned = append(pinned, name)
 		}
 	}

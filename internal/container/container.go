@@ -24,7 +24,9 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	domainpackassets "github.com/Tencent/WeKnora/domain-packs"
 	"github.com/Tencent/WeKnora/internal/agent/approval"
+	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	neo4jRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/neo4j"
@@ -689,6 +691,25 @@ func BuildContainer(container *dig.Container) *dig.Container {
 				u.SetSpellingSupport(settings, feedback)
 			}
 		}
+	}))
+	// domain packs ship in the binary; an invalid one stops startup, like a
+	// broken built-in skill
+	must(container.Invoke(func(agents interfaces.AgentService) error {
+		registry, err := domainpacks.Load(domainpackassets.FS)
+		if err != nil {
+			return err
+		}
+		for _, name := range registry.Names() {
+			pack, _ := registry.Get(name)
+			for _, finding := range pack.Lint() {
+				logger.Warnf(ctx, "[Container] Domain pack %s lint: %s", name, finding)
+			}
+		}
+		if u, ok := agents.(interface{ SetDomainPacks(*domainpacks.Registry) }); ok {
+			u.SetDomainPacks(registry)
+		}
+		logger.Infof(ctx, "[Container] Domain packs shipped: %v", registry.Names())
+		return nil
 	}))
 	// answers to the chat gate's "unclear word" question are kept as
 	// training data for the spell-check model
