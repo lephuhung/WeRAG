@@ -37,7 +37,7 @@ func searchKnowledgeTool() mcp.Tool {
 			"terms to match")),
 		mcp.WithString("mode", mcp.Description("hybrid (default), semantic, or keyword"),
 			mcp.Enum(tools.SearchModeHybrid, tools.SearchModeSemantic, tools.SearchModeKeyword)),
-		mcp.WithNumber("limit", mcp.Description("Maximum passages to return, default 10, max 30")),
+		mcp.WithNumber("limit", mcp.Description("Maximum passages to return, at most 10 (the default)")),
 		mcp.WithArray("knowledge_base_ids", mcp.WithStringItems(),
 			mcp.Description("Optional knowledge base ids or names to restrict the search; defaults to every "+
 				"knowledge base in scope")),
@@ -53,7 +53,7 @@ func grepChunksTool() mcp.Tool {
 			"literal terms in the pattern, and every returned chunk matches the pattern."),
 		mcp.WithString("query", mcp.Required(), mcp.Description("Regular expression (POSIX, case-insensitive) to "+
 			"match against chunk text; text that is not a valid regular expression is matched literally")),
-		mcp.WithNumber("limit", mcp.Description("Maximum passages to return, default 10, max 30")),
+		mcp.WithNumber("limit", mcp.Description("Maximum passages to return, at most 10 (the default)")),
 		mcp.WithArray("knowledge_base_ids", mcp.WithStringItems(),
 			mcp.Description("Optional knowledge base ids or names to restrict the search")),
 		mcp.WithReadOnlyHintAnnotation(true),

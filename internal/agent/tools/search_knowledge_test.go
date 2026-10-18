@@ -32,6 +32,13 @@ func TestClampSearchLimit(t *testing.T) {
 	if got := clampSearchLimit(500); got != searchKnowledgeMaxLimit {
 		t.Fatalf("max limit = %d", got)
 	}
+	if searchKnowledgeMaxLimit != 10 {
+		t.Fatalf("max limit constant = %d, want 10", searchKnowledgeMaxLimit)
+	}
+	// the model raised limit to 15-20 for long, mostly unread results
+	if got := clampSearchLimit(20); got != 10 {
+		t.Fatalf("limit 20 clamps to %d, want 10", got)
+	}
 	if got := clampSearchLimit(7); got != 7 {
 		t.Fatalf("explicit limit = %d", got)
 	}
@@ -159,8 +166,8 @@ func TestRetrievalParamsFallBackAndNeverUndercutLimit(t *testing.T) {
 		t.Fatalf("retrievalParams = %d %.2f %.2f", topK, v, k)
 	}
 	bare := &SearchKnowledgeTool{}
-	if topK, _, _ := bare.retrievalParams(3); topK != searchKnowledgeMaxLimit {
-		t.Fatalf("missing config should fall back to %d, got %d", searchKnowledgeMaxLimit, topK)
+	if topK, _, _ := bare.retrievalParams(3); topK != searchKnowledgeCandidatePool {
+		t.Fatalf("missing config should fall back to %d, got %d", searchKnowledgeCandidatePool, topK)
 	}
 }
 
@@ -242,5 +249,85 @@ func TestFormatOutputRowsCarryHandlesAndSnippets(t *testing.T) {
 	}
 	if strings.Contains(res.Output, "already_seen") || strings.Contains(res.Output, "retrieval_statistics") {
 		t.Fatalf("legacy annotations must be gone: %s", res.Output)
+	}
+}
+
+func TestFormatOutputSendsFullContentForTopRanksOnly(t *testing.T) {
+	results := make([]*searchResultWithMeta, 0, 8)
+	contents := make([]string, 0, 8)
+	for i := 1; i <= 8; i++ {
+		content := strings.Repeat("Điều "+string(rune('0'+i))+" quy định về thể thức văn bản hành chính. ", 20)
+		contents = append(contents, content)
+		results = append(results, &searchResultWithMeta{
+			SearchResult: &types.SearchResult{
+				ID: "chunk-" + string(rune('0'+i)), KnowledgeID: "doc-1", KnowledgeTitle: "Nghị định 30",
+				Content: content, Score: 1 - float64(i)/10,
+			},
+			KnowledgeBaseID: "kb-1", KnowledgeBaseType: types.KnowledgeBaseTypeDocument,
+		})
+	}
+	tool := &SearchKnowledgeTool{BaseTool: searchKnowledgeTool}
+	res := tool.formatOutput(context.Background(), results, []string{"kb-1"}, "thể thức", SearchModeHybrid)
+
+	blocks := strings.Split(res.Output, "<chunk rank=")[1:]
+	if len(blocks) != 8 {
+		t.Fatalf("want 8 chunks, got %d:\n%s", len(blocks), res.Output)
+	}
+	for i, block := range blocks {
+		block = block[:strings.Index(block, "</chunk>")]
+		if i < defaultSearchFullContentTop {
+			if !strings.Contains(block, "<content>") || strings.Contains(block, "<head>") {
+				t.Fatalf("rank %d must carry full content:\n%s", i+1, block)
+			}
+			continue
+		}
+		if strings.Contains(block, "<content>") || !strings.Contains(block, "<head>") ||
+			!strings.Contains(block, "<match_snippet>") {
+			t.Fatalf("rank %d must carry snippet + head only:\n%s", i+1, block)
+		}
+		if !strings.Contains(block, `chunk_id="chunk-`) || !strings.Contains(block, `knowledge_id="doc-1"`) {
+			t.Fatalf("rank %d lost its ids:\n%s", i+1, block)
+		}
+	}
+	if !strings.Contains(res.Output, "<note>Results ranked 6+ show a snippet only") {
+		t.Fatalf("missing note:\n%s", res.Output)
+	}
+
+	rows, _ := res.Data["results"].([]map[string]interface{})
+	if len(rows) != 8 {
+		t.Fatalf("structured rows = %d", len(rows))
+	}
+	for i, row := range rows {
+		if row["content"] != contents[i] {
+			t.Fatalf("row %d must keep full content for the UI", i+1)
+		}
+		_, marked := row["model_view"]
+		if marked != (i >= defaultSearchFullContentTop) {
+			t.Fatalf("row %d model_view marker = %v", i+1, marked)
+		}
+	}
+
+	tool.WithFullContentTop(10)
+	res = tool.formatOutput(context.Background(), results, []string{"kb-1"}, "thể thức", SearchModeHybrid)
+	if strings.Contains(res.Output, "<head>") || strings.Contains(res.Output, "<note>") {
+		t.Fatalf("top 10 must keep all 8 in full:\n%s", res.Output)
+	}
+
+	tool = &SearchKnowledgeTool{BaseTool: searchKnowledgeTool,
+		config: &config.Config{Conversation: &config.ConversationConfig{SearchFullContentTop: 2}}}
+	if got := tool.effectiveFullContentTop(); got != 2 {
+		t.Fatalf("config knob ignored: %d", got)
+	}
+}
+
+func TestSearchContentHeadCutsAtWordBoundary(t *testing.T) {
+	short := "Điều 1. Phạm vi  điều chỉnh"
+	if got := searchContentHead(short, 240); got != "Điều 1. Phạm vi điều chỉnh" {
+		t.Fatalf("short head = %q", got)
+	}
+	long := strings.Repeat("văn bản ", 60)
+	got := searchContentHead(long, 240)
+	if !strings.HasSuffix(got, "…") || len([]rune(got)) > 241 || strings.HasSuffix(got, "vă…") {
+		t.Fatalf("long head = %q", got)
 	}
 }

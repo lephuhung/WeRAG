@@ -212,6 +212,9 @@ type modelChunk struct {
 	role      string
 	match     string
 	content   string
+	// head is the start of a chunk whose full text was left out
+	// (view="snippet"); read_document fetches the rest.
+	head string
 	// cite names the legal provision the chunk sits in ("khoản 2 Điều
 	// 14"); empty for other documents.
 	cite string
@@ -232,8 +235,21 @@ func (r *sourceRegistry) modelKnowledgeOutput(mode string, rows []map[string]int
 	if len(chunks) == 0 {
 		return r.CompactKnownText(fallback)
 	}
-	return renderKnowledgeChunks(mode, chunks, nil)
+	output := renderKnowledgeChunks(mode, chunks, nil)
+	for _, chunk := range chunks {
+		if chunk.view == snippetView {
+			output = strings.TrimSuffix(output, "</retrieval>") +
+				"  <note>Chunks with view=\"snippet\" show the match and the start only; " +
+				"call read_document with the chunk id and a query for their full text.</note>\n</retrieval>"
+			break
+		}
+	}
+	return output
 }
+
+// snippetView marks a row search_knowledge shortened for the model: its
+// "content" stays full for the UI, the model gets the match and the head.
+const snippetView = "snippet"
 
 // modelChunksFromRows registers every row's handles and converts it into the
 // renderer's chunk model.
@@ -255,6 +271,10 @@ func (r *sourceRegistry) modelChunksFromRows(mode string, rows []map[string]inte
 		if chunkIndex == 0 {
 			chunkIndex = intValue(row, "index")
 		}
+		view, content, head := viewForRow(row, mode), stringValue(row, "content"), ""
+		if stringValue(row, "model_view") == snippetView {
+			view, content, head = snippetView, "", stringValue(row, "content_head")
+		}
 		chunkHandle := r.RegisterChunk(ChunkReference{
 			ChunkID:         chunkID,
 			KnowledgeID:     knowledgeID,
@@ -271,10 +291,11 @@ func (r *sourceRegistry) modelChunksFromRows(mode string, rows []map[string]inte
 			metadata:      stringValue(row, "knowledge_metadata"),
 			chunkType:     chunkType,
 			index:         chunkIndex,
-			view:          viewForRow(row, mode),
+			view:          view,
 			role:          stringValue(row, "role"),
 			match:         firstNonEmpty(stringValue(row, "match_snippet"), stringValue(row, "matched_content")),
-			content:       stringValue(row, "content"),
+			content:       content,
+			head:          head,
 			cite:          stringValue(row, "legal_cite"),
 			appendixFiles: mapsValue(row["appendix_files"]),
 			question:      firstNonEmpty(stringValue(row, "faq_question"), stringValue(row, "faq_standard_question")),
@@ -513,6 +534,9 @@ func renderKnowledgeChunks(mode string, chunks []modelChunk, info map[string]int
 			}
 			if chunk.content != "" {
 				fmt.Fprintf(&b, "      <content>%s</content>\n", escapeText(chunk.content))
+			}
+			if chunk.head != "" {
+				fmt.Fprintf(&b, "      <head>%s</head>\n", escapeText(chunk.head))
 			}
 			for _, answer := range chunk.answers {
 				fmt.Fprintf(&b, "      <answer>%s</answer>\n", escapeText(answer))

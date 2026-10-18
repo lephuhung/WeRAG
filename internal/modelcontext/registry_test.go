@@ -726,3 +726,31 @@ func TestDecodeToolCallsStripsAbbreviationAuthorityClaims(t *testing.T) {
 	require.Contains(t, args, "abbreviation_meaning_ids")
 	require.Equal(t, "ATTT là gì", args["query"])
 }
+
+// search_knowledge marks lower-ranked rows model_view=snippet: the model gets
+// the match and the head while the row's content stays full for the UI.
+func TestModelOutputRendersSnippetRowsWithoutContent(t *testing.T) {
+	registry := NewRegistry(true)
+	full := map[string]interface{}{
+		"chunk_id": "chunk-1", "knowledge_id": "doc-1", "knowledge_base_id": "kb-1",
+		"knowledge_title": "Doc", "content": "full text one",
+	}
+	short := map[string]interface{}{
+		"chunk_id": "chunk-2", "knowledge_id": "doc-1", "knowledge_base_id": "kb-1",
+		"knowledge_title": "Doc", "content": "full text two that is long", "match_snippet": "text two",
+		"model_view": "snippet", "content_head": "full text two…",
+	}
+	out := registry.ModelToolResultForTool("search_knowledge", &types.ToolResult{
+		Success: true, Data: map[string]any{
+			"display_type": "search_results", "mode": "hybrid",
+			"results": []map[string]interface{}{full, short},
+		},
+	})
+	require.Contains(t, out, "<content>full text one</content>")
+	require.Contains(t, out, `view="snippet"`)
+	require.Contains(t, out, "<head>full text two…</head>")
+	require.Contains(t, out, "<match>text two</match>")
+	require.NotContains(t, out, "full text two that is long")
+	require.Contains(t, out, "call read_document with the chunk id")
+	require.True(t, len(out) > 0 && out[len(out)-len("</retrieval>"):] == "</retrieval>")
+}

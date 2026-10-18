@@ -26,6 +26,10 @@ type ToolExecContext struct {
 	// approval) can re-derive a fresh timeout from ApprovalCtx using this
 	// value instead of hard-coding a duration. Zero means "fallback to 60s".
 	ExecTimeout time.Duration
+	// Round is the 1-based ReAct round the call belongs to; 0 outside an
+	// agent turn. search_knowledge uses it to name the round a repeated
+	// query first ran in.
+	Round int
 }
 
 // WithToolExecContext returns ctx that carries ToolExecContext for MCP approval and similar features.
