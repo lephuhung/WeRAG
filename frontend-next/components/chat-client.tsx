@@ -2577,7 +2577,7 @@ function ChatBody({ id }: { id: string }) {
       else if (item.type === "mcp") mcpIds.add(item.id);
       else if (item.type === "skill") skillSet.add(item.skill_name ?? item.id);
     }
-    const selectedAgentId = ctx.settings.selectedAgentId || "builtin-quick-answer";
+    const selectedAgentId = ctx.settings.selectedAgentId || "builtin-smart-reasoning";
     // The document assistant only works through its tools: it always takes
     // the agent pipeline, whatever agent flag a restored session state left
     // behind (its chip is locked on while a document is open).

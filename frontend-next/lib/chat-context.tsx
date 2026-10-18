@@ -104,8 +104,10 @@ const DEFAULTS: ChatSettings = {
   selectedTags: [],
   selectedMCPServices: [],
   selectedSkills: [],
-  isAgentEnabled: false,
-  selectedAgentId: BUILTIN_QUICK_ANSWER_ID,
+  // Smart reasoning is the one Q&A agent since 2026-10-18 (quick answer is
+  // switched off in builtin_agents.yaml and no longer listed).
+  isAgentEnabled: true,
+  selectedAgentId: BUILTIN_SMART_REASONING_ID,
   webSearchEnabled: false,
   localBrowserEnabled: false,
   selectedChatModelId: "",
@@ -125,7 +127,7 @@ function loadSettings(): ChatSettings {
       selectedTags: parsed.selectedTags ?? [],
       selectedMCPServices: parsed.selectedMCPServices ?? [],
       selectedSkills: parsed.selectedSkills ?? [],
-      selectedAgentId: parsed.selectedAgentId || BUILTIN_QUICK_ANSWER_ID,
+      selectedAgentId: parsed.selectedAgentId || BUILTIN_SMART_REASONING_ID,
     };
     // Field removed with the shared-agent feature; scrub stale persisted copies.
     delete (merged as Record<string, unknown>).selectedAgentSourceTenantId;
@@ -226,7 +228,21 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             `/api/v1/web-search-providers`,
           ).catch(() => null),
         ]);
-      if (agentsRes?.data) setAgents(agentsRes.data);
+      if (agentsRes?.data) {
+        setAgents(agentsRes.data);
+        // A persisted choice the server no longer lists (a built-in switched
+        // off, such as quick answer) falls back to the Q&A agent, so a new
+        // chat never silently runs on a hidden agent.
+        setSettings((prev) => {
+          const listed = agentsRes.data!.some((a) => a.id === prev.selectedAgentId);
+          if (listed || !prev.selectedAgentId.startsWith("builtin-")) return prev;
+          const fallback = agentsRes.data!.find((a) => a.id === BUILTIN_SMART_REASONING_ID) ?? agentsRes.data![0];
+          if (!fallback) return prev;
+          const next = { ...prev, selectedAgentId: fallback.id, isAgentEnabled: true };
+          try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+          return next;
+        });
+      }
       setKnowledgeBases(
         (kbRows ?? []).map((k) => ({
           id: k.id,

@@ -7,6 +7,7 @@
 
 builtin_agents:
   - id: "builtin-quick-answer"
+    enabled: false   # 2026-10-18: one Q&A agent (smart reasoning); kept resolvable for embed/API callers
     avatar: ""
     is_builtin: true
     i18n:

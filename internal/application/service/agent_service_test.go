@@ -608,11 +608,11 @@ func TestValidateConfigMaxIterationsUnlimited(t *testing.T) {
 func TestDisabledBuiltinAgentsAreHiddenFromThePicker(t *testing.T) {
 	require.NoError(t, types.LoadBuiltinAgentsConfig(filepath.Join("..", "..", "..", "config")))
 
-	for _, id := range []string{types.BuiltinWikiResearcherID, types.BuiltinDataAnalystID} {
+	for _, id := range []string{types.BuiltinWikiResearcherID, types.BuiltinDataAnalystID, types.BuiltinQuickAnswerID} {
 		require.False(t, types.IsBuiltinAgentEnabled(id), "%s is switched off in builtin_agents.yaml", id)
 		require.True(t, types.IsBuiltinAgentID(id), "%s must still resolve by ID for old sessions", id)
 	}
-	for _, id := range []string{types.BuiltinQuickAnswerID, types.BuiltinSmartReasoningID, types.BuiltinDocumentAssistantID} {
+	for _, id := range []string{types.BuiltinSmartReasoningID, types.BuiltinDocumentAssistantID} {
 		require.True(t, types.IsBuiltinAgentEnabled(id), "%s stays on", id)
 	}
 	require.True(t, types.IsBuiltinAgentEnabled("not-in-yaml"), "unknown ids default to enabled")
@@ -620,6 +620,7 @@ func TestDisabledBuiltinAgentsAreHiddenFromThePicker(t *testing.T) {
 	ids := types.GetBuiltinAgentIDs()
 	require.NotContains(t, ids, types.BuiltinWikiResearcherID, "the picker list leaves a switched-off agent out")
 	require.NotContains(t, ids, types.BuiltinDataAnalystID)
+	require.NotContains(t, ids, types.BuiltinQuickAnswerID)
 	require.Contains(t, ids, types.BuiltinDocumentAssistantID)
 	require.Contains(t, types.GetAllBuiltinAgentIDs(), types.BuiltinWikiResearcherID,
 		"rows that already name it (IM channels) still resolve")
