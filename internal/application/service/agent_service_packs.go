@@ -155,4 +155,31 @@ func (s *agentService) setDomainFooter(
 	engine.SetDomainFooter(func(_ context.Context, answer string) string {
 		return source.Footer(domainPackNow(), answer)
 	})
+	engine.SetDomainPackPrompts(domainPackPrompts(ctx, packs))
+}
+
+// domainPackPrompts is the SKILL.md body of each pack for the system
+// prompt, in order while the bodies fit agent.MaxDomainPackPromptBytes; a
+// pack past the budget keeps its block without a body, which tells the
+// model to read its SKILL.md with read_file.
+func domainPackPrompts(ctx context.Context, packs []*domainpacks.Pack) []agent.DomainPackPrompt {
+	out := make([]agent.DomainPackPrompt, 0, len(packs))
+	used := 0
+	var deferred []string
+	for _, p := range packs {
+		prompt := agent.DomainPackPrompt{Name: p.Name(), Version: p.Manifest.Metadata.Version}
+		if body := p.Skill.Instructions; used+len(body) <= agent.MaxDomainPackPromptBytes {
+			prompt.Body = body
+			used += len(body)
+		} else {
+			deferred = append(deferred, p.Name())
+		}
+		out = append(out, prompt)
+	}
+	if len(deferred) > 0 {
+		logger.Warnf(ctx, "Domain pack bodies over %d bytes; these are read with read_file instead: %v",
+			agent.MaxDomainPackPromptBytes, deferred)
+		common.PipelineWarn(ctx, "Agent", "domain_pack_prompt_cap", map[string]interface{}{"packs": deferred})
+	}
+	return out
 }

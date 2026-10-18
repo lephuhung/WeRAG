@@ -64,6 +64,11 @@ func (t *CompareTaxMethodsTool) WithFormulaBlock(block string) *CompareTaxMethod
 	return t
 }
 
+// compareTaxAnswerNote tells the model what code appends for it.
+const compareTaxAnswerNote = "Hệ thống tự chèn bảng kết quả này, khối Giả định và Công thức áp dụng vào cuối câu trả lời. " +
+	"Trong câu trả lời chỉ nêu kết luận theo dòng \"Đọc kết quả\" và lưu ý GTGT đầu vào; " +
+	"không tự tính lại hay suy luận lại biên hòa vốn.\n"
+
 // compareTaxArgs are the four parameters in schema order.
 var compareTaxArgs = []string{"doanh_thu", "loi_nhuan", "ty_le_doanh_thu", "thue_suat"}
 
@@ -112,21 +117,29 @@ func (t *CompareTaxMethodsTool) Execute(_ context.Context, args json.RawMessage)
 	if t.formulaBlock != "" {
 		output += "\n" + t.formulaBlock + "\n"
 	}
+	output += "\n" + compareTaxAnswerNote
+	// appended to the final answer by code (types.ToolDataAnswerBlock), so
+	// the figures, recommendation and assumptions reach the user as computed
+	answerBlock := strings.TrimSpace(result.Render())
+	if t.formulaBlock != "" {
+		answerBlock += "\n\n" + t.formulaBlock
+	}
 	return &types.ToolResult{
 		Success: true,
 		Output:  output,
 		Data: map[string]interface{}{
-			"doanh_thu":           result.Revenue,
-			"loi_nhuan":           result.Profit,
-			"ty_le_doanh_thu":     result.RevenueRatio,
-			"thue_suat":           result.TaxRate,
-			"thue_theo_doanh_thu": result.TaxOnRevenue,
-			"thue_theo_loi_nhuan": result.TaxOnProfit,
-			"bien_loi_nhuan":      result.Margin,
-			"bien_hoa_von":        result.BreakEven,
-			"chenh_lech":          result.Difference,
-			"khuyen_nghi":         result.Recommendation,
-			"gia_dinh":            result.Assumptions,
+			"doanh_thu":               result.Revenue,
+			"loi_nhuan":               result.Profit,
+			"ty_le_doanh_thu":         result.RevenueRatio,
+			"thue_suat":               result.TaxRate,
+			"thue_theo_doanh_thu":     result.TaxOnRevenue,
+			"thue_theo_loi_nhuan":     result.TaxOnProfit,
+			"bien_loi_nhuan":          result.Margin,
+			"bien_hoa_von":            result.BreakEven,
+			"chenh_lech":              result.Difference,
+			"khuyen_nghi":             result.Recommendation,
+			"gia_dinh":                result.Assumptions,
+			types.ToolDataAnswerBlock: answerBlock,
 		},
 	}, nil
 }

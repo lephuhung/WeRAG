@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	domainpackassets "github.com/Tencent/WeKnora/domain-packs"
 	"github.com/Tencent/WeKnora/internal/agent"
 	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
@@ -152,4 +153,38 @@ func TestFinalAnswerHistoryDropsDomainFooter(t *testing.T) {
 	got := finalAnswerHistoryMessage(msg)
 	require.NotNil(t, got)
 	require.Equal(t, "Trả lời.", got.Content)
+}
+
+func TestDomainPackPromptsCarryBodiesUpToTheCap(t *testing.T) {
+	reg, err := domainpacks.Load(domainpackassets.FS)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pack, ok := reg.Get("opc-vn-business-law")
+	if !ok {
+		t.Fatal("pilot pack not shipped")
+	}
+	got := domainPackPrompts(context.Background(), []*domainpacks.Pack{pack})
+	if len(got) != 1 || got[0].Name != "opc-vn-business-law" || got[0].Body != pack.Skill.Instructions ||
+		got[0].Version != pack.Manifest.Metadata.Version {
+		t.Fatalf("prompt = %+v", got)
+	}
+	if strings.Contains(got[0].Body, "answer_footer") {
+		t.Error("the body carries no frontmatter")
+	}
+	// as many bodies as fit the byte budget; the next pack is named for read_file
+	fit := agent.MaxDomainPackPromptBytes / len(pack.Skill.Instructions)
+	many := make([]*domainpacks.Pack, fit+1)
+	for i := range many {
+		many[i] = pack
+	}
+	capped := domainPackPrompts(context.Background(), many)
+	if len(capped) != fit+1 {
+		t.Fatalf("every pack keeps its block: %d", len(capped))
+	}
+	for i, p := range capped {
+		if (i < fit) == (p.Body == "") {
+			t.Fatalf("pack %d of %d: body %d bytes (budget %d)", i, len(capped), len(p.Body), agent.MaxDomainPackPromptBytes)
+		}
+	}
 }

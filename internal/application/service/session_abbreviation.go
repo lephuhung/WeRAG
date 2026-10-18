@@ -318,6 +318,7 @@ func emitAbbreviationTerminal(ctx context.Context, bus *event.EventBus, req *typ
 	}
 	var steps []types.AgentStep
 	if choice != nil && r.Status == types.AbbreviationStatusNeedsDefinition {
+		choice = withFinalMessage(choice, answer)
 		callID := types.PipelineToolCallIDPrefix + "abbrchoice-" + req.AssistantMessageID
 		if err := bus.Emit(ctx, event.Event{Type: event.EventAgentToolResult, SessionID: req.Session.ID,
 			Data: event.AgentToolResultData{ToolCallID: callID, ToolName: AbbreviationChoiceType,

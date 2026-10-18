@@ -9,6 +9,7 @@ import (
 	legalskillassets "github.com/Tencent/WeKnora/examples/skills"
 	"github.com/Tencent/WeKnora/internal/agent/skills"
 	"github.com/Tencent/WeKnora/internal/sandbox"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -110,4 +111,17 @@ func TestManagerReadsOnlyPackResources(t *testing.T) {
 	assert.Contains(t, err.Error(), "read-only")
 	_, ok := mgr.SandboxSkillDir(samplePack)
 	assert.False(t, ok)
+}
+
+func TestStripFooterCutsTheToolAnswerBlockToo(t *testing.T) {
+	answer := "Trả lời." + types.ToolAnswerBlockMarker + "Giả định: …\n" + FooterMarker + "Lưu ý.\n"
+	if got := StripFooter(answer); got != "Trả lời." {
+		t.Fatalf("got %q", got)
+	}
+	if got := StripFooter("Trả lời." + FooterMarker + "x"); got != "Trả lời." {
+		t.Fatalf("got %q", got)
+	}
+	if got := StripFooter("Trả lời."); got != "Trả lời." {
+		t.Fatalf("got %q", got)
+	}
 }

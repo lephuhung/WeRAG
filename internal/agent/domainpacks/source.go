@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/agent/skills"
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 // Source offers one agent's packs to the skills manager. Like the built-in
@@ -122,10 +123,15 @@ func (s *Source) Footer(now time.Time, answer string) string {
 	return FooterMarker + strings.Join(parts, "\n\n") + "\n"
 }
 
-// StripFooter cuts the footer block, and anything after it, from an answer.
+// StripFooter cuts the code-appended tail of an answer: the tool answer
+// block (types.ToolAnswerBlockMarker) or the footer, whichever comes first,
+// and anything after it.
 func StripFooter(answer string) string {
-	if i := strings.Index(answer, FooterMarker); i >= 0 {
-		return answer[:i]
+	cut := len(answer)
+	for _, marker := range []string{types.ToolAnswerBlockMarker, FooterMarker} {
+		if i := strings.Index(answer, marker); i >= 0 && i < cut {
+			cut = i
+		}
 	}
-	return answer
+	return answer[:cut]
 }

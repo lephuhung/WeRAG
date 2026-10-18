@@ -502,6 +502,9 @@ type BuildSystemPromptOptions struct {
 	// UserContext is the requester's profile (work unit, province),
 	// types.UserContextPrompt.
 	UserContext string
+	// DomainPacks are the agent's domain packs whose SKILL.md body is
+	// rendered in full (formatDomainPacks).
+	DomainPacks []DomainPackPrompt
 }
 
 // BuildSystemPrompt builds the progressive RAG system prompt
@@ -605,6 +608,9 @@ func BuildSystemPromptSections(
 			sections = append(sections, SystemPromptSection{
 				"skills", formatSkillsMetadata(options.SkillsMetadata, options.ShellExecEnabled),
 			})
+		}
+		if !skillInstallMode && len(options.DomainPacks) > 0 {
+			sections = append(sections, SystemPromptSection{"domain_packs", formatDomainPacks(options.DomainPacks)})
 		}
 		if options.UserContext != "" {
 			sections = append(sections, SystemPromptSection{"user_context", options.UserContext})

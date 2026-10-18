@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/Tencent/WeKnora/internal/types"
 )
 
 func runCompareTax(t *testing.T, args string) (bool, string, map[string]interface{}) {
@@ -107,10 +109,28 @@ func TestCompareTaxMethodsToolAppendsFormulaBlock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasSuffix(strings.TrimSpace(res.Output), block) {
-		t.Errorf("formula block not appended:\n%s", res.Output)
+	if !strings.Contains(res.Output, block) || !strings.HasSuffix(res.Output, compareTaxAnswerNote) {
+		t.Errorf("formula block and the note to the model expected:\n%s", res.Output)
+	}
+	if answer, _ := res.Data[types.ToolDataAnswerBlock].(string); strings.Contains(answer, "Hệ thống tự chèn") {
+		t.Error("the note to the model is not part of the user-facing block")
 	}
 	if strings.Index(res.Output, "Giả định:") > strings.Index(res.Output, "Công thức áp dụng:") {
 		t.Error("the assumptions come before the formulas")
+	}
+}
+
+func TestCompareTaxMethodsToolLeavesAnAnswerBlock(t *testing.T) {
+	block := "Công thức áp dụng:\n- X: a = b (căn cứ: 67/2025/QH15)"
+	res, err := NewCompareTaxMethodsTool().WithFormulaBlock(block).Execute(context.Background(),
+		json.RawMessage(`{"doanh_thu":5000000000,"loi_nhuan":300000000,"ty_le_doanh_thu":1,"thue_suat":0.17}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	answer, _ := res.Data[types.ToolDataAnswerBlock].(string)
+	for _, want := range []string{"50.000.000 đ", "51.000.000 đ", "Khuyến nghị sơ bộ:", "Giả định:", block} {
+		if !strings.Contains(answer, want) {
+			t.Errorf("answer block lacks %q:\n%s", want, answer)
+		}
 	}
 }

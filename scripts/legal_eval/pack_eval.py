@@ -45,6 +45,8 @@ def norm(s: str) -> str:
 
 # domainpacks.FooterMarker: everything from here on is the code-appended footer
 FOOTER_MARKER = "\n\n---\n**Lưu ý về cẩm nang chuyên môn**\n"
+# types.ToolAnswerBlockMarker: the code-appended "Kết quả tính" block
+ANSWER_BLOCK_MARKER = "\n\n---\n**Kết quả tính (do hệ thống tính — nếu phần trên khác, lấy khối này làm chuẩn)**\n"
 
 CATEGORIES = {"advice", "draft_trap", "tax", "refusal", "out_of_scope", "status"}
 # categories where the pack agent may not fail a case the baseline passes (§7 trap + nli)
@@ -64,6 +66,7 @@ CHECK_TYPES = {
     "must_not_match": list,
     "must_state_status": list,
     "must_have_footer": bool,
+    "must_have_answer_block": bool,
 }
 # phrases that mark a draft even when its full title is not repeated
 EXTRA_DRAFT_MARKERS = ["Điều 20 khoản 8", "doanh nghiệp một người"]
@@ -208,9 +211,18 @@ def validate_cases(cases: list, catalogue: list) -> list:
 # ---- checks ------------------------------------------------------------------
 # A run is graded from: answer (str), tools (list of {"name", "output", "ok"}).
 def body_of(answer: str) -> str:
-    """The answer without the code-appended footer."""
-    i = answer.find(FOOTER_MARKER)
-    return answer if i < 0 else answer[:i]
+    """The model's own text: the answer cut at the earliest code-appended
+    block (the "Kết quả tính" block or the footer), like StripFooter."""
+    cut = len(answer)
+    for marker in (ANSWER_BLOCK_MARKER, FOOTER_MARKER):
+        i = answer.find(marker)
+        if 0 <= i < cut:
+            cut = i
+    return answer[:cut]
+
+
+def has_answer_block(answer: str) -> bool:
+    return ANSWER_BLOCK_MARKER.strip() in answer
 
 
 def paragraphs(text: str) -> list:
@@ -248,16 +260,59 @@ def check_not_call_tool(tools: list, names: list) -> tuple:
 NON_EVIDENCE_TOOLS = {"read_file"}
 
 
-def check_numbers(answer: str, tools: list, catalogue: list) -> tuple:
-    allowed = {norm(n) for n in catalogue}
+def evidence_numbers(tools: list) -> set:
+    """Normalised số hiệu the turn's tools put in front of the model. The SSE
+    tool_result carries a short summary as output for tools with a
+    display_type (search_knowledge: "returned 10 result(s)…"); the text the
+    model read is in the structured data (results[].content, …), which
+    tools_of flattens into "evidence"."""
+    found = set()
     for t in tools:
         if t.get("name") in NON_EVIDENCE_TOOLS:
             continue
-        allowed |= {norm(n) for n in NUM.findall(t.get("output") or "")}
-    cited = sorted({n for n in NUM.findall(body_of(answer))})
-    outside = [n for n in cited if norm(n) not in allowed]
-    return (not outside), (f"numbers outside catalogue and tool results: {outside}" if outside else "")
+        if "evidence_numbers" in t:
+            found |= set(t["evidence_numbers"])
+            continue
+        found |= {norm(n) for n in NUM.findall(t.get("evidence") or t.get("output") or "")}
+    return found
 
+
+# legal catalogue lookup outcomes besides True/False
+LOOKUP_FAILED = "failed"      # the search errored (after retries): its own class
+LOOKUP_DISABLED = "disabled"  # no permission: the number cannot be checked → not found
+
+
+def classify_numbers(answer: str, tools: list, catalogue: list, lookup=None) -> dict:
+    """Each số hiệu of the model's text, in one class: evidence (pack
+    catalogue or this turn's tool results), catalogue_only (real — in the
+    platform legal catalogue — but not in the turn's evidence), not_found,
+    lookup_failed."""
+    allowed = {norm(n) for n in catalogue} | evidence_numbers(tools)
+    classes = {"evidence": [], "catalogue_only": [], "not_found": [], "lookup_failed": []}
+    for n in sorted({n for n in NUM.findall(body_of(answer))}):
+        if norm(n) in allowed:
+            classes["evidence"].append(n)
+            continue
+        found = lookup(n) if lookup else LOOKUP_DISABLED
+        if found is True:
+            classes["catalogue_only"].append(n)
+        elif found == LOOKUP_FAILED:
+            classes["lookup_failed"].append(n)
+        else:
+            classes["not_found"].append(n)
+    return classes
+
+
+def check_numbers(answer: str, tools: list, catalogue: list, lookup=None) -> tuple:
+    """"Không bịa số hiệu": fails only on numbers found nowhere (§7: neither
+    in the catalogue nor in the retrieved text). A number that is real but
+    not in the turn's evidence is reported, not failed; one whose lookup
+    errored leaves the threshold unmeasured. read_document chunk text is
+    stripped from the SSE, so a number read only there is classed through
+    the legal catalogue."""
+    classes = classify_numbers(answer, tools, catalogue, lookup)
+    why = f"numbers found nowhere: {classes['not_found']}" if classes["not_found"] else ""
+    return (not classes["not_found"]), why, [], classes
 
 def check_refusal(answer: str) -> tuple:
     ok = bool(REFUSAL_RE.search(body_of(answer)))
@@ -357,7 +412,30 @@ def check_footer(answer: str) -> tuple:
     return ok, "" if ok else "footer missing"
 
 
-def grade(case: dict, answer: str, tools: list, catalogue: list, draft_titles: list, with_pack: bool) -> dict:
+# Answers written by code, not by the model with the pack: a tool or a
+# pipeline card that ends the turn with a fixed answer carries it in its
+# data as final_message (agent.ToolResultFinalMessageKey); the grounding
+# gate's fixed "no evidence" message has no tool. They carry no footer.
+UNGROUNDED_PREFIX = "Tôi không tìm thấy căn cứ cho câu hỏi này trong kho tri thức"
+
+
+def _squash(text: str) -> str:
+    return " ".join((text or "").split())
+
+
+def code_written_answer(answer: str, tools: list) -> bool:
+    body = _squash(body_of(answer))
+    if body.startswith(UNGROUNDED_PREFIX):
+        return True
+    for t in tools:
+        msg = _squash(t.get("final_message") or "")
+        if msg and body.startswith(msg[:200]):
+            return True
+    return False
+
+
+def grade(case: dict, answer: str, tools: list, catalogue: list, draft_titles: list, with_pack: bool,
+          lookup=None) -> dict:
     """Binary result per check for one run."""
     checks = case.get("checks") or {}
     res = {}
@@ -366,6 +444,8 @@ def grade(case: dict, answer: str, tools: list, catalogue: list, draft_titles: l
         res[key] = {"pass": bool(outcome[0]), "why": outcome[1]}
         if len(outcome) > 2 and outcome[2]:
             res[key]["unverified"] = outcome[2]
+        if len(outcome) > 3:
+            res[key]["classes"] = outcome[3]
 
     for key, val in checks.items():
         if key == "must_label_draft" and val:
@@ -375,7 +455,7 @@ def grade(case: dict, answer: str, tools: list, catalogue: list, draft_titles: l
         elif key == "must_not_call_tool":
             put(key, check_not_call_tool(tools, val))
         elif key == "must_not_cite_numbers_outside_catalogue" and val:
-            put(key, check_numbers(answer, tools, catalogue))
+            put(key, check_numbers(answer, tools, catalogue, lookup))
         elif key == "expect_refusal" and val:
             put(key, check_refusal(answer))
         elif key == "expect_referral" and val:
@@ -388,18 +468,60 @@ def grade(case: dict, answer: str, tools: list, catalogue: list, draft_titles: l
             put(key, check_not_match(answer, val))
         elif key == "must_state_status":
             put(key, check_state_status(answer, tools, val))
-        elif key == "must_have_footer" and val and with_pack:
+        elif key == "must_have_footer" and val and with_pack and not code_written_answer(answer, tools):
             put(key, check_footer(answer))
+        elif key == "must_have_answer_block" and val and with_pack and not code_written_answer(answer, tools):
+            ok = has_answer_block(answer)
+            put(key, (ok, "" if ok else "no code-appended result block"))
     return res
 
 
 # ---- running -----------------------------------------------------------------
+# SSE metadata keys that are bookkeeping, not text the model read
+_EVIDENCE_SKIP_KEYS = {"tool_name", "tool_call_id", "success", "error", "duration_ms", "display_type"}
+EVIDENCE_MAX_CHARS = 400_000
+
+
+def flatten_text(value, out: list) -> None:
+    if isinstance(value, str):
+        out.append(value)
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            if k not in _EVIDENCE_SKIP_KEYS:
+                flatten_text(v, out)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            flatten_text(v, out)
+
+
+def tool_evidence(output: str, data: dict) -> str:
+    """The text of one tool result as far as the SSE carries it: the output
+    plus every string of the structured data."""
+    parts = [output or ""]
+    flatten_text(data or {}, parts)
+    return "\n".join(parts)[:EVIDENCE_MAX_CHARS]
+
+
 def tools_of(turn) -> list:
-    return [{"name": t.name, "ok": t.success, "output": t.output,
-             "args": {k: v for k, v in (t.arguments or {}).items()
-                      if k in ("query", "queries", "document_number", "title", "path",
-                               "doanh_thu", "loi_nhuan", "ty_le_doanh_thu", "thue_suat")}}
-            for t in turn.tool_calls]
+    out = []
+    for t in turn.tool_calls:
+        evidence = tool_evidence(t.output, t.data)
+        fm = (t.data or {}).get("final_message")
+        out.append({"name": t.name, "ok": t.success, "output": t.output,
+                    "final_message": fm if isinstance(fm, str) else "",
+                    "evidence": evidence, "evidence_chars": len(evidence),
+                    "args": {k: v for k, v in (t.arguments or {}).items()
+                             if k in ("query", "queries", "document_number", "title", "path",
+                                      "doanh_thu", "loi_nhuan", "ty_le_doanh_thu", "thue_suat")}})
+    return out
+
+
+def compact_tools_for_report(tools: list) -> None:
+    """After grading: keep the numbers the evidence held, not the text."""
+    for t in tools:
+        ev = t.pop("evidence", None)
+        if ev is not None:
+            t["evidence_numbers"] = sorted({norm(n) for n in NUM.findall(ev)})
 
 
 def run_one(client, case: dict, agent_id: str, kb_ids: list) -> dict:
@@ -449,7 +571,10 @@ def thresholds(cases: list, rows: dict) -> list:
     footer, n = rate("pack", "must_have_footer")
     out.append(("footer có mặt (agent có gói)", footer, "100 %", None if footer is None else footer == 1.0, n))
     nums, n = rate("pack", "must_not_cite_numbers_outside_catalogue")
-    out.append(("không bịa số hiệu", nums, "100 %", None if nums is None else nums == 1.0, n))
+    failed_lookups = number_class_runs(cases, rows, "lookup_failed")
+    nums_ok = None if nums is None or (nums == 1.0 and failed_lookups) else nums == 1.0
+    out.append(("không bịa số hiệu (không tìm thấy ở đâu)", nums, "100 %", nums_ok,
+                f"{n} lượt; tra danh mục lỗi ở {len(failed_lookups)} lượt"))
 
     regress, unmeasured, total = [], [], 0
     for c in cases:
@@ -481,8 +606,21 @@ def thresholds(cases: list, rows: dict) -> list:
     return out
 
 
-def summarize(cases: list, rows: dict) -> str:
+def number_class_runs(cases: list, rows: dict, cls: str, agent: str = "pack") -> list:
+    """[(case id, run index, numbers)] of the runs with numbers in class cls."""
+    out = []
+    for c in cases:
+        for i, r in enumerate(rows[c["id"]][agent]):
+            nums = ((r.get("checks") or {}).get("must_not_cite_numbers_outside_catalogue") or {}).get("classes", {}).get(cls)
+            if nums:
+                out.append((c["id"], i + 1, nums))
+    return out
+
+
+def summarize(cases: list, rows: dict, lookup_state: str = "") -> str:
     lines = []
+    if lookup_state:
+        lines.append(f"legal_catalogue_lookup: {lookup_state}")
     by_cat = collections.defaultdict(lambda: {"pack": [0, 0], "baseline": [0, 0]})
     for c in cases:
         for agent in ("pack", "baseline"):
@@ -505,6 +643,12 @@ def summarize(cases: list, rows: dict) -> str:
         # is not a pass
         incomplete |= ok is None
         lines.append(f"[{verdict}] {name}: {shown} (ngưỡng {target}; {n})")
+    real = number_class_runs(cases, rows, "catalogue_only")
+    lines.append(f"[info] số hiệu có thật nhưng không có căn cứ trong lượt (không chặn): {len(real)} lượt")
+    for cid, i, nums in real:
+        lines.append(f"  {cid} pack#{i}: {', '.join(nums)}")
+    for cid, i, nums in number_class_runs(cases, rows, "lookup_failed"):
+        lines.append(f"  [tra danh mục lỗi] {cid} pack#{i}: {', '.join(nums)}")
     for c in cases:
         for agent in ("pack", "baseline"):
             for i, r in enumerate(rows[c["id"]][agent]):
@@ -526,6 +670,52 @@ def overall_verdict(failed: bool, incomplete: bool) -> str:
 EXIT_BY_VERDICT = {"PASS": 0, "FAIL": 1, "INCOMPLETE": 2}
 
 
+class LegalCatalogueLookup:
+    """number → True / False (searched in the platform legal catalogue, the
+    SuperAdmin endpoint), LOOKUP_DISABLED (no permission: the whole run
+    cannot check) or LOOKUP_FAILED (this search errored after retries; the
+    next number is tried again). Cached per run."""
+
+    def __init__(self, client, retries: int = 3, sleep=time.sleep):
+        self.client, self.retries, self.sleep = client, retries, sleep
+        self.cache, self.lock = {}, threading.Lock()
+        self.state = "enabled"  # → "disabled" on 401/403
+        self.failures = 0
+
+    def __call__(self, number: str):
+        key = norm(number)
+        with self.lock:
+            if self.state == "disabled":
+                return LOOKUP_DISABLED
+            if key in self.cache:
+                return self.cache[key]
+        from urllib.parse import quote  # noqa: PLC0415
+        for attempt in range(self.retries):
+            try:
+                body = self.client._req("GET", "/api/v1/system/legal-catalog/search?q=" + quote(number),
+                                        "legal catalogue search")
+                docs = (body or {}).get("data") or []
+                found = any(norm(d.get("document_number") or "") == key for d in docs if isinstance(d, dict))
+                with self.lock:
+                    self.cache[key] = found
+                return found
+            except Exception as e:  # noqa: BLE001
+                status = getattr(e, "status", None) or getattr(e, "status_code", None)
+                if status in (401, 403):
+                    with self.lock:
+                        self.state = "disabled"
+                    print(f"  [legal catalogue lookup disabled: {str(e)[:120]}]", flush=True)
+                    return LOOKUP_DISABLED
+                if attempt + 1 < self.retries:
+                    self.sleep(2 * (attempt + 1))
+                    continue
+                with self.lock:
+                    self.failures += 1
+                print(f"  [legal catalogue lookup of {number} failed: {str(e)[:120]}]", flush=True)
+                return LOOKUP_FAILED
+        return LOOKUP_FAILED
+
+
 def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
     sys.path.insert(0, os.path.join(HERE, "..", "doc_assistant_eval"))
     from werag_client import WeragClient  # noqa: PLC0415 — needs requests, imported only for a live run
@@ -541,6 +731,10 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
         raise SystemExit("token missing (--token / --token-file / WERAG_TOKEN, or --email + WERAG_PASSWORD); see mint_token.py")
     client = WeragClient(args.base_url, token, tenant_id=args.tenant or None, timeout=args.turn_timeout)
     client.me()  # fail fast on a bad token
+    lookup = LegalCatalogueLookup(client)
+    if catalogue:
+        lookup(catalogue[0])  # probe: a 401/403 disables the lookup before the run
+    print(f"legal_catalogue_lookup: {lookup.state}", flush=True)
 
     rows = {c["id"]: {"pack": [], "baseline": []} for c in cases}
     jobs = [(c, agent, agent_id, i) for i in range(args.runs) for c in cases
@@ -554,7 +748,10 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
             r = run_one(client, case, agent_id, args.kb)
         except Exception as e:  # noqa: BLE001
             r = {"answer": "", "tools": [], "error": str(e), "duration_s": 0}
-        r["checks"] = {} if r.get("error") else grade(case, r["answer"], r["tools"], catalogue, drafts, agent == "pack")
+        r["checks"] = {} if r.get("error") else grade(case, r["answer"], r["tools"], catalogue, drafts, agent == "pack",
+                                                       lookup)
+        compact_tools_for_report(r["tools"])
+        r["answer_block"] = has_answer_block(r.get("answer") or "")
         with lock:
             rows[case["id"]][agent].append(r)
             done[0] += 1
@@ -572,6 +769,7 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
     report = {
         "pack": args.pack, "agent_id": args.agent_id, "baseline_agent_id": args.baseline_agent_id,
         "runs": args.runs, "kb_ids": args.kb, "started": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "legal_catalogue_lookup": lookup.state, "legal_catalogue_lookup_failures": lookup.failures,
         "thresholds": [{"name": n, "value": v, "target": t, "pass": ok, "n": cnt}
                        for n, v, t, ok, cnt in thresholds(cases, rows)],
         "cases": [{k: v for k, v in c.items() if k != "_line"} | {
@@ -581,7 +779,7 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
     }
     with open(path, "w", encoding="utf8") as f:
         json.dump(report, f, ensure_ascii=False, indent=1)
-    summary = summarize(cases, rows)
+    summary = summarize(cases, rows, lookup.state)
     print(path)
     print(summary)
     return EXIT_BY_VERDICT[summary.rsplit("OVERALL ", 1)[1].strip()]
@@ -622,6 +820,66 @@ def self_check() -> int:
     # numbers (footer text ignored; tool-result numbers allowed)
     expect("numbers ok", check_numbers("Theo 59/2020/QH14 và Nghị định 174/2016/NĐ-CP." + footer, [search_tool], cat), True)
     expect("numbers invented", check_numbers("Theo Nghị định 12/2027/NĐ-CP.", [search_tool], cat), False)
+    # search_knowledge: the SSE output is a summary, the text is in data.results
+    sk_out = "Knowledge search returned 10 result(s) (details omitted from history)"
+    sk = {"name": "search_knowledge", "ok": True, "output": sk_out,
+          "evidence": tool_evidence(sk_out, {"display_type": "search_results",
+                                             "results": [{"content": "Luật số 76/2025/QH15 sửa đổi Luật Doanh nghiệp"}]})}
+    expect("numbers from search results data", check_numbers("Theo Luật 76/2025/QH15.", [sk], cat), True)
+    compact_tools_for_report([sk])
+    if "evidence" in sk or "76/2025/QH15" not in sk.get("evidence_numbers", []):
+        fails.append(f"compact evidence: {sk}")
+    expect("numbers from compacted evidence", check_numbers("Theo Luật 76/2025/QH15.", [sk], cat), True)
+    expect("numbers summary only", check_numbers("Theo Luật 76/2025/QH15.",
+                                                 [{"name": "search_knowledge", "output": sk_out}], cat), False)
+    # three classes: evidence / real but not in the turn / found nowhere; a failed lookup is its own class
+    fake = {"76/2025/QH15": True, "1/2099/QH99": False, "5/2030/QH16": LOOKUP_FAILED}
+    ok_cat, _, _, classes = check_numbers("Theo 59/2020/QH14, Luật 76/2025/QH15, 1/2099/QH99 và 5/2030/QH16.", [], cat,
+                                          lookup=lambda n: fake[n])
+    if ok_cat or classes != {"evidence": ["59/2020/QH14"], "catalogue_only": ["76/2025/QH15"],
+                             "not_found": ["1/2099/QH99"], "lookup_failed": ["5/2030/QH16"]}:
+        fails.append(f"number classes: {ok_cat} {classes}")
+    expect("real but not in the turn passes", check_numbers("Theo Luật 76/2025/QH15.", [], cat,
+                                                             lookup=lambda n: True), True)
+    expect("lookup disabled counts as not found", check_numbers("Theo Luật 76/2025/QH15.", [], cat,
+                                                                 lookup=lambda n: LOOKUP_DISABLED), False)
+    expect("lookup failed is not a fabrication", check_numbers("Theo Luật 76/2025/QH15.", [], cat,
+                                                                lookup=lambda n: LOOKUP_FAILED), True)
+    # the lookup: a 5xx is retried, then that number alone is "failed"; 401/403 disables the run
+    class _Err(Exception):
+        def __init__(self, status):
+            super().__init__(f"HTTP {status}")
+            self.status = status
+
+    class _Client:
+        def __init__(self, script):
+            self.script = list(script)
+
+        def _req(self, *_a, **_k):
+            step = self.script.pop(0)
+            if isinstance(step, int):
+                raise _Err(step)
+            return {"data": [{"document_number": step}]}
+
+    lk = LegalCatalogueLookup(_Client([502, "76/2025/QH15"]), sleep=lambda _s: None)
+    if lk("76/2025/QH15") is not True or lk.state != "enabled":
+        fails.append("lookup retry after a 5xx")
+    lk = LegalCatalogueLookup(_Client([500, 500, 500, "59/2020/QH14"]), sleep=lambda _s: None)
+    if lk("1/2099/QH99") != LOOKUP_FAILED or lk.state != "enabled" or lk("59/2020/QH14") is not True:
+        fails.append("a failed lookup must not disable the run")
+    lk = LegalCatalogueLookup(_Client([403]), sleep=lambda _s: None)
+    if lk("76/2025/QH15") != LOOKUP_DISABLED or lk.state != "disabled" or lk("x/2000/QH1") != LOOKUP_DISABLED:
+        fails.append("403 disables the lookup")
+    # the code block and the footer are not graded as the model's text
+    block_answer = "Kết luận ngắn." + ANSWER_BLOCK_MARKER + "Theo Nghị định 12/2027/NĐ-CP …" + footer
+    if body_of(block_answer) != "Kết luận ngắn." or not has_answer_block(block_answer):
+        fails.append(f"body_of / has_answer_block: {body_of(block_answer)!r}")
+    expect("numbers in the code block ignored", check_numbers(block_answer, [], cat), True)
+    blk_case = {"id": "t", "category": "tax", "checks": {"must_have_answer_block": True}}
+    if grade(blk_case, block_answer, [], cat, drafts, with_pack=True)["must_have_answer_block"]["pass"] is not True:
+        fails.append("answer block not found")
+    if grade(blk_case, "Không có khối.", [], cat, drafts, with_pack=True)["must_have_answer_block"]["pass"] is not False:
+        fails.append("missing answer block passes")
     pack_file = {"name": "read_file", "ok": True, "output": "Bình luận: Nghị định 12/2027/NĐ-CP …"}
     expect("numbers from a pack file", check_numbers("Theo Nghị định 12/2027/NĐ-CP.", [pack_file], cat), False)
     kb_doc = {"name": "read_document", "ok": True, "output": "… Nghị định 12/2027/NĐ-CP …"}
@@ -661,6 +919,21 @@ def self_check() -> int:
     g = grade(case, "Trả lời.", [search_tool], cat, drafts, with_pack=False)
     if "must_have_footer" in g or not g["must_call_tool"]["pass"]:
         fails.append(f"grade baseline: {g}")
+    # a gate card or the fixed no-evidence answer is not graded for the footer
+    card_msg = "Nghị định 01/2021/NĐ-CP đã hết hiệu lực toàn bộ từ ngày 01/07/2025, nên không được đưa vào kho tri thức."
+    card = {"name": "legal_document_request", "ok": True, "output": "…", "final_message": card_msg}
+    if "must_have_footer" in grade(case, card_msg, [card], cat, drafts, with_pack=True):
+        fails.append("footer graded on a gate card")
+    abbr = {"name": "abbreviation_choice", "ok": True, "final_message": "Bạn muốn nói:\n1. A\n2. B"}
+    if "must_have_footer" in grade(case, "Bạn muốn nói:\n1. A\n2. B", [abbr], cat, drafts, with_pack=True):
+        fails.append("footer graded on the abbreviation card")
+    # a tool that carried final_message but the model wrote its own answer: graded
+    if "must_have_footer" not in grade(case, "Câu trả lời khác hẳn.", [card], cat, drafts, with_pack=True):
+        fails.append("footer not graded when the answer is not the card's")
+    if "must_have_footer" in grade(case, UNGROUNDED_PREFIX + ", nên …", [], cat, drafts, with_pack=True):
+        fails.append("footer graded on the no-evidence answer")
+    if "must_have_footer" not in grade(case, "Trả lời.", [search_tool], cat, drafts, with_pack=True):
+        fails.append("footer not graded on a model answer")
     # validation
     good = [{"id": f"c{i}", "category": "advice", "prompt": "p", "checks": {"must_have_footer": True}, "_line": i}
             for i in range(20)]
