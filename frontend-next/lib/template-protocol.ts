@@ -14,7 +14,9 @@ export function templatePrompt(id: DocumentTemplateId): string {
 export const TEMPLATE_HINT = 'Bạn có thể nhập: mục đích, nội dung chính, đối tượng nhận, thời gian, phạm vi và yêu cầu thực hiện. Bổ sung cơ quan hoặc người ký nếu khác thông tin đơn vị đã lưu; trợ lý sẽ hỏi tiếp những mục còn thiếu.';
 /** redo: the first turn of a request asked in plain chat to draft the last
  * one of this type again; the server starts it from what was said for that. */
-export type TemplateRequest = { schema_version: 1; request_id: string; template_id: DocumentTemplateId; document_id?: string; redo?: true };
+/** from_conversation: opened by the agent hand-off card; the server drafts it
+ * from the conversation held with the other agent before the switch. */
+export type TemplateRequest = { schema_version: 1; request_id: string; template_id: DocumentTemplateId; document_id?: string; redo?: true; from_conversation?: true };
 export type TemplateFields = {
   parent_agency?: string; agency: string; locality: string; date: string; number_symbol: string; subject: string;
   addressee?: string; grounds?: string[]; request_basis?: string; decision_authority?: string;
@@ -25,8 +27,9 @@ export type TemplateFields = {
  * server from the platform default and the workspace's override
  * (types.TemplateFontSizeSpecs). */
 export type TemplateFontSizes = Partial<Record<string, number>>;
+/** skipped: "bỏ qua" before saying anything; the document stays empty. */
 export type TemplateResponse = Required<TemplateRequest> & (
-  { status: 'needs_input'; missing_fields: string[] } | { status: 'ready'; fields: TemplateFields; font_sizes?: TemplateFontSizes }
+  { status: 'needs_input'; missing_fields: string[] } | { status: 'ready'; fields: TemplateFields; font_sizes?: TemplateFontSizes } | { status: 'skipped' }
 );
 const record = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const text = (v: unknown, max = 2000): v is string => typeof v === 'string' && !!v.trim() && v.length <= max && !/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/.test(v);
@@ -35,6 +38,7 @@ const strings = (v: unknown, max: number) => Array.isArray(v) && v.length > 0 &&
 export function parseTemplateResponse(value: unknown): TemplateResponse | null {
   if (!record(value) || value.schema_version !== 1 || !text(value.request_id, 128) || !text(value.document_id,128) || !TEMPLATE_CHOICES.some(([id]) => id === value.template_id)) return null;
   if (value.status === 'needs_input') return strings(value.missing_fields,30) ? value as TemplateResponse : null;
+  if (value.status === 'skipped') return value as TemplateResponse;
   if (value.status !== 'ready' || !record(value.fields)) return null;
   const f = value.fields;
   if (!['agency','locality','date','number_symbol','subject','signer_name'].every(key => text(f[key]))) return null;
@@ -71,7 +75,10 @@ export function restoreTemplateRequest(store: TemplateStore, tenant: string, ses
   try {
     const value: unknown = JSON.parse(store?.getItem(cacheKey(tenant, session, document)) ?? 'null');
     if (!record(value) || value.schema_version !== 1 || !text(value.request_id,128) || value.sessionId !== session || value.document_id !== document || !TEMPLATE_CHOICES.some(([id]) => id === value.template_id) || typeof value.savedAt !== 'number' || Date.now() - value.savedAt > 86400000) return null;
-    return { schema_version: 1, request_id: value.request_id, template_id: value.template_id as DocumentTemplateId, document_id: document, sessionId: session };
+    return {
+      schema_version: 1, request_id: value.request_id, template_id: value.template_id as DocumentTemplateId, document_id: document, sessionId: session,
+      ...(value.from_conversation === true ? { from_conversation: true as const } : {}),
+    };
   } catch { return null; }
 }
 
@@ -95,4 +102,23 @@ export function redoTemplateId(text: string, last: DocumentTemplateId | null): D
   const named = TEMPLATE_CHOICES.find(([, name]) => t.includes(name.toLocaleLowerCase('vi-VN').replace(' cá biệt', '')));
   if (named) return named[0];
   return /(^|\s)văn bản(?=$|[\s,.!?:;])/u.test(t) ? last : null;
+}
+
+/* The user turned the templates down for an empty document ("bỏ qua" at
+ * once, or closed the offer): the live spellcheck finds it empty again on
+ * every pass, so the offer must remember it, across reloads. */
+// per document (sub-chats show the same document); session is kept in the
+// signature for callers, the document id alone is unique
+const dismissKey = (tenant: string, _session: string, document: string) => `werag.template-dismissed:${tenant}:${document}`;
+export function dismissTemplates(store: TemplateStore, tenant: string, session: string, document: string): void {
+  try { store?.setItem(dismissKey(tenant, session, document), String(Date.now())); } catch { /* unavailable */ }
+}
+export function templatesDismissed(store: TemplateStore, tenant: string, session: string, document: string): boolean {
+  try { return !!store?.getItem(dismissKey(tenant, session, document)); } catch { return false; }
+}
+/** A message that only turns the offer down ("bỏ qua", "không cần mẫu");
+ * not "thôi" / "không cần", which answer the assistant as often. */
+export function isTemplateSkip(text: string): boolean {
+  const t = text.trim().toLocaleLowerCase('vi-VN').replace(/[.!]+$/u, '');
+  return /^(bỏ qua|không cần mẫu|không dùng mẫu|văn bản trắng|giữ văn bản trắng|tạo văn bản trắng)( nhé| nha| ạ)?$/u.test(t);
 }

@@ -16,7 +16,8 @@ Groups (the pipelines a real user goes through):
   multi     – nhiều văn bản: đối chiếu, gọi tên bằng @, nguồn chỉ đọc
   suggest   – gợi ý hoàn thiện, chèn đoạn, yêu cầu ngoài phạm vi
   template  – soạn văn bản mẫu NĐ30 từ chat, "tạo lại", cỡ chữ/lề trang
-  handoff   – đang dùng agent khác mà muốn tạo file Word → chuyển sang Soạn thảo văn bản
+  handoff   – đang dùng agent khác, đã thảo luận nội dung, muốn tạo file Word → gợi ý + thẻ chuyển
+              sang Soạn thảo văn bản; bấm thẻ → văn bản mang theo nội dung đã thảo luận
   web       – tìm kiếm web (phụ thuộc mạng)
 """
 from __future__ import annotations
@@ -248,30 +249,176 @@ def _no_card_text_copied():
     return C.custom("no choice-card question copied as plain text", fn)
 
 DOCUMENT_ASSISTANT_ID = "builtin-document-assistant"
+HANDOFF_CARD = "agent_handoff"
+OTHER_AGENTS = ["builtin-quick-answer", "builtin-smart-reasoning", "builtin-data-analyst", "builtin-wiki-researcher"]
 
 
-def _switched_to_document_assistant():
-    """the turn hands over to the document assistant in a form the UI can act on
-    (an event / card naming builtin-document-assistant, or the template card),
-    not just a sentence telling the user to switch."""
+def _handoff_card(t):
+    """the agent_handoff card of a turn, {} when none. Contract (to build):
+    display_type agent_handoff, target_agent_id builtin-document-assistant,
+    template_id (one of the six, "" when the type is unclear), resend (the
+    text the click sends), from_conversation true."""
+    return next((tc.data for tc in t.tool_calls if (tc.data or {}).get("display_type") == HANDOFF_CARD), {})
+
+
+def _handoff_offered(template_id=None):
     def fn(t, ctx):
-        names = {"agent_switch", "agent_handoff", "switch_agent", TEMPLATE_TOOL}
-        hit = [e.get("response_type") or e.get("type") for e in t.events
-               if DOCUMENT_ASSISTANT_ID in json.dumps(e, ensure_ascii=False)]
-        hit += [d for d in t.display_types() if d in names] + [tc.name for tc in t.tool_calls if tc.name in names]
-        return bool(hit), f"signals {hit or 'none'}; display_types={t.display_types()}"
-    return C.custom("switched to the document assistant (structured, not only text)", fn)
+        card = _handoff_card(t)
+        ok = card.get("target_agent_id") == DOCUMENT_ASSISTANT_ID and bool(card.get("resend")) and \
+            (template_id is None or card.get("template_id") == template_id)
+        return ok, f"card={ {k: card.get(k) for k in ('target_agent_id', 'template_id', 'resend', 'from_conversation')} if card else 'none'}"
+    return C.custom(f"switch card to the document assistant{'' if template_id is None else ' (' + template_id + ')'}", fn)
+
+
+def _no_handoff():
+    return C.custom("no switch card", lambda t, ctx: (not _handoff_card(t), f"display_types={t.display_types()}"))
 
 
 def _no_fake_file():
     """no claim of a Word file that was never produced (no artifacts in the turn)."""
     def fn(t, ctx):
-        produced = any((e.get("response_type") or e.get("type")) in ("artifacts_pending",) or (e.get("data") or {}).get("artifacts")
+        produced = any((e.get("response_type") or e.get("type")) == "artifacts_pending" or (e.get("data") or {}).get("artifacts")
                        for e in t.events)
         claims = [p for p in ("đã tạo file", "đã tạo tệp", "đã tạo xong file", "file word đã", "tải xuống tại", "đã lưu file", ".docx](")
                   if p in t.text.lower()]
         return produced or not claims, f"artifacts={produced} claims={claims}"
     return C.custom("no claim of a Word file that does not exist", fn)
+
+
+def _blank_target(name="van_ban_moi.docx"):
+    """before hook of the click: the empty document the web UI creates for
+    the switch (python-docx, no text), opened in the web editor (onlyoffice:
+    the hand-off is web-only, and a word_addin tab refuses a web-built
+    template)."""
+    def f(ctx):
+        import os
+        from docx import Document
+        path = os.path.join(ctx["fixtures_dir"], name)
+        if not os.path.exists(path):
+            Document().save(path)
+        ctx["docs"][name] = ctx["client"].add_target(ctx["session_id"], path, editor_kind="onlyoffice")
+        if ctx["turns"]:
+            ctx["handoff"] = _handoff_card(ctx["turns"][-1])
+    return f
+
+
+def _click_query(ctx):
+    return (ctx.get("handoff") or {}).get("resend", "")
+
+
+def _click_request(name="van_ban_moi.docx", fallback_template="ke-hoach"):
+    """the click: the document assistant, a template request on the empty
+    document seeded from the conversation (from_conversation)."""
+    def f(ctx):
+        card = ctx.get("handoff") or {}
+        rid = ctx.setdefault("handoff_req", str(uuid.uuid4()))
+        return {"agent_id": DOCUMENT_ASSISTANT_ID, "document_template_request": {
+            "schema_version": 1, "request_id": rid, "template_id": card.get("template_id") or fallback_template,
+            "document_id": doc(ctx, name)["id"], "from_conversation": True}}
+    return f
+
+
+def _template_text(t):
+    card = _template_card(t)
+    return json.dumps(card.get("fields") or {}, ensure_ascii=False).lower()
+
+
+def _carries(*facts, pending_ok=False):
+    """the drafted document carries the facts settled in the discussion
+    (each fact: alternatives, any one matches). pending_ok: a needs_input
+    turn passes (the check runs again on the ready turn after "bỏ qua")."""
+    def fn(t, ctx):
+        card = _template_card(t)
+        if pending_ok and card.get("status") == "needs_input":
+            return True, "needs_input: checked after 'bỏ qua'"
+        if card.get("status") != "ready":
+            return False, f"status={card.get('status')} missing={card.get('missing_fields')}"
+        text = _template_text(t)
+        miss = [f[0] for f in facts if not any(x.lower() in text for x in f)]
+        return not miss, f"missing {miss}"
+    return C.custom(f"document carries the discussed content {[f[0] for f in facts]}", fn)
+
+
+def _not_asked_again(*topics):
+    """details already given in the discussion are not asked for again."""
+    def fn(t, ctx):
+        missing = [str(m).lower() for m in _template_card(t).get("missing_fields") or []]
+        asked = [tp for tp in topics if any(tp.lower() in m for m in missing)]
+        return not asked, f"asked again {asked}; missing={missing}"
+    return C.custom(f"not asked again: {list(topics)}", fn)
+
+
+def _reuses_answer(turn_index, min_share=0.6, pending_ok=False):
+    """the document's body comes from the content the other agent drafted in
+    chat: the share of the body's distinctive words that are in that draft
+    (the draft's own intro, header, placeholders and notes are rightly left
+    out, so the other direction is no measure)."""
+    def words(text):
+        out = {w.strip(".,;:()*\"“”'-–/") for w in text.lower().split()}
+        return {w for w in out if len(w) >= 5 and not w.startswith("http")}
+    def fn(t, ctx):
+        card = _template_card(t)
+        if pending_ok and card.get("status") == "needs_input":
+            return True, "needs_input: checked after 'bỏ qua'"
+        if card.get("status") != "ready":
+            return False, f"status={card.get('status')}"
+        draft = words(ctx["turns"][turn_index].text)
+        body = words(" ".join(p.get("text", "") for p in (card.get("fields") or {}).get("paragraphs") or []))
+        if not body:
+            return False, "empty body"
+        share = sum(1 for w in body if w in draft) / len(body)
+        return share >= min_share, f"share {share:.2f} of {len(body)} body words from the draft"
+    return C.custom(f"document body taken from the drafted content (≥{int(min_share * 100)}%)", fn)
+
+def _saved_as_docx(*facts, name="van_ban_moi.docx", pending_ok=False):
+    """the ready result ends as a real .docx in the document, like the web UI
+    does it: built with frontend-next's builder, stored through
+    POST …/template, downloaded back — a Word 2007+ package (zip with
+    word/document.xml, docx content type, .docx name) carrying the facts."""
+    def fn(t, ctx):
+        import io, os, subprocess, tempfile, zipfile
+        card = _template_card(t)
+        if pending_ok and card.get("status") == "needs_input":
+            return True, "needs_input: saved after 'bỏ qua'"
+        if card.get("status") != "ready":
+            return False, f"status={card.get('status')}"
+        here = os.path.dirname(os.path.abspath(__file__))
+        with tempfile.TemporaryDirectory() as tmp:
+            src, out = os.path.join(tmp, "result.json"), os.path.join(tmp, "out.docx")
+            with open(src, "w", encoding="utf-8") as f:
+                json.dump(card, f, ensure_ascii=False)
+            p = subprocess.run(["node", "--experimental-strip-types", os.path.join(here, "build_template_docx.mjs"), src, out],
+                               capture_output=True, text=True, timeout=120)
+            if p.returncode != 0:
+                return False, f"builder failed: {p.stderr[-300:]}"
+            built = open(out, "rb").read()
+        client, sid, d = ctx["client"], ctx["session_id"], doc(ctx, name)
+        rev = int(client.get_document(sid, d["id"]).get("revision") or 0)
+        client.store_template(sid, d["id"], rev, built)
+        r = client.download_document(sid, d["id"])
+        ctype = r.headers.get("Content-Type", "")
+        disp = r.headers.get("Content-Disposition", "")
+        try:
+            z = zipfile.ZipFile(io.BytesIO(r.content))
+            xml = z.read("word/document.xml").decode("utf-8")
+        except Exception as e:  # noqa: BLE001
+            return False, f"not a .docx package: {e!r} ({len(r.content)} bytes, {ctype})"
+        import re
+        text = re.sub(r"<[^>]+>", "", xml).lower()
+        miss = [f[0] for f in facts if not any(x.lower() in text for x in f)]
+        ok = "wordprocessingml" in ctype and ".docx" in disp.lower() and not miss
+        return ok, f"content-type={ctype} disposition={disp} missing={miss}"
+    return C.custom("saved as a real .docx carrying the content", fn)
+
+
+def _no_workaround():
+    """no fallback to HTML-as-.doc, .htm or Python code to make the file."""
+    return C.answer_not_contains(["html", ".htm", "định dạng .doc", "file .doc ", "python-docx", "import docx"])
+
+
+def _skip_if_ready(text="bỏ qua"):
+    return lambda ctx: text if _template_card(ctx["turns"][-1]).get("status") == "needs_input" else ""
+
 
 SCENARIOS: List[Scenario] = [
     # ------------------------------------------------------------------ content
@@ -888,6 +1035,34 @@ SCENARIOS: List[Scenario] = [
             ),
         ],
     ),
+    # A unit code (PV01, PA05) is a proper name: kept as typed once, never
+    # asked about again (session 681b6a7a asked on every request). A random
+    # code per run keeps the scenario repeatable; the dictionary row it adds
+    # (is_proper_name, active) is removed by hand after a run.
+    Scenario(
+        id="abbr_proper_name", group="partial",
+        title="Mã đơn vị lạ → thẻ hỏi; trả lời '3' (giữ nguyên) → không hỏi lại ở yêu cầu sau",
+        documents=[("target", "quy_trinh.docx")],
+        steps=[
+            Step(
+                lambda ctx: f"Gửi Phòng {ctx.setdefault('code', 'PV' + str(uuid.uuid4().int % 40 + 60))} về việc báo cáo kết quả rà soát",
+                S(C.display_type("abbreviation_choice"),
+                  C.custom("the card asks about the code", lambda t, ctx: any(
+                      str((tc.data or {}).get("subject", "")).upper() == ctx["code"] for tc in t.tool_calls
+                      if (tc.data or {}).get("display_type") == "abbreviation_choice"))),
+            ),
+            Step(
+                "3",
+                S(C.no_display_type("abbreviation_choice"), C.answer_not_contains(["chưa rõ ý nghĩa"])),
+                note="Gõ '3' (không bấm): mục 3 của thẻ là 'Giữ nguyên'.",
+            ),
+            Step(
+                lambda ctx: f"Phòng {ctx['code']} cần báo cáo những nội dung gì?",
+                S(C.no_display_type("abbreviation_choice"), C.answer_not_contains(["chưa rõ ý nghĩa"])),
+                note="Yêu cầu mới có mã đó: không hỏi lại.",
+            ),
+        ],
+    ),
     # --------------------------------------------------------------- template
     # A NĐ30 document drafted from chat (document_template_request): the
     # abbreviation card on PV01 keeps the first message; "bỏ qua" fills the
@@ -925,35 +1100,111 @@ SCENARIOS: List[Scenario] = [
             ),
         ],
     ),
-    # ---------------------------------------------------------------- handoff
-    # The user is talking to another agent (no document open) and asks for a
-    # Word file. Wanted: the turn moves to "Soạn thảo văn bản" (the only
-    # agent that writes documents) and drafts the content there. The switch
-    # checks FAIL until that hand-off exists (2026-10-17: only an open
-    # document pins the document assistant, qa.go pinDocumentAssistantForTurn).
+    # A new, empty document whose template the user skips at once (nothing
+    # said yet): the document stays blank, nothing is drafted; the web client
+    # then stops offering the templates for that document.
     Scenario(
-        id="handoff_reasoning_word_file", group="handoff", title="Đang ở agent Suy luận, muốn tạo file Word → chuyển sang Soạn thảo văn bản và soạn nội dung",
+        id="template_skip_at_once", group="template",
+        title="Văn bản mới, chọn mẫu rồi 'bỏ qua' ngay → giữ văn bản trắng, không tạo khung",
         documents=[],
-        steps=[Step(
-            'Tôi muốn tạo một file Word công văn gửi các phòng thông báo lịch tập huấn chuyển đổi số ngày 25/10/2026 tại hội trường Công an tỉnh, giúp tôi soạn nhé.',
-            S(_switched_to_document_assistant(), _no_fake_file(), C.no_edit_ops(),
-              C.answer_contains_any(["Soạn thảo văn bản", "soạn thảo văn bản"]),
-              C.answer_contains_any(["tập huấn"], status=WARN)),
-            extra={"agent_id": "builtin-smart-reasoning"},
-            note="Mong muốn: chuyển agent (có cấu trúc, UI bấm được) rồi soạn nội dung; tối thiểu: chỉ đúng agent, không bịa đã tạo file.",
-        )],
+        steps=[
+            Step(
+                "bỏ qua",
+                S(_template_status("skipped"), C.answer_contains_any(["văn bản trắng"]), C.no_edit_ops(),
+                  C.custom("no model drafted anything (fields absent)", lambda t, ctx: not _template_card(t).get("fields"))),
+                before=_blank_target("van_ban_trong.docx"), extra=_template_request("skip_req", "ke-hoach", "van_ban_trong.docx"),
+            ),
+            Step(
+                lambda ctx: "Tạo cho tôi văn bản kế hoạch theo NĐ 30, thông tin tôi cần là: ",
+                S(_template_status("needs_input", "skipped"), C.no_edit_ops()),
+                extra=_template_request("skip_req2", "ke-hoach", "van_ban_trong.docx"),
+                note="Gửi nguyên câu gợi ý (không bỏ qua): trợ lý hỏi các mục còn thiếu, không tạo văn bản.",
+            ),
+        ],
+    ),
+    # ---------------------------------------------------------------- handoff
+    # Talking to another agent, the user settles the content, then asks for
+    # a Word file. Wanted (decided 2026-10-17): the answer suggests switching
+    # and shows a switch card (all agents; not the Word add-in, which always
+    # has a document); the click opens an empty document in "Soạn thảo văn
+    # bản" and drafts it FROM THE CONVERSATION: the settled details are in
+    # the document and are not asked again; content the other agent already
+    # drafted in chat is reused. Contract: _handoff_card / _click_request.
+    # FAIL until the hand-off is built.
+    Scenario(
+        id="handoff_discussed_plan", group="handoff",
+        title="Suy luận: thảo luận + chốt nội dung kế hoạch → 'tạo file Word' → gợi ý + thẻ chuyển; bấm → kế hoạch mang đủ nội dung đã chốt",
+        documents=[],
+        steps=[
+            Step('Tôi cần tổ chức lớp tập huấn chuyển đổi số cho cán bộ, kế hoạch nên có những nội dung gì?', S(_no_handoff(), C.no_edit_ops()), extra={"agent_id": "builtin-smart-reasoning"}),
+            Step('Chốt như sau: 3 lớp, mỗi lớp 40 học viên, từ ngày 25/10/2026 đến 27/10/2026 tại hội trường Công an tỉnh; giảng viên mời từ Sở Khoa học và Công nghệ; kinh phí 50 triệu đồng từ ngân sách đơn vị; Phòng Tham mưu chủ trì. Người ký: Đại tá Nguyễn Văn An, Phó Giám đốc, ký thay Giám đốc.', S(_no_handoff(), C.no_edit_ops()), extra={"agent_id": "builtin-smart-reasoning"},
+                 note="Chốt nội dung: chưa đòi tạo file nên chưa hiện thẻ."),
+            Step(
+                "Giờ tạo cho tôi file Word kế hoạch này",
+                S(_handoff_offered("ke-hoach"), C.answer_contains_any(["Soạn thảo văn bản"]), _no_fake_file(), _no_workaround(), C.no_edit_ops()),
+                extra={"agent_id": "builtin-smart-reasoning"},
+                note="Gợi ý chuyển agent + thẻ chuyển bấm được; không bịa đã tạo file.",
+            ),
+            Step(
+                _click_query,
+                S(_template_status("ready", "needs_input"), _not_asked_again("người ký", "nội dung", "thời gian", "địa điểm"), _no_handoff(),
+                  _carries(("3 lớp", "ba lớp", "03 lớp"), ("40 học viên", "40 người"), ("25/10/2026", "25 tháng 10"), ("Sở Khoa học và Công nghệ",), ("50 triệu", "50.000.000"), ("Nguyễn Văn An",), pending_ok=True), _saved_as_docx(("3 lớp", "ba lớp", "03 lớp"), ("40 học viên", "40 người"), ("25/10/2026", "25 tháng 10"), ("Sở Khoa học và Công nghệ",), ("50 triệu", "50.000.000"), ("Nguyễn Văn An",), pending_ok=True)),
+                before=_blank_target(), extra=_click_request(),
+                note="Mô phỏng bấm thẻ: chọn Soạn thảo văn bản, mở tài liệu trống, gửi resend kèm document_template_request(from_conversation).",
+            ),
+            Step(_skip_if_ready(), S(_template_status("ready"), _carries(("3 lớp", "ba lớp", "03 lớp"), ("40 học viên", "40 người"), ("25/10/2026", "25 tháng 10"), ("Sở Khoa học và Công nghệ",), ("50 triệu", "50.000.000"), ("Nguyễn Văn An",)), _saved_as_docx(("3 lớp", "ba lớp", "03 lớp"), ("40 học viên", "40 người"), ("25/10/2026", "25 tháng 10"), ("Sở Khoa học và Công nghệ",), ("50 triệu", "50.000.000"), ("Nguyễn Văn An",))), extra=_click_request(),
+                 note="Còn thiếu mục khung (số hiệu, viết tắt…) → 'bỏ qua' để trống."),
+        ],
     ),
     Scenario(
-        id="handoff_quick_word_file", group="handoff", title="Đang ở agent Hỏi đáp nhanh, muốn tạo file Word → chuyển sang Soạn thảo văn bản và soạn nội dung",
+        id="handoff_drafted_letter", group="handoff",
+        title="Hỏi đáp nhanh soạn sẵn công văn trong chat → 'đưa vào file Word' → thẻ chuyển; bấm → văn bản dùng lại nội dung đã soạn",
+        documents=[],
+        steps=[
+            Step(
+                "Soạn giúp tôi nội dung công văn gửi các phòng đề nghị cử cán bộ tham dự lớp tập huấn chuyển đổi số "
+                "từ ngày 25/10/2026 đến 27/10/2026 tại hội trường Công an tỉnh, hạn gửi danh sách trước ngày 20/10/2026.",
+                S(_no_handoff(), C.answer_contains_any(["tập huấn"])), extra={"agent_id": "builtin-quick-answer"},
+                note="Agent khác soạn nội dung ngay trong chat (hành vi hiện tại).",
+            ),
+            Step(
+                "Đưa nội dung trên vào file Word giúp tôi",
+                S(_handoff_offered("cong-van"), C.answer_contains_any(["Soạn thảo văn bản"]), _no_fake_file(), _no_workaround()),
+                extra={"agent_id": "builtin-quick-answer"},
+            ),
+            Step(_click_query, S(_template_status("ready", "needs_input"), _not_asked_again("nội dung", "thời gian"), _reuses_answer(0, pending_ok=True),
+                                 _carries(("20/10/2026", "20 tháng 10"), ("25/10/2026", "25 tháng 10"), pending_ok=True), _saved_as_docx(("20/10/2026", "20 tháng 10"), ("25/10/2026", "25 tháng 10"), pending_ok=True)),
+                 before=_blank_target(), extra=_click_request(fallback_template="cong-van")),
+            Step(_skip_if_ready(), S(_template_status("ready"), _reuses_answer(0), _carries(("20/10/2026", "20 tháng 10"), ("25/10/2026", "25 tháng 10")), _saved_as_docx(("20/10/2026", "20 tháng 10"), ("25/10/2026", "25 tháng 10"))),
+                 extra=_click_request(fallback_template="cong-van")),
+        ],
+    ),
+    # every other agent offers the switch; the document assistant itself does not
+    *[Scenario(
+        id=f"handoff_offer_{a.split('-', 1)[1].replace('-', '_')}", group="handoff",
+        title=f"{a}: 'tạo file Word công văn …' → gợi ý + thẻ chuyển sang Soạn thảo văn bản",
         documents=[],
         steps=[Step(
-            'Tôi muốn tạo một file Word công văn gửi các phòng thông báo lịch tập huấn chuyển đổi số ngày 25/10/2026 tại hội trường Công an tỉnh, giúp tôi soạn nhé.',
-            S(_switched_to_document_assistant(), _no_fake_file(), C.no_edit_ops(),
-              C.answer_contains_any(["Soạn thảo văn bản", "soạn thảo văn bản"]),
-              C.answer_contains_any(["tập huấn"], status=WARN)),
-            extra={"agent_id": "builtin-quick-answer"},
-            note="Hỏi đáp nhanh không có công cụ: không được giả vờ đã tạo file.",
+            "Tạo cho tôi file Word công văn gửi các phòng về lịch tập huấn chuyển đổi số ngày 25/10/2026",
+            S(_handoff_offered("cong-van"), C.answer_contains_any(["Soạn thảo văn bản"]), _no_fake_file(), _no_workaround(), C.no_edit_ops()),
+            extra={"agent_id": a},
         )],
+    ) for a in OTHER_AGENTS],
+    Scenario(
+        id="handoff_not_for_questions", group="handoff",
+        title="Hỏi về văn bản / về Word (không đòi tạo file) → không hiện thẻ chuyển",
+        documents=[],
+        steps=[
+            Step("Công văn 12/QT-SNV quy định gì?", S(_no_handoff()), extra={"agent_id": "builtin-smart-reasoning"}),
+            Step("Word là gì, khác gì Google Docs?", S(_no_handoff()), extra={"agent_id": "builtin-quick-answer"}),
+            Step("Cách đánh số trang trong Word như thế nào?", S(_no_handoff()), extra={"agent_id": "builtin-quick-answer"}),
+        ],
+    ),
+    Scenario(
+        id="handoff_not_in_document_assistant", group="handoff",
+        title="Đang ở Soạn thảo văn bản mà đòi tạo file Word → không hiện thẻ chuyển (đã đúng agent)",
+        documents=[("target", "quy_trinh.docx")],
+        steps=[Step("Tạo cho tôi file Word công văn gửi các phòng về lịch tập huấn", S(_no_handoff()))],
     ),
 ]
 

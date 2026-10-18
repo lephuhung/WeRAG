@@ -13,6 +13,9 @@ export const LEGAL_CANDIDATES_TYPE = "legal_candidates";
 export const ABBREVIATION_CHOICE_TYPE = "abbreviation_choice";
 /** "luật đất đai — which group?" (a broad question over dozens of documents). */
 export const BROAD_QUERY_TYPE = "broad_query_clarification";
+/** Another agent was asked for a Word file: switch to "Soạn thảo văn bản",
+ * which drafts it from the conversation (one option per document type). */
+export const AGENT_HANDOFF_TYPE = "agent_handoff";
 
 export interface ChoiceOption {
   /** Main text of the option (a số hiệu, a full form). */
@@ -31,6 +34,11 @@ export interface ChoiceOption {
    * `template` with "{text}" replaced by what was typed. */
   input?: string;
   template?: string;
+  /** Agent hand-off: picking opens an empty document in the document
+   * assistant and drafts this type from the conversation. */
+  handoff?: { templateId: string; agentId: string };
+  /** The hand-off's guessed type: the main button; the others are smaller. */
+  primary?: boolean;
 }
 
 /** The message an option sends: its resend, or its template filled with text. */
@@ -39,7 +47,7 @@ export function optionMessage(o: ChoiceOption, text = ""): string {
 }
 
 export interface ChoiceList {
-  kind: typeof LEGAL_CANDIDATES_TYPE | typeof ABBREVIATION_CHOICE_TYPE | typeof BROAD_QUERY_TYPE;
+  kind: typeof LEGAL_CANDIDATES_TYPE | typeof ABBREVIATION_CHOICE_TYPE | typeof BROAD_QUERY_TYPE | typeof AGENT_HANDOFF_TYPE;
   /** What is being asked about ("Nghị định 53", "ABC"). */
   subject: string;
   /** How many options there are in all (the list may be shorter). */
@@ -91,6 +99,27 @@ export function parseChoiceList(data: unknown): ChoiceList | null {
     }
     if (options.length === 0) return null;
     return { kind: BROAD_QUERY_TYPE, subject: str(d.topic), total: options.length, options };
+  }
+  if (d.display_type === AGENT_HANDOFF_TYPE) {
+    const agentId = str(d.target_agent_id);
+    // every type, the guessed one (template_id) first
+    const raw: unknown[] = Array.isArray(d.options) && d.options.length
+      ? d.options
+      : str(d.template_id) ? [{ template_id: d.template_id, label: d.template_name, resend: d.resend }] : [];
+    const options: ChoiceOption[] = [];
+    for (const r of raw) {
+      const o = rec(r);
+      if (!o || !agentId || !str(o.template_id) || !str(o.resend)) continue;
+      options.push({
+        label: str(o.label) || str(o.template_id), detail: str(o.resend), resend: str(o.resend),
+        handoff: { templateId: str(o.template_id), agentId },
+      });
+    }
+    if (options.length === 0) return null;
+    const guess = str(d.template_id);
+    options.sort((a, b) => Number(b.handoff?.templateId === guess) - Number(a.handoff?.templateId === guess));
+    if (guess && options[0]?.handoff?.templateId === guess) options[0].primary = true;
+    return { kind: AGENT_HANDOFF_TYPE, subject: str(d.target_agent_name), total: options.length, options };
   }
   if (d.display_type === ABBREVIATION_CHOICE_TYPE) {
     const options: ChoiceOption[] = [];

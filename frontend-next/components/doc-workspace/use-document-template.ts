@@ -6,7 +6,9 @@ import { readAppliedBatches, rememberAppliedBatch } from "@/lib/api/document-ops
 import { DocumentWorkspaceError, getDocumentWorkspace, storeDocumentTemplate } from "@/lib/api/document-workspace";
 import type { DocumentTemplateId } from "@/lib/document-templates";
 import {
+  dismissTemplates,
   forgetTemplateRequest,
+  templatesDismissed,
   lastTemplate,
   parseTemplateResponse,
   redoTemplateId,
@@ -34,7 +36,7 @@ const randomId = () =>
 
 export type TemplateNotice =
   | { kind: "needs"; fields: string[] }
-  | { kind: "building" | "done" | "invalid" | "notEmpty" | "otherDoc" | "noData" }
+  | { kind: "building" | "done" | "invalid" | "notEmpty" | "otherDoc" | "noData" | "skipped" }
   | { kind: "failed"; error: string };
 
 /* A new NĐ30 document drafted from chat into the open, empty document (the
@@ -72,6 +74,8 @@ export function useDocumentTemplate({
   const requestRef = useRef<PendingTemplate | null>(null);
   requestRef.current = request;
   const [notice, setNotice] = useState<TemplateNotice | null>(null);
+  // documents whose template offer the user turned down (kept in storage)
+  const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
   const pendingRef = useRef(new Set<string>());
   const receivedRef = useRef(false);
   const onWrittenRef = useRef(onWritten);
@@ -119,6 +123,37 @@ export function useDocumentTemplate({
     [sessionId, tenantKey, editorRef],
   );
 
+  /** The agent hand-off card was clicked: a request drafted from the
+   * conversation, for the empty document just opened (not visible yet: it
+   * is kept and taken up when the document shows). Returns its id. */
+  const handoff = useCallback(
+    (templateId: DocumentTemplateId, documentId: string) => {
+      if (!sessionId) return null;
+      const next: PendingTemplate = {
+        schema_version: 1, request_id: randomId(), template_id: templateId, document_id: documentId, sessionId,
+        from_conversation: true,
+      };
+      saveTemplateRequest(storage(), tenantKey, next);
+      if (documentId === editorRef.current?.documentId) update(next);
+      setNotice(null);
+      return next.request_id;
+    },
+    [sessionId, tenantKey, editorRef],
+  );
+
+  /** The user turned the offer down for this document (closed it, or
+   * "bỏ qua" at once): it is not offered again for it, even after a reload. */
+  const dismiss = useCallback(
+    (documentId?: string | null, say = false) => {
+      const doc = documentId ?? editorRef.current?.documentId;
+      if (!sessionId || !doc) return;
+      dismissTemplates(storage(), tenantKey, sessionId, doc);
+      setDismissed((prev) => new Set(prev).add(doc));
+      if (say) setNotice({ kind: "skipped" });
+    },
+    [sessionId, tenantKey, editorRef],
+  );
+
   const cancel = useCallback(() => {
     forgetTemplateRequest(storage(), tenantKey, requestRef.current);
     update(null);
@@ -146,6 +181,7 @@ export function useDocumentTemplate({
     return {
       schema_version: 1 as const, request_id: r.request_id, template_id: r.template_id, document_id: r.document_id,
       ...(r.redo ? { redo: true as const } : {}),
+      ...(r.from_conversation ? { from_conversation: true as const } : {}),
     };
   }, [sessionId, tenantKey, emptyDocId, editorRef]);
 
@@ -202,6 +238,14 @@ export function useDocumentTemplate({
         setNotice({ kind: "needs", fields: result.missing_fields });
         return true;
       }
+      if (result.status === "skipped") {
+        // the document stays empty: close the request, stop offering
+        forgetTemplateRequest(storage(), tenantKey, r);
+        update(null);
+        dismiss(r.document_id);
+        setNotice({ kind: "skipped" });
+        return true;
+      }
       const { fields, font_sizes: sizes } = result;
       void write(sessionId, r, async () => {
         const { buildDocumentTemplate } = await import("@/lib/document-templates");
@@ -209,15 +253,20 @@ export function useDocumentTemplate({
       });
       return true;
     },
-    [sessionId, write],
+    [sessionId, write, tenantKey, dismiss],
   );
+
+  const offerDismissed =
+    !!sessionId && !!documentId && (dismissed.has(documentId) || templatesDismissed(storage(), tenantKey, sessionId, documentId));
 
   return {
     request,
     notice,
     /** The visible document is empty and no request is open: offer the picker. */
-    showPicker: enabled && !request && !!emptyDocId && emptyDocId === documentId,
+    showPicker: enabled && !request && !!emptyDocId && emptyDocId === documentId && !offerDismissed,
     begin,
+    handoff,
+    dismiss,
     cancel,
     forSend,
     turnEnded,

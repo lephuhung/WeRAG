@@ -37,3 +37,28 @@ test('a plain chat "draft it again" names the type to redo', async()=>{
  assert.equal(redoTemplateId('Tạo công văn mới gửi PV01','cong-van'),null);
  assert.equal(redoTemplateId('tạo lạinh công văn',null),null);
 });
+
+test('a hand-off request keeps from_conversation across a reload', async()=>{
+ const { saveTemplateRequest, restoreTemplateRequest }=await import('./template-protocol.ts');
+ const data=new Map<string,string>();
+ const store={getItem:(k:string)=>data.get(k)??null,setItem:(k:string,v:string)=>{data.set(k,v);},removeItem:(k:string)=>{data.delete(k);}};
+ saveTemplateRequest(store,'t1',{schema_version:1,request_id:'h1',template_id:'ke-hoach',document_id:'doc9',sessionId:'s1',from_conversation:true});
+ assert.equal(restoreTemplateRequest(store,'t1','s1','doc9')?.from_conversation,true);
+ saveTemplateRequest(store,'t1',{schema_version:1,request_id:'h2',template_id:'ke-hoach',document_id:'doc8',sessionId:'s1'});
+ assert.equal(restoreTemplateRequest(store,'t1','s1','doc8')?.from_conversation,undefined);
+});
+
+test('"bỏ qua" at once: a skipped result, remembered per document across reloads', async()=>{
+ const { parseTemplateResponse, dismissTemplates, templatesDismissed, isTemplateSkip }=await import('./template-protocol.ts');
+ const skipped={schema_version:1,request_id:'r1',template_id:'ke-hoach',document_id:'doc1',status:'skipped'};
+ assert.equal(parseTemplateResponse(skipped)?.status,'skipped');
+ const data=new Map<string,string>();
+ const store={getItem:(k:string)=>data.get(k)??null,setItem:(k:string,v:string)=>{data.set(k,v);},removeItem:(k:string)=>{data.delete(k);}};
+ assert.equal(templatesDismissed(store,'t1','s1','doc1'),false);
+ dismissTemplates(store,'t1','s1','doc1');
+ assert.equal(templatesDismissed(store,'t1','s1','doc1'),true);
+ assert.equal(templatesDismissed(store,'t1','s1','doc2'),false,'a new document is offered again');
+ assert.equal(templatesDismissed(store,'t1','sub-chat','doc1'),true,'a sub-chat shows the same document');
+ for (const yes of ['bỏ qua','Bỏ qua nhé','không cần mẫu','văn bản trắng.']) assert.equal(isTemplateSkip(yes),true,yes);
+ for (const no of ['thôi','không cần','để trống','bỏ qua phần căn cứ, còn lại là kế hoạch tập huấn','Soạn kế hoạch tập huấn','không cần hỏi thêm, tạo kế hoạch tập huấn']) assert.equal(isTemplateSkip(no),false,no);
+});

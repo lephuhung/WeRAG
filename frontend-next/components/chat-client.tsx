@@ -10,6 +10,7 @@ import { DOC_MENTION_COLOR, DocMention, DocMentionIcon } from "@/components/doc-
 import { splitDocumentMentions } from "@/lib/document-mentions";
 import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext, type MentionRequestItem } from "@/lib/chat-context";
 import { useT } from "@/lib/i18n";
+import { dayLabel, dayStarts, messageDateTime, messageTime } from "@/lib/message-time";
 import { chatErrorKey, isSessionLimitError } from "@/lib/api/chat-errors";
 import { sessionUsageFromComplete, type SessionUsage } from "@/lib/session-limits";
 import { ContextCompactedDivider, SessionLimitCard, SessionUsageBanner } from "@/components/chat/session-limit";
@@ -35,7 +36,9 @@ import {
   type SourceQuestionChip,
   markDocumentFormatFindings,
   startDocumentFormatCheck,
+  createDocumentWorkspace,
 } from "@/lib/api/document-workspace";
+import type { DocumentTemplateId } from "@/lib/document-templates";
 import {
   parseScopeClarification,
   scopeCardFromDocuments,
@@ -78,7 +81,7 @@ import { FormatCheckReportModal } from "@/components/doc-workspace/format-check-
 import type { EditorActions, EditorOpsResult } from "@/components/doc-workspace/use-live-spelling";
 import { useDocumentTemplate } from "@/components/doc-workspace/use-document-template";
 import { DocumentTemplateBar, DocumentTemplatePicker } from "@/components/doc-workspace/document-template-picker";
-import { templatePrompt } from "@/lib/template-protocol";
+import { isTemplateSkip, templatePrompt } from "@/lib/template-protocol";
 import { findingCheckOp, findingSelectOp, type FormatFinding } from "@/lib/format-findings";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/components/toast";
@@ -123,6 +126,8 @@ type UiMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  /** When the row was saved (history) or sent (this client) — ISO time. */
+  createdAt?: string;
   thinking?: string;
   /** Ordered agent timeline (thinking rounds + tool calls), rendered by
    * ThinkingDisplay — mirrors the Vue smart-agent event stream. */
@@ -415,6 +420,34 @@ function SelectionQuote({ selection }: { selection: DocumentSelection }) {
   );
 }
 
+/** Send time under a message; the full date shows on hover. */
+function MessageTime({ iso }: { iso?: string }) {
+  const { locale } = useT();
+  const time = messageTime(iso, locale);
+  if (!time) return null;
+  return (
+    <time dateTime={iso} title={messageDateTime(iso, locale)} className="px-1 text-[11px] tabular-nums text-muted-soft">
+      {time}
+    </time>
+  );
+}
+
+/** Rule with the day's name where the conversation moves to another day. */
+function DayDivider({ iso }: { iso?: string }) {
+  const { t } = useT();
+  const label = dayLabel(iso);
+  if (!label) return null;
+  const text =
+    label.kind === "date" ? label.text : label.kind === "today" ? t("chat.dayToday") : t("chat.dayYesterday");
+  return (
+    <div className="my-4 flex items-center gap-3 text-[12px] text-muted" role="separator">
+      <span className="h-px flex-1 bg-hairline" />
+      <span>{text}</span>
+      <span className="h-px flex-1 bg-hairline" />
+    </div>
+  );
+}
+
 const UserMessageBubble = memo(function UserMessageBubble({
   message,
   onFork,
@@ -508,7 +541,8 @@ const UserMessageBubble = memo(function UserMessageBubble({
       )}
       {/* Touch has no hover — actions stay visible on phones; on desktop they
           appear only while hovering the user message. */}
-      <div className="mt-1 flex items-center gap-1 pr-1 text-muted-soft opacity-100 transition-opacity group-hover:opacity-100 focus-within:opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
+      <div className="mt-1 flex items-center gap-1 pr-1">
+      <div className="flex items-center gap-1 text-muted-soft opacity-100 transition-opacity group-hover:opacity-100 focus-within:opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
         {onEdit && (
           <button
             type="button"
@@ -544,6 +578,8 @@ const UserMessageBubble = memo(function UserMessageBubble({
             <IconFork className="h-3.5 w-3.5" />
           </button>
         )}
+      </div>
+      <MessageTime iso={message.createdAt} />
       </div>
     </div>
   );
@@ -694,8 +730,10 @@ function BotMessageActions({
   onFork,
   onRegenerate,
   feedback,
+  createdAt,
 }: {
   content: string;
+  createdAt?: string;
   canFork?: boolean;
   onFork?: () => void;
   onRegenerate?: () => void;
@@ -761,6 +799,7 @@ function BotMessageActions({
           initialComment={feedback.initialComment}
         />
       )}
+      <MessageTime iso={createdAt} />
     </div>
   );
 }
@@ -987,6 +1026,7 @@ const AssistantMessage = memo(function AssistantMessage({
         {!m.streaming && (m.assistantMessageId || m.content) && (
           <BotMessageActions
             content={m.content}
+            createdAt={m.createdAt}
             canFork={sessionId !== "new" && Boolean(m.assistantMessageId)}
             onFork={m.assistantMessageId ? () => onFork(m) : undefined}
             onRegenerate={!busy ? () => onRegenerate(index) : undefined}
@@ -1449,9 +1489,6 @@ function ChatBody({ id }: { id: string }) {
   });
   templateToolRef.current = docTemplate.onToolResult;
   useEffect(() => setTemplateHint(false), [id]);
-  // in a chat with messages the picker can be hidden, per chat and document
-  const [templatePickerClosed, setTemplatePickerClosed] = useState<string | null>(null);
-  const templatePickerKey = `${id}:${editorDocId ?? ""}`;
   const [assistantMessageId, setAssistantMessageId] = useState<string | null>(null);
   // Session whose turn activity we report to the sidebar. Tracks `id` except
   // on the "new" route, where send() points it at the freshly-created session
@@ -1646,6 +1683,7 @@ function ChatBody({ id }: { id: string }) {
               id: m.id ?? `h${i}`,
               role: (m.role === "user" ? "user" : "assistant") as "user" | "assistant",
               content: parsed.content,
+              createdAt: m.created_at,
               thinking: parsed.thinking,
               ...(m.role === "assistant"
                 ? (() => {
@@ -1973,6 +2011,15 @@ function ChatBody({ id }: { id: string }) {
   const send = async (s: ComposerSend) => {
     const t = s.query.trim();
     if (!t || busy || docPaneBusyRef.current) return;
+    // "bỏ qua" under the template offer, no type picked: the document stays
+    // blank and the offer goes away; nothing is sent to the assistant
+    if (
+      ctx.settings.selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID && docTemplate.showPicker && !docTemplate.request && isTemplateSkip(t)
+    ) {
+      docTemplate.dismiss(null, true);
+      setInput("");
+      return;
+    }
     setError(null);
     setSessionLimitFor(null);
     // A new send invalidates any previous stream's pending callbacks (e.g.
@@ -2143,7 +2190,8 @@ function ChatBody({ id }: { id: string }) {
         ? { ...sentSelectionRaw, document: selectionDoc.file_name }
         : sentSelectionRaw;
     const sentDocMentions = s.mentionedItems.filter((it) => it.type === "document").map((it) => it.name);
-    setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: t, attachments: sentAttachments.length > 0 ? sentAttachments : undefined, document_selection: sentSelection, document_mentions: sentDocMentions.length > 0 ? sentDocMentions : undefined }, { id: asstId, role: "assistant", content: "", streaming: true }]);
+    const sentAt = new Date().toISOString();
+    setMessages((m) => [...m, { id: `u${Date.now()}`, role: "user", content: t, createdAt: sentAt, attachments: sentAttachments.length > 0 ? sentAttachments : undefined, document_selection: sentSelection, document_mentions: sentDocMentions.length > 0 ? sentDocMentions : undefined }, { id: asstId, role: "assistant", content: "", createdAt: sentAt, streaming: true }]);
     setInput("");
     setImages([]);
 
@@ -2725,10 +2773,43 @@ function ChatBody({ id }: { id: string }) {
   }, []);
   // A picked option: its message goes out (the question with the full số
   // hiệu, or "ABC = full form" for an abbreviation) and the turn continues.
-  const runChoicePick = useCallback(async (option: ChoiceOption) => {
-    const blank = { attachments: [], imageFiles: [], mentionedItems: [], modelId: "" };
-    void sendRef.current({ query: option.resend, ...blank });
-  }, []);
+  // The agent hand-off card: an empty document opens in "Soạn thảo văn
+  // bản" and is drafted from the conversation; the request goes out once
+  // the document shows in the editor (the template hook takes it up).
+  const pendingHandoff = useRef<{ sessionId: string; requestId: string; query: string } | null>(null);
+  const startTemplateHandoff = docTemplate.handoff;
+  const runHandoff = useCallback(
+    async (option: ChoiceOption) => {
+      const h = option.handoff;
+      if (!h) return;
+      // no session yet (the page has not moved to the new one): say so
+      // instead of showing the option as picked with nothing opened
+      const sid = idRef.current;
+      if (sid === "new") throw new Error(tr("docws.handoff.failed"));
+      const { buildBlankDocument } = await import("@/lib/document-templates");
+      const file = new File([(await buildBlankDocument()) as BlobPart], tr("docws.newDocumentFile"), {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      });
+      const up = await uploadTemporaryAttachment(sid, file, h.agentId, "auto", undefined, "target");
+      if (!up?.data?.id) throw new Error(tr("docws.handoff.failed"));
+      const view = await createDocumentWorkspace(sid, up.data.id);
+      const requestId = startTemplateHandoff(h.templateId as DocumentTemplateId, view.id);
+      if (!requestId) throw new Error(tr("docws.handoff.failed"));
+      pendingHandoff.current = { sessionId: sid, requestId, query: option.resend };
+      // an open document pins the document assistant (see the effect above)
+      noteSessionDocument(view.file_name);
+      ctx.selectAgent(h.agentId);
+    },
+    [tr, startTemplateHandoff, noteSessionDocument, ctx],
+  );
+  const runChoicePick = useCallback(
+    async (option: ChoiceOption) => {
+      if (option.handoff) return runHandoff(option);
+      const blank = { attachments: [], imageFiles: [], mentionedItems: [], modelId: "" };
+      void sendRef.current({ query: option.resend, ...blank });
+    },
+    [runHandoff],
+  );
   // "Không phải?": the question goes again and the gate asks about the
   // words it had read on its own
   const rejectReading = useCallback((m: UiMessage) => {
@@ -2738,6 +2819,7 @@ function ChatBody({ id }: { id: string }) {
   }, []);
   // only the latest question can be asked again this way
   const lastUserIndex = messages.map((m) => m.role).lastIndexOf("user");
+  const dayStartIndexes = useMemo(() => dayStarts(messages.map((m) => m.createdAt)), [messages]);
   const clearScope = async () => {
     if (id === "new") return;
     setScopeEditing(false);
@@ -2876,6 +2958,14 @@ function ChatBody({ id }: { id: string }) {
   // On "new" the pane runs in pre-session mode: picking a file creates the
   // session and navigates to it.
   const isDocumentAssistant = ctx.settings.selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID;
+  // the hand-off's first turn, once the new document is the visible one
+  const templateRequestId = docTemplate.request?.request_id;
+  useEffect(() => {
+    const p = pendingHandoff.current;
+    if (!p || p.sessionId !== id || busy || !isDocumentAssistant || templateRequestId !== p.requestId) return;
+    pendingHandoff.current = null;
+    void sendRef.current({ query: p.query, attachments: [], imageFiles: [], mentionedItems: [], modelId: "" });
+  }, [id, busy, isDocumentAssistant, templateRequestId]);
 
   // Split view (editor on the left): the chat column renders like the phone
   // layout — base (unprefixed) classes only, full column width, smaller type.
@@ -2884,7 +2974,7 @@ function ChatBody({ id }: { id: string }) {
   const templatePicker = (
     <DocumentTemplatePicker
       disabled={busy}
-      onClose={messages.length > 0 ? () => setTemplatePickerClosed(templatePickerKey) : undefined}
+      onClose={messages.length > 0 ? () => docTemplate.dismiss() : undefined}
       onChoose={(templateId) => {
         docTemplate.begin(templateId);
         setTemplateHint(true);
@@ -2922,10 +3012,11 @@ function ChatBody({ id }: { id: string }) {
       <div ref={scrollRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto">
         <div className={compact ? "w-full px-[17px] py-4" : "mx-auto w-full max-w-[768px] px-4 py-5 sm:px-6 sm:py-8"}>
           {isDocumentAssistant && docTemplate.showPicker && messages.length === 0 && templatePicker}
-          {messages.map((m, index) =>
-            m.role === "user" ? (
+          {messages.map((m, index) => (
+            <Fragment key={m.id}>
+            {dayStartIndexes.has(index) && <DayDivider iso={m.createdAt} />}
+            {m.role === "user" ? (
               <UserMessageBubble
-                key={m.id}
                 message={m}
                 onEdit={handleEditQuestion}
                 onFork={id !== "new" ? handleFork : undefined}
@@ -2933,7 +3024,7 @@ function ChatBody({ id }: { id: string }) {
                 compact={compact}
               />
             ) : (
-              <Fragment key={m.id}>
+              <>
                 <AssistantMessage
                   m={m}
                   index={index}
@@ -2963,9 +3054,10 @@ function ChatBody({ id }: { id: string }) {
                 {m.contextCompacted && (
                   <ContextCompactedDivider summary={m.contextCompacted.summary} degraded={m.contextCompacted.degraded} />
                 )}
-              </Fragment>
-            ),
-          )}
+              </>
+            )}
+            </Fragment>
+          ))}
           {error && <p className="body-sm mb-4 text-error">{error}</p>}
           {sessionLimitFor && sessionLimitFor === id && <SessionLimitCard sessionId={id} compact={compact} />}
         </div>
@@ -2979,7 +3071,6 @@ function ChatBody({ id }: { id: string }) {
           {isDocumentAssistant &&
             docTemplate.showPicker &&
             messages.length > 0 &&
-            templatePickerClosed !== templatePickerKey &&
             templatePicker}
           {isDocumentAssistant && id !== "new" && !busy && contextUsage && shouldOfferSubChat(contextUsage) && subChatBannerClosed !== id && (
             <SubChatBanner sessionId={id} usage={contextUsage} disabled={busy} compact={compact} onClose={() => setSubChatBannerClosed(id)} />

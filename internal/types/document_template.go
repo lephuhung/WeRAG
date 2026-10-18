@@ -19,6 +19,10 @@ type DocumentTemplateRequest struct {
 	// request of this type in the session ("tạo lại công văn" in a new,
 	// empty document), so it is drafted again without asking again.
 	Redo bool `json:"redo,omitempty"`
+	// FromConversation drafts the document from the session's earlier
+	// conversation: the click on the agent hand-off card after the user
+	// discussed the content with another agent.
+	FromConversation bool `json:"from_conversation,omitempty"`
 }
 
 // DocumentTemplateToolName is the tool name of the structured answer.
@@ -42,11 +46,12 @@ func (r *DocumentTemplateRequest) Normalized() *DocumentTemplateRequest {
 		return nil
 	}
 	out := DocumentTemplateRequest{
-		SchemaVersion: 1,
-		RequestID:     strings.TrimSpace(r.RequestID),
-		TemplateID:    strings.TrimSpace(r.TemplateID),
-		DocumentID:    strings.TrimSpace(r.DocumentID),
-		Redo:          r.Redo,
+		SchemaVersion:    1,
+		RequestID:        strings.TrimSpace(r.RequestID),
+		TemplateID:       strings.TrimSpace(r.TemplateID),
+		DocumentID:       strings.TrimSpace(r.DocumentID),
+		Redo:             r.Redo,
+		FromConversation: r.FromConversation,
 	}
 	if _, ok := DocumentTemplateNames[out.TemplateID]; !ok {
 		return nil

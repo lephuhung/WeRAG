@@ -296,6 +296,25 @@ class WeragClient:
         doc["attachment_id"] = att.get("id")
         return doc
 
+    # ---- document template ------------------------------------------------
+    def get_document(self, session_id: str, document_id: str) -> Dict[str, Any]:
+        data = self._req("GET", f"/api/v1/sessions/{session_id}/documents/{document_id}", "get_document")
+        return data.get("data", data) if isinstance(data, dict) else data
+
+    def store_template(self, session_id: str, document_id: str, revision: int, docx: bytes) -> Dict[str, Any]:
+        """what the web UI does with a ready template: write the built .docx into the empty document."""
+        data = self._req("POST", f"/api/v1/sessions/{session_id}/documents/{document_id}/template?revision={revision}",
+                         "store_template", data=docx,
+                         headers={"Content-Type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"})
+        return data.get("data", data) if isinstance(data, dict) else data
+
+    def download_document(self, session_id: str, document_id: str) -> requests.Response:
+        r = self.s.get(self.base_url + f"/api/v1/sessions/{session_id}/documents/{document_id}/download",
+                       headers=self._headers(), timeout=60)
+        if r.status_code >= 300:
+            raise ApiError(r.status_code, r.text, "download_document")
+        return r
+
     # ---- format check ----------------------------------------------------
     def start_format_check(self, session_id: str, document_id: str) -> Any:
         return self._req("POST", f"/api/v1/sessions/{session_id}/documents/{document_id}/format-check", "start_format_check")

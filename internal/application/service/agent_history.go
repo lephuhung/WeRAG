@@ -848,6 +848,7 @@ var choiceCardTypes = map[string]bool{
 	AbbreviationChoiceType:                 true,
 	agenttools.LegalCandidatesType:         true,
 	agenttools.BroadQueryClarificationType: true,
+	agenttools.AgentHandoffType:            true,
 }
 
 // choiceCardHistoryNote is what a turn that ended on a choice card replays,
@@ -860,6 +861,11 @@ func choiceCardHistoryNote(m *types.Message) string {
 		for _, tc := range step.ToolCalls {
 			if !types.IsPipelineToolCallID(tc.ID) || !choiceCardTypes[tc.Name] {
 				continue
+			}
+			if tc.Name == agenttools.AgentHandoffType {
+				// the user may ignore the card and keep chatting here
+				return "(Lượt này hệ thống đã gợi ý chuyển sang trợ lý Soạn thảo văn bản để tạo tệp Word. " +
+					"Không nhắc lại gợi ý đó; nếu người dùng hỏi tiếp, trả lời bình thường.)"
 			}
 			about := ""
 			if tc.Result != nil {

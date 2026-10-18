@@ -22,6 +22,8 @@ var quickAnswerTimelineTools = map[string]struct{}{
 	"people_lookup":        {},
 	// the broad-question card (a pipeline answer; renders as a choice list)
 	"broad_query_clarification": {},
+	// the agent hand-off card (a Word file asked of another agent)
+	"agent_handoff": {},
 }
 
 // quickAnswerTimelineRecorder persists the fast-answer pipeline's timeline into

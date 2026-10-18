@@ -95,12 +95,16 @@ func (s *sessionService) documentTemplateTurn(ctx context.Context, req *types.QA
 				break
 			}
 			if last := tools.LoadDocumentTemplateState(ctx, scope, tools.LastDocumentTemplateRequestID(tr.TemplateID)); last != nil {
-				state.Inputs, state.Asked, state.Redo = last.Inputs, last.Asked, true
+				state.Inputs, state.Asked, state.Redo, state.Conversation = last.Inputs, last.Asked, true, last.Conversation
 				break
 			}
 		}
-		logger.Infof(ctx, "document template %s (%s): new request, redo=%v, inputs carried=%d",
-			tr.RequestID, tr.TemplateID, tr.Redo, len(state.Inputs))
+		// the agent hand-off: drafted from what was discussed before
+		if tr.FromConversation && len(state.Conversation) == 0 {
+			state.Conversation = s.templateConversation(ctx, req)
+		}
+		logger.Infof(ctx, "document template %s (%s): new request, redo=%v, inputs carried=%d, conversation=%d",
+			tr.RequestID, tr.TemplateID, tr.Redo, len(state.Inputs), len(state.Conversation))
 	}
 	// the question as the abbreviation gate settled it: a turn resumed from
 	// its card carries the card's answer ("PV01 → PV01") as the raw query
@@ -127,6 +131,7 @@ func (s *sessionService) documentTemplateTurn(ctx context.Context, req *types.QA
 	in := tools.DocumentTemplateInput{
 		Request: tr, Profile: profile, User: s.templateUser(ctx), Inputs: state.Inputs,
 		Today: types.PromptNow(), Model: model, Asked: state.Asked, KeepBlanks: state.Redo,
+		Conversation: state.Conversation,
 	}
 	// the user's work context (profile preferences)
 	if user, _ := ctx.Value(types.UserContextKey).(*types.User); user != nil {

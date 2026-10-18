@@ -8,7 +8,7 @@
 
 import { useId, useState } from "react";
 import { useT } from "@/lib/i18n";
-import { optionMessage, type ChoiceList, type ChoiceOption } from "@/lib/choice-list";
+import { AGENT_HANDOFF_TYPE, optionMessage, type ChoiceList, type ChoiceOption } from "@/lib/choice-list";
 
 export function ChoiceListView({
   card,
@@ -53,6 +53,39 @@ export function ChoiceListView({
 
   if (picked) {
     return <p className="caption mt-1 text-muted-soft">{t("docws.choice.done", { label: picked })}</p>;
+  }
+
+  // the agent hand-off: the guessed type as the main button (switch and
+  // draft it), the other types as small buttons to correct the guess
+  if (card.kind === AGENT_HANDOFF_TYPE) {
+    const main = card.options.findIndex((o) => o.primary);
+    const small = "rounded-[6px] border border-hairline-strong px-2 py-0.5 text-[12px] text-body hover:bg-surface-strong disabled:opacity-50";
+    return (
+      <div className="mt-2 w-full min-w-0">
+        {main >= 0 && (
+          <button
+            type="button"
+            disabled={disabled || working}
+            onClick={() => void pick(main)}
+            className="rounded-[6px] bg-[#1f6feb] px-2.5 py-1 text-[12.5px] font-semibold text-white disabled:opacity-50"
+          >
+            {t("docws.handoff.switch", { type: card.options[main].label.toLocaleLowerCase("vi-VN") })}
+          </button>
+        )}
+        <div className="mt-1.5 flex flex-wrap items-center gap-1.5" role="group" aria-label={t("docws.handoff.label")}>
+          <span className="caption text-muted-soft">{t(main >= 0 ? "docws.handoff.other" : "docws.handoff.pick")}</span>
+          {card.options.map((o, i) =>
+            i === main ? null : (
+              <button key={`${i}-${o.label}`} type="button" disabled={disabled || working} onClick={() => void pick(i)} title={o.detail} className={small}>
+                {o.label}
+              </button>
+            ),
+          )}
+        </div>
+        {working && <p className="caption mt-1 text-muted-soft">{t("docws.handoff.opening")}</p>}
+        {error && <p className="caption mt-2 text-error">{error}</p>}
+      </div>
+    );
   }
 
   const more = Math.max(0, card.total - card.options.length);

@@ -152,5 +152,7 @@ function noticeText(n: TemplateNotice, t: ReturnType<typeof useT>["t"]): string 
       return t("docws.tplOtherDoc");
     case "noData":
       return t("docws.tplNoData");
+    case "skipped":
+      return t("docws.tplSkipped");
   }
 }

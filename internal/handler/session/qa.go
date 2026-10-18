@@ -137,6 +137,7 @@ func (rc *qaRequestContext) buildQARequest() *types.QARequest {
 		QuestionOrigin:         rc.questionOrigin,
 		DocumentSelection:      rc.documentSelection,
 		DocumentTemplate:       rc.documentTemplate,
+		Channel:                rc.channel,
 		MentionedDocumentIDs:   rc.mentionedDocumentIDs,
 		ClarificationRequestID: rc.clarificationRequestID,
 		ClarificationVersion:   rc.clarificationVersion,

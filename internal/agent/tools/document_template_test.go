@@ -290,6 +290,10 @@ func TestDocumentTemplateRequestNormalized(t *testing.T) {
 	if n := ok.Normalized(); n == nil || n.RequestID != "r1" {
 		t.Fatalf("normalized: %+v", n)
 	}
+	ok.FromConversation = true
+	if n := ok.Normalized(); n == nil || !n.FromConversation {
+		t.Fatalf("from_conversation lost: %+v", n)
+	}
 	for _, bad := range []*types.DocumentTemplateRequest{
 		nil,
 		{SchemaVersion: 2, RequestID: "r", TemplateID: "ke-hoach", DocumentID: "d"},
@@ -614,5 +618,146 @@ func TestDocumentTemplateRedoStateKeptUnderLastKey(t *testing.T) {
 	}
 	if LoadDocumentTemplateState(ctx, session, "r2") != nil || LoadDocumentTemplateState(ctx, "other", last) != nil {
 		t.Fatal("the last state leaked to another request or session")
+	}
+}
+
+// A hand-off drafts from the earlier conversation: the settled facts and
+// the other agent's draft reach the model, the draft's figures are not
+// "invented", and the signer counts only when the user wrote it.
+func TestDocumentTemplateFromConversation(t *testing.T) {
+	d := planDraft()
+	d["paragraphs"] = []map[string]string{{"kind": "body", "text": "Tổ chức 3 lớp, mỗi lớp 40 học viên, kinh phí 50 triệu đồng."}}
+	model := &scriptedChat{replies: []string{draftJSON(t, d)}}
+	in := templateInput(model, "ke-hoach", "Soạn kế hoạch từ nội dung đã trao đổi")
+	in.Conversation = []TemplateTurn{
+		{Role: "user", Text: "Chốt: 3 lớp, mỗi lớp 40 học viên. Người ký: Nguyễn Văn A, Giám đốc, ký trực tiếp"},
+		{Role: "assistant", Text: "Dự thảo: … kinh phí 50 triệu đồng từ ngân sách đơn vị …"},
+	}
+	out, err := PrepareDocumentTemplate(context.Background(), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt := model.calls[0][1].Content
+	if !strings.Contains(prompt, "[user] Chốt: 3 lớp") || !strings.Contains(prompt, "[assistant] Dự thảo") {
+		t.Fatalf("conversation not in the prompt:\n%s", prompt)
+	}
+	if len(model.calls) != 1 {
+		t.Fatalf("50 (from the assistant's draft) taken as invented: %d calls", len(model.calls))
+	}
+	if !out.Ready || out.Data["fields"].(map[string]interface{})["signer_name"] != "Nguyễn Văn A" {
+		t.Fatalf("not ready with the user's signer: %s", out.Answer)
+	}
+
+	// a signer only the assistant wrote is not the user's
+	model = &scriptedChat{replies: []string{draftJSON(t, d), draftJSON(t, d)}}
+	in = templateInput(model, "ke-hoach", "Soạn kế hoạch từ nội dung đã trao đổi")
+	in.Conversation = []TemplateTurn{
+		{Role: "user", Text: "Chốt: 3 lớp, mỗi lớp 40 học viên, kinh phí 50 triệu đồng"},
+		{Role: "assistant", Text: "Người ký: Nguyễn Văn A, Giám đốc, ký trực tiếp"},
+	}
+	out, _ = PrepareDocumentTemplate(context.Background(), in)
+	if out.Ready || !strings.Contains(strings.Join(out.Data["missing_fields"].([]string), "\n"), "Người ký") {
+		t.Fatalf("the assistant's signer was taken: ready=%v %s", out.Ready, out.Answer)
+	}
+}
+
+// The drafting unit said in the earlier conversation ("tôi là …") counts:
+// it is not asked again after the hand-off; the other agent's words do not.
+func TestDocumentTemplateUnitFromConversation(t *testing.T) {
+	d := planDraft()
+	d["drafting_unit"], d["drafting_unit_abbr"], d["user_position"] = "Phòng Tổ chức", "TC", "Chuyên viên"
+	model := &scriptedChat{replies: []string{draftJSON(t, d)}}
+	in := templateInput(model, "ke-hoach", "Soạn kế hoạch từ nội dung đã trao đổi")
+	in.Profile, in.User = nil, TemplateUserContext{}
+	in.Conversation = []TemplateTurn{
+		{Role: "user", Text: "Tôi là Chuyên viên Phòng Tổ chức (TC). Kế hoạch đào tạo AI, 3 lớp tập huấn. Người ký: Nguyễn Văn A, Giám đốc, ký trực tiếp"},
+	}
+	out, _ := PrepareDocumentTemplate(context.Background(), in)
+	if strings.Contains(strings.Join(out.Data["missing_fields"].([]string), "\n"), "Phòng/bộ phận") || out.Learned == nil {
+		t.Fatalf("the unit said in the conversation is asked again: %v learned=%+v", out.Data["missing_fields"], out.Learned)
+	}
+
+	model = &scriptedChat{replies: []string{draftJSON(t, d)}}
+	in.Model = model
+	in.Conversation = []TemplateTurn{
+		{Role: "user", Text: "Kế hoạch đào tạo AI, 3 lớp tập huấn. Người ký: Nguyễn Văn A, Giám đốc, ký trực tiếp"},
+		{Role: "assistant", Text: "Tôi là Chuyên viên Phòng Tổ chức (TC)"},
+	}
+	out, _ = PrepareDocumentTemplate(context.Background(), in)
+	if out.Learned != nil {
+		t.Fatalf("the assistant's words were learned as the user's: %+v", out.Learned)
+	}
+}
+
+// Session 681b6a7a: the user answered the unit question with short replies
+// ("Bộ phận: Đội 4", "PA05-Đ4"), no "tôi"; they count, a reply about the
+// signer does not.
+func TestDocumentTemplateUnitFromShortReplies(t *testing.T) {
+	d := planDraft()
+	d["drafting_unit"], d["drafting_unit_abbr"], d["user_position"] = "Đội 4", "PA05-Đ4", ""
+	model := &scriptedChat{replies: []string{draftJSON(t, d)}}
+	in := templateInput(model, "ke-hoach", "Kế hoạch đào tạo AI cho cán bộ trong quý I, 3 lớp tập huấn. Người ký: Nguyễn Văn A, Giám đốc, ký trực tiếp",
+		"Bộ phận: Đội 4", "PA05-Đ4")
+	in.User = TemplateUserContext{}
+	out, _ := PrepareDocumentTemplate(context.Background(), in)
+	missing, _ := out.Data["missing_fields"].([]string)
+	if strings.Contains(strings.Join(missing, "\n"), "Phòng/bộ phận") ||
+		out.Learned == nil || out.Learned.Unit != "Đội 4" || out.Learned.UnitAbbr != "PA05-Đ4" {
+		t.Fatalf("short replies not taken: missing=%v learned=%+v", out.Data["missing_fields"], out.Learned)
+	}
+
+	// the first message (what the document is about) and a reply about the
+	// signer are not the user's unit
+	d["drafting_unit"], d["drafting_unit_abbr"] = "Phòng Tham mưu", "PV01"
+	model = &scriptedChat{replies: []string{draftJSON(t, d)}}
+	in.Model, in.Inputs = model, []string{"Công văn gửi Phòng Tham mưu (PV01) về tập huấn", "Người ký: Trưởng Phòng Tham mưu PV01, ký trực tiếp"}
+	out, _ = PrepareDocumentTemplate(context.Background(), in)
+	if out.Learned != nil && out.Learned.Unit != "" {
+		t.Fatalf("the recipient / the signer's unit taken as the user's: %+v", out.Learned)
+	}
+}
+
+// "Bỏ qua" before giving anything: the document stays empty, no model call.
+func TestDocumentTemplateSkippedAtOnce(t *testing.T) {
+	prefill := "Tạo cho tôi văn bản kế hoạch theo NĐ 30, thông tin tôi cần là: "
+	for _, inputs := range [][]string{
+		{"bỏ qua"},
+		{"Bỏ qua nhé"},
+		{prefill},
+		{prefill, "bỏ qua"},
+		{prefill + "bỏ qua"},
+		{"không cần mẫu"},
+		{"Giữ văn bản trắng nhé"},
+	} {
+		model := &scriptedChat{replies: []string{draftJSON(t, map[string]any{"missing_content": []string{"Nội dung kế hoạch"}})}}
+		out, err := PrepareDocumentTemplate(context.Background(), templateInput(model, "ke-hoach", inputs...))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(inputs) == 1 && inputs[0] == prefill {
+			// the prefill alone is no skip: the questions are asked
+			if out.Data["status"] == "skipped" {
+				t.Errorf("%q: the prefill alone is not a skip", inputs)
+			}
+			continue
+		}
+		if out.Data["status"] != "skipped" || out.Ready || len(model.calls) != 0 || !strings.Contains(out.Answer, "văn bản trắng") {
+			t.Errorf("%q: status=%v ready=%v calls=%d answer=%q", inputs, out.Data["status"], out.Ready, len(model.calls), out.Answer)
+		}
+	}
+	// something said then skipped, or the document asked for now (the
+	// needs_input skip button): drafted with blanks as before
+	for _, inputs := range [][]string{
+		{"Kế hoạch đào tạo AI cho cán bộ", "bỏ qua"},
+		{prefill + "đào tạo AI, bỏ qua phần còn lại"},
+		{"Cứ tạo luôn đi"},
+		{"Tạo ngay, để trống hết"},
+		{prefill, "Bỏ qua các thông tin còn thiếu, tạo văn bản và để trống để tôi tự điền."},
+	} {
+		model := &scriptedChat{replies: []string{draftJSON(t, planDraft())}}
+		out, _ := PrepareDocumentTemplate(context.Background(), templateInput(model, "ke-hoach", inputs...))
+		if out.Data["status"] == "skipped" {
+			t.Errorf("%q: content was given, not a skip", inputs)
+		}
 	}
 }

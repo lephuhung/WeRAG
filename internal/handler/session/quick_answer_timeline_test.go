@@ -176,3 +176,21 @@ func TestQuickAnswerTimelineRecorderPersistsPeopleLookup(t *testing.T) {
 	assert.Equal(t, true, call.Result.Data["found"])
 	assert.Equal(t, "phone", call.Result.Data["lookup_type"])
 }
+
+// The agent hand-off card of a fast-answer turn is kept with the message, so
+// it renders after a reload and history replays it as a card note.
+func TestQuickAnswerTimelineRecorderPersistsAgentHandoff(t *testing.T) {
+	bus := event.NewEventBus()
+	msg := &types.Message{}
+	registerQuickAnswerTimelineRecorder(bus, msg)
+
+	emitTimelineStage(t, bus, "handoff-m1", "agent_handoff", map[string]any{"query": "Tạo file Word công văn"},
+		event.AgentToolResultData{Output: "Agent đang dùng không tạo được file Word…", Success: true,
+			Data: map[string]interface{}{"display_type": "agent_handoff", "target_agent_id": "builtin-document-assistant", "template_id": "cong-van"}})
+
+	require.Len(t, msg.AgentSteps, 1)
+	call := msg.AgentSteps[0].ToolCalls[0]
+	assert.Equal(t, "agent_handoff", call.Name)
+	assert.True(t, types.IsPipelineToolCallID(call.ID))
+	assert.Equal(t, "cong-van", call.Result.Data["template_id"])
+}

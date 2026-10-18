@@ -32,6 +32,11 @@ func (s *sessionService) KnowledgeQA(
 	if handled, err := s.documentTemplateTurn(ctx, req, eventBus, false); handled || err != nil {
 		return err
 	}
+	// another agent asked for a Word file: offer to switch to the document
+	// assistant, which drafts it from this conversation; no model runs
+	if handled, err := s.agentHandoff(ctx, req, eventBus, false); handled || err != nil {
+		return err
+	}
 	ctx, handled, err := s.PrepareAbbreviationTurn(ctx, req, eventBus)
 	if handled || err != nil {
 		return err

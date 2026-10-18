@@ -65,6 +65,67 @@ type DocumentTemplateInput struct {
 	// built ("tạo lại công văn"), so what was left blank then stays blank
 	// and nothing is asked again.
 	KeepBlanks bool
+	// Conversation is the earlier conversation the document is drafted
+	// from (the agent hand-off), oldest first; nil for a plain request.
+	Conversation []TemplateTurn
+}
+
+// TemplateTurn is one message of the earlier conversation.
+type TemplateTurn struct {
+	// Role is "user" or "assistant".
+	Role string `json:"role"`
+	Text string `json:"text"`
+}
+
+// conversationUserText is what the user wrote in the earlier conversation.
+func conversationUserText(turns []TemplateTurn) string {
+	var b strings.Builder
+	for _, t := range turns {
+		if t.Role == "user" {
+			b.WriteString(t.Text)
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+// selfInputs are the user's messages that may say who the user is: the
+// first-person ones ("tôi là chuyên viên Văn phòng"), the earlier
+// conversation's included, and the replies of this request after its first
+// message, which answer the questions about the user ("Bộ phận: Đội 4",
+// "VP" right under "Phòng/bộ phận soạn thảo của bạn …?") unless they speak
+// of the signer.
+func selfInputs(in DocumentTemplateInput) []string {
+	var out []string
+	for _, t := range in.Conversation {
+		if t.Role == "user" && selfRe.MatchString(strings.ToLower(t.Text)) {
+			out = append(out, t.Text)
+		}
+	}
+	for i, m := range in.Inputs {
+		lower := strings.ToLower(m)
+		if selfRe.MatchString(lower) || (i > 0 && !signerTalkRe.MatchString(lower)) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// signerTalkRe marks a reply about the signer, whose unit and position are
+// not the user's.
+var signerTalkRe = regexp.MustCompile(`người ký|(^|[^\p{L}])ký([^\p{L}]|$)`)
+
+// conversationAssistantText is what the other agent wrote there (drafts the
+// user asked to put into the document).
+func conversationAssistantText(turns []TemplateTurn) string {
+	var b strings.Builder
+	for _, t := range turns {
+		if t.Role == "assistant" {
+			b.WriteString(t.Text)
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
 }
 
 // DocumentTemplateOutcome is the answer to one turn.
@@ -132,6 +193,50 @@ const (
 // skipAsksRe: the user's message asks to build the document now and leave
 // what is missing blank.
 var skipAsksRe = regexp.MustCompile(`bỏ qua|để trống|điền sau|bổ sung sau|tự điền|cứ tạo|tạo luôn|tạo ngay|khỏi hỏi|không cần hỏi|không cần (thêm )?thông tin|\bskip\b|leave (it |them )?blanks?`)
+
+// templatePromptRe is the composer's prefill of a picked type
+// (frontend templatePrompt): sent as it is, it says nothing yet.
+var templatePromptRe = regexp.MustCompile(`tạo cho tôi văn bản [\p{L} ]+ theo nđ ?30,? thông tin tôi cần là:?`)
+
+// emptyAskWords are the words that remain of a skip once its phrase is
+// gone ("bỏ qua các thông tin còn thiếu, tạo văn bản và để trống …").
+var emptyAskWords = map[string]bool{
+	"các": true, "thông": true, "tin": true, "còn": true, "thiếu": true, "tạo": true, "văn": true, "bản": true,
+	"và": true, "để": true, "tôi": true, "mình": true, "nhé": true, "nha": true, "ạ": true, "đi": true,
+	"luôn": true, "cho": true, "giúp": true, "hết": true, "tất": true, "cả": true, "phần": true, "này": true,
+	"thôi": true, "ok": true, "vâng": true, "được": true, "rồi": true, "trống": true, "trắng": true, "mới": true,
+}
+
+// keepBlankRe: a message that turns the template down ("bỏ qua", "không
+// cần mẫu", "văn bản trắng"); buildNowRe: one that asks for the document
+// now ("cứ tạo luôn", "tạo văn bản và để trống …", the skip button of a
+// needs_input), which builds it with blanks.
+var (
+	keepBlankRe = regexp.MustCompile(`bỏ qua|\bskip\b|không cần mẫu|không dùng mẫu|(?:giữ |để )?văn bản trắng`)
+	buildNowRe  = regexp.MustCompile(`cứ tạo|tạo luôn|tạo ngay|tạo văn bản|khỏi hỏi|không cần hỏi|\bcreate\b`)
+)
+
+// saidNothing: no message of the request holds anything but the prefill
+// and a refusal ("bỏ qua" at once): the user wants the empty document as it
+// is. Asking for the document now is no refusal.
+func saidNothing(inputs []string) bool {
+	if len(inputs) == 0 || !keepBlankRe.MatchString(fold(inputs[len(inputs)-1])) {
+		return false
+	}
+	for _, m := range inputs {
+		f := fold(m)
+		if buildNowRe.MatchString(f) {
+			return false
+		}
+		t := keepBlankRe.ReplaceAllString(skipAsksRe.ReplaceAllString(templatePromptRe.ReplaceAllString(f, " "), " "), " ")
+		for _, w := range strings.FieldsFunc(t, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
+			if !emptyAskWords[w] {
+				return false
+			}
+		}
+	}
+	return true
+}
 
 // wantsBlanks: the current message (the last input) skips the questions.
 func wantsBlanks(inputs []string) bool {
@@ -207,19 +312,37 @@ func PrepareDocumentTemplate(ctx context.Context, in DocumentTemplateInput) (*Do
 	if in.Request == nil || in.Model == nil {
 		return nil, fmt.Errorf("document template: no request or model")
 	}
-	userText := strings.Join(in.Inputs, "\n")
+	// "bỏ qua" before saying anything: the document stays empty, nothing is
+	// drafted (no model call); the client closes the request and stops
+	// offering the templates for this document
+	if len(in.Conversation) == 0 && !in.KeepBlanks && saidNothing(in.Inputs) {
+		r := in.Request
+		return &DocumentTemplateOutcome{
+			Data: map[string]interface{}{
+				"schema_version": 1, "request_id": r.RequestID, "document_id": r.DocumentID, "template_id": r.TemplateID,
+				"status": "skipped",
+			},
+			Answer: "Đã giữ văn bản trắng, không tạo mẫu. Bạn có thể soạn trực tiếp trong văn bản; khi cần mẫu NĐ30, chọn \"Tạo văn bản mới\" để mở một văn bản trống khác.",
+		}, nil
+	}
+	// what the user wrote, here and in the conversation the request is
+	// drafted from: the signer, the agency, the form of signing must be in
+	// it. Facts of the body may also come from what the other agent drafted
+	// there, since the user asked for that content in the document.
+	userText := conversationUserText(in.Conversation) + strings.Join(in.Inputs, "\n")
+	factText := userText + "\n" + conversationAssistantText(in.Conversation)
 	draft, err := draftTemplate(ctx, in, "")
 	if err != nil {
 		return nil, err
 	}
-	bad := draftViolations(draft, userText, in.Today)
+	bad := draftViolations(draft, factText, in.Today)
 	if len(bad) > 0 {
 		// once more, told what was invented
 		retry, err := draftTemplate(ctx, in, "Your previous answer used facts the user never wrote: "+strings.Join(bad, "; ")+
 			". Remove them (or list what is needed in missing_content) and answer again.")
 		if err == nil {
 			draft = retry
-			bad = draftViolations(draft, userText, in.Today)
+			bad = draftViolations(draft, factText, in.Today)
 		}
 	}
 	out := assembleTemplate(in, draft, userText, bad)
@@ -242,6 +365,15 @@ func draftTemplate(ctx context.Context, in DocumentTemplateInput, correction str
 	}
 	if u := in.User; u.Unit != "" || u.Position != "" {
 		fmt.Fprintf(&b, "- the user's drafting unit: %s (%s); the user's position: %s\n", u.Unit, u.UnitAbbr, u.Position)
+	}
+	if len(in.Conversation) > 0 {
+		b.WriteString("\nThe earlier conversation, oldest first. The user discussed the document there with another assistant and then asked for it as a Word file: " +
+			"the facts the user settled there count as written by the user; a text the assistant drafted there is the content to put in the body " +
+			"(keep its substance, wording and figures; drop its own header, signature and \"Nơi nhận\" lines, its placeholders in square brackets and its notes to the user). " +
+			"Names, the signer and the form of signing count only when the USER wrote them.\n")
+		for _, t := range in.Conversation {
+			fmt.Fprintf(&b, "[%s] %s\n", t.Role, t.Text)
+		}
 	}
 	b.WriteString("\nThe user's messages, oldest first:\n")
 	for i, m := range in.Inputs {
@@ -344,10 +476,11 @@ var subjectPrefixRe = regexp.MustCompile(`(?i)^(v/v|về việc)\s*:?\s*`)
 // "tôi công tác ở…", "phòng của tôi…"); "Tạo cho tôi…" is not one.
 var selfRe = regexp.MustCompile(`(^|[^\p{L}])(tôi|mình)\s+(là|làm|đang là|đang làm|công tác|thuộc|ở)([^\p{L}]|$)|của (tôi|mình)([^\p{L}]|$)`)
 
-// saidOfSelf: one of the user's messages in the first person contains s.
+// saidOfSelf: one of the messages that may say who the user is
+// (selfInputs) contains s.
 func saidOfSelf(inputs []string, s string) bool {
 	for _, m := range inputs {
-		if selfRe.MatchString(strings.ToLower(m)) && said(m, s) {
+		if said(m, s) {
 			return true
 		}
 	}
@@ -450,10 +583,10 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 	user := in.User
 	learned := TemplateUserContext{}
 	if u, a := strings.TrimSpace(d.DraftingUnit), strings.TrimSpace(d.DraftingUnitAbbr); u != "" && a != "" &&
-		saidOfSelf(in.Inputs, u) && saidOfSelf(in.Inputs, a) {
+		saidOfSelf(selfInputs(in), u) && saidOfSelf(selfInputs(in), a) {
 		learned.Unit, learned.UnitAbbr = u, a
 	}
-	if p := strings.TrimSpace(d.UserPosition); p != "" && saidOfSelf(in.Inputs, p) {
+	if p := strings.TrimSpace(d.UserPosition); p != "" && saidOfSelf(selfInputs(in), p) {
 		learned.Position = p
 	}
 	if learned.Unit != "" {

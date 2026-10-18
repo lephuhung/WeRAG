@@ -135,7 +135,8 @@ def run_scenario(sc: SC.Scenario, client: WeragClient, manifest: Dict[str, Any],
     t0 = time.time()
     out: Dict[str, Any] = {"id": sc.id, "group": sc.group, "title": sc.title, "requires": sc.requires,
                            "steps": [], "status": "PASS", "session_id": None, "setup_error": None}
-    ctx: Dict[str, Any] = {"client": client, "manifest": manifest, "docs": {}, "turns": []}
+    ctx: Dict[str, Any] = {"client": client, "manifest": manifest, "docs": {}, "turns": [],
+                           "fixtures_dir": fixtures_dir, "editor_kind": editor_kind}
     sid = None
     try:
         sid = client.create_session(f"[eval] {sc.id}")

@@ -84,6 +84,10 @@ type QARequest struct {
 	// DocumentTemplate is a request for a new NĐ30 document drafted into
 	// an empty Word document; the turn is answered by the template flow.
 	DocumentTemplate *DocumentTemplateRequest
+	// Channel is the client the turn came from ("web", "embed", …); empty
+	// for turns built outside the HTTP chat handler (IM, MCP), which cannot
+	// show the web-only cards (agent hand-off).
+	Channel string
 	// MentionedDocumentIDs are the editable documents (workspace IDs) the
 	// user named with @ in this turn; an edit tool may only change one of
 	// these (or the selection's document) when the session holds several.

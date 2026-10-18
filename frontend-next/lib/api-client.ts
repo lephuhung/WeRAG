@@ -330,13 +330,16 @@ export async function refreshAccessToken(): Promise<string> {
 
 function envelopeMessage(payload: unknown): string {
   if (payload && typeof payload === "object") {
-    const p = payload as { error?: unknown; message?: unknown };
+    const p = payload as { error?: unknown; message?: unknown; msg?: unknown };
     if (typeof p.error === "string") return p.error;
     if (p.error && typeof p.error === "object") {
       const m = (p.error as { message?: unknown }).message;
       if (typeof m === "string") return m;
     }
     if (typeof p.message === "string") return p.message;
+    // Gin handlers answer errors as {code, msg}; without this the UI shows
+    // a bare "Request failed" and hides the server's explanation.
+    if (typeof p.msg === "string" && p.msg.trim() !== "") return p.msg;
   }
   return "Request failed";
 }

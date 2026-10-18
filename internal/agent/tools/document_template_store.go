@@ -30,8 +30,11 @@ type DocumentTemplateState struct {
 	Inputs     []string          `json:"inputs"`
 	Asked      map[string]string `json:"asked,omitempty"`
 	// Redo: the request started from the last ready one (KeepBlanks).
-	Redo      bool      `json:"redo,omitempty"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Redo bool `json:"redo,omitempty"`
+	// Conversation: the earlier conversation the request is drafted from
+	// (DocumentTemplateRequest.FromConversation), loaded once.
+	Conversation []TemplateTurn `json:"conversation,omitempty"`
+	UpdatedAt    time.Time      `json:"updated_at"`
 }
 
 type documentTemplateStore struct {
@@ -74,6 +77,7 @@ func LoadDocumentTemplateState(ctx context.Context, sessionID, requestID string)
 		}
 		cp := *st
 		cp.Inputs = append([]string(nil), st.Inputs...)
+		cp.Conversation = append([]TemplateTurn(nil), st.Conversation...)
 		return &cp
 	}
 	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
