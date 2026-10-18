@@ -46,7 +46,7 @@ updates:
 
   # ─── npm ───
   - package-ecosystem: npm
-    directory: "/frontend"
+    directory: "/frontend-next"
     schedule:
       interval: monthly
     open-pull-requests-limit: 0

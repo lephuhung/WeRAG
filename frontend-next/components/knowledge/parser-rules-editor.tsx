@@ -5,6 +5,7 @@ import { getParserEngines, type ParserEngineInfo } from "@/lib/api/system";
 import type { ParserEngineRule } from "@/lib/api/knowledge";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { Select } from "@/components/select";
+import { IMAGE_EXTENSIONS } from "@/lib/parse-settings";
 
 /* Embedded port of frontend/src/views/knowledge/settings/KBParserSettings.vue:
  * one engine <select> per file-type family present in the upload batch
@@ -112,9 +113,11 @@ export function ParserRulesEditor({
         });
     }
     /* Extensions the backend registry knows but no family covers get their own
-     * dynamic row in the data section, matching the Vue component. */
+     * dynamic row in the data section, matching the Vue component. Images
+     * are not: knowledge bases take documents only. */
     const grouped = new Set(out.flatMap((g) => g.extensions));
-    for (const ext of [...ft].filter((x) => !grouped.has(x) && x !== "url").sort()) {
+    const images = new Set([...IMAGE_EXTENSIONS, "tif", "tiff"]);
+    for (const ext of [...ft].filter((x) => !grouped.has(x) && !images.has(x) && x !== "url").sort()) {
       out.push({ key: `dyn-${ext}`, label: ext.toUpperCase(), extensions: [ext], category: "data" });
     }
 

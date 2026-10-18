@@ -178,7 +178,7 @@ helm install weknora ./helm \
 |-----------|-------------|---------|
 | `frontend.enabled` | Enable frontend | `true` |
 | `frontend.replicaCount` | Number of replicas | `1` |
-| `frontend.image.repository` | Image repository | `werag/frontend-next` |
+| `frontend.image.repository` | Image repository | `wechatopenai/werag-frontend-next` |
 | `frontend.image.tag` | Image tag | `latest` |
 
 ### PostgreSQL (ParadeDB)

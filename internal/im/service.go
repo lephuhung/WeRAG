@@ -3556,11 +3556,11 @@ func (s *Service) checkDuplicateBot(channel *IMChannel, excludeID string) error 
 // at the start and end of processing.
 // ────────────────────────────────────────────────────────────────────────
 
-// supportedKBFileExts is the set of file extensions that can be saved to a knowledge base.
+// supportedKBFileExts is the set of file extensions that can be saved to a
+// knowledge base: documents only, no images.
 var supportedKBFileExts = map[string]bool{
 	"pdf": true, "txt": true, "docx": true, "doc": true,
 	"md": true, "markdown": true,
-	"png": true, "jpg": true, "jpeg": true, "gif": true,
 	"csv": true, "xlsx": true, "xls": true,
 	"pptx": true, "ppt": true,
 }

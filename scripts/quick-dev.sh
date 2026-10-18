@@ -78,7 +78,7 @@ read -r start_frontend
 if [ "$start_frontend" = "y" ] || [ "$start_frontend" = "Y" ]; then
     log_info "启动前端..."
     # 在后台启动前端
-    nohup bash -c 'cd "'$PROJECT_ROOT'/frontend" && npm run dev' > "$PROJECT_ROOT/logs/frontend.log" 2>&1 &
+    nohup bash -c 'cd "'$PROJECT_ROOT'/frontend-next" && npm run dev' > "$PROJECT_ROOT/logs/frontend.log" 2>&1 &
     FRONTEND_PID=$!
     echo $FRONTEND_PID > "$PROJECT_ROOT/tmp/frontend.pid"
     log_success "前端已在后台启动 (PID: $FRONTEND_PID)"

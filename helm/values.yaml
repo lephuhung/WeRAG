@@ -158,7 +158,7 @@ frontend:
 
   image:
     # -- Image repository
-    repository: werag/frontend-next
+    repository: wechatopenai/werag-frontend-next
     # -- Image tag
     tag: latest
     # -- Image pull policy

@@ -1,6 +1,6 @@
 services:
   frontend:
-    image: werag/frontend-next:${WEKNORA_VERSION:-latest}
+    image: wechatopenai/werag-frontend-next:${WEKNORA_VERSION:-latest}
     # Next.js standalone server behind nginx; nginx proxies /api, /files and
     # /r straight to the app. Optional: NPM_REGISTRY=https://registry.npmmirror.com
     build:
