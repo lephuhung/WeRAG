@@ -10,6 +10,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/docformat/docxwrite"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 var loopPage = "40. Hồ sơ trình phê duyệt | Thời hạn\nTHỐ SƠ TRÀ THẢO " + strings.Repeat("TẾ ", 300)
@@ -189,5 +190,61 @@ func TestLegalDraftFetchRepairsLoopingPage(t *testing.T) {
 	report2 := AnalyzeLegalDraft(read)
 	if !hasWarning(report2, "ocr_degenerate", "trang 2", true) || report2.Ready {
 		t.Fatalf("structure = %+v", report2.Warnings)
+	}
+}
+
+// renderDocReader answers a render with page images by storage key only.
+type renderDocReader struct {
+	interfaces.DocumentReader
+	req *types.ReadRequest
+}
+
+func (r *renderDocReader) Read(_ context.Context, req *types.ReadRequest) (*types.ReadResult, error) {
+	r.req = req
+	return &types.ReadResult{ImageRefs: []types.ImageRef{
+		{Filename: "VanBanGoc_74_page_5.jpg", OriginalRef: "images/VanBanGoc_74_page_5.jpg", StorageKey: "minio://b/p5.jpg"},
+		{Filename: "VanBanGoc_74_page_6.jpg", OriginalRef: "images/VanBanGoc_74_page_6.jpg", StorageKey: "minio://b/p6.jpg"},
+		{OriginalRef: "images/VanBanGoc_74_page_41.jpg", ImageData: []byte("inline41")},
+		{Filename: "VanBanGoc_74_page_55.jpg", StorageKey: "minio://b/broken.jpg"},
+	}}, nil
+}
+
+func TestRenderPDFPagesFromStorage(t *testing.T) {
+	docreader := &renderDocReader{}
+	var fetched []string
+	svc := &LegalDraftService{reader: docreader,
+		StorageImage: func(_ context.Context, key string) ([]byte, error) {
+			fetched = append(fetched, key)
+			if key == "minio://b/broken.jpg" {
+				return nil, errors.New("404")
+			}
+			return []byte("bytes:" + key), nil
+		}}
+	images, err := svc.renderPDFPages(context.Background(), []byte("%PDF"), "VanBanGoc_74.pdf", []int{6, 41, 55, 60})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if docreader.req == nil || docreader.req.ParserEngine != "builtin" || docreader.req.ParserEngineOverrides["pdf_force_scanned"] != "true" {
+		t.Fatalf("render request = %+v", docreader.req)
+	}
+	if string(images[6]) != "bytes:minio://b/p6.jpg" || string(images[41]) != "inline41" || images[55] != nil ||
+		images[60] != nil || images[5] != nil || len(images) != 2 {
+		t.Fatalf("images = %v", images)
+	}
+	if !reflect.DeepEqual(fetched, []string{"minio://b/p6.jpg", "minio://b/broken.jpg"}) {
+		t.Fatalf("fetched = %v (page 5 is not wanted)", fetched)
+	}
+
+	// the whole repair: page 6 is re-read from its stored image
+	svc.ImageOCR = func(_ context.Context, img []byte, page int) (string, error) {
+		if string(img) != "bytes:minio://b/p6.jpg" {
+			return "", errors.New("wrong image")
+		}
+		return "40. Hồ sơ trình phê duyệt nhiệm vụ lập quy hoạch | Vĩnh viễn", nil
+	}
+	md := "<!-- page 6 -->\n\n" + loopPage + "\n\n<!-- page 7 -->\n\nĐiều 7. Hiệu lực"
+	out, report := svc.repairDegeneratePages(context.Background(), md, []byte("%PDF"), "VanBanGoc_74.pdf")
+	if len(report.DegeneratePages) != 0 || !strings.Contains(out, "Vĩnh viễn") || strings.Contains(out, "TẾ") {
+		t.Fatalf("repair: %+v\n%s", report, out)
 	}
 }

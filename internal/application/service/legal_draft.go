@@ -81,6 +81,9 @@ type LegalDraftService struct {
 	// builtin renderer and the Go paddleocr_vl image reader).
 	PageImages LegalDraftPageImages
 	ImageOCR   LegalDraftImageOCR
+	// StorageImage fetches a page image docreader left in shared storage
+	// (nil: the file service, or the SSRF-safe client for a URL).
+	StorageImage LegalDraftStorageImage
 
 	// fetching serializes fetches of one document within this process
 	fetching sync.Map
