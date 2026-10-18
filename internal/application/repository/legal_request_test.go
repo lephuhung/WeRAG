@@ -157,3 +157,28 @@ func TestLegalRequestUpdateDetailMergesAndParseStatus(t *testing.T) {
 		t.Fatalf("statuses = %v %v", st, err)
 	}
 }
+
+func TestLegalRequestListByNumberKey(t *testing.T) {
+	repo, _ := newLegalRequestRepo(t)
+	ctx := context.Background()
+	for _, docID := range []string{"", "155366"} {
+		if _, err := repo.Record(ctx, &types.LegalDocumentRequest{
+			NumberKey: "53/2022/ND-CP", DocumentNumber: "53/2022/NĐ-CP", LegalDocumentID: docID,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := repo.Record(ctx, &types.LegalDocumentRequest{NumberKey: "1/2020/QH14"}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := repo.ListByNumberKey(ctx, "53/2022/ND-CP")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
+	}
+	if rows, _ := repo.ListByNumberKey(ctx, " "); len(rows) != 0 {
+		t.Fatalf("blank key must match nothing, got %d", len(rows))
+	}
+}

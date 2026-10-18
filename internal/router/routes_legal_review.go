@@ -55,3 +55,13 @@ func RegisterLegalDraftRoutes(r *gin.RouterGroup, h *handler.LegalDraftHandler, 
 		drafts.DELETE("/:id", h.DiscardLegalDraft)
 	}
 }
+
+// RegisterDomainPackReconcileRoutes wires the SuperAdmin check of a domain
+// pack's catalogue.yaml against the legal catalogue
+// (docs/domain-pack-standard.md §4 layer b).
+func RegisterDomainPackReconcileRoutes(r *gin.RouterGroup, h *handler.DomainPackReconcileHandler, g *rbacGuards) {
+	if h == nil {
+		return
+	}
+	r.POST("/system/domain-packs/:name/reconcile", g.PlatformSuperAdmin(), h.ReconcileDomainPack)
+}
