@@ -34,9 +34,12 @@ Environment (docreader service, ``DOCREADER_*`` convention):
 * ``DOCREADER_VN_OCR_DETECT_BROKEN_VN``   — default true
 * ``DOCREADER_VN_OCR_VN_TONE_MIN_RATIO``  — default 0.02 (AIRAG
   HRAG_OCR_VN_TONE_MIN_RATIO)
-* ``DOCREADER_VN_OCR_REPETITION_PENALTY`` — default 1.05; SenOCR-Vi can
-  otherwise loop a fragment (e.g. its instruction template) until
-  max_tokens. Set to 1.0 to disable; only for endpoints accepting the
+* ``DOCREADER_VN_OCR_REPETITION_PENALTY`` — set it to 1.1 (documented
+  default); SenOCR-Vi can otherwise loop a fragment (its instruction
+  template, one word of a big table) until max_tokens. Measured 2026-10-18
+  on the page-6 table of 74/2025/TT-BTC at 200 dpi: 1.05 still loops (a
+  run of 991 tokens), 1.08 and 1.1 read it, 1.15 alters plain text pages
+  (similarity 0.825; 1.1 keeps 0.997). Only an explicitly set value is sent. Set to 1.0 to disable; only for endpoints accepting the
   OpenAI ``repetition_penalty`` extension (vLLM).
 """
 
@@ -70,7 +73,7 @@ VN_OCR_MAX_TOKENS = _env_int("DOCREADER_VN_OCR_MAX_TOKENS", 4096)
 VN_OCR_CONCURRENCY = _env_int("DOCREADER_VN_OCR_CONCURRENCY", 4)
 VN_OCR_TIMEOUT = _env_float("DOCREADER_VN_OCR_TIMEOUT", 180.0)
 VN_OCR_VLLM_XARGS = _env_bool("DOCREADER_VN_OCR_VLLM_XARGS", False)
-VN_OCR_REPETITION_PENALTY = _env_float("DOCREADER_VN_OCR_REPETITION_PENALTY", 1.05)
+VN_OCR_REPETITION_PENALTY = _env_float("DOCREADER_VN_OCR_REPETITION_PENALTY", 1.1)
 VN_DETECT_BROKEN = _env_bool("DOCREADER_VN_OCR_DETECT_BROKEN_VN", True)
 VN_TONE_MIN_RATIO = _env_float("DOCREADER_VN_OCR_VN_TONE_MIN_RATIO", 0.02)
 

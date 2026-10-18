@@ -57,10 +57,12 @@ type PaddleOCRVLReader struct {
 // NewPaddleOCRVLReader creates a reader from ParserEngineOverrides.
 // remote is the docreader client used for OpenAI-mode PDF rendering (may be nil).
 func NewPaddleOCRVLReader(overrides map[string]string, remote interfaces.DocReader) *PaddleOCRVLReader {
-	// Default 1.05 breaks SenOCR-Vi's degenerate loops (instruction-template
-	// echoes run to max_tokens otherwise); set the override to "1" or "0"
-	// for endpoints that reject the repetition_penalty extension.
-	rp, rpSet := 1.05, false
+	// Default 1.1, measured 2026-10-18 on SenOCR-Vi (page 6 table of
+	// 74/2025/TT-BTC, 200 dpi): 1.05 still loops (run of 991 tokens), 1.08
+	// and 1.1 read the table, 1.15 starts changing plain text pages
+	// (similarity 0.825), 1.1 keeps them at 0.997. Set the override to "1"
+	// or "0" for endpoints that reject the repetition_penalty extension.
+	rp, rpSet := 1.1, false
 	if raw := strings.TrimSpace(overrides["paddleocr_vl_repetition_penalty"]); raw != "" {
 		rpSet = true
 		if v, err := strconv.ParseFloat(raw, 64); err == nil {
@@ -434,7 +436,7 @@ func (c *PaddleOCRVLReader) openAIOCRImage(ctx context.Context, image []byte) (s
 	// repetition_penalty is a nonstandard extension: only forward it when the
 	// tenant explicitly configured paddleocr_vl_repetition_penalty to a
 	// meaningful non-default value, mirroring the readOpenAI docreader
-	// pass-through (which gates on ocrRepPenaltySet). The 1.05 default stays
+	// pass-through (which gates on ocrRepPenaltySet). The 1.1 default stays
 	// local so generic OpenAI-compatible endpoints never see the key.
 	if c.ocrRepPenaltySet && c.ocrRepPenalty > 0 && c.ocrRepPenalty != 1.0 {
 		reqBody["repetition_penalty"] = c.ocrRepPenalty
