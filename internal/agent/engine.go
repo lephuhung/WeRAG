@@ -89,6 +89,9 @@ type AgentEngine struct {
 	stopReason string
 	// wrapUpNudged records that this turn already got wrapUpNudgeText.
 	wrapUpNudged bool
+	// failureGuard disables a tool after identicalFailureLimit identical
+	// failures in the turn (failure_guard.go).
+	failureGuard toolFailureGuard
 }
 
 // maxSteerOverruns caps loop-end injects past MaxIterations. One extra round
@@ -602,6 +605,8 @@ loop:
 		}
 		// a tool that failed maxToolFailuresPerTurn times is withdrawn
 		tools = dropExhaustedTools(tools, state.RoundSteps)
+		// and one disabled by identical failures, by its offered name
+		tools = e.failureGuard.filterTools(messageID, tools)
 
 		// Each iteration runs inside an "agent.round.<N>" Langfuse span.
 		// We execute the body in a closure so `defer span.Finish()` fires at

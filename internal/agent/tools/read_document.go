@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -18,6 +19,9 @@ const (
 	readDocumentMaxContext   = 5
 	readDocumentMaxMatches   = 20
 	readDocumentScanPageSize = 100
+	// readDocumentPartialMatches is how many chunks the partial-match
+	// fallback returns when no chunk contains every word of a query.
+	readDocumentPartialMatches = 3
 	// readDocumentChunkOverhead approximates the per-chunk tags and handles
 	// the model rendering adds around each chunk's content.
 	readDocumentChunkOverhead = 120
@@ -30,7 +34,8 @@ var readDocumentTool = BaseTool{
 		"chunk; set context to include neighbouring chunks on each side).\n" +
 		"query finds passages inside the document: matching chunks come back with one chunk of context on each " +
 		"side. By default query is case-insensitive and split on whitespace: a chunk matches when it contains " +
-		"every word, in any order. Set regex=true to match query as one POSIX regular expression instead.\n" +
+		"every word, in any order; when none does, the chunks containing the most words (at least half) come back " +
+		"instead, marked as partial matches. Set regex=true to match query as one POSIX regular expression instead.\n" +
 		"Page through long documents with offset and limit: offset counts chunks in reading order from 0 and is " +
 		"not a chunk index, so continue with the returned next_offset, and use id=cN with context to read around " +
 		"a specific chunk. A page holds fewer than limit chunks when they would exceed the output size budget; " +
@@ -57,7 +62,7 @@ var readDocumentTool = BaseTool{
     },
     "query": {
       "type": "string",
-      "description": "Words a chunk must all contain; returns matching chunks with context instead of a page"
+      "description": "Words a chunk must all contain (else the chunks with the most of them); returns matching chunks with context instead of a page"
     },
     "regex": {
       "type": "boolean",
@@ -179,7 +184,7 @@ func (t *ReadDocumentTool) Execute(ctx context.Context, args json.RawMessage) (*
 	// chunk: silently returning the single chunk would read as "no match".
 	switch {
 	case len(matchers) > 0:
-		return t.readByQuery(ctx, knowledge, query, matchers)
+		return t.readByQuery(ctx, knowledge, query, matchers, !input.Regex && len(matchers) >= 2)
 	case chunk != nil:
 		return t.readAroundChunk(ctx, knowledge, chunk, contextChunks)
 	default:
@@ -397,10 +402,19 @@ func (t *ReadDocumentTool) readAroundChunk(
 
 // readByQuery scans the document in order and returns chunks matched by
 // every matcher, with one chunk of context on each side, capped at
-// readDocumentMaxMatches.
+// readDocumentMaxMatches. With partial set (a multi-word, non-regex query)
+// and no chunk matching every word, it returns the partialMatchFallback
+// chunks instead: "không đội mũ bảo hiểm người điều khiển" found 0 of 48
+// chunks three times in a row, and the model then walked the articles one
+// by one.
 func (t *ReadDocumentTool) readByQuery(
-	ctx context.Context, knowledge *types.Knowledge, query string, matchers []*regexp.Regexp,
+	ctx context.Context, knowledge *types.Knowledge, query string, matchers []*regexp.Regexp, partial bool,
 ) (*types.ToolResult, error) {
+	var words []*regexp.Regexp
+	var candidates []partialMatch
+	if partial {
+		words = distinctMatchers(matchers)
+	}
 	var rows []readChunkRow
 	emitted := make(map[string]bool)
 	matchCount := 0
@@ -438,6 +452,11 @@ scan:
 			if q := faqStandardQuestion(c); q != "" {
 				haystack += "\n" + q
 			}
+			if words != nil && matchCount == 0 {
+				if hit := matchingWords(words, haystack); len(hit) >= partialMatchThreshold(len(words)) {
+					candidates = append(candidates, partialMatch{chunk: c, words: hit})
+				}
+			}
 			if matchesAll(matchers, haystack) {
 				if matchCount >= readDocumentMaxMatches || used >= budget {
 					truncated = true
@@ -465,10 +484,33 @@ scan:
 		page++
 	}
 
+	note := ""
+	if matchCount == 0 && len(candidates) > 0 {
+		best := bestPartialMatches(candidates, readDocumentPartialMatches)
+		for _, m := range best {
+			if len(rows) > 0 && used >= budget {
+				break
+			}
+			emit(readChunkRow{chunk: m.chunk, role: "match", snippet: extractChunkMatchSnippet(m.chunk, m.words)})
+		}
+		matchCount = len(rows)
+		note = fmt.Sprintf(partialMatchNote, matchCount, len(best[0].words), len(words))
+	}
+
 	data := t.buildData(knowledge, total, rows)
 	data["query"] = query
 	data["match_count"] = matchCount
 	data["truncated"] = truncated
+	if note != "" {
+		data["match_mode"] = "partial"
+		data["model_note"] = note
+		output := t.buildOutput(knowledge, total, rows, query)
+		return &types.ToolResult{
+			Success: true,
+			Output:  strings.Replace(output, "</query>\n", "</query>\n<note>"+xmlEscape(note)+"</note>\n", 1),
+			Data:    data,
+		}, nil
+	}
 	return &types.ToolResult{
 		Success: true,
 		Output:  t.buildOutput(knowledge, total, rows, query),
@@ -489,6 +531,68 @@ func fitChunksToBudget(chunks []*types.Chunk, budget int) []*types.Chunk {
 		}
 	}
 	return chunks
+}
+
+// partialMatchNote explains partial matches to the model: the number of
+// chunks shown, the best chunk's word count and the query's word count.
+const partialMatchNote = "No chunk contains every word of the query; showing the %d chunk(s) matching the most words " +
+	"(best: %d of %d words). Check that they answer the question before citing them."
+
+// partialMatch is a chunk holding some of a query's words.
+type partialMatch struct {
+	chunk *types.Chunk
+	words []*regexp.Regexp // the query words it contains
+}
+
+// partialMatchThreshold is the fewest words of an n-word query a chunk must
+// contain to be a partial match: half of them, and at least 2.
+func partialMatchThreshold(n int) int {
+	need := (n + 1) / 2
+	if need < 2 {
+		need = 2
+	}
+	return need
+}
+
+// distinctMatchers drops matchers repeating an earlier one ("điều điều").
+func distinctMatchers(matchers []*regexp.Regexp) []*regexp.Regexp {
+	seen := make(map[string]bool, len(matchers))
+	out := make([]*regexp.Regexp, 0, len(matchers))
+	for _, m := range matchers {
+		key := strings.ToLower(m.String())
+		if !seen[key] {
+			seen[key] = true
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// matchingWords returns the matchers found in s.
+func matchingWords(matchers []*regexp.Regexp, s string) []*regexp.Regexp {
+	var hit []*regexp.Regexp
+	for _, m := range matchers {
+		if m.MatchString(s) {
+			hit = append(hit, m)
+		}
+	}
+	return hit
+}
+
+// bestPartialMatches returns the n candidates with the most words, ties in
+// document order (the scan order); the result is in that ranking order.
+func bestPartialMatches(candidates []partialMatch, n int) []partialMatch {
+	sorted := append([]partialMatch(nil), candidates...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if len(sorted[i].words) != len(sorted[j].words) {
+			return len(sorted[i].words) > len(sorted[j].words)
+		}
+		return sorted[i].chunk.ChunkIndex < sorted[j].chunk.ChunkIndex
+	})
+	if len(sorted) > n {
+		sorted = sorted[:n]
+	}
+	return sorted
 }
 
 func matchesAll(matchers []*regexp.Regexp, s string) bool {

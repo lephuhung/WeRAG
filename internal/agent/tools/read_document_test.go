@@ -525,3 +525,56 @@ func TestReadDocumentFAQChunkExposesQuestion(t *testing.T) {
 		t.Fatalf("output = %s", res.Output)
 	}
 }
+
+func TestReadDocumentQueryFallsBackToPartialMatches(t *testing.T) {
+	tool, repo := newReadDocumentFixture(8)
+	for _, c := range repo.ordered {
+		c.Content = "Điều khoản chung về thủ tục."
+	}
+	repo.ordered[1].Content = "Người điều khiển xe máy phải đội mũ bảo hiểm." // 7 of 8 words
+	repo.ordered[2].Content = "Đội mũ bảo hiểm."                              // 4 of 8: ranked 4th
+	repo.ordered[3].Content = "Người điều khiển phải đội mũ."                 // 5 of 8
+	repo.ordered[5].Content = "Không đội mũ bảo hiểm khi ngồi sau xe."        // 5 of 8
+	repo.ordered[6].Content = "Mũ bảo hiểm đạt chuẩn."                        // 3 of 8: below half
+	res, err := tool.Execute(context.Background(),
+		json.RawMessage(`{"id":"doc-1","query":"không đội mũ bảo hiểm người điều khiển"}`))
+	if err != nil || !res.Success {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if got := chunkIDsFromData(t, res.Data); strings.Join(got, ",") != "chunk-1,chunk-3,chunk-5" {
+		t.Fatalf("partial matches = %v, want best first, ties in document order", got)
+	}
+	if res.Data["match_mode"] != "partial" || res.Data["match_count"] != 3 || res.Data["fetched_chunks"] != 3 {
+		t.Fatalf("data = %+v", res.Data)
+	}
+	rows := res.Data["chunks"].([]map[string]interface{})
+	for _, r := range rows {
+		if r["role"] != "match" {
+			t.Fatalf("partial matches carry no context rows: %+v", rows)
+		}
+	}
+	const note = "No chunk contains every word of the query; showing the 3 chunk(s) matching the most words (best: 7 of 8 words)."
+	if !strings.Contains(res.Output, note) || !strings.Contains(fmt.Sprint(res.Data["model_note"]), note) {
+		t.Fatalf("output = %s\nnote = %v", res.Output, res.Data["model_note"])
+	}
+}
+
+func TestReadDocumentQueryPartialFallbackNeedsSeveralWords(t *testing.T) {
+	tool, repo := newReadDocumentFixture(3)
+	repo.ordered[1].Content = "the engine"
+	// one word without a hit stays an empty result
+	res, err := tool.Execute(context.Background(), json.RawMessage(`{"id":"doc-1","query":"absent"}`))
+	if err != nil || !res.Success || res.Data["match_count"] != 0 || res.Data["match_mode"] != nil {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	// a chunk with one word of two is below the 2-word floor
+	res, err = tool.Execute(context.Background(), json.RawMessage(`{"id":"doc-1","query":"engine absent"}`))
+	if err != nil || !res.Success || res.Data["match_count"] != 0 || res.Data["match_mode"] != nil {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	// regex queries never fall back
+	res, err = tool.Execute(context.Background(), json.RawMessage(`{"id":"doc-1","query":"the absent","regex":true}`))
+	if err != nil || !res.Success || res.Data["match_count"] != 0 || res.Data["match_mode"] != nil {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+}

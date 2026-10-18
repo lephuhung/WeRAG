@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode"
@@ -26,6 +27,17 @@ const (
 	sectionSearchAmbiguityCap = 10
 )
 
+// sectionAppendixPattern matches a request for an appendix or a form
+// ("Phụ lục I", "Mẫu số 02"), which is not a section: 8 calls in 30 days
+// failed on "Phụ lục I".
+var sectionAppendixPattern = regexp.MustCompile(`(?i)^\s*(phụ lục|mẫu số)`)
+
+// sectionAppendixGuidance is how to reach an appendix instead, for the tool
+// description and the error of an appendix request.
+const sectionAppendixGuidance = "Appendices (Phụ lục) and forms (Mẫu số) are not sections: find their text with " +
+	"read_document(id=dN, query=\"Phụ lục I\"); when the document's chunks list an appendix_file (an appendix " +
+	"published as a separate file), give the user that file's name and link instead."
+
 var searchDocumentSectionTool = BaseTool{
 	name: ToolSearchDocumentSection,
 	description: "Fetch the exact text of one section of a Vietnamese legal or administrative document by its " +
@@ -38,7 +50,7 @@ var searchDocumentSectionTool = BaseTool{
 		"candidates are listed instead: retry with one knowledge_id.\n" +
 		"One section per call: ask for \"khoản 2 Điều 17\" and \"khoản 3 Điều 17\" separately. Use " +
 		"search_knowledge for questions by topic, and read_document(id=cN, context=...) to read around a " +
-		"returned chunk.",
+		"returned chunk.\n" + sectionAppendixGuidance,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -127,6 +139,9 @@ func (t *SearchDocumentSectionTool) Execute(ctx context.Context, args json.RawMe
 	ref, err := vietnamese_legal.ParseSectionRef(section)
 	if err != nil {
 		msg := fmt.Sprintf("section %q names no Điều, Khoản, Điểm, Chương, Mục or Phần", section)
+		if sectionAppendixPattern.MatchString(section) {
+			msg += ". " + sectionAppendixGuidance
+		}
 		return &types.ToolResult{Success: false, Error: msg}, fmt.Errorf("%s", msg)
 	}
 	if ref.Multi {

@@ -294,3 +294,22 @@ func TestSearchDocumentSectionLinksTheAskedKhoan(t *testing.T) {
 		t.Fatalf("rows = %+v", rows)
 	}
 }
+
+func TestSearchDocumentSectionPointsAppendicesToReadDocument(t *testing.T) {
+	tool, _ := newSectionFixture(t)
+	for _, section := range []string{"Phụ lục I", "phụ lục", "Mẫu số 02"} {
+		res, _ := tool.Execute(context.Background(), json.RawMessage(`{"section":"`+section+`"}`))
+		if res.Success || !strings.Contains(res.Error, "are not sections") ||
+			!strings.Contains(res.Error, `read_document(id=dN, query="Phụ lục I")`) ||
+			!strings.Contains(res.Error, "appendix_file") {
+			t.Errorf("%s: error = %q", section, res.Error)
+		}
+	}
+	res, _ := tool.Execute(context.Background(), json.RawMessage(`{"section":"phạm vi điều chỉnh"}`))
+	if strings.Contains(res.Error, "are not sections") {
+		t.Errorf("a non-appendix section gets no appendix guidance: %q", res.Error)
+	}
+	if !strings.Contains(tool.Description(), "are not sections") {
+		t.Errorf("the description must carry the appendix guidance")
+	}
+}

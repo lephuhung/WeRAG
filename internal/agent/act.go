@@ -422,13 +422,29 @@ func (e *AgentEngine) executeSingleToolCall(
 	e.emitToolOutcome(ctx, toolCall, iteration, sessionID)
 }
 
-// runToolCall handles argument parsing, execution, logging, and pipeline events for a single tool call.
-// It returns the completed ToolCall struct. Safe to call from multiple goroutines.
+// runToolCall runs one tool call through the repeated-failure guard
+// (failure_guard.go): a tool disabled in this turn is refused without
+// running, and every outcome is recorded. Safe to call from multiple
+// goroutines.
 func (e *AgentEngine) runToolCall(
 	ctx context.Context, tc types.LLMToolCall, i int,
 	iteration, round int, sessionID, assistantMessageID string,
 ) types.ToolCall {
 	tc.ID = agenttools.NormalizeToolCallID(tc.ID, tc.Function.Name, i)
+	if refused, ok := e.refuseDisabledTool(ctx, tc, round, assistantMessageID); ok {
+		return refused
+	}
+	toolCall := e.executeOneToolCall(ctx, tc, i, iteration, round, sessionID, assistantMessageID)
+	e.recordToolOutcome(ctx, &toolCall, round, assistantMessageID)
+	return toolCall
+}
+
+// executeOneToolCall handles argument parsing, execution, logging, and pipeline events for a single tool call.
+// It returns the completed ToolCall struct. Safe to call from multiple goroutines.
+func (e *AgentEngine) executeOneToolCall(
+	ctx context.Context, tc types.LLMToolCall, i int,
+	iteration, round int, sessionID, assistantMessageID string,
+) types.ToolCall {
 	total := "?" // unknown in isolation; callers log the batch size
 	toolTag := fmt.Sprintf("[Agent][Round-%d][Tool %s (%d/%s)]",
 		round, tc.Function.Name, i+1, total)

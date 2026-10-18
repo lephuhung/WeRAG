@@ -65,11 +65,8 @@ builtin_agents:
         - "read_document"
         - "list_documents"
         - "query_knowledge_graph"
-        # Wiki pages are a lookup aid (catalogue overview, relations); the
-        # engine drops these when no KB in scope has a wiki, and appends a
-        # "verify against the source" reminder to answers that used them.
-        - "wiki_search"
-        - "wiki_read_page"
+        # No wiki tools: the wiki is a code-generated catalogue for people
+        # (decision 2026-10-13); agents read the documents themselves.
       web_search_enabled: true
       web_search_max_results: 5
       reflection_enabled: false
@@ -202,8 +199,6 @@ builtin_agents:
         - "search_knowledge"
         - "read_document"
         - "query_knowledge_graph"
-        - "wiki_search"
-        - "wiki_read_page"
         - "resolve_abbreviation"
       web_search_enabled: true
       web_search_max_results: 5

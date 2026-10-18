@@ -119,6 +119,12 @@ func dropExhaustedTools(tools []chat.Tool, steps []types.AgentStep) []chat.Tool 
 	return out
 }
 
+// carriesStopNote reports whether an error already tells the model the tool
+// is withdrawn: this guard's note or the repeated-failure guard's text.
+func carriesStopNote(errMsg string) bool {
+	return strings.Contains(errMsg, "không còn được cung cấp") || strings.Contains(errMsg, toolDisabledMarker)
+}
+
 // noteExhaustedTools appends toolExhaustedNote to the error of every failed
 // call in step that brings its tool to the failure cap, and toolCapNote to
 // the call that brings a read tool to its call cap (counting prior steps),
@@ -135,7 +141,7 @@ func noteExhaustedTools(step *types.AgentStep, prior []types.AgentStep) {
 		calls[name]++
 		if !tc.Result.Success {
 			failures[name]++
-			if failures[name] >= maxToolFailuresPerTurn && !strings.Contains(tc.Result.Error, "không còn được cung cấp") {
+			if failures[name] >= maxToolFailuresPerTurn && !carriesStopNote(tc.Result.Error) {
 				tc.Result.Error += fmt.Sprintf(toolExhaustedNote, name, failures[name])
 				continue
 			}
@@ -144,7 +150,7 @@ func noteExhaustedTools(step *types.AgentStep, prior []types.AgentStep) {
 			note := fmt.Sprintf(toolCapNote, name, calls[name], toolCapHint[name])
 			if tc.Result.Success {
 				tc.Result.Output += note
-			} else if !strings.Contains(tc.Result.Error, "không còn được cung cấp") {
+			} else if !carriesStopNote(tc.Result.Error) {
 				tc.Result.Error += note
 			}
 		}
