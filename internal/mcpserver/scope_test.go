@@ -249,16 +249,16 @@ func TestSharedKnowledgeBaseRejectsLegacyTenantWideGrant(t *testing.T) {
 
 func TestResolveAskAgentUsesEndpointAgentOnly(t *testing.T) {
 	agents := &stubAgentService{agents: map[string]*types.CustomAgent{
-		types.BuiltinQuickAnswerID: {ID: types.BuiltinQuickAnswerID, TenantID: 1, IsBuiltin: true},
-		types.BuiltinWikiFixerID:   {ID: types.BuiltinWikiFixerID, TenantID: 1, IsBuiltin: true},
-		"agent-own":                {ID: "agent-own", TenantID: 1},
-		"agent-foreign":            {ID: "agent-foreign", TenantID: 2},
+		types.BuiltinSmartReasoningID: {ID: types.BuiltinSmartReasoningID, TenantID: 1, IsBuiltin: true},
+		types.BuiltinWikiFixerID:      {ID: types.BuiltinWikiFixerID, TenantID: 1, IsBuiltin: true},
+		"agent-own":                   {ID: "agent-own", TenantID: 1},
+		"agent-foreign":               {ID: "agent-foreign", TenantID: 2},
 	}}
 	srv := &Server{agentService: agents}
 
 	got, err := srv.resolveAskAgent(context.Background(), &types.MCPEndpoint{ID: "ep", TenantID: 1})
-	if err != nil || got.ID != types.BuiltinQuickAnswerID {
-		t.Fatalf("empty default must fall back to quick answer: %v %v", got, err)
+	if err != nil || got.ID != types.BuiltinSmartReasoningID {
+		t.Fatalf("empty default must fall back to smart reasoning: %v %v", got, err)
 	}
 	got, err = srv.resolveAskAgent(context.Background(),
 		&types.MCPEndpoint{ID: "ep", TenantID: 1, DefaultAgentID: "agent-own"})

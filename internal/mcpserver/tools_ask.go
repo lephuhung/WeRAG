@@ -111,7 +111,8 @@ func (s *Server) handleAsk(ctx context.Context, req mcp.CallToolRequest) (*mcp.C
 func (s *Server) resolveAskAgent(ctx context.Context, ep *types.MCPEndpoint) (*types.CustomAgent, error) {
 	agentID := strings.TrimSpace(ep.DefaultAgentID)
 	if agentID == "" {
-		agentID = types.BuiltinQuickAnswerID
+		// the one Q&A agent since 2026-10-18 (quick answer is switched off)
+		agentID = types.BuiltinSmartReasoningID
 	}
 	agent, err := s.agentService.GetAgentByID(ctx, agentID)
 	if err != nil || agent == nil {

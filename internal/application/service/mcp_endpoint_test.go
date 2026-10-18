@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"github.com/stretchr/testify/require"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -141,13 +143,26 @@ func TestMCPEndpointDefaultAgentMustBelongToTenant(t *testing.T) {
 		t.Fatalf("foreign agent must be rejected as not found, got %v", err)
 	}
 
-	builtin := &types.CustomAgent{ID: types.BuiltinQuickAnswerID, TenantID: 99, IsBuiltin: true}
+	builtin := &types.CustomAgent{ID: types.BuiltinSmartReasoningID, TenantID: 99, IsBuiltin: true}
 	svc = newMCPEndpointServiceForTest(newStubMCPEndpointRepo(), builtin)
 	if _, _, err := svc.Create(context.Background(), 1, &types.MCPEndpoint{
-		Name: "x", Tools: types.StringArray{"ask"}, DefaultAgentID: types.BuiltinQuickAnswerID,
+		Name: "x", Tools: types.StringArray{"ask"}, DefaultAgentID: types.BuiltinSmartReasoningID,
 	}); err != nil {
 		t.Fatalf("builtin agent must be accepted: %v", err)
 	}
+
+	// a builtin switched off in builtin_agents.yaml (quick answer) cannot be
+	// chosen for an endpoint, but one configured earlier still answers
+	require.NoError(t, types.LoadBuiltinAgentsConfig(filepath.Join("..", "..", "..", "config")))
+	off := &types.CustomAgent{ID: types.BuiltinQuickAnswerID, TenantID: 99, IsBuiltin: true}
+	svc = newMCPEndpointServiceForTest(newStubMCPEndpointRepo(), off)
+	_, _, err = svc.Create(context.Background(), 1, &types.MCPEndpoint{
+		Name: "x", Tools: types.StringArray{"ask"}, DefaultAgentID: types.BuiltinQuickAnswerID,
+	})
+	if appErr, ok := apperrors.IsAppError(err); !ok || appErr.Code != apperrors.ErrNotFound {
+		t.Fatalf("switched-off builtin must be rejected for a new endpoint, got %v", err)
+	}
+	require.True(t, types.MCPEndpointAgentAllowed(off, 1), "an endpoint configured earlier keeps answering")
 }
 
 func TestMCPEndpointUpdateRotateDeleteAreTenantScoped(t *testing.T) {

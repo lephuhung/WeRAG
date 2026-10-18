@@ -366,7 +366,7 @@ func (s *mcpEndpointService) validateAgent(ctx context.Context, tenantID uint64,
 		return "", nil
 	}
 	agent, err := s.agentService.GetAgentByID(ctx, agentID)
-	if err != nil || agent == nil || !types.MCPEndpointAgentAllowed(agent, tenantID) {
+	if err != nil || agent == nil || !types.MCPEndpointAgentSelectable(agent, tenantID) {
 		return "", apperrors.NewNotFoundError("agent not found")
 	}
 	return agentID, nil

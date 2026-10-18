@@ -624,6 +624,7 @@ func TestDisabledBuiltinAgentsAreHiddenFromThePicker(t *testing.T) {
 	require.Contains(t, ids, types.BuiltinDocumentAssistantID)
 	require.Contains(t, types.GetAllBuiltinAgentIDs(), types.BuiltinWikiResearcherID,
 		"rows that already name it (IM channels) still resolve")
-	require.False(t, types.MCPEndpointAgentAllowed(&types.CustomAgent{ID: types.BuiltinWikiResearcherID, IsBuiltin: true}, 1),
-		"an MCP endpoint cannot ask a switched-off agent")
+	off := &types.CustomAgent{ID: types.BuiltinWikiResearcherID, IsBuiltin: true}
+	require.True(t, types.MCPEndpointAgentAllowed(off, 1), "an endpoint configured earlier still answers")
+	require.False(t, types.MCPEndpointAgentSelectable(off, 1), "but a switched-off agent cannot be chosen anew")
 }

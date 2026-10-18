@@ -199,15 +199,18 @@ func MCPEndpointScope(ep *MCPEndpoint) TenantAPIKeyScope {
 
 // MCPEndpointAgentAllowed reports whether an endpoint of tenantID may run
 // agent for the ask tool. Tenant-owned agents qualify; builtins qualify only
-// when they are user-facing (listed by GetBuiltinAgentIDs). Internal builtins
-// such as the wiki fixer and the skill installer stay unreachable because
-// they ship write and shell tools that the endpoint allowlist never covers.
+// when they are user-facing (GetAllBuiltinAgentIDs, switched on or not, so
+// an endpoint configured before an agent was switched off keeps working).
+// Internal builtins such as the wiki fixer and the skill installer stay
+// unreachable because they ship write and shell tools that the endpoint
+// allowlist never covers. Choosing a switched-off builtin for a new or
+// updated endpoint is refused by MCPEndpointAgentSelectable.
 func MCPEndpointAgentAllowed(agent *CustomAgent, tenantID uint64) bool {
 	if agent == nil {
 		return false
 	}
 	if agent.IsBuiltin || IsBuiltinAgentID(agent.ID) {
-		for _, id := range GetBuiltinAgentIDs() {
+		for _, id := range GetAllBuiltinAgentIDs() {
 			if id == agent.ID {
 				return true
 			}
@@ -215,4 +218,16 @@ func MCPEndpointAgentAllowed(agent *CustomAgent, tenantID uint64) bool {
 		return false
 	}
 	return agent.TenantID == tenantID
+}
+
+// MCPEndpointAgentSelectable is MCPEndpointAgentAllowed for configuring an
+// endpoint: a builtin must also be switched on in builtin_agents.yaml.
+func MCPEndpointAgentSelectable(agent *CustomAgent, tenantID uint64) bool {
+	if !MCPEndpointAgentAllowed(agent, tenantID) {
+		return false
+	}
+	if agent.IsBuiltin || IsBuiltinAgentID(agent.ID) {
+		return IsBuiltinAgentEnabled(agent.ID)
+	}
+	return true
 }
