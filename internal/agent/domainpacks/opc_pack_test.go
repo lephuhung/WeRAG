@@ -18,7 +18,7 @@ func TestOpcVNBusinessLawPackShips(t *testing.T) {
 	require.True(t, ok, "pack must be embedded")
 
 	m := pack.Manifest.Metadata
-	assert.Equal(t, "1.0.0", m.Version)
+	assert.Equal(t, "1.1.0", m.Version)
 	assert.Equal(t, "17/10/2026", m.AsOf.VN())
 	assert.Equal(t, "2027-04-17", m.ReviewBy.Format(dateLayout))
 	assert.Equal(t, "CC-BY-4.0", m.Licence)

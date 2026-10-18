@@ -17,6 +17,8 @@ Cần phân biệt với:
 
 ## Bảng so sánh
 
+> Các điều của văn bản dưới đây trích theo bản gốc (17/10/2026). Danh mục ghi Luật Doanh nghiệp 59/2020/QH14 đã được sửa đổi ("Hết hiệu lực một phần"): trước khi trích một điều, đọc văn bản hiện hành bằng `search_knowledge` và nêu việc sửa đổi nếu có.
+
 | Tiêu chí | Hộ kinh doanh | Doanh nghiệp tư nhân | TNHH MTV (1 cá nhân) | TNHH 2TV | Cổ phần |
 |---|---|---|---|---|---|
 | Tư cách pháp nhân | Không | Không | **Có** | Có | Có |
@@ -36,7 +38,7 @@ Cần phân biệt với:
 - Đăng ký tại UBND cấp xã/phường; không có tư cách pháp nhân.
 - Chủ hộ (hoặc các thành viên hộ gia đình) chịu trách nhiệm bằng **toàn bộ tài sản** với nợ của hộ.
 - Điều kiện và quy mô của hộ kinh doanh: tra quy định hiện hành trong kho tri thức.
-- Không áp dụng phương pháp khấu trừ GTGT như doanh nghiệp; thuế thường theo phương pháp khoán/trực tiếp (đang thay đổi lộ trình 2025–2026).
+- Không áp dụng phương pháp khấu trừ GTGT như doanh nghiệp; thuế thường theo phương pháp khoán/trực tiếp (theo bản gốc, đang thay đổi theo lộ trình 2025–2026; tra quy định hiện hành).
 - Không phù hợp khi cần đấu thầu, ký hợp đồng lớn, vay ngân hàng quy mô, hoặc gọi vốn.
 
 **Ưu:** đơn giản, chi phí thấp, linh hoạt.

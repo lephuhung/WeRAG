@@ -4,7 +4,7 @@
 
 - Tác phẩm gốc: skill `opc-vn-business-law` của Diginno ("Diginno — opc-vn-business-law"), bản 1.0.2, mốc dữ liệu 17/10/2026.
 - Lấy từ bản fork https://github.com/lephuhung/opc-vn-business-law (fork của https://github.com/diginno-net/opc-vn-business-law), commit `1cb90548d6d8385cffdfd475798b0cfd1c01688f`.
-- Ngày nhập: 18/10/2026. Bản trong WeRAG: 1.0.0.
+- Ngày nhập: 18/10/2026. Bản trong WeRAG: 1.1.0 (xem CHANGELOG).
 
 ## Giấy phép
 
@@ -50,4 +50,11 @@ Lint của registry (`Pack.Lint`, chạy trong `TestShippedPacksAreValid`) trên
 
 ## CHANGELOG
 
+- 1.1.0 (18/10/2026): theo kết quả đối chiếu danh mục trên môi trường dev ngày 18/10/2026 (13/13 có trong danh mục, 12 có toàn văn trong KB công khai). `as_of` giữ mốc của bản gốc (17/10/2026).
+  - Bỏ 01/2021/NĐ-CP (danh mục: hết hiệu lực toàn bộ 01/07/2025, bị thay thế bởi 168/2025/NĐ-CP); thêm 168/2025/NĐ-CP. `03`, `06`, checklist dẫn "tra Nghị định 168/2025/NĐ-CP trong KB".
+  - 58/2026/TT-BTC: danh mục ghi ngày hiệu lực khác bản gốc (01/7/2026) → văn bản ghi "bản gốc ghi …; danh mục ghi ngày khác — dùng check_legal_status".
+  - 132/2018/TT-BTC: danh mục ghi còn hiệu lực, không có quan hệ thay thế; bản gốc cho rằng đã được 58/2026/TT-BTC thay thế → giữ trong danh mục, văn bản ghi rõ hai nguồn khác nhau.
+  - Văn bản danh mục ghi "Hết hiệu lực một phần" (đã được sửa đổi): 59/2020/QH14, 88/2015/QH13, 133/2016/TT-BTC, 67/2025/QH15, 48/2024/QH15, 41/2024/QH15, 22/2023/QH15. Các luật sửa đổi không đưa vào danh mục; mỗi tệp trích điều của các văn bản này có ghi chú đọc bản hiện hành bằng `search_knowledge` và nêu sửa đổi. `articles` ghi các điều gói trích (59/2020/QH14, 88/2015/QH13, 174/2016/NĐ-CP, 80/2021/NĐ-CP, 22/2023/QH15); 67/2025, 48/2024, 41/2024, 133/2016 không có điều cụ thể trong bản gốc nên để trống.
+  - Thêm `formulas.yaml` (4 công thức của `compare_tax_methods`, căn cứ 67/2025/QH15 không ghi điều vì bản gốc không nêu); 05 dẫn 48/2024/QH15 và 41/2024/QH15 như bảng trạng thái bản gốc.
+  - Thêm "theo bản gốc" cho lộ trình 2025–2026 (01, 05, 07) và Nghị định 80/2021/NĐ-CP (02).
 - 1.0.0 (18/10/2026): bản chuẩn hoá đầu tiên cho WeRAG từ bản gốc 1.0.2. Danh mục 13 số hiệu: 59/2020/QH14, 88/2015/QH13, 174/2016/NĐ-CP, 133/2016/TT-BTC, 58/2026/TT-BTC, 132/2018/TT-BTC, 80/2021/NĐ-CP, 67/2025/QH15, 48/2024/QH15, 198/2025/QH15, 41/2024/QH15, 01/2021/NĐ-CP, 22/2023/QH15.

@@ -23,8 +23,8 @@ documents:
     title: Thông tư hướng dẫn chế độ kế toán doanh nghiệp siêu nhỏ
     used_for: kế toán siêu nhỏ, người nhà làm kế toán, báo cáo tối giản
   - number: 132/2018/TT-BTC
-    title: Thông tư hướng dẫn chế độ kế toán doanh nghiệp siêu nhỏ (bản trước)
-    used_for: so sánh lịch sử với chế độ kế toán siêu nhỏ hiện hành
+    title: Thông tư hướng dẫn chế độ kế toán doanh nghiệp siêu nhỏ
+    used_for: chế độ kế toán siêu nhỏ trước Thông tư 58/2026/TT-BTC (bản gốc cho rằng đã bị thay thế; danh mục chưa ghi nhận)
   - number: 80/2021/NĐ-CP
     title: Nghị định quy định chi tiết một số điều của Luật Hỗ trợ doanh nghiệp nhỏ và vừa
     used_for: tiêu chí siêu nhỏ, nhỏ, vừa; hỗ trợ hộ kinh doanh chuyển đổi
@@ -41,9 +41,8 @@ documents:
   - number: 41/2024/QH15
     title: Luật Bảo hiểm xã hội
     used_for: nghĩa vụ bảo hiểm xã hội khi có lao động
-  - number: 01/2021/NĐ-CP
-    title: Nghị định về đăng ký doanh nghiệp
-    used_for: hồ sơ đăng ký doanh nghiệp, đăng ký hộ kinh doanh
+  - number: 168/2025/NĐ-CP
+    used_for: hồ sơ đăng ký doanh nghiệp, đăng ký hộ kinh doanh (danh mục ghi thay thế Nghị định 01/2021 mà bản gốc dẫn)
   - number: 22/2023/QH15
     title: Luật Đấu thầu
     used_for: ưu đãi doanh nghiệp nhỏ và vừa trong mua sắm công

@@ -5,7 +5,7 @@
 > **CẢNH BÁO**
 > - **Mẫu tham khảo, chưa đối chiếu Luật Doanh nghiệp hiện hành** (nội dung theo bản gốc ngày 17/10/2026).
 > - Đây là **mẫu tham khảo**, không phải điều lệ mẫu chính thức của cơ quan đăng ký kinh doanh.
-> - Phải đối chiếu Luật Doanh nghiệp 2020, văn bản hướng dẫn và điều lệ mẫu hiện hành.
+> - Phải đối chiếu Luật Doanh nghiệp 59/2020/QH14 hiện hành (đã được sửa đổi — đọc bản hiện hành bằng `search_knowledge`), văn bản hướng dẫn và điều lệ mẫu hiện hành.
 > - Không dùng nguyên bản cho hồ sơ thật khi chưa được luật sư/người có chuyên môn rà soát.
 > - Các chỗ `[...]` là nơi điền thông tin.
 > - Mẫu này giữ **Chủ tịch công ty** theo luật hiện hành.

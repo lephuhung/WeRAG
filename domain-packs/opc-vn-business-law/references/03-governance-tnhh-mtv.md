@@ -4,8 +4,10 @@
 
 ## Khung pháp lý
 
+> Các điều của văn bản dưới đây trích theo bản gốc (17/10/2026). Danh mục ghi Luật Doanh nghiệp 59/2020/QH14 đã được sửa đổi ("Hết hiệu lực một phần"): trước khi trích một điều, đọc văn bản hiện hành bằng `search_knowledge` và nêu việc sửa đổi nếu có.
+
 - **Luật Doanh nghiệp 2020 (59/2020/QH14)**, số điều theo bản gốc (kiểm tra văn bản sửa đổi bằng `find_related_legal_documents`): Điều 74–87 (TNHH MTV), Điều 12–14 (người đại diện theo pháp luật), Điều 24 (nội dung điều lệ).
-- Văn bản hướng dẫn đăng ký doanh nghiệp (bản gốc dẫn Nghị định 01/2021/NĐ-CP; có thể đã được sửa đổi hoặc thay thế — xác nhận bằng `check_legal_status`).
+- Văn bản hướng dẫn đăng ký doanh nghiệp (bản gốc dẫn Nghị định 01/2021; danh mục ghi đã được thay thế bởi Nghị định 168/2025/NĐ-CP — tra Nghị định 168/2025/NĐ-CP trong KB).
 
 ## Hai mô hình quản trị
 

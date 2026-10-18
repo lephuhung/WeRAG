@@ -69,7 +69,7 @@ Mẫu câu:
 - Điều khoản vừa bị sửa trong 6 tháng gần nhất.
 - Ngành nghề kinh doanh có điều kiện (danh mục thay đổi).
 - Ưu đãi thuế theo ngành/địa bàn/khu công nghiệp.
-- Ngưỡng doanh thu áp dụng cho hộ kinh doanh (đang thay đổi theo lộ trình 2025–2026).
+- Ngưỡng doanh thu áp dụng cho hộ kinh doanh (theo bản gốc, đang thay đổi theo lộ trình 2025–2026).
 - Trường hợp có yếu tố nước ngoài, đất đai, lao động, chứng khoán.
 
 Nói rõ: "Cần kiểm tra văn bản hiện hành tại thời điểm bạn làm hồ sơ" — an toàn hơn là đoán.

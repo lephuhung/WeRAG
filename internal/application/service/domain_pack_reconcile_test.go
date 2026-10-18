@@ -67,8 +67,8 @@ func TestDomainPackReconcileSortsCatalogueNumbers(t *testing.T) {
 		{ID: "luat67", DocumentNumber: "67/2025/QH15", NumberKey: "67/2025/QH15", EffectiveOn: testDay(t, "2027-01-01")},
 		{ID: "luat48", DocumentNumber: "48/2024/QH15", NumberKey: "48/2024/QH15", Status: "Ngưng hiệu lực"},
 		// số hiệu is not unique: one live row, one fully expired
-		{ID: "nd01a", DocumentNumber: "01/2021/NĐ-CP", NumberKey: "01/2021/ND-CP", Title: "Đăng ký doanh nghiệp", Status: "Còn hiệu lực"},
-		{ID: "nd01b", DocumentNumber: "01/2021/NĐ-CP", NumberKey: "01/2021/ND-CP", Title: "Văn bản khác cùng số", Status: "Hết hiệu lực toàn bộ"},
+		{ID: "nd01a", DocumentNumber: "168/2025/NĐ-CP", NumberKey: "168/2025/ND-CP", Title: "Đăng ký doanh nghiệp", Status: "Còn hiệu lực"},
+		{ID: "nd01b", DocumentNumber: "168/2025/NĐ-CP", NumberKey: "168/2025/ND-CP", Title: "Văn bản khác cùng số", Status: "Hết hiệu lực toàn bộ"},
 		// a prefix match must not count as the document
 		{ID: "luat22x", DocumentNumber: "22/2023/QH15/X", NumberKey: "22/2023/QH15/X"},
 	}))
@@ -146,7 +146,7 @@ func TestDomainPackReconcileSortsCatalogueNumbers(t *testing.T) {
 
 	require.Len(t, res.Ambiguous, 1)
 	amb := res.Ambiguous[0]
-	assert.Equal(t, "01/2021/NĐ-CP", amb.Number)
+	assert.Equal(t, "168/2025/NĐ-CP", amb.Number)
 	require.Len(t, amb.Documents, 2)
 	for _, d := range amb.Documents {
 		if d.ID == "nd01a" {

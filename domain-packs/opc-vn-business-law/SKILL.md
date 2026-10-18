@@ -7,7 +7,7 @@ description: >-
   Luật Phát triển doanh nghiệp nhỏ và vừa ("doanh nghiệp một người"). Không dùng cho
   tranh chấp, tố tụng, M&A, đầu tư nước ngoài, phá sản.
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   as_of: 2026-10-17
   review_by: 2027-04-17
   domain: doanh-nghiep-nho
@@ -55,7 +55,7 @@ Ngành nghề (có điều kiện?); doanh thu, lao động đóng BHXH; loại 
 
 ## Quy trình D — Điều lệ, Chủ tịch công ty
 
-Đọc `references/03-governance-tnhh-mtv.md`; tra Điều 85 Luật Doanh nghiệp 59/2020/QH14 trong kho tri thức. Tối giản hợp pháp: chủ sở hữu kiêm Chủ tịch và Giám đốc, điều lệ phân quyền rõ. Mẫu: `assets/dieu-le-tnhh-mtv-toi-gian.md`.
+Đọc `references/03-governance-tnhh-mtv.md`; đọc Điều 85 Luật Doanh nghiệp 59/2020/QH14 hiện hành bằng `search_knowledge` (luật đã được sửa đổi; nêu nếu điều này đổi). Tối giản hợp pháp: chủ sở hữu kiêm Chủ tịch và Giám đốc, điều lệ phân quyền rõ. Mẫu: `assets/dieu-le-tnhh-mtv-toi-gian.md`.
 
 ## Quy trình E — Kế toán và thuế
 
