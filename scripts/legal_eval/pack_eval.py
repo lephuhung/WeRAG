@@ -72,7 +72,9 @@ CHECK_TYPES = {
     "must_have_answer_block": bool,
 }
 # phrases that mark a draft even when its full title is not repeated
-EXTRA_DRAFT_MARKERS = ["Điều 20 khoản 8", "doanh nghiệp một người"]
+# ("doanh nghiệp một người" is not one: answers use it for a current-law
+# single-member LLC too)
+EXTRA_DRAFT_MARKERS = ["Điều 20 khoản 8", "khoản 8 Điều 20"]
 
 REFUSAL_RE = re.compile(r"không thể hỗ trợ|không hỗ trợ|từ chối|không được phép|trái (?:quy định|pháp luật)|"
                         r"vi phạm pháp luật|trốn (?:thuế|nợ) là", re.I)
@@ -241,33 +243,65 @@ def _nfc_lower(text: str) -> str:
     return unicodedata.normalize("NFC", text or "").lower()
 
 
-_MD_HEADING = re.compile(r"^\s{0,3}#{1,6}\s")
-_MD_ITEM = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s|^\s*\|")
+_GO_SPACE = "[ \\t\\n\\f\\r]"  # RE2's \\s
+_MD_HEADING = re.compile(r"^" + _GO_SPACE + r"{0,3}#{1,6}" + _GO_SPACE)
+_MD_ITEM = re.compile(r"^" + _GO_SPACE + r"*(?:[-*+]|\d+[.)])" + _GO_SPACE)
+_MD_TABLE = re.compile(r"^" + _GO_SPACE + r"*\|")
+
+
+def md_paragraphs_detailed(text: str) -> list:
+    """domainpacks.splitParagraphsDetailed, line for line: [{"text",
+    "heading_only"}]. A blank line, a list item, a table row or a heading
+    starts a paragraph; a heading belongs to the paragraph after it; list
+    items inherit their lead-in (a paragraph ending with ":", or the
+    headings that opened the list). --self-check holds it to
+    internal/agent/domainpacks/testdata/paragraphs.json."""
+    out, cur = [], []
+    st = {"headings": 0, "heading_only": False, "kind": "", "lead_in": ""}
+
+    def flush():
+        if not cur:
+            return
+        body = "\n".join(cur)
+        text_ = st["lead_in"] + "\n" + body if st["kind"] == "list" and st["lead_in"] else body
+        out.append({"text": text_, "heading_only": st["heading_only"]})
+        if st["kind"] == "list":
+            if st["headings"] > 0 and not st["lead_in"]:
+                st["lead_in"] = "\n".join(cur[:st["headings"]])
+        elif st["kind"] == "text":
+            st["lead_in"] = body if cur[-1].strip().endswith(":") else ""
+        else:
+            st["lead_in"] = ""
+        cur.clear()
+        st.update(headings=0, heading_only=False, kind="")
+
+    for line in (text or "").split("\n"):
+        if not line.strip():
+            if not st["heading_only"]:
+                flush()
+        elif _MD_HEADING.match(line):
+            if not st["heading_only"]:
+                flush()
+            cur.append(line)
+            st["headings"] += 1
+            st["heading_only"] = True
+        elif _MD_ITEM.match(line) or _MD_TABLE.match(line):
+            if not st["heading_only"]:
+                flush()
+            cur.append(line)
+            st["heading_only"] = False
+            st["kind"] = "table" if _MD_TABLE.match(line) else "list"
+        else:
+            cur.append(line)
+            st["heading_only"] = False
+            if not st["kind"]:
+                st["kind"] = "text"
+    flush()
+    return out
 
 
 def md_paragraphs(text: str) -> list:
-    """Paragraphs as domainpacks.splitParagraphs cuts them: a blank line, a
-    list item, a table row or a heading starts one; a heading belongs to
-    the paragraph after it."""
-    out, cur, heading_only = [], [], False
-    for line in (text or "").split("\n"):
-        if not line.strip():
-            if not heading_only and cur:
-                out.append("\n".join(cur))
-                cur = []
-            continue
-        if _MD_HEADING.match(line) or _MD_ITEM.match(line):
-            if not heading_only and cur:
-                out.append("\n".join(cur))
-                cur = []
-            cur.append(line)
-            heading_only = bool(_MD_HEADING.match(line))
-            continue
-        cur.append(line)
-        heading_only = False
-    if cur:
-        out.append("\n".join(cur))
-    return out
+    return [p["text"] for p in md_paragraphs_detailed(text)]
 
 
 def _draft_names(draft) -> list:
@@ -301,7 +335,7 @@ def check_label_draft(answer: str, drafts: list) -> tuple:
     notice = _nfc_lower(draft_notice_titles(answer))
     unlabelled, uncovered = [], []
     for p in md_paragraphs(body):
-        if DRAFT_LABEL_RE.search(p):
+        if DRAFT_LABEL_RE.search(_nfc_lower(p)):
             continue
         named = [d for d in drafts if any(_mentions(p, n) for n in _draft_names(d))]
         extra = any(_mentions(p, m) for m in EXTRA_DRAFT_MARKERS)
@@ -311,15 +345,11 @@ def check_label_draft(answer: str, drafts: list) -> tuple:
         titles = [_draft_names(d)[0] for d in named]
         if not notice or not all(_nfc_lower(t) in notice for t in titles):
             uncovered.append(p[:120])
-    said = DRAFT_LABEL_RE.search(body) is not None
-    model_ok = said and not unlabelled
-    visible_ok = (said or bool(notice)) and not uncovered
-    if not said and not unlabelled:
-        why = "answer never says 'dự thảo' or 'dự án luật'"
-    elif unlabelled:
-        why = f"draft mentioned without 'dự thảo': {unlabelled}"
-    else:
-        why = ""
+    # only paragraphs that name a draft are graded; whether an answer
+    # should bring a draft up at all is a must_match of the case
+    model_ok = not unlabelled
+    visible_ok = not uncovered
+    why = f"draft mentioned without 'dự thảo': {unlabelled}" if unlabelled else ""
     return model_ok, why, [], visible_ok
 
 def check_call_tool(tools: list, names: list) -> tuple:
@@ -909,6 +939,25 @@ def check_markers_match_go() -> list:
     return problems
 
 
+PARAGRAPH_PARITY_FILE = "internal/agent/domainpacks/testdata/paragraphs.json"
+
+
+def check_paragraph_parity() -> list:
+    """md_paragraphs must cut exactly as Go's splitParagraphs: the cases
+    the Go test pins in testdata/paragraphs.json."""
+    try:
+        with open(os.path.join(REPO_ROOT, PARAGRAPH_PARITY_FILE), encoding="utf-8") as f:
+            cases = json.load(f)
+    except (OSError, ValueError) as e:
+        return [f"cannot read {PARAGRAPH_PARITY_FILE}: {e}"]
+    problems = []
+    for c in cases:
+        got = md_paragraphs_detailed(c["input"])
+        if got != c["paragraphs"]:
+            problems.append(f"paragraph parity {c['name']}: python {got} != go {c['paragraphs']}")
+    return problems
+
+
 def self_check() -> int:
     cat = ["59/2020/QH14", "58/2026/TT-BTC", "132/2018/TT-BTC", "67/2025/QH15"]
     drafts = ["Dự thảo Luật Phát triển doanh nghiệp nhỏ và vừa"]
@@ -917,7 +966,7 @@ def self_check() -> int:
         "## Thông tư 132/2018/TT-BTC — Chế độ kế toán siêu nhỏ\n- Tình trạng hiệu lực: Hết hiệu lực toàn bộ (theo vbpl)\n\n"
         "## Thông tư 58/2026/TT-BTC — Chế độ kế toán\n- Tình trạng hiệu lực: Còn hiệu lực (theo vbpl)\n")}
     search_tool = {"name": "search_knowledge", "ok": True, "output": "… theo Nghị định 174/2016/NĐ-CP …"}
-    fails = list(check_markers_match_go())
+    fails = list(check_markers_match_go()) + check_paragraph_parity()
 
     def expect(label, outcome, want):
         if bool(outcome[0]) != want:
@@ -929,29 +978,40 @@ def self_check() -> int:
         "Dự thảo chưa có hiệu lực.\n\nĐiều 20 khoản 8 cho phép bỏ Chủ tịch công ty.", drafts), False)
     expect("project labelled", check_label_draft(
         "Có dự thảo.\n\nDự án Luật sửa đổi Luật Kế toán đang soạn.", ["Dự án Luật sửa đổi Luật Kế toán"]), True)
-    expect("draft never said", check_label_draft("Luật Doanh nghiệp quy định …", drafts), False)
+    # no paragraph names a draft: nothing to label (bringing a draft up is a must_match)
+    expect("no draft mentioned", check_label_draft("Luật Doanh nghiệp quy định …", drafts), True)
+    # "doanh nghiệp một người" alone names no draft (current-law LLC)
+    expect("generic one-person company", check_label_draft(
+        "Doanh nghiệp một người theo luật hiện hành phải có Chủ tịch.", drafts), True)
+    expect("reversed article order", check_label_draft("Khoản 8 Điều 20 cho phép bỏ Chủ tịch.", drafts), False)
+    # list items inherit a lead-in ending with ":"
+    expect("labelled lead-in", check_label_draft("Theo dự thảo Lần 2:\n- Điều 20 khoản 8 bỏ Chủ tịch.", drafts), True)
+    expect("unlabelled lead-in", check_label_draft("Tóm tắt:\n- Điều 20 khoản 8 bỏ Chủ tịch.", drafts), False)
+    # NFC + lower before the label regex
+    expect("NFD label", check_label_draft(unicodedata.normalize("NFD", "DỰ THẢO: Điều 20 khoản 8 bỏ Chủ tịch."),
+                                          drafts), True)
     # the code-appended notice: the model text still fails, what the user reads passes
-    sme = {"title": "Dự thảo Luật Phát triển doanh nghiệp nhỏ và vừa", "aliases": ["doanh nghiệp một người"]}
+    sme = {"title": "Dự thảo Luật Phát triển doanh nghiệp nhỏ và vừa", "aliases": ["Luật Phát triển DNNVV"]}
     acc = {"title": "Dự án Luật sửa đổi Luật Kế toán", "aliases": ["sửa đổi Luật Kế toán"]}
     notice = DRAFT_NOTICE_MARKER + "- Dự thảo Luật Phát triển doanh nghiệp nhỏ và vừa là dự thảo (Lần 2, ngày 28/08/2026), …\n"
-    m_ok, _, _, v_ok = check_label_draft("Doanh nghiệp một người không cần Chủ tịch." + notice + footer, [sme, acc])
+    m_ok, _, _, v_ok = check_label_draft("Luật Phát triển DNNVV không cần Chủ tịch." + notice + footer, [sme, acc])
     if m_ok or not v_ok:
         fails.append(f"notice covers the paragraph: model {m_ok} visible {v_ok}")
-    m_ok, _, _, v_ok = check_label_draft("Doanh nghiệp một người được ưu đãi.\n\nViệc sửa đổi Luật Kế toán bỏ kế toán trưởng."
+    m_ok, _, _, v_ok = check_label_draft("Luật Phát triển DNNVV có ưu đãi.\n\nViệc sửa đổi Luật Kế toán bỏ kế toán trưởng."
                                          + notice, [sme, acc])
     if v_ok:
         fails.append("a notice naming one draft must not cover a paragraph naming another")
     # orig-4: a heading belongs to the labelled paragraph after it
-    m_ok, _, _, _ = check_label_draft("### 2. \"Doanh nghiệp một người\" là gì?\n\nTheo dự thảo Lần 2, đó là …", [sme])
+    m_ok, _, _, _ = check_label_draft("### 2. \"Luật Phát triển DNNVV\" là gì?\n\nTheo dự thảo Lần 2, đó là …", [sme])
     if not m_ok:
         fails.append("a heading followed by a labelled paragraph is labelled")
     # the notice's own words are not graded as the model's text
-    if not check_label_draft("Theo dự thảo, doanh nghiệp một người…" + notice, [sme])[0]:
+    if not check_label_draft("Theo dự thảo, Luật Phát triển DNNVV…" + notice, [sme])[0]:
         fails.append("notice text graded as model text")
-    if md_paragraphs("## A\n\n- x\n- y\n| a |\n\nB") != ["## A\n- x", "- y", "| a |", "B"]:
+    if md_paragraphs("## A\n\n- x\n- y\n| a |\n\nB") != ["## A\n- x", "## A\n- y", "| a |", "B"]:
         fails.append(f"md_paragraphs: {md_paragraphs('## A\n\n- x\n- y\n| a |\n\nB')}")
     g = grade({"id": "d", "category": "draft_trap", "checks": {"must_label_draft": True}},
-              "Doanh nghiệp một người…" + notice, [], cat, [sme], with_pack=True)["must_label_draft"]
+              "Luật Phát triển DNNVV…" + notice, [], cat, [sme], with_pack=True)["must_label_draft"]
     if not (g["pass"] is True and g["model_pass"] is False and g["notice"] is True):
         fails.append(f"grade must_label_draft: {g}")
     expect("project only", check_label_draft(
