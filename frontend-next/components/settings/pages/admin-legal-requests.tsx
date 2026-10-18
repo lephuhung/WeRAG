@@ -4,7 +4,9 @@
  * in chat that no knowledge base holds the full text of. Shown as the
  * "Document requests" tab of the legal documents page
  * (admin-legal-documents.tsx). Backend: /api/v1/system/legal-requests
- * (+ /:id, /public-knowledge-bases) — SuperAdmin-only. */
+ * (+ /:id, /:id/portal-check, /public-knowledge-bases) — SuperAdmin-only.
+ * A document vbpl.vn has only as an original PDF scan can be loaded with
+ * OCR (allow_pdf); the portal check says which form exists. */
 
 import { useCallback, useEffect, useState } from "react";
 import { Modal } from "@/components/modal";
@@ -13,12 +15,14 @@ import { useT, type LocaleKey } from "@/lib/i18n";
 import { ApiError } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/datetime";
 import {
+  checkLegalRequestPortal,
   decideLegalRequest,
   listLegalRequestKnowledgeBases,
   listLegalRequests,
   type LegalRequestCounts,
   type LegalRequestFilter,
   type LegalRequestItem,
+  type LegalRequestPortal,
 } from "@/lib/api/legal-requests";
 
 const PAGE_SIZE = 50;
@@ -47,6 +51,45 @@ function itemLabel(item: LegalRequestItem): string {
   return [d?.doc_type || item.doc_type, d?.document_number || item.document_number].filter(Boolean).join(" ");
 }
 
+/** What vbpl.vn offers, as one of the badge kinds. */
+type PortalKind = "html" | "pdf" | "none" | "gone";
+
+function portalOf(item: LegalRequestItem): LegalRequestPortal | null {
+  const p = item.detail?.portal;
+  return p && typeof p === "object" ? p : null;
+}
+
+function portalKind(p: LegalRequestPortal): PortalKind {
+  if (!p.exists) return "gone";
+  if (p.html) return "html";
+  if (p.pdf_file) return "pdf";
+  return "none";
+}
+
+const PORTAL_TONE: Record<PortalKind, string> = {
+  html: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+  pdf: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+  none: "bg-surface-strong text-muted",
+  gone: "bg-surface-strong text-muted",
+};
+
+function PortalBadge({ portal, locale }: { portal: LegalRequestPortal; locale: string }) {
+  const { t } = useT();
+  const kind = portalKind(portal);
+  const when = formatDateTime(portal.checked_at, locale);
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span
+        className={`badge-pill inline-block w-fit text-[10px] ${PORTAL_TONE[kind]}`}
+        title={portal.pdf_file || undefined}
+      >
+        {t(`lreq.portal.${kind}` as LocaleKey)}
+      </span>
+      {when && <span className="caption tabular-nums text-muted-soft">{t("lreq.portal.checkedAt", { time: when })}</span>}
+    </div>
+  );
+}
+
 export function countTotal(c: LegalRequestCounts | null): number {
   return c ? c.requested + c.added + c.rejected : 0;
 }
@@ -71,20 +114,23 @@ export default function LegalRequestsSection({
   const [notice, setNotice] = useState("");
   const [acting, setActing] = useState<{ item: LegalRequestItem; action: Action } | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (): Promise<LegalRequestItem[] | null> => {
     setLoading(true);
     setError("");
     try {
       const res = await listLegalRequests({ status: filter, page, pageSize: PAGE_SIZE });
-      setItems(res.data?.items ?? []);
+      const list = res.data?.items ?? [];
+      setItems(list);
       setTotal(res.data?.total ?? 0);
       if (res.data?.counts) {
         setCounts(res.data.counts);
         onCounts?.(res.data.counts);
       }
+      return list;
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) onDenied?.();
       else setError(errorText(e, t("lreq.loadFailed")));
+      return null;
     } finally {
       setLoading(false);
     }
@@ -164,6 +210,7 @@ export default function LegalRequestsSection({
                   setNotice("");
                   setActing({ item, action });
                 }}
+                onUpdated={(updated) => setItems((cur) => cur.map((it) => (it.id === updated.id ? updated : it)))}
               />
             ))}
             {items.length === 0 && (
@@ -199,6 +246,7 @@ export default function LegalRequestsSection({
         <DecisionDialog
           item={acting.item}
           action={acting.action}
+          onReload={async () => (await load())?.find((it) => it.id === acting.item.id) ?? null}
           onClose={() => setActing(null)}
           onDone={(updated) => {
             setActing(null);
@@ -219,12 +267,30 @@ function RequestRow({
   item,
   locale,
   onAct,
+  onUpdated,
 }: {
   item: LegalRequestItem;
   locale: string;
   onAct: (action: Action) => void;
+  onUpdated: (item: LegalRequestItem) => void;
 }) {
   const { t } = useT();
+  const [checking, setChecking] = useState(false);
+  const [checkError, setCheckError] = useState("");
+  const portal = portalOf(item);
+  const parsing = item.knowledge_parse_status === "pending" || item.knowledge_parse_status === "processing";
+  const checkPortal = async () => {
+    setChecking(true);
+    setCheckError("");
+    try {
+      const res = await checkLegalRequestPortal(item.id);
+      if (res.data) onUpdated(res.data);
+    } catch (e) {
+      setCheckError(errorText(e, t("lreq.portal.checkFailed")));
+    } finally {
+      setChecking(false);
+    }
+  };
   const doc = item.document ?? null;
   const title = doc?.title || item.title;
   const label = itemLabel(item);
@@ -292,20 +358,44 @@ function RequestRow({
                 {item.decision_note}
               </span>
             )}
+            {item.status === "added" && parsing && (
+              <span className="badge-pill inline-block w-fit bg-amber-500/10 text-[10px] text-amber-700 dark:text-amber-400">
+                {t("lreq.parse.processing")}
+              </span>
+            )}
+            {item.status === "added" && item.knowledge_parse_status === "failed" && (
+              <span className="badge-pill inline-block w-fit bg-red-500/10 text-[10px] text-red-700 dark:text-red-400">
+                {t("lreq.parse.failed")}
+              </span>
+            )}
           </div>
         ) : (
-          <div className="flex flex-wrap gap-1.5">
-            {item.legal_document_id && (
-              <button type="button" className="btn btn-primary btn-sm py-0.5 text-[12px]" onClick={() => onAct("ingest")}>
-                {t("lreq.act.ingest")}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
+              {item.legal_document_id && (
+                <button type="button" className="btn btn-primary btn-sm py-0.5 text-[12px]" onClick={() => onAct("ingest")}>
+                  {t("lreq.act.ingest")}
+                </button>
+              )}
+              <button type="button" className="btn btn-outline btn-sm py-0.5 text-[12px]" onClick={() => onAct("added")}>
+                {t("lreq.act.added")}
               </button>
-            )}
-            <button type="button" className="btn btn-outline btn-sm py-0.5 text-[12px]" onClick={() => onAct("added")}>
-              {t("lreq.act.added")}
-            </button>
-            <button type="button" className="btn btn-outline btn-sm py-0.5 text-[12px]" onClick={() => onAct("reject")}>
-              {t("lreq.act.reject")}
-            </button>
+              <button type="button" className="btn btn-outline btn-sm py-0.5 text-[12px]" onClick={() => onAct("reject")}>
+                {t("lreq.act.reject")}
+              </button>
+              {item.legal_document_id && (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm py-0.5 text-[12px]"
+                  onClick={() => void checkPortal()}
+                  disabled={checking}
+                >
+                  {checking ? t("lreq.checkingPortal") : t("lreq.act.checkPortal")}
+                </button>
+              )}
+            </div>
+            {portal && <PortalBadge portal={portal} locale={locale} />}
+            {checkError && <span className="caption text-error">{checkError}</span>}
           </div>
         )}
       </td>
@@ -314,17 +404,27 @@ function RequestRow({
 }
 
 function DecisionDialog({
-  item,
+  item: initial,
   action,
+  onReload,
   onClose,
   onDone,
 }: {
   item: LegalRequestItem;
   action: Action;
+  /** Reloads the queue and returns this request as the server now has it. */
+  onReload: () => Promise<LegalRequestItem | null>;
   onClose: () => void;
   onDone: (updated: LegalRequestItem) => void;
 }) {
-  const { t } = useT();
+  const { t, locale } = useT();
+  // the request as last read: an ingest refused for lack of HTML stores
+  // what vbpl.vn offers (detail.portal), reloaded into this dialog
+  const [item, setItem] = useState(initial);
+  const portal = action === "ingest" ? portalOf(item) : null;
+  const kind = portal ? portalKind(portal) : null;
+  const pdfOnly = kind === "pdf";
+  const blocked = kind === "none" || kind === "gone";
   const [kbs, setKbs] = useState<{ id: string; name: string }[] | null>(null);
   const [kbId, setKbId] = useState(item.suggested_kb_id ?? "");
   const [note, setNote] = useState("");
@@ -355,7 +455,7 @@ function DecisionDialog({
   }, [action, t]);
 
   const canSubmit =
-    !saving && (action === "ingest" ? !!kbId : action === "reject" ? note.trim() !== "" : true);
+    !saving && (action === "ingest" ? !!kbId && !blocked : action === "reject" ? note.trim() !== "" : true);
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -365,13 +465,26 @@ function DecisionDialog({
       const res = await decideLegalRequest(
         item.id,
         action === "ingest"
-          ? { action, knowledge_base_id: kbId }
+          ? { action, knowledge_base_id: kbId, ...(pdfOnly ? { allow_pdf: true } : {}) }
           : action === "reject"
             ? { action, note: note.trim() }
             : { action, note: note.trim() || undefined, knowledge_id: knowledgeId.trim() || undefined },
       );
       onDone(res.data ?? item);
     } catch (e) {
+      // a refusal for lack of HTML (only a PDF scan, or nothing) stored the
+      // portal availability on the request: reload it to offer the PDF
+      // option or say why nothing can be loaded
+      if (action === "ingest" && e instanceof ApiError && e.status === 400 && !pdfOnly) {
+        const fresh = await onReload().catch(() => null);
+        if (fresh && portalOf(fresh)) {
+          setItem(fresh);
+          const k = portalKind(portalOf(fresh)!);
+          setError(k === "pdf" ? "" : errorText(e, t("lreq.actFailed")));
+          setSaving(false);
+          return;
+        }
+      }
       setError(errorText(e, t("lreq.actFailed")));
       setSaving(false);
     }
@@ -409,6 +522,24 @@ function DecisionDialog({
           </label>
         )}
 
+        {portal && (
+          <div className="flex flex-col gap-1.5">
+            <PortalBadge portal={portal} locale={locale} />
+            {pdfOnly && (
+              <div className="rounded-[10px] border border-amber-500/30 bg-amber-500/5 p-2.5">
+                <p className="caption text-body">{t("lreq.pdf.only", { file: portal.pdf_file })}</p>
+                <p className="caption mt-1 text-amber-700 dark:text-amber-400">{t("lreq.pdf.warning")}</p>
+              </div>
+            )}
+            {blocked && (
+              <div className="rounded-[10px] border border-hairline bg-canvas-soft p-2.5">
+                <p className="caption text-body">{t(kind === "gone" ? "lreq.gone.reason" : "lreq.none.reason")}</p>
+                <p className="caption mt-1 text-muted">{t("lreq.none.hint")}</p>
+              </div>
+            )}
+          </div>
+        )}
+
         {action !== "ingest" && (
           <label className="flex flex-col gap-1">
             <span className="caption text-muted">
@@ -442,7 +573,13 @@ function DecisionDialog({
             {t("common.cancel")}
           </button>
           <button className="btn btn-primary btn-sm" onClick={() => void submit()} disabled={!canSubmit}>
-            {saving ? (action === "ingest" ? t("lreq.ingesting") : "…") : t(`lreq.confirm.${action}` as LocaleKey)}
+            {saving
+              ? action === "ingest"
+                ? t("lreq.ingesting")
+                : "…"
+              : pdfOnly
+                ? t("lreq.pdf.confirm")
+                : t(`lreq.confirm.${action}` as LocaleKey)}
           </button>
         </div>
       </div>

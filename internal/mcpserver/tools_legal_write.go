@@ -34,11 +34,17 @@ func legalIngestTool() mcp.Tool {
 		mcp.WithDescription("Fetch one document from vbpl.vn by id and add it to a public legal knowledge base "+
 			"with the standard metadata (external_id, source=vbpl, số hiệu, dates, status, appendix files). "+
 			"Idempotent: an unchanged copy is reported as unchanged, a changed page replaces the old copy. "+
-			"Refuses documents the portal marks fully expired (\"Hết hiệu lực toàn bộ\") and empty pages. "+
+			"Refuses documents the portal marks fully expired (\"Hết hiệu lực toàn bộ\") and documents with no full text. "+
+			"Without HTML full text some documents have only the original PDF (a scan): pass allow_pdf=true to ingest it; "+
+			"the knowledge base's pdf parser OCRs it, so expect OCR slips and a weaker Điều/Khoản structure. The result's "+
+			"source_format says which was ingested (html or pdf_ocr). "+
 			"Pick the knowledge base by document type (Luật → the Luật base, Nghị định → Nghị định…)."),
 		mcp.WithString("vbpl_id", mcp.Required(), mcp.Description("vbpl.vn document id (legal_catalog_search returns it)")),
 		mcp.WithString("knowledge_base_id", mcp.Required(), mcp.Description("Target knowledge base id or exact name")),
 		mcp.WithString("reason", mcp.Description("Why this document is fed (logged)")),
+		mcp.WithBoolean("allow_pdf", mcp.Description("Default false. When vbpl.vn has no HTML full text, ingest the "+
+			"portal's original PDF instead: a scanned original, OCRed while parsing, so the text may carry OCR slips and "+
+			"the legal structure may be weaker. Without it such a document is refused with a message naming the PDF.")),
 	)
 }
 
@@ -115,21 +121,23 @@ func (s *Server) handleLegalIngest(ctx context.Context, req mcp.CallToolRequest)
 
 	res, err := s.legalFeedService().IngestFromPortal(scoped, vbplID, kb,
 		service.LegalFeedActor{EndpointID: ep.ID, TenantID: ep.TenantID, Channel: legalFeedChannel},
-		req.GetString("reason", ""))
+		req.GetString("reason", ""), service.LegalIngestOptions{AllowPDF: req.GetBool("allow_pdf", false)})
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	if res.Result == "unchanged" {
 		return mcp.NewToolResultStructured(map[string]any{
 			"result": "unchanged", "vbpl_id": vbplID, "knowledge_id": res.KnowledgeID, "knowledge_base_id": kb.ID,
+			"source_format": res.SourceFormat,
 		}, fmt.Sprintf("Document %s (%s) is already in %s and unchanged.", vbplID, res.DocumentNumber, kb.Name)), nil
 	}
 	return mcp.NewToolResultStructured(map[string]any{
 		"result": res.Result, "vbpl_id": vbplID, "knowledge_id": res.KnowledgeID, "knowledge_base_id": kb.ID,
 		"replaced_knowledge_id": res.ReplacedKnowledgeID, "document": summarizeKnowledge(res.Knowledge),
 		"document_number": res.DocumentNumber, "doc_type": res.DocType, "status": res.Status, "vbpl_markup": res.VBPLMarkup,
-	}, fmt.Sprintf("Document %s (%s, %s) %s in %s as %s; indexing runs asynchronously (parse_status).",
-		vbplID, res.DocumentNumber, res.DocType, res.Result, kb.Name, res.KnowledgeID)), nil
+		"source_format": res.SourceFormat,
+	}, fmt.Sprintf("Document %s (%s, %s) %s in %s as %s from %s; indexing runs asynchronously (parse_status).",
+		vbplID, res.DocumentNumber, res.DocType, res.Result, kb.Name, res.KnowledgeID, res.SourceFormat)), nil
 }
 
 // legalFeedService is the shared vbpl.vn ingest (service.LegalFeedService),

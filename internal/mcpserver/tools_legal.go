@@ -583,7 +583,9 @@ func legalListRequestsTool() mcp.Tool {
 		mcp.WithDescription("List the documents users asked about that the system holds no full text of: each chat "+
 			"question naming a full số hiệu no knowledge base holds records a request (once per session). Rows with "+
 			"a vbpl_id are known to the catalogue and can be fed with legal_ingest_document, which marks them added; "+
-			"rows without one are numbers the catalogue does not know. Most recently requested first."),
+			"rows without one are numbers the catalogue does not know. A row's portal (when a check or an ingest recorded it) "+
+			"says what vbpl.vn offers: html true, or only pdf_file (then ingest with allow_pdf), or neither. "+
+			"Most recently requested first."),
 		mcp.WithString("status", mcp.Description("requested (default), added, rejected or all")),
 		mcp.WithNumber("limit", mcp.Description("Maximum rows, default 100, max 500")),
 	)
@@ -600,6 +602,9 @@ type legalRequestRow struct {
 	RequestCount    int       `json:"request_count"`
 	LastRequestedAt time.Time `json:"last_requested_at"`
 	URL             string    `json:"url,omitempty"`
+	// Portal is what vbpl.vn offers for the document (html, pdf_file,
+	// exists, checked_at), when a SuperAdmin check or ingest recorded it.
+	Portal json.RawMessage `json:"portal,omitempty"`
 }
 
 func (s *Server) handleLegalListRequests(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -627,6 +632,14 @@ func (s *Server) handleLegalListRequests(ctx context.Context, req mcp.CallToolRe
 			DocType: r.DocType, Status: r.Status, RequestCount: r.RequestCount, LastRequestedAt: r.LastRequestedAt}
 		if r.LegalDocumentID != "" {
 			row.URL = fmt.Sprintf(vbplDocURL, r.LegalDocumentID)
+		}
+		if len(r.Detail) > 0 {
+			var detail map[string]json.RawMessage
+			if json.Unmarshal(r.Detail, &detail) == nil {
+				if p := detail[types.LegalRequestDetailPortal]; len(p) > 0 && string(p) != "null" {
+					row.Portal = p
+				}
+			}
 		}
 		out = append(out, row)
 	}

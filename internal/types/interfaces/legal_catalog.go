@@ -160,6 +160,12 @@ type LegalRequestRepository interface {
 	List(ctx context.Context, status string, offset, limit int) ([]*types.LegalDocumentRequest, int64, error)
 	// Decide sets the status of one request with the decision fields.
 	Decide(ctx context.Context, id, status, decidedBy, note, knowledgeID, kbID string) (*types.LegalDocumentRequest, error)
+	// UpdateDetail merges the top-level keys of detail into the request's
+	// Detail JSON (other keys are kept) and returns the stored row, nil
+	// when the request is absent.
+	UpdateDetail(ctx context.Context, id string, detail map[string]any) (*types.LegalDocumentRequest, error)
+	// KnowledgeParseStatuses returns knowledges.parse_status by knowledge id.
+	KnowledgeParseStatuses(ctx context.Context, knowledgeIDs []string) (map[string]string, error)
 	// MarkAddedByDocument marks the open requests of a catalogue document
 	// added (after any ingest of that vbpl.vn id); returns how many.
 	MarkAddedByDocument(ctx context.Context, legalDocumentID, knowledgeID, kbID, actor string) (int64, error)
@@ -187,4 +193,7 @@ type LegalRequestService interface {
 	Decide(ctx context.Context, id string, d *types.LegalRequestDecision) (*types.LegalRequestItem, error)
 	// PublicKnowledgeBases lists the KBs a request can be ingested into.
 	PublicKnowledgeBases(ctx context.Context) ([]types.LegalPublicKB, error)
+	// CheckPortal reads what vbpl.vn offers for the request's document
+	// (HTML, original PDF, nothing) and stores it as detail.portal.
+	CheckPortal(ctx context.Context, id string) (*types.LegalRequestItem, error)
 }

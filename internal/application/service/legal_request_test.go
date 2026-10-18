@@ -2,8 +2,12 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	stderrors "errors"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,6 +48,31 @@ func (r *queueRepo) Decide(_ context.Context, id, status, by, note, kid, kbID st
 	now := time.Now()
 	row.Status, row.DecidedBy, row.DecisionNote, row.KnowledgeID, row.KnowledgeBaseID, row.DecidedAt = status, by, note, kid, kbID, &now
 	r.decided = append(r.decided, id+":"+status)
+	return row, nil
+}
+
+func (r *queueRepo) KnowledgeParseStatuses(_ context.Context, ids []string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, id := range ids {
+		out[id] = "processing"
+	}
+	return out, nil
+}
+
+func (r *queueRepo) UpdateDetail(_ context.Context, id string, detail map[string]any) (*types.LegalDocumentRequest, error) {
+	row := r.rows[id]
+	if row == nil {
+		return nil, nil
+	}
+	merged := map[string]any{}
+	if len(row.Detail) > 0 {
+		_ = json.Unmarshal(row.Detail, &merged)
+	}
+	for k, v := range detail {
+		merged[k] = v
+	}
+	raw, _ := json.Marshal(merged)
+	row.Detail = types.JSON(raw)
 	return row, nil
 }
 
@@ -121,7 +150,8 @@ func TestLegalRequestServiceQueue(t *testing.T) {
 		t.Fatalf("reject: %+v %v", it, err)
 	}
 	it, err = svc.Decide(ctx, "r1", &types.LegalRequestDecision{Action: "added", KnowledgeID: "k9", KnowledgeBaseID: "kb-nd"})
-	if err != nil || it.Status != types.LegalRequestAdded || it.KnowledgeID != "k9" || it.Document == nil {
+	if err != nil || it.Status != types.LegalRequestAdded || it.KnowledgeID != "k9" || it.Document == nil ||
+		it.KnowledgeParseStatus != "processing" {
 		t.Fatalf("added: %+v %v", it, err)
 	}
 }
@@ -136,5 +166,43 @@ func TestLegalTypeTargetsSuggestKBs(t *testing.T) {
 		if targets[docType].ID != want {
 			t.Errorf("%s → %q, want %q", docType, targets[docType].ID, want)
 		}
+	}
+}
+
+func TestLegalRequestCheckPortal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"success":true,"data":{"id":"179132","docNum":"74/2022/TT-BTC","effStatus":{"name":"Còn hiệu lực"},
+			"documentContentFileName":"VanBanGoc_74.TT.pdf","documentContent":{"content":""}}}`)
+	}))
+	defer srv.Close()
+	repo := &queueRepo{rows: map[string]*types.LegalDocumentRequest{
+		"r1": {ID: "r1", LegalDocumentID: "179132", Status: types.LegalRequestRequested, Detail: types.JSON(`{"keep":1}`)},
+		"r2": {ID: "r2", Status: types.LegalRequestRequested},
+	}}
+	feed := NewLegalFeedService(nil, nil, repo)
+	feed.HTTP = &http.Client{Transport: feedGateway{base: srv.URL}}
+	svc := NewLegalRequestService(repo, queueCatalog{}, nil, feed)
+	ctx := context.Background()
+
+	it, err := svc.CheckPortal(ctx, "r1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var detail struct {
+		Keep   int                     `json:"keep"`
+		Portal LegalPortalAvailability `json:"portal"`
+	}
+	if err := json.Unmarshal(it.Detail, &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.Keep != 1 || !detail.Portal.Exists || detail.Portal.HTML || detail.Portal.PDFFile != "VanBanGoc_74.TT.pdf" ||
+		detail.Portal.CheckedAt.IsZero() || !strings.Contains(string(it.Detail), `"checked_at"`) {
+		t.Fatalf("detail = %s", it.Detail)
+	}
+	if _, err := svc.CheckPortal(ctx, "r2"); httpStatus(err) != http.StatusBadRequest {
+		t.Fatalf("no vbpl id: %v", err)
+	}
+	if _, err := svc.CheckPortal(ctx, "nope"); httpStatus(err) != http.StatusNotFound {
+		t.Fatalf("missing: %v", err)
 	}
 }

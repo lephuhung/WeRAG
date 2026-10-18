@@ -19,13 +19,16 @@ import (
 
 type feedKnowledge struct {
 	interfaces.KnowledgeService
-	created []string
+	created  []string
+	lastMeta map[string]string
+	lastType string
 }
 
 func (f *feedKnowledge) CreateKnowledgeFromFile(_ context.Context, kbID string, fh *multipart.FileHeader,
 	meta map[string]string, _ *bool, name string, _ []string, channel string, _ *types.KnowledgeProcessOverrides,
 ) (*types.Knowledge, error) {
 	f.created = append(f.created, kbID+"|"+name+"|"+meta["external_id"]+"|"+channel)
+	f.lastMeta, f.lastType = meta, fh.Header.Get("Content-Type")
 	return &types.Knowledge{ID: "k-new", KnowledgeBaseID: kbID, Title: name}, nil
 }
 
@@ -52,6 +55,12 @@ func TestLegalFeedIngestFromPortal(t *testing.T) {
 	body := `<p class="prov-article">Điều 1. Phạm vi điều chỉnh</p>` + strings.Repeat("<p>nội dung</p>", 30)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.EscapedPath() == "/api/qtdc/public/doc/minio/buckets/vbpl/3003/VanBanGoc_3%20TT.pdf/download":
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = io.WriteString(w, "%PDF-1.4\nscan")
+		case strings.HasSuffix(r.URL.Path, "/3003"):
+			_, _ = io.WriteString(w, `{"success":true,"data":{"id":"3003","docNum":"3/2021/TT-BTC","title":"Thông tư 3/2021/TT-BTC",
+				"docType":{"name":"Thông tư"},"effStatus":{"name":"Còn hiệu lực"},"documentContentFileName":"VanBanGoc_3 TT.pdf","documentContent":{"content":""}}}`)
 		case strings.HasSuffix(r.URL.Path, "/155366"):
 			_, _ = io.WriteString(w, `{"success":true,"data":{"id":"155366","docNum":"53/2022/NĐ-CP","title":"Nghị định 53/2022/NĐ-CP quy định chi tiết",
 				"docType":{"name":"Nghị định"},"effStatus":{"name":"Còn hiệu lực"},"documentContent":{"content":"`+strings.ReplaceAll(body, `"`, `\"`)+`"}}}`)
@@ -93,24 +102,26 @@ func TestLegalFeedIngestFromPortal(t *testing.T) {
 	actor := LegalFeedActor{TenantID: 10000, UserID: "u-super", Channel: types.ChannelWeb}
 	ctx := context.Background()
 
-	for id, want := range map[string]string{"1001": "fully expired", "2002": "no published full text", "404": "vbpl.vn không có văn bản với id 404", "stale": "vbpl.vn không có văn bản với id stale (danh mục có thể đã cũ)", "../x": "not a vbpl.vn document id"} {
-		_, err := feed.IngestFromPortal(ctx, id, kb, actor, "")
+	for id, want := range map[string]string{"1001": "fully expired", "2002": "vbpl.vn không có toàn văn (HTML hay PDF) cho văn bản 2002", "404": "vbpl.vn không có văn bản với id 404", "stale": "vbpl.vn không có văn bản với id stale (danh mục có thể đã cũ)", "../x": "not a vbpl.vn document id"} {
+		_, err := feed.IngestFromPortal(ctx, id, kb, actor, "", LegalIngestOptions{AllowPDF: true})
 		if _, ok := err.(*LegalFeedRefusal); !ok || !strings.Contains(err.Error(), want) {
 			t.Fatalf("%s: err = %v, want refusal %q", id, err, want)
 		}
 	}
 	// a 400 without the not-found body stays a gateway failure (API 503)
-	if _, err := feed.IngestFromPortal(ctx, "broken", kb, actor, ""); err == nil || strings.Contains(err.Error(), "không có văn bản") {
+	if _, err := feed.IngestFromPortal(ctx, "broken", kb, actor, "", LegalIngestOptions{}); err == nil || strings.Contains(err.Error(), "không có văn bản") {
 		t.Fatalf("broken: err = %v", err)
 	} else if _, ok := err.(*LegalFeedRefusal); ok {
 		t.Fatalf("broken must not be a refusal: %v", err)
 	}
-	if _, err := feed.IngestFromPortal(ctx, "155366", &types.KnowledgeBase{ID: "own", OwnerTenantID: 7}, actor, ""); err == nil {
+	if _, err := feed.IngestFromPortal(ctx, "155366", &types.KnowledgeBase{ID: "own", OwnerTenantID: 7}, actor, "", LegalIngestOptions{}); err == nil {
 		t.Fatal("a tenant KB must be refused")
 	}
 
-	res, err := feed.IngestFromPortal(ctx, "155366", kb, actor, "test")
-	if err != nil || res.Result != "created" || res.KnowledgeID != "k-new" || res.DocumentNumber != "53/2022/NĐ-CP" {
+	// the HTML wins even when PDF is allowed
+	res, err := feed.IngestFromPortal(ctx, "155366", kb, actor, "test", LegalIngestOptions{AllowPDF: true})
+	if err != nil || res.Result != "created" || res.KnowledgeID != "k-new" || res.DocumentNumber != "53/2022/NĐ-CP" ||
+		res.SourceFormat != LegalSourceHTML {
 		t.Fatalf("ingest: %+v %v", res, err)
 	}
 	if len(know.created) != 1 || !strings.HasPrefix(know.created[0], "kb-nd|Nghị định 53-2022-NĐ-CP quy định chi tiết.html|155366|web") {
@@ -119,9 +130,47 @@ func TestLegalFeedIngestFromPortal(t *testing.T) {
 	if len(reqs.marked) != 1 || reqs.marked[0] != "155366|k-new|kb-nd|u-super" {
 		t.Fatalf("marked = %v", reqs.marked)
 	}
+	if know.lastType != "text/html" || know.lastMeta["source_format"] != "" {
+		t.Fatalf("html upload: type %q meta %v", know.lastType, know.lastMeta)
+	}
 	var logged int64
 	db.Raw(`SELECT COUNT(*) FROM legal_feed_log WHERE action = 'ingest_created' AND vbpl_id = '155366' AND actor_tenant_id = 10000`).Scan(&logged)
 	if logged != 1 {
 		t.Fatalf("feed log rows = %d", logged)
+	}
+
+	// only a scanned PDF: refused unless allowed, the refusal says what exists
+	_, err = feed.IngestFromPortal(ctx, "3003", kb, actor, "", LegalIngestOptions{})
+	refusal, ok := err.(*LegalFeedRefusal)
+	if !ok || !refusal.PDFOnly || refusal.Portal == nil || refusal.Portal.PDFFile != "VanBanGoc_3 TT.pdf" || refusal.Portal.HTML ||
+		!strings.Contains(err.Error(), "allow_pdf") {
+		t.Fatalf("pdf not allowed: %v %+v", err, refusal)
+	}
+	res, err = feed.IngestFromPortal(ctx, "3003", kb, actor, "", LegalIngestOptions{AllowPDF: true})
+	if err != nil || res.SourceFormat != LegalSourcePDFOCR || res.Result != "created" || res.VBPLMarkup {
+		t.Fatalf("pdf ingest: %+v %v", res, err)
+	}
+	if got := know.created[len(know.created)-1]; got != "kb-nd|Thông tư 3-2021-TT-BTC.pdf|3003|web" {
+		t.Fatalf("pdf created = %s", got)
+	}
+	if know.lastType != "application/pdf" || know.lastMeta["source_format"] != "pdf_ocr" ||
+		know.lastMeta["source_file"] != "VanBanGoc_3 TT.pdf" || know.lastMeta["external_id"] != "3003" {
+		t.Fatalf("pdf upload: type %q meta %v", know.lastType, know.lastMeta)
+	}
+	var detail string
+	db.Raw(`SELECT detail FROM legal_feed_log WHERE vbpl_id = '3003'`).Scan(&detail)
+	if !strings.Contains(detail, `"source_format":"pdf_ocr"`) || !strings.Contains(detail, `"source_file":"VanBanGoc_3 TT.pdf"`) {
+		t.Fatalf("pdf log detail = %s", detail)
+	}
+
+	portal, err := feed.CheckPortal(ctx, "3003")
+	if err != nil || !portal.Exists || portal.HTML || portal.PDFFile != "VanBanGoc_3 TT.pdf" || portal.Status != "Còn hiệu lực" {
+		t.Fatalf("check 3003: %+v %v", portal, err)
+	}
+	if portal, err = feed.CheckPortal(ctx, "stale"); err != nil || portal.Exists {
+		t.Fatalf("check stale: %+v %v", portal, err)
+	}
+	if portal, err = feed.CheckPortal(ctx, "155366"); err != nil || !portal.HTML || portal.PDFFile != "" {
+		t.Fatalf("check 155366: %+v %v", portal, err)
 	}
 }

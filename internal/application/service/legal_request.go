@@ -97,9 +97,23 @@ func (s *legalRequestService) items(ctx context.Context, rows []*types.LegalDocu
 	} else {
 		targets = LegalTypeTargets(kbs)
 	}
+	var knowledgeIDs []string
+	for _, r := range rows {
+		if r.KnowledgeID != "" {
+			knowledgeIDs = append(knowledgeIDs, r.KnowledgeID)
+		}
+	}
+	parse := map[string]string{}
+	if len(knowledgeIDs) > 0 {
+		if st, err := s.requests.KnowledgeParseStatuses(ctx, knowledgeIDs); err != nil {
+			logger.Warnf(ctx, "[LegalRequests] parse statuses: %v", err)
+		} else {
+			parse = st
+		}
+	}
 	items := make([]*types.LegalRequestItem, 0, len(rows))
 	for _, r := range rows {
-		item := &types.LegalRequestItem{LegalDocumentRequest: r}
+		item := &types.LegalRequestItem{LegalDocumentRequest: r, KnowledgeParseStatus: parse[r.KnowledgeID]}
 		docType := r.DocType
 		if d := docs[r.LegalDocumentID]; d != nil {
 			item.Document = &types.LegalRequestDocument{
@@ -152,12 +166,12 @@ func (s *legalRequestService) Decide(
 		decided, err = s.requests.Decide(ctx, id, types.LegalRequestAdded, caller.UserID, note,
 			strings.TrimSpace(d.KnowledgeID), strings.TrimSpace(d.KnowledgeBaseID))
 	case types.LegalRequestActionIngest:
-		res, ierr := s.ingest(ctx, row, strings.TrimSpace(d.KnowledgeBaseID), caller)
+		res, ierr := s.ingest(ctx, row, strings.TrimSpace(d.KnowledgeBaseID), caller, d.AllowPDF)
 		if ierr != nil {
 			return nil, ierr
 		}
 		if note == "" {
-			note = "Bổ sung từ vbpl.vn (" + res.Result + ")"
+			note = "Bổ sung từ vbpl.vn (" + res.Result + ", " + res.SourceFormat + ")"
 		}
 		decided, err = s.requests.Decide(ctx, id, types.LegalRequestAdded, caller.UserID, note, res.KnowledgeID, res.KnowledgeBaseID)
 	default:
@@ -175,7 +189,7 @@ func (s *legalRequestService) Decide(
 // ingest fetches the request's document from vbpl.vn into a public KB with
 // the same code as the MCP tool legal_ingest_document.
 func (s *legalRequestService) ingest(
-	ctx context.Context, row *types.LegalDocumentRequest, kbID string, caller types.Caller,
+	ctx context.Context, row *types.LegalDocumentRequest, kbID string, caller types.Caller, allowPDF bool,
 ) (*LegalIngestResult, error) {
 	if row.LegalDocumentID == "" {
 		return nil, apperrors.NewBadRequestError("the catalogue does not know this document: add it by hand and mark the request added")
@@ -199,12 +213,20 @@ func (s *legalRequestService) ingest(
 	}
 	res, err := s.feed.IngestFromPortal(grant.Context(ctx), row.LegalDocumentID, kb,
 		LegalFeedActor{TenantID: caller.TenantID, UserID: caller.UserID, Channel: types.ChannelWeb},
-		"Đề nghị bổ sung "+row.ID+" ("+row.DocumentNumber+")")
+		"Đề nghị bổ sung "+row.ID+" ("+row.DocumentNumber+")", LegalIngestOptions{AllowPDF: allowPDF})
 	if err != nil {
 		var refusal *LegalFeedRefusal
 		var appErr *apperrors.AppError
 		switch {
 		case stderrors.As(err, &refusal):
+			// keep what the portal offers so the queue can show the PDF
+			// option (or why nothing can be ingested) without a new check
+			if refusal.Portal != nil {
+				s.storePortal(ctx, row.ID, refusal.Portal)
+			}
+			if refusal.PDFOnly {
+				return nil, apperrors.NewBadRequestError(LegalRequestPDFOnlyMessage)
+			}
 			return nil, apperrors.NewBadRequestError(refusal.Error())
 		case stderrors.As(err, &appErr):
 			return nil, err
@@ -214,6 +236,52 @@ func (s *legalRequestService) ingest(
 		}
 	}
 	return res, nil
+}
+
+// LegalRequestPDFOnlyMessage answers an ingest of a document vbpl.vn has
+// only as a scanned PDF when the SuperAdmin did not choose the PDF.
+const LegalRequestPDFOnlyMessage = "vbpl.vn chỉ có bản PDF scan của văn bản này; chọn \"Nạp bản PDF (OCR)\" để nạp"
+
+// CheckPortal reads what vbpl.vn offers for the request's document and
+// stores it as detail.portal.
+func (s *legalRequestService) CheckPortal(ctx context.Context, id string) (*types.LegalRequestItem, error) {
+	row, err := s.requests.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil {
+		return nil, apperrors.NewNotFoundError("legal document request not found")
+	}
+	if row.LegalDocumentID == "" {
+		return nil, apperrors.NewBadRequestError("the catalogue does not know this document: there is no vbpl.vn id to check")
+	}
+	if s.feed == nil {
+		return nil, apperrors.NewServiceUnavailableError("the vbpl.vn feed is not available")
+	}
+	portal, err := s.feed.CheckPortal(ctx, row.LegalDocumentID)
+	if err != nil {
+		var refusal *LegalFeedRefusal
+		if stderrors.As(err, &refusal) {
+			return nil, apperrors.NewBadRequestError(refusal.Error())
+		}
+		logger.Warnf(ctx, "[LegalRequests] portal check of %s failed: %v", row.LegalDocumentID, err)
+		return nil, apperrors.NewServiceUnavailableError(err.Error())
+	}
+	updated, err := s.requests.UpdateDetail(ctx, id, map[string]any{types.LegalRequestDetailPortal: portal})
+	if err != nil {
+		return nil, err
+	}
+	if updated == nil {
+		return nil, apperrors.NewNotFoundError("legal document request not found")
+	}
+	return s.item(ctx, updated)
+}
+
+// storePortal records detail.portal; a failure is logged only.
+func (s *legalRequestService) storePortal(ctx context.Context, id string, portal *LegalPortalAvailability) {
+	if _, err := s.requests.UpdateDetail(ctx, id, map[string]any{types.LegalRequestDetailPortal: portal}); err != nil {
+		logger.Warnf(ctx, "[LegalRequests] storing portal availability of %s: %v", id, err)
+	}
 }
 
 func (s *legalRequestService) PublicKnowledgeBases(ctx context.Context) ([]types.LegalPublicKB, error) {

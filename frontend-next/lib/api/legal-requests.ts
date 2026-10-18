@@ -3,7 +3,7 @@
  * request; the SuperAdmin ingests it from vbpl.vn, marks it added by hand,
  * or rejects it (the note is shown to users who ask again). Every route is
  * SuperAdmin-only; the server enforces it. */
-import { apiGet, apiPut } from "@/lib/api-client";
+import { apiGet, apiPost, apiPut } from "@/lib/api-client";
 
 export type LegalRequestStatus = "requested" | "added" | "rejected";
 export type LegalRequestFilter = LegalRequestStatus | "all";
@@ -19,6 +19,28 @@ export interface LegalRequestDocument {
   issued_on: string | null;
   url: string;
 }
+
+/** What vbpl.vn offers for the document (stored by a portal check, or by an
+ * ingest refused for lack of full text). */
+export interface LegalRequestPortal {
+  checked_at: string;
+  /** The portal's validity status ("Còn hiệu lực"…). */
+  status: string;
+  /** HTML full text is published. */
+  html: boolean;
+  /** The original PDF (a scan), "" when there is none. */
+  pdf_file: string;
+  /** false: the portal has no document with this id. */
+  exists: boolean;
+}
+
+export interface LegalRequestDetail {
+  portal?: LegalRequestPortal;
+  [key: string]: unknown;
+}
+
+/** knowledges.parse_status of the linked document ("" when none). */
+export type LegalKnowledgeParseStatus = "" | "pending" | "processing" | "completed" | "failed" | string;
 
 export interface LegalRequestItem {
   id: string;
@@ -41,12 +63,14 @@ export interface LegalRequestItem {
   decided_by: string;
   decided_at: string | null;
   decision_note: string;
-  detail: unknown;
+  detail: LegalRequestDetail | null;
   created_at: string;
   updated_at: string;
   document?: LegalRequestDocument | null;
   /** The public KB the server would ingest into (empty when it has no guess). */
   suggested_kb_id?: string;
+  /** Parse status of knowledge_id: an ingested PDF scan is OCRed asynchronously. */
+  knowledge_parse_status?: LegalKnowledgeParseStatus;
 }
 
 export interface LegalRequestCounts {
@@ -60,6 +84,8 @@ export interface LegalRequestDecision {
   knowledge_base_id?: string;
   knowledge_id?: string;
   note?: string;
+  /** "ingest" only: use the portal's original PDF scan (OCR) when there is no HTML. */
+  allow_pdf?: boolean;
 }
 
 export function listLegalRequests(params: {
@@ -83,6 +109,11 @@ export function decideLegalRequest(
   body: LegalRequestDecision,
 ): Promise<{ success: boolean; data: LegalRequestItem }> {
   return apiPut(`/api/v1/system/legal-requests/${encodeURIComponent(id)}`, body);
+}
+
+/** Reads what vbpl.vn offers for the request's document and stores it as detail.portal. */
+export function checkLegalRequestPortal(id: string): Promise<{ success: boolean; data: LegalRequestItem }> {
+  return apiPost(`/api/v1/system/legal-requests/${encodeURIComponent(id)}/portal-check`, {});
 }
 
 export function listLegalRequestKnowledgeBases(): Promise<{ success: boolean; data: { id: string; name: string }[] }> {

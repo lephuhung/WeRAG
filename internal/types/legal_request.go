@@ -73,6 +73,10 @@ type LegalRequestItem struct {
 	// SuggestedKBID is the public KB named for the document's type
 	// ("VBPL – Nghị định"), "" when none is.
 	SuggestedKBID string `json:"suggested_kb_id"`
+	// KnowledgeParseStatus is knowledges.parse_status of KnowledgeID
+	// ("pending", "processing", "completed", "failed"), "" when no document
+	// is linked: an ingested PDF scan is OCRed asynchronously.
+	KnowledgeParseStatus string `json:"knowledge_parse_status"`
 }
 
 // LegalRequestDocument is the catalogue view of a requested document.
@@ -95,7 +99,14 @@ type LegalRequestDecision struct {
 	KnowledgeBaseID string `json:"knowledge_base_id"`
 	KnowledgeID     string `json:"knowledge_id"`
 	Note            string `json:"note"`
+	// AllowPDF lets "ingest" use the portal's original PDF (a scan, OCRed by
+	// the KB's pdf parser) when vbpl.vn has no HTML full text.
+	AllowPDF bool `json:"allow_pdf"`
 }
+
+// LegalRequestDetailPortal is the Detail key holding what vbpl.vn offers
+// for the document (service.LegalPortalAvailability).
+const LegalRequestDetailPortal = "portal"
 
 // Legal request decision actions.
 const (

@@ -66,6 +66,67 @@ type LegalFeedEntry struct {
 	Detail          map[string]any
 }
 
+// LegalIngestOptions tunes one ingest.
+type LegalIngestOptions struct {
+	// AllowPDF lets a document without HTML full text be ingested from the
+	// portal's original PDF (a scan: the KB's pdf parser OCRs it, the
+	// structure may be weaker than the HTML markup's).
+	AllowPDF bool
+}
+
+// Source formats of an ingested document (LegalIngestResult.SourceFormat,
+// knowledges.metadata.source_format for the PDF).
+const (
+	LegalSourceHTML   = "html"
+	LegalSourcePDFOCR = "pdf_ocr"
+)
+
+// LegalPortalAvailability is what vbpl.vn offers for one document: its
+// HTML full text, its original PDF, or nothing. Stored on a request as
+// detail.portal.
+type LegalPortalAvailability struct {
+	CheckedAt time.Time `json:"checked_at"`
+	// Status is the portal's validity status ("Còn hiệu lực"…).
+	Status string `json:"status"`
+	HTML   bool   `json:"html"`
+	// PDFFile is the portal's original PDF ("VanBanGoc_….pdf"), "" when none.
+	PDFFile string `json:"pdf_file"`
+	// Exists is false when the portal has no document with the id.
+	Exists bool `json:"exists"`
+}
+
+func portalAvailability(d *vbpl.Detail) *LegalPortalAvailability {
+	a := &LegalPortalAvailability{CheckedAt: time.Now(), Exists: d != nil}
+	if d != nil {
+		a.Status, a.HTML = strings.TrimSpace(d.EffStatus.Name), d.HasHTML()
+		if d.HasPDF() {
+			a.PDFFile = strings.TrimSpace(d.ContentFileName)
+		}
+	}
+	return a
+}
+
+// CheckPortal reads what vbpl.vn offers for a document without downloading
+// it. A stale id is a result (Exists false), not an error.
+func (s *LegalFeedService) CheckPortal(ctx context.Context, vbplID string) (*LegalPortalAvailability, error) {
+	var client *http.Client
+	if s != nil {
+		client = s.HTTP
+	}
+	detail, err := vbpl.FetchDetail(ctx, client, vbplID)
+	if err != nil {
+		var missing *vbpl.NoDocumentError
+		if stderrors.As(err, &missing) {
+			return portalAvailability(nil), nil
+		}
+		if strings.Contains(err.Error(), "is not a vbpl.vn document id") {
+			return nil, &LegalFeedRefusal{msg: err.Error()}
+		}
+		return nil, err
+	}
+	return portalAvailability(detail), nil
+}
+
 // LegalIngestResult reports one ingest.
 type LegalIngestResult struct {
 	// Result is "created", "replaced" or "unchanged".
@@ -78,6 +139,8 @@ type LegalIngestResult struct {
 	DocType             string
 	Status              string
 	VBPLMarkup          bool
+	// SourceFormat is LegalSourceHTML or LegalSourcePDFOCR.
+	SourceFormat string
 	// Knowledge is the created document (nil when unchanged).
 	Knowledge *types.Knowledge
 }
@@ -85,7 +148,14 @@ type LegalIngestResult struct {
 // LegalFeedRefusal is an ingest the feed will not do (fully expired, no
 // full text, held by another KB, a bad id): the caller's input, not a
 // failure — an HTTP API answers it with 4xx.
-type LegalFeedRefusal struct{ msg string }
+type LegalFeedRefusal struct {
+	msg string
+	// Portal is what vbpl.vn offers when the refusal is about the full
+	// text (none, or only a PDF without AllowPDF); nil otherwise.
+	Portal *LegalPortalAvailability
+	// PDFOnly: the portal has only the original PDF and AllowPDF was off.
+	PDFOnly bool
+}
 
 func (e *LegalFeedRefusal) Error() string { return e.msg }
 
@@ -101,6 +171,7 @@ func refuse(format string, args ...any) error {
 // write is logged and open requests for the document are marked added.
 func (s *LegalFeedService) IngestFromPortal(
 	ctx context.Context, vbplID string, kb *types.KnowledgeBase, actor LegalFeedActor, reason string,
+	opts LegalIngestOptions,
 ) (*LegalIngestResult, error) {
 	if s == nil || s.knowledge == nil || s.db == nil {
 		return nil, fmt.Errorf("knowledge service is not available")
@@ -128,15 +199,40 @@ func (s *LegalFeedService) IngestFromPortal(
 		return nil, refuse("document %s (%s) is \"%s\": fully expired documents keep their catalogue "+
 			"row only and are never fed into a knowledge base", vbplID, detail.DocNum, status)
 	}
+	// The HTML full text when the portal has it; otherwise, when allowed,
+	// the original PDF (a scan the KB's pdf parser OCRs).
 	content := []byte(detail.Content)
-	if len(content) < vbpl.MinHTMLBytes {
-		return nil, refuse("document %s has no published full text on vbpl.vn (%d bytes)", vbplID, len(content))
+	name, meta, format := vbpl.FileName(detail), vbpl.Metadata(detail), LegalSourceHTML
+	if !detail.HasHTML() {
+		portal := portalAvailability(detail)
+		if !detail.HasPDF() {
+			return nil, &LegalFeedRefusal{Portal: portal, msg: fmt.Sprintf(
+				"vbpl.vn không có toàn văn (HTML hay PDF) cho văn bản %s", vbplID)}
+		}
+		if !opts.AllowPDF {
+			return nil, &LegalFeedRefusal{Portal: portal, PDFOnly: true, msg: fmt.Sprintf(
+				"văn bản %s: vbpl.vn chỉ có bản PDF scan (%s); bật allow_pdf để nạp", vbplID, portal.PDFFile)}
+		}
+		pdf, err := vbpl.FetchAttachment(ctx, s.HTTP, vbplID, portal.PDFFile)
+		if err != nil {
+			var missing *vbpl.NoDocumentError
+			if stderrors.As(err, &missing) {
+				return nil, refuse("vbpl.vn không có tệp %s của văn bản %s", portal.PDFFile, vbplID)
+			}
+			if strings.Contains(err.Error(), "not a PDF") || strings.Contains(err.Error(), "MB limit") {
+				return nil, &LegalFeedRefusal{Portal: portal, msg: err.Error()}
+			}
+			return nil, err
+		}
+		content, name, format = pdf, vbpl.PDFFileName(detail), LegalSourcePDFOCR
+		meta["source_format"], meta["source_file"] = LegalSourcePDFOCR, portal.PDFFile
 	}
 	sum := md5.Sum(content)
 	hash := hex.EncodeToString(sum[:])
 	res := &LegalIngestResult{
 		VBPLID: vbplID, KnowledgeBaseID: kb.ID, DocumentNumber: detail.DocNum,
-		DocType: detail.DocType.Name, Status: status, VBPLMarkup: vbpl.LooksLikeVBPL(content),
+		DocType: detail.DocType.Name, Status: status, SourceFormat: format,
+		VBPLMarkup: format == LegalSourceHTML && vbpl.LooksLikeVBPL(content),
 	}
 
 	// Where is this document already? Same KB + same bytes → nothing to do;
@@ -167,7 +263,6 @@ func (s *LegalFeedService) IngestFromPortal(
 		res.ReplacedKnowledgeID = e.ID
 	}
 
-	name := vbpl.FileName(detail)
 	fh, err := memoryFileHeader("file", name, content)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stage the file: %w", err)
@@ -176,7 +271,7 @@ func (s *LegalFeedService) IngestFromPortal(
 	if channel == "" {
 		channel = types.ChannelAPI
 	}
-	created, err := s.knowledge.CreateKnowledgeFromFile(ctx, kb.ID, fh, vbpl.Metadata(detail), nil, name, nil, channel, nil)
+	created, err := s.knowledge.CreateKnowledgeFromFile(ctx, kb.ID, fh, meta, nil, name, nil, channel, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to add document: %w", err)
 	}
@@ -186,7 +281,10 @@ func (s *LegalFeedService) IngestFromPortal(
 	}
 	res.KnowledgeID, res.Knowledge = created.ID, created
 	logDetail := map[string]any{"replaced_knowledge_id": res.ReplacedKnowledgeID, "status": status, "md5": hash,
-		"vbpl_markup": res.VBPLMarkup}
+		"vbpl_markup": res.VBPLMarkup, "source_format": format}
+	if format == LegalSourcePDFOCR {
+		logDetail["source_file"] = meta["source_file"]
+	}
 	if actor.UserID != "" {
 		logDetail["actor_user_id"] = actor.UserID
 	}
@@ -244,6 +342,9 @@ func memoryFileHeader(field, name string, content []byte) (*multipart.FileHeader
 	hdr := textproto.MIMEHeader{}
 	hdr.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, field, strings.ReplaceAll(name, `"`, "'")))
 	hdr.Set("Content-Type", "text/html")
+	if strings.HasSuffix(strings.ToLower(name), ".pdf") {
+		hdr.Set("Content-Type", "application/pdf")
+	}
 	part, err := w.CreatePart(hdr)
 	if err != nil {
 		return nil, err

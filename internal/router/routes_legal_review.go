@@ -34,5 +34,6 @@ func RegisterLegalRequestRoutes(r *gin.RouterGroup, h *handler.LegalRequestHandl
 		requests.GET("", h.ListLegalRequests)
 		requests.GET("/public-knowledge-bases", h.ListLegalRequestKnowledgeBases)
 		requests.PUT("/:id", h.DecideLegalRequest)
+		requests.POST("/:id/portal-check", h.CheckLegalRequestPortal)
 	}
 }

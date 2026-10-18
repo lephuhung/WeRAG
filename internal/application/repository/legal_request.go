@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -147,6 +149,60 @@ func (r *legalRequestRepository) Decide(
 		return nil, nil
 	}
 	return r.Get(ctx, id)
+}
+
+func (r *legalRequestRepository) UpdateDetail(
+	ctx context.Context, id string, detail map[string]any,
+) (*types.LegalDocumentRequest, error) {
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row types.LegalDocumentRequest
+		q := tx
+		if tx.Dialector.Name() == "postgres" {
+			q = tx.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		if err := q.Select("id", "detail").Where("id = ?", id).Take(&row).Error; err != nil {
+			return err
+		}
+		merged := map[string]any{}
+		if len(row.Detail) > 0 && string(row.Detail) != "null" {
+			if err := json.Unmarshal(row.Detail, &merged); err != nil {
+				return fmt.Errorf("legal request %s: bad detail JSON: %w", id, err)
+			}
+		}
+		for k, v := range detail {
+			merged[k] = v
+		}
+		raw, err := json.Marshal(merged)
+		if err != nil {
+			return err
+		}
+		return tx.Model(&types.LegalDocumentRequest{}).Where("id = ?", id).
+			Updates(map[string]any{"detail": types.JSON(raw), "updated_at": time.Now()}).Error
+	})
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return r.Get(ctx, id)
+}
+
+func (r *legalRequestRepository) KnowledgeParseStatuses(ctx context.Context, knowledgeIDs []string) (map[string]string, error) {
+	out := map[string]string{}
+	if len(knowledgeIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		ID          string
+		ParseStatus string
+	}
+	err := r.db.WithContext(ctx).Table("knowledges").Select("id, parse_status").
+		Where("id IN ? AND deleted_at IS NULL", knowledgeIDs).Scan(&rows).Error
+	for _, row := range rows {
+		out[row.ID] = row.ParseStatus
+	}
+	return out, err
 }
 
 func (r *legalRequestRepository) MarkAddedByDocument(

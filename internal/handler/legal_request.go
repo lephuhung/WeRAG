@@ -62,7 +62,10 @@ func (h *LegalRequestHandler) ListLegalRequests(c *gin.Context) {
 // @Summary      Ingest, reject or close a legal document request
 // @Description  action "ingest" fetches the document from vbpl.vn into the
 // @Description  public knowledge base knowledge_base_id (same code as the MCP
-// @Description  tool legal_ingest_document); "reject" keeps note as the
+// @Description  tool legal_ingest_document); allow_pdf lets it use the
+// @Description  portal's original PDF scan (OCR) when there is no HTML full
+// @Description  text, otherwise such a document answers 400 and its portal
+// @Description  availability is stored as detail.portal; "reject" keeps note as the
 // @Description  reason users see; "added" records a document added by hand.
 // @Tags         Rà soát pháp lý
 // @Accept       json
@@ -79,6 +82,28 @@ func (h *LegalRequestHandler) DecideLegalRequest(c *gin.Context) {
 		return
 	}
 	item, err := h.svc.Decide(ctx, c.Param("id"), &req)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": item})
+}
+
+// CheckLegalRequestPortal godoc
+// @Summary      Check what vbpl.vn offers for a requested document
+// @Description  Reads the document's portal page (no download) and stores
+// @Description  detail.portal = {checked_at, status, html, pdf_file, exists}
+// @Description  on the request: HTML full text, only an original PDF scan,
+// @Description  or nothing.
+// @Tags         Rà soát pháp lý
+// @Produce      json
+// @Param        id path string true "Request ID"
+// @Success      200 {object} map[string]interface{} "Updated item"
+// @Router       /system/legal-requests/{id}/portal-check [post]
+func (h *LegalRequestHandler) CheckLegalRequestPortal(c *gin.Context) {
+	ctx := c.Request.Context()
+	item, err := h.svc.CheckPortal(ctx, c.Param("id"))
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)

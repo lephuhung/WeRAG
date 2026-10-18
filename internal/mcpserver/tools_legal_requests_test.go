@@ -22,7 +22,8 @@ func (f *fakeLegalRequests) List(_ context.Context, status string, _, limit int)
 	at := time.Date(2026, 10, 18, 14, 5, 0, 0, time.UTC)
 	return []*types.LegalDocumentRequest{
 		{ID: "r1", LegalDocumentID: "155366", DocumentNumber: "53/2022/NĐ-CP", Title: "T", DocType: "Nghị định",
-			Status: types.LegalRequestRequested, RequestCount: 3, LastRequestedAt: at},
+			Status: types.LegalRequestRequested, RequestCount: 3, LastRequestedAt: at,
+			Detail: types.JSON(`{"portal":{"html":false,"pdf_file":"VanBanGoc_53.pdf","exists":true}}`)},
 		{ID: "r2", DocumentNumber: "12/2024/QĐ-UBND", Status: types.LegalRequestRequested, RequestCount: 1, LastRequestedAt: at},
 	}, 2, nil
 }
@@ -68,7 +69,10 @@ func TestLegalListRequests(t *testing.T) {
 	if first["vbpl_id"] != "155366" || first["url"] != "https://vbpl.vn/van-ban/chi-tiet/155366" || first["request_count"] != float64(3) {
 		t.Fatalf("first = %v", first)
 	}
-	if second["vbpl_id"] != "" || second["url"] != nil {
+	if portal, _ := first["portal"].(map[string]any); portal["pdf_file"] != "VanBanGoc_53.pdf" || portal["html"] != false {
+		t.Fatalf("first portal = %v", first["portal"])
+	}
+	if second["vbpl_id"] != "" || second["url"] != nil || second["portal"] != nil {
 		t.Fatalf("uncatalogued row = %v", second)
 	}
 
