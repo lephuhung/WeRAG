@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -42,9 +41,11 @@ func (e *AgentEngine) appendToolAnswerBlocks(ctx context.Context, state *types.A
 }
 
 // toolAnswerBlocks joins the answer blocks of the turn's successful calls.
-// Calls of one tool with the same arguments count once (the last); several
-// distinct calculations of one tool are all kept, numbered "Lần tính n".
-// Tools come in the order of their last call.
+// A calculation is identified by its rendered block: calls of one tool
+// that render the same block count once (the last), whatever the spelling
+// of their arguments ("1" vs 1 vs 1.0); distinct blocks of one tool are
+// all kept, numbered "Lần tính n/m". Tools come in the order of their last
+// call.
 func toolAnswerBlocks(steps []types.AgentStep) string {
 	type entry struct {
 		key   string
@@ -61,7 +62,7 @@ func toolAnswerBlocks(steps []types.AgentStep) string {
 			if block = strings.TrimSpace(block); block == "" {
 				continue
 			}
-			key := argsKey(call.Args)
+			key := block
 			entries := byTool[call.Name]
 			for i, e := range entries {
 				if e.key == key {
@@ -91,14 +92,4 @@ func toolAnswerBlocks(steps []types.AgentStep) string {
 		}
 	}
 	return strings.Join(parts, "\n\n")
-}
-
-// argsKey is a canonical form of a call's arguments (encoding/json sorts
-// map keys).
-func argsKey(args map[string]interface{}) string {
-	raw, err := json.Marshal(args)
-	if err != nil {
-		return fmt.Sprint(args)
-	}
-	return string(raw)
 }

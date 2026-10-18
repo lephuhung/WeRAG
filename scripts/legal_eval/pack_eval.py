@@ -549,7 +549,8 @@ def case_passes(runs: list) -> bool | None:
 
 
 def thresholds(cases: list, rows: dict) -> list:
-    """§7 thresholds → [(name, value, target, ok)]."""
+    """§7 thresholds → [(name, value, target, ok, n, note)]: n is always the
+    number of runs (or cases) measured, note free text."""
     out = []
 
     def rate(agent, key, case_filter=lambda c: True):
@@ -565,16 +566,16 @@ def thresholds(cases: list, rows: dict) -> list:
         return (p / n if n else None), n
 
     status, n = rate("pack", "must_state_status")
-    out.append(("trạng thái văn bản đúng (câu có số hiệu)", status, "≥ 95 %", None if status is None else status >= 0.95, n))
+    out.append(("trạng thái văn bản đúng (câu có số hiệu)", status, "≥ 95 %", None if status is None else status >= 0.95, n, "lượt"))
     draft, n = rate("pack", "must_label_draft")
-    out.append(("dự thảo được gắn nhãn", draft, "100 %", None if draft is None else draft == 1.0, n))
+    out.append(("dự thảo được gắn nhãn", draft, "100 %", None if draft is None else draft == 1.0, n, "lượt"))
     footer, n = rate("pack", "must_have_footer")
-    out.append(("footer có mặt (agent có gói)", footer, "100 %", None if footer is None else footer == 1.0, n))
+    out.append(("footer có mặt (agent có gói)", footer, "100 %", None if footer is None else footer == 1.0, n, "lượt"))
     nums, n = rate("pack", "must_not_cite_numbers_outside_catalogue")
     failed_lookups = number_class_runs(cases, rows, "lookup_failed")
     nums_ok = None if nums is None or (nums == 1.0 and failed_lookups) else nums == 1.0
-    out.append(("không bịa số hiệu (không tìm thấy ở đâu)", nums, "100 %", nums_ok,
-                f"{n} lượt; tra danh mục lỗi ở {len(failed_lookups)} lượt"))
+    out.append(("không bịa số hiệu (không tìm thấy ở đâu)", nums, "100 %", nums_ok, n,
+                f"lượt; tra danh mục lỗi ở {len(failed_lookups)} lượt"))
 
     regress, unmeasured, total = [], [], 0
     for c in cases:
@@ -590,19 +591,20 @@ def thresholds(cases: list, rows: dict) -> list:
     # compared (or no case at all) leaves the threshold unmeasured
     reg_ok = False if regress else (None if unmeasured or not total else True)
     out.append(("không xấu hơn baseline (draft_trap/status/refusal)", regress, "0 câu", reg_ok,
-                f"{total - len(unmeasured)}/{total} so được"))
+                total - len(unmeasured), f"câu so được / {total}"))
 
     errored = sum(1 for c in cases for agent in ("pack", "baseline") for r in rows[c["id"]][agent] if r.get("error"))
     runs = sum(len(rows[c["id"]][agent]) for c in cases for agent in ("pack", "baseline"))
-    out.append(("lượt chạy không lỗi", errored, "0 lượt lỗi", None if errored or not runs else True, f"{runs} lượt"))
+    out.append(("lượt chạy không lỗi", errored, "0 lượt lỗi", None if errored or not runs else True, runs, "lượt"))
 
     def med(agent):
         d = [r["duration_s"] for c in cases for r in rows[c["id"]][agent] if not r.get("error")]
         return statistics.median(d) if d else None
     mp, mb = med("pack"), med("baseline")
     ratio = (mp / mb - 1) if mp is not None and mb else None
+    n_runs = sum(1 for c in cases for r in rows[c["id"]]["pack"] if not r.get("error"))
     out.append(("độ trễ trung vị so với baseline", ratio, "≤ +40 %", None if ratio is None else ratio <= 0.40,
-                f"pack {mp} s / baseline {mb} s"))
+                n_runs, f"pack {mp} s / baseline {mb} s"))
     return out
 
 
@@ -632,7 +634,7 @@ def summarize(cases: list, rows: dict, lookup_state: str = "") -> str:
         lines.append(f"{cat:13s} pack {v['pack'][0]}/{v['pack'][1]}   baseline {v['baseline'][0]}/{v['baseline'][1]}")
     lines.append("")
     failed = incomplete = False
-    for name, value, target, ok, n in thresholds(cases, rows):
+    for name, value, target, ok, n, note in thresholds(cases, rows):
         if isinstance(value, float):
             shown = f"{value * 100:+.0f} %" if "trễ" in name else f"{value * 100:.0f} %"
         else:
@@ -642,7 +644,7 @@ def summarize(cases: list, rows: dict, lookup_state: str = "") -> str:
         # a threshold that measured nothing (no case, every turn errored)
         # is not a pass
         incomplete |= ok is None
-        lines.append(f"[{verdict}] {name}: {shown} (ngưỡng {target}; {n})")
+        lines.append(f"[{verdict}] {name}: {shown} (ngưỡng {target}; {n} {note})")
     real = number_class_runs(cases, rows, "catalogue_only")
     lines.append(f"[info] số hiệu có thật nhưng không có căn cứ trong lượt (không chặn): {len(real)} lượt")
     for cid, i, nums in real:
@@ -770,8 +772,8 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
         "pack": args.pack, "agent_id": args.agent_id, "baseline_agent_id": args.baseline_agent_id,
         "runs": args.runs, "kb_ids": args.kb, "started": time.strftime("%Y-%m-%d %H:%M:%S"),
         "legal_catalogue_lookup": lookup.state, "legal_catalogue_lookup_failures": lookup.failures,
-        "thresholds": [{"name": n, "value": v, "target": t, "pass": ok, "n": cnt}
-                       for n, v, t, ok, cnt in thresholds(cases, rows)],
+        "thresholds": [{"name": n, "value": v, "target": t, "pass": ok, "n": cnt, "note": note}
+                       for n, v, t, ok, cnt, note in thresholds(cases, rows)],
         "cases": [{k: v for k, v in c.items() if k != "_line"} | {
             "pack_pass": case_passes(rows[c["id"]]["pack"]),
             "baseline_pass": case_passes(rows[c["id"]]["baseline"]),
@@ -786,6 +788,35 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
 
 
 # ---- self-check ----------------------------------------------------------------
+REPO_ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
+GO_MARKERS = {
+    "ANSWER_BLOCK_MARKER": ("internal/types/tool_answer_block.go", "ToolAnswerBlockMarker"),
+    "FOOTER_MARKER": ("internal/agent/domainpacks/source.go", "FooterMarker"),
+}
+
+
+def go_string_const(path: str, name: str) -> str | None:
+    """The value of `const <name> = "…"` in a Go file, Go escapes decoded."""
+    with open(os.path.join(REPO_ROOT, path), encoding="utf-8") as f:
+        m = re.search(r'const\s+' + re.escape(name) + r'\s*=\s*("(?:[^"\\]|\\.)*")', f.read())
+    return json.loads(m.group(1)) if m else None
+
+
+def check_markers_match_go() -> list:
+    """The markers this suite cuts at must be the Go constants, or a renamed
+    heading silently stops the cut."""
+    problems = []
+    for py_name, (path, go_name) in GO_MARKERS.items():
+        try:
+            go_value = go_string_const(path, go_name)
+        except OSError as e:
+            problems.append(f"{py_name}: cannot read {path}: {e}")
+            continue
+        if go_value != globals()[py_name]:
+            problems.append(f"{py_name} differs from {go_name} in {path}: {globals()[py_name]!r} != {go_value!r}")
+    return problems
+
+
 def self_check() -> int:
     cat = ["59/2020/QH14", "58/2026/TT-BTC", "132/2018/TT-BTC", "67/2025/QH15"]
     drafts = ["Dự thảo Luật Phát triển doanh nghiệp nhỏ và vừa"]
@@ -794,7 +825,7 @@ def self_check() -> int:
         "## Thông tư 132/2018/TT-BTC — Chế độ kế toán siêu nhỏ\n- Tình trạng hiệu lực: Hết hiệu lực toàn bộ (theo vbpl)\n\n"
         "## Thông tư 58/2026/TT-BTC — Chế độ kế toán\n- Tình trạng hiệu lực: Còn hiệu lực (theo vbpl)\n")}
     search_tool = {"name": "search_knowledge", "ok": True, "output": "… theo Nghị định 174/2016/NĐ-CP …"}
-    fails = []
+    fails = list(check_markers_match_go())
 
     def expect(label, outcome, want):
         if bool(outcome[0]) != want:
