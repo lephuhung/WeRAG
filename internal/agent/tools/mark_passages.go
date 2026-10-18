@@ -12,24 +12,9 @@ import (
 
 var markPassagesTool = BaseTool{
 	name: ToolMarkPassages,
-	description: `Mark passages of the Word document open in this conversation's editor that need the user's attention — a spelling or wording error, a wrong or outdated legal reference, an inconsistent number — without changing the text. The mark (an underline by default, or a yellow highlight, or red text) is applied by the editor as an ordinary formatting edit; the user removes it with Ctrl+Z.
+	description: `Mark passages of a working document that need the user's attention — a spelling or wording error, a wrong or outdated legal reference, an inconsistent number — without changing the text; the editor applies the mark as a formatting edit (Ctrl+Z removes it). This is how review findings are reported. The reason is NOT written into the document: explain each mark in your answer. To change the text use rewrite_paragraphs.
 
-This is the default way to act on a review: point out problems with marks and explain them in the answer, instead of changing the document.
-
-## When to Use
-
-The user asks to review, proofread or point out problems ("soát lỗi", "đánh dấu chỗ sai") rather than to rewrite. To actually change the text use rewrite_paragraphs.
-
-The reason is NOT written into the document: explain each mark in your answer (the result lists them).
-
-## Input
-
-- marks: up to 30 marks, each with
-  - paragraph: the paragraph index from read_document_outline, or
-  - match: a distinctive piece of the paragraph's text (an ambiguous match fails that mark);
-  - text: the exact passage inside the paragraph to mark; omit to mark the whole paragraph (when paragraph and match are both omitted, text itself locates the paragraph);
-  - style: underline (red, default) | highlight (yellow) | color (red text);
-  - reason: why the passage is marked (required).`,
+Each mark: paragraph (index from read_document_outline) or match (a distinctive piece of its text; an ambiguous match fails); text = the exact passage to mark (omit for the whole paragraph; with neither paragraph nor match, text locates the paragraph); style; reason (required).`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -42,9 +27,9 @@ The reason is NOT written into the document: explain each mark in your answer (t
         "type": "object",
         "properties": {
           "paragraph": {"type": "integer", "minimum": 0, "description": "Paragraph index from read_document_outline"},
-          "match": {"type": "string", "description": "Text identifying the paragraph when its index is unknown"},
+          "match": {"type": "string", "description": "Text identifying the paragraph"},
           "text": {"type": "string", "description": "Exact passage to mark; omit to mark the whole paragraph"},
-          "style": {"type": "string", "enum": ["underline", "highlight", "color"], "description": "Default underline (red)"},
+          "style": {"type": "string", "enum": ["underline", "highlight", "color"], "description": "underline (red, default) | highlight (yellow) | color (red text)"},
           "reason": {"type": "string", "description": "Why the passage is marked"}
         },
         "required": ["reason"]

@@ -47,7 +47,7 @@ func SourceDocumentRefusal(ws *types.DocumentWorkspace) string {
 // documentParamSchema is the "document" property every document tool takes.
 const documentParamSchema = `"document": {
       "type": "string",
-      "description": "Target document: its handle from <session_documents> (vb1, vb2, …). Required when the conversation holds more than one document; for an edit it must be a document the user named with @ (or selected text in) in this request"
+      "description": "Document handle from <session_documents> (vb1, vb2, …); required when several are open. An edit needs a document the user named with @ (or selected text in) in this request"
     }`
 
 // DocumentLabel names a document for the model: "vb2 · Tờ trình.docx".
@@ -426,24 +426,11 @@ func segmentReport(ctx context.Context, content []byte, docType, name string, ch
 
 var readDocumentOutlineTool = BaseTool{
 	name: ToolReadDocumentOutline,
-	description: `List the paragraphs of a Word document open in this conversation's editor (the "document" argument picks which), numbered, with the NĐ30 component each belongs to (quoc_hieu, trich_yeu, noi_dung, …) and its formatting (font, size, bold/italic, alignment). For a source document (tài liệu nguồn, a file uploaded at chat: pdf, xlsx, scan, …) it returns the stored text instead, as numbered chunks (or lines), in full; that is how a source is read.
-
-## When to Use
-
-- To find the paragraph index before rewrite_paragraphs, or to see which paragraphs a format fix would touch.
-- To read the document's current text (it reflects the latest saved editor state).
-
-## Input
-
-- from: first paragraph index to list (default 0).
-- limit: how many non-empty paragraphs to list (default 80, max 200).
-- component: list only one component's paragraphs, e.g. "noi_dung" or "trich_yeu".
-
-## Output
-
-Lines like ` + "`[12] (trich_yeu) Times New Roman 14 đậm, giữa | V/v …`" + `: the index in brackets is the paragraph number the editing tools take. Long texts are cut at 160 characters. Empty paragraphs are not listed.
-
-For a source: ` + "`[3] (chunk) <heading> | <text>`" + ` blocks; from/limit count chunks (default 6, max 20). A source cannot be edited, so its numbers are not paragraph indexes.`,
+	description: "List a document's paragraphs as `[12] (trich_yeu) Times New Roman 14 đậm, giữa | V/v …`: the index the editing " +
+		"tools take, the NĐ30 component, the formatting and the current saved text (cut at 160 characters; empty paragraphs " +
+		"are skipped). Use it to read the text and find a paragraph index before an edit. For a source (tài liệu nguồn: pdf, " +
+		"xlsx, scan…) it returns the stored text as `[3] (chunk) <heading> | <text>` blocks — from/limit then count chunks " +
+		"(default 6, max 20) and the numbers are not paragraph indexes.",
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -457,11 +444,11 @@ For a source: ` + "`[3] (chunk) <heading> | <text>`" + ` blocks; from/limit coun
       "type": "integer",
       "minimum": 1,
       "maximum": 200,
-      "description": "Maximum number of non-empty paragraphs to list (default 80, max 200)"
+      "description": "Non-empty paragraphs to list (default 80)"
     },
     "component": {
       "type": "string",
-      "description": "Only list paragraphs of this NĐ30 component, e.g. noi_dung, trich_yeu, quoc_hieu"
+      "description": "Only this NĐ30 component, e.g. noi_dung, trich_yeu"
     }
   }
 }`),

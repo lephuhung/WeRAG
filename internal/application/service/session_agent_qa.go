@@ -251,6 +251,9 @@ func (s *sessionService) AgentQA(
 	// turn produced that card (agent.answerGuard)
 	if req.CustomAgent != nil && req.CustomAgent.ID == types.BuiltinDocumentAssistantID {
 		ctx = types.WithAnswerButtonGuard(ctx)
+		// the bound knowledge bases are listed briefly unless the turn
+		// retrieves from them (agent.compactKnowledgeDirectory)
+		ctx = types.WithDocumentAssistantTurn(ctx)
 	}
 	// a legal document named by a bare number the catalogue holds several
 	// of is answered with a card of candidates to click; no model runs

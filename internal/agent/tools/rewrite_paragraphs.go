@@ -13,32 +13,11 @@ import (
 
 var rewriteParagraphsTool = BaseTool{
 	name: ToolRewriteParagraphs,
-	description: `Rewrite the passage the user highlighted in the Word document open in this conversation's editor.
+	description: `Rewrite text inside existing paragraphs of the passage the user highlighted (<document_selection>) in a working document: every rewrite, shortening, summary, expansion or correction of a highlighted passage goes through it; it refuses without a selection or outside it, and cannot add or delete paragraphs. mode "propose" (default) changes nothing: the versions appear under your answer with a "Thay vào văn bản" button; "apply" changes the document at once, only when the user asked for that ("sửa luôn", "thay luôn vào văn bản").
 
-## When to Use
+Prefer old/new (an exact substring) over replacing the whole paragraph. An edit never spans a paragraph break: one edit per paragraph of the selection (a summary goes into the first, the others get a shortened text). An ambiguous match fails and lists the candidates: retry with the paragraph index.
 
-ONLY when the user asks in this turn to rewrite, shorten, summarise, expand, correct or reword text, or asks for a suggestion of how to word it ("viết lại", "gợi ý viết lại", "đề xuất cách viết", "sửa câu này", "rút gọn", "tóm tắt đoạn này", "mở rộng đoạn này"), AND has highlighted the passage (the <document_selection> block). Such a request on a highlighted passage always goes through this tool — never answer it by writing the new text in the chat, where it cannot be applied: a proposal does not change the document, it shows the text with a "Thay vào văn bản" button. Without a selection the tool refuses; an edit outside the selected passage is refused too. To point out problems without changing the text, use mark_passages.
-
-## Propose or apply
-
-- mode "propose" (the default for a highlighted passage): the document is NOT changed. The rewritten versions are shown to the user under your answer, each with a "Thay vào văn bản" button; the user picks one and it replaces the highlighted passage. Never say the text was changed — tell the user to choose a version with the button.
-- mode "apply": the edit is applied in the editor at once (the user undoes it with Ctrl+Z). Pass it ONLY when the user explicitly asked to apply the change right away ("sửa luôn", "thay luôn vào văn bản").
-
-## Input
-
-- edits: up to 30 edits, each with
-  - paragraph: the paragraph index from read_document_outline, or
-  - match: a distinctive piece of the paragraph's current text (the selected text works). An ambiguous match fails that edit and lists the candidates — retry with the paragraph index.
-  - old: the exact substring to replace inside that paragraph (preferred); omit to replace the whole paragraph text.
-  - new: the replacement text (required; it may be empty only together with old, to delete that substring).
-- A selection spanning several paragraphs: one edit PER paragraph (paragraph index, new = that paragraph's new text); an edit never spans paragraph breaks. A summary of several paragraphs goes into the first one's edit, the others get a shortened text.
-- One version is the default: edits[0].new, written in Vietnamese administrative register (văn phong hành chính) or as the user's guidance says ("gọn hơn", "bỏ câu cuối").
-- options_requested: true ONLY when the user explicitly asked for several options in this turn ("vài phương án", "2 cách viết", "cho tôi lựa chọn"). Without it, variants are ignored and only edits[0].new is proposed.
-- variants: with options_requested and exactly one edit: other wordings of that edit's new text. edits[0].new is version 1; at most 3 versions in all.
-- labels: optional short names of the versions in order (version 1 = edits[0].new); default "Văn phong hành chính" for a single version, "Phương án 1", "Phương án 2"… for options.
-- note: optional short reason for the change, shown back in the result.
-
-Keep the administrative register and the original meaning; change only what was asked. It only changes text inside existing paragraphs: it cannot add paragraphs (use insert_paragraphs) or delete them, and formatting (font, size, alignment) is handled by apply_format_fixes.`,
+One version is the default (edits[0].new). options_requested=true only when the user explicitly asked for several options ("vài phương án", "2 cách viết", "cho tôi lựa chọn"); variants then holds other wordings of the single edit's new text.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -47,7 +26,7 @@ Keep the administrative register and the original meaning; change only what was 
       "type": "array",
       "minItems": 1,
       "maxItems": 30,
-      "description": "Edits to apply, in order",
+      "description": "Edits, in order",
       "items": {
         "type": "object",
         "properties": {
@@ -58,15 +37,15 @@ Keep the administrative register and the original meaning; change only what was 
           },
           "match": {
             "type": "string",
-            "description": "Text that identifies the paragraph when its index is unknown"
+            "description": "Distinctive text of the paragraph when its index is unknown"
           },
           "old": {
             "type": "string",
-            "description": "Exact substring of the paragraph to replace; omit to replace the whole paragraph"
+            "description": "Exact substring to replace; omit to replace the whole paragraph"
           },
           "new": {
             "type": "string",
-            "description": "Replacement text"
+            "description": "Replacement text; empty only with old, to delete it"
           }
         },
         "required": ["new"]
@@ -75,27 +54,27 @@ Keep the administrative register and the original meaning; change only what was 
     "mode": {
       "type": "string",
       "enum": ["propose", "apply"],
-      "description": "propose (default with a highlighted passage): show the versions for the user to choose, the document is not changed; apply: change the document at once — only when the user explicitly asked to apply immediately"
+      "description": "Default propose"
     },
     "options_requested": {
       "type": "boolean",
-      "description": "true only when the user explicitly asked for several options; variants are ignored otherwise"
+      "description": "true only when the user asked for several options; else variants are ignored"
     },
     "variants": {
       "type": "array",
       "maxItems": 3,
       "items": {"type": "string"},
-      "description": "Only with options_requested and exactly one edit: alternative wordings of edits[0].new (which is version 1); at most 3 versions in all"
+      "description": "With options_requested and one edit: other wordings of edits[0].new (version 1); 3 versions at most"
     },
     "labels": {
       "type": "array",
       "maxItems": 3,
       "items": {"type": "string"},
-      "description": "Optional short names of the versions in order (version 1 = edits[0].new)"
+      "description": "Optional version names"
     },
     "note": {
       "type": "string",
-      "description": "Optional short reason for the edits"
+      "description": "Optional short reason"
     }
   },
   "required": ["edits"]
