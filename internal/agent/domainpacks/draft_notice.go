@@ -149,24 +149,75 @@ var (
 	tableRowLine = regexp.MustCompile(`^\s*\|`)
 )
 
+// paragraph is one unit the draft check reads. HeadingOnly marks a
+// paragraph of headings alone (only at the end of a text: a heading
+// otherwise joins the paragraph after it).
+type paragraph struct {
+	Text        string `json:"text"`
+	HeadingOnly bool   `json:"heading_only"`
+}
+
 // splitParagraphs splits Markdown into paragraphs: a blank line, a list
 // item, a table row or a heading starts a new one. A heading belongs to
 // the paragraph that follows it ("### 2. Doanh nghiệp một người là gì?"
-// then a labelled paragraph is one labelled unit).
+// then a labelled paragraph is one labelled unit). List items inherit
+// their lead-in: each item after a paragraph ending with ":" (or after
+// headings that opened the list) carries that text, so "Theo dự thảo:" then
+// "- bỏ Chủ tịch công ty" is labelled. pack_eval.md_paragraphs is the same
+// algorithm, held to it by testdata/paragraphs.json.
 func splitParagraphs(text string) []string {
-	var out []string
+	ps := splitParagraphsDetailed(text)
+	out := make([]string, len(ps))
+	for i, p := range ps {
+		out[i] = p.Text
+	}
+	return out
+}
+
+const (
+	kindNone  = ""
+	kindText  = "text"
+	kindList  = "list"
+	kindTable = "table"
+)
+
+func splitParagraphsDetailed(text string) []paragraph {
+	var out []paragraph
 	var cur []string
+	headings := 0 // leading heading lines of cur
 	headingOnly := false
+	kind := kindNone
+	leadIn := ""
 	flush := func() {
-		if len(cur) > 0 {
-			out = append(out, strings.Join(cur, "\n"))
+		if len(cur) == 0 {
+			return
 		}
-		cur, headingOnly = nil, false
+		body := strings.Join(cur, "\n")
+		p := paragraph{Text: body, HeadingOnly: headingOnly}
+		if kind == kindList && leadIn != "" {
+			p.Text = leadIn + "\n" + body
+		}
+		out = append(out, p)
+		switch kind {
+		case kindList:
+			if headings > 0 && leadIn == "" {
+				// headings that opened a list lead all its items
+				leadIn = strings.Join(cur[:headings], "\n")
+			}
+		case kindText:
+			if strings.HasSuffix(strings.TrimSpace(cur[len(cur)-1]), ":") {
+				leadIn = body
+			} else {
+				leadIn = ""
+			}
+		default:
+			leadIn = ""
+		}
+		cur, headings, headingOnly, kind = nil, 0, false, kindNone
 	}
 	for _, line := range strings.Split(text, "\n") {
-		blank := strings.TrimSpace(line) == ""
 		switch {
-		case blank:
+		case strings.TrimSpace(line) == "":
 			if !headingOnly {
 				flush()
 			}
@@ -175,6 +226,7 @@ func splitParagraphs(text string) []string {
 				flush()
 			}
 			cur = append(cur, line)
+			headings++
 			headingOnly = true
 		case listItemLine.MatchString(line) || tableRowLine.MatchString(line):
 			if !headingOnly {
@@ -182,9 +234,16 @@ func splitParagraphs(text string) []string {
 			}
 			cur = append(cur, line)
 			headingOnly = false
+			kind = kindList
+			if tableRowLine.MatchString(line) {
+				kind = kindTable
+			}
 		default:
 			cur = append(cur, line)
 			headingOnly = false
+			if kind == kindNone {
+				kind = kindText
+			}
 		}
 	}
 	flush()

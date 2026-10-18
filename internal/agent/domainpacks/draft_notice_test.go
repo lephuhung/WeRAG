@@ -30,8 +30,11 @@ func TestSplitParagraphs(t *testing.T) {
 		"### 2. Tiêu đề\nĐoạn sau tiêu đề.",
 		"- mục 1", "- mục 2", "| a | b |", "| c | d |", "Kết.",
 	}, got)
-	// a heading followed by a list: the heading joins the first item
-	assert.Equal(t, []string{"## A\n- x", "- y"}, splitParagraphs("## A\n\n- x\n- y"))
+	// headings that open a list lead every item
+	assert.Equal(t, []string{"## A\n- x", "## A\n- y"}, splitParagraphs("## A\n\n- x\n- y"))
+	// a lead-in ending with ":" leads the items after it, not the paragraph after them
+	assert.Equal(t, []string{"Theo dự thảo:", "Theo dự thảo:\n- x", "Theo dự thảo:\n- y", "Hết."},
+		splitParagraphs("Theo dự thảo:\n\n- x\n- y\n\nHết."))
 }
 
 func TestDraftNotice(t *testing.T) {
@@ -40,23 +43,26 @@ func TestDraftNotice(t *testing.T) {
 		name, text string
 		want       []string // notice lines; nil = no notice
 	}{
-		{"labelled", "Theo dự thảo Lần 2, doanh nghiệp một người không bắt buộc có Chủ tịch.", nil},
-		{"unlabelled alias", "Doanh nghiệp một người không cần Chủ tịch công ty.", []string{smeLine}},
+		{"labelled", "Theo dự thảo Lần 2, Luật Phát triển DNNVV cho phép không có Chủ tịch.", nil},
+		{"unlabelled alias", "Luật Phát triển DNNVV cho phép không cần Chủ tịch công ty.", []string{smeLine}},
+		{"reversed article order", "Khoản 8 Điều 20 cho phép bỏ Chủ tịch.", []string{smeLine}},
+		{"generic one-person company is not the draft", "Doanh nghiệp một người theo luật hiện hành là công ty TNHH MTV.", nil},
 		{"label in another paragraph does not count",
 			"Đây là dự thảo.\n\nĐiều 20 khoản 8 cho phép bỏ Chủ tịch.", []string{smeLine}},
 		{"heading then a labelled paragraph (orig-4)",
-			"### 2. \"Doanh nghiệp một người\" là gì?\n\nTheo dự thảo Lần 2 ngày 28/8/2026, đó là công ty TNHH MTV…", nil},
+			"### 2. Điều 20 khoản 8 là gì?\n\nTheo dự thảo Lần 2 ngày 28/8/2026, đó là …", nil},
 		{"heading then an unlabelled paragraph",
-			"### Doanh nghiệp một người\n\nLà công ty TNHH MTV do cá nhân làm chủ.", []string{smeLine}},
-		{"list item unlabelled", "Tóm tắt (dự thảo):\n- Luật Phát triển DNNVV bỏ Chủ tịch công ty.", []string{smeLine}},
+			"### Luật Phát triển DNNVV\n\nCho phép bỏ Chủ tịch công ty.", []string{smeLine}},
+		{"list item under a labelled lead-in", "Tóm tắt (dự thảo):\n- Luật Phát triển DNNVV bỏ Chủ tịch công ty.", nil},
+		{"list item under an unlabelled lead-in", "Tóm tắt:\n\n- Ý khác.\n- Luật Phát triển DNNVV bỏ Chủ tịch công ty.", []string{smeLine}},
 		{"word boundary", "Xem Điều 20 khoản 80 của luật khác.", nil},
-		{"case and Unicode form", norm.NFD.String("DOANH NGHIỆP MỘT NGƯỜI được ưu đãi."), []string{smeLine}},
+		{"case and Unicode form", norm.NFD.String("LUẬT PHÁT TRIỂN DOANH NGHIỆP NHỎ VÀ VỪA có ưu đãi."), []string{smeLine}},
 		{"two drafts, one undated",
-			"Doanh nghiệp một người được ưu đãi.\n\nViệc sửa đổi Luật Kế toán và Luật Kiểm toán độc lập có thể bỏ kế toán trưởng.",
+			"Điều 20 khoản 8 có ưu đãi.\n\nViệc sửa đổi Luật Kế toán và Luật Kiểm toán độc lập có thể bỏ kế toán trưởng.",
 			[]string{smeLine, "- Dự án Luật sửa đổi, bổ sung Luật Kế toán và Luật Kiểm toán độc lập là dự án luật " +
 				"(chưa rõ lần dự thảo), chưa được thông qua; không áp dụng như quy định hiện hành."}},
 		{"inside code blocks only",
-			"Câu trả lời." + types.ToolAnswerBlockMarker + "doanh nghiệp một người\n" + FooterMarker + "Điều 20 khoản 8\n", nil},
+			"Câu trả lời." + types.ToolAnswerBlockMarker + "Luật Phát triển DNNVV\n" + FooterMarker + "Điều 20 khoản 8\n", nil},
 		{"no mention", "Luật Doanh nghiệp 59/2020/QH14 quy định Chủ tịch công ty.", nil},
 	}
 	for _, tc := range cases {
