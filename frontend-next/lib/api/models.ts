@@ -217,7 +217,7 @@ export interface ModelConfig {
   parameters: {
     base_url?: string;
     api_key?: string;
-    provider?: string; // openai, aliyun, zhipu, generic
+    provider?: string; // generic, openai, weknoracloud, jev, clef
     embedding_parameters?: {
       dimension?: number;
       truncate_prompt_tokens?: number;

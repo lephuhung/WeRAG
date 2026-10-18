@@ -305,8 +305,6 @@ func RunAsynqServer(params AsynqTaskParams) *asynq.ServeMux {
 	mux.HandleFunc(types.TypeKnowledgeAutoTag, params.KnowledgeAutoTag.Handle)
 	mux.HandleFunc(types.TypeKnowledgeBaseProfile, params.KnowledgeBaseProfile.Handle)
 
-	// Register data source sync handler
-
 	// Register wiki ingest handler + the debounced KB-global finalize handler.
 	// Both route to the same dispatch (WikiIngest.Handle switches on task type)
 	// and both land on QueueWiki, so the dedicated wiki pool serves them.

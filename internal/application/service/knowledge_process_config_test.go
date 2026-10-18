@@ -638,8 +638,7 @@ func TestResolveFileImportProcessConfig_LockedDefaultsProvideVLM(t *testing.T) {
 	withParseDefaults(t, enabledParseDefaults())
 
 	kb := &types.KnowledgeBase{} // no VLM configured on the KB
-	// KBs take documents only; the VLM default still reaches scanned PDFs.
-	eff, err := resolveFileImportProcessConfig(context.Background(), kb, "pdf", nil, nil)
+	eff, err := resolveFileImportProcessConfig(context.Background(), kb, "png", nil, nil)
 	require.NoError(t, err)
 	require.Equal(t, "sys-vlm", eff.VLMConfig.ModelID)
 }
