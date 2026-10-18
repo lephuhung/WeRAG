@@ -1,0 +1,63 @@
+# Fixed formulas of the pack (docs/domain-pack-standard.md §3.5). Each id is
+# implemented in internal/agent/domaintools/opcvn; the examples are checked by
+# the Go tests. Rates and ratios are variables with source kb: they are looked
+# up in the knowledge base, never written here as constants.
+formulas:
+  - id: thue_theo_ty_le_doanh_thu
+    name: Thuế TNDN tính theo tỷ lệ % trên doanh thu
+    expression: Thuế theo % doanh thu = Doanh thu × Tỷ lệ % doanh thu
+    variables:
+      - {name: doanh_thu, description: Doanh thu năm, unit: đồng, source: input}
+      - {name: ty_le_doanh_thu, description: Tỷ lệ thuế TNDN trên doanh thu, unit: "%", source: kb}
+    basis:
+      - {number: 67/2025/QH15}
+    tool: compare_tax_methods
+    examples:
+      - inputs: {doanh_thu: 8000000000, ty_le_doanh_thu: 1.5}
+        expected: {thue_theo_doanh_thu: 120000000}
+  - id: thue_theo_loi_nhuan
+    name: Thuế TNDN kê khai trên lợi nhuận
+    expression: Thuế theo lợi nhuận = Lợi nhuận trước thuế × Thuế suất TNDN
+    variables:
+      - {name: loi_nhuan, description: Lợi nhuận trước thuế (coi là thu nhập chịu thuế), unit: đồng, source: input}
+      - {name: thue_suat, description: Thuế suất thuế TNDN, unit: phân số (0–1), source: kb}
+    basis:
+      - {number: 67/2025/QH15}
+    tool: compare_tax_methods
+    examples:
+      - inputs: {loi_nhuan: 1200000000, thue_suat: 0.2}
+        expected: {thue_theo_loi_nhuan: 240000000}
+  - id: bien_hoa_von
+    name: Biên lợi nhuận hòa vốn giữa hai cách tính
+    expression: Biên lợi nhuận hòa vốn = (Tỷ lệ % doanh thu ÷ 100) ÷ Thuế suất TNDN (kết quả là phân số; nhân 100 để đọc ra %)
+    variables:
+      - {name: ty_le_doanh_thu, description: Tỷ lệ thuế TNDN trên doanh thu, unit: "%", source: kb}
+      - {name: thue_suat, description: Thuế suất thuế TNDN, unit: phân số (0–1), source: kb}
+    basis:
+      - {number: 67/2025/QH15}
+    tool: compare_tax_methods
+    examples:
+      - inputs: {ty_le_doanh_thu: 1.5, thue_suat: 0.2}
+        expected: {bien_hoa_von: 0.075}
+  - id: so_sanh_thue_tndn
+    name: So sánh thuế TNDN theo % doanh thu và kê khai
+    expression: >-
+      Chênh lệch = Thuế theo lợi nhuận − Thuế theo % doanh thu; Biên lợi nhuận = Lợi nhuận trước thuế ÷ Doanh thu;
+      biên lợi nhuận thấp hơn biên hòa vốn thì kê khai có lợi hơn về TNDN (chưa tính GTGT, lệ phí môn bài, ưu đãi,
+      chi phí không được trừ)
+    variables:
+      - {name: doanh_thu, description: Doanh thu năm, unit: đồng, source: input}
+      - {name: loi_nhuan, description: Lợi nhuận trước thuế, unit: đồng, source: input}
+      - {name: ty_le_doanh_thu, description: Tỷ lệ thuế TNDN trên doanh thu, unit: "%", source: kb}
+      - {name: thue_suat, description: Thuế suất thuế TNDN, unit: phân số (0–1), source: kb}
+    basis:
+      - {number: 67/2025/QH15}
+    tool: compare_tax_methods
+    examples:
+      # self-test of the source script so_sanh_thue.py
+      - inputs: {doanh_thu: 8000000000, loi_nhuan: 1200000000, ty_le_doanh_thu: 1.5, thue_suat: 0.2}
+        expected: {thue_theo_doanh_thu: 120000000, thue_theo_loi_nhuan: 240000000, bien_loi_nhuan: 0.15,
+                   bien_hoa_von: 0.075, chenh_lech: 120000000}
+      - inputs: {doanh_thu: 1000000000, loi_nhuan: 100000000, ty_le_doanh_thu: 5, thue_suat: 0.2}
+        expected: {thue_theo_doanh_thu: 50000000, thue_theo_loi_nhuan: 20000000, bien_loi_nhuan: 0.1,
+                   bien_hoa_von: 0.25, chenh_lech: -30000000}

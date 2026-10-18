@@ -20,7 +20,12 @@ type Pack struct {
 	// given to a model.
 	files     map[string]string
 	catalogue *Catalogue
+	formulas  *Formulas
 	raw       string // SKILL.md as written
+	// citedIn maps a number key cited in SKILL.md, references or assets to
+	// the files citing it; citedWritten keeps the number as first written.
+	citedIn      map[string][]string
+	citedWritten map[string]string
 }
 
 // Name is the pack's skill name.

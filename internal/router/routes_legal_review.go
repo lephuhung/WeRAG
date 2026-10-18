@@ -63,5 +63,10 @@ func RegisterDomainPackReconcileRoutes(r *gin.RouterGroup, h *handler.DomainPack
 	if h == nil {
 		return
 	}
-	r.POST("/system/domain-packs/:name/reconcile", g.PlatformSuperAdmin(), h.ReconcileDomainPack)
+	packs := r.Group("/system/domain-packs", g.PlatformSuperAdmin())
+	{
+		packs.GET("", h.ListSystemDomainPacks)
+		packs.GET("/:name", h.GetSystemDomainPack)
+		packs.POST("/:name/reconcile", h.ReconcileDomainPack)
+	}
 }

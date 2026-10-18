@@ -6,6 +6,8 @@
 
 ## Thuế thu nhập doanh nghiệp (TNDN)
 
+> Các quy định thuế dưới đây trích theo bản gốc (17/10/2026). Danh mục ghi Luật Thuế TNDN 67/2025/QH15, Luật Thuế GTGT 48/2024/QH15 và Luật Bảo hiểm xã hội 41/2024/QH15 đã được sửa đổi ("Hết hiệu lực một phần"): trước khi trích một điều, đọc văn bản hiện hành bằng `search_knowledge` và nêu việc sửa đổi nếu có.
+
 Luật Thuế TNDN 67/2025/QH15 có thuế suất phổ thông và mức thấp hơn cho doanh nghiệp có doanh thu năm nhỏ (bậc theo doanh thu). Bảng thuế suất và ngưỡng doanh thu của bản gốc đã được bỏ: tra mức hiện hành trong kho tri thức.
 
 - Doanh thu làm căn cứ xác định thuế suất là doanh thu của kỳ tính thuế **trước liền kề**.
@@ -20,6 +22,8 @@ Lưu ý:
 
 ## Thuế giá trị gia tăng (GTGT)
 
+Văn bản bản gốc dẫn cho phương pháp tính thuế GTGT: Luật Thuế giá trị gia tăng 48/2024/QH15 (hiệu lực: tra cứu trước khi dùng).
+
 Hai phương pháp:
 
 | Phương pháp | Cách tính | Phù hợp |
@@ -29,7 +33,7 @@ Hai phương pháp:
 
 - Doanh nghiệp đáp ứng điều kiện được chọn phương pháp khấu trừ; phương pháp trực tiếp áp dụng cho một số đối tượng theo luật.
 - Tỷ lệ % trực tiếp khác nhau theo ngành (phân phối, dịch vụ, sản xuất, xây dựng...). **Phải tra biểu tỷ lệ hiện hành.**
-- Hộ kinh doanh có ngưỡng doanh thu miễn thuế GTGT/TNCN — ngưỡng này đang thay đổi theo lộ trình 2025–2026, phải kiểm tra trước khi tính.
+- Hộ kinh doanh có ngưỡng doanh thu miễn thuế GTGT/TNCN — theo bản gốc, ngưỡng này đang thay đổi theo lộ trình 2025–2026; phải kiểm tra trước khi tính.
 
 ## Lệ phí môn bài
 
@@ -67,7 +71,7 @@ Ví dụ số học (không phải mức luật định): nếu r bằng một p
 | Quyết toán TNDN | Hàng năm | Thời hạn sau kết thúc năm tài chính: tra hiện hành |
 | TNCN | Hàng tháng/quý + quyết toán | Tùy số lượng lao động |
 | Lệ phí môn bài | Đầu năm | Hạn nộp: tra hiện hành |
-| BHXH | Hàng tháng | Khi có lao động thuộc đối tượng |
+| BHXH | Hàng tháng | Khi có lao động thuộc đối tượng (bản gốc dẫn Luật Bảo hiểm xã hội 41/2024/QH15; tra KB) |
 
 Lịch cụ thể có thể thay đổi; luôn kiểm tra thông báo của cơ quan thuế.
 

@@ -36,6 +36,7 @@ import {
   type LegalDraft,
   type LegalDraftSummary,
 } from "@/lib/api/legal-drafts";
+import { packOriginName } from "@/lib/domain-pack-view";
 
 const PAGE_SIZE = 50;
 
@@ -323,10 +324,17 @@ function RequestRow({
   const label = itemLabel(item);
   const decided = item.status === "added" || item.status === "rejected";
   const draft = item.draft ?? null;
+  // a request recorded by a domain pack's catalogue reconcile
+  const packOrigin = packOriginName(item.detail);
   return (
     <tr className="align-top">
       <td className="px-5 py-3.5">
         <div className="text-[13px] font-semibold text-ink">{label || "—"}</div>
+        {packOrigin && (
+          <span className="badge-pill mt-1 inline-block bg-[#1f6feb]/10 text-[10.5px] text-[#1f6feb]">
+            {t("lreq.packOrigin", { name: packOrigin })}
+          </span>
+        )}
         {title && (
           <div className="caption mt-0.5 line-clamp-2 text-body" title={title}>
             {title}

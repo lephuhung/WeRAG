@@ -37,14 +37,20 @@ type DomainPackReconciler struct {
 	catalog  interfaces.LegalCatalogRepository
 	requests interfaces.LegalRequestRepository
 	reviews  interfaces.LegalReviewRepository
+	agents   agentLookup
 	now      func() time.Time
 }
 
 // NewDomainPackReconciler creates the reconciler.
 func NewDomainPackReconciler(packs *domainpacks.Registry, catalog interfaces.LegalCatalogRepository,
 	requests interfaces.LegalRequestRepository, reviews interfaces.LegalReviewRepository,
+	agents interfaces.DomainPackAgentRepository,
 ) *DomainPackReconciler {
-	return &DomainPackReconciler{packs: packs, catalog: catalog, requests: requests, reviews: reviews, now: domainPackNow}
+	r := &DomainPackReconciler{packs: packs, catalog: catalog, requests: requests, reviews: reviews, now: domainPackNow}
+	if agents != nil {
+		r.agents = agents
+	}
+	return r
 }
 
 // reconcileRun is one Reconcile call: the pack and who asked.
@@ -96,67 +102,101 @@ func (r *DomainPackReconciler) Reconcile(ctx context.Context, name string) (*typ
 func (r *DomainPackReconciler) reconcileOne(ctx context.Context, run reconcileRun,
 	ref types.DomainPackCatalogueRef, out *types.DomainPackReconcileResult,
 ) error {
-	key := vietnamese_legal.CatalogNumberKey(ref.Number)
-	docs, err := r.catalog.FindByNumberKey(ctx, key, domainPackReconcileLookup)
+	lk, err := r.lookup(ctx, run.now, ref)
 	if err != nil {
-		return fmt.Errorf("catalogue lookup: %w", err)
+		return err
 	}
-	// FindByNumberKey falls back to a prefix match; a pack names full
-	// numbers, so only the exact key counts
-	var exact []*types.LegalDocument
-	for _, d := range docs {
-		if d != nil && d.NumberKey == key {
-			exact = append(exact, d)
-		}
-	}
-	if len(exact) == 0 {
-		req, err := r.request(ctx, run, ref, &types.LegalDocumentRequest{NumberKey: key, DocumentNumber: ref.Number, Title: ref.Title})
+	if len(lk.rows) == 0 {
+		req, err := r.request(ctx, run, ref, &types.LegalDocumentRequest{NumberKey: lk.key, DocumentNumber: ref.Number, Title: ref.Title})
 		if err != nil {
 			return err
 		}
 		out.Missing = append(out.Missing, types.DomainPackReconcileMissing{DomainPackCatalogueRef: ref, Request: req})
 		return nil
 	}
-
-	reports := make([]types.DomainPackReconcileDocument, 0, len(exact))
-	for _, d := range exact {
-		doc, err := r.document(ctx, d, run.now)
-		if err != nil {
-			return err
-		}
-		reports = append(reports, doc)
-	}
-	if err := r.markHeld(ctx, reports); err != nil {
-		return err
-	}
 	// no KB holds any of them: ask for the text, as the gate does — of the
-	// rows not fully expired when there are live ones beside expired ones
-	held := false
-	for _, doc := range reports {
-		held = held || doc.HeldInKB
-	}
-	if !held {
-		for i, d := range exact {
-			if len(exact) > 1 && expiredBesideLive(exact, d) {
+	// rows not fully expired when there are live ones beside expired ones,
+	// and not at all when every row is fully expired (the gate shows the
+	// "expired" card instead; here the status_note tells the SuperAdmin to
+	// fix the pack)
+	if !lk.held() && !allFullyExpired(lk.rows) {
+		for i, d := range lk.rows {
+			if len(lk.rows) > 1 && expiredBesideLive(lk.rows, d) {
 				continue
 			}
 			req, err := r.request(ctx, run, ref, &types.LegalDocumentRequest{
-				NumberKey: key, DocumentNumber: firstNonEmpty(strings.TrimSpace(d.DocumentNumber), ref.Number),
+				NumberKey: lk.key, DocumentNumber: firstNonEmpty(strings.TrimSpace(d.DocumentNumber), ref.Number),
 				Title: d.Title, DocType: d.DocType,
 				LegalDocumentID: d.ID, Source: types.LegalRequestSourceCatalogue,
 			})
 			if err != nil {
 				return err
 			}
-			reports[i].Request = req
+			lk.docs[i].Request = req
 		}
 	}
-	if len(reports) == 1 {
-		out.Found = append(out.Found, types.DomainPackReconcileFound{DomainPackCatalogueRef: ref, Document: reports[0]})
+	if len(lk.docs) == 1 {
+		out.Found = append(out.Found, types.DomainPackReconcileFound{DomainPackCatalogueRef: ref, Document: lk.docs[0]})
 		return nil
 	}
-	out.Ambiguous = append(out.Ambiguous, types.DomainPackReconcileAmbiguous{DomainPackCatalogueRef: ref, Documents: reports})
+	out.Ambiguous = append(out.Ambiguous, types.DomainPackReconcileAmbiguous{DomainPackCatalogueRef: ref, Documents: lk.docs})
 	return nil
+}
+
+// numberLookup is the read-only inspection of one catalogue number: the
+// catalogue rows holding it exactly, projected with their status notes and
+// whether a public KB holds the text. It writes nothing.
+type numberLookup struct {
+	key  string
+	rows []*types.LegalDocument
+	docs []types.DomainPackReconcileDocument
+}
+
+func (lk *numberLookup) held() bool {
+	for _, d := range lk.docs {
+		if d.HeldInKB {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *DomainPackReconciler) lookup(ctx context.Context, now time.Time, ref types.DomainPackCatalogueRef) (*numberLookup, error) {
+	lk := &numberLookup{key: vietnamese_legal.CatalogNumberKey(ref.Number)}
+	docs, err := r.catalog.FindByNumberKey(ctx, lk.key, domainPackReconcileLookup)
+	if err != nil {
+		return nil, fmt.Errorf("catalogue lookup: %w", err)
+	}
+	// FindByNumberKey falls back to a prefix match; a pack names full
+	// numbers, so only the exact key counts
+	for _, d := range docs {
+		if d != nil && d.NumberKey == lk.key {
+			lk.rows = append(lk.rows, d)
+		}
+	}
+	for _, d := range lk.rows {
+		doc, err := r.document(ctx, d, now)
+		if err != nil {
+			return nil, err
+		}
+		lk.docs = append(lk.docs, doc)
+	}
+	if len(lk.docs) > 0 {
+		if err := r.markHeld(ctx, lk.docs); err != nil {
+			return nil, err
+		}
+	}
+	return lk, nil
+}
+
+// allFullyExpired reports whether every row is "Hết hiệu lực toàn bộ".
+func allFullyExpired(rows []*types.LegalDocument) bool {
+	for _, d := range rows {
+		if !strings.HasPrefix(strings.TrimSpace(d.Status), LegalExpiredStatusPrefix) {
+			return false
+		}
+	}
+	return len(rows) > 0
 }
 
 // markHeld sets HeldInKB like the chat gate decides a document is held: an

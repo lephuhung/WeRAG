@@ -1355,7 +1355,8 @@ func (s *agentService) registerTools(
 			toolToRegister = tools.NewGenerateIllustrationTool(images, serviceName, illustrationDocs, sessionID)
 		// Fixed-formula tool of a domain pack: pure computation, no service.
 		case tools.ToolCompareTaxMethods:
-			toolToRegister = tools.NewCompareTaxMethodsTool()
+			toolToRegister = tools.NewCompareTaxMethodsTool().
+				WithFormulaBlock(s.domainPacks.FormulaBlock(tools.ToolCompareTaxMethods))
 
 		case tools.ToolShellExec, tools.ToolReadFile, tools.LegacyToolReadSkill, tools.LegacyToolExecuteSkillScript,
 			tools.ToolListSandboxFiles, tools.LegacyToolReadSandboxFile, tools.ToolWriteSandboxFile,

@@ -2,7 +2,7 @@
 
 # Checklist chuyển đổi hộ kinh doanh lên công ty
 
-> In ra, đánh dấu, lưu cùng hồ sơ. Mỗi mục có thể không áp dụng cho trường hợp của bạn. Checklist theo bản gốc (17/10/2026): thủ tục đăng ký doanh nghiệp hiện hành phải tra trong kho tri thức.
+> In ra, đánh dấu, lưu cùng hồ sơ. Mỗi mục có thể không áp dụng cho trường hợp của bạn. Checklist theo bản gốc (17/10/2026): thủ tục đăng ký doanh nghiệp hiện hành — tra Nghị định 168/2025/NĐ-CP trong KB.
 
 ## A. Trước khi quyết định
 

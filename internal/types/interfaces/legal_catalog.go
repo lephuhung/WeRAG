@@ -254,3 +254,11 @@ type LegalDraftService interface {
 	// Summaries returns the draft summary of each given vbpl.vn id that has one.
 	Summaries(ctx context.Context, vbplIDs []string) (map[string]*types.LegalDraftSummary, error)
 }
+
+// DomainPackAgentRepository finds the custom agents that use a domain pack.
+type DomainPackAgentRepository interface {
+	// ListAgentsUsingPack returns the live custom agents of every
+	// organization whose config.domain_packs contains name, with their
+	// organization's name; ordered by organization then agent name.
+	ListAgentsUsingPack(ctx context.Context, name string) ([]types.DomainPackAgent, error)
+}

@@ -86,6 +86,9 @@ type CatalogueEntry struct {
 	Number  string `yaml:"number"`
 	Title   string `yaml:"title"`
 	UsedFor string `yaml:"used_for"`
+	// Articles are the provisions the pack cites ("Điều 85", "Điều 52
+	// khoản 2"); optional.
+	Articles []string `yaml:"articles"`
 }
 
 // statusKeys are refused anywhere in catalogue.yaml with a message that says
@@ -104,7 +107,7 @@ func validatePack(fsys fs.FS, name string) (*Pack, error) {
 
 	pack := &Pack{files: map[string]string{}}
 	seen := map[string]bool{}
-	var skillData, catalogueData, evalsData []byte
+	var skillData, catalogueData, evalsData, formulasData []byte
 
 	walkErr := fs.WalkDir(fsys, name, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -146,7 +149,7 @@ func validatePack(fsys fs.FS, name string) (*Pack, error) {
 			fail("%s: executable files are not allowed", rel)
 		}
 		switch {
-		case rel == skillFile, rel == catalogueFile, rel == attributionFile, rel == evalsFile:
+		case rel == skillFile, rel == catalogueFile, rel == attributionFile, rel == evalsFile, rel == formulasFile:
 		case nested && (top == referencesDir || top == assetsDir) && strings.HasSuffix(rel, ".md"):
 		default:
 			fail("%s: file is not allowed in a pack", rel)
@@ -164,6 +167,8 @@ func validatePack(fsys fs.FS, name string) (*Pack, error) {
 			catalogueData = data
 		case evalsFile:
 			evalsData = data
+		case formulasFile:
+			formulasData = data
 		case attributionFile:
 		default:
 			if len(data) > maxResourceBytes {
@@ -200,6 +205,19 @@ func validatePack(fsys fs.FS, name string) (*Pack, error) {
 			fail("%s: %v", catalogueFile, err)
 		}
 		pack.catalogue = catalogue
+	}
+	if formulasData != nil {
+		formulas, ferrs := parseFormulas(formulasData, pack.Manifest, pack.catalogue)
+		errs = append(errs, ferrs...)
+		pack.formulas = formulas
+	}
+	if pack.Manifest != nil {
+		errs = append(errs, checkDomainToolsDescribed(pack.Manifest, pack.formulas)...)
+		texts := map[string]string{skillFile: pack.raw}
+		for rel, content := range pack.files {
+			texts[rel] = content
+		}
+		pack.citedIn, pack.citedWritten = citations(texts)
 	}
 	if evalsData != nil {
 		if err := checkEvals(evalsData); err != nil {
@@ -362,6 +380,11 @@ func parseCatalogue(data []byte) (*Catalogue, error) {
 			return nil, fmt.Errorf("documents[%d]: number %q is listed twice", i, number)
 		}
 		seen[number] = true
+		for j, a := range doc.Articles {
+			if strings.TrimSpace(a) == "" {
+				return nil, fmt.Errorf("documents[%d] (%s): articles[%d] is empty", i, number, j)
+			}
+		}
 	}
 	return &catalogue, nil
 }
@@ -417,6 +440,9 @@ func (p *Pack) Lint() []string {
 			}
 		}
 	}
+
+	findings = append(findings, p.citationFindings()...)
+	findings = append(findings, p.formulaFindings()...)
 
 	allowed := map[string]bool{tools.ToolReadFile: true}
 	for _, name := range AlwaysOnTools {
