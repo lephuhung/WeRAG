@@ -266,6 +266,14 @@ export const IconChevronLeft = ({ className }: P) => (
   </svg>
 );
 
+/** A window with its left panel: hide or show the app's left rail. */
+export const IconSidebarToggle = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M9 4v16" />
+  </svg>
+);
+
 export const IconArrowUp = ({ className }: P) => (
   <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
     <path d="M12 19V5m-7 7 7-7 7 7" />

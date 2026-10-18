@@ -21,10 +21,12 @@ import {
   IconArtifact,
   IconBook,
   IconChat,
+  IconChevronRight,
   IconPlus,
   IconSearch,
   IconTrash,
 } from "@/components/icons";
+import { setSidebarHidden, useSidebarHidden } from "@/lib/sidebar-state";
 import { vnDaysAgo } from "@/lib/datetime";
 
 const NAV = [
@@ -64,6 +66,9 @@ export function Sidebar() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
+  // hidden on desktop by a full-width page (the legal draft review); the
+  // tab at the left edge brings it back from any page
+  const desktopHidden = useSidebarHidden();
 
   const confirmDelete = async () => {
     if (!removing || deleting) return;
@@ -212,10 +217,21 @@ export function Sidebar() {
       {/* Desktop: the translate makes the rail its own stacking layer, so it
        * needs a z-index above the page (the ONLYOFFICE pane is z-10) or the
        * account menu, wider than the rail, opens under the editor. */}
+      {desktopHidden && (
+        <button
+          type="button"
+          onClick={() => setSidebarHidden(false)}
+          title={t("sidebar.show")}
+          aria-label={t("sidebar.show")}
+          className="fixed left-0 top-1/2 z-40 hidden h-12 w-5 -translate-y-1/2 items-center justify-center rounded-r-md border border-l-0 border-hairline bg-canvas text-muted-soft shadow-sm transition-colors hover:text-ink lg:flex"
+        >
+          <IconChevronRight className="h-3.5 w-3.5" />
+        </button>
+      )}
       <aside
         className={`fixed inset-y-0 left-0 z-50 flex h-dvh w-[264px] shrink-0 flex-col border-r border-hairline bg-canvas transition-transform duration-200 ease-out lg:relative lg:z-30 lg:translate-x-0 lg:transition-none ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        } ${desktopHidden ? "lg:hidden" : ""}`}
       >
       <div className="flex h-16 items-center px-5">
         <Link

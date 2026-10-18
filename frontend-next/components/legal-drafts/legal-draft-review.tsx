@@ -16,7 +16,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Modal } from "@/components/modal";
 import { useConfirm } from "@/components/confirm-dialog";
 import { useToast } from "@/components/toast";
-import { IconChevronLeft, IconExternal, IconRefresh } from "@/components/icons";
+import { IconChevronLeft, IconExternal, IconRefresh, IconSidebarToggle } from "@/components/icons";
+import { setSidebarHidden, useSidebarHidden } from "@/lib/sidebar-state";
 import { DocumentPane } from "@/components/doc-workspace/document-pane";
 import { SplitPane } from "@/components/doc-workspace/split-pane";
 import type { EditorActions } from "@/components/doc-workspace/use-live-spelling";
@@ -64,6 +65,7 @@ export const queueHref = (view: "requests" | "drafts" = "drafts") =>
 
 export function LegalDraftReview({ id }: { id: string }) {
   const { t, locale } = useT();
+  const sidebarHidden = useSidebarHidden();
   const router = useRouter();
   const searchParams = useSearchParams();
   const preferredKb = searchParams.get("kb");
@@ -248,6 +250,17 @@ export function LegalDraftReview({ id }: { id: string }) {
     <div className="flex min-h-0 flex-1 flex-col">
       {/* header */}
       <div className="hairline-b flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5">
+        {/* the PDF and the editor need the whole laptop width: the app's
+            left rail can be hidden from here (it comes back from its tab) */}
+        <button
+          type="button"
+          onClick={() => setSidebarHidden(!sidebarHidden)}
+          className="btn btn-ghost btn-sm hidden shrink-0 lg:inline-flex"
+          title={t(sidebarHidden ? "sidebar.show" : "sidebar.hide")}
+          aria-label={t(sidebarHidden ? "sidebar.show" : "sidebar.hide")}
+        >
+          <IconSidebarToggle className="h-3.5 w-3.5" />
+        </button>
         <Link href={queueHref("drafts")} className="btn btn-ghost btn-sm shrink-0" title={t("ldraft.review.back")}>
           <IconChevronLeft className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">{t("ldraft.review.back")}</span>
