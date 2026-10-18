@@ -33,6 +33,10 @@ type LegalFeedService struct {
 	requests  interfaces.LegalRequestRepository
 	// HTTP fetches from vbpl.vn; nil uses a default client (tests swap it).
 	HTTP *http.Client
+	// Reviews receives the approved legal review link of every ingested
+	// document (its identity is the vbpl.vn id it was fetched by), so the
+	// review scan never has to pick it up; nil skips it.
+	Reviews interfaces.LegalReviewRepository
 }
 
 // NewLegalFeedService creates the feed service.
@@ -241,6 +245,10 @@ type LegalIngestDocument struct {
 	SourceFormat string
 	// LogDetail is added to the legal_feed_log row.
 	LogDetail map[string]any
+	// ReviewedBy is who vouches for the document's identity on its legal
+	// review link: the approving SuperAdmin of a reviewed draft;
+	// "" = types.LegalReviewerVBPL (fetched by its vbpl.vn id).
+	ReviewedBy string
 }
 
 // IngestHTML adds a document's HTML (the portal's, or one built from a
@@ -293,6 +301,7 @@ func (s *LegalFeedService) IngestHTML(
 		}
 		if e.FileHash == hash {
 			res.Result, res.KnowledgeID = "unchanged", e.ID
+			s.saveReviewLink(ctx, doc, e.ID, kb.ID, false)
 			s.markRequestsAdded(ctx, res, actor)
 			return res, nil
 		}
@@ -331,8 +340,41 @@ func (s *LegalFeedService) IngestHTML(
 		Action: "ingest_" + res.Result, VBPLID: vbplID, KnowledgeID: created.ID, KnowledgeBaseID: kb.ID,
 		DocumentNumber: doc.DocumentNumber, Reason: reason, Detail: logDetail,
 	})
+	s.saveReviewLink(ctx, doc, created.ID, kb.ID, true)
 	s.markRequestsAdded(ctx, res, actor)
 	return res, nil
+}
+
+// saveReviewLink records the approved legal review link of an ingested
+// document, as the review scan does for a document imported from vbpl.vn:
+// legal_document_id is the vbpl.vn id it was fetched by. An unchanged copy
+// gets one only when it has none (a reviewer's decision is kept). Best
+// effort: a failure is logged and the scan links the document later.
+func (s *LegalFeedService) saveReviewLink(ctx context.Context, doc LegalIngestDocument, knowledgeID, kbID string, fresh bool) {
+	if s.Reviews == nil || knowledgeID == "" {
+		return
+	}
+	if !fresh {
+		if existing, err := s.Reviews.GetLink(ctx, knowledgeID); err != nil || existing != nil {
+			return
+		}
+	}
+	by := doc.ReviewedBy
+	if by == "" {
+		by = types.LegalReviewerVBPL
+	}
+	sug, _ := json.Marshal(types.LegalIdentitySuggestion{
+		DocumentNumber: strings.TrimSpace(doc.DocumentNumber), DocType: strings.TrimSpace(doc.DocType),
+		CatalogMatches: []string{doc.VBPLID},
+	})
+	now := time.Now()
+	link := &types.LegalDocumentLink{
+		KnowledgeID: knowledgeID, KnowledgeBaseID: kbID, LegalDocumentID: doc.VBPLID,
+		ReviewStatus: types.LegalReviewApproved, Suggestion: types.JSON(sug), ReviewedBy: by, ReviewedAt: &now,
+	}
+	if err := s.Reviews.SaveLink(ctx, link); err != nil {
+		logger.Warnf(ctx, "[LegalFeed] review link of %s (%s): %v", knowledgeID, doc.VBPLID, err)
+	}
 }
 
 // markRequestsAdded closes the open requests for the ingested document.

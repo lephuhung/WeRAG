@@ -678,6 +678,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		if u, ok := sessions.(legalRequestUser); ok {
 			u.SetLegalRequests(requests, reviews)
 		}
+		// an ingest links the document to its catalogue row at once
+		feed.Reviews = reviews
 		mcpServer.SetLegalFeed(feed, requests)
 		mcpServer.SetLegalDrafts(drafts)
 	}))

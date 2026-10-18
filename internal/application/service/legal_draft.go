@@ -520,6 +520,18 @@ func (s *LegalDraftService) Open(ctx context.Context, id string, viewer types.Le
 		return nil, apperrors.NewUnauthorizedError("a user is required to open a draft")
 	}
 	tenantID := types.PlatformTenantID
+	// the session routes only find a session of the viewer: a draft opened
+	// before by another SuperAdmin moves to this one
+	if d.SessionID != "" {
+		if sess, err := s.sessions.GetSessionByID(ctx, tenantID, d.SessionID); err == nil && sess != nil && sess.UserID != userID {
+			if err := s.sessions.SetSessionOwnerID(ctx, tenantID, d.SessionID, userID); err != nil {
+				return nil, fmt.Errorf("hand the review session over: %w", err)
+			}
+			logger.Infof(ctx, "[LegalDraft] draft %s: review session %s handed over from %s to %s", d.ID, d.SessionID,
+				sess.UserID, userID)
+			sess.UserID = userID
+		}
+	}
 
 	var ws *types.DocumentWorkspace
 	if d.WorkspaceID != "" && d.SessionID != "" {
@@ -538,13 +550,17 @@ func (s *LegalDraftService) Open(ctx context.Context, id string, viewer types.Le
 			return nil, err
 		}
 	}
+	// the latest reviewer is whoever opened it last
+	fields := map[string]any{"reviewed_by": userID}
 	if d.Status == types.LegalDraftReady {
-		d.Status, d.ReviewedBy = types.LegalDraftReviewing, userID
-		if err := s.drafts.Update(ctx, d.ID, map[string]any{"status": d.Status, "reviewed_by": userID}); err != nil {
-			return nil, err
-		}
+		d.Status = types.LegalDraftReviewing
+		fields["status"] = d.Status
 		s.moveRequests(ctx, d.LegalDocumentID, []string{types.LegalRequestRequested, types.LegalRequestFetched},
 			types.LegalRequestReviewing)
+	}
+	d.ReviewedBy = userID
+	if err := s.drafts.Update(ctx, d.ID, fields); err != nil {
+		return nil, err
 	}
 
 	viewCtx := WithDocumentEditorOrigin(ctx, viewer.Origin)
@@ -769,8 +785,8 @@ func (s *LegalDraftService) Approve(ctx context.Context, id, kbID string) (*type
 	res, err := s.feed.IngestHTML(grantCtx, LegalIngestDocument{
 		VBPLID: d.LegalDocumentID, DocumentNumber: detail.DocNum, DocType: detail.DocType.Name,
 		Status: strings.TrimSpace(detail.EffStatus.Name), FileName: vbpl.FileName(detail), Metadata: meta,
-		SourceFormat: LegalSourcePDFReviewed,
-		LogDetail:    map[string]any{"source_file": d.PDFFileName, "draft_id": d.ID, "articles": len(report.Articles)},
+		SourceFormat: LegalSourcePDFReviewed, ReviewedBy: caller.UserID,
+		LogDetail: map[string]any{"source_file": d.PDFFileName, "draft_id": d.ID, "articles": len(report.Articles)},
 	}, html, kb, LegalFeedActor{TenantID: caller.TenantID, UserID: caller.UserID, Channel: types.ChannelWeb},
 		"Bản nháp OCR đã duyệt "+d.ID+" ("+d.DocumentNumber+")")
 	if err != nil {

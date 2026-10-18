@@ -107,7 +107,8 @@ func (c *draftCatalog) CreateAccessGrant(context.Context, string, time.Duration)
 
 type draftSessions struct {
 	interfaces.SessionService
-	created []*types.Session
+	created   []*types.Session
+	handovers int
 }
 
 func (s *draftSessions) CreateSession(_ context.Context, sess *types.Session) (*types.Session, error) {
@@ -123,6 +124,32 @@ func (s *draftSessions) GetSessionByID(_ context.Context, tenantID uint64, id st
 		}
 	}
 	return nil, apperrors.NewNotFoundError("session not found")
+}
+
+func (s *draftSessions) SetSessionOwnerID(_ context.Context, tenantID uint64, id, owner string) error {
+	for _, sess := range s.created {
+		if sess.ID == id && sess.TenantID == tenantID {
+			sess.UserID = owner
+			s.handovers++
+			return nil
+		}
+	}
+	return apperrors.ErrSessionNotFound
+}
+
+// fakeReviewLinks records the legal review links an ingest saves.
+type fakeReviewLinks struct {
+	interfaces.LegalReviewRepository
+	links map[string]*types.LegalDocumentLink
+}
+
+func (f *fakeReviewLinks) SaveLink(_ context.Context, l *types.LegalDocumentLink) error {
+	f.links[l.KnowledgeID] = l
+	return nil
+}
+
+func (f *fakeReviewLinks) GetLink(_ context.Context, id string) (*types.LegalDocumentLink, error) {
+	return f.links[id], nil
 }
 
 type draftAttachments struct {
@@ -237,6 +264,7 @@ func newDraftTestService(t *testing.T) (*LegalDraftService, *gorm.DB, *feedKnowl
 	know := &feedKnowledge{}
 	feed := NewLegalFeedService(db, know, requests)
 	feed.HTTP = &http.Client{Transport: feedGateway{base: srv.URL}}
+	feed.Reviews = &fakeReviewLinks{links: map[string]*types.LegalDocumentLink{}}
 	att := &draftAttachments{docs: map[string]*types.TemporaryDocument{}, data: map[string][]byte{}}
 	ws := &draftWorkspaces{att: att}
 	sessions := &draftSessions{}
@@ -401,6 +429,22 @@ func TestLegalDraftFlow(t *testing.T) {
 		t.Fatalf("reopen: %+v %v (sessions %d, workspaces %d)", reopened, err, len(sessions.created), ws.created)
 	}
 
+	// another SuperAdmin opens it: the hidden session is handed over, so the
+	// session routes (owner-scoped) find it for them
+	other := context.WithValue(ctx, types.CallerContextKey, types.Caller{TenantID: 7, UserID: "u-other"})
+	handed, err := svc.Open(other, draft.ID, types.LegalDraftViewer{UserID: "u-other"})
+	if err != nil || handed.SessionID != opened.SessionID || handed.DocumentID != opened.DocumentID ||
+		sess.UserID != "u-other" || sessions.handovers != 1 || len(sessions.created) != 1 || ws.created != 1 {
+		t.Fatalf("handover: %+v %v (owner %q, handovers %d)", handed, err, sess.UserID, sessions.handovers)
+	}
+	if got, _ := svc.Get(ctx, draft.ID); got.ReviewedBy != "u-other" || got.Status != types.LegalDraftReviewing {
+		t.Fatalf("reviewed_by after the second open = %q (%s)", got.ReviewedBy, got.Status)
+	}
+	if _, err := svc.Open(ctx, draft.ID, types.LegalDraftViewer{UserID: "u-super"}); err != nil || sess.UserID != "u-super" ||
+		sessions.handovers != 2 {
+		t.Fatalf("hand back: %v owner %q", err, sess.UserID)
+	}
+
 	// structure of the OCR text as opened
 	report, err := svc.Structure(ctx, draft.ID)
 	if err != nil {
@@ -463,6 +507,11 @@ func TestLegalDraftFlow(t *testing.T) {
 		know.lastMeta["source_file"] != "VanBanGoc_3 TT.pdf" || know.lastMeta["reviewed_by"] != "u-super" ||
 		know.lastMeta["reviewed_at"] == "" || know.lastMeta["doc_number"] != "3/2021/TT-BTC" {
 		t.Fatalf("ingest = %v meta %v type %q", know.created, know.lastMeta, know.lastType)
+	}
+	link := svc.feed.Reviews.(*fakeReviewLinks).links["k-new"]
+	if link == nil || link.ReviewStatus != types.LegalReviewApproved || link.LegalDocumentID != "3003" ||
+		link.KnowledgeBaseID != "kb-tt" || link.ReviewedBy != "u-super" || link.ReviewedAt == nil {
+		t.Fatalf("review link = %+v", link)
 	}
 	if _, err := svc.Approve(ctx, draft.ID, "kb-tt"); httpStatus(err) != http.StatusConflict {
 		t.Fatalf("approve twice: %v", err)

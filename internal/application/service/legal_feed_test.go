@@ -98,6 +98,8 @@ func TestLegalFeedIngestFromPortal(t *testing.T) {
 	know, reqs := &feedKnowledge{}, &feedRequests{}
 	feed := NewLegalFeedService(db, know, reqs)
 	feed.HTTP = &http.Client{Transport: feedGateway{base: srv.URL}}
+	reviews := &fakeReviewLinks{links: map[string]*types.LegalDocumentLink{}}
+	feed.Reviews = reviews
 	kb := &types.KnowledgeBase{ID: "kb-nd", OwnerTenantID: 0}
 	actor := LegalFeedActor{TenantID: 10000, UserID: "u-super", Channel: types.ChannelWeb}
 	ctx := context.Background()
@@ -128,6 +130,12 @@ func TestLegalFeedIngestFromPortal(t *testing.T) {
 	}
 	if len(reqs.marked) != 1 || reqs.marked[0] != "155366|k-new|kb-nd|u-super" {
 		t.Fatalf("marked = %v", reqs.marked)
+	}
+	// the ingest links the document to its catalogue row at once, as the scan would
+	if l := reviews.links["k-new"]; l == nil || l.ReviewStatus != types.LegalReviewApproved || l.LegalDocumentID != "155366" ||
+		l.ReviewedBy != types.LegalReviewerVBPL || l.KnowledgeBaseID != "kb-nd" || l.ReviewedAt == nil ||
+		!strings.Contains(string(l.Suggestion), `"document_number":"53/2022/NĐ-CP"`) {
+		t.Fatalf("review link = %+v", l)
 	}
 	if know.lastType != "text/html" || know.lastMeta["source_format"] != "" {
 		t.Fatalf("html upload: type %q meta %v", know.lastType, know.lastMeta)
@@ -177,5 +185,21 @@ func TestLegalFeedIngestFromPortal(t *testing.T) {
 	}
 	if portal, err = feed.CheckPortal(ctx, "155366"); err != nil || !portal.HTML || portal.PDFFile != "" {
 		t.Fatalf("check 155366: %+v %v", portal, err)
+	}
+}
+
+func TestLegalFeedReviewLinkKeepsReviewerDecision(t *testing.T) {
+	reviews := &fakeReviewLinks{links: map[string]*types.LegalDocumentLink{
+		"k1": {KnowledgeID: "k1", LegalDocumentID: "other", ReviewStatus: types.LegalReviewRejected, ReviewedBy: "u-rev"},
+	}}
+	feed := &LegalFeedService{Reviews: reviews}
+	doc := LegalIngestDocument{VBPLID: "155366", DocumentNumber: "53/2022/NĐ-CP"}
+	feed.saveReviewLink(context.Background(), doc, "k1", "kb", false)
+	if l := reviews.links["k1"]; l.ReviewStatus != types.LegalReviewRejected || l.LegalDocumentID != "other" {
+		t.Fatalf("an unchanged copy overwrote the reviewer's link: %+v", l)
+	}
+	feed.saveReviewLink(context.Background(), doc, "k2", "kb", false)
+	if l := reviews.links["k2"]; l == nil || l.ReviewStatus != types.LegalReviewApproved || l.ReviewedBy != types.LegalReviewerVBPL {
+		t.Fatalf("an unchanged copy without a link got none: %+v", l)
 	}
 }
