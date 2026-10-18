@@ -23,10 +23,13 @@ metadata:
     - title: Dự thảo Luật Phát triển doanh nghiệp nhỏ và vừa
       version: Lần 2
       date: 2026-08-28
+      aliases: [Luật Phát triển doanh nghiệp nhỏ và vừa, Luật Phát triển DNNVV, Điều 20 khoản 8, khoản 8 Điều 20]
     - title: Dự án Luật sửa đổi, bổ sung Luật Kế toán và Luật Kiểm toán độc lập
       version: chưa rõ lần dự thảo
+      aliases: [sửa đổi Luật Kế toán và Luật Kiểm toán độc lập]
     - title: Dự án Luật sửa đổi, bổ sung Luật Thuế thu nhập doanh nghiệp, Luật Thuế thu nhập cá nhân và Luật Thuế sử dụng đất phi nông nghiệp
       version: chưa rõ lần dự thảo
+      aliases: ["sửa đổi Luật Thuế thu nhập doanh nghiệp, Luật Thuế thu nhập cá nhân"]
 ---
 # Cẩm nang doanh nghiệp một người
 

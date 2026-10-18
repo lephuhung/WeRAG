@@ -123,12 +123,12 @@ func (s *Source) Footer(now time.Time, answer string) string {
 	return FooterMarker + strings.Join(parts, "\n\n") + "\n"
 }
 
-// StripFooter cuts the code-appended tail of an answer: the tool answer
-// block (types.ToolAnswerBlockMarker) or the footer, whichever comes first,
-// and anything after it.
+// StripFooter cuts the code-appended tail of an answer: the draft notice
+// (DraftNoticeMarker), the tool answer block (types.ToolAnswerBlockMarker)
+// or the footer, whichever comes first, and anything after it.
 func StripFooter(answer string) string {
 	cut := len(answer)
-	for _, marker := range []string{types.ToolAnswerBlockMarker, FooterMarker} {
+	for _, marker := range []string{DraftNoticeMarker, types.ToolAnswerBlockMarker, FooterMarker} {
 		if i := strings.Index(answer, marker); i >= 0 && i < cut {
 			cut = i
 		}

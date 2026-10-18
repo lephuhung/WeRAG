@@ -304,6 +304,9 @@ func checkSkill(pack *Pack, dir string, data []byte) []error {
 			fail("metadata.draft_documents[%d]: version %q must not carry a date", i, DraftVersionUnknown)
 		}
 	}
+	for _, err := range checkDraftAliases(m.DraftDocuments) {
+		fail("%v", err)
+	}
 
 	available := map[string]bool{}
 	for _, def := range tools.AvailableToolDefinitions() {
@@ -489,4 +492,37 @@ func knownToolNames() []string {
 		names[name] = true
 	}
 	return sortedKeys(names)
+}
+
+// checkDraftAliases: aliases are specific phrases (≥ 4 runes, not a
+// generic word like "luật mới"), and no name — title or alias — belongs to
+// two drafts of the pack.
+func checkDraftAliases(drafts []DraftDocument) []error {
+	var errs []error
+	owner := map[string]int{}
+	for i, d := range drafts {
+		for j, alias := range d.Aliases {
+			a := strings.TrimSpace(alias)
+			switch {
+			case a == "":
+				errs = append(errs, fmt.Errorf("metadata.draft_documents[%d].aliases[%d] is empty", i, j))
+			case utf8.RuneCountInString(a) < minAliasRunes:
+				errs = append(errs, fmt.Errorf("metadata.draft_documents[%d].aliases[%d] %q is shorter than %d characters",
+					i, j, a, minAliasRunes))
+			case genericDraftAliases[normText(a)]:
+				errs = append(errs, fmt.Errorf("metadata.draft_documents[%d].aliases[%d] %q is too generic", i, j, a))
+			}
+		}
+		for _, name := range d.Names() {
+			key := normText(strings.TrimSpace(name))
+			if key == "" {
+				continue
+			}
+			if other, dup := owner[key]; dup && other != i {
+				errs = append(errs, fmt.Errorf("metadata.draft_documents: %q names both draft %d and draft %d", name, other, i))
+			}
+			owner[key] = i
+		}
+	}
+	return errs
 }
