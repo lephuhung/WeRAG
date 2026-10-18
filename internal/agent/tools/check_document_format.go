@@ -28,28 +28,16 @@ const maxFormatCheckBytes = 30 << 20
 
 var checkDocumentFormatTool = BaseTool{
 	name: ToolCheckDocumentFormat,
-	description: `Check the format ("thể thức") of a Word (.docx) administrative document the user uploaded in this conversation against Nghị định 30/2020/NĐ-CP, Phụ lục I: required components (quốc hiệu, tiêu ngữ, cơ quan ban hành, số ký hiệu, địa danh-ngày tháng, trích yếu, chữ ký, nơi nhận…), their position (left/right column), font, size, bold/italic, alignment, order, paper size and margins.
+	description: `Check the format ("thể thức") of a Word (.docx) administrative document the user uploaded in this conversation against Nghị định 30/2020/NĐ-CP, Phụ lục I: required components, their position, font, size, bold/italic, alignment, order, paper size and margins.
 
-## When to Use
-
-ONLY when the user explicitly asks to check, review or evaluate the format of an uploaded document — e.g. "kiểm tra thể thức", "văn bản này đúng thể thức chưa", "soát lỗi trình bày / căn lề / cỡ chữ / font", "đúng Nghị định 30 không".
-
-Do NOT call it just because a .docx is attached, nor to summarize, translate, answer questions about or extract content from a document — read the attachment content for that. It checks layout only: for spelling (chính tả) questions use check_spelling when it is available, otherwise proofread the text yourself.
-
-## Input
+Call it ONLY when the user asks to check the format ("kiểm tra thể thức", "đúng Nghị định 30 không", "soát lỗi căn lề / cỡ chữ") — not because a .docx is attached, nor to summarise or answer questions about its content. Layout only: spelling is check_spelling when available, else proofread yourself.
 
 - file_name: the uploaded file to check; omit when only one .docx was uploaded (the newest .docx is used).
-- document_type: optional rule set (cong_van, quyet_dinh, bao_cao, to_trinh, ke_hoach, thong_bao, …). Omit it: the type is detected from the document. Pass it only when the user names the type or confirms it after a result asked which type the document is — never guess it yourself.
+- document_type: omit it (detected); pass it only when the user names or confirms the type, never guess.
 
-## Scope
+A document that is not one of the 29 văn bản hành chính (Điều 7 NĐ30) gets only technical layout checks; a văn bản "ban hành kèm theo" also gets tên loại/trích yếu and its "kèm theo" line; the result says which scope applied.
 
-A document that is not one of the 29 văn bản hành chính of Điều 7 NĐ30 (a promulgated luật/nghị định/thông tư, a form, a table, loose material, an unknown type) gets only the technical layout checks (page, margins, body font/size/alignment/indent/spacing, page number); a văn bản "ban hành kèm theo" (quy chế, kế hoạch … attached to a quyết định, without its own số or signature) also gets the tên loại/trích yếu checks and its "kèm theo" line. The result says which scope was applied. Naming a document_type of a văn bản hành chính forces the full check — do so only when the user asks for it.
-
-## Output
-
-Usually a finished evaluation: the file's measured formatting judged by a reasoning model against the NĐ30 skills of the document's type (signing authority, Nơi nhận, required parts, wording, spelling, plus the measured font/size/alignment/margin findings). Present it to the user as is — do not re-judge it. The check takes about a minute.
-
-If the evaluation was unavailable, the result instead holds the measured findings, the format data line by line and the <skill> blocks: apply the skills to the data yourself, keep the measured findings, and answer grouped by component with the rule, the quoted line and the fix. Either way, say that seals, signatures and page numbers still need a manual review.`,
+Usually it returns a finished evaluation: present it as is, do not re-judge it. If it returns measured findings, line data and <skill> blocks instead, apply the skills yourself and answer by component (rule, quoted line, fix). Either way say seals, signatures and page numbers need a manual review.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -59,7 +47,7 @@ If the evaluation was unavailable, the result instead holds the measured finding
     },
     "document_type": {
       "type": "string",
-      "description": "Rule set named by the user, e.g. cong_van, quyet_dinh, bao_cao, to_trinh; omit to auto-detect (default). Naming a type forces the full NĐ30 check"
+      "description": "Rule set named by the user (cong_van, quyet_dinh, bao_cao, to_trinh…); omit to auto-detect. Forces the full NĐ30 check"
     }
   }
 }`),
@@ -83,9 +71,9 @@ var checkWorkspaceFormatSchema = json.RawMessage(`{
     ` + documentParamSchema + `,
     "document_type": {
       "type": "string",
-      "description": "Rule set named by the user, e.g. cong_van, quyet_dinh, bao_cao, to_trinh; omit to auto-detect (default). Naming a type forces the full NĐ30 check"
+      "description": "Rule set named by the user (cong_van, quyet_dinh, bao_cao, to_trinh…); omit to auto-detect. Forces the full NĐ30 check"
     },
-    "mark": {"type": "boolean", "description": "Underline the measured findings in the editor: each paragraph that breaks a rule, or the stray character itself (default true)"}
+    "mark": {"type": "boolean", "description": "Underline the measured findings in the editor (default true)"}
   }
 }`)
 
@@ -131,7 +119,7 @@ func (t *CheckDocumentFormatTool) ReportOnly() *CheckDocumentFormatTool {
 	c := *t
 	c.reportOnly = true
 	c.speller = nil
-	c.description += "\n\nIn this conversation the check ONLY REPORTS: nothing is underlined or marked in the document and mark is ignored. Never say the findings were marked; to have them marked or fixed the user switches to the document assistant (Soạn thảo văn bản)."
+	c.description += "\n\nHere the check ONLY REPORTS: nothing is underlined (mark is ignored). Never say the findings were marked; to mark or fix them the user switches to the document assistant (Soạn thảo văn bản)."
 	return &c
 }
 
@@ -139,7 +127,7 @@ func (t *CheckDocumentFormatTool) WithSpelling(s *CheckSpellingTool) *CheckDocum
 	c := *t
 	c.speller = s
 	if s != nil {
-		c.description += "\n\nIt also reviews the spelling of the document in the same run: each mistake is underlined in the editor and listed in the result under \"Lỗi chính tả\". Present that list as the spelling part of your answer; do not call check_spelling again for the same document in this turn."
+		c.description += "\n\nIt also reviews the spelling in the same run: mistakes are underlined and listed under \"Lỗi chính tả\"; present that list, do not call check_spelling for this document again this turn."
 	}
 	return &c
 }
@@ -167,7 +155,7 @@ func NewCheckDocumentFormatToolForWorkspace(workspace DocumentWorkspaceSource, c
 	base.description = strings.Replace(base.description,
 		"- file_name: the uploaded file to check; omit when only one .docx was uploaded (the newest .docx is used).",
 		"- document: the open document to check (vb1, vb2, …); omit when only one is open.", 1)
-	base.description += "\n\nIn the editor, the measured findings that name a paragraph are also underlined (unless mark=false): the paragraph, or just the stray character inside a word; the content and formatting are not changed. Tell the user the underlines show where each finding is; findings without a paragraph (a missing component, the margins) are only in your answer."
+	base.description += "\n\nThe measured findings that name a paragraph are also underlined in the editor (unless mark=false); nothing is changed. Findings without a paragraph (a missing component, the margins) are only in your answer."
 	base.schema = checkWorkspaceFormatSchema
 	t := &CheckDocumentFormatTool{BaseTool: base, chatModel: chatModel, sessionID: sessionID, workspace: workspace}
 	t.source = func(ctx context.Context, _ uint64, ref string) ([]byte, string, int, error) {

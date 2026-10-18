@@ -17,33 +17,10 @@ const ToolResolveAbbreviation = "resolve_abbreviation"
 
 var resolveAbbreviationTool = BaseTool{
 	name: ToolResolveAbbreviation,
-	description: `Work with the Vietnamese abbreviation dictionary.
-
-## When to Use
-
-In a Q&A turn, abbreviations in the user's message were already resolved and
-validated by the runtime before you were invoked — use the resolved mapping
-shown in the request or in this tool's output, and never re-expand or guess a
-short form. This tool's remaining jobs are narrower:
-
-## Actions
-
-- action="expand" (default): pass text in "text". Inside a resolved Q&A turn
-  the runtime's validated mapping is applied; outside one, the active
-  dictionary is consulted. Returns the rewritten text plus which
-  abbreviations were applied, which matched several meanings (ambiguous —
-  ask the user which they meant), and which look like abbreviations but are
-  unknown to the dictionary.
-- action="lookup": pass one short form in "short_form" to list its known
-  meanings (active and pending — pending entries are diagnostic only and are
-  never used for expansion).
-- action="suggest": propose a new abbreviation with "short_form",
-  "full_form" and optional "description". Inside a resolved Q&A turn it is
-  accepted only when it reproduces the exact definition the user supplied
-  for this request. Never infer or invent a full form. An accepted
-  suggestion applies to the current request and stays pending for the shared
-  dictionary until a workspace Owner or SuperAdmin activates it — say so
-  when reporting back to the user.`,
+	description: `Vietnamese abbreviation dictionary. In a Q&A turn the runtime already resolved and validated the message's abbreviations: use that mapping and never re-expand or guess a short form.
+- expand (default): rewrites "text" (the turn's validated mapping, else the active dictionary) and reports the abbreviations applied, ambiguous (ask the user which meaning) and unknown.
+- lookup: lists the meanings of "short_form" (pending ones are diagnostic only, never used to expand).
+- suggest: proposes short_form + full_form (+ description); inside a resolved turn it is accepted only when it reproduces the definition the user gave for this request. Never infer or invent a full form. An accepted suggestion applies to this request and stays pending until an Owner or SuperAdmin activates it — say so.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {

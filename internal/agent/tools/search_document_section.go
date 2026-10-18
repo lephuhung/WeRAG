@@ -40,17 +40,12 @@ const sectionAppendixGuidance = "Appendices (Phụ lục) and forms (Mẫu số)
 
 var searchDocumentSectionTool = BaseTool{
 	name: ToolSearchDocumentSection,
-	description: "Fetch the exact text of one section of a Vietnamese legal or administrative document by its " +
-		"citation: Điều, Khoản and Điểm (\"Điều 17\", \"khoản 2 Điều 17\", \"điểm a khoản 2 Điều 17\") or a " +
-		"Chương/Mục/Phần heading (\"Chương II\"). Matching uses the structural metadata recorded when the " +
-		"document was indexed, so \"Điều 3\" never returns \"Điều 30\".\n" +
-		"Name the document with knowledge_id (its dN handle) or document_number (số hiệu such as " +
-		"\"53/2022/NĐ-CP\", or \"Nghị định 53/2022\"); with neither, every document in scope is scanned and " +
-		"the chunks come back grouped by document. When a document_number fits several documents the " +
-		"candidates are listed instead: retry with one knowledge_id.\n" +
-		"One section per call: ask for \"khoản 2 Điều 17\" and \"khoản 3 Điều 17\" separately. Use " +
-		"search_knowledge for questions by topic, and read_document(id=cN, context=...) to read around a " +
-		"returned chunk.\n" + sectionAppendixGuidance,
+	description: "Fetch the exact text of one section of a Vietnamese legal or administrative document by its citation: " +
+		"Điều/Khoản/Điểm (\"khoản 2 Điều 17\", \"điểm a khoản 2 Điều 17\") or a Chương/Mục/Phần heading. It matches " +
+		"structural metadata, so \"Điều 3\" never returns \"Điều 30\". Name the document with knowledge_id (dN) or " +
+		"document_number; with neither, every document in scope is scanned. A document_number that fits several " +
+		"documents lists the candidates: retry with one knowledge_id. One section per call. Use search_knowledge for " +
+		"topics and read_document(id=cN, context=...) to read around a chunk.\n" + sectionAppendixGuidance,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -61,7 +56,7 @@ var searchDocumentSectionTool = BaseTool{
     },
     "knowledge_id": {
       "type": "string",
-      "description": "dN handle of the document to read the section from"
+      "description": "dN handle of the document"
     },
     "document_number": {
       "type": "string",
@@ -70,7 +65,7 @@ var searchDocumentSectionTool = BaseTool{
     "knowledge_base_ids": {
       "type": "array",
       "items": {"type": "string"},
-      "description": "bN handles to restrict the scan to (default: every knowledge base in scope)"
+      "description": "bN handles to restrict the scan to (default: all in scope)"
     }
   },
   "required": ["section"]

@@ -17,31 +17,11 @@ import (
 
 var applyFormatFixesTool = BaseTool{
 	name: ToolApplyFormatFixes,
-	description: `Fix the layout ("thể thức") of the Word document open in this conversation's editor to Nghị định 30/2020/NĐ-CP. It re-runs the NĐ30 rule checks and plans the corrections that can be made mechanically. It works in two steps, so nothing is changed before the user agrees:
+	description: `Fix the NĐ30 layout ("thể thức") of a working document mechanically: font (Times New Roman), size, bold/italic and alignment of every paragraph of a component that breaks a rule (even when the check as a whole passes), A4 paper and page margins. Nothing else: spacing, indents, column position, wording, missing components, order and tab-split lines are listed under "Cần sửa thủ công".
 
-1. review (the default): the document is NOT changed. The result is the plan, and the editor underlines every paragraph the plan would change and every finding left for a manual fix, so the user sees where each one is.
-2. apply=true: the editor applies the planned corrections as ordinary formatting edits (Ctrl+Z undoes them); findings left for a manual fix stay underlined.
+Two steps, so nothing is changed before the user agrees: without apply it reviews — returns the plan and underlines the paragraphs it would change and the manual findings; apply=true applies the plan (Ctrl+Z undoes it). dry_run=true returns the plan without underlining, only when the user asks for the plan alone ("chỉ xem kế hoạch").
 
-Use it only when the user asks to fix the format ("sửa thể thức", "chuẩn hóa"). It corrects:
-
-- font (Times New Roman), font size, bold/italic and paragraph alignment of each component (quốc hiệu, tiêu ngữ, trích yếu, nội dung, chữ ký, nơi nhận…) — every paragraph of the component that breaks the rule, not only the samples a check listed;
-- paper size (A4) and page margins.
-
-If the document's structure cannot be identified reliably (a required component such as quốc hiệu or chữ ký was not found, or the document type is unknown), nothing is changed: the result is the plan with a warning. Confirm with the user — ideally ask them which document type it is and pass document_type — then call again with force=true.
-
-It does NOT change line spacing, spacing before/after paragraphs or indents. Position (left/right column), wording, missing components, component order and lines split in two columns by a tab cannot be fixed this way either: they are listed as needing a manual fix (missing parts can be added with insert_paragraphs).
-
-## When to Use
-
-After check_document_format (or when the user directly asks to normalise the layout). Call it first WITHOUT apply: show the plan, say the underlines show where, and ask whether to apply. Pass apply=true only when the user then agrees in a later message ("áp dụng", "đồng ý sửa", "sửa đi"), or when the current message itself says to apply without review ("sửa luôn", "áp dụng ngay", "tự sửa giúp"). Report what changed (Ctrl+Z or the revision history undo it). dry_run=true returns the plan without underlining anything — only when the user asks to see the plan alone ("chỉ xem kế hoạch").
-
-## Input
-
-- check_ids: rule ids to fix (as reported by the check, e.g. "noi_dung.font", "trich_yeu.size", "page.margin.left"); omit to fix every fixable rule. Font, size, bold/italic and alignment rules are applied paragraph by paragraph: each paragraph that breaks one is fixed even when the check as a whole passes (e.g. one body paragraph in Arial among paragraphs in Times New Roman).
-- document_type: rule set to apply (cong_van, quyet_dinh, …); omit to auto-detect.
-- apply: true to change the document — only after the user agreed to the plan (see When to Use). Omitted: review only.
-- dry_run: true to only return the plan, without underlining — only when the user asks to see the plan alone.
-- force: true to apply even though the structure could not be identified reliably; only after the user confirmed.`,
+If the structure cannot be identified (quốc hiệu or chữ ký not found, unknown type), nothing is changed and the plan carries a warning: confirm with the user, ask the document type, then call again with that document_type and force=true.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -49,7 +29,7 @@ After check_document_format (or when the user directly asks to normalise the lay
     "check_ids": {
       "type": "array",
       "items": {"type": "string"},
-      "description": "Rule ids to fix, e.g. noi_dung.font, trich_yeu.size, page.margin.left; omit to fix every fixable rule (formatting rules paragraph by paragraph)"
+      "description": "Rule ids from the check, e.g. noi_dung.font, trich_yeu.size, page.margin.left; omit to fix every fixable rule"
     },
     "document_type": {
       "type": "string",
@@ -57,15 +37,15 @@ After check_document_format (or when the user directly asks to normalise the lay
     },
     "apply": {
       "type": "boolean",
-      "description": "true: apply the planned corrections — only after the user agreed to the plan; omitted: review (plan + underlines, nothing changed)"
+      "description": "true: apply the plan, only after the user agreed; omitted: review (plan + underlines, nothing changed)"
     },
     "dry_run": {
       "type": "boolean",
-      "description": "true: return the fix plan only, without underlining anything"
+      "description": "true: the plan only, no underlines"
     },
     "force": {
       "type": "boolean",
-      "description": "true: apply even when the document structure could not be identified reliably (only after the user confirmed)"
+      "description": "true: proceed although the structure could not be identified (only after the user confirmed)"
     }
   }
 }`),

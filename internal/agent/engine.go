@@ -33,28 +33,31 @@ const langfuseQueryPreview = 2000
 // engine therefore does not maintain its own cache, system-prompt store, or
 // cross-turn buffer.
 type AgentEngine struct {
-	config               *types.AgentConfig
-	toolRegistry         *agenttools.ToolRegistry
-	chatModel            chat.Chat
-	eventBus             *event.EventBus
-	knowledgeBasesInfo   []*KnowledgeBaseInfo    // Detailed knowledge base information for prompt
-	selectedDocs         []*SelectedDocumentInfo // User-selected documents (via @ mention)
-	pinnedMCPServices    []*PinnedMCPServiceInfo // User @mentioned MCP services for this turn
-	pinnedSkills         []*PinnedSkillInfo      // User @mentioned skills for this turn
-	questionOrigin       *QuestionOriginInfo     // Source of a picked suggested question, if any
-	sessionID            string                  // Session ID for logging and event emission
-	systemPromptTemplate string                  // System prompt template (optional, uses default if empty)
-	memoryPrompt         string                  // Long-term memory envelope appended to the system prompt
-	skillsManager        *skills.Manager         // Skills manager for Progressive Disclosure (optional)
-	appConfig            *appconfig.Config       // Application config for prompt template resolution (optional)
-	imageDescriber       ImageDescriberFunc      // VLM function for describing images in tool results (optional)
-	legalHistory         LegalHistoryFunc        // appends the amendment history of cited legal provisions (optional)
-	sourceEditNote       SourceEditNoteFunc      // appends the read-only note of an edit asked of a source document (optional)
-	tokenEstimator       *agenttoken.Estimator   // Token estimator for context window management, calibrated
-	rawEstimator         *agenttoken.Estimator   // Same tokenizer at scale 1, for measuring the calibration
-	compactor            *compaction.Compactor   // Summarizes older history to fit the context window (nil = disabled)
-	lastUsage            types.TokenUsage        // Token usage from the most recent LLM call
-	lastSentMsgCount     int                     // Number of messages sent in the most recent LLM call
+	config             *types.AgentConfig
+	toolRegistry       *agenttools.ToolRegistry
+	chatModel          chat.Chat
+	eventBus           *event.EventBus
+	knowledgeBasesInfo []*KnowledgeBaseInfo    // Detailed knowledge base information for prompt
+	selectedDocs       []*SelectedDocumentInfo // User-selected documents (via @ mention)
+	pinnedMCPServices  []*PinnedMCPServiceInfo // User @mentioned MCP services for this turn
+	pinnedSkills       []*PinnedSkillInfo      // User @mentioned skills for this turn
+	questionOrigin     *QuestionOriginInfo     // Source of a picked suggested question, if any
+	// compactKnowledgeDirectory lists the bound knowledge bases briefly in
+	// the runtime context (set per turn in Execute, see compactKnowledgeDirectory).
+	compactKnowledgeDirectory bool
+	sessionID                 string                // Session ID for logging and event emission
+	systemPromptTemplate      string                // System prompt template (optional, uses default if empty)
+	memoryPrompt              string                // Long-term memory envelope appended to the system prompt
+	skillsManager             *skills.Manager       // Skills manager for Progressive Disclosure (optional)
+	appConfig                 *appconfig.Config     // Application config for prompt template resolution (optional)
+	imageDescriber            ImageDescriberFunc    // VLM function for describing images in tool results (optional)
+	legalHistory              LegalHistoryFunc      // appends the amendment history of cited legal provisions (optional)
+	sourceEditNote            SourceEditNoteFunc    // appends the read-only note of an edit asked of a source document (optional)
+	tokenEstimator            *agenttoken.Estimator // Token estimator for context window management, calibrated
+	rawEstimator              *agenttoken.Estimator // Same tokenizer at scale 1, for measuring the calibration
+	compactor                 *compaction.Compactor // Summarizes older history to fit the context window (nil = disabled)
+	lastUsage                 types.TokenUsage      // Token usage from the most recent LLM call
+	lastSentMsgCount          int                   // Number of messages sent in the most recent LLM call
 	// overflowRecovered records that this turn already spent its one
 	// compact-and-retry on a context overflow. A second attempt would mean
 	// history size was never the problem, and looping on it burns the round
@@ -396,6 +399,7 @@ func (e *AgentEngine) Execute(
 	if len(imageURLs) > 0 {
 		imgs = imageURLs[0]
 	}
+	e.compactKnowledgeDirectory = compactKnowledgeDirectory(ctx)
 	messages := e.buildMessagesWithLLMContext(systemPrompt,
 		e.abbreviationModelQuery(ctx, query), sessionID, llmContext, imgs)
 	if e.toolRegistry != nil {

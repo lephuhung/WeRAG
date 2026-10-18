@@ -21,41 +21,14 @@ const ToolCheckLegalStatus = "check_legal_status"
 const checkLegalStatusMaxPerGroup = 8
 
 var checkLegalStatusTool = BaseTool{
-	name: ToolCheckLegalStatus,
-	description: `Check whether a Vietnamese legal document is still in force, using the
-platform's legal catalogue (metadata imported from vbpl.vn, the Ministry of
-Justice portal — central-government documents and the local documents of
-some provinces).
-
-## When to Use
-
-- The user asks whether a document is still valid, when it takes or took
-  effect, or what replaced, repealed, amended or guides it.
-- The user names a document by số ký hiệu that the knowledge bases do not
-  hold: its title, issuer and dates are here.
-- Before you base an answer on a legal document you found (search results,
-  a citation in a document), check it here when its validity matters, and
-  say so when it has expired, been replaced or been amended.
-
-## Input
-
-Pass the số ký hiệu in "document_number" (e.g. "31/2024/QH15", "30/2020/NĐ-CP";
-a number without its suffix such as "30/2020" also works). Without a number,
-pass words of the title in "title" (e.g. "Luật Đất đai").
-
-## Output
-
-For each match: type, issuer, issue / effective / expiry dates, the portal's
-status with the snapshot date, then the documents that act on it (replace,
-repeal, amend, guide…) and those it acts on. The status is a snapshot: quote
-its date. A document missing from the catalogue is unknown here — never
-conclude it was repealed.`,
+	name:        ToolCheckLegalStatus,
+	description: `Check whether a Vietnamese legal document is still in force, using the platform's legal catalogue (vbpl.vn: central-government documents and some provinces' local ones). Use it when the user asks about validity, effective dates or what replaced, repealed, amended or guides a document; when they name a số ký hiệu the knowledge bases do not hold (title, issuer and dates are here); and before you base an answer on a document whose validity matters — say when it has expired, been replaced or amended. Each match lists type, issuer, dates, the portal status with its snapshot date (quote it) and the related documents. A document missing from the catalogue is unknown here: never conclude it was repealed.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
     "document_number": {
       "type": "string",
-      "description": "Số ký hiệu, e.g. \"31/2024/QH15\""
+      "description": "Số ký hiệu, e.g. \"31/2024/QH15\" (\"30/2020\" without suffix also works)"
     },
     "title": {
       "type": "string",

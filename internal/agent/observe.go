@@ -534,11 +534,13 @@ func escapeXMLAttr(s string) string {
 // Emitted as an XML-ish block (not free prose) so it is a visually distinct,
 // data envelope. Escaping preserves its structure; the system source-data
 // contract defines how to treat its contents. This is not an authorization gate.
+// compactKBs lists the bound knowledge bases briefly (compactKnowledgeDirectory).
 func buildRuntimeContextBlock(
 	sessionID string,
 	kbs []*KnowledgeBaseInfo,
 	docs []*SelectedDocumentInfo,
 	origin *QuestionOriginInfo,
+	compactKBs bool,
 ) string {
 	var sb strings.Builder
 	sb.WriteString("<runtime_context scope=\"this_turn\">\n")
@@ -553,7 +555,7 @@ func buildRuntimeContextBlock(
 		// semantics explicit and to match the naming the prompt templates use
 		// when referring back to this block.
 		sb.WriteString("  <bound_knowledge_bases>\n")
-		sb.WriteString(indentLines(formatKnowledgeBaseList(kbs), "    "))
+		sb.WriteString(indentLines(formatKnowledgeBaseDirectory(kbs, compactKBs), "    "))
 		sb.WriteString("\n  </bound_knowledge_bases>\n")
 	}
 
@@ -737,7 +739,8 @@ func commonStringPrefix(a, b string) string {
 // not written to rendered_content / history.
 func (e *AgentEngine) RenderUserTurnContent(sessionID, query string) string {
 	e.registerRuntimeReferences()
-	runtimeCtx := buildRuntimeContextBlock(sessionID, e.knowledgeBasesInfo, e.selectedDocs, e.questionOrigin)
+	runtimeCtx := buildRuntimeContextBlock(sessionID, e.knowledgeBasesInfo, e.selectedDocs, e.questionOrigin,
+		e.compactKnowledgeDirectory)
 	runtimeCtx = e.modelContext.CompactKnownText(runtimeCtx)
 	mustUse := buildMustUseBlock(e.pinnedMCPServices, e.pinnedSkills)
 	return composeUserTurnContent(runtimeCtx, mustUse, query)
