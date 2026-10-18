@@ -94,22 +94,38 @@ func (s *Source) GetSkillBasePath(name string) (string, error) {
 	return s.byName[name].Skill.BasePath, nil
 }
 
+// FooterMarker opens the footer block. It is stable so the block can be cut
+// from an answer replayed as history (agent_history.go): a model that sees
+// the footer in an earlier answer copies it, and the answer ends up with two.
+const FooterMarker = "\n\n---\n**Lưu ý về cẩm nang chuyên môn**\n"
+
 // Footer is the block code appends to every answer of an agent with these
 // packs: each pack's answer_footer, and for a pack past review_by a line
-// saying so. "" when there are no packs.
-func (s *Source) Footer(now time.Time) string {
+// saying so. Text the answer already carries is not repeated. "" when
+// nothing is left to add.
+func (s *Source) Footer(now time.Time, answer string) string {
 	var parts []string
-	for _, pack := range s.Packs() {
-		if footer := strings.TrimSpace(pack.Manifest.Metadata.AnswerFooter); footer != "" {
-			parts = append(parts, footer)
+	add := func(text string) {
+		if text != "" && !strings.Contains(answer, text) {
+			parts = append(parts, text)
 		}
+	}
+	for _, pack := range s.Packs() {
+		add(strings.TrimSpace(pack.Manifest.Metadata.AnswerFooter))
 		if pack.Overdue(now) {
-			parts = append(parts, fmt.Sprintf("Nội dung cẩm nang có mốc %s, đã quá hạn rà soát.",
-				pack.Manifest.Metadata.AsOf.VN()))
+			add(fmt.Sprintf("Nội dung cẩm nang có mốc %s, đã quá hạn rà soát.", pack.Manifest.Metadata.AsOf.VN()))
 		}
 	}
 	if len(parts) == 0 {
 		return ""
 	}
-	return "\n\n---\n" + strings.Join(parts, "\n\n") + "\n"
+	return FooterMarker + strings.Join(parts, "\n\n") + "\n"
+}
+
+// StripFooter cuts the footer block, and anything after it, from an answer.
+func StripFooter(answer string) string {
+	if i := strings.Index(answer, FooterMarker); i >= 0 {
+		return answer[:i]
+	}
+	return answer
 }

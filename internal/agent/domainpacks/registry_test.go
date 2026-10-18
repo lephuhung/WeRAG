@@ -63,7 +63,7 @@ func TestLoadSamplePack(t *testing.T) {
 	assert.Equal(t, "1.0.0", m.Version)
 	assert.Equal(t, "17/10/2026", m.AsOf.VN())
 	assert.Equal(t, "2027-04-17", m.ReviewBy.Format(dateLayout))
-	assert.Equal(t, []string{"search_knowledge"}, m.RequiredTools)
+	assert.Equal(t, []string{"thinking"}, m.RequiredTools)
 	require.Len(t, m.DraftDocuments, 1)
 	assert.Equal(t, "Lần 2", m.DraftDocuments[0].Version)
 	assert.Equal(t, "skill://sample-pack", pack.Skill.BasePath)
@@ -124,6 +124,9 @@ func TestLoadRejectsBrokenPacks(t *testing.T) {
 		{"url in body", func(t *testing.T, f fstest.MapFS) {
 			setFile(f, "SKILL.md", sampleSkill(t, f)+"\nXem https://thuvienphapluat.vn\n")
 		}, "contains a URL"},
+		{"url in reference", func(t *testing.T, f fstest.MapFS) {
+			setFile(f, "references/a.md", "Bình luận tham khảo. Nguồn: www.example.vn/x")
+		}, "references/a.md: contains a URL"},
 		{"shell_exec in body", func(t *testing.T, f fstest.MapFS) {
 			setFile(f, "SKILL.md", sampleSkill(t, f)+"\nChạy shell_exec.\n")
 		}, `contains "shell_exec"`},
@@ -149,10 +152,10 @@ func TestLoadRejectsBrokenPacks(t *testing.T) {
 			delete(f, samplePack+"/ATTRIBUTION.md")
 		}, "ATTRIBUTION.md is missing"},
 		{"unknown tool", func(t *testing.T, f fstest.MapFS) {
-			replaceInSkill(t, f, "required_tools: [search_knowledge]", "required_tools: [search_knowledge, compare_tax]")
+			replaceInSkill(t, f, "required_tools: [thinking]", "required_tools: [thinking, compare_tax]")
 		}, `"compare_tax" is not an available tool`},
 		{"always-on tool", func(t *testing.T, f fstest.MapFS) {
-			replaceInSkill(t, f, "required_tools: [search_knowledge]", "required_tools: [check_legal_status]")
+			replaceInSkill(t, f, "required_tools: [thinking]", "required_tools: [check_legal_status]")
 		}, "is always on"},
 		{"misspelt manifest field", func(t *testing.T, f fstest.MapFS) {
 			replaceInSkill(t, f, "answer_footer:", "answer_foter:")
@@ -217,12 +220,23 @@ func TestOverdueAndFooter(t *testing.T) {
 	assert.True(t, pack.Overdue(time.Date(2027, 4, 18, 0, 1, 0, 0, vn)))
 
 	src := NewSource([]*Pack{pack})
-	assert.Equal(t, "\n\n---\nThông tin tham khảo, không phải tư vấn pháp lý.\n",
-		src.Footer(time.Date(2026, 11, 1, 9, 0, 0, 0, vn)))
-	assert.Equal(t, "\n\n---\nThông tin tham khảo, không phải tư vấn pháp lý.\n\n"+
-		"Nội dung cẩm nang có mốc 17/10/2026, đã quá hạn rà soát.\n",
-		src.Footer(time.Date(2027, 5, 1, 9, 0, 0, 0, vn)))
-	assert.Empty(t, NewSource(nil).Footer(time.Now()))
+	const footer = "Thông tin tham khảo, không phải tư vấn pháp lý."
+	const overdue = "Nội dung cẩm nang có mốc 17/10/2026, đã quá hạn rà soát."
+	assert.Equal(t, FooterMarker+footer+"\n", src.Footer(time.Date(2026, 11, 1, 9, 0, 0, 0, vn), "Trả lời."))
+	late := time.Date(2027, 5, 1, 9, 0, 0, 0, vn)
+	assert.Equal(t, FooterMarker+footer+"\n\n"+overdue+"\n", src.Footer(late, "Trả lời."))
+	assert.Empty(t, NewSource(nil).Footer(time.Now(), "Trả lời."))
+
+	// text the answer already carries (a model copying an earlier footer)
+	// is not repeated
+	assert.Equal(t, FooterMarker+overdue+"\n", src.Footer(late, "Trả lời.\n\n"+footer))
+	assert.Empty(t, src.Footer(late, "Trả lời. "+footer+" "+overdue))
+}
+
+func TestStripFooter(t *testing.T) {
+	answer := "Trả lời.\n\n---\n**Lịch sử sửa đổi**\n- x"
+	assert.Equal(t, answer, StripFooter(answer+FooterMarker+"Thông tin tham khảo.\n"))
+	assert.Equal(t, "Không có footer.", StripFooter("Không có footer."))
 }
 
 func TestSourceServesOnlyResources(t *testing.T) {

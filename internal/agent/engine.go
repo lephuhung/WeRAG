@@ -831,6 +831,11 @@ func (e *AgentEngine) runReActIteration(
 		if *consecutiveSameContent >= maxRepeatedResponseRounds {
 			logger.Warnf(ctx, "[Agent][Round-%d] Detected stuck loop: same content repeated %d times (finish=%s), stopping",
 				round, *consecutiveSameContent+1, response.FinishReason)
+			// No domain-pack footer here: this path ends on a repeated
+			// response that analyzeResponse never accepted as the answer and
+			// that is never closed with a Done, so there is no answer stream
+			// to append it to. A model stuck repeating itself is not pack
+			// advice either.
 			state.FinalAnswer = response.Content
 			state.IsComplete = true
 			return iterOutcomeBreak, nil

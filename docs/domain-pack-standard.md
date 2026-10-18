@@ -49,6 +49,8 @@ Lý do chọn nhúng thay vì tải lên lúc chạy:
 
 Đường tải lên lúc chạy (dựa trên `tenant_skill_catalog` đã lưu archive) để sau, khi có nhu cầu gói không cần mã.
 
+`domain-packs/embed.go` nhúng **toàn bộ** cây (`//go:embed *`), không liệt kê từng mẫu: go:embed báo lỗi khi một mẫu không khớp tệp nào (lúc chưa có gói), và nhúng hết thì registry kiểm được mọi tệp thực sự ship — tệp lạ làm dừng khởi động thay vì lọt qua. `ATTRIBUTION.md` và `evals/` vì thế cũng nằm trong binary nhưng không bao giờ được đưa cho model. Tệp go:embed bỏ qua (tên bắt đầu bằng `.`/`_`) do test đọc thư mục nguồn bắt.
+
 ### 3.2 Cấu trúc
 
 ```
@@ -62,6 +64,15 @@ domain-packs/<name>/
 ```
 
 Không có `scripts/`, README, PROMO, LICENSE gốc, CHANGELOG của bên thứ ba (gộp vào ATTRIBUTION.md).
+
+Schema `catalogue.yaml` (đọc với `KnownFields(true)`; khoá kiểu `status`/`trang_thai`/`hieu_luc`/`in_force`/`effective` bị từ chối ở mọi cấp):
+
+```yaml
+documents:
+  - number: 01/2021/NĐ-CP          # bắt buộc, không trùng
+    title: Nghị định về đăng ký doanh nghiệp   # tuỳ chọn
+    used_for: thủ tục đăng ký      # bắt buộc
+```
 
 ### 3.3 Manifest (frontmatter `SKILL.md`)
 
@@ -98,7 +109,7 @@ Mọi gói trong `domain-packs/` phải qua test:
 - chỉ có các thư mục/tệp trong 3.2; không có tệp thực thi;
 - `required_tools` đều là tool có trong `AvailableToolDefinitions`;
 - `catalogue.yaml` đúng schema, không có trường trạng thái;
-- `SKILL.md` ≤ 6 KB; không chứa URL, `shell_exec`, `scripts/`, `$WEKNORA_SKILL_DIR`; mỗi tệp tham khảo ≤ 32 KB;
+- `SKILL.md` ≤ 6 KB; không chứa URL (trừ trường `origin`), `shell_exec`, `scripts/`, `$WEKNORA_SKILL_DIR`; mỗi tệp tham khảo ≤ 32 KB; `references/**` và `assets/**` cũng không chứa URL (nguồn ghi ở ATTRIBUTION.md);
 - manifest đọc bằng struct riêng với `KnownFields(true)` (sai chính tả trường = lỗi); áp luôn `Skill.Validate` hiện có;
 - `required_tools` không chứa tool luôn-bật;
 - tệp được duyệt cả trên FS nhúng lẫn thư mục nguồn (go:embed bỏ qua tệp `.`/`_`);
@@ -131,7 +142,8 @@ Mọi gói trong `domain-packs/` phải qua test:
 - **Bật theo agent**: trường mới `CustomAgentConfig.DomainPacks []string` (chỉ agent smart-reasoning). Chỉ agent khai tên gói mới thấy gói; trợ lý văn bản và agent khác không thấy. Không cần sandbox, không phụ thuộc `SkillsEnabled`/`SelectedSkills`.
 - **Thứ tự nguồn skill**: built-in → gói → skill Tổ chức. Gói được xem là skill chỉ-đọc như built-in (`IsReadOnlySkill` = built-in ∪ gói): luôn qua `isSkillAllowed`, không qua `filterAllowedSkills`, `shell_exec` từ chối. Skill Tổ chức trùng tên gói bị ẩn (log). Tên gói trùng built-in bị test 3.4 chặn.
 - **Hiển thị cho model**: tên + mô tả trong system prompt, `read_file(skill://<name>/SKILL.md)`, rồi tài nguyên. `read_file` chỉ phục vụ `SKILL.md`, `references/**`, `assets/**`; `catalogue.yaml`, `evals/`, `ATTRIBUTION.md` chỉ dành cho test và lệnh đối chiếu.
-- **Footer**: `appendDomainFooter` gọi sau `appendSourceEditNote` ở **cả hai** đường trả lời: `internal/agent/engine.go` (model dừng tự nhiên) và `internal/agent/finalize.go` (tổng hợp, gồm cả hết vòng lặp). Chunk phải emit trên cùng `answerID` **trước** sự kiện `Done` — handler stream cộng dồn theo id nên footer vừa hiện vừa được lưu; emit sau `Done` thì không vào DB. Footer là khối cuối cùng (sau "Lịch sử sửa đổi"), đúng một lần; bỏ qua khi câu trả lời rỗng và trên các câu cố định do mã ("không tìm thấy căn cứ", fallback, forced final, synthesis fallback).
+- **Footer**: `appendDomainFooter` gọi sau `appendSourceEditNote` ở **cả hai** đường trả lời: `internal/agent/engine.go` (model dừng tự nhiên) và `internal/agent/finalize.go` (tổng hợp, gồm cả hết vòng lặp). Chunk phải emit trên cùng `answerID` **trước** sự kiện `Done` — handler stream cộng dồn theo id nên footer vừa hiện vừa được lưu; emit sau `Done` thì không vào DB. Footer là khối cuối cùng (sau "Lịch sử sửa đổi"), đúng một lần; bỏ qua khi câu trả lời rỗng và trên các câu cố định do mã ("không tìm thấy căn cứ", fallback, forced final, synthesis fallback, vòng lặp lặp lại). Khối mở bằng dấu mốc cố định `\n\n---\n**Lưu ý về cẩm nang chuyên môn**\n` (`domainpacks.FooterMarker`); khi câu trả lời được phát lại làm lịch sử cho lượt sau, mọi thứ từ dấu mốc trở đi bị cắt (như "Lịch sử sửa đổi"), nếu không Qwen chép footer và câu trả lời có hai footer. Phòng thủ thêm: câu footer nào đã có trong câu trả lời thì không chèn lại.
+- **Gói chỉ hiệu lực khi đủ tool**: lúc chạy, gói có `required_tools` không nằm hết trong tool thực sự đăng ký cho lượt đó (allowlist hoặc mặc định, sau khi `registerTools` tước tool không dùng được, ví dụ `search_knowledge` khi không có KB) bị bỏ qua (log), cả trong skill lẫn footer. Tên gói được giải một lần trong `buildAgentConfig` (cắt khoảng trắng, bỏ trùng, chỉ tên có trong build, chỉ agent smart-reasoning).
 - **Hết hạn rà soát**: `now > review_by` (theo `types.PromptNow()`) → footer thêm câu "Nội dung cẩm nang có mốc dd/mm/yyyy, đã quá hạn rà soát" và API liệt kê gói trả `overdue`. **Không** tự tắt gói theo đồng hồ (trái nguyên tắc 3); muốn ngắt thì SuperAdmin bỏ gói khỏi agent.
 - **Lưu agent**: từ chối tên gói không tồn tại; từ chối khi tool hiệu lực thiếu `required_tools` — tool hiệu lực = `allowed_tools`, rỗng thì `tools.DefaultAllowedTools()`; `search_knowledge` còn cần `kb_selection_mode != "none"` (lúc chạy tool này bị tước nếu không có KB). Tool luôn-bật (`check_legal_status`, `find_related_legal_documents`, `resolve_abbreviation`, `search_document_section`) không được khai trong `required_tools`. Chỉ SuperAdmin sửa agent (đã đúng theo route).
 - **API**: `GET /api/v1/agents/domain-packs` trả `name, description, version, as_of, review_by, overdue, required_tools` cho trình sửa agent.

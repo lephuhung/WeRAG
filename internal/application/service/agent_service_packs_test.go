@@ -58,7 +58,16 @@ func TestDomainPackRunsWithoutSandboxOnlyForItsAgent(t *testing.T) {
 	require.Equal(t, append(append([]string(nil), bundledLegalSkillNames...), testPack), engineSkillNames(t, engine))
 	state, err = engine.Execute(ctx, "sess", "msg", "hỏi", nil)
 	require.NoError(t, err)
-	require.Equal(t, "ok\n\n---\nThông tin tham khảo, không phải tư vấn pháp lý.\n", state.FinalAnswer)
+	require.Equal(t, "ok"+domainpacks.FooterMarker+"Thông tin tham khảo, không phải tư vấn pháp lý.\n", state.FinalAnswer)
+
+	// the defaults lack the pack's required thinking tool: no pack, no footer
+	cfg = &types.AgentConfig{DomainPacks: []string{testPack}}
+	engine, err = svc.CreateAgentEngine(ctx, cfg, &fakeAgentChatModel{}, nil, nil, "sess", "msg")
+	require.NoError(t, err)
+	require.Equal(t, bundledLegalSkillNames, engineSkillNames(t, engine))
+	state, err = engine.Execute(ctx, "sess", "msg", "hỏi", nil)
+	require.NoError(t, err)
+	require.Equal(t, "ok", state.FinalAnswer)
 }
 
 func TestDomainPackResourcesReadableButNotExecutable(t *testing.T) {
@@ -68,6 +77,7 @@ func TestDomainPackResourcesReadableButNotExecutable(t *testing.T) {
 	registry := tools.NewToolRegistry()
 	shell := tools.NewShellExecTool(refusingExecutor{t: t}, nil)
 	registry.RegisterTool(shell)
+	registry.RegisterTool(tools.NewSequentialThinkingTool())
 	mgr, err := svc.initializeSkillsManager(ctx, "sess", cfg, registry)
 	require.NoError(t, err)
 	require.True(t, mgr.IsReadOnlySkill(testPack))
@@ -94,7 +104,7 @@ func TestDomainPackFooterOverdueLine(t *testing.T) {
 	t.Cleanup(func() { domainPackNow = old })
 
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(7))
-	cfg := &types.AgentConfig{DomainPacks: []string{testPack}}
+	cfg := &types.AgentConfig{DomainPacks: []string{testPack}, AllowedTools: []string{tools.ToolThinking}}
 	engine, err := testPackService(t).CreateAgentEngine(ctx, cfg, &fakeAgentChatModel{}, nil, nil, "sess", "msg")
 	require.NoError(t, err)
 	state, err := engine.Execute(ctx, "sess", "msg", "hỏi", nil)
@@ -116,4 +126,30 @@ func (e refusingExecutor) ExecShellCommand(context.Context, string, string, stri
 	map[string]string) (*sandbox.ExecuteResult, error) {
 	e.t.Fatal("a domain pack must never reach the sandbox")
 	return nil, nil
+}
+
+func TestResolveAgentDomainPacks(t *testing.T) {
+	registry, err := domainpacks.Load(os.DirFS("../../agent/domainpacks/testdata"))
+	require.NoError(t, err)
+	svc := &sessionService{}
+	svc.SetDomainPacks(registry)
+	ctx := context.Background()
+
+	agentWith := func(mode string, packs ...string) *types.CustomAgent {
+		return &types.CustomAgent{ID: "a1", Config: types.CustomAgentConfig{AgentMode: mode, DomainPacks: packs}}
+	}
+	require.Equal(t, []string{testPack},
+		svc.resolveAgentDomainPacks(ctx, agentWith(types.AgentModeSmartReasoning, " "+testPack+" ", "gone", testPack)))
+	require.Empty(t, svc.resolveAgentDomainPacks(ctx, agentWith(types.AgentModeQuickAnswer, testPack)),
+		"only smart-reasoning agents read packs")
+	require.Empty(t, svc.resolveAgentDomainPacks(ctx, agentWith(types.AgentModeSmartReasoning)))
+}
+
+// The footer of an earlier answer is cut from history so the model does not
+// copy it into the next one.
+func TestFinalAnswerHistoryDropsDomainFooter(t *testing.T) {
+	msg := &types.Message{Content: "Trả lời." + domainpacks.FooterMarker + "Thông tin tham khảo.\n"}
+	got := finalAnswerHistoryMessage(msg)
+	require.NotNil(t, got)
+	require.Equal(t, "Trả lời.", got.Content)
 }

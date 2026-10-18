@@ -694,7 +694,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	}))
 	// domain packs ship in the binary; an invalid one stops startup, like a
 	// broken built-in skill
-	must(container.Invoke(func(agents interfaces.AgentService) error {
+	must(container.Invoke(func(agents interfaces.AgentService, sessions interfaces.SessionService) error {
 		registry, err := domainpacks.Load(domainpackassets.FS)
 		if err != nil {
 			return err
@@ -705,7 +705,15 @@ func BuildContainer(container *dig.Container) *dig.Container {
 				logger.Warnf(ctx, "[Container] Domain pack %s lint: %s", name, finding)
 			}
 		}
-		if u, ok := agents.(interface{ SetDomainPacks(*domainpacks.Registry) }); ok {
+		type domainPackUser interface {
+			SetDomainPacks(*domainpacks.Registry)
+		}
+		for _, svc := range []any{agents, sessions} {
+			u, ok := svc.(domainPackUser)
+			if !ok {
+				// a silent skip would leave every agent without its packs
+				return fmt.Errorf("%T cannot take the domain packs", svc)
+			}
 			u.SetDomainPacks(registry)
 		}
 		logger.Infof(ctx, "[Container] Domain packs shipped: %v", registry.Names())

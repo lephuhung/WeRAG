@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const testDomainFooter = "\n\n---\nThông tin tham khảo, không phải tư vấn pháp lý.\n"
+const testDomainFooter = "\n\n---\n**Lưu ý về cẩm nang chuyên môn**\nThông tin tham khảo, không phải tư vấn pháp lý.\n"
 
 type answerEvent struct {
 	id      string
@@ -61,7 +61,7 @@ func assertFooterLastBeforeDone(t *testing.T, events []answerEvent) {
 }
 
 func withDomainFooter(engine *AgentEngine) {
-	engine.SetDomainFooter(func(context.Context) string { return testDomainFooter })
+	engine.SetDomainFooter(func(context.Context, string) string { return testDomainFooter })
 }
 
 func TestDomainFooterOnNaturalStop(t *testing.T) {
@@ -139,4 +139,21 @@ func TestDomainFooterSkipsCodeWrittenAnswers(t *testing.T) {
 		engine.appendDomainFooter(context.Background(), state, "sess", "answer-1")
 		assert.Equal(t, "  ", state.FinalAnswer)
 	})
+}
+
+// The footer function sees the answer, so text a model already copied in
+// is not appended again.
+func TestDomainFooterGetsTheAnswer(t *testing.T) {
+	engine := newTestEngine(t, &mockChat{})
+	var seen string
+	engine.SetDomainFooter(func(_ context.Context, answer string) string {
+		seen = answer
+		return ""
+	})
+	content := collectAnswer(t, engine)
+	state := &types.AgentState{FinalAnswer: "Trả lời." + testDomainFooter}
+	engine.appendDomainFooter(context.Background(), state, "sess", "answer-1")
+	assert.Equal(t, "Trả lời."+testDomainFooter, seen)
+	assert.Equal(t, "Trả lời."+testDomainFooter, state.FinalAnswer)
+	assert.Empty(t, *content)
 }

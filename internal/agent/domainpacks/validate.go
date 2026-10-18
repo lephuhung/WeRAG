@@ -172,6 +172,10 @@ func validatePack(fsys fs.FS, name string) (*Pack, error) {
 			if !utf8.Valid(data) {
 				fail("%s: not UTF-8 text", rel)
 			}
+			if urlPattern.Match(data) {
+				// sources belong in ATTRIBUTION.md; a link invites a web fetch
+				fail("%s: contains a URL", rel)
+			}
 			pack.files[rel] = string(data)
 		}
 		return nil

@@ -587,7 +587,7 @@ func (s *sessionService) buildAgentConfig(
 	// Configure skills based on CustomAgentConfig
 	s.configureSkillsFromAgent(ctx, agentConfig, customAgent)
 	// Domain packs do not depend on the skill picker or the sandbox.
-	agentConfig.DomainPacks = append([]string(nil), customAgent.Config.DomainPacks...)
+	agentConfig.DomainPacks = s.resolveAgentDomainPacks(ctx, customAgent)
 
 	// Then add the skills installed into the sandbox config this run boots.
 	//

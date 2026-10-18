@@ -14,9 +14,10 @@ import (
 // amendment history: a sentence only in SKILL.md is one Qwen drops
 // (docs/domain-pack-standard.md §6).
 
-// DomainFooterFunc returns the footer block, "" when there is none. It is
-// asked per answer so the overdue line follows the clock.
-type DomainFooterFunc func(ctx context.Context) string
+// DomainFooterFunc returns the footer block for answer, "" when there is
+// none. It is asked per answer so the overdue line follows the clock, and
+// it leaves out footer text the answer already carries.
+type DomainFooterFunc func(ctx context.Context, answer string) string
 
 // SetDomainFooter installs the domain-pack footer.
 func (e *AgentEngine) SetDomainFooter(fn DomainFooterFunc) {
@@ -32,7 +33,7 @@ func (e *AgentEngine) appendDomainFooter(ctx context.Context, state *types.Agent
 		strings.TrimSpace(state.FinalAnswer) == "" || strings.HasPrefix(state.FinalAnswer, ungroundedAnswer) {
 		return
 	}
-	block := e.domainFooter(ctx)
+	block := e.domainFooter(ctx, state.FinalAnswer)
 	if block == "" {
 		return
 	}

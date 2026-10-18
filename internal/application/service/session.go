@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	chatpipeline "github.com/Tencent/WeKnora/internal/application/service/chat_pipeline"
@@ -171,6 +172,9 @@ type sessionService struct {
 	// (SetLegalRequests); nil turns it off.
 	legalRequests interfaces.LegalRequestRepository
 	legalReviews  interfaces.LegalReviewRepository
+	// domainPacks are the packs shipped in this build (SetDomainPacks); an
+	// agent's pack names are resolved against them once per turn.
+	domainPacks *domainpacks.Registry
 }
 
 // NewSessionService creates a new session service instance with all required dependencies
