@@ -145,12 +145,31 @@ func (c *TaxComparison) Render() string {
 	for _, row := range rows {
 		fmt.Fprintf(&b, "- %s: %s\n", row[0], row[1])
 	}
-	fmt.Fprintf(&b, "\nKhuyến nghị sơ bộ: %s\n", c.Recommendation)
+	fmt.Fprintf(&b, "\nĐọc kết quả: %s\n", c.Reading())
+	fmt.Fprintf(&b, "Khuyến nghị sơ bộ: %s\n", c.Recommendation)
 	b.WriteString("\nGiả định:\n")
 	for _, a := range c.Assumptions {
 		fmt.Fprintf(&b, "- %s\n", a)
 	}
 	return b.String()
+}
+
+// Reading states the direction of the comparison in words, so nobody has to
+// derive it from the break-even margin: tax on profit is margin × revenue ×
+// rate and tax on revenue is ratio × revenue, so a margin above the
+// break-even (ratio ÷ rate) means declaring on profit pays more.
+func (c *TaxComparison) Reading() string {
+	margin, breakEven := FormatPercent(c.Margin, 2), FormatPercent(c.BreakEven, 2)
+	switch {
+	case math.Abs(c.Difference) < 1:
+		return fmt.Sprintf("Biên lợi nhuận thực tế %s bằng biên hòa vốn %s → hai cách nộp gần như bằng nhau.", margin, breakEven)
+	case c.Difference > 0:
+		return fmt.Sprintf("Biên lợi nhuận thực tế %s cao hơn biên hòa vốn %s → kê khai trên lợi nhuận nộp nhiều hơn "+
+			"(cách tính theo %% doanh thu nộp ít hơn); thấp hơn hòa vốn thì ngược lại.", margin, breakEven)
+	default:
+		return fmt.Sprintf("Biên lợi nhuận thực tế %s thấp hơn biên hòa vốn %s → kê khai trên lợi nhuận nộp ít hơn "+
+			"(cách tính theo %% doanh thu nộp nhiều hơn); cao hơn hòa vốn thì ngược lại.", margin, breakEven)
+	}
 }
 
 // FormatVND writes an amount rounded to the đồng with dots between

@@ -135,3 +135,27 @@ func TestFormatters(t *testing.T) {
 		t.Errorf("got %q", got)
 	}
 }
+
+func TestReadingStatesTheDirection(t *testing.T) {
+	// tax-2 of the eval: 6 % margin, 1 % ratio, 17 % rate → break-even 5,88 %
+	k, err := CompareTaxMethods(TaxInput{Revenue: 5_000_000_000, Profit: 300_000_000, RevenueRatio: 1, TaxRate: 0.17})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Biên lợi nhuận thực tế 6,00% cao hơn biên hòa vốn 5,88% → kê khai trên lợi nhuận nộp nhiều hơn"
+	if !strings.HasPrefix(k.Reading(), want) || k.Recommendation != RecommendRevenue {
+		t.Errorf("reading %q, recommendation %q", k.Reading(), k.Recommendation)
+	}
+	if !strings.Contains(k.Render(), "Đọc kết quả: "+want) {
+		t.Errorf("render lacks the reading:\n%s", k.Render())
+	}
+	low, _ := CompareTaxMethods(TaxInput{Revenue: 1_000_000_000, Profit: 20_000_000, RevenueRatio: 1, TaxRate: 0.2})
+	if !strings.Contains(low.Reading(), "thấp hơn biên hòa vốn 5,00% → kê khai trên lợi nhuận nộp ít hơn") ||
+		low.Recommendation != RecommendDeclared {
+		t.Errorf("low margin: %q / %q", low.Reading(), low.Recommendation)
+	}
+	eq, _ := CompareTaxMethods(TaxInput{Revenue: 10_000_000_000, Profit: 500_000_000, RevenueRatio: 1, TaxRate: 0.2})
+	if !strings.Contains(eq.Reading(), "gần như bằng nhau") {
+		t.Errorf("equal: %q", eq.Reading())
+	}
+}

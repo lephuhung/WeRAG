@@ -10,4 +10,4 @@ const ToolDataAnswerBlock = "answer_block"
 // ToolAnswerBlockMarker opens the appended block. It is stable so the block
 // (and the footer after it) can be cut when the answer is replayed as
 // history, like the domain-pack footer.
-const ToolAnswerBlockMarker = "\n\n---\n**Kết quả tính (do hệ thống tính bằng công cụ)**\n"
+const ToolAnswerBlockMarker = "\n\n---\n**Kết quả tính (do hệ thống tính — nếu phần trên khác, lấy khối này làm chuẩn)**\n"
