@@ -1,0 +1,43 @@
+# Documents the opc-vn-business-law pack relies on, from references/00-legal-status.md
+# of the source skill (status column dropped: validity comes only from legal_documents;
+# run POST /api/v1/system/domain-packs/opc-vn-business-law/reconcile to check them).
+documents:
+  - number: 59/2020/QH14
+    title: Luật Doanh nghiệp
+    used_for: loại hình doanh nghiệp, cơ cấu quản trị, điều lệ, người đại diện theo pháp luật
+  - number: 88/2015/QH13
+    title: Luật Kế toán
+    used_for: kế toán trưởng, người làm kế toán, sổ sách, chứng từ, báo cáo
+  - number: 174/2016/NĐ-CP
+    title: Nghị định quy định chi tiết một số điều của Luật Kế toán
+    used_for: kế toán trưởng, phụ trách kế toán ở doanh nghiệp siêu nhỏ
+  - number: 133/2016/TT-BTC
+    title: Thông tư hướng dẫn chế độ kế toán doanh nghiệp nhỏ và vừa
+    used_for: chế độ kế toán doanh nghiệp nhỏ và vừa
+  - number: 58/2026/TT-BTC
+    title: Thông tư hướng dẫn chế độ kế toán doanh nghiệp siêu nhỏ
+    used_for: kế toán siêu nhỏ, người nhà làm kế toán, báo cáo tối giản
+  - number: 132/2018/TT-BTC
+    title: Thông tư hướng dẫn chế độ kế toán doanh nghiệp siêu nhỏ (bản trước)
+    used_for: so sánh lịch sử với chế độ kế toán siêu nhỏ hiện hành
+  - number: 80/2021/NĐ-CP
+    title: Nghị định quy định chi tiết một số điều của Luật Hỗ trợ doanh nghiệp nhỏ và vừa
+    used_for: tiêu chí siêu nhỏ, nhỏ, vừa; hỗ trợ hộ kinh doanh chuyển đổi
+  - number: 67/2025/QH15
+    title: Luật Thuế thu nhập doanh nghiệp
+    used_for: thuế suất thuế thu nhập doanh nghiệp
+  - number: 48/2024/QH15
+    title: Luật Thuế giá trị gia tăng
+    used_for: phương pháp tính thuế giá trị gia tăng
+  - number: 198/2025/QH15
+    title: Nghị quyết về một số cơ chế, chính sách đặc biệt phát triển kinh tế tư nhân
+    used_for: ưu đãi, cơ chế đặc biệt cho kinh tế tư nhân
+  - number: 41/2024/QH15
+    title: Luật Bảo hiểm xã hội
+    used_for: nghĩa vụ bảo hiểm xã hội khi có lao động
+  - number: 01/2021/NĐ-CP
+    title: Nghị định về đăng ký doanh nghiệp
+    used_for: hồ sơ đăng ký doanh nghiệp, đăng ký hộ kinh doanh
+  - number: 22/2023/QH15
+    title: Luật Đấu thầu
+    used_for: ưu đãi doanh nghiệp nhỏ và vừa trong mua sắm công
