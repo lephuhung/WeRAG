@@ -65,7 +65,12 @@ func (h *CustomAgentHandler) validateDomainPacks(cfg types.CustomAgentConfig) er
 		}
 		return pack.Manifest.Metadata.RequiredTools, true
 	}
-	if err := cfg.ValidateDomainPacks(lookup, tools.DefaultAllowedTools()); err != nil {
+	// the run time reads retired tool names as their successors
+	if len(cfg.AllowedTools) > 0 {
+		cfg.AllowedTools = tools.NormalizeAllowedTools(cfg.AllowedTools)
+	}
+	if err := cfg.ValidateDomainPacks(lookup, tools.DefaultAllowedTools(),
+		tools.KnowledgeScopedTools(cfg.WebSearchEnabled)); err != nil {
 		return errors.NewBadRequestError(err.Error())
 	}
 	return nil

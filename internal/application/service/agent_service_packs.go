@@ -7,6 +7,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/agent/skills"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
+	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -16,6 +17,31 @@ import (
 
 // domainPackNow is the clock of the overdue-review line; tests replace it.
 var domainPackNow = types.PromptNow
+
+// SetDomainPacks installs the packs shipped in this build: a copied agent
+// keeps only the packs that still ship.
+func (s *customAgentService) SetDomainPacks(registry *domainpacks.Registry) {
+	s.domainPacks = registry
+}
+
+// shippedDomainPacks keeps the names this build ships, in order.
+func (s *customAgentService) shippedDomainPacks(ctx context.Context, names []string) []string {
+	if len(names) == 0 {
+		return nil
+	}
+	packs, unknown := s.domainPacks.Resolve(names)
+	if len(unknown) > 0 {
+		logger.Warnf(ctx, "Copied agent drops domain packs this build does not ship: %v", unknown)
+	}
+	kept := make([]string, 0, len(packs))
+	for _, pack := range packs {
+		kept = append(kept, pack.Name())
+	}
+	if len(kept) == 0 {
+		return nil
+	}
+	return kept
+}
 
 // SetDomainPacks installs the packs shipped in this build, loaded once at
 // startup by the container.
@@ -40,6 +66,10 @@ func (s *sessionService) resolveAgentDomainPacks(ctx context.Context, customAgen
 	packs, unknown := s.domainPacks.Resolve(customAgent.Config.DomainPacks)
 	if len(unknown) > 0 {
 		logger.Warnf(ctx, "Agent %s names domain packs this build does not ship; skipped: %v", customAgent.ID, unknown)
+		common.PipelineWarn(ctx, "Agent", "domain_pack_unknown", map[string]interface{}{
+			"agent_id": customAgent.ID,
+			"packs":    unknown,
+		})
 	}
 	names := make([]string, 0, len(packs))
 	for _, pack := range packs {
@@ -59,6 +89,11 @@ func (s *agentService) SetDomainPacks(registry *domainpacks.Registry) {
 // allowlist (or the defaults) after registerTools stripped what the turn
 // cannot use, e.g. search_knowledge without a knowledge base. A pack
 // without its tools would steer the model to calls it cannot make.
+//
+// It runs before read_file, the pinned MCP tools and the browser tools are
+// registered. That is safe only because validate.go requires
+// required_tools ⊆ AvailableToolDefinitions, which registerTools has
+// already handled by the time this runs.
 func (s *agentService) usableDomainPacks(
 	ctx context.Context, config *types.AgentConfig, registry *tools.ToolRegistry, warn bool,
 ) []*domainpacks.Pack {
@@ -82,6 +117,10 @@ func (s *agentService) usableDomainPacks(
 		if len(missing) > 0 {
 			if warn {
 				logger.Warnf(ctx, "Domain pack %s skipped: this run lacks its required tools %v", pack.Name(), missing)
+				common.PipelineWarn(ctx, "Agent", "domain_pack_skipped", map[string]interface{}{
+					"pack":          pack.Name(),
+					"missing_tools": missing,
+				})
 			}
 			continue
 		}

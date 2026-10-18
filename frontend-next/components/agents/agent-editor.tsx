@@ -16,6 +16,7 @@ import {
   OPEN_DOCUMENT_MAX_RUNES_LIMIT,
   listDomainPacks,
   missingDomainPackTools,
+  shippedDomainPacks,
   type CustomAgent,
   type DomainPackInfo,
 } from "@/lib/api/agents";
@@ -161,6 +162,8 @@ export function AgentEditorModal({
   const [kbs, setKbs] = useState<KnowledgeBaseRow[]>([]);
   const [mcpList, setMcpList] = useState<MCPService[]>([]);
   const [packList, setPackList] = useState<DomainPackInfo[]>([]);
+  // only a loaded list may decide that a stored pack no longer ships
+  const [packsLoaded, setPacksLoaded] = useState(false);
 
   useEffect(() => {
     setDraft(draftFrom(agent));
@@ -257,8 +260,12 @@ export function AgentEditorModal({
     listMCPServices()
       .then((res: MCPService[]) => setMcpList(res ?? []))
       .catch(() => setMcpList([]));
+    setPacksLoaded(false);
     listDomainPacks()
-      .then((res) => setPackList(res.data ?? []))
+      .then((res) => {
+        setPackList(res.data ?? []);
+        setPacksLoaded(true);
+      })
       .catch(() => setPackList([]));
     getStorageEngineStatus()
       .then((res) => {
@@ -275,9 +282,18 @@ export function AgentEditorModal({
   // Required tools of the chosen packs the agent would lack; the server
   // refuses the save in that case, so it is shown and checked here first.
   const missingPackTools = useMemo(
-    () => missingDomainPackTools(packList, draft.domain_packs, draft.allowed_tools, draft.kb_selection_mode),
-    [packList, draft.domain_packs, draft.allowed_tools, draft.kb_selection_mode],
+    () =>
+      missingDomainPackTools(packList, draft.domain_packs, {
+        allowedTools: draft.allowed_tools,
+        kbSelectionMode: draft.kb_selection_mode,
+        knowledgeBases: draft.knowledge_bases,
+        webSearchEnabled: draft.web_search_enabled,
+      }),
+    [packList, draft.domain_packs, draft.allowed_tools, draft.kb_selection_mode, draft.knowledge_bases, draft.web_search_enabled],
   );
+  // stored names this build no longer ships: removed on save
+  const savedPacks = packsLoaded ? shippedDomainPacks(draft.domain_packs, packList) : draft.domain_packs;
+  const droppedPacks = draft.domain_packs.filter((name) => !savedPacks.includes(name));
 
   const toggleDomainPack = (name: string) => {
     setDraft((prev) => ({
@@ -362,8 +378,7 @@ export function AgentEditorModal({
         mcp_selection_mode: draft.mcp_selection_mode,
         allowed_tools: draft.allowed_tools,
         // packs only work on smart-reasoning agents; undefined clears them
-        domain_packs:
-          draft.agent_mode === "smart-reasoning" && draft.domain_packs.length > 0 ? draft.domain_packs : undefined,
+        domain_packs: draft.agent_mode === "smart-reasoning" && savedPacks.length > 0 ? savedPacks : undefined,
         mcp_services: draft.mcp_selection_mode === "selected" ? draft.mcp_services : undefined,
         image_upload_enabled: draft.image_upload_enabled,
         vlm_model_id: draft.vlm_model_id || undefined,
@@ -1220,11 +1235,9 @@ export function AgentEditorModal({
                   </div>
                 )}
                 {/* a stored pack this build does not ship */}
-                {draft.domain_packs.filter((n) => !packList.some((p) => p.name === n)).length > 0 && packList.length > 0 && (
+                {droppedPacks.length > 0 && (
                   <p className="caption mt-2 text-error">
-                    {t("agent.domainPacks.unknown", {
-                      names: draft.domain_packs.filter((n) => !packList.some((p) => p.name === n)).join(", "),
-                    })}
+                    {t("agent.domainPacks.unknown", { names: droppedPacks.join(", ") })}
                   </p>
                 )}
                 {missingPackTools.length > 0 && (

@@ -305,7 +305,7 @@ export function getAgentTypePresets() {
 // ===== domain packs =====
 
 export type { DomainPackInfo } from "./domain-packs";
-export { missingDomainPackTools } from "./domain-packs";
+export { missingDomainPackTools, shippedDomainPacks } from "./domain-packs";
 
 export function listDomainPacks() {
   return apiGet<{ data: DomainPackInfo[] }>("/api/v1/agents/domain-packs");

@@ -3,11 +3,13 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/application/service"
@@ -87,4 +89,61 @@ func TestListDomainPacks(t *testing.T) {
 	require.NoError(t, err)
 	pack, _ := registry.Get("sample-pack")
 	require.Equal(t, pack.Overdue(types.PromptNow()), got.Overdue)
+}
+
+// searchPackRegistry ships the sample pack changed to require search_knowledge.
+func searchPackRegistry(t *testing.T) *domainpacks.Registry {
+	t.Helper()
+	src := os.DirFS("../agent/domainpacks/testdata")
+	fsys := fstest.MapFS{}
+	for _, rel := range []string{"SKILL.md", "catalogue.yaml", "ATTRIBUTION.md", "references/a.md", "assets/checklist.md"} {
+		data, err := fs.ReadFile(src, "sample-pack/"+rel)
+		require.NoError(t, err)
+		if rel == "SKILL.md" {
+			data = []byte(strings.Replace(string(data), "required_tools: [thinking]", "required_tools: [search_knowledge]", 1))
+		}
+		fsys["sample-pack/"+rel] = &fstest.MapFile{Data: data, Mode: 0o644}
+	}
+	registry, err := domainpacks.Load(fsys)
+	require.NoError(t, err)
+	return registry
+}
+
+func TestDomainPackSaveCheckMatchesRunTime(t *testing.T) {
+	h := &CustomAgentHandler{domainPacks: searchPackRegistry(t)}
+	cfg := types.CustomAgentConfig{
+		AgentMode:       types.AgentModeSmartReasoning,
+		KBSelectionMode: "selected",
+		KnowledgeBases:  []string{"kb-1"},
+		// a retired name the run time reads as search_knowledge
+		AllowedTools: []string{"grep_chunks"},
+		DomainPacks:  []string{"sample-pack"},
+	}
+	require.NoError(t, h.validateDomainPacks(cfg))
+	require.Equal(t, []string{"grep_chunks"}, cfg.AllowedTools, "the stored list is not rewritten")
+
+	cfg.KnowledgeBases = nil
+	err := h.validateDomainPacks(cfg)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "kho tri thức")
+}
+
+func TestCopyAgentDropsUnshippedDomainPacks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	registry, err := domainpacks.Load(os.DirFS("../agent/domainpacks/testdata"))
+	require.NoError(t, err)
+	repo := &agentAvatarRepository{agent: &types.CustomAgent{ID: "custom-1", Name: "src", TenantID: 1,
+		Config: types.CustomAgentConfig{AgentMode: types.AgentModeSmartReasoning, DomainPacks: []string{"gone", "sample-pack"}}}}
+	svc := service.NewCustomAgentService(repo, nil, nil, nil, nil, nil, nil)
+	svc.(interface{ SetDomainPacks(*domainpacks.Registry) }).SetDomainPacks(registry)
+	h := &CustomAgentHandler{service: svc, domainPacks: registry}
+	router := gin.New()
+	router.Use(middleware.ErrorHandler())
+	router.POST("/agents/:id/copy", h.CopyAgent)
+	req := httptest.NewRequest(http.MethodPost, "/agents/custom-1/copy", nil)
+	req = req.WithContext(context.WithValue(req.Context(), types.TenantIDContextKey, uint64(1)))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	require.Equal(t, []string{"sample-pack"}, repo.agent.Config.DomainPacks)
 }

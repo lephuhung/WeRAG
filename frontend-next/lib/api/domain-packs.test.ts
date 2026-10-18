@@ -2,7 +2,13 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { missingDomainPackTools, type DomainPackInfo } from "./domain-packs.ts";
+import {
+  knowledgeScopedTools,
+  missingDomainPackTools,
+  shippedDomainPacks,
+  type DomainPackAgentTools,
+  type DomainPackInfo,
+} from "./domain-packs.ts";
 import { buildAgentConfigForSave } from "./agent-config.ts";
 
 const pack = (name: string, required_tools: string[]): DomainPackInfo => ({
@@ -18,21 +24,43 @@ const pack = (name: string, required_tools: string[]): DomainPackInfo => ({
 });
 
 describe("missingDomainPackTools", () => {
-  const packs = [pack("opc", ["search_knowledge", "compare_tax_methods"]), pack("other", ["thinking"])];
+  const packs = [pack("opc", ["search_knowledge", "compare_tax_methods"]), pack("reader", ["read_document"])];
+  const agent = (over: Partial<DomainPackAgentTools> = {}): DomainPackAgentTools => ({
+    allowedTools: ["search_knowledge", "compare_tax_methods", "read_document"],
+    kbSelectionMode: "selected",
+    knowledgeBases: ["kb-1"],
+    webSearchEnabled: false,
+    ...over,
+  });
 
   it("lists required tools of selected packs the agent lacks", () => {
-    assert.deepEqual(missingDomainPackTools(packs, ["opc"], ["search_knowledge"], "all"), ["compare_tax_methods"]);
+    assert.deepEqual(missingDomainPackTools(packs, ["opc"], agent({ allowedTools: ["search_knowledge"] })), [
+      "compare_tax_methods",
+    ]);
   });
 
   it("ignores packs that are not selected", () => {
-    assert.deepEqual(missingDomainPackTools(packs, [], [], "all"), []);
+    assert.deepEqual(missingDomainPackTools(packs, [], agent({ allowedTools: [] })), []);
   });
 
-  it("counts search_knowledge as missing without a knowledge base", () => {
-    assert.deepEqual(
-      missingDomainPackTools(packs, ["opc"], ["search_knowledge", "compare_tax_methods"], "none"),
-      ["search_knowledge"],
-    );
+  it("counts knowledge tools as missing without a knowledge base", () => {
+    assert.deepEqual(missingDomainPackTools(packs, ["opc"], agent({ kbSelectionMode: "none" })), ["search_knowledge"]);
+    assert.deepEqual(missingDomainPackTools(packs, ["reader"], agent({ knowledgeBases: [] })), ["read_document"]);
+  });
+
+  it("cannot judge \"all\" and leaves it to the server", () => {
+    assert.deepEqual(missingDomainPackTools(packs, ["opc", "reader"], agent({ kbSelectionMode: "all", knowledgeBases: [] })), []);
+  });
+
+  it("mirrors todo_write going with web search off", () => {
+    assert.equal(knowledgeScopedTools(false).includes("todo_write"), true);
+    assert.equal(knowledgeScopedTools(true).includes("todo_write"), false);
+  });
+});
+
+describe("shippedDomainPacks", () => {
+  it("drops names this build no longer ships, keeping order", () => {
+    assert.deepEqual(shippedDomainPacks(["gone", "reader", "opc"], [pack("opc", []), pack("reader", [])]), ["reader", "opc"]);
   });
 });
 

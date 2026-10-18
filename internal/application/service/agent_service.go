@@ -1047,30 +1047,10 @@ func (s *agentService) registerTools(
 	hasKnowledge := agentHasKnowledgeScope(config)
 	if !hasKnowledge {
 		filteredTools := make([]string, 0)
-		kbTools := map[string]bool{
-			tools.ToolSearchKnowledge:       true,
-			tools.ToolReadDocument:          true,
-			tools.ToolListDocuments:         true,
-			tools.ToolSearchDocumentSection: true,
-			tools.ToolQueryKnowledgeGraph:   true,
-			tools.ToolDatabaseQuery:         true,
-			tools.ToolDataAnalysis:          true,
-			tools.ToolDataSchema:            true,
-			// Wiki tools also require at least one KB in scope.
-			tools.ToolWikiReadPage:    true,
-			tools.ToolWikiSearch:      true,
-			tools.ToolWikiFlagIssue:   true,
-			tools.ToolWikiWritePage:   true,
-			tools.ToolWikiReplaceText: true,
-			tools.ToolWikiRenamePage:  true,
-			tools.ToolWikiDeletePage:  true,
-			tools.ToolWikiReadIssue:   true,
-			tools.ToolWikiUpdateIssue: true,
-		}
-
-		// If no knowledge and no web search, also disable todo_write (not useful for simple chat)
-		if !config.WebSearchEnabled {
-			kbTools[tools.ToolTodoWrite] = true
+		// shared with the domain-pack save check (tools.KnowledgeScopedTools)
+		kbTools := map[string]bool{}
+		for _, name := range tools.KnowledgeScopedTools(config.WebSearchEnabled) {
+			kbTools[name] = true
 		}
 
 		for _, toolName := range allowedTools {

@@ -707,13 +707,13 @@ func BuildContainer(container *dig.Container) *dig.Container {
 			}
 		}
 	}))
-	// the agent and session services read the shipped domain packs
+	// the agent, session and custom-agent services read the shipped domain packs
 	must(container.Invoke(func(registry *domainpacks.Registry, agents interfaces.AgentService,
-		sessions interfaces.SessionService) error {
+		sessions interfaces.SessionService, customAgents interfaces.CustomAgentService) error {
 		type domainPackUser interface {
 			SetDomainPacks(*domainpacks.Registry)
 		}
-		for _, svc := range []any{agents, sessions} {
+		for _, svc := range []any{agents, sessions, customAgents} {
 			u, ok := svc.(domainPackUser)
 			if !ok {
 				// a silent skip would leave every agent without its packs

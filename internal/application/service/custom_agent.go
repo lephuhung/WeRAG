@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/application/repository"
@@ -47,6 +48,8 @@ type customAgentService struct {
 	wikiPageRepo         interfaces.WikiPageRepository
 	tagRepo              interfaces.KnowledgeTagRepository
 	knowledgeRepo        interfaces.KnowledgeRepository
+	// domainPacks are the packs shipped in this build (SetDomainPacks).
+	domainPacks *domainpacks.Registry
 }
 
 // NewCustomAgentService creates a new custom agent service
@@ -509,6 +512,8 @@ func (s *customAgentService) CopyAgent(ctx context.Context, id string) (*types.C
 		CreatedAt:   time.Now(),
 		UpdatedAt:   time.Now(),
 	}
+	// a pack this build no longer ships would make the copy unsavable
+	newAgent.Config.DomainPacks = s.shippedDomainPacks(ctx, sourceAgent.Config.DomainPacks)
 	// The clone is owned by whoever ran the copy, not the original
 	// creator — same reasoning as CopyKnowledgeBase. Skip synthetic
 	// API-key users.
