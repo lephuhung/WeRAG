@@ -248,15 +248,38 @@ def check_not_call_tool(tools: list, names: list) -> tuple:
 NON_EVIDENCE_TOOLS = {"read_file"}
 
 
-def check_numbers(answer: str, tools: list, catalogue: list) -> tuple:
-    allowed = {norm(n) for n in catalogue}
+def evidence_numbers(tools: list) -> set:
+    """Normalised số hiệu the turn's tools put in front of the model. The SSE
+    tool_result carries a short summary as output for tools with a
+    display_type (search_knowledge: "returned 10 result(s)…"); the text the
+    model read is in the structured data (results[].content, …), which
+    tools_of flattens into "evidence"."""
+    found = set()
     for t in tools:
         if t.get("name") in NON_EVIDENCE_TOOLS:
             continue
-        allowed |= {norm(n) for n in NUM.findall(t.get("output") or "")}
+        if "evidence_numbers" in t:
+            found |= set(t["evidence_numbers"])
+            continue
+        found |= {norm(n) for n in NUM.findall(t.get("evidence") or t.get("output") or "")}
+    return found
+
+
+def check_numbers(answer: str, tools: list, catalogue: list, lookup=None) -> tuple:
+    """Every số hiệu in the answer is in the pack catalogue, in what the
+    turn's tools returned, or — §7 "danh mục" — in the platform legal
+    catalogue (lookup: number → bool | None, None = could not check).
+    read_document chunk text is stripped from the SSE, so a number read only
+    there is verified through the legal catalogue."""
+    allowed = {norm(n) for n in catalogue} | evidence_numbers(tools)
     cited = sorted({n for n in NUM.findall(body_of(answer))})
     outside = [n for n in cited if norm(n) not in allowed]
-    return (not outside), (f"numbers outside catalogue and tool results: {outside}" if outside else "")
+    in_legal_catalogue = []
+    if lookup and outside:
+        in_legal_catalogue = [n for n in outside if lookup(n)]
+        outside = [n for n in outside if n not in in_legal_catalogue]
+    why = f"numbers outside catalogue and tool results: {outside}" if outside else ""
+    return (not outside), why, ([f"in legal catalogue only: {in_legal_catalogue}"] if in_legal_catalogue else [])
 
 
 def check_refusal(answer: str) -> tuple:
@@ -357,7 +380,21 @@ def check_footer(answer: str) -> tuple:
     return ok, "" if ok else "footer missing"
 
 
-def grade(case: dict, answer: str, tools: list, catalogue: list, draft_titles: list, with_pack: bool) -> dict:
+# Answers written by code, not by the model with the pack: a gate's card
+# (legal_request_gate, clarification cards, handoff) or the grounding gate's
+# fixed "no evidence" message. They carry no domain footer by design.
+CODE_ANSWER_TOOLS = {"legal_document_request", "legal_candidates", "broad_query_clarification",
+                     "agent_handoff", "prepare_document_template", "unreadable_attachments"}
+UNGROUNDED_PREFIX = "Tôi không tìm thấy căn cứ cho câu hỏi này trong kho tri thức"
+
+
+def code_written_answer(answer: str, tools: list) -> bool:
+    return (any(t.get("name") in CODE_ANSWER_TOOLS for t in tools)
+            or answer.lstrip().startswith(UNGROUNDED_PREFIX))
+
+
+def grade(case: dict, answer: str, tools: list, catalogue: list, draft_titles: list, with_pack: bool,
+          lookup=None) -> dict:
     """Binary result per check for one run."""
     checks = case.get("checks") or {}
     res = {}
@@ -375,7 +412,7 @@ def grade(case: dict, answer: str, tools: list, catalogue: list, draft_titles: l
         elif key == "must_not_call_tool":
             put(key, check_not_call_tool(tools, val))
         elif key == "must_not_cite_numbers_outside_catalogue" and val:
-            put(key, check_numbers(answer, tools, catalogue))
+            put(key, check_numbers(answer, tools, catalogue, lookup))
         elif key == "expect_refusal" and val:
             put(key, check_refusal(answer))
         elif key == "expect_referral" and val:
@@ -388,18 +425,55 @@ def grade(case: dict, answer: str, tools: list, catalogue: list, draft_titles: l
             put(key, check_not_match(answer, val))
         elif key == "must_state_status":
             put(key, check_state_status(answer, tools, val))
-        elif key == "must_have_footer" and val and with_pack:
+        elif key == "must_have_footer" and val and with_pack and not code_written_answer(answer, tools):
             put(key, check_footer(answer))
     return res
 
 
 # ---- running -----------------------------------------------------------------
+# SSE metadata keys that are bookkeeping, not text the model read
+_EVIDENCE_SKIP_KEYS = {"tool_name", "tool_call_id", "success", "error", "duration_ms", "display_type"}
+EVIDENCE_MAX_CHARS = 400_000
+
+
+def flatten_text(value, out: list) -> None:
+    if isinstance(value, str):
+        out.append(value)
+    elif isinstance(value, dict):
+        for k, v in value.items():
+            if k not in _EVIDENCE_SKIP_KEYS:
+                flatten_text(v, out)
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            flatten_text(v, out)
+
+
+def tool_evidence(output: str, data: dict) -> str:
+    """The text of one tool result as far as the SSE carries it: the output
+    plus every string of the structured data."""
+    parts = [output or ""]
+    flatten_text(data or {}, parts)
+    return "\n".join(parts)[:EVIDENCE_MAX_CHARS]
+
+
 def tools_of(turn) -> list:
-    return [{"name": t.name, "ok": t.success, "output": t.output,
-             "args": {k: v for k, v in (t.arguments or {}).items()
-                      if k in ("query", "queries", "document_number", "title", "path",
-                               "doanh_thu", "loi_nhuan", "ty_le_doanh_thu", "thue_suat")}}
-            for t in turn.tool_calls]
+    out = []
+    for t in turn.tool_calls:
+        evidence = tool_evidence(t.output, t.data)
+        out.append({"name": t.name, "ok": t.success, "output": t.output,
+                    "evidence": evidence, "evidence_chars": len(evidence),
+                    "args": {k: v for k, v in (t.arguments or {}).items()
+                             if k in ("query", "queries", "document_number", "title", "path",
+                                      "doanh_thu", "loi_nhuan", "ty_le_doanh_thu", "thue_suat")}})
+    return out
+
+
+def compact_tools_for_report(tools: list) -> None:
+    """After grading: keep the numbers the evidence held, not the text."""
+    for t in tools:
+        ev = t.pop("evidence", None)
+        if ev is not None:
+            t["evidence_numbers"] = sorted({norm(n) for n in NUM.findall(ev)})
 
 
 def run_one(client, case: dict, agent_id: str, kb_ids: list) -> dict:
@@ -526,6 +600,37 @@ def overall_verdict(failed: bool, incomplete: bool) -> str:
 EXIT_BY_VERDICT = {"PASS": 0, "FAIL": 1, "INCOMPLETE": 2}
 
 
+def legal_catalogue_lookup(client):
+    """number → True/False when the platform legal catalogue was searched
+    (SuperAdmin endpoint), None when it cannot be (no permission, error):
+    then the number counts as outside. Cached per run."""
+    cache, lock = {}, threading.Lock()
+    disabled = [False]
+
+    def lookup(number: str):
+        key = norm(number)
+        with lock:
+            if key in cache:
+                return cache[key]
+            if disabled[0]:
+                return None
+        found = None
+        try:
+            from urllib.parse import quote  # noqa: PLC0415
+            body = client._req("GET", "/api/v1/system/legal-catalog/search?q=" + quote(number), "legal catalogue search")
+            docs = (body or {}).get("data") or []
+            found = any(norm(d.get("document_number") or "") == key for d in docs if isinstance(d, dict))
+        except Exception as e:  # noqa: BLE001
+            print(f"  [legal catalogue lookup disabled: {str(e)[:120]}]", flush=True)
+            with lock:
+                disabled[0] = True
+            return None
+        with lock:
+            cache[key] = found
+        return found
+    return lookup
+
+
 def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
     sys.path.insert(0, os.path.join(HERE, "..", "doc_assistant_eval"))
     from werag_client import WeragClient  # noqa: PLC0415 — needs requests, imported only for a live run
@@ -541,6 +646,7 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
         raise SystemExit("token missing (--token / --token-file / WERAG_TOKEN, or --email + WERAG_PASSWORD); see mint_token.py")
     client = WeragClient(args.base_url, token, tenant_id=args.tenant or None, timeout=args.turn_timeout)
     client.me()  # fail fast on a bad token
+    lookup = legal_catalogue_lookup(client)
 
     rows = {c["id"]: {"pack": [], "baseline": []} for c in cases}
     jobs = [(c, agent, agent_id, i) for i in range(args.runs) for c in cases
@@ -554,7 +660,9 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
             r = run_one(client, case, agent_id, args.kb)
         except Exception as e:  # noqa: BLE001
             r = {"answer": "", "tools": [], "error": str(e), "duration_s": 0}
-        r["checks"] = {} if r.get("error") else grade(case, r["answer"], r["tools"], catalogue, drafts, agent == "pack")
+        r["checks"] = {} if r.get("error") else grade(case, r["answer"], r["tools"], catalogue, drafts, agent == "pack",
+                                                       lookup)
+        compact_tools_for_report(r["tools"])
         with lock:
             rows[case["id"]][agent].append(r)
             done[0] += 1
@@ -622,6 +730,24 @@ def self_check() -> int:
     # numbers (footer text ignored; tool-result numbers allowed)
     expect("numbers ok", check_numbers("Theo 59/2020/QH14 và Nghị định 174/2016/NĐ-CP." + footer, [search_tool], cat), True)
     expect("numbers invented", check_numbers("Theo Nghị định 12/2027/NĐ-CP.", [search_tool], cat), False)
+    # search_knowledge: the SSE output is a summary, the text is in data.results
+    sk_out = "Knowledge search returned 10 result(s) (details omitted from history)"
+    sk = {"name": "search_knowledge", "ok": True, "output": sk_out,
+          "evidence": tool_evidence(sk_out, {"display_type": "search_results",
+                                             "results": [{"content": "Luật số 76/2025/QH15 sửa đổi Luật Doanh nghiệp"}]})}
+    expect("numbers from search results data", check_numbers("Theo Luật 76/2025/QH15.", [sk], cat), True)
+    compact_tools_for_report([sk])
+    if "evidence" in sk or "76/2025/QH15" not in sk.get("evidence_numbers", []):
+        fails.append(f"compact evidence: {sk}")
+    expect("numbers from compacted evidence", check_numbers("Theo Luật 76/2025/QH15.", [sk], cat), True)
+    expect("numbers summary only", check_numbers("Theo Luật 76/2025/QH15.",
+                                                 [{"name": "search_knowledge", "output": sk_out}], cat), False)
+    ok_cat, _, note = check_numbers("Theo Luật 76/2025/QH15 và 1/2099/QH99.", [], cat,
+                                    lookup=lambda n: n.startswith("76/"))
+    if ok_cat or not note:
+        fails.append(f"legal catalogue lookup: {ok_cat} {note}")
+    expect("legal catalogue lookup passes", check_numbers("Theo Luật 76/2025/QH15.", [], cat,
+                                                           lookup=lambda n: True), True)
     pack_file = {"name": "read_file", "ok": True, "output": "Bình luận: Nghị định 12/2027/NĐ-CP …"}
     expect("numbers from a pack file", check_numbers("Theo Nghị định 12/2027/NĐ-CP.", [pack_file], cat), False)
     kb_doc = {"name": "read_document", "ok": True, "output": "… Nghị định 12/2027/NĐ-CP …"}
@@ -661,6 +787,14 @@ def self_check() -> int:
     g = grade(case, "Trả lời.", [search_tool], cat, drafts, with_pack=False)
     if "must_have_footer" in g or not g["must_call_tool"]["pass"]:
         fails.append(f"grade baseline: {g}")
+    # a gate card or the fixed no-evidence answer is not graded for the footer
+    card = {"name": "legal_document_request", "ok": True, "output": "…"}
+    if "must_have_footer" in grade(case, "Nghị định … đã hết hiệu lực.", [card], cat, drafts, with_pack=True):
+        fails.append("footer graded on a gate card")
+    if "must_have_footer" in grade(case, UNGROUNDED_PREFIX + ", nên …", [], cat, drafts, with_pack=True):
+        fails.append("footer graded on the no-evidence answer")
+    if "must_have_footer" not in grade(case, "Trả lời.", [search_tool], cat, drafts, with_pack=True):
+        fails.append("footer not graded on a model answer")
     # validation
     good = [{"id": f"c{i}", "category": "advice", "prompt": "p", "checks": {"must_have_footer": True}, "_line": i}
             for i in range(20)]
