@@ -4,8 +4,11 @@
  * or rejects it (the note is shown to users who ask again). Every route is
  * SuperAdmin-only; the server enforces it. */
 import { apiGet, apiPost, apiPut } from "@/lib/api-client";
+import type { LegalDraftSummary } from "@/lib/api/legal-drafts";
 
-export type LegalRequestStatus = "requested" | "added" | "rejected";
+/** fetched: vbpl.vn has only a scanned PDF, fetched into an OCR draft that
+ * waits for review; reviewing: the draft is open in the editor. */
+export type LegalRequestStatus = "requested" | "fetched" | "reviewing" | "added" | "rejected";
 export type LegalRequestFilter = LegalRequestStatus | "all";
 
 /** The catalogue row a request matched (when it is in the vbpl.vn catalogue). */
@@ -71,10 +74,14 @@ export interface LegalRequestItem {
   suggested_kb_id?: string;
   /** Parse status of knowledge_id: an ingested PDF scan is OCRed asynchronously. */
   knowledge_parse_status?: LegalKnowledgeParseStatus;
+  /** The OCR draft of the document's scanned PDF, null when none was fetched. */
+  draft?: LegalDraftSummary | null;
 }
 
 export interface LegalRequestCounts {
   requested: number;
+  fetched?: number;
+  reviewing?: number;
   added: number;
   rejected: number;
 }
@@ -84,8 +91,6 @@ export interface LegalRequestDecision {
   knowledge_base_id?: string;
   knowledge_id?: string;
   note?: string;
-  /** "ingest" only: use the portal's original PDF scan (OCR) when there is no HTML. */
-  allow_pdf?: boolean;
 }
 
 export function listLegalRequests(params: {

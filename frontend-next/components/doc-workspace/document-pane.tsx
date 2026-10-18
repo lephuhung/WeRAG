@@ -65,6 +65,7 @@ export function DocumentPane({
   onEditorDisabled,
   onOpsOutcome: reportOpsOutcome,
   onSpellingStatus,
+  spellingRunToken = 0,
 }: {
   sessionId: string;
   documentId: string;
@@ -84,6 +85,9 @@ export function DocumentPane({
   /** The visible document's live spellcheck, and how to select one of its
    * listed mistakes in this editor. */
   onSpellingStatus?: (status: LiveSpellingStatus, actions: SpellingActions, editor: EditorActions) => void;
+  /** Bumped by the page to review the paragraphs not reviewed yet now,
+   * without waiting for a pause in typing. */
+  spellingRunToken?: number;
 }) {
   const { t } = useT();
   const toast = useToast();
@@ -367,6 +371,9 @@ export function DocumentPane({
     if (active) onSpellingStatus?.(spellingStatus, spellingActions, editorActions);
   }, [active, spellingStatus, spellingActions, editorActions, onSpellingStatus]);
   liveSpellingOutcomeRef.current = liveSpelling.onOutcome;
+  useEffect(() => {
+    if (spellingRunToken) scheduleSpelling(0);
+  }, [spellingRunToken, scheduleSpelling]);
   const allBatches = useMemo(
     () => (liveSpelling.batches.length > 0 ? [...opsBatches, ...liveSpelling.batches] : opsBatches),
     [opsBatches, liveSpelling.batches],

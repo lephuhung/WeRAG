@@ -33,11 +33,14 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: devOrigins.length > 0 ? devOrigins : ["127.0.0.1", "localhost"],
   async rewrites() {
     // Dev + single-origin deploy parity with Vue (vite proxy + nginx):
-    // /api/* and /files/* go to the Go backend.
+    // /api/*, /files/* and /r/* go to the Go backend.
     // Go app serves on APP_PORT (default 8080).
     return [
       { source: "/api/:path*", destination: `${backend}/api/:path*` },
       { source: "/files/:path*", destination: `${backend}/files/:path*` },
+      // short-lived read grants (the legal draft review's original PDF);
+      // nginx proxies them in the Docker image
+      { source: "/r/:path*", destination: `${backend}/r/:path*` },
       { source: "/asr/:path*", destination: `${asr}/:path*` },
     ];
   },

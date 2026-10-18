@@ -24,7 +24,17 @@
  * Every per-document call takes an optional documentId; without one it uses
  * the legacy /document routes, which act on the session's active document.
  */
-import { ApiError, apiDel, apiDownload, apiGet, apiPost, apiPut, authHeaders, refreshAccessToken } from "../api-client.ts";
+import {
+  ApiError,
+  apiDel,
+  apiDownload,
+  apiGet,
+  apiPost,
+  apiPut,
+  authHeaders,
+  refreshAccessToken,
+  type ApiRequestOptions,
+} from "../api-client.ts";
 import { parseDocumentScope, type DocumentScope, type DocumentScopeSection, type DocumentScopeTask } from "../document-scope.ts";
 
 export type DocumentWorkspaceStatus = "open" | "closed";
@@ -183,6 +193,27 @@ const base = (sessionId: string, documentId?: string) =>
     ? `${sessionBase(sessionId)}/documents/${encodeURIComponent(documentId)}`
     : `${sessionBase(sessionId)}/document`;
 
+/* Sessions that live in another organization than the selected one: the
+ * hidden session a SuperAdmin edits a legal OCR draft in belongs to the
+ * platform organization (10000). Its document routes are sent with that
+ * X-Tenant-ID; every other session keeps the selected organization. */
+const sessionTenants = new Map<string, string>();
+
+/** Sends this session's document requests with X-Tenant-ID = tenantId
+ * (null removes the override). */
+export function setDocumentSessionTenant(sessionId: string, tenantId: string | number | null): void {
+  if (!sessionId) return;
+  if (tenantId === null || tenantId === "" || tenantId === 0) sessionTenants.delete(sessionId);
+  else sessionTenants.set(sessionId, String(tenantId));
+}
+
+/** The request options of a call on this session's documents. */
+export function sessionRequestOptions(sessionId: string, opts?: ApiRequestOptions): ApiRequestOptions | undefined {
+  const tenant = sessionTenants.get(sessionId);
+  if (!tenant) return opts;
+  return { ...opts, headers: { ...(opts?.headers ?? {}), "X-Tenant-ID": tenant } };
+}
+
 function toWorkspaceError(err: unknown): unknown {
   if (err instanceof ApiError) {
     if (err.status === 503) return new DocumentWorkspaceError("editor_disabled", 503, err.message);
@@ -200,7 +231,7 @@ export async function getDocumentWorkspace(
   documentId?: string,
 ): Promise<DocumentWorkspaceView | null> {
   try {
-    const res = await apiGet<Envelope<DocumentWorkspaceView>>(base(sessionId, documentId));
+    const res = await apiGet<Envelope<DocumentWorkspaceView>>(base(sessionId, documentId), sessionRequestOptions(sessionId));
     return res?.data ?? null;
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) return null;
@@ -334,7 +365,11 @@ export async function closeDocumentWorkspace(sessionId: string, documentId: stri
 
 export async function forceSaveDocumentWorkspace(sessionId: string, documentId?: string): Promise<{ revision: number }> {
   try {
-    const res = await apiPost<Envelope<{ revision: number }>>(`${base(sessionId, documentId)}/forcesave`, {});
+    const res = await apiPost<Envelope<{ revision: number }>>(
+      `${base(sessionId, documentId)}/forcesave`,
+      {},
+      sessionRequestOptions(sessionId),
+    );
     return { revision: Number(res?.data?.revision) || 0 };
   } catch (err) {
     throw toWorkspaceError(err);
@@ -356,7 +391,7 @@ export async function reviewDocumentSpelling(
   try {
     const res = await apiPost<
       Envelope<{ document_ops?: unknown[]; found?: number; failed?: boolean; missed?: unknown[]; off?: boolean }>
-    >(`${base(sessionId, documentId)}/spelling`, { paragraphs }, opts);
+    >(`${base(sessionId, documentId)}/spelling`, { paragraphs }, sessionRequestOptions(sessionId, opts));
     const d = res?.data;
     return {
       ops: Array.isArray(d?.document_ops) ? d.document_ops : [],
@@ -384,7 +419,7 @@ export async function recordSpellingVerdict(
       wrong: verdict.wrong,
       suggestion: verdict.suggestion ?? "",
       text_occurrence: verdict.textOccurrence ?? 1,
-    });
+    }, sessionRequestOptions(sessionId));
   } catch (err) {
     throw toWorkspaceError(err);
   }
@@ -463,7 +498,7 @@ export async function storeDocumentTemplate(
 }
 
 export function downloadDocumentWorkspace(sessionId: string, documentId?: string): Promise<Blob> {
-  return apiDownload(`${base(sessionId, documentId)}/download`);
+  return apiDownload(`${base(sessionId, documentId)}/download`, sessionRequestOptions(sessionId));
 }
 
 /** Fire-and-forget forcesave for beforeunload/pagehide: `keepalive` lets the
@@ -473,7 +508,7 @@ export function forceSaveDocumentWorkspaceKeepalive(sessionId: string, documentI
     return fetch(`${base(sessionId, documentId)}/forcesave`, {
       method: "POST",
       keepalive: true,
-      headers: { "Content-Type": "application/json", ...authHeaders() },
+      headers: { "Content-Type": "application/json", ...authHeaders(), ...(sessionRequestOptions(sessionId)?.headers ?? {}) },
       body: "{}",
     })
       .then((res) => res.ok)
@@ -645,7 +680,10 @@ export async function markDocumentFormatFindings(sessionId: string, documentId: 
 
 export async function listDocumentRevisions(sessionId: string, documentId?: string): Promise<DocumentRevisionEntry[]> {
   try {
-    const res = await apiGet<Envelope<DocumentRevisionEntry[]>>(`${base(sessionId, documentId)}/revisions`);
+    const res = await apiGet<Envelope<DocumentRevisionEntry[]>>(
+      `${base(sessionId, documentId)}/revisions`,
+      sessionRequestOptions(sessionId),
+    );
     return Array.isArray(res?.data) ? res.data : [];
   } catch (err) {
     throw toWorkspaceError(err);
@@ -757,6 +795,7 @@ export async function restoreDocumentRevision(
     const res = await apiPost<Envelope<{ revision: number; editor_key: string }>>(
       `${base(sessionId, documentId)}/revisions/${encodeURIComponent(String(seq))}/restore`,
       {},
+      sessionRequestOptions(sessionId),
     );
     return { revision: Number(res?.data?.revision) || 0, editor_key: String(res?.data?.editor_key ?? "") };
   } catch (err) {
