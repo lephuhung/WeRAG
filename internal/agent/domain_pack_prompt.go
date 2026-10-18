@@ -13,13 +13,15 @@ import (
 type DomainPackPrompt struct {
 	Name    string
 	Version string
-	Body    string
+	// Body is the SKILL.md body; "" when it did not fit the budget, and
+	// the prompt then tells the model to read it with read_file.
+	Body string
 }
 
-// MaxDomainPackPrompts caps how many pack bodies one prompt carries (each is
-// at most 6 KB by the format rules); the service drops the rest with a
-// warning.
-const MaxDomainPackPrompts = 2
+// MaxDomainPackPromptBytes caps the pack bodies one prompt carries (a body
+// is at most 6 KB by the format rules). Packs past it are named with an
+// explicit read_file instruction instead (agent_service_packs.go).
+const MaxDomainPackPromptBytes = 12 * 1024
 
 // SetDomainPackPrompts installs the pack bodies for this run's system prompt.
 func (e *AgentEngine) SetDomainPackPrompts(packs []DomainPackPrompt) {
@@ -37,8 +39,13 @@ func formatDomainPacks(packs []DomainPackPrompt) string {
 		"still come from the knowledge base and the legal catalogue tools. Read the pack's references/ and assets/ " +
 		"files with read_file(path=skill://<pack>/<file>) when its workflow points to them.\n")
 	for _, p := range packs {
+		body := strings.TrimSpace(p.Body)
+		if body == "" {
+			body = fmt.Sprintf("This pack's workflow is not inlined here. Before answering a question within its "+
+				"scope, read it with read_file(path=skill://%s/SKILL.md).", p.Name)
+		}
 		fmt.Fprintf(&b, "<domain_pack name=\"%s\" version=\"%s\">\n%s\n</domain_pack>\n",
-			escapeXMLAttr(p.Name), escapeXMLAttr(p.Version), strings.TrimSpace(p.Body))
+			escapeXMLAttr(p.Name), escapeXMLAttr(p.Version), body)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

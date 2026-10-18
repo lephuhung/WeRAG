@@ -55,3 +55,15 @@ func TestDomainPackBodyEscapesAttributes(t *testing.T) {
 		t.Errorf("attribute not escaped: %s", got)
 	}
 }
+
+func TestDomainPackWithoutBodyIsReadWithReadFile(t *testing.T) {
+	got := formatDomainPacks([]DomainPackPrompt{{Name: "pack-a", Version: "1.0.0", Body: "Quy trình A"},
+		{Name: "pack-b", Version: "2.0.0"}})
+	if !strings.Contains(got, "Quy trình A") {
+		t.Error("inlined body missing")
+	}
+	if !strings.Contains(got, `<domain_pack name="pack-b" version="2.0.0">`) ||
+		!strings.Contains(got, "read_file(path=skill://pack-b/SKILL.md)") {
+		t.Errorf("deferred pack must say how to read it:\n%s", got)
+	}
+}

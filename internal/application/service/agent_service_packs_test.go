@@ -172,8 +172,19 @@ func TestDomainPackPromptsCarryBodiesUpToTheCap(t *testing.T) {
 	if strings.Contains(got[0].Body, "answer_footer") {
 		t.Error("the body carries no frontmatter")
 	}
-	capped := domainPackPrompts(context.Background(), []*domainpacks.Pack{pack, pack, pack})
-	if len(capped) != agent.MaxDomainPackPrompts {
-		t.Fatalf("got %d bodies, cap is %d", len(capped), agent.MaxDomainPackPrompts)
+	// as many bodies as fit the byte budget; the next pack is named for read_file
+	fit := agent.MaxDomainPackPromptBytes / len(pack.Skill.Instructions)
+	many := make([]*domainpacks.Pack, fit+1)
+	for i := range many {
+		many[i] = pack
+	}
+	capped := domainPackPrompts(context.Background(), many)
+	if len(capped) != fit+1 {
+		t.Fatalf("every pack keeps its block: %d", len(capped))
+	}
+	for i, p := range capped {
+		if (i < fit) == (p.Body == "") {
+			t.Fatalf("pack %d of %d: body %d bytes (budget %d)", i, len(capped), len(p.Body), agent.MaxDomainPackPromptBytes)
+		}
 	}
 }
