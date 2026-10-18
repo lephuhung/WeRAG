@@ -62,3 +62,11 @@ func TestUngroundedRoundKeepsAToolCall(t *testing.T) {
 	require.Equal(t, []types.LLMToolCall{call}, resp.ToolCalls)
 	require.Empty(t, resp.Content)
 }
+
+func TestUngroundedAnswerNamesARecordedRequest(t *testing.T) {
+	require.Equal(t, ungroundedAnswer, ungroundedAnswerFor(context.Background()))
+	require.NotContains(t, ungroundedAnswer, "tìm kiếm web")
+	ctx := types.WithLegalRequestRecorded(context.Background(), "12/2024/QĐ-UBND")
+	require.Equal(t, ungroundedAnswer+" Đã ghi nhận đề nghị bổ sung văn bản 12/2024/QĐ-UBND tới quản trị viên.",
+		ungroundedAnswerFor(ctx))
+}

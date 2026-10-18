@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/agent/tools"
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -431,7 +432,7 @@ const (
 	// legalKBNamePrefix: the public legal KBs are named "VBPL – <type>, <type>…"
 	// (docs/legal-document-feed-spec.md §1); the types after the prefix say
 	// which document types each one holds.
-	legalKBNamePrefix = "VBPL – "
+	legalKBNamePrefix = service.LegalKBNamePrefix
 )
 
 // legalLocalIssuer mirrors LOCAL_ISSUER of crawl_vbpl.py: issuers of
@@ -474,17 +475,13 @@ type legalMissingRow struct {
 // "VBPL – Hiến pháp, Bộ luật, Luật, Pháp lệnh" → four types. A type listed
 // by two bases keeps the first (name order).
 func legalTypeTargets(kbs []struct{ ID, Name string }) map[string]struct{ ID, Name string } {
+	in := make([]types.LegalPublicKB, len(kbs))
+	for i, kb := range kbs {
+		in[i] = types.LegalPublicKB(kb)
+	}
 	out := map[string]struct{ ID, Name string }{}
-	for _, kb := range kbs {
-		if !strings.HasPrefix(kb.Name, legalKBNamePrefix) {
-			continue
-		}
-		for _, t := range strings.Split(strings.TrimPrefix(kb.Name, legalKBNamePrefix), ",") {
-			t = strings.TrimSpace(t)
-			if _, dup := out[t]; t != "" && !dup {
-				out[t] = kb
-			}
-		}
+	for t, kb := range service.LegalTypeTargets(in) {
+		out[t] = struct{ ID, Name string }{kb.ID, kb.Name}
 	}
 	return out
 }
@@ -572,4 +569,71 @@ func (s *Server) handleLegalListMissing(ctx context.Context, req mcp.CallToolReq
 	return mcp.NewToolResultStructured(map[string]any{
 		"documents": out, "has_more": hasMore, "skipped_local": skippedLocal, "types": typeList, "min_year": minYear,
 	}, text+"."), nil
+}
+
+// --- legal_list_requests -------------------------------------------------
+
+const (
+	defaultLegalRequestsLimit = 100
+	maxLegalRequestsLimit     = 500
+)
+
+func legalListRequestsTool() mcp.Tool {
+	return mcp.NewTool(types.MCPEndpointToolLegalListRequests,
+		mcp.WithDescription("List the documents users asked about that the system holds no full text of: each chat "+
+			"question naming a full số hiệu no knowledge base holds records a request (once per session). Rows with "+
+			"a vbpl_id are known to the catalogue and can be fed with legal_ingest_document, which marks them added; "+
+			"rows without one are numbers the catalogue does not know. Most recently requested first."),
+		mcp.WithString("status", mcp.Description("requested (default), added, rejected or all")),
+		mcp.WithNumber("limit", mcp.Description("Maximum rows, default 100, max 500")),
+	)
+}
+
+// legalRequestRow is one request as the feed agent sees it.
+type legalRequestRow struct {
+	ID              string    `json:"id"`
+	VBPLID          string    `json:"vbpl_id"`
+	DocumentNumber  string    `json:"document_number"`
+	Title           string    `json:"title"`
+	DocType         string    `json:"doc_type"`
+	Status          string    `json:"status"`
+	RequestCount    int       `json:"request_count"`
+	LastRequestedAt time.Time `json:"last_requested_at"`
+	URL             string    `json:"url,omitempty"`
+}
+
+func (s *Server) handleLegalListRequests(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if s.legalRequests == nil {
+		return mcp.NewToolResultError("legal document requests are not available"), nil
+	}
+	status := strings.ToLower(strings.TrimSpace(req.GetString("status", types.LegalRequestRequested)))
+	switch status {
+	case "", types.LegalRequestRequested:
+		status = types.LegalRequestRequested
+	case "all":
+		status = ""
+	case types.LegalRequestAdded, types.LegalRequestRejected:
+	default:
+		return mcp.NewToolResultError("status must be requested, added, rejected or all"), nil
+	}
+	limit := clampInt(req.GetInt("limit", defaultLegalRequestsLimit), 1, maxLegalRequestsLimit, defaultLegalRequestsLimit)
+	rows, total, err := s.legalRequests.List(ctx, status, 0, limit)
+	if err != nil {
+		return mcp.NewToolResultErrorFromErr("listing failed", err), nil
+	}
+	out := make([]legalRequestRow, 0, len(rows))
+	for _, r := range rows {
+		row := legalRequestRow{ID: r.ID, VBPLID: r.LegalDocumentID, DocumentNumber: r.DocumentNumber, Title: r.Title,
+			DocType: r.DocType, Status: r.Status, RequestCount: r.RequestCount, LastRequestedAt: r.LastRequestedAt}
+		if r.LegalDocumentID != "" {
+			row.URL = fmt.Sprintf(vbplDocURL, r.LegalDocumentID)
+		}
+		out = append(out, row)
+	}
+	label := status
+	if label == "" {
+		label = "all"
+	}
+	return mcp.NewToolResultStructured(map[string]any{"requests": out, "total": total, "status": label},
+		fmt.Sprintf("%d %s request(s); %d listed.", total, label, len(out))), nil
 }

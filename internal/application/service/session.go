@@ -167,6 +167,10 @@ type sessionService struct {
 	documentWorkspaces interfaces.DocumentWorkspaceService
 	// legalCatalog answers for documents a question names by số hiệu.
 	legalCatalog interfaces.LegalCatalogService
+	// legalRequests / legalReviews back the missing-document gate
+	// (SetLegalRequests); nil turns it off.
+	legalRequests interfaces.LegalRequestRepository
+	legalReviews  interfaces.LegalReviewRepository
 }
 
 // NewSessionService creates a new session service instance with all required dependencies

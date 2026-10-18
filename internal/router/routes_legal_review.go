@@ -22,3 +22,17 @@ func RegisterLegalReviewRoutes(r *gin.RouterGroup, h *handler.LegalReviewHandler
 	}
 	r.GET("/system/legal-catalog/search", g.PlatformSuperAdmin(), h.SearchLegalCatalog)
 }
+
+// RegisterLegalRequestRoutes wires the SuperAdmin queue of requests to add
+// legal documents users asked about that no knowledge base holds.
+func RegisterLegalRequestRoutes(r *gin.RouterGroup, h *handler.LegalRequestHandler, g *rbacGuards) {
+	if h == nil {
+		return
+	}
+	requests := r.Group("/system/legal-requests", g.PlatformSuperAdmin())
+	{
+		requests.GET("", h.ListLegalRequests)
+		requests.GET("/public-knowledge-bases", h.ListLegalRequestKnowledgeBases)
+		requests.PUT("/:id", h.DecideLegalRequest)
+	}
+}

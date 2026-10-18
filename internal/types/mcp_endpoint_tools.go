@@ -47,6 +47,7 @@ const (
 	MCPEndpointToolLegalExpiryAudit   = "legal_expiry_audit"
 	MCPEndpointToolLegalSyncStatus    = "legal_catalog_sync_status"
 	MCPEndpointToolLegalListMissing   = "legal_list_missing"
+	MCPEndpointToolLegalListRequests  = "legal_list_requests"
 	MCPEndpointToolLegalIngest        = "legal_ingest_document"
 	MCPEndpointToolLegalRemove        = "legal_remove_document"
 	MCPEndpointToolLegalApplyExpiry   = "legal_apply_expiry_audit"
@@ -86,6 +87,7 @@ var mcpEndpointToolCatalog = []MCPEndpointToolDefinition{
 	{Name: MCPEndpointToolLegalExpiryAudit, Group: MCPEndpointToolGroupLegal},
 	{Name: MCPEndpointToolLegalSyncStatus, Group: MCPEndpointToolGroupLegal},
 	{Name: MCPEndpointToolLegalListMissing, Group: MCPEndpointToolGroupLegal},
+	{Name: MCPEndpointToolLegalListRequests, Group: MCPEndpointToolGroupLegal},
 	{Name: MCPEndpointToolLegalIngest, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},
 	{Name: MCPEndpointToolLegalRemove, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},
 	{Name: MCPEndpointToolLegalApplyExpiry, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},

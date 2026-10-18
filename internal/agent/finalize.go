@@ -44,12 +44,13 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	// from the model's memory either (see grounding_gate.go)
 	if isUngrounded(markUngrounded(ctx, state.RoundSteps)) {
 		answerID := generateEventID("answer")
-		for _, d := range []event.AgentFinalAnswerData{{Content: ungroundedAnswer}, {Done: true}} {
+		answer := ungroundedAnswerFor(ctx)
+		for _, d := range []event.AgentFinalAnswerData{{Content: answer}, {Done: true}} {
 			e.eventBus.Emit(ctx, event.Event{
 				ID: answerID, Type: event.EventAgentFinalAnswer, SessionID: sessionID, Data: d,
 			})
 		}
-		state.FinalAnswer = ungroundedAnswer
+		state.FinalAnswer = answer
 		return nil
 	}
 
