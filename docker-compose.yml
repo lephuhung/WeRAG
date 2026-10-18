@@ -465,7 +465,7 @@ services:
       - asr
     ports:
       # Loopback only: browsers come through the frontend's /asr/ proxy.
-      - "127.0.0.1:${ASR_PORT:-8110}:8110"
+      - "${INTERNAL_BIND_ADDR:-127.0.0.1}:${ASR_PORT:-8110}:8110"
     environment:
       - WERAG_BACKEND_URL=${ASR_BACKEND_URL:-http://app:8080}
       - ASR_API_KEY=${ASR_API_KEY:-}
@@ -494,7 +494,7 @@ services:
       - ocr
       - full
     ports:
-      - "${VLLM_OCR_PORT:-8001}:8001"
+      - "${INTERNAL_BIND_ADDR:-127.0.0.1}:${VLLM_OCR_PORT:-8001}:8001"
     environment:
       - HF_HUB_OFFLINE=${HF_HUB_OFFLINE:-1}
       - FLASHINFER_DISABLE_VERSION_CHECK=1
@@ -669,8 +669,8 @@ services:
       - NEO4J_apoc_import_file_use__neo4j__config=true
       - NEO4JLABS_PLUGINS=["apoc"]
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "${INTERNAL_BIND_ADDR:-127.0.0.1}:7474:7474"
+      - "${INTERNAL_BIND_ADDR:-127.0.0.1}:7687:7687"
     restart: always
     networks:
       - WeKnora-network
@@ -777,10 +777,11 @@ services:
       MINIO_ROOT_USER: ${LANGFUSE_MINIO_USER:-langfuseminio}
       MINIO_ROOT_PASSWORD: ${LANGFUSE_MINIO_PASSWORD:-langfuseminiosecret}
     ports:
-      # 9100：S3 API（浏览器上传媒体时会直连此端口，必须对外暴露）
-      - "${LANGFUSE_MINIO_S3_PORT:-9100}:9000"
+      # 9100: S3 API. Browser media uploads would hit it directly (LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT);
+      # WeRAG sends none, so it stays on loopback unless INTERNAL_BIND_ADDR opens it.
+      - "${INTERNAL_BIND_ADDR:-127.0.0.1}:${LANGFUSE_MINIO_S3_PORT:-9100}:9000"
       # 9101：MinIO 控制台（可选，方便排障）
-      - "${LANGFUSE_MINIO_CONSOLE_PORT:-9101}:9001"
+      - "${INTERNAL_BIND_ADDR:-127.0.0.1}:${LANGFUSE_MINIO_CONSOLE_PORT:-9101}:9001"
     volumes:
       - langfuse_minio_data:/data
     healthcheck:
@@ -1085,7 +1086,7 @@ services:
       - UPSTREAM_URL=${AIRAG_EMBED_RERANK_URL:-http://hrag-embed-rerank:8090}
       - ADAPTER_API_KEY=${AIRAG_ADAPTER_API_KEY:-}
     ports:
-      - "${AIRAG_ADAPTER_PORT:-8090}:8090"
+      - "${INTERNAL_BIND_ADDR:-127.0.0.1}:${AIRAG_ADAPTER_PORT:-8090}:8090"
     networks:
       - WeKnora-network
     depends_on:
