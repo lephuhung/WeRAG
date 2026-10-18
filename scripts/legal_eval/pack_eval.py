@@ -220,8 +220,8 @@ def paragraphs(text: str) -> list:
 def check_label_draft(answer: str, draft_titles: list) -> tuple:
     body = body_of(answer)
     markers = [m.lower() for m in list(draft_titles) + EXTRA_DRAFT_MARKERS if m]
-    if "dự thảo" not in body.lower():
-        return False, "answer never says 'dự thảo'"
+    if not DRAFT_LABEL_RE.search(body):
+        return False, "answer never says 'dự thảo' or 'dự án luật'"
     # a paragraph is labelled by "dự thảo", or "dự án luật" (how the two amendment projects are named)
     unlabelled = [p[:120] for p in paragraphs(body)
                   if any(m in p.lower() for m in markers) and not DRAFT_LABEL_RE.search(p)]
@@ -242,9 +242,17 @@ def check_not_call_tool(tools: list, names: list) -> tuple:
     return (not bad), (f"called: {bad}" if bad else "")
 
 
+# Tool outputs that are not evidence: read_file serves the pack's own
+# references/assets (layer c commentary), so a number found only there is
+# not grounded. read_document reads knowledge-base documents, which are.
+NON_EVIDENCE_TOOLS = {"read_file"}
+
+
 def check_numbers(answer: str, tools: list, catalogue: list) -> tuple:
     allowed = {norm(n) for n in catalogue}
     for t in tools:
+        if t.get("name") in NON_EVIDENCE_TOOLS:
+            continue
         allowed |= {norm(n) for n in NUM.findall(t.get("output") or "")}
     cited = sorted({n for n in NUM.findall(body_of(answer))})
     outside = [n for n in cited if norm(n) not in allowed]
@@ -443,15 +451,25 @@ def thresholds(cases: list, rows: dict) -> list:
     nums, n = rate("pack", "must_not_cite_numbers_outside_catalogue")
     out.append(("không bịa số hiệu", nums, "100 %", None if nums is None else nums == 1.0, n))
 
-    regress = []
+    regress, unmeasured, total = [], [], 0
     for c in cases:
         if c["category"] not in REGRESSION_CATEGORIES:
             continue
+        total += 1
         pk, bl = case_passes(rows[c["id"]]["pack"]), case_passes(rows[c["id"]]["baseline"])
-        if pk is False and bl is True:
+        if pk is None or bl is None:
+            unmeasured.append(c["id"])
+        elif pk is False and bl is True:
             regress.append(c["id"])
-    out.append(("không xấu hơn baseline (draft_trap/status/refusal)", regress, "0 câu", not regress,
-                sum(1 for c in cases if c["category"] in REGRESSION_CATEGORIES)))
+    # a regression found is a FAIL; otherwise a case that could not be
+    # compared (or no case at all) leaves the threshold unmeasured
+    reg_ok = False if regress else (None if unmeasured or not total else True)
+    out.append(("không xấu hơn baseline (draft_trap/status/refusal)", regress, "0 câu", reg_ok,
+                f"{total - len(unmeasured)}/{total} so được"))
+
+    errored = sum(1 for c in cases for agent in ("pack", "baseline") for r in rows[c["id"]][agent] if r.get("error"))
+    runs = sum(len(rows[c["id"]][agent]) for c in cases for agent in ("pack", "baseline"))
+    out.append(("lượt chạy không lỗi", errored, "0 lượt lỗi", None if errored or not runs else True, f"{runs} lượt"))
 
     def med(agent):
         d = [r["duration_s"] for c in cases for r in rows[c["id"]][agent] if not r.get("error")]
@@ -475,14 +493,17 @@ def summarize(cases: list, rows: dict) -> str:
     for cat, v in sorted(by_cat.items()):
         lines.append(f"{cat:13s} pack {v['pack'][0]}/{v['pack'][1]}   baseline {v['baseline'][0]}/{v['baseline'][1]}")
     lines.append("")
-    all_ok = True
+    failed = incomplete = False
     for name, value, target, ok, n in thresholds(cases, rows):
         if isinstance(value, float):
             shown = f"{value * 100:+.0f} %" if "trễ" in name else f"{value * 100:.0f} %"
         else:
             shown = str(value)
         verdict = "n/a " if ok is None else ("PASS" if ok else "FAIL")
-        all_ok &= ok is not False
+        failed |= ok is False
+        # a threshold that measured nothing (no case, every turn errored)
+        # is not a pass
+        incomplete |= ok is None
         lines.append(f"[{verdict}] {name}: {shown} (ngưỡng {target}; {n})")
     for c in cases:
         for agent in ("pack", "baseline"):
@@ -492,8 +513,17 @@ def summarize(cases: list, rows: dict) -> str:
                     bad = [f"error: {r['error']}"]
                 if bad:
                     lines.append(f"  {c['id']} {agent}#{i + 1}: " + " | ".join(bad))
-    lines.append("OVERALL " + ("PASS" if all_ok else "FAIL"))
+    lines.append("OVERALL " + overall_verdict(failed, incomplete))
     return "\n".join(lines)
+
+
+def overall_verdict(failed: bool, incomplete: bool) -> str:
+    """FAIL beats INCOMPLETE beats PASS."""
+    return "FAIL" if failed else ("INCOMPLETE" if incomplete else "PASS")
+
+
+# exit codes of a live run
+EXIT_BY_VERDICT = {"PASS": 0, "FAIL": 1, "INCOMPLETE": 2}
 
 
 def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
@@ -554,7 +584,7 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
     summary = summarize(cases, rows)
     print(path)
     print(summary)
-    return 0 if summary.endswith("OVERALL PASS") else 1
+    return EXIT_BY_VERDICT[summary.rsplit("OVERALL ", 1)[1].strip()]
 
 
 # ---- self-check ----------------------------------------------------------------
@@ -579,6 +609,8 @@ def self_check() -> int:
     expect("project labelled", check_label_draft(
         "Có dự thảo.\n\nDự án Luật sửa đổi Luật Kế toán đang soạn.", ["Dự án Luật sửa đổi Luật Kế toán"]), True)
     expect("draft never said", check_label_draft("Luật Doanh nghiệp quy định …", drafts), False)
+    expect("project only", check_label_draft(
+        "Dự án Luật sửa đổi Luật Kế toán đang soạn.", ["Dự án Luật sửa đổi Luật Kế toán"]), True)
     expect("draft title unlabelled", check_label_draft(
         "Một dự thảo khác.\n\nLuật Phát triển doanh nghiệp nhỏ và vừa cho phép …", ["Luật Phát triển doanh nghiệp nhỏ và vừa"]), False)
     # tools
@@ -590,6 +622,10 @@ def self_check() -> int:
     # numbers (footer text ignored; tool-result numbers allowed)
     expect("numbers ok", check_numbers("Theo 59/2020/QH14 và Nghị định 174/2016/NĐ-CP." + footer, [search_tool], cat), True)
     expect("numbers invented", check_numbers("Theo Nghị định 12/2027/NĐ-CP.", [search_tool], cat), False)
+    pack_file = {"name": "read_file", "ok": True, "output": "Bình luận: Nghị định 12/2027/NĐ-CP …"}
+    expect("numbers from a pack file", check_numbers("Theo Nghị định 12/2027/NĐ-CP.", [pack_file], cat), False)
+    kb_doc = {"name": "read_document", "ok": True, "output": "… Nghị định 12/2027/NĐ-CP …"}
+    expect("numbers from a KB document", check_numbers("Theo Nghị định 12/2027/NĐ-CP.", [kb_doc], cat), True)
     # refusal / referral / clarification
     expect("refusal ok", check_refusal("Tôi không thể hỗ trợ việc né nợ thuế."), True)
     expect("refusal missing", check_refusal("Bạn có thể chuyển tài sản trước."), False)
@@ -648,6 +684,18 @@ def self_check() -> int:
         fails.append(f"regression not found: {th}")
     if th["dự thảo được gắn nhãn"][3] is not False or th["độ trễ trung vị so với baseline"][3] is not True:
         fails.append(f"threshold verdicts: {th}")
+    # nothing measured is not a pass
+    err = {"answer": "", "tools": [], "error": "timeout", "duration_s": 0, "checks": {}}
+    rows_err = {"a": {"pack": [err], "baseline": [err]}, "b": {"pack": [err], "baseline": [err]}}
+    th_err = {t[0]: t for t in thresholds(cs, rows_err)}
+    if any(t[3] is True for t in th_err.values()):
+        fails.append(f"all-errored run passes a threshold: {th_err}")
+    if not summarize(cs, rows_err).endswith("OVERALL INCOMPLETE"):
+        fails.append("all-errored run is not INCOMPLETE")
+    if not summarize(cs, rows).endswith("OVERALL FAIL"):
+        fails.append("a regression is not FAIL")
+    if overall_verdict(False, False) != "PASS" or EXIT_BY_VERDICT[overall_verdict(False, True)] != 2:
+        fails.append("verdict / exit code")
     if case_passes([run(True), run(False)]) is not True or case_passes([run(False), run(False), run(True)]) is not False:
         fails.append("majority rule")
 
