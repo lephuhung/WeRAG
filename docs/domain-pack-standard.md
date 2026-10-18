@@ -44,7 +44,7 @@ Gói nằm trong repo tại `domain-packs/<name>/` và được nhúng vào bina
 
 Lý do chọn nhúng thay vì tải lên lúc chạy:
 - Gói luôn phải được viết lại (mục 5) và đi kèm tool Go (lớp d) — tool Go đằng nào cũng cần build lại.
-- Review qua git diff + test kiểm định dạng (mục 3.4) thay cho installer agent đọc text của bên thứ ba trong sandbox (bề mặt prompt injection).
+- Review qua git diff + test kiểm định dạng (mục 3.4) thay cho installer agent (LLM) tự đọc và cài skill trong sandbox — SuperAdmin duyệt trên diff, không phụ thuộc một bước cài do model điều khiển.
 - Không cần sandbox, không cần object storage để đọc tài nguyên.
 
 Đường tải lên lúc chạy (dựa trên `tenant_skill_catalog` đã lưu archive) để sau, khi có nhu cầu gói không cần mã.
@@ -113,7 +113,7 @@ Mọi gói trong `domain-packs/` phải qua test:
 - manifest đọc bằng struct riêng với `KnownFields(true)` (sai chính tả trường = lỗi); áp luôn `Skill.Validate` hiện có;
 - `required_tools` không chứa tool luôn-bật;
 - tệp được duyệt cả trên FS nhúng lẫn thư mục nguồn (go:embed bỏ qua tệp `.`/`_`);
-- **lint** (không phải cổng an toàn, review tay vẫn bắt buộc): mẫu nghi prompt injection ("bỏ qua hướng dẫn", "ignore previous", "system prompt"), tên tool không thuộc `required_tools` ∪ tool luôn-bật.
+- **lint** (công cụ hỗ trợ SuperAdmin duyệt, không thay review tay): mẫu nghi prompt injection ("bỏ qua hướng dẫn", "ignore previous", "system prompt"), tên tool không thuộc `required_tools` ∪ tool luôn-bật.
 
 ## 4. Quy tắc 4+1 lớp
 
@@ -127,18 +127,18 @@ Mọi gói trong `domain-packs/` phải qua test:
 
 ### 4.1 Tính toán: backend hay sandbox
 
-Hai loại mã, hai nơi chạy:
+Gói và skill đều do SuperAdmin duyệt trước khi thêm, nên nơi chạy **không** chọn theo độ tin cậy của người viết mà theo tính chất phép tính:
 
 | | Tool Go trong backend | Script trong sandbox |
 | --- | --- | --- |
 | Dùng cho | phép tính có công thức cố định, đầu vào có schema (so sánh thuế, tính hạn, lệ phí, quy đổi) | xử lý dữ liệu / tạo tệp không đoán trước được (Excel, Word, biểu đồ từ dữ liệu người dùng, đối chiếu bảng kê), cần thư viện (pandas, openpyxl, OCR) |
-| Ai viết | đội WeRAG viết lại từ script gốc, review như mọi mã backend | mã của gói, có thể từ bên thứ ba |
-| Ràng buộc | hàm thuần: không I/O, không mạng, không DB, không đọc tệp; đầu vào có giới hạn (số dương, khoảng hợp lệ), không có giá trị mặc định cho tham số pháp lý (thuế suất, tỷ lệ); output có khối "Giả định"; unit test | manifest khai `requires_sandbox: true`; cài qua đường skill Tổ chức (snapshot image), SuperAdmin duyệt; kết quả chỉ là sản phẩm phụ — căn cứ, footer, nhãn dự thảo vẫn do mã ngoài sandbox |
-| Vị trí | `internal/agent/domaintools/<pack>/` (mỗi gói một package, không import service/repository), đăng ký qua `required_tools` | snapshot image của sandbox config |
+| Vì sao | model chỉ điền tham số theo schema, không tự ghép dòng lệnh (không thể quên tham số rồi rơi vào mặc định); kết quả ổn định, có unit test; khối "Giả định" do mã tạo; không phụ thuộc sandbox, không thêm độ trễ khởi động | lệnh do model ghép **lúc chạy** từ câu hỏi và tệp người dùng tải lên — thứ SuperAdmin không duyệt trước được (tệp tải lên có thể chứa câu lệnh chèn). Sandbox giới hạn hậu quả khi model bị dẫn sai |
+| Ràng buộc | hàm thuần: không I/O, không mạng, không DB, không đọc tệp; đầu vào có giới hạn (số dương, khoảng hợp lệ), không có giá trị mặc định cho tham số pháp lý (thuế suất, tỷ lệ); output có khối "Giả định"; unit test | kết quả chỉ là sản phẩm phụ — căn cứ, footer, nhãn dự thảo vẫn do mã ngoài sandbox |
+| Vị trí | `internal/agent/domaintools/<pack>/` (mỗi gói một package, không import service/repository); khai trong `required_tools`, đăng ký trong `AvailableToolDefinitions`/`registerTools`, bật qua `allowed_tools` của agent | skill Tổ chức (snapshot image của sandbox config), cài và duyệt bởi SuperAdmin |
 
-Lý do tool Go chạy trong backend mà không cần sandbox: sandbox tồn tại để cách ly **mã không tin cậy hoặc tuỳ ý** (mã bên thứ ba, lệnh do model ghép). Tool Go là mã đã review, hàm thuần, chi phí micro-giây — cách ly nó không thêm an toàn, chỉ thêm độ trễ và điểm hỏng. Cái giá thật là **gắn kết**: mỗi gói có tool thì thêm mã vào binary lõi và đổi công thức phải build lại backend. Giữ cái giá đó nhỏ bằng ranh giới package ở trên; nếu sau này nhiều gói chỉ cần công thức đơn giản, cân nhắc tool công thức khai báo (công thức trong manifest, bộ đánh giá biểu thức an toàn) thay vì viết Go cho từng gói.
+Cái giá của tool Go là **gắn kết**: mỗi gói có tool thì thêm mã vào binary lõi và đổi công thức phải build lại backend. Giữ cái giá đó nhỏ bằng ranh giới package ở trên; nếu sau này nhiều gói chỉ cần công thức đơn giản, cân nhắc tool công thức khai báo (công thức trong manifest, bộ đánh giá biểu thức an toàn) thay vì viết Go cho từng gói.
 
-Gói `requires_sandbox` chưa được hỗ trợ ở giai đoạn 1–2 (gói nhúng không chạy script); làm khi có gói đầu tiên cần nó (ví dụ Excel add-in).
+**Gói cần script sandbox chưa được hỗ trợ ở giai đoạn 1–2.** Hiện gói nhúng cấm `scripts/`, tệp thực thi, và `scripts/`/`shell_exec`/`$WEKNORA_SKILL_DIR` trong SKILL.md; manifest decode strict nên trường `requires_sandbox` chưa tồn tại (khai hôm nay = lỗi khởi động). Khi có gói đầu tiên cần (ví dụ Excel add-in): thêm `requires_sandbox` vào `Metadata`, script nằm ở một skill Tổ chức riêng (snapshot image), SKILL.md của gói chỉ nêu tên skill đó, và nới các lệnh cấm tương ứng cho đúng trường hợp này.
 
 ## 5. Checklist nhập skill của bên thứ ba
 
