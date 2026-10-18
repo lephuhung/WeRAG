@@ -22,6 +22,7 @@ import type { KnowledgeReferenceItem } from "@/components/chat/references-drawer
  * silently desyncs the next rotation). Embed streams never refresh. */
 import { refreshAccessToken } from "../api-client.ts";
 import { ChatStreamError, parseErrorEnvelope } from "./chat-errors.ts";
+import { clientChannel } from "./client-channel.ts";
 
 export type StreamChunk = {
   id?: string;
@@ -178,7 +179,7 @@ function buildChatBody(params: StreamParams, isAgentChat: boolean, isEmbed: bool
       : {}),
     ...(params.abbreviationAskWords?.length ? { recheck_words: params.abbreviationAskWords } : {}),
     ...(params.documentTemplateRequest ? { document_template_request: params.documentTemplateRequest } : {}),
-    channel: isEmbed ? "embed" : "web",
+    channel: isEmbed ? "embed" : clientChannel(),
   };
 }
 

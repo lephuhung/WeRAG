@@ -3,6 +3,7 @@
  * SSE streaming itself lives in ./stream.ts (postChat equivalent).
  */
 import { apiDel, apiDownload, apiGet, apiPost, apiPut, type ApiRequestOptions } from "@/lib/api-client";
+import { clientChannel } from "./client-channel.ts";
 
 // ---- sessions ---------------------------------------------------------------
 
@@ -276,7 +277,7 @@ export function steerSession(
     expected_assistant_message_id: expectedAssistantMessageId,
     steer_id: steerId,
     mentioned_items: mentionedItems,
-    channel: "web",
+    channel: clientChannel(),
     delivery,
   });
 }
