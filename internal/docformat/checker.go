@@ -293,6 +293,8 @@ func Check(ctx context.Context, content []byte, opts Options) *Report {
 	if err != nil {
 		return &Report{Source: opts.SourceName, Error: err.Error()}
 	}
+	// a văn bản của Đảng (party.go), whichever segmenter labelled it
+	markParty(l, seg)
 	requested := strings.ToLower(strings.TrimSpace(opts.DocumentType))
 	if requested == "" {
 		requested = "auto"
@@ -300,6 +302,10 @@ func Check(ctx context.Context, content []byte, opts Options) *Report {
 	used := requested
 	if requested == "auto" || requested == "detect" {
 		used = seg.DetectedType
+	} else if IsPartyType(seg.DetectedType) {
+		// a party document is never checked by NĐ30: a named NĐ30 type
+		// gets its party counterpart
+		used = PartySlugFor(requested)
 	}
 	scope, err := resolveScope(opts.Scope, requested, seg)
 	if err != nil {
@@ -346,8 +352,12 @@ func Check(ctx context.Context, content []byte, opts Options) *Report {
 }
 
 // ruleSetName is the rule set Check applies to a document of type used:
-// its own when one exists, else the shared base.
+// its own when one exists, else the shared base; a party type always
+// names itself (LoadRuleSet gives it _dang_base when it has no file).
 func ruleSetName(used string) string {
+	if IsPartyType(used) {
+		return used
+	}
 	for _, t := range AvailableTypes() {
 		if t == used {
 			return used

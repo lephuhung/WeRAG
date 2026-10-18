@@ -119,6 +119,8 @@ func measuredFix(rule *RuleCheck) string {
 		return "Chỉnh lại trong Page Setup cho đúng quy định."
 	case "page_number":
 		return "Đặt số trang ở giữa phần đầu trang (header), không hiện ở trang đầu."
+	case "mark_below":
+		return "Thêm dấu, đường kẻ theo quy định ngay dưới thành phần này."
 	}
 	return "Sửa theo quy định trên."
 }
@@ -133,7 +135,7 @@ func measuredFindings(r *Report, status string) []reportFinding {
 		if c.Status != status {
 			continue
 		}
-		rule := "Theo NĐ30: " + UserDesc(c)
+		rule := "Theo " + ruleSource(r) + ": " + UserDesc(c)
 		var lines []string
 		for _, ev := range c.Evidence {
 			txt, ok := ev["text"]
@@ -157,7 +159,7 @@ func measuredFindings(r *Report, status string) []reportFinding {
 		}
 		var fix string
 		if present {
-			fix = "Bổ sung thành phần này đúng vị trí theo NĐ30."
+			fix = "Bổ sung thành phần này đúng vị trí theo " + ruleSource(r) + "."
 		} else {
 			fix = measuredFix(rs.CheckByID(c.ID))
 		}
@@ -203,7 +205,7 @@ func judgedFindings(items []JudgmentItem, sev string) []reportFinding {
 			}
 			group := ComponentName(f.Component)
 			if f.Component == "" {
-				group = checklistTitles[it.Item]
+				group = it.Title
 			}
 			out = append(out, reportFinding{group, findingText(f.Rule, f.Line, f.Fix)})
 		}

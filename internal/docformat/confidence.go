@@ -24,7 +24,7 @@ var luuRe = regexp.MustCompile(`^[-–—+•*]?\s*LUU\b`)
 
 // headComponents sit in the head block; tailComponents in the tail block.
 var (
-	headComponents = map[string]bool{"quoc_hieu": true, "tieu_ngu": true, "co_quan_chu_quan": true,
+	headComponents = map[string]bool{"quoc_hieu": true, "tieu_ngu": true, "tieu_de_dang": true, "co_quan_chu_quan": true,
 		"co_quan_ban_hanh": true, "so_ky_hieu": true, "dia_danh_ngay_thang": true, "trich_yeu": true,
 		"tham_quyen_ban_hanh": true, "can_cu": true, "kinh_gui": true, "do_mat": true, "do_khan": true,
 		"chi_dan_luu_hanh": true}

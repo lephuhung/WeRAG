@@ -111,6 +111,9 @@ func ScopeOf(seg *Segmentation, detectedType string) (string, string) {
 	if seg == nil {
 		return ScopeTechnical, "không bóc tách được thành phần"
 	}
+	if IsPartyType(detectedType) {
+		return partyScope(seg, detectedType)
+	}
 	found := func(k string) bool { return seg.Comp(k).Found }
 	if so := seg.Comp("so_ky_hieu"); so.Found && qpplYearRe.MatchString(fold(so.Text)) {
 		name := "chưa rõ loại"
@@ -156,6 +159,22 @@ func ScopeOf(seg *Segmentation, detectedType string) (string, string) {
 		return ScopeTechnical, "không có quốc hiệu, số ký hiệu và khối ký (phần thân, biểu mẫu hoặc bảng)"
 	}
 	return ScopeFull, fmt.Sprintf("văn bản hành chính loại %q", detectedType)
+}
+
+// partyScope classifies a văn bản của Đảng (party.go) — never by the NĐ30
+// tests: attached with the "kèm theo" line and no số or khối ký of its
+// own; full with the tiêu đề and a số ký hiệu or a khối ký; technical
+// otherwise.
+func partyScope(seg *Segmentation, docType string) (string, string) {
+	found := func(k string) bool { return seg.Comp(k).Found }
+	if line := KemTheoLine(seg); line != "" && (!found("so_ky_hieu") || !found("signature")) {
+		return ScopeAttached, fmt.Sprintf("văn bản của Đảng ban hành kèm theo (%q), không có số ký hiệu hoặc khối ký riêng",
+			truncateRunes(line, 100))
+	}
+	if found("tieu_de_dang") && (found("so_ky_hieu") || found("signature")) {
+		return ScopeFull, fmt.Sprintf("văn bản của Đảng loại %q (%s)", PartyTypeName(docType), PartyGuide)
+	}
+	return ScopeTechnical, "văn bản của Đảng nhưng không có tiêu đề cùng số ký hiệu hoặc khối ký (" + PartyGuide + ")"
 }
 
 var (
@@ -288,11 +307,26 @@ func scopedSegmentation(l *Layout, seg *Segmentation, scope string) *Segmentatio
 // components were not checked.
 const scopeChecksNote = "Không kiểm tra thành phần thể thức vì văn bản không thuộc 29 loại văn bản hành chính (Điều 7 NĐ30); chọn loại văn bản để kiểm tra đầy đủ."
 
+// partyScopeChecksNote is scopeChecksNote for a văn bản của Đảng.
+const partyScopeChecksNote = "Không kiểm tra thành phần thể thức vì văn bản của Đảng thiếu tiêu đề cùng số ký hiệu hoặc khối ký (" + PartyGuide + "); chọn loại văn bản để kiểm tra đầy đủ."
+
 // scopeNames are the scopes as the reports name them.
 var scopeNames = map[string]string{
 	ScopeFull:      "đầy đủ (văn bản hành chính)",
 	ScopeTechnical: "kỹ thuật trình bày",
 	ScopeAttached:  "văn bản ban hành kèm theo",
+}
+
+// ScopeLabel names the report's scope for the user: the full scope of a
+// văn bản của Đảng is not a văn bản hành chính's.
+func (r *Report) ScopeLabel() string {
+	if r == nil || r.Scope == nil {
+		return ScopeName(ScopeFull)
+	}
+	if r.Party() && r.Scope.Used == ScopeFull {
+		return "đầy đủ (văn bản của Đảng)"
+	}
+	return ScopeName(r.Scope.Used)
 }
 
 // ScopeName names a scope for the user.
@@ -313,7 +347,7 @@ func BuildScopedEvaluation(r *Report, items []JudgmentItem) string {
 	warns := append(measuredFindings(r, StatusWarn), judgedFindings(items, "warn")...)
 	errs = append(errs, judgedFindings(items, "error")...)
 	b.WriteString("## Kết luận\n")
-	fmt.Fprintf(&b, "Phạm vi kiểm tra: **%s** — %s.\n", ScopeName(sc.Used), sc.Reason)
+	fmt.Fprintf(&b, "Phạm vi kiểm tra: **%s** — %s.\n", r.ScopeLabel(), sc.Reason)
 	if len(errs) > 0 {
 		fmt.Fprintf(&b, "**Chưa đạt kỹ thuật trình bày**: %d lỗi cần sửa", len(errs))
 	} else {
@@ -328,7 +362,11 @@ func BuildScopedEvaluation(r *Report, items []JudgmentItem) string {
 		line := strings.TrimPrefix(ChecklistLine(it), fmt.Sprintf("%d. ", it.Item))
 		fmt.Fprintf(&b, "- %s\n", line)
 	}
-	b.WriteString(scopeChecksNote + "\n")
+	if r.Party() {
+		b.WriteString(partyScopeChecksNote + "\n")
+	} else {
+		b.WriteString(scopeChecksNote + "\n")
+	}
 
 	b.WriteString("\n## Lỗi (bắt buộc sửa)\n")
 	if len(errs) == 0 {

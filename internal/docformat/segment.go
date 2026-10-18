@@ -76,7 +76,8 @@ var (
 		`CHANH\s+AN|VIEN\s+TRUONG|UY\s+BAN\s+NHAN\s+DAN|HOI\s+DONG\s+NHAN\s+DAN|` +
 		`HOI\s+DONG\s+QUAN\s+TRI|THU\s+TRUONG|CUC\s+TRUONG|GIAM\s+DOC|` +
 		`TRUONG\s+BAN|CHINH\s+PHU|BAN\s+THUONG\s+VU|BAN\s+CHAP\s+HANH)\b`)
-	sigOpenRe = regexp.MustCompile(`^(TM|KT|TL|TUQ|Q)\s*\.|` +
+	// "T/M", "K/T", "T/L" open a party khối ký (Hướng dẫn 36-HD/VPTW)
+	sigOpenRe = regexp.MustCompile(`^(TM|KT|TL|TUQ|Q)\s*\.|^(T/M|K/T|T/L)\s|` +
 		`^(KY\s+DUYET|QUYEN|KIEM\s+NGHIEM|CHU\s+TICH|PHO\s+CHU\s+TICH|` +
 		`THU\s+TUONG|PHO\s+THU\s+TUONG|BO\s+TRUONG|PHO\s+BO\s+TRUONG|` +
 		`GIAM\s+DOC|PHO\s+GIAM\s+DOC|THU\s+TRUONG|PHO\s+THU\s+TRUONG|` +
@@ -170,7 +171,7 @@ func lineSplit(p *Para) []int {
 		return nil
 	}
 	for _, k := range content {
-		if f := fold(lines[k]); quocHieuLineRe.MatchString(f) || tieuNguRe.MatchString(f) {
+		if f := fold(lines[k]); quocHieuLineRe.MatchString(f) || tieuNguRe.MatchString(f) || partyTitleRe.MatchString(f) {
 			return content
 		}
 	}
@@ -570,7 +571,7 @@ func banHanhLineCount(lines []leftLine) int {
 }
 
 func isHeaderLine(f string) bool {
-	return quocHieuRe.MatchString(f) || tieuNguRe.MatchString(f) ||
+	return quocHieuRe.MatchString(f) || tieuNguRe.MatchString(f) || partyTitleRe.MatchString(f) ||
 		diaDanhRe.MatchString(f) || soKyHieuRe.MatchString(f)
 }
 
@@ -589,7 +590,7 @@ func isHeading(el element, f string) bool {
 	if el.zone != ZoneFull || (p.InTable && p.TableLayout == "columns") {
 		return false
 	}
-	if quocHieuRe.MatchString(f) || tieuNguRe.MatchString(f) || diaDanhRe.MatchString(f) {
+	if quocHieuRe.MatchString(f) || tieuNguRe.MatchString(f) || diaDanhRe.MatchString(f) || partyTitleRe.MatchString(f) {
 		return false
 	}
 	if trichVVRe.MatchString(f) {
@@ -682,6 +683,9 @@ func Segment(l *Layout) *Segmentation {
 		return seg
 	}
 	hEnd := headerEnd(els)
+	// a văn bản của Đảng (party.go): tiêu đề instead of quốc hiệu, the
+	// trích yếu of a công văn under the số without "V/v"
+	party := partyHeader(els[:hEnd])
 
 	// ---- header: left column (cơ quan, số), right column
 	var left []leftLine
@@ -692,7 +696,7 @@ func Segment(l *Layout) *Segmentation {
 			continue
 		}
 		idx := el.para.Index
-		if chiDanRe.MatchString(f) {
+		if chiDanRe.MatchString(f) || (party && partyChiDanRe.MatchString(f)) {
 			seg.add("chi_dan_luu_hanh", idx, el.text, el.zone, hi, el.sub)
 			continue
 		}
@@ -708,6 +712,8 @@ func Segment(l *Layout) *Segmentation {
 			continue
 		}
 		switch {
+		case partyTitleRe.MatchString(f):
+			seg.add("tieu_de_dang", idx, el.text, el.zone, hi, el.sub)
 		case tieuNguRe.MatchString(f):
 			seg.add("tieu_ngu", idx, el.text, el.zone, hi, el.sub)
 		case quocHieuRe.MatchString(f):
@@ -721,10 +727,14 @@ func Segment(l *Layout) *Segmentation {
 			seg.add("trich_yeu", idx, el.text, el.zone, hi, el.sub)
 			trichOpened = true
 		case el.zone == ZoneLeft || (el.zone == ZoneFull && pLeftish(el.para)) ||
-			(el.zone == ZoneFull && !seg.Comp("quoc_hieu").Found):
+			(el.zone == ZoneFull && !seg.Comp("quoc_hieu").Found && !seg.Comp("tieu_de_dang").Found):
 			switch {
 			case trichOpened:
 				seg.add("trich_yeu", idx, el.text, ZoneLeft, hi, el.sub)
+			case party && seg.Comp("so_ky_hieu").Found && !looksAgency(el.text, f) && partyCongVanLine(seg, el):
+				// HD36 ô 5b: a party công văn's trích yếu, no "V/v"
+				seg.add("trich_yeu", idx, el.text, ZoneLeft, hi, el.sub)
+				trichOpened = true
 			case seg.Comp("so_ky_hieu").Found && !looksAgency(el.text, f):
 				seg.add("header_left_other", idx, el.text, ZoneLeft, hi, el.sub)
 			default:
@@ -879,7 +889,7 @@ func Segment(l *Layout) *Segmentation {
 			if isRight(el) || isDiaChi(fold(el.text)) {
 				continue
 			}
-			if t := strings.TrimSpace(el.text); runeLen(t) <= 12 && kyHieuSTRe.MatchString(t) {
+			if t := strings.TrimSpace(el.text); runeLen(t) <= 12 && (kyHieuSTRe.MatchString(t) || (party && partyKyHieuSTRe.MatchString(t))) {
 				kyHieuK = k
 			}
 			break // only the last left line of the nơi nhận block
@@ -914,6 +924,9 @@ func Segment(l *Layout) *Segmentation {
 		case kinhGuiRe.MatchString(f):
 			seg.add("kinh_gui", p.Index, el.text, el.zone, pos, el.sub)
 		case canCuRe.MatchString(f) && !seg.Comp("noi_dung").Found:
+			seg.add("can_cu", p.Index, el.text, ZoneFull, pos, el.sub)
+		case party && partyCanCu(seg, el, f):
+			// HD36: "- Căn cứ …;" lines, upright
 			seg.add("can_cu", p.Index, el.text, ZoneFull, pos, el.sub)
 		case canCuMore(seg, el, f):
 			// "Nhằm …;", "Theo đề nghị của …;" continue the căn cứ block
@@ -953,6 +966,7 @@ func Segment(l *Layout) *Segmentation {
 	seg.addFooterDiaChi(l)
 	seg.Bounds = blockBounds(els, seg, hEnd, bodyStart, lastBody, noiNhan, sigOpen,
 		hEnd > 0 || trichOpened || trichStart >= 0)
+	markParty(l, seg)
 	return seg
 }
 
@@ -1062,6 +1076,41 @@ func canCuMore(seg *Segmentation, el element, f string) bool {
 		return false
 	}
 	return !resolutionRe.MatchString(f) && !articleRe.MatchString(f)
+}
+
+// partyCongVanLine: a left-column line under a party số ký hiệu opens a
+// công văn's trích yếu (ô 5b) when the ký hiệu is a công văn's (CV) or has
+// no code, or when the line is set like one (italic, 12 pt or less); a
+// nghị quyết's stray line there leaves its heading alone.
+func partyCongVanLine(seg *Segmentation, el element) bool {
+	switch partyTypeFromSymbol(seg.Comp("so_ky_hieu").Text) {
+	case "", "dang_cong_van":
+		return true
+	}
+	p := el.para
+	return isTrue(p.Italic) || (p.SizePt != nil && *p.SizePt <= 12)
+}
+
+// partyCanCu: a căn cứ line of a party document — "- Căn cứ …;" opening
+// the block (HD36 prints căn cứ upright, often as a dashed list), or a
+// line ending in ";" or "," right after it, until the first Điều or the
+// resolution line.
+func partyCanCu(seg *Segmentation, el element, f string) bool {
+	if seg.Comp("noi_dung").Found {
+		return false
+	}
+	bare := strings.TrimLeft(f, "-–—+ ")
+	if canCuRe.MatchString(bare) {
+		return true
+	}
+	if !seg.Comp("can_cu").Found {
+		return false
+	}
+	t := strings.TrimSpace(el.text)
+	if !strings.HasSuffix(t, ";") && !strings.HasSuffix(t, ",") {
+		return false
+	}
+	return !resolutionRe.MatchString(bare) && !articleRe.MatchString(bare)
 }
 
 // addFooterDiaChi reads ô 13 from the page-1 footer when the body has none:

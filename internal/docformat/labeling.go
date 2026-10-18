@@ -32,6 +32,7 @@ type ComponentDef struct {
 var Components = []ComponentDef{
 	{"quoc_hieu", "Quốc hiệu: 'CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM', đầu trang, cột phải."},
 	{"tieu_ngu", "Tiêu ngữ: 'Độc lập - Tự do - Hạnh phúc', ngay dưới quốc hiệu."},
+	{"tieu_de_dang", "Tiêu đề 'ĐẢNG CỘNG SẢN VIỆT NAM' của văn bản của Đảng (Hướng dẫn 36-HD/VPTW): góc phải, dòng đầu, thay cho quốc hiệu; văn bản của Đảng không có quốc hiệu, tiêu ngữ."},
 	{"co_quan_chu_quan", "Tên cơ quan chủ quản trực tiếp — một cơ quan KHÁC, cấp trên của cơ quan ban hành — cột trái đầu trang, phía trên tên cơ quan ban hành. VD: 'UBND TỈNH THỪA THIÊN HUẾ' phía trên 'SỞ Y TẾ'. Văn bản của UBND, HĐND, Bộ, cơ quan trung ương thường KHÔNG có cơ quan chủ quản."},
 	{"co_quan_ban_hanh", "Tên cơ quan, tổ chức ban hành văn bản (in đậm), cột trái đầu trang. Tên dài xuống dòng thì MỌI dòng đều là co_quan_ban_hanh: 'ỦY BAN NHÂN DÂN' + 'THÀNH PHỐ HUẾ' là MỘT tên (UBND thành phố Huế), không phải chủ quản + ban hành; tương tự 'HỘI ĐỒNG NHÂN DÂN' + 'TỈNH ...'."},
 	{"so_ky_hieu", "Số, ký hiệu văn bản: 'Số: 12/QĐ-UBND', cột trái dưới tên cơ quan."},
@@ -587,6 +588,8 @@ func ApplyLabels(l *Layout, reply *Reply, task *Task) (*Segmentation, *LabelDiag
 	if dt != "" && dt != seg.DetectedType {
 		diag.DocumentType = map[string]string{"llm": dt, "used": seg.DetectedType}
 	}
+	// a văn bản của Đảng (party.go): its tiêu đề and type
+	markParty(l, seg)
 	if reply.NotND30 {
 		seg.ModelNotND30 = reply.NotND30Reason
 		if seg.ModelNotND30 == "" {

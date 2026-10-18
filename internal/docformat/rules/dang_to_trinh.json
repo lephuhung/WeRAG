@@ -1,0 +1,52 @@
+{
+  "type": "dang_to_trinh",
+  "label": "Tờ trình của Đảng (Hướng dẫn 36-HD/VPTW)",
+  "required_components": [
+    "tieu_de_dang",
+    "co_quan_ban_hanh",
+    "so_ky_hieu",
+    "dia_danh_ngay_thang",
+    "trich_yeu",
+    "noi_dung",
+    "signature",
+    "noi_nhan",
+    "kinh_gui"
+  ],
+  "optional_components": [
+    "co_quan_chu_quan",
+    "do_mat",
+    "do_khan",
+    "phu_luc"
+  ],
+  "checks": [
+    {
+      "id": "trich_yeu.type_line",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "text",
+      "op": "regex",
+      "value": "TỜ TRÌNH|TO TRINH",
+      "mode": "any",
+      "desc": "Tên loại văn bản 'TỜ TRÌNH' một dòng riêng, trên trích yếu",
+      "severity": "warn"
+    }
+  ],
+  "judgment": [
+    {
+      "id": "yeu_cau_rieng",
+      "requirements": [
+        {
+          "check": "component_regex",
+          "component": "noi_nhan",
+          "skip": 1,
+          "mode": "first",
+          "regex": "NHU TREN",
+          "when": "kinh_gui",
+          "desc": "Có \"Kính gửi\" thì dòng đầu nơi nhận là \"- Như trên,\"",
+          "severity": "error",
+          "fix": "Ghi \"- Như trên,\" ở dòng đầu nơi nhận."
+        }
+      ]
+    }
+  ]
+}

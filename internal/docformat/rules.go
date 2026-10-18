@@ -25,8 +25,12 @@ import (
 // matches regex; a run property is read from the runs covering the match),
 // page_setup (a property of the first section, a range widened by ±0.5 mm;
 // later sections are reported, not judged), page_number (a centred header PAGE
-// field and no number on page 1) and stray_chars (a symbol typed inside a
-// word in any paragraph).
+// field and no number on page 1), stray_chars (a symbol typed inside a
+// word in any paragraph) and mark_below (the line under a component is a
+// mark: the "*" and "-----" of a văn bản của Đảng).
+// A type file's check with "disabled": true drops the base check of its id.
+// A party type (party.go) merges over rules/_dang_base.json instead of
+// _base.json; one without its own file gets _dang_base alone.
 // Rules that need judgment — signing authority, Nơi nhận, wording — are
 // the "judgment" section of the same files, decided by judgment.go; what
 // those rules cannot decide goes to a model with the document-type skills
@@ -56,6 +60,16 @@ type RuleCheck struct {
 	// technical, attached; none means the full scope only. A type's rule
 	// replacing a base one without its own scope keeps the base's.
 	Scope []string `json:"scope,omitempty"`
+	// Disabled in a type file drops the base check of the same id.
+	Disabled bool `json:"disabled,omitempty"`
+	// mark_below: an underlined component counts as marked (UnderlineOK);
+	// a blank paragraph under it is a drawn line the reader cannot see,
+	// skipped (SkipBlank).
+	UnderlineOK bool `json:"underline_ok,omitempty"`
+	SkipBlank   bool `json:"skip_blank,omitempty"`
+	// Only (mark_below): judge only a line under the component matching
+	// it (an off count of hyphens), skip otherwise.
+	Only string `json:"only,omitempty"`
 }
 
 // RuleSet is a document type's merged rules.
@@ -100,17 +114,26 @@ func ParaSatisfies(p *Para, c RuleCheck) (bool, error) {
 	return compare(c.Op, actual, c.Value)
 }
 
-// AvailableTypes lists the document types with their own rule set.
+// AvailableTypes lists the document types with their own rule set: the
+// NĐ30 types with a file, and every party type (a party type without a
+// file of its own has the shared _dang_base rules).
 func AvailableTypes() []string {
 	entries, err := rulesFS.ReadDir("rules")
 	if err != nil {
 		return nil
 	}
+	seen := map[string]bool{}
 	var out []string
 	for _, e := range entries {
 		n := e.Name()
 		if strings.HasSuffix(n, ".json") && !strings.HasPrefix(n, "_") {
 			out = append(out, strings.TrimSuffix(n, ".json"))
+			seen[out[len(out)-1]] = true
+		}
+	}
+	for _, t := range PartyTypes() {
+		if !seen[t] {
+			out = append(out, t)
 		}
 	}
 	sort.Strings(out)
@@ -130,9 +153,16 @@ func loadRuleFile(name string) (map[string]json.RawMessage, error) {
 }
 
 // LoadRuleSet returns the rule set of docType merged over _base ("base"
-// returns _base alone).
+// returns _base alone); a party type merges over _dang_base ("dang" and
+// "_dang_base" return it alone, a party type without a file of its own
+// gets it under the type's name).
 func LoadRuleSet(docType string) (*RuleSet, error) {
-	baseRaw, err := loadRuleFile("_base")
+	baseName := "_base"
+	party := IsPartyType(docType) || docType == partyBaseRules
+	if party {
+		baseName = partyBaseRules
+	}
+	baseRaw, err := loadRuleFile(baseName)
 	if err != nil {
 		return nil, err
 	}
@@ -144,12 +174,16 @@ func LoadRuleSet(docType string) (*RuleSet, error) {
 	if err := remarshal(baseRaw, &base); err != nil {
 		return nil, err
 	}
-	if docType == "base" || docType == "_base" || docType == "generic" {
+	if docType == "base" || docType == "_base" || docType == "generic" ||
+		docType == PartyGeneric || docType == partyBaseRules {
 		return &base, nil
 	}
 	specRaw, err := loadRuleFile(docType)
 	if err != nil {
-		return nil, err
+		if !party {
+			return nil, err
+		}
+		specRaw = map[string]json.RawMessage{"label": json.RawMessage(strconvQuote(partyLabel(docType)))}
 	}
 	for k, v := range specRaw {
 		if k != "checks" && k != "anchors" && k != "judgment" {
@@ -171,17 +205,20 @@ func LoadRuleSet(docType string) (*RuleSet, error) {
 	rs.Checks = nil
 	for _, c := range base.Checks {
 		if o, ok := own[c.ID]; ok {
+			delete(own, c.ID)
+			if o.Disabled {
+				continue
+			}
 			if o.Scope == nil {
 				o.Scope = c.Scope
 			}
 			rs.Checks = append(rs.Checks, o)
-			delete(own, c.ID)
 		} else {
 			rs.Checks = append(rs.Checks, c)
 		}
 	}
 	for _, c := range spec.Checks {
-		if _, ok := own[c.ID]; ok {
+		if _, ok := own[c.ID]; ok && !c.Disabled {
 			rs.Checks = append(rs.Checks, c)
 		}
 	}
@@ -198,6 +235,11 @@ func LoadRuleSet(docType string) (*RuleSet, error) {
 		rs.Label = spec.Label
 	}
 	return &rs, nil
+}
+
+func strconvQuote(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
 
 func remarshal(in map[string]json.RawMessage, out any) error {
@@ -450,6 +492,17 @@ func paraAttr(p *Para, prop string) any {
 		return optNum(p.LineSpacingPt)
 	case "line_spacing_multiple":
 		return optNum(p.LineSpacingMult)
+	case "para_spacing_pt":
+		// the space between paragraphs: the larger of before / after
+		switch {
+		case p.SpaceBeforePt == nil && p.SpaceAfterPt == nil:
+			return nil
+		case p.SpaceBeforePt == nil:
+			return *p.SpaceAfterPt
+		case p.SpaceAfterPt == nil:
+			return *p.SpaceBeforePt
+		}
+		return math.Max(*p.SpaceBeforePt, *p.SpaceAfterPt)
 	case "page_break_before":
 		return p.PageBreakBefore
 	case "in_table":
@@ -1016,6 +1069,8 @@ func Evaluate(l *Layout, seg *Segmentation, rs *RuleSet) []CheckResult {
 			r = evalPageNumber(l, c)
 		case "stray_chars":
 			r = evalStrayChars(l, c)
+		case "mark_below":
+			r, err = evalMarkBelow(l, seg, c)
 		default:
 			r = evalOut{status: StatusSkip, note: fmt.Sprintf("unknown check kind '%s'", kind)}
 		}
@@ -1063,4 +1118,105 @@ func evalStrayChars(l *Layout, c RuleCheck) evalOut {
 		status = failStatus(c.Severity)
 	}
 	return evalOut{status: status, actual: n, evidence: evidence}
+}
+
+// markBelowScan bounds how many paragraphs of its column under a component
+// mark_below reads.
+const markBelowScan = 3
+
+// evalMarkBelow (kind mark_below): the first non-empty line under the
+// component, in its column, matches regex on the trimmed raw text — the
+// "*" under a party cơ quan ban hành, the "-----" under its trích yếu, the
+// rule under its tiêu đề (Hướng dẫn 36-HD/VPTW). A line of the component's
+// own last paragraph matching it counts ("ĐẢNG CỘNG SẢN VIỆT NAM⏎____"), so
+// does an underlined component with underline_ok. With skip_blank, a blank
+// paragraph right under it — where a drawn line sits, which the layout
+// does not read — is a skip, not a finding.
+func evalMarkBelow(l *Layout, seg *Segmentation, c RuleCheck) (evalOut, error) {
+	re, err := regexp.Compile(c.Regex)
+	if err != nil {
+		return evalOut{}, err
+	}
+	var only *regexp.Regexp
+	if c.Only != "" {
+		if only, err = regexp.Compile(c.Only); err != nil {
+			return evalOut{}, err
+		}
+	}
+	comp := seg.Comp(c.Component)
+	last, zone := -1, comp.Zone
+	for i, p := range comp.Paras {
+		if p > last {
+			last = p
+			if i < len(comp.Zones) {
+				zone = comp.Zones[i]
+			}
+		}
+	}
+	if !comp.Found || last < 0 || last >= len(l.Paragraphs) {
+		return evalOut{status: StatusSkip, note: fmt.Sprintf("component '%s' not found", c.Component)}, nil
+	}
+	// the text of p in the component's column
+	column := func(p *Para) (string, bool) {
+		switch {
+		case p.Zone == ZoneSplit && zone == ZoneRight:
+			return p.RightText, true
+		case p.Zone == ZoneSplit && zone == ZoneLeft:
+			return p.LeftText, true
+		case zone == ZoneFull || zone == "" || p.Zone == zone:
+			return p.Text, true
+		}
+		return "", false
+	}
+	if t, _ := column(l.Paragraphs[last]); t != "" {
+		for _, ln := range strings.Split(t, "\n") {
+			if ln = strings.TrimSpace(ln); re.MatchString(ln) {
+				return evalOut{status: StatusPass, actual: ln}, nil
+			}
+			if only != nil && only.MatchString(ln) {
+				return evalOut{status: failStatus(c.Severity), actual: ln}, nil
+			}
+		}
+	}
+	if c.UnderlineOK {
+		views, _ := comp.ParaViews(l)
+		under := len(views) > 0
+		for _, p := range views {
+			if strings.TrimSpace(p.Text) != "" && !isTrue(p.Underline) {
+				under = false
+			}
+		}
+		if under {
+			return evalOut{status: StatusPass, actual: "underline"}, nil
+		}
+	}
+	seen := 0
+	for i := last + 1; i < len(l.Paragraphs) && seen < markBelowScan; i++ {
+		p := l.Paragraphs[i]
+		t, ok := column(p)
+		if !ok {
+			continue
+		}
+		seen++
+		t = strings.TrimSpace(t)
+		if t == "" {
+			if c.SkipBlank && seen == 1 {
+				return evalOut{status: StatusSkip, note: "dòng dưới để trống (đường kẻ vẽ bằng hình không đo được): rà soát trên bản in"}, nil
+			}
+			continue
+		}
+		first, _, _ := strings.Cut(t, "\n")
+		if first = strings.TrimSpace(first); re.MatchString(first) {
+			return evalOut{status: StatusPass, actual: first}, nil
+		}
+		if only != nil && !only.MatchString(first) {
+			return evalOut{status: StatusSkip, actual: first, note: "không có dòng để xét"}, nil
+		}
+		return evalOut{status: failStatus(c.Severity), actual: first,
+			evidence: []map[string]any{{"para": p.Index, "text": truncateRunes(first, 80), "actual": first}}}, nil
+	}
+	if only != nil {
+		return evalOut{status: StatusSkip, note: "không có dòng để xét"}, nil
+	}
+	return evalOut{status: failStatus(c.Severity), actual: nil}, nil
 }

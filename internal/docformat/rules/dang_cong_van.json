@@ -1,0 +1,133 @@
+{
+  "type": "dang_cong_van",
+  "label": "Công văn của Đảng (Hướng dẫn 36-HD/VPTW)",
+  "required_components": [
+    "tieu_de_dang",
+    "co_quan_ban_hanh",
+    "so_ky_hieu",
+    "dia_danh_ngay_thang",
+    "trich_yeu",
+    "noi_dung",
+    "signature",
+    "noi_nhan",
+    "kinh_gui"
+  ],
+  "optional_components": [
+    "co_quan_chu_quan",
+    "do_mat",
+    "do_khan",
+    "phu_luc"
+  ],
+  "checks": [
+    {
+      "id": "trich_yeu.align",
+      "disabled": true
+    },
+    {
+      "id": "trich_yeu.type.size",
+      "disabled": true
+    },
+    {
+      "id": "trich_yeu.type.bold",
+      "disabled": true
+    },
+    {
+      "id": "trich_yeu.summary.size",
+      "disabled": true
+    },
+    {
+      "id": "trich_yeu.summary.bold",
+      "disabled": true
+    },
+    {
+      "id": "trich_yeu.dashes",
+      "disabled": true
+    },
+    {
+      "id": "trich_yeu.dashes.count",
+      "disabled": true
+    },
+    {
+      "id": "trich_yeu.zone",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "zone",
+      "op": "eq",
+      "value": "left",
+      "desc": "Trích yếu công văn đặt dưới số và ký hiệu (HD36 ô 5b)",
+      "severity": "error"
+    },
+    {
+      "id": "trich_yeu.size",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "size_pt",
+      "op": "range",
+      "value": [
+        12.0,
+        12.0
+      ],
+      "mode": "majority",
+      "desc": "Trích yếu công văn cỡ chữ 12 (HD36 Phụ lục 3)",
+      "severity": "warn"
+    },
+    {
+      "id": "trich_yeu.italic",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "italic",
+      "op": "eq",
+      "value": true,
+      "mode": "majority",
+      "desc": "Trích yếu công văn in thường, nghiêng",
+      "severity": "warn"
+    },
+    {
+      "id": "trich_yeu.bold",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "bold",
+      "op": "ne",
+      "value": true,
+      "mode": "majority",
+      "desc": "Trích yếu công văn không in đậm",
+      "severity": "warn"
+    }
+  ],
+  "judgment": [
+    {
+      "id": "yeu_cau_rieng",
+      "requirements": [
+        {
+          "check": "component_regex",
+          "component": "trich_yeu",
+          "mode": "none",
+          "regex": "^CONG VAN$",
+          "desc": "Công văn không có dòng tên loại \"CÔNG VĂN\"",
+          "severity": "error",
+          "fix": "Bỏ dòng \"CÔNG VĂN\"; trích yếu đặt dưới số ký hiệu."
+        },
+        {
+          "check": "component_regex",
+          "component": "trich_yeu",
+          "mode": "none",
+          "regex": "^(V\\s*/\\s*V|VE VIEC)\\b",
+          "desc": "Trích yếu công văn của Đảng không ghi \"V/v\" (Hướng dẫn 36-HD/VPTW mục 1.5)",
+          "severity": "error",
+          "fix": "Bỏ \"V/v\", chỉ ghi nội dung trích yếu (ví dụ \"Chuẩn bị hội nghị trực tuyến …\")."
+        },
+        {
+          "check": "component_regex",
+          "component": "noi_nhan",
+          "skip": 1,
+          "mode": "first",
+          "regex": "NHU TREN",
+          "when": "kinh_gui",
+          "desc": "Có \"Kính gửi\" thì dòng đầu nơi nhận là \"- Như trên,\"",
+          "severity": "error",
+          "fix": "Ghi \"- Như trên,\" ở dòng đầu nơi nhận."
+        }
+      ]
+    }
+  ]
+}
