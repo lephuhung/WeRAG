@@ -80,6 +80,7 @@ func TestGenericScopeRequest(t *testing.T) {
 // The gate's decision table: long/short × anchored/generic × task clear ×
 // answered before × config off.
 func TestDocumentScopeClarificationDecision(t *testing.T) {
+	freshSessionStores(t)
 	freshDocProfiles(t)
 	long := newFakeWorkspace(clarifyDocx(t, 200))
 	short := newFakeWorkspace(clarifyDocx(t, 30))

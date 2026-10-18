@@ -46,6 +46,20 @@ func freshDocProfiles(t *testing.T) {
 	t.Cleanup(func() { docProfiles, docProfileSchedule = prevStore, prevSchedule })
 }
 
+// freshSessionStores empties the in-memory per-session stores (scopes,
+// answered scope cards, asked broad topics) and empties them again after
+// the test, so a test sees no state from an earlier run (go test -count).
+func freshSessionStores(t *testing.T) {
+	t.Helper()
+	clear := func() {
+		docScopes.Clear()
+		docClarified.Clear()
+		broadQueries.Clear()
+	}
+	clear()
+	t.Cleanup(clear)
+}
+
 // waitProfile waits for the document's background profile job to end.
 func waitProfile(t *testing.T, documentID string) *types.DocumentProfile {
 	t.Helper()

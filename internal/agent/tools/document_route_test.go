@@ -49,6 +49,7 @@ func (f *fakeRouter) Complete(_ context.Context, msgs []docformat.Message) (stri
 }
 
 func TestRouteTier1PicksTheClearDocumentAndSection(t *testing.T) {
+	freshSessionStores(t)
 	freshDocProfiles(t)
 	ws := routeWorkspace(t)
 	model := &fakeRouter{}
@@ -79,6 +80,7 @@ func TestRouteTier1PicksTheClearDocumentAndSection(t *testing.T) {
 }
 
 func TestRouteTier2AsksTheModelWhenTier1IsUnclear(t *testing.T) {
+	freshSessionStores(t)
 	freshDocProfiles(t)
 	ws := routeWorkspace(t)
 	model := &fakeRouter{reply: "```json\n{\"documents\":[{\"handle\":\"vb1\",\"sections\":[\"Điều 2. Tổ chức thực hiện\",\"Điều 9\"]}],\"task\":\"summary\",\"confidence\":0.8}\n```"}

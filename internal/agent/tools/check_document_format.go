@@ -706,7 +706,15 @@ func (t *CheckDocumentFormatTool) Recheck(ctx context.Context) {
 	savedAt := *ws.LastSavedAt
 	ctx = context.WithoutCancel(ctx)
 	go func() {
-		defer formatRechecking.Delete(t.documentID)
+		defer func() {
+			formatRechecking.Delete(t.documentID)
+			// a save that came while this ran was turned away as busy:
+			// follow it now (only a newer one, so this cannot loop)
+			cur, err := t.workspace.Get(ctx, tenantID, t.sessionID, t.documentID)
+			if err == nil && cur != nil && cur.LastSavedAt != nil && cur.LastSavedAt.After(savedAt) {
+				t.Recheck(ctx)
+			}
+		}()
 		content, _, revision, err := t.source(ctx, tenantID, t.documentID)
 		if err != nil || prev == nil {
 			return
@@ -715,8 +723,8 @@ func (t *CheckDocumentFormatTool) Recheck(ctx context.Context) {
 			kept := *prev
 			kept.CheckedSavedAt = &savedAt
 			kept.Revision = revision
-			formatChecks.storeState(ctx, t.documentID, &kept)
-			// keep the shown result as long as the state that points to it
+			// keep the shown result as long as the state that points to it;
+			// the report first, so a reader of the new state gets its report
 			docKey := formatCheckDocumentKey(t.documentID)
 			if r := formatChecks.get(ctx, docKey); r != nil {
 				// the findings' anchors still hold only when the bytes are
@@ -727,6 +735,7 @@ func (t *CheckDocumentFormatTool) Recheck(ctx context.Context) {
 				}
 				formatChecks.put(ctx, r, docKey)
 			}
+			formatChecks.storeState(ctx, t.documentID, &kept)
 			logger.Infof(ctx, "check_document_format: save of document %s kept the format; evaluation still current", t.documentID)
 			return
 		}

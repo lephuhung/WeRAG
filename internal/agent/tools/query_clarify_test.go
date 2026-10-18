@@ -58,6 +58,7 @@ func TestStripLeadingDocType(t *testing.T) {
 }
 
 func TestBroadQueryAsksOverAWideTopic(t *testing.T) {
+	freshSessionStores(t)
 	cat := &fakeTitles{n: 60}
 	card := BroadQueryClarification(context.Background(), cat, "s-wide", BroadQueryInput{Query: "cho tôi biết quy định về luật đất đai"})
 	if card == nil {

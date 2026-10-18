@@ -205,8 +205,9 @@ func (t *QueryKnowledgeGraphTool) Execute(ctx context.Context, args json.RawMess
 
 	wg.Wait()
 
-	// Collect and deduplicate results
-	seenChunks := make(map[string]*types.SearchResult)
+	// Collect and deduplicate results, in the order the KBs returned them
+	seenChunks := make(map[string]bool)
+	var allResults []*types.SearchResult
 	var errors []string
 	graphConfigs := make(map[string]graphConfigSummary)
 	kbCounts := make(map[string]int)
@@ -239,19 +240,16 @@ func (t *QueryKnowledgeGraphTool) Execute(ctx context.Context, args json.RawMess
 		}
 		kbCounts[kbID] = len(result.results)
 		for _, r := range result.results {
-			if _, seen := seenChunks[r.ID]; !seen {
-				seenChunks[r.ID] = r
+			if !seenChunks[r.ID] {
+				seenChunks[r.ID] = true
+				allResults = append(allResults, r)
 			}
 		}
 	}
 
-	// Convert map to slice and sort by score
-	allResults := make([]*types.SearchResult, 0, len(seenChunks))
-	for _, result := range seenChunks {
-		allResults = append(allResults, result)
-	}
-
-	sort.Slice(allResults, func(i, j int) bool {
+	// By score; graph chunks all score 1, so they keep the graph's order
+	// (a map walk here shuffled them from one call to the next)
+	sort.SliceStable(allResults, func(i, j int) bool {
 		return allResults[i].Score > allResults[j].Score
 	})
 

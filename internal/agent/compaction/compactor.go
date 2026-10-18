@@ -370,6 +370,11 @@ func (c *Compactor) streamSummary(
 			return "", "", fmt.Errorf("summarization stalled: no output for %s", timeout)
 		case chunk, ok := <-stream:
 			if !ok {
+				// a stream that ends because the turn was stopped holds a cut
+				// summary, not a finished one
+				if err := ctx.Err(); err != nil {
+					return "", "", err
+				}
 				if streamErr != "" {
 					return "", finishReason, fmt.Errorf("summarization stream error: %s", streamErr)
 				}
