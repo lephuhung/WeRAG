@@ -19,6 +19,7 @@ import {
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { copyToClipboard } from "@/lib/clipboard";
+import { formatDate } from "@/lib/datetime";
 
 const CAPABILITIES: { id: TenantAPIKeyCapability; labelEn: string; labelVi: string }[] = [
   { id: "retrieve", labelEn: "Retrieve", labelVi: "Truy xuất" },
@@ -36,7 +37,7 @@ const CAPABILITIES: { id: TenantAPIKeyCapability; labelEn: string; labelVi: stri
 function fmtDate(v?: string): string {
   if (!v) return "-";
   try {
-    return new Date(v).toLocaleDateString();
+    return formatDate(v) || v;
   } catch {
     return v;
   }

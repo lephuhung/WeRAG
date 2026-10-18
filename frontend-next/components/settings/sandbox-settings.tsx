@@ -17,6 +17,7 @@ import {
 } from "@/lib/api/sandbox";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { formatDate } from "@/lib/datetime";
 
 /* Same default the Vue editor pre-fills (SandboxConfigEditorDrawer.vue). */
 const DEFAULT_DOCKER_IMAGE = "wechatopenai/weknora-sandbox:main";
@@ -396,7 +397,7 @@ export function SandboxSettings() {
                       {ep}
                     </td>
                     <td className="py-3.5 px-4 text-xs text-muted">
-                      {cfg.created_at ? new Date(cfg.created_at).toLocaleDateString() : "—"}
+                      {cfg.created_at ? formatDate(cfg.created_at) : "—"}
                     </td>
                     <td className="py-3.5 px-4 text-right space-x-1">
                       <button

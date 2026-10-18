@@ -28,13 +28,14 @@ import {
   type UsageQuote,
   type UsageScopeKind,
 } from "@/lib/api/usage";
+import { formatDateTime } from "@/lib/datetime";
 
 const MONTH_CHOICES = [1, 3, 6, 12];
 
 function fmtDate(v: string | null | undefined): string {
   if (!v) return "";
   const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" });
+  return Number.isNaN(d.getTime()) ? "" : formatDateTime(d);
 }
 
 function statusKey(s: UsageOrder["status"]): LocaleKey {

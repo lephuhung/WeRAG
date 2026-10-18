@@ -20,6 +20,7 @@ import { useT } from "@/lib/i18n";
 import { useRouter } from "next/navigation";
 import { copyToClipboard } from "@/lib/clipboard";
 import { InviteMemberModal } from "@/components/invite-member-modal";
+import { formatDate } from "@/lib/datetime";
 
 export function TenantMembers() {
   const { t } = useT();
@@ -438,7 +439,7 @@ export function TenantMembers() {
 
                     {/* Joined date */}
                     <td className="py-3.5 px-4 text-muted text-xs">
-                      {m.joined_at ? new Date(m.joined_at).toLocaleDateString() : "—"}
+                      {m.joined_at ? formatDate(m.joined_at) : "—"}
                     </td>
 
                     {/* Actions */}

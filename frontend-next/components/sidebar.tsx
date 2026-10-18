@@ -25,6 +25,7 @@ import {
   IconSearch,
   IconTrash,
 } from "@/components/icons";
+import { vnDaysAgo } from "@/lib/datetime";
 
 const NAV = [
   { href: "/platform/creatChat", labelKey: "nav.newChat", icon: IconChat, match: ["/platform/creatChat", "/platform/chat"] },
@@ -41,9 +42,8 @@ function bucketOf(row: SessionRow): string {
   const ts = row.updated_at ?? row.created_at ?? "";
   const d = ts ? new Date(ts) : null;
   if (!d || Number.isNaN(d.getTime())) return "Older";
-  const now = new Date();
-  const day = (a: Date) => a.getFullYear() * 1000 + Math.floor(a.getMonth() * 30 + a.getDate());
-  const diff = day(now) - day(d);
+  // Calendar days in Vietnam time, whatever the viewer's zone.
+  const diff = vnDaysAgo(d);
   if (diff <= 0) return "Today";
   if (diff <= 1) return "Yesterday";
   if (diff <= 7) return "Last 7 days";

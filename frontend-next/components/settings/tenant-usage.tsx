@@ -20,6 +20,7 @@ import {
   type UsageSummary,
   type UsageTenantUsage,
 } from "@/lib/api/usage";
+import { formatDate } from "@/lib/datetime";
 
 export function TenantUsage() {
   const { t } = useT();
@@ -107,7 +108,7 @@ export function TenantUsage() {
           </Row>
           {sub.ends_at && (
             <Row label={t("tus.endsAt")} desc="">
-              <span className="caption text-body">{new Date(sub.ends_at).toLocaleDateString()}</span>
+              <span className="caption text-body">{formatDate(sub.ends_at)}</span>
             </Row>
           )}
           <Row label={sub.mode === "seat" ? t("tus.limitsPerSeat") : t("tus.limitsPool")} desc={t("tus.limitsDesc")}>
@@ -176,7 +177,7 @@ export function TenantUsage() {
                         {m?.username || m?.email || s.user_id}
                         {s.user_id === myId ? ` · ${t("tus.you")}` : ""}
                       </div>
-                      <div className="caption text-muted">{new Date(s.assigned_at).toLocaleDateString()}</div>
+                      <div className="caption text-muted">{formatDate(s.assigned_at)}</div>
                     </div>
                     {isAdmin && (
                       <button type="button" className="btn btn-outline btn-sm text-rose-600" disabled={busy} onClick={() => void run(() => revokeTenantSeat(tenantId, s.user_id))}>

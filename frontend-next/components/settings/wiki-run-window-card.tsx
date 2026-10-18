@@ -11,6 +11,7 @@ import {
 } from "@/lib/api/system";
 import { Toggle } from "@/components/settings/toggle";
 import { useT } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/datetime";
 
 export function WikiRunWindowCard({
   status,
@@ -19,7 +20,7 @@ export function WikiRunWindowCard({
   status: WikiRunWindowStatus;
   onSaved: () => void;
 }) {
-  const { t } = useT();
+  const { t, locale } = useT();
   const [draft, setDraft] = useState<WikiRunWindow>(status);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
@@ -54,13 +55,7 @@ export function WikiRunWindowCard({
       ? t("q.wikiWindowOpen")
       : t("q.wikiWindowClosed", {
           time: status.next_open
-            ? new Date(status.next_open).toLocaleString(undefined, {
-                timeZone: status.timezone,
-                hour: "2-digit",
-                minute: "2-digit",
-                day: "2-digit",
-                month: "2-digit",
-              })
+            ? formatDateTime(status.next_open, locale)
             : status.start,
         });
 

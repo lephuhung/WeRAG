@@ -26,6 +26,7 @@ import {
   type UsagePromoCode,
   type UsagePromoInput,
 } from "@/lib/api/usage";
+import { formatDateTime } from "@/lib/datetime";
 
 type BankForm = { bankBin: string; bankName: string; accountNo: string; accountName: string; orderTTLHours: string; contact: string };
 const emptyBank: BankForm = { bankBin: "", bankName: "", accountNo: "", accountName: "", orderTTLHours: "72", contact: "" };
@@ -42,7 +43,7 @@ function dateOf(v: string | null | undefined): string {
 function fmtDateTime(v: string | null | undefined): string {
   if (!v) return "";
   const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? "" : d.toLocaleString("vi-VN", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit", year: "numeric" });
+  return Number.isNaN(d.getTime()) ? "" : formatDateTime(d);
 }
 
 type PromoForm = { code: string; name: string; discount_type: "percent" | "amount"; discount_value: number; plan_ids: string[]; max_uses: number; starts_at: string; ends_at: string; is_active: boolean; note: string };

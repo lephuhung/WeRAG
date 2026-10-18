@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useT, type LocaleKey } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/datetime";
 import { useToast } from "@/components/toast";
 import { useConfirm } from "@/components/confirm-dialog";
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
@@ -69,7 +70,7 @@ export function RevisionHistoryPanel({
     const d = new Date(iso);
     return Number.isNaN(d.getTime())
       ? iso
-      : d.toLocaleString(locale === "vi" ? "vi-VN" : "en-GB", { dateStyle: "short", timeStyle: "short" });
+      : formatDateTime(d, locale);
   };
 
   const restore = async (rev: DocumentRevisionEntry, message: string) => {

@@ -237,7 +237,7 @@ func (s *temporaryDocumentService) Create(
 	document := &types.TemporaryDocument{
 		TenantID: tenantID, SessionID: sessionID, ResourceRef: resourceRef,
 		FileName: baseName, FileType: ext, MimeType: strings.TrimSpace(mimeType), FileSize: fileSize,
-		Status: types.TemporaryDocumentStatusUploaded, ExpiresAt: time.Now().Add(temporaryDocumentTTL()),
+		Status: types.TemporaryDocumentStatusUploaded, ExpiresAt: time.Now().UTC().Add(temporaryDocumentTTL()),
 		ProcessingOptions: types.JSON(optionsJSON),
 	}
 	if err := s.repo.Create(ctx, document); err != nil {
@@ -250,6 +250,19 @@ func (s *temporaryDocumentService) Create(
 			_ = s.fileService.DeleteFile(ctx, resourceRef)
 			return nil, fmt.Errorf("bind attachment resource: %w", err)
 		}
+	}
+	// An empty document opened to be written (editor tab) has nothing to
+	// parse: it is ready at once instead of failing in the parser and
+	// holding a parse slot of its owner.
+	if gate == types.InputGateDocument && ext == ".docx" && emptyDocx(data) {
+		now := time.Now()
+		err := s.repo.MarkReady(ctx, tenantID, document.ID, "", types.JSON("[]"), types.JSON("[]"), types.JSON("{}"), 0, 0, now)
+		if err == nil {
+			document.Status, document.ReadyAt = types.TemporaryDocumentStatusReady, &now
+			return document, nil
+		}
+		// the parser decides then, as for any other upload
+		logger.Warnf(ctx, "temporary document %s: mark the empty document ready: %v", document.ID, err)
 	}
 	payload, _ := json.Marshal(types.TemporaryDocumentTaskPayload{
 		TenantID: tenantID, DocumentID: document.ID, Initiator: types.TaskInitiatorFromContext(ctx),
@@ -591,9 +604,6 @@ func (s *temporaryDocumentService) parse(ctx context.Context, document *types.Te
 		request.ParserEngineOverrides = tenant.ParserEngineConfig.ToOverridesMap()
 	}
 	deps := docparser.ReaderDeps{Overrides: request.ParserEngineOverrides, Remote: s.documentReader}
-	if s.tenantService != nil {
-		deps.WeKnoraCloudCredentials = s.tenantService.GetWeKnoraCloudCredentials
-	}
 	reader, err := docparser.NewReader(ctx, parserEngine, strings.TrimPrefix(ext, "."), false, deps)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("parse document: %w", err)

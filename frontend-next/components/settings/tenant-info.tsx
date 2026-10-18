@@ -13,6 +13,7 @@ import { getCurrentUser } from "@/lib/api/auth";
 import { deleteTenant, fetchAllTenantMembers, leaveTenant, updateTenant, type TenantInfo as TenantRecord } from "@/lib/api/tenants";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/datetime";
 import { useConfirm } from "@/components/confirm-dialog";
 import { useRouter } from "next/navigation";
 
@@ -262,9 +263,7 @@ export function TenantInfo() {
         <Row label={t("tenant.createdAt")} desc={t("tenant.createdAtDesc")}>
           <span className="caption text-body">
             {info.created_at
-              ? new Intl.DateTimeFormat(locale === "vi" ? "vi-VN" : "en-US", {
-                  year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
-                }).format(new Date(info.created_at))
+              ? formatDateTime(info.created_at, locale)
               : "-"}
           </span>
         </Row>

@@ -23,6 +23,7 @@ import {
 import { Markdown } from "@/components/markdown";
 import { useTenantRole } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/datetime";
 import { IconDoc } from "@/components/icons";
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
 import { Modal } from "@/components/modal";
@@ -223,7 +224,7 @@ export function WikiPageView({
   onNavigate?: (slug: string) => void;
   canMutate?: boolean;
 }) {
-  const { t } = useT();
+  const { t, locale } = useT();
   const { isTenantAdmin } = useTenantRole();
   /* Wiki edits require BOTH the resource capability (own-tenant manage,
    * threaded from KbDetail) AND Tenant Admin authority in the active
@@ -425,7 +426,7 @@ export function WikiPageView({
                       v{r.version} · {r.edit_source || "pipeline"}
                     </div>
                     <div className="caption mt-0.5 text-muted">
-                      {r.created_at ? new Date(r.created_at).toLocaleString() : ""}
+                      {r.created_at ? formatDateTime(r.created_at, locale) : ""}
                     </div>
                   </div>
                   {canEditWiki && (

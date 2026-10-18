@@ -96,7 +96,7 @@ function ArtifactThumb({ item }: { item: ArtifactLibraryItem }) {
 }
 
 function ArtifactsInner() {
-  const { t } = useT();
+  const { t, locale } = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [category, setCategory] = useState<ArtifactCategory>("all");
@@ -342,7 +342,7 @@ function ArtifactsInner() {
                             {a.file_name}
                           </div>
                           <div className="caption mt-0.5 truncate text-muted">
-                            {formatArtifactSize(a.file_size)} · {formatArtifactDateTime(a.created_at)}
+                            {formatArtifactSize(a.file_size)} · {formatArtifactDateTime(a.created_at, locale)}
                           </div>
                           <Link
                             href={`/platform/chat/${a.session_id}`}

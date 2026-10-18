@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/modal";
 import { IconRefresh, IconSearch } from "@/components/icons";
 import { useT } from "@/lib/i18n";
+import { vnIntl } from "@/lib/datetime";
 import { useAuth } from "@/lib/auth";
 import { getCurrentUser } from "@/lib/api/auth";
 import {
@@ -102,7 +103,7 @@ function shortId(id: string): string {
 function formatTime(s: string | undefined, locale: string): string {
   if (!s) return "—";
   try {
-    return new Intl.DateTimeFormat(locale, {
+    return new Intl.DateTimeFormat(locale, vnIntl({
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -110,7 +111,7 @@ function formatTime(s: string | undefined, locale: string): string {
       minute: "2-digit",
       second: "2-digit",
       hour12: false,
-    }).format(new Date(s));
+    })).format(new Date(s));
   } catch {
     return s;
   }

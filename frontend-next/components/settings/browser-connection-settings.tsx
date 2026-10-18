@@ -11,9 +11,10 @@ import {
 } from "@/lib/api/browser";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useT } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/datetime";
 
 export function BrowserConnectionSettings() {
-  const { t } = useT();
+  const { t, locale } = useT();
   const [status, setStatus] = useState<BrowserAccountStatus | null>(null);
   const [pairingLink, setPairingLink] = useState("");
   const [loading, setLoading] = useState(true);
@@ -129,7 +130,7 @@ export function BrowserConnectionSettings() {
                 <span className="caption text-muted block text-xs mt-0.5">
                   {t("browser.device")}: {status.device.label || status.device.id} • {t("browser.lastSeen")}:{" "}
                   {status.device.last_seen_at
-                    ? new Date(status.device.last_seen_at).toLocaleTimeString()
+                    ? formatDateTime(status.device.last_seen_at, locale)
                     : t("browser.now")}
                 </span>
               )}

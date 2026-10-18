@@ -104,7 +104,7 @@ export function KbGrantForm({ overview, onDone }: { overview: KBAccessOverview; 
     try {
       await grantKBToTenant(overview.kb_id, {
         grantee_tenant_id: grantee,
-        ...(expires ? { expires_at: new Date(`${expires}T23:59:59`).toISOString() } : {}),
+        ...(expires ? { expires_at: `${expires}T23:59:59+07:00` } : {}),
       });
       setUnit("");
       setExpires("");

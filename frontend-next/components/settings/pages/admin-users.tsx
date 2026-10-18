@@ -17,6 +17,7 @@ import {
 } from "@/lib/api/system";
 import type { TenantRole } from "@/lib/api/tenants";
 import { ApiError } from "@/lib/api-client";
+import { formatDate } from "@/lib/datetime";
 
 const initials = (name: string) =>
   name
@@ -389,7 +390,7 @@ export default function SystemUsers() {
                 </td>
                 <td className="px-5 py-3.5 align-middle whitespace-nowrap">
                   <span className="caption text-muted">
-                    {u.created_at ? new Date(u.created_at).toLocaleDateString() : "—"}
+                    {u.created_at ? formatDate(u.created_at) : "—"}
                   </span>
                 </td>
                 <td

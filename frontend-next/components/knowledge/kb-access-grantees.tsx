@@ -14,6 +14,7 @@ import {
   type KBGrantee,
 } from "@/lib/kb-access";
 import { useT, type LocaleKey } from "@/lib/i18n";
+import { formatDate } from "@/lib/datetime";
 
 export function KbAccessGrantees({ overview, onChanged }: { overview: KBAccessOverview; onChanged: () => void }) {
   const { t } = useT();
@@ -88,7 +89,7 @@ export function KbAccessGrantees({ overview, onChanged }: { overview: KBAccessOv
                     {reason && <span className="caption ml-2 text-muted">({t(reason as LocaleKey)})</span>}
                     {g.expires_at && (
                       <span className="caption ml-2 text-muted">
-                        {t("kbAccess.until", { date: new Date(g.expires_at).toLocaleDateString() })}
+                        {t("kbAccess.until", { date: formatDate(g.expires_at) })}
                       </span>
                     )}
                   </div>

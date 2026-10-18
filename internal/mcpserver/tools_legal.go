@@ -197,7 +197,7 @@ LEFT JOIN LATERAL (
     FROM legal_document_relations r
     JOIN legal_documents o ON o.id = r.from_id
     WHERE r.to_id = d.id AND r.relation IN ('replaces', 'expires')
-      AND o.effective_on IS NOT NULL AND o.effective_on <= CURRENT_DATE
+      AND o.effective_on IS NOT NULL AND o.effective_on <= (NOW() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
     ORDER BY o.effective_on ASC
     LIMIT 1
 ) sup ON TRUE

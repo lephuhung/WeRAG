@@ -5,6 +5,7 @@ import { Modal } from "@/components/modal";
 import { Markdown } from "@/components/markdown";
 import { DocMentionIcon } from "@/components/doc-mention";
 import { useT } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/datetime";
 import { useToast } from "@/components/toast";
 import {
   DocumentWorkspaceError,
@@ -47,7 +48,7 @@ export function FormatCheckReportModal({
   /** Underlines the findings in the document (nothing is changed). */
   onMark?: () => Promise<void>;
 }) {
-  const { t } = useT();
+  const { t, locale } = useT();
   const [marking, setMarking] = useState(false);
   const [state, setState] = useState<
     { status: "loading" } | { status: "error" } | { status: "done"; report: DocumentFormatReport | null }
@@ -81,7 +82,7 @@ export function FormatCheckReportModal({
             <span className="caption rounded-full bg-surface-strong px-2 py-0.5 text-ink">{report.document_type_label}</span>
           )}
           {checkedAt && !Number.isNaN(checkedAt.getTime()) && (
-            <span className="caption">{t("docws.fcReportCheckedAt", { time: checkedAt.toLocaleString() })}</span>
+            <span className="caption">{t("docws.fcReportCheckedAt", { time: formatDateTime(checkedAt, locale) })}</span>
           )}
         </div>
       )}

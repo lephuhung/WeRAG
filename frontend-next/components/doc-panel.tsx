@@ -20,6 +20,7 @@ import {
   type TimelineSummary,
 } from "@/components/knowledge/processing-timeline";
 import { useT } from "@/lib/i18n";
+import { formatDate } from "@/lib/datetime";
 
 const STATUS_STYLE: Record<string, { label: string; cls: string; dot: string }> = {
   completed: { label: "Indexed", cls: "text-success", dot: "#16a34a" },
@@ -315,5 +316,5 @@ function fmtShortDate(v?: string): string {
   if (!v) return "";
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return v;
-  return d.toLocaleDateString(undefined, { year: "2-digit", month: "short", day: "numeric" });
+  return formatDate(d);
 }

@@ -3,16 +3,20 @@
 import { useMemo } from "react";
 import { useT } from "@/lib/i18n";
 import type { MessageDayActivity } from "@/lib/api/system";
+import { vnDayKey } from "@/lib/datetime";
 
 const CELL = 12;
 const GAP = 3;
 const WEEKDAY_ROWS = 7; // Mon..Sun
 
+/* Calendar days are Vietnam days. A day is carried as UTC midnight of its
+ * date so stepping and weekday maths never touch the viewer's zone. */
+function dayOf(key: string): Date {
+  return new Date(`${key}T00:00:00Z`);
+}
+
 function toISODate(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
+  return d.toISOString().slice(0, 10);
 }
 
 /* GitHub-style activity heatmap: one column per week (Mon→Sun rows),
@@ -30,15 +34,15 @@ export function MessageHeatmap({ days, data }: { days: number; data: MessageDayA
       total += d.count;
     }
 
-    // End on today; start `days-1` back, then rewind to the Monday of that week.
-    const end = new Date();
-    end.setHours(0, 0, 0, 0);
+    // End on today (Vietnam); start `days-1` back, then rewind to the Monday of that week.
+    const end = dayOf(vnDayKey(new Date()));
     const start = new Date(end);
-    start.setDate(start.getDate() - (days - 1));
-    // Align to Monday (getDay: 0=Sun..6=Sat)
-    const dow = (start.getDay() + 6) % 7;
-    start.setDate(start.getDate() - dow);
+    start.setUTCDate(start.getUTCDate() - (days - 1));
+    // Align to Monday (getUTCDay: 0=Sun..6=Sat)
+    const dow = (start.getUTCDay() + 6) % 7;
+    start.setUTCDate(start.getUTCDate() - dow);
 
+    const monthLabel = new Intl.DateTimeFormat(undefined, { month: "short", timeZone: "UTC" });
     const weeks: { date: string; count: number; future: boolean }[][] = [];
     const months: { index: number; label: string }[] = [];
     let prevMonth = -1;
@@ -55,11 +59,11 @@ export function MessageHeatmap({ days, data }: { days: number; data: MessageDayA
           count: byDate.get(iso)?.count ?? 0,
           future: cursor > end,
         });
-        cursor.setDate(cursor.getDate() + 1);
+        cursor.setUTCDate(cursor.getUTCDate() + 1);
       }
-      if (cursor.getMonth() !== prevMonth && week.some((c) => !c.future)) {
-        months.push({ index: w, label: cursor.toLocaleString(undefined, { month: "short" }) });
-        prevMonth = cursor.getMonth();
+      if (cursor.getUTCMonth() !== prevMonth && week.some((c) => !c.future)) {
+        months.push({ index: w, label: monthLabel.format(cursor) });
+        prevMonth = cursor.getUTCMonth();
       }
       weeks.push(week);
     }
@@ -129,7 +133,7 @@ export function MessageHeatmap({ days, data }: { days: number; data: MessageDayA
                 title={
                   cell.future
                     ? undefined
-                    : `${cell.date}: ${cell.count} ${t("stats.messages").toLowerCase()}`
+                    : `${cell.date.split("-").reverse().join("/")}: ${cell.count} ${t("stats.messages").toLowerCase()}`
                 }
                 className="rounded-[2px]"
                 style={{

@@ -39,6 +39,7 @@ import {
   IconMinusCircle,
   IconRefresh,
 } from "@/components/icons";
+import { vnParts } from "@/lib/datetime";
 
 /* Ported from frontend/src/components/knowledge-processing-timeline.vue:
  * Langfuse-style waterfall of the document processing pipeline
@@ -246,16 +247,19 @@ function formatTime(s?: string | null): string {
   if (Number.isNaN(ts)) return s;
   const d = new Date(ts);
   const ms = String(d.getMilliseconds()).padStart(3, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  const ss = String(d.getSeconds()).padStart(2, "0");
+  // Vietnam time, whatever the viewer's zone.
+  const p = vnParts(d);
+  if (!p) return s;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const hh = pad(p.hour);
+  const mm = pad(p.minute);
+  const ss = pad(p.second);
   /* Omit the year when it matches the current one; month+day always
    * shown so older traces stay unambiguous. */
-  const now = new Date();
-  const yyyy = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const datePart = yyyy === now.getFullYear() ? `${mo}-${dd}` : `${yyyy}-${mo}-${dd}`;
+  const yyyy = p.year;
+  const mo = pad(p.month);
+  const dd = pad(p.day);
+  const datePart = yyyy === vnParts(new Date())?.year ? `${mo}-${dd}` : `${yyyy}-${mo}-${dd}`;
   return `${datePart} ${hh}:${mm}:${ss}.${ms}`;
 }
 

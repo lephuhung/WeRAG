@@ -5,6 +5,7 @@ import { getWikiGraph, type WikiGraphData } from "@/lib/api/wiki";
 import { getEntityGraph, getLegalGraph, type EntityGraphResponse, type GraphView } from "@/lib/api/graph";
 import { GraphCanvas, RelationList, type CanvasEdge, type CanvasNode, type TypeStyle } from "@/components/graph-canvas";
 import { useT, type LocaleKey } from "@/lib/i18n";
+import { formatDate as vnFormatDate } from "@/lib/datetime";
 
 type GraphMode = "wiki" | "entity" | "legal";
 
@@ -313,7 +314,7 @@ function legalGroup(docType: string) {
 }
 
 function LegalGraph({ kbId, onOpenKnowledge }: { kbId: string; onOpenKnowledge?: (knowledgeId: string) => void }) {
-  const { t, locale } = useT();
+  const { t } = useT();
   const relationLabel = useRelationLabel();
   const [view, setView] = useState<GraphView | null>(null);
   const [error, setError] = useState("");
@@ -350,7 +351,7 @@ function LegalGraph({ kbId, onOpenKnowledge }: { kbId: string; onOpenKnowledge?:
     [view, relationLabel]
   );
   const formatDate = (iso?: string) =>
-    iso ? new Date(iso).toLocaleDateString(locale === "vi" ? "vi-VN" : "en-GB") : "—";
+    (iso && vnFormatDate(iso)) || "—";
 
   return (
     <GraphCanvas

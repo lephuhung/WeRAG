@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useT } from "@/lib/i18n";
+import { formatDateTime } from "@/lib/datetime";
 import { ApiError } from "@/lib/api-client";
 import {
   getKnowledgeDetails,
@@ -214,7 +215,7 @@ function ChunkCard({
   /* Reloads the page after a conflict so the reviewer sees the latest text. */
   onReload: () => Promise<void>;
 }) {
-  const { t } = useT();
+  const { t, locale } = useT();
   const editing = draft !== undefined;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -424,7 +425,7 @@ function ChunkCard({
                     <div className="flex items-center gap-2">
                       <span className="caption text-muted">
                         {t("lrev.c.revision", { n: r.revision })}
-                        {r.edited_at ? ` · ${new Date(r.edited_at).toLocaleString()}` : ""}
+                        {r.edited_at ? ` · ${formatDateTime(r.edited_at, locale)}` : ""}
                         {r.revision === chunk.content_revision ? ` · ${t("lrev.c.current")}` : ""}
                       </span>
                       {r.revision !== chunk.content_revision && (

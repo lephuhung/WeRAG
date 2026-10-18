@@ -30,6 +30,7 @@ import {
 } from "@/lib/api/memory";
 import { Toggle } from "@/components/settings/toggle";
 import { useT } from "@/lib/i18n";
+import { formatDate, vnDayKey } from "@/lib/datetime";
 
 export function MemoryPersonalSettings() {
   const { t } = useT();
@@ -190,7 +191,7 @@ export function MemoryPersonalSettings() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `memory-export-${new Date().toISOString().slice(0, 10)}.json`;
+        a.download = `memory-export-${vnDayKey(new Date())}.json`;
         a.click();
         URL.revokeObjectURL(url);
       }
@@ -488,7 +489,7 @@ export function MemoryPersonalSettings() {
 
                   <div className="flex items-center justify-between text-[11px] text-muted border-t border-hairline pt-2 mt-1">
                     <span>
-                      {t("memp.createdAt")}: {it.created_at ? new Date(it.created_at).toLocaleDateString() : "—"}
+                      {t("memp.createdAt")}: {it.created_at ? formatDate(it.created_at) : "—"}
                     </span>
                     <span>
                       {it.use_count > 0
@@ -542,7 +543,7 @@ export function MemoryPersonalSettings() {
                         {t("memp.mentions", { n: tp.hits })}
                       </td>
                       <td className="py-3 px-4 text-muted text-xs">
-                        {tp.last_seen_at ? new Date(tp.last_seen_at).toLocaleDateString() : "—"}
+                        {tp.last_seen_at ? formatDate(tp.last_seen_at) : "—"}
                       </td>
                       <td className="py-3 px-4 text-right space-x-1">
                         <button

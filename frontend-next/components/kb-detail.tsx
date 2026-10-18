@@ -54,6 +54,7 @@ import {
 } from "@/lib/kb-capabilities";
 import { getKBAccess } from "@/lib/api/kb-access";
 import { MyKBInvites } from "@/components/knowledge/my-kb-invites";
+import { formatDate } from "@/lib/datetime";
 
 /* Backend field is parse_status (types.Knowledge.go ParseStatus); values
  * are pending/processing/finalizing/completed/failed/cancelled. The port
@@ -1002,7 +1003,7 @@ function fmtShortDate(v?: string): string {
   if (!v) return "";
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return v;
-  return d.toLocaleDateString(undefined, { year: "2-digit", month: "short", day: "numeric" });
+  return formatDate(d);
 }
 
 /* Human file size for the metadata row. */

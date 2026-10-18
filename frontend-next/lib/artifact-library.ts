@@ -1,5 +1,7 @@
 /* Ported from frontend/src/utils/artifactLibrary.ts + sessionArtifacts.ts format helpers. */
 
+import { formatDateTime, vnDaysAgo } from "./datetime.ts";
+
 export type ArtifactCategory =
   | "all"
   | "document"
@@ -43,8 +45,8 @@ export type ArtifactDateGroup = "today" | "yesterday" | "last7Days" | "last30Day
 export function artifactDateGroup(raw: string, now: Date = new Date()): ArtifactDateGroup {
   const at = new Date(raw);
   if (Number.isNaN(at.getTime())) return "earlier";
-  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const days = Math.round((startOfDay(now) - startOfDay(at)) / 86_400_000);
+  // Calendar days in Vietnam time, whatever the viewer's zone.
+  const days = vnDaysAgo(at, now);
   if (days <= 0) return "today";
   if (days === 1) return "yesterday";
   if (days < 7) return "last7Days";
@@ -78,10 +80,10 @@ export function formatArtifactSize(size: number | undefined | null): string {
   return unit === 0 ? `${value} ${units[unit]}` : `${value.toFixed(1)} ${units[unit]}`;
 }
 
-export function formatArtifactDateTime(raw: string | undefined | null): string {
+/** "14h05 - 16/10/2026" in Vietnam time. */
+export function formatArtifactDateTime(raw: string | undefined | null, locale: string = "vi"): string {
   if (!raw) return "—";
   const parsed = new Date(raw);
   if (Number.isNaN(parsed.getTime())) return String(raw);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())} ${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+  return formatDateTime(parsed, locale);
 }

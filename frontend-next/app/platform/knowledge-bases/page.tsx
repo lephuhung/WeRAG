@@ -27,6 +27,7 @@ import {
   IconPlus,
   IconSearch,
 } from "@/components/icons";
+import { formatDate } from "@/lib/datetime";
 
 const ORBS = ["mint", "lavender", "peach", "sky", "rose"] as const;
 const PUBLIC_PAGE_SIZE = 12;
@@ -544,5 +545,5 @@ function fmtShortDate(v?: string): string {
   if (!v) return "";
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return v;
-  return d.toLocaleDateString(undefined, { year: "2-digit", month: "short", day: "numeric" });
+  return formatDate(d);
 }

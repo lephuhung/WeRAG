@@ -119,10 +119,11 @@ func (s *statsService) loadMessageStats(ctx context.Context, stats *types.System
 
 	// Calendar-day bucket expression, per dialect. Everything returns a
 	// 'YYYY-MM-DD' string so the result scans into MessageDayActivity.Date.
+	// Postgres buckets by the Vietnam day: the session runs in UTC.
 	dayExpr := "date(created_at)"
 	switch db.Dialector.Name() {
 	case "postgres":
-		dayExpr = "to_char(created_at, 'YYYY-MM-DD')"
+		dayExpr = "to_char(created_at AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYYY-MM-DD')"
 	case "mysql":
 		dayExpr = "DATE(created_at)"
 	}
