@@ -1,0 +1,3622 @@
+{
+ "name": "2026-10-18",
+ "note": "onlyoffice, judge Qwen3.6-35B-A3B-FP8, tenant 10003, --parallel 2; 56 scenarios; HEAD fa1dd3a6 + uncommitted eval files",
+ "source": "results/baseline-20261018/20261018-024004/results.json",
+ "summary": {
+  "PASS": 46,
+  "WARN": 5,
+  "FAIL": 5
+ },
+ "scenarios": {
+  "content_meta": {
+   "group": "content",
+   "title": "Hỏi số ký hiệu, người ký, ngày của văn bản đang mở",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Văn bản này số bao nhiêu, do ai ký, ngày nào?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions all of ['12/QT-SNV', 'Trần Minh Quang']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['01 tháng 10 năm 2026', '01/10/2026', '1/10/2026']",
+       "status": "PASS"
+      },
+      {
+       "label": "none of ['rewrite_paragraphs', 'insert_paragraphs', 'apply_format_fixes'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "none of ['search_knowledge', 'web_search'] called",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "content_figures": {
+   "group": "content",
+   "title": "Hỏi số liệu nằm trong văn bản",
+   "status": "WARN",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Năm 2025 Sở tiếp nhận bao nhiêu văn bản đến và tỷ lệ giải quyết đúng hạn là bao nhiêu?",
+     "status": "WARN",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['4.812', '4812']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['99,5', '99.5']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "none of ['search_knowledge', 'web_search'] called",
+       "status": "WARN"
+      }
+     ]
+    }
+   ]
+  },
+  "content_summary_short": {
+   "group": "content",
+   "title": "Tóm tắt văn bản ngắn (không hỏi lại phạm vi)",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Tóm tắt văn bản này",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "display_type document_scope_clarification absent",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['5 bước', 'năm bước', 'Bước 1']",
+       "status": "PASS"
+      },
+      {
+       "label": "none of ['rewrite_paragraphs', 'insert_paragraphs', 'apply_format_fixes', 'draw_diagram', 'generate_illustration'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer does not offer to edit the document itself",
+       "status": "PASS"
+      },
+      {
+       "label": "LLM judge: Bản tóm tắt phải trung thành với văn bản (quy trình 5 bước tiếp nhận v",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "long_clarify": {
+   "group": "long",
+   "title": "Văn bản dài + yêu cầu chung → hỏi lại phạm vi (thẻ chọn việc)",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Tóm tắt văn bản này",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "display_type document_scope_clarification present",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['khá dài']",
+       "status": "PASS"
+      },
+      {
+       "label": "none of ['read_document_outline', 'find_in_documents', 'rewrite_paragraphs', 'insert_paragraphs', 'apply_format_fixes'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "card offers summary task",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "long_whole": {
+   "group": "long",
+   "title": "Văn bản dài + 'toàn bộ' → tóm tắt, không hỏi lại",
+   "status": "FAIL",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Tóm tắt toàn bộ văn bản này",
+     "status": "FAIL",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "display_type document_scope_clarification absent",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer covers >= 3/5 expected points",
+       "status": "PASS"
+      },
+      {
+       "label": "answer does not offer to edit the document itself",
+       "status": "PASS"
+      },
+      {
+       "label": "LLM judge: Bản tóm tắt phải bám theo các mục của báo cáo 268/BC-SNV (chỉ đạo điều",
+       "status": "FAIL"
+      }
+     ]
+    }
+   ]
+  },
+  "long_section": {
+   "group": "long",
+   "title": "Văn bản dài + hỏi một mục cụ thể → trả lời có số liệu",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Tóm tắt mục II (kết quả công tác văn thư) của văn bản",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "display_type document_scope_clarification absent",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['3.624', '3624']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['2.118', '2118']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "long_find_figure": {
+   "group": "long",
+   "title": "Văn bản dài: tìm số liệu ở cuối văn bản (ngoài cửa sổ ngữ cảnh)",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Tổng kinh phí thực hiện tập huấn nghiệp vụ trong báo cáo là bao nhiêu và có bao nhiêu lượt người tham dự?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "display_type document_scope_clarification absent",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['2,5 tỷ', '2.5 tỷ']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['320']",
+       "status": "PASS"
+      },
+      {
+       "label": "one of ['find_in_documents', 'read_document_outline'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "spell_document": {
+   "group": "spelling",
+   "title": "Kiểm tra chính tả toàn văn bản → gạch chân, không tự sửa",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Kiểm tra lỗi chính tả trong văn bản này",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "tool check_spelling called",
+       "status": "PASS"
+      },
+      {
+       "label": "check_spelling.scope is document",
+       "status": "PASS"
+      },
+      {
+       "label": ">= 3 'mark' op(s)",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "spelling recall >= 60% of seeded errors",
+       "status": "PASS"
+      },
+      {
+       "label": "none of ['rewrite_paragraphs'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['triển khai', 'triển']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer does not offer to edit the document itself",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 2,
+     "query": "Sửa các lỗi chính tả đó giúp tôi",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "no edit op unless a tool produced one; never claims a fix without ops",
+       "status": "PASS"
+      },
+      {
+       "label": "LLM judge: Trợ lý chỉ được nói đã sửa khi thực sự có thao tác sửa (replaceText/re",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "spell_selection": {
+   "group": "spelling",
+   "title": "Bôi đen một đoạn + 'soát lỗi chính tả' → check_spelling được ép gọi đầu tiên",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Soát lỗi chính tả đoạn này",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "tool check_spelling called first",
+       "status": "PASS"
+      },
+      {
+       "label": "check_spelling.scope is selection",
+       "status": "PASS"
+      },
+      {
+       "label": "check_spelling.mark is not false (mistakes are always underlined)",
+       "status": "PASS"
+      },
+      {
+       "label": ">= 1 'mark' op(s)",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "spelling recall >= 60% of seeded errors",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "format_check_and_fix": {
+   "group": "format",
+   "title": "Kiểm tra thể thức NĐ30 → báo lỗi; sửa chỉ sau khi đồng ý",
+   "status": "WARN",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Kiểm tra thể thức văn bản này theo Nghị định 30/2020/NĐ-CP",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "tool check_document_format called",
+       "status": "PASS"
+      },
+      {
+       "label": "none of ['apply_format_fixes'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "no 'formatParagraph' op",
+       "status": "PASS"
+      },
+      {
+       "label": "no 'pageSetup' op",
+       "status": "PASS"
+      },
+      {
+       "label": "brief reply when the format check just started in background",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 2,
+     "query": "Kết quả kiểm tra thể thức thế nào? Liệt kê các lỗi đã phát hiện.",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer covers >= 3/5 expected points",
+       "status": "PASS"
+      },
+      {
+       "label": "none of ['apply_format_fixes'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "no 'formatParagraph' op",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 3,
+     "query": "Sửa các lỗi thể thức đó giúp tôi",
+     "status": "WARN",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "tool apply_format_fixes called",
+       "status": "PASS"
+      },
+      {
+       "label": "no 'formatParagraph' op",
+       "status": "PASS"
+      },
+      {
+       "label": "no 'pageSetup' op",
+       "status": "PASS"
+      },
+      {
+       "label": "no 'insertAfter' op",
+       "status": "PASS"
+      },
+      {
+       "label": "apply_format_fixes result mentions one of ['KẾ HOẠCH', 'CHƯA SỬA', 'CHƯA đồng ý', 'chưa sửa']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer avoids ['đã sửa xong', 'đã áp dụng']",
+       "status": "PASS"
+      },
+      {
+       "label": "apply_format_fixes.apply is false/absent (model obeys review-first by itself)",
+       "status": "WARN"
+      }
+     ]
+    },
+    {
+     "step": 4,
+     "query": "Đồng ý, áp dụng các sửa đó",
+     "status": "WARN",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "tool apply_format_fixes called",
+       "status": "PASS"
+      },
+      {
+       "label": "apply_format_fixes.apply is true after consent",
+       "status": "PASS"
+      },
+      {
+       "label": ">= 1 'formatParagraph' op(s)",
+       "status": "WARN"
+      }
+     ]
+    }
+   ]
+  },
+  "rewrite_formal": {
+   "group": "rewrite",
+   "title": "Bôi đen + 'viết lại trang trọng hơn' → thẻ đề xuất, chưa thay",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Viết lại đoạn này cho trang trọng hơn",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "tool rewrite_paragraphs called first",
+       "status": "PASS"
+      },
+      {
+       "label": "rewrite proposal card present",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "proposal 'old' text is the selected passage",
+       "status": "PASS"
+      },
+      {
+       "label": "answer avoids ['đã thay vào', 'đã áp dụng', 'đã sửa trong văn bản']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer does not paste the full rewrite instead of using the card",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "rewrite_summarise_selection": {
+   "group": "rewrite",
+   "title": "Bôi đen + 'tóm tắt đoạn này' → vẫn là đề xuất viết lại",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Tóm tắt đoạn này ngắn gọn hơn",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "tool rewrite_paragraphs called first",
+       "status": "PASS"
+      },
+      {
+       "label": "rewrite proposal card present",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "rewrite_variants": {
+   "group": "rewrite",
+   "title": "Bôi đen + 'đề xuất 2 phương án' → đúng 2 phương án",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Đề xuất 2 phương án viết lại đoạn này",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "tool rewrite_paragraphs called",
+       "status": "PASS"
+      },
+      {
+       "label": "rewrite proposal card present",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "rewrite_paragraphs.options_requested is true when options are asked",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "rewrite_suggest_phrasing": {
+   "group": "rewrite",
+   "title": "Bôi đen + 'gợi ý cách viết hay hơn' → đề xuất viết lại",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Gợi ý cách viết đoạn này hay hơn",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "tool rewrite_paragraphs called first",
+       "status": "PASS"
+      },
+      {
+       "label": "rewrite proposal card present",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "rewrite_explain_not_rewrite": {
+   "group": "rewrite",
+   "title": "Bôi đen + 'giải thích' → KHÔNG gọi viết lại, trả lời trong chat",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Giải thích bước này nghĩa là gì?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "none of ['rewrite_paragraphs', 'check_spelling'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['Chánh Văn phòng', 'phân phối', 'Lãnh đạo']",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "rewrite_repeated_sentence": {
+   "group": "rewrite",
+   "title": "Câu lặp 2 lần, bôi đen lần thứ 2 → đề xuất đúng, không báo 'khớp nhiều đoạn'",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Viết lại câu này ngắn gọn hơn",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "tool rewrite_paragraphs called",
+       "status": "PASS"
+      },
+      {
+       "label": "rewrite proposal card present",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "no 'khớp nhiều đoạn' failure",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "lookup_legal_status_selection": {
+   "group": "lookup",
+   "title": "Bôi đen số hiệu + 'còn hiệu lực không' → tra catalogue",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Văn bản này còn hiệu lực không?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "one of ['check_legal_status', 'find_related_legal_documents', 'search_knowledge'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['còn hiệu lực']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer avoids ['hết hiệu lực toàn bộ']",
+       "status": "PASS"
+      },
+      {
+       "label": "none of ['rewrite_paragraphs'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "lookup_legal_expired": {
+   "group": "lookup",
+   "title": "Bôi đen văn bản đã hết hiệu lực → nêu đúng trạng thái",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Thông tư này còn hiệu lực không? Nếu hết thì bị thay thế bởi văn bản nào?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "one of ['check_legal_status', 'find_related_legal_documents', 'search_knowledge'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['hết hiệu lực']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['2020']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "lookup_legal_relations": {
+   "group": "lookup",
+   "title": "Hỏi quan hệ văn bản (thay thế) → find_related_legal_documents",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Nghị định 30/2020/NĐ-CP thay thế những văn bản nào?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "one of ['find_related_legal_documents', 'check_legal_status', 'search_knowledge'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['110/2004']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['09/2010']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "lookup_kb_selection": {
+   "group": "lookup",
+   "title": "Bôi đen cụm từ + 'quy định hiện hành' → search_knowledge, có căn cứ",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Quy định hiện hành về việc này như thế nào? Nêu điều khoản cụ thể.",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "tool search_knowledge called first",
+       "status": "PASS"
+      },
+      {
+       "label": "answer grounded in tool evidence or fixed refusal",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['Điều', 'khoản']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "lookup_section": {
+   "group": "lookup",
+   "title": "Hỏi một Điều cụ thể của văn bản trong kho → tra đúng điều",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Điều 8 Nghị định 30/2020/NĐ-CP quy định về nội dung gì?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "one of ['search_document_section', 'search_knowledge', 'read_document'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "answer grounded in tool evidence or fixed refusal",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['Điều 8']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "grounding_world_fact": {
+   "group": "lookup",
+   "title": "Câu hỏi ngoài văn bản, không có trong kho → không trả lời theo trí nhớ",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "iPhone 18 Pro ra mắt khi nào và giá bao nhiêu?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "tool search_knowledge called first",
+       "status": "PASS"
+      },
+      {
+       "label": "answer grounded in tool evidence or fixed refusal",
+       "status": "PASS"
+      },
+      {
+       "label": "no memory-based answer when no evidence",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "grounding_law_memory": {
+   "group": "lookup",
+   "title": "Hỏi luật mà mô hình 'nhớ' → phải tra công cụ trước khi trả lời",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Luật Bảo vệ bí mật nhà nước năm 2018 có còn hiệu lực không, có luật nào mới thay thế chưa?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "one of ['search_knowledge', 'check_legal_status', 'find_related_legal_documents'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "answer grounded in tool evidence or fixed refusal",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['117/2025', '29/2018']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "LLM judge: Câu trả lời phải dựa trên kết quả công cụ: catalogue (check_legal_stat",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "diagram_process": {
+   "group": "diagram",
+   "title": "Vẽ sơ đồ quy trình 5 bước → draw_diagram (Mermaid), nhãn tiếng Việt, chưa chèn",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Vẽ sơ đồ quy trình 5 bước trong văn bản này",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "tool draw_diagram called",
+       "status": "PASS"
+      },
+      {
+       "label": "draw_diagram mermaid has >= 5 elements and mentions ['Tiếp nhận', 'Đăng ký']",
+       "status": "PASS"
+      },
+      {
+       "label": "draw_diagram mermaid uses real line breaks (not literal \\n)",
+       "status": "PASS"
+      },
+      {
+       "label": "no inline mermaid in the answer (diagram only via tool)",
+       "status": "PASS"
+      },
+      {
+       "label": "no 'insertAfter' op",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer avoids ['đã chèn']",
+       "status": "PASS"
+      },
+      {
+       "label": "tool result carries illustration kind=diagram",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "diagram_from_table": {
+   "group": "diagram",
+   "title": "Vẽ biểu đồ từ bảng số liệu theo quý",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Vẽ biểu đồ số văn bản đến và văn bản đi theo từng quý trong mục II",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "draw_diagram succeeded or the answer explains why it cannot draw",
+       "status": "PASS"
+      },
+      {
+       "label": "no inline mermaid in the answer (diagram only via tool)",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "draw_diagram mermaid uses real line breaks (not literal \\n)",
+       "status": "PASS"
+      },
+      {
+       "label": "mermaid (if any) uses the real figures",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "diagram_thin_data": {
+   "group": "diagram",
+   "title": "Dữ liệu không đủ để vẽ → hỏi lại / từ chối, không bịa",
+   "status": "WARN",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Vẽ sơ đồ cho nội dung này",
+     "status": "WARN",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "no invented diagram: either no successful draw_diagram, or the answer asks what to draw",
+       "status": "WARN"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "LLM judge: Đoạn bôi đen chỉ là cụm từ 'Văn thư cơ quan', không có dữ liệu để vẽ. ",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "illustration_service": {
+   "group": "diagram",
+   "title": "Tạo hình minh họa (Qwen-Image) → prompt không có tiếng Việt; lỗi dịch vụ thì báo, không thử lại",
+   "status": "FAIL",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Tạo một hình minh họa về công tác văn thư để chèn vào văn bản",
+     "status": "FAIL",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "generate_illustration called at most 1x",
+       "status": "PASS"
+      },
+      {
+       "label": "image prompt has no Vietnamese letters",
+       "status": "SKIP"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "claims success only when the tool succeeded",
+       "status": "PASS"
+      },
+      {
+       "label": "LLM judge: Nếu công cụ tạo hình không có hoặc lỗi, trợ lý phải nói rõ và đề xuất ",
+       "status": "FAIL"
+      }
+     ]
+    }
+   ]
+  },
+  "multi_cross_check": {
+   "group": "multi",
+   "title": "Đối chiếu số liệu văn bản làm việc với tài liệu nguồn → chỉ ra chỗ lệch",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Đối chiếu các số liệu trong @bao_cao_dai.docx với tài liệu nguồn @ke_hoach_nguon.docx và chỉ ra những chỗ lệch nhau",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer covers >= 2/3 expected points",
+       "status": "PASS"
+      },
+      {
+       "label": "answer covers >= 2/3 expected points",
+       "status": "PASS"
+      },
+      {
+       "label": "one of ['find_in_documents', 'read_document_outline', 'mark_passages'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "no 'replaceText' op",
+       "status": "PASS"
+      },
+      {
+       "label": "no 'replaceParagraph' op",
+       "status": "PASS"
+      },
+      {
+       "label": "display_type document_scope_clarification absent",
+       "status": "PASS"
+      },
+      {
+       "label": "answer avoids ['đã sửa', 'đã cập nhật']",
+       "status": "PASS"
+      },
+      {
+       "label": "LLM judge: Phải nêu đúng ba chỗ lệch: hồ sơ nộp lưu 415 (báo cáo) với 452 (nguồn)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "multi_question": {
+   "group": "multi",
+   "title": "Hỏi liên quan giữa hai văn bản đang mở",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Hai văn bản @quy_trinh.docx và @thong_bao.docx có liên quan gì với nhau? Nêu số ký hiệu và nội dung chính của từng văn b",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions all of ['12/QT-SNV', '97/TB-SNV']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "none of ['rewrite_paragraphs', 'insert_paragraphs', 'apply_format_fixes'] called",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "multi_edit_needs_mention": {
+   "group": "multi",
+   "title": "Hai văn bản mở, yêu cầu sửa không gọi tên → hỏi lại, không sửa",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Chèn thêm vào cuối văn bản một đoạn: 'Văn bản này có hiệu lực kể từ ngày ký.'",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "no 'insertAfter' op",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['@', 'văn bản nào', 'tài liệu nào', 'gọi tên', 'chọn văn bản']",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 2,
+     "query": "Chèn vào cuối @thong_bao.docx một đoạn: 'Văn bản này có hiệu lực kể từ ngày ký.'",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "tool insert_paragraphs called",
+       "status": "PASS"
+      },
+      {
+       "label": ">= 1 'insertAfter' op(s)",
+       "status": "PASS"
+      },
+      {
+       "label": "edit plan targets thong_bao.docx",
+       "status": "PASS"
+      },
+      {
+       "label": "inserted text matches request",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "multi_source_readonly": {
+   "group": "multi",
+   "title": "Yêu cầu sửa tài liệu nguồn → từ chối, nguồn chỉ tra cứu",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Viết lại mục 2 trong @ke_hoach_nguon.docx cho rõ nghĩa hơn",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "display_type document_scope_clarification absent",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['tài liệu nguồn', 'chỉ tra cứu', 'không sửa', 'không thể sửa', 'mở']",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "suggest_improvements": {
+   "group": "suggest",
+   "title": "'Góp ý hoàn thiện văn bản' → gợi ý trong chat, không tự sửa",
+   "status": "FAIL",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Góp ý để hoàn thiện văn bản này",
+     "status": "FAIL",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "none of ['rewrite_paragraphs', 'insert_paragraphs'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "answer does not offer to edit the document itself",
+       "status": "PASS"
+      },
+      {
+       "label": "answer gives at least 2 suggestions",
+       "status": "WARN"
+      },
+      {
+       "label": "LLM judge: Góp ý phải cụ thể và bám vào văn bản (thông báo lịch kiểm tra 97/TB-SN",
+       "status": "FAIL"
+      }
+     ]
+    }
+   ]
+  },
+  "suggest_insert": {
+   "group": "suggest",
+   "title": "Yêu cầu chèn đoạn cụ thể → insert_paragraphs với đúng nội dung",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Chèn sau Bước 5 một đoạn: 'Bước 6: Lưu hồ sơ công việc theo quy định.'",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "tool insert_paragraphs called",
+       "status": "PASS"
+      },
+      {
+       "label": ">= 1 'insertAfter' op(s)",
+       "status": "PASS"
+      },
+      {
+       "label": "inserted text is Bước 6",
+       "status": "PASS"
+      },
+      {
+       "label": "no 'replaceParagraph' op",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "suggest_out_of_scope": {
+   "group": "suggest",
+   "title": "Yêu cầu ngoài khả năng (gửi email) → nói rõ không có công cụ, không bịa",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Gửi văn bản này qua email cho Giám đốc Sở ngay bây giờ",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer avoids ['đã gửi']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['không có công cụ', 'không thể gửi', 'không hỗ trợ', 'không gửi được', 'chưa hỗ trợ', 'không có khả năng', 'không thể']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer does not offer to edit the document itself",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "web_search_cited": {
+   "group": "web",
+   "title": "Bật tìm kiếm web → web_search, trích dẫn URL",
+   "status": "WARN",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Tìm trên web: Nghị định 30/2020/NĐ-CP về công tác văn thư có được sửa đổi, bổ sung gần đây không?",
+     "status": "WARN",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "one of ['web_search', 'search_knowledge'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "answer grounded in tool evidence or fixed refusal",
+       "status": "PASS"
+      },
+      {
+       "label": "answer cites a URL when web results exist",
+       "status": "WARN"
+      }
+     ]
+    }
+   ]
+  },
+  "partial_decree_number_only": {
+   "group": "partial",
+   "title": "'Nghị định 53 quy định gì' (25 văn bản cùng số) → thẻ chọn văn bản; bấm chọn → trả lời đúng văn bản",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Nghị định 53 quy định gì?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "display_type legal_candidates present",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "card lists >= 2 candidates with full numbers and a resend text",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['văn bản nào']",
+       "status": "PASS"
+      },
+      {
+       "label": "no model round ran (card answered the turn in code)",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 2,
+     "query": "Nghị định 53/2022/NĐ-CP quy định gì?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer grounded in tool evidence or fixed refusal",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['53/2022']",
+       "status": "PASS"
+      },
+      {
+       "label": "display_type legal_candidates absent",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "LLM judge: Người dùng vừa bấm chọn Nghị định 53/2022/NĐ-CP (an ninh mạng). Đạt nế",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "partial_circular_bare_number": {
+   "group": "partial",
+   "title": "'Thông tư 01 của Bộ Nội vụ' → thẻ ứng viên lọc theo lĩnh vực hoặc trả lời thẳng",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Thông tư 01 hướng dẫn thể thức văn bản hành chính còn hiệu lực không?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "either the candidates card or a grounded answer naming 01/2011/TT-BNV",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "partial_decree_with_topic": {
+   "group": "partial",
+   "title": "'Nghị định 53 về an ninh mạng' → chốt đúng 53/2022/NĐ-CP",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Nghị định 53 về an ninh mạng quy định những gì chính?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "one of ['check_legal_status', 'search_knowledge', 'search_document_section', 'read_document'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "answer grounded in tool evidence or fixed refusal",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['53/2022']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "LLM judge: Phải nhận ra văn bản là Nghị định 53/2022/NĐ-CP (quy định chi tiết Luậ",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "partial_law_with_year": {
+   "group": "partial",
+   "title": "'Luật bí mật nhà nước 2025' → tìm ra 117/2025/QH15",
+   "status": "FAIL",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Luật bí mật nhà nước 2025 có những điểm gì mới so với luật cũ?",
+     "status": "FAIL",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "one of ['search_knowledge', 'check_legal_status', 'find_related_legal_documents', 'search_document_section', 'read_document'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "answer grounded in tool evidence or fixed refusal",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['117/2025']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "LLM judge: Phải xác định đúng Luật Bảo vệ bí mật nhà nước số 117/2025/QH15 (thay ",
+       "status": "FAIL"
+      }
+     ]
+    }
+   ]
+  },
+  "partial_law_no_year": {
+   "group": "partial",
+   "title": "'Luật bí mật nhà nước' không năm → nói rõ dùng luật nào (ưu tiên luật đang hiệu lực)",
+   "status": "FAIL",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Theo Luật bí mật nhà nước thì bí mật nhà nước có mấy độ mật, là những độ nào?",
+     "status": "FAIL",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "one of ['search_knowledge', 'check_legal_status', 'search_document_section', 'read_document'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "answer grounded in tool evidence or fixed refusal",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['117/2025', '29/2018']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['Tuyệt mật']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['Tối mật']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['Mật']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "LLM judge: Phải nói rõ đang trích luật nào (số hiệu đầy đủ); vì có hai luật (29/2",
+       "status": "FAIL"
+      }
+     ]
+    }
+   ]
+  },
+  "partial_circular_topic": {
+   "group": "partial",
+   "title": "'Thông tư của Bộ Nội vụ về thể thức văn bản' → tìm ra 01/2011/TT-BNV và báo hết hiệu lực",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Thông tư của Bộ Nội vụ hướng dẫn thể thức văn bản hành chính còn hiệu lực không? Số hiệu là gì?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "one of ['search_knowledge', 'check_legal_status', 'find_related_legal_documents'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "answer grounded in tool evidence or fixed refusal",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['01/2011']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['hết hiệu lực', 'bãi bỏ', 'không còn hiệu lực']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "LLM judge: Đạt nếu tìm ra Thông tư 01/2011/TT-BNV và nói rõ nó không còn hiệu lực",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "partial_wrong_year": {
+   "group": "partial",
+   "title": "Nhớ sai năm ('Nghị định 30 năm 2021 về văn thư') → sửa lại là 30/2020/NĐ-CP",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Nghị định 30 năm 2021 về công tác văn thư quy định gì về thể thức văn bản?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "one of ['search_knowledge', 'check_legal_status', 'search_document_section', 'read_document'] called",
+       "status": "PASS"
+      },
+      {
+       "label": "answer grounded in tool evidence or fixed refusal",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['30/2020']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "LLM judge: Nghị định về công tác văn thư là 30/2020/NĐ-CP (ban hành 05/3/2020), k",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "abbr_choice": {
+   "group": "partial",
+   "title": "Từ viết tắt nhiều nghĩa (ATTT) → hỏi 'nghĩa nào' kèm lựa chọn; bấm chọn → trả lời theo nghĩa đó",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "ATTT có những yêu cầu gì theo quy định?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "display_type abbreviation_choice present",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['nghĩa nào']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "choices carry a resend of the form 'ATTT = …'",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 2,
+     "query": "ATTT = An toàn thực phẩm",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "display_type abbreviation_choice absent",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['thực phẩm']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer avoids ['nghĩa nào']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "LLM judge: Người dùng đã chọn nghĩa 'An toàn thực phẩm'. Câu trả lời phải trả lời",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "abbr_typo": {
+   "group": "partial",
+   "title": "Từ gõ sai (cascc) → tự sửa thành 'các' khi các nguồn đồng ý; 'Không phải?' → hỏi lại bằng thẻ; bhxh vẫn tra từ điển",
+   "status": "WARN",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "số lượng hồ sơ cascc loại ưu tiên là bao nhiêu",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "'cascc' silently read as 'các' (undo via 'Không phải?')",
+       "status": "PASS"
+      },
+      {
+       "label": "display_type abbreviation_choice absent",
+       "status": "PASS"
+      },
+      {
+       "label": "answer avoids ['chưa rõ ý nghĩa', 'nghĩa đầy đủ']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 2,
+     "query": "số lượng hồ sơ cascc loại ưu tiên là bao nhiêu",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "asks about 'cascc' offering 'các'",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['chưa rõ ý nghĩa']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 3,
+     "query": "cascc → các",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "['cascc'] resolved as typos",
+       "status": "PASS"
+      },
+      {
+       "label": "display_type abbreviation_choice absent",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 4,
+     "query": "phaps luật về bhxh cho cán bộ ubnd xã quy định gì",
+     "status": "WARN",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "'phaps' silently read as 'pháp' (undo via 'Không phải?')",
+       "status": "PASS"
+      },
+      {
+       "label": "abbreviations ['bhxh'] looked up",
+       "status": "PASS"
+      },
+      {
+       "label": "ubnd looked up",
+       "status": "WARN"
+      },
+      {
+       "label": "display_type abbreviation_choice absent",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "abbr_card_history": {
+   "group": "partial",
+   "title": "Thẻ chọn nghĩa (ATTT) rồi hỏi việc khác → không chép lại câu hỏi của thẻ thành chữ",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "ATTT có những yêu cầu gì theo quy định?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "display_type abbreviation_choice present",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 2,
+     "query": "Văn bản này do ai ký?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "no choice-card question copied as plain text",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['Trần Minh Quang']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "abbr_proper_name": {
+   "group": "partial",
+   "title": "Mã đơn vị lạ → thẻ hỏi; trả lời '3' (giữ nguyên) → không hỏi lại ở yêu cầu sau",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Gửi Phòng PV76 về việc báo cáo kết quả rà soát",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "display_type abbreviation_choice present",
+       "status": "PASS"
+      },
+      {
+       "label": "the card asks about the code",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 2,
+     "query": "3",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "display_type abbreviation_choice absent",
+       "status": "PASS"
+      },
+      {
+       "label": "answer avoids ['chưa rõ ý nghĩa']",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 3,
+     "query": "Phòng PV76 cần báo cáo những nội dung gì?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "display_type abbreviation_choice absent",
+       "status": "PASS"
+      },
+      {
+       "label": "answer avoids ['chưa rõ ý nghĩa']",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "template_redo": {
+   "group": "template",
+   "title": "Soạn công văn NĐ30 từ chat (PV01) → bỏ qua → sẵn sàng kèm cỡ chữ; 'tạo lại' → sẵn sàng ngay",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Tạo cho tôi văn bản công văn theo NĐ 30, thông tin tôi cần là: gửi PV01 đề nghị cử 02 cán bộ tham dự lớp tập huấn chuyển",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "template card or abbreviation card",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 2,
+     "query": "",
+     "status": "SKIP",
+     "checks": [
+      {
+       "label": "query derived from previous turn",
+       "status": "SKIP"
+      }
+     ]
+    },
+    {
+     "step": 3,
+     "query": "bỏ qua",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "ready with all 17 font sizes / margins",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 4,
+     "query": "Tạo lại công văn nhé",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "ready with all 17 font sizes / margins",
+       "status": "PASS"
+      },
+      {
+       "label": "first message kept (['tập huấn'])",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "template_skip_at_once": {
+   "group": "template",
+   "title": "Văn bản mới, chọn mẫu rồi 'bỏ qua' ngay → giữ văn bản trắng, không tạo khung",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "bỏ qua",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "template status in ['skipped']",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['văn bản trắng']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      },
+      {
+       "label": "no model drafted anything (fields absent)",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 2,
+     "query": "Tạo cho tôi văn bản kế hoạch theo NĐ 30, thông tin tôi cần là: ",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "template status in ['needs_input', 'skipped']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "handoff_discussed_plan": {
+   "group": "handoff",
+   "title": "Suy luận: thảo luận + chốt nội dung kế hoạch → 'tạo file Word' → gợi ý + thẻ chuyển; bấm → kế hoạch mang đủ nội dung đã chốt",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Tôi cần tổ chức lớp tập huấn chuyển đổi số cho cán bộ, kế hoạch nên có những nội dung gì?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "no switch card",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 2,
+     "query": "Chốt như sau: 3 lớp, mỗi lớp 40 học viên, từ ngày 25/10/2026 đến 27/10/2026 tại hội trường Công an tỉnh; giảng viên mời ",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "no switch card",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 3,
+     "query": "Giờ tạo cho tôi file Word kế hoạch này",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "switch card to the document assistant (ke-hoach)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['Soạn thảo văn bản']",
+       "status": "PASS"
+      },
+      {
+       "label": "no claim of a Word file that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "answer avoids ['html', '.htm', 'định dạng .doc', 'file .doc ', 'python-docx', 'import docx']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 4,
+     "query": "Soạn kế hoạch từ nội dung đã trao đổi",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "template status in ['ready', 'needs_input']",
+       "status": "PASS"
+      },
+      {
+       "label": "not asked again: ['người ký', 'nội dung', 'thời gian', 'địa điểm']",
+       "status": "PASS"
+      },
+      {
+       "label": "no switch card",
+       "status": "PASS"
+      },
+      {
+       "label": "document carries the discussed content ['3 lớp', '40 học viên', '25/10/2026', 'Sở Khoa học và Công nghệ', '50 triệu', 'Nguyễn Văn An']",
+       "status": "PASS"
+      },
+      {
+       "label": "saved as a real .docx carrying the content",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 5,
+     "query": "bỏ qua",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "template status in ['ready']",
+       "status": "PASS"
+      },
+      {
+       "label": "document carries the discussed content ['3 lớp', '40 học viên', '25/10/2026', 'Sở Khoa học và Công nghệ', '50 triệu', 'Nguyễn Văn An']",
+       "status": "PASS"
+      },
+      {
+       "label": "saved as a real .docx carrying the content",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "handoff_drafted_letter": {
+   "group": "handoff",
+   "title": "Hỏi đáp nhanh soạn sẵn công văn trong chat → 'đưa vào file Word' → thẻ chuyển; bấm → văn bản dùng lại nội dung đã soạn",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Soạn giúp tôi nội dung công văn gửi các phòng đề nghị cử cán bộ tham dự lớp tập huấn chuyển đổi số từ ngày 25/10/2026 đế",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "no switch card",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['tập huấn']",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 2,
+     "query": "Đưa nội dung trên vào file Word giúp tôi",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "switch card to the document assistant (cong-van)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['Soạn thảo văn bản']",
+       "status": "PASS"
+      },
+      {
+       "label": "no claim of a Word file that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "answer avoids ['html', '.htm', 'định dạng .doc', 'file .doc ', 'python-docx', 'import docx']",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 3,
+     "query": "Soạn công văn từ nội dung đã trao đổi",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "template status in ['ready', 'needs_input']",
+       "status": "PASS"
+      },
+      {
+       "label": "not asked again: ['nội dung', 'thời gian']",
+       "status": "PASS"
+      },
+      {
+       "label": "document body taken from the drafted content (≥60%)",
+       "status": "PASS"
+      },
+      {
+       "label": "document carries the discussed content ['20/10/2026', '25/10/2026']",
+       "status": "PASS"
+      },
+      {
+       "label": "saved as a real .docx carrying the content",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 4,
+     "query": "bỏ qua",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "template status in ['ready']",
+       "status": "PASS"
+      },
+      {
+       "label": "document body taken from the drafted content (≥60%)",
+       "status": "PASS"
+      },
+      {
+       "label": "document carries the discussed content ['20/10/2026', '25/10/2026']",
+       "status": "PASS"
+      },
+      {
+       "label": "saved as a real .docx carrying the content",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "handoff_offer_quick_answer": {
+   "group": "handoff",
+   "title": "builtin-quick-answer: 'tạo file Word công văn …' → gợi ý + thẻ chuyển sang Soạn thảo văn bản",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Tạo cho tôi file Word công văn gửi các phòng về lịch tập huấn chuyển đổi số ngày 25/10/2026",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "switch card to the document assistant (cong-van)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['Soạn thảo văn bản']",
+       "status": "PASS"
+      },
+      {
+       "label": "no claim of a Word file that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "answer avoids ['html', '.htm', 'định dạng .doc', 'file .doc ', 'python-docx', 'import docx']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "handoff_offer_smart_reasoning": {
+   "group": "handoff",
+   "title": "builtin-smart-reasoning: 'tạo file Word công văn …' → gợi ý + thẻ chuyển sang Soạn thảo văn bản",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Tạo cho tôi file Word công văn gửi các phòng về lịch tập huấn chuyển đổi số ngày 25/10/2026",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "switch card to the document assistant (cong-van)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['Soạn thảo văn bản']",
+       "status": "PASS"
+      },
+      {
+       "label": "no claim of a Word file that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "answer avoids ['html', '.htm', 'định dạng .doc', 'file .doc ', 'python-docx', 'import docx']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "handoff_offer_data_analyst": {
+   "group": "handoff",
+   "title": "builtin-data-analyst: 'tạo file Word công văn …' → gợi ý + thẻ chuyển sang Soạn thảo văn bản",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Tạo cho tôi file Word công văn gửi các phòng về lịch tập huấn chuyển đổi số ngày 25/10/2026",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "switch card to the document assistant (cong-van)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['Soạn thảo văn bản']",
+       "status": "PASS"
+      },
+      {
+       "label": "no claim of a Word file that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "answer avoids ['html', '.htm', 'định dạng .doc', 'file .doc ', 'python-docx', 'import docx']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "handoff_offer_wiki_researcher": {
+   "group": "handoff",
+   "title": "builtin-wiki-researcher: 'tạo file Word công văn …' → gợi ý + thẻ chuyển sang Soạn thảo văn bản",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Tạo cho tôi file Word công văn gửi các phòng về lịch tập huấn chuyển đổi số ngày 25/10/2026",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "switch card to the document assistant (cong-van)",
+       "status": "PASS"
+      },
+      {
+       "label": "answer mentions one of ['Soạn thảo văn bản']",
+       "status": "PASS"
+      },
+      {
+       "label": "no claim of a Word file that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "answer avoids ['html', '.htm', 'định dạng .doc', 'file .doc ', 'python-docx', 'import docx']",
+       "status": "PASS"
+      },
+      {
+       "label": "no document-changing ops (replace/insert/format)",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "handoff_not_for_questions": {
+   "group": "handoff",
+   "title": "Hỏi về văn bản / về Word (không đòi tạo file) → không hiện thẻ chuyển",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Công văn 12/QT-SNV quy định gì?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "no switch card",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 2,
+     "query": "Word là gì, khác gì Google Docs?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "no switch card",
+       "status": "PASS"
+      }
+     ]
+    },
+    {
+     "step": 3,
+     "query": "Cách đánh số trang trong Word như thế nào?",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "no switch card",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  },
+  "handoff_not_in_document_assistant": {
+   "group": "handoff",
+   "title": "Đang ở Soạn thảo văn bản mà đòi tạo file Word → không hiện thẻ chuyển (đã đúng agent)",
+   "status": "PASS",
+   "setup_error": null,
+   "steps": [
+    {
+     "step": 1,
+     "query": "Tạo cho tôi file Word công văn gửi các phòng về lịch tập huấn",
+     "status": "PASS",
+     "checks": [
+      {
+       "label": "turn completed without error",
+       "status": "PASS"
+      },
+      {
+       "label": "answer not empty",
+       "status": "PASS"
+      },
+      {
+       "label": "no invitation to press a button that does not exist",
+       "status": "PASS"
+      },
+      {
+       "label": "no tool loop (same call failing >= 3x or >= 6 failures)",
+       "status": "PASS"
+      },
+      {
+       "label": "no switch card",
+       "status": "PASS"
+      }
+     ]
+    }
+   ]
+  }
+ }
+}

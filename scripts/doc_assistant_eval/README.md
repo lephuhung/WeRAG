@@ -8,14 +8,21 @@ trả lời theo trí nhớ, vẽ sơ đồ/hình minh họa, nhiều văn bản
 nguồn chỉ đọc), gợi ý hoàn thiện, chèn đoạn, yêu cầu ngoài phạm vi, tìm web,
 và nhóm `partial`: nhớ tên văn bản không đầy đủ ("Nghị định 53", "Luật bí mật
 nhà nước 2025", sai năm) và từ viết tắt nhiều nghĩa → danh sách lựa chọn bấm
-được (`legal_candidates`, `abbreviation_choice`), bước 2 mô phỏng bấm chọn.
+được (`legal_candidates`, `abbreviation_choice`), bước 2 mô phỏng bấm chọn;
+mã đơn vị (PV01) giữ nguyên thành tên riêng; nhóm `template` (văn bản mẫu NĐ30
+từ chat: "bỏ qua", "tạo lại", cỡ chữ/lề, "bỏ qua" ngay → văn bản trắng) và
+nhóm `handoff` (đang ở agent khác, thảo luận nội dung rồi đòi file Word →
+thẻ chuyển sang Soạn thảo văn bản; bấm → văn bản .docx mang nội dung đã chốt).
 
 ```
 scripts/doc_assistant_eval/
 ├── fixtures/build_fixtures.py   # sinh 5 file .docx có lỗi gieo sẵn + manifest.json
 ├── werag_client.py              # client API: session, upload, mở tab, SSE agent-chat
 ├── checks.py                    # bộ assertion (tool gọi, ops, thẻ, nội dung trả lời…)
-├── scenarios.py                 # 35 kịch bản / 40 lượt, nhóm theo pipeline
+├── scenarios.py                 # 56 kịch bản, nhóm theo pipeline
+├── compare.py                   # lưu baseline / so sánh một lần chạy với baseline
+├── baselines/                   # kết quả đã lưu (commit) để đối chiếu: <ngày>.json
+├── build_template_docx.mjs      # dựng .docx bằng bộ dựng của frontend-next (check _saved_as_docx)
 ├── judge.py                     # giám khảo LLM (tùy chọn, OpenAI-compatible)
 ├── run_eval.py                  # runner → results/<ts>/report.md + results.json
 └── mint_token.py                # cấp token cho tài khoản test (JWT_SECRET + auth_tokens)
@@ -60,6 +67,30 @@ và việc snapshot/forcesave có thể chờ 20 s mỗi lượt).
   (dev: "An toàn thông tin" và "An toàn thực phẩm").
 - Backend dev (air) restart mỗi khi có file Go được lưu; runner tự chạy lại
   kịch bản bị đứt (`--retries`), nhưng nên tránh lưu Go trong lúc chạy.
+
+## Đối chiếu với lần trước
+
+`results/` không được commit. Sau một lần chạy đầy đủ, lưu bản tóm tắt
+(trạng thái từng kịch bản/check, không có câu trả lời) vào `baselines/` và
+commit cùng `FINDINGS-<ngày>.md`; lần sau so sánh:
+
+```bash
+python3 compare.py diff results/<thư mục>/<ts>/results.json baselines/2026-10-18.json   # exit 1 khi có kịch bản tệ đi
+python3 compare.py save results/<thư mục>/<ts>/results.json --name <ngày> --note "editor, judge, …"
+```
+
+Cấu hình chuẩn của các baseline: `--editor onlyoffice`, giám khảo
+`JUDGE_MODEL=Qwen/Qwen3.6-35B-A3B-FP8`, tenant 10003. Giám khảo không biết văn
+bản mới hơn dữ liệu huấn luyện của nó (vd. 333/2026/NĐ-CP trong catalogue):
+FAIL của giám khảo ở nhóm `partial` cần đọc lại trước khi coi là lỗi.
+
+`abbr_proper_name` thêm một mã ngẫu nhiên PV60–PV99 làm tên riêng (active) vào
+từ điển dùng chung; xóa sau khi chạy:
+
+```sql
+DELETE FROM abbreviations WHERE is_proper_name AND short_form ~ '^PV[6-9][0-9]$'
+  AND description LIKE 'Tên riêng — người dùng chọn giữ nguyên%';
+```
 
 ## Trạng thái
 
