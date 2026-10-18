@@ -17,10 +17,10 @@ func taxCall(ok bool, block string) types.ToolCall {
 	}}
 }
 
-// two calls: the block of the last successful one, once
+// the same calculation run twice, a failed call, another tool: one block
 func taxSteps() []types.AgentStep {
 	return []types.AgentStep{
-		{ToolCalls: []types.ToolCall{taxCall(true, "Lần 1\nGiả định:\n- a")}},
+		{ToolCalls: []types.ToolCall{taxCall(true, "Lần 2\nGiả định:\n- b")}},
 		{ToolCalls: []types.ToolCall{taxCall(true, "Lần 2\nGiả định:\n- b"), taxCall(false, "lỗi")}},
 		{ToolCalls: []types.ToolCall{{Name: "search_knowledge", Result: &types.ToolResult{Success: true}}}},
 	}
@@ -85,16 +85,16 @@ func TestToolAnswerBlocksKeepDistinctCalculations(t *testing.T) {
 		c.Args = args
 		return c
 	}
-	a := map[string]interface{}{"doanh_thu": 8e9, "thue_suat": 0.2}
-	b := map[string]interface{}{"thue_suat": 0.17, "doanh_thu": 8e9}
 	steps := []types.AgentStep{
-		{ToolCalls: []types.ToolCall{call(a, "A cũ")}},
-		{ToolCalls: []types.ToolCall{call(b, "B")}},
-		// same arguments as the first (key order differs): counts once, the last
-		{ToolCalls: []types.ToolCall{call(map[string]interface{}{"thue_suat": 0.2, "doanh_thu": 8e9}, "A")}},
+		{ToolCalls: []types.ToolCall{call(map[string]interface{}{"ty_le_doanh_thu": "1"}, "A")}},
+		{ToolCalls: []types.ToolCall{call(map[string]interface{}{"thue_suat": 0.17}, "B")}},
+		// other spelling of the first call's arguments, same result: one calculation
+		{ToolCalls: []types.ToolCall{call(map[string]interface{}{"ty_le_doanh_thu": 1.0}, "A")}},
 	}
-	got := toolAnswerBlocks(steps)
-	assert.Equal(t, "**Lần tính 1/2**\nB\n\n**Lần tính 2/2**\nA", got)
+	assert.Equal(t, "**Lần tính 1/2**\nB\n\n**Lần tính 2/2**\nA", toolAnswerBlocks(steps))
+	// the same block twice: one block, no numbering
+	one := []types.AgentStep{{ToolCalls: []types.ToolCall{call(nil, "A"), call(map[string]interface{}{"x": 1}, "A")}}}
+	assert.Equal(t, "A", toolAnswerBlocks(one))
 }
 
 func TestToolAnswerBlockOnSynthesisFallbackBringsTheFooter(t *testing.T) {
