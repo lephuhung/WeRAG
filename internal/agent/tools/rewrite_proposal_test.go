@@ -216,3 +216,22 @@ func TestRewriteDropsVersionsBeyondTheRequestedCount(t *testing.T) {
 		t.Fatalf("versions: %+v\n%s", vs, res.Output)
 	}
 }
+
+// "2 phương án" sent as two edits of the same paragraph becomes one edit
+// plus a variant instead of the "variants need exactly one edit" error.
+func TestRewriteFoldsSamePassageEditsIntoVariants(t *testing.T) {
+	ws := newFakeWorkspace(testCongVan(t, nd30Margins))
+	ctx := types.WithUserQuery(selectionCtx(proposalP8), "Đề xuất 2 phương án viết lại đoạn này")
+	res := runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "s"),
+		`{"options_requested":true,"edits":[{"paragraph":8,"old":"năm 2026","new":"năm 2027"},{"paragraph":8,"old":"năm 2026","new":"năm 2028"}]}`)
+	vs := proposalVariants(t, res)
+	if !res.Success || len(vs) != 2 || vs[0].New != "năm 2027" || vs[1].New != "năm 2028" {
+		t.Fatalf("folded versions: %+v\n%s", vs, res.Output)
+	}
+	// edits of two different passages are not versions of one another
+	res = runToolCtx(t, ctx, NewRewriteParagraphsTool(ws, "s"),
+		`{"options_requested":true,"edits":[{"paragraph":8,"old":"năm 2026","new":"năm 2027"},{"paragraph":8,"old":"Sở Nội vụ","new":"Sở Nội vụ tỉnh"}],"variants":["x"]}`)
+	if res.Success {
+		t.Fatalf("two passages with variants must still be refused: %s", res.Output)
+	}
+}

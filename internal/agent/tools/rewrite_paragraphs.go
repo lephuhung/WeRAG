@@ -131,6 +131,41 @@ func rewriteMode(asked string, sel *types.DocumentSelection, target *types.Docum
 	return rewriteModeApply
 }
 
+// foldSamePassageEditsIntoVariants turns edits that all rewrite one passage
+// (same paragraph index, or same old/match text) into one edit plus
+// variants, keeping the order the model gave. Edits of different passages
+// are left alone.
+func foldSamePassageEditsIntoVariants(in rewriteParagraphsInput) rewriteParagraphsInput {
+	if len(in.Edits) < 2 {
+		return in
+	}
+	first := in.Edits[0]
+	key := func(x rewriteEdit) string {
+		if x.Old != nil && strings.TrimSpace(*x.Old) != "" {
+			return strings.Join(strings.Fields(*x.Old), " ")
+		}
+		return strings.Join(strings.Fields(x.Match), " ")
+	}
+	samePassage := func(e rewriteEdit) bool {
+		if (first.Paragraph == nil) != (e.Paragraph == nil) ||
+			(first.Paragraph != nil && *first.Paragraph != *e.Paragraph) {
+			return false
+		}
+		// the same text being replaced (old/match), or both whole paragraphs
+		return key(first) == key(e) && (key(first) != "" || first.Paragraph != nil)
+	}
+	extra := make([]string, 0, len(in.Edits)-1)
+	for _, e := range in.Edits[1:] {
+		if !samePassage(e) || e.New == nil {
+			return in
+		}
+		extra = append(extra, *e.New)
+	}
+	in.Edits = in.Edits[:1]
+	in.Variants = append(extra, in.Variants...)
+	return in
+}
+
 // rewriteVersions is the list of new texts a proposal offers: edits[0].new
 // then the variants (a variant repeating an earlier text is dropped).
 func rewriteVersions(in rewriteParagraphsInput) ([]string, string) {
@@ -239,6 +274,12 @@ func (t *RewriteParagraphsTool) Execute(ctx context.Context, args json.RawMessag
 				in.Labels = in.Labels[:n]
 			}
 		}
+	}
+	// "2 phương án" sent as two edits of the same passage (seen 3 times on
+	// 2026-10-18 even with the rule in the description): fold the later
+	// edits into variants instead of sending the call back.
+	if in.OptionsRequested && in.Mode != rewriteModeApply {
+		in = foldSamePassageEditsIntoVariants(in)
 	}
 	variantsIgnored := false
 	if len(in.Variants) > 0 && !in.OptionsRequested {
