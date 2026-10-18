@@ -2054,6 +2054,10 @@ type UpdateSystemSettingRequest struct {
 func (h *SystemHandler) UpdateSystemSetting(c *gin.Context) {
 	ctx := logger.CloneContext(c.Request.Context())
 	key := c.Param("key")
+	if service.IsSecretSetting(key) {
+		// the body is {"value": "<secret>"}: keep it out of the request log
+		c.Set(types.LogOmitRequestBodyContextKey.String(), true)
+	}
 
 	var req UpdateSystemSettingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

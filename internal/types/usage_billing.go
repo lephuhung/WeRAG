@@ -213,3 +213,96 @@ type UsageOrderView struct {
 	TransferContent string `json:"transfer_content"`
 	QRURL           string `json:"qr_url"`
 }
+
+// Incoming payments.
+//
+// A payment checker (a bank-statement poller, a SePay/Casso-style
+// service) pushes each incoming transfer to POST /billing/payments/webhook
+// with the shared secret of BillingWebhookSecretSettingKey. The transfer is
+// stored once per (source, external_id); one whose content carries the
+// code of a pending order and covers its total confirms that order.
+// Everything else is kept with a status for SuperAdmin to settle by hand.
+
+const (
+	// BillingWebhookSecretSettingKey holds the secret the checker sends
+	// (a system setting SuperAdmin sets on the billing page, read on every
+	// request); BillingWebhookSecretEnv is its fallback while no value is
+	// saved. The webhook is off (503) while both are empty.
+	BillingWebhookSecretSettingKey = "billing.webhook_secret"
+	BillingWebhookSecretEnv        = "BILLING_WEBHOOK_SECRET"
+
+	// UsagePaymentMatched: the transfer confirmed its order.
+	UsagePaymentMatched = "matched"
+	// UsagePaymentUnmatched: no known order code in the content.
+	UsagePaymentUnmatched = "unmatched"
+	// UsagePaymentUnderpaid: the order is pending but the amount is short.
+	UsagePaymentUnderpaid = "underpaid"
+	// UsagePaymentOrderClosed: the order was already paid or cancelled,
+	// or had expired before the transfer was made.
+	UsagePaymentOrderClosed = "order_closed"
+	// UsagePaymentConfirmFailed: the order matched but applying it failed
+	// (e.g. the subscription has grown more seats than the order pays).
+	UsagePaymentConfirmFailed = "confirm_failed"
+	// UsagePaymentIgnored: not money in to the receiving account.
+	UsagePaymentIgnored = "ignored"
+
+	UsagePaymentDirectionIn  = "in"
+	UsagePaymentDirectionOut = "out"
+)
+
+// UsagePaymentWebhookRequest is one transaction as the checker reports it.
+type UsagePaymentWebhookRequest struct {
+	// Source names the checker ("sepay", "casso", "bank-poller"); with
+	// TransactionID it identifies the transaction, so a resend is a no-op.
+	Source        string `json:"source"`
+	TransactionID string `json:"transaction_id"`
+	// AmountVND is the transferred amount in đồng.
+	AmountVND int64 `json:"amount_vnd"`
+	// Content is the transfer description; the order code is found in it.
+	Content string `json:"content"`
+	// AccountNo is the receiving account; when given it must be the
+	// configured one.
+	AccountNo string `json:"account_no"`
+	// Direction is "in" (default) or "out"; outgoing money is ignored.
+	Direction string `json:"direction"`
+	// TransactedAt is when the bank booked the transfer (default: now).
+	TransactedAt *time.Time `json:"transacted_at"`
+}
+
+// UsagePaymentTransaction is one row of usage_payment_transactions.
+type UsagePaymentTransaction struct {
+	ID           string    `json:"id"            gorm:"primaryKey;type:varchar(36)"`
+	Source       string    `json:"source"        gorm:"type:varchar(32)"`
+	ExternalID   string    `json:"external_id"   gorm:"type:varchar(128)"`
+	AmountVND    int64     `json:"amount_vnd"`
+	Content      string    `json:"content"       gorm:"type:text"`
+	AccountNo    string    `json:"account_no"    gorm:"type:varchar(64)"`
+	TransactedAt time.Time `json:"transacted_at"`
+	Status       string    `json:"status"        gorm:"type:varchar(24)"`
+	// Reason says why a transaction did not confirm its order.
+	Reason    string    `json:"reason"        gorm:"type:text"`
+	OrderID   *string   `json:"order_id"      gorm:"type:varchar(36)"`
+	OrderCode string    `json:"order_code"    gorm:"type:varchar(24)"`
+	Raw       JSON      `json:"raw"           gorm:"type:jsonb"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// TableName returns the table name.
+func (UsagePaymentTransaction) TableName() string { return "usage_payment_transactions" }
+
+// UsagePaymentFilter narrows and pages a transaction listing (newest
+// first).
+type UsagePaymentFilter struct {
+	Status string
+	Offset int
+	Limit  int
+}
+
+// UsagePaymentResult answers the webhook: the stored transaction, the
+// order it confirmed (or matched), and whether it had been received before.
+type UsagePaymentResult struct {
+	Transaction *UsagePaymentTransaction `json:"transaction"`
+	Order       *UsageOrderView          `json:"order,omitempty"`
+	Duplicate   bool                     `json:"duplicate"`
+}

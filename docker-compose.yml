@@ -20,6 +20,9 @@ services:
       # For remote deployment, set this to the remote App's service port.
       - APP_PORT=${APP_BACKEND_PORT:-8080}
       - APP_SCHEME=${APP_SCHEME:-http}
+      # IP/CIDR của load balancer đứng trước container này (phân tách bằng
+      # dấu phẩy); để trống khi nginx này là điểm vào đầu tiên.
+      - REAL_IP_FROM=${REAL_IP_FROM:-}
     # NOTE: If using a remote App backend, comment out or remove the depends_on
     # block below and set APP_HOST/APP_BACKEND_PORT/APP_SCHEME in your .env file.
     depends_on:
@@ -91,9 +94,8 @@ services:
       # Docker 沙箱默认关闭：本机 docker.sock 等同宿主机 root。
       # 系统管理员也可在「Settings  → 系统Settings 」打开（立即生效）。未落库时读本变量。
       - WEKNORA_SANDBOX_DOCKER_ENABLED=${WEKNORA_SANDBOX_DOCKER_ENABLED:-false}
-      # gin 信任的代理 CIDR（逗号分隔）；显式设为空字符串则禁用代理信任。
-      # 默认信任 loopback + 私网段（容器网络内 nginx 已覆盖）
-      # - WEKNORA_TRUSTED_PROXIES=${WEKNORA_TRUSTED_PROXIES:-}
+      # Proxy được tin X-Forwarded-For: đặt WEKNORA_TRUSTED_PROXIES trong .env
+      # (đi vào qua env_file) — xem .env.example và docs/billing-payment-webhook.md.
       # 启动时自动执行数据库迁移；设为 false 禁用，默认启用
       - AUTO_MIGRATE=${AUTO_MIGRATE:-true}
       # IM 渠道图片/文件外链的外部可达 URL。IM 显示Knowledge Base图片需二选一：

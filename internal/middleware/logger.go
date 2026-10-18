@@ -255,7 +255,10 @@ func Logger() gin.HandlerFunc {
 			"client_ip":   secutils.SanitizeForLog(clientIP),
 		})
 
-		// Thêm request body (nếu có)
+		// Thêm request body (nếu có), trừ khi handler báo body chứa bí mật
+		if c.GetBool(types.LogOmitRequestBodyContextKey.String()) {
+			requestBody = ""
+		}
 		if requestBody != "" {
 			logMsg = logMsg.WithField("request_body", secutils.SanitizeForLog(requestBody))
 		}

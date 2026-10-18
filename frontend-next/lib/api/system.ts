@@ -409,7 +409,8 @@ export interface SystemSettingItem {
   value_type: "int" | "string" | "bool" | "string_list" | "json";
   category: string;
   description: string;
-  /** P3+ — currently always false. May surface a "redacted" state when true. */
+  /** True for secret keys (billing.webhook_secret): `value` is masked to
+   * "••••••••" + its last 4 characters, "" when unset. */
   is_secret: boolean;
   /** P3+ — currently always false. May show "needs restart" badge when true. */
   requires_restart: boolean;

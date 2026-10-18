@@ -451,6 +451,8 @@ export const BILLING_SETTING_KEYS = {
   accountName: "billing.bank_account_name",
   orderTTLHours: "billing.order_ttl_hours",
   contact: "billing.contact",
+  /** Secret of the payment checker; reads come back masked. */
+  webhookSecret: "billing.webhook_secret",
 } as const;
 
 /** i18n key for a quote's promo_error. */

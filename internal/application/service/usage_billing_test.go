@@ -21,7 +21,9 @@ type memBillingRepo struct {
 	interfaces.UsageBillingRepository
 	promos map[string]*types.UsagePromoCode
 	orders map[string]*types.UsageOrder
-	plans  *memPlanRepo
+	// payments are keyed by source + "/" + external_id
+	payments map[string]*types.UsagePaymentTransaction
+	plans    *memPlanRepo
 	// failUpdateOrder makes the next UpdateOrder fail (a lost connection
 	// after the subscription was written).
 	failUpdateOrder bool
@@ -38,6 +40,10 @@ func (m *memBillingRepo) InTransaction(ctx context.Context, fn func(ctx context.
 	orders := map[string]types.UsageOrder{}
 	for k, v := range m.orders {
 		orders[k] = *v
+	}
+	payments := map[string]types.UsagePaymentTransaction{}
+	for k, v := range m.payments {
+		payments[k] = *v
 	}
 	subs := map[string]types.UsageSubscription{}
 	if m.plans != nil {
@@ -57,6 +63,11 @@ func (m *memBillingRepo) InTransaction(ctx context.Context, fn func(ctx context.
 	for k, v := range orders {
 		v := v
 		m.orders[k] = &v
+	}
+	m.payments = map[string]*types.UsagePaymentTransaction{}
+	for k, v := range payments {
+		v := v
+		m.payments[k] = &v
 	}
 	if m.plans != nil {
 		m.plans.active = map[string]*types.UsageSubscription{}
@@ -81,7 +92,11 @@ func (m *memBillingRepo) GetOrderForUpdate(ctx context.Context, id string) (*typ
 }
 
 func newMemBillingRepo() *memBillingRepo {
-	return &memBillingRepo{promos: map[string]*types.UsagePromoCode{}, orders: map[string]*types.UsageOrder{}}
+	return &memBillingRepo{
+		promos:   map[string]*types.UsagePromoCode{},
+		orders:   map[string]*types.UsageOrder{},
+		payments: map[string]*types.UsagePaymentTransaction{},
+	}
 }
 
 func (m *memBillingRepo) GetPromoByCode(_ context.Context, code string) (*types.UsagePromoCode, error) {

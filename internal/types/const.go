@@ -16,6 +16,10 @@ const (
 	TenantInfoContextKey ContextKey = "TenantInfo"
 	// RequestIDContextKey is the context key for request ID
 	RequestIDContextKey ContextKey = "RequestID"
+	// LogOmitRequestBodyContextKey: a handler sets it (gin c.Set, true) when
+	// the request body carries a secret the field-name redaction cannot
+	// see; the request logger then leaves the body out.
+	LogOmitRequestBodyContextKey ContextKey = "LogOmitRequestBody"
 	// LoggerContextKey is the context key for logger
 	LoggerContextKey ContextKey = "Logger"
 	// UserContextKey is the context key for user information

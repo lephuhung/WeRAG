@@ -86,6 +86,38 @@ func (l *ipRateLimiter) allow(ip string) bool {
 	return true
 }
 
+// check runs ok under the IP's bucket lock and counts a slot only when it
+// returns false (e.g. a wrong secret). refused is true, without running
+// ok, once the window's slots are used up. Holding the lock across ok
+// serialises the checks of one IP, so a parallel burst gets at most max
+// failed checks, and a passing check never takes a slot. ok must be quick.
+func (l *ipRateLimiter) check(ip string, ok func() bool) (refused, passed bool) {
+	if ip == "" {
+		ip = "_unknown_"
+	}
+	now := time.Now()
+	cutoff := now.Add(-l.window)
+	val, _ := l.buckets.LoadOrStore(ip, &ipBucket{})
+	b := val.(*ipBucket)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	kept := b.timestamps[:0]
+	for _, t := range b.timestamps {
+		if t.After(cutoff) {
+			kept = append(kept, t)
+		}
+	}
+	b.timestamps = kept
+	if len(b.timestamps) >= l.max {
+		return true, false
+	}
+	if ok() {
+		return false, true
+	}
+	b.timestamps = append(b.timestamps, now)
+	return false, false
+}
+
 func (l *ipRateLimiter) cleanupLoop() {
 	t := time.NewTicker(publicAuthRateLimitCleanupInterval)
 	defer t.Stop()

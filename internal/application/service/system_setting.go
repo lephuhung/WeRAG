@@ -104,6 +104,10 @@ type settingSpec struct {
 	// (e.g. asynq worker pool size). The UI shows a restart badge; the
 	// service persists the flag on first write.
 	RequiresRestart bool
+	// Secret marks keys whose value must not leave the server once saved:
+	// List/Get/Update return it masked (see maskSecretSetting) and the
+	// change audit carries no value. Only the typed Get* reads see it.
+	Secret bool
 }
 
 // registry pins the set of legal keys. Expanding it is a deliberate,
@@ -476,6 +480,14 @@ var registry = map[string]settingSpec{
 	types.BillingContactSettingKey: {
 		Type: "string", EnvName: "", Default: "", Category: "billing",
 		Description: "Thông tin liên hệ hỗ trợ thanh toán hiển thị trên trang thanh toán.",
+	},
+	// billing.webhook_secret authenticates the payment checker on POST
+	// /billing/payments/webhook; read per request, so a new value takes
+	// effect at once. Empty (and no ENV) = webhook off.
+	types.BillingWebhookSecretSettingKey: {
+		Type: "string", EnvName: types.BillingWebhookSecretEnv, Default: "", Category: "billing", Secret: true,
+		Description: "Khóa bí mật của dịch vụ tự kiểm tra giao dịch khi đẩy giao dịch vào webhook thanh toán. " +
+			"Để trống = tắt webhook. Có hiệu lực ngay; chỉ hiện đầy đủ một lần lúc tạo.",
 	},
 	// chat.web_search_enabled gates web search (network providers and the
 	// local-browser tool) platform-wide. The per-agent / per-request switches
@@ -1006,11 +1018,11 @@ func (s *systemSettingService) List(ctx context.Context) ([]*types.SystemSetting
 			if isBootstrapDefaultRow(row, spec) {
 				row.Value = s.fallbackJSONForSpec(key, spec)
 			}
-			out = append(out, row)
+			out = append(out, maskSecretSetting(row, spec))
 			delete(byKey, key)
 			continue
 		}
-		out = append(out, s.virtualSetting(key, spec))
+		out = append(out, maskSecretSetting(s.virtualSetting(key, spec), spec))
 	}
 
 	// Preserve out-of-band rows so operators can still see unexpected
@@ -1046,9 +1058,36 @@ func (s *systemSettingService) Get(ctx context.Context, key string) (*types.Syst
 		if isBootstrapDefaultRow(row, spec) {
 			row.Value = s.fallbackJSONForSpec(key, spec)
 		}
-		return row, nil
+		return maskSecretSetting(row, spec), nil
 	}
-	return s.virtualSetting(key, spec), nil
+	return maskSecretSetting(s.virtualSetting(key, spec), spec), nil
+}
+
+// IsSecretSetting reports whether key is a Secret setting, so callers can
+// keep its value out of places the service does not control (request logs).
+func IsSecretSetting(key string) bool { return registry[key].Secret }
+
+// maskSecretSetting returns row as API callers may see it: for a Secret
+// key a copy whose value keeps only the last 4 characters ("" stays ""),
+// so the page can tell a secret is set without the server handing it
+// out. The copy matters: Update's row is also the cache entry.
+func maskSecretSetting(row *types.SystemSetting, spec settingSpec) *types.SystemSetting {
+	if row == nil || !spec.Secret {
+		return row
+	}
+	cp := *row
+	cp.IsSecret = true
+	var v string
+	_ = json.Unmarshal(row.Value, &v)
+	if v != "" {
+		tail := v
+		if len(tail) > 4 {
+			tail = tail[len(tail)-4:]
+		}
+		v = "••••••••" + tail
+	}
+	cp.Value, _ = json.Marshal(v)
+	return &cp
 }
 
 func (s *systemSettingService) virtualSetting(key string, spec settingSpec) *types.SystemSetting {
@@ -1062,7 +1101,7 @@ func (s *systemSettingService) virtualSetting(key string, spec settingSpec) *typ
 		ValueType:       spec.Type,
 		Category:        category,
 		Description:     spec.Description,
-		IsSecret:        false,
+		IsSecret:        spec.Secret,
 		RequiresRestart: spec.RequiresRestart,
 		LastModifiedBy:  "",
 		Enum:            spec.Enum,
@@ -1126,8 +1165,12 @@ func (s *systemSettingService) fallbackJSONForSpec(key string, spec settingSpec)
 // empty last_modified_by and the registry default value, so deployments
 // that already ran the unsafe seed regain the intended ENV/config
 // fallback behaviour until a SystemAdmin explicitly saves a value.
+//
+// Secret keys are never treated so: their saved "" deliberately turns the
+// feature off, and must not fall back to the ENV value even when written
+// without a user in context (a script, an internal caller).
 func isBootstrapDefaultRow(row *types.SystemSetting, spec settingSpec) bool {
-	if row == nil || strings.TrimSpace(row.LastModifiedBy) != "" {
+	if row == nil || spec.Secret || strings.TrimSpace(row.LastModifiedBy) != "" {
 		return false
 	}
 	def, err := encodeDefault(spec)
@@ -1234,7 +1277,7 @@ func (s *systemSettingService) Update(ctx context.Context, key string, rawValue 
 		ValueType:       spec.Type,
 		Category:        category,
 		Description:     description,
-		IsSecret:        isSecret,
+		IsSecret:        isSecret || spec.Secret,
 		RequiresRestart: requiresRestart,
 		LastModifiedBy:  auditActor(ctx),
 	}
@@ -1271,7 +1314,7 @@ func (s *systemSettingService) Update(ctx context.Context, key string, rawValue 
 
 	s.publishChange(ctx, key)
 	s.emitChangeAudit(ctx, key, spec.Type, oldValue, encoded)
-	return persisted, nil
+	return maskSecretSetting(persisted, spec), nil
 }
 
 // Reset deletes the DB override for `key` so the resolver falls back
@@ -1421,12 +1464,18 @@ func (s *systemSettingService) emitChangeAudit(
 	if s.audit == nil {
 		return
 	}
-	details, _ := json.Marshal(map[string]any{
+	entry := map[string]any{
 		"key":        key,
 		"value_type": valueType,
 		"old_value":  json.RawMessage(oldValue),
 		"new_value":  json.RawMessage(newValue),
-	})
+	}
+	if registry[key].Secret {
+		// a secret never lands in the audit log, only that it changed
+		entry["old_value"] = secretAuditValue(oldValue)
+		entry["new_value"] = secretAuditValue(newValue)
+	}
+	details, _ := json.Marshal(entry)
 	_ = s.audit.Log(ctx, &types.AuditLog{
 		// tenant_id=0 marks the row as system-scope (the audit_logs
 		// table itself is tenant-scoped; 0 is the convention for
@@ -1553,6 +1602,15 @@ func encodeForType(declared string, rawValue any) (types.JSON, error) {
 	}
 }
 
+// secretAuditValue says whether a secret was set, without its value.
+func secretAuditValue(raw types.JSON) string {
+	var v string
+	if len(raw) == 0 || json.Unmarshal(raw, &v) != nil || v == "" {
+		return ""
+	}
+	return "[set]"
+}
+
 // validateRegistryEntry runs key-specific structural validation that
 // goes beyond the type contract enforced by encodeForType. It is called
 // by Update right after the type/enum checks; nil error means the value
@@ -1566,6 +1624,21 @@ func encodeForType(declared string, rawValue any) (types.JSON, error) {
 //     400 body verbatim).
 func validateRegistryEntry(key string, rawValue any) error {
 	switch key {
+	case types.BillingWebhookSecretSettingKey:
+		// "" turns the webhook off; anything else must look generated, which
+		// also refuses the masked value the page shows being saved back.
+		v, _ := rawValue.(string)
+		if v == "" {
+			return nil
+		}
+		if len(v) < 32 || len(v) > 256 {
+			return errors.New("the webhook secret must be 32 to 256 characters")
+		}
+		for _, r := range v {
+			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
+				return errors.New("the webhook secret may only contain letters, digits, '-' and '_'")
+			}
+		}
 	case "asynq.core_concurrency", "asynq.postprocess_concurrency",
 		"asynq.enrichment_concurrency", "asynq.maintenance_concurrency",
 		"asynq.shared_concurrency", "asynq.wiki_concurrency":

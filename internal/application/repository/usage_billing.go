@@ -178,3 +178,58 @@ func (r *usageBillingRepository) ExpirePendingOrders(ctx context.Context, now ti
 	}
 	return expired, nil
 }
+
+// CreatePaymentTransaction inserts with ON CONFLICT DO NOTHING on
+// (source, external_id): no row affected means the transfer is known.
+func (r *usageBillingRepository) CreatePaymentTransaction(ctx context.Context, t *types.UsagePaymentTransaction) (bool, error) {
+	res := r.conn(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "source"}, {Name: "external_id"}},
+		DoNothing: true,
+	}).Create(t)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected > 0, nil
+}
+
+func (r *usageBillingRepository) GetPaymentTransactionByExternalID(
+	ctx context.Context, source, externalID string,
+) (*types.UsagePaymentTransaction, error) {
+	var t types.UsagePaymentTransaction
+	err := r.conn(ctx).Where("source = ? AND external_id = ?", source, externalID).First(&t).Error
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+func (r *usageBillingRepository) UpdatePaymentTransaction(ctx context.Context, t *types.UsagePaymentTransaction) error {
+	t.UpdatedAt = time.Now()
+	return r.conn(ctx).Model(t).Select("*").Omit("id", "created_at").Updates(t).Error
+}
+
+func (r *usageBillingRepository) ListPaymentTransactions(
+	ctx context.Context, filter types.UsagePaymentFilter,
+) ([]*types.UsagePaymentTransaction, int64, error) {
+	q := r.conn(ctx).Model(&types.UsagePaymentTransaction{})
+	if filter.Status != "" {
+		q = q.Where("status = ?", filter.Status)
+	}
+	var total int64
+	if err := q.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	// id breaks ties so pages do not overlap within one created_at
+	q = q.Order("created_at DESC").Order("id DESC")
+	if filter.Offset > 0 {
+		q = q.Offset(filter.Offset)
+	}
+	if filter.Limit > 0 {
+		q = q.Limit(filter.Limit)
+	}
+	var out []*types.UsagePaymentTransaction
+	if err := q.Find(&out).Error; err != nil {
+		return nil, 0, err
+	}
+	return out, total, nil
+}

@@ -4096,6 +4096,35 @@ definitions:
       period:
         type: string
     type: object
+  github_com_Tencent_WeKnora_internal_types.UsagePaymentWebhookRequest:
+    properties:
+      account_no:
+        description: |-
+          AccountNo is the receiving account; when given it must be the
+          configured one.
+        type: string
+      amount_vnd:
+        description: AmountVND is the transferred amount in đồng.
+        type: integer
+      content:
+        description: Content is the transfer description; the order code is found
+          in it.
+        type: string
+      direction:
+        description: Direction is "in" (default) or "out"; outgoing money is ignored.
+        type: string
+      source:
+        description: |-
+          Source names the checker ("sepay", "casso", "bank-poller"); with
+          TransactionID it identifies the transaction, so a resend is a no-op.
+        type: string
+      transacted_at:
+        description: 'TransactedAt is when the bank booked the transfer (default:
+          now).'
+        type: string
+      transaction_id:
+        type: string
+    type: object
   github_com_Tencent_WeKnora_internal_types.UsagePlan:
     properties:
       code:
@@ -8141,6 +8170,32 @@ paths:
       security:
       - Bearer: []
       summary: Cancel a pending order of mine / of my organization
+      tags:
+      - Thanh toán
+  /billing/payments/webhook:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Public route authenticated by the billing.webhook_secret setting (fallback BILLING_WEBHOOK_SECRET)
+        (header X-Webhook-Secret, or Authorization: Bearer|Apikey <secret>).
+        A transfer whose content carries a pending order's code and covers
+        its total confirms the order. A resend of the same source +
+        transaction_id returns the stored result with duplicate=true.
+      parameters:
+      - description: transaction
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.UsagePaymentWebhookRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Push one incoming bank transfer (payment checker)
       tags:
       - Thanh toán
   /billing/plans:
@@ -17085,6 +17140,33 @@ paths:
       security:
       - Bearer: []
       summary: Mark an order paid and apply it (SuperAdmin)
+      tags:
+      - Gói sử dụng
+  /system/admin/usage/payments:
+    get:
+      description: Newest first. page_size defaults to 50, at most 200.
+      parameters:
+      - description: matched|unmatched|underpaid|order_closed|confirm_failed|ignored
+        in: query
+        name: status
+        type: string
+      - description: Page (from 1)
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      responses:
+        "200":
+          description: data, total, page, page_size
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: Transfers pushed by the payment checker (SuperAdmin)
       tags:
       - Gói sử dụng
   /system/admin/usage/plans:

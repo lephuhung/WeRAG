@@ -1,6 +1,10 @@
 package handler
 
 import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -366,4 +370,100 @@ func (h *UsageBillingHandler) DeletePromo(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// ---- payment checker -----------------------------------------------------------
+
+// paymentWebhookMaxBody bounds one pushed transaction.
+const paymentWebhookMaxBody = 64 << 10
+
+// PaymentWebhookSecret feeds middleware.PaymentWebhookAuth on the route.
+func (h *UsageBillingHandler) PaymentWebhookSecret(ctx context.Context) string {
+	return h.billing.PaymentWebhookSecret(ctx)
+}
+
+// PaymentWebhook godoc
+// @Summary      Push one incoming bank transfer (payment checker)
+// @Description  Public route authenticated by the billing.webhook_secret setting (fallback BILLING_WEBHOOK_SECRET)
+// @Description  (header X-Webhook-Secret, or Authorization: Bearer|Apikey <secret>).
+// @Description  A transfer whose content carries a pending order's code and covers
+// @Description  its total confirms the order. A resend of the same source +
+// @Description  transaction_id returns the stored result with duplicate=true.
+// @Tags         Thanh toán
+// @Accept       json
+// @Param        body body types.UsagePaymentWebhookRequest true "transaction"
+// @Success      200 {object} map[string]interface{}
+// @Router       /billing/payments/webhook [post]
+//
+// The secret and the per-IP limits are checked by
+// middleware.PaymentWebhookAuth on the route, before this handler.
+func (h *UsageBillingHandler) PaymentWebhook(c *gin.Context) {
+	raw, err := io.ReadAll(io.LimitReader(c.Request.Body, paymentWebhookMaxBody+1))
+	if err != nil {
+		c.Error(apperrors.NewBadRequestError("cannot read the body"))
+		return
+	}
+	if len(raw) > paymentWebhookMaxBody {
+		c.Error(apperrors.NewBadRequestError("body too large"))
+		return
+	}
+	// Postgres text and jsonb reject NUL; refuse it here (400, not worth a
+	// resend) rather than fail the insert with a 500 the checker retries.
+	if bytes.IndexByte(raw, 0) >= 0 || bytes.Contains(raw, []byte(`\u0000`)) {
+		c.Error(apperrors.NewBadRequestError("the body must not contain NUL characters"))
+		return
+	}
+	var req types.UsagePaymentWebhookRequest
+	if err := json.Unmarshal(raw, &req); err != nil {
+		c.Error(apperrors.NewBadRequestError("invalid transaction body").WithDetails(err.Error()))
+		return
+	}
+	res, err := h.billing.RecordPayment(c.Request.Context(), req, raw)
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": res})
+}
+
+// AdminListPayments godoc
+// @Summary      Transfers pushed by the payment checker (SuperAdmin)
+// @Tags         Gói sử dụng
+// @Description  Newest first. page_size defaults to 50, at most 200.
+// @Param        status    query string false "matched|unmatched|underpaid|order_closed|confirm_failed|ignored"
+// @Param        page      query int    false "Page (from 1)"
+// @Param        page_size query int    false "Page size"
+// @Success      200 {object} map[string]interface{} "data, total, page, page_size"
+// @Security     Bearer
+// @Router       /system/admin/usage/payments [get]
+func (h *UsageBillingHandler) AdminListPayments(c *gin.Context) {
+	pageNo, size := 1, 50
+	if v := strings.TrimSpace(c.Query("page")); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			c.Error(apperrors.NewBadRequestError("page must be a number from 1"))
+			return
+		}
+		pageNo = n
+	}
+	if v := strings.TrimSpace(c.Query("page_size")); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			c.Error(apperrors.NewBadRequestError("page_size must be a number from 1"))
+			return
+		}
+		size = min(n, 200)
+	}
+	list, total, err := h.billing.ListPayments(c.Request.Context(), types.UsagePaymentFilter{
+		Status: strings.TrimSpace(c.Query("status")),
+		Offset: (pageNo - 1) * size,
+		Limit:  size,
+	})
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true, "data": list, "total": total, "page": pageNo, "page_size": size,
+	})
 }

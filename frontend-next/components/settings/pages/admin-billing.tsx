@@ -1,11 +1,13 @@
 "use client";
 
 /* SuperAdmin billing: the bank account that receives transfers (VietQR),
- * promo codes, and the orders to confirm once the money arrived. */
+ * promo codes, the orders to confirm once the money arrived, and the
+ * secret of the payment checker that confirms them automatically. */
 
 import { useCallback, useEffect, useState } from "react";
 import { Modal } from "@/components/modal";
-import { IconEdit, IconPlus, IconRefresh } from "@/components/icons";
+import { IconCopy, IconEdit, IconPlus, IconRefresh } from "@/components/icons";
+import { copyToClipboard } from "@/lib/clipboard";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { getCurrentUser } from "@/lib/api/auth";
 import { getSystemSetting, updateSystemSetting } from "@/lib/api/system";
@@ -30,6 +32,13 @@ import { formatDateTime } from "@/lib/datetime";
 
 type BankForm = { bankBin: string; bankName: string; accountNo: string; accountName: string; orderTTLHours: string; contact: string };
 const emptyBank: BankForm = { bankBin: "", bankName: "", accountNo: "", accountName: "", orderTTLHours: "72", contact: "" };
+
+/** 32 random bytes as hex: what the webhook secret setting accepts. */
+function newWebhookSecret(): string {
+  const b = new Uint8Array(32);
+  crypto.getRandomValues(b);
+  return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+}
 
 function todayVN(): string {
   return new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
@@ -56,6 +65,11 @@ export default function AdminBilling() {
   const [busy, setBusy] = useState(false);
   const [bank, setBank] = useState<BankForm>(emptyBank);
   const [bankSaved, setBankSaved] = useState(false);
+  // masked current secret ("" = webhook off); the full one only right after
+  // it was generated, until the page is left
+  const [secretMasked, setSecretMasked] = useState("");
+  const [secretShown, setSecretShown] = useState("");
+  const [secretCopied, setSecretCopied] = useState(false);
   const [plans, setPlans] = useState<UsagePlan[]>([]);
   const [promos, setPromos] = useState<UsagePromoCode[]>([]);
   const [orders, setOrders] = useState<UsageOrder[]>([]);
@@ -71,11 +85,12 @@ export default function AdminBilling() {
   const load = useCallback(async () => {
     try {
       const K = BILLING_SETTING_KEYS;
-      const [bin, name, no, acct, ttl, contact, pl, pr] = await Promise.all([
+      const [bin, name, no, acct, ttl, contact, secret, pl, pr] = await Promise.all([
         getSystemSetting(K.bankBin), getSystemSetting(K.bankName), getSystemSetting(K.accountNo),
         getSystemSetting(K.accountName), getSystemSetting(K.orderTTLHours), getSystemSetting(K.contact),
-        listUsagePlans(true), listUsagePromos(true),
+        getSystemSetting(K.webhookSecret), listUsagePlans(true), listUsagePromos(true),
       ]);
+      setSecretMasked(String(secret.value ?? ""));
       setBank({
         bankBin: String(bin.value ?? ""), bankName: String(name.value ?? ""), accountNo: String(no.value ?? ""),
         accountName: String(acct.value ?? ""), orderTTLHours: String(ttl.value ?? "72"), contact: String(contact.value ?? ""),
@@ -130,6 +145,27 @@ export default function AdminBilling() {
       setBankSaved(true);
       setTimeout(() => setBankSaved(false), 2000);
     });
+
+  // ---- payment webhook secret
+  const generateSecret = () => {
+    if (secretMasked && !window.confirm(t("badm.webhookRegenConfirm"))) return;
+    void run(async () => {
+      const secret = newWebhookSecret();
+      const row = await updateSystemSetting(BILLING_SETTING_KEYS.webhookSecret, secret);
+      setSecretMasked(String(row.value ?? ""));
+      setSecretShown(secret);
+      setSecretCopied(false);
+    });
+  };
+  const disableWebhook = () => {
+    if (!window.confirm(t("badm.webhookOffConfirm"))) return;
+    void run(async () => {
+      await updateSystemSetting(BILLING_SETTING_KEYS.webhookSecret, "");
+      setSecretMasked("");
+      setSecretShown("");
+    });
+  };
+  const copySecret = async () => setSecretCopied(await copyToClipboard(secretShown));
 
   // ---- promos
   const openNewPromo = () => {
@@ -322,6 +358,38 @@ export default function AdminBilling() {
           {bankSaved && <span className="caption text-emerald-700">{t("badm.saved")}</span>}
           <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void saveBank()}>{t("common.save")}</button>
         </div>
+      </section>
+
+      {/* Payment webhook */}
+      <section className="rounded-lg border border-hairline p-4">
+        <h3 className="text-[14px] font-medium text-ink">{t("badm.webhookTitle")}</h3>
+        <p className="caption mb-3 text-muted">{t("badm.webhookDesc")}</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="caption text-muted">{t("badm.webhookSecret")}</span>
+          {secretMasked ? (
+            <code className="rounded bg-surface-strong px-2 py-1 font-mono text-[12px] text-ink">{secretMasked}</code>
+          ) : (
+            <span className="badge-pill text-[11px]">{t("badm.webhookOff")}</span>
+          )}
+          <div className="ml-auto flex gap-2">
+            {secretMasked && (
+              <button type="button" className="btn btn-outline btn-sm text-rose-600" disabled={busy} onClick={disableWebhook}>{t("badm.webhookDisable")}</button>
+            )}
+            <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={generateSecret}>{t("badm.webhookGenerate")}</button>
+          </div>
+        </div>
+        {secretShown && (
+          <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+            <p className="caption mb-2">{t("badm.webhookShownOnce")}</p>
+            <div className="flex items-center gap-2">
+              <code className="min-w-0 flex-1 break-all rounded bg-surface-strong px-2 py-1 font-mono text-[12px] text-ink">{secretShown}</code>
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => void copySecret()}>
+                <IconCopy className="h-3.5 w-3.5" /> {secretCopied ? t("badm.webhookCopied") : t("badm.webhookCopy")}
+              </button>
+            </div>
+          </div>
+        )}
+        <p className="caption mt-3 text-muted-soft">{t("badm.webhookHelp")}</p>
       </section>
 
       {/* Promo modal */}

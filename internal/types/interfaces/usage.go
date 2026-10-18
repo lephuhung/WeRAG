@@ -174,6 +174,15 @@ type UsageBillingRepository interface {
 	// LockScope serialises order settlement for one scope until the
 	// transaction of ctx ends.
 	LockScope(ctx context.Context, scopeType, scopeID string) error
+
+	// CreatePaymentTransaction inserts t unless (source, external_id) is
+	// already stored, and reports whether it inserted. In a transaction a
+	// concurrent insert of the same key waits for the other to commit.
+	CreatePaymentTransaction(ctx context.Context, t *types.UsagePaymentTransaction) (bool, error)
+	GetPaymentTransactionByExternalID(ctx context.Context, source, externalID string) (*types.UsagePaymentTransaction, error)
+	UpdatePaymentTransaction(ctx context.Context, t *types.UsagePaymentTransaction) error
+	// ListPaymentTransactions returns one page and the total matching filter.
+	ListPaymentTransactions(ctx context.Context, filter types.UsagePaymentFilter) ([]*types.UsagePaymentTransaction, int64, error)
 }
 
 // UsageBillingService quotes, takes and settles orders for usage packages.
@@ -201,6 +210,16 @@ type UsageBillingService interface {
 	// replaces whatever the scope had. Settlement is one transaction, so a
 	// failed confirmation leaves nothing applied and a retry applies once.
 	ConfirmOrder(ctx context.Context, id, confirmedBy string) (*types.UsageOrderView, error)
+	// RecordPayment stores a transfer pushed by the payment checker (a
+	// resend returns the stored one with Duplicate set) and confirms the
+	// order whose code is in its content when the amount covers it.
+	RecordPayment(ctx context.Context, req types.UsagePaymentWebhookRequest, raw []byte) (*types.UsagePaymentResult, error)
+	// ListPayments returns one page of stored transfers and the total.
+	ListPayments(ctx context.Context, filter types.UsagePaymentFilter) ([]*types.UsagePaymentTransaction, int64, error)
+	// PaymentWebhookSecret is the secret the checker must send ("" = the
+	// webhook is off): the billing.webhook_secret setting, else
+	// BILLING_WEBHOOK_SECRET.
+	PaymentWebhookSecret(ctx context.Context) string
 
 	ListPromos(ctx context.Context, includeInactive bool) ([]*types.UsagePromoCode, error)
 	CreatePromo(ctx context.Context, promo *types.UsagePromoCode) (*types.UsagePromoCode, error)

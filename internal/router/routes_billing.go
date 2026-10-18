@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Tencent/WeKnora/internal/handler"
+	"github.com/Tencent/WeKnora/internal/middleware"
 )
 
 // RegisterBillingRoutes mounts the purchase flow for signed-in people
@@ -14,6 +15,11 @@ func RegisterBillingRoutes(r *gin.RouterGroup, h *handler.UsageBillingHandler, g
 	if h == nil {
 		return
 	}
+	// The payment checker has no account (the path is in middleware
+	// noAuthAPI): PaymentWebhookAuth checks its shared secret under per-IP
+	// limits, wrong secrets counted apart.
+	r.POST("/billing/payments/webhook", middleware.PaymentWebhookAuth(h.PaymentWebhookSecret), h.PaymentWebhook)
+
 	billing := r.Group("/billing", g.Member())
 	billing.GET("/info", h.Info)
 	billing.GET("/plans", h.Plans)
@@ -27,6 +33,7 @@ func RegisterBillingRoutes(r *gin.RouterGroup, h *handler.UsageBillingHandler, g
 	admin.GET("/orders", h.AdminListOrders)
 	admin.POST("/orders/:id/confirm", h.AdminConfirmOrder)
 	admin.POST("/orders/:id/cancel", h.AdminCancelOrder)
+	admin.GET("/payments", h.AdminListPayments)
 	admin.GET("/promos", h.ListPromos)
 	admin.POST("/promos", h.CreatePromo)
 	admin.PUT("/promos/:id", h.UpdatePromo)

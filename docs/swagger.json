@@ -1980,6 +1980,38 @@
                 }
             }
         },
+        "/billing/payments/webhook": {
+            "post": {
+                "description": "Public route authenticated by the billing.webhook_secret setting (fallback BILLING_WEBHOOK_SECRET)\n(header X-Webhook-Secret, or Authorization: Bearer|Apikey \u003csecret\u003e).\nA transfer whose content carries a pending order's code and covers\nits total confirms the order. A resend of the same source +\ntransaction_id returns the stored result with duplicate=true.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Thanh toán"
+                ],
+                "summary": "Push one incoming bank transfer (payment checker)",
+                "parameters": [
+                    {
+                        "description": "transaction",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsagePaymentWebhookRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/billing/plans": {
             "get": {
                 "security": [
@@ -15630,6 +15662,49 @@
                 }
             }
         },
+        "/system/admin/usage/payments": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Newest first. page_size defaults to 50, at most 200.",
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Transfers pushed by the payment checker (SuperAdmin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "matched|unmatched|underpaid|order_closed|confirm_failed|ignored",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page (from 1)",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "data, total, page, page_size",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/system/admin/usage/plans": {
             "get": {
                 "security": [
@@ -23918,6 +23993,38 @@
                     "type": "string"
                 },
                 "period": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.UsagePaymentWebhookRequest": {
+            "type": "object",
+            "properties": {
+                "account_no": {
+                    "description": "AccountNo is the receiving account; when given it must be the\nconfigured one.",
+                    "type": "string"
+                },
+                "amount_vnd": {
+                    "description": "AmountVND is the transferred amount in đồng.",
+                    "type": "integer"
+                },
+                "content": {
+                    "description": "Content is the transfer description; the order code is found in it.",
+                    "type": "string"
+                },
+                "direction": {
+                    "description": "Direction is \"in\" (default) or \"out\"; outgoing money is ignored.",
+                    "type": "string"
+                },
+                "source": {
+                    "description": "Source names the checker (\"sepay\", \"casso\", \"bank-poller\"); with\nTransactionID it identifies the transaction, so a resend is a no-op.",
+                    "type": "string"
+                },
+                "transacted_at": {
+                    "description": "TransactedAt is when the bank booked the transfer (default: now).",
+                    "type": "string"
+                },
+                "transaction_id": {
                     "type": "string"
                 }
             }
