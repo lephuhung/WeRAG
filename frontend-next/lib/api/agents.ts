@@ -1,5 +1,6 @@
 /* Ported from frontend/src/api/agent/index.ts. */
 import { apiDel, apiGet, apiPost, apiPut } from "@/lib/api-client";
+import type { DomainPackInfo } from "./domain-packs";
 
 export {
   isDocumentAssistantAgent,
@@ -71,6 +72,9 @@ export interface CustomAgentConfig {
   // ===== skills (agent mode only) =====
   skills_selection_mode?: "all" | "selected" | "none";
   selected_skills?: string[];
+  // Embedded domain packs this agent reads (smart-reasoning only); checked
+  // on save against the shipped packs and the agent's tools.
+  domain_packs?: string[];
 
   // ===== sandbox =====
   // Sandbox config the agent's skill scripts run on; empty disables sandbox
@@ -296,6 +300,15 @@ export interface AgentTypePreset {
 
 export function getAgentTypePresets() {
   return apiGet<{ data: AgentTypePreset[] }>("/api/v1/agents/type-presets");
+}
+
+// ===== domain packs =====
+
+export type { DomainPackInfo } from "./domain-packs";
+export { missingDomainPackTools, shippedDomainPacks } from "./domain-packs";
+
+export function listDomainPacks() {
+  return apiGet<{ data: DomainPackInfo[] }>("/api/v1/agents/domain-packs");
 }
 
 // ===== IM channels =====

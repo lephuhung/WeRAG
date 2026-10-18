@@ -24,7 +24,9 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	domainpackassets "github.com/Tencent/WeKnora/domain-packs"
 	"github.com/Tencent/WeKnora/internal/agent/approval"
+	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	neo4jRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/neo4j"
@@ -590,6 +592,21 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewWebSearchProviderHandler))
 	must(container.Provide(handler.NewVectorStoreHandler))
 	must(container.Provide(handler.NewStorageBackendHandler))
+	// domain packs ship in the binary; an invalid one stops startup, like a
+	// broken built-in skill
+	must(container.Provide(func() (*domainpacks.Registry, error) {
+		registry, err := domainpacks.Load(domainpackassets.FS)
+		if err != nil {
+			return nil, err
+		}
+		for _, name := range registry.Names() {
+			pack, _ := registry.Get(name)
+			for _, finding := range pack.Lint() {
+				logger.Warnf(ctx, "[Container] Domain pack %s lint: %s", name, finding)
+			}
+		}
+		return registry, nil
+	}))
 	must(container.Provide(handler.NewCustomAgentHandler))
 	must(container.Provide(handler.NewUserResourceFavoriteHandler))
 	must(container.Provide(func(s *service.TenantSkillService) *handler.SkillHandler {
@@ -699,6 +716,23 @@ func BuildContainer(container *dig.Container) *dig.Container {
 				u.SetSpellingSupport(settings, feedback)
 			}
 		}
+	}))
+	// the agent, session and custom-agent services read the shipped domain packs
+	must(container.Invoke(func(registry *domainpacks.Registry, agents interfaces.AgentService,
+		sessions interfaces.SessionService, customAgents interfaces.CustomAgentService) error {
+		type domainPackUser interface {
+			SetDomainPacks(*domainpacks.Registry)
+		}
+		for _, svc := range []any{agents, sessions, customAgents} {
+			u, ok := svc.(domainPackUser)
+			if !ok {
+				// a silent skip would leave every agent without its packs
+				return fmt.Errorf("%T cannot take the domain packs", svc)
+			}
+			u.SetDomainPacks(registry)
+		}
+		logger.Infof(ctx, "[Container] Domain packs shipped: %v", registry.Names())
+		return nil
 	}))
 	// answers to the chat gate's "unclear word" question are kept as
 	// training data for the spell-check model

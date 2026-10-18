@@ -169,6 +169,9 @@ type AgentConfig struct {
 	// Per-request @mention pins (runtime only; injected as <must_use> in the user message).
 	PinnedMCPServiceIDs []string `json:"-"`
 	PinnedSkillNames    []string `json:"-"`
+	// DomainPacks: CustomAgentConfig.DomainPacks, resolved against the
+	// shipped packs when the skills manager is built (runtime only).
+	DomainPacks []string `json:"-"`
 	// QuestionOrigin is the knowledge source of a suggested question the user
 	// picked, already checked to be inside KnowledgeBases (runtime only;
 	// rendered into runtime_context as a retrieval hint).

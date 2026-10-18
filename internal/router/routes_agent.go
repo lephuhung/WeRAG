@@ -34,6 +34,8 @@ func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomA
 	{
 		// Get placeholder definitions (must be before /:id to avoid conflict) — Viewer+
 		agentsRead.GET("/placeholders", g.Member(), agentHandler.GetPlaceholders)
+		// List the domain packs shipped in this build (must be before /:id) — Viewer+
+		agentsRead.GET("/domain-packs", g.Member(), agentHandler.ListDomainPacks)
 		// List smart-reasoning agent type presets (rag-qa / wiki-qa / hybrid / custom) — Viewer+
 		agentsRead.GET("/type-presets", g.Member(), agentHandler.GetAgentTypePresets)
 		// Create custom agent — SystemAdmin

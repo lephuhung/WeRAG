@@ -14,7 +14,11 @@ import {
   isDocumentAssistantAgent,
   clampOpenDocumentMaxRunes,
   OPEN_DOCUMENT_MAX_RUNES_LIMIT,
+  listDomainPacks,
+  missingDomainPackTools,
+  shippedDomainPacks,
   type CustomAgent,
+  type DomainPackInfo,
 } from "@/lib/api/agents";
 import { listKnowledgeBases, type KnowledgeBaseRow } from "@/lib/api/knowledge";
 import { listMCPServices, type MCPService } from "@/lib/api/mcp";
@@ -30,6 +34,7 @@ import {
 import { listModels, type ModelConfig } from "@/lib/api/models";
 import { buildAgentConfigForSave } from "@/lib/api/agent-config";
 import { getStorageEngineStatus } from "@/lib/api/system";
+import { formatDate } from "@/lib/datetime";
 
 type TabKey = "basic" | "knowledge" | "tools" | "multimodal";
 
@@ -59,6 +64,8 @@ type Draft = {
   mcp_selection_mode: "all" | "selected" | "none";
   mcp_services: string[];
   allowed_tools: string[];
+  // Domain packs (smart-reasoning only)
+  domain_packs: string[];
   // Multimodal / attachments
   image_upload_enabled: boolean;
   vlm_model_id: string;
@@ -106,6 +113,7 @@ function draftFrom(a: CustomAgent | null): Draft {
     allowed_tools: a?.config?.allowed_tools?.length
       ? normalizeAllowedTools(a.config.allowed_tools)
       : [...DEFAULT_ALLOWED_TOOLS],
+    domain_packs: a?.config?.domain_packs ?? [],
     image_upload_enabled: a?.config?.image_upload_enabled ?? false,
     vlm_model_id: a?.config?.vlm_model_id ?? "",
     attachment_image_understanding: a?.config?.attachment_image_understanding ?? false,
@@ -153,6 +161,9 @@ export function AgentEditorModal({
   const [modelList, setModelList] = useState<ModelConfig[]>(models ?? []);
   const [kbs, setKbs] = useState<KnowledgeBaseRow[]>([]);
   const [mcpList, setMcpList] = useState<MCPService[]>([]);
+  const [packList, setPackList] = useState<DomainPackInfo[]>([]);
+  // only a loaded list may decide that a stored pack no longer ships
+  const [packsLoaded, setPacksLoaded] = useState(false);
 
   useEffect(() => {
     setDraft(draftFrom(agent));
@@ -249,6 +260,13 @@ export function AgentEditorModal({
     listMCPServices()
       .then((res: MCPService[]) => setMcpList(res ?? []))
       .catch(() => setMcpList([]));
+    setPacksLoaded(false);
+    listDomainPacks()
+      .then((res) => {
+        setPackList(res.data ?? []);
+        setPacksLoaded(true);
+      })
+      .catch(() => setPackList([]));
     getStorageEngineStatus()
       .then((res) => {
         const map: Record<string, boolean> = {};
@@ -260,6 +278,31 @@ export function AgentEditorModal({
 
   const patch = <K extends keyof Draft>(k: K, v: Draft[K]) =>
     setDraft((d) => ({ ...d, [k]: v }));
+
+  // Required tools of the chosen packs the agent would lack; the server
+  // refuses the save in that case, so it is shown and checked here first.
+  const missingPackTools = useMemo(
+    () =>
+      missingDomainPackTools(packList, draft.domain_packs, {
+        allowedTools: draft.allowed_tools,
+        kbSelectionMode: draft.kb_selection_mode,
+        knowledgeBases: draft.knowledge_bases,
+        webSearchEnabled: draft.web_search_enabled,
+      }),
+    [packList, draft.domain_packs, draft.allowed_tools, draft.kb_selection_mode, draft.knowledge_bases, draft.web_search_enabled],
+  );
+  // stored names this build no longer ships: removed on save
+  const savedPacks = packsLoaded ? shippedDomainPacks(draft.domain_packs, packList) : draft.domain_packs;
+  const droppedPacks = draft.domain_packs.filter((name) => !savedPacks.includes(name));
+
+  const toggleDomainPack = (name: string) => {
+    setDraft((prev) => ({
+      ...prev,
+      domain_packs: prev.domain_packs.includes(name)
+        ? prev.domain_packs.filter((n) => n !== name)
+        : [...prev.domain_packs, name],
+    }));
+  };
 
   const toggleKb = (kbId: string) => {
     setDraft((prev) => {
@@ -305,6 +348,11 @@ export function AgentEditorModal({
       return;
     }
 
+    if (draft.agent_mode === "smart-reasoning" && missingPackTools.length > 0) {
+      setError(t("agent.domainPacks.missingTools", { tools: missingPackTools.join(", ") }));
+      return;
+    }
+
     setSaving(true);
     setError("");
     try {
@@ -329,6 +377,8 @@ export function AgentEditorModal({
         web_search_enabled: draft.web_search_enabled,
         mcp_selection_mode: draft.mcp_selection_mode,
         allowed_tools: draft.allowed_tools,
+        // packs only work on smart-reasoning agents; undefined clears them
+        domain_packs: draft.agent_mode === "smart-reasoning" && savedPacks.length > 0 ? savedPacks : undefined,
         mcp_services: draft.mcp_selection_mode === "selected" ? draft.mcp_services : undefined,
         image_upload_enabled: draft.image_upload_enabled,
         vlm_model_id: draft.vlm_model_id || undefined,
@@ -1132,6 +1182,71 @@ export function AgentEditorModal({
               )}
               <p className="caption mt-2 text-muted-soft">{t("agent.tools.autoNote")}</p>
             </div>
+
+            {draft.agent_mode === "smart-reasoning" && (
+              <div className="rounded-[12px] border border-hairline p-3">
+                <span className="mb-1 block text-[13px] font-medium text-ink">{t("agent.domainPacks.title")}</span>
+                <p className="caption mb-2 text-muted-soft">{t("agent.domainPacks.desc")}</p>
+                {packList.length === 0 ? (
+                  <p className="caption text-muted">{t("agent.domainPacks.none")}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {packList.map((pack) => {
+                      const checked = draft.domain_packs.includes(pack.name);
+                      return (
+                        <label
+                          key={pack.name}
+                          className={`flex items-start gap-2.5 rounded-md border px-2.5 py-2 select-none ${
+                            checked ? "border-ink" : "border-hairline"
+                          } ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={checked}
+                            disabled={readOnly}
+                            onChange={() => toggleDomainPack(pack.name)}
+                          />
+                          <span className="min-w-0">
+                            <span className="flex flex-wrap items-center gap-1.5">
+                              <span className="font-mono text-[13px] text-ink">{pack.name}</span>
+                              <span className="caption text-muted-soft">
+                                {t("agent.domainPacks.version", { version: pack.version })}
+                              </span>
+                              <span className="caption text-muted-soft">
+                                {t("agent.domainPacks.asOf", { date: formatDate(pack.as_of) })}
+                              </span>
+                              {pack.overdue && (
+                                <span className="caption rounded bg-error/10 px-1 text-error">
+                                  {t("agent.domainPacks.overdue")}
+                                </span>
+                              )}
+                            </span>
+                            <span className="caption block text-muted">{pack.description}</span>
+                            {pack.required_tools?.length > 0 && (
+                              <span className="caption block text-muted-soft">
+                                {t("agent.domainPacks.requires", { tools: pack.required_tools.join(", ") })}
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                {/* a stored pack this build does not ship */}
+                {droppedPacks.length > 0 && (
+                  <p className="caption mt-2 text-error">
+                    {t("agent.domainPacks.unknown", { names: droppedPacks.join(", ") })}
+                  </p>
+                )}
+                {missingPackTools.length > 0 && (
+                  <p className="caption mt-2 text-error">
+                    {t("agent.domainPacks.missingTools", { tools: missingPackTools.join(", ") })}
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="rounded-[12px] border border-hairline p-3">
               <label className={`flex items-center gap-2.5 select-none ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}>

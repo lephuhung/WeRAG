@@ -145,6 +145,9 @@ func (t *ReadFileTool) readSkillResource(ctx context.Context, input ReadFileInpu
 		fmt.Fprintf(&b, "# %s\n\n%s\n\n", skill.Name, skill.Description)
 		// Keep execution guidance before potentially long instructions so the
 		// first page identifies the correct runtime even for large skills.
+		// TODO(domain-packs): IsBuiltinSkill is also true for a domain pack,
+		// which this line then calls "built-in"; say "read-only skill" once
+		// feat/skills-cleanup (which edits this block) has landed.
 		if t.skills.IsBuiltinSkill(name) {
 			b.WriteString("Read-only instructions: this built-in skill has no executable scripts or sandbox directory.\n\n")
 		} else if t.shell {

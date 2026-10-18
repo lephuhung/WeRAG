@@ -53,6 +53,7 @@ type AgentEngine struct {
 	imageDescriber            ImageDescriberFunc    // VLM function for describing images in tool results (optional)
 	legalHistory              LegalHistoryFunc      // appends the amendment history of cited legal provisions (optional)
 	sourceEditNote            SourceEditNoteFunc    // appends the read-only note of an edit asked of a source document (optional)
+	domainFooter              DomainFooterFunc      // appends the domain packs' footer, last block of the answer (optional)
 	tokenEstimator            *agenttoken.Estimator // Token estimator for context window management, calibrated
 	rawEstimator              *agenttoken.Estimator // Same tokenizer at scale 1, for measuring the calibration
 	compactor                 *compaction.Compactor // Summarizes older history to fit the context window (nil = disabled)
@@ -834,6 +835,11 @@ func (e *AgentEngine) runReActIteration(
 		if *consecutiveSameContent >= maxRepeatedResponseRounds {
 			logger.Warnf(ctx, "[Agent][Round-%d] Detected stuck loop: same content repeated %d times (finish=%s), stopping",
 				round, *consecutiveSameContent+1, response.FinishReason)
+			// No domain-pack footer here: this path ends on a repeated
+			// response that analyzeResponse never accepted as the answer and
+			// that is never closed with a Done, so there is no answer stream
+			// to append it to. A model stuck repeating itself is not pack
+			// advice either.
 			state.FinalAnswer = response.Content
 			state.IsComplete = true
 			return iterOutcomeBreak, nil
@@ -955,6 +961,7 @@ func (e *AgentEngine) runReActIteration(
 		e.appendLegalHistory(ctx, state, sessionID, verdict.answerID)
 		e.appendWikiCaveat(ctx, state, sessionID, verdict.answerID)
 		e.appendSourceEditNote(ctx, state, sessionID, verdict.answerID, query)
+		e.appendDomainFooter(ctx, state, sessionID, verdict.answerID)
 		e.closeAnswerStream(ctx, sessionID, verdict.answerID)
 		return iterOutcomeBreak, nil
 	}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/sandbox"
 )
 
@@ -104,6 +105,9 @@ type Manager struct {
 	// builtinSource is immutable and takes precedence over same-named tenant
 	// or host skills. It never supplies an executable sandbox path.
 	builtinSource *BuiltinSource
+	// packSource holds the domain packs this agent opted into. Read-only like
+	// the built-ins: ranked after them, before tenant or host skills.
+	packSource ReadOnlySource
 
 	// Configuration
 	skillDirs     []string
@@ -162,17 +166,37 @@ func (m *Manager) WithBuiltinSource(source *BuiltinSource) *Manager {
 	return m
 }
 
-// IsBuiltinSkill reports whether the named skill must never be executed.
+// WithPackSource attaches the domain packs this agent opted into during
+// construction, before Initialize can make them visible.
+func (m *Manager) WithPackSource(source ReadOnlySource) *Manager {
+	m.packSource = source
+	return m
+}
+
+// IsReadOnlySkill reports whether the named skill must never be executed:
+// a built-in or one of the agent's domain packs.
+func (m *Manager) IsReadOnlySkill(name string) bool {
+	if m == nil {
+		return false
+	}
+	return m.builtinSource.Has(name) || (m.packSource != nil && m.packSource.Has(name))
+}
+
+// IsBuiltinSkill is IsReadOnlySkill under the name shell_exec and read_file
+// already use.
 func (m *Manager) IsBuiltinSkill(name string) bool {
-	return m != nil && m.builtinSource.Has(name)
+	return m.IsReadOnlySkill(name)
 }
 
 // resolveSource decides which source owns one skill name. An installed image
 // is the only copy the sandbox can run: falling back to a host skill directory
 // would advertise files that are not in the image.
 func (m *Manager) resolveSource(skillName string) SkillSource {
-	if m.IsBuiltinSkill(skillName) {
+	if m.builtinSource.Has(skillName) {
 		return m.builtinSource
+	}
+	if m.packSource != nil && m.packSource.Has(skillName) {
+		return m.packSource
 	}
 	if m.tenantSource != nil {
 		return m.tenantSource
@@ -192,6 +216,19 @@ func (m *Manager) discoverAllSkills() ([]*SkillMetadata, error) {
 		}
 		all = append(all, builtins...)
 	}
+	// Packs were chosen by the agent's configuration; allowedSkills narrows
+	// only tenant/host skills.
+	if m.packSource != nil {
+		packs, err := m.packSource.DiscoverSkills()
+		if err != nil {
+			return nil, err
+		}
+		for _, meta := range packs {
+			if meta != nil && !m.builtinSource.Has(meta.Name) {
+				all = append(all, meta)
+			}
+		}
+	}
 
 	var other []*SkillMetadata
 	var err error
@@ -204,9 +241,14 @@ func (m *Manager) discoverAllSkills() ([]*SkillMetadata, error) {
 		return nil, err
 	}
 	for _, meta := range m.filterAllowedSkills(other) {
-		if meta != nil && !m.IsBuiltinSkill(meta.Name) {
-			all = append(all, meta)
+		if meta == nil {
+			continue
 		}
+		if m.IsReadOnlySkill(meta.Name) {
+			logger.Warnf(context.Background(), "[Skills] Hiding skill %q: a built-in skill or domain pack owns the name", meta.Name)
+			continue
+		}
+		all = append(all, meta)
 	}
 	return all, nil
 }
@@ -282,7 +324,7 @@ func (m *Manager) LoadSkill(ctx context.Context, skillName string) (*Skill, erro
 
 // isSkillAllowed checks if a skill is in the allowed list
 func (m *Manager) isSkillAllowed(skillName string) bool {
-	if m.IsBuiltinSkill(skillName) {
+	if m.IsReadOnlySkill(skillName) {
 		return true
 	}
 	if len(m.allowedSkills) == 0 {

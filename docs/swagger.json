@@ -401,6 +401,38 @@
                 }
             }
         },
+        "/agents/domain-packs": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Trả về các gói chuyên môn có trong phiên bản này để chọn cho trợ lý suy luận: phiên bản, mốc dữ liệu, hạn rà soát (overdue = đã quá hạn) và công cụ bắt buộc",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Trợ lý"
+                ],
+                "summary": "Lấy danh sách gói chuyên môn",
+                "responses": {
+                    "200": {
+                        "description": "danh sách gói chuyên môn",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/agents/placeholders": {
             "get": {
                 "security": [
@@ -16540,6 +16572,139 @@
                 }
             }
         },
+        "/system/legal-requests": {
+            "get": {
+                "description": "Pages the requests to add legal documents, most recently\nrequested first. status is requested (default), added,\nrejected or all; counts holds the total per status.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "List legal document requests",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "requested, added, rejected or all",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Items, total and counts",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-requests/public-knowledge-bases": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Public knowledge bases a request can be ingested into",
+                "responses": {
+                    "200": {
+                        "description": "[{id, name}]",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-requests/{id}": {
+            "put": {
+                "description": "action \"ingest\" fetches the document from vbpl.vn into the\npublic knowledge base knowledge_base_id (same code as the MCP\ntool legal_ingest_document); allow_pdf lets it use the\nportal's original PDF scan (OCR) when there is no HTML full\ntext, otherwise such a document answers 400 and its portal\navailability is stored as detail.portal; \"reject\" keeps note as the\nreason users see; \"added\" records a document added by hand.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Ingest, reject or close a legal document request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Decision",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.LegalRequestDecision"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated item",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-requests/{id}/portal-check": {
+            "post": {
+                "description": "Reads the document's portal page (no download) and stores\ndetail.portal = {checked_at, status, html, pdf_file, exists}\non the request: HTML full text, only an original PDF scan,\nor nothing.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Check what vbpl.vn offers for a requested document",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated item",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/system/legal-reviews": {
             "get": {
                 "description": "Pages the review queue of public-KB documents. status is\npending, approved, rejected, alerts (approved documents a\nnewer one supersedes) or empty for all.",
@@ -20161,6 +20326,13 @@
                     "description": "===== Data Analysis Settings =====\nWhether to run the legacy in-pipeline DuckDB SQL data-analysis stage when\nthe retrieved chunks include CSV/Excel files. This issues an extra LLM\ncall to generate a SQL query and is disabled by default because most\nquick-answer / RAG-style agents do not want the added latency.",
                     "type": "boolean"
                 },
+                "domain_packs": {
+                    "description": "DomainPacks names the embedded domain packs (domain-packs/\u003cname\u003e) this\nagent reads: read-only skills with reference files and a code-appended\nanswer footer. Independent of SkillsSelectionMode and of the sandbox\n(docs/domain-pack-standard.md §6).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "embedding_top_k": {
                     "description": "===== Retrieval Strategy Settings (for both modes) =====\nEmbedding/Vector retrieval top K",
                     "type": "integer"
@@ -21542,6 +21714,28 @@
                     "type": "string"
                 },
                 "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.LegalRequestDecision": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "description": "Action is \"ingest\" (fetch from vbpl.vn into KnowledgeBaseID), \"reject\"\nor \"added\" (added by hand).",
+                    "type": "string"
+                },
+                "allow_pdf": {
+                    "description": "AllowPDF lets \"ingest\" use the portal's original PDF (a scan, OCRed by\nthe KB's pdf parser) when vbpl.vn has no HTML full text.",
+                    "type": "boolean"
+                },
+                "knowledge_base_id": {
+                    "type": "string"
+                },
+                "knowledge_id": {
+                    "type": "string"
+                },
+                "note": {
                     "type": "string"
                 }
             }

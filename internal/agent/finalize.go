@@ -129,7 +129,8 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 
 	// Safety net: strip any residual <think> blocks that may have leaked through
 	state.FinalAnswer = cleanAnswerInContext(ctx, agenttools.StripThinkBlocks(llmResult.Content))
-	if strings.TrimSpace(state.FinalAnswer) == "" {
+	synthesized := strings.TrimSpace(state.FinalAnswer) != ""
+	if !synthesized {
 		// never end a turn on an empty answer: say what was gathered
 		logger.Warnf(ctx, "[Agent][FinalAnswer] Synthesis returned no text; emitting the fallback")
 		state.FinalAnswer = e.synthesisFallback(state)
@@ -138,6 +139,10 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	e.appendLegalHistory(ctx, state, sessionID, answerID)
 	e.appendWikiCaveat(ctx, state, sessionID, answerID)
 	e.appendSourceEditNote(ctx, state, sessionID, answerID, query)
+	if synthesized {
+		// the code-built fallback is not advice from a pack
+		e.appendDomainFooter(ctx, state, sessionID, answerID)
+	}
 	e.eventBus.Emit(ctx, event.Event{
 		ID:        answerID,
 		Type:      event.EventAgentFinalAnswer,

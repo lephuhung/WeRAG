@@ -192,6 +192,37 @@ func DefaultAllowedTools() []string {
 	}
 }
 
+// KnowledgeScopedTools are the tools a turn without any knowledge scope does
+// not get: registerTools strips them, and the domain-pack save check counts
+// them as missing for an agent with no knowledge base. todo_write goes too
+// when web search is also off (not useful for simple chat).
+func KnowledgeScopedTools(webSearchEnabled bool) []string {
+	scoped := []string{
+		ToolSearchKnowledge,
+		ToolReadDocument,
+		ToolListDocuments,
+		ToolSearchDocumentSection,
+		ToolQueryKnowledgeGraph,
+		ToolDatabaseQuery,
+		ToolDataAnalysis,
+		ToolDataSchema,
+		// Wiki tools also require at least one KB in scope.
+		ToolWikiReadPage,
+		ToolWikiSearch,
+		ToolWikiFlagIssue,
+		ToolWikiWritePage,
+		ToolWikiReplaceText,
+		ToolWikiRenamePage,
+		ToolWikiDeletePage,
+		ToolWikiReadIssue,
+		ToolWikiUpdateIssue,
+	}
+	if !webSearchEnabled {
+		scoped = append(scoped, ToolTodoWrite)
+	}
+	return scoped
+}
+
 // Retired tool identifiers are retained only for decoding existing histories
 // and ignoring obsolete allowlist entries. They have no implementation or
 // registration path and are never offered in model tool schemas.

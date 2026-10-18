@@ -179,6 +179,11 @@ type CustomAgentConfig struct {
 	SkillsSelectionMode string `yaml:"skills_selection_mode" json:"skills_selection_mode"`
 	// Selected skill names (only used when SkillsSelectionMode is "selected")
 	SelectedSkills []string `yaml:"selected_skills" json:"selected_skills"`
+	// DomainPacks names the embedded domain packs (domain-packs/<name>) this
+	// agent reads: read-only skills with reference files and a code-appended
+	// answer footer. Independent of SkillsSelectionMode and of the sandbox
+	// (docs/domain-pack-standard.md §6).
+	DomainPacks []string `yaml:"domain_packs,omitempty" json:"domain_packs,omitempty"`
 
 	// ===== Sandbox Settings =====
 	// SandboxConfigID selects which organization sandbox config this agent's
