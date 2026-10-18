@@ -570,7 +570,7 @@ func TestLegalDraftDiscardAndFailure(t *testing.T) {
 
 func TestLegalDraftHTMLConverts(t *testing.T) {
 	var paras []LegalDraftParagraph
-	for i, p := range LegalDraftParagraphsFromOCR(draftOCRText) {
+	for i, p := range LegalDraftParagraphsFromOCR(draftOCRText, nil) {
 		paras = append(paras, LegalDraftParagraph{Index: i, Text: p.Text, Marker: p.Style == docxwrite.StylePageMarker})
 	}
 	html := BuildLegalDraftHTML(paras)

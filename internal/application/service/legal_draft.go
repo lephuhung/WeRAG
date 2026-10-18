@@ -76,6 +76,11 @@ type LegalDraftService struct {
 	OCR LegalDraftOCR
 	// Go runs a background OCR; nil starts a goroutine (tests run inline).
 	Go func(func())
+	// PageImages renders PDF pages and ImageOCR reads one page image: the
+	// second pass over pages the first OCR looped on (nil: docreader's
+	// builtin renderer and the Go paddleocr_vl image reader).
+	PageImages LegalDraftPageImages
+	ImageOCR   LegalDraftImageOCR
 
 	// fetching serializes fetches of one document within this process
 	fetching sync.Map
@@ -286,9 +291,14 @@ func (s *LegalDraftService) runOCR(ctx context.Context, draft *types.LegalDocume
 	if pages <= 0 {
 		pages = draft.OCRPages
 	}
+	// pages the OCR looped on are read again; what stays broken is flagged
+	markdown, repair := s.repairDegeneratePages(ctx, markdown, pdf, draft.PDFFileName)
+	reportJSON, _ := json.Marshal(repair)
 	draft.OCRMarkdown, draft.OCRPages, draft.OCREngine, draft.Status, draft.Error = markdown, pages, engine, types.LegalDraftReady, ""
+	draft.OCRReport = types.JSON(reportJSON)
 	if err := s.drafts.Update(ctx, draft.ID, map[string]any{
 		"ocr_markdown": markdown, "ocr_pages": pages, "ocr_engine": engine, "status": types.LegalDraftReady, "error": "",
+		"ocr_report": types.JSON(reportJSON),
 	}); err != nil {
 		logger.Warnf(ctx, "[LegalDraft] storing OCR of draft %s: %v", draft.ID, err)
 		return

@@ -30,6 +30,10 @@ type LegalDocumentDraft struct {
 	OCRMarkdown string `json:"ocr_markdown,omitempty" gorm:"type:text;not null;default:''"`
 	OCRPages    int    `json:"ocr_pages"              gorm:"not null;default:0"`
 	OCREngine   string `json:"ocr_engine"             gorm:"type:varchar(64);not null;default:''"`
+	// OCRReport is what the OCR repair did: {"ocr_pages_reocr": [pages read
+	// again because the first pass looped], "ocr_degenerate_pages": [pages
+	// still broken, flagged in the draft for typing in from the PDF]}.
+	OCRReport JSON `json:"ocr_report,omitempty" gorm:"type:jsonb"`
 
 	Status string `json:"status" gorm:"type:varchar(16);not null;default:'fetching';index:idx_legal_document_drafts_status"`
 	Error  string `json:"error"  gorm:"type:text;not null;default:''"`

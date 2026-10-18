@@ -23,6 +23,8 @@ const (
 	StyleHeading3   = "Heading3"
 	StyleHeading4   = "Heading4"
 	StylePageMarker = "PageMarker"
+	// StylePageWarning flags a page whose OCR is broken (red, bold italic).
+	StylePageWarning = "PageWarning"
 )
 
 // MarkStyleName is the name of the character style the ONLYOFFICE assistant
@@ -54,7 +56,7 @@ type Document struct {
 
 var knownStyles = map[string]bool{
 	StyleNormal: true, StyleHeading1: true, StyleHeading2: true, StyleHeading3: true,
-	StyleHeading4: true, StylePageMarker: true,
+	StyleHeading4: true, StylePageMarker: true, StylePageWarning: true,
 }
 
 // Build writes doc as a .docx package.
@@ -241,6 +243,9 @@ var stylesXML = xmlHeader + `<w:styles xmlns:w="http://schemas.openxmlformats.or
 	`<w:style w:type="paragraph" w:customStyle="1" w:styleId="PageMarker"><w:name w:val="PageMarker"/>` +
 	`<w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:jc w:val="right"/><w:spacing w:before="120" w:after="120"/></w:pPr>` +
 	`<w:rPr><w:i/><w:iCs/><w:color w:val="808080"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>` +
+	`<w:style w:type="paragraph" w:customStyle="1" w:styleId="PageWarning"><w:name w:val="PageWarning"/>` +
+	`<w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:spacing w:before="60" w:after="120"/></w:pPr>` +
+	`<w:rPr><w:b/><w:bCs/><w:i/><w:iCs/><w:color w:val="FF0000"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style>` +
 	`<w:style w:type="character" w:default="1" w:styleId="DefaultParagraphFont"><w:name w:val="Default Paragraph Font"/>` +
 	`<w:uiPriority w:val="1"/><w:semiHidden/><w:unhideWhenUsed/></w:style>` +
 	// the plugin's mark style: underline only, out of the style gallery

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"html"
 	"regexp"
@@ -35,6 +36,7 @@ var (
 	ocrBoldRe         = regexp.MustCompile(`\*\*|__`)
 	ocrItalicRe       = regexp.MustCompile(`(^|[\s(])\*([^*\n]+)\*`)
 	draftPageTextRe   = regexp.MustCompile(`^\[Trang \d+\]$`)
+	draftWarnTextRe   = regexp.MustCompile(`^\[OCR hỏng ở trang (\d+)\b`)
 	draftLabelOnlyRe  = regexp.MustCompile(`(?i)^(?:phần|chương|mục)\s+[\p{L}\p{N}]+\s*[.:]?$`)
 	draftHeadingNumRe = regexp.MustCompile(`(?i)^(?:phần|chương|mục|điều)\s+((?:thứ\s+)?[\p{L}\p{N}]+)`)
 	draftClauseRe     = regexp.MustCompile(`^\d+\.`)
@@ -50,17 +52,27 @@ var (
 // Phần/Chương/Mục/Điều headings the legal parser recognises Heading1–4
 // (with the title line under a bare "Chương II"), Markdown marks and HTML
 // tags are dropped, table rows become text cells joined by " | ", and the
-// short upper-case lines of the header are centred in bold.
-func LegalDraftParagraphsFromOCR(markdown string) []docxwrite.Paragraph {
+// short upper-case lines of the header are centred in bold. Right after the
+// marker of each page in degenerate (its OCR still broken after the second
+// pass) comes a red PageWarning line asking the reviewer to type the page in.
+func LegalDraftParagraphsFromOCR(markdown string, degenerate []int) []docxwrite.Paragraph {
 	type line struct {
-		text   string
-		marker bool
+		text    string
+		marker  bool
+		warning bool
+	}
+	broken := map[string]bool{}
+	for _, n := range degenerate {
+		broken[strconv.Itoa(n)] = true
 	}
 	var lines []line
 	for _, raw := range strings.Split(strings.ReplaceAll(markdown, "\r", ""), "\n") {
 		t := strings.TrimSpace(raw)
 		if m := ocrPageLineRe.FindStringSubmatch(t); m != nil {
 			lines = append(lines, line{text: "[Trang " + m[1] + "]", marker: true})
+			if broken[m[1]] {
+				lines = append(lines, line{text: LegalDraftPageWarningText(m[1]), warning: true})
+			}
 			continue
 		}
 		if t = cleanOCRLine(t); t != "" {
@@ -70,7 +82,7 @@ func LegalDraftParagraphsFromOCR(markdown string) []docxwrite.Paragraph {
 	var texts []string
 	var idx []int
 	for i, l := range lines {
-		if !l.marker {
+		if !l.marker && !l.warning {
 			texts = append(texts, l.text)
 			idx = append(idx, i)
 		}
@@ -97,6 +109,8 @@ func LegalDraftParagraphsFromOCR(markdown string) []docxwrite.Paragraph {
 		switch {
 		case l.marker:
 			p.Style = docxwrite.StylePageMarker
+		case l.warning:
+			p.Style = docxwrite.StylePageWarning
 		case styles[i] != "":
 			p.Style = styles[i]
 		case i < firstHeading && isUpperLine(l.text) && utf8.RuneCountInString(l.text) <= 120:
@@ -217,10 +231,21 @@ func looksLikeTitle(t string) bool {
 	return isUpperLine(t) && utf8.RuneCountInString(t) <= 250
 }
 
-// BuildLegalDraftDocx writes the draft's OCR text as the editor's .docx.
+// LegalDraftPageWarningText is the line flagging a page whose OCR is broken.
+func LegalDraftPageWarningText(page string) string {
+	return "[OCR hỏng ở trang " + page + " — nhập tay từ bản PDF]"
+}
+
+// BuildLegalDraftDocx writes the draft's OCR text as the editor's .docx,
+// flagging the pages its OCR report lists as still degenerate.
 func BuildLegalDraftDocx(d *types.LegalDocumentDraft) ([]byte, error) {
+	var report LegalOCRReport
+	if len(d.OCRReport) > 0 {
+		_ = json.Unmarshal(d.OCRReport, &report)
+	}
 	title := strings.TrimSpace(d.DocumentNumber + " " + d.Title)
-	return docxwrite.Build(docxwrite.Document{Title: title, Paragraphs: LegalDraftParagraphsFromOCR(d.OCRMarkdown)})
+	return docxwrite.Build(docxwrite.Document{Title: title,
+		Paragraphs: LegalDraftParagraphsFromOCR(d.OCRMarkdown, report.DegeneratePages)})
 }
 
 // ---------------------------------------------------------------------------
@@ -233,6 +258,9 @@ type LegalDraftParagraph struct {
 	Text string
 	// Marker: a "[Trang N]" page marker (style PageMarker or that text).
 	Marker bool
+	// WarningPage is the page a "[OCR hỏng ở trang N …]" line flags (style
+	// PageWarning or that text), 0 for any other paragraph.
+	WarningPage int
 }
 
 // ReadLegalDraftParagraphs reads the paragraphs of a draft .docx.
@@ -255,10 +283,16 @@ func ReadLegalDraftParagraphs(data []byte) ([]LegalDraftParagraph, error) {
 	for _, p := range paras {
 		// one line; inner spaces kept (a double space is an OCR slip to report)
 		text := strings.TrimSpace(strings.NewReplacer("\n", " ", "\t", " ", "\u00a0", " ").Replace(p.Text))
-		out = append(out, LegalDraftParagraph{
+		para := LegalDraftParagraph{
 			Index: p.Index, Text: text,
 			Marker: styles[p.Index] == docxwrite.StylePageMarker || draftPageTextRe.MatchString(text),
-		})
+		}
+		if m := draftWarnTextRe.FindStringSubmatch(text); m != nil {
+			para.WarningPage, _ = strconv.Atoi(m[1])
+		} else if styles[para.Index] == docxwrite.StylePageWarning && text != "" {
+			para.WarningPage = -1 // a warning line whose text was edited
+		}
+		out = append(out, para)
 	}
 	return out, nil
 }
@@ -277,7 +311,7 @@ func newDraftLines(all []LegalDraftParagraph) *draftLines {
 	dl := &draftLines{levelOf: map[int]int{}}
 	var texts []string
 	for _, p := range all {
-		if p.Marker || p.Text == "" {
+		if p.Marker || p.WarningPage != 0 || p.Text == "" {
 			continue
 		}
 		dl.paras = append(dl.paras, p)
@@ -330,10 +364,16 @@ func AnalyzeLegalDraft(all []LegalDraftParagraph) *types.LegalDraftStructure {
 		CheckedAt: time.Now(), Paragraphs: len(all),
 		Headings: []types.LegalDraftHeading{}, Articles: []types.LegalDraftArticle{}, Warnings: []types.LegalDraftWarning{},
 	}
-	var markers []int
+	var markers, warnings, warnPages []int
 	for _, p := range all {
-		if p.Marker {
+		switch {
+		case p.Marker:
 			markers = append(markers, p.Index)
+		case p.WarningPage != 0:
+			warnings = append(warnings, p.Index)
+			if p.WarningPage > 0 {
+				warnPages = append(warnPages, p.WarningPage)
+			}
 		}
 	}
 	dl := newDraftLines(all)
@@ -456,6 +496,30 @@ func AnalyzeLegalDraft(all []LegalDraftParagraph) *types.LegalDraftStructure {
 		warn("page_marker", legalDraftSeverityInfo, fmt.Sprintf(
 			"Còn %d dấu [Trang N] của bản OCR (bỏ qua khi duyệt; nên xóa nếu nó cắt ngang một đoạn)", len(markers)),
 			shown[0], shown)
+	}
+
+	// pages whose OCR stayed broken: the reviewer types them in from the PDF
+	// and then deletes the red line
+	if len(warnings) > 0 {
+		pages := "?"
+		if len(warnPages) > 0 {
+			var ps []string
+			for _, n := range warnPages {
+				ps = append(ps, strconv.Itoa(n))
+			}
+			pages = strings.Join(ps, ", ")
+		}
+		warn("ocr_degenerate", legalDraftSeverityError, fmt.Sprintf(
+			"OCR hỏng ở trang %s: nhập lại nội dung các trang này từ bản PDF rồi xóa dòng cảnh báo màu đỏ", pages),
+			warnings[0], warnings)
+	}
+	repeats := 0
+	for _, p := range dl.paras {
+		if repeats < legalDraftMaxOCRSuspects && HasOCRRepetition(p.Text) {
+			warn("ocr_repetition", legalDraftSeverityWarning,
+				"Một từ lặp lại liên tiếp nhiều lần (OCR lặp vòng): đối chiếu với bản PDF", p.Index, nil)
+			repeats++
+		}
 	}
 
 	// OCR slips

@@ -26,7 +26,7 @@ func NewLegalDraftRepository(db *gorm.DB) interfaces.LegalDraftRepository {
 // OCR text, which can run to hundreds of kilobytes.
 var legalDraftListColumns = []string{
 	"id", "request_id", "legal_document_id", "document_number", "doc_type", "title", "pdf_file_name", "pdf_ref",
-	"pdf_bytes", "ocr_pages", "ocr_engine", "status", "error", "session_id", "attachment_id", "workspace_id",
+	"pdf_bytes", "ocr_pages", "ocr_engine", "ocr_report", "status", "error", "session_id", "attachment_id", "workspace_id",
 	"structure", "approved_knowledge_id", "approved_kb_id", "created_by", "reviewed_by", "approved_by",
 	"approved_at", "created_at", "updated_at",
 }
