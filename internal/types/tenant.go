@@ -320,7 +320,9 @@ type ParserEngineConfig struct {
 	// skip_special_tokens=false; default off for SenOCR-Vi / PaddleOCR-VL.
 	PaddleOCRVLVllmXargs string `json:"paddleocr_vl_vllm_xargs,omitempty"`
 	// openai mode: repetition_penalty for /chat/completions (vLLM extension);
-	// default 1.05 breaks degenerate loops, "1"/"0" disables.
+	// "1.1" is the value to configure for SenOCR-Vi (measured 2026-10-18:
+	// 1.05 still loops on big table pages, 1.15 alters plain text), "1"/"0"
+	// disables. Only an explicit value is sent.
 	PaddleOCRVLRepetitionPenalty   string `json:"paddleocr_vl_repetition_penalty,omitempty"`
 	PaddleOCRVLUseSealRecognition  *bool  `json:"paddleocr_vl_use_seal_recognition,omitempty"`
 	PaddleOCRVLUseChartRecognition *bool  `json:"paddleocr_vl_use_chart_recognition,omitempty"`
