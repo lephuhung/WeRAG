@@ -49,9 +49,12 @@ type PaddleOCRVLReader struct {
 	// paddleocr_vl_repetition_penalty; only then is it forwarded to the
 	// docreader (which otherwise falls back to its own env default).
 	ocrRepPenaltySet bool
-	useSeal          bool
-	useChart         bool
-	remote           interfaces.DocReader
+	// ocrMaxTokens caps an image OCR answer (paddleocr_vl_max_tokens); 0
+	// leaves the endpoint's default.
+	ocrMaxTokens int
+	useSeal      bool
+	useChart     bool
+	remote       interfaces.DocReader
 }
 
 // NewPaddleOCRVLReader creates a reader from ParserEngineOverrides.
@@ -69,7 +72,9 @@ func NewPaddleOCRVLReader(overrides map[string]string, remote interfaces.DocRead
 			rp = v
 		}
 	}
+	maxTokens, _ := strconv.Atoi(strings.TrimSpace(overrides["paddleocr_vl_max_tokens"]))
 	return &PaddleOCRVLReader{
+		ocrMaxTokens:     maxTokens,
 		endpoint:         strings.TrimRight(overrides["paddleocr_vl_endpoint"], "/"),
 		apiMode:          resolvePaddleOCRVLAPIMode(overrides),
 		ocrModel:         strings.TrimSpace(overrides["paddleocr_vl_model"]),
@@ -440,6 +445,9 @@ func (c *PaddleOCRVLReader) openAIOCRImage(ctx context.Context, image []byte) (s
 	// local so generic OpenAI-compatible endpoints never see the key.
 	if c.ocrRepPenaltySet && c.ocrRepPenalty > 0 && c.ocrRepPenalty != 1.0 {
 		reqBody["repetition_penalty"] = c.ocrRepPenalty
+	}
+	if c.ocrMaxTokens > 0 {
+		reqBody["max_tokens"] = c.ocrMaxTokens
 	}
 	payload, _ := json.Marshal(reqBody)
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint+"/chat/completions", bytes.NewReader(payload))

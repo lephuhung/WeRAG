@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -28,6 +29,18 @@ const tablePage = `| STT | Tên nhóm hồ sơ, tài liệu | Thời hạn lưu 
 | 42 | Hồ sơ công bố quy hoạch | Vĩnh viễn |
 | 43 | Báo cáo thống kê định kỳ | 0 | 0 | 0 | 0 | 0 | 0 | 0 |`
 
+// tenYearTable: a retention table whose last column is mostly "10 năm".
+var tenYearTable = func() string {
+	var b strings.Builder
+	b.WriteString("| STT | Tên nhóm hồ sơ, tài liệu | Thời hạn |\n|---|---|---|\n")
+	for i, name := range []string{"Hồ sơ hội nghị sơ kết", "Báo cáo tháng", "Công văn trao đổi", "Hồ sơ thi đua",
+		"Sổ theo dõi công văn", "Hồ sơ mua sắm tài sản", "Hồ sơ kiểm kê", "Báo cáo quý", "Hồ sơ tập huấn",
+		"Hồ sơ công tác phí", "Kế hoạch năm", "Hồ sơ đoàn ra", "Hồ sơ đoàn vào", "Biên bản bàn giao"} {
+		fmt.Fprintf(&b, "| %d | %s | 10 năm |\n", 50+i, name)
+	}
+	return b.String()
+}()
+
 func TestIsDegenerateOCRPage(t *testing.T) {
 	for name, tc := range map[string]struct {
 		text string
@@ -40,8 +53,12 @@ func TestIsDegenerateOCRPage(t *testing.T) {
 		"case and punctuation":       {"tế, Tế. TẾ; tế tế TẾ!", true},
 		"low distinct ratio": {strings.Repeat("hồ sơ lưu trữ hồ sơ lưu trữ ", 12) +
 			"hồ sơ lưu trữ", true},
-		"short low ratio page": {"hồ sơ hồ sơ hồ sơ", false},
-		"empty":                {"", false},
+		"short low ratio page":                   {"hồ sơ hồ sơ hồ sơ", false},
+		"numeric loop with the odd other number": {"Quyết định về tài sản công " + strings.Repeat("2019 2019 2019 2019 2019 2019 2019 2019 2019 2019 2020 ", 20), true},
+		"twelve equal numbers":                   {"Mức thu " + strings.Repeat("2019 ", 12) + "đồng", true},
+		"row of eight zeros":                     {"| Báo cáo thống kê | 0 0 0 0 0 0 0 0 | 2024 |", false},
+		"column of ten-year rows":                {tenYearTable, false},
+		"empty":                                  {"", false},
 	} {
 		if got := IsDegenerateOCRPage(tc.text); got != tc.want {
 			t.Errorf("%s: %v, want %v", name, got, tc.want)
@@ -271,7 +288,7 @@ func TestRepairRetriesWithPenaltyAndKeepsSamples(t *testing.T) {
 	}
 	md := "<!-- page 6 -->\n\n" + loopPage + "\n\n<!-- page 9 -->\n\n" + loopPage
 	out, report := svc.repairDegeneratePages(context.Background(), md, nil, "x.pdf")
-	if !reflect.DeepEqual(attempts, []int{61, 62, 91, 92}) {
+	if !reflect.DeepEqual(attempts, []int{61, 62, 91, 92, 93}) {
 		t.Fatalf("attempts = %v", attempts)
 	}
 	if !reflect.DeepEqual(report.DegeneratePages, []int{9}) || !strings.Contains(out, "Hồ sơ trình phê duyệt") ||
@@ -297,6 +314,7 @@ func TestSecondPassPenalty(t *testing.T) {
 		want       string
 	}{
 		{"", 1, "1.1"}, {"", 2, "1.2"}, {"1.05", 1, "1.05"}, {"1.05", 2, "1.1"}, {"1.1", 2, "1.2"},
+		{"1.05", 3, "1.2"}, {"", 3, "1.2"},
 	} {
 		if got := secondPassPenalty(tc.configured, tc.attempt); got != tc.want {
 			t.Errorf("%q attempt %d = %q, want %q", tc.configured, tc.attempt, got, tc.want)
@@ -323,7 +341,7 @@ func TestOCRPageImageSendsRepetitionPenalty(t *testing.T) {
 	t.Setenv("DOCREADER_VN_OCR_MODEL", "senocr-vi")
 	svc := &LegalDraftService{}
 	png := []byte("\x89PNG\r\n\x1a\nfake")
-	for attempt, want := range map[int]float64{1: 1.1, 2: 1.2} {
+	for attempt, want := range map[int]float64{1: 1.1, 2: 1.2, 3: 1.2} {
 		text, err := svc.ocrPageImage(context.Background(), png, 6, attempt)
 		if err != nil || !strings.Contains(text, "Vĩnh viễn") {
 			t.Fatalf("attempt %d: %q %v", attempt, text, err)
@@ -332,5 +350,30 @@ func TestOCRPageImageSendsRepetitionPenalty(t *testing.T) {
 		if got, ok := last["repetition_penalty"].(float64); !ok || got != want || last["model"] != "senocr-vi" {
 			t.Fatalf("attempt %d body = %v", attempt, last)
 		}
+		// only the last attempt caps the answer
+		if mt, capped := last["max_tokens"]; capped != (attempt == 3) || (capped && mt != float64(3000)) {
+			t.Fatalf("attempt %d max_tokens = %v", attempt, mt)
+		}
+	}
+}
+
+func TestAnalyzeLegalDraftFlagsNumericLoop(t *testing.T) {
+	paras := []LegalDraftParagraph{
+		{Index: 0, Text: "Điều 1. Phạm vi"}, {Index: 1, Text: "Điều 2. Đối tượng"},
+		{Index: 2, Text: "Điều 3. Tài sản công " + strings.Repeat("2019 ", 40)},
+		{Index: 3, Text: "| Báo cáo | 0 0 0 0 0 0 0 0 |"},
+	}
+	r := AnalyzeLegalDraft(paras)
+	n := 0
+	for _, w := range r.Warnings {
+		if w.Code == "ocr_repetition" {
+			n++
+			if w.Paragraph != 2 {
+				t.Fatalf("flagged paragraph %d", w.Paragraph)
+			}
+		}
+	}
+	if n != 1 {
+		t.Fatalf("ocr_repetition warnings = %d: %+v", n, r.Warnings)
 	}
 }

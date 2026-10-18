@@ -26,8 +26,14 @@ import (
 // fails too the run is cut and the page is flagged for the reviewer.
 
 const (
-	// legalOCRRunMin: this many equal tokens in a row make a page degenerate.
-	legalOCRRunMin = 6
+	// legalOCRRunMin: this many equal words in a row make a page degenerate;
+	// legalOCRNumberRunMin: this many equal numbers.
+	legalOCRRunMin       = 6
+	legalOCRNumberRunMin = 12
+	// a page of this many tokens where one token makes up this share is
+	// degenerate
+	legalOCRDominanceMinTokens = 80
+	legalOCRDominance          = 0.25
 	// a page this long whose distinct tokens are under this share of all
 	// its tokens is degenerate too
 	legalOCRRatioMinChars = 150
@@ -58,11 +64,14 @@ type LegalOCRReport struct {
 	RejectedSamples map[int]string `json:"rejected_samples,omitempty"`
 }
 
-// ocrToken is one whitespace-separated token with its normalized form ("" for
-// tokens without a letter: table pipes, numbers, punctuation).
+// ocrToken is one whitespace-separated token with its normalized forms:
+// norm for a word (it has a letter), num for a number (digits, no letter),
+// key for any token (lower case; "" for a bare pipe or punctuation).
 type ocrToken struct {
 	start, end int
 	norm       string
+	num        string
+	key        string
 }
 
 // ocrHTMLTagRe: HTML tags (OCR tables) are not words; "<td></td><td></td>"
@@ -79,26 +88,37 @@ func ocrTokens(text string) []ocrToken {
 		raw := strings.TrimFunc(text[loc[0]:loc[1]], func(r rune) bool {
 			return unicode.IsPunct(r) || unicode.IsSymbol(r)
 		})
-		norm := ""
-		if strings.IndexFunc(raw, unicode.IsLetter) >= 0 {
-			norm = strings.ToLower(raw)
+		tok := ocrToken{start: loc[0], end: loc[1], key: strings.ToLower(raw)}
+		switch {
+		case strings.IndexFunc(raw, unicode.IsLetter) >= 0:
+			tok.norm = tok.key
+		case strings.IndexFunc(raw, unicode.IsDigit) >= 0:
+			tok.num = tok.key
 		}
-		out = append(out, ocrToken{start: loc[0], end: loc[1], norm: norm})
+		out = append(out, tok)
 	}
 	return out
 }
 
-// ocrRuns returns the [first, last] token index pairs of every run of at
-// least legalOCRRunMin equal word tokens.
+// ocrRuns returns the [first, last] token index pairs of every run of
+// equal tokens long enough to be a loop: legalOCRRunMin words, or
+// legalOCRNumberRunMin numbers (a table row of eight zeros is legitimate).
 func ocrRuns(toks []ocrToken) [][2]int {
 	var runs [][2]int
 	for i := 0; i < len(toks); {
 		j := i
-		if toks[i].norm != "" {
-			for j+1 < len(toks) && toks[j+1].norm == toks[i].norm {
+		min := 0
+		switch {
+		case toks[i].norm != "":
+			min = legalOCRRunMin
+		case toks[i].num != "":
+			min = legalOCRNumberRunMin
+		}
+		if min > 0 {
+			for j+1 < len(toks) && toks[j+1].key == toks[i].key {
 				j++
 			}
-			if j-i+1 >= legalOCRRunMin {
+			if j-i+1 >= min {
 				runs = append(runs, [2]int{i, j})
 			}
 		}
@@ -108,15 +128,33 @@ func ocrRuns(toks []ocrToken) [][2]int {
 }
 
 // HasOCRRepetition reports whether text holds a run of legalOCRRunMin or
-// more equal words ("TẾ TẾ TẾ TẾ TẾ TẾ").
+// more equal words ("TẾ TẾ TẾ TẾ TẾ TẾ") or legalOCRNumberRunMin equal
+// numbers.
 func HasOCRRepetition(text string) bool { return len(ocrRuns(ocrTokens(text))) > 0 }
 
 // IsDegenerateOCRPage reports whether one page of OCR text is degenerate: a
-// run of legalOCRRunMin equal words, or a long page whose distinct words are
-// under legalOCRRatioMin of all its words.
+// run of legalOCRRunMin equal words or legalOCRNumberRunMin equal numbers;
+// a page of legalOCRDominanceMinTokens tokens or more where one token (any
+// kind) is legalOCRDominance of them ("2019 2019 2019 …" broken by the odd
+// other number); or a long page whose distinct words are under
+// legalOCRRatioMin of all its words.
 func IsDegenerateOCRPage(text string) bool {
 	toks := ocrTokens(text)
 	if len(ocrRuns(toks)) > 0 {
+		return true
+	}
+	counts, total, top := map[string]int{}, 0, 0
+	for _, t := range toks {
+		if t.key == "" {
+			continue
+		}
+		total++
+		counts[t.key]++
+		if counts[t.key] > top {
+			top = counts[t.key]
+		}
+	}
+	if total >= legalOCRDominanceMinTokens && float64(top) >= legalOCRDominance*float64(total) {
 		return true
 	}
 	if len([]rune(text)) <= legalOCRRatioMinChars {
@@ -282,8 +320,13 @@ func (s *LegalDraftService) repairDegeneratePages(
 	return replaceOCRPages(markdown, texts), report
 }
 
-// legalOCRAttempts is how many times a degenerate page's image is read.
-const legalOCRAttempts = 2
+// legalOCRAttempts is how many times a degenerate page's image is read;
+// the last attempt caps the answer at legalOCRCappedMaxTokens so a loop
+// cannot use the whole token budget.
+const (
+	legalOCRAttempts        = 3
+	legalOCRCappedMaxTokens = "3000"
+)
 
 // Repetition penalties of the second pass. SenOCR-Vi loops on big table
 // pages without one and reads them with 1.1; the readers only send a
@@ -295,7 +338,7 @@ const (
 
 // secondPassPenalty is the repetition penalty of an attempt: the platform
 // organization's own value (else 1.1) first; then 1.1 when the first
-// attempt used another value, else 1.2.
+// attempt used another value, else 1.2; 1.2 on the third.
 func secondPassPenalty(configured string, attempt int) string {
 	configured = strings.TrimSpace(configured)
 	first := configured
@@ -304,6 +347,9 @@ func secondPassPenalty(configured string, attempt int) string {
 	}
 	if attempt <= 1 {
 		return first
+	}
+	if attempt >= 3 {
+		return legalOCRRetryPenalty
 	}
 	if first != legalOCRPenalty {
 		return legalOCRPenalty
@@ -324,10 +370,10 @@ func longestOCRRun(text string) (string, int) {
 	best, bestN := "", 0
 	for i := 0; i < len(toks); {
 		j := i
-		for j+1 < len(toks) && toks[i].norm != "" && toks[j+1].norm == toks[i].norm {
+		for j+1 < len(toks) && toks[i].key != "" && toks[j+1].key == toks[i].key {
 			j++
 		}
-		if toks[i].norm != "" && j-i+1 > bestN {
+		if toks[i].key != "" && j-i+1 > bestN {
 			best, bestN = text[toks[i].start:toks[i].end], j-i+1
 		}
 		i = j + 1
@@ -481,6 +527,9 @@ func (s *LegalDraftService) fetchStorageImage(ctx context.Context, key string) (
 func (s *LegalDraftService) ocrPageImage(ctx context.Context, image []byte, page, attempt int) (string, error) {
 	overrides := s.secondPassOverrides(ctx)
 	overrides["paddleocr_vl_repetition_penalty"] = secondPassPenalty(overrides["paddleocr_vl_repetition_penalty"], attempt)
+	if attempt >= legalOCRAttempts {
+		overrides["paddleocr_vl_max_tokens"] = legalOCRCappedMaxTokens
+	}
 	reader := docparser.NewPaddleOCRVLReader(overrides, nil)
 	res, err := reader.Read(ctx, &types.ReadRequest{
 		FileContent: image, FileName: fmt.Sprintf("page_%d.jpg", page), FileType: "jpg",
