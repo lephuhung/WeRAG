@@ -297,7 +297,7 @@ func TestDocumentTemplateRequestNormalized(t *testing.T) {
 	for _, bad := range []*types.DocumentTemplateRequest{
 		nil,
 		{SchemaVersion: 2, RequestID: "r", TemplateID: "ke-hoach", DocumentID: "d"},
-		{SchemaVersion: 1, RequestID: "r", TemplateID: "nghi-quyet", DocumentID: "d"},
+		{SchemaVersion: 1, RequestID: "r", TemplateID: "hop-dong", DocumentID: "d"},
 		{SchemaVersion: 1, RequestID: "", TemplateID: "ke-hoach", DocumentID: "d"},
 		{SchemaVersion: 1, RequestID: "r", TemplateID: "ke-hoach", DocumentID: ""},
 	} {

@@ -15,6 +15,13 @@ const LABELS: Record<DocumentTemplateId, TranslationKey> = {
   "to-trinh": "docws.tplToTrinh",
   "thong-bao": "docws.tplThongBao",
   "quyet-dinh": "docws.tplQuyetDinh",
+  "nghi-quyet": "docws.tplNghiQuyet",
+  "chi-thi": "docws.tplChiThi",
+  "cong-dien": "docws.tplCongDien",
+  "giay-moi": "docws.tplGiayMoi",
+  "giay-gioi-thieu": "docws.tplGiayGioiThieu",
+  "bien-ban": "docws.tplBienBan",
+  "giay-nghi-phep": "docws.tplGiayNghiPhep",
 };
 
 /* Shown while the visible document is empty: pick a document type to have
