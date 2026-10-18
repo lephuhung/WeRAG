@@ -893,6 +893,15 @@ definitions:
           call to generate a SQL query and is disabled by default because most
           quick-answer / RAG-style agents do not want the added latency.
         type: boolean
+      domain_packs:
+        description: |-
+          DomainPacks names the embedded domain packs (domain-packs/<name>) this
+          agent reads: read-only skills with reference files and a code-appended
+          answer footer. Independent of SkillsSelectionMode and of the sandbox
+          (docs/domain-pack-standard.md §6).
+        items:
+          type: string
+        type: array
       embedding_top_k:
         description: |-
           ===== Retrieval Strategy Settings (for both modes) =====
@@ -2057,6 +2066,25 @@ definitions:
       status:
         type: string
       title:
+        type: string
+    type: object
+  github_com_Tencent_WeKnora_internal_types.LegalRequestDecision:
+    properties:
+      action:
+        description: |-
+          Action is "ingest" (fetch from vbpl.vn into KnowledgeBaseID), "reject"
+          or "added" (added by hand).
+        type: string
+      allow_pdf:
+        description: |-
+          AllowPDF lets "ingest" use the portal's original PDF (a scan, OCRed by
+          the KB's pdf parser) when vbpl.vn has no HTML full text.
+        type: boolean
+      knowledge_base_id:
+        type: string
+      knowledge_id:
+        type: string
+      note:
         type: string
     type: object
   github_com_Tencent_WeKnora_internal_types.LegalReviewDecision:
@@ -7321,6 +7349,27 @@ paths:
       - Bearer: []
       - ApiKeyAuth: []
       summary: Lấy câu hỏi gợi ý
+      tags:
+      - Trợ lý
+  /agents/domain-packs:
+    get:
+      consumes:
+      - application/json
+      description: 'Trả về các gói chuyên môn có trong phiên bản này để chọn cho trợ
+        lý suy luận: phiên bản, mốc dữ liệu, hạn rà soát (overdue = đã quá hạn) và
+        công cụ bắt buộc'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: danh sách gói chuyên môn
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      - ApiKeyAuth: []
+      summary: Lấy danh sách gói chuyên môn
       tags:
       - Trợ lý
   /agents/placeholders:
@@ -17714,6 +17763,108 @@ paths:
             additionalProperties: true
             type: object
       summary: Search the legal catalogue
+      tags:
+      - Rà soát pháp lý
+  /system/legal-requests:
+    get:
+      description: |-
+        Pages the requests to add legal documents, most recently
+        requested first. status is requested (default), added,
+        rejected or all; counts holds the total per status.
+      parameters:
+      - description: requested, added, rejected or all
+        in: query
+        name: status
+        type: string
+      - description: Page
+        in: query
+        name: page
+        type: integer
+      - description: Page size
+        in: query
+        name: page_size
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Items, total and counts
+          schema:
+            additionalProperties: true
+            type: object
+      summary: List legal document requests
+      tags:
+      - Rà soát pháp lý
+  /system/legal-requests/{id}:
+    put:
+      consumes:
+      - application/json
+      description: |-
+        action "ingest" fetches the document from vbpl.vn into the
+        public knowledge base knowledge_base_id (same code as the MCP
+        tool legal_ingest_document); allow_pdf lets it use the
+        portal's original PDF scan (OCR) when there is no HTML full
+        text, otherwise such a document answers 400 and its portal
+        availability is stored as detail.portal; "reject" keeps note as the
+        reason users see; "added" records a document added by hand.
+      parameters:
+      - description: Request ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Decision
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.LegalRequestDecision'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated item
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Ingest, reject or close a legal document request
+      tags:
+      - Rà soát pháp lý
+  /system/legal-requests/{id}/portal-check:
+    post:
+      description: |-
+        Reads the document's portal page (no download) and stores
+        detail.portal = {checked_at, status, html, pdf_file, exists}
+        on the request: HTML full text, only an original PDF scan,
+        or nothing.
+      parameters:
+      - description: Request ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated item
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Check what vbpl.vn offers for a requested document
+      tags:
+      - Rà soát pháp lý
+  /system/legal-requests/public-knowledge-bases:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: '[{id, name}]'
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Public knowledge bases a request can be ingested into
       tags:
       - Rà soát pháp lý
   /system/legal-reviews:

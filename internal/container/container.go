@@ -587,6 +587,21 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewWebSearchProviderHandler))
 	must(container.Provide(handler.NewVectorStoreHandler))
 	must(container.Provide(handler.NewStorageBackendHandler))
+	// domain packs ship in the binary; an invalid one stops startup, like a
+	// broken built-in skill
+	must(container.Provide(func() (*domainpacks.Registry, error) {
+		registry, err := domainpacks.Load(domainpackassets.FS)
+		if err != nil {
+			return nil, err
+		}
+		for _, name := range registry.Names() {
+			pack, _ := registry.Get(name)
+			for _, finding := range pack.Lint() {
+				logger.Warnf(ctx, "[Container] Domain pack %s lint: %s", name, finding)
+			}
+		}
+		return registry, nil
+	}))
 	must(container.Provide(handler.NewCustomAgentHandler))
 	must(container.Provide(handler.NewUserResourceFavoriteHandler))
 	must(container.Provide(func(s *service.TenantSkillService) *handler.SkillHandler {
@@ -692,19 +707,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 			}
 		}
 	}))
-	// domain packs ship in the binary; an invalid one stops startup, like a
-	// broken built-in skill
-	must(container.Invoke(func(agents interfaces.AgentService, sessions interfaces.SessionService) error {
-		registry, err := domainpacks.Load(domainpackassets.FS)
-		if err != nil {
-			return err
-		}
-		for _, name := range registry.Names() {
-			pack, _ := registry.Get(name)
-			for _, finding := range pack.Lint() {
-				logger.Warnf(ctx, "[Container] Domain pack %s lint: %s", name, finding)
-			}
-		}
+	// the agent and session services read the shipped domain packs
+	must(container.Invoke(func(registry *domainpacks.Registry, agents interfaces.AgentService,
+		sessions interfaces.SessionService) error {
 		type domainPackUser interface {
 			SetDomainPacks(*domainpacks.Registry)
 		}

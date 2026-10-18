@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/im"
@@ -37,6 +38,9 @@ type CustomAgentHandler struct {
 	// models validates the document-assistant model selections. Optional —
 	// nil in partially-wired unit tests, where they are left unchecked.
 	models interfaces.ModelService
+	// domainPacks are the packs shipped in this build: listed for the editor
+	// and checked on save. Nil ships none, so any selection is refused.
+	domainPacks *domainpacks.Registry
 }
 
 // NewCustomAgentHandler creates a new custom agent handler instance
@@ -46,6 +50,7 @@ func NewCustomAgentHandler(
 	userService interfaces.UserService,
 	sandboxConfigs *service.TenantSandboxConfigService,
 	models interfaces.ModelService,
+	domainPacks *domainpacks.Registry,
 ) *CustomAgentHandler {
 	return &CustomAgentHandler{
 		service:        service,
@@ -53,6 +58,7 @@ func NewCustomAgentHandler(
 		userService:    userService,
 		sandboxConfigs: sandboxConfigs,
 		models:         models,
+		domainPacks:    domainPacks,
 	}
 }
 
@@ -105,6 +111,10 @@ func (h *CustomAgentHandler) CreateAgent(c *gin.Context) {
 		return
 	}
 	if err := h.validateAgentSandboxConfig(ctx, req.Config); err != nil {
+		c.Error(err)
+		return
+	}
+	if err := h.validateDomainPacks(req.Config); err != nil {
 		c.Error(err)
 		return
 	}
@@ -359,6 +369,10 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 		return
 	}
 	if err := h.validateAgentSandboxConfig(ctx, req.Config); err != nil {
+		c.Error(err)
+		return
+	}
+	if err := h.validateDomainPacks(req.Config); err != nil {
 		c.Error(err)
 		return
 	}
