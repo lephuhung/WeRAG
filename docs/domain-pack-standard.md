@@ -56,7 +56,8 @@ Lý do chọn nhúng thay vì tải lên lúc chạy:
 ```
 domain-packs/<name>/
   SKILL.md          # frontmatter manifest + quy trình (lớp a)
-  catalogue.yaml    # số hiệu văn bản mà gói dựa vào (lớp b) — không có cột trạng thái
+  catalogue.yaml    # "Văn bản trích dẫn": số hiệu + điều trích (lớp b) — không có cột trạng thái
+  formulas.yaml     # "Công thức": công thức cố định của tool Go (lớp d) — tuỳ chọn, xem 3.5
   references/*.md   # bình luận, cẩm nang (lớp c)
   assets/*.md       # mẫu, checklist (lớp c)
   evals/cases.jsonl # bộ kiểm (lớp e)
@@ -69,10 +70,13 @@ Schema `catalogue.yaml` (đọc với `KnownFields(true)`; khoá kiểu `status`
 
 ```yaml
 documents:
-  - number: 01/2021/NĐ-CP          # bắt buộc, không trùng
+  - number: 168/2025/NĐ-CP         # bắt buộc, không trùng
     title: Nghị định về đăng ký doanh nghiệp   # tuỳ chọn
     used_for: thủ tục đăng ký      # bắt buộc
+    articles: ["Điều 21"]          # tuỳ chọn: các điều gói trích
 ```
+
+`catalogue.yaml` và `formulas.yaml` là **hai nơi duy nhất** SuperAdmin cập nhật văn bản và công thức của gói; trang quản trị "Gói chuyên môn" (§8) hiển thị chúng cùng kết quả tra danh mục. Gói trích số hiệu ở tệp nào (`cited_in`) **không viết tay**: registry tính lúc nạp bằng cách quét `SKILL.md`, `references/**`, `assets/**` tìm số hiệu đầy đủ (số/năm/ký hiệu), so theo khoá danh mục (`CatalogNumberKey`).
 
 ### 3.3 Manifest (frontmatter `SKILL.md`)
 
@@ -113,7 +117,34 @@ Mọi gói trong `domain-packs/` phải qua test:
 - manifest đọc bằng struct riêng với `KnownFields(true)` (sai chính tả trường = lỗi); áp luôn `Skill.Validate` hiện có;
 - `required_tools` không chứa tool luôn-bật;
 - tệp được duyệt cả trên FS nhúng lẫn thư mục nguồn (go:embed bỏ qua tệp `.`/`_`);
-- **lint** (công cụ hỗ trợ SuperAdmin duyệt, không thay review tay): mẫu nghi prompt injection ("bỏ qua hướng dẫn", "ignore previous", "system prompt"), tên tool không thuộc `required_tools` ∪ tool luôn-bật.
+- `draft_documents`: `title` + `version` bắt buộc; `date` bắt buộc trừ khi `version` là "chưa rõ lần dự thảo" (khi đó không được có — không bịa ngày);
+- `catalogue.yaml`: `articles` (nếu có) không rỗng từng phần tử;
+- `formulas.yaml` (nếu có, xem 3.5) đọc strict; mọi `required_tools` là tool công thức (`domaintools.IsDomainTool`) phải được ít nhất một công thức mô tả;
+- **lint** (công cụ hỗ trợ SuperAdmin duyệt, không thay review tay; `TestShippedPacksAreValid` đòi 0 phát hiện): mẫu nghi prompt injection ("bỏ qua hướng dẫn", "ignore previous", "system prompt"), tên tool không thuộc `required_tools` ∪ tool luôn-bật, số hiệu được trích trong văn bản gói mà không có trong `catalogue.yaml`, mục danh mục không được trích ở đâu, biểu thức công thức ghi tỷ lệ dạng hằng số ("× 20 %").
+
+### 3.5 Công thức (`formulas.yaml`)
+
+```yaml
+formulas:
+  - id: thue_theo_ty_le_doanh_thu        # snake_case, không trùng; = id hàm Go
+    name: Thuế TNDN tính theo tỷ lệ % trên doanh thu
+    expression: Thuế theo % doanh thu = Doanh thu × Tỷ lệ % doanh thu
+    variables:
+      - {name: doanh_thu, description: Doanh thu năm, unit: đồng, source: input}
+      - {name: ty_le_doanh_thu, description: Tỷ lệ thuế TNDN trên doanh thu, unit: "%", source: kb}
+    basis:
+      - {number: 67/2025/QH15, article: ""}   # số hiệu phải có trong catalogue.yaml; điều chỉ ghi khi nguồn nêu
+    tool: compare_tax_methods                # phải nằm trong required_tools
+    examples:                                # ≥ 1; hàm Go phải tái tạo (tiền ±1 đ, tỷ lệ ±1e-9)
+      - inputs: {doanh_thu: 8000000000, ty_le_doanh_thu: 1.5}
+        expected: {thue_theo_doanh_thu: 120000000}
+```
+
+- Không có hằng số luật định trong công thức: thuế suất, tỷ lệ, ngưỡng là biến `source: kb` (tra KB lúc trả lời) — lint bắt "20 %" trong `expression`.
+- Mã: `internal/agent/domaintools` là registry id → hàm thuần `func(map[string]float64) (map[string]float64, error)` (không giá trị mặc định: thiếu biến = lỗi); mỗi gói một package con (`opcvn`). Registry gói từ chối công thức không có hàm Go cho đúng tool. Test: mọi công thức của mọi gói ship có hàm và qua mọi ví dụ; mọi hàm được mô tả trong một `formulas.yaml`.
+- Tool đọc khối "Công thức áp dụng" (tên, biểu thức, căn cứ số hiệu + điều) do `Registry.FormulaBlock(tool)` sinh từ `formulas.yaml` và nối vào kết quả — văn bản công thức chỉ viết một lần, không lặp trong Go.
+- `formulas.yaml` không phục vụ qua `read_file`; model nhận những gì cần qua kết quả tool.
+- Đổi công thức = sửa `formulas.yaml` + mã Go, review, build lại (không sửa lúc chạy).
 
 ## 4. Quy tắc 4+1 lớp
 
@@ -181,20 +212,21 @@ Cái giá của tool Go là **gắn kết**: mỗi gói có tool thì thêm mã 
 - Tenant Admin quản lý thành viên và KB riêng; không gán gói, không sửa agent.
 - Phiên bản mới của gói đi cùng bản build; CHANGELOG trong ATTRIBUTION.md ghi số hiệu thêm/bớt.
 - Mỗi Tổ chức một agent riêng (không chia sẻ được). Màn quản trị liệt kê agent theo gói để rà khi nâng phiên bản.
+- **Trang SuperAdmin "Gói chuyên môn"** (frontend-next, khu quản trị nền tảng; chỉ đọc + nút đối chiếu): danh sách gói (phiên bản, mốc, hạn rà soát, số văn bản/công thức/agent); chi tiết ba tab "Văn bản trích dẫn" (số hiệu, tên, điều trích, trạng thái danh mục, có trong KB, ghi chú hiệu lực, tệp trích, công thức dùng), "Công thức" (biểu thức, biến, căn cứ ok/cảnh báo, ví dụ), "Agent đang dùng" (agent, Tổ chức). Dòng có cảnh báo được tô — đó là danh sách "cần cập nhật gì". Nút "Đối chiếu danh mục" gọi `POST …/reconcile` và dẫn tới hàng đợi yêu cầu văn bản. API: `GET /api/v1/system/domain-packs`, `GET /api/v1/system/domain-packs/:name` (tra danh mục chỉ đọc, không ghi yêu cầu; agent mọi Tổ chức có `config.domain_packs` chứa tên gói), cùng guard SuperAdmin với `/system/legal-requests`. Không sửa gói lúc chạy.
 
 ## 9. Lộ trình
 
 | GĐ | Việc | Ghi chú |
 | --- | --- | --- |
 | 1 | Định dạng gói + nguồn nhúng (`domain-packs/embed.go`, `internal/agent/domainpacks/`) + test 3.4 (gói mẫu trong testdata, không ship); manager coi gói là chỉ-đọc; `DomainPacks` trên agent + nạp lúc chạy + kiểm khi lưu; footer (2 đường) + câu quá hạn; `GET /agents/domain-packs`; chọn gói trong trình sửa agent (frontend-next, en + vi); sinh lại swagger. Thứ tự: nguồn → manager → nạp lúc chạy → footer → cấu hình/API → UI | không migration |
-| 2 | Chuẩn hoá `opc-vn-business-law`; tool `compare_tax_methods`; lệnh đối chiếu danh mục → `legal_document_requests`; bộ eval `pack` trong `scripts/legal_eval`; màn quản trị liệt kê agent theo gói (`config->'domain_packs'`) | **Đã làm (18/10/2026)** trừ màn quản trị liệt kê agent theo gói (để sau) và UI đối chiếu (chỉ có endpoint). Chưa chạy: đối chiếu trên DB dev, eval với agent thật (nhánh chưa merge). Chi tiết ở §9.1 |
+| 2 | Chuẩn hoá `opc-vn-business-law`; tool `compare_tax_methods`; lệnh đối chiếu danh mục → `legal_document_requests`; bộ eval `pack` trong `scripts/legal_eval`; màn quản trị liệt kê agent theo gói (`config->'domain_packs'`) | **Đã làm (18/10/2026)**, gồm trang "Gói chuyên môn" (§8), `formulas.yaml` + `articles` + `cited_in` (§3.2, §3.5). Đối chiếu trên DB dev đã chạy (18/10/2026, gói lên 1.1.0); eval với agent thật chưa chạy. Chi tiết ở §9.1 |
 | 3 | Cờ KB `evidence_role=reference`; lọc theo lĩnh vực (`legal_document_links` → `legal_documents.field` + bảng mã lĩnh vực); bộ kiểm phần "Căn cứ" + nhãn dự thảo bằng mã | lớn nhất |
 
 ### 9.1 Giai đoạn 2 — đã làm
 
 - **Tool `compare_tax_methods`**: hàm thuần `internal/agent/domaintools/opcvn` (port `so_sanh_thue.py`, test tái tạo self-test) + wrapper `internal/agent/tools/compare_tax_methods.go`; trong `AvailableToolDefinitions`, không trong `DefaultAllowedTools`; `registerTools`; policy model-handle rỗng; trình sửa agent có nhóm "Công cụ tính", bước chat có nhãn (en + vi). Bốn tham số bắt buộc, chấp nhận số trong chuỗi ("8000000000", "1.2e9"), từ chối "8 tỷ"/"1.200.000". Khác script có chủ ý: `ty_le_doanh_thu` chỉ là phần trăm, 0 < x < 100 (script nhận cả 1.5 lẫn 0.015 nên 0.5 thành 50 %), kiểm NaN/vô cực, trần 10^15 đ, thuế suất hiện tới 2 chữ số thập phân.
 - **Gói `domain-packs/opc-vn-business-law`** (1.0.0, SKILL.md 5 516 byte): 13 số hiệu trong `catalogue.yaml`, 3 dự thảo trong manifest — hai dự án luật không có lần/ngày trong bản gốc nên `version: chưa rõ lần dự thảo` và không có `date` (validator: `date` bắt buộc trừ đúng trường hợp này, và khi đó không được có). Tài nguyên không khẳng định hiệu lực ("bản gốc ghi …; xác nhận bằng check_legal_status"), số liệu luật định → "tra KB". Bỏ thêm bảng ngưỡng siêu nhỏ (NĐ 80/2021) và trần Luật Hỗ trợ DNNVV 2017 ở `02` (số liệu đổi theo văn bản). Sửa câu biên hòa vốn bị ngược chiều trong `05` gốc. 30 câu eval. `TestShippedPacksAreValid` 0 lint; `TestOpcVNBusinessLawPackShips` khoá hợp đồng của gói.
-- **Đối chiếu**: `POST /api/v1/system/domain-packs/:name/reconcile` (SuperAdmin như `/system/legal-requests`), `service.DomainPackReconciler`. Khoá `CatalogNumberKey`, chỉ khớp đúng khoá (bỏ khớp tiền tố). Kết quả `found`, `missing`, `ambiguous`, `errors` (lỗi theo từng số hiệu, các số khác vẫn trả). `status_note`: hết hiệu lực toàn bộ/một phần, ngưng/đình chỉ, chưa có hiệu lực (trạng thái hoặc `effective_on` > hôm nay), quá `expired_on`, bị thay thế/làm hết hiệu lực/ngưng bởi văn bản đã có hiệu lực, được (hoặc sẽ được) sửa đổi bởi văn bản khác. Văn bản có trong danh mục: `held_in_kb` theo cùng cách cổng chat (liên kết đã duyệt hoặc bản đã nạp vào KB công khai theo `external_id`); không KB nào giữ → yêu cầu có `legal_document_id` (nút Ingest cần) và `source = "catalogue"`; số hiệu trùng: bỏ dòng hết hiệu lực khi có dòng còn hiệu lực, như cổng. Không có trong danh mục → yêu cầu `source = ""`. `source` giữ nghĩa của cổng; nguồn gói nằm ở `detail.origin = "pack:<tên>"` (cùng `pack_version`, `used_for`), nên tên gói không bị giới hạn varchar(32). Yêu cầu ghi `last_tenant_id`/`last_user_id` của người gọi, `last_query` = "Danh mục gói chuyên môn …". Đã có yêu cầu cùng (`number_key`, `legal_document_id`) ở mọi trạng thái thì chỉ báo lại, không bump, không mở lại yêu cầu bị từ chối/đã thêm. Không migration (thêm `LegalRequestRepository.ListByNumberKey`). Không có GET kết quả lần trước.
+- **Đối chiếu**: `POST /api/v1/system/domain-packs/:name/reconcile` (SuperAdmin như `/system/legal-requests`), `service.DomainPackReconciler`. Khoá `CatalogNumberKey`, chỉ khớp đúng khoá (bỏ khớp tiền tố). Kết quả `found`, `missing`, `ambiguous`, `errors` (lỗi theo từng số hiệu, các số khác vẫn trả). `status_note`: hết hiệu lực toàn bộ/một phần, ngưng/đình chỉ, chưa có hiệu lực (trạng thái hoặc `effective_on` > hôm nay), quá `expired_on`, bị thay thế/làm hết hiệu lực/ngưng bởi văn bản đã có hiệu lực, được (hoặc sẽ được) sửa đổi bởi văn bản khác. Văn bản có trong danh mục: `held_in_kb` theo cùng cách cổng chat (liên kết đã duyệt hoặc bản đã nạp vào KB công khai theo `external_id`); không KB nào giữ → yêu cầu có `legal_document_id` (nút Ingest cần) và `source = "catalogue"`; số hiệu trùng: bỏ dòng hết hiệu lực khi có dòng còn hiệu lực, như cổng. Không có trong danh mục → yêu cầu `source = ""`. `source` giữ nghĩa của cổng; nguồn gói nằm ở `detail.origin = "pack:<tên>"` (cùng `pack_version`, `used_for`), nên tên gói không bị giới hạn varchar(32). Yêu cầu ghi `last_tenant_id`/`last_user_id` của người gọi, `last_query` = "Danh mục gói chuyên môn …". Đã có yêu cầu cùng (`number_key`, `legal_document_id`) ở mọi trạng thái thì chỉ báo lại, không bump, không mở lại yêu cầu bị từ chối/đã thêm. Số hiệu mà mọi dòng danh mục đều "Hết hiệu lực toàn bộ" không ghi yêu cầu (như cổng — cổng hiện thẻ "đã hết hiệu lực"); `status_note` là tín hiệu để sửa gói. Khác cổng: đối chiếu **không** dùng `KnowledgeNamed` (tìm theo tên tệp/tiêu đề trong KB của agent) vì không có agent/KB cụ thể — văn bản tải lên KB bằng tay mà không có `external_id` sẽ hiện "chưa có trong KB". Phần tra cứu (lookup, `held_in_kb`, `status_note`) tách riêng, dùng chung cho trang chi tiết (chỉ đọc). Không migration (thêm `LegalRequestRepository.ListByNumberKey`, `DomainPackAgentRepository`). Không có GET kết quả lần trước.
 - **Eval**: `run_legal_eval.py --set pack --pack <tên> --agent-id … --baseline-agent-id … [--runs 3]`, `--dry-run` (kiểm tệp case, offline), `--self-check` (kiểm các hàm chấm, offline). Kiểm nhị phân: `must_label_draft` (đoạn nhắc dự thảo phải có "dự thảo"/"dự án luật"), `must_call_tool`/`must_not_call_tool`, `must_not_cite_numbers_outside_catalogue` (danh mục ∪ kết quả tool của lượt), `expect_refusal`, `expect_referral`, `must_ask_clarification`, `must_match`/`must_not_match`, `must_state_status` (so với trạng thái trong kết quả `check_legal_status`/`find_related_legal_documents`; không có thì chỉ cần nhắc số hiệu, ghi `unverified`), `must_have_footer` (chỉ agent có gói). Ngưỡng theo §7; "không xấu hơn" tính trên nhóm `draft_trap`/`status`/`refusal` của bộ case gói. Số hiệu chỉ có trong `read_file` (bình luận của gói) không tính là có căn cứ. Ngưỡng không đo được (không câu nào, mọi lượt lỗi, câu không so được, có lượt lỗi) → `OVERALL INCOMPLETE`, mã thoát 2 — không bao giờ tính là đạt.
 
 **Xung đột với `feat/skills-cleanup`** (worktree chưa commit): sửa cùng `initializeSkillsManager`, `configureSkillsFromAgent`, `types/agent.go`, `builtin_source.go`, `read_file.go`. Với nhánh đó, agent có `BuiltinSkillsDisabled && !SkillsEnabled` nhận manager `nil` — khi hai nhánh gặp nhau, điều kiện phải thành `BuiltinSkillsDisabled && !SkillsEnabled && len(DomainPacks) == 0`, nếu không gói biến mất. Để rebase dễ: phần nối gói nằm trong tệp mới (`agent_service_packs.go`, `internal/agent/domainpacks/`), chỉ chạm `initializeSkillsManager` bằng vài dòng; giữ tên `IsBuiltinSkill` làm alias của `IsReadOnlySkill`.
