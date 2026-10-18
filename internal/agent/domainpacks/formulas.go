@@ -229,7 +229,7 @@ func basisText(basis []FormulaBasis) string {
 }
 
 // documentNumberPattern finds full số hiệu (number/year/symbol) in pack text.
-var documentNumberPattern = regexp.MustCompile(`\b\d{1,4}/\d{4}/[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)*`)
+var documentNumberPattern = regexp.MustCompile(`\b\d{1,4}/\d{4}/[\p{L}\p{N}]+(?:[-–—‐‑−][\p{L}\p{N}]+)*`)
 
 // citations maps each number key cited in the pack's SKILL.md, references
 // and assets to the files citing it, and the key to the number as written.

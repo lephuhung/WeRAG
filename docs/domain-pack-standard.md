@@ -146,6 +146,8 @@ formulas:
 - `formulas.yaml` không phục vụ qua `read_file`; model nhận những gì cần qua kết quả tool.
 - Đổi công thức = sửa `formulas.yaml` + mã Go, review, build lại (không sửa lúc chạy).
 
+Hạn chế đã biết: khối "Công thức áp dụng" gộp công thức của mọi gói mô tả cùng một tool, không lọc theo gói của agent. Vô hại khi mỗi tool chỉ thuộc một gói; khi gói thứ hai dùng lại tool thì phải truyền danh sách gói của agent vào `FormulaBlock`.
+
 ## 4. Quy tắc 4+1 lớp
 
 | Lớp | Được phép | Cấm | Cơ chế |

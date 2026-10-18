@@ -29,7 +29,7 @@ formulas:
         expected: {thue_theo_loi_nhuan: 240000000}
   - id: bien_hoa_von
     name: Biên lợi nhuận hòa vốn giữa hai cách tính
-    expression: Biên lợi nhuận hòa vốn = Tỷ lệ % doanh thu ÷ Thuế suất TNDN
+    expression: Biên lợi nhuận hòa vốn = (Tỷ lệ % doanh thu ÷ 100) ÷ Thuế suất TNDN (kết quả là phân số; nhân 100 để đọc ra %)
     variables:
       - {name: ty_le_doanh_thu, description: Tỷ lệ thuế TNDN trên doanh thu, unit: "%", source: kb}
       - {name: thue_suat, description: Thuế suất thuế TNDN, unit: phân số (0–1), source: kb}
