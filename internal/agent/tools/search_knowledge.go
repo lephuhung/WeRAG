@@ -27,8 +27,27 @@ const (
 
 const (
 	searchKnowledgeDefaultLimit = 10
-	searchKnowledgeMaxLimit     = 30
+	// searchKnowledgeMaxLimit caps the chunks one call returns to the model.
+	// Raising limit to 15-20 multiplied each result's size without finding
+	// more: the next call reads further with read_document instead.
+	searchKnowledgeMaxLimit = 10
+	// searchKnowledgeCandidatePool is the retrieval pool when the config
+	// sets none, and the pool a pattern filter (grep_chunks) narrows.
+	searchKnowledgeCandidatePool = 30
 )
+
+// defaultSearchFullContentTop is how many top-ranked chunks carry their full
+// text to the model. Lower-ranked chunks carry the match snippet and the
+// first searchHeadMaxRunes characters; read_document fetches the rest. The
+// structured rows the UI shows as references keep the full content.
+const (
+	defaultSearchFullContentTop = 5
+	searchHeadMaxRunes          = 240
+)
+
+// searchSnippetOnlyNote tells the model how to read a shortened result.
+const searchSnippetOnlyNote = "Results ranked %d+ show a snippet only; " +
+	"use read_document(id, query) for their full text."
 
 var searchKnowledgeTool = BaseTool{
 	name: ToolSearchKnowledge,
@@ -62,9 +81,9 @@ var searchKnowledgeTool = BaseTool{
     },
     "limit": {
       "type": "integer",
-      "description": "Maximum chunks to return (default 10, max 30)",
+      "description": "Maximum chunks to return (at most 10, the default); read further with read_document",
       "minimum": 1,
-      "maximum": 30
+      "maximum": 10
     },
     "abbreviation_meaning_ids": {
       "type": "object",
@@ -117,6 +136,67 @@ type SearchKnowledgeTool struct {
 	patternFilter       *regexp.Regexp
 	abbreviationService interfaces.AbbreviationService
 	legalCatalog        interfaces.LegalCatalogService
+	// fullContentTop is how many top-ranked results carry their full text;
+	// 0 means defaultSearchFullContentTop.
+	fullContentTop int
+	// history holds the turn's completed searches for the repeat guard.
+	history searchHistory
+}
+
+// WithFullContentTop sets how many top-ranked results carry their full text
+// to the model; n <= 0 restores the default.
+func (t *SearchKnowledgeTool) WithFullContentTop(n int) *SearchKnowledgeTool {
+	t.fullContentTop = n
+	return t
+}
+
+// effectiveFullContentTop resolves the setter, then the config knob, then
+// the package default.
+func (t *SearchKnowledgeTool) effectiveFullContentTop() int {
+	if t.fullContentTop > 0 {
+		return t.fullContentTop
+	}
+	if t.config != nil && t.config.Conversation != nil && t.config.Conversation.SearchFullContentTop > 0 {
+		return t.config.Conversation.SearchFullContentTop
+	}
+	return defaultSearchFullContentTop
+}
+
+// searchContentHead returns the first maxRunes characters of content with
+// whitespace collapsed, cut at a word boundary and marked with "…".
+func searchContentHead(content string, maxRunes int) string {
+	text := strings.Join(strings.Fields(content), " ")
+	runes := []rune(text)
+	if len(runes) <= maxRunes {
+		return text
+	}
+	cut := runes[:maxRunes]
+	if i := lastSpaceRune(cut); i > maxRunes/2 {
+		cut = cut[:i]
+	}
+	return strings.TrimRight(string(cut), " ,;:.") + "…"
+}
+
+func lastSpaceRune(runes []rune) int {
+	for i := len(runes) - 1; i >= 0; i-- {
+		if runes[i] == ' ' {
+			return i
+		}
+	}
+	return -1
+}
+
+// writeSearchResultBody writes a result's text: the match snippet, then the
+// full content, or for a shortened result a <head> instead of <content>.
+func writeSearchResultBody(ob *strings.Builder, snippet, content string, shortened bool) {
+	if snippet != "" {
+		fmt.Fprintf(ob, "<match_snippet>%s</match_snippet>\n", xmlEscape(snippet))
+	}
+	if shortened {
+		fmt.Fprintf(ob, "<head>%s</head>\n", xmlEscape(searchContentHead(content, searchHeadMaxRunes)))
+		return
+	}
+	fmt.Fprintf(ob, "<content>%s</content>\n", content)
 }
 
 func (t *SearchKnowledgeTool) WithAbbreviationService(
@@ -194,6 +274,29 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 	}
 	limit := clampSearchLimit(input.Limit)
 
+	// A near-identical query of an earlier round returns the same chunks:
+	// the long turns ended on three such calls hunting for text the
+	// knowledge base does not hold, each costing a full result.
+	// It runs before the abbreviation gate: the same raw query under the same
+	// meaning selection resolves to the same effective query within a turn.
+	turnMessageID, turnRound, inTurn := searchTurnPosition(ctx)
+	repeatKey := searchRepeatKey(mode, input.AbbreviationMeaningIDs, input.LiteralAbbreviations)
+	if inTurn {
+		if prev, repeat := t.history.findRepeat(turnMessageID, turnRound, repeatKey, query); repeat {
+			logger.Infof(ctx, "[Tool][SearchKnowledge] query=%q mode=%s repeats round %d; not run",
+				query, mode, prev.round)
+			return &types.ToolResult{
+				Success: true,
+				Output:  searchRepeatOutput(query, mode, prev),
+				Data: map[string]interface{}{
+					"repeat_of_round": prev.round,
+					"query":           query,
+					"mode":            mode,
+				},
+			}, nil
+		}
+	}
+
 	originalQuery := query
 	resolved, blocked, resolveErr := ResolveToolQuery(ctx, query, t.abbreviationService,
 		input.AbbreviationMeaningIDs, input.LiteralAbbreviations)
@@ -232,7 +335,7 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 
 	retrievalLimit := limit
 	if t.patternFilter != nil {
-		retrievalLimit = searchKnowledgeMaxLimit
+		retrievalLimit = searchKnowledgeCandidatePool
 	}
 	topK, vectorThreshold, keywordThreshold := t.retrievalParams(retrievalLimit)
 	logger.Infof(ctx,
@@ -320,6 +423,9 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 		result.Output += "\n" + legalNote
 	}
 	annotateAbbreviationResolution(result, originalQuery, query)
+	if inTurn {
+		t.history.record(turnMessageID, turnRound, repeatKey, originalQuery, len(final))
+	}
 	return result, nil
 }
 
@@ -462,7 +568,7 @@ func (t *SearchKnowledgeTool) retrievalParams(limit int) (topK int, vectorThresh
 		keywordThreshold = t.config.Conversation.KeywordThreshold
 	}
 	if topK <= 0 {
-		topK = searchKnowledgeMaxLimit
+		topK = searchKnowledgeCandidatePool
 	}
 	if topK < limit {
 		topK = limit
@@ -922,6 +1028,8 @@ func (t *SearchKnowledgeTool) formatOutput(
 	formattedResults := make([]map[string]interface{}, 0, len(results))
 	faqMetadataCache := make(map[string]*types.FAQChunkMetadata)
 	queries := []string{query}
+	fullTop := t.effectiveFullContentTop()
+	shortenedCount := 0
 
 	for i, result := range results {
 		var faqMeta *types.FAQChunkMetadata
@@ -956,10 +1064,12 @@ func (t *SearchKnowledgeTool) formatOutput(
 		}
 		fmt.Fprintf(&ob, "<%s rank=\"%d\" %s knowledge_base_id=\"%s\" knowledge_title=\"%s\" score=\"%.3f\">\n",
 			tag, i+1, idAttr, xmlEscape(result.KnowledgeBaseID), xmlEscape(result.KnowledgeTitle), result.Score)
-		if snippet != "" {
-			fmt.Fprintf(&ob, "<match_snippet>%s</match_snippet>\n", xmlEscape(snippet))
+		// FAQ pairs are short and always carry their full fields.
+		shortened := !isFAQ && i >= fullTop
+		if shortened {
+			shortenedCount++
 		}
-		fmt.Fprintf(&ob, "<content>%s</content>\n", result.Content)
+		writeSearchResultBody(&ob, snippet, result.Content, shortened)
 		if result.ImageInfo != "" {
 			var imageInfos []types.ImageInfo
 			if err := json.Unmarshal([]byte(result.ImageInfo), &imageInfos); err == nil {
@@ -993,6 +1103,12 @@ func (t *SearchKnowledgeTool) formatOutput(
 		if images := chunkImageList(result.ImageInfo); len(images) > 0 {
 			row["images"] = images
 		}
+		if shortened {
+			// Read by the model renderer only (modelcontext); "content"
+			// stays full for the references drawer and stored messages.
+			row["model_view"] = "snippet"
+			row["content_head"] = searchContentHead(result.Content, searchHeadMaxRunes)
+		}
 		if isFAQ {
 			row["faq_id"] = result.ID
 			row["index"] = result.ChunkIndex
@@ -1009,6 +1125,9 @@ func (t *SearchKnowledgeTool) formatOutput(
 			addLegalCitation(row, legalMetadataFromJSON(result.ChunkMetadata))
 		}
 		formattedResults = append(formattedResults, row)
+	}
+	if shortenedCount > 0 {
+		fmt.Fprintf(&ob, "<note>%s</note>\n", fmt.Sprintf(searchSnippetOnlyNote, fullTop+1))
 	}
 	ob.WriteString("</search_results>")
 

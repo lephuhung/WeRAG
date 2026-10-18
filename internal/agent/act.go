@@ -576,6 +576,7 @@ func (e *AgentEngine) runToolCall(
 		// so MCP tool human-approval (issue #1173) can legitimately block longer.
 		ApprovalCtx: toolCtx,
 		ExecTimeout: execTimeout,
+		Round:       round,
 	})
 
 	var result *types.ToolResult

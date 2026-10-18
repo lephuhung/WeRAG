@@ -87,6 +87,8 @@ type AgentEngine struct {
 	// stopReason is the cap that ended the loop before a natural finish
 	// (event.TurnLimitTurnBudget), "" for the iteration limit.
 	stopReason string
+	// wrapUpNudged records that this turn already got wrapUpNudgeText.
+	wrapUpNudged bool
 }
 
 // maxSteerOverruns caps loop-end injects past MaxIterations. One extra round
@@ -749,6 +751,9 @@ func (e *AgentEngine) runReActIteration(
 	// updated (the injected text counts as new delta tokens for the next
 	// call), so the very next LLM call sees the user's addition.
 	e.drainSteerMessages(ctx, state, messagesPtr, sessionID, assistantMessageID)
+	// After wrapUpNudgeRound rounds the model is asked, once, to answer from
+	// what it gathered (wrap_up.go). Same boundary as steering, same tail.
+	e.appendWrapUpNudge(ctx, state, messagesPtr)
 
 	logger.Infof(ctx, "[Agent][Round-%d/%s] Starting: %d messages, %d tools, est_tokens=%d",
 		round, e.maxIterationsDisplay(), len(*messagesPtr), len(tools), currentTokens)

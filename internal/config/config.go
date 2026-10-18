@@ -168,6 +168,11 @@ type ConversationConfig struct {
 	EnableRerank         bool           `yaml:"enable_rerank"                    json:"enable_rerank"`
 	Summary              *SummaryConfig `yaml:"summary"                          json:"summary"`
 
+	// SearchFullContentTop is how many top-ranked search_knowledge results
+	// carry their full chunk text to the model; the rest carry a snippet and
+	// a short head. 0 uses the tool default (5).
+	SearchFullContentTop int `yaml:"search_full_content_top" json:"search_full_content_top"`
+
 	// Prompt template ID fields — resolved to text by backfillConversationDefaults
 	FallbackPromptID             string `yaml:"fallback_prompt_id"                json:"fallback_prompt_id"`
 	RewritePromptID              string `yaml:"rewrite_prompt_id"                 json:"rewrite_prompt_id"`
@@ -722,6 +727,9 @@ func ValidateConfig(cfg *Config) error {
 		}
 		if cfg.Conversation.RerankTopK < 0 {
 			errs = append(errs, "conversation.rerank_top_k must be >= 0")
+		}
+		if cfg.Conversation.SearchFullContentTop < 0 {
+			errs = append(errs, "conversation.search_full_content_top must be >= 0")
 		}
 		if cfg.Conversation.VectorThreshold < 0 || cfg.Conversation.VectorThreshold > 1 {
 			errs = append(errs, "conversation.vector_threshold must be between 0 and 1")
