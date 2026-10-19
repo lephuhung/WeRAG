@@ -32,6 +32,11 @@ const (
 	// SuperAdmin holds (seeded by migration 000140, editable like any plan).
 	// A subscription to it counts only while its holder is a SuperAdmin.
 	UsageSystemAdminPlanCode = "system-admin"
+	// UsageGuestPlanCode is the personal package of a Guest chatting in the
+	// public portal (seeded by migration 000172 with 10 questions a day,
+	// editable like any plan). The usage guard subscribes a Guest to it on
+	// the first lookup; it counts only in the public portal.
+	UsageGuestPlanCode = "guest"
 
 	UsageSubscriptionActive    = "active"
 	UsageSubscriptionCancelled = "cancelled"

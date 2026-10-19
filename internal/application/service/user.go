@@ -1177,8 +1177,9 @@ func (s *userService) SwitchTenant(
 	if err != nil {
 		return nil, fmt.Errorf("load target organization: %w", err)
 	}
-	// A configuration profile is not a workspace anyone works in.
-	if tenant.IsConfigProfile() {
+	// A configuration profile or the public portal is not an organization
+	// anyone works in.
+	if tenant.IsHiddenTenant() {
 		return nil, ErrMembershipNotFound
 	}
 

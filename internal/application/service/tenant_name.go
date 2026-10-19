@@ -11,7 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 
 	werrors "github.com/Tencent/WeKnora/internal/errors"
-	"github.com/Tencent/WeKnora/internal/types"
 )
 
 // TenantNameMaxLength matches tenants.name VARCHAR(255) (characters).
@@ -87,7 +86,7 @@ func (s *tenantService) ValidateTenantName(ctx context.Context, name string, exc
 	}
 	key := strings.ToLower(normalized)
 	for _, t := range tenants {
-		if t == nil || t.ID == excludeID || t.Kind == types.TenantKindConfigProfile {
+		if t == nil || t.ID == excludeID || t.IsHiddenTenant() {
 			continue
 		}
 		if tenantNameKey(t.Name) == key {

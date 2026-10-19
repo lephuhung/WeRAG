@@ -249,7 +249,7 @@ func (h *SystemHandler) UpdateSystemTenant(c *gin.Context) {
 		return
 	}
 	tenant, err := h.tenantSvc.GetTenantByID(ctx, tenantID)
-	if err != nil || tenant == nil || tenant.IsConfigProfile() {
+	if err != nil || tenant == nil || tenant.IsHiddenTenant() {
 		c.Error(apperrors.NewNotFoundError("organization not found"))
 		return
 	}
@@ -316,7 +316,7 @@ func (h *SystemHandler) AddSystemTenantMember(c *gin.Context) {
 		return
 	}
 	// A configuration profile has no members.
-	if tenant, err := h.tenantSvc.GetTenantByID(ctx, tenantID); err != nil || tenant == nil || tenant.IsConfigProfile() {
+	if tenant, err := h.tenantSvc.GetTenantByID(ctx, tenantID); err != nil || tenant == nil || tenant.IsHiddenTenant() {
 		c.Error(apperrors.NewNotFoundError("organization not found"))
 		return
 	}

@@ -73,6 +73,16 @@ type TenantRepository interface {
 	// settings onto every organization that inherits from it (or onto one
 	// organization when workspaceID is non-zero). Returns the rows updated.
 	SyncProfileSettings(ctx context.Context, profileID, workspaceID uint64) (int64, error)
+	// GetPublicPortal returns the public portal tenant guest chat runs in,
+	// or (nil, nil) when none exists (migration 000172 seeds it).
+	GetPublicPortal(ctx context.Context) (*types.Tenant, error)
+}
+
+// PublicPortalResolver finds the public portal tenant. The tenant service
+// implements it; auth middleware type-asserts for it so the many
+// TenantService fakes need not.
+type PublicPortalResolver interface {
+	GetPublicPortal(ctx context.Context) (*types.Tenant, error)
 }
 
 type TenantAPIKeyCreateRequest struct {
