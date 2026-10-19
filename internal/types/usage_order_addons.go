@@ -40,6 +40,27 @@ type UsageOrderAddonLine struct {
 	// priced to (the right ends there even if the subscription is extended
 	// before the order is paid).
 	PaidUntil *time.Time `json:"paid_until,omitempty"`
+	// CoveredUntil: the end of the right the scope already holds (renewal,
+	// plan change); only the time after it is charged.
+	CoveredUntil *time.Time `json:"covered_until,omitempty"`
+	// Gap*: renewal only — the part of the current period the right does
+	// not cover yet (from max(now, CoveredUntil) to the current end), priced
+	// like a mid-term purchase, on top of Months.
+	GapMonths         int    `json:"gap_months,omitempty"`
+	GapLeftoverDays   int    `json:"gap_leftover_days,omitempty"`
+	GapLeftoverFactor string `json:"gap_leftover_factor,omitempty"`
+	GapVND            int64  `json:"gap_vnd,omitempty"`
+	// ExtraUnits*: seats added on an order whose right is already held —
+	// the added seats for the time the held right still covers.
+	ExtraUnits    int   `json:"extra_units,omitempty"`
+	ExtraUnitsVND int64 `json:"extra_units_vnd,omitempty"`
+	// SeatsOnly: a held add-on the order does not buy again, charged only
+	// for the seats the order adds (ExtraUnits*); its right is not extended.
+	SeatsOnly bool `json:"seats_only,omitempty"`
+	// SubscriptionEnd: renewal — the subscription end the line was priced
+	// against; if it has moved by the time the order is confirmed (another
+	// order renewed it meanwhile) the order is refused (409).
+	SubscriptionEnd *time.Time `json:"subscription_end,omitempty"`
 }
 
 // UsageOrderAddonLines is the addons jsonb of usage_orders.
@@ -112,13 +133,7 @@ func PriceAddonRemainder(unit int64, units int, from, until time.Time) (months, 
 	if !until.After(from) {
 		return 0, 0, "", 0
 	}
-	for !from.AddDate(0, months+1, 0).After(until) {
-		months++
-	}
-	rest := until.Sub(from.AddDate(0, months, 0))
-	if rest > 0 {
-		leftoverDays = int((rest + 24*time.Hour - 1) / (24 * time.Hour))
-	}
+	months, leftoverDays = AddonPeriodSplit(from, until)
 	monthly := unit * int64(units)
 	amount = monthly * int64(months)
 	switch {
@@ -139,4 +154,26 @@ type UsageScopeAddons struct {
 	Subscription *UsageSubscription        `json:"subscription,omitempty"`
 	Held         []*UsageSubscriptionAddon `json:"held"`
 	Purchasable  []UsagePlanAddonOffer     `json:"purchasable"`
+}
+
+// AddonPeriodSplit splits [from, until) into whole months and the days left
+// over — the one place the day counting of decision 7.3 is defined (user
+// decision 19/10/2026, see usage_calendar.go). A day ends at 24:00 GMT+7:
+// k whole months from `from` run to the end of the Vietnamese date k months
+// later (SubscriptionEndVN, the same end a k-month subscription bought at
+// `from` gets; months clamp at the month's end, 31/1 → 28/2 → 31/3), and the
+// leftover counts the Vietnamese calendar dates after that (CalendarDaysVN;
+// with no whole month, from `from`, the purchase date counting as a day).
+func AddonPeriodSplit(from, until time.Time) (months, leftoverDays int) {
+	if !until.After(from) {
+		return 0, 0
+	}
+	for !SubscriptionEndVN(from, months+1).After(until) {
+		months++
+	}
+	start := from
+	if months > 0 {
+		start = SubscriptionEndVN(from, months)
+	}
+	return months, CalendarDaysVN(start, until)
 }

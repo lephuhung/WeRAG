@@ -659,8 +659,9 @@ func (s *customAgentService) DeleteAgent(ctx context.Context, id string) error {
 		return ErrInvalidTenantID
 	}
 
-	// Get existing agent to verify ownership
-	existingAgent, err := s.repo.GetAgentByID(ctx, id, tenantID)
+	// Get existing agent to verify ownership. A SuperAdmin reads past the
+	// visibility rule, so a switched-off agent can still be deleted.
+	existingAgent, err := s.repoGetAgent(ctx, id, tenantID)
 	if err != nil {
 		if errors.Is(err, repository.ErrCustomAgentNotFound) {
 			return ErrAgentNotFound
@@ -1458,6 +1459,7 @@ func (s *customAgentService) SetAgentEnabled(ctx context.Context, id string, ena
 	if !ok {
 		return nil, ErrInvalidTenantID
 	}
+	tenantID = switchTenant(ctx, tenantID)
 	// the row the caller's tenant reads (its own, else the profile's,
 	// rebound to it): saving writes the caller's tenant, the configuration
 	// profile under the ConfigProfile middleware
@@ -1495,6 +1497,19 @@ func (s *customAgentService) SetAgentEnabled(ctx context.Context, id string, ena
 	logger.Infof(ctx, "Built-in agent %s switched %v (new row in tenant %d)", id, enabled, tenantID)
 	types.ApplyBuiltinAgentLocalization(ctx, row)
 	return row, nil
+}
+
+// switchTenant is where an agent's on/off switch is written: the
+// configuration profile the caller's tenant inherits from. The
+// ConfigProfile middleware already moves a human SuperAdmin there but lets
+// platform API keys through with their own tenant, which would otherwise
+// get a private copy of a built-in row and stop inheriting the profile's.
+func switchTenant(ctx context.Context, tenantID uint64) uint64 {
+	if t, ok := types.TenantInfoFromContext(ctx); ok && t != nil && t.ID == tenantID &&
+		!t.IsConfigProfile() && t.ConfigProfileID != nil && *t.ConfigProfileID != 0 {
+		return *t.ConfigProfileID
+	}
+	return tenantID
 }
 
 func (s *customAgentService) saveSwitch(ctx context.Context, agent *types.CustomAgent, enabled bool) error {

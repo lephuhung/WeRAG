@@ -87,3 +87,77 @@ func TestDeactivateUnsellableAgentAddon(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, row.IsActive)
 }
+
+func TestSubscriptionAddonUpsertNeverShortens(t *testing.T) {
+	_, repo := distributionFixture(t)
+	ctx := context.Background()
+	plans := NewUsagePlanRepository(repo.db)
+	long, short := distNow.AddDate(0, 3, 0), distNow.AddDate(0, 1, 0)
+	require.NoError(t, plans.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+		SubscriptionID: "sub-t2", AgentID: "addon", StartsAt: distNow, EndsAt: &long}))
+	require.NoError(t, plans.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+		SubscriptionID: "sub-t2", AgentID: "addon", StartsAt: distNow.AddDate(0, 0, 5), EndsAt: &short, PriceVND: 7}))
+	rows, err := plans.ListSubscriptionAddons(ctx, "sub-t2")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.True(t, long.Equal(*rows[0].EndsAt), "the later end is kept")
+	require.True(t, distNow.Equal(rows[0].StartsAt), "the earlier start is kept")
+	require.Equal(t, int64(7), rows[0].PriceVND)
+
+	// pinning only gives an open right an end
+	require.NoError(t, plans.PinSubscriptionAddonEnd(ctx, "sub-t2", "addon", short))
+	rows, _ = plans.ListSubscriptionAddons(ctx, "sub-t2")
+	require.True(t, long.Equal(*rows[0].EndsAt))
+	rows, _ = plans.ListSubscriptionAddons(ctx, "sub-t1")
+	require.Nil(t, rows[0].EndsAt)
+	require.NoError(t, plans.PinSubscriptionAddonEnd(ctx, "sub-t1", "addon", short))
+	rows, _ = plans.ListSubscriptionAddons(ctx, "sub-t1")
+	require.True(t, short.Equal(*rows[0].EndsAt))
+}
+
+// A switched-off specialist agent is not sold (review item 3).
+func TestSwitchedOffAgentIsNotAvailableForSale(t *testing.T) {
+	db, repo := distributionFixture(t)
+	ctx := context.Background()
+	plans := NewUsagePlanRepository(repo.db)
+	require.NoError(t, plans.CreateAgentAddon(ctx, &types.UsageAgentAddon{AgentID: "addon", IsActive: true}))
+	row, err := plans.GetAgentAddon(ctx, "addon")
+	require.NoError(t, err)
+	require.True(t, row.AgentAvailable)
+	require.NoError(t, db.Exec("UPDATE custom_agents SET enabled = ? WHERE id = ?", false, "addon").Error)
+	row, err = plans.GetAgentAddon(ctx, "addon")
+	require.NoError(t, err)
+	require.False(t, row.AgentAvailable)
+	require.True(t, row.IsActive, "switching it back on resumes sales")
+}
+
+func TestProfileBuiltinAgentsAndPendingOrderAddons(t *testing.T) {
+	db, repo := distributionFixture(t)
+	ctx := context.Background()
+	plans := NewUsagePlanRepository(repo.db)
+	off := false
+	require.NoError(t, repo.CreateAgent(ctx, &types.CustomAgent{ID: types.BuiltinSmartReasoningID, Name: "Suy luận",
+		TenantID: 9, IsBuiltin: true, Switch: &off}))
+	require.NoError(t, repo.CreateAgent(ctx, &types.CustomAgent{ID: types.BuiltinSmartReasoningID, Name: "riêng",
+		TenantID: 1, IsBuiltin: true}))
+	rows, err := plans.ProfileBuiltinAgents(ctx, types.UsageIncludedAgentIDs)
+	require.NoError(t, err)
+	require.Len(t, rows, 1, "the profile's row only")
+	require.Equal(t, "Suy luận", rows[0].Name)
+	require.False(t, rows[0].EffectiveEnabled())
+
+	require.NoError(t, db.AutoMigrate(&types.UsageOrder{}))
+	for _, o := range []*types.UsageOrder{
+		{ID: "o1", OrderCode: "WRA", ScopeType: "tenant", ScopeID: "1", Status: types.UsageOrderPending,
+			Addons: types.UsageOrderAddonLines{{AgentID: "addon"}}},
+		{ID: "o2", OrderCode: "WRB", ScopeType: "tenant", ScopeID: "1", Status: types.UsageOrderPaid,
+			Addons: types.UsageOrderAddonLines{{AgentID: "x"}}},
+		{ID: "o3", OrderCode: "WRC", ScopeType: "tenant", ScopeID: "2", Status: types.UsageOrderPending,
+			Addons: types.UsageOrderAddonLines{{AgentID: "y"}}},
+	} {
+		require.NoError(t, db.Create(o).Error)
+	}
+	pending, err := plans.PendingOrderAddons(ctx, "tenant", "1")
+	require.NoError(t, err)
+	require.Equal(t, map[string][]string{"o1": {"addon"}}, pending)
+}

@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"math"
 	"net/url"
 	"strings"
 	"time"
@@ -76,7 +75,7 @@ func (s *usageBillingService) PurchasablePlans(ctx context.Context, scopeKind st
 	if err != nil {
 		return nil, err
 	}
-	included := includedPlanAgents(ctx)
+	included := includedPlanAgents(ctx, s.planRepo)
 	out := make([]*types.UsagePlanOffer, 0, len(all))
 	for _, p := range all {
 		if scopeKind != "" && p.ScopeKind != scopeKind {
@@ -123,6 +122,9 @@ func (s *usageBillingService) quote(
 		if err != nil {
 			return nil, nil, err
 		}
+		if !addonOrderPromoAllowed() {
+			req.PromoCode = ""
+		}
 		promo, err := s.applyPromo(ctx, q, req.PromoCode, strict)
 		return q, promo, err
 	default:
@@ -162,7 +164,7 @@ func (s *usageBillingService) quote(
 		q.SubtotalVND = plan.PriceVND * int64(req.Months)
 	}
 	q.Kind = types.UsageOrderKindPlan
-	if err := s.priceAddonsWithPlan(ctx, q, req.AddonAgentIDs); err != nil {
+	if err := s.priceAddonsWithPlan(ctx, q, req.AddonAgentIDs, scopeID); err != nil {
 		return nil, nil, err
 	}
 	q.TotalVND = q.SubtotalVND
@@ -228,7 +230,8 @@ func (s *usageBillingService) priceSeatRenewal(ctx context.Context, q *types.Usa
 	if q.Seats == cur.Seats || cur.EndsAt == nil || !cur.EndsAt.After(now) {
 		return nil
 	}
-	days := int(math.Ceil(cur.EndsAt.Sub(now).Hours() / 24))
+	// Vietnamese calendar days left, a started day counting (usage_calendar.go)
+	days := types.CalendarDaysVN(now, *cur.EndsAt)
 	added := int64(q.Seats - cur.Seats)
 	q.ProratedDays = days
 	// rounded up: a partial đồng is not given away
@@ -272,6 +275,12 @@ func (s *usageBillingService) CreateOrder(
 	if err != nil {
 		return nil, err
 	}
+	// an expired order no longer blocks a new one for the same add-on
+	if len(q.Addons) > 0 {
+		if err := s.expireDue(ctx); err != nil {
+			return nil, err
+		}
+	}
 	now := s.now()
 	order := &types.UsageOrder{
 		ID:            uuid.New().String(),
@@ -311,6 +320,16 @@ func (s *usageBillingService) CreateOrder(
 	// The promo use is reserved in the order's transaction: the code's last
 	// use goes to one order only, and a failed insert gives it back.
 	err = s.repo.InTransaction(ctx, func(ctx context.Context) error {
+		// one pending order per add-on and scope (checked under the scope
+		// lock, so two tabs cannot both pass)
+		if len(order.Addons) > 0 {
+			if err := s.repo.LockScope(ctx, order.ScopeType, order.ScopeID); err != nil {
+				return err
+			}
+			if err := s.refusePendingAddons(ctx, order.ScopeType, order.ScopeID, order.Addons); err != nil {
+				return err
+			}
+		}
 		if promo != nil {
 			ok, err := s.repo.ReservePromoUse(ctx, promo.ID)
 			if err != nil {
@@ -345,10 +364,9 @@ func (s *usageBillingService) CreateOrder(
 	if err != nil {
 		return nil, err
 	}
-	if order.TotalVND <= 0 {
-		// Nothing to pay: a free trial or a 100% code.
-		return s.ConfirmOrder(ctx, order.ID, createdBy)
-	}
+	// A 0-đồng order (a 100 % code, a free add-on) waits for a SuperAdmin
+	// like any other: nothing is ever confirmed automatically (user
+	// decision 19/10/2026), and the payment webhook ignores amounts ≤ 0.
 	return s.view(ctx, order), nil
 }
 
@@ -502,6 +520,9 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 				"the subscription now has %d seats but order %s pays for %d; cancel it and order again",
 				cur.Seats, o.OrderCode, o.Seats))
 		}
+		if err := refuseMovedSubscription(o, cur); err != nil {
+			return "", err
+		}
 		held, err := s.planRepo.ListSubscriptionAddons(ctx, cur.ID)
 		if err != nil {
 			return "", err
@@ -511,7 +532,7 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 		if cur.EndsAt != nil && cur.EndsAt.After(now) {
 			from = *cur.EndsAt
 		}
-		ends := from.AddDate(0, o.Months, 0)
+		ends := types.SubscriptionEndVN(from, o.Months)
 		cur.EndsAt = &ends
 		if o.Mode == types.UsageModeSeat && o.Seats > cur.Seats {
 			cur.Seats = o.Seats
@@ -527,6 +548,12 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 		}
 		heldBy := map[string]*types.UsageSubscriptionAddon{}
 		for _, h := range held {
+			// a right without an end ran with the subscription, i.e. to
+			// the end before this extension
+			if h.EndsAt == nil && oldEnd != nil {
+				e := *oldEnd
+				h.EndsAt = &e
+			}
 			heldBy[h.AgentID] = h
 		}
 		if err := s.grantOrderAddons(ctx, o, cur, now, heldBy); err != nil {
@@ -534,7 +561,7 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 		}
 		return cur.ID, nil
 	}
-	ends := now.AddDate(0, o.Months, 0)
+	ends := types.SubscriptionEndVN(now, o.Months)
 	sub := &types.UsageSubscription{
 		ScopeType: o.ScopeType,
 		ScopeID:   o.ScopeID,
@@ -561,7 +588,7 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 	if err := s.carryAddonsOver(ctx, replaced, v.UsageSubscription, o, now); err != nil {
 		return "", err
 	}
-	if err := s.grantOrderAddons(ctx, o, v.UsageSubscription, now, map[string]*types.UsageSubscriptionAddon{}); err != nil {
+	if err := s.grantOrderAddons(ctx, o, v.UsageSubscription, now, nil); err != nil {
 		return "", err
 	}
 	return v.ID, nil

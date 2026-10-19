@@ -248,7 +248,15 @@ export function BillingPage() {
     months: (n: number) => t("bill.monthsN", { n }),
     half: (days: number) => t("bill.addonHalf", { days }),
     full: (days: number) => t("bill.addonFull", { days }),
+    gap: (span: string) => t("bill.addonGap", { span }),
+    extraSeats: (n: number, amount: string) => t("bill.addonExtraSeats", { n, amount }),
   };
+  // add-ons the scope holds now, by agent (shown next to the plan's list)
+  const heldUntil = useMemo(() => {
+    const m: Record<string, string | null> = {};
+    for (const h of scopeAddons?.held ?? []) m[h.agent_id] = h.ends_at ?? scopeAddons?.subscription?.ends_at ?? null;
+    return m;
+  }, [scopeAddons]);
   const renderLines = (lines: UsageOrderAddonLine[] | undefined) =>
     (lines ?? []).map((l) => (
       <div key={l.agent_id} className="flex justify-between gap-3">
@@ -301,7 +309,20 @@ export function BillingPage() {
             )}
             <div className="flex justify-between font-medium text-ink"><span>{t("bill.total")}</span><span className="tabular-nums">{formatPriceVND(order.total_vnd)}</span></div>
           </div>
-          {pending && (
+          {pending && order.total_vnd <= 0 && (
+            <div className="border-t border-hairline px-4 py-3 text-[14px] text-muted">
+              <p>{t("bill.freeOrderWaits")}</p>
+              <p className="caption mt-1 flex items-center gap-1 text-muted">
+                <IconRefresh className="h-3.5 w-3.5 animate-spin" /> {t("bill.waiting")}
+              </p>
+              <div className="mt-3 flex justify-end">
+                <button type="button" className="btn btn-outline btn-sm text-rose-600" disabled={busy} onClick={() => cancelOrder(order)}>
+                  {t("bill.cancel")}
+                </button>
+              </div>
+            </div>
+          )}
+          {pending && order.total_vnd > 0 && (
             <div className="border-t border-hairline px-4 py-3">
               <div className="text-[14px] font-medium text-ink">{t("bill.payTitle")}</div>
               <div className="mt-3 flex flex-wrap gap-5">
@@ -456,6 +477,11 @@ export function BillingPage() {
                     <span className="min-w-0 flex-1">
                       <span className="block text-[13.5px] text-ink">{a.name}</span>
                       {a.description && <span className="caption block text-muted">{a.description}</span>}
+                      {a.agent_id in heldUntil && (
+                        <span className="caption block text-amber-700">
+                          {heldUntil[a.agent_id] ? t("bill.addonHeldUntil", { date: fmtDate(heldUntil[a.agent_id]) }) : t("bill.addonHeld")}
+                        </span>
+                      )}
                     </span>
                     <span className="caption shrink-0 tabular-nums text-ink">
                       {formatPriceVND(a.price_vnd)}

@@ -83,8 +83,9 @@ func fillAgentAddons(db *gorm.DB, rows []*types.UsageAgentAddon, now time.Time) 
 		ID           string
 		Name         string
 		Distribution string
+		Enabled      *bool
 	}
-	if err := db.Table("custom_agents").Select("id, name, distribution").
+	if err := db.Table("custom_agents").Select("id, name, distribution, enabled").
 		Where("id IN ? AND deleted_at IS NULL AND is_builtin = ?", ids, false).
 		Order("tenant_id ASC").Scan(&agents).Error; err != nil {
 		return err
@@ -95,7 +96,9 @@ func fillAgentAddons(db *gorm.DB, rows []*types.UsageAgentAddon, now time.Time) 
 		if _, ok := names[a.ID]; !ok {
 			names[a.ID] = a.Name
 		}
-		if a.Distribution == types.AgentDistributionAddon {
+		// a switched-off agent is hidden from buyers, so it is not sold
+		// (the row stays active: switching the agent back on resumes sales)
+		if a.Distribution == types.AgentDistributionAddon && (a.Enabled == nil || *a.Enabled) {
 			available[a.ID] = true
 		}
 	}
@@ -135,6 +138,38 @@ func addonHolderCounts(db *gorm.DB, agentIDs []string, now time.Time) (map[strin
 	}
 	for _, row := range rows {
 		out[row.AgentID] = row.Holders
+	}
+	return out, nil
+}
+
+// ProfileBuiltinAgents returns the stored built-in rows of the configuration
+// profile(s) for ids (name customised by a SuperAdmin, on/off switch).
+func (r *usagePlanRepository) ProfileBuiltinAgents(ctx context.Context, ids []string) ([]*types.CustomAgent, error) {
+	rows := []*types.CustomAgent{}
+	if len(ids) == 0 {
+		return rows, nil
+	}
+	err := r.conn(ctx).
+		Where("id IN ? AND is_builtin = ?", ids, true).
+		Where("tenant_id IN (SELECT id FROM tenants WHERE kind = ? AND deleted_at IS NULL)", types.TenantKindConfigProfile).
+		Order("tenant_id ASC").Find(&rows).Error
+	return rows, err
+}
+
+// PendingOrderAddons maps each pending order of a scope to the add-on agents
+// it buys.
+func (r *usagePlanRepository) PendingOrderAddons(ctx context.Context, scopeType, scopeID string) (map[string][]string, error) {
+	var orders []*types.UsageOrder
+	if err := r.conn(ctx).Select("id", "addons").
+		Where("scope_type = ? AND scope_id = ? AND status = ?", scopeType, scopeID, types.UsageOrderPending).
+		Find(&orders).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string][]string, len(orders))
+	for _, o := range orders {
+		for _, l := range o.Addons {
+			out[o.ID] = append(out[o.ID], l.AgentID)
+		}
 	}
 	return out, nil
 }

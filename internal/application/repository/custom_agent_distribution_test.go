@@ -133,6 +133,23 @@ func TestAgentDistributionVisibilityPostgres(t *testing.T) {
 	agents, err := NewDomainPackAgentRepository(db).ListAgentsUsingPack(ctx, "none")
 	require.NoError(t, err)
 	require.Empty(t, agents)
+
+	// never shorten, and pin, on timestamptz
+	long, short := distNow.AddDate(0, 3, 0), distNow.AddDate(0, 1, 0)
+	require.NoError(t, plans.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+		SubscriptionID: "sub-t2", AgentID: "addon", StartsAt: distNow, EndsAt: &long}))
+	require.NoError(t, plans.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+		SubscriptionID: "sub-t2", AgentID: "addon", StartsAt: distNow, EndsAt: &short}))
+	held, err := plans.ListSubscriptionAddons(ctx, "sub-t2")
+	require.NoError(t, err)
+	require.True(t, long.Equal(*held[0].EndsAt))
+	require.NoError(t, plans.PinSubscriptionAddonEnd(ctx, "sub-t1", "addon", short))
+	held, err = plans.ListSubscriptionAddons(ctx, "sub-t1")
+	require.NoError(t, err)
+	require.True(t, short.Equal(*held[0].EndsAt))
+	rows2, err := plans.ProfileBuiltinAgents(ctx, types.UsageIncludedAgentIDs)
+	require.NoError(t, err)
+	require.Empty(t, rows2)
 }
 
 func checkVisibilityByCaller(t *testing.T, repo *customAgentRepository) {
@@ -236,7 +253,8 @@ func TestSubscriptionAddonRepository(t *testing.T) {
 	require.Equal(t, "addon", addons[0].AgentName)
 	created := addons[0].CreatedAt
 
-	// re-granting replaces period and price, keeps one row and created_at
+	// re-granting replaces the price, keeps one row and created_at, and
+	// never shortens: the open right (with the subscription) stays open
 	end := distNow.AddDate(0, 2, 0)
 	require.NoError(t, plans.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
 		SubscriptionID: "sub-t1", AgentID: "addon", StartsAt: distNow, EndsAt: &end, PriceVND: 150000,
@@ -245,7 +263,7 @@ func TestSubscriptionAddonRepository(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, addons, 1)
 	require.Equal(t, int64(150000), addons[0].PriceVND)
-	require.NotNil(t, addons[0].EndsAt)
+	require.Nil(t, addons[0].EndsAt)
 	require.WithinDuration(t, created, addons[0].CreatedAt, time.Second)
 
 	d, found, err := plans.CustomAgentDistribution(ctx, "addon")
@@ -313,5 +331,8 @@ func TestUsageOrderAddonLinesPostgres(t *testing.T) {
 	require.Len(t, got.Addons, 1)
 	require.Equal(t, int64(495000), got.Addons[0].AmountVND)
 	require.True(t, end.Equal(*got.Addons[0].PaidUntil))
+	pending, err := NewUsagePlanRepository(db).PendingOrderAddons(ctx, "tenant", "1")
+	require.NoError(t, err)
+	require.Equal(t, []string{"addon"}, pending["o-pg"])
 	require.NoError(t, db.Exec("DELETE FROM usage_orders WHERE id = 'o-pg'").Error)
 }

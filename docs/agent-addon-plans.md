@@ -2,7 +2,7 @@
 
 - Ngày: 2026-10-19.
 - Nhánh: `feat/agent-addons` (worktree `/home/WeRAG-wt/agent-addons`), tách từ `feat/document-assistant` tại `38e230f7`.
-- Trạng thái: người dùng đã chốt toàn bộ mục 7 (19/10/2026); giai đoạn A đang làm.
+- Trạng thái: giai đoạn A, B, C và nút bật/tắt đã làm, **đã merge vào `feat/document-assistant` (3a3ea4ce)**, migration 000166–000169 **đã chạy trên DB dev**; các sửa sau rà soát (§8.4, gồm migration 000171) nằm trên `feat/agent-addons` chờ merge. Người dùng đã chốt toàn bộ mục 7 (19/10/2026, gồm 7.7–7.9). Fable còn nợ một lượt rà (§9).
 - Liên quan: `docs/domain-pack-standard.md` (bộ kỹ năng), `docs/billing-payment-webhook.md`, mục "Tổ chức áp dụng" trong `docs/tenant-kb-permissions-implementation-plan.md` §8.
 
 ## 1. Vì sao đổi
@@ -89,6 +89,9 @@ thấy(agent, caller) =
 4. **Agent chuyên ngành chỉ hiện cho Tổ chức/người đã mua**, kể cả khi `usage.enforce` tắt (một chỗ trong mã để đổi: `addonsVisibleWithoutPurchase`). **`usage.enforce` mặc định bật** (registry + giá trị dự phòng của `usageGuard.Enforced`); tắt chỉ để kiểm thử.
 5. **Gói cá nhân cũng mua kèm được** agent chuyên ngành (quyền dùng gắn vào thuê bao cá nhân).
 6. Tên hiển thị **"Bộ kỹ năng chuyên môn"** (ngắn: "Bộ kỹ năng") cho domain pack.
+7. **Mã khuyến mãi** (mục 5 của rà soát): mã còn hiệu lực áp cho **mọi đơn, mọi lúc** — đơn gói và đơn chỉ mua agent giữa kỳ như nhau; lượt dùng được giữ/trả như đơn gói. Một ô mã duy nhất trên trang "Mua gói" dùng cho cả hai. (Một chỗ trong mã: `addonOrderPromoAllowed`.)
+8. **Thời gian** (mục 7 của rà soát): tính theo thời gian, nhưng **một ngày kết thúc lúc 24:00 giờ Việt Nam (GMT+7)**, không phải giờ mua. Ngày hết của thuê bao/quyền dùng agent được đưa về cuối ngày hết hạn (24:00 VN = 00:00 ngày hôm sau theo giờ VN, lưu UTC). Phần ngày lẻ của quy tắc 2 mốc đếm theo **ngày lịch** tới mốc nửa đêm đó (≤ 15 ngày → 1/2, > 15 → đủ; tháng tròn tính đủ). Cộng tháng **kẹp về cuối tháng** (31/1 + 1 tháng = 28/2 hoặc 29/2, không phải 3/3). Áp cho thuê bao mới, gia hạn, add-on và báo giá giữa kỳ. Thuê bao và quyền dùng đang chạy được làm tròn một lần lên 24:00 VN bằng migration 000171 (dev: 2 thuê bao, 0 quyền add-on). Đơn gia hạn kèm add-on đang chờ đúng lúc chạy 000171 sẽ bị 409 `subscription_changed` (hạn vừa được làm tròn) và phải đặt lại. (Một chỗ: `types.AddonPeriodSplit`; lịch ở `internal/types/usage_calendar.go`.)
+9. **Đơn 0 đồng** (mục 8 của rà soát, ví dụ mã giảm 100 %): luôn **chờ SuperAdmin xác nhận**, không bao giờ tự xác nhận (đã bỏ nhánh tự xác nhận trong `CreateOrder`; webhook vốn bỏ qua số tiền ≤ 0).
 
 ## 8. Giai đoạn
 
@@ -101,7 +104,7 @@ thấy(agent, caller) =
 
 Mỗi giai đoạn: Opus làm, Fable rà (khi còn hạn mức), migration theo số kế tiếp sau số cao nhất đã commit.
 
-### 8.1 Giai đoạn A — đã làm (19/10/2026, nhánh `feat/agent-addons`, chưa merge, chưa chạy migration trên dev)
+### 8.1 Giai đoạn A — đã làm (19/10/2026; đã merge vào `feat/document-assistant` 3a3ea4ce, migration 000166 đã chạy trên dev)
 
 **Đã giao**
 
@@ -126,7 +129,7 @@ Mỗi giai đoạn: Opus làm, Fable rà (khi còn hạn mức), migration theo 
 8. Đổi gói (`CreateSubscription` huỷ thuê bao cũ) không chuyển add-on sang thuê bao mới — giai đoạn C phải chép.
 9. Thông báo 2104 giữ nguyên câu "không tồn tại hoặc không áp dụng cho Tổ chức của bạn" (frontend và eval dựa vào); docs/error-codes.md ghi thêm trường hợp chưa mua/hết hạn.
 
-### 8.2 Giai đoạn B — đã làm (19/10/2026, cùng nhánh, commit riêng sau giai đoạn A; chưa merge, chưa chạy migration trên dev)
+### 8.2 Giai đoạn B — đã làm (19/10/2026; đã merge 3a3ea4ce, migration 000167 đã chạy trên dev)
 
 **Đã giao**
 
@@ -144,7 +147,7 @@ Mỗi giai đoạn: Opus làm, Fable rà (khi còn hạn mức), migration theo 
 3. Xoá dòng danh mục không thu hồi quyền dùng đã bán (`usage_subscription_addons` giữ nguyên tới khi hết hạn).
 4. Tên agent trong danh mục lấy từ dòng agent của hồ sơ cấu hình (Tổ chức ghi đè tên riêng không ảnh hưởng).
 
-### 8.3 Công tắc bật/tắt agent và giai đoạn C — đã làm (19/10/2026, cùng nhánh, commit riêng; chưa merge, chưa chạy migration trên dev)
+### 8.3 Công tắc bật/tắt agent và giai đoạn C — đã làm (19/10/2026; đã merge 3a3ea4ce, migration 000168–000169 đã chạy trên dev; sửa sau rà soát ở §8.4)
 
 **Công tắc bật/tắt agent (yêu cầu mới, làm trước giai đoạn C)**
 
@@ -170,7 +173,28 @@ Mỗi giai đoạn: Opus làm, Fable rà (khi còn hạn mức), migration theo 
 
 **Khác với thiết kế / cần biết**
 
-1. Gia hạn gói ghế có thêm ghế: phần ghế thêm của **add-on** cho thời gian còn lại của kỳ hiện tại không tính (chỉ phần gói có tính theo ngày như trước); add-on tính × số ghế mới × số tháng gia hạn.
+1. ~~Gia hạn gói ghế có thêm ghế: phần ghế thêm của add-on không tính~~ — **đã bỏ** (§8.4): ghế thêm nay trả cho thời gian quyền đang có còn chạy.
 2. Đơn `addon` dùng `plan_id` của thuê bao đích (cột bắt buộc), `months` = 0.
 3. Word add-in: không đổi (panel gói của add-in đọc `/me/usage`, không có danh sách add-on; không đơn giản để thêm trong repo này).
 4. Huỷ/hết hạn đơn chưa trả không đụng tới quyền dùng.
+
+### 8.4 Sửa sau rà soát Opus (19/10/2026, `feat/agent-addons` sau khi merge `feat/document-assistant` vào nhánh; chờ merge)
+
+- **Gia hạn kèm add-on không còn cho dùng free** (mục 1, 6): add-on mới/hết sớm trả phần chưa phủ của kỳ hiện tại (`max(now, ngày hết quyền)` → hạn cũ, tính như mua giữa kỳ) cộng số tháng gia hạn; quyền đã chạy quá hạn cũ chỉ trả phần sau đó; ghế thêm trả cho thời gian quyền đang có còn chạy (gia hạn và đổi gói). Dòng đơn có thêm `covered_until`, `gap_*`, `extra_units*`.
+- **Không bao giờ rút ngắn, không trả hai lần** (mục 2): ghi quyền dùng luôn lấy ngày hết muộn hơn (`types.MergeSubscriptionAddon`; NULL = theo thuê bao); gia hạn ghim quyền không có ngày hết mà nó không trả (`PinSubscriptionAddonEnd`); xác nhận một dòng có tiền mà quyền đã phủ tới ngày đó → 409 (`addon_held`; webhook ghi `confirm_failed` để hoàn tiền); đơn thứ hai đang chờ cho cùng add-on và phạm vi → 409 (`addon_pending`, kiểm dưới khoá phạm vi); đổi gói chuyển mọi quyền sang tới ngày đã trả và chỉ tính phần sau đó, quyền đã phủ hết kỳ mới → từ chối khi báo giá. Test `TestPlanChangeCarriesAddonsToTheirPaidEnd` sửa theo hành vi đúng.
+- **Agent đang tắt không bán** (mục 3): `agent_available` xét cả công tắc; dòng danh mục giữ nguyên, bật lại agent là bán tiếp.
+- **SuperAdmin xoá được agent đang tắt** (mục 4).
+- **Thẻ gói** dùng tên agent cơ bản đang lưu trong hồ sơ (ví dụ "Suy luận" trên dev), bỏ agent cơ bản đang tắt; **công tắc qua API key nền tảng** ghi vào hồ sơ cấu hình, không vào Tổ chức của key (mục 9).
+- Quyết định 7.7–7.9 (mã khuyến mãi, lịch giờ Việt Nam, đơn 0 đồng) đã làm như §7.
+- Chưa làm (mục 9 rà soát, mức thấp): SuperAdmin đổi gói tay không chuyển add-on; add-on của agent thuộc hồ sơ cấu hình khác (khi có nhiều hồ sơ).
+
+**Rà lại lần 2 (R1–R4, 19/10/2026)**
+
+- **R1** — cộng tháng từ một ngày hết đã lưu (00:00 VN ngày hôm sau) bước từ ngày cuối được phủ: hết 30/10 + 1 tháng = hết 30/11 (trước đây hết 29/11), hết 31/1 + 1 tháng = hết 28/2 (29/2 năm nhuận); quyền hết 30/10 nối tới hết 30/11 là đúng 1 tháng (trước đây 1 tháng + 1 ngày = 1,5 tháng). Mọi phép cộng tháng đi qua `types.SubscriptionEndVN`.
+- **R2** — migration **000171**: thuê bao đang chạy và quyền dùng còn hiệu lực có ngày hết lẻ giờ được làm tròn lên 24:00 VN kế tiếp; hàng đã hết hạn, đã huỷ, không có ngày hết hoặc đã ở nửa đêm VN giữ nguyên; down là no-op. Số hàng trên dev **chưa đếm được** từ máy này (Postgres dev chỉ có trong mạng Docker, cổng 5432/5433 trên host không phải DB dev); câu đếm: `SELECT count(*) FROM usage_subscriptions WHERE status='active' AND ends_at > now() AND ends_at <> date_trunc('day', ends_at AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh';` (và tương tự cho `usage_subscription_addons`, bỏ điều kiện `status`).
+- **R3** — dòng add-on của đơn gia hạn ghi `subscription_end` lúc báo giá; khi xác nhận mà thuê bao đã đổi hạn (đơn khác gia hạn trước) → 409 `subscription_changed` (webhook ghi `confirm_failed`). Tăng ghế khi gia hạn/đổi gói mà **không** mua lại add-on đang giữ: thêm dòng `seats_only` tính ghế thêm cho thời gian quyền còn chạy (giá đã chốt của quyền), không gia hạn quyền.
+- **R4** — `docs/billing-payment-webhook.md` ghi trường hợp đơn hết hạn được mở lại sau khi đã mua lại agent (và đơn gia hạn bị đổi hạn) → `confirm_failed`, hoàn tiền tay.
+
+## 9. Rà soát
+
+- 2026-10-19: Fable hết hạn mức (HTTP 429) khi rà nhánh này; theo quyết định của người dùng, một agent Opus độc lập rà trước (bản rà: scratchpad `review-agent-addons-opus.md`): quyền truy cập đạt; phần tiền có 2 lỗi CAO + 2 TRUNG BÌNH, đã sửa ở §8.4; mục 5, 7, 8 do người dùng chốt (§7.7–7.9). **Còn nợ: Fable rà lại toàn bộ `38e230f7..HEAD` (giai đoạn A, B, C, nút bật/tắt) khi có hạn mức**, kể cả khi đã merge.

@@ -75,7 +75,7 @@ func TestGrantAndRevokeSubscriptionAddon(t *testing.T) {
 	require.Equal(t, 404, appErrCode(t, err))
 	_, err = svc.GrantSubscriptionAddon(ctx, "sub-1", types.UsageSubscriptionAddonGrant{AgentID: "chung"}, "")
 	require.Equal(t, 400, appErrCode(t, err), "a basic agent is already everyone's")
-	past := time.Now().Add(-time.Hour)
+	past := time.Now().AddDate(0, 0, -2) // ends snap to 24:00 VN: an earlier date
 	_, err = svc.GrantSubscriptionAddon(ctx, "sub-1", types.UsageSubscriptionAddonGrant{AgentID: "thue", EndsAt: &past}, "")
 	require.Equal(t, 400, appErrCode(t, err))
 	_, err = svc.GrantSubscriptionAddon(ctx, "sub-1", types.UsageSubscriptionAddonGrant{AgentID: "thue", PriceVND: -1}, "")
@@ -218,4 +218,39 @@ func TestTenantUsageListsHeldAddons(t *testing.T) {
 	require.Len(t, usage.Addons, 1, "expired rights are left out")
 	require.Equal(t, "Thuế", usage.Addons[0].AgentName)
 	require.WithinDuration(t, end, *usage.Addons[0].EndsAt, time.Second)
+}
+
+// Review item 9: plan cards name the basic agents as the profile stores
+// them and leave out a switched-off one.
+func TestIncludedPlanAgentsUseTheProfileRows(t *testing.T) {
+	for id, name := range map[string]string{
+		types.BuiltinDocumentAssistantID: "Soạn thảo văn bản", types.BuiltinSmartReasoningID: "Suy luận thông minh",
+	} {
+		id, name := id, name
+		if _, ok := types.BuiltinAgentRegistry[id]; ok {
+			continue
+		}
+		types.BuiltinAgentRegistry[id] = func(tenantID uint64) *types.CustomAgent {
+			return &types.CustomAgent{ID: id, Name: name, IsBuiltin: true, TenantID: tenantID}
+		}
+		t.Cleanup(func() { delete(types.BuiltinAgentRegistry, id) })
+	}
+	svc, db := newAddonPlanServiceDB(t)
+	require.NoError(t, db.Exec(`CREATE TABLE tenants (id INTEGER PRIMARY KEY, kind TEXT, deleted_at DATETIME)`).Error)
+	require.NoError(t, db.Exec(`INSERT INTO tenants (id, kind) VALUES (9, 'config_profile'), (1, 'workspace')`).Error)
+	ctx := context.Background()
+	agents := repository.NewCustomAgentRepository(db)
+	require.NoError(t, agents.CreateAgent(ctx, &types.CustomAgent{ID: types.BuiltinSmartReasoningID, Name: "Suy luận",
+		TenantID: 9, IsBuiltin: true}))
+	// (the document assistant has no stored row: its name comes from the
+	// registry, whatever another test loaded there)
+	got := includedPlanAgents(ctx, svc.repo)
+	require.Len(t, got, 2)
+	require.Equal(t, types.BuiltinDocumentAssistantID, got[0].ID)
+	require.Equal(t, types.UsagePlanAgent{ID: types.BuiltinSmartReasoningID, Name: "Suy luận"}, got[1])
+
+	require.NoError(t, db.Exec("UPDATE custom_agents SET enabled = ? WHERE id = ?", false, types.BuiltinSmartReasoningID).Error)
+	got = includedPlanAgents(ctx, svc.repo)
+	require.Len(t, got, 1)
+	require.Equal(t, types.BuiltinDocumentAssistantID, got[0].ID)
 }

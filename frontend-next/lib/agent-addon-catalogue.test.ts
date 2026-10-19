@@ -85,3 +85,36 @@ describe("buyer add-on choice", () => {
     );
   });
 });
+
+describe("renewal line detail", () => {
+  it("adds the uncovered gap and the added seats", () => {
+    const labels = {
+      months: (n: number) => `${n} tháng`,
+      half: (d: number) => `½ tháng (${d} ngày)`,
+      full: (d: number) => `1 tháng (${d} ngày)`,
+      gap: (span: string) => `phần còn thiếu ${span}`,
+      extraSeats: (n: number, amount: string) => `${n} ghế thêm ${amount}`,
+    };
+    assert.equal(
+      addonLineDetail(
+        { agent_id: "a", name: "A", unit_price_vnd: 1, units: 3, months: 1, gap_months: 11, gap_vnd: 33, extra_units: 2, extra_units_vnd: 4, amount_vnd: 0 },
+        (v) => `${v}đ`,
+        labels,
+      ),
+      "1đ × 3 × (1 tháng) + phần còn thiếu 11 tháng + 2 ghế thêm 4đ",
+    );
+  });
+});
+
+describe("seats-only line", () => {
+  it("shows only the added seats", () => {
+    assert.equal(
+      addonLineDetail(
+        { agent_id: "a", name: "A", unit_price_vnd: 99000, units: 0, months: 0, seats_only: true, extra_units: 2, extra_units_vnd: 495000, amount_vnd: 495000 },
+        (v) => `${v}đ`,
+        { months: (n) => `${n}`, half: (d) => `${d}`, full: (d) => `${d}`, extraSeats: (n, a) => `${n} ghế thêm ${a}` },
+      ),
+      "2 ghế thêm 495000đ",
+    );
+  });
+});

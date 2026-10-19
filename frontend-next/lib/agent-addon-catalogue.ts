@@ -71,8 +71,17 @@ export function keepOffered(ids: string[], offered: { agent_id: string }[]): str
 export function addonLineDetail(
   line: UsageOrderAddonLine,
   fmt: (v: number) => string,
-  labels: { months: (n: number) => string; half: (days: number) => string; full: (days: number) => string },
+  labels: {
+    months: (n: number) => string;
+    half: (days: number) => string;
+    full: (days: number) => string;
+    gap?: (span: string) => string;
+    extraSeats?: (seats: number, amount: string) => string;
+  },
 ): string {
+  if (line.seats_only) {
+    return labels.extraSeats ? labels.extraSeats(line.extra_units ?? 0, fmt(line.extra_units_vnd ?? 0)) : fmt(line.amount_vnd);
+  }
   const parts = [fmt(line.unit_price_vnd)];
   if (line.units > 1) parts.push(`× ${line.units}`);
   const span: string[] = [];
@@ -80,5 +89,18 @@ export function addonLineDetail(
   if (line.leftover_factor === "half") span.push(labels.half(line.leftover_days ?? 0));
   if (line.leftover_factor === "full") span.push(labels.full(line.leftover_days ?? 0));
   if (span.length > 0) parts.push(`× (${span.join(" + ")})`);
-  return parts.join(" ");
+  let out = parts.join(" ");
+  // renewal: the part of the current period not covered yet
+  if ((line.gap_vnd ?? 0) > 0) {
+    const gap: string[] = [];
+    if ((line.gap_months ?? 0) > 0) gap.push(labels.months(line.gap_months ?? 0));
+    if (line.gap_leftover_factor === "half") gap.push(labels.half(line.gap_leftover_days ?? 0));
+    if (line.gap_leftover_factor === "full") gap.push(labels.full(line.gap_leftover_days ?? 0));
+    out += ` + ${labels.gap ? labels.gap(gap.join(" + ")) : gap.join(" + ")}`;
+  }
+  // seats added on a right already held
+  if ((line.extra_units_vnd ?? 0) > 0 && labels.extraSeats) {
+    out += ` + ${labels.extraSeats(line.extra_units ?? 0, fmt(line.extra_units_vnd ?? 0))}`;
+  }
+  return out;
 }

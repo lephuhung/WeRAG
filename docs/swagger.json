@@ -16423,7 +16423,7 @@
                         "Bearer": []
                     }
                 ],
-                "description": "Manual grant by a SuperAdmin (tests, negotiated deals). Re-granting replaces the period and price.",
+                "description": "Manual grant by a SuperAdmin (tests, negotiated deals). Re-granting replaces the price and can only extend the period (a right is never shortened; revoke with DELETE).",
                 "consumes": [
                     "application/json"
                 ],

@@ -287,7 +287,7 @@ func (h *UsageAdminHandler) ListSubscriptionAddons(c *gin.Context) {
 
 // GrantSubscriptionAddon godoc
 // @Summary      Grant a specialist (addon) agent to a subscription
-// @Description  Manual grant by a SuperAdmin (tests, negotiated deals). Re-granting replaces the period and price.
+// @Description  Manual grant by a SuperAdmin (tests, negotiated deals). Re-granting replaces the price and can only extend the period (a right is never shortened; revoke with DELETE).
 // @Tags         Gói sử dụng
 // @Accept       json
 // @Param        id path string true "subscription id"

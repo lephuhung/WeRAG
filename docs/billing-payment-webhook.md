@@ -102,6 +102,10 @@ Dùng một **tổ chức hoặc tài khoản thử** — giao dịch giả sẽ
 > (`addons`) hoặc chỉ mua agent cho gói đang dùng (`kind = "addon"`). Webhook xác nhận
 > các đơn này như mọi đơn: quyền dùng agent được ghi cùng transaction; đơn mua agent cho
 > một thuê bao đã bị thay thế bị từ chối và giao dịch ghi `confirm_failed`.
+> Cũng ghi `confirm_failed`: một đơn đã hết hạn được **mở lại** (tiền chuyển trước hạn) trong khi
+> khách đã đặt và trả một đơn mới cho cùng agent (`addon_held`), và một đơn gia hạn kèm agent
+> mà thuê bao đã được gia hạn bằng đơn khác sau lúc báo giá (`subscription_changed`). Không có
+> gì được ghi thêm; SuperAdmin **hoàn tiền bằng tay** cho giao dịch đó.
 
 ## 3. Việc hằng ngày của SuperAdmin
 

@@ -449,6 +449,20 @@ export interface UsageOrderAddonLine {
   leftover_factor?: "half" | "full" | "";
   amount_vnd: number;
   paid_until?: string | null;
+  /** Already held to this date (renewal, plan change): only later time is charged. */
+  covered_until?: string | null;
+  /** Renewal: the part of the current period not covered yet. */
+  gap_months?: number;
+  gap_leftover_days?: number;
+  gap_leftover_factor?: "half" | "full" | "";
+  gap_vnd?: number;
+  /** Seats added on a held right, for the time it still runs. */
+  extra_units?: number;
+  extra_units_vnd?: number;
+  /** A held add-on not bought again: only the added seats are charged. */
+  seats_only?: boolean;
+  /** Renewal: the subscription end the line was priced against. */
+  subscription_end?: string | null;
 }
 
 export interface UsageQuoteRequest {

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -190,16 +189,40 @@ func (r *usagePlanRepository) ListSubscriptionAddons(
 	return addons, nil
 }
 
+// UpsertSubscriptionAddon writes a right, never shortening an existing one
+// (types.MergeSubscriptionAddon). Callers that must not race run inside a
+// transaction holding the scope lock (order confirmation).
 func (r *usagePlanRepository) UpsertSubscriptionAddon(ctx context.Context, addon *types.UsageSubscriptionAddon) error {
 	now := time.Now()
-	if addon.CreatedAt.IsZero() {
-		addon.CreatedAt = now
+	var existing []*types.UsageSubscriptionAddon
+	if err := r.conn(ctx).Where("subscription_id = ? AND agent_id = ?", addon.SubscriptionID, addon.AgentID).
+		Limit(1).Find(&existing).Error; err != nil {
+		return err
 	}
-	addon.UpdatedAt = now
-	return r.conn(ctx).Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "subscription_id"}, {Name: "agent_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"starts_at", "ends_at", "price_vnd", "order_id", "granted_by", "updated_at"}),
-	}).Create(addon).Error
+	if len(existing) == 0 {
+		if addon.CreatedAt.IsZero() {
+			addon.CreatedAt = now
+		}
+		addon.UpdatedAt = now
+		return r.conn(ctx).Create(addon).Error
+	}
+	merged := types.MergeSubscriptionAddon(existing[0], addon)
+	merged.UpdatedAt = now
+	*addon = *merged
+	return r.conn(ctx).Model(&types.UsageSubscriptionAddon{}).
+		Where("subscription_id = ? AND agent_id = ?", addon.SubscriptionID, addon.AgentID).
+		Updates(map[string]interface{}{
+			"starts_at": merged.StartsAt, "ends_at": merged.EndsAt, "price_vnd": merged.PriceVND,
+			"order_id": merged.OrderID, "granted_by": merged.GrantedBy, "updated_at": merged.UpdatedAt,
+		}).Error
+}
+
+// PinSubscriptionAddonEnd gives a right without an end the end `end`
+// (a renewal that does not pay for it); a right with an end is untouched.
+func (r *usagePlanRepository) PinSubscriptionAddonEnd(ctx context.Context, subscriptionID, agentID string, end time.Time) error {
+	return r.conn(ctx).Model(&types.UsageSubscriptionAddon{}).
+		Where("subscription_id = ? AND agent_id = ? AND ends_at IS NULL", subscriptionID, agentID).
+		Updates(map[string]interface{}{"ends_at": end, "updated_at": time.Now()}).Error
 }
 
 func (r *usagePlanRepository) DeleteSubscriptionAddon(ctx context.Context, subscriptionID, agentID string) (bool, error) {
