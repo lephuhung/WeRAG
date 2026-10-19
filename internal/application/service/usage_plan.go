@@ -218,7 +218,77 @@ func (s *usagePlanService) ListSubscriptions(
 		}
 		views = append(views, v)
 	}
-	return views, nil
+	implicit, err := s.implicitGuestViews(ctx, filter, subs)
+	if err != nil {
+		return nil, err
+	}
+	return append(views, implicit...), nil
+}
+
+// implicitGuestViews lists the guest plan of every Guest who has no active
+// personal subscription yet: the usage guard subscribes a Guest on their
+// first question, so without these rows the admin page would not show the
+// package of a Guest who has not asked anything. Only for listings that
+// could hold such a row (personal scope, active, any or the guest plan).
+func (s *usagePlanService) implicitGuestViews(
+	ctx context.Context, filter types.UsageSubscriptionFilter, subs []*types.UsageSubscription,
+) ([]*types.UsageSubscriptionView, error) {
+	if s.users == nil || filter.ScopeID != "" ||
+		(filter.ScopeType != "" && filter.ScopeType != types.UsageScopeUser) ||
+		(filter.Status != "" && filter.Status != types.UsageSubscriptionActive) ||
+		(filter.PlanID != "" && filter.PlanID != types.UsageGuestPlanID) {
+		return nil, nil
+	}
+	plan, err := s.guard.planByCode(ctx, types.UsageGuestPlanCode)
+	if err != nil || plan == nil {
+		return nil, err
+	}
+	guests, err := s.users.ListGuestUsers(ctx)
+	if err != nil || len(guests) == 0 {
+		return nil, err
+	}
+	// the listing may be filtered (guest plan only): ask for any active row
+	held := map[string]bool{}
+	if filter.ScopeType == "" && filter.Status == "" && filter.PlanID == "" {
+		for _, sub := range subs {
+			if sub.ScopeType == types.UsageScopeUser && sub.Status == types.UsageSubscriptionActive {
+				held[sub.ScopeID] = true
+			}
+		}
+	} else {
+		active, err := s.repo.ListSubscriptions(ctx, types.UsageSubscriptionFilter{
+			ScopeType: types.UsageScopeUser, Status: types.UsageSubscriptionActive,
+		})
+		if err != nil {
+			return nil, err
+		}
+		for _, sub := range active {
+			held[sub.ScopeID] = true
+		}
+	}
+	now := s.now()
+	var out []*types.UsageSubscriptionView
+	for _, u := range guests {
+		if held[u.ID] {
+			continue
+		}
+		sub := &types.UsageSubscription{
+			ScopeType: types.UsageScopeUser, ScopeID: u.ID, PlanID: plan.ID, Plan: plan,
+			Mode: types.UsageModePool, StartsAt: u.CreatedAt, Status: types.UsageSubscriptionActive,
+		}
+		statuses, err := s.guard.limitStatus(ctx, sub.EffectiveLimits(), types.UsageScopeGuest, u.ID, now)
+		if err != nil {
+			return nil, err
+		}
+		name := u.Username
+		if name == "" {
+			name = u.Email
+		}
+		out = append(out, &types.UsageSubscriptionView{
+			UsageSubscription: sub, ScopeName: name, Current: true, Limits: statuses, Implicit: true,
+		})
+	}
+	return out, nil
 }
 
 func (s *usagePlanService) GetSubscription(ctx context.Context, id string) (*types.UsageSubscriptionView, error) {
@@ -243,7 +313,12 @@ func (s *usagePlanService) view(ctx context.Context, sub *types.UsageSubscriptio
 		Current:           sub.IsCurrentAt(now),
 		Limits:            []types.UsageLimitStatus{},
 	}
-	statuses, err := s.guard.limitStatus(ctx, sub.EffectiveLimits(), sub.ScopeType, sub.ScopeID, now)
+	// a guest plan counts the person's turns in the public portal (guest scope)
+	counterScope := sub.ScopeType
+	if sub.ScopeType == types.UsageScopeUser && rolePlan(sub.Plan) == types.UsageGuestPlanCode {
+		counterScope = types.UsageScopeGuest
+	}
+	statuses, err := s.guard.limitStatus(ctx, sub.EffectiveLimits(), counterScope, sub.ScopeID, now)
 	if err != nil {
 		return nil, err
 	}
