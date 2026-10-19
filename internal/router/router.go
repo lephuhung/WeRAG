@@ -220,6 +220,9 @@ func NewRouter(params RouterParams) *gin.Engine {
 	r.POST("/api/v1/local-browser/extension/authorize", params.SessionHandler.BrowserSkillAuthorize)
 	r.POST("/api/v1/local-browser/internal", params.SessionHandler.BrowserSkillInternal)
 
+	// Read-only catalogue for anonymous visitors to the landing page.
+	RegisterPublicBillingRoutes(r, params.UsageBillingHandler)
+
 	// Middleware xác thực
 	r.Use(middleware.Auth(params.TenantService, params.UserService, params.TenantMemberService, params.TenantAPIKeyService, params.Config))
 

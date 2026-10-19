@@ -239,7 +239,10 @@ export function Sidebar() {
           className="flex items-center gap-2.5 transition-opacity hover:opacity-85"
         >
           <BrandLogo size={32} priority />
-          <span className="display-sm tracking-tight text-ink">WeRAG</span>
+          <span className="flex flex-col text-ink">
+            <span className="text-[23px] font-semibold leading-none tracking-tight">weRAG</span>
+            <span className="mt-1 text-[11px] leading-tight text-muted">Trợ lý pháp luật</span>
+          </span>
         </Link>
       </div>
 
