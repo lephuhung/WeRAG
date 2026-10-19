@@ -104,6 +104,9 @@ export interface DomainPackAgent {
   name: string;
   tenant_id: number;
   tenant_name: string;
+  // "Tổ chức áp dụng"; [] = every Tổ chức
+  applies_to_tenant_ids?: number[];
+  applies_to?: { tenant_id: number; tenant_name: string }[];
 }
 
 export interface DomainPackError {

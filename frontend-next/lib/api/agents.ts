@@ -166,6 +166,9 @@ export interface CustomAgent {
   // badge on list cards.
   creator_name?: string;
   config: CustomAgentConfig;
+  // "Tổ chức áp dụng": the workspaces allowed to use the agent; [] = every
+  // Tổ chức. Always [] on built-in agents.
+  applies_to_tenant_ids?: number[];
   created_at?: string;
   updated_at?: string;
 }
@@ -178,6 +181,7 @@ export interface CreateAgentRequest {
   description?: string;
   avatar?: string;
   config?: CustomAgentConfig;
+  applies_to_tenant_ids?: number[];
 }
 
 export interface UpdateAgentRequest {
@@ -185,6 +189,8 @@ export interface UpdateAgentRequest {
   description?: string;
   avatar?: string;
   config?: CustomAgentConfig;
+  // absent keeps the stored list; [] = every Tổ chức
+  applies_to_tenant_ids?: number[];
 }
 
 // Built-in agent ids
