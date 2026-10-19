@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS custom_agents (
     config TEXT NOT NULL DEFAULT '{}',
     applies_to_tenant_ids TEXT NOT NULL DEFAULT '[]',
     distribution VARCHAR(16) NOT NULL DEFAULT 'basic',
+    enabled BOOLEAN,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     deleted_at DATETIME,

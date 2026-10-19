@@ -64,6 +64,7 @@ func agentScopeRouter(t *testing.T) *gin.Engine {
 	router.PUT("/agents/:id", h.UpdateAgent)
 	router.POST("/agents", h.CreateAgent)
 	router.POST("/agents/:id/copy", h.CopyAgent)
+	router.PUT("/agents/:id/enabled", h.SetAgentEnabled)
 	return router
 }
 
@@ -166,4 +167,31 @@ func TestAgentDistributionHandler(t *testing.T) {
 	require.Contains(t, rec.Body.String(), `"applies_to_tenant_ids":[]`)
 	rec = agentScopeDo(router, http.MethodGet, "/agents/group", "", map[string]string{"X-Test-Tenant": "1"})
 	require.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestAgentSwitchHandler(t *testing.T) {
+	router := agentScopeRouter(t)
+	super := map[string]string{"X-Test-Tenant": "9", "X-Test-Super": "1"}
+	member := map[string]string{"X-Test-Tenant": "1"}
+
+	rec := agentScopeDo(router, http.MethodPut, "/agents/group/enabled", `{"enabled":false}`, member)
+	require.Equal(t, http.StatusForbidden, rec.Code, rec.Body.String())
+	rec = agentScopeDo(router, http.MethodPut, "/agents/group/enabled", `{}`, super)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	rec = agentScopeDo(router, http.MethodPut, "/agents/nope/enabled", `{"enabled":false}`, super)
+	require.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
+
+	rec = agentScopeDo(router, http.MethodPut, "/agents/group/enabled", `{"enabled":false}`, super)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"enabled":false`)
+	rec = agentScopeDo(router, http.MethodGet, "/agents/group", "", member)
+	require.Equal(t, http.StatusNotFound, rec.Code, "switched off: hidden from members")
+
+	// only the SuperAdmin's include_disabled lists it
+	rec = agentScopeDo(router, http.MethodGet, "/agents?include_disabled=true", "", member)
+	require.NotContains(t, rec.Body.String(), `"id":"group"`)
+	rec = agentScopeDo(router, http.MethodGet, "/agents", "", map[string]string{"X-Test-Tenant": "1", "X-Test-Super": "1"})
+	require.NotContains(t, rec.Body.String(), `"id":"group"`)
+	rec = agentScopeDo(router, http.MethodGet, "/agents?include_disabled=true", "", map[string]string{"X-Test-Tenant": "1", "X-Test-Super": "1"})
+	require.Contains(t, rec.Body.String(), `"id":"group"`)
 }

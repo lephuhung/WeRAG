@@ -45,6 +45,7 @@ var (
 	// agent whose distribution is not internal: the visibility rule ignores
 	// the list there, so storing it would read like a restriction that is
 	// not applied.
+	ErrAgentSwitchForbidden    = errors.New("chỉ quản trị hệ thống mới bật/tắt trợ lý được")
 	ErrAgentScopeNeedsInternal = errors.New("\"Tổ chức áp dụng\" chỉ dùng cho cách phân phối Nội bộ; với Cơ bản hoặc Chuyên ngành hãy để trống")
 )
 
@@ -347,8 +348,20 @@ func (s *customAgentService) GetAgentByIDAndTenant(ctx context.Context, id strin
 	return agent, nil
 }
 
-// ListAgents lists all agents for the current tenant (including built-in agents)
+// ListAgents lists the agents the caller may pick for the current tenant
+// (including built-in agents), leaving out those switched off.
 func (s *customAgentService) ListAgents(ctx context.Context) ([]*types.CustomAgent, error) {
+	return s.listAgents(ctx, false)
+}
+
+// ListAllAgents is ListAgents with switched-off agents included, for the
+// SuperAdmin agent page where they are switched back on. Anyone else gets
+// the ordinary list.
+func (s *customAgentService) ListAllAgents(ctx context.Context) ([]*types.CustomAgent, error) {
+	return s.listAgents(ctx, ignoresAgentTenantScope(ctx))
+}
+
+func (s *customAgentService) listAgents(ctx context.Context, includeDisabled bool) ([]*types.CustomAgent, error) {
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok {
 		return nil, ErrInvalidTenantID
@@ -383,32 +396,35 @@ func (s *customAgentService) ListAgents(ctx context.Context) ([]*types.CustomAge
 	}
 
 	// Build result: built-in agents first, then custom agents
-	builtinIDs := types.GetBuiltinAgentIDs()
+	builtinIDs := types.GetAllBuiltinAgentIDs()
 	result := make([]*types.CustomAgent, 0, len(allAgents)+len(builtinIDs))
 
-	// Add built-in agents in order; GetBuiltinAgentIDs leaves out one
-	// switched off in builtin_agents.yaml even when a tenant row exists for it.
+	// Add built-in agents in order, leaving out one switched off (the
+	// SuperAdmin's stored switch, else builtin_agents.yaml) unless asked.
 	for _, builtinID := range builtinIDs {
+		var agent *types.CustomAgent
 		if builtinInDB[builtinID] {
 			// Use customized config from database
-			for _, agent := range allAgents {
-				if agent.ID == builtinID {
-					types.ApplyBuiltinAgentLocalization(ctx, agent)
-					result = append(result, agent)
+			for _, row := range allAgents {
+				if row.ID == builtinID {
+					types.ApplyBuiltinAgentLocalization(ctx, row)
+					agent = row
 					break
 				}
 			}
 		} else {
 			// Use default built-in agent (i18n-aware)
-			if agent := types.GetBuiltinAgentWithContext(ctx, builtinID, tenantID); agent != nil {
-				result = append(result, agent)
-			}
+			agent = types.GetBuiltinAgentWithContext(ctx, builtinID, tenantID)
+		}
+		if agent != nil && (includeDisabled || agent.EffectiveEnabled()) {
+			result = append(result, agent)
 		}
 	}
 
-	// Add custom agents
+	// Add custom agents (a switched-off one only reaches here for a
+	// SuperAdmin, who reads unscoped)
 	for _, agent := range allAgents {
-		if !types.IsBuiltinAgentID(agent.ID) {
+		if !types.IsBuiltinAgentID(agent.ID) && (includeDisabled || agent.EffectiveEnabled()) {
 			result = append(result, agent)
 		}
 	}
@@ -1423,4 +1439,70 @@ func isEnglishLocale(locale string) bool {
 		return true
 	}
 	return false
+}
+
+// SetAgentEnabled is the SuperAdmin's runtime on/off switch of an agent,
+// stored on its row in the caller's tenant (the configuration profile under
+// the ConfigProfile middleware). A built-in without a row gets one with the
+// default configuration, like its first customisation. Only an explicit
+// human SuperAdmin or a platform caller reaches it (route gate); the
+// service checks the human SuperAdmin flag again for direct callers.
+func (s *customAgentService) SetAgentEnabled(ctx context.Context, id string, enabled bool) (*types.CustomAgent, error) {
+	if id == "" {
+		return nil, errors.New("agent ID cannot be empty")
+	}
+	if !types.IsSystemAdminFromContext(ctx) {
+		return nil, ErrAgentSwitchForbidden
+	}
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok {
+		return nil, ErrInvalidTenantID
+	}
+	// the row the caller's tenant reads (its own, else the profile's,
+	// rebound to it): saving writes the caller's tenant, the configuration
+	// profile under the ConfigProfile middleware
+	existing, err := s.repo.GetAgentByIDIgnoringTenantScope(ctx, id, tenantID)
+	if err != nil && !errors.Is(err, repository.ErrCustomAgentNotFound) {
+		return nil, err
+	}
+	if existing != nil {
+		if err := s.saveSwitch(ctx, existing, enabled); err != nil {
+			return nil, err
+		}
+		existing.EnsureDefaults()
+		if existing.IsBuiltin || types.IsBuiltinAgentID(id) {
+			types.ApplyBuiltinAgentLocalization(ctx, existing)
+		}
+		return existing, nil
+	}
+	if !types.IsBuiltinAgentID(id) {
+		return nil, ErrAgentNotFound
+	}
+	def := types.GetBuiltinAgent(id, tenantID)
+	if def == nil {
+		return nil, ErrAgentNotFound
+	}
+	row := &types.CustomAgent{
+		ID: def.ID, Name: def.Name, Description: def.Description, Avatar: def.Avatar,
+		IsBuiltin: true, TenantID: tenantID, Config: def.Config,
+		Distribution: types.AgentDistributionBasic, Switch: &enabled,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	row.EnsureDefaults()
+	if err := s.repo.CreateAgent(ctx, row); err != nil {
+		return nil, err
+	}
+	logger.Infof(ctx, "Built-in agent %s switched %v (new row in tenant %d)", id, enabled, tenantID)
+	types.ApplyBuiltinAgentLocalization(ctx, row)
+	return row, nil
+}
+
+func (s *customAgentService) saveSwitch(ctx context.Context, agent *types.CustomAgent, enabled bool) error {
+	agent.Switch = &enabled
+	agent.UpdatedAt = time.Now()
+	if err := s.repo.UpdateAgent(ctx, agent); err != nil {
+		return err
+	}
+	logger.Infof(ctx, "Agent %s switched %v", agent.ID, enabled)
+	return nil
 }

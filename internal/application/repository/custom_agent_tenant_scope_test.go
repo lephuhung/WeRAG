@@ -138,5 +138,6 @@ func TestAgentTenantScopePostgresSQL(t *testing.T) {
 	require.Contains(t, sql, "(tenant_id = $3 OR distribution = $4")
 	require.Contains(t, sql, "WHERE usa.agent_id = custom_agents.id")
 	require.Contains(t, sql, "OR (us.scope_type = $15 AND us.scope_id = $16)")
-	require.Equal(t, "u-1", stmt.Vars[len(stmt.Vars)-1])
+	require.Equal(t, "u-1", stmt.Vars[len(stmt.Vars)-4])
+	require.Contains(t, sql, "(is_builtin = $17 OR COALESCE(enabled, $18) = $19)")
 }

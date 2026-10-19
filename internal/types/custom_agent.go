@@ -93,6 +93,14 @@ type CustomAgent struct {
 	// dụng" list). See custom_agent_distribution.go. Built-ins are basic.
 	Distribution string `yaml:"distribution" json:"distribution" gorm:"type:varchar(16);not null;default:basic"`
 
+	// Switch is the SuperAdmin's runtime on/off switch (column enabled):
+	// nil = the default (builtin_agents.yaml `enabled` for a built-in, on
+	// for a custom agent). See EffectiveEnabled.
+	Switch *bool `yaml:"-" json:"-" gorm:"column:enabled"`
+	// Enabled is EffectiveEnabled for API readers (filled by
+	// EnsureDefaults); not stored.
+	Enabled bool `yaml:"-" json:"enabled" gorm:"-"`
+
 	// Timestamps
 	CreatedAt time.Time      `yaml:"created_at" json:"created_at"`
 	UpdatedAt time.Time      `yaml:"updated_at" json:"updated_at"`
@@ -604,6 +612,7 @@ func (a *CustomAgent) EnsureDefaults() {
 	if a == nil {
 		return
 	}
+	a.Enabled = a.EffectiveEnabled()
 	// Built-ins are always basic; a custom agent's empty value stays empty
 	// here so CreateAgent can tell "not sent" from a choice.
 	if a.IsBuiltin || IsBuiltinAgentID(a.ID) {
@@ -731,8 +740,9 @@ var builtinAgentIDsOrdered = []string{
 
 // GetBuiltinAgentIDs returns the user-facing built-in agent IDs in fixed
 // order, leaving out those switched off in builtin_agents.yaml
-// (`enabled: false`). Every list a user or an endpoint picks an agent from
-// goes through here, so a switched-off agent is offered nowhere.
+// (`enabled: false`). YAML only: the SuperAdmin's runtime switch lives on
+// the agent row (CustomAgent.EffectiveEnabled), which ListAgents and the MCP
+// endpoint selection read instead.
 func GetBuiltinAgentIDs() []string {
 	out := make([]string, 0, len(builtinAgentIDsOrdered))
 	for _, id := range builtinAgentIDsOrdered {

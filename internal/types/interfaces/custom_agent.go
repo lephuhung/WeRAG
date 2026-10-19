@@ -39,6 +39,14 @@ type CustomAgentService interface {
 	//   - Possible errors such as insufficient permissions, etc.
 	ListAgents(ctx context.Context) ([]*types.CustomAgent, error)
 
+	// ListAllAgents is ListAgents with switched-off agents included, for a
+	// SuperAdmin (anyone else gets ListAgents).
+	ListAllAgents(ctx context.Context) ([]*types.CustomAgent, error)
+
+	// SetAgentEnabled is the SuperAdmin's runtime on/off switch of an agent
+	// (built-in or custom), stored on its row in the caller's tenant.
+	SetAgentEnabled(ctx context.Context, id string, enabled bool) (*types.CustomAgent, error)
+
 	// UpdateAgent updates agent information
 	// Parameters:
 	//   - ctx: Context information

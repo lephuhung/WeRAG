@@ -227,13 +227,11 @@ func MCPEndpointAgentAllowed(agent *CustomAgent, tenantID uint64) bool {
 }
 
 // MCPEndpointAgentSelectable is MCPEndpointAgentAllowed for configuring an
-// endpoint: a builtin must also be switched on in builtin_agents.yaml.
+// endpoint: the agent must also be switched on (the SuperAdmin's runtime
+// switch, else builtin_agents.yaml for a built-in).
 func MCPEndpointAgentSelectable(agent *CustomAgent, tenantID uint64) bool {
 	if !MCPEndpointAgentAllowed(agent, tenantID) {
 		return false
 	}
-	if agent.IsBuiltin || IsBuiltinAgentID(agent.ID) {
-		return IsBuiltinAgentEnabled(agent.ID)
-	}
-	return true
+	return agent.EffectiveEnabled()
 }

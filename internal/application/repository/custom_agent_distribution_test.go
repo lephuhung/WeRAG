@@ -256,3 +256,32 @@ func TestSubscriptionAddonRepository(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, found)
 }
+
+func TestSwitchedOffCustomAgentIsHidden(t *testing.T) {
+	db, repo := distributionFixture(t)
+	ctx := context.Background()
+	require.NoError(t, db.Exec("UPDATE custom_agents SET enabled = ? WHERE id = ?", false, "basic").Error)
+	viewer := types.AgentViewer{TenantID: 1, Now: distNow}
+	require.NotContains(t, visibleIDs(t, repo, viewer), "basic")
+	// NULL = on, as for every row saved before the column existed
+	require.NoError(t, db.Exec("UPDATE custom_agents SET enabled = NULL WHERE id = ?", "basic").Error)
+	require.Contains(t, visibleIDs(t, repo, viewer), "basic")
+
+	// a built-in row stays resolvable when switched off; a tenant's own row
+	// takes the profile's switch
+	off := false
+	require.NoError(t, repo.CreateAgent(ctx, &types.CustomAgent{ID: "builtin-x", Name: "x", TenantID: 9, IsBuiltin: true, Switch: &off}))
+	require.NoError(t, repo.CreateAgent(ctx, &types.CustomAgent{ID: "builtin-x", Name: "x (1)", TenantID: 1, IsBuiltin: true}))
+	got, err := repo.GetVisibleAgentByID(ctx, "builtin-x", viewer)
+	require.NoError(t, err)
+	require.Equal(t, "x (1)", got.Name)
+	require.NotNil(t, got.Switch)
+	require.False(t, *got.Switch)
+	list, err := repo.ListVisibleAgents(ctx, viewer)
+	require.NoError(t, err)
+	for _, a := range list {
+		if a.ID == "builtin-x" {
+			require.False(t, a.EffectiveEnabled())
+		}
+	}
+}

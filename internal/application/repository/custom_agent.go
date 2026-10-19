@@ -63,7 +63,11 @@ func (r *customAgentRepository) getAgentByID(ctx context.Context, id string, ten
 		return nil, err
 	}
 	var picked *types.CustomAgent
+	var profileSwitch *bool
 	for _, row := range rows {
+		if row.TenantID != tenantID && row.Switch != nil {
+			profileSwitch = row.Switch
+		}
 		if picked == nil || row.TenantID == tenantID {
 			picked = row
 		}
@@ -71,6 +75,7 @@ func (r *customAgentRepository) getAgentByID(ctx context.Context, id string, ten
 	if picked == nil {
 		return nil, ErrCustomAgentNotFound
 	}
+	applyProfileSwitch(picked, tenantID, profileSwitch)
 	return inheritAgent(picked, tenantID), nil
 }
 
@@ -104,9 +109,12 @@ func (r *customAgentRepository) listAgents(ctx context.Context, tenantID uint64,
 		return nil, err
 	}
 	own := make(map[string]bool, len(rows))
+	profileSwitch := map[string]*bool{}
 	for _, row := range rows {
 		if row.TenantID == tenantID {
 			own[row.ID] = true
+		} else if row.Switch != nil {
+			profileSwitch[row.ID] = row.Switch
 		}
 	}
 	agents := make([]*types.CustomAgent, 0, len(rows))
@@ -114,9 +122,20 @@ func (r *customAgentRepository) listAgents(ctx context.Context, tenantID uint64,
 		if row.TenantID != tenantID && own[row.ID] {
 			continue
 		}
+		applyProfileSwitch(row, tenantID, profileSwitch[row.ID])
 		agents = append(agents, inheritAgent(row, tenantID))
 	}
 	return agents, nil
+}
+
+// applyProfileSwitch gives a tenant's own row (a built-in it customized
+// before configuration moved to the profile) the on/off switch the
+// SuperAdmin set on the profile's row: the switch is a platform decision.
+func applyProfileSwitch(row *types.CustomAgent, tenantID uint64, profileSwitch *bool) {
+	if row != nil && row.TenantID == tenantID && profileSwitch != nil {
+		v := *profileSwitch
+		row.Switch = &v
+	}
 }
 
 // whereAgentVisibleTo keeps the rows a viewer may use
@@ -128,7 +147,8 @@ func (r *customAgentRepository) listAgents(ctx context.Context, tenantID uint64,
 //   - distribution "basic": everyone;
 //   - "internal": applies_to_tenant_ids empty or containing the tenant;
 //   - "addon": a current usage_subscription_addons row for the agent on a
-//     current subscription of the tenant or of the viewer's own person.
+//     current subscription of the tenant or of the viewer's own person;
+//   - and, for a custom agent, not switched off (enabled is not false).
 //
 // Built-in rows are always basic (the API refuses anything else).
 func whereAgentVisibleTo(query *gorm.DB, viewer types.AgentViewer) *gorm.DB {
@@ -146,9 +166,13 @@ func whereAgentVisibleTo(query *gorm.DB, viewer types.AgentViewer) *gorm.DB {
 	addon, addonArgs := addonVisibleSQL(viewer)
 	args = append(args, types.AgentDistributionAddon)
 	args = append(args, addonArgs...)
+	// a custom agent the SuperAdmin switched off is hidden from everyone
+	// else (its sessions get 2104); a switched-off built-in stays
+	// resolvable by id and is only left out of the pickers (ListAgents)
 	return query.Where(`(tenant_id = ? OR distribution = ?
 		OR (distribution = ? AND `+internal+`)
-		OR (distribution = ? AND `+addon+`))`, args...)
+		OR (distribution = ? AND `+addon+`))`, args...).
+		Where("(is_builtin = ? OR COALESCE(enabled, ?) = ?)", true, true, true)
 }
 
 // addonVisibleSQL is the "bought" half of whereAgentVisibleTo: an EXISTS on

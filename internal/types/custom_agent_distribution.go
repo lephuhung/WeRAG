@@ -139,3 +139,21 @@ type UsageSubscriptionAddonGrant struct {
 	// PriceVND is the agreed monthly price (0 = free).
 	PriceVND int64 `json:"price_vnd"`
 }
+
+// EffectiveEnabled is the agent's on/off state: the SuperAdmin's stored
+// switch when there is one, else builtin_agents.yaml `enabled` for a
+// built-in, else on. A switched-off built-in is left out of every picker but
+// stays resolvable by id; a switched-off custom agent is hidden from
+// everyone but a SuperAdmin (the visibility rule), so its sessions get 2104.
+func (a *CustomAgent) EffectiveEnabled() bool {
+	if a == nil {
+		return false
+	}
+	if a.Switch != nil {
+		return *a.Switch
+	}
+	if a.IsBuiltin || IsBuiltinAgentID(a.ID) {
+		return IsBuiltinAgentEnabled(a.ID)
+	}
+	return true
+}
