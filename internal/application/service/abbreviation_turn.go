@@ -674,6 +674,12 @@ func (c *AbbreviationTurnCoordinator) rememberProperNames(ctx context.Context, a
 	if !ok {
 		return
 	}
+	// A proper name is written platform-wide and active at once: a Guest
+	// (public portal, anyone who signs up) must not add to it. Their
+	// "keep as typed" still answers the turn as typed.
+	if types.InPublicPortal(ctx) {
+		return
+	}
 	for _, t := range typos {
 		if !strings.EqualFold(strings.TrimSpace(t.Correct), t.Wrong) || !looksLikeProperName(asked.OriginalQuery, t.Wrong) {
 			continue
