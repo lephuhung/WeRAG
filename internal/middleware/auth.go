@@ -664,7 +664,7 @@ func resolveTargetTenant(
 		case accessible && err == nil && targetTenant != nil:
 			logger.Infof(ctx, "User %s switching to tenant %d", user.ID, parsedTenantID)
 			return parsedTenantID, targetTenant, parsedTenantID != user.TenantID, true
-		case IsGuestChatAPI(c.Request.URL.Path, c.Request.Method) && isGuestUser(ctx, user, memberService):
+		case IsGuestChatAPI(c.Request.URL.Path, c.Request.Method) && isGuestUser(ctx, user, memberService, tenantService):
 			// A Guest's client may still send the tenant it was removed
 			// from: on the guest chat routes the stale header is ignored
 			// and the request resolves as if it had none (public portal).

@@ -28,6 +28,16 @@ func (f *portalTenantService) GetTenantByID(_ context.Context, id uint64) (*type
 	return nil, nil
 }
 
+func (f *portalTenantService) GetTenantsByIDs(_ context.Context, ids []uint64) (map[uint64]*types.Tenant, error) {
+	out := map[uint64]*types.Tenant{}
+	for _, id := range ids {
+		if t, ok := f.tenants[id]; ok {
+			out[id] = t
+		}
+	}
+	return out, nil
+}
+
 func (f *portalTenantService) GetPublicPortal(context.Context) (*types.Tenant, error) {
 	if f.noPortal {
 		return nil, nil
@@ -51,8 +61,10 @@ func guestChatHarness(t *testing.T, user *types.User, members *fakeMemberService
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 	tenants := &portalTenantService{noPortal: noPortal, tenants: map[uint64]*types.Tenant{
-		7:            {ID: 7, Kind: types.TenantKindWorkspace},
-		testPortalID: {ID: testPortalID, Kind: types.TenantKindPublicPortal},
+		7:            {ID: 7, Name: "Sở Tư pháp", Kind: types.TenantKindWorkspace},
+		9:            {ID: 9, Name: "Phòng khác", Kind: types.TenantKindWorkspace},
+		testPortalID: {ID: testPortalID, Name: "Tra cứu công khai", Kind: types.TenantKindPublicPortal},
+		// tenant 11 was deleted: GetTenantByID/GetTenantsByIDs no longer find it
 	}}
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
@@ -187,6 +199,17 @@ func TestGuestChatMemberUnchanged(t *testing.T) {
 	got := guestChatHarness(t, &types.User{ID: "user-1", TenantID: 7}, members, http.MethodPost, "/api/v1/agent-chat/s1", "", false)
 	if got.code != http.StatusOK || got.tenantID != 7 || got.role != string(types.TenantRoleMember) {
 		t.Fatalf("got %+v, want tenant 7 as member", got)
+	}
+}
+
+// An active membership left in a deleted tenant does not make a member
+// (GET /auth/me drops it too): the account chats in the portal.
+func TestGuestChatDeletedTenantMembershipStillGuest(t *testing.T) {
+	members := newFakeMemberService()
+	members.seedActive("user-1", 11, types.TenantRoleMember)
+	got := guestChatHarness(t, &types.User{ID: "user-1"}, members, http.MethodPost, "/api/v1/agent-chat/s1", "", false)
+	if got.code != http.StatusOK || got.tenantID != testPortalID {
+		t.Fatalf("got %+v, want portal", got)
 	}
 }
 

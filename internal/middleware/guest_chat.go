@@ -101,8 +101,10 @@ func matchGuestChatSegs(pattern, segs []string) bool {
 // isGuestUser reports whether user is a Guest: a real human account that is
 // not a SuperAdmin and holds no active membership in any tenant. Lookup
 // errors fail closed (not a guest).
-func isGuestUser(ctx context.Context, user *types.User, memberService interfaces.TenantMemberService) bool {
-	if user == nil || user.IsSystemAdmin || types.IsSyntheticUserID(user.ID) || memberService == nil {
+func isGuestUser(
+	ctx context.Context, user *types.User, memberService interfaces.TenantMemberService, tenantService interfaces.TenantService,
+) bool {
+	if user == nil || user.IsSystemAdmin || types.IsSyntheticUserID(user.ID) || memberService == nil || tenantService == nil {
 		return false
 	}
 	members, err := memberService.ListByUser(ctx, user.ID)
@@ -110,8 +112,24 @@ func isGuestUser(ctx context.Context, user *types.User, memberService interfaces
 		logger.Warnf(ctx, "[auth] guest check: memberships of %s unavailable: %v", user.ID, err)
 		return false
 	}
+	ids := make([]uint64, 0, len(members))
 	for _, m := range members {
 		if m != nil && m.TenantID != 0 && m.Status == types.TenantMemberStatusActive {
+			ids = append(ids, m.TenantID)
+		}
+	}
+	if len(ids) == 0 {
+		return true
+	}
+	// Same rule as GET /auth/me: a membership of a deleted tenant does not
+	// count, so the UI and this check agree on who is a Guest.
+	tenants, err := tenantService.GetTenantsByIDs(ctx, ids)
+	if err != nil {
+		logger.Warnf(ctx, "[auth] guest check: tenants of %s unavailable: %v", user.ID, err)
+		return false
+	}
+	for _, m := range members {
+		if m != nil && types.CountsAsMembership(m, tenants[m.TenantID]) {
 			return false
 		}
 	}
@@ -155,7 +173,7 @@ func tryGuestChat(
 	if !IsGuestChatAPI(c.Request.URL.Path, c.Request.Method) {
 		return false
 	}
-	if !isGuestUser(c.Request.Context(), user, memberService) {
+	if !isGuestUser(c.Request.Context(), user, memberService, tenantService) {
 		return false
 	}
 	return attachPublicPortalGuest(c, tenantService, user)

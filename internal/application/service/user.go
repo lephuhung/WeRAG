@@ -348,20 +348,21 @@ func (s *userService) buildMembershipsForUser(
 		if m == nil || m.Status != types.TenantMemberStatusActive {
 			continue
 		}
-		name := ""
+		var tenant *types.Tenant
 		if activeTenant != nil && m.TenantID == activeTenant.ID {
-			name = activeTenant.Name
-		} else if t, ok := tenantByID[m.TenantID]; ok && t != nil {
-			name = t.Name
+			tenant = activeTenant
+		} else if t, ok := tenantByID[m.TenantID]; ok {
+			tenant = t
 		}
 		// Drop memberships whose tenant row is gone (deleted tenant or
-		// stale tenant_members left over from before cascade delete).
-		if strings.TrimSpace(name) == "" {
+		// stale tenant_members left over from before cascade delete); the
+		// guest-chat check in auth applies the same rule.
+		if !types.CountsAsMembership(m, tenant) {
 			continue
 		}
 		out = append(out, types.Membership{
 			TenantID:   m.TenantID,
-			TenantName: name,
+			TenantName: tenant.Name,
 			Role:       m.Role,
 		})
 	}
