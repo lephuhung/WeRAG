@@ -248,7 +248,15 @@ export function BillingPage() {
     months: (n: number) => t("bill.monthsN", { n }),
     half: (days: number) => t("bill.addonHalf", { days }),
     full: (days: number) => t("bill.addonFull", { days }),
+    gap: (span: string) => t("bill.addonGap", { span }),
+    extraSeats: (n: number, amount: string) => t("bill.addonExtraSeats", { n, amount }),
   };
+  // add-ons the scope holds now, by agent (shown next to the plan's list)
+  const heldUntil = useMemo(() => {
+    const m: Record<string, string | null> = {};
+    for (const h of scopeAddons?.held ?? []) m[h.agent_id] = h.ends_at ?? scopeAddons?.subscription?.ends_at ?? null;
+    return m;
+  }, [scopeAddons]);
   const renderLines = (lines: UsageOrderAddonLine[] | undefined) =>
     (lines ?? []).map((l) => (
       <div key={l.agent_id} className="flex justify-between gap-3">
@@ -456,6 +464,11 @@ export function BillingPage() {
                     <span className="min-w-0 flex-1">
                       <span className="block text-[13.5px] text-ink">{a.name}</span>
                       {a.description && <span className="caption block text-muted">{a.description}</span>}
+                      {a.agent_id in heldUntil && (
+                        <span className="caption block text-amber-700">
+                          {heldUntil[a.agent_id] ? t("bill.addonHeldUntil", { date: fmtDate(heldUntil[a.agent_id]) }) : t("bill.addonHeld")}
+                        </span>
+                      )}
                     </span>
                     <span className="caption shrink-0 tabular-nums text-ink">
                       {formatPriceVND(a.price_vnd)}

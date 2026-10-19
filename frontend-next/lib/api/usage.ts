@@ -449,6 +449,16 @@ export interface UsageOrderAddonLine {
   leftover_factor?: "half" | "full" | "";
   amount_vnd: number;
   paid_until?: string | null;
+  /** Already held to this date (renewal, plan change): only later time is charged. */
+  covered_until?: string | null;
+  /** Renewal: the part of the current period not covered yet. */
+  gap_months?: number;
+  gap_leftover_days?: number;
+  gap_leftover_factor?: "half" | "full" | "";
+  gap_vnd?: number;
+  /** Seats added on a held right, for the time it still runs. */
+  extra_units?: number;
+  extra_units_vnd?: number;
 }
 
 export interface UsageQuoteRequest {
