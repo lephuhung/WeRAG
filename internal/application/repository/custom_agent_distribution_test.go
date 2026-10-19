@@ -109,7 +109,7 @@ func TestAgentDistributionVisibilityPostgres(t *testing.T) {
 	for _, table := range []string{"usage_agent_addons", "usage_subscription_addons", "usage_subscriptions", "custom_agents", "tenants"} {
 		require.NoError(t, db.Exec("DELETE FROM "+table).Error)
 	}
-	if err := db.Exec(`INSERT INTO usage_plans (id) VALUES ('plan') ON CONFLICT DO NOTHING`).Error; err != nil {
+	if err := db.Exec(`INSERT INTO usage_plans (id, code, name) VALUES ('plan', 'plan', 'Plan') ON CONFLICT DO NOTHING`).Error; err != nil {
 		t.Logf("usage_plans: %v", err)
 	}
 	_, repo := distributionFixtureOn(t, db)
@@ -284,4 +284,34 @@ func TestSwitchedOffCustomAgentIsHidden(t *testing.T) {
 			require.False(t, a.EffectiveEnabled())
 		}
 	}
+}
+
+// TestUsageOrderAddonLinesPostgres stores an order's add-on lines (jsonb)
+// and kind on a real PostgreSQL; skipped like the test above.
+func TestUsageOrderAddonLinesPostgres(t *testing.T) {
+	dsn := os.Getenv("WEKNORA_REPO_TEST_POSTGRES_DSN")
+	if dsn == "" {
+		t.Skip("set WEKNORA_REPO_TEST_POSTGRES_DSN to run against PostgreSQL")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.Exec("DELETE FROM usage_orders WHERE id = 'o-pg'").Error)
+	ctx := context.Background()
+	repo := NewUsageBillingRepository(db)
+	end := distNow.AddDate(0, 2, 0)
+	target := "sub-x"
+	order := &types.UsageOrder{ID: "o-pg", OrderCode: "WRPGTEST01", ScopeType: "tenant", ScopeID: "1",
+		PlanID: "plan", Kind: types.UsageOrderKindAddon, TargetSubscriptionID: &target,
+		Addons: types.UsageOrderAddonLines{{AgentID: "addon", Name: "A", UnitPriceVND: 99000, Units: 2,
+			Months: 2, LeftoverDays: 10, LeftoverFactor: "half", AmountVND: 495000, PaidUntil: &end}},
+		CreatedAt: distNow, UpdatedAt: distNow}
+	require.NoError(t, repo.CreateOrder(ctx, order))
+	got, err := repo.GetOrder(ctx, "o-pg")
+	require.NoError(t, err)
+	require.Equal(t, types.UsageOrderKindAddon, got.Kind)
+	require.Equal(t, "sub-x", *got.TargetSubscriptionID)
+	require.Len(t, got.Addons, 1)
+	require.Equal(t, int64(495000), got.Addons[0].AmountVND)
+	require.True(t, end.Equal(*got.Addons[0].PaidUntil))
+	require.NoError(t, db.Exec("DELETE FROM usage_orders WHERE id = 'o-pg'").Error)
 }

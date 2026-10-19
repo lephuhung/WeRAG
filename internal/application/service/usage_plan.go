@@ -433,7 +433,8 @@ func (s *usagePlanService) RevokeSeat(ctx context.Context, subscriptionID, userI
 }
 
 func (s *usagePlanService) TenantUsage(ctx context.Context, tenantID uint64) (*types.UsageTenantUsage, error) {
-	out := &types.UsageTenantUsage{Enforced: s.guard.Enforced(ctx), Seats: []*types.UsageSeat{}}
+	out := &types.UsageTenantUsage{Enforced: s.guard.Enforced(ctx), Seats: []*types.UsageSeat{},
+		Addons: []*types.UsageSubscriptionAddon{}}
 	sub, err := s.repo.GetActiveSubscription(ctx, types.UsageScopeTenant, types.UsageTenantScopeID(tenantID))
 	if err != nil {
 		return nil, err
@@ -446,6 +447,19 @@ func (s *usagePlanService) TenantUsage(ctx context.Context, tenantID uint64) (*t
 		return nil, err
 	}
 	out.Subscription = v
+	addons, err := s.repo.ListSubscriptionAddons(ctx, sub.ID)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	for _, a := range addons {
+		if a.IsCurrentAt(now) {
+			if a.EndsAt == nil {
+				a.EndsAt = sub.EndsAt // shown as "ends with the subscription"
+			}
+			out.Addons = append(out.Addons, a)
+		}
+	}
 	if sub.Mode == types.UsageModeSeat {
 		seats, err := s.repo.ListSeats(ctx, sub.ID)
 		if err != nil {

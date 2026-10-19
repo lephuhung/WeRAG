@@ -292,4 +292,7 @@ type UsageTenantUsage struct {
 	Enforced     bool                   `json:"enforced"`
 	Subscription *UsageSubscriptionView `json:"subscription,omitempty"`
 	Seats        []*UsageSeat           `json:"seats"`
+	// Addons are the specialist agents the subscription holds (current
+	// rights, with their end).
+	Addons []*UsageSubscriptionAddon `json:"addons"`
 }

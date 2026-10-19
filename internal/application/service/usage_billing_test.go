@@ -46,9 +46,13 @@ func (m *memBillingRepo) InTransaction(ctx context.Context, fn func(ctx context.
 		payments[k] = *v
 	}
 	subs := map[string]types.UsageSubscription{}
+	addons := map[string]types.UsageSubscriptionAddon{}
 	if m.plans != nil {
 		for k, v := range m.plans.active {
 			subs[k] = *v
+		}
+		for k, v := range m.plans.addons {
+			addons[k] = *v
 		}
 	}
 	err := fn(ctx)
@@ -74,6 +78,11 @@ func (m *memBillingRepo) InTransaction(ctx context.Context, fn func(ctx context.
 		for k, v := range subs {
 			v := v
 			m.plans.active[k] = &v
+		}
+		m.plans.addons = map[string]*types.UsageSubscriptionAddon{}
+		for k, v := range addons {
+			v := v
+			m.plans.addons[k] = &v
 		}
 	}
 	return err
@@ -176,6 +185,42 @@ func (m *memBillingRepo) ExpirePendingOrders(_ context.Context, now time.Time) (
 type memPlanRepo struct {
 	interfaces.UsagePlanRepository
 	active map[string]*types.UsageSubscription
+	// catalogue is the add-on catalogue; addons the rights, keyed by
+	// subscription id + "/" + agent id
+	catalogue []*types.UsageAgentAddon
+	addons    map[string]*types.UsageSubscriptionAddon
+}
+
+func (m *memPlanRepo) ListAgentAddons(_ context.Context, includeInactive bool) ([]*types.UsageAgentAddon, error) {
+	var out []*types.UsageAgentAddon
+	for _, a := range m.catalogue {
+		if includeInactive || a.IsActive {
+			c := *a
+			out = append(out, &c)
+		}
+	}
+	return out, nil
+}
+
+func (m *memPlanRepo) ListSubscriptionAddons(_ context.Context, subID string) ([]*types.UsageSubscriptionAddon, error) {
+	var out []*types.UsageSubscriptionAddon
+	for _, a := range m.addons {
+		if a.SubscriptionID == subID {
+			c := *a
+			out = append(out, &c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].AgentID < out[j].AgentID })
+	return out, nil
+}
+
+func (m *memPlanRepo) UpsertSubscriptionAddon(_ context.Context, a *types.UsageSubscriptionAddon) error {
+	if m.addons == nil {
+		m.addons = map[string]*types.UsageSubscriptionAddon{}
+	}
+	c := *a
+	m.addons[a.SubscriptionID+"/"+a.AgentID] = &c
+	return nil
 }
 
 func (m *memPlanRepo) GetActiveSubscription(_ context.Context, scopeType, scopeID string) (*types.UsageSubscription, error) {

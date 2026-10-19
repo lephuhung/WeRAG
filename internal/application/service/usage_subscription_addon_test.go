@@ -198,3 +198,24 @@ func TestPurchasablePlansCarryAgents(t *testing.T) {
 	require.Contains(t, string(b), `"included_agents":[`)
 	require.Contains(t, string(b), `"addons":[]`)
 }
+
+// The Tổ chức "Gói sử dụng" page lists the add-ons it holds with their end
+// (a right without one shows the subscription's end).
+func TestTenantUsageListsHeldAddons(t *testing.T) {
+	svc, db := newAddonPlanServiceDB(t)
+	svc.guard = &usageGuard{}
+	ctx := context.Background()
+	end := time.Now().AddDate(0, 2, 0)
+	require.NoError(t, db.Model(&types.UsageSubscription{}).Where("id = ?", "sub-1").Update("ends_at", end).Error)
+	_, err := svc.GrantSubscriptionAddon(ctx, "sub-1", types.UsageSubscriptionAddonGrant{AgentID: "thue"}, "sa")
+	require.NoError(t, err)
+	past := time.Now().Add(-time.Hour)
+	require.NoError(t, svc.repo.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+		SubscriptionID: "sub-1", AgentID: "old", StartsAt: past.AddDate(0, -1, 0), EndsAt: &past}))
+
+	usage, err := svc.TenantUsage(ctx, 1)
+	require.NoError(t, err)
+	require.Len(t, usage.Addons, 1, "expired rights are left out")
+	require.Equal(t, "Thuế", usage.Addons[0].AgentName)
+	require.WithinDuration(t, end, *usage.Addons[0].EndsAt, time.Second)
+}

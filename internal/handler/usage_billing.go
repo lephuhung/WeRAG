@@ -102,6 +102,28 @@ func (h *UsageBillingHandler) Plans(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": plans})
 }
 
+// Subscription godoc
+// @Summary      The scope's current subscription and its specialist agents
+// @Description  Held add-ons (with their end) and the add-ons still on sale with the subscription's plan, for a mid-term purchase (quote/order with kind "addon").
+// @Tags         Thanh toán
+// @Param        scope query string true "tenant or user"
+// @Success      200 {object} map[string]interface{}
+// @Security     Bearer
+// @Router       /billing/subscription [get]
+func (h *UsageBillingHandler) Subscription(c *gin.Context) {
+	scopeType := strings.TrimSpace(c.Query("scope"))
+	scopeID, ok := billingScope(c, scopeType)
+	if !ok {
+		return
+	}
+	out, err := h.billing.ScopeAddons(c.Request.Context(), scopeType, scopeID)
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": out})
+}
+
 // Quote godoc
 // @Summary      Price a purchase (with an optional promo code)
 // @Tags         Thanh toán

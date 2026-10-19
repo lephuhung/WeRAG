@@ -170,3 +170,37 @@ func TestBillingPlansCarryAgents(t *testing.T) {
 		}
 	}
 }
+
+func (billingPlansStub) ScopeAddons(_ context.Context, scopeType, scopeID string) (*types.UsageScopeAddons, error) {
+	return &types.UsageScopeAddons{Held: []*types.UsageSubscriptionAddon{{AgentID: scopeType + ":" + scopeID}}}, nil
+}
+
+// The buy page reads its scope's add-ons: the Tổ chức needs a Tenant Admin,
+// the personal scope is the caller.
+func TestBillingSubscriptionScope(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.Use(middleware.ErrorHandler())
+	RegisterBillingRoutes(engine.Group("/api/v1"), handler.NewUsageBillingHandler(billingPlansStub{}),
+		&rbacGuards{cfg: &config.Config{}})
+	get := func(path string, role types.TenantRole) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		ctx := context.WithValue(req.Context(), types.TenantIDContextKey, uint64(10003))
+		ctx = context.WithValue(ctx, types.UserIDContextKey, "u-7")
+		ctx = types.WithCaller(ctx, types.Caller{TenantID: 10003, UserID: "u-7", Role: role})
+		rec := httptest.NewRecorder()
+		engine.ServeHTTP(rec, req.WithContext(ctx))
+		return rec
+	}
+	if rec := get("/api/v1/billing/subscription?scope=tenant", types.TenantRoleMember); rec.Code != http.StatusForbidden {
+		t.Fatalf("member, tenant scope = %d", rec.Code)
+	}
+	rec := get("/api/v1/billing/subscription?scope=tenant", types.TenantRoleAdmin)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"agent_id":"tenant:10003"`) {
+		t.Fatalf("admin, tenant scope = %d %s", rec.Code, rec.Body.String())
+	}
+	rec = get("/api/v1/billing/subscription?scope=user", types.TenantRoleMember)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"agent_id":"user:u-7"`) {
+		t.Fatalf("member, user scope = %d %s", rec.Code, rec.Body.String())
+	}
+}

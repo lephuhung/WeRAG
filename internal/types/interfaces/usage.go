@@ -237,6 +237,9 @@ type UsageBillingService interface {
 	// Each plan carries the basic agents it includes and the add-ons sold
 	// with it.
 	PurchasablePlans(ctx context.Context, scopeKind string) ([]*types.UsagePlanOffer, error)
+	// ScopeAddons is a scope's current subscription with the add-ons it
+	// holds and those it may still buy on it (kind "addon" orders).
+	ScopeAddons(ctx context.Context, scopeType, scopeID string) (*types.UsageScopeAddons, error)
 	// Quote prices req for scopeID. Renewing a seat subscription with fewer
 	// seats is refused; more seats also pay the added seats for the time
 	// left on the current period.
