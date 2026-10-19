@@ -54,6 +54,7 @@ export function Composer({
   uploadsBecomeSources = false,
   onOpenAttachmentForEditing,
   sendRequest = null,
+  toolbarStart = null,
   toolbarEnd = null,
 }: {
   sessionId?: string;
@@ -85,6 +86,8 @@ export function Composer({
   onOpenAttachmentForEditing?: (a: PendingAttachment) => void;
   /** Sends this text right away (a picked quick action); a new seq sends again. */
   sendRequest?: { text: string; seq: number } | null;
+  /** Extra document tools after attachment and web search. */
+  toolbarStart?: ReactNode;
   /** Shown just before the send button (e.g. the context usage ring). */
   toolbarEnd?: ReactNode;
 }) {
@@ -275,6 +278,94 @@ export function Composer({
 
   const showStop = isReplying && canStop !== false && !value.trim();
 
+  const agentControl = (
+    <div className={uploadsBecomeSources ? "relative min-w-0 [&>button]:max-w-full" : "relative"}>
+      <AgentModeButton locked={!!agentLockFileName} onOpen={() => { closePopups(); setAgentOpen(true); }} />
+      {agentLockFileName ? (
+        <AgentLockNotice open={agentOpen} fileName={agentLockFileName} onClose={() => setAgentOpen(false)} />
+      ) : (
+        <AgentSelector open={agentOpen} onClose={() => setAgentOpen(false)} />
+      )}
+    </div>
+  );
+  const webControl = (
+    <button
+      onClick={() => toggleWebSearch(!websearchOn)}
+      aria-label={uploadsBecomeSources ? "Tìm kiếm trên web" : undefined}
+      title={webSearchReady ? (websearchOn ? "Web search on" : "Web search off") : "No default search provider"}
+      className={`flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full text-[12.5px] font-medium transition-colors ${uploadsBecomeSources ? "w-7 justify-center" : "px-2 sm:px-2.5"} ${
+        websearchOn ? "bg-[#edf5ff] text-[#0f2d59] dark:bg-[#15273f] dark:text-[#dce9fe]" : "text-muted hover:bg-surface-strong hover:text-ink"
+      } ${webSearchReady ? "" : "opacity-50"}`}
+    >
+      <IconGlobe className="h-3.5 w-3.5" />{!uploadsBecomeSources && " Web"}
+    </button>
+  );
+  const attachmentControl = (
+    <div className="relative">
+      <button
+        onClick={() => {
+          const next = !attachOpen;
+          closePopups();
+          setAttachOpen(next);
+        }}
+        title={
+          uploadsBecomeSources
+            ? t("composer.uploadsBecomeSourcesHint")
+            : sessionId
+              ? "Attach files or images"
+              : "Attach (upload after session is created)"
+        }
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors ${
+          images.length + attachments.length > 0 ? "bg-surface-strong text-ink" : "text-muted hover:bg-surface-strong hover:text-ink"
+        }`}
+      >
+        <IconPaperclip className="h-3.5 w-3.5" />
+        {images.length + attachments.length > 0 && (
+          <span className="caption ml-0.5">{images.length + attachments.length}</span>
+        )}
+      </button>
+      {attachOpen && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setAttachOpen(false)} />
+          <div className="card absolute bottom-full left-0 z-50 mb-2 w-[230px] p-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
+            <button
+              onClick={() => {
+                setAttachOpen(false);
+                onPickFiles();
+              }}
+              className="flex w-full items-center gap-2.5 rounded-[8px] px-3 py-2 text-left text-[13px] text-body transition-colors hover:bg-surface-strong hover:text-ink"
+            >
+              <IconDoc className="h-4 w-4 shrink-0" />
+              <span className="min-w-0 flex-1 leading-tight">
+                <span className="block whitespace-nowrap">Upload file</span>
+                <span className={`caption block text-muted ${uploadsBecomeSources ? "" : "whitespace-nowrap"}`}>
+                  {uploadsBecomeSources ? t("composer.uploadsBecomeSources") : "PDF, DOCX, XLSX…"}
+                </span>
+              </span>
+            </button>
+            <button
+              onClick={() => {
+                setAttachOpen(false);
+                onPickImages();
+              }}
+              disabled={!imageCapable}
+              title={imageCapable ? undefined : "Current agent doesn't support images"}
+              className="flex w-full items-center gap-2.5 rounded-[8px] px-3 py-2 text-left text-[13px] text-body transition-colors hover:bg-surface-strong hover:text-ink disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-body"
+            >
+              <IconImage className="h-4 w-4 shrink-0" />
+              <span className="min-w-0 flex-1 leading-tight">
+                <span className="block whitespace-nowrap">Upload image</span>
+                <span className="caption block whitespace-nowrap text-muted">
+                  {imageCapable ? "JPEG, PNG, GIF, WebP" : "Not supported by this agent"}
+                </span>
+              </span>
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+
   return (
     <div className={`card relative flex flex-col gap-2 ${compact ? "p-2.5" : "p-3 sm:p-4"}`} onClick={() => closePopups()}>
       {images.length > 0 && (
@@ -356,6 +447,7 @@ export function Composer({
           // placeholder under the file icon, and the bold is a stroke.
           <div
             ref={highlightRef}
+            data-composer-highlight
             aria-hidden
             className={`pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words ${compact ? "py-1.5 text-[13px]" : "py-2 text-[14px]"} leading-relaxed text-ink`}
           >
@@ -402,89 +494,8 @@ export function Composer({
       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
         {/* Left group wraps internally on narrow screens; send stays pinned
             right on the first row instead of dropping to a line of its own. */}
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 sm:gap-2">
-          <div className="relative">
-            <AgentModeButton locked={!!agentLockFileName} onOpen={() => { closePopups(); setAgentOpen(true); }} />
-            {agentLockFileName ? (
-              <AgentLockNotice open={agentOpen} fileName={agentLockFileName} onClose={() => setAgentOpen(false)} />
-            ) : (
-              <AgentSelector open={agentOpen} onClose={() => setAgentOpen(false)} />
-            )}
-          </div>
-
-          <button
-            onClick={() => toggleWebSearch(!websearchOn)}
-            title={webSearchReady ? (websearchOn ? "Web search on" : "Web search off") : "No default search provider"}
-            className={`flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2 text-[12.5px] font-medium transition-colors sm:px-2.5 ${
-              websearchOn ? "bg-[#edf5ff] text-[#0f2d59] dark:bg-[#15273f] dark:text-[#dce9fe]" : "text-muted hover:bg-surface-strong hover:text-ink"
-            } ${webSearchReady ? "" : "opacity-50"}`}
-          >
-            <IconGlobe className="h-3.5 w-3.5" /> Web
-          </button>
-
-          <div className="relative">
-            <button
-              onClick={() => {
-                const next = !attachOpen;
-                closePopups();
-                setAttachOpen(next);
-              }}
-              title={
-                uploadsBecomeSources
-                  ? t("composer.uploadsBecomeSourcesHint")
-                  : sessionId
-                    ? "Attach files or images"
-                    : "Attach (upload after session is created)"
-              }
-              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors ${
-                images.length + attachments.length > 0 ? "bg-surface-strong text-ink" : "text-muted hover:bg-surface-strong hover:text-ink"
-              }`}
-            >
-              <IconPaperclip className="h-3.5 w-3.5" />
-              {images.length + attachments.length > 0 && (
-                <span className="caption ml-0.5">{images.length + attachments.length}</span>
-              )}
-            </button>
-            {attachOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setAttachOpen(false)} />
-                <div className="card absolute bottom-full left-0 z-50 mb-2 w-[230px] p-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
-                  <button
-                    onClick={() => {
-                      setAttachOpen(false);
-                      onPickFiles();
-                    }}
-                    className="flex w-full items-center gap-2.5 rounded-[8px] px-3 py-2 text-left text-[13px] text-body transition-colors hover:bg-surface-strong hover:text-ink"
-                  >
-                    <IconDoc className="h-4 w-4 shrink-0" />
-                    <span className="min-w-0 flex-1 leading-tight">
-                      <span className="block whitespace-nowrap">Upload file</span>
-                      <span className={`caption block text-muted ${uploadsBecomeSources ? "" : "whitespace-nowrap"}`}>
-                        {uploadsBecomeSources ? t("composer.uploadsBecomeSources") : "PDF, DOCX, XLSX…"}
-                      </span>
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      setAttachOpen(false);
-                      onPickImages();
-                    }}
-                    disabled={!imageCapable}
-                    title={imageCapable ? undefined : "Current agent doesn't support images"}
-                    className="flex w-full items-center gap-2.5 rounded-[8px] px-3 py-2 text-left text-[13px] text-body transition-colors hover:bg-surface-strong hover:text-ink disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-body"
-                  >
-                    <IconImage className="h-4 w-4 shrink-0" />
-                    <span className="min-w-0 flex-1 leading-tight">
-                      <span className="block whitespace-nowrap">Upload image</span>
-                      <span className="caption block whitespace-nowrap text-muted">
-                        {imageCapable ? "JPEG, PNG, GIF, WebP" : "Not supported by this agent"}
-                      </span>
-                    </span>
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
+        <div className={uploadsBecomeSources ? "flex shrink-0 items-center gap-1.5" : "flex min-w-0 flex-1 flex-wrap items-center gap-1.5 sm:gap-2"}>
+          {uploadsBecomeSources ? <>{attachmentControl}{webControl}{toolbarStart}</> : <>{agentControl}{webControl}{attachmentControl}{toolbarStart}</>}
 
           <DictationButton
             value={value}
@@ -496,8 +507,9 @@ export function Composer({
           />
         </div>
 
-        <div className="relative ml-auto flex shrink-0 items-center gap-2">
+        <div className={uploadsBecomeSources ? "relative ml-auto flex min-w-0 flex-1 items-center justify-end gap-1.5" : "relative ml-auto flex shrink-0 items-center gap-2"}>
           {toolbarEnd}
+          {uploadsBecomeSources && agentControl}
           {showStop ? (
             <button onClick={onStop} className="btn btn-outline h-9 shrink-0" title="Stop generation">
               ■ Stop
