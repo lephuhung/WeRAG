@@ -24,7 +24,7 @@ func (h *UsageBillingHandler) PublicPlans(c *gin.Context) {
 	}
 	data := make([]gin.H, 0, len(plans))
 	for _, p := range plans {
-		if p == nil || !p.IsActive || p.PriceVND <= 0 {
+		if p == nil || p.UsagePlan == nil || !p.IsActive || p.PriceVND <= 0 {
 			continue
 		}
 		data = append(data, gin.H{

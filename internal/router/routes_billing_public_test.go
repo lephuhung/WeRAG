@@ -20,10 +20,10 @@ type publicBillingStub struct {
 	interfaces.UsageBillingService
 	scope string
 	err   error
-	plans []*types.UsagePlan
+	plans []*types.UsagePlanOffer
 }
 
-func (s *publicBillingStub) PurchasablePlans(_ context.Context, scope string) ([]*types.UsagePlan, error) {
+func (s *publicBillingStub) PurchasablePlans(_ context.Context, scope string) ([]*types.UsagePlanOffer, error) {
 	s.scope = scope
 	return s.plans, s.err
 }
@@ -39,10 +39,11 @@ func publicBillingTestRouter(s *publicBillingStub) *gin.Engine {
 }
 
 func TestPublicBillingPlansAnonymousCatalogue(t *testing.T) {
-	s := &publicBillingStub{plans: []*types.UsagePlan{
-		{ID: "live", Name: "Live plan", IsActive: true, PriceVND: 100000, Features: types.JSON(`{"internal":"hidden"}`)},
-		{ID: "inactive", IsActive: false, PriceVND: 100000},
-		{ID: "not-for-sale", IsActive: true, PriceVND: 0},
+	s := &publicBillingStub{plans: []*types.UsagePlanOffer{
+		{UsagePlan: &types.UsagePlan{ID: "live", Name: "Live plan", IsActive: true, PriceVND: 100000, Features: types.JSON(`{"internal":"hidden"}`)}},
+		{UsagePlan: &types.UsagePlan{ID: "inactive", IsActive: false, PriceVND: 100000}},
+		{UsagePlan: &types.UsagePlan{ID: "not-for-sale", IsActive: true, PriceVND: 0}},
+		{},
 		nil,
 	}}
 	r := publicBillingTestRouter(s)

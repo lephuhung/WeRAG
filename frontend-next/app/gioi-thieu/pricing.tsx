@@ -2,28 +2,21 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { planPrice, type UsagePlan } from "@/lib/api/usage";
+import { listPublicPlans, planPrice, type PublicUsagePlan } from "@/lib/api/usage";
 import styles from "./page.module.css";
-
-type PublicPlan = Pick<UsagePlan, "id" | "name" | "description" | "scope_kind" | "mode" | "limits" | "price_vnd" | "price_label" | "sort_order">;
 
 export function LandingPricing() {
   const [scope, setScope] = useState<"user" | "tenant">("user");
-  const [plans, setPlans] = useState<PublicPlan[]>([]);
+  const [plans, setPlans] = useState<PublicUsagePlan[]>([]);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
     setStatus("loading");
-    fetch(`/api/v1/public/billing/plans?scope=${scope}`, {
-      signal: controller.signal, credentials: "omit", cache: "no-store",
-    }).then(async response => {
-      if (!response.ok) throw new Error("Unable to load plans");
-      const result = await response.json();
-      if (result.success !== true || !Array.isArray(result.data)) throw new Error("Invalid catalogue");
+    listPublicPlans(scope, controller.signal).then(result => {
       if (!controller.signal.aborted) {
-        setPlans((result.data as PublicPlan[]).sort((a, b) => a.sort_order - b.sort_order));
+        setPlans(result);
         setStatus("ready");
       }
     }).catch(() => {
@@ -35,7 +28,7 @@ export function LandingPricing() {
   return <div>
     <div className={styles.scope} role="group" aria-label="Đối tượng sử dụng">
       <button type="button" aria-pressed={scope === "user"} onClick={() => setScope("user")}>Cá nhân</button>
-      <button type="button" aria-pressed={scope === "tenant"} onClick={() => setScope("tenant")}>Không gian làm việc</button>
+      <button type="button" aria-pressed={scope === "tenant"} onClick={() => setScope("tenant")}>Tổ chức</button>
     </div>
     <div aria-live="polite" aria-busy={status === "loading"}>
       {status === "loading" ? <p className={styles.pricingNote}>Đang tải các gói đang mở bán…</p>
