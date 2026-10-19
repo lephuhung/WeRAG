@@ -201,7 +201,7 @@ export function ChatProvider({ children, newChat = false, sessionId = "" }: { ch
   const isMobile = useMobileChat();
   // Known before the first render: the platform shell renders only once
   // /auth/me answered (RequireAuth), so no tenant call starts for a guest.
-  const { isGuest } = useTenantRole();
+  const { isGuest, membershipState } = useTenantRole();
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [sessionMode, setSessionMode] = useState<{ sessionId: string; agentId: string } | null>(null);
   const sessionAgentId = sessionMode?.sessionId === sessionId ? sessionMode.agentId : null;
@@ -221,7 +221,8 @@ export function ChatProvider({ children, newChat = false, sessionId = "" }: { ch
   const [webSearchReady, setWebSearchReady] = useState(false);
   const [fileNames, setFileNames] = useState<Record<string, string>>({});
   const [hydrated, setHydrated] = useState(false);
-  const loaded = useRef(false);
+  // the account kind the resources were loaded for (see the effect below)
+  const loadedFor = useRef<string | null>(null);
 
   useEffect(() => {
     setSettings(loadSettings());
@@ -243,6 +244,12 @@ export function ChatProvider({ children, newChat = false, sessionId = "" }: { ch
       // answer TENANT_REQUIRED, and a guest gets no picker for them anyway.
       const agentsRes = await apiGet<{ success: boolean; data?: AgentSummary[] }>(`/api/v1/agents`).catch(() => null);
       if (agentsRes?.data) setAgents(agentsRes.data);
+      // a member who just became a guest: drop the organization's lists
+      setKnowledgeBases([]);
+      setModels([]);
+      setMcpServices([]);
+      setSkills([]);
+      setWebSearchReady(false);
       return;
     }
     try {
@@ -321,11 +328,15 @@ export function ChatProvider({ children, newChat = false, sessionId = "" }: { ch
     }
   }, [isGuest]);
 
+  // Loaded once per account kind: a guest who joins or creates an
+  // organization (or a member who loses the last membership) gets the
+  // resources of the new kind without reopening the chat.
   useEffect(() => {
-    if (loaded.current) return;
-    loaded.current = true;
+    const kind = isGuest ? "guest" : membershipState;
+    if (loadedFor.current === kind) return;
+    loadedFor.current = kind;
     void refresh();
-  }, [refresh]);
+  }, [refresh, isGuest, membershipState]);
 
   // Resolve display names for @-picked files (settings store only keeps ids).
   useEffect(() => {

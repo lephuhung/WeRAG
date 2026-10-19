@@ -116,6 +116,8 @@ export function Sidebar() {
     };
   }, []);
 
+  // reloaded when the account kind changes: a guest's sessions live in the
+  // public portal, a member's in the organization
   useEffect(() => {
     let alive = true;
     listSessions(1, 30)
@@ -128,7 +130,7 @@ export function Sidebar() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [isGuest]);
 
   useEffect(() => {
     const handleTitleUpdated = (e: Event) => {

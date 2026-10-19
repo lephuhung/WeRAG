@@ -23,6 +23,9 @@ import { useT } from "@/lib/i18n";
 import { SplitPane } from "@/components/doc-workspace/split-pane";
 import { DocWorkspace } from "@/components/doc-workspace/doc-workspace";
 import { GuestChatNote } from "@/components/chat/guest-chat-note";
+import { chatErrorKey, chatErrorTextKey } from "@/lib/api/chat-errors";
+import { shouldRefreshAccount } from "@/lib/guest-chat";
+import { useAuth } from "@/lib/auth";
 
 const FALLBACK_SUGGESTIONS = [
   "Summarize the latest release notes",
@@ -50,6 +53,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
   const attachments = useAttachments(undefined);
   const ctx = useChatContext();
   const { t } = useT();
+  const { refreshMe } = useAuth();
 
   const addImages = (files: File[]) => {
     const allowed = ["image/jpeg", "image/png", "image/gif", "image/webp"];
@@ -166,7 +170,11 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
       });
       router.push(`/platform/chat/${sessionId}?${qs}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create session");
+      // the account kind changed under the open page: read /auth/me again
+      // and the page follows the new kind
+      if (shouldRefreshAccount(err, { isGuest: ctx.isGuest, sessionCall: false })) void refreshMe();
+      const key = chatErrorKey(err);
+      setError(key ? t(chatErrorTextKey(key, ctx.isGuest)) : err instanceof Error ? err.message : "Failed to create session");
     } finally {
       setBusy(false);
     }
