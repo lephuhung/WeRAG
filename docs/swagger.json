@@ -326,7 +326,7 @@
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Lấy mọi trợ lý của tổ chức hiện tại (gồm cả trợ lý tích hợp sẵn)",
+                "description": "Lấy mọi trợ lý của tổ chức hiện tại (gồm cả trợ lý tích hợp sẵn). Trợ lý đang tắt chỉ có khi quản trị hệ thống gửi include_disabled=true.",
                 "consumes": [
                     "application/json"
                 ],
@@ -337,6 +337,14 @@
                     "Trợ lý"
                 ],
                 "summary": "Lấy danh sách trợ lý",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "SuperAdmin: gồm cả trợ lý đang tắt",
+                        "name": "include_disabled",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "danh sách trợ lý",
@@ -715,6 +723,53 @@
                         "description": "không tìm thấy trợ lý",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{id}/enabled": {
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Công tắc lúc chạy cho trợ lý tích hợp sẵn và trợ lý tuỳ chỉnh. Trợ lý tích hợp sẵn đang tắt không hiện trong danh sách chọn nhưng vẫn mở được theo id; trợ lý tuỳ chỉnh đang tắt bị ẩn với mọi người trừ quản trị hệ thống (lượt chat tiếp theo nhận 2104). Chưa đặt = giá trị trong builtin_agents.yaml (tích hợp sẵn) hoặc bật (tuỳ chỉnh).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Trợ lý"
+                ],
+                "summary": "Bật/tắt trợ lý (quản trị hệ thống)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "agent id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "enabled",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.SetAgentEnabledRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     }
                 }
@@ -27974,6 +28029,17 @@
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "internal_handler.SetAgentEnabledRequest": {
+            "type": "object",
+            "required": [
+                "enabled"
+            ],
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
                 }
             }
         },

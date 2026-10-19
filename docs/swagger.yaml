@@ -6534,6 +6534,13 @@ definitions:
     required:
     - query
     type: object
+  internal_handler.SetAgentEnabledRequest:
+    properties:
+      enabled:
+        type: boolean
+    required:
+    - enabled
+    type: object
   internal_handler.StorageCheckRequest:
     properties:
       minio:
@@ -7575,7 +7582,13 @@ paths:
     get:
       consumes:
       - application/json
-      description: Lấy mọi trợ lý của tổ chức hiện tại (gồm cả trợ lý tích hợp sẵn)
+      description: Lấy mọi trợ lý của tổ chức hiện tại (gồm cả trợ lý tích hợp sẵn).
+        Trợ lý đang tắt chỉ có khi quản trị hệ thống gửi include_disabled=true.
+      parameters:
+      - description: 'SuperAdmin: gồm cả trợ lý đang tắt'
+        in: query
+        name: include_disabled
+        type: boolean
       produces:
       - application/json
       responses:
@@ -7761,6 +7774,40 @@ paths:
       - Bearer: []
       - ApiKeyAuth: []
       summary: Nhân bản trợ lý
+      tags:
+      - Trợ lý
+  /agents/{id}/enabled:
+    put:
+      consumes:
+      - application/json
+      description: Công tắc lúc chạy cho trợ lý tích hợp sẵn và trợ lý tuỳ chỉnh.
+        Trợ lý tích hợp sẵn đang tắt không hiện trong danh sách chọn nhưng vẫn mở
+        được theo id; trợ lý tuỳ chỉnh đang tắt bị ẩn với mọi người trừ quản trị hệ
+        thống (lượt chat tiếp theo nhận 2104). Chưa đặt = giá trị trong builtin_agents.yaml
+        (tích hợp sẵn) hoặc bật (tuỳ chỉnh).
+      parameters:
+      - description: agent id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: enabled
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.SetAgentEnabledRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: Bật/tắt trợ lý (quản trị hệ thống)
       tags:
       - Trợ lý
   /agents/{id}/suggested-questions:
