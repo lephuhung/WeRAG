@@ -73,3 +73,19 @@ export function defaultDistribution(skillSets: string[], scopeIds: number[]): Ag
 export function scopeForSave(distribution: AgentDistribution, scopeIds: number[]): number[] {
   return distribution === "internal" ? scopeIds : [];
 }
+
+/* The basic agents every service plan includes (backend
+ * types.UsageIncludedAgentIDs, plan decision 7.1). Switching one off asks
+ * for confirmation. */
+export const PLAN_BASIC_AGENT_IDS = ["builtin-document-assistant", "builtin-smart-reasoning"];
+
+// Whether switching `agentId` to `next` needs the "every plan includes it"
+// confirmation.
+export function switchOffNeedsConfirm(agentId: string, next: boolean): boolean {
+  return !next && PLAN_BASIC_AGENT_IDS.includes(agentId);
+}
+
+// An agent's on/off state as the API reports it; absent = on.
+export function agentEnabled(agent: { enabled?: boolean | null }): boolean {
+  return agent.enabled !== false;
+}

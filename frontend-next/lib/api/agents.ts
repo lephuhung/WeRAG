@@ -171,6 +171,9 @@ export interface CustomAgent {
   applies_to_tenant_ids?: number[];
   // "Cách phân phối": basic | addon | internal (always basic on built-ins)
   distribution?: "basic" | "addon" | "internal";
+  // the SuperAdmin's on/off switch, effective value (stored, else
+  // builtin_agents.yaml for a built-in, else on)
+  enabled?: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -218,8 +221,14 @@ export function listAgents(params?: {
   /* Creator filter; built-in agents (is_builtin=true) are always returned
    * regardless so the dropdown never silently loses the presets. */
   creator?: "all" | "mine" | "others";
+  /* SuperAdmin agent page: also the switched-off agents (ignored for
+   * anyone else). */
+  includeDisabled?: boolean;
 }) {
-  const qs = params?.creator && params.creator !== "all" ? `?creator=${params.creator}` : "";
+  const q = new URLSearchParams();
+  if (params?.creator && params.creator !== "all") q.set("creator", params.creator);
+  if (params?.includeDisabled) q.set("include_disabled", "true");
+  const qs = q.toString() ? `?${q.toString()}` : "";
   return apiGet<{ data: CustomAgent[]; disabled_own_agent_ids?: string[] }>(`/api/v1/agents${qs}`);
 }
 
@@ -233,6 +242,11 @@ export function createAgent(data: CreateAgentRequest) {
 
 export function updateAgent(id: string, data: UpdateAgentRequest) {
   return apiPut<{ data: CustomAgent }>(`/api/v1/agents/${id}`, data);
+}
+
+/** SuperAdmin runtime on/off switch (built-in and custom agents). */
+export function setAgentEnabled(id: string, enabled: boolean) {
+  return apiPut<{ data: CustomAgent }>(`/api/v1/agents/${encodeURIComponent(id)}/enabled`, { enabled });
 }
 
 export function deleteAgent(id: string) {

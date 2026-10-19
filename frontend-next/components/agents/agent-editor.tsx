@@ -17,6 +17,7 @@ import {
   listDomainPacks,
   missingDomainPackTools,
   shippedDomainPacks,
+  setAgentEnabled,
   type CustomAgent,
   type DomainPackInfo,
 } from "@/lib/api/agents";
@@ -54,6 +55,8 @@ import {
 } from "@/lib/agent-addon-catalogue";
 import {
   AGENT_DISTRIBUTIONS,
+  agentEnabled,
+  switchOffNeedsConfirm,
   defaultDistribution,
   normalizeDistribution,
   scopeForSave,
@@ -201,6 +204,8 @@ export function AgentEditorModal({
     normalizeDistribution(agent?.distribution),
   );
   const [distributionTouched, setDistributionTouched] = useState(false);
+  // the SuperAdmin's on/off switch, saved through its own endpoint
+  const [enabled, setEnabled] = useState<boolean>(() => (agent ? agentEnabled(agent) : true));
   // "Bán kèm gói dịch vụ": the agent's row in the add-on catalogue, saved
   // through the catalogue API after the agent itself
   const [addonRow, setAddonRow] = useState<UsageAgentAddon | null>(null);
@@ -214,6 +219,7 @@ export function AgentEditorModal({
     setScopeIds(agent?.applies_to_tenant_ids ?? []);
     setDistribution(normalizeDistribution(agent?.distribution));
     setDistributionTouched(false);
+    setEnabled(agent ? agentEnabled(agent) : true);
     setAddonRow(null);
     setAddonDraft(addonSaleDraft(null));
     setAddonTouched(false);
@@ -448,6 +454,11 @@ export function AgentEditorModal({
       return;
     }
 
+    const wasEnabled = agent ? agentEnabled(agent) : true;
+    if (enabled !== wasEnabled && switchOffNeedsConfirm(agent?.id ?? "", enabled)) {
+      if (!window.confirm(t("agentp.switchOffBasicBody", { name: agent?.name ?? "" }))) return;
+    }
+
     setSaving(true);
     setError("");
     try {
@@ -527,6 +538,10 @@ export function AgentEditorModal({
             applies_to_tenant_ids: appliesTo,
             distribution: dist,
           });
+      if (enabled !== wasEnabled) {
+        const switched = await setAgentEnabled(res.data.id, enabled);
+        res.data.enabled = switched.data?.enabled ?? enabled;
+      }
       onSaved(res.data);
       // the catalogue row needs the agent saved as a specialist first
       if (!isBuiltin && !addonLoadFailed && shouldSaveAddonSale(addonRow != null, addonTouched, distribution)) {
@@ -618,6 +633,22 @@ export function AgentEditorModal({
         {/* Tab: Basic */}
         {tab === "basic" && (
           <div className="space-y-3.5">
+            {!readOnly && (
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-[12px] border border-hairline p-3 select-none">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={enabled}
+                  onChange={(e) => setEnabled(e.target.checked)}
+                />
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-medium text-ink">{t("agent.enabled.title")}</span>
+                  <span className="caption block text-muted">
+                    {enabled ? t("agent.enabled.onDesc") : isBuiltin ? t("agent.enabled.offBuiltin") : t("agent.enabled.offCustom")}
+                  </span>
+                </span>
+              </label>
+            )}
             {/* "Bộ kỹ năng chuyên môn" first: it decides what the agent is for
                 (and, for a new agent, its default distribution) */}
             {(draft.agent_mode === "smart-reasoning" || !isBuiltin) && (

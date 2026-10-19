@@ -7,6 +7,8 @@ import {
   defaultDistribution,
   normalizeDistribution,
   scopeForSave,
+  switchOffNeedsConfirm,
+  agentEnabled,
   scopeSummary,
   scopeTenantOptions,
   toggleScopeTenant,
@@ -79,5 +81,18 @@ describe("distribution", () => {
     assert.deepEqual(scopeForSave("internal", [10003]), [10003]);
     assert.deepEqual(scopeForSave("basic", [10003]), []);
     assert.deepEqual(scopeForSave("addon", [10003]), []);
+  });
+});
+
+describe("agent switch", () => {
+  it("asks before switching off a basic agent only", () => {
+    assert.equal(switchOffNeedsConfirm("builtin-document-assistant", false), true);
+    assert.equal(switchOffNeedsConfirm("builtin-smart-reasoning", false), true);
+    assert.equal(switchOffNeedsConfirm("builtin-smart-reasoning", true), false);
+    assert.equal(switchOffNeedsConfirm("builtin-quick-answer", false), false);
+  });
+  it("reads an absent flag as on", () => {
+    assert.equal(agentEnabled({}), true);
+    assert.equal(agentEnabled({ enabled: false }), false);
   });
 });
