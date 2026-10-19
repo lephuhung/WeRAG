@@ -197,6 +197,13 @@ func SummaryMessage(summary string) chat.Message {
 	}
 }
 
+// IsSummaryMessage reports whether m is a compaction summary (written by the
+// model, not by the user): by its kind, or by its envelope when the kind did
+// not survive a reload.
+func IsSummaryMessage(m chat.Message) bool {
+	return m.Kind == chat.MessageKindCompactionSummary || strings.HasPrefix(m.Content, summaryPrefix)
+}
+
 // unwrapSummary recovers the raw text from a summary message so it can be
 // handed to the update prompt without its envelope.
 func unwrapSummary(content string) string {

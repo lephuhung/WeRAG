@@ -9,6 +9,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/Tencent/WeKnora/internal/agent/compaction"
 	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -140,9 +141,22 @@ func (c *numberCheck) refreshEvidence() {
 	}
 	ev := map[string]bool{}
 	numberKeys(c.query, ev)
+	// tool names by call id, to know which tool a tool message answers
+	toolNames := map[string]string{}
 	for _, m := range c.history {
-		// the system prompt carries the pack's own text: not evidence
-		if m.Role == "system" {
+		for _, tc := range m.ToolCalls {
+			toolNames[tc.ID] = tc.Function.Name
+		}
+	}
+	for _, m := range c.history {
+		// not evidence: the system prompt (the pack's own text), a compaction
+		// summary (the model's own words) and read_file results (pack
+		// resources). Earlier answers stay evidence: a tenant's number whose
+		// tool message was compacted away lives on in them.
+		if m.Role == "system" || compaction.IsSummaryMessage(m) {
+			continue
+		}
+		if m.Role == "tool" && (m.Name == "read_file" || toolNames[m.ToolCallID] == "read_file") {
 			continue
 		}
 		numberKeys(domainpacks.StripFooter(m.Content), ev)

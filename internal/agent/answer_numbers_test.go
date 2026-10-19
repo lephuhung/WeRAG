@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/agent/compaction"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/assert"
@@ -211,4 +212,22 @@ func TestLookupErrorPolicy(t *testing.T) {
 	} else {
 		assert.Equal(t, "Luật 99/2099/QH99.", got)
 	}
+}
+
+// A read_file result and a compaction summary are not evidence.
+func TestNumberCheckHistoryExclusions(t *testing.T) {
+	e := &AgentEngine{}
+	e.SetNumberCatalog(testCatalog)
+	history := []chat.Message{
+		compaction.SummaryMessage("Người dùng hỏi về Nghị định 555/2025/NĐ-CP."),
+		{Role: "assistant", ToolCalls: []chat.ToolCall{{ID: "c1", Function: chat.FunctionCall{Name: "read_file"}}}},
+		{Role: "tool", ToolCallID: "c1", Content: "Bình luận: Nghị định 666/2025/NĐ-CP"},
+		{Role: "tool", Name: "read_file", Content: "Nghị định 444/2025/NĐ-CP"},
+		{Role: "assistant", ToolCalls: []chat.ToolCall{{ID: "c2", Function: chat.FunctionCall{Name: "search_knowledge"}}}},
+		{Role: "tool", ToolCallID: "c2", Content: "Quyết định 123/QĐ-UBND"},
+	}
+	ctx := e.withNumberCheck(context.Background(), &types.AgentState{}, "", history)
+	assert.Equal(t, "Một nghị định "+RemovedNumberNote+", một nghị định "+RemovedNumberNote+
+		", một nghị định "+RemovedNumberNote+" và Quyết định 123/QĐ-UBND.",
+		cleanAnswerNumbers(ctx, "Nghị định 555/2025/NĐ-CP, nghị định 666/2025/NĐ-CP, nghị định 444/2025/NĐ-CP và Quyết định 123/QĐ-UBND."))
 }
