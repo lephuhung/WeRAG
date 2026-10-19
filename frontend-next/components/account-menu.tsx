@@ -12,6 +12,7 @@ import { formatTokens, getMyUsage, type UsageSummary } from "@/lib/api/usage";
 import { useAuth, useTenantRole } from "@/lib/auth";
 import { useAvatarUrl } from "@/lib/avatar";
 import { useT, type Locale } from "@/lib/i18n";
+import { consumeSettingsRedirect } from "@/lib/settings-deep-link";
 import { useToast } from "@/components/toast";
 import { SettingsModal } from "@/components/settings-modal";
 import { UsagePlanPill } from "@/components/usage-plan-pill";
@@ -121,6 +122,15 @@ export function AccountMenu() {
   }, [isSystemAdmin, refreshPending]);
 
   useEffect(() => setOpen(false), [pathname]);
+
+  /* Legacy settings URLs redirect into the platform shell. Consume the
+   * requested section after navigation so the modal opens reliably. */
+  useEffect(() => {
+    const section = consumeSettingsRedirect(window.sessionStorage);
+    if (!section) return;
+    setSettingsSection(section);
+    setSettingsOpen(true);
+  }, [pathname]);
 
   /* Own usage counters, refreshed each time the menu opens: cheap (two
    * indexed rows) and always current for the person looking at it. */

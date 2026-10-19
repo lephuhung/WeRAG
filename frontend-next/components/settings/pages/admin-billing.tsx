@@ -70,10 +70,12 @@ export default function AdminBilling() {
   const [secretMasked, setSecretMasked] = useState("");
   const [secretShown, setSecretShown] = useState("");
   const [secretCopied, setSecretCopied] = useState(false);
+  const [bankOpen, setBankOpen] = useState(false);
   const [plans, setPlans] = useState<UsagePlan[]>([]);
   const [promos, setPromos] = useState<UsagePromoCode[]>([]);
   const [orders, setOrders] = useState<UsageOrder[]>([]);
-  const [filter, setFilter] = useState<UsageOrderStatus | "">("pending");
+  const [filter, setFilter] = useState<UsageOrderStatus | "">("");
+  const [activeTab, setActiveTab] = useState<"orders" | "promos">("orders");
   const [promoOpen, setPromoOpen] = useState(false);
   const [promoEditing, setPromoEditing] = useState<UsagePromoCode | null>(null);
   const [promoForm, setPromoForm] = useState<PromoForm>(emptyPromo);
@@ -237,11 +239,35 @@ export default function AdminBilling() {
   const statusKey = (s: UsageOrderStatus): LocaleKey => `bill.status.${s}` as LocaleKey;
 
   return (
-    <div className="mx-auto w-full max-w-[1100px] space-y-8 px-5 py-6">
+    <div className="mx-auto w-full max-w-[1100px] px-5 py-6">
       {error && <p className="caption text-error">{error}</p>}
 
+      <div className="mb-6 flex flex-wrap items-center gap-3 border-b border-hairline" role="tablist" aria-label={t("badm.orders")}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "orders"}
+          className={`border-b-2 px-1 pb-3 text-[14px] font-medium transition-colors ${activeTab === "orders" ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink"}`}
+          onClick={() => setActiveTab("orders")}
+        >
+          {t("badm.orders")}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "promos"}
+          className={`border-b-2 px-1 pb-3 text-[14px] font-medium transition-colors ${activeTab === "promos" ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink"}`}
+          onClick={() => setActiveTab("promos")}
+        >
+          {t("badm.promos")}
+        </button>
+        <button type="button" className="btn btn-outline btn-sm mb-2 ml-auto shrink-0" onClick={() => setBankOpen(true)}>
+          <IconEdit className="h-3.5 w-3.5" /> {t("badm.bankTitle")}
+        </button>
+      </div>
+
       {/* Orders */}
-      <section>
+      {activeTab === "orders" && <section>
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <h3 className="text-[14px] font-medium text-ink">{t("badm.orders")}</h3>
           <select className="input h-9 w-44 py-0" value={filter} onChange={(e) => changeFilter(e.target.value as UsageOrderStatus | "")}>
@@ -257,8 +283,17 @@ export default function AdminBilling() {
         {orders.length === 0 ? (
           <p className="caption text-muted-soft">{t("badm.noOrders")}</p>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-hairline">
-            <table className="w-full text-[13.5px]">
+          <div className="min-w-0 overflow-hidden rounded-lg border border-hairline">
+            <table className="w-full table-fixed text-[13px]">
+              <colgroup>
+                <col className="w-[14%]" />
+                <col className="w-[15%]" />
+                <col className="w-[16%]" />
+                <col className="w-[11%]" />
+                <col className="w-[17%]" />
+                <col className="w-[17%]" />
+                <col className="w-[10%]" />
+              </colgroup>
               <thead className="caption text-muted">
                 <tr className="border-b border-hairline text-left">
                   <th className="px-3 py-2 font-normal">{t("badm.colCode")}</th>
@@ -273,25 +308,25 @@ export default function AdminBilling() {
               <tbody className="divide-y divide-hairline">
                 {orders.map((o) => (
                   <tr key={o.id}>
-                    <td className="px-3 py-2 font-mono text-ink">{o.order_code}</td>
-                    <td className="px-3 py-2 text-ink">
+                    <td className="whitespace-nowrap px-2.5 py-2 font-mono text-[12px] text-ink">{o.order_code}</td>
+                    <td className="break-words px-2.5 py-2 text-ink">
                       {o.scope_name} <span className="caption text-muted-soft">({o.scope_type === "tenant" ? t("usg.scopeTenant") : t("usg.scopeUser")})</span>
                     </td>
-                    <td className="px-3 py-2 text-ink">
+                    <td className="break-words px-2.5 py-2 text-ink">
                       {o.plan_name} · {t("bill.monthsN", { n: o.months })}{o.mode === "seat" ? ` · ${t("bill.seatsN", { n: o.seats })}` : ""}
                       {o.promo_code ? <span className="caption block text-muted">{o.promo_code} −{formatPriceVND(o.discount_vnd)}</span> : null}
                     </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-ink">{formatPriceVND(o.total_vnd)}</td>
-                    <td className="px-3 py-2">
+                    <td className="px-2.5 py-2 text-right tabular-nums text-ink">{formatPriceVND(o.total_vnd)}</td>
+                    <td className="px-2.5 py-2">
                       <span className={`badge-pill text-[11px] ${o.status === "paid" ? "text-emerald-700" : o.status === "pending" ? "text-amber-700" : "text-muted"}`}>{t(statusKey(o.status))}</span>
                       {o.status === "paid" && o.paid_at ? <span className="caption block text-muted-soft">{fmtDateTime(o.paid_at)}</span> : null}
                     </td>
-                    <td className="caption px-3 py-2 text-muted">{fmtDateTime(o.created_at)}</td>
-                    <td className="px-3 py-2 text-right">
+                    <td className="caption whitespace-nowrap px-2.5 py-2 text-muted">{fmtDateTime(o.created_at)}</td>
+                    <td className="px-2 py-2 text-right">
                       {o.status === "pending" && (
-                        <div className="flex justify-end gap-1.5">
-                          <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => confirm(o)}>{t("badm.confirm")}</button>
-                          <button type="button" className="btn btn-outline btn-sm text-rose-600" disabled={busy} onClick={() => cancel(o)}>{t("badm.cancelOrder")}</button>
+                        <div className="flex flex-col items-stretch gap-1.5">
+                          <button type="button" className="btn btn-primary btn-sm w-full px-2" disabled={busy} onClick={() => confirm(o)}>{t("badm.confirm")}</button>
+                          <button type="button" className="btn btn-outline btn-sm w-full px-2 text-rose-600" disabled={busy} onClick={() => cancel(o)}>{t("badm.cancelOrder")}</button>
                         </div>
                       )}
                     </td>
@@ -301,10 +336,10 @@ export default function AdminBilling() {
             </table>
           </div>
         )}
-      </section>
+      </section>}
 
       {/* Promo codes */}
-      <section>
+      {activeTab === "promos" && <section>
         <div className="mb-3 flex items-center gap-3">
           <h3 className="text-[14px] font-medium text-ink">{t("badm.promos")}</h3>
           <button type="button" className="btn btn-outline btn-sm ml-auto" onClick={openNewPromo}>
@@ -340,25 +375,31 @@ export default function AdminBilling() {
             ))}
           </div>
         )}
-      </section>
+      </section>}
 
-      {/* Bank account */}
-      <section className="rounded-lg border border-hairline p-4">
-        <h3 className="text-[14px] font-medium text-ink">{t("badm.bankTitle")}</h3>
-        <p className="caption mb-3 text-muted">{t("badm.bankDesc")}</p>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="block"><span className="caption mb-1 block text-muted">{t("badm.bankName")}</span><input className="input" value={bank.bankName} onChange={(e) => setBank({ ...bank, bankName: e.target.value })} placeholder="Vietcombank" /></label>
-          <label className="block"><span className="caption mb-1 block text-muted">{t("badm.bankBin")}</span><input className="input" inputMode="numeric" value={bank.bankBin} onChange={(e) => setBank({ ...bank, bankBin: e.target.value.replace(/[^\d]/g, "") })} placeholder="970436" /></label>
-          <label className="block"><span className="caption mb-1 block text-muted">{t("badm.accountNo")}</span><input className="input" value={bank.accountNo} onChange={(e) => setBank({ ...bank, accountNo: e.target.value })} /></label>
-          <label className="block"><span className="caption mb-1 block text-muted">{t("badm.accountName")}</span><input className="input" value={bank.accountName} onChange={(e) => setBank({ ...bank, accountName: e.target.value })} /></label>
-          <label className="block"><span className="caption mb-1 block text-muted">{t("badm.ttl")}</span><input className="input" type="number" min={1} value={bank.orderTTLHours} onChange={(e) => setBank({ ...bank, orderTTLHours: e.target.value })} /></label>
-          <label className="block"><span className="caption mb-1 block text-muted">{t("badm.contact")}</span><input className="input" value={bank.contact} onChange={(e) => setBank({ ...bank, contact: e.target.value })} /></label>
+      {/* Bank account modal */}
+      <Modal open={bankOpen} title={t("badm.bankTitle")} onClose={() => setBankOpen(false)} width="w-[680px]">
+        <p className="caption mb-4 text-muted">{t("badm.bankDesc")}</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label className="min-w-0"><span className="caption mb-1 block text-muted">{t("badm.bankName")}</span><input className="input w-full" value={bank.bankName} onChange={(e) => setBank({ ...bank, bankName: e.target.value })} placeholder="Vietcombank" /></label>
+          <label className="min-w-0"><span className="caption mb-1 block text-muted">{t("badm.bankBin")}</span><input className="input w-full" inputMode="numeric" value={bank.bankBin} onChange={(e) => setBank({ ...bank, bankBin: e.target.value.replace(/[^\d]/g, "") })} placeholder="970436" /></label>
+          <label className="min-w-0"><span className="caption mb-1 block text-muted">{t("badm.accountNo")}</span><input className="input w-full" value={bank.accountNo} onChange={(e) => setBank({ ...bank, accountNo: e.target.value })} /></label>
+          <label className="min-w-0"><span className="caption mb-1 block text-muted">{t("badm.accountName")}</span><input className="input w-full" value={bank.accountName} onChange={(e) => setBank({ ...bank, accountName: e.target.value })} /></label>
+          <label className="min-w-0"><span className="caption mb-1 block text-muted">{t("badm.ttl")}</span><input className="input w-full" type="number" min={1} value={bank.orderTTLHours} onChange={(e) => setBank({ ...bank, orderTTLHours: e.target.value })} /></label>
+          <label className="min-w-0"><span className="caption mb-1 block text-muted">{t("badm.contact")}</span><input className="input w-full" value={bank.contact} onChange={(e) => setBank({ ...bank, contact: e.target.value })} /></label>
         </div>
-        <div className="mt-3 flex items-center justify-end gap-3">
+        <div className="mt-5 flex items-center justify-end gap-3">
           {bankSaved && <span className="caption text-emerald-700">{t("badm.saved")}</span>}
-          <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void saveBank()}>{t("common.save")}</button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={busy}
+            onClick={() => void saveBank().then((ok) => ok && setBankOpen(false))}
+          >
+            {t("common.save")}
+          </button>
         </div>
-      </section>
+      </Modal>
 
       {/* Payment webhook */}
       <section className="rounded-lg border border-hairline p-4">

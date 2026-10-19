@@ -123,7 +123,7 @@ function AgentsPanel() {
 
   return (
     <>
-      <div className="mb-6 flex items-center justify-between gap-4">
+      <div className="mb-6 flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-[14px] text-muted">
           {t("agentp.subtitle")}
         </p>

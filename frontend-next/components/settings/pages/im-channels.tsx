@@ -106,10 +106,10 @@ function IMChannelsPanel() {
       {!createOpen && (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <p className="caption max-w-[560px] text-muted">{t("imp.subtitle")}</p>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
             {agents.length > 1 && (
               <Select
-                className="w-[200px]"
+                className="w-full sm:w-[200px]"
                 value={agentFilter}
                 onChange={setAgentFilter}
                 options={[
@@ -144,7 +144,7 @@ function IMChannelsPanel() {
             className={`rounded-xl border p-4.5 shadow-sm transition-all ${
               c.enabled
                 ? "border-hairline bg-surface-card hover:border-hairline-strong hover:shadow-md"
-                : "border-hairline/60 bg-surface/60 opacity-80"
+                : "border-hairline/60 bg-surface-card/60 opacity-80"
             }`}
           >
             <div className="flex items-start justify-between gap-3">

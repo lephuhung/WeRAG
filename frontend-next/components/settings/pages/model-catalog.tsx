@@ -515,7 +515,7 @@ function SystemModels() {
               onClick={() => setFilterType(opt.id)}
               className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[12.5px] font-medium transition-colors ${
                 isSelected
-                  ? "bg-ink text-white dark:bg-white dark:text-ink"
+                  ? "bg-ink text-on-primary"
                   : "text-muted hover:bg-surface-strong hover:text-ink"
               }`}
             >
@@ -524,7 +524,7 @@ function SystemModels() {
                 <span
                   className={`rounded-full px-1.5 py-0.2 text-[10.5px] ${
                     isSelected
-                      ? "bg-white/20 text-white dark:bg-black/20 dark:text-ink"
+                      ? "bg-on-primary/20 text-on-primary"
                       : "bg-surface-strong text-muted"
                   }`}
                 >
@@ -572,7 +572,7 @@ function SystemModels() {
                         {meta.name}
                       </span>
                       {m.isDefault && (
-                        <span className="rounded-md bg-ink px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white dark:bg-white dark:text-ink">
+                        <span className="rounded-md bg-ink px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-on-primary">
                           {t("mdl.defaultBadge")}
                         </span>
                       )}

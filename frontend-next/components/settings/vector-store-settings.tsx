@@ -71,7 +71,7 @@ export function VectorStoreSettings() {
 
   return (
     <div>
-      <div className="flex items-center justify-between border-b border-hairline pb-4">
+      <div className="flex flex-col items-start gap-3 border-b border-hairline pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="title-md">{t("vstore.title")}</h2>
           <p className="caption mt-1 text-muted">
@@ -101,12 +101,12 @@ export function VectorStoreSettings() {
             return (
               <div
                 key={sid}
-                className="flex flex-col gap-2 rounded-xl border border-hairline bg-surface p-4 transition-colors hover:border-hairline-strong"
+                className="flex flex-col gap-2 rounded-xl border border-hairline bg-surface-card p-4 transition-colors hover:border-hairline-strong"
               >
-                <div className="flex items-center justify-between">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[15px] font-medium text-ink">{s.name}</span>
+                <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0 w-full sm:flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="min-w-0 break-words text-[15px] font-medium text-ink">{s.name}</span>
                       <span className="badge-pill uppercase text-[10px]">{s.engine_type}</span>
                       {s.source && (
                         <span className="badge-pill text-[10px] text-muted">
@@ -116,7 +116,7 @@ export function VectorStoreSettings() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
                     {s.id && (
                       <button
                         onClick={() => handleTest(s.id!)}

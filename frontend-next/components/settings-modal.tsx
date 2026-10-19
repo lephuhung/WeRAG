@@ -25,6 +25,7 @@ import {
   type ComponentType,
   type ReactNode,
 } from "react";
+import { useDialogFocus } from "./use-dialog-focus";
 import { createPortal } from "react-dom";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth";
@@ -48,8 +49,7 @@ import { BrowserConnectionSettings } from "@/components/settings/browser-connect
 import { EnvVarsSettings } from "@/components/settings/env-vars-settings";
 import { AbbreviationsSettings } from "@/components/settings/abbreviations-settings";
 import { SkillsSettings } from "@/components/settings/skills-settings";
-import { VectorStoreSettings } from "@/components/settings/vector-store-settings";
-import { StorageSettings } from "@/components/settings/storage-settings";
+import { DataStorageHub } from "@/components/settings/data-storage-hub";
 import { ParserEngineSettings } from "@/components/settings/parser-engine-settings";
 import { WebSearchSettings } from "@/components/settings/web-search-settings";
 import { SandboxSettings } from "@/components/settings/sandbox-settings";
@@ -170,9 +170,9 @@ const GROUPS: SettingsGroup[] = [
       { key: "catalog", labelKey: "systemNav.catalog", fallback: "Model catalog", icon: IconGraph, minRole: "owner", render: () => <ModelCatalogPage />, route: `${SYS}/models` },
       { key: "ollama", fallback: "Ollama (local)", icon: IconGraph, minRole: "owner", render: () => <ModelOllamaPage />, route: `${SYS}/models/ollama`, subOnly: true, parent: "catalog" },
       { key: "weknoracloud", fallback: "WeRAG Cloud", icon: IconGraph, minRole: "owner", render: () => <ModelWeknoraCloudPage />, route: `${SYS}/models/weknoracloud`, subOnly: true, parent: "catalog" },
-      { key: "vector", labelKey: "settingsNav.vectorstore", fallback: "Vector store engine", icon: IconGraph, minRole: "system", render: () => <VectorStoreSettings />, route: `${SYS}/engines/vector` },
+      { key: "vector", labelKey: "settingsNav.dataStorage", fallback: "Data storage", icon: IconStorageEngine, minRole: "system", render: () => <DataStorageHub />, route: `${SYS}/engines/vector` },
       { key: "parser", labelKey: "settingsNav.parser", fallback: "Parser engines", icon: IconParserEngine, minRole: "system", render: () => <ParserEngineSettings />, route: `${SYS}/engines/parser` },
-      { key: "storage", labelKey: "settingsNav.storage", fallback: "Storage engine", icon: IconStorageEngine, minRole: "system", render: () => <StorageSettings />, route: `${SYS}/engines/storage` },
+      { key: "storage", labelKey: "settingsNav.dataStorage", fallback: "Data storage", icon: IconStorageEngine, minRole: "system", render: () => <DataStorageHub initialTab="storage" />, route: `${SYS}/engines/storage`, subOnly: true, parent: "vector" },
       { key: "search", labelKey: "settingsNav.websearch", fallback: "Web search", icon: IconSearch, minRole: "system", render: () => <WebSearchSettings />, route: `${SYS}/engines/search` },
       { key: "sandbox", labelKey: "settingsNav.sandbox", fallback: "Sandbox", icon: IconPower, minRole: "system", render: () => <SandboxSettings />, route: `${SYS}/engines/sandbox` },
 
@@ -249,17 +249,11 @@ export function SettingsModal({
     prevDepth.current = sub.depth;
   }, [sub.depth]);
 
-  /* Escape steps back out of an open sub-page before closing the modal. */
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (subTopRef.current) subTopRef.current.back();
-      else onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus({ open: open && mounted, containerRef: dialogRef, onClose: () => {
+    if (subTopRef.current) subTopRef.current.back();
+    else onClose();
+  } });
 
   /* Embedded pages may hold plain <Link> navigation (e.g. sharing →
    * knowledge bases). When the underlying route changes, close the modal so
@@ -328,7 +322,9 @@ export function SettingsModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6">
       <div className="absolute inset-0 bg-ink/20" onClick={onClose} />
       <div
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
         aria-label={t("user.settings")}
         className="card relative flex max-h-[calc(100dvh-1rem)] w-full max-w-[1120px] flex-col overflow-hidden sm:h-[min(760px,calc(100dvh-3rem))] sm:flex-row"
       >
@@ -345,6 +341,9 @@ export function SettingsModal({
             <div className="relative min-w-0 flex-1">
               <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft" />
               <input
+                type="search"
+                name="settings-query"
+                autoComplete="off"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={t("settingsModal.search")}

@@ -149,7 +149,7 @@ export function ParserEngineSettings() {
       {error && <div className="mt-4 rounded-xl bg-error/10 p-3 text-[13px] text-error">{error}</div>}
 
       {/* DocReader */}
-      <section className="mt-6 rounded-xl border border-hairline bg-surface p-4">
+      <section className="mt-6 rounded-xl border border-hairline bg-surface-card p-4">
         <div className="flex items-center gap-2">
           <StatusDot ok={docreader.connected} />
           <h3 className="text-[15px] font-medium text-ink">DocReader</h3>
@@ -175,7 +175,7 @@ export function ParserEngineSettings() {
       </section>
 
       {/* Engines */}
-      <section className="mt-4 rounded-xl border border-hairline bg-surface p-4">
+      <section className="mt-4 rounded-xl border border-hairline bg-surface-card p-4">
         <h3 className="text-[15px] font-medium text-ink">{t("peng.enginesTitle")}</h3>
         <p className="caption mt-1 text-muted">{t("peng.enginesHint")}</p>
         <div className="mt-3 divide-y divide-hairline">
@@ -208,7 +208,7 @@ export function ParserEngineSettings() {
       </section>
 
       {/* PaddleOCR-VL / OpenAI-compatible OCR */}
-      <section className="mt-4 rounded-xl border border-hairline bg-surface p-4">
+      <section className="mt-4 rounded-xl border border-hairline bg-surface-card p-4">
         <h3 className="text-[15px] font-medium text-ink">{t("peng.ocrTitle")}</h3>
         <p className="caption mt-1 text-muted">{t("peng.ocrHint")}</p>
 

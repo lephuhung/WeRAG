@@ -154,11 +154,11 @@ export function WebSearchSettings() {
       ) : (
         <div className="space-y-3">
           {providers.map((p) => (
-            <div key={p.id} className="card p-4 flex items-center justify-between">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
+            <div key={p.id} className="card flex flex-col items-start gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 w-full sm:flex-1">
+                <div className="flex flex-wrap items-center gap-2">
                   <IconSearch className="h-4 w-4 text-primary" />
-                  <span className="font-medium text-sm text-ink">{p.name}</span>
+                  <span className="min-w-0 break-words font-medium text-sm text-ink">{p.name}</span>
                   <span className="rounded bg-surface-strong px-2 py-0.5 text-[11px] font-mono text-muted uppercase">
                     {p.provider}
                   </span>
@@ -169,7 +169,7 @@ export function WebSearchSettings() {
                   )}
                 </div>
                 {p.parameters?.base_url && (
-                  <p className="caption mt-1 text-muted font-mono">{p.parameters.base_url}</p>
+                  <p className="caption mt-1 break-all text-muted font-mono">{p.parameters.base_url}</p>
                 )}
               </div>
               <div className="flex items-center gap-2 shrink-0">

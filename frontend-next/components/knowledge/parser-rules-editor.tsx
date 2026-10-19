@@ -181,7 +181,7 @@ export function ParserRulesEditor({
       if (r) r.xlsx_first_row_as_header = checked;
     });
 
-  const rowGrid = `grid grid-cols-1 gap-x-6 sm:grid-cols-2 ${columns === 3 ? "lg:grid-cols-3" : ""}`;
+  const rowGrid = `grid grid-cols-1 gap-2.5 sm:grid-cols-2 ${columns === 3 ? "lg:grid-cols-3" : ""}`;
 
   if (engines === null) {
     return <p className="caption text-muted">{t("ps.parserLoading")}</p>;
@@ -197,7 +197,7 @@ export function ParserRulesEditor({
         if (catGroups.length === 0) return null;
         return (
           <div key={category}>
-            <div className="caption-uppercase mb-1 flex items-center gap-2 text-muted-soft">
+            <div className="caption-uppercase mb-2 flex items-center gap-2 text-muted-soft">
               {t(CATEGORY_LABEL_KEY[category])}
               <span className="h-px flex-1 bg-hairline" aria-hidden />
             </div>
@@ -215,42 +215,42 @@ export function ParserRulesEditor({
                 return (
                   <div
                     key={g.key}
-                    className={`flex items-center gap-2.5 py-1 ${noEngine ? "opacity-55" : ""}`}
+                    className={`flex min-w-0 flex-col gap-3 rounded-[10px] border border-hairline bg-surface-card/60 p-3 ${noEngine ? "opacity-55" : ""}`}
                   >
-                    <span
-                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] text-[8px] font-bold tracking-tight ${glyph.cls}`}
-                      aria-hidden
-                    >
-                      {glyph.glyph}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[12.5px] font-medium text-ink">{g.label}</div>
-                      <div className="mt-0.5 flex flex-wrap gap-1">
-                        {g.extensions.map((x) => (
-                          <span
-                            key={x}
-                            className="rounded bg-surface-strong px-1 py-px text-[10px] leading-4 text-muted"
-                          >
-                            .{x}
-                          </span>
-                        ))}
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-[9px] font-bold tracking-tight ${glyph.cls}`}
+                        aria-hidden
+                      >
+                        {glyph.glyph}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[13px] font-semibold text-ink">{g.label}</div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {g.extensions.map((x) => (
+                            <span
+                              key={x}
+                              className="rounded bg-surface-strong px-1.5 py-px text-[10px] leading-4 text-muted"
+                            >
+                              .{x}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     </div>
                     {noEngine ? (
-                      <span className="shrink-0 text-[11px] text-muted-soft">
+                      <span className="flex h-8 items-center rounded-[8px] bg-surface-strong px-3 text-[11px] text-muted-soft">
                         — {t("ps.parserNoEngine")}
                       </span>
                     ) : (
-                      <div className="flex shrink-0 items-center gap-1.5">
+                      <div className="flex w-full items-center gap-2">
                         {g.extensions.includes("xlsx") && selected === "builtin" && (
-                          /* Pill toggle for the two-state header flag — kept
-                           * inline so rows stay a uniform height. */
                           <button
                             type="button"
                             role="switch"
                             aria-checked={rule?.xlsx_first_row_as_header === true}
                             onClick={() => setXlsxHeader(g.extensions, !(rule?.xlsx_first_row_as_header === true))}
-                            className={`rounded-full border px-2 py-0.5 text-[10.5px] font-medium transition-colors ${
+                            className={`h-8 shrink-0 rounded-[8px] border px-2.5 text-[10.5px] font-medium transition-colors ${
                               rule?.xlsx_first_row_as_header === true
                                 ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
                                 : "border-hairline text-muted hover:text-ink"
@@ -260,7 +260,7 @@ export function ParserRulesEditor({
                           </button>
                         )}
                         <Select
-                          className={`h-7 w-[150px] py-0.5 px-2.5 text-[12px] ${
+                          className={`h-8 min-w-0 flex-1 px-2.5 py-0.5 text-[12px] ${
                             isDefault
                               ? "text-muted"
                               : "border-sky-500/40 font-medium text-ink"

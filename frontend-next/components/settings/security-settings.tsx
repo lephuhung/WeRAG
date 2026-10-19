@@ -8,9 +8,11 @@ import { clearTokens, signInPath } from "@/lib/api-client";
 import { changePassword } from "@/lib/api/auth";
 import { TwoFactorSettings } from "@/components/settings/two-factor-settings";
 import { useT } from "@/lib/i18n";
+import { useAuth } from "@/lib/auth";
 
 export function SecuritySettings() {
   const { t } = useT();
+  const { user } = useAuth();
 
   const [pw, setPw] = useState({ current: "", next: "", confirm: "" });
   const [pwSaved, setPwSaved] = useState(false);
@@ -40,12 +42,23 @@ export function SecuritySettings() {
   return (
     <div className="flex flex-col gap-7">
       {/* change password */}
-      <div>
+      <form onSubmit={(event) => event.preventDefault()}>
         <h3 className="title-sm mb-3">{t("userSettings.changePassword")}</h3>
         <div className="flex flex-col gap-3">
           <input
             className="input"
+            type="email"
+            name="username"
+            autoComplete="username"
+            aria-label={t("userSettings.email")}
+            value={user?.email ?? ""}
+            readOnly
+          />
+          <input
+            className="input"
             type="password"
+            name="current-password"
+            autoComplete="current-password"
             placeholder={t("userSettings.currentPassword")}
             value={pw.current}
             onChange={(e) => setPw({ ...pw, current: e.target.value })}
@@ -53,6 +66,8 @@ export function SecuritySettings() {
           <input
             className="input"
             type="password"
+            name="new-password"
+            autoComplete="new-password"
             placeholder={t("userSettings.newPassword")}
             value={pw.next}
             onChange={(e) => setPw({ ...pw, next: e.target.value })}
@@ -60,6 +75,8 @@ export function SecuritySettings() {
           <input
             className="input"
             type="password"
+            name="confirm-password"
+            autoComplete="new-password"
             placeholder={t("userSettings.confirmPassword")}
             value={pw.confirm}
             onChange={(e) => setPw({ ...pw, confirm: e.target.value })}
@@ -67,6 +84,7 @@ export function SecuritySettings() {
         </div>
         <div className="mt-3 flex items-center gap-3">
           <button
+            type="button"
             className="btn btn-primary btn-sm"
             disabled={!pw.current || !pw.next || pw.next !== pw.confirm || pwBusy}
             onClick={() => void changePw()}
@@ -81,7 +99,7 @@ export function SecuritySettings() {
           )}
           {pwError && <span className="caption text-error">{pwError}</span>}
         </div>
-      </div>
+      </form>
 
       <div className="border-t border-hairline pt-7">
         <TwoFactorSettings />

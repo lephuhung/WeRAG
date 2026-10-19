@@ -24,7 +24,7 @@ export function MemoryHub({ initialTab = "mine" }: { initialTab?: MemoryHubTab }
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-1.5" role="tablist">
+      <div className="flex items-center gap-6 overflow-x-auto border-b border-hairline" role="tablist">
         {tabs.map((it) => (
           <button
             key={it.id}
@@ -32,10 +32,10 @@ export function MemoryHub({ initialTab = "mine" }: { initialTab?: MemoryHubTab }
             role="tab"
             aria-selected={tab === it.id}
             onClick={() => setTab(it.id)}
-            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-1 pb-3 pt-1 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ink ${
               tab === it.id
-                ? "bg-ink text-white dark:bg-white dark:text-ink"
-                : "text-muted hover:bg-surface-strong hover:text-ink"
+                ? "border-ink font-semibold text-ink"
+                : "border-transparent font-medium text-muted hover:border-hairline-strong hover:text-ink"
             }`}
           >
             {it.label}

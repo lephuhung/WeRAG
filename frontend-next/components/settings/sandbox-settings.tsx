@@ -334,7 +334,7 @@ export function SandboxSettings() {
               onClick={() => setFilterType(ft)}
               className={`rounded-full px-3 py-1 text-xs font-medium capitalize transition-colors ${
                 filterType === ft
-                  ? "bg-ink text-white dark:bg-white dark:text-ink"
+                  ? "bg-ink text-on-primary"
                   : "text-muted hover:bg-surface-strong hover:text-ink"
               }`}
             >

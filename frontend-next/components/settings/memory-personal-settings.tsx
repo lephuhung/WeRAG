@@ -355,7 +355,7 @@ export function MemoryPersonalSettings() {
             onClick={() => setMainTab("items")}
             className={`text-sm font-medium pb-2 border-b-2 -mb-2.5 transition-colors ${
               mainTab === "items"
-                ? "border-brand text-brand font-semibold"
+                ? "border-primary text-primary font-semibold"
                 : "border-transparent text-muted hover:text-ink"
             }`}
           >
@@ -366,7 +366,7 @@ export function MemoryPersonalSettings() {
             onClick={() => setMainTab("topics")}
             className={`text-sm font-medium pb-2 border-b-2 -mb-2.5 transition-colors ${
               mainTab === "topics"
-                ? "border-brand text-brand font-semibold"
+                ? "border-primary text-primary font-semibold"
                 : "border-transparent text-muted hover:text-ink"
             }`}
           >
@@ -377,7 +377,7 @@ export function MemoryPersonalSettings() {
             onClick={() => setMainTab("docs")}
             className={`text-sm font-medium pb-2 border-b-2 -mb-2.5 transition-colors ${
               mainTab === "docs"
-                ? "border-brand text-brand font-semibold"
+                ? "border-primary text-primary font-semibold"
                 : "border-transparent text-muted hover:text-ink"
             }`}
           >
@@ -394,7 +394,7 @@ export function MemoryPersonalSettings() {
                 onClick={() => setStatusFilter(st)}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                   statusFilter === st
-                    ? "bg-ink text-white dark:bg-white dark:text-ink"
+                    ? "bg-ink text-on-primary"
                     : "text-muted hover:bg-surface-strong hover:text-ink"
                 }`}
               >
@@ -423,7 +423,7 @@ export function MemoryPersonalSettings() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="badge-pill uppercase text-[10.5px] font-semibold bg-brand/10 text-brand">
+                      <span className="badge-pill uppercase text-[10.5px] font-semibold bg-primary/10 text-primary">
                         {it.kind}
                       </span>
                       {it.topic && (

@@ -83,7 +83,7 @@ export function InputLimitsCard() {
   };
 
   const group = (prefix: "limits.chat.pdf" | "limits.chat.docx" | "limits.kb." | "limits.chat.question" | "limits.parse.", title: string) => (
-    <div className="min-w-[260px] flex-1">
+    <div className="min-w-0 w-full basis-[260px] flex-1">
       <div className="caption mb-2 font-medium text-ink">{title}</div>
       <div className="flex flex-wrap gap-3">
         {INPUT_LIMIT_KEYS.filter((k) => k.key.startsWith(prefix)).map((k) => (
@@ -113,7 +113,7 @@ export function InputLimitsCard() {
       </div>
       <p className="caption mb-4 text-muted">{t("q.limitsDesc")}</p>
       <div className="flex flex-wrap gap-6">
-        <div className="min-w-[260px] flex-1">
+        <div className="min-w-0 w-full basis-[260px] flex-1">
           <div className="caption mb-2 font-medium text-ink">{t("q.limitsChat")}</div>
           <div className="flex flex-wrap gap-3">
             {INPUT_LIMIT_KEYS.filter((k) => k.key.startsWith("limits.chat.pdf") || k.key.startsWith("limits.chat.docx")).map((k) => (
@@ -136,7 +136,7 @@ export function InputLimitsCard() {
       <div className="mt-4 flex flex-wrap gap-6">
         {group("limits.chat.question", t("q.limitsQuestions"))}
         {group("limits.parse.", t("q.limitsParsing"))}
-        <div className="min-w-[260px] flex-1">
+        <div className="min-w-0 w-full basis-[260px] flex-1">
           <div className="caption mb-2 font-medium text-ink">{t("q.limitsBroad")}</div>
           <div className="flex items-center gap-2">
             <Toggle checked={broadDraft} onChange={setBroadDraft} label={t("q.limitsBroadOn")} />

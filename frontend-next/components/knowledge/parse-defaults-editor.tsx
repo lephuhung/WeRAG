@@ -241,8 +241,8 @@ export function ParseDefaultsEditor() {
         )}
       </section>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-      <section className="card p-4 xl:col-span-3 @container">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <section className="card p-4 lg:col-span-2 @container">
         <h3 className="title-sm text-ink">{t("ps.tabParser")}</h3>
         <p className="caption mt-1 text-muted">{t("ps.parserDesc")}</p>
         <div className="mt-2">
@@ -480,10 +480,10 @@ export function ParseDefaultsEditor() {
         )}
       </section>
 
-      {/* Column 3: ASR + summary + question stack — keeps the three narrow
-       * sections in one column so the grid stays three cells wide. */}
-      <div className="flex flex-col gap-4">
-      <section className="card p-4 @container">
+      {/* Compact features share one row. Disabled features remain one short
+       * toggle card; their detailed controls appear only when enabled. */}
+      <div className="grid grid-cols-1 gap-3 lg:col-span-2 lg:grid-cols-3">
+      <section className="card p-3.5 @container">
         <h3 className="title-sm text-ink">{t("ps.tabAsr")}</h3>
         <p className="caption mt-1 text-muted">{t("ps.asrDesc")}</p>
         <div className="divide-y divide-hairline">
@@ -526,7 +526,7 @@ export function ParseDefaultsEditor() {
         )}
       </section>
 
-      <section className="card p-4 @container">
+      <section className="card p-3.5 @container">
         <h3 className="title-sm text-ink">{t("ps.tabSummary")}</h3>
         <p className="caption mt-1 text-muted">{t("ps.summaryDesc")}</p>
         {row(
@@ -539,7 +539,7 @@ export function ParseDefaultsEditor() {
         )}
       </section>
 
-      <section className="card p-4 @container">
+      <section className="card p-3.5 @container">
         <h3 className="title-sm text-ink">{t("ps.tabQuestion")}</h3>
         <p className="caption mt-1 text-muted">{t("ps.questionDesc")}</p>
         {row(
@@ -568,8 +568,13 @@ export function ParseDefaultsEditor() {
           </div>,
         )}
         {state.question.enabled && (
-          <div className="py-3">
-            <div className="text-[13px] font-medium text-ink">{t("ps.questionInstrLabel")}</div>
+          <details className="group border-t border-hairline pt-2">
+            <summary className="cursor-pointer list-none text-[12px] font-medium text-muted transition-colors hover:text-ink">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="transition-transform group-open:rotate-90" aria-hidden>›</span>
+                {t("ps.questionInstrLabel")}
+              </span>
+            </summary>
             <textarea
               className="input mt-2 h-auto min-h-[56px] w-full resize-y"
               value={state.question.customInstructions}
@@ -580,7 +585,7 @@ export function ParseDefaultsEditor() {
                 }))
               }
             />
-          </div>
+          </details>
         )}
       </section>
       </div>
