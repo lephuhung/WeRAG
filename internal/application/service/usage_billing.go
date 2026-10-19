@@ -520,6 +520,9 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 				"the subscription now has %d seats but order %s pays for %d; cancel it and order again",
 				cur.Seats, o.OrderCode, o.Seats))
 		}
+		if err := refuseMovedSubscription(o, cur); err != nil {
+			return "", err
+		}
 		held, err := s.planRepo.ListSubscriptionAddons(ctx, cur.ID)
 		if err != nil {
 			return "", err

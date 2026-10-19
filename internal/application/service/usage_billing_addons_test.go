@@ -272,6 +272,10 @@ func TestQuoteAddonLinesAgainstWhatIsHeld(t *testing.T) {
 			require.Len(t, q.Addons, 1)
 			got := q.Addons[0]
 			c.want.AgentID, c.want.Name, c.want.UnitPriceVND = "thue", "Thuế HKD", 99_000
+			if c.subPlan != "" && c.subPlan == c.req.PlanID {
+				// a renewal line records the end it was priced against
+				c.want.SubscriptionEnd = c.subEnd
+			}
 			require.Equal(t, c.want, got)
 			require.Equal(t, got.AmountVND, q.AddonsVND)
 		})
@@ -504,4 +508,98 @@ func TestPromoCodeOnAddonOrder(t *testing.T) {
 	q, err = f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1, PromoCode: "MOT"}, "10003")
 	require.NoError(t, err)
 	require.Empty(t, q.PromoError)
+}
+
+// endOfVN is 24:00 Vietnam time of the given date (as stored).
+func endOfVN(y int, m time.Month, d int) time.Time {
+	return time.Date(y, m, d+1, 0, 0, 0, 0, time.FixedZone("ICT", 7*3600)).UTC()
+}
+
+// Review R1: renewing from a stored end keeps the date (end of 30/10 + 1
+// month = end of 30/11) and prices an add-on for exactly one month.
+func TestRenewalFromAStoredEndKeepsTheDate(t *testing.T) {
+	f := newBillingFixture(t)
+	withAddonCatalogue(f)
+	ctx := context.Background()
+	end := endOfVN(2026, 10, 30)
+	f.plans.active["tenant/10003"] = &types.UsageSubscription{ID: "sub-1", ScopeType: "tenant", ScopeID: "10003",
+		PlanID: "pool", Mode: "pool", StartsAt: billingNow.AddDate(0, -1, 0), EndsAt: &end,
+		Status: types.UsageSubscriptionActive}
+	require.NoError(t, f.plans.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+		SubscriptionID: "sub-1", AgentID: "thue", StartsAt: billingNow, EndsAt: &end}))
+
+	o, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1,
+		AddonAgentIDs: []string{"thue"}}, "10003", "u1")
+	require.NoError(t, err)
+	require.Equal(t, int64(99_000), o.Addons[0].AmountVND, "exactly one month, no leftover")
+	_, err = f.svc.ConfirmOrder(ctx, o.ID, "sa")
+	require.NoError(t, err)
+	want := endOfVN(2026, 11, 30)
+	require.Equal(t, want, *f.plans.active["tenant/10003"].EndsAt)
+	require.Equal(t, want, *f.right("sub-1", "thue").EndsAt)
+
+	// a right held to the end of 30/10 bought again mid-term up to the end
+	// of 30/11 is one month too
+	require.NoError(t, f.plans.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+		SubscriptionID: "sub-1", AgentID: "kt", StartsAt: billingNow, EndsAt: &end}))
+	f.plans.active["tenant/10003"].PlanID, f.plans.active["tenant/10003"].Mode = "seat", "seat"
+	f.plans.active["tenant/10003"].Seats = 1
+	q, err := f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "tenant", Kind: "addon",
+		AddonAgentIDs: []string{"kt"}}, "10003")
+	require.NoError(t, err)
+	require.Equal(t, 1, q.Addons[0].Months)
+	require.Equal(t, 0, q.Addons[0].LeftoverDays)
+	require.Equal(t, int64(50_000), q.Addons[0].AmountVND)
+}
+
+// Review R3: two pending renewals, one with an add-on: whichever is
+// confirmed second was priced against an end that has moved → 409.
+func TestRenewalPricedAgainstAMovedEndIsRefused(t *testing.T) {
+	f := newBillingFixture(t)
+	withAddonCatalogue(f)
+	ctx := context.Background()
+	end := endOfVN(2026, 12, 31)
+	f.plans.active["tenant/10003"] = &types.UsageSubscription{ID: "sub-1", ScopeType: "tenant", ScopeID: "10003",
+		PlanID: "pool", Mode: "pool", StartsAt: billingNow.AddDate(0, -1, 0), EndsAt: &end,
+		Status: types.UsageSubscriptionActive}
+	withAddon, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1,
+		AddonAgentIDs: []string{"thue"}}, "10003", "u1")
+	require.NoError(t, err)
+	require.Equal(t, end, *withAddon.Addons[0].SubscriptionEnd)
+	plain, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1}, "10003", "u2")
+	require.NoError(t, err)
+	_, err = f.svc.ConfirmOrder(ctx, plain.ID, "sa")
+	require.NoError(t, err)
+	_, err = f.svc.ConfirmOrder(ctx, withAddon.ID, "sa")
+	require.Equal(t, 409, appErrHTTP(t, err))
+	require.Nil(t, f.right("sub-1", "thue"), "no add-on for a period it did not pay for")
+	res := f.pay(t, types.UsagePaymentWebhookRequest{TransactionID: "FT3", AmountVND: withAddon.TotalVND, Content: withAddon.OrderCode})
+	require.Equal(t, types.UsagePaymentConfirmFailed, res.Transaction.Status)
+}
+
+// Review R3/6: a renewal adding seats pays the added seats on a held
+// add-on it does not buy again ("seats only"), without extending it.
+func TestSeatIncreaseChargesHeldAddonNotBoughtAgain(t *testing.T) {
+	f := newBillingFixture(t)
+	withAddonCatalogue(f)
+	ctx := context.Background()
+	end := endOfVN(2026, 12, 23) // 2 months + 10 dates after 13/10 17:00 VN
+	held := endOfVN(2026, 12, 23)
+	f.plans.active["tenant/10003"] = &types.UsageSubscription{ID: "sub-1", ScopeType: "tenant", ScopeID: "10003",
+		PlanID: "seat", Mode: "seat", Seats: 3, StartsAt: billingNow.AddDate(0, -1, 0), EndsAt: &end,
+		Status: types.UsageSubscriptionActive}
+	require.NoError(t, f.plans.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+		SubscriptionID: "sub-1", AgentID: "thue", StartsAt: billingNow, EndsAt: &held, PriceVND: 99_000}))
+
+	o, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 5},
+		"10003", "u1")
+	require.NoError(t, err)
+	require.Len(t, o.Addons, 1)
+	line := o.Addons[0]
+	require.True(t, line.SeatsOnly)
+	require.Equal(t, 2, line.ExtraUnits)
+	require.Equal(t, int64(99_000*2*2+99_000), line.AmountVND, "2 seats × (2 months + ½)")
+	_, err = f.svc.ConfirmOrder(ctx, o.ID, "sa")
+	require.NoError(t, err)
+	require.Equal(t, held, *f.right("sub-1", "thue").EndsAt, "the right is not extended by a seats-only line")
 }

@@ -54,6 +54,13 @@ type UsageOrderAddonLine struct {
 	// the added seats for the time the held right still covers.
 	ExtraUnits    int   `json:"extra_units,omitempty"`
 	ExtraUnitsVND int64 `json:"extra_units_vnd,omitempty"`
+	// SeatsOnly: a held add-on the order does not buy again, charged only
+	// for the seats the order adds (ExtraUnits*); its right is not extended.
+	SeatsOnly bool `json:"seats_only,omitempty"`
+	// SubscriptionEnd: renewal — the subscription end the line was priced
+	// against; if it has moved by the time the order is confirmed (another
+	// order renewed it meanwhile) the order is refused (409).
+	SubscriptionEnd *time.Time `json:"subscription_end,omitempty"`
 }
 
 // UsageOrderAddonLines is the addons jsonb of usage_orders.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -70,12 +71,14 @@ func (s *usageBillingService) sellableAddons(
 //     that end is charged; one that already covers the new period is
 //     refused (addon_held).
 //   - Either way, seats added on a held right pay for the added seats while
-//     the held right still runs.
+//     the held right still runs — also for a held add-on the order does not
+//     buy again (a "seats only" line that does not extend the right).
+//   - Renewal lines record the subscription end they were priced against.
 func (s *usageBillingService) priceAddonsWithPlan(
 	ctx context.Context, q *types.UsageQuote, agentIDs []string, scopeID string,
 ) error {
 	rows, err := s.sellableAddons(ctx, q.Plan.ID, agentIDs)
-	if err != nil || len(rows) == 0 {
+	if err != nil {
 		return err
 	}
 	now := s.now()
@@ -114,6 +117,8 @@ func (s *usageBillingService) priceAddonsWithPlan(
 		case renewal && cur.EndsAt != nil && cur.EndsAt.After(now):
 			oldEnd := *cur.EndsAt
 			newEnd := types.SubscriptionEndVN(oldEnd, q.Months)
+			priced := oldEnd
+			line.SubscriptionEnd = &priced
 			covered := now
 			if h != nil {
 				covered = oldEnd
@@ -167,6 +172,45 @@ func (s *usageBillingService) priceAddonsWithPlan(
 			line.AmountVND = a.PriceVND * int64(units) * int64(q.Months)
 		}
 		q.Addons = append(q.Addons, line)
+	}
+	// held add-ons the order does not buy again still pay for added seats
+	if cur != nil {
+		heldUnits := addonUnits(cur.Mode, cur.Seats)
+		bought := map[string]bool{}
+		for _, a := range rows {
+			bought[a.AgentID] = true
+		}
+		ids := make([]string, 0, len(held))
+		for id := range held {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			h := held[id]
+			if bought[id] || units <= heldUnits {
+				continue
+			}
+			covered := h.EndsAt
+			if covered == nil {
+				covered = cur.EndsAt
+			}
+			if covered == nil || !covered.After(now) {
+				continue
+			}
+			line := types.UsageOrderAddonLine{
+				AgentID: id, Name: h.AgentName, UnitPriceVND: h.PriceVND, SeatsOnly: true,
+				ExtraUnits: units - heldUnits, CoveredUntil: covered,
+			}
+			_, _, _, line.ExtraUnitsVND = types.PriceAddonRemainder(h.PriceVND, units-heldUnits, now, *covered)
+			line.AmountVND = line.ExtraUnitsVND
+			if renewal && cur.EndsAt != nil {
+				priced := *cur.EndsAt
+				line.SubscriptionEnd = &priced
+			}
+			if line.AmountVND > 0 {
+				q.Addons = append(q.Addons, line)
+			}
+		}
 	}
 	q.AddonsVND = q.Addons.Total()
 	q.SubtotalVND += q.AddonsVND
@@ -337,6 +381,9 @@ func (s *usageBillingService) grantOrderAddons(
 	}
 	orderID := o.ID
 	for _, line := range o.Addons {
+		if line.SeatsOnly {
+			continue // pays for added seats; the right keeps its end
+		}
 		end := sub.EndsAt
 		if line.PaidUntil != nil {
 			e := *line.PaidUntil
@@ -362,7 +409,9 @@ func (s *usageBillingService) grantOrderAddons(
 func orderAddonIDs(o *types.UsageOrder) map[string]bool {
 	out := make(map[string]bool, len(o.Addons))
 	for _, l := range o.Addons {
-		out[l.AgentID] = true
+		if !l.SeatsOnly {
+			out[l.AgentID] = true
+		}
 	}
 	return out
 }
@@ -471,4 +520,22 @@ func (s *usageBillingService) ScopeAddons(ctx context.Context, scopeType, scopeI
 		})
 	}
 	return out, nil
+}
+
+// refuseMovedSubscription refuses a renewal whose add-on lines were priced
+// against another subscription end than the current one (another order
+// renewed it meanwhile): confirmed, it would grant the add-on for a period
+// it did not pay for.
+func refuseMovedSubscription(o *types.UsageOrder, cur *types.UsageSubscription) error {
+	for _, l := range o.Addons {
+		if l.SubscriptionEnd == nil {
+			continue
+		}
+		if cur.EndsAt == nil || !cur.EndsAt.Equal(*l.SubscriptionEnd) {
+			return apperrors.NewConflictError(fmt.Sprintf(
+				"the subscription changed since order %s was priced; cancel it and order again", o.OrderCode)).
+				WithDetails(map[string]string{"reason": "subscription_changed"})
+		}
+	}
+	return nil
 }
