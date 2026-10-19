@@ -40,8 +40,8 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "WeRAG - Tra cứu tài liệu AI",
-  description: "WeRAG — Tra cứu tài liệu AI & Hệ thống khai thác tri thức thông minh",
+  title: "weRAG — Trợ lý pháp luật",
+  description: "weRAG — Trợ lý pháp luật: tra cứu, hỏi đáp văn bản pháp luật và đối chiếu nguồn trích dẫn.",
   icons: {
     icon: "/icon.png",
     apple: "/icon.png",

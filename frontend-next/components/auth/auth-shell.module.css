@@ -1,4 +1,5 @@
 .shell{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(420px,1fr);min-height:100svh;background:#fff;color:#172b45;color-scheme:light;font-family:var(--font-sans);letter-spacing:0}
+.brand>div>small{font-size:11px;line-height:1.4;letter-spacing:0;margin-top:4px}
 .showcase{position:relative;display:flex;flex-direction:column;overflow:hidden;padding:36px 7%;background:radial-gradient(ellipse at 80% 42%,#203f60 0,transparent 55%),#10263f;color:#fff}
 .showcase:before{content:"";position:absolute;inset:0;background-image:radial-gradient(#ffffff12 1px,transparent 1px);background-size:26px 26px;pointer-events:none}
 .brand,.story,.showcaseFooter{position:relative;z-index:1}.brand{display:flex;gap:13px;align-items:center}.brand strong{font-size:25px;letter-spacing:-1px}.brand strong span{color:#c9ae7a;padding-left:8px}.brand small{display:block;font-size:9px;letter-spacing:2px;color:#bfcede;margin-top:2px}

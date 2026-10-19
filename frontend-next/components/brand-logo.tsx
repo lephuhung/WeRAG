@@ -7,22 +7,21 @@ interface BrandLogoProps {
 }
 
 /**
- * BrandLogo — Biểu tượng Logo đại diện cho hệ thống Tra cứu tài liệu (WeRAG).
- * Theo yêu cầu: Logo chỉ gồm ảnh/icon biểu tượng, không kèm text title.
+ * Shared open-book mark for weRAG — Trợ lý pháp luật.
  */
 export function BrandLogo({ size = 36, className = "", priority = false }: BrandLogoProps) {
   return (
     <div
-      className={`relative inline-flex items-center justify-center shrink-0 overflow-hidden rounded-xl shadow-sm ${className}`}
+      className={`relative inline-flex shrink-0 items-center justify-center ${className}`}
       style={{ width: size, height: size }}
     >
       <Image
-        src="/logo.png"
-        alt="Logo Tra cứu tài liệu"
+        src="/brand-mark.svg"
+        alt="weRAG — Trợ lý pháp luật"
         width={size}
         height={size}
-        priority={priority}
-        className="h-full w-full object-cover"
+        preload={priority}
+        className="h-full w-full object-contain"
       />
     </div>
   );

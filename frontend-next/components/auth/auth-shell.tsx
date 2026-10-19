@@ -9,7 +9,7 @@ export function AuthShell({ children, mode }: { children: ReactNode; mode: "logi
       <section className={styles.showcase} aria-label="Giới thiệu WeRAG">
         <Link href="/" className={styles.brand} aria-label="WeRAG — Về trang chủ">
           <BrandLogo size={44} priority />
-          <div><strong>WeRAG<span> / </span></strong><small>TRỢ LÝ TRI THỨC PHÁP LUẬT</small></div>
+          <div><strong>weRAG</strong><small>Trợ lý pháp luật</small></div>
         </Link>
         <div className={styles.story}>
           <p className={styles.eyebrow}><span /> KẾT NỐI TRI THỨC · LÀM RÕ CĂN CỨ</p>

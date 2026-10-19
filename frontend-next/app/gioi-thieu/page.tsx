@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { BrandLogo } from "@/components/brand-logo";
 import { LandingPricing } from "./pricing";
 import styles from "./page.module.css";
 
 export const metadata: Metadata = {
-  title: "WeRAG — Tri thức của bạn. Sức mạnh của AI.",
-  description: "Khám phá WeRAG: hỏi đáp tài liệu AI, quản lý kho tri thức, trợ lý chuyên biệt và các gói sử dụng cho cá nhân, đội nhóm.",
+  title: "weRAG — Trợ lý pháp luật",
+  description: "Khám phá weRAG: tra cứu, hỏi đáp văn bản pháp luật có nguồn trích dẫn cho cá nhân, đội nhóm và tổ chức.",
 };
 
 const features = [
@@ -21,7 +22,7 @@ export default function MarketingLandingPage() {
   return <div className={styles.page} lang="vi">
     <a href="#noi-dung" className={styles.skip}>Đến nội dung chính</a>
     <header className={styles.header}>
-      <Link href="/" className={styles.brand} aria-label="WeRAG — Trang chủ"><span className={styles.mark}>W</span> WeRAG<span className={styles.brandNote}> / KNOWLEDGE AI</span></Link>
+      <Link href="/" className={styles.brand} aria-label="weRAG — Trợ lý pháp luật — Trang chủ"><BrandLogo size={38} priority /><span className={styles.brandText}><strong>weRAG</strong><small>Trợ lý pháp luật</small></span></Link>
       <nav aria-label="Điều hướng chính"><a href="#tinh-nang">Tính năng</a><a href="#cach-hoat-dong">Cách hoạt động</a><a href="#goi-cuoc">Gói cước</a></nav>
       <div className={styles.headerActions}><Link href="/login" className={styles.login}>Đăng nhập</Link><Link href="/platform/creatChat" className={styles.primary}>Vào ứng dụng <span aria-hidden="true">↗</span></Link></div>
     </header>
@@ -34,7 +35,7 @@ export default function MarketingLandingPage() {
           <p className={styles.heroNote}>Dành cho cá nhân, đội nhóm và tổ chức.</p>
         </div>
         <div className={styles.preview} aria-label="Ví dụ minh họa hỏi đáp tài liệu">
-          <div className={styles.previewTop}><span className={styles.mark}>W</span><span>Không gian tri thức</span><span className={styles.demoLabel}>MINH HỌA</span></div>
+          <div className={styles.previewTop}><BrandLogo size={28} /><span>Trợ lý pháp luật</span><span className={styles.demoLabel}>MINH HỌA</span></div>
           <div className={styles.previewBody}><p className={styles.smallLabel}>NGUỒN TRI THỨC CỦA BẠN</p><div className={styles.files}><span>▤ &nbsp; Quy trình nội bộ.pdf</span><span>▤ &nbsp; Hướng dẫn sản phẩm.docx</span></div>
             <div className={styles.question}>Tóm tắt những điểm chính trong tài liệu này.</div>
             <div className={styles.answer}><span className={styles.answerIcon}>✳</span><div><strong>Từ thông tin đến hiểu biết.</strong><p>Đặt câu hỏi, khám phá nội dung và quay lại nguồn tham chiếu ngay trong cuộc trò chuyện.</p><span className={styles.source}>↗ Nguồn tham chiếu · Tài liệu gốc</span></div></div>
@@ -53,6 +54,6 @@ export default function MarketingLandingPage() {
       <section className={`${styles.section} ${styles.faq}`}><p className={styles.eyebrow}>GIẢI ĐÁP TRƯỚC KHI BẮT ĐẦU</p><h2>Bạn có thể muốn biết.</h2>{[["WeRAG giúp tôi làm được gì?", "Bạn có thể tổ chức kho tri thức, hỏi đáp trên tài liệu, tạo trợ lý AI chuyên biệt và sử dụng các tích hợp phục vụ công việc."], ["Làm thế nào để xem giá và mua gói?", "Bạn có thể xem giá và hạn mức các gói đang mở bán ngay trên trang này mà không cần đăng nhập. Khi chọn mua, hãy đăng nhập vào ứng dụng để xác nhận thời hạn và tổng tiền."], ["Đội nhóm có thể dùng chung gói không?", "Hệ thống hỗ trợ gói cho không gian làm việc, với hạn mức dùng chung hoặc theo số chỗ tùy cấu hình của từng gói."], ["Câu trả lời có nguồn tham chiếu không?", "Khi tra cứu kho tri thức, bạn có thể theo dõi các nguồn được truy xuất để đối chiếu với tài liệu gốc. Hãy kiểm tra nội dung nguồn trước khi sử dụng thông tin quan trọng."]].map(([q,a]) => <details key={q}><summary>{q}<span aria-hidden="true">+</span></summary><p>{a}</p></details>)}</section>
       <section className={styles.cta}><p className={styles.eyebrow}>BẮT ĐẦU TỪ TRI THỨC BẠN ĐÃ CÓ</p><h2>Câu trả lời tiếp theo<br />nằm trong tài liệu của bạn.</h2><Link href="/register" className={styles.primary}>Tạo tài khoản WeRAG <span aria-hidden="true">↗</span></Link></section>
     </main>
-    <footer className={styles.footer}><Link href="/" className={styles.brand}>WeRAG<span className={styles.brandNote}> / KNOWLEDGE AI</span></Link><span>Tri thức được kết nối.</span><div><a href="#goi-cuoc">Gói cước</a><Link href="/platform/creatChat">Vào ứng dụng ↗</Link></div></footer>
+    <footer className={styles.footer}><Link href="/" className={styles.brand}><BrandLogo size={38} /><span className={styles.brandText}><strong>weRAG</strong><small>Trợ lý pháp luật</small></span></Link><span>Tri thức được kết nối.</span><div><a href="#goi-cuoc">Gói cước</a><Link href="/platform/creatChat">Vào ứng dụng ↗</Link></div></footer>
   </div>;
 }

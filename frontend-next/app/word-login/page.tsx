@@ -87,6 +87,7 @@ function WordLoginApproval() {
       <div className={styles.panel}>
         <div className={styles.card}>
           <div className={styles.logo}><BrandLogo size={56} priority /></div>
+          <div className="mb-4 text-center"><strong className="text-2xl tracking-tight text-ink">weRAG</strong><p className="mt-1 text-xs text-muted">Trợ lý pháp luật</p></div>
           <p className={styles.eyebrow}>WERAG · MICROSOFT WORD</p>
           <h1 className={styles.title}>{t("wordLogin.title")}</h1>
 
