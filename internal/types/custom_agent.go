@@ -83,6 +83,11 @@ type CustomAgent struct {
 	// Agent configuration
 	Config CustomAgentConfig `yaml:"config" json:"config" gorm:"type:json"`
 
+	// AppliesToTenantIDs is "Tổ chức áp dụng": the workspaces allowed to use
+	// this agent when they inherit it from a configuration profile. Empty =
+	// every workspace on the profile. Built-in agents are never scoped.
+	AppliesToTenantIDs AgentTenantScope `yaml:"applies_to_tenant_ids" json:"applies_to_tenant_ids" gorm:"column:applies_to_tenant_ids;type:json"`
+
 	// Timestamps
 	CreatedAt time.Time      `yaml:"created_at" json:"created_at"`
 	UpdatedAt time.Time      `yaml:"updated_at" json:"updated_at"`

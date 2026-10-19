@@ -119,6 +119,18 @@ type CustomAgentRepository interface {
 	//   - Possible errors such as database errors, etc.
 	ListAgentsByTenantID(ctx context.Context, tenantID uint64) ([]*types.CustomAgent, error)
 
+	// GetAgentByIDIgnoringTenantScope and ListAgentsByTenantIDIgnoringTenantScope
+	// skip the "Tổ chức áp dụng" (applies_to_tenant_ids) filter that
+	// GetAgentByID and ListAgentsByTenantID apply. Only a SuperAdmin, who
+	// manages every agent, reads through them.
+	GetAgentByIDIgnoringTenantScope(ctx context.Context, id string, tenantID uint64) (*types.CustomAgent, error)
+	ListAgentsByTenantIDIgnoringTenantScope(ctx context.Context, tenantID uint64) ([]*types.CustomAgent, error)
+
+	// InvalidScopeTenantIDs returns the ids that cannot be in the "Tổ chức
+	// áp dụng" list of an agent owned by ownerTenantID (not a live workspace
+	// inheriting from that configuration profile).
+	InvalidScopeTenantIDs(ctx context.Context, ownerTenantID uint64, tenantIDs []uint64) ([]uint64, error)
+
 	// UpdateAgent updates an agent record
 	// Parameters:
 	//   - ctx: Context information

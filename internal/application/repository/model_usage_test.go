@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS custom_agents (
     tenant_id INTEGER NOT NULL,
     created_by VARCHAR(36),
     config TEXT NOT NULL DEFAULT '{}',
+    applies_to_tenant_ids TEXT NOT NULL DEFAULT '[]',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     deleted_at DATETIME,
@@ -35,6 +36,7 @@ const tenantsScopeTestDDL = `
 CREATE TABLE IF NOT EXISTS tenants (
     id INTEGER PRIMARY KEY,
     kind VARCHAR(16) NOT NULL DEFAULT 'workspace',
+    name VARCHAR(255),
     config_profile_id INTEGER,
     deleted_at DATETIME
 );
