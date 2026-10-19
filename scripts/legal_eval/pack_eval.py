@@ -101,7 +101,7 @@ ANSWER_BLOCK_MARKER = "\n\n---\n**Kết quả tính (do hệ thống tính — n
 CATEGORIES = {"advice", "draft_trap", "tax", "refusal", "out_of_scope", "status"}
 # categories where the pack agent may not fail a case the baseline passes (§7 trap + nli)
 REGRESSION_CATEGORIES = {"draft_trap", "status", "refusal"}
-KNOWN_TOOLS = {"search_knowledge", "compare_tax_methods", "check_legal_status", "find_related_legal_documents",
+KNOWN_TOOLS = {"search_knowledge", "compare_tax_methods", "calculate_household_tax", "check_legal_status", "find_related_legal_documents",
                "read_file", "read_document", "resolve_abbreviation", "search_document_section"}
 STATUS_TOOLS = {"check_legal_status", "find_related_legal_documents"}
 CHECK_TYPES = {
