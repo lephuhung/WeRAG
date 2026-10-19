@@ -348,20 +348,21 @@ func (s *userService) buildMembershipsForUser(
 		if m == nil || m.Status != types.TenantMemberStatusActive {
 			continue
 		}
-		name := ""
+		var tenant *types.Tenant
 		if activeTenant != nil && m.TenantID == activeTenant.ID {
-			name = activeTenant.Name
-		} else if t, ok := tenantByID[m.TenantID]; ok && t != nil {
-			name = t.Name
+			tenant = activeTenant
+		} else if t, ok := tenantByID[m.TenantID]; ok {
+			tenant = t
 		}
 		// Drop memberships whose tenant row is gone (deleted tenant or
-		// stale tenant_members left over from before cascade delete).
-		if strings.TrimSpace(name) == "" {
+		// stale tenant_members left over from before cascade delete); the
+		// guest-chat check in auth applies the same rule.
+		if !types.CountsAsMembership(m, tenant) {
 			continue
 		}
 		out = append(out, types.Membership{
 			TenantID:   m.TenantID,
-			TenantName: name,
+			TenantName: tenant.Name,
 			Role:       m.Role,
 		})
 	}
@@ -1177,8 +1178,9 @@ func (s *userService) SwitchTenant(
 	if err != nil {
 		return nil, fmt.Errorf("load target organization: %w", err)
 	}
-	// A configuration profile is not a workspace anyone works in.
-	if tenant.IsConfigProfile() {
+	// A configuration profile or the public portal is not an organization
+	// anyone works in.
+	if tenant.IsHiddenTenant() {
 		return nil, ErrMembershipNotFound
 	}
 

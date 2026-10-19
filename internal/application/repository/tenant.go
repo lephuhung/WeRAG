@@ -142,9 +142,11 @@ func (r *tenantRepository) SyncProfileSettings(ctx context.Context, profileID, w
 		sets = append(sets, col+" = (SELECT p."+col+" FROM tenants p WHERE p.id = ?)")
 		args = append(args, profileID)
 	}
+	// The public portal inherits like an organization: guest chat retrieves
+	// with the profile's engines and credentials.
 	sql := "UPDATE tenants SET " + strings.Join(sets, ", ") +
-		" WHERE config_profile_id = ? AND kind = ? AND deleted_at IS NULL"
-	args = append(args, profileID, types.TenantKindWorkspace)
+		" WHERE config_profile_id = ? AND kind IN (?, ?) AND deleted_at IS NULL"
+	args = append(args, profileID, types.TenantKindWorkspace, types.TenantKindPublicPortal)
 	if workspaceID != 0 {
 		sql += " AND id = ?"
 		args = append(args, workspaceID)
@@ -165,6 +167,20 @@ func (r *tenantRepository) GetDefaultConfigProfile(ctx context.Context) (*types.
 		return nil, err
 	}
 	return &profile, nil
+}
+
+// GetPublicPortal returns the oldest live public portal tenant.
+func (r *tenantRepository) GetPublicPortal(ctx context.Context) (*types.Tenant, error) {
+	var portal types.Tenant
+	err := r.db.WithContext(ctx).Where("kind = ?", types.TenantKindPublicPortal).
+		Order("id ASC").First(&portal).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &portal, nil
 }
 
 // SearchTenants searches tenants with pagination and filters

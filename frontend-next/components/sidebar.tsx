@@ -11,6 +11,7 @@ import {
   useSessionActivityEntries,
 } from "@/lib/session-activity";
 import { useT } from "@/lib/i18n";
+import { useTenantRole } from "@/lib/auth";
 import { useCommandPalette } from "@/components/command-palette/command-palette-context";
 import { AccountMenu } from "@/components/account-menu";
 import { BrandLogo } from "@/components/brand-logo";
@@ -32,7 +33,7 @@ import { vnDaysAgo } from "@/lib/datetime";
 const NAV = [
   { href: "/platform/creatChat", labelKey: "nav.newChat", icon: IconChat, match: ["/platform/creatChat", "/platform/chat"] },
   { href: "/platform/knowledge-bases", labelKey: "nav.knowledgeBases", icon: IconBook, match: ["/platform/knowledge-bases"] },
-  { href: "/platform/artifacts", labelKey: "nav.artifacts", icon: IconArtifact, match: ["/platform/artifacts"] },
+  { href: "/platform/artifacts", labelKey: "nav.artifacts", icon: IconArtifact, match: ["/platform/artifacts"], orgOnly: true },
 ] as const;
 
 function isActive(pathname: string | null, match: readonly string[]) {
@@ -57,6 +58,9 @@ export function Sidebar() {
   const router = useRouter();
   const { t } = useT();
   const palette = useCommandPalette();
+  // a guest (no organization) has chat + public KBs; the artifacts library
+  // needs an organization
+  const { isGuest } = useTenantRole();
   const [live, setLive] = useState<SessionRow[] | null>(null);
   // Sessions with an in-flight assistant turn (this tab marked them, or they
   // were left mid-generation). Rows show a spinner; detached entries are
@@ -112,6 +116,8 @@ export function Sidebar() {
     };
   }, []);
 
+  // reloaded when the account kind changes: a guest's sessions live in the
+  // public portal, a member's in the organization
   useEffect(() => {
     let alive = true;
     listSessions(1, 30)
@@ -124,7 +130,7 @@ export function Sidebar() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [isGuest]);
 
   useEffect(() => {
     const handleTitleUpdated = (e: Event) => {
@@ -260,7 +266,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex flex-col gap-0.5 px-3">
-        {NAV.map((item) => (
+        {NAV.filter((item) => !(isGuest && "orgOnly" in item && item.orgOnly)).map((item) => (
           <Link
             key={item.href}
             href={item.href}

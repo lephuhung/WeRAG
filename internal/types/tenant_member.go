@@ -1,6 +1,7 @@
 package types
 
 import (
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -176,6 +177,18 @@ const (
 	// only public/published KBs, cannot create or own KBs, gets no ACL.
 	MembershipStateGuest MembershipState = "guest"
 )
+
+// CountsAsMembership reports whether a tenant_members row makes the account
+// a member: active, and its tenant row still live (tenant, the row loaded
+// for m.TenantID, nil when gone) with a name. Memberships of deleted
+// tenants (stale rows from before cascade delete) do not count. GET /auth/me
+// (the memberships it lists, hence membership_state) and the guest-chat
+// check in auth both use it, so the UI and the server agree on who is a
+// Guest.
+func CountsAsMembership(m *TenantMember, tenant *Tenant) bool {
+	return m != nil && m.TenantID != 0 && m.Status == TenantMemberStatusActive &&
+		tenant != nil && strings.TrimSpace(tenant.Name) != ""
+}
 
 // ResolveMembershipState derives the account kind from the SuperAdmin flag
 // and the caller's active memberships (as built for the login response,

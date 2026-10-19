@@ -831,7 +831,7 @@ func authorizeAgentKnowledgeScope(ctx context.Context, cfg types.CustomAgentConf
 	switch strings.ToLower(strings.TrimSpace(cfg.KBSelectionMode)) {
 	case "none":
 		return nil
-	case "all":
+	case "all", types.KBSelectionModePublic:
 		return errors.NewForbiddenError("API key scope does not allow agents that use all knowledge bases")
 	case "selected":
 		return types.AuthorizeTenantAPIKeyKnowledgeBases(ctx, cfg.KnowledgeBases...)

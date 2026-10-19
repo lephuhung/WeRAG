@@ -170,6 +170,13 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		logger.Error(ctx, "Failed to parse request data", err)
 		return nil, nil, errors.NewBadRequestError(err.Error())
 	}
+	// A Guest in the public portal runs the public lookup and nothing else.
+	portal := types.InPublicPortal(ctx)
+	if portal {
+		restrictPublicPortalRequest(ctx, &request)
+		// a Guest cannot see or delete memory: none is recalled or saved
+		ctx = types.WithMemoryDisabled(ctx)
+	}
 
 	// Validate query content
 	if request.Query == "" {
@@ -222,13 +229,24 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 	// A session that holds an editable document belongs to the document
 	// assistant: another agent has no tools for the document, so a request
 	// from a stale tab or the API naming one is run by the assistant.
-	pinnedAgentID, documents := h.pinDocumentAssistantForTurn(ctx, session, request.AgentID)
-	request.AgentID = pinnedAgentID
+	// The portal has no document routes, so it never pins.
+	documents := sessionDocuments{known: true}
+	if !portal {
+		var pinnedAgentID string
+		pinnedAgentID, documents = h.pinDocumentAssistantForTurn(ctx, session, request.AgentID)
+		request.AgentID = pinnedAgentID
+	}
 
 	// Get custom agent if agent_id is provided.
 	customAgent, effectiveTenantID := h.resolveAgent(ctx, c, request.AgentID)
 	if err := unavailableAgentError(request.AgentID, customAgent); err != nil {
 		return nil, nil, err
+	}
+	if portal {
+		if err := publicLookupUnavailable(customAgent); err != nil {
+			return nil, nil, err
+		}
+		customAgent = enforcePublicLookupConfig(customAgent)
 	}
 
 	// Merge @mentioned items into knowledge_base_ids and knowledge_ids
@@ -1605,7 +1623,7 @@ func (h *Handler) runVLMAnalysisIfNeeded(streamCtx *sseStreamContext, reqCtx *qa
 		agentWillResolveKBs := false
 		if !hasRequestKBs && reqCtx.customAgent != nil && !reqCtx.customAgent.Config.RetrieveKBOnlyWhenMentioned {
 			switch reqCtx.customAgent.Config.KBSelectionMode {
-			case "all":
+			case "all", types.KBSelectionModePublic:
 				agentWillResolveKBs = true
 			case "selected", "":
 				agentWillResolveKBs = len(reqCtx.customAgent.Config.KnowledgeBases) > 0

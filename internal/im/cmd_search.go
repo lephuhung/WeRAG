@@ -80,6 +80,15 @@ func (c *SearchCommand) Execute(ctx context.Context, cmdCtx *CommandContext, arg
 						cmdCtx.CustomAgent.ID, skipped, len(allKBs))
 				}
 			}
+		case types.KBSelectionModePublic:
+			// Platform public knowledge bases only, as the QA pipeline.
+			if allKBs, err := c.kbService.ListKnowledgeBases(ctx); err == nil {
+				for _, kb := range allKBs {
+					if access.IsPlatformPublicKB(kb) {
+						kbIDs = append(kbIDs, kb.ID)
+					}
+				}
+			}
 		case "none":
 			// No knowledge bases configured — will return empty results.
 		case "selected":

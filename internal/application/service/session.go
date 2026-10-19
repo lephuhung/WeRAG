@@ -247,6 +247,12 @@ func (s *sessionService) CreateSession(ctx context.Context, session *types.Sessi
 		logger.Error(ctx, "Failed to create session: tenant ID cannot be empty")
 		return nil, stderrors.New("organization ID is required")
 	}
+	// A session without an owner is visible to its whole tenant; in the
+	// public portal that would be every Guest.
+	if types.InPublicPortal(ctx) && session.UserID == "" {
+		logger.Error(ctx, "Failed to create session: a public portal session needs an owner")
+		return nil, stderrors.New("a public portal session needs an owner")
+	}
 
 	logger.Infof(ctx, "Creating session, tenant ID: %d", session.TenantID)
 

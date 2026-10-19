@@ -199,15 +199,28 @@ func usageDenial(ent *types.UsageEntitlement, userID string) error {
 // A SuperAdmin is governed by their own package (the system-admin plan)
 // whatever workspace they are in; one promoted after migration 000140 gets
 // that subscription on the first lookup.
+//
+// A Guest in the public portal is governed by their own package alone: the
+// portal holds no subscription, and one without a package of their own gets
+// a subscription to the guest plan on the first lookup. Outside the portal
+// a guest-plan subscription counts for nothing (a Guest who joined a Tổ chức
+// draws on its package).
 func (g *usageGuard) Entitlement(ctx context.Context, tenantID uint64, userID string) (*types.UsageEntitlement, error) {
 	now := g.now()
 	realUser := userID != "" && !types.IsSyntheticUserID(userID)
 	systemAdmin := realUser && types.IsSystemAdminFromContext(ctx)
 	if systemAdmin {
-		ent, err := g.systemAdminEntitlement(ctx, userID, now)
+		ent, err := g.personalPlanEntitlement(ctx, userID, types.UsageSystemAdminPlanCode, "SuperAdmin", now)
 		if err != nil || ent != nil {
 			return ent, err
 		}
+	}
+	portal := portalTenant(ctx, tenantID)
+	if portal {
+		if !realUser {
+			return nil, nil
+		}
+		return g.personalPlanEntitlement(ctx, userID, types.UsageGuestPlanCode, "Khách", now)
 	}
 	if tenantID != 0 {
 		sub, err := g.plans.GetActiveSubscription(ctx, types.UsageScopeTenant, types.UsageTenantScopeID(tenantID))
@@ -246,8 +259,10 @@ func (g *usageGuard) Entitlement(ctx context.Context, tenantID uint64, userID st
 		if err != nil {
 			return nil, err
 		}
-		// a SuperAdmin package outlives a revoked SuperAdmin role: ignore it
-		if sub != nil && !(sub.Plan != nil && sub.Plan.Code == types.UsageSystemAdminPlanCode && !systemAdmin) {
+		// a SuperAdmin package outlives a revoked SuperAdmin role, and a
+		// guest package the account's Guest days: ignore both
+		role := rolePlan(subPlan(sub))
+		if sub != nil && !(role == types.UsageSystemAdminPlanCode && !systemAdmin) && role != types.UsageGuestPlanCode {
 			ent := entitlementFrom(sub, types.UsageScopeUser, now)
 			ent.HasSeat = true
 			ent.CountedScope = types.UsageScopeUser
@@ -260,16 +275,40 @@ func (g *usageGuard) Entitlement(ctx context.Context, tenantID uint64, userID st
 	return nil, nil
 }
 
-// systemAdminEntitlement is a SuperAdmin's personal package, creating the
-// subscription to the system-admin plan when they have none. Nil when the
-// plan was deleted: the caller then falls back to the ordinary lookup.
-func (g *usageGuard) systemAdminEntitlement(ctx context.Context, userID string, now time.Time) (*types.UsageEntitlement, error) {
+// portalTenant reports whether tenantID is the public portal the request
+// runs in (types.InPublicPortal for the same tenant).
+func portalTenant(ctx context.Context, tenantID uint64) bool {
+	t, ok := types.TenantInfoFromContext(ctx)
+	return ok && tenantID != 0 && t.ID == tenantID && t.IsPublicPortal()
+}
+
+// personalPlanEntitlement is a person's own package, creating the
+// subscription to the plan named by planCode when they have none: the
+// system-admin plan for a SuperAdmin, the guest plan for a Guest. Nil when
+// the plan was deleted: a SuperAdmin then falls back to the ordinary lookup,
+// a Guest is refused (no package).
+//
+// A package the person already holds wins (one they bought), except the
+// other role package — a system-admin one kept after losing the SuperAdmin
+// role, a guest one kept after becoming SuperAdmin — which is closed and
+// replaced (a scope holds one active subscription).
+func (g *usageGuard) personalPlanEntitlement(
+	ctx context.Context, userID, planCode, note string, now time.Time,
+) (*types.UsageEntitlement, error) {
 	sub, err := g.plans.GetActiveSubscription(ctx, types.UsageScopeUser, userID)
 	if err != nil {
 		return nil, err
 	}
+	if role := rolePlan(subPlan(sub)); role != "" && role != planCode {
+		sub.Status = types.UsageSubscriptionCancelled
+		if err := g.plans.UpdateSubscription(ctx, sub); err != nil {
+			return nil, err
+		}
+		logger.Infof(ctx, "usage guard: %s package of %s closed for %s", role, userID, planCode)
+		sub = nil
+	}
 	if sub == nil {
-		plan, err := g.systemAdminPlan(ctx)
+		plan, err := g.planByCode(ctx, planCode)
 		if err != nil || plan == nil {
 			return nil, err
 		}
@@ -281,32 +320,79 @@ func (g *usageGuard) systemAdminEntitlement(ctx context.Context, userID string, 
 			Mode:      types.UsageModePool,
 			StartsAt:  now,
 			Status:    types.UsageSubscriptionActive,
-			Note:      "SuperAdmin",
+			Note:      note,
 		}
 		if err := g.plans.CreateSubscription(ctx, created); err != nil {
 			// a concurrent lookup may have created it first
-			logger.Warnf(ctx, "usage guard: system-admin subscription for %s: %v", userID, err)
+			logger.Warnf(ctx, "usage guard: %s subscription for %s: %v", planCode, userID, err)
 		}
 		if sub, err = g.plans.GetActiveSubscription(ctx, types.UsageScopeUser, userID); err != nil || sub == nil {
 			return nil, err
 		}
 	}
+	// A Guest whose bought package ran out still has the guest plan: its
+	// expired subscription stays the scope's one active row (billing renews
+	// it), so the guest plan applies without a subscription of its own.
+	if planCode == types.UsageGuestPlanCode && !sub.IsCurrentAt(now) &&
+		rolePlan(sub.Plan) != types.UsageGuestPlanCode {
+		plan, err := g.planByCode(ctx, planCode)
+		if err != nil {
+			return nil, err
+		}
+		if plan != nil {
+			sub = &types.UsageSubscription{
+				ScopeType: types.UsageScopeUser, ScopeID: userID, PlanID: plan.ID, Plan: plan,
+				Mode: types.UsageModePool, StartsAt: now, Status: types.UsageSubscriptionActive,
+			}
+		}
+	}
 	ent := entitlementFrom(sub, types.UsageScopeUser, now)
 	ent.HasSeat = true
 	ent.CountedScope = types.UsageScopeUser
-	if err := g.fillLimitStatus(ctx, ent, sub.EffectiveLimits(), types.UsageScopeUser, userID, now); err != nil {
+	// in the public portal the person's turns are counted apart (guest scope)
+	counterScope := types.UsageScopeUser
+	if planCode == types.UsageGuestPlanCode {
+		counterScope = types.UsageScopeGuest
+	}
+	if err := g.fillLimitStatus(ctx, ent, sub.EffectiveLimits(), counterScope, userID, now); err != nil {
 		return nil, err
 	}
 	return ent, nil
 }
 
-func (g *usageGuard) systemAdminPlan(ctx context.Context) (*types.UsagePlan, error) {
+// rolePlan names the role package p is — the packages that follow an
+// account's kind rather than a purchase: UsageSystemAdminPlanCode
+// (SuperAdmin, found by code) or UsageGuestPlanCode (Guest, found by the
+// fixed id migration 000172 seeds, so a plan someone else named "guest" is
+// never taken for it). "" for any other plan.
+func rolePlan(p *types.UsagePlan) string {
+	switch {
+	case p == nil:
+		return ""
+	case p.ID == types.UsageGuestPlanID:
+		return types.UsageGuestPlanCode
+	case p.Code == types.UsageSystemAdminPlanCode:
+		return types.UsageSystemAdminPlanCode
+	}
+	return ""
+}
+
+// subPlan is sub's plan, nil for no subscription.
+func subPlan(sub *types.UsageSubscription) *types.UsagePlan {
+	if sub == nil {
+		return nil
+	}
+	return sub.Plan
+}
+
+// planByCode finds a role package (see rolePlan).
+func (g *usageGuard) planByCode(ctx context.Context, code string) (*types.UsagePlan, error) {
 	plans, err := g.plans.ListPlans(ctx, true)
 	if err != nil {
 		return nil, err
 	}
 	for _, p := range plans {
-		if p.Code == types.UsageSystemAdminPlanCode {
+		if rolePlan(p) == code {
 			return p, nil
 		}
 	}

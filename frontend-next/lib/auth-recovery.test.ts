@@ -8,7 +8,9 @@ import { ApiError } from "./api-client.ts";
 import {
   isStaleTenantGuest,
   isTenantMembershipRequired,
+  isTenantRequired,
   loadWithStaleTenantRecovery,
+  tenantErrorCode,
 } from "./auth-recovery.ts";
 
 const unauthorized = () => new ApiError(401, "unauthorized");
@@ -226,5 +228,39 @@ describe("TENANT_MEMBERSHIP_REQUIRED (stale home tenant guest)", () => {
     );
     assert.equal(isStaleTenantGuest({ tenant_required: false, user: {} }), false);
     assert.equal(isStaleTenantGuest(undefined), false);
+  });
+
+  it("TENANT_REQUIRED (409) is a tenant rejection: retried tenantless, never a sign-out", async () => {
+    const tenantRequired = () =>
+      new ApiError(409, "Organization required", { error: "Organization required", code: "TENANT_REQUIRED" });
+    assert.equal(isTenantRequired(tenantRequired()), true);
+    assert.equal(isTenantRequired(new ApiError(409, "busy", { code: 1005 })), false);
+    assert.equal(isTenantRequired(new ApiError(403, "x", { code: "TENANT_REQUIRED" })), false);
+
+    const skips: boolean[] = [];
+    const recovered = await loadWithStaleTenantRecovery(async (skip) => {
+      skips.push(skip);
+      if (!skip) throw tenantRequired();
+      return "me";
+    }, true);
+    assert.deepEqual(recovered, { kind: "ok", value: "me", recoveredFromStaleTenant: true });
+    assert.deepEqual(skips, [false, true]);
+
+    const noTenant = await loadWithStaleTenantRecovery(async () => {
+      throw tenantRequired();
+    }, false);
+    assert.equal(noTenant.kind, "transient");
+  });
+
+  it("tenantErrorCode reads flat and nested string codes only", () => {
+    assert.equal(tenantErrorCode({ code: "TENANT_MEMBERSHIP_REQUIRED" }), "TENANT_MEMBERSHIP_REQUIRED");
+    assert.equal(tenantErrorCode({ error: { code: "TENANT_REQUIRED" } }), "TENANT_REQUIRED");
+    assert.equal(tenantErrorCode({ error: { code: 1005 } }), null);
+    assert.equal(tenantErrorCode("TENANT_REQUIRED"), null);
+    assert.equal(tenantErrorCode(null), null);
+    assert.equal(
+      isTenantMembershipRequired(new ApiError(403, "x", { error: { code: "TENANT_MEMBERSHIP_REQUIRED" } })),
+      true,
+    );
   });
 });

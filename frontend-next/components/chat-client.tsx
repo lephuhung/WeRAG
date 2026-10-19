@@ -11,7 +11,8 @@ import { splitDocumentMentions } from "@/lib/document-mentions";
 import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext, type MentionRequestItem } from "@/lib/chat-context";
 import { useT } from "@/lib/i18n";
 import { dayLabel, dayStarts, messageDateTime, messageTime } from "@/lib/message-time";
-import { chatErrorKey, isSessionLimitError } from "@/lib/api/chat-errors";
+import { chatErrorKey, chatErrorTextKey, isSessionLimitError } from "@/lib/api/chat-errors";
+import { shouldRefreshAccount } from "@/lib/guest-chat";
 import { sessionUsageFromComplete, type SessionUsage } from "@/lib/session-limits";
 import { ContextCompactedDivider, SessionLimitCard, SessionUsageBanner } from "@/components/chat/session-limit";
 import { ContextRing, useContextUsage } from "@/components/chat/context-ring";
@@ -118,6 +119,7 @@ import {
   type AgentStepItem,
 } from "@/components/chat/agent-steps";
 import { AbbreviationSuggestionCard } from "@/components/chat/abbreviation-suggestion-card";
+import { GuestChatNote } from "@/components/chat/guest-chat-note";
 import { ReferencesDrawer, type KnowledgeReferenceItem } from "@/components/chat/references-drawer";
 import { copyToClipboard } from "@/lib/clipboard";
 
@@ -892,9 +894,13 @@ const AssistantMessage = memo(function AssistantMessage({
   onIllustrationInsert,
   onIllustrationInserted,
   compact = false,
+  guest = false,
 }: {
   m: UiMessage;
   index: number;
+  /** Guest chat: no fork, follow-up suggestions, abbreviation or memory
+   * cards — their routes need an organization. */
+  guest?: boolean;
   /** Sends the message of a picked option (choice list under the answer). */
   onChoicePick?: (option: ChoiceOption) => Promise<void>;
   /** The cards are live only on the last turn; older ones show their text. */
@@ -973,7 +979,7 @@ const AssistantMessage = memo(function AssistantMessage({
         {hasPeopleCard && (
           <PeopleCard people={m.peopleData!} isLoadingMore={m.streaming} />
         )}
-        {(m.savedMemories?.length ?? 0) > 0 && <SavedMemoryNotice memories={m.savedMemories!} compact={compact} />}
+        {!guest && (m.savedMemories?.length ?? 0) > 0 && <SavedMemoryNotice memories={m.savedMemories!} compact={compact} />}
         {/* the card itself sits above the composer (see pendingScopeCard) */}
         {!m.streaming && m.scopeCard && scopeCardActive && (
           <p className="caption mt-2 text-muted-soft">{t("docws.scopeCard.pickBelow")}</p>
@@ -1017,7 +1023,7 @@ const AssistantMessage = memo(function AssistantMessage({
               onInserted={onIllustrationInserted}
             />
           ))}
-        {!m.streaming && (m.abbreviationCandidates?.length ?? 0) > 0 && (
+        {!guest && !m.streaming && (m.abbreviationCandidates?.length ?? 0) > 0 && (
           <AbbreviationSuggestionCard
             candidates={m.abbreviationCandidates!}
             refreshKey={abbreviationRefreshKey}
@@ -1033,8 +1039,8 @@ const AssistantMessage = memo(function AssistantMessage({
           <BotMessageActions
             content={m.content}
             createdAt={m.createdAt}
-            canFork={sessionId !== "new" && Boolean(m.assistantMessageId)}
-            onFork={m.assistantMessageId ? () => onFork(m) : undefined}
+            canFork={!guest && sessionId !== "new" && Boolean(m.assistantMessageId)}
+            onFork={!guest && m.assistantMessageId ? () => onFork(m) : undefined}
             onRegenerate={!busy ? () => onRegenerate(index) : undefined}
             feedback={
               sessionId !== "new" && m.assistantMessageId && m.isCompleted === true && !m.isError
@@ -1048,7 +1054,7 @@ const AssistantMessage = memo(function AssistantMessage({
             }
           />
         )}
-        {sessionId !== "new" && !compact && (
+        {sessionId !== "new" && !compact && !guest && (
           <FollowUpSuggestions
             sessionId={sessionId}
             messageId={m.assistantMessageId ?? null}
@@ -1101,8 +1107,11 @@ function ChatBody({ id }: { id: string }) {
     handoffCacheRef.current.resolved,
   );
   const ctx = useChatContext();
+  // Guest chat (no organization): public-lookup assistant only — no
+  // documents, forks, follow-ups or other organization-only calls.
+  const guest = ctx.isGuest;
   const { t: tr } = useT();
-  const { user } = useAuth();
+  const { user, refreshMe } = useAuth();
   // Non-admin callers never send a model override; the server resolves the
   // model assigned to the selected response mode.
   const canPickModel = user?.is_system_admin === true;
@@ -1258,7 +1267,8 @@ function ChatBody({ id }: { id: string }) {
     [id],
   );
   useEffect(() => {
-    if (id === "new") return;
+    // a guest's session holds no document (and the route needs an organization)
+    if (id === "new" || guest) return;
     let alive = true;
     getDocumentWorkspace(id)
       .then((v) => {
@@ -1270,7 +1280,7 @@ function ChatBody({ id }: { id: string }) {
     return () => {
       alive = false;
     };
-  }, [id, noteSessionDocument]);
+  }, [id, noteSessionDocument, guest]);
   useEffect(() => {
     if (docFileName && ctx.hydrated && ctx.settings.selectedAgentId !== BUILTIN_DOCUMENT_ASSISTANT_ID) {
       if (ctx.isMobile) ctx.hydrateSessionState({ agent_id: BUILTIN_DOCUMENT_ASSISTANT_ID, agent_enabled: true });
@@ -1613,6 +1623,20 @@ function ChatBody({ id }: { id: string }) {
   }, []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
+  // The account kind changed while the chat was open (a guest joined an
+  // organization, a member lost the last membership): the session belongs
+  // to the old kind. Read /auth/me again (the provider then reloads for the
+  // new kind) and leave for a new chat, dropping the stale session.
+  const onAccountError = (e: unknown, sessionCall = true): boolean => {
+    if (!shouldRefreshAccount(e, { isGuest: guest, sessionCall })) return false;
+    void refreshMe();
+    // also on the "new" route, whose URL already names the session a send made
+    if (typeof window !== "undefined" && window.location.pathname !== "/platform/creatChat") router.replace("/platform/creatChat");
+    return true;
+  };
+  const onAccountErrorRef = useRef(onAccountError);
+  onAccountErrorRef.current = onAccountError;
+
   // History and session details:
   // Mirrors Vue loadSessionAndHydrate: fetch session details to populate title
   // and hydrate input state (agent, model, KBs) from last_request_state.
@@ -1661,6 +1685,7 @@ function ChatBody({ id }: { id: string }) {
       })
       .catch((err) => {
         console.error("Failed to load session details:", err);
+        if (alive) onAccountErrorRef.current(err);
       });
 
     // If there is an initial query waiting to be auto-sent on mount,
@@ -1984,8 +2009,9 @@ function ChatBody({ id }: { id: string }) {
           updateSessionActivity(id, false);
         }
       })
-      .catch(() => {
+      .catch((err) => {
         /* keep empty — no seed fallback so failures stay visible */
+        if (alive) onAccountErrorRef.current(err);
       });
     return () => {
       alive = false;
@@ -2098,8 +2124,9 @@ function ChatBody({ id }: { id: string }) {
         // Stale upload/session errors never surface into the new session.
         if (!isLive()) return;
         const key = chatErrorKey(e);
-        setError(key ? tr(key) : e instanceof Error ? e.message : tr("chat.err.generic"));
+        setError(key ? tr(chatErrorTextKey(key, guest)) : e instanceof Error ? e.message : tr("chat.err.generic"));
         setBusy(false);
+        onAccountError(e, false);
         return;
       }
     }
@@ -2166,8 +2193,9 @@ function ChatBody({ id }: { id: string }) {
         // Stale upload errors never surface into the new session.
         if (!isLive()) return;
         const key = chatErrorKey(e);
-        setError(key ? tr(key) : e instanceof Error ? e.message : tr("chat.err.generic"));
+        setError(key ? tr(chatErrorTextKey(key, guest)) : e instanceof Error ? e.message : tr("chat.err.generic"));
         setBusy(false);
+        onAccountError(e, false);
         return;
       }
     }
@@ -2681,8 +2709,9 @@ function ChatBody({ id }: { id: string }) {
         if (!isLive()) return;
         if (e instanceof DOMException && e.name === "AbortError") return;
         const errorKey = chatErrorKey(e);
-        const errorText = errorKey ? tr(errorKey) : e instanceof Error ? e.message : tr("chat.err.generic");
+        const errorText = errorKey ? tr(chatErrorTextKey(errorKey, guest)) : e instanceof Error ? e.message : tr("chat.err.generic");
         console.error("[streamChat] Error:", e);
+        onAccountError(e);
         // a used-up session gets the "open a new session" card instead of
         // a bare error line
         if (isSessionLimitError(e)) setSessionLimitFor(activeSessionId);
@@ -2835,11 +2864,19 @@ function ChatBody({ id }: { id: string }) {
   );
   const runChoicePick = useCallback(
     async (option: ChoiceOption) => {
-      if (option.handoff) return runHandoff(option);
+      if (option.handoff) {
+        // a hand-off opens a Word file with the document assistant, which
+        // needs an organization
+        if (guest) {
+          toast.info(tr("chat.err.tenantRequired"));
+          return;
+        }
+        return runHandoff(option);
+      }
       const blank = { attachments: [], imageFiles: [], mentionedItems: [], modelId: "" };
       void sendRef.current({ query: option.resend, ...blank });
     },
-    [runHandoff],
+    [runHandoff, guest, toast, tr],
   );
   // "Không phải?": the question goes again and the gate asks about the
   // words it had read on its own
@@ -3055,7 +3092,7 @@ function ChatBody({ id }: { id: string }) {
               <UserMessageBubble
                 message={m}
                 onEdit={handleEditQuestion}
-                onFork={id !== "new" ? handleFork : undefined}
+                onFork={id !== "new" && !guest ? handleFork : undefined}
                 onRejectReading={index === lastUserIndex ? rejectReading : undefined}
                 compact={compact}
               />
@@ -3086,6 +3123,7 @@ function ChatBody({ id }: { id: string }) {
                   onIllustrationInsert={insertIllustration}
                   onIllustrationInserted={markIllustrationInserted}
                   compact={compact}
+                  guest={guest}
                 />
                 {m.contextCompacted && (
                   <ContextCompactedDivider summary={m.contextCompacted.summary} degraded={m.contextCompacted.degraded} />
@@ -3281,7 +3319,9 @@ function ChatBody({ id }: { id: string }) {
             }
           />}
           </div>
-          {!compact && (
+          {guest ? (
+            <GuestChatNote className="mt-3" />
+          ) : !compact && (
             <p className="caption mt-3 text-center text-muted-soft">
               Answers are grounded in your knowledge bases — verify important details.
             </p>

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"slices"
 	"strings"
 	"time"
 
@@ -292,6 +293,47 @@ func (s *customAgentService) GetAgentByID(ctx context.Context, id string) (*type
 		return nil, errors.New("agent ID cannot be empty")
 	}
 
+	// A Guest in the public portal runs the public-lookup agent and nothing
+	// else: every other id reads as not found.
+	if types.InPublicPortal(ctx) && id != types.BuiltinPublicLookupID {
+		return nil, ErrAgentNotFound
+	}
+	agent, err := s.getAgentByID(ctx, id)
+	if err != nil || agent == nil || agent.ID != types.BuiltinPublicLookupID {
+		return agent, err
+	}
+	// The SuperAdmin's agent editor reads the agent as stored, so saving it
+	// never turns the inherited ids into its own.
+	if !ignoresAgentTenantScope(ctx) {
+		s.inheritPublicLookupModels(ctx, agent)
+	}
+	return agent, nil
+}
+
+// inheritPublicLookupModels fills the public-lookup agent's empty chat and
+// rerank model ids from the smart-reasoning agent the caller's tenant sees
+// (the profile's row once a SuperAdmin configured it). builtin_agents.yaml
+// carries no model ids, and guest chat must work on a fresh install without
+// anyone opening the agent editor; the ids the SuperAdmin sets on the
+// public-lookup agent itself still win.
+func (s *customAgentService) inheritPublicLookupModels(ctx context.Context, agent *types.CustomAgent) {
+	if strings.TrimSpace(agent.Config.ModelID) != "" && strings.TrimSpace(agent.Config.RerankModelID) != "" {
+		return
+	}
+	source, err := s.getAgentByID(ctx, types.BuiltinSmartReasoningID)
+	if err != nil || source == nil {
+		logger.Warnf(ctx, "public lookup: no smart-reasoning agent to take model ids from: %v", err)
+		return
+	}
+	if strings.TrimSpace(agent.Config.ModelID) == "" {
+		agent.Config.ModelID = source.Config.ModelID
+	}
+	if strings.TrimSpace(agent.Config.RerankModelID) == "" {
+		agent.Config.RerankModelID = source.Config.RerankModelID
+	}
+}
+
+func (s *customAgentService) getAgentByID(ctx context.Context, id string) (*types.CustomAgent, error) {
 	// Get tenant ID from context
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok {
@@ -397,6 +439,18 @@ func (s *customAgentService) listAgents(ctx context.Context, includeDisabled boo
 
 	// Build result: built-in agents first, then custom agents
 	builtinIDs := types.GetAllBuiltinAgentIDs()
+	switch {
+	case types.InPublicPortal(ctx):
+		// A Guest picks nothing: the public-lookup agent is all there is.
+		builtinIDs = []string{types.BuiltinPublicLookupID}
+		allAgents = slices.DeleteFunc(allAgents, func(a *types.CustomAgent) bool {
+			return a.ID != types.BuiltinPublicLookupID
+		})
+	case ignoresAgentTenantScope(ctx):
+		// Members never see the guest agent in their picker; the SuperAdmin
+		// does, to switch it off or give it its own models.
+		builtinIDs = append(slices.Clone(builtinIDs), types.BuiltinPublicLookupID)
+	}
 	result := make([]*types.CustomAgent, 0, len(allAgents)+len(builtinIDs))
 
 	// Add built-in agents in order, leaving out one switched off (the
@@ -874,6 +928,19 @@ func (s *customAgentService) getSuggestedQuestions(
 	if len(effectiveKBIDs) == 0 && len(knowledgeIDs) == 0 && len(resolvedTags.TagIDsByTenant) == 0 {
 		// Use agent's KB configuration
 		switch agent.Config.KBSelectionMode {
+		case types.KBSelectionModePublic:
+			kbs, err := s.kbService.ListKnowledgeBases(ctx)
+			if err != nil {
+				logger.ErrorWithFields(ctx, err, map[string]interface{}{
+					"agent_id": agentID,
+				})
+				return finalizeStarterSuggestions(curated, nil, starterMode, limit), nil
+			}
+			// platform public bases only, as the runtime scope
+			effectiveKBIDs = filterPlatformPublicKBIDs(kbs, agent)
+			if len(effectiveKBIDs) == 0 {
+				return finalizeStarterSuggestions(curated, nil, starterMode, limit), nil
+			}
 		case "all":
 			kbs, err := s.kbService.ListKnowledgeBases(ctx)
 			if err != nil {

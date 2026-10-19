@@ -358,7 +358,7 @@ func (s *usagePlanService) TenantOverview(ctx context.Context) ([]*types.UsageTe
 	keys := types.UsagePeriodKeysAt(s.now())
 	out := make([]*types.UsageTenantOverview, 0, len(tenants))
 	for _, t := range tenants {
-		if t.Kind == types.TenantKindConfigProfile {
+		if t.IsHiddenTenant() {
 			continue
 		}
 		scopeID := types.UsageTenantScopeID(t.ID)

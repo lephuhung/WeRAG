@@ -156,7 +156,7 @@ func TestUsageGuardSeatModeNeedsSeatAndCountsUser(t *testing.T) {
 func TestUsageGuardPersonalSubscriptionWhenWorkspaceHasNone(t *testing.T) {
 	plans := &fakeUsagePlanRepo{active: map[string]*types.UsageSubscription{
 		"user/user-1": {ID: "sub-u", Mode: "pool", Status: "active",
-			Plan: &types.UsagePlan{Code: "guest", ScopeKind: "user", Limits: types.UsageLimits{{Metric: "questions", Period: "day", Limit: 5}}}},
+			Plan: &types.UsagePlan{Code: "personal", ScopeKind: "user", Limits: types.UsageLimits{{Metric: "questions", Period: "day", Limit: 5}}}},
 	}}
 	counters := &countingRepo{rows: map[string][]*types.UsageCounter{
 		"user/user-1": {{Metric: "questions", PeriodKey: "2026-10-13", Value: 5}},
@@ -167,7 +167,7 @@ func TestUsageGuardPersonalSubscriptionWhenWorkspaceHasNone(t *testing.T) {
 	ent, err := g.Entitlement(context.Background(), 10003, "user-1")
 	require.NoError(t, err)
 	require.Equal(t, "user", ent.Source)
-	require.Equal(t, "guest", ent.PlanCode)
+	require.Equal(t, "personal", ent.PlanCode)
 }
 
 func TestUsageLimitsValidate(t *testing.T) {

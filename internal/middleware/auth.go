@@ -496,6 +496,10 @@ func authenticateJWTUser(
 			attachTenantlessUserContext(c, user)
 			return true
 		}
+		// A Guest's chat runs in the public portal (guest_chat.go).
+		if tryGuestChat(c, tenantService, memberService, user) {
+			return true
+		}
 		c.JSON(http.StatusConflict, gin.H{
 			"error": "Organization required",
 			"code":  "TENANT_REQUIRED",
@@ -510,6 +514,10 @@ func authenticateJWTUser(
 		var err error
 		tenant, err = tenantService.GetTenantByID(ctx, targetTenantID)
 		if err != nil || tenant == nil {
+			// a Guest whose stale claim names a deleted tenant still chats
+			if tryGuestChat(c, tenantService, memberService, user) {
+				return true
+			}
 			logger.Warnf(ctx, "[auth] tenant lookup failed: tenant=%d user=%s err=%v", targetTenantID, user.ID, err)
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "Unauthorized: invalid organization",
@@ -520,8 +528,10 @@ func authenticateJWTUser(
 	}
 	// A configuration profile holds shared settings only; nobody signs in to
 	// it. SuperAdmin configuration routes reach it through their own scope.
-	if tenant.IsConfigProfile() {
-		logger.Warnf(ctx, "[auth] refused configuration profile as organization: tenant=%d user=%s", targetTenantID, user.ID)
+	// The public portal is entered only through tryGuestChat, never named by
+	// a JWT claim or X-Tenant-ID (not even a SuperAdmin's).
+	if tenant.IsHiddenTenant() {
+		logger.Warnf(ctx, "[auth] refused hidden tenant (%s) as organization: tenant=%d user=%s", tenant.Kind, targetTenantID, user.ID)
 		c.JSON(http.StatusForbidden, gin.H{"error": "Forbidden: not an organization"})
 		c.Abort()
 		return false
@@ -571,6 +581,11 @@ func authenticateJWTUser(
 				"[auth] user %s has no active membership in tenant %d; serving %s tenantless (guest)",
 				user.ID, targetTenantID, c.Request.URL.Path)
 			attachTenantlessUserContext(c, user)
+			return true
+		}
+		// ... and their chat runs in the public portal, provided they hold
+		// no active membership anywhere else either.
+		if tryGuestChat(c, tenantService, memberService, user) {
 			return true
 		}
 		logger.Warnf(ctx, "User %s has no active membership in tenant %d", user.ID, targetTenantID)
@@ -641,24 +656,35 @@ func resolveTargetTenant(
 		}
 		// Kiểm tra người dùng có được chọn đơn vị đích không: đơn vị của mình, SuperAdmin, hoặc
 		// có bản ghi membership active — một trong ba, do IsTenantAccessible quyết định thống nhất.
-		if !IsTenantAccessible(ctx, user, parsedTenantID, memberService, cfg) {
+		var targetTenant *types.Tenant
+		accessible := IsTenantAccessible(ctx, user, parsedTenantID, memberService, cfg)
+		if accessible {
+			// Kiểm tra đơn vị đích có tồn tại không
+			targetTenant, err = tenantService.GetTenantByID(ctx, parsedTenantID)
+		}
+		switch {
+		case accessible && err == nil && targetTenant != nil:
+			logger.Infof(ctx, "User %s switching to tenant %d", user.ID, parsedTenantID)
+			return parsedTenantID, targetTenant, parsedTenantID != user.TenantID, true
+		case IsGuestChatAPI(c.Request.URL.Path, c.Request.Method) && isGuestUser(ctx, user, memberService, tenantService):
+			// A Guest's client may still send the tenant it was removed
+			// from: on the guest chat routes the stale header is ignored
+			// and the request resolves as if it had none (public portal).
+			logger.Infof(ctx, "Guest %s sent stale X-Tenant-ID %d on %s; ignored",
+				user.ID, parsedTenantID, c.Request.URL.Path)
+		case !accessible:
 			logger.Warnf(ctx, "User %s attempted to access tenant %d without permission", user.ID, parsedTenantID)
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": "Forbidden: insufficient permissions to access target organization",
 			})
 			c.Abort()
 			return 0, nil, false, false
-		}
-		// Kiểm tra đơn vị đích có tồn tại không
-		targetTenant, err := tenantService.GetTenantByID(ctx, parsedTenantID)
-		if err != nil || targetTenant == nil {
+		default:
 			logger.Warnf(ctx, "Error getting target tenant by ID: %v, tenantID: %d", err, parsedTenantID)
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid target organization ID"})
 			c.Abort()
 			return 0, nil, false, false
 		}
-		logger.Infof(ctx, "User %s switching to tenant %d", user.ID, parsedTenantID)
-		return parsedTenantID, targetTenant, parsedTenantID != user.TenantID, true
 	}
 
 	if targetTenantID == 0 {
@@ -827,6 +853,14 @@ func attachAPIKeyAuthContext(
 	if err != nil {
 		logger.Warnf(c.Request.Context(), "[auth] API key tenant lookup failed: tenant=%d err=%v", tenantID, err)
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: invalid API key"})
+		c.Abort()
+		return
+	}
+	// The public portal is for signed-in Guests only, never a machine
+	// principal (a platform key naming it in X-Tenant-ID).
+	if t.IsPublicPortal() {
+		logger.Warnf(c.Request.Context(), "[auth] API key refused in the public portal: tenant=%d", tenantID)
+		c.JSON(http.StatusForbidden, gin.H{"error": "Forbidden: not an organization"})
 		c.Abort()
 		return
 	}

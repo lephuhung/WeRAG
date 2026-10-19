@@ -40,8 +40,9 @@ func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomA
 		agentsRead.GET("/type-presets", g.Member(), agentHandler.GetAgentTypePresets)
 		// Create custom agent — SystemAdmin
 		agentsWrite.POST("", g.SystemAdmin(), g.ConfigProfile(), agentHandler.CreateAgent)
-		// List all agents (including built-in) — Viewer+
-		agentsRead.GET("", g.Member(), agentHandler.ListAgents)
+		// List all agents (including built-in) — Viewer+; a Guest in the
+		// public portal gets the public-lookup agent only
+		agentsRead.GET("", g.GuestChat(), agentHandler.ListAgents)
 		// Get agent by ID — Viewer+
 		agentsRead.GET("/:id", g.Member(), agentHandler.GetAgent)
 		// Update agent — SystemAdmin

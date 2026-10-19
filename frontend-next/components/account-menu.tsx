@@ -63,7 +63,7 @@ export function AccountMenu() {
   const pathname = usePathname();
   const { t, locale, setLocale } = useT();
   const auth = useAuth();
-  const { role, isSystemAdmin } = useTenantRole();
+  const { role, isSystemAdmin, isGuest } = useTenantRole();
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState("general");
@@ -196,7 +196,9 @@ export function AccountMenu() {
     ? t("acct.roleSystem")
     : role === "admin" || role === "owner"
       ? t("acct.roleAdmin")
-      : t("acct.roleMember");
+      : isGuest
+        ? t("acct.roleGuest")
+        : t("acct.roleMember");
 
   return (
     <div className="relative" ref={rootRef}>

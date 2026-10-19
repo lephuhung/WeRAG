@@ -219,6 +219,49 @@ builtin_agents:
       rerank_top_k: 10
       rerank_threshold: 0.3
 
+  # Guest chat (migration 000172): the only agent a Guest gets, in the public
+  # portal. kb_selection_mode "public" = platform public knowledge bases
+  # only; the server forces this agent for portal callers and drops their
+  # KB/mention/attachment/MCP/skill/web-search choices. No model ids here:
+  # empty ones are taken from builtin-smart-reasoning at run time, so it
+  # works without setup; a SuperAdmin can still set its own.
+  - id: "builtin-public-lookup"
+    avatar: "⚖️"
+    is_builtin: true
+    i18n:
+      default:
+        name: "Public Lookup"
+        description: "Look up the platform's public legal documents (for accounts without an organization)"
+      vi:
+        name: "Tra cứu văn bản công khai"
+        description: "Tra cứu văn bản pháp luật công khai của nền tảng (cho tài khoản chưa thuộc Tổ chức)"
+    config:
+      agent_mode: "smart-reasoning"
+      agent_type: "custom"
+      system_prompt_id: "public_lookup"
+      temperature: 0.2
+      max_completion_tokens: 0
+      max_iterations: 12
+      kb_selection_mode: "public"
+      retrieve_kb_only_when_mentioned: false
+      mcp_selection_mode: "none"
+      skills_selection_mode: "none"
+      memory_enabled: false
+      allowed_tools:
+        - "search_knowledge"
+        - "read_document"
+        - "list_documents"
+      web_search_enabled: false
+      web_search_max_results: 0
+      image_upload_enabled: false
+      reflection_enabled: false
+      multi_turn_enabled: true
+      embedding_top_k: 10
+      keyword_threshold: 0.3
+      vector_threshold: 0.5
+      rerank_top_k: 10
+      rerank_threshold: 0.3
+
   - id: "builtin-wiki-fixer"
     avatar: "🔧"
     is_builtin: true

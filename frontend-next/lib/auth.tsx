@@ -5,6 +5,7 @@ import { apiGet, clearTokens, getTokens, setTokens } from "@/lib/api-client";
 import { isStaleTenantGuest, loadWithStaleTenantRecovery } from "@/lib/auth-recovery";
 import { useT } from "@/lib/i18n";
 import { resolveMembershipState, type MembershipState } from "@/lib/tenant-roles";
+import { isGuestAccount } from "@/lib/guest-chat";
 
 /* Mirrors frontend/src/api/auth/index.ts LoginResponse + UserInfo shapes (subset). */
 
@@ -32,11 +33,16 @@ type AuthState = {
   /* Account kind from /auth/me membership_state ("guest" until loaded). A
    * SuperAdmin without a selected unit is a normal state, not an error. */
   membershipState: MembershipState;
+  /* /auth/me capabilities.can_create_tenant: this deployment lets the user
+   * create an organization (POST /tenants). A guest is pointed there. */
+  canCreateTenant: boolean;
   isLoggedIn: boolean;
   ready: boolean;
 };
 
-const AuthContext = createContext<
+/* Exported for the Word add-in's browser preview (src/dev/preview-app.tsx
+ * there), which provides a fake session. */
+export const AuthContext = createContext<
   AuthState & {
     login: (email: string, password: string) => Promise<string | null>;
     logout: () => Promise<void>;
@@ -49,6 +55,7 @@ const AuthContext = createContext<
   tenant: null,
   memberships: [],
   membershipState: "guest",
+  canCreateTenant: false,
   isLoggedIn: false,
   ready: false,
   login: async () => null,
@@ -65,6 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
   const [memberships, setMemberships] = useState<AuthState["memberships"]>([]);
   const [membershipState, setMembershipState] = useState<MembershipState>("guest");
+  const [canCreateTenant, setCanCreateTenant] = useState(false);
   const [ready, setReady] = useState(false);
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
   const { setLocale } = useT();
@@ -103,6 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             memberships?: AuthState["memberships"];
             membership_state?: string;
             tenant_required?: boolean;
+            capabilities?: { can_create_tenant?: boolean };
           };
         }>("/api/v1/auth/me", skipTenant ? { skipTenant: true } : undefined),
       tenantStored,
@@ -119,6 +128,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(res.data.user);
         setTenant(res.data.tenant ?? null);
         setMemberships(res.data.memberships ?? []);
+        setCanCreateTenant(res.data.capabilities?.can_create_tenant === true);
         setMembershipState(
           resolveMembershipState({
             membershipState: res.data.membership_state,
@@ -230,6 +240,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setTenant(null);
     setMemberships([]);
     setMembershipState("guest");
+    setCanCreateTenant(false);
     setSelectedTenantId(null);
     try {
       localStorage.removeItem(TENANT_KEY);
@@ -254,6 +265,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       tenant,
       memberships,
       membershipState,
+      canCreateTenant,
       isLoggedIn: Boolean(user),
       ready,
       login,
@@ -262,7 +274,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       selectedTenantId,
       setSelectedTenant,
     }),
-    [user, tenant, memberships, membershipState, ready, login, logout, refreshMe, selectedTenantId, setSelectedTenant],
+    [user, tenant, memberships, membershipState, canCreateTenant, ready, login, logout, refreshMe, selectedTenantId, setSelectedTenant],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -296,6 +308,6 @@ export function useTenantRole() {
     membershipState,
     /* Only once /auth/me answered: the "guest" default must not flash a
      * guest notice while the session is still loading. */
-    isGuest: auth.isLoggedIn && membershipState === "guest" && !isSystemAdmin,
+    isGuest: isGuestAccount({ loggedIn: auth.isLoggedIn, membershipState, isSystemAdmin }),
   };
 }
