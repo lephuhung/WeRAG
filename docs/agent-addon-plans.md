@@ -100,3 +100,28 @@ thấy(agent, caller) =
 | D | Trang "Gói sử dụng" của Tổ chức + Word add-in (chỉ hiển thị nếu cần); chuyển agent "Tư vấn doanh nghiệp nhỏ – thuế" sang Chuyên ngành và cho 10003 mua thử |
 
 Mỗi giai đoạn: Opus làm, Fable rà (khi còn hạn mức), migration theo số kế tiếp sau số cao nhất đã commit.
+
+### 8.1 Giai đoạn A — đã làm (19/10/2026, nhánh `feat/agent-addons`, chưa merge, chưa chạy migration trên dev)
+
+**Đã giao**
+
+- `usage.enforce` mặc định **bật** (registry + `usageGuard.Enforced`); guard không có settings service chỉ có trong unit test nên vẫn coi là tắt. Trang quản trị đọc "chưa lưu" là bật.
+- Đổi tên hiển thị "Gói chuyên môn" → "Bộ kỹ năng chuyên môn"/"Bộ kỹ năng" (en "Skill sets"/"Skill set"): menu và trang quản trị, trình sửa agent, nhãn yêu cầu văn bản "Bộ kỹ năng: …", mô tả công cụ `compare_tax_methods`, lỗi kiểm tra bộ kỹ năng, tóm tắt swagger, `last_query` của đối chiếu. Định danh, route, trường JSON và dấu footer "Lưu ý về cẩm nang chuyên môn" giữ nguyên.
+- Trình sửa agent: chọn bộ kỹ năng ở đầu tab Cơ bản (vẫn chỉ cho suy luận; chế độ hỏi nhanh hiện ghi chú; vẫn kiểm `required_tools`); radio "Cách phân phối" có giải thích; "Tổ chức áp dụng" nằm trong mục "Nâng cao", chỉ hiện với Nội bộ, các cách khác lưu `[]`. Danh sách agent có nhãn "Chuyên ngành"/"Nội bộ"; chi tiết bộ kỹ năng có cột "Cách phân phối".
+- Migration **000166** `agent_distribution`: `custom_agents.distribution` (`basic`/`addon`/`internal`, CHECK, mặc định `basic`); hàng tuỳ chỉnh đang có danh sách khác rỗng → `internal` (trên dev: 2 agent eval [10000] và "Tư vấn doanh nghiệp nhỏ – thuế" [10003] — hiển thị không đổi); bảng `usage_subscription_addons` (khoá chính `(subscription_id, agent_id)`, `starts_at`, `ends_at` NULL = theo hạn thuê bao, `price_vnd`, `order_id` → `usage_orders` ON DELETE SET NULL, `granted_by`, `created_at`, `updated_at`; xoá thuê bao xoá theo; chỉ mục `(agent_id, subscription_id)` và `order_id`).
+- Điều kiện thấy (§6) nằm trong cổng cũ: `whereAgentVisibleTo` (repository) là **một** điều kiện SQL cho cả danh sách và lấy một agent — EXISTS `usage_subscription_addons` → `usage_subscriptions` theo khoá chính, cả hai còn hiệu lực tại thời điểm gọi, thuê bao `tenant` của Tổ chức gọi **hoặc** thuê bao `user` của người gọi. `customAgentService` truyền `types.AgentViewer` (Tổ chức + người thật; API key/IM/embed/MCP không có người → theo Tổ chức). SuperAdmin người thật vẫn đọc không lọc. Quyết định 7.4 nằm ở **một** hàm: `addonsVisibleWithoutPurchase()` (`service/custom_agent.go`, trả `false`).
+- Tạo agent không gửi `distribution`: có danh sách → `internal`, có bộ kỹ năng → `addon`, còn lại → `basic`. Danh sách chỉ nhận với `internal` (khác → 400). Built-in luôn `basic` (gửi khác → 400). Nhân bản giữ cách phân phối.
+- API SuperAdmin (nhóm `/system/admin`, chặn API key không phải nền tảng): `GET`/`POST /api/v1/system/admin/usage/subscriptions/:id/addons` (body `agent_id`, `starts_at?`, `ends_at?`, `price_vnd`; cấp lại = thay hạn và giá), `DELETE …/addons/:agent_id`. Chỉ cấp được agent `addon`.
+- Kiểm thử: repository (mỗi cách phân phối × thành viên Tổ chức đã mua / Tổ chức khác / người có gói cá nhân / API key / SuperAdmin; hết hạn add-on, hết hạn và huỷ thuê bao, thu hồi; cùng ma trận chạy trên PostgreSQL 16 thật qua `WEKNORA_REPO_TEST_POSTGRES_DSN`), service (mặc định khi tạo, đổi cách phân phối, built-in, nhân bản, cấp/thu hồi), router (chỉ SuperAdmin), handler + lượt chat (add-on hết hạn → 2104), migration lên–xuống–lên trên PostgreSQL 16; frontend `tsc` + node test.
+
+**Khác với thiết kế / cần biết**
+
+1. "Cơ bản" = mọi Tổ chức (không thêm điều kiện "có gói còn hạn" vào việc thấy agent); lượt hỏi vẫn qua kiểm gói `usage.enforce`, nay mặc định bật.
+2. Hàng agent thuộc chính Tổ chức luôn thấy, bất kể cách phân phối (như "Tổ chức áp dụng" trước đây).
+3. Gói ghế: add-on của thuê bao Tổ chức hiện cho mọi thành viên; ghế vẫn do kiểm gói của lượt hỏi chặn.
+4. Thuê bao Tổ chức và thuê bao cá nhân được xét **cả hai** (usage guard chỉ lấy thuê bao Tổ chức trước rồi mới tới cá nhân).
+5. Đổi một agent khỏi "Nội bộ" mà không gửi danh sách thì danh sách cũ bị xoá.
+6. Đường xoá: `DELETE …/addons/:agent_id` (theo mẫu ghế), thêm `GET` để xem.
+7. Gắn agent vào kênh IM/embed/MCP lúc cấu hình (SuperAdmin đọc không lọc) chỉ kiểm danh sách "Nội bộ"; agent Chuyên ngành mà Tổ chức của kênh chưa mua vẫn gắn được, kênh trả lời "trợ lý không áp dụng" ở tin nhắn đầu. Có thể chặn lúc gắn ở giai đoạn sau.
+8. Đổi gói (`CreateSubscription` huỷ thuê bao cũ) không chuyển add-on sang thuê bao mới — giai đoạn C phải chép.
+9. Thông báo 2104 giữ nguyên câu "không tồn tại hoặc không áp dụng cho Tổ chức của bạn" (frontend và eval dựa vào); docs/error-codes.md ghi thêm trường hợp chưa mua/hết hạn.
