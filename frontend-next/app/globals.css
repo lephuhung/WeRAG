@@ -1,5 +1,8 @@
 @import "tailwindcss";
 @import "../styles/theme-anthropic.css";
+@import "../styles/font-scale.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* ElevenLabs editorial design tokens — see .orca/drops/DESIGN-elevenlabs.md */
 @theme {
@@ -69,7 +72,7 @@ html.dark {
   --color-body-strong: #fafaf9;
   --color-muted: #a8a29e;
   --color-muted-soft: #78716c;
-  --color-on-primary: #f5f5f4;
+  --color-on-primary: #171412;
   --color-hairline: #292524;
   --color-hairline-soft: #1c1917;
   --color-hairline-strong: #44403c;
@@ -88,7 +91,7 @@ html.dark {
     background: var(--color-canvas);
     color: var(--color-body);
     font-family: var(--font-sans);
-    font-size: 14px;
+    font-size: calc(14px * var(--app-font-scale, 1));
     line-height: 1.5;
     letter-spacing: 0.16px;
     -webkit-font-smoothing: antialiased;
@@ -106,7 +109,7 @@ html.dark {
   .display-mega {
     font-family: var(--font-display);
     font-weight: 300;
-    font-size: 52px;
+    font-size: calc(52px * var(--app-font-scale, 1));
     line-height: 1.05;
     letter-spacing: -1.4px;
     color: var(--color-ink);
@@ -114,7 +117,7 @@ html.dark {
   .display-xl {
     font-family: var(--font-display);
     font-weight: 300;
-    font-size: 40px;
+    font-size: calc(40px * var(--app-font-scale, 1));
     line-height: 1.08;
     letter-spacing: -0.8px;
     color: var(--color-ink);
@@ -122,7 +125,7 @@ html.dark {
   .display-lg {
     font-family: var(--font-display);
     font-weight: 300;
-    font-size: 30px;
+    font-size: calc(30px * var(--app-font-scale, 1));
     line-height: 1.18;
     letter-spacing: -0.3px;
     color: var(--color-ink);
@@ -130,7 +133,7 @@ html.dark {
   .display-md {
     font-family: var(--font-display);
     font-weight: 300;
-    font-size: 27px;
+    font-size: calc(27px * var(--app-font-scale, 1));
     line-height: 1.15;
     letter-spacing: -0.27px;
     color: var(--color-ink);
@@ -138,34 +141,34 @@ html.dark {
   .display-sm {
     font-family: var(--font-display);
     font-weight: 300;
-    font-size: 20px;
+    font-size: calc(20px * var(--app-font-scale, 1));
     line-height: 1.25;
     color: var(--color-ink);
   }
   .title-md {
-    font-size: 17px;
+    font-size: calc(17px * var(--app-font-scale, 1));
     font-weight: 500;
     line-height: 1.4;
     color: var(--color-ink);
   }
   .title-sm {
-    font-size: 15px;
+    font-size: calc(15px * var(--app-font-scale, 1));
     font-weight: 500;
     line-height: 1.45;
     letter-spacing: 0.1px;
     color: var(--color-ink);
   }
   .body-sm {
-    font-size: 13.5px;
+    font-size: calc(13.5px * var(--app-font-scale, 1));
     line-height: 1.5;
     letter-spacing: 0.1px;
   }
   .caption {
-    font-size: 12.5px;
+    font-size: calc(12.5px * var(--app-font-scale, 1));
     line-height: 1.5;
   }
   .caption-uppercase {
-    font-size: 11px;
+    font-size: calc(11px * var(--app-font-scale, 1));
     font-weight: 600;
     line-height: 1.4;
     letter-spacing: 0.8px;
@@ -174,16 +177,16 @@ html.dark {
 
   @media (max-width: 640px) {
     .display-mega {
-      font-size: 30px;
+      font-size: calc(30px * var(--app-font-scale, 1));
       letter-spacing: -0.5px;
     }
     .display-xl {
-      font-size: 28px;
+      font-size: calc(28px * var(--app-font-scale, 1));
     }
   }
   @media (min-width: 641px) and (max-width: 1024px) {
     .display-mega {
-      font-size: 40px;
+      font-size: calc(40px * var(--app-font-scale, 1));
     }
   }
   /* ---------- buttons ---------- */
@@ -195,7 +198,7 @@ html.dark {
     height: 36px;
     padding: 8px 18px;
     border-radius: 9999px;
-    font-size: 13.5px;
+    font-size: calc(13.5px * var(--app-font-scale, 1));
     font-weight: 500;
     line-height: 1;
     cursor: pointer;
@@ -235,7 +238,7 @@ html.dark {
   .btn-sm {
     height: 30px;
     padding: 5px 12px;
-    font-size: 12.5px;
+    font-size: calc(12.5px * var(--app-font-scale, 1));
   }
 
   /* ---------- surfaces ---------- */
@@ -259,7 +262,7 @@ html.dark {
     color: var(--color-ink);
     border-radius: 9999px;
     padding: 3px 9px;
-    font-size: 11px;
+    font-size: calc(11px * var(--app-font-scale, 1));
     font-weight: 600;
     line-height: 1.4;
     letter-spacing: 0.96px;
@@ -275,8 +278,9 @@ html.dark {
     color: var(--color-ink);
     border: 1px solid var(--color-hairline-strong);
     border-radius: var(--radius-md2);
-    padding: 10px 14px;
-    font-size: 14px;
+    padding: 8px 14px;
+    line-height: 1.4;
+    font-size: calc(14px * var(--app-font-scale, 1));
     letter-spacing: 0.1px;
     outline: none;
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
@@ -301,7 +305,7 @@ html.dark {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a8a29e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
   }
   .input::placeholder {
-    color: var(--color-muted-soft);
+    color: var(--color-muted);
   }
   .input:focus {
     border-color: var(--color-ink);
@@ -328,7 +332,7 @@ html.dark {
     width: 100%;
     padding: 7px 12px;
     border-radius: var(--radius-md2);
-    font-size: 13.5px;
+    font-size: calc(13.5px * var(--app-font-scale, 1));
     font-weight: 500;
     color: var(--color-body);
     transition: background-color 0.15s ease, color 0.15s ease;
@@ -343,7 +347,7 @@ html.dark {
   }
   /* Compact scope for the account dropdown — smaller than the settings rail. */
   .acct-menu .nav-item {
-    font-size: 12.5px;
+    font-size: calc(12.5px * var(--app-font-scale, 1));
     padding: 6px 10px;
   }
   .acct-menu .nav-item svg {
@@ -353,7 +357,7 @@ html.dark {
 
   /* ---------- chat markdown (port of chat-markdown.less typography) ---------- */
   .chat-markdown {
-    font-size: 15px;
+    font-size: calc(15px * var(--app-font-scale, 1));
     line-height: 1.75;
     color: var(--color-body);
     overflow-wrap: break-word;
@@ -384,13 +388,13 @@ html.dark {
     margin: 14px 0 6px;
   }
   .chat-markdown h1 {
-    font-size: 22px;
+    font-size: calc(22px * var(--app-font-scale, 1));
   }
   .chat-markdown h2 {
-    font-size: 19px;
+    font-size: calc(19px * var(--app-font-scale, 1));
   }
   .chat-markdown h3 {
-    font-size: 17px;
+    font-size: calc(17px * var(--app-font-scale, 1));
   }
   .chat-markdown ul,
   .chat-markdown ol {
@@ -418,7 +422,7 @@ html.dark {
     background: var(--color-surface-strong);
     border-radius: var(--radius-md2);
     overflow-x: auto;
-    font-size: 13.5px;
+    font-size: calc(13.5px * var(--app-font-scale, 1));
     line-height: 1.5;
   }
   .chat-markdown code {
@@ -436,7 +440,7 @@ html.dark {
     width: 100%;
     margin: 0 0 8px;
     border-collapse: collapse;
-    font-size: 14px;
+    font-size: calc(14px * var(--app-font-scale, 1));
   }
   .chat-markdown th,
   .chat-markdown td {
@@ -496,20 +500,20 @@ html.dark {
   /* Document-assistant split view: the chat column renders phone-sized
    * (one step down) — scoped to .chat-compact so other agents are unchanged. */
   .chat-compact .chat-markdown {
-    font-size: 13px;
+    font-size: calc(13px * var(--app-font-scale, 1));
     line-height: 1.65;
   }
   .chat-compact .chat-markdown p {
     margin-bottom: 10px;
   }
   .chat-compact .chat-markdown h1 {
-    font-size: 17px;
+    font-size: calc(17px * var(--app-font-scale, 1));
   }
   .chat-compact .chat-markdown h2 {
-    font-size: 15.5px;
+    font-size: calc(15.5px * var(--app-font-scale, 1));
   }
   .chat-compact .chat-markdown h3 {
-    font-size: 14px;
+    font-size: calc(14px * var(--app-font-scale, 1));
   }
   .chat-compact .chat-markdown h1,
   .chat-compact .chat-markdown h2,
@@ -523,14 +527,14 @@ html.dark {
   }
   .chat-compact .chat-markdown pre {
     padding: 10px 12px;
-    font-size: 12px;
+    font-size: calc(12px * var(--app-font-scale, 1));
   }
   .chat-compact .chat-markdown blockquote {
     padding: 4px 10px;
   }
   .chat-compact .chat-markdown th,
   .chat-compact .chat-markdown td {
-    font-size: 12.5px;
+    font-size: calc(12.5px * var(--app-font-scale, 1));
   }
 }
 
@@ -719,7 +723,7 @@ html.dark {
   border-radius: 6px;
   background: var(--color-ink);
   color: var(--color-canvas);
-  font-size: 12px;
+  font-size: calc(12px * var(--app-font-scale, 1));
   font-weight: 400;
   line-height: 1.4;
   white-space: normal;

@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Newsreader, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
+import { UI_PREFERENCES_BOOT_SCRIPT } from "@/lib/ui-preferences";
 
 import { GlobalUiTheme } from "@/components/global-ui-theme";
 
@@ -70,7 +71,7 @@ export default function RootLayout({
       className={`${inter.variable} ${displaySerif.variable} ${plexSans.variable} ${plexMono.variable}`}
     >
       <body>
-        <script dangerouslySetInnerHTML={{ __html: UI_THEME_BOOT_SCRIPT }} />
+        <script dangerouslySetInnerHTML={{ __html: UI_THEME_BOOT_SCRIPT + UI_PREFERENCES_BOOT_SCRIPT }} />
         <GlobalUiTheme />
         {children}
       </body>

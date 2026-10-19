@@ -1,69 +1,89 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Orb } from "@/components/orb";
 import { Toggle } from "@/components/settings/toggle";
 
 const SWATCHES = [
-  { name: "canvas", hex: "#f5f5f5", cls: "bg-canvas" },
-  { name: "canvas-soft", hex: "#fafafa", cls: "bg-canvas-soft" },
-  { name: "surface-card", hex: "#ffffff", cls: "bg-surface-card" },
-  { name: "surface-strong", hex: "#f0efed", cls: "bg-surface-strong" },
-  { name: "ink", hex: "#0c0a09", cls: "bg-ink" },
-  { name: "primary", hex: "#292524", cls: "bg-primary" },
-  { name: "body", hex: "#4e4e4e", cls: "bg-body" },
-  { name: "muted", hex: "#777169", cls: "bg-muted" },
-  { name: "hairline", hex: "#e7e5e4", cls: "bg-hairline" },
-  { name: "hairline-strong", hex: "#d6d3d1", cls: "bg-hairline-strong" },
+  { name: "canvas", cls: "bg-canvas" },
+  { name: "canvas-soft", cls: "bg-canvas-soft" },
+  { name: "surface-card", cls: "bg-surface-card" },
+  { name: "surface-strong", cls: "bg-surface-strong" },
+  { name: "ink", cls: "bg-ink" },
+  { name: "primary", cls: "bg-primary" },
+  { name: "body", cls: "bg-body" },
+  { name: "muted", cls: "bg-muted" },
+  { name: "hairline", cls: "bg-hairline" },
+  { name: "hairline-strong", cls: "bg-hairline-strong" },
 ];
 
 const ORBS = ["mint", "peach", "lavender", "sky", "rose"] as const;
-const ORB_HEX: Record<(typeof ORBS)[number], string> = {
-  mint: "#a7e5d3",
-  peach: "#f4c5a8",
-  lavender: "#c8b8e0",
-  sky: "#a8c8e8",
-  rose: "#e8b8c4",
-};
 
 const TYPE_SCALE = [
-  { cls: "display-mega", label: "display-mega · 64/300" },
-  { cls: "display-xl", label: "display-xl · 48/300" },
-  { cls: "display-lg", label: "display-lg · 36/300" },
-  { cls: "display-md", label: "display-md · 32/300" },
-  { cls: "display-sm", label: "display-sm · 24/300" },
-  { cls: "title-md", label: "title-md · 20/500" },
-  { cls: "title-sm", label: "title-sm · 18/500" },
+  { cls: "display-mega" },
+  { cls: "display-xl" },
+  { cls: "display-lg" },
+  { cls: "display-md" },
+  { cls: "display-sm" },
+  { cls: "title-md" },
+  { cls: "title-sm" },
 ];
 
 export default function DesignPage() {
   const [demoToggle, setDemoToggle] = useState(true);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [metrics, setMetrics] = useState<Record<string, string>>({});
+  const [preset, setPreset] = useState("");
+  const [colors, setColors] = useState<Record<string, string>>({});
+  const [font, setFont] = useState("");
+  useEffect(() => {
+    const sync = () => {
+      const root = document.documentElement;
+      const style = getComputedStyle(root);
+      setPreset((root.dataset.theme === "anthropic" ? "Anthropic" : "ElevenLabs") + (root.classList.contains("dark") ? " · Dark" : " · Light"));
+      setColors(Object.fromEntries(SWATCHES.map(swatch => [swatch.name, style.getPropertyValue(`--color-${swatch.name}`).trim()])));
+      const values: Record<string, string> = {};
+      for (const element of rootRef.current?.querySelectorAll<HTMLElement>("[data-type]") ?? []) {
+        const computed = getComputedStyle(element);
+        values[element.dataset.type!] = `${computed.fontSize} / ${computed.fontWeight}`;
+        setFont(computed.fontFamily);
+      }
+      setMetrics(values);
+    };
+    sync();
+    const observer = new MutationObserver(sync);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "style", "data-theme"] });
+    window.addEventListener("resize", sync);
+    let active = true;
+    void document.fonts.ready.then(() => { if (active) sync(); });
+    return () => { active = false; observer.disconnect(); window.removeEventListener("resize", sync); };
+  }, []);
 
   return (
-    <div className="min-h-screen bg-canvas">
+    <div ref={rootRef} className="min-h-screen bg-canvas">
       <div className="mx-auto max-w-[1200px] px-4 py-8 sm:px-8 sm:py-12 lg:px-12 lg:py-16">
         <div className="caption-uppercase mb-3 text-muted">Design system</div>
-        <h1 className="display-mega mb-4">ElevenLabs editorial</h1>
+        <h1 className="display-mega mb-4">{preset || "WeRAG design system"}</h1>
         <p className="mb-16 max-w-[560px] text-body">
-          Off-white canvas, warm near-black ink, Waldenburg-style display at weight
-          300, Inter body, pastel atmospheric orbs as the only color moments.
+          Giá trị màu và kiểu chữ đang áp dụng trên giao diện. Kích thước bên dưới cập nhật theo màn hình và tùy chọn cỡ chữ.
+          <span className="caption mt-2 block text-muted">{font}</span>
         </p>
 
         {/* type scale */}
         <section className="mb-16">
           <h2 className="caption-uppercase mb-6 text-muted">Type scale</h2>
-          <div className="card divide-y divide-hairline p-8">
+          <div className="card divide-y divide-hairline p-4 sm:p-8">
             {TYPE_SCALE.map((t) => (
-              <div key={t.cls} className="flex items-baseline justify-between gap-8 py-4">
-                <span className={t.cls}>The quick brown fox</span>
-                <span className="caption shrink-0 text-muted-soft">{t.label}</span>
+              <div key={t.cls} className="flex min-w-0 flex-col gap-2 py-4 sm:flex-row sm:items-baseline sm:justify-between sm:gap-8">
+                <span className={`${t.cls} min-w-0 break-words`} data-type={t.cls}>Tri thức dẫn lối tương lai</span>
+                <span className="caption shrink-0 text-muted">{t.cls} · {metrics[t.cls] ?? "…"}</span>
               </div>
             ))}
-            <div className="flex items-baseline justify-between gap-8 py-4">
-              <span className="text-[16px] text-body">
-                Body — Inter 400 with +0.16px tracking, the editorial dialect for running text.
+            <div className="flex min-w-0 flex-col gap-2 py-4 sm:flex-row sm:items-baseline sm:justify-between sm:gap-8">
+              <span className="text-[16px] text-body" data-type="body-md">
+                Văn bản có dấu tiếng Việt — tài liệu, cơ sở tri thức và câu trả lời.
               </span>
-              <span className="caption shrink-0 text-muted-soft">body-md · 16/400</span>
+              <span className="caption shrink-0 text-muted">body-md · {metrics["body-md"] ?? "…"}</span>
             </div>
           </div>
         </section>
@@ -77,7 +97,7 @@ export default function DesignPage() {
                 <div className={`h-20 ${s.cls} border-b border-hairline`} />
                 <div className="p-3">
                   <div className="text-[13px] font-medium text-ink">{s.name}</div>
-                  <div className="caption text-muted">{s.hex}</div>
+                  <div className="caption text-muted">{colors[s.name] || "…"}</div>
                 </div>
               </div>
             ))}
@@ -97,7 +117,7 @@ export default function DesignPage() {
               />
             ))}
             <div className="absolute inset-0 flex items-center justify-center">
-              <span className="display-md">mint · peach · lavender · sky · rose</span>
+              <span className="display-md px-4 text-center">mint · peach · lavender · sky · rose</span>
             </div>
           </div>
         </section>

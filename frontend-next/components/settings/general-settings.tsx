@@ -17,20 +17,8 @@ import {
   type UiTheme,
 } from "@/lib/ui-theme";
 
-export type ThemeMode = "light" | "dark" | "system";
-export type FontSizeKey = "small" | "normal" | "large";
-
-const THEME_KEY = "weknora_theme";
-const FONT_SIZE_KEY = "weknora_font_size";
-
-function applyTheme(mode: ThemeMode) {
-  const root = document.documentElement;
-  const dark =
-    mode === "dark" ||
-    (mode === "system" &&
-      window.matchMedia("(prefers-color-scheme: dark)").matches);
-  root.classList.toggle("dark", dark);
-}
+import { readPreferences, savePreferences, type ThemeMode, type FontSizeKey } from "@/lib/ui-preferences";
+export type { ThemeMode, FontSizeKey } from "@/lib/ui-preferences";
 
 export function GeneralSettings() {
   const { t, locale, setLocale } = useT();
@@ -63,24 +51,14 @@ export function GeneralSettings() {
   };
 
   useEffect(() => {
-    try {
-      const savedTheme = localStorage.getItem(THEME_KEY) as ThemeMode | null;
-      const savedSize = localStorage.getItem(FONT_SIZE_KEY) as FontSizeKey | null;
-      if (savedTheme) setThemeState(savedTheme);
-      if (savedSize) setFontSizeState(savedSize);
-    } catch {
-      /* ignore */
-    }
+    const saved = readPreferences();
+    setThemeState(saved.theme);
+    setFontSizeState(saved.fontSize);
   }, []);
 
   const setTheme = (mode: ThemeMode) => {
     setThemeState(mode);
-    try {
-      localStorage.setItem(THEME_KEY, mode);
-    } catch {
-      /* ignore */
-    }
-    applyTheme(mode);
+    savePreferences(mode, fontSize);
   };
 
   const fontSizeOptions: { value: FontSizeKey; labelKey: "fontSmall" | "fontNormal" | "fontLarge"; scale: string }[] = [
@@ -89,14 +67,9 @@ export function GeneralSettings() {
     { value: "large", labelKey: "fontLarge", scale: "112%" },
   ];
 
-  const setFontSize = (size: FontSizeKey, scale: string) => {
+  const setFontSize = (size: FontSizeKey, _scale: string) => {
     setFontSizeState(size);
-    try {
-      localStorage.setItem(FONT_SIZE_KEY, size);
-    } catch {
-      /* ignore */
-    }
-    document.documentElement.style.setProperty("--app-font-scale", scale);
+    savePreferences(theme, size);
   };
 
   return (
