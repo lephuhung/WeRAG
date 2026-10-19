@@ -330,10 +330,31 @@ func (g *usageGuard) personalPlanEntitlement(
 			return nil, err
 		}
 	}
+	// A Guest whose bought package ran out still has the guest plan: its
+	// expired subscription stays the scope's one active row (billing renews
+	// it), so the guest plan applies without a subscription of its own.
+	if planCode == types.UsageGuestPlanCode && !sub.IsCurrentAt(now) &&
+		!(sub.Plan != nil && sub.Plan.Code == types.UsageGuestPlanCode) {
+		plan, err := g.planByCode(ctx, planCode)
+		if err != nil {
+			return nil, err
+		}
+		if plan != nil {
+			sub = &types.UsageSubscription{
+				ScopeType: types.UsageScopeUser, ScopeID: userID, PlanID: plan.ID, Plan: plan,
+				Mode: types.UsageModePool, StartsAt: now, Status: types.UsageSubscriptionActive,
+			}
+		}
+	}
 	ent := entitlementFrom(sub, types.UsageScopeUser, now)
 	ent.HasSeat = true
 	ent.CountedScope = types.UsageScopeUser
-	if err := g.fillLimitStatus(ctx, ent, sub.EffectiveLimits(), types.UsageScopeUser, userID, now); err != nil {
+	// in the public portal the person's turns are counted apart (guest scope)
+	counterScope := types.UsageScopeUser
+	if planCode == types.UsageGuestPlanCode {
+		counterScope = types.UsageScopeGuest
+	}
+	if err := g.fillLimitStatus(ctx, ent, sub.EffectiveLimits(), counterScope, userID, now); err != nil {
 		return nil, err
 	}
 	return ent, nil

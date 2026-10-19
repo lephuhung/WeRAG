@@ -26,15 +26,26 @@ func NewUsageMeter(repo interfaces.UsageCounterRepository) interfaces.UsageMeter
 // usageScopes lists the counters a turn belongs to: always the workspace,
 // plus the person when userID is a real account (the IM and API paths run
 // as synthetic system-<tenant> users, which only the workspace scope sees).
-func usageScopes(tenantID uint64, userID string) [][2]string {
+// In the public portal the person is counted under the guest scope instead
+// (personCounterScope).
+func usageScopes(ctx context.Context, tenantID uint64, userID string) [][2]string {
 	scopes := make([][2]string, 0, 2)
 	if tenantID != 0 {
 		scopes = append(scopes, [2]string{types.UsageScopeTenant, types.UsageTenantScopeID(tenantID)})
 	}
 	if userID != "" && !types.IsSyntheticUserID(userID) {
-		scopes = append(scopes, [2]string{types.UsageScopeUser, userID})
+		scopes = append(scopes, [2]string{personCounterScope(ctx, tenantID), userID})
 	}
 	return scopes
+}
+
+// personCounterScope is the scope a person's counters live in for a turn
+// of tenantID: "guest" in the public portal, "user" everywhere else.
+func personCounterScope(ctx context.Context, tenantID uint64) string {
+	if portalTenant(ctx, tenantID) {
+		return types.UsageScopeGuest
+	}
+	return types.UsageScopeUser
 }
 
 // buildUsageIncrements expands metric deltas over every scope and period.
@@ -42,10 +53,10 @@ func usageScopes(tenantID uint64, userID string) [][2]string {
 // counters (scope "session", period "all"), which only the per-session caps
 // read.
 func buildUsageIncrements(
-	tenantID uint64, userID, sessionID string, at time.Time, deltas map[string]int64,
+	ctx context.Context, tenantID uint64, userID, sessionID string, at time.Time, deltas map[string]int64,
 ) []types.UsageIncrement {
 	keys := types.UsagePeriodKeysAt(at)
-	scopes := usageScopes(tenantID, userID)
+	scopes := usageScopes(ctx, tenantID, userID)
 	out := make([]types.UsageIncrement, 0, (len(scopes)*2+1)*len(deltas))
 	for metric, delta := range deltas {
 		if delta <= 0 {
@@ -79,7 +90,7 @@ func (m *usageMeter) add(ctx context.Context, increments []types.UsageIncrement)
 }
 
 func (m *usageMeter) RecordQuestion(ctx context.Context, tenantID uint64, userID, sessionID string) {
-	m.add(ctx, buildUsageIncrements(tenantID, userID, sessionID, m.now(), map[string]int64{
+	m.add(ctx, buildUsageIncrements(ctx, tenantID, userID, sessionID, m.now(), map[string]int64{
 		types.UsageMetricQuestions: 1,
 	}))
 }
@@ -98,7 +109,7 @@ func (m *usageMeter) RecordMessageUsage(ctx context.Context, msg *types.Message)
 	}
 	tenantID, _ := types.TenantIDFromContext(ctx)
 	userID, _ := types.UserIDFromContext(ctx)
-	increments := buildUsageIncrements(tenantID, userID, msg.SessionID, m.now(), map[string]int64{
+	increments := buildUsageIncrements(ctx, tenantID, userID, msg.SessionID, m.now(), map[string]int64{
 		types.UsageMetricTokens:           int64(total),
 		types.UsageMetricPromptTokens:     int64(u.PromptTokens),
 		types.UsageMetricCompletionTokens: int64(u.CompletionTokens),
@@ -118,7 +129,7 @@ func (m *usageMeter) RecordOCRUsage(
 	if total <= 0 && pages <= 0 {
 		return
 	}
-	m.add(context.WithoutCancel(ctx), buildUsageIncrements(tenantID, userID, sessionID, m.now(), map[string]int64{
+	m.add(context.WithoutCancel(ctx), buildUsageIncrements(ctx, tenantID, userID, sessionID, m.now(), map[string]int64{
 		types.UsageMetricTokens:           int64(total),
 		types.UsageMetricPromptTokens:     int64(usage.PromptTokens),
 		types.UsageMetricCompletionTokens: int64(usage.CompletionTokens),
@@ -161,7 +172,12 @@ func (m *usageMeter) scopeSummary(ctx context.Context, scopeType, scopeID string
 func (m *usageMeter) Summary(ctx context.Context, tenantID uint64, userID string) (*types.UsageSummary, error) {
 	keys := types.UsagePeriodKeysAt(m.now())
 	out := &types.UsageSummary{Timezone: types.UsageTimezone}
-	for _, scope := range usageScopes(tenantID, userID) {
+	portal := portalTenant(ctx, tenantID)
+	for _, scope := range usageScopes(ctx, tenantID, userID) {
+		// the portal's counters add up every Guest: not this caller's to see
+		if portal && scope[0] == types.UsageScopeTenant {
+			continue
+		}
 		s, err := m.scopeSummary(ctx, scope[0], scope[1], keys)
 		if err != nil {
 			return nil, err

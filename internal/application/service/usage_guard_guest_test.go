@@ -52,7 +52,9 @@ func TestUsageGuardGuestGetsGuestPackageInPortal(t *testing.T) {
 		plans: []*types.UsagePlan{poolPlan(), guestPlan()},
 	}}
 	counters := &countingRepo{rows: map[string][]*types.UsageCounter{
-		"user/guest-1": {{Metric: "questions", PeriodKey: "2026-10-13", Value: 9}},
+		"guest/guest-1": {{Metric: "questions", PeriodKey: "2026-10-13", Value: 9}},
+		// questions asked as a member (seat or personal package) do not count here
+		"user/guest-1": {{Metric: "questions", PeriodKey: "2026-10-13", Value: 50}},
 	}}
 	g := guestGuard(plans, counters)
 
@@ -67,7 +69,7 @@ func TestUsageGuardGuestGetsGuestPackageInPortal(t *testing.T) {
 	require.Equal(t, types.UsageGuestPlanCode, ent.PlanCode)
 	require.Equal(t, types.UsageScopeUser, ent.CountedScope)
 
-	counters.rows["user/guest-1"][0].Value = 10
+	counters.rows["guest/guest-1"][0].Value = 10
 	err = checkTurn(g, portalCtx(), testPortalID, "guest-1")
 	require.Equal(t, types.UsageDenialLimit, denialReason(t, err))
 }
@@ -129,4 +131,55 @@ func TestUsageGuardSystemAdminReplacesGuestPackage(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, types.UsageSystemAdminPlanCode, ent.PlanCode)
 	require.Equal(t, []string{"sub-g"}, plans.closed)
+}
+
+// A Guest whose bought package expired falls back to the guest plan instead
+// of being stuck on "expired"; the bought subscription is left for renewal.
+func TestUsageGuardGuestExpiredPackageFallsBackToGuestPlan(t *testing.T) {
+	ended := guardNow.Add(-time.Hour)
+	own := &types.UsagePlan{ID: "plan-own", Code: "ca-nhan", ScopeKind: "user", Mode: "pool"}
+	plans := &rolePlanRepo{adminPlanRepo: adminPlanRepo{
+		fakeUsagePlanRepo: fakeUsagePlanRepo{active: map[string]*types.UsageSubscription{
+			"user/guest-1": {ID: "sub-own", PlanID: "plan-own", Mode: "pool", Status: "active", EndsAt: &ended, Plan: own},
+		}},
+		plans: []*types.UsagePlan{own, guestPlan()},
+	}}
+	counters := &countingRepo{rows: map[string][]*types.UsageCounter{
+		"guest/guest-1": {{Metric: "questions", PeriodKey: "2026-10-13", Value: 3}},
+	}}
+	g := guestGuard(plans, counters)
+	ent, err := g.Entitlement(portalCtx(), testPortalID, "guest-1")
+	require.NoError(t, err)
+	require.False(t, ent.Expired)
+	require.Equal(t, types.UsageGuestPlanCode, ent.PlanCode)
+	require.Len(t, ent.Limits, 1)
+	require.Equal(t, int64(3), ent.Limits[0].Used)
+	require.NoError(t, checkTurn(g, portalCtx(), testPortalID, "guest-1"))
+	require.Equal(t, "sub-own", plans.active["user/guest-1"].ID, "the bought subscription is kept")
+	require.Empty(t, plans.closed)
+
+	// outside the portal the expired package still reads as expired
+	err = checkTurn(g, context.Background(), 10003, "guest-1")
+	require.Equal(t, types.UsageDenialExpired, denialReason(t, err))
+}
+
+// Portal turns are metered under the guest scope, never the user scope a
+// seat or personal package reads; the portal's shared counters stay out of
+// the Guest's own summary.
+func TestUsageMeterPortalCountsGuestScope(t *testing.T) {
+	scopes := usageScopes(portalCtx(), testPortalID, "guest-1")
+	require.Equal(t, [][2]string{{types.UsageScopeTenant, types.UsageTenantScopeID(testPortalID)},
+		{types.UsageScopeGuest, "guest-1"}}, scopes)
+	require.Equal(t, [][2]string{{types.UsageScopeTenant, types.UsageTenantScopeID(10003)},
+		{types.UsageScopeUser, "user-1"}}, usageScopes(context.Background(), 10003, "user-1"))
+
+	repo := &countingRepo{rows: map[string][]*types.UsageCounter{
+		"guest/guest-1": {{Metric: "questions", PeriodKey: "2026-10-13", Value: 4}},
+		"tenant/" + types.UsageTenantScopeID(testPortalID): {{Metric: "questions", PeriodKey: "2026-10-13", Value: 900}},
+	}}
+	m := &usageMeter{repo: repo, now: func() time.Time { return guardNow }}
+	sum, err := m.Summary(portalCtx(), testPortalID, "guest-1")
+	require.NoError(t, err)
+	require.Nil(t, sum.Tenant)
+	require.NotNil(t, sum.User)
 }
