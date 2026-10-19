@@ -236,7 +236,8 @@ func TestSubscriptionAddonRepository(t *testing.T) {
 	require.Equal(t, "addon", addons[0].AgentName)
 	created := addons[0].CreatedAt
 
-	// re-granting replaces period and price, keeps one row and created_at
+	// re-granting replaces the price, keeps one row and created_at, and
+	// never shortens: the open right (with the subscription) stays open
 	end := distNow.AddDate(0, 2, 0)
 	require.NoError(t, plans.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
 		SubscriptionID: "sub-t1", AgentID: "addon", StartsAt: distNow, EndsAt: &end, PriceVND: 150000,
@@ -245,7 +246,7 @@ func TestSubscriptionAddonRepository(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, addons, 1)
 	require.Equal(t, int64(150000), addons[0].PriceVND)
-	require.NotNil(t, addons[0].EndsAt)
+	require.Nil(t, addons[0].EndsAt)
 	require.WithinDuration(t, created, addons[0].CreatedAt, time.Second)
 
 	d, found, err := plans.CustomAgentDistribution(ctx, "addon")

@@ -189,6 +189,36 @@ type memPlanRepo struct {
 	// subscription id + "/" + agent id
 	catalogue []*types.UsageAgentAddon
 	addons    map[string]*types.UsageSubscriptionAddon
+	// billing gives PendingOrderAddons the orders
+	billing *memBillingRepo
+}
+
+func (m *memPlanRepo) PinSubscriptionAddonEnd(_ context.Context, subID, agentID string, end time.Time) error {
+	if a := m.addons[subID+"/"+agentID]; a != nil && a.EndsAt == nil {
+		e := end
+		a.EndsAt = &e
+	}
+	return nil
+}
+
+func (m *memPlanRepo) ProfileBuiltinAgents(context.Context, []string) ([]*types.CustomAgent, error) {
+	return nil, nil
+}
+
+func (m *memPlanRepo) PendingOrderAddons(_ context.Context, scopeType, scopeID string) (map[string][]string, error) {
+	out := map[string][]string{}
+	if m.billing == nil {
+		return out, nil
+	}
+	for _, o := range m.billing.orders {
+		if o.ScopeType != scopeType || o.ScopeID != scopeID || o.Status != types.UsageOrderPending {
+			continue
+		}
+		for _, l := range o.Addons {
+			out[o.ID] = append(out[o.ID], l.AgentID)
+		}
+	}
+	return out, nil
 }
 
 func (m *memPlanRepo) ListAgentAddons(_ context.Context, includeInactive bool) ([]*types.UsageAgentAddon, error) {
@@ -218,7 +248,8 @@ func (m *memPlanRepo) UpsertSubscriptionAddon(_ context.Context, a *types.UsageS
 	if m.addons == nil {
 		m.addons = map[string]*types.UsageSubscriptionAddon{}
 	}
-	c := *a
+	merged := types.MergeSubscriptionAddon(m.addons[a.SubscriptionID+"/"+a.AgentID], a)
+	c := *merged
 	m.addons[a.SubscriptionID+"/"+a.AgentID] = &c
 	return nil
 }
@@ -310,6 +341,7 @@ func newBillingFixture(t *testing.T) *billingFixture {
 	}, repo: planRepo, now: billingNow}
 	repo := newMemBillingRepo()
 	repo.plans = planRepo
+	planRepo.billing = repo
 	settings := billingSettings{
 		strings: map[string]string{
 			types.BillingBankBINSettingKey:         "970436",

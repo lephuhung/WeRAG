@@ -81,8 +81,16 @@ type UsagePlanRepository interface {
 	// with the agent names filled.
 	ListSubscriptionAddons(ctx context.Context, subscriptionID string) ([]*types.UsageSubscriptionAddon, error)
 	// UpsertSubscriptionAddon inserts the (subscription, agent) row or
-	// replaces its period, price and grantor.
+	// updates it without ever shortening it (types.MergeSubscriptionAddon).
 	UpsertSubscriptionAddon(ctx context.Context, addon *types.UsageSubscriptionAddon) error
+	// PinSubscriptionAddonEnd gives a right with no end the end `end`.
+	PinSubscriptionAddonEnd(ctx context.Context, subscriptionID, agentID string, end time.Time) error
+	// ProfileBuiltinAgents returns the stored rows of built-in agents in the
+	// configuration profile(s), for the plans' included agents.
+	ProfileBuiltinAgents(ctx context.Context, ids []string) ([]*types.CustomAgent, error)
+	// PendingOrderAddons returns, per pending order of a scope, the add-on
+	// agent ids it buys (to refuse a second order for the same add-on).
+	PendingOrderAddons(ctx context.Context, scopeType, scopeID string) (map[string][]string, error)
 	// DeleteSubscriptionAddon removes the row; false when there was none.
 	DeleteSubscriptionAddon(ctx context.Context, subscriptionID, agentID string) (bool, error)
 	// CustomAgentDistribution returns the distribution of a live custom

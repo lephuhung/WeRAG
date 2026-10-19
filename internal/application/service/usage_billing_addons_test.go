@@ -144,20 +144,138 @@ func TestPlanChangeCarriesAddonsToTheirPaidEnd(t *testing.T) {
 	require.NoError(t, err)
 	paidEnd := billingNow.AddDate(0, 3, 0)
 
-	// to the pool plan, buying "thue" again for 1 month: "thue" follows the
-	// new subscription; "kt" (not sold with pool) is kept to its paid end
-	o2, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1,
+	// to the pool plan for 1 month, ticking "thue" again: it is already paid
+	// to +3 months, beyond the new period, so the line is refused
+	_, err = f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1,
+		AddonAgentIDs: []string{"thue"}}, "10003")
+	require.Equal(t, "addon_held", badRequestReason(t, err))
+
+	// for 6 months: only the 3 months after the paid end are charged
+	// (pool plan: one unit; the held right was for 2 seats)
+	o2, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 6,
 		AddonAgentIDs: []string{"thue"}}, "10003", "u1")
 	require.NoError(t, err)
+	line := o2.Addons[0]
+	require.Equal(t, paidEnd, *line.CoveredUntil)
+	require.Equal(t, 3, line.Months)
+	require.Equal(t, int64(99_000*3), line.AmountVND)
+	require.Zero(t, line.ExtraUnits, "fewer units than held: nothing extra")
 	_, err = f.svc.ConfirmOrder(ctx, o2.ID, "sa")
 	require.NoError(t, err)
 	next := f.plans.active["tenant/10003"]
 	require.Equal(t, "pool", next.PlanID)
-	require.Equal(t, billingNow.AddDate(0, 1, 0), *f.right(next.ID, "thue").EndsAt)
+	require.Equal(t, billingNow.AddDate(0, 6, 0), *f.right(next.ID, "thue").EndsAt)
+	// "kt" (not sold with pool) is carried to its paid end
 	kt := f.right(next.ID, "kt")
 	require.NotNil(t, kt, "carried over")
 	require.Equal(t, paidEnd, *kt.EndsAt)
 	require.Equal(t, o.ID, *kt.OrderID)
+}
+
+// Money paths of a plan order that renews or replaces the current
+// subscription (review items 1, 2, 6): only time not yet paid is charged.
+func TestQuoteAddonLinesAgainstWhatIsHeld(t *testing.T) {
+	type held struct {
+		end  *time.Time // nil: with the subscription
+		none bool
+	}
+	at := func(m, d int) *time.Time { v := billingNow.AddDate(0, m, d); return &v }
+	cases := []struct {
+		name      string
+		subPlan   string
+		subSeats  int
+		subEnd    *time.Time
+		held      held
+		req       types.UsageQuoteRequest
+		want      types.UsageOrderAddonLine
+		heldError bool
+	}{
+		{
+			name:    "renewal + new add-on pays the rest of the current period too",
+			subPlan: "seat", subSeats: 3, subEnd: at(11, 0), held: held{none: true},
+			req: types.UsageQuoteRequest{PlanID: "seat", Months: 1, Seats: 3},
+			want: types.UsageOrderAddonLine{Units: 3, Months: 1, GapMonths: 11, GapVND: 99_000 * 3 * 11,
+				AmountVND: 99_000 * 3 * 12},
+		},
+		{
+			name:    "renewal of a right that ends early: the uncovered gap (2 months 11 days → ½)",
+			subPlan: "pool", subEnd: at(5, 0), held: held{end: at(2, 20)},
+			req: types.UsageQuoteRequest{PlanID: "pool", Months: 1},
+			want: types.UsageOrderAddonLine{Units: 1, Months: 1, CoveredUntil: at(2, 20), GapMonths: 2,
+				GapLeftoverDays: 11, GapLeftoverFactor: types.UsageAddonLeftoverHalf,
+				GapVND: 99_000*2 + 49_500, AmountVND: 99_000*2 + 49_500 + 99_000},
+		},
+		{
+			name:    "renewal of a held right: just the renewal months",
+			subPlan: "pool", subEnd: at(2, 0), held: held{},
+			req:  types.UsageQuoteRequest{PlanID: "pool", Months: 3},
+			want: types.UsageOrderAddonLine{Units: 1, Months: 3, CoveredUntil: at(2, 0), AmountVND: 99_000 * 3},
+		},
+		{
+			name:    "seats added at renewal pay the added seats for the rest of the period (2 months 10 days)",
+			subPlan: "seat", subSeats: 3, subEnd: at(2, 10), held: held{},
+			req: types.UsageQuoteRequest{PlanID: "seat", Months: 1, Seats: 5},
+			want: types.UsageOrderAddonLine{Units: 5, Months: 1, CoveredUntil: at(2, 10), ExtraUnits: 2,
+				ExtraUnitsVND: 99_000*2*2 + 99_000, AmountVND: 99_000*5 + 99_000*2*2 + 99_000},
+		},
+		{
+			name:    "plan change: only after the carried paid end",
+			subPlan: "seat", subSeats: 1, subEnd: at(3, 0), held: held{},
+			req:  types.UsageQuoteRequest{PlanID: "pool", Months: 6},
+			want: types.UsageOrderAddonLine{Units: 1, Months: 3, CoveredUntil: at(3, 0), AmountVND: 99_000 * 3},
+		},
+		{
+			name:    "plan change to more seats also pays the added seats while the carried right runs",
+			subPlan: "pool", subEnd: at(1, 0), held: held{},
+			req: types.UsageQuoteRequest{PlanID: "seat", Months: 2, Seats: 4},
+			want: types.UsageOrderAddonLine{Units: 4, Months: 1, CoveredUntil: at(1, 0), ExtraUnits: 3,
+				ExtraUnitsVND: 99_000 * 3, AmountVND: 99_000*4 + 99_000*3},
+		},
+		{
+			name:    "plan change inside the carried period: refused",
+			subPlan: "seat", subSeats: 1, subEnd: at(3, 0), held: held{},
+			req: types.UsageQuoteRequest{PlanID: "pool", Months: 1}, heldError: true,
+		},
+		{
+			name: "no subscription: plain months",
+			held: held{none: true},
+			req:  types.UsageQuoteRequest{PlanID: "pool", Months: 2},
+			want: types.UsageOrderAddonLine{Units: 1, Months: 2, AmountVND: 99_000 * 2},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			f := newBillingFixture(t)
+			withAddonCatalogue(f)
+			if c.subPlan != "" {
+				mode := "pool"
+				if c.subPlan == "seat" {
+					mode = "seat"
+				}
+				f.plans.active["tenant/10003"] = &types.UsageSubscription{ID: "sub-1", ScopeType: "tenant", ScopeID: "10003",
+					PlanID: c.subPlan, Mode: mode, Seats: c.subSeats, StartsAt: billingNow.AddDate(0, -1, 0),
+					EndsAt: c.subEnd, Status: types.UsageSubscriptionActive}
+				if !c.held.none {
+					require.NoError(t, f.plans.UpsertSubscriptionAddon(context.Background(), &types.UsageSubscriptionAddon{
+						SubscriptionID: "sub-1", AgentID: "thue", StartsAt: billingNow.AddDate(0, -1, 0), EndsAt: c.held.end}))
+				}
+			}
+			req := c.req
+			req.ScopeType = "tenant"
+			req.AddonAgentIDs = []string{"thue"}
+			q, err := f.svc.Quote(context.Background(), req, "10003")
+			if c.heldError {
+				require.Equal(t, "addon_held", badRequestReason(t, err))
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, q.Addons, 1)
+			got := q.Addons[0]
+			c.want.AgentID, c.want.Name, c.want.UnitPriceVND = "thue", "Thuế HKD", 99_000
+			require.Equal(t, c.want, got)
+			require.Equal(t, got.AmountVND, q.AddonsVND)
+		})
+	}
 }
 
 func TestMidTermAddonPurchase(t *testing.T) {
@@ -270,4 +388,85 @@ func TestScopeAddonsForTheBuyPage(t *testing.T) {
 	require.Equal(t, "kt", out.Purchasable[0].AgentID)
 	require.True(t, out.Purchasable[0].PerSeat)
 	_ = time.Now
+}
+
+// Review item 2: a right is never shortened, an order never pays twice for
+// the same time.
+func TestAddonRightsAreNeverShortenedOrPaidTwice(t *testing.T) {
+	ctx := context.Background()
+	end := billingNow.AddDate(0, 2, 0)
+	newSub := func(f *billingFixture) {
+		f.plans.active["tenant/10003"] = &types.UsageSubscription{ID: "sub-1", ScopeType: "tenant", ScopeID: "10003",
+			PlanID: "pool", Mode: "pool", StartsAt: billingNow.AddDate(0, -1, 0), EndsAt: &end,
+			Status: types.UsageSubscriptionActive}
+	}
+	addonReq := types.UsageQuoteRequest{ScopeType: "tenant", Kind: "addon", AddonAgentIDs: []string{"thue"}}
+
+	t.Run("a second pending order for the same add-on is refused", func(t *testing.T) {
+		f := newBillingFixture(t)
+		withAddonCatalogue(f)
+		newSub(f)
+		first, err := f.svc.CreateOrder(ctx, addonReq, "10003", "u1")
+		require.NoError(t, err)
+		_, err = f.svc.CreateOrder(ctx, addonReq, "10003", "u2")
+		require.Equal(t, 409, appErrHTTP(t, err))
+		// nor a renewal that buys it again
+		_, err = f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1,
+			AddonAgentIDs: []string{"thue"}}, "10003", "u2")
+		require.Equal(t, 409, appErrHTTP(t, err))
+		// a renewal without it, or another add-on, is fine
+		_, err = f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1}, "10003", "u2")
+		require.NoError(t, err)
+		// once the first is cancelled, it can be ordered again
+		_, err = f.svc.CancelOrder(ctx, first.ID)
+		require.NoError(t, err)
+		_, err = f.svc.CreateOrder(ctx, addonReq, "10003", "u1")
+		require.NoError(t, err)
+	})
+
+	t.Run("confirming an order whose add-on is already covered is refused", func(t *testing.T) {
+		f := newBillingFixture(t)
+		withAddonCatalogue(f)
+		newSub(f)
+		o, err := f.svc.CreateOrder(ctx, addonReq, "10003", "u1")
+		require.NoError(t, err)
+		// meanwhile a SuperAdmin grants it to the end by hand
+		require.NoError(t, f.plans.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+			SubscriptionID: "sub-1", AgentID: "thue", StartsAt: billingNow, EndsAt: &end}))
+		_, err = f.svc.ConfirmOrder(ctx, o.ID, "sa")
+		require.Equal(t, 409, appErrHTTP(t, err))
+		// paid through the webhook: kept as confirm_failed for a refund
+		res := f.pay(t, types.UsagePaymentWebhookRequest{TransactionID: "FT2", AmountVND: o.TotalVND, Content: o.OrderCode})
+		require.Equal(t, types.UsagePaymentConfirmFailed, res.Transaction.Status)
+	})
+
+	t.Run("a mid-term order confirmed after a longer right does not pull it back", func(t *testing.T) {
+		f := newBillingFixture(t)
+		withAddonCatalogue(f)
+		newSub(f)
+		o, err := f.svc.CreateOrder(ctx, addonReq, "10003", "u1")
+		require.NoError(t, err)
+		// the right is meanwhile granted from now to the end minus a day,
+		// then the subscription is renewed and the right extended past
+		// the order's paid_until by a merge
+		later := end.AddDate(0, 1, 0)
+		short := end.AddDate(0, 0, -1)
+		require.NoError(t, f.plans.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+			SubscriptionID: "sub-1", AgentID: "thue", StartsAt: billingNow, EndsAt: &short}))
+		_, err = f.svc.ConfirmOrder(ctx, o.ID, "sa")
+		require.NoError(t, err, "not yet covered to paid_until: the order applies")
+		require.Equal(t, end, *f.right("sub-1", "thue").EndsAt)
+		require.NoError(t, f.plans.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+			SubscriptionID: "sub-1", AgentID: "thue", StartsAt: billingNow, EndsAt: &later}))
+		require.NoError(t, f.plans.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+			SubscriptionID: "sub-1", AgentID: "thue", StartsAt: billingNow, EndsAt: &end}))
+		require.Equal(t, later, *f.right("sub-1", "thue").EndsAt, "an earlier end never shortens a right")
+	})
+}
+
+func appErrHTTP(t *testing.T, err error) int {
+	t.Helper()
+	appErr, ok := err.(*apperrors.AppError)
+	require.True(t, ok, "%v", err)
+	return appErr.HTTPCode
 }

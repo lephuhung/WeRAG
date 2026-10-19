@@ -157,3 +157,36 @@ func (a *CustomAgent) EffectiveEnabled() bool {
 	}
 	return true
 }
+
+// MergeSubscriptionAddon is the never-shorten rule for writing a right that
+// may already exist: the later end wins (nil = "with the subscription"
+// counts as the latest), the earlier start is kept, and price, order and
+// grantor come from the new write. A right is only ever shortened on
+// purpose (PinSubscriptionAddonEnd) or revoked.
+func MergeSubscriptionAddon(existing, incoming *UsageSubscriptionAddon) *UsageSubscriptionAddon {
+	if existing == nil {
+		return incoming
+	}
+	out := *incoming
+	out.CreatedAt = existing.CreatedAt
+	if !existing.StartsAt.IsZero() && (out.StartsAt.IsZero() || existing.StartsAt.Before(out.StartsAt)) {
+		out.StartsAt = existing.StartsAt
+	}
+	switch {
+	case existing.EndsAt == nil || incoming.EndsAt == nil:
+		out.EndsAt = nil
+	case existing.EndsAt.After(*incoming.EndsAt):
+		end := *existing.EndsAt
+		out.EndsAt = &end
+	}
+	return &out
+}
+
+// CoversUntil reports whether a right still runs at now and at least to
+// end (a nil end follows the subscription and covers any end within it).
+func (a *UsageSubscriptionAddon) CoversUntil(now, end time.Time) bool {
+	if a == nil || !a.IsCurrentAt(now) {
+		return false
+	}
+	return a.EndsAt == nil || !a.EndsAt.Before(end)
+}

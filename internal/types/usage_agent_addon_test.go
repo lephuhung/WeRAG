@@ -40,3 +40,35 @@ func TestPriceAddonRemainder(t *testing.T) {
 	_, _, _, amount := PriceAddonRemainder(49_001, 1, from, from.AddDate(0, 0, 3))
 	require.Equal(t, int64(24_501), amount)
 }
+
+func TestMergeSubscriptionAddonNeverShortens(t *testing.T) {
+	d := func(days int) *time.Time {
+		v := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC).AddDate(0, 0, days)
+		return &v
+	}
+	cases := []struct {
+		name               string
+		oldEnd, newEnd     *time.Time
+		want               *time.Time
+		oldStart, newStart *time.Time
+		wantStart          *time.Time
+	}{
+		{"later new end wins", d(10), d(20), d(20), d(0), d(5), d(0)},
+		{"earlier new end loses", d(20), d(10), d(20), d(0), d(5), d(0)},
+		{"open existing stays open", nil, d(10), nil, d(5), d(0), d(0)},
+		{"open new opens it", d(10), nil, nil, d(0), d(0), d(0)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := MergeSubscriptionAddon(
+				&UsageSubscriptionAddon{StartsAt: *c.oldStart, EndsAt: c.oldEnd, PriceVND: 1},
+				&UsageSubscriptionAddon{StartsAt: *c.newStart, EndsAt: c.newEnd, PriceVND: 2})
+			require.Equal(t, c.want, got.EndsAt)
+			require.Equal(t, *c.wantStart, got.StartsAt, "the earlier start is kept")
+			require.Equal(t, int64(2), got.PriceVND)
+		})
+	}
+	require.Same(t, (*UsageSubscriptionAddon)(nil), (*UsageSubscriptionAddon)(nil))
+	in := &UsageSubscriptionAddon{PriceVND: 3}
+	require.Same(t, in, MergeSubscriptionAddon(nil, in), "a new right is written as is")
+}

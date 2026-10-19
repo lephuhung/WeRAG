@@ -59,22 +59,163 @@ func (s *usageBillingService) sellableAddons(
 	return out, nil
 }
 
-// priceAddonsWithPlan adds the add-on lines of a plan order: unit × units ×
-// the order's months.
-func (s *usageBillingService) priceAddonsWithPlan(ctx context.Context, q *types.UsageQuote, agentIDs []string) error {
+// priceAddonsWithPlan adds the add-on lines of a plan order: unit × units
+// × the order's months, but only for time the scope has not paid for yet.
+//   - Renewal of the current subscription: a right that does not yet run to
+//     the current end also pays the uncovered gap (from max(now, its end) to
+//     the current end), priced like a mid-term purchase; a right that
+//     already runs past the current end pays only beyond it.
+//   - New subscription replacing a current one (plan change): a right the
+//     scope holds is carried over to its paid end, so only the time after
+//     that end is charged; one that already covers the new period is
+//     refused (addon_held).
+//   - Either way, seats added on a held right pay for the added seats while
+//     the held right still runs.
+func (s *usageBillingService) priceAddonsWithPlan(
+	ctx context.Context, q *types.UsageQuote, agentIDs []string, scopeID string,
+) error {
 	rows, err := s.sellableAddons(ctx, q.Plan.ID, agentIDs)
-	if err != nil {
+	if err != nil || len(rows) == 0 {
 		return err
 	}
+	now := s.now()
+	var cur *types.UsageSubscription
+	held := map[string]*types.UsageSubscriptionAddon{}
+	if scopeID != "" {
+		if cur, err = s.planRepo.GetActiveSubscription(ctx, q.Plan.ScopeKind, scopeID); err != nil {
+			return err
+		}
+		if cur != nil && cur.IsCurrentAt(now) {
+			list, err := s.planRepo.ListSubscriptionAddons(ctx, cur.ID)
+			if err != nil {
+				return err
+			}
+			for _, h := range list {
+				if h.IsCurrentAt(now) {
+					held[h.AgentID] = h
+				}
+			}
+		} else {
+			cur = nil
+		}
+	}
 	units := addonUnits(q.Mode, q.Seats)
+	renewal := renewsSubscription(cur, q.Plan.ID, q.Mode, now)
 	for _, a := range rows {
-		q.Addons = append(q.Addons, types.UsageOrderAddonLine{
-			AgentID: a.AgentID, Name: a.AgentName, UnitPriceVND: a.PriceVND, Units: units,
-			Months: q.Months, AmountVND: a.PriceVND * int64(units) * int64(q.Months),
-		})
+		line := types.UsageOrderAddonLine{
+			AgentID: a.AgentID, Name: a.AgentName, UnitPriceVND: a.PriceVND, Units: units, Months: q.Months,
+		}
+		h := held[a.AgentID]
+		heldUnits := 0
+		if cur != nil {
+			heldUnits = addonUnits(cur.Mode, cur.Seats)
+		}
+		switch {
+		case renewal && cur.EndsAt != nil && cur.EndsAt.After(now):
+			oldEnd := *cur.EndsAt
+			newEnd := oldEnd.AddDate(0, q.Months, 0)
+			covered := now
+			if h != nil {
+				covered = oldEnd
+				if h.EndsAt != nil && h.EndsAt.After(now) {
+					covered = *h.EndsAt
+				}
+				c := covered
+				line.CoveredUntil = &c
+			}
+			if !covered.Before(newEnd) {
+				return addonHeldError(a.AgentID, covered)
+			}
+			if covered.Before(oldEnd) {
+				line.GapMonths, line.GapLeftoverDays, line.GapLeftoverFactor, line.GapVND =
+					types.PriceAddonRemainder(a.PriceVND, units, covered, oldEnd)
+				line.AmountVND = line.GapVND + a.PriceVND*int64(units)*int64(q.Months)
+			} else {
+				// held past the current end: only the rest of the renewal
+				line.Months, line.LeftoverDays, line.LeftoverFactor, line.AmountVND =
+					types.PriceAddonRemainder(a.PriceVND, units, covered, newEnd)
+			}
+			if h != nil && units > heldUnits {
+				_, _, _, line.ExtraUnitsVND = types.PriceAddonRemainder(a.PriceVND, units-heldUnits, now, minTime(covered, newEnd))
+				line.ExtraUnits = units - heldUnits
+				line.AmountVND += line.ExtraUnitsVND
+			}
+		case !renewal && h != nil:
+			// plan change: the held right is carried over to its paid end
+			newEnd := now.AddDate(0, q.Months, 0)
+			carried := h.EndsAt
+			if carried == nil {
+				carried = cur.EndsAt
+			}
+			if carried == nil || !carried.Before(newEnd) {
+				end := newEnd
+				if carried != nil {
+					end = *carried
+				}
+				return addonHeldError(a.AgentID, end)
+			}
+			c := *carried
+			line.CoveredUntil = &c
+			line.Months, line.LeftoverDays, line.LeftoverFactor, line.AmountVND =
+				types.PriceAddonRemainder(a.PriceVND, units, c, newEnd)
+			if units > heldUnits {
+				_, _, _, line.ExtraUnitsVND = types.PriceAddonRemainder(a.PriceVND, units-heldUnits, now, c)
+				line.ExtraUnits = units - heldUnits
+				line.AmountVND += line.ExtraUnitsVND
+			}
+		default:
+			line.AmountVND = a.PriceVND * int64(units) * int64(q.Months)
+		}
+		q.Addons = append(q.Addons, line)
 	}
 	q.AddonsVND = q.Addons.Total()
 	q.SubtotalVND += q.AddonsVND
+	return nil
+}
+
+func minTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
+}
+
+// addonHeldError refuses an add-on the scope already holds for the whole
+// period an order would pay for.
+func addonHeldError(agentID string, until time.Time) error {
+	return apperrors.NewBadRequestError("the subscription already has this specialist agent for that period").
+		WithDetails(map[string]string{"reason": "addon_held", "agent_id": agentID,
+			"covered_until": until.Format(time.RFC3339)})
+}
+
+// addonOrderPromoAllowed is review item 5, awaiting the user's decision,
+// kept in this one place: whether a promo code (checked against the plan of
+// the subscription) also discounts an add-on-only order. Today: yes.
+func addonOrderPromoAllowed() bool { return true }
+
+// refusePendingAddons refuses an order for an add-on that another pending
+// order of the same scope already buys: confirmed one after the other they
+// would charge twice for the same time.
+func (s *usageBillingService) refusePendingAddons(ctx context.Context, scopeType, scopeID string, lines types.UsageOrderAddonLines) error {
+	if len(lines) == 0 {
+		return nil
+	}
+	pending, err := s.planRepo.PendingOrderAddons(ctx, scopeType, scopeID)
+	if err != nil {
+		return err
+	}
+	want := map[string]bool{}
+	for _, l := range lines {
+		want[l.AgentID] = true
+	}
+	for _, ids := range pending {
+		for _, id := range ids {
+			if want[id] {
+				return apperrors.NewConflictError("another order waiting for payment already buys this specialist agent; pay or cancel it first").
+					WithDetails(map[string]string{"reason": "addon_pending", "agent_id": id})
+			}
+		}
+	}
 	return nil
 }
 
@@ -169,8 +310,11 @@ func (s *usageBillingService) applyAddonOrder(ctx context.Context, o *types.Usag
 }
 
 // grantOrderAddons writes the order's add-on lines on sub: a line's right
-// runs to its PaidUntil (mid-term purchase) or to the subscription's end.
-// A right the subscription already holds keeps its start.
+// runs to its PaidUntil (mid-term purchase) or to the subscription's end,
+// never shortening what the subscription already holds. A paid line whose
+// right the subscription already holds to that end is refused (409): the
+// money is kept on the order for the SuperAdmin to refund instead of being
+// swallowed (the webhook records confirm_failed).
 func (s *usageBillingService) grantOrderAddons(
 	ctx context.Context, o *types.UsageOrder, sub *types.UsageSubscription, now time.Time,
 	held map[string]*types.UsageSubscriptionAddon,
@@ -190,16 +334,19 @@ func (s *usageBillingService) grantOrderAddons(
 	}
 	orderID := o.ID
 	for _, line := range o.Addons {
-		row := &types.UsageSubscriptionAddon{
-			SubscriptionID: sub.ID, AgentID: line.AgentID, StartsAt: now, EndsAt: sub.EndsAt,
-			PriceVND: line.UnitPriceVND, OrderID: &orderID, GrantedBy: "order " + o.OrderCode,
-		}
+		end := sub.EndsAt
 		if line.PaidUntil != nil {
-			end := *line.PaidUntil
-			row.EndsAt = &end
+			e := *line.PaidUntil
+			end = &e
 		}
-		if h := held[line.AgentID]; h != nil && h.IsCurrentAt(now) {
-			row.StartsAt = h.StartsAt
+		if h := held[line.AgentID]; line.AmountVND > 0 && end != nil && h.CoversUntil(now, *end) {
+			return apperrors.NewConflictError(fmt.Sprintf(
+				"order %s pays for %s, which the subscription already has to that date; cancel it",
+				o.OrderCode, line.AgentID)).WithDetails(map[string]string{"reason": "addon_held", "agent_id": line.AgentID})
+		}
+		row := &types.UsageSubscriptionAddon{
+			SubscriptionID: sub.ID, AgentID: line.AgentID, StartsAt: now, EndsAt: end,
+			PriceVND: line.UnitPriceVND, OrderID: &orderID, GrantedBy: "order " + o.OrderCode,
 		}
 		if err := s.planRepo.UpsertSubscriptionAddon(ctx, row); err != nil {
 			return err
@@ -233,9 +380,7 @@ func (s *usageBillingService) freezeUnrenewedAddons(
 		if renewed[h.AgentID] || h.EndsAt != nil {
 			continue
 		}
-		end := *oldEnd
-		h.EndsAt = &end
-		if err := s.planRepo.UpsertSubscriptionAddon(ctx, h); err != nil {
+		if err := s.planRepo.PinSubscriptionAddonEnd(ctx, sub.ID, h.AgentID, *oldEnd); err != nil {
 			return err
 		}
 	}
@@ -244,8 +389,7 @@ func (s *usageBillingService) freezeUnrenewedAddons(
 
 // carryAddonsOver moves the current add-ons of a replaced subscription to
 // its successor (plan change): each keeps its paid end (its own end, else
-// the old subscription's), whether or not the new plan sells it; one the
-// order buys again is written by grantOrderAddons instead.
+// the old subscription's), whether or not the new plan sells it.
 func (s *usageBillingService) carryAddonsOver(
 	ctx context.Context, old, next *types.UsageSubscription, o *types.UsageOrder, now time.Time,
 ) error {
@@ -256,9 +400,10 @@ func (s *usageBillingService) carryAddonsOver(
 	if err != nil {
 		return err
 	}
-	bought := orderAddonIDs(o)
+	// every current right moves, including one the order buys again: the
+	// order's line then only extends it (never-shorten merge)
 	for _, h := range held {
-		if bought[h.AgentID] || !h.IsCurrentAt(now) {
+		if !h.IsCurrentAt(now) {
 			continue
 		}
 		end := h.EndsAt

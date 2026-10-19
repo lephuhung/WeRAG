@@ -40,6 +40,20 @@ type UsageOrderAddonLine struct {
 	// priced to (the right ends there even if the subscription is extended
 	// before the order is paid).
 	PaidUntil *time.Time `json:"paid_until,omitempty"`
+	// CoveredUntil: the end of the right the scope already holds (renewal,
+	// plan change); only the time after it is charged.
+	CoveredUntil *time.Time `json:"covered_until,omitempty"`
+	// Gap*: renewal only — the part of the current period the right does
+	// not cover yet (from max(now, CoveredUntil) to the current end), priced
+	// like a mid-term purchase, on top of Months.
+	GapMonths         int    `json:"gap_months,omitempty"`
+	GapLeftoverDays   int    `json:"gap_leftover_days,omitempty"`
+	GapLeftoverFactor string `json:"gap_leftover_factor,omitempty"`
+	GapVND            int64  `json:"gap_vnd,omitempty"`
+	// ExtraUnits*: seats added on an order whose right is already held —
+	// the added seats for the time the held right still covers.
+	ExtraUnits    int   `json:"extra_units,omitempty"`
+	ExtraUnitsVND int64 `json:"extra_units_vnd,omitempty"`
 }
 
 // UsageOrderAddonLines is the addons jsonb of usage_orders.
@@ -112,13 +126,7 @@ func PriceAddonRemainder(unit int64, units int, from, until time.Time) (months, 
 	if !until.After(from) {
 		return 0, 0, "", 0
 	}
-	for !from.AddDate(0, months+1, 0).After(until) {
-		months++
-	}
-	rest := until.Sub(from.AddDate(0, months, 0))
-	if rest > 0 {
-		leftoverDays = int((rest + 24*time.Hour - 1) / (24 * time.Hour))
-	}
+	months, leftoverDays = AddonPeriodSplit(from, until)
 	monthly := unit * int64(units)
 	amount = monthly * int64(months)
 	switch {
@@ -139,4 +147,24 @@ type UsageScopeAddons struct {
 	Subscription *UsageSubscription        `json:"subscription,omitempty"`
 	Held         []*UsageSubscriptionAddon `json:"held"`
 	Purchasable  []UsagePlanAddonOffer     `json:"purchasable"`
+}
+
+// AddonPeriodSplit splits [from, until) into whole months and the days left
+// over — the one place the day counting of decision 7.3 is defined (review
+// item 7, awaiting the user's decision). Today: months step with Go's
+// AddDate from `from` (31/1 + 1 month = 3/3), and the leftover counts
+// started 24-hour periods from the instant of purchase, not calendar days
+// in GMT+7.
+func AddonPeriodSplit(from, until time.Time) (months, leftoverDays int) {
+	if !until.After(from) {
+		return 0, 0
+	}
+	for !from.AddDate(0, months+1, 0).After(until) {
+		months++
+	}
+	rest := until.Sub(from.AddDate(0, months, 0))
+	if rest > 0 {
+		leftoverDays = int((rest + 24*time.Hour - 1) / (24 * time.Hour))
+	}
+	return months, leftoverDays
 }

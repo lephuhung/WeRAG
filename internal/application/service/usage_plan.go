@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -521,7 +522,7 @@ func (s *usagePlanService) ListSubscriptionAddons(
 }
 
 // GrantSubscriptionAddon gives a subscription the right to use one
-// specialist agent, or replaces the period and price of an existing grant.
+// specialist agent, or extends an existing grant (never shortens it; price and grantor are replaced).
 // Only an "addon" agent can be granted: a basic one is already everyone's
 // and an internal one follows its "Tổ chức áp dụng" list.
 func (s *usagePlanService) GrantSubscriptionAddon(
@@ -584,15 +585,36 @@ func (s *usagePlanService) RevokeSubscriptionAddon(ctx context.Context, subscrip
 	return nil
 }
 
-// includedPlanAgents names the basic agents every plan includes, in the
-// caller's locale, as builtin_agents.yaml names them; one switched off in
-// this build is left out.
-func includedPlanAgents(ctx context.Context) []types.UsagePlanAgent {
+// includedPlanAgents names the basic agents every plan includes as users
+// see them: the configuration profile's stored row when there is one (a
+// SuperAdmin may have renamed it), localised like the agent picker, and
+// leaving out one that is switched off. A read failure falls back to
+// builtin_agents.yaml.
+func includedPlanAgents(ctx context.Context, repo interfaces.UsagePlanRepository) []types.UsagePlanAgent {
+	stored := map[string]*types.CustomAgent{}
+	if repo != nil {
+		rows, err := repo.ProfileBuiltinAgents(ctx, types.UsageIncludedAgentIDs)
+		if err != nil {
+			logger.Warnf(ctx, "usage: included agents read from the profile failed: %v", err)
+		}
+		for _, r := range rows {
+			if _, ok := stored[r.ID]; !ok {
+				stored[r.ID] = r
+			}
+		}
+	}
 	out := make([]types.UsagePlanAgent, 0, len(types.UsageIncludedAgentIDs))
 	for _, id := range types.UsageIncludedAgentIDs {
-		if a := types.GetBuiltinAgentWithContext(ctx, id, 0); a != nil {
-			out = append(out, types.UsagePlanAgent{ID: id, Name: a.Name})
+		a := stored[id]
+		if a != nil {
+			types.ApplyBuiltinAgentLocalization(ctx, a)
+		} else {
+			a = types.GetBuiltinAgentWithContext(ctx, id, 0)
 		}
+		if a == nil || !a.EffectiveEnabled() {
+			continue
+		}
+		out = append(out, types.UsagePlanAgent{ID: id, Name: a.Name})
 	}
 	return out
 }
@@ -602,7 +624,7 @@ func (s *usagePlanService) ListAgentAddons(ctx context.Context, includeInactive 
 	if err != nil {
 		return nil, err
 	}
-	return &types.UsageAgentAddonCatalogue{Addons: rows, IncludedAgents: includedPlanAgents(ctx)}, nil
+	return &types.UsageAgentAddonCatalogue{Addons: rows, IncludedAgents: includedPlanAgents(ctx, s.repo)}, nil
 }
 
 // validateAgentAddon normalizes a catalogue row and checks it: an addon
