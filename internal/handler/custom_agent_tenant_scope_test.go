@@ -28,15 +28,16 @@ func agentScopeRouter(t *testing.T) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.CustomAgent{}))
+	require.NoError(t, db.AutoMigrate(&types.CustomAgent{}, &types.UsageSubscription{}, &types.UsageSubscriptionAddon{}))
 	require.NoError(t, db.Exec(`CREATE TABLE tenants (id INTEGER PRIMARY KEY, name TEXT,
 		kind TEXT NOT NULL DEFAULT 'workspace', config_profile_id INTEGER, deleted_at DATETIME)`).Error)
 	require.NoError(t, db.Exec(`INSERT INTO tenants (id, name, kind, config_profile_id) VALUES
 		(9, 'Cấu hình chung', 'config_profile', NULL), (1, 'Nhóm thuế', 'workspace', 9), (2, 'Phòng khác', 'workspace', 9)`).Error)
 	repo := repository.NewCustomAgentRepository(db)
 	require.NoError(t, repo.CreateAgent(context.Background(), &types.CustomAgent{
-		ID: "group", Name: "Thuế", TenantID: 9, AppliesToTenantIDs: types.AgentTenantScope{1},
-		Config: types.CustomAgentConfig{AgentMode: types.AgentModeSmartReasoning},
+		ID: "group", Name: "Thuế", TenantID: 9, Distribution: types.AgentDistributionInternal,
+		AppliesToTenantIDs: types.AgentTenantScope{1},
+		Config:             types.CustomAgentConfig{AgentMode: types.AgentModeSmartReasoning},
 	}))
 
 	h := &CustomAgentHandler{service: service.NewCustomAgentService(repo, nil, nil, nil, nil, nil, nil)}
@@ -135,4 +136,34 @@ func TestAgentTenantScopeHandlerValidatesList(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &created))
 	require.Contains(t, rec.Body.String(), `"applies_to_tenant_ids":[]`, "an empty list is an array, not null")
+}
+
+func TestAgentDistributionHandler(t *testing.T) {
+	router := agentScopeRouter(t)
+	super := map[string]string{"X-Test-Tenant": "9", "X-Test-Super": "1"}
+	cfg := `"config":{"agent_mode":"smart-reasoning"}`
+
+	// the default on create is answered back
+	rec := agentScopeDo(router, http.MethodPost, "/agents", `{"name":"Mới",`+cfg+`}`, super)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"distribution":"basic"`)
+	rec = agentScopeDo(router, http.MethodPost, "/agents", `{"name":"Nhóm",`+cfg+`,"applies_to_tenant_ids":[1]}`, super)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"distribution":"internal"`)
+
+	// a list on a basic agent, an unknown value: 400 with the reason
+	rec = agentScopeDo(router, http.MethodPost, "/agents",
+		`{"name":"Sai",`+cfg+`,"distribution":"basic","applies_to_tenant_ids":[1]}`, super)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "Nội bộ")
+	rec = agentScopeDo(router, http.MethodPost, "/agents", `{"name":"Sai",`+cfg+`,"distribution":"all"}`, super)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+
+	// switching "group" to addon hides it from workspace 1 (not bought)
+	rec = agentScopeDo(router, http.MethodPut, "/agents/group", `{"name":"Thuế",`+cfg+`,"distribution":"addon"}`, super)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), `"distribution":"addon"`)
+	require.Contains(t, rec.Body.String(), `"applies_to_tenant_ids":[]`)
+	rec = agentScopeDo(router, http.MethodGet, "/agents/group", "", map[string]string{"X-Test-Tenant": "1"})
+	require.Equal(t, http.StatusNotFound, rec.Code)
 }

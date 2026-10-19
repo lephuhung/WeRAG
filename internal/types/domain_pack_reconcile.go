@@ -210,6 +210,9 @@ type DomainPackAgent struct {
 	// Tổ chức on its configuration profile); AppliesTo names them.
 	AppliesToTenantIDs AgentTenantScope       `json:"applies_to_tenant_ids"`
 	AppliesTo          []DomainPackAgentScope `json:"applies_to" gorm:"-"`
+	// Distribution is the agent's "Cách phân phối" (basic | addon |
+	// internal); the list above only counts for internal.
+	Distribution string `json:"distribution"`
 }
 
 // DomainPackAgentScope is one Tổ chức in an agent's "Tổ chức áp dụng" list.

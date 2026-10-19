@@ -25,8 +25,8 @@ func agentScopeFixture(t *testing.T) (*gorm.DB, *customAgentRepository) {
 	ctx := context.Background()
 	for _, a := range []*types.CustomAgent{
 		{ID: "everyone", Name: "everyone", TenantID: 9},
-		{ID: "group", Name: "group", TenantID: 9, AppliesToTenantIDs: types.AgentTenantScope{1, 3}},
-		{ID: "only-two", Name: "only-two (profile)", TenantID: 9, AppliesToTenantIDs: types.AgentTenantScope{2}},
+		{ID: "group", Name: "group", TenantID: 9, Distribution: types.AgentDistributionInternal, AppliesToTenantIDs: types.AgentTenantScope{1, 3}},
+		{ID: "only-two", Name: "only-two (profile)", TenantID: 9, Distribution: types.AgentDistributionInternal, AppliesToTenantIDs: types.AgentTenantScope{2}},
 		{ID: "only-two", Name: "only-two (workspace 1)", TenantID: 1},
 	} {
 		require.NoError(t, repo.CreateAgent(ctx, a))
@@ -122,17 +122,21 @@ func TestInvalidScopeTenantIDs(t *testing.T) {
 }
 
 // The Postgres branch renders the jsonb containment the migration's GIN index
-// serves; the SQLite tests above only exercise the json_each branch.
+// serves and the add-on EXISTS; the SQLite tests above only exercise the
+// json_each branch.
 func TestAgentTenantScopePostgresSQL(t *testing.T) {
 	db, err := gorm.Open(postgres.New(postgres.Config{DSN: "host=127.0.0.1 user=x dbname=x sslmode=disable"}),
 		&gorm.Config{DryRun: true, DisableAutomaticPing: true})
 	require.NoError(t, err)
-	stmt := whereAgentAppliesToTenant(
-		db.Model(&types.CustomAgent{}).Where(configScopeSQL("tenant_id"), configScopeArgs(7)...), 7,
+	stmt := whereAgentVisibleTo(
+		db.Model(&types.CustomAgent{}).Where(configScopeSQL("tenant_id"), configScopeArgs(7)...),
+		types.AgentViewer{TenantID: 7, UserID: "u-1"},
 	).Find(&[]*types.CustomAgent{}).Statement
 	sql := stmt.SQL.String()
 	require.Contains(t, sql, "COALESCE(applies_to_tenant_ids, '[]'::jsonb) = '[]'::jsonb")
-	require.Contains(t, sql, "applies_to_tenant_ids @> jsonb_build_array($4::bigint)")
-	require.Contains(t, sql, "(tenant_id = $3 OR")
-	require.Equal(t, []interface{}{uint64(7), uint64(7), uint64(7), uint64(7)}, stmt.Vars)
+	require.Contains(t, sql, "applies_to_tenant_ids @> jsonb_build_array($6::bigint)")
+	require.Contains(t, sql, "(tenant_id = $3 OR distribution = $4")
+	require.Contains(t, sql, "WHERE usa.agent_id = custom_agents.id")
+	require.Contains(t, sql, "OR (us.scope_type = $15 AND us.scope_id = $16)")
+	require.Equal(t, "u-1", stmt.Vars[len(stmt.Vars)-1])
 }

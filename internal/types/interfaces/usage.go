@@ -76,6 +76,18 @@ type UsagePlanRepository interface {
 	HasSeat(ctx context.Context, subscriptionID, userID string) (bool, error)
 	AddSeat(ctx context.Context, seat *types.UsageSeat) error
 	RemoveSeat(ctx context.Context, subscriptionID, userID string) error
+
+	// ListSubscriptionAddons lists the add-on agents of a subscription,
+	// with the agent names filled.
+	ListSubscriptionAddons(ctx context.Context, subscriptionID string) ([]*types.UsageSubscriptionAddon, error)
+	// UpsertSubscriptionAddon inserts the (subscription, agent) row or
+	// replaces its period, price and grantor.
+	UpsertSubscriptionAddon(ctx context.Context, addon *types.UsageSubscriptionAddon) error
+	// DeleteSubscriptionAddon removes the row; false when there was none.
+	DeleteSubscriptionAddon(ctx context.Context, subscriptionID, agentID string) (bool, error)
+	// CustomAgentDistribution returns the distribution of a live custom
+	// (not built-in) agent; found is false when no such agent exists.
+	CustomAgentDistribution(ctx context.Context, agentID string) (distribution string, found bool, err error)
 }
 
 // UsageGuard decides whether a chat turn may start.
@@ -131,6 +143,14 @@ type UsagePlanService interface {
 	ListSeats(ctx context.Context, subscriptionID string) ([]*types.UsageSeat, error)
 	AssignSeat(ctx context.Context, subscriptionID, userID, assignedBy string) error
 	RevokeSeat(ctx context.Context, subscriptionID, userID string) error
+
+	// ListSubscriptionAddons, GrantSubscriptionAddon and
+	// RevokeSubscriptionAddon manage the specialist ("addon") agents a
+	// subscription may use (usage_subscription_addons). Phase A: SuperAdmin
+	// grants by hand (tests, negotiated deals); purchases come in phase C.
+	ListSubscriptionAddons(ctx context.Context, subscriptionID string) ([]*types.UsageSubscriptionAddon, error)
+	GrantSubscriptionAddon(ctx context.Context, subscriptionID string, grant types.UsageSubscriptionAddonGrant, grantedBy string) (*types.UsageSubscriptionAddon, error)
+	RevokeSubscriptionAddon(ctx context.Context, subscriptionID, agentID string) error
 
 	// TenantUsage is the organization-facing view: its active subscription
 	// with consumption and its seats. Enforced mirrors usage.enforce.

@@ -493,3 +493,79 @@ func (s *usagePlanService) RevokeTenantSeat(ctx context.Context, tenantID uint64
 	}
 	return s.repo.RemoveSeat(ctx, sub.ID, userID)
 }
+
+func (s *usagePlanService) ListSubscriptionAddons(
+	ctx context.Context, subscriptionID string,
+) ([]*types.UsageSubscriptionAddon, error) {
+	if _, err := s.repo.GetSubscription(ctx, subscriptionID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperrors.NewNotFoundError("subscription not found")
+		}
+		return nil, err
+	}
+	return s.repo.ListSubscriptionAddons(ctx, subscriptionID)
+}
+
+// GrantSubscriptionAddon gives a subscription the right to use one
+// specialist agent, or replaces the period and price of an existing grant.
+// Only an "addon" agent can be granted: a basic one is already everyone's
+// and an internal one follows its "Tổ chức áp dụng" list.
+func (s *usagePlanService) GrantSubscriptionAddon(
+	ctx context.Context, subscriptionID string, grant types.UsageSubscriptionAddonGrant, grantedBy string,
+) (*types.UsageSubscriptionAddon, error) {
+	if _, err := s.repo.GetSubscription(ctx, subscriptionID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperrors.NewNotFoundError("subscription not found")
+		}
+		return nil, err
+	}
+	agentID := strings.TrimSpace(grant.AgentID)
+	if agentID == "" {
+		return nil, apperrors.NewBadRequestError("agent_id is required")
+	}
+	distribution, found, err := s.repo.CustomAgentDistribution(ctx, agentID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, apperrors.NewNotFoundError("agent not found")
+	}
+	if distribution != types.AgentDistributionAddon {
+		return nil, apperrors.NewBadRequestError(
+			"chỉ cấp quyền dùng cho trợ lý có cách phân phối Chuyên ngành (addon)")
+	}
+	if grant.PriceVND < 0 {
+		return nil, apperrors.NewBadRequestError("price_vnd must be >= 0")
+	}
+	addon := &types.UsageSubscriptionAddon{
+		SubscriptionID: subscriptionID,
+		AgentID:        agentID,
+		StartsAt:       s.now(),
+		EndsAt:         grant.EndsAt,
+		PriceVND:       grant.PriceVND,
+		GrantedBy:      grantedBy,
+	}
+	if grant.StartsAt != nil && !grant.StartsAt.IsZero() {
+		addon.StartsAt = *grant.StartsAt
+	}
+	if addon.EndsAt != nil && !addon.EndsAt.After(addon.StartsAt) {
+		return nil, apperrors.NewBadRequestError("ends_at must be after starts_at")
+	}
+	if err := s.repo.UpsertSubscriptionAddon(ctx, addon); err != nil {
+		return nil, err
+	}
+	return addon, nil
+}
+
+// RevokeSubscriptionAddon takes an add-on back: the agent disappears from
+// the subscription holders' lists and their next turn with it gets 2104.
+func (s *usagePlanService) RevokeSubscriptionAddon(ctx context.Context, subscriptionID, agentID string) error {
+	deleted, err := s.repo.DeleteSubscriptionAddon(ctx, subscriptionID, strings.TrimSpace(agentID))
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return apperrors.NewNotFoundError("add-on not found")
+	}
+	return nil
+}

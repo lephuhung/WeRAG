@@ -30,8 +30,8 @@ func (r *domainPackAgentRepository) ListAgentsUsingPack(ctx context.Context, nam
 		contains = "EXISTS (SELECT 1 FROM json_each(a.config, '$.domain_packs') AS p WHERE p.value = ?)"
 	}
 	err := db.Table("custom_agents AS a").
-		Select("a.id AS id, a.name AS name, a.tenant_id AS tenant_id, COALESCE(t.name, '') AS tenant_name, " +
-			"a.applies_to_tenant_ids AS applies_to_tenant_ids").
+		Select("a.id AS id, a.name AS name, a.tenant_id AS tenant_id, COALESCE(t.name, '') AS tenant_name, "+
+			"a.applies_to_tenant_ids AS applies_to_tenant_ids, a.distribution AS distribution").
 		Joins("LEFT JOIN tenants t ON t.id = a.tenant_id").
 		Where("a.deleted_at IS NULL").
 		Where(contains, name).

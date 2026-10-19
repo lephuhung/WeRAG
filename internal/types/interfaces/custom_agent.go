@@ -119,10 +119,17 @@ type CustomAgentRepository interface {
 	//   - Possible errors such as database errors, etc.
 	ListAgentsByTenantID(ctx context.Context, tenantID uint64) ([]*types.CustomAgent, error)
 
+	// GetVisibleAgentByID and ListVisibleAgents apply the visibility rule
+	// ("Cách phân phối": basic / addon bought / internal "Tổ chức áp dụng")
+	// for a viewer: the tenant plus, for a human, their personal
+	// subscription's add-ons. GetAgentByID and ListAgentsByTenantID apply
+	// it for the tenant alone.
+	GetVisibleAgentByID(ctx context.Context, id string, viewer types.AgentViewer) (*types.CustomAgent, error)
+	ListVisibleAgents(ctx context.Context, viewer types.AgentViewer) ([]*types.CustomAgent, error)
+
 	// GetAgentByIDIgnoringTenantScope and ListAgentsByTenantIDIgnoringTenantScope
-	// skip the "Tổ chức áp dụng" (applies_to_tenant_ids) filter that
-	// GetAgentByID and ListAgentsByTenantID apply. Only a SuperAdmin, who
-	// manages every agent, reads through them.
+	// skip the visibility filter that the reads above apply. Only a
+	// SuperAdmin, who manages every agent, reads through them.
 	GetAgentByIDIgnoringTenantScope(ctx context.Context, id string, tenantID uint64) (*types.CustomAgent, error)
 	ListAgentsByTenantIDIgnoringTenantScope(ctx context.Context, tenantID uint64) ([]*types.CustomAgent, error)
 

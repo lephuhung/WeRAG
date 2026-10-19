@@ -29,25 +29,35 @@ func (r *customAgentRepository) CreateAgent(ctx context.Context, agent *types.Cu
 
 // GetAgentByID gets an agent by id for a tenant. The tenant's own row wins;
 // otherwise the row of the configuration profile the tenant inherits from is
-// returned, rebound to the tenant (see inheritAgent). A profile row whose
-// "Tổ chức áp dụng" list leaves the tenant out is not found.
+// returned, rebound to the tenant (see inheritAgent). A profile row the
+// tenant may not use (see whereAgentVisibleTo) is not found. It answers for
+// the Tổ chức alone: add-ons on a person's own subscription need
+// GetVisibleAgentByID with the person in the viewer.
 func (r *customAgentRepository) GetAgentByID(ctx context.Context, id string, tenantID uint64) (*types.CustomAgent, error) {
-	return r.getAgentByID(ctx, id, tenantID, true)
+	return r.getAgentByID(ctx, id, tenantID, &types.AgentViewer{TenantID: tenantID})
 }
 
-// GetAgentByIDIgnoringTenantScope is GetAgentByID without the "Tổ chức áp
-// dụng" filter, for a SuperAdmin who manages every agent.
+// GetVisibleAgentByID is GetAgentByID for a viewer: the tenant plus, for a
+// human caller, the add-ons of their personal subscription.
+func (r *customAgentRepository) GetVisibleAgentByID(ctx context.Context, id string, viewer types.AgentViewer) (*types.CustomAgent, error) {
+	return r.getAgentByID(ctx, id, viewer.TenantID, &viewer)
+}
+
+// GetAgentByIDIgnoringTenantScope is GetAgentByID without the visibility
+// filter ("Cách phân phối", "Tổ chức áp dụng"), for a SuperAdmin who manages
+// every agent.
 func (r *customAgentRepository) GetAgentByIDIgnoringTenantScope(ctx context.Context, id string, tenantID uint64) (*types.CustomAgent, error) {
-	return r.getAgentByID(ctx, id, tenantID, false)
+	return r.getAgentByID(ctx, id, tenantID, nil)
 }
 
-func (r *customAgentRepository) getAgentByID(ctx context.Context, id string, tenantID uint64, scoped bool) (*types.CustomAgent, error) {
+// getAgentByID reads one agent; a nil viewer skips the visibility filter.
+func (r *customAgentRepository) getAgentByID(ctx context.Context, id string, tenantID uint64, viewer *types.AgentViewer) (*types.CustomAgent, error) {
 	var rows []*types.CustomAgent
 	query := r.db.WithContext(ctx).
 		Where("id = ?", id).
 		Where(configScopeSQL("tenant_id"), configScopeArgs(tenantID)...)
-	if scoped {
-		query = whereAgentAppliesToTenant(query, tenantID)
+	if viewer != nil {
+		query = whereAgentVisibleTo(query, *viewer)
 	}
 	if err := query.Find(&rows).Error; err != nil {
 		return nil, err
@@ -65,24 +75,30 @@ func (r *customAgentRepository) getAgentByID(ctx context.Context, id string, ten
 }
 
 // ListAgentsByTenantID lists the agents a tenant sees: its own rows plus the
-// rows of its configuration profile that it has not overridden and whose
-// "Tổ chức áp dụng" list includes it (or is empty).
+// rows of its configuration profile that it has not overridden and that it
+// may use (see whereAgentVisibleTo), for the Tổ chức alone.
 func (r *customAgentRepository) ListAgentsByTenantID(ctx context.Context, tenantID uint64) ([]*types.CustomAgent, error) {
-	return r.listAgents(ctx, tenantID, true)
+	return r.listAgents(ctx, tenantID, &types.AgentViewer{TenantID: tenantID})
+}
+
+// ListVisibleAgents is ListAgentsByTenantID for a viewer (see
+// GetVisibleAgentByID).
+func (r *customAgentRepository) ListVisibleAgents(ctx context.Context, viewer types.AgentViewer) ([]*types.CustomAgent, error) {
+	return r.listAgents(ctx, viewer.TenantID, &viewer)
 }
 
 // ListAgentsByTenantIDIgnoringTenantScope is ListAgentsByTenantID without
-// the "Tổ chức áp dụng" filter, for a SuperAdmin who manages every agent.
+// the visibility filter, for a SuperAdmin who manages every agent.
 func (r *customAgentRepository) ListAgentsByTenantIDIgnoringTenantScope(ctx context.Context, tenantID uint64) ([]*types.CustomAgent, error) {
-	return r.listAgents(ctx, tenantID, false)
+	return r.listAgents(ctx, tenantID, nil)
 }
 
-func (r *customAgentRepository) listAgents(ctx context.Context, tenantID uint64, scoped bool) ([]*types.CustomAgent, error) {
+func (r *customAgentRepository) listAgents(ctx context.Context, tenantID uint64, viewer *types.AgentViewer) ([]*types.CustomAgent, error) {
 	var rows []*types.CustomAgent
 	query := r.db.WithContext(ctx).
 		Where(configScopeSQL("tenant_id"), configScopeArgs(tenantID)...)
-	if scoped {
-		query = whereAgentAppliesToTenant(query, tenantID)
+	if viewer != nil {
+		query = whereAgentVisibleTo(query, *viewer)
 	}
 	if err := query.Order("created_at DESC").Find(&rows).Error; err != nil {
 		return nil, err
@@ -103,19 +119,60 @@ func (r *customAgentRepository) listAgents(ctx context.Context, tenantID uint64,
 	return agents, nil
 }
 
-// whereAgentAppliesToTenant keeps the rows a tenant may use: its own rows
-// always (the list restricts inheritance, not ownership), and inherited rows
-// whose applies_to_tenant_ids is empty or contains the tenant. Built-in rows
-// are never scoped, but the API refuses a list on them, so the column is
-// always [] there and needs no special case.
-func whereAgentAppliesToTenant(query *gorm.DB, tenantID uint64) *gorm.DB {
+// whereAgentVisibleTo keeps the rows a viewer may use
+// (docs/agent-addon-plans.md §6), in one SQL condition so the agent list and
+// every chat turn cost one query:
+//
+//   - the tenant's own rows, always (visibility restricts inheritance, not
+//     ownership);
+//   - distribution "basic": everyone;
+//   - "internal": applies_to_tenant_ids empty or containing the tenant;
+//   - "addon": a current usage_subscription_addons row for the agent on a
+//     current subscription of the tenant or of the viewer's own person.
+//
+// Built-in rows are always basic (the API refuses anything else).
+func whereAgentVisibleTo(query *gorm.DB, viewer types.AgentViewer) *gorm.DB {
+	tenantID := viewer.TenantID
+	var internal string
 	if query.Dialector.Name() == "postgres" {
-		return query.Where(`(tenant_id = ? OR COALESCE(applies_to_tenant_ids, '[]'::jsonb) = '[]'::jsonb
-			OR applies_to_tenant_ids @> jsonb_build_array(?::bigint))`, tenantID, tenantID)
+		internal = `(COALESCE(applies_to_tenant_ids, '[]'::jsonb) = '[]'::jsonb
+			OR applies_to_tenant_ids @> jsonb_build_array(?::bigint))`
+	} else {
+		// the SQLite test schema stores the list as JSON text
+		internal = `(json_array_length(COALESCE(applies_to_tenant_ids, '[]')) = 0
+			OR EXISTS (SELECT 1 FROM json_each(applies_to_tenant_ids) AS s WHERE s.value = ?))`
 	}
-	// the SQLite test schema stores the list as JSON text
-	return query.Where(`(tenant_id = ? OR json_array_length(COALESCE(applies_to_tenant_ids, '[]')) = 0
-		OR EXISTS (SELECT 1 FROM json_each(applies_to_tenant_ids) AS s WHERE s.value = ?))`, tenantID, tenantID)
+	args := []interface{}{tenantID, types.AgentDistributionBasic, types.AgentDistributionInternal, tenantID}
+	addon, addonArgs := addonVisibleSQL(viewer)
+	args = append(args, types.AgentDistributionAddon)
+	args = append(args, addonArgs...)
+	return query.Where(`(tenant_id = ? OR distribution = ?
+		OR (distribution = ? AND `+internal+`)
+		OR (distribution = ? AND `+addon+`))`, args...)
+}
+
+// addonVisibleSQL is the "bought" half of whereAgentVisibleTo: an EXISTS on
+// usage_subscription_addons (index on agent_id) joined to the subscription
+// by primary key, both current at the viewer's instant. Correlated on
+// custom_agents.id, so the outer query must read custom_agents unaliased.
+func addonVisibleSQL(viewer types.AgentViewer) (string, []interface{}) {
+	if viewer.AllAddons {
+		return "1 = 1", nil
+	}
+	now := viewer.At()
+	scope := "(us.scope_type = ? AND us.scope_id = ?)"
+	args := []interface{}{now, now, types.UsageSubscriptionActive, now, now,
+		types.UsageScopeTenant, types.UsageTenantScopeID(viewer.TenantID)}
+	if viewer.UserID != "" && !types.IsSyntheticUserID(viewer.UserID) {
+		scope = "(" + scope + " OR (us.scope_type = ? AND us.scope_id = ?))"
+		args = append(args, types.UsageScopeUser, viewer.UserID)
+	}
+	return `EXISTS (SELECT 1 FROM usage_subscription_addons usa
+			JOIN usage_subscriptions us ON us.id = usa.subscription_id
+			WHERE usa.agent_id = custom_agents.id
+			AND usa.starts_at <= ? AND (usa.ends_at IS NULL OR usa.ends_at > ?)
+			AND us.status = ? AND us.starts_at <= ? AND (us.ends_at IS NULL OR us.ends_at > ?)
+			AND ` + scope + `)`, args
 }
 
 // InvalidScopeTenantIDs returns the ids in tenantIDs that cannot be in the

@@ -88,6 +88,11 @@ type CustomAgent struct {
 	// every workspace on the profile. Built-in agents are never scoped.
 	AppliesToTenantIDs AgentTenantScope `yaml:"applies_to_tenant_ids" json:"applies_to_tenant_ids" gorm:"column:applies_to_tenant_ids;type:json"`
 
+	// Distribution is "Cách phân phối": basic (every Tổ chức), addon (sold
+	// with a service plan; only buyers see it) or internal (the "Tổ chức áp
+	// dụng" list). See custom_agent_distribution.go. Built-ins are basic.
+	Distribution string `yaml:"distribution" json:"distribution" gorm:"type:varchar(16);not null;default:basic"`
+
 	// Timestamps
 	CreatedAt time.Time      `yaml:"created_at" json:"created_at"`
 	UpdatedAt time.Time      `yaml:"updated_at" json:"updated_at"`
@@ -598,6 +603,11 @@ func (CustomAgent) TableName() string {
 func (a *CustomAgent) EnsureDefaults() {
 	if a == nil {
 		return
+	}
+	// Built-ins are always basic; a custom agent's empty value stays empty
+	// here so CreateAgent can tell "not sent" from a choice.
+	if a.IsBuiltin || IsBuiltinAgentID(a.ID) {
+		a.Distribution = AgentDistributionBasic
 	}
 	if a.Config.QuestionSuggestions == nil {
 		a.Config.QuestionSuggestions = &QuestionSuggestionConfig{

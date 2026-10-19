@@ -98,13 +98,17 @@ func (s AgentTenantScope) AppliesToTenant(tenantID uint64) bool {
 	return false
 }
 
-// AppliesToTenant reports whether the agent may be used by a workspace.
-// Built-in agents are never scoped (see AgentTenantScope).
+// AppliesToTenant reports whether the agent's "Tổ chức áp dụng" list lets a
+// workspace use it. Built-in agents are never scoped (see AgentTenantScope),
+// and the list only counts for an "internal" agent. An "addon" agent passes
+// here: whether the workspace bought it is subscription data, which only the
+// repository's visibility condition sees — the scoped lookup a channel runs
+// with on every message refuses it there.
 func (a *CustomAgent) AppliesToTenant(tenantID uint64) bool {
 	if a == nil {
 		return false
 	}
-	if a.IsBuiltin || IsBuiltinAgentID(a.ID) {
+	if a.EffectiveDistribution() != AgentDistributionInternal {
 		return true
 	}
 	return a.AppliesToTenantIDs.AppliesToTenant(tenantID)

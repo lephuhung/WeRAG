@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -49,16 +50,31 @@ func scopeAgentService(t *testing.T) interfaces.CustomAgentService {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.CustomAgent{}))
+	require.NoError(t, db.AutoMigrate(&types.CustomAgent{}, &types.UsageSubscription{}, &types.UsageSubscriptionAddon{}))
 	require.NoError(t, db.Exec(`CREATE TABLE tenants (id INTEGER PRIMARY KEY, kind TEXT NOT NULL DEFAULT 'workspace',
 		config_profile_id INTEGER, deleted_at DATETIME)`).Error)
 	require.NoError(t, db.Exec(`INSERT INTO tenants (id, kind, config_profile_id) VALUES
 		(9, 'config_profile', NULL), (1, 'workspace', 9), (2, 'workspace', 9)`).Error)
 	repo := repository.NewCustomAgentRepository(db)
 	require.NoError(t, repo.CreateAgent(context.Background(), &types.CustomAgent{
-		ID: "group", Name: "Thuế", TenantID: 9, AppliesToTenantIDs: types.AgentTenantScope{1},
+		ID: "group", Name: "Thuế", TenantID: 9, Distribution: types.AgentDistributionInternal,
+		AppliesToTenantIDs: types.AgentTenantScope{1},
+		Config:             types.CustomAgentConfig{AgentMode: types.AgentModeSmartReasoning},
+	}))
+	// "thue" is a specialist add-on workspace 2 bought on a subscription
+	// that has just expired
+	require.NoError(t, repo.CreateAgent(context.Background(), &types.CustomAgent{
+		ID: "thue", Name: "Thuế HKD", TenantID: 9, Distribution: types.AgentDistributionAddon,
 		Config: types.CustomAgentConfig{AgentMode: types.AgentModeSmartReasoning},
 	}))
+	ended := time.Now().Add(-time.Minute)
+	require.NoError(t, db.Omit("Plan").Create(&types.UsageSubscription{
+		ID: "sub-2", ScopeType: types.UsageScopeTenant, ScopeID: "2", PlanID: "p",
+		StartsAt: ended.AddDate(0, -1, 0), EndsAt: &ended, Status: "active",
+	}).Error)
+	require.NoError(t, db.Create(&types.UsageSubscriptionAddon{
+		SubscriptionID: "sub-2", AgentID: "thue", StartsAt: ended.AddDate(0, -1, 0),
+	}).Error)
 	return service.NewCustomAgentService(repo, nil, nil, nil, nil, nil, nil)
 }
 
@@ -93,6 +109,8 @@ func TestAgentTurnRefusedWhenTenantLostAgent(t *testing.T) {
 		`{"query":"tiếp tục","agent_id":"group","agent_enabled":false}`,
 		// an id that never existed answers the same
 		`{"query":"tiếp tục","agent_id":"no-such-agent","agent_enabled":false}`,
+		// an add-on whose subscription expired
+		`{"query":"tiếp tục","agent_id":"thue","agent_enabled":true}`,
 	} {
 		rec := postAgentTurn(t, h, body)
 		require.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())

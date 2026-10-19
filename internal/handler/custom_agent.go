@@ -69,8 +69,13 @@ type CreateAgentRequest struct {
 	Avatar      string                  `json:"avatar"`
 	Config      types.CustomAgentConfig `json:"config"`
 	// AppliesToTenantIDs is "Tổ chức áp dụng": the workspaces allowed to use
-	// the agent. Empty or absent = every Tổ chức.
+	// an internal agent. Empty or absent = every Tổ chức. Only allowed with
+	// distribution "internal".
 	AppliesToTenantIDs types.AgentTenantScope `json:"applies_to_tenant_ids"`
+	// Distribution is "Cách phân phối": basic | addon | internal. Absent:
+	// internal with a non-empty applies_to_tenant_ids, addon with domain
+	// packs, else basic.
+	Distribution string `json:"distribution" enums:"basic,addon,internal"`
 }
 
 // UpdateAgentRequest defines the request body for updating an agent
@@ -86,6 +91,10 @@ type UpdateAgentRequest struct {
 	// AppliesToTenantIDs is "Tổ chức áp dụng". A pointer for the same reason
 	// as Avatar: absent keeps the stored list, [] clears it (every Tổ chức).
 	AppliesToTenantIDs *types.AgentTenantScope `json:"applies_to_tenant_ids"`
+	// Distribution is "Cách phân phối" (basic | addon | internal); absent
+	// keeps the stored one. Leaving internal without sending a list clears
+	// the stored "Tổ chức áp dụng".
+	Distribution string `json:"distribution" enums:"basic,addon,internal"`
 }
 
 // CreateAgent godoc
@@ -136,6 +145,7 @@ func (h *CustomAgentHandler) CreateAgent(c *gin.Context) {
 		Avatar:             req.Avatar,
 		Config:             req.Config,
 		AppliesToTenantIDs: req.AppliesToTenantIDs,
+		Distribution:       req.Distribution,
 	}
 	agent.EnsureDefaults()
 	// The DB column (varchar(64)) has no application-level guard, so an
@@ -403,10 +413,11 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 	// Build agent object. Avatar is deliberately absent here — it reaches the
 	// service as a separate pointer, so that "not sent" survives the trip.
 	agent := &types.CustomAgent{
-		ID:          id,
-		Name:        req.Name,
-		Description: req.Description,
-		Config:      req.Config,
+		ID:           id,
+		Name:         req.Name,
+		Description:  req.Description,
+		Config:       req.Config,
+		Distribution: req.Distribution,
 	}
 	// nil tells the service the list was not sent; Normalized never returns
 	// nil, so a sent [] still clears the stored list.

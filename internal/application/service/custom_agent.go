@@ -36,19 +36,54 @@ var (
 	// ErrAgentTenantScopeInvalid refuses a "Tổ chức áp dụng" list naming a
 	// tenant that does not inherit the agent (see InvalidScopeTenantIDs).
 	ErrAgentTenantScopeInvalid = errors.New("\"Tổ chức áp dụng\" chỉ được chọn trong các Tổ chức dùng cấu hình chung của trợ lý này")
+	// ErrAgentDistributionInvalid refuses an unknown "Cách phân phối".
+	ErrAgentDistributionInvalid = errors.New("\"Cách phân phối\" phải là Cơ bản (basic), Chuyên ngành (addon) hoặc Nội bộ (internal)")
+	// ErrBuiltinAgentDistribution refuses a distribution other than basic on
+	// a built-in agent (same reason as ErrBuiltinAgentNotScopable).
+	ErrBuiltinAgentDistribution = errors.New("trợ lý tích hợp sẵn luôn có cách phân phối Cơ bản")
+	// ErrAgentScopeNeedsInternal refuses a "Tổ chức áp dụng" list on an
+	// agent whose distribution is not internal: the visibility rule ignores
+	// the list there, so storing it would read like a restriction that is
+	// not applied.
+	ErrAgentScopeNeedsInternal = errors.New("\"Tổ chức áp dụng\" chỉ dùng cho cách phân phối Nội bộ; với Cơ bản hoặc Chuyên ngành hãy để trống")
 )
 
-// IsAgentTenantScopeError reports a refused "Tổ chức áp dụng" list (the
-// invalid-list error carries the offending ids, so compare with errors.Is).
+// IsAgentTenantScopeError reports a refused "Tổ chức áp dụng" list or
+// "Cách phân phối" (the invalid-list error carries the offending ids, so
+// compare with errors.Is).
 func IsAgentTenantScopeError(err error) bool {
-	return errors.Is(err, ErrBuiltinAgentNotScopable) || errors.Is(err, ErrAgentTenantScopeInvalid)
+	return errors.Is(err, ErrBuiltinAgentNotScopable) || errors.Is(err, ErrAgentTenantScopeInvalid) ||
+		errors.Is(err, ErrAgentDistributionInvalid) || errors.Is(err, ErrBuiltinAgentDistribution) ||
+		errors.Is(err, ErrAgentScopeNeedsInternal)
 }
 
-// ignoresAgentTenantScope reports whether the caller reads agents past their
-// "Tổ chức áp dụng" list: only an explicit human SuperAdmin, who authors and
-// manages every agent. API keys and every tenant role stay scoped.
+// ignoresAgentTenantScope reports whether the caller reads agents past the
+// visibility rule (distribution, "Tổ chức áp dụng"): only an explicit human
+// SuperAdmin, who authors and manages every agent. API keys and every tenant
+// role stay scoped.
 func ignoresAgentTenantScope(ctx context.Context) bool {
 	return access.IsExplicitHumanSuperAdmin(ctx, types.CallerFromContext(ctx))
+}
+
+// addonsVisibleWithoutPurchase is decision 7.4 of docs/agent-addon-plans.md,
+// kept in this one place so it can be flipped: whether "addon" (specialist)
+// agents are shown to every Tổ chức without a purchase. Today: never — the
+// right to use one follows subscription data (usage_subscription_addons on a
+// current subscription) whether or not usage.enforce is on, so switching
+// enforcement on later changes no one's agent list.
+func addonsVisibleWithoutPurchase(context.Context) bool {
+	return false
+}
+
+// agentViewer is who a scoped agent read answers for: the tenant of the
+// call and, for a human, the person (personal-subscription add-ons).
+// Synthetic API-key users and anonymous callers carry no person.
+func agentViewer(ctx context.Context, tenantID uint64) types.AgentViewer {
+	viewer := types.AgentViewer{TenantID: tenantID, AllAddons: addonsVisibleWithoutPurchase(ctx)}
+	if uid, ok := types.UserIDFromContext(ctx); ok && uid != "" && !types.IsSyntheticUserID(uid) {
+		viewer.UserID = uid
+	}
+	return viewer
 }
 
 // repoGetAgent reads one agent for the caller, scoped unless the caller is a
@@ -57,18 +92,47 @@ func (s *customAgentService) repoGetAgent(ctx context.Context, id string, tenant
 	if ignoresAgentTenantScope(ctx) {
 		return s.repo.GetAgentByIDIgnoringTenantScope(ctx, id, tenantID)
 	}
-	return s.repo.GetAgentByID(ctx, id, tenantID)
+	return s.repo.GetVisibleAgentByID(ctx, id, agentViewer(ctx, tenantID))
 }
 
-// validateTenantScope normalizes an agent's "Tổ chức áp dụng" list in place
-// and checks it may be stored on an agent owned by ownerTenantID.
+// validateDistribution normalizes a custom agent's "Cách phân phối" in place:
+// a known value, basic for built-ins. Callers fill an absent value first
+// (CreateAgent: DefaultAgentDistribution; UpdateAgent: the stored one).
+func validateDistribution(agent *types.CustomAgent) error {
+	d := types.NormalizeAgentDistribution(agent.Distribution)
+	if agent.IsBuiltin || types.IsBuiltinAgentID(agent.ID) {
+		if d != "" && d != types.AgentDistributionBasic {
+			return ErrBuiltinAgentDistribution
+		}
+		agent.Distribution = types.AgentDistributionBasic
+		return nil
+	}
+	if d == "" {
+		d = types.AgentDistributionBasic
+	}
+	if !types.IsValidAgentDistribution(d) {
+		return ErrAgentDistributionInvalid
+	}
+	agent.Distribution = d
+	return nil
+}
+
+// validateTenantScope normalizes an agent's distribution and "Tổ chức áp
+// dụng" list in place and checks the list may be stored on an agent owned by
+// ownerTenantID: only an internal agent carries one.
 func (s *customAgentService) validateTenantScope(ctx context.Context, agent *types.CustomAgent, ownerTenantID uint64) error {
 	agent.AppliesToTenantIDs = agent.AppliesToTenantIDs.Normalized()
+	if err := validateDistribution(agent); err != nil {
+		return err
+	}
 	if len(agent.AppliesToTenantIDs) == 0 {
 		return nil
 	}
 	if agent.IsBuiltin || types.IsBuiltinAgentID(agent.ID) {
 		return ErrBuiltinAgentNotScopable
+	}
+	if agent.Distribution != types.AgentDistributionInternal {
+		return ErrAgentScopeNeedsInternal
 	}
 	invalid, err := s.repo.InvalidScopeTenantIDs(ctx, ownerTenantID, agent.AppliesToTenantIDs)
 	if err != nil {
@@ -175,6 +239,12 @@ func (s *customAgentService) CreateAgent(ctx context.Context, agent *types.Custo
 	if err := agent.Config.QuestionSuggestions.Validate(); err != nil {
 		return nil, err
 	}
+	// No "Cách phân phối" sent: an agent with a skill set starts as a
+	// specialist add-on nobody has bought, so creating one never hands it
+	// to every Tổ chức (docs/agent-addon-plans.md §3).
+	if types.NormalizeAgentDistribution(agent.Distribution) == "" {
+		agent.Distribution = types.DefaultAgentDistribution(agent)
+	}
 	if err := s.validateTenantScope(ctx, agent, tenantID); err != nil {
 		return nil, err
 	}
@@ -265,13 +335,17 @@ func (s *customAgentService) ListAgents(ctx context.Context) ([]*types.CustomAge
 	}
 
 	// Get all agents from database (including built-in agents with customized
-	// config). A SuperAdmin sees every agent; anyone else only those whose
-	// "Tổ chức áp dụng" list includes the tenant (or is empty).
-	listAgents := s.repo.ListAgentsByTenantID
+	// config). A SuperAdmin sees every agent; anyone else only those the
+	// visibility rule lets them use (basic, bought add-on, internal list).
+	var (
+		allAgents []*types.CustomAgent
+		err       error
+	)
 	if ignoresAgentTenantScope(ctx) {
-		listAgents = s.repo.ListAgentsByTenantIDIgnoringTenantScope
+		allAgents, err = s.repo.ListAgentsByTenantIDIgnoringTenantScope(ctx, tenantID)
+	} else {
+		allAgents, err = s.repo.ListVisibleAgents(ctx, agentViewer(ctx, tenantID))
 	}
-	allAgents, err := listAgents(ctx, tenantID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"tenant_id": tenantID,
@@ -385,6 +459,15 @@ func (s *customAgentService) UpdateAgent(
 	if agent.AppliesToTenantIDs != nil {
 		existingAgent.AppliesToTenantIDs = agent.AppliesToTenantIDs
 	}
+	// "" = distribution not sent: keep the stored one. Leaving internal
+	// without sending a list drops the stored list (it would no longer
+	// apply); a list sent with another distribution is refused below.
+	if d := types.NormalizeAgentDistribution(agent.Distribution); d != "" {
+		if d != types.AgentDistributionInternal && agent.AppliesToTenantIDs == nil {
+			existingAgent.AppliesToTenantIDs = types.AgentTenantScope{}
+		}
+		existingAgent.Distribution = d
+	}
 	existingAgent.UpdatedAt = time.Now()
 
 	// Ensure defaults
@@ -417,6 +500,9 @@ func (s *customAgentService) UpdateAgent(
 func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *types.CustomAgent, tenantID uint64) (*types.CustomAgent, error) {
 	if len(agent.AppliesToTenantIDs.Normalized()) > 0 {
 		return nil, ErrBuiltinAgentNotScopable
+	}
+	if d := types.NormalizeAgentDistribution(agent.Distribution); d != "" && d != types.AgentDistributionBasic {
+		return nil, ErrBuiltinAgentDistribution
 	}
 	// Persist locale-independent display fields (the YAML "default" locale) so
 	// read paths that skip builtin localization see a stable language.
@@ -596,8 +682,12 @@ func (s *customAgentService) CopyAgent(ctx context.Context, id string) (*types.C
 		// (not re-validated): dropping a since-deleted tenant could empty
 		// the list, and an empty list means "every Tổ chức".
 		AppliesToTenantIDs: append(types.AgentTenantScope{}, sourceAgent.AppliesToTenantIDs...),
-		CreatedAt:          time.Now(),
-		UpdatedAt:          time.Now(),
+		// and its distribution, for the same reason: a copy of a
+		// specialist add-on must not become a basic agent everyone sees.
+		// A copy of a built-in is a basic custom agent.
+		Distribution: sourceAgent.EffectiveDistribution(),
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 	// a pack this build no longer ships would make the copy unsavable
 	newAgent.Config.DomainPacks = s.shippedDomainPacks(ctx, sourceAgent.Config.DomainPacks)
