@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconClose, IconDoc, IconDownload, IconExternal } from "@/components/icons";
+import { useDialogFocus } from "./use-dialog-focus";
+import { useT } from "@/lib/i18n";
 import { Markdown } from "@/components/markdown";
 
 export interface DocPreviewSource {
@@ -28,6 +30,9 @@ export function DocPreviewModal({
    * (e.g. the artifacts page) keep download without code changes. */
   canDownloadOriginal?: boolean;
 }) {
+  const { t } = useT();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus({ open: !!source, containerRef: dialogRef, onClose });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -127,47 +132,52 @@ export function DocPreviewModal({
         aria-hidden="true"
       />
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={displayName}
         className="relative flex h-[88vh] w-full max-w-[1020px] flex-col overflow-hidden rounded-[20px] border border-hairline-strong bg-canvas shadow-[0_32px_64px_rgba(0,0,0,0.3)]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="flex shrink-0 items-center justify-between border-b border-hairline bg-surface-card px-6 py-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface text-ink">
+        <div className="flex shrink-0 flex-col items-stretch gap-3 border-b border-hairline bg-surface-card px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-surface-card text-ink">
               <IconDoc className="h-5 w-5" />
             </div>
             <div className="min-w-0">
-              <h3 className="truncate text-[15px] font-semibold text-ink">{displayName}</h3>
+              <h3 className="line-clamp-2 break-words text-[15px] font-semibold text-ink">{displayName}</h3>
               {source.sizeBytes ? (
                 <span className="caption text-muted">{fmtBytes(source.sizeBytes)}</span>
               ) : null}
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center justify-end gap-2">
             {blobUrl && (
               <>
                 <button
                   onClick={handleOpenExternal}
                   className="btn btn-outline btn-sm"
-                  title="Open in new window"
+                  title={t("preview.open")}
                 >
-                  <IconExternal className="h-3.5 w-3.5" /> Open
+                  <IconExternal className="h-3.5 w-3.5" /> {t("preview.open")}
                 </button>
                 {canDownloadOriginal && (
                   <button
                     onClick={handleDownload}
                     className="btn btn-primary btn-sm"
-                    title="Download file"
+                    title={t("preview.download")}
                   >
-                    <IconDownload className="h-3.5 w-3.5" /> Download
+                    <IconDownload className="h-3.5 w-3.5" /> {t("preview.download")}
                   </button>
                 )}
               </>
             )}
             <button
               onClick={onClose}
-              className="rounded-full p-1.5 text-muted hover:bg-surface-strong hover:text-ink"
+              aria-label={t("common.close")}
+              className="shrink-0 rounded-full p-1.5 text-muted hover:bg-surface-strong hover:text-ink"
             >
               <IconClose className="h-5 w-5" />
             </button>
@@ -179,12 +189,12 @@ export function DocPreviewModal({
           {loading ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted">
               <span className="h-6 w-6 animate-spin rounded-full border-2 border-hairline-strong border-t-ink" />
-              <p className="caption">Loading document preview…</p>
+              <p className="caption">{t("preview.loading")}</p>
             </div>
           ) : error ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center">
               <p className="text-[14px] font-medium text-error">{error}</p>
-              <p className="caption text-muted">Unable to load preview for this file.</p>
+              <p className="caption text-muted">{t("preview.failed")}</p>
             </div>
           ) : previewKind === "image" && blobUrl ? (
             <div className="flex flex-1 items-center justify-center overflow-auto p-6">
@@ -211,7 +221,7 @@ export function DocPreviewModal({
             </div>
           ) : previewKind === "code" && textContent !== null ? (
             <div className="flex-1 overflow-auto bg-surface-card p-6">
-              <pre className="font-mono text-[13px] leading-relaxed text-ink selection:bg-accent/20">
+              <pre className="font-mono text-[13px] leading-relaxed text-ink selection:bg-primary/20">
                 <code>{textContent}</code>
               </pre>
             </div>
@@ -221,11 +231,11 @@ export function DocPreviewModal({
                 <IconDoc className="h-7 w-7" />
               </div>
               <div>
-                <p className="text-[15px] font-medium text-ink">Preview not available</p>
+                <p className="text-[15px] font-medium text-ink">{t("preview.unavailable")}</p>
                 <p className="caption mt-1 text-muted">
                   {canDownloadOriginal
-                    ? "Direct in-browser preview is not supported for this file format. You can download the file to inspect it."
-                    : "Direct in-browser preview is not supported for this file format."}
+                    ? `${t("preview.unsupported")} ${t("preview.downloadHint")}`
+                    : t("preview.unsupported")}
                 </p>
               </div>
               {canDownloadOriginal && (
@@ -234,7 +244,7 @@ export function DocPreviewModal({
                   disabled={!blobUrl}
                   className="btn btn-primary btn-sm"
                 >
-                  <IconDownload className="h-4 w-4" /> Download original file
+                  <IconDownload className="h-4 w-4" /> {t("preview.downloadOriginal")}
                 </button>
               )}
             </div>

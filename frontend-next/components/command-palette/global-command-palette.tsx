@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
+import { useDialogFocus } from "@/components/use-dialog-focus";
 import { useRouter } from "next/navigation";
 import { useCommandPalette } from "./command-palette-context";
 import {
@@ -57,6 +59,8 @@ export function GlobalCommandPalette() {
   const [chunks, setChunks] = useState<KnowledgeSemanticSearchResult[]>([]);
   const [messages, setMessages] = useState<MessageSearchGroupItem[]>([]);
 
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus({ open: isOpen, containerRef: dialogRef, onClose: close });
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [, startTransition] = useTransition();
@@ -304,7 +308,7 @@ export function GlobalCommandPalette() {
           title: `Ask AI: "${q}"`,
           subtitle: "Launch a new chat answering this query",
           badge: "AI Query",
-          icon: <IconChat className="h-4 w-4 text-accent" />,
+          icon: <IconChat className="h-4 w-4 text-primary" />,
           onSelect: () => {
             close();
             router.push(`/platform/creatChat?prompt=${encodeURIComponent(q)}`);
@@ -350,14 +354,18 @@ export function GlobalCommandPalette() {
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 pt-[12vh] backdrop-blur-sm animate-in fade-in duration-150">
+  return createPortal(
+    <div className="fixed inset-0 z-[90] flex items-start justify-center bg-black/40 p-4 pt-[12vh] backdrop-blur-sm animate-in fade-in duration-150">
       <div
         className="fixed inset-0"
         onClick={close}
         aria-hidden="true"
       />
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
         className="relative flex w-full max-w-[620px] flex-col overflow-hidden rounded-[20px] border border-hairline-strong bg-surface-card shadow-[0_24px_48px_rgba(0,0,0,0.18)]"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
@@ -433,7 +441,7 @@ export function GlobalCommandPalette() {
                     className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
                       isSelected
                         ? "bg-surface-card text-ink"
-                        : "bg-surface text-muted"
+                        : "bg-surface-card text-muted"
                     }`}
                   >
                     {item.icon}
@@ -467,7 +475,7 @@ export function GlobalCommandPalette() {
         </div>
 
         {/* Footer shortcuts */}
-        <div className="flex items-center justify-between border-t border-hairline bg-surface/50 px-4 py-2.5 text-[12px] text-muted">
+        <div className="flex items-center justify-between border-t border-hairline bg-surface-card/50 px-4 py-2.5 text-[12px] text-muted">
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1">
               <kbd className="rounded border border-hairline px-1 text-[10px]">↑</kbd>
@@ -486,6 +494,6 @@ export function GlobalCommandPalette() {
           <span className="caption text-muted-soft">WeRAG Command Palette</span>
         </div>
       </div>
-    </div>
+    </div>, document.body,
   );
 }

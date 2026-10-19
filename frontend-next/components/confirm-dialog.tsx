@@ -9,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useDialogFocus } from "./use-dialog-focus";
 import { createPortal } from "react-dom";
 import { useT } from "@/lib/i18n";
 import { HostedSubPage, useInSubPageHost } from "@/components/settings/sub-page-host";
@@ -121,17 +122,8 @@ function OverlayConfirm({
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
   useEffect(() => setMounted(true), []);
 
-  useEffect(() => {
-    confirmBtnRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onSettle(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onSettle]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus({ open: mounted, containerRef: dialogRef, onClose: () => onSettle(false) });
 
   if (!mounted) return null;
 
@@ -139,6 +131,7 @@ function OverlayConfirm({
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6">
       <div className="absolute inset-0 bg-ink/30 backdrop-blur-[2px]" onClick={() => onSettle(false)} />
       <div
+        ref={dialogRef}
         role="alertdialog"
         aria-modal="true"
         aria-label={options.title}

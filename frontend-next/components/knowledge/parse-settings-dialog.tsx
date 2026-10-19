@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useDialogFocus } from "@/components/use-dialog-focus";
 import { Toggle } from "@/components/settings/toggle";
 import { IconClose, IconDoc } from "@/components/icons";
 import { ParserRulesEditor } from "@/components/knowledge/parser-rules-editor";
@@ -109,12 +110,8 @@ export function ParseSettingsDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onCancel();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onCancel]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus({ open, containerRef: dialogRef, onClose: onCancel });
 
   const batchExts = useMemo(() => {
     const set = new Set<string>();
@@ -271,7 +268,9 @@ export function ParseSettingsDialog({
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6">
       <div className="absolute inset-0 bg-ink/20" onClick={onCancel} />
       <div
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
         aria-label={title}
         className="card relative flex h-[600px] max-h-[calc(100dvh-1.5rem)] w-[920px] max-w-full flex-col overflow-hidden p-0"
       >
@@ -285,7 +284,7 @@ export function ParseSettingsDialog({
 
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:flex-row md:overflow-hidden">
           {/* left: files / source */}
-          <aside className="flex w-full shrink-0 flex-col border-b border-hairline bg-surface md:w-[260px] md:border-b-0 md:border-r">
+          <aside className="flex w-full shrink-0 flex-col border-b border-hairline bg-surface-card md:w-[260px] md:border-b-0 md:border-r">
             <div className="border-b border-hairline px-4 py-3">
               <h2 className="title-sm text-ink">{title}</h2>
               {mode === "file" && (

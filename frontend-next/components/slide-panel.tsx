@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useRef } from "react";
+import { useDialogFocus } from "./use-dialog-focus";
 import { HostedSubPage, useInSubPageHost } from "@/components/settings/sub-page-host";
 
 type SlidePanelProps = {
@@ -38,12 +39,8 @@ function OverlaySlidePanel({
   width = "w-[440px]",
   children,
 }: SlidePanelProps) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialogFocus({ open, containerRef: dialogRef, onClose });
 
   return (
     <>
@@ -54,6 +51,10 @@ function OverlaySlidePanel({
         }`}
       />
       <aside
+        ref={dialogRef}
+        inert={!open}
+        aria-hidden={!open}
+        aria-modal={open || undefined}
         role="dialog"
         aria-label={label}
         className={`fixed right-0 top-0 z-50 flex h-full ${width} max-w-[92vw] flex-col border-l border-hairline bg-surface-card shadow-[0_4px_16px_rgba(0,0,0,0.04)] transition-transform duration-200 ease-out will-change-transform ${
