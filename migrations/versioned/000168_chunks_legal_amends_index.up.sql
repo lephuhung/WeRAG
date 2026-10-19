@@ -1,4 +1,4 @@
--- Migration: 000167_chunks_legal_amends_index
+-- Migration: 000168_chunks_legal_amends_index
 -- The amendment history and the current wording shown to agents look up,
 -- on every legal answer and every knowledge search, the chunks whose
 -- metadata.legal.amends names a given Điều ("@>" on the amends array).

@@ -113,7 +113,7 @@ func main() {
 		if *verbose {
 			fmt.Printf("%s  %s\n", r.ID, r.Title)
 			for _, a := range phrases {
-				fmt.Printf("    %s | Điều %s khoản %s | %q → %q\n", a.Document, a.Article, a.Khoan, a.From, a.To)
+				fmt.Printf("    %s | Điều %s khoản %s điểm %s | %q → %q\n", a.Document, a.Article, a.Khoan, a.Diem, a.From, a.To)
 			}
 		}
 		if !*apply {

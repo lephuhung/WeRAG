@@ -33,18 +33,25 @@ var (
 	// label just before it; provMatches checks both and that the match does
 	// not run on into a word.
 	// Only the keywords ignore case: a capital after "," ("…, Điều 4") is
-	// not a bare điểm letter, and a bare letter must end there (", khoản 6"
-	// is not điểm k).
-	phraseProvRe = regexp.MustCompile(`((?i:điểm|khoản|điều))\s+(\d+[a-zđ]?|[a-zđ])|(?:,|\svà)\s*(\d+[a-zđ]?)|(?:,|\svà)\s*([a-zđ])(?:[\s,;.)]|$)`)
-	// phraseExceptRe ends the provisions: what follows "trừ" is excluded.
+	// not a bare điểm letter.
+	phraseProvRe = regexp.MustCompile(`((?i:điểm|khoản|điều))\s+(\d+[a-zđ]?|[a-zđ])|(?:,|\svà)\s*(\d+[a-zđ]?)|(?:,|\svà)\s*([a-zđ])`)
+	// phraseBareNextRe is what may follow a bare label: the list goes on or
+	// ends ("Điều 3, 4 Luật …"), not a quantity ("Điều 3, 15 ngày").
+	phraseBareNextRe = regexp.MustCompile(`(?i)^(?:\s*[,;.)]|\s*$|\s+(?:và|khoản|điểm|điều|của|tại|bộ luật|luật|pháp lệnh|nghị định|nghị quyết|thông tư|quyết định)(?:\s|$))`)
+	// phraseListMoreRe starts the next group of a provision list after ";".
+	phraseListMoreRe = regexp.MustCompile(`(?i)^(?:các\s+|tên\s+)?(?:khoản|điểm|điều)\s`)
+	// phraseExceptRe marks an exception ("trừ …"): such a list is not read.
 	phraseExceptRe = regexp.MustCompile(`(?i)(?:^|[\s,(])(?:ngoại trừ|trừ|không áp dụng)(?:[\s,:]|$)`)
 	fileNumberRe   = regexp.MustCompile(`\b(\d+)-(\d{4})-([A-ZĐ])`)
 	phraseNumberRe = regexp.MustCompile(`\d+/\d{4}/[A-ZĐa-zđ0-9\-]+`)
 	// phraseDocRe reads the document named right after the provisions,
 	// with or without a title before its number: "Luật Xây dựng số
 	// 50/2014/QH13", "Nghị định số 68/2026/NĐ-CP", "Luật Quản lý thuế".
-	phraseDocRe  = regexp.MustCompile(`(?i)^[\s,]*(?:của\s+|tại\s+)?((?:Bộ luật|Luật|Pháp lệnh|Nghị định|Nghị quyết|Thông tư liên tịch|Thông tư|Quyết định)\s[^,;:(“"]*)`)
-	phraseDocEnd = regexp.MustCompile(`(?i)\s+(?:ngày\s+\d|được sửa đổi|đã được|như sau|và\s)`)
+	phraseDocRe = regexp.MustCompile(`(?i)^[\s,]*(?:của\s+|tại\s+)?((?:Bộ luật|Luật|Pháp lệnh|Nghị định|Nghị quyết|Thông tư liên tịch|Thông tư|Quyết định)\s[^,;:(“"]*)`)
+	// phraseDocNumberRe is tried first: the title may hold commas ("Luật
+	// Phòng, chống ma túy số 73/2021/QH14").
+	phraseDocNumberRe = regexp.MustCompile(`(?i)^[\s,]*(?:của\s+|tại\s+)?((?:Bộ luật|Luật|Pháp lệnh|Nghị định|Nghị quyết|Thông tư liên tịch|Thông tư|Quyết định)\s[^;:(“"]{0,160}?\d+/\d{4}/[A-ZĐa-zđ0-9\-]+)`)
+	phraseDocEnd      = regexp.MustCompile(`(?i)\s+(?:ngày\s+\d|được sửa đổi|đã được|như sau|và\s)`)
 )
 
 // phraseAmends reads the phrase amendments of one paragraph, sentence by
@@ -197,21 +204,26 @@ func phraseClause(rest string, remove bool, enclosing func() string) []Amend {
 }
 
 // readPhraseTail reads the provisions of a tail and the document named
-// right after them. ok is false when that document is the amending one
-// itself ("Nghị định này").
+// right after them; a tail with an exception gives none. ok is false when
+// that document is the amending one itself ("Nghị định này").
 func readPhraseTail(tail string) (provs []phraseProv, doc string, ok bool) {
-	if m := phraseExceptRe.FindStringIndex(tail); m != nil {
-		tail = tail[:m[0]]
+	if phraseExceptRe.MatchString(tail) {
+		// "tại khoản 2 Điều 9, trừ điểm a": what is excepted cannot be
+		// told apart reliably, so the amendment is left out
+		return nil, "", true
 	}
 	provs, end := readPhraseTargets(tail)
 	if len(provs) == 0 {
 		return nil, "", true
 	}
-	m := phraseDocRe.FindStringSubmatch(tail[end:])
-	if m == nil {
+	var name string
+	if m := phraseDocNumberRe.FindStringSubmatch(tail[end:]); m != nil {
+		name = m[1]
+	} else if m := phraseDocRe.FindStringSubmatch(tail[end:]); m != nil {
+		name = m[1]
+	} else {
 		return provs, "", true
 	}
-	name := m[1]
 	if n := phraseNumberRe.FindStringIndex(name); n != nil {
 		name = name[:n[1]]
 	} else if e := phraseDocEnd.FindStringIndex(name); e != nil {
@@ -225,8 +237,9 @@ func readPhraseTail(tail string) (provs []phraseProv, doc string, ok bool) {
 	return provs, sentenceCase(name), true
 }
 
-// splitClauses cuts a sentence, outside quoted phrases, at ";" and before
-// another verb after "," or "và".
+// splitClauses cuts a sentence, outside quoted phrases, at ";" — unless a
+// provision label follows, going on with the list — and before another
+// verb after "," or "và".
 func splitClauses(text string) []string {
 	var out []string
 	inQuote := false
@@ -240,7 +253,8 @@ func splitClauses(text string) []string {
 		case '"':
 			inQuote = !inQuote
 		case ';':
-			if !inQuote {
+			// "tại khoản 2 Điều 4; khoản 6 Điều 5; Điều 74" is one list
+			if !inQuote && !phraseListMoreRe.MatchString(strings.TrimLeft(text[i+1:], " ")) {
 				out = append(out, text[start:i])
 				start = i + 1
 			}
@@ -351,27 +365,46 @@ type provMatch struct {
 
 // provMatches returns the provision labels of s: "Điều 3," but not "điều
 // của"; a bare label only right after a label of its kind (a number after
-// a khoản or Điều, a letter after a điểm), so "…, 15 ngày" is not one.
+// a khoản or Điều, a letter after a điểm) and followed by the list going on
+// or ending, so "…, 15 ngày" is not one. A rejected match does not hide
+// the text after its first rune (", khoản 6" is not điểm k).
 func provMatches(s string) []provMatch {
 	var out []provMatch
 	last, lastEnd := "", -1
-	for _, m := range phraseProvRe.FindAllStringSubmatchIndex(s, -1) {
-		// (a bare letter's match already ends with its delimiter)
-		if r, _ := utf8.DecodeRuneInString(s[m[1]:]); m[8] < 0 && m[1] < len(s) && (unicode.IsLetter(r) || unicode.IsDigit(r)) {
-			continue
+	for pos := 0; pos < len(s); {
+		m := phraseProvRe.FindStringSubmatchIndex(s[pos:])
+		if m == nil {
+			break
 		}
-		switch {
-		case m[2] >= 0:
-			last = strings.ToLower(s[m[2]:m[3]])
-			out = append(out, provMatch{kw: last, label: s[m[4]:m[5]], end: m[1]})
-			lastEnd = m[1]
-		case lastEnd == m[0] && m[6] >= 0 && (last == "khoản" || last == "điều"):
-			out = append(out, provMatch{kw: last, label: s[m[6]:m[7]], end: m[1]})
-			lastEnd = m[1]
-		case lastEnd == m[0] && m[8] >= 0 && last == "điểm":
-			out = append(out, provMatch{kw: last, label: s[m[8]:m[9]], end: m[1]})
-			lastEnd = m[1]
+		for i := range m {
+			if m[i] >= 0 {
+				m[i] += pos
+			}
 		}
+		next := m[1]
+		accepted := false
+		if r, _ := utf8.DecodeRuneInString(s[m[1]:]); m[1] >= len(s) || !(unicode.IsLetter(r) || unicode.IsDigit(r)) {
+			bare := lastEnd == m[0] && phraseBareNextRe.MatchString(s[m[1]:])
+			switch {
+			case m[2] >= 0:
+				last = strings.ToLower(s[m[2]:m[3]])
+				out = append(out, provMatch{kw: last, label: s[m[4]:m[5]], end: m[1]})
+				accepted = true
+			case bare && m[6] >= 0 && (last == "khoản" || last == "điều"):
+				out = append(out, provMatch{kw: last, label: s[m[6]:m[7]], end: m[1]})
+				accepted = true
+			case bare && m[8] >= 0 && last == "điểm":
+				out = append(out, provMatch{kw: last, label: s[m[8]:m[9]], end: m[1]})
+				accepted = true
+			}
+		}
+		if accepted {
+			lastEnd = m[1]
+		} else {
+			_, n := utf8.DecodeRuneInString(s[m[0]:])
+			next = m[0] + n
+		}
+		pos = next
 	}
 	return out
 }

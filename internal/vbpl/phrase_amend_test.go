@@ -110,8 +110,22 @@ func TestPhraseAmendsClauses(t *testing.T) {
 		{`Thay thế từ “huyện” bằng từ “xã” tại khoản 2 Điều 6; cụm từ “pháp lệnh” bằng cụm từ “pháp luật” tại điểm a khoản 1 Điều 28;`,
 			[]Amend{{Article: "6", Khoan: "2", Phrase: true, From: "huyện", To: "xã"}, {Article: "28", Khoan: "1", Diem: "a", Phrase: true, From: "pháp lệnh", To: "pháp luật"}}},
 		// exceptions are not targets
-		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 3, trừ trường hợp quy định tại khoản 2 Điều 9`,
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 3, trừ trường hợp quy định tại khoản 2 Điều 9`, nil},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 2 Điều 9 trừ điểm a`, nil},
+		// ";" inside a provision list (re-review, Nghị định 53/2024)
+		{`Thay thế cụm từ “Bộ Tài nguyên và Môi trường” bằng cụm từ “Bộ Nông nghiệp và Môi trường” tại khoản 2 Điều 4; khoản 6 Điều 5; Điều 74; Điều 75.`,
+			[]Amend{
+				{Article: "4", Khoan: "2", Phrase: true, From: "Bộ Tài nguyên và Môi trường", To: "Bộ Nông nghiệp và Môi trường"},
+				{Article: "5", Khoan: "6", Phrase: true, From: "Bộ Tài nguyên và Môi trường", To: "Bộ Nông nghiệp và Môi trường"},
+				{Article: "74", Phrase: true, From: "Bộ Tài nguyên và Môi trường", To: "Bộ Nông nghiệp và Môi trường"},
+				{Article: "75", Phrase: true, From: "Bộ Tài nguyên và Môi trường", To: "Bộ Nông nghiệp và Môi trường"},
+			}},
+		{`Bãi bỏ cụm từ “A” tại các điểm a, b và c khoản 4 Điều 124`,
+			[]Amend{{Article: "124", Khoan: "4", Diem: "a", Phrase: true, From: "A"}, {Article: "124", Khoan: "4", Diem: "b", Phrase: true, From: "A"}, {Article: "124", Khoan: "4", Diem: "c", Phrase: true, From: "A"}}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 3, 15 ngày`,
 			[]Amend{{Article: "3", Phrase: true, From: "A", To: "B"}}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 3, khoản 6 Điều 5 Luật Phòng, chống ma túy số 73/2021/QH14`,
+			[]Amend{{Document: "Luật Phòng, chống ma túy số 73/2021/QH14", Article: "5", Khoan: "3", Phrase: true, From: "A", To: "B"}, {Document: "Luật Phòng, chống ma túy số 73/2021/QH14", Article: "5", Khoan: "6", Phrase: true, From: "A", To: "B"}}},
 		{`Thay thế cụm từ “A” bằng cụm từ “B” trong toàn bộ Nghị định, trừ Điều 5`, nil},
 		// điểm lists, a stray number after a comma
 		{`Thay thế cụm từ “A” bằng cụm từ “B” tại điểm a và c khoản 2 Điều 14`,

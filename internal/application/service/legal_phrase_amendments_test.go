@@ -64,3 +64,25 @@ func TestApplyPhraseChangesReviewCases(t *testing.T) {
 		}
 	}
 }
+
+// Re-review 2026-10-19: one document's renumbering does not chain, a
+// case-only change is ignored, a later document does chain.
+func TestApplyPhraseChangesNoSameDocumentChain(t *testing.T) {
+	now := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)
+	nd := legalHistoryDoc{Number: "177/2025/NĐ-CP", Type: "Nghị định", EffFrom: "2025-07-01"}
+	got := applyPhraseChanges("theo khoản 4 Điều 7", []legalPhraseChange{
+		{From: "khoản 5 Điều 7", To: "khoản 6 Điều 7", Amender: nd},
+		{From: "khoản 4 Điều 7", To: "khoản 5 Điều 7", Amender: nd},
+	}, now)
+	if want := "theo khoản 5 Điều 7 [thay cho “khoản 4 Điều 7” theo Nghị định 177/2025/NĐ-CP, từ 01/07/2025]"; got != want {
+		t.Fatalf("got %q", got)
+	}
+	got = applyPhraseChanges("theo quy chuẩn", []legalPhraseChange{{From: "quy chuẩn", To: "Quy chuẩn", Amender: nd}}, now)
+	if got != "theo quy chuẩn" {
+		t.Fatalf("case-only: %q", got)
+	}
+	got = applyPhraseChanges("1. Khoản:\n- b) cấp huyện", []legalPhraseChange{{From: "cấp huyện", To: "cấp xã", Khoan: "1", Diem: "b", Amender: nd}}, now)
+	if got != "1. Khoản:\n- b) cấp xã [thay cho “cấp huyện” theo Nghị định 177/2025/NĐ-CP, từ 01/07/2025]" {
+		t.Fatalf("dash điểm: %q", got)
+	}
+}

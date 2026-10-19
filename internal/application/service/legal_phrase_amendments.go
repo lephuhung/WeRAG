@@ -79,25 +79,38 @@ func (h *legalHistory) phraseChanges(chunks []legalHistoryChunk) map[string][]le
 	if len(targets) == 0 {
 		return nil
 	}
-	var conds []string
-	var args []interface{}
+	var conds, ranks []string
+	var args, rankArgs []interface{}
 	args = append(args, h.kbIDs)
+	numbers := map[string]bool{}
+	for _, c := range targets {
+		if !numbers[c.Doc.Number] {
+			numbers[c.Doc.Number] = true
+			ranks = append(ranks, `strpos(c.metadata->'legal'->>'amends', ?) > 0`)
+			rankArgs = append(rankArgs, c.Doc.Number)
+		}
+	}
 	for a := range articles {
 		filter, _ := json.Marshal([]map[string]interface{}{{"article": a, "phrase": true}})
 		conds = append(conds, `c.metadata->'legal'->'amends' @> ?::jsonb`)
 		args = append(args, string(filter))
 	}
-	sort.Strings(conds) // stable SQL text
+	// amending chunks that name a target's số hiệu first, then those naming
+	// documents by title only, as backward() ranks them
+	args = append(args, rankArgs...)
 	args = append(args, legalPhraseCandidates)
 	var rows []legalHistoryRow
 	if err := h.db.Raw(legalHistorySelect+` AND jsonb_exists(c.metadata->'legal', 'amends')
-		AND (`+strings.Join(conds, " OR ")+`) LIMIT ?`, args...).Scan(&rows).Error; err != nil {
+		AND (`+strings.Join(conds, " OR ")+`)
+		ORDER BY (`+strings.Join(ranks, " OR ")+`) DESC,
+			c.metadata->'legal'->>'amends' !~ '[0-9]+/[0-9]{4}' DESC
+		LIMIT ?`, args...).Scan(&rows).Error; err != nil {
 		logger.Warnf(h.ctx, "[LegalWording] amending chunks: %v", err)
 		return nil
 	}
 	amenders := parseLegalHistoryRows(rows)
 	out := map[string][]legalPhraseChange{}
-	var numbers []string
+	var amenderNumbers []string
 	for _, c := range targets {
 		article := c.Legal.ArticleNos[0]
 		khoans := setOf(c.Legal.KhoanNos)
@@ -122,12 +135,12 @@ func (h *legalHistory) phraseChanges(chunks []legalHistoryChunk) map[string][]le
 				}
 				seen[key] = true
 				out[c.ID] = append(out[c.ID], legalPhraseChange{From: a.From, To: a.To, Khoan: a.Khoan, Diem: a.Diem, Amender: ac.Doc})
-				numbers = append(numbers, ac.Doc.Number)
+				amenderNumbers = append(amenderNumbers, ac.Doc.Number)
 			}
 		}
 	}
 	// an amender no longer in force changes nothing
-	if expired := fullyExpiredDocs(h.ctx, h.db, numbers); len(expired) > 0 {
+	if expired := fullyExpiredDocs(h.ctx, h.db, amenderNumbers); len(expired) > 0 {
 		for id, list := range out {
 			kept := list[:0]
 			for _, ch := range list {
@@ -236,17 +249,24 @@ func applyPhraseChanges(content string, changes []legalPhraseChange, now time.Ti
 func phraseReplacement(stored string, changes []legalPhraseChange, now time.Time) (string, bool) {
 	current := stored
 	var since time.Time
-	var via []string
+	var via, used []string
 	removed := false
 	for hop := 0; hop < legalPhraseChainHops && !removed; hop++ {
 		best, found := -1, false
 		var bestAt time.Time
 		for i, ch := range changes {
-			if !samePhrase(ch.From, current) {
+			// a case-only change ("quy chuẩn" → "Quy chuẩn") changes nothing
+			if !samePhrase(ch.From, current) || (ch.To != "" && samePhrase(ch.From, ch.To)) {
 				continue
 			}
 			at, known := phraseEffect(ch.Amender, now.Location())
-			if !known || at.After(now) || at.Before(since) {
+			if !known || at.After(now) {
+				continue
+			}
+			// a later hop is a later document: one document's changes are
+			// made at once ("khoản 5" → "khoản 6" and "khoản 4" → "khoản 5"
+			// renumber, they do not chain)
+			if hop > 0 && (!at.After(since) || containsString(used, ch.Amender.Number)) {
 				continue
 			}
 			if !found || at.After(bestAt) || (at.Equal(bestAt) && ch.Amender.Number > changes[best].Amender.Number) {
@@ -257,6 +277,7 @@ func phraseReplacement(stored string, changes []legalPhraseChange, now time.Time
 			break
 		}
 		ch := changes[best]
+		used = append(used, ch.Amender.Number)
 		via = append(via, ch.Amender.label()+", từ "+bestAt.Format("02/01/2006"))
 		since = bestAt
 		if ch.To == "" {
@@ -269,7 +290,7 @@ func phraseReplacement(stored string, changes []legalPhraseChange, now time.Time
 	var pending []string
 	if !removed {
 		for _, ch := range changes {
-			if !samePhrase(ch.From, current) {
+			if !samePhrase(ch.From, current) || (ch.To != "" && samePhrase(ch.From, ch.To)) || containsString(used, ch.Amender.Number) {
 				continue
 			}
 			at, known := phraseEffect(ch.Amender, now.Location())
@@ -363,7 +384,7 @@ func gluedAt(content string, start, end int) bool {
 	return false
 }
 
-var diemStartRe = regexp.MustCompile(`(?m)^\s*(?:> )?([a-zđ])\)\s`)
+var diemStartRe = regexp.MustCompile(`(?m)^\s*(?:> )?(?:[-*]\s+)?([a-zđ])\)\s`)
 
 // provisionScope tells which khoản and điểm of an article chunk a byte
 // offset falls in ("" before the first one).

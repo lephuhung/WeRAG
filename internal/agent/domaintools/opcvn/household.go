@@ -93,8 +93,9 @@ func CalculateHouseholdTax(in HouseholdInput) (*HouseholdTax, error) {
 	}
 	reduction := 0.0
 	if in.Reduction != nil {
-		if r := *in.Reduction; !finite(r) || r < 0 || r >= 100 {
-			return nil, errors.New("Tỷ lệ giảm thuế TNCN ghi theo phần trăm, từ 0 đến dưới 100 (ví dụ 30 cho 30%)")
+		// under 1 is a fraction typed for a percent (0.3 for 30 %)
+		if r := *in.Reduction; !finite(r) || r < 0 || r >= 100 || (r > 0 && r < 1) {
+			return nil, errors.New("Tỷ lệ giảm thuế TNCN ghi theo PHẦN TRĂM, từ 1 đến dưới 100 (ví dụ 30 cho 30%)")
 		}
 		reduction = *in.Reduction / 100
 	}
