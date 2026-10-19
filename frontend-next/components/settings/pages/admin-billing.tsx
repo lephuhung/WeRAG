@@ -29,6 +29,7 @@ import {
   type UsagePromoInput,
 } from "@/lib/api/usage";
 import { formatDateTime } from "@/lib/datetime";
+import { WebhookGuide } from "./admin-billing-webhook-guide";
 
 type BankForm = { bankBin: string; bankName: string; accountNo: string; accountName: string; orderTTLHours: string; contact: string };
 const emptyBank: BankForm = { bankBin: "", bankName: "", accountNo: "", accountName: "", orderTTLHours: "72", contact: "" };
@@ -432,6 +433,7 @@ export default function AdminBilling() {
           </div>
         )}
         <p className="caption mt-3 text-muted-soft">{t("badm.webhookHelp")}</p>
+        <WebhookGuide key={secretShown} enabled={!!secretMasked} secretShown={secretShown} />
       </section>
 
       {/* Promo modal */}
