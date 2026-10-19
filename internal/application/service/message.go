@@ -484,6 +484,11 @@ func (s *messageService) chatHistoryBinding(ctx context.Context, create bool) *t
 	if !ok || tenant == nil {
 		return nil
 	}
+	// Guests' chats are not indexed: one chat-history base for the whole
+	// portal would mix every Guest's messages.
+	if tenant.IsPublicPortal() {
+		return nil
+	}
 	if s.tenantService == nil || tenant.ConfigProfileID == nil {
 		return configuredChatHistory(tenant.ChatHistoryConfig)
 	}
