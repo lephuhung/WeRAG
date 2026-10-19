@@ -423,6 +423,11 @@ type AmendRef struct {
 	Article  string `json:"article,omitempty"`
 	Khoan    string `json:"khoan,omitempty"`
 	Diem     string `json:"diem,omitempty"`
+	// Phrase marks a phrase amendment: the words From become To in the
+	// provision (To empty: removed) instead of a quoted new text.
+	Phrase bool   `json:"phrase,omitempty"`
+	From   string `json:"from,omitempty"`
+	To     string `json:"to,omitempty"`
 }
 
 // String renders the reference as Vietnamese legal text: "khoản 2 Điều 9

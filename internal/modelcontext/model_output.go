@@ -271,7 +271,9 @@ func (r *sourceRegistry) modelChunksFromRows(mode string, rows []map[string]inte
 		if chunkIndex == 0 {
 			chunkIndex = intValue(row, "index")
 		}
-		view, content, head := viewForRow(row, mode), stringValue(row, "content"), ""
+		// model_content: the stored text with in-place legal amendments
+		// applied (search_knowledge); "content" stays as stored for the UI
+		view, content, head := viewForRow(row, mode), firstNonEmpty(stringValue(row, "model_content"), stringValue(row, "content")), ""
 		if stringValue(row, "model_view") == snippetView {
 			view, content, head = snippetView, "", stringValue(row, "content_head")
 		}
@@ -293,7 +295,7 @@ func (r *sourceRegistry) modelChunksFromRows(mode string, rows []map[string]inte
 			index:         chunkIndex,
 			view:          view,
 			role:          stringValue(row, "role"),
-			match:         firstNonEmpty(stringValue(row, "match_snippet"), stringValue(row, "matched_content")),
+			match:         firstNonEmpty(stringValue(row, "model_match"), stringValue(row, "match_snippet"), stringValue(row, "matched_content")),
 			content:       content,
 			head:          head,
 			cite:          stringValue(row, "legal_cite"),

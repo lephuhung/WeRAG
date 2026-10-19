@@ -105,7 +105,7 @@ func TestDomainPackReconcileSortsCatalogueNumbers(t *testing.T) {
 	res, err := r.Reconcile(ctx, "opc-vn-business-law")
 	require.NoError(t, err)
 	assert.Empty(t, res.Errors)
-	assert.Equal(t, 13, len(res.Found)+len(res.Missing)+len(res.Ambiguous))
+	assert.Equal(t, 17, len(res.Found)+len(res.Missing)+len(res.Ambiguous))
 
 	found := map[string]types.DomainPackReconcileDocument{}
 	for _, f := range res.Found {
@@ -161,7 +161,7 @@ func TestDomainPackReconcileSortsCatalogueNumbers(t *testing.T) {
 	for _, m := range res.Missing {
 		missing[m.Number] = m
 	}
-	assert.Len(t, missing, 13-6-1)
+	assert.Len(t, missing, 17-6-1)
 	assert.Contains(t, missing, "22/2023/QH15", "a prefix match is not the document")
 	assert.Equal(t, open.ID, missing["88/2015/QH13"].Request.ID)
 	assert.False(t, missing["88/2015/QH13"].Request.Created)
@@ -216,7 +216,7 @@ func TestDomainPackReconcileReportsPerNumberErrors(t *testing.T) {
 	require.NoError(t, db.Migrator().DropTable(&types.LegalDocumentRequest{}))
 	res, err := r.Reconcile(reconcileCallerCtx(), "opc-vn-business-law")
 	require.NoError(t, err)
-	assert.Len(t, res.Errors, 13)
+	assert.Len(t, res.Errors, 17)
 	assert.Equal(t, "59/2020/QH14", res.Errors[0].Number)
 }
 
@@ -260,8 +260,8 @@ func TestDomainPackDetailIsReadOnly(t *testing.T) {
 	require.NoError(t, db.Model(&types.LegalDocumentRequest{}).Count(&n).Error)
 	assert.Zero(t, n, "the detail view never records a request")
 
-	assert.Equal(t, 13, detail.DocumentCount)
-	assert.Equal(t, 4, detail.FormulaCount)
+	assert.Equal(t, 17, detail.DocumentCount)
+	assert.Equal(t, 9, detail.FormulaCount)
 	require.Len(t, detail.Agents, 2)
 	assert.Equal(t, "a1", detail.Agents[0].ID)
 	assert.Equal(t, "Công an tỉnh", detail.Agents[0].TenantName)
@@ -295,20 +295,25 @@ func TestDomainPackDetailIsReadOnly(t *testing.T) {
 	assert.Contains(t, docs["59/2020/QH14"].Articles, "Điều 85")
 	assert.True(t, docs["59/2020/QH14"].Warning, "no public KB holds it")
 
-	require.Len(t, detail.Formulas, 4)
+	require.Len(t, detail.Formulas, 9)
 	for _, f := range detail.Formulas {
 		assert.True(t, f.Warning, f.ID)
 		require.NotEmpty(t, f.Basis)
 		assert.Equal(t, types.DomainPackBasisWarning, f.Basis[0].Status)
-		assert.Contains(t, f.Basis[0].Note, "Hết hiệu lực một phần")
 		assert.NotEmpty(t, f.Examples)
+		if f.Tool != "compare_tax_methods" {
+			// the household formulas cite documents this catalogue lacks
+			assert.Contains(t, f.Basis[0].Note, "không có trong danh mục văn bản", f.ID)
+			continue
+		}
+		assert.Contains(t, f.Basis[0].Note, "Hết hiệu lực một phần")
 	}
 
 	list, err := r.List(ctx)
 	require.NoError(t, err)
 	require.Len(t, list, 1)
 	assert.Equal(t, 2, list[0].AgentCount)
-	assert.Equal(t, 13, list[0].DocumentCount)
+	assert.Equal(t, 17, list[0].DocumentCount)
 
 	_, err = r.Detail(ctx, "nope")
 	assert.Error(t, err)
