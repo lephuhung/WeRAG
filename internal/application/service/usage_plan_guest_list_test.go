@@ -65,6 +65,10 @@ func TestUsagePlanServiceListsGuestPlans(t *testing.T) {
 	users := &guestUserRepo{guests: []*types.User{
 		{ID: "asked", Username: "asked"}, {ID: "bought", Username: "bought"}, {ID: "new", Username: "new"},
 	}}
+	// a member's own package keeps the personal counters
+	plans.active["user/member"] = &types.UsageSubscription{ID: "sub-member", ScopeType: "user", ScopeID: "member",
+		PlanID: own.ID, Plan: own, Mode: "pool", Status: "active"}
+	counters.rows["user/member"] = []*types.UsageCounter{{Metric: "questions", PeriodKey: "2026-10-13", Value: 5}}
 	clock := func() time.Time { return guardNow }
 	s := &usagePlanService{repo: plans, counters: counters, users: users, now: clock,
 		guard: &usageGuard{plans: plans, counters: counters, settings: enforcingSettings{on: true}, now: clock}}
@@ -75,10 +79,11 @@ func TestUsagePlanServiceListsGuestPlans(t *testing.T) {
 	for _, v := range views {
 		byScope[v.ScopeID] = v
 	}
-	require.Len(t, byScope, 3)
+	require.Len(t, byScope, 4)
+	require.EqualValues(t, 5, byScope["member"].Limits[0].Used)
 	require.False(t, byScope["asked"].Implicit)
 	require.EqualValues(t, 3, byScope["asked"].Limits[0].Used, "guest plan reads the guest counters")
-	require.EqualValues(t, 7, byScope["bought"].Limits[0].Used, "a bought plan reads the personal counters")
+	require.EqualValues(t, 1, byScope["bought"].Limits[0].Used, "a Guest's bought plan reads the guest counters, as the guard does")
 	require.True(t, byScope["new"].Implicit)
 	require.Empty(t, byScope["new"].ID)
 	require.Equal(t, types.UsageGuestPlanID, byScope["new"].PlanID)
@@ -102,4 +107,36 @@ func TestUsagePlanServiceListsGuestPlans(t *testing.T) {
 		got[v.ScopeID] = true
 	}
 	require.Equal(t, map[string]bool{"asked": true, "new": true}, got)
+}
+
+// A Guest whose bought plan expired, or who kept a system-admin package,
+// is under the guest plan (the guard applies it): the page shows that row
+// next to the old one.
+func TestUsagePlanServiceListsGuestPlanBesideInapplicablePackage(t *testing.T) {
+	ended := guardNow.Add(-time.Hour)
+	own := &types.UsagePlan{ID: "plan-own", Code: "ca-nhan", ScopeKind: "user", Mode: "pool"}
+	admin := &types.UsagePlan{ID: "plan-admin", Code: types.UsageSystemAdminPlanCode, ScopeKind: "user", Mode: "pool"}
+	plans := &listingPlanRepo{adminPlanRepo{
+		fakeUsagePlanRepo: fakeUsagePlanRepo{active: map[string]*types.UsageSubscription{
+			"user/expired": {ID: "sub-expired", ScopeType: "user", ScopeID: "expired", PlanID: own.ID, Plan: own, Mode: "pool", Status: "active", EndsAt: &ended},
+			"user/demoted": {ID: "sub-admin", ScopeType: "user", ScopeID: "demoted", PlanID: admin.ID, Plan: admin, Mode: "pool", Status: "active"},
+		}},
+		plans: []*types.UsagePlan{own, admin, guestPlan()},
+	}}
+	counters := &countingRepo{rows: map[string][]*types.UsageCounter{}}
+	users := &guestUserRepo{guests: []*types.User{{ID: "expired", Username: "expired"}, {ID: "demoted", Username: "demoted"}}}
+	clock := func() time.Time { return guardNow }
+	s := &usagePlanService{repo: plans, counters: counters, users: users, now: clock,
+		guard: &usageGuard{plans: plans, counters: counters, settings: enforcingSettings{on: true}, now: clock}}
+
+	views, err := s.ListSubscriptions(context.Background(), types.UsageSubscriptionFilter{ScopeType: "user"})
+	require.NoError(t, err)
+	implicit := map[string]bool{}
+	for _, v := range views {
+		if v.Implicit {
+			implicit[v.ScopeID] = true
+		}
+	}
+	require.Len(t, views, 4)
+	require.Equal(t, map[string]bool{"expired": true, "demoted": true}, implicit)
 }
