@@ -28,7 +28,7 @@ func TestCatalogNumberLookupIsExact(t *testing.T) {
 	lookup := catalogNumberLookup(repo)
 	for key, want := range map[string]bool{
 		vietnamese_legal.CatalogNumberKey("168/2025/NĐ–CP"): true, // dash variant, same key
-		"30/2020": false, // a prefix match is not the number
+		"30/2020":        false, // a prefix match is not the number
 		"132/2023/ND-CP": false,
 	} {
 		got, err := lookup(ctx, key)
