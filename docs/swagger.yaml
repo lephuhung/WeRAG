@@ -4635,6 +4635,17 @@ definitions:
     type: object
   github_com_Tencent_WeKnora_internal_types.UsageQuoteRequest:
     properties:
+      addon_agent_ids:
+        description: AddonAgentIDs are the specialist agents bought with it.
+        items:
+          type: string
+        type: array
+      kind:
+        description: |-
+          Kind "plan" (default) or "addon": add-ons on the scope's current
+          subscription, priced for the rest of its period (PlanID, Months and
+          Seats are then taken from the subscription).
+        type: string
       months:
         type: integer
       note:
@@ -8797,6 +8808,27 @@ paths:
       security:
       - Bearer: []
       summary: Price a purchase (with an optional promo code)
+      tags:
+      - Thanh toán
+  /billing/subscription:
+    get:
+      description: Held add-ons (with their end) and the add-ons still on sale with
+        the subscription's plan, for a mid-term purchase (quote/order with kind "addon").
+      parameters:
+      - description: tenant or user
+        in: query
+        name: scope
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: The scope's current subscription and its specialist agents
       tags:
       - Thanh toán
   /chunker/preview:

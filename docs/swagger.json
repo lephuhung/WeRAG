@@ -2165,6 +2165,38 @@
                 }
             }
         },
+        "/billing/subscription": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Held add-ons (with their end) and the add-ons still on sale with the subscription's plan, for a mid-term purchase (quote/order with kind \"addon\").",
+                "tags": [
+                    "Thanh toán"
+                ],
+                "summary": "The scope's current subscription and its specialist agents",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "tenant or user",
+                        "name": "scope",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/chunker/preview": {
             "post": {
                 "security": [
@@ -25521,6 +25553,17 @@
         "github_com_Tencent_WeKnora_internal_types.UsageQuoteRequest": {
             "type": "object",
             "properties": {
+                "addon_agent_ids": {
+                    "description": "AddonAgentIDs are the specialist agents bought with it.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "kind": {
+                    "description": "Kind \"plan\" (default) or \"addon\": add-ons on the scope's current\nsubscription, priced for the rest of its period (PlanID, Months and\nSeats are then taken from the subscription).",
+                    "type": "string"
+                },
                 "months": {
                     "type": "integer"
                 },
