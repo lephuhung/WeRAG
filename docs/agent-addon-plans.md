@@ -22,7 +22,7 @@ Cách hiện tại (SuperAdmin tick "Tổ chức áp dụng" trên từng agent)
 | `usage_plans` | Gói dịch vụ | Service plan | Go, Plus, … |
 | domain pack | Bộ kỹ năng chuyên môn (ngắn: Bộ kỹ năng) | Skill set | đổi từ "Gói chuyên môn" |
 | agent được bán thêm | Agent chuyên ngành | Specialist assistant | |
-| agent có sẵn trong mọi gói | Agent cơ bản | Included assistant | 2 agent, xem câu hỏi 7.1 |
+| agent có sẵn trong mọi gói | Agent cơ bản | Included assistant | 2 agent: "Soạn thảo văn bản", "Suy luận thông minh" (tên trong `builtin_agents.yaml`, câu hỏi 7.1) |
 
 ## 3. Cách phân phối một agent
 
@@ -83,7 +83,7 @@ thấy(agent, caller) =
 
 ## 7. Quyết định (19/10/2026)
 
-1. **Hai agent cơ bản**: *Trợ lý văn bản* (`builtin-document-assistant`) và *Hỏi đáp pháp luật* (`builtin-smart-reasoning`). Các built-in khác giữ tắt.
+1. **Hai agent cơ bản**: *Soạn thảo văn bản* (`builtin-document-assistant`) và *Suy luận thông minh* (`builtin-smart-reasoning`) — giữ tên hiện có (người dùng chốt 19/10/2026). Các built-in khác giữ tắt.
 2. **Giá agent chuyên ngành nhân số ghế** với gói ghế (Go): giá/tháng × số ghế; gói pool: giá/tháng cho cả Tổ chức.
 3. **Mua thêm giữa kỳ — chỉ 2 mốc**: mỗi tháng còn lại tính đủ giá; phần tháng lẻ còn lại ≤ 15 ngày tính **1/2**, > 15 ngày tính **đủ**. Hết hạn cùng thuê bao.
 4. **Agent chuyên ngành chỉ hiện cho Tổ chức/người đã mua**, kể cả khi `usage.enforce` tắt (một chỗ trong mã để đổi: `addonsVisibleWithoutPurchase`). **`usage.enforce` mặc định bật** (registry + giá trị dự phòng của `usageGuard.Enforced`); tắt chỉ để kiểm thử.
@@ -139,7 +139,38 @@ Mỗi giai đoạn: Opus làm, Fable rà (khi còn hạn mức), migration theo 
 
 **Khác với thiết kế / cần biết**
 
-1. Tên 2 agent cơ bản lấy từ `builtin_agents.yaml` (hiện là "Soạn thảo văn bản", "Suy luận thông minh"), không phải chữ "Trợ lý văn bản", "Hỏi đáp pháp luật" trong §2 — một nguồn tên duy nhất với ô chọn agent; đổi tên trong YAML nếu muốn đúng chữ ở §2. Danh sách 2 agent nằm ở `types.UsageIncludedAgentIDs`.
+1. Tên 2 agent cơ bản lấy từ `builtin_agents.yaml` ("Soạn thảo văn bản", "Suy luận thông minh"); người dùng chốt giữ tên này, §2/§7.1 đã sửa theo. Danh sách 2 agent nằm ở `types.UsageIncludedAgentIDs`.
 2. Agent cơ bản tuỳ chỉnh (cách phân phối Cơ bản, không phải built-in) không được liệt kê trên thẻ gói.
 3. Xoá dòng danh mục không thu hồi quyền dùng đã bán (`usage_subscription_addons` giữ nguyên tới khi hết hạn).
 4. Tên agent trong danh mục lấy từ dòng agent của hồ sơ cấu hình (Tổ chức ghi đè tên riêng không ảnh hưởng).
+
+### 8.3 Công tắc bật/tắt agent và giai đoạn C — đã làm (19/10/2026, cùng nhánh, commit riêng; chưa merge, chưa chạy migration trên dev)
+
+**Công tắc bật/tắt agent (yêu cầu mới, làm trước giai đoạn C)**
+
+- Trước đây chỉ có `enabled` trong `config/builtin_agents.yaml` (18/10/2026), SuperAdmin không thấy/không đổi được. Nay: cột `custom_agents.enabled` (migration **000168**, NULL = mặc định: giá trị YAML với built-in, bật với agent tuỳ chỉnh), `CustomAgent.EffectiveEnabled()`, trường API `enabled` (giá trị hiệu lực).
+- Với built-in, công tắc nằm trên dòng của agent trong hồ sơ cấu hình (10009) — tạo dòng ở lần bật/tắt đầu, như mọi tuỳ chỉnh built-in; dòng riêng cũ của một Tổ chức nhận công tắc của hồ sơ.
+- API: `PUT /api/v1/agents/:id/enabled` `{"enabled": bool}` (SystemAdmin + ConfigProfile như các route sửa agent; service kiểm lại cờ SuperAdmin). `GET /agents?include_disabled=true` chỉ có tác dụng với SuperAdmin (trang quản trị agent); mọi ô chọn agent, kể cả của SuperAdmin, bỏ agent đang tắt. Chọn agent cho MCP endpoint đọc giá trị hiệu lực.
+- Built-in đang tắt: không có trong danh sách chọn nhưng vẫn mở được theo id (như cờ YAML). Agent tuỳ chỉnh đang tắt: điều kiện SQL thấy agent loại bỏ (`COALESCE(enabled, true)`), nên ẩn với mọi người trừ SuperAdmin, lượt chat kế tiếp nhận 2104.
+- Giao diện: công tắc trên thẻ agent (trang quản trị agent; agent đang tắt hiện mờ kèm ghi chú) và ô "Đang bật" ở đầu tab Cơ bản của trình sửa. Tắt một trong 2 agent cơ bản phải xác nhận ("mọi gói dịch vụ đều gồm agent này").
+
+**Giai đoạn C — mua agent chuyên ngành**
+
+- Migration **000169**: `usage_orders.kind` (`plan`|`addon`), `target_subscription_id`, `addons` jsonb (dòng add-on, giá chốt lúc đặt).
+- Báo giá/đơn (Tổ chức và cá nhân, 7.5): `kind=plan` + `addon_agent_ids` = giá gói + Σ giá add-on × số tháng (× số ghế với gói ghế, 7.2); chỉ nhận add-on đang bán kèm gói đó; mã khuyến mãi giảm trên toàn bộ tạm tính (gói + add-on).
+- Mua thêm giữa kỳ `kind=addon` (7.3, `types.PriceAddonRemainder`): từ bây giờ (hoặc từ ngày hết của quyền đang có) tới hết thuê bao: mỗi tháng còn lại tính đủ; phần lẻ ≤ 15 ngày tính 1/2 (làm tròn lên đồng), > 15 ngày tính đủ; ngày bắt đầu dở tính là một ngày; × số ghế. Từ chối khi đã có quyền tới hết thuê bao, khi không có thuê bao hiện hành, hoặc thuê bao không có ngày hết (SuperAdmin cấp tay).
+- Xác nhận (nút SuperAdmin hoặc webhook thanh toán, cùng transaction):
+  - Thuê bao mới: add-on của đơn hết hạn cùng thuê bao.
+  - **Đổi gói**: add-on còn hiệu lực của thuê bao cũ được chuyển sang thuê bao mới **tới ngày đã trả tiền** (ngày hết của quyền, hoặc của thuê bao cũ) — kể cả khi gói mới không bán add-on đó (quyết định: giữ tới hết hạn đã trả, không hoàn tiền, không cắt ngang). Add-on mua lại trong đơn đổi gói theo hạn thuê bao mới.
+  - **Gia hạn cùng gói**: add-on có trong đơn gia hạn theo hạn mới (giữ ngày bắt đầu); add-on không có trong đơn giữ ngày hết đã trả (quyền không có ngày hết được ghim vào hạn cũ, không được gia hạn miễn phí).
+  - Đơn `addon`: quyền trên thuê bao đích tới đúng ngày đã báo giá (`paid_until`), kể cả khi thuê bao được gia hạn trước lúc trả tiền; nếu thuê bao đích không còn là thuê bao hiện hành → 409 (webhook ghi `confirm_failed` như hiện có).
+- `GET /api/v1/billing/subscription?scope=tenant|user` (người mua; Tổ chức cần Tenant Admin): thuê bao hiện hành, add-on đang có, add-on còn mua được. Trang "Gói sử dụng" của Tổ chức (`GET /tenants/:id/usage`) liệt kê add-on đang có và ngày hết.
+- Giao diện "Mua gói": thẻ gói hiện "Gồm: Soạn thảo văn bản, Suy luận thông minh" và số agent mua thêm được; chọn gói → tick agent chuyên ngành (giá/tháng, /ghế); báo giá liệt kê từng dòng add-on và cách tính; mục "Agent chuyên ngành của gói đang dùng" để mua thêm giữa kỳ. Đơn hàng (người mua và SuperAdmin) hiện dòng add-on.
+- Kiểm thử: bảng tính 2 mốc (0/7/15/16 ngày, ngày dở, × ghế, làm tròn nửa giá), báo giá gói + add-on (ghế, pool, cá nhân, không bán, khuyến mãi), xác nhận (quyền + `order_id`), gia hạn (theo hạn mới / giữ hạn cũ / ghim quyền không ngày hết), đổi gói (chuyển tới hạn đã trả), giữa kỳ (giá, đã có, chưa có thuê bao, thuê bao đổi trước khi trả), webhook, `ScopeAddons`, trang Tổ chức; router `/billing/subscription`; đơn có dòng add-on trên PostgreSQL 16 thật; migration 165→169 lên/xuống trên PostgreSQL 16; frontend `tsc` + node test.
+
+**Khác với thiết kế / cần biết**
+
+1. Gia hạn gói ghế có thêm ghế: phần ghế thêm của **add-on** cho thời gian còn lại của kỳ hiện tại không tính (chỉ phần gói có tính theo ngày như trước); add-on tính × số ghế mới × số tháng gia hạn.
+2. Đơn `addon` dùng `plan_id` của thuê bao đích (cột bắt buộc), `months` = 0.
+3. Word add-in: không đổi (panel gói của add-in đọc `/me/usage`, không có danh sách add-on; không đơn giản để thêm trong repo này).
+4. Huỷ/hết hạn đơn chưa trả không đụng tới quyền dùng.
