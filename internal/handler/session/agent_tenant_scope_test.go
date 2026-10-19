@@ -97,6 +97,7 @@ func TestAgentTurnRefusedWhenTenantLostAgent(t *testing.T) {
 		rec := postAgentTurn(t, h, body)
 		require.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
 		require.Contains(t, rec.Body.String(), "không áp dụng cho Tổ chức của bạn")
+		require.Contains(t, rec.Body.String(), `"code":2104`, "a code of its own, so the UI does not call it a missing conversation")
 		require.False(t, sessions.ran, "the turn must not run")
 	}
 }

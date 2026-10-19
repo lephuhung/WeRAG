@@ -709,7 +709,7 @@ func unavailableAgentError(agentID string, agent *types.CustomAgent) error {
 	if agentID == "" || agent != nil || types.IsReservedBuiltinAgentID(agentID) {
 		return nil
 	}
-	return errors.NewNotFoundError(agentUnavailableMessage)
+	return errors.NewAgentUnavailableError(agentUnavailableMessage)
 }
 
 // pinDocumentAssistant returns the document assistant's ID when the session

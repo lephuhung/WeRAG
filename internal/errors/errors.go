@@ -37,6 +37,10 @@ const (
 	ErrAgentMissingAllowedTools  ErrorCode = 2101
 	ErrAgentInvalidMaxIterations ErrorCode = 2102
 	ErrAgentInvalidTemperature   ErrorCode = 2103
+	// ErrAgentUnavailable: a chat turn named a custom agent the caller
+	// cannot use (deleted, never existed, or outside its "Tổ chức áp dụng"
+	// list). HTTP 404; one code for all three so it never tells them apart.
+	ErrAgentUnavailable ErrorCode = 2104
 
 	// VectorStore binding related error codes (2200-2299).
 	// Both map to HTTP 400 with a generic message; the typed code lets
@@ -242,6 +246,16 @@ func NewAgentInvalidTemperatureError() *AppError {
 		Code:     ErrAgentInvalidTemperature,
 		Message:  "tham số temperature phải nằm trong khoảng 0-2",
 		HTTPCode: http.StatusBadRequest,
+	}
+}
+
+// NewAgentUnavailableError refuses a chat turn whose custom agent does not
+// resolve for the caller (see ErrAgentUnavailable).
+func NewAgentUnavailableError(message string) *AppError {
+	return &AppError{
+		Code:     ErrAgentUnavailable,
+		Message:  message,
+		HTTPCode: http.StatusNotFound,
 	}
 }
 
