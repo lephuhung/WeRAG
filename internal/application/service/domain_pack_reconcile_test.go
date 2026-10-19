@@ -237,7 +237,8 @@ func TestDomainPackDetailIsReadOnly(t *testing.T) {
 	}))
 	require.NoError(t, db.Exec(`INSERT INTO tenants (id, name) VALUES (10003, 'Công an tỉnh'), (10004, 'Sở Tư pháp')`).Error)
 	for _, a := range []*types.CustomAgent{
-		{ID: "a1", Name: "Tư vấn DN", TenantID: 10003, Config: types.CustomAgentConfig{DomainPacks: []string{"opc-vn-business-law"}}},
+		{ID: "a1", Name: "Tư vấn DN", TenantID: 10003, AppliesToTenantIDs: types.AgentTenantScope{10004, 10077},
+			Config: types.CustomAgentConfig{DomainPacks: []string{"opc-vn-business-law"}}},
 		{ID: "a2", Name: "Khác", TenantID: 10003, Config: types.CustomAgentConfig{DomainPacks: []string{"other-pack"}}},
 		{ID: "a3", Name: "Hỗ trợ", TenantID: 10004, Config: types.CustomAgentConfig{DomainPacks: []string{"x", "opc-vn-business-law"}}},
 	} {
@@ -256,6 +257,11 @@ func TestDomainPackDetailIsReadOnly(t *testing.T) {
 	assert.Equal(t, "a1", detail.Agents[0].ID)
 	assert.Equal(t, "Công an tỉnh", detail.Agents[0].TenantName)
 	assert.Equal(t, "Sở Tư pháp", detail.Agents[1].TenantName)
+	// "Tổ chức áp dụng": named where the tenant exists, [] = every Tổ chức
+	assert.Equal(t, []types.DomainPackAgentScope{{TenantID: 10004, TenantName: "Sở Tư pháp"}, {TenantID: 10077}},
+		detail.Agents[0].AppliesTo)
+	assert.Empty(t, detail.Agents[1].AppliesTo)
+	assert.NotNil(t, detail.Agents[1].AppliesTo, "an array in the API, not null")
 
 	docs := map[string]types.DomainPackDocumentView{}
 	for _, d := range detail.Documents {
