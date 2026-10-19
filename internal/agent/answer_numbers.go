@@ -40,8 +40,8 @@ func (e *AgentEngine) SetNumberCatalog(fn NumberCatalogFunc) {
 
 // RemoveNumberOnLookupError decides what a failed catalogue lookup does:
 // true removes the number (fail-closed: an unverified number is not shown),
-// false keeps it (fail-open). Fail-closed is the recommendation, pending the
-// user's confirmation; this is the one place to flip it.
+// false keeps it (fail-open). Fail-closed was confirmed by the user on
+// 19/10/2026; this is the one place to flip it.
 const RemoveNumberOnLookupError = true
 
 // RemovedNumberNote replaces a removed number.
