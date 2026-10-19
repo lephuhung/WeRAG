@@ -88,6 +88,24 @@ type UsagePlanRepository interface {
 	// CustomAgentDistribution returns the distribution of a live custom
 	// (not built-in) agent; found is false when no such agent exists.
 	CustomAgentDistribution(ctx context.Context, agentID string) (distribution string, found bool, err error)
+
+	// Catalogue of specialist agents sold with plans (usage_agent_addons).
+	// Listings fill the agent name, availability and holder count.
+	ListAgentAddons(ctx context.Context, includeInactive bool) ([]*types.UsageAgentAddon, error)
+	GetAgentAddon(ctx context.Context, agentID string) (*types.UsageAgentAddon, error)
+	CreateAgentAddon(ctx context.Context, row *types.UsageAgentAddon) error
+	UpdateAgentAddon(ctx context.Context, row *types.UsageAgentAddon) error
+	DeleteAgentAddon(ctx context.Context, agentID string) (bool, error)
+	AgentAddonCatalogueSync
+}
+
+// AgentAddonCatalogueSync keeps the add-on catalogue in step with the
+// agents: the custom agent service calls it after an agent is updated or
+// deleted.
+type AgentAddonCatalogueSync interface {
+	// DeactivateUnsellableAgentAddon switches the catalogue row of agentID
+	// off unless a live custom agent with that id is still an addon agent.
+	DeactivateUnsellableAgentAddon(ctx context.Context, agentID string) error
 }
 
 // UsageGuard decides whether a chat turn may start.
@@ -152,6 +170,13 @@ type UsagePlanService interface {
 	GrantSubscriptionAddon(ctx context.Context, subscriptionID string, grant types.UsageSubscriptionAddonGrant, grantedBy string) (*types.UsageSubscriptionAddon, error)
 	RevokeSubscriptionAddon(ctx context.Context, subscriptionID, agentID string) error
 
+	// Catalogue of specialist agents sold with plans (SuperAdmin). Only an
+	// addon agent may be listed; price >= 0; plan ids must exist.
+	ListAgentAddons(ctx context.Context, includeInactive bool) (*types.UsageAgentAddonCatalogue, error)
+	CreateAgentAddon(ctx context.Context, row *types.UsageAgentAddon) (*types.UsageAgentAddon, error)
+	UpdateAgentAddon(ctx context.Context, row *types.UsageAgentAddon) (*types.UsageAgentAddon, error)
+	DeleteAgentAddon(ctx context.Context, agentID string) error
+
 	// TenantUsage is the organization-facing view: its active subscription
 	// with consumption and its seats. Enforced mirrors usage.enforce.
 	TenantUsage(ctx context.Context, tenantID uint64) (*types.UsageTenantUsage, error)
@@ -209,7 +234,9 @@ type UsageBillingRepository interface {
 type UsageBillingService interface {
 	BillingInfo(ctx context.Context) *types.UsageBillingInfo
 	// PurchasablePlans lists active plans of a scope kind that carry a price.
-	PurchasablePlans(ctx context.Context, scopeKind string) ([]*types.UsagePlan, error)
+	// Each plan carries the basic agents it includes and the add-ons sold
+	// with it.
+	PurchasablePlans(ctx context.Context, scopeKind string) ([]*types.UsagePlanOffer, error)
 	// Quote prices req for scopeID. Renewing a seat subscription with fewer
 	// seats is refused; more seats also pay the added seats for the time
 	// left on the current period.

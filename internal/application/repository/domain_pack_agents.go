@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -31,14 +32,29 @@ func (r *domainPackAgentRepository) ListAgentsUsingPack(ctx context.Context, nam
 	}
 	err := db.Table("custom_agents AS a").
 		Select("a.id AS id, a.name AS name, a.tenant_id AS tenant_id, COALESCE(t.name, '') AS tenant_name, "+
-			"a.applies_to_tenant_ids AS applies_to_tenant_ids, a.distribution AS distribution").
+			"a.applies_to_tenant_ids AS applies_to_tenant_ids, a.distribution AS distribution, "+
+			"uaa.price_vnd AS addon_price_vnd, uaa.is_active AS addon_active").
 		Joins("LEFT JOIN tenants t ON t.id = a.tenant_id").
+		Joins("LEFT JOIN usage_agent_addons uaa ON uaa.agent_id = a.id").
 		Where("a.deleted_at IS NULL").
 		Where(contains, name).
 		Order("a.tenant_id").Order("a.name").
 		Scan(&out).Error
 	if err != nil {
 		return out, err
+	}
+	if len(out) > 0 {
+		ids := make([]string, 0, len(out))
+		for _, a := range out {
+			ids = append(ids, a.ID)
+		}
+		holders, err := addonHolderCounts(db, ids, time.Now())
+		if err != nil {
+			return out, err
+		}
+		for i := range out {
+			out[i].AddonHolders = holders[out[i].ID]
+		}
 	}
 	return out, r.nameScopeTenants(db, out)
 }

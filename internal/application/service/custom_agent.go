@@ -171,6 +171,26 @@ type customAgentService struct {
 	knowledgeRepo        interfaces.KnowledgeRepository
 	// domainPacks are the packs shipped in this build (SetDomainPacks).
 	domainPacks *domainpacks.Registry
+	// addonCatalogue switches an add-on catalogue row off once its agent
+	// is deleted or no longer an addon agent (SetAgentAddonCatalogue).
+	addonCatalogue interfaces.AgentAddonCatalogueSync
+}
+
+// SetAgentAddonCatalogue wires the add-on catalogue (usage_agent_addons).
+func (s *customAgentService) SetAgentAddonCatalogue(c interfaces.AgentAddonCatalogueSync) {
+	s.addonCatalogue = c
+}
+
+// syncAddonCatalogue deactivates the catalogue row of an agent that can no
+// longer be sold. A failure is logged, not returned: the agent change is
+// already saved, and the billing offer re-checks the agent on every read.
+func (s *customAgentService) syncAddonCatalogue(ctx context.Context, agentID string) {
+	if s.addonCatalogue == nil {
+		return
+	}
+	if err := s.addonCatalogue.DeactivateUnsellableAgentAddon(ctx, agentID); err != nil {
+		logger.Warnf(ctx, "Agent %s: could not sync the add-on catalogue: %v", agentID, err)
+	}
 }
 
 // NewCustomAgentService creates a new custom agent service
@@ -492,6 +512,7 @@ func (s *customAgentService) UpdateAgent(
 		return nil, err
 	}
 
+	s.syncAddonCatalogue(ctx, agent.ID)
 	logger.Infof(ctx, "Custom agent updated successfully, ID: %s", agent.ID)
 	return existingAgent, nil
 }
@@ -645,6 +666,7 @@ func (s *customAgentService) DeleteAgent(ctx context.Context, id string) error {
 		return err
 	}
 
+	s.syncAddonCatalogue(ctx, id)
 	logger.Infof(ctx, "Custom agent deleted successfully, ID: %s", id)
 	return nil
 }

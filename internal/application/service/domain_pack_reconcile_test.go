@@ -30,7 +30,8 @@ func newReconcileFixture(t *testing.T) (*DomainPackReconciler, *gorm.DB) {
 	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&types.LegalDocument{}, &types.LegalDocumentRelation{},
-		&types.LegalDocumentRequest{}, &types.LegalDocumentLink{}, &types.CustomAgent{}))
+		&types.LegalDocumentRequest{}, &types.LegalDocumentLink{}, &types.CustomAgent{},
+		&types.UsageAgentAddon{}, &types.UsageSubscription{}, &types.UsageSubscriptionAddon{}))
 	require.NoError(t, db.Exec(`CREATE TABLE tenants (id INTEGER PRIMARY KEY, name TEXT)`).Error)
 	require.NoError(t, db.Exec(`CREATE TABLE knowledges (id TEXT, knowledge_base_id TEXT, title TEXT,
 		file_name TEXT, deleted_at DATETIME, metadata TEXT)`).Error)
@@ -237,13 +238,21 @@ func TestDomainPackDetailIsReadOnly(t *testing.T) {
 	}))
 	require.NoError(t, db.Exec(`INSERT INTO tenants (id, name) VALUES (10003, 'Công an tỉnh'), (10004, 'Sở Tư pháp')`).Error)
 	for _, a := range []*types.CustomAgent{
-		{ID: "a1", Name: "Tư vấn DN", TenantID: 10003, AppliesToTenantIDs: types.AgentTenantScope{10004, 10077},
-			Config: types.CustomAgentConfig{DomainPacks: []string{"opc-vn-business-law"}}},
+		{ID: "a1", Name: "Tư vấn DN", TenantID: 10003, Distribution: types.AgentDistributionInternal,
+			AppliesToTenantIDs: types.AgentTenantScope{10004, 10077},
+			Config:             types.CustomAgentConfig{DomainPacks: []string{"opc-vn-business-law"}}},
 		{ID: "a2", Name: "Khác", TenantID: 10003, Config: types.CustomAgentConfig{DomainPacks: []string{"other-pack"}}},
-		{ID: "a3", Name: "Hỗ trợ", TenantID: 10004, Config: types.CustomAgentConfig{DomainPacks: []string{"x", "opc-vn-business-law"}}},
+		{ID: "a3", Name: "Hỗ trợ", TenantID: 10004, Distribution: types.AgentDistributionAddon,
+			Config: types.CustomAgentConfig{DomainPacks: []string{"x", "opc-vn-business-law"}}},
 	} {
 		require.NoError(t, db.Create(a).Error)
 	}
+	// a3 is sold at 99.000 VNĐ/month and one current subscription holds it
+	require.NoError(t, db.Create(&types.UsageAgentAddon{AgentID: "a3", PriceVND: 99000, IsActive: true}).Error)
+	require.NoError(t, db.Omit("Plan").Create(&types.UsageSubscription{ID: "s1", ScopeType: "tenant", ScopeID: "10004",
+		PlanID: "p", StartsAt: time.Now().AddDate(0, -1, 0), Status: "active"}).Error)
+	require.NoError(t, db.Create(&types.UsageSubscriptionAddon{SubscriptionID: "s1", AgentID: "a3",
+		StartsAt: time.Now().AddDate(0, -1, 0)}).Error)
 
 	detail, err := r.Detail(ctx, "opc-vn-business-law")
 	require.NoError(t, err)
@@ -262,6 +271,15 @@ func TestDomainPackDetailIsReadOnly(t *testing.T) {
 		detail.Agents[0].AppliesTo)
 	assert.Empty(t, detail.Agents[1].AppliesTo)
 	assert.NotNil(t, detail.Agents[1].AppliesTo, "an array in the API, not null")
+	// distribution and the add-on catalogue
+	assert.Equal(t, types.AgentDistributionInternal, detail.Agents[0].Distribution)
+	assert.Nil(t, detail.Agents[0].AddonPriceVND, "not in the catalogue")
+	assert.Equal(t, types.AgentDistributionAddon, detail.Agents[1].Distribution)
+	require.NotNil(t, detail.Agents[1].AddonPriceVND)
+	assert.Equal(t, int64(99000), *detail.Agents[1].AddonPriceVND)
+	require.NotNil(t, detail.Agents[1].AddonActive)
+	assert.True(t, *detail.Agents[1].AddonActive)
+	assert.Equal(t, int64(1), detail.Agents[1].AddonHolders)
 
 	docs := map[string]types.DomainPackDocumentView{}
 	for _, d := range detail.Documents {

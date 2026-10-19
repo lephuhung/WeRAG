@@ -569,3 +569,103 @@ func (s *usagePlanService) RevokeSubscriptionAddon(ctx context.Context, subscrip
 	}
 	return nil
 }
+
+// includedPlanAgents names the basic agents every plan includes, in the
+// caller's locale, as builtin_agents.yaml names them; one switched off in
+// this build is left out.
+func includedPlanAgents(ctx context.Context) []types.UsagePlanAgent {
+	out := make([]types.UsagePlanAgent, 0, len(types.UsageIncludedAgentIDs))
+	for _, id := range types.UsageIncludedAgentIDs {
+		if a := types.GetBuiltinAgentWithContext(ctx, id, 0); a != nil {
+			out = append(out, types.UsagePlanAgent{ID: id, Name: a.Name})
+		}
+	}
+	return out
+}
+
+func (s *usagePlanService) ListAgentAddons(ctx context.Context, includeInactive bool) (*types.UsageAgentAddonCatalogue, error) {
+	rows, err := s.repo.ListAgentAddons(ctx, includeInactive)
+	if err != nil {
+		return nil, err
+	}
+	return &types.UsageAgentAddonCatalogue{Addons: rows, IncludedAgents: includedPlanAgents(ctx)}, nil
+}
+
+// validateAgentAddon normalizes a catalogue row and checks it: an addon
+// agent, a price >= 0, plans that exist.
+func (s *usagePlanService) validateAgentAddon(ctx context.Context, row *types.UsageAgentAddon) error {
+	row.AgentID = strings.TrimSpace(row.AgentID)
+	row.Description = strings.TrimSpace(row.Description)
+	row.PlanIDs = row.PlanIDs.Normalized()
+	if row.AgentID == "" {
+		return apperrors.NewBadRequestError("agent_id is required")
+	}
+	if row.PriceVND < 0 {
+		return apperrors.NewBadRequestError("price_vnd must be >= 0")
+	}
+	distribution, found, err := s.repo.CustomAgentDistribution(ctx, row.AgentID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return apperrors.NewNotFoundError("agent not found")
+	}
+	if distribution != types.AgentDistributionAddon {
+		return apperrors.NewBadRequestError(
+			"chỉ trợ lý có cách phân phối Chuyên ngành (addon) mới bán kèm gói dịch vụ được")
+	}
+	for _, id := range row.PlanIDs {
+		if _, err := s.repo.GetPlan(ctx, id); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apperrors.NewBadRequestError(fmt.Sprintf("plan %q does not exist", id))
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *usagePlanService) CreateAgentAddon(ctx context.Context, row *types.UsageAgentAddon) (*types.UsageAgentAddon, error) {
+	if err := s.validateAgentAddon(ctx, row); err != nil {
+		return nil, err
+	}
+	if _, err := s.repo.GetAgentAddon(ctx, row.AgentID); err == nil {
+		return nil, apperrors.NewConflictError("this agent is already in the add-on catalogue")
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if err := s.repo.CreateAgentAddon(ctx, row); err != nil {
+		return nil, err
+	}
+	return s.repo.GetAgentAddon(ctx, row.AgentID)
+}
+
+func (s *usagePlanService) UpdateAgentAddon(ctx context.Context, row *types.UsageAgentAddon) (*types.UsageAgentAddon, error) {
+	if _, err := s.repo.GetAgentAddon(ctx, strings.TrimSpace(row.AgentID)); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperrors.NewNotFoundError("add-on not found")
+		}
+		return nil, err
+	}
+	if err := s.validateAgentAddon(ctx, row); err != nil {
+		return nil, err
+	}
+	if err := s.repo.UpdateAgentAddon(ctx, row); err != nil {
+		return nil, err
+	}
+	return s.repo.GetAgentAddon(ctx, row.AgentID)
+}
+
+// DeleteAgentAddon takes an agent out of the catalogue. Subscriptions that
+// already hold it keep their rights until they end (usage_subscription_addons
+// is untouched).
+func (s *usagePlanService) DeleteAgentAddon(ctx context.Context, agentID string) error {
+	deleted, err := s.repo.DeleteAgentAddon(ctx, strings.TrimSpace(agentID))
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return apperrors.NewNotFoundError("add-on not found")
+	}
+	return nil
+}

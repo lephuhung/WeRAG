@@ -106,7 +106,7 @@ func TestAgentDistributionVisibilityPostgres(t *testing.T) {
 	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	for _, table := range []string{"usage_subscription_addons", "usage_subscriptions", "custom_agents", "tenants"} {
+	for _, table := range []string{"usage_agent_addons", "usage_subscription_addons", "usage_subscriptions", "custom_agents", "tenants"} {
 		require.NoError(t, db.Exec("DELETE FROM "+table).Error)
 	}
 	if err := db.Exec(`INSERT INTO usage_plans (id) VALUES ('plan') ON CONFLICT DO NOTHING`).Error; err != nil {
@@ -114,6 +114,25 @@ func TestAgentDistributionVisibilityPostgres(t *testing.T) {
 	}
 	_, repo := distributionFixtureOn(t, db)
 	checkVisibilityByCaller(t, repo)
+
+	// the catalogue queries on jsonb / timestamptz
+	ctx := context.Background()
+	plans := NewUsagePlanRepository(db)
+	require.NoError(t, plans.CreateAgentAddon(ctx, &types.UsageAgentAddon{
+		AgentID: "addon", PriceVND: 49000, PlanIDs: types.UsagePlanIDList{"plan"}, IsActive: true}))
+	rows, err := plans.ListAgentAddons(ctx, false)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.True(t, rows[0].AgentAvailable)
+	require.Equal(t, types.UsagePlanIDList{"plan"}, rows[0].PlanIDs)
+	require.NoError(t, db.Exec("UPDATE custom_agents SET distribution = 'basic' WHERE id = 'addon'").Error)
+	require.NoError(t, plans.DeactivateUnsellableAgentAddon(ctx, "addon"))
+	row, err := plans.GetAgentAddon(ctx, "addon")
+	require.NoError(t, err)
+	require.False(t, row.IsActive)
+	agents, err := NewDomainPackAgentRepository(db).ListAgentsUsingPack(ctx, "none")
+	require.NoError(t, err)
+	require.Empty(t, agents)
 }
 
 func checkVisibilityByCaller(t *testing.T, repo *customAgentRepository) {

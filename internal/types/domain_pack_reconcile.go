@@ -213,6 +213,12 @@ type DomainPackAgent struct {
 	// Distribution is the agent's "Cách phân phối" (basic | addon |
 	// internal); the list above only counts for internal.
 	Distribution string `json:"distribution"`
+	// AddonPriceVND and AddonActive are the agent's row in the add-on
+	// catalogue (usage_agent_addons); nil = not in the catalogue.
+	// AddonHolders counts the current subscriptions holding the add-on.
+	AddonPriceVND *int64 `json:"addon_price_vnd"`
+	AddonActive   *bool  `json:"addon_active"`
+	AddonHolders  int64  `json:"addon_holders" gorm:"-"`
 }
 
 // DomainPackAgentScope is one Tổ chức in an agent's "Tổ chức áp dụng" list.

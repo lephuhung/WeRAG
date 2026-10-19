@@ -65,12 +65,19 @@ func (s *usageBillingService) BillingInfo(ctx context.Context) *types.UsageBilli
 	return info
 }
 
-func (s *usageBillingService) PurchasablePlans(ctx context.Context, scopeKind string) ([]*types.UsagePlan, error) {
+func (s *usageBillingService) PurchasablePlans(ctx context.Context, scopeKind string) ([]*types.UsagePlanOffer, error) {
 	all, err := s.plans.ListPlans(ctx, false)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*types.UsagePlan, 0, len(all))
+	// one catalogue read for every plan; only rows whose agent is still a
+	// live addon agent are offered
+	catalogue, err := s.planRepo.ListAgentAddons(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	included := includedPlanAgents(ctx)
+	out := make([]*types.UsagePlanOffer, 0, len(all))
 	for _, p := range all {
 		if scopeKind != "" && p.ScopeKind != scopeKind {
 			continue
@@ -78,7 +85,24 @@ func (s *usageBillingService) PurchasablePlans(ctx context.Context, scopeKind st
 		if p.PriceVND <= 0 {
 			continue
 		}
-		out = append(out, p)
+		offer := &types.UsagePlanOffer{
+			UsagePlan:      p,
+			IncludedAgents: included,
+			Addons:         []types.UsagePlanAddonOffer{},
+		}
+		for _, a := range catalogue {
+			if !a.IsActive || !a.AgentAvailable || !a.PlanIDs.Includes(p.ID) {
+				continue
+			}
+			offer.Addons = append(offer.Addons, types.UsagePlanAddonOffer{
+				AgentID:     a.AgentID,
+				Name:        a.AgentName,
+				Description: a.Description,
+				PriceVND:    a.PriceVND,
+				PerSeat:     p.Mode == types.UsageModeSeat,
+			})
+		}
+		out = append(out, offer)
 	}
 	return out, nil
 }

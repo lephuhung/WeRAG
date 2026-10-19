@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -14,6 +15,12 @@ import (
 // addonFixture adds a specialist agent "thue" to the scope fixture, sold to
 // workspace 1 and to the personal subscription of "u-personal".
 func addonFixture(t *testing.T) *customAgentService {
+	t.Helper()
+	svc, _ := addonFixtureDB(t)
+	return svc
+}
+
+func addonFixtureDB(t *testing.T) (*customAgentService, *gorm.DB) {
 	t.Helper()
 	svc, db := newAgentScopeService(t)
 	ctx := context.Background()
@@ -34,7 +41,7 @@ func addonFixture(t *testing.T) *customAgentService {
 			SubscriptionID: sub, AgentID: "thue", StartsAt: past,
 		}))
 	}
-	return svc
+	return svc, db
 }
 
 func userCtx(tenantID uint64, userID string) context.Context {
@@ -165,4 +172,42 @@ func TestAddonsVisibleWithoutPurchaseIsOff(t *testing.T) {
 	require.False(t, addonsVisibleWithoutPurchase(context.Background()))
 	require.False(t, agentViewer(userCtx(1, "u"), 1).AllAddons)
 	require.Empty(t, agentViewer(userCtx(1, "system-1"), 1).UserID)
+}
+
+// Converting an agent away from addon, or deleting it, switches its
+// catalogue row off (it is never offered again until a SuperAdmin re-enables
+// it).
+func TestAgentChangesDeactivateCatalogueRow(t *testing.T) {
+	svc, db := addonFixtureDB(t)
+	plans := repository.NewUsagePlanRepository(db)
+	svc.SetAgentAddonCatalogue(plans)
+	ctx := context.Background()
+	profile := scopeSuperAdminCtx(9)
+	require.NoError(t, plans.CreateAgentAddon(ctx, &types.UsageAgentAddon{AgentID: "thue", PriceVND: 99000, IsActive: true}))
+
+	// an edit that keeps addon leaves it on
+	_, err := svc.UpdateAgent(profile, &types.CustomAgent{ID: "thue", Name: "Thuế HKD 2",
+		Config: types.CustomAgentConfig{AgentMode: types.AgentModeSmartReasoning, DomainPacks: []string{"thue-hkd"}}}, nil)
+	require.NoError(t, err)
+	row, err := plans.GetAgentAddon(ctx, "thue")
+	require.NoError(t, err)
+	require.True(t, row.IsActive)
+
+	_, err = svc.UpdateAgent(profile, &types.CustomAgent{ID: "thue", Name: "Thuế HKD 2", Distribution: "internal",
+		Config: types.CustomAgentConfig{AgentMode: types.AgentModeSmartReasoning}}, nil)
+	require.NoError(t, err)
+	row, err = plans.GetAgentAddon(ctx, "thue")
+	require.NoError(t, err)
+	require.False(t, row.IsActive)
+
+	// back to addon and on again, then deleted
+	_, err = svc.UpdateAgent(profile, &types.CustomAgent{ID: "thue", Name: "Thuế HKD 2", Distribution: "addon",
+		Config: types.CustomAgentConfig{AgentMode: types.AgentModeSmartReasoning}}, nil)
+	require.NoError(t, err)
+	row.IsActive = true
+	require.NoError(t, plans.UpdateAgentAddon(ctx, row))
+	require.NoError(t, svc.DeleteAgent(profile, "thue"))
+	row, err = plans.GetAgentAddon(ctx, "thue")
+	require.NoError(t, err)
+	require.False(t, row.IsActive)
 }

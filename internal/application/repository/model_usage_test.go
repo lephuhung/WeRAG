@@ -61,6 +61,16 @@ CREATE TABLE IF NOT EXISTS usage_subscription_addons (
     updated_at DATETIME,
     PRIMARY KEY (subscription_id, agent_id)
 );
+CREATE TABLE IF NOT EXISTS usage_agent_addons (
+    agent_id VARCHAR(36) PRIMARY KEY,
+    price_vnd INTEGER NOT NULL DEFAULT 0,
+    plan_ids TEXT NOT NULL DEFAULT '[]',
+    description TEXT NOT NULL DEFAULT '',
+    is_active BOOLEAN NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME,
+    updated_at DATETIME
+);
 `
 
 // tenantsScopeTestDDL is the slice of the tenants table the configuration

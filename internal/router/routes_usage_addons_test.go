@@ -39,6 +39,26 @@ func (s *addonPlansStub) RevokeSubscriptionAddon(_ context.Context, id, agentID 
 	return nil
 }
 
+func (s *addonPlansStub) ListAgentAddons(context.Context, bool) (*types.UsageAgentAddonCatalogue, error) {
+	s.calls = append(s.calls, "catalogue")
+	return &types.UsageAgentAddonCatalogue{}, nil
+}
+
+func (s *addonPlansStub) CreateAgentAddon(_ context.Context, row *types.UsageAgentAddon) (*types.UsageAgentAddon, error) {
+	s.calls = append(s.calls, "create "+row.AgentID)
+	return row, nil
+}
+
+func (s *addonPlansStub) UpdateAgentAddon(_ context.Context, row *types.UsageAgentAddon) (*types.UsageAgentAddon, error) {
+	s.calls = append(s.calls, "update "+row.AgentID)
+	return row, nil
+}
+
+func (s *addonPlansStub) DeleteAgentAddon(_ context.Context, agentID string) error {
+	s.calls = append(s.calls, "delete "+agentID)
+	return nil
+}
+
 func serveAddonRoute(t *testing.T, stub *addonPlansStub, method, path, body string, ctxFn func(context.Context) context.Context) int {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -69,6 +89,10 @@ func TestSubscriptionAddonRoutesAreSuperAdminOnly(t *testing.T) {
 		{http.MethodGet, "/api/v1/system/admin/usage/subscriptions/sub-1/addons", ""},
 		{http.MethodPost, "/api/v1/system/admin/usage/subscriptions/sub-1/addons", `{"agent_id":"thue"}`},
 		{http.MethodDelete, "/api/v1/system/admin/usage/subscriptions/sub-1/addons/thue", ""},
+		{http.MethodGet, "/api/v1/system/admin/usage/agent-addons", ""},
+		{http.MethodPost, "/api/v1/system/admin/usage/agent-addons", `{"agent_id":"thue","price_vnd":49000}`},
+		{http.MethodPut, "/api/v1/system/admin/usage/agent-addons/thue", `{"price_vnd":59000}`},
+		{http.MethodDelete, "/api/v1/system/admin/usage/agent-addons/thue", ""},
 	}
 	for _, r := range routes {
 		stub := &addonPlansStub{}
@@ -93,5 +117,56 @@ func TestSubscriptionAddonRoutesAreSuperAdminOnly(t *testing.T) {
 	}
 	if code := serveAddonRoute(t, &addonPlansStub{}, http.MethodPost, routes[1].path, `{}`, superAdmin); code != http.StatusBadRequest {
 		t.Fatalf("grant without agent_id = %d, want 400", code)
+	}
+}
+
+func TestAgentAddonCatalogueUpdateTakesAgentFromPath(t *testing.T) {
+	stub := &addonPlansStub{}
+	superAdmin := func(ctx context.Context) context.Context {
+		ctx = context.WithValue(ctx, types.UserIDContextKey, "super-1")
+		ctx = types.WithCaller(ctx, types.Caller{TenantID: 1, UserID: "super-1", Role: types.TenantRoleOwner})
+		return context.WithValue(ctx, types.SystemAdminContextKey, true)
+	}
+	code := serveAddonRoute(t, stub, http.MethodPut, "/api/v1/system/admin/usage/agent-addons/thue",
+		`{"agent_id":"other","price_vnd":1}`, superAdmin)
+	if code != http.StatusOK || len(stub.calls) != 1 || stub.calls[0] != "update thue" {
+		t.Fatalf("update = %d %v, want the path's agent", code, stub.calls)
+	}
+}
+
+// billingPlansStub answers GET /billing/plans with one offer.
+type billingPlansStub struct {
+	interfaces.UsageBillingService
+}
+
+func (billingPlansStub) PurchasablePlans(context.Context, string) ([]*types.UsagePlanOffer, error) {
+	return []*types.UsagePlanOffer{{
+		UsagePlan:      &types.UsagePlan{ID: "go", Name: "Go", Mode: types.UsageModeSeat, PriceVND: 49000},
+		IncludedAgents: []types.UsagePlanAgent{{ID: types.BuiltinDocumentAssistantID, Name: "Soạn thảo văn bản"}},
+		Addons:         []types.UsagePlanAddonOffer{{AgentID: "thue", Name: "Thuế", PriceVND: 99000, PerSeat: true}},
+	}}, nil
+}
+
+// Buyers (any member) read the plans with their basic agents and add-ons;
+// the plan's own fields stay at the top level for older clients.
+func TestBillingPlansCarryAgents(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	engine.Use(middleware.ErrorHandler())
+	RegisterBillingRoutes(engine.Group("/api/v1"), handler.NewUsageBillingHandler(billingPlansStub{}),
+		&rbacGuards{cfg: &config.Config{}})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/billing/plans?scope=tenant", nil)
+	ctx := types.WithCaller(req.Context(), types.Caller{TenantID: 1, UserID: "u", Role: types.TenantRoleMember})
+	rec := httptest.NewRecorder()
+	engine.ServeHTTP(rec, req.WithContext(ctx))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /billing/plans = %d %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"id":"go"`, `"price_vnd":49000`, `"included_agents":[{"id":"builtin-document-assistant"`,
+		`"addons":[{"agent_id":"thue","name":"Thuế","description":"","price_vnd":99000,"per_seat":true}]`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body lacks %s: %s", want, body)
+		}
 	}
 }
