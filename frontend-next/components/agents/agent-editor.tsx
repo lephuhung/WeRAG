@@ -35,6 +35,8 @@ import { listModels, type ModelConfig } from "@/lib/api/models";
 import { buildAgentConfigForSave } from "@/lib/api/agent-config";
 import { getStorageEngineStatus } from "@/lib/api/system";
 import { formatDate } from "@/lib/datetime";
+import { listAllTenants } from "@/lib/api/tenants";
+import { scopeTenantOptions, toggleScopeTenant, type ScopeTenantOption } from "@/lib/agent-tenant-scope";
 
 type TabKey = "basic" | "knowledge" | "tools" | "multimodal";
 
@@ -164,12 +166,31 @@ export function AgentEditorModal({
   const [packList, setPackList] = useState<DomainPackInfo[]>([]);
   // only a loaded list may decide that a stored pack no longer ships
   const [packsLoaded, setPacksLoaded] = useState(false);
+  // "Tổ chức áp dụng" ([] = every Tổ chức); built-in agents are never scoped
+  const [scopeIds, setScopeIds] = useState<number[]>(() => agent?.applies_to_tenant_ids ?? []);
+  const [scopeTenants, setScopeTenants] = useState<ScopeTenantOption[]>([]);
+  const [scopeLoadFailed, setScopeLoadFailed] = useState(false);
 
   useEffect(() => {
     setDraft(draftFrom(agent));
+    setScopeIds(agent?.applies_to_tenant_ids ?? []);
     setTab("basic");
     setError("");
   }, [agent, open]);
+
+  useEffect(() => {
+    if (!open || isBuiltin) return;
+    setScopeLoadFailed(false);
+    listAllTenants()
+      .then((res) => {
+        if (!res.success) {
+          setScopeLoadFailed(true);
+          return;
+        }
+        setScopeTenants(scopeTenantOptions(res.data?.items ?? []));
+      })
+      .catch(() => setScopeLoadFailed(true));
+  }, [open, isBuiltin]);
 
   useEffect(() => {
     if (models && models.length > 0) {
@@ -413,16 +434,20 @@ export function AgentEditorModal({
       // current defaults go out untouched.
       const config = buildAgentConfigForSave(agent?.config, configPayload, agent ? "edit" : "create");
 
+      // built-in agents never carry a list; absent keeps theirs ([])
+      const appliesTo = isBuiltin ? undefined : scopeIds;
       const res = agent
         ? await updateAgent(agent.id, {
             name: trimmedName,
             description: draft.description,
             config,
+            applies_to_tenant_ids: appliesTo,
           })
         : await createAgent({
             name: trimmedName,
             description: draft.description,
             config,
+            applies_to_tenant_ids: appliesTo,
           });
       onSaved(res.data);
       onClose();
@@ -785,6 +810,65 @@ export function AgentEditorModal({
                     </span>
                   </label>
                 </div>
+              </div>
+            )}
+            {!isBuiltin && (
+              <div className="rounded-[12px] border border-hairline p-3">
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <span className="text-[13px] font-medium text-ink">{t("agent.scope.title")}</span>
+                  <span className="caption text-muted">
+                    {scopeIds.length === 0 ? t("agent.scope.all") : t("agent.scope.count", { count: scopeIds.length })}
+                  </span>
+                </div>
+                <p className="caption mb-2 text-muted-soft">{t("agent.scope.desc")}</p>
+                {scopeLoadFailed ? (
+                  <p className="caption text-error">{t("agent.scope.loadFailed")}</p>
+                ) : scopeTenants.length === 0 ? (
+                  <p className="caption text-muted">{t("agent.scope.none")}</p>
+                ) : (
+                  <div className="max-h-[180px] space-y-1 overflow-y-auto">
+                    {scopeTenants.map((tenant) => (
+                      <label
+                        key={tenant.id}
+                        className={`flex items-center gap-2 rounded-md px-1.5 py-1 select-none ${
+                          readOnly ? "cursor-default opacity-75" : "cursor-pointer hover:bg-surface-strong/60"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={scopeIds.includes(tenant.id)}
+                          disabled={readOnly}
+                          onChange={() => setScopeIds((prev) => toggleScopeTenant(prev, tenant.id))}
+                        />
+                        <span className="min-w-0 truncate text-[13px] text-ink">{tenant.name}</span>
+                        <span className="caption tabular-nums text-muted-soft">#{tenant.id}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+                {/* stored ids no longer offered (deleted or moved Tổ chức) stay until unticked */}
+                {scopeIds
+                  .filter((id) => scopeTenants.length > 0 && !scopeTenants.some((tenant) => tenant.id === id))
+                  .map((id) => (
+                    <label key={id} className="mt-1 flex items-center gap-2 px-1.5 py-1 select-none">
+                      <input
+                        type="checkbox"
+                        checked
+                        disabled={readOnly}
+                        onChange={() => setScopeIds((prev) => toggleScopeTenant(prev, id))}
+                      />
+                      <span className="caption text-error">{t("agent.scope.missing", { id })}</span>
+                    </label>
+                  ))}
+                {scopeIds.length > 0 && !readOnly && (
+                  <button
+                    type="button"
+                    className="caption mt-2 text-primary hover:underline"
+                    onClick={() => setScopeIds([])}
+                  >
+                    {t("agent.scope.clear")}
+                  </button>
+                )}
               </div>
             )}
           </div>

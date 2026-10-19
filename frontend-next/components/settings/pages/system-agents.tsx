@@ -27,6 +27,8 @@ import { AgentEmbedChannels } from "@/components/agents/embed-channels";
 import { AgentEditorModal } from "@/components/agents/agent-editor";
 import { Modal } from "@/components/modal";
 import { listModels, type ModelConfig } from "@/lib/api/models";
+import { listAllTenants } from "@/lib/api/tenants";
+import { scopeSummary } from "@/lib/agent-tenant-scope";
 import { RequireSystemAccess } from "@/components/require-system-access";
 import { useInSettingsModal } from "@/components/system/in-modal-nav";
 
@@ -60,6 +62,8 @@ function AgentsPanel() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<CustomAgent | null>(null);
   const [embedAgent, setEmbedAgent] = useState<CustomAgent | null>(null);
+  // Tổ chức names for the "Tổ chức áp dụng" badge
+  const [tenantNames, setTenantNames] = useState<Record<number, string>>({});
 
   const load = () => {
     let alive = true;
@@ -80,6 +84,14 @@ function AgentsPanel() {
       .catch(() => {
         if (alive) setModels([]);
       });
+    listAllTenants()
+      .then((res) => {
+        if (!alive || !res.success) return;
+        const names: Record<number, string> = {};
+        for (const tenant of res.data?.items ?? []) names[tenant.id] = tenant.name;
+        setTenantNames(names);
+      })
+      .catch(() => undefined);
     return () => {
       alive = false;
     };
@@ -149,6 +161,8 @@ function AgentsPanel() {
         {(agents ?? []).map((a) => {
           const isBuiltin = isBuiltinAgent(a.id);
           const modelName = getModelDisplayName(a.config?.model_id);
+          const scope = isBuiltin ? null : scopeSummary(a.applies_to_tenant_ids, (id) => tenantNames[id]);
+          const scopeAll = (a.applies_to_tenant_ids ?? []).map((id) => tenantNames[id] || `#${id}`).join(", ");
 
           return (
             <div
@@ -168,6 +182,14 @@ function AgentsPanel() {
                   {isBuiltin && (
                     <span className="rounded-full bg-surface-strong px-2 py-0.5 text-[11px] font-medium text-muted shrink-0">
                       {t("agentp.builtin")}
+                    </span>
+                  )}
+                  {scope && (
+                    <span
+                      className="min-w-0 truncate rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary"
+                      title={t("agentp.scopeTitle", { names: scopeAll })}
+                    >
+                      {t("agentp.scope", { names: scope.names.join(", ") + (scope.more > 0 ? ` +${scope.more}` : "") })}
                     </span>
                   )}
                 </div>

@@ -206,4 +206,14 @@ type DomainPackAgent struct {
 	Name       string `json:"name"`
 	TenantID   uint64 `json:"tenant_id"`
 	TenantName string `json:"tenant_name"`
+	// AppliesToTenantIDs is the agent's "Tổ chức áp dụng" list ([] = every
+	// Tổ chức on its configuration profile); AppliesTo names them.
+	AppliesToTenantIDs AgentTenantScope       `json:"applies_to_tenant_ids"`
+	AppliesTo          []DomainPackAgentScope `json:"applies_to" gorm:"-"`
+}
+
+// DomainPackAgentScope is one Tổ chức in an agent's "Tổ chức áp dụng" list.
+type DomainPackAgentScope struct {
+	TenantID   uint64 `json:"tenant_id"`
+	TenantName string `json:"tenant_name"`
 }

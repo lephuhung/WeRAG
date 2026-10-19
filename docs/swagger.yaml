@@ -1278,10 +1278,28 @@ definitions:
     type: object
   github_com_Tencent_WeKnora_internal_types.DomainPackAgent:
     properties:
+      applies_to:
+        items:
+          $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackAgentScope'
+        type: array
+      applies_to_tenant_ids:
+        description: |-
+          AppliesToTenantIDs is the agent's "Tổ chức áp dụng" list ([] = every
+          Tổ chức on its configuration profile); AppliesTo names them.
+        items:
+          type: integer
+        type: array
       id:
         type: string
       name:
         type: string
+      tenant_id:
+        type: integer
+      tenant_name:
+        type: string
+    type: object
+  github_com_Tencent_WeKnora_internal_types.DomainPackAgentScope:
+    properties:
       tenant_id:
         type: integer
       tenant_name:
@@ -3259,7 +3277,9 @@ definitions:
       paddleocr_vl_repetition_penalty:
         description: |-
           openai mode: repetition_penalty for /chat/completions (vLLM extension);
-          default 1.05 breaks degenerate loops, "1"/"0" disables.
+          "1.1" is the value to configure for SenOCR-Vi (measured 2026-10-18:
+          1.05 still loops on big table pages, 1.15 alters plain text), "1"/"0"
+          disables. Only an explicit value is sent.
         type: string
       paddleocr_vl_use_chart_recognition:
         type: boolean
@@ -5581,6 +5601,13 @@ definitions:
     type: object
   internal_handler.CreateAgentRequest:
     properties:
+      applies_to_tenant_ids:
+        description: |-
+          AppliesToTenantIDs is "Tổ chức áp dụng": the workspaces allowed to use
+          the agent. Empty or absent = every Tổ chức.
+        items:
+          type: integer
+        type: array
       avatar:
         type: string
       config:
@@ -6545,6 +6572,13 @@ definitions:
     type: object
   internal_handler.UpdateAgentRequest:
     properties:
+      applies_to_tenant_ids:
+        description: |-
+          AppliesToTenantIDs is "Tổ chức áp dụng". A pointer for the same reason
+          as Avatar: absent keeps the stored list, [] clears it (every Tổ chức).
+        items:
+          type: integer
+        type: array
       avatar:
         description: |-
           Avatar travels as a pointer so an omitted field can be told apart from

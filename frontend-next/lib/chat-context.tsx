@@ -7,6 +7,7 @@ import type { SessionLastRequestState } from "@/lib/api/chat";
 import { defaultWebSearchFor } from "@/lib/api/agent-doc-defaults";
 import { useMobileChat } from "@/components/use-mobile-chat";
 import { resolveChatMode } from "@/lib/mobile-chat-policy";
+import { availableAgentId } from "@/lib/agent-tenant-scope";
 
 /* Ports the chat-input slice of frontend/src/stores/settings.ts +
  * chatResources.ts + organization.ts into one React context:
@@ -243,15 +244,15 @@ export function ChatProvider({ children, newChat = false, sessionId = "" }: { ch
         ]);
       if (agentsRes?.data) {
         setAgents(agentsRes.data);
-        // A persisted choice the server no longer lists (a built-in switched
-        // off, such as quick answer) falls back to the Q&A agent, so a new
-        // chat never silently runs on a hidden agent.
+        // A persisted choice the server no longer lists — a built-in switched
+        // off (quick answer), a deleted custom agent, or one whose "Tổ chức
+        // áp dụng" no longer includes this Tổ chức — falls back to the Q&A
+        // agent: the server refuses a turn naming it.
         setSettings((prev) => {
-          const listed = agentsRes.data!.some((a) => a.id === prev.selectedAgentId);
-          if (listed || !prev.selectedAgentId.startsWith("builtin-")) return prev;
-          const fallback = agentsRes.data!.find((a) => a.id === BUILTIN_SMART_REASONING_ID) ?? agentsRes.data![0];
-          if (!fallback) return prev;
-          const next = { ...prev, selectedAgentId: fallback.id, isAgentEnabled: true };
+          const listedIds = agentsRes.data!.map((a) => a.id);
+          const id = availableAgentId(listedIds, prev.selectedAgentId, BUILTIN_SMART_REASONING_ID);
+          if (!id || id === prev.selectedAgentId) return prev;
+          const next = { ...prev, selectedAgentId: id, isAgentEnabled: true };
           try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
           return next;
         });
@@ -425,11 +426,22 @@ export function ChatProvider({ children, newChat = false, sessionId = "" }: { ch
   const hydrateSessionState = useCallback(
     (state?: SessionLastRequestState | null) => {
       if (!state) return;
-      if (state.agent_id) setSessionMode({ sessionId, agentId: state.agent_id });
-      const hydrateAgent = agents.find((a) => a.id === (state.agent_id || settings.selectedAgentId));
+      // A session's last agent may no longer be listed (deleted, or outside
+      // this Tổ chức's "Tổ chức áp dụng"): continue with the Q&A agent.
+      // Before the list loads the id is kept; the load corrects it.
+      const lastAgentId = state.agent_id
+        ? (availableAgentId(agents.map((a) => a.id), state.agent_id, BUILTIN_SMART_REASONING_ID) ?? state.agent_id)
+        : "";
+      const replaced = !!state.agent_id && lastAgentId !== state.agent_id;
+      if (lastAgentId) setSessionMode({ sessionId, agentId: lastAgentId });
+      const hydrateAgent = agents.find((a) => a.id === (lastAgentId || settings.selectedAgentId));
       update({
-        ...(typeof state.agent_enabled === "boolean" ? { isAgentEnabled: state.agent_enabled } : {}),
-        ...(state.agent_id ? { selectedAgentId: state.agent_id } : {}),
+        ...(replaced
+          ? { isAgentEnabled: true }
+          : typeof state.agent_enabled === "boolean"
+            ? { isAgentEnabled: state.agent_enabled }
+            : {}),
+        ...(lastAgentId ? { selectedAgentId: lastAgentId } : {}),
         ...(state.model_id ? { selectedChatModelId: state.model_id } : {}),
         ...(Array.isArray(state.knowledge_base_ids) ? { selectedKnowledgeBases: [...state.knowledge_base_ids] } : {}),
         ...(Array.isArray(state.knowledge_ids) ? { selectedFiles: [...state.knowledge_ids] } : {}),

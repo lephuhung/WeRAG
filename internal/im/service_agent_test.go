@@ -68,3 +68,20 @@ func TestSetChannelAgentIDRequiresAgentID(t *testing.T) {
 		t.Fatal("SetChannelAgentID() expected error for empty agent_id")
 	}
 }
+
+// A SuperAdmin reads every agent, so binding checks the channel's workspace
+// against the agent's "Tổ chức áp dụng" list too.
+func TestSetChannelAgentIDRejectsAgentOutsideTenantScope(t *testing.T) {
+	svc := &Service{
+		agentService: &stubIMAgentService{
+			agent: &types.CustomAgent{ID: "agent-new", TenantID: 42, AppliesToTenantIDs: types.AgentTenantScope{7}},
+		},
+	}
+	channel := &IMChannel{ID: "im-1", TenantID: 42, AgentID: "agent-old"}
+	if err := svc.SetChannelAgentID(context.Background(), channel, "agent-new"); err == nil {
+		t.Fatal("SetChannelAgentID() expected error for an agent that does not apply to the channel's Tổ chức")
+	}
+	if channel.AgentID != "agent-old" {
+		t.Fatalf("channel.AgentID = %q, want unchanged agent-old", channel.AgentID)
+	}
+}

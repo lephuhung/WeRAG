@@ -88,6 +88,15 @@ func (s *stubAgentRepoForModelDelete) GetAgentByID(context.Context, string, uint
 func (s *stubAgentRepoForModelDelete) ListAgentsByTenantID(context.Context, uint64) ([]*types.CustomAgent, error) {
 	return nil, nil
 }
+func (s *stubAgentRepoForModelDelete) GetAgentByIDIgnoringTenantScope(context.Context, string, uint64) (*types.CustomAgent, error) {
+	return nil, nil
+}
+func (s *stubAgentRepoForModelDelete) ListAgentsByTenantIDIgnoringTenantScope(context.Context, uint64) ([]*types.CustomAgent, error) {
+	return nil, nil
+}
+func (s *stubAgentRepoForModelDelete) InvalidScopeTenantIDs(context.Context, uint64, []uint64) ([]uint64, error) {
+	return nil, nil
+}
 func (s *stubAgentRepoForModelDelete) UpdateAgent(context.Context, *types.CustomAgent) error {
 	return nil
 }

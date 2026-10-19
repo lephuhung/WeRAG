@@ -61,7 +61,7 @@ Một số endpoint cũ trả `{"success":false,"message":"…"}` không có `er
 | 2005 | 403 | `NewTenantCreationDisabledError()` | đã tắt tự tạo tổ chức; hãy tham gia tổ chức qua lời mời |
 | 2006 | 400 | `ValidateTenantName` | organization name must be at most 255 characters |
 
-### 2.3 Cấu hình trợ lý (2100–2103)
+### 2.3 Cấu hình trợ lý (2100–2104)
 
 | Code | HTTP | Hàm tạo | Thông báo |
 |---|---|---|---|
@@ -69,6 +69,7 @@ Một số endpoint cũ trả `{"success":false,"message":"…"}` không có `er
 | 2101 | 400 | `NewAgentMissingAllowedToolsError()` | cần chọn ít nhất một công cụ được phép |
 | 2102 | 400 | `NewAgentInvalidMaxIterationsError()` | số vòng lặp tối đa phải là số nguyên dương, hoặc -1 nếu không giới hạn |
 | 2103 | 400 | `NewAgentInvalidTemperatureError()` | tham số temperature phải nằm trong khoảng 0-2 |
+| 2104 | 404 | `NewAgentUnavailableError()` | trợ lý không tồn tại hoặc không áp dụng cho Tổ chức của người gọi (lượt chat; đã xoá, id sai hoặc ngoài "Tổ chức áp dụng" đều cùng mã) |
 
 ### 2.4 Kho vector và mô hình (2200–2300)
 

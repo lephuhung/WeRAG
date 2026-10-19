@@ -227,6 +227,9 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 
 	// Get custom agent if agent_id is provided.
 	customAgent, effectiveTenantID := h.resolveAgent(ctx, c, request.AgentID)
+	if err := unavailableAgentError(request.AgentID, customAgent); err != nil {
+		return nil, nil, err
+	}
 
 	// Merge @mentioned items into knowledge_base_ids and knowledge_ids
 	kbIDs, knowledgeIDs := mergeKnowledgeTargets(request.KnowledgeBaseIDs, request.KnowledgeIds, request.MentionedItems)
@@ -687,6 +690,26 @@ func (h *Handler) resolveAgent(
 	logger.Warnf(ctx, "Failed to get agent, agent ID: %s, "+
 		"using default config", secutils.SanitizeForLog(agentID))
 	return nil, 0
+}
+
+// agentUnavailableMessage answers a turn naming a custom agent the caller
+// cannot use: deleted, never existed, or outside its "Tổ chức áp dụng" list.
+// One message for all three so the answer never tells whether the agent
+// exists; it also covers a conversation whose Tổ chức lost the agent after
+// it started.
+const agentUnavailableMessage = "Trợ lý này không tồn tại hoặc không áp dụng cho Tổ chức của bạn. " +
+	"Hãy chọn trợ lý khác để tiếp tục cuộc trò chuyện."
+
+// unavailableAgentError refuses a turn whose named custom agent did not
+// resolve. Running it with the default configuration instead (the old
+// behaviour) answered with a different assistant than the one the user
+// picked. Built-in ids keep that fallback: they are never scoped and a
+// switched-off built-in still answers as plain chat.
+func unavailableAgentError(agentID string, agent *types.CustomAgent) error {
+	if agentID == "" || agent != nil || types.IsReservedBuiltinAgentID(agentID) {
+		return nil
+	}
+	return errors.NewAgentUnavailableError(agentUnavailableMessage)
 }
 
 // pinDocumentAssistant returns the document assistant's ID when the session

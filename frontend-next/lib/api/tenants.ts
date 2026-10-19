@@ -9,6 +9,9 @@ import { apiDel, apiGet, apiPost, apiPut, ApiError } from "@/lib/api-client";
 export interface TenantInfo {
   id: number;
   name: string;
+  kind?: string;
+  // the configuration profile the workspace inherits shared config from
+  config_profile_id?: number | null;
   description?: string;
   status?: string;
   business?: string;

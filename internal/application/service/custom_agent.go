@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand"
 	"strings"
 	"time"
@@ -27,7 +28,63 @@ var (
 	// response mode is a platform-level assignment owned by system admins.
 	ErrBuiltinModelManagedByAdmin = errors.New("built-in agent model is managed by system administrators")
 	ErrAgentNameRequired          = errors.New("agent name is required")
+	// ErrBuiltinAgentNotScopable refuses a "Tổ chức áp dụng" list on a
+	// built-in agent: built-ins fall back to the registry default when no row
+	// is visible, and core flows pin them by id (document assistant, wiki
+	// fixer, skill installer), so a list could not hide them, only break them.
+	ErrBuiltinAgentNotScopable = errors.New("trợ lý tích hợp sẵn áp dụng cho mọi Tổ chức, không giới hạn \"Tổ chức áp dụng\" được")
+	// ErrAgentTenantScopeInvalid refuses a "Tổ chức áp dụng" list naming a
+	// tenant that does not inherit the agent (see InvalidScopeTenantIDs).
+	ErrAgentTenantScopeInvalid = errors.New("\"Tổ chức áp dụng\" chỉ được chọn trong các Tổ chức dùng cấu hình chung của trợ lý này")
 )
+
+// IsAgentTenantScopeError reports a refused "Tổ chức áp dụng" list (the
+// invalid-list error carries the offending ids, so compare with errors.Is).
+func IsAgentTenantScopeError(err error) bool {
+	return errors.Is(err, ErrBuiltinAgentNotScopable) || errors.Is(err, ErrAgentTenantScopeInvalid)
+}
+
+// ignoresAgentTenantScope reports whether the caller reads agents past their
+// "Tổ chức áp dụng" list: only an explicit human SuperAdmin, who authors and
+// manages every agent. API keys and every tenant role stay scoped.
+func ignoresAgentTenantScope(ctx context.Context) bool {
+	return access.IsExplicitHumanSuperAdmin(ctx, types.CallerFromContext(ctx))
+}
+
+// repoGetAgent reads one agent for the caller, scoped unless the caller is a
+// SuperAdmin.
+func (s *customAgentService) repoGetAgent(ctx context.Context, id string, tenantID uint64) (*types.CustomAgent, error) {
+	if ignoresAgentTenantScope(ctx) {
+		return s.repo.GetAgentByIDIgnoringTenantScope(ctx, id, tenantID)
+	}
+	return s.repo.GetAgentByID(ctx, id, tenantID)
+}
+
+// validateTenantScope normalizes an agent's "Tổ chức áp dụng" list in place
+// and checks it may be stored on an agent owned by ownerTenantID.
+func (s *customAgentService) validateTenantScope(ctx context.Context, agent *types.CustomAgent, ownerTenantID uint64) error {
+	agent.AppliesToTenantIDs = agent.AppliesToTenantIDs.Normalized()
+	if len(agent.AppliesToTenantIDs) == 0 {
+		return nil
+	}
+	if agent.IsBuiltin || types.IsBuiltinAgentID(agent.ID) {
+		return ErrBuiltinAgentNotScopable
+	}
+	invalid, err := s.repo.InvalidScopeTenantIDs(ctx, ownerTenantID, agent.AppliesToTenantIDs)
+	if err != nil {
+		return err
+	}
+	if len(invalid) > 0 {
+		logger.Warnf(ctx, "Agent %s: applies_to_tenant_ids %v are not workspaces of profile %d",
+			agent.ID, invalid, ownerTenantID)
+		ids := make([]string, 0, len(invalid))
+		for _, id := range invalid {
+			ids = append(ids, fmt.Sprintf("#%d", id))
+		}
+		return fmt.Errorf("%w (không hợp lệ: %s)", ErrAgentTenantScopeInvalid, strings.Join(ids, ", "))
+	}
+	return nil
+}
 
 const (
 	// suggestionDefaultLimit is the fallback count when neither the caller nor
@@ -118,6 +175,9 @@ func (s *customAgentService) CreateAgent(ctx context.Context, agent *types.Custo
 	if err := agent.Config.QuestionSuggestions.Validate(); err != nil {
 		return nil, err
 	}
+	if err := s.validateTenantScope(ctx, agent, tenantID); err != nil {
+		return nil, err
+	}
 
 	logger.Infof(ctx, "Creating custom agent, ID: %s, tenant ID: %d, name: %s, agent_mode: %s",
 		agent.ID, agent.TenantID, agent.Name, agent.Config.AgentMode)
@@ -150,7 +210,7 @@ func (s *customAgentService) GetAgentByID(ctx context.Context, id string) (*type
 	// Check if it's a built-in agent using the registry
 	if types.IsBuiltinAgentID(id) {
 		// Try to get from database first (for customized config)
-		agent, err := s.repo.GetAgentByID(ctx, id, tenantID)
+		agent, err := s.repoGetAgent(ctx, id, tenantID)
 		if err == nil {
 			// Found in database, overlay locale-specific name/description/avatar
 			agent.EnsureDefaults()
@@ -163,8 +223,9 @@ func (s *customAgentService) GetAgentByID(ctx context.Context, id string) (*type
 		}
 	}
 
-	// Query from database
-	agent, err := s.repo.GetAgentByID(ctx, id, tenantID)
+	// Query from database. Outside its "Tổ chức áp dụng" list an agent is
+	// not found, the same answer as for an id that never existed.
+	agent, err := s.repoGetAgent(ctx, id, tenantID)
 	if err != nil {
 		if errors.Is(err, repository.ErrCustomAgentNotFound) {
 			return nil, ErrAgentNotFound
@@ -203,8 +264,14 @@ func (s *customAgentService) ListAgents(ctx context.Context) ([]*types.CustomAge
 		return nil, ErrInvalidTenantID
 	}
 
-	// Get all agents from database (including built-in agents with customized config)
-	allAgents, err := s.repo.ListAgentsByTenantID(ctx, tenantID)
+	// Get all agents from database (including built-in agents with customized
+	// config). A SuperAdmin sees every agent; anyone else only those whose
+	// "Tổ chức áp dụng" list includes the tenant (or is empty).
+	listAgents := s.repo.ListAgentsByTenantID
+	if ignoresAgentTenantScope(ctx) {
+		listAgents = s.repo.ListAgentsByTenantIDIgnoringTenantScope
+	}
+	allAgents, err := listAgents(ctx, tenantID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"tenant_id": tenantID,
@@ -281,7 +348,7 @@ func (s *customAgentService) UpdateAgent(
 	}
 
 	// Get existing agent
-	existingAgent, err := s.repo.GetAgentByID(ctx, agent.ID, tenantID)
+	existingAgent, err := s.repoGetAgent(ctx, agent.ID, tenantID)
 	if err != nil {
 		if errors.Is(err, repository.ErrCustomAgentNotFound) {
 			return nil, ErrAgentNotFound
@@ -313,11 +380,23 @@ func (s *customAgentService) UpdateAgent(
 		existingAgent.Avatar = *avatar
 	}
 	existingAgent.Config = agent.Config
+	// nil = the caller did not send applies_to_tenant_ids: keep the stored
+	// list, as for the avatar. A sent list, even [], replaces it.
+	if agent.AppliesToTenantIDs != nil {
+		existingAgent.AppliesToTenantIDs = agent.AppliesToTenantIDs
+	}
 	existingAgent.UpdatedAt = time.Now()
 
 	// Ensure defaults
 	existingAgent.EnsureDefaults()
 	if err := existingAgent.Config.QuestionSuggestions.Validate(); err != nil {
+		return nil, err
+	}
+	// The list is checked against the tenant the row lives in: the
+	// configuration profile, for a SuperAdmin save (ConfigProfile middleware).
+	// existingAgent.TenantID is rebound to the caller by the repository, which
+	// is that same tenant here.
+	if err := s.validateTenantScope(ctx, existingAgent, tenantID); err != nil {
 		return nil, err
 	}
 
@@ -336,6 +415,9 @@ func (s *customAgentService) UpdateAgent(
 
 // updateBuiltinAgent updates a built-in agent's configuration and custom fields
 func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *types.CustomAgent, tenantID uint64) (*types.CustomAgent, error) {
+	if len(agent.AppliesToTenantIDs.Normalized()) > 0 {
+		return nil, ErrBuiltinAgentNotScopable
+	}
 	// Persist locale-independent display fields (the YAML "default" locale) so
 	// read paths that skip builtin localization see a stable language.
 	defaultAgent := types.GetBuiltinAgent(agent.ID, tenantID)
@@ -509,8 +591,13 @@ func (s *customAgentService) CopyAgent(ctx context.Context, id string) (*types.C
 		IsBuiltin:   false, // Copied agents are never built-in
 		TenantID:    tenantID,
 		Config:      sourceAgent.Config,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		// The copy keeps the source's "Tổ chức áp dụng" list: copying a
+		// work-group agent must not hand it to every Tổ chức. Kept verbatim
+		// (not re-validated): dropping a since-deleted tenant could empty
+		// the list, and an empty list means "every Tổ chức".
+		AppliesToTenantIDs: append(types.AgentTenantScope{}, sourceAgent.AppliesToTenantIDs...),
+		CreatedAt:          time.Now(),
+		UpdatedAt:          time.Now(),
 	}
 	// a pack this build no longer ships would make the copy unsavable
 	newAgent.Config.DomainPacks = s.shippedDomainPacks(ctx, sourceAgent.Config.DomainPacks)

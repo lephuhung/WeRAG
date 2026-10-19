@@ -589,6 +589,7 @@ function AgentsTab({ detail }: { detail: DomainPackDetail }) {
           <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
             <th className="px-5 py-3 font-medium">{t("dpk.agent.name")}</th>
             <th className="px-5 py-3 font-medium">{t("dpk.agent.org")}</th>
+            <th className="px-5 py-3 font-medium">{t("dpk.agent.scope")}</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-hairline">
@@ -598,11 +599,24 @@ function AgentsTab({ detail }: { detail: DomainPackDetail }) {
               <td className="px-5 py-3 text-[13px] text-body">
                 {a.tenant_name || "—"} <span className="caption tabular-nums text-muted">#{a.tenant_id}</span>
               </td>
+              <td className="px-5 py-3 text-[13px] text-body">
+                {a.applies_to && a.applies_to.length > 0 ? (
+                  <ul className="space-y-0.5">
+                    {a.applies_to.map((s) => (
+                      <li key={s.tenant_id}>
+                        {s.tenant_name || "—"} <span className="caption tabular-nums text-muted">#{s.tenant_id}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <span className="text-muted">{t("dpk.agent.scopeAll")}</span>
+                )}
+              </td>
             </tr>
           ))}
           {detail.agents.length === 0 && (
             <tr>
-              <td colSpan={2} className="px-5 py-10 text-center text-[14px] text-muted">
+              <td colSpan={3} className="px-5 py-10 text-center text-[14px] text-muted">
                 {t("dpk.agent.empty")}
               </td>
             </tr>
