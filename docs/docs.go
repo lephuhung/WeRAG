@@ -418,7 +418,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Trả về các gói chuyên môn có trong phiên bản này để chọn cho trợ lý suy luận: phiên bản, mốc dữ liệu, hạn rà soát (overdue = đã quá hạn) và công cụ bắt buộc",
+                "description": "Trả về các bộ kỹ năng chuyên môn có trong phiên bản này để chọn cho trợ lý suy luận: phiên bản, mốc dữ liệu, hạn rà soát (overdue = đã quá hạn) và công cụ bắt buộc",
                 "consumes": [
                     "application/json"
                 ],
@@ -428,10 +428,10 @@ const docTemplate = `{
                 "tags": [
                     "Trợ lý"
                 ],
-                "summary": "Lấy danh sách gói chuyên môn",
+                "summary": "Lấy danh sách bộ kỹ năng chuyên môn (domain pack)",
                 "responses": {
                     "200": {
-                        "description": "danh sách gói chuyên môn",
+                        "description": "danh sách bộ kỹ năng",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -16170,6 +16170,117 @@ const docTemplate = `{
                 }
             }
         },
+        "/system/admin/usage/subscriptions/{id}/addons": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Specialist agents a subscription may use",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "subscription id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Manual grant by a SuperAdmin (tests, negotiated deals). Re-granting replaces the period and price.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Grant a specialist (addon) agent to a subscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "subscription id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "add-on",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsageSubscriptionAddonGrant"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/usage/subscriptions/{id}/addons/{agent_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Take a specialist agent back from a subscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "subscription id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "agent id",
+                        "name": "agent_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/system/admin/usage/subscriptions/{id}/seats": {
             "get": {
                 "security": [
@@ -16533,14 +16644,14 @@ const docTemplate = `{
                         "Bearer": []
                     }
                 ],
-                "description": "Các gói chuyên môn có trong bản build: phiên bản, mốc dữ\nliệu, hạn rà soát, số văn bản trích dẫn, số công thức, số\nagent đang dùng (mọi Tổ chức).",
+                "description": "Các bộ kỹ năng chuyên môn có trong bản build: phiên bản, mốc dữ\nliệu, hạn rà soát, số văn bản trích dẫn, số công thức, số\nagent đang dùng (mọi Tổ chức).",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Rà soát pháp lý"
                 ],
-                "summary": "Danh sách gói chuyên môn (SuperAdmin)",
+                "summary": "Danh sách bộ kỹ năng chuyên môn (SuperAdmin)",
                 "responses": {
                     "200": {
                         "description": "Danh sách gói",
@@ -16568,11 +16679,11 @@ const docTemplate = `{
                 "tags": [
                     "Rà soát pháp lý"
                 ],
-                "summary": "Chi tiết gói chuyên môn (SuperAdmin)",
+                "summary": "Chi tiết bộ kỹ năng chuyên môn (SuperAdmin)",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Tên gói chuyên môn",
+                        "description": "Tên bộ kỹ năng (domain pack)",
                         "name": "name",
                         "in": "path",
                         "required": true
@@ -16602,11 +16713,11 @@ const docTemplate = `{
                 "tags": [
                     "Rà soát pháp lý"
                 ],
-                "summary": "Đối chiếu danh mục của gói chuyên môn",
+                "summary": "Đối chiếu danh mục của bộ kỹ năng chuyên môn",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Tên gói chuyên môn",
+                        "description": "Tên bộ kỹ năng (domain pack)",
                         "name": "name",
                         "in": "path",
                         "required": true
@@ -19764,6 +19875,7 @@ const docTemplate = `{
                 2101,
                 2102,
                 2103,
+                2104,
                 2200,
                 2201,
                 2300
@@ -19791,6 +19903,7 @@ const docTemplate = `{
                 "ErrAgentMissingAllowedTools",
                 "ErrAgentInvalidMaxIterations",
                 "ErrAgentInvalidTemperature",
+                "ErrAgentUnavailable",
                 "ErrVectorStoreBindingInvalid",
                 "ErrVectorStoreUnavailable",
                 "ErrModelInUse"
@@ -21019,6 +21132,10 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                },
+                "distribution": {
+                    "description": "Distribution is the agent's \"Cách phân phối\" (basic | addon |\ninternal); the list above only counts for internal.",
+                    "type": "string"
                 },
                 "id": {
                     "type": "string"
@@ -25235,6 +25352,29 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_Tencent_WeKnora_internal_types.UsageSubscriptionAddonGrant": {
+            "type": "object",
+            "required": [
+                "agent_id"
+            ],
+            "properties": {
+                "agent_id": {
+                    "type": "string"
+                },
+                "ends_at": {
+                    "description": "EndsAt nil = until the subscription ends.",
+                    "type": "string"
+                },
+                "price_vnd": {
+                    "description": "PriceVND is the agreed monthly price (0 = free).",
+                    "type": "integer"
+                },
+                "starts_at": {
+                    "description": "StartsAt defaults to now.",
+                    "type": "string"
+                }
+            }
+        },
         "github_com_Tencent_WeKnora_internal_types.UsedMemory": {
             "type": "object",
             "properties": {
@@ -26449,7 +26589,7 @@ const docTemplate = `{
             ],
             "properties": {
                 "applies_to_tenant_ids": {
-                    "description": "AppliesToTenantIDs is \"Tổ chức áp dụng\": the workspaces allowed to use\nthe agent. Empty or absent = every Tổ chức.",
+                    "description": "AppliesToTenantIDs is \"Tổ chức áp dụng\": the workspaces allowed to use\nan internal agent. Empty or absent = every Tổ chức. Only allowed with\ndistribution \"internal\".",
                     "type": "array",
                     "items": {
                         "type": "integer"
@@ -26463,6 +26603,15 @@ const docTemplate = `{
                 },
                 "description": {
                     "type": "string"
+                },
+                "distribution": {
+                    "description": "Distribution is \"Cách phân phối\": basic | addon | internal. Absent:\ninternal with a non-empty applies_to_tenant_ids, addon with domain\npacks, else basic.",
+                    "type": "string",
+                    "enum": [
+                        "basic",
+                        "addon",
+                        "internal"
+                    ]
                 },
                 "name": {
                     "type": "string"
@@ -27833,6 +27982,15 @@ const docTemplate = `{
                 },
                 "description": {
                     "type": "string"
+                },
+                "distribution": {
+                    "description": "Distribution is \"Cách phân phối\" (basic | addon | internal); absent\nkeeps the stored one. Leaving internal without sending a list clears\nthe stored \"Tổ chức áp dụng\".",
+                    "type": "string",
+                    "enum": [
+                        "basic",
+                        "addon",
+                        "internal"
+                    ]
                 },
                 "name": {
                     "type": "string"

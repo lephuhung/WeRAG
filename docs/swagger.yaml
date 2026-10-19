@@ -122,6 +122,7 @@ definitions:
     - 2101
     - 2102
     - 2103
+    - 2104
     - 2200
     - 2201
     - 2300
@@ -149,6 +150,7 @@ definitions:
     - ErrAgentMissingAllowedTools
     - ErrAgentInvalidMaxIterations
     - ErrAgentInvalidTemperature
+    - ErrAgentUnavailable
     - ErrVectorStoreBindingInvalid
     - ErrVectorStoreUnavailable
     - ErrModelInUse
@@ -1289,6 +1291,11 @@ definitions:
         items:
           type: integer
         type: array
+      distribution:
+        description: |-
+          Distribution is the agent's "Cách phân phối" (basic | addon |
+          internal); the list above only counts for internal.
+        type: string
       id:
         type: string
       name:
@@ -4631,6 +4638,22 @@ definitions:
       updated_at:
         type: string
     type: object
+  github_com_Tencent_WeKnora_internal_types.UsageSubscriptionAddonGrant:
+    properties:
+      agent_id:
+        type: string
+      ends_at:
+        description: EndsAt nil = until the subscription ends.
+        type: string
+      price_vnd:
+        description: PriceVND is the agreed monthly price (0 = free).
+        type: integer
+      starts_at:
+        description: StartsAt defaults to now.
+        type: string
+    required:
+    - agent_id
+    type: object
   github_com_Tencent_WeKnora_internal_types.UsedMemory:
     properties:
       content:
@@ -5604,7 +5627,8 @@ definitions:
       applies_to_tenant_ids:
         description: |-
           AppliesToTenantIDs is "Tổ chức áp dụng": the workspaces allowed to use
-          the agent. Empty or absent = every Tổ chức.
+          an internal agent. Empty or absent = every Tổ chức. Only allowed with
+          distribution "internal".
         items:
           type: integer
         type: array
@@ -5613,6 +5637,16 @@ definitions:
       config:
         $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.CustomAgentConfig'
       description:
+        type: string
+      distribution:
+        description: |-
+          Distribution is "Cách phân phối": basic | addon | internal. Absent:
+          internal with a non-empty applies_to_tenant_ids, addon with domain
+          packs, else basic.
+        enum:
+        - basic
+        - addon
+        - internal
         type: string
       name:
         type: string
@@ -6589,6 +6623,16 @@ definitions:
       config:
         $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.CustomAgentConfig'
       description:
+        type: string
+      distribution:
+        description: |-
+          Distribution is "Cách phân phối" (basic | addon | internal); absent
+          keeps the stored one. Leaving internal without sending a list clears
+          the stored "Tổ chức áp dụng".
+        enum:
+        - basic
+        - addon
+        - internal
         type: string
       name:
         type: string
@@ -7733,21 +7777,21 @@ paths:
     get:
       consumes:
       - application/json
-      description: 'Trả về các gói chuyên môn có trong phiên bản này để chọn cho trợ
-        lý suy luận: phiên bản, mốc dữ liệu, hạn rà soát (overdue = đã quá hạn) và
-        công cụ bắt buộc'
+      description: 'Trả về các bộ kỹ năng chuyên môn có trong phiên bản này để chọn
+        cho trợ lý suy luận: phiên bản, mốc dữ liệu, hạn rà soát (overdue = đã quá
+        hạn) và công cụ bắt buộc'
       produces:
       - application/json
       responses:
         "200":
-          description: danh sách gói chuyên môn
+          description: danh sách bộ kỹ năng
           schema:
             additionalProperties: true
             type: object
       security:
       - Bearer: []
       - ApiKeyAuth: []
-      summary: Lấy danh sách gói chuyên môn
+      summary: Lấy danh sách bộ kỹ năng chuyên môn (domain pack)
       tags:
       - Trợ lý
   /agents/placeholders:
@@ -17860,6 +17904,77 @@ paths:
       summary: Update a subscription
       tags:
       - Gói sử dụng
+  /system/admin/usage/subscriptions/{id}/addons:
+    get:
+      parameters:
+      - description: subscription id
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: Specialist agents a subscription may use
+      tags:
+      - Gói sử dụng
+    post:
+      consumes:
+      - application/json
+      description: Manual grant by a SuperAdmin (tests, negotiated deals). Re-granting
+        replaces the period and price.
+      parameters:
+      - description: subscription id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: add-on
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.UsageSubscriptionAddonGrant'
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: Grant a specialist (addon) agent to a subscription
+      tags:
+      - Gói sử dụng
+  /system/admin/usage/subscriptions/{id}/addons/{agent_id}:
+    delete:
+      parameters:
+      - description: subscription id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: agent id
+        in: path
+        name: agent_id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - Bearer: []
+      summary: Take a specialist agent back from a subscription
+      tags:
+      - Gói sử dụng
   /system/admin/usage/subscriptions/{id}/seats:
     get:
       parameters:
@@ -18109,7 +18224,7 @@ paths:
   /system/domain-packs:
     get:
       description: |-
-        Các gói chuyên môn có trong bản build: phiên bản, mốc dữ
+        Các bộ kỹ năng chuyên môn có trong bản build: phiên bản, mốc dữ
         liệu, hạn rà soát, số văn bản trích dẫn, số công thức, số
         agent đang dùng (mọi Tổ chức).
       produces:
@@ -18123,7 +18238,7 @@ paths:
             type: array
       security:
       - Bearer: []
-      summary: Danh sách gói chuyên môn (SuperAdmin)
+      summary: Danh sách bộ kỹ năng chuyên môn (SuperAdmin)
       tags:
       - Rà soát pháp lý
   /system/domain-packs/{name}:
@@ -18134,7 +18249,7 @@ paths:
         công thức (căn cứ ok/warning), agent đang dùng. Không ghi
         yêu cầu nào; POST …/reconcile mới ghi.
       parameters:
-      - description: Tên gói chuyên môn
+      - description: Tên bộ kỹ năng (domain pack)
         in: path
         name: name
         required: true
@@ -18148,7 +18263,7 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackDetail'
       security:
       - Bearer: []
-      summary: Chi tiết gói chuyên môn (SuperAdmin)
+      summary: Chi tiết bộ kỹ năng chuyên môn (SuperAdmin)
       tags:
       - Rà soát pháp lý
   /system/domain-packs/{name}/reconcile:
@@ -18161,7 +18276,7 @@ paths:
         detail.origin = pack:<tên gói>, không trùng yêu cầu đã có) hoặc ambiguous
         (nhiều văn bản cùng số hiệu). Không sửa legal_documents.
       parameters:
-      - description: Tên gói chuyên môn
+      - description: Tên bộ kỹ năng (domain pack)
         in: path
         name: name
         required: true
@@ -18175,7 +18290,7 @@ paths:
             $ref: '#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileResult'
       security:
       - Bearer: []
-      summary: Đối chiếu danh mục của gói chuyên môn
+      summary: Đối chiếu danh mục của bộ kỹ năng chuyên môn
       tags:
       - Rà soát pháp lý
   /system/info:
