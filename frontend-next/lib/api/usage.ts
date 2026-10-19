@@ -459,6 +459,10 @@ export interface UsageOrderAddonLine {
   /** Seats added on a held right, for the time it still runs. */
   extra_units?: number;
   extra_units_vnd?: number;
+  /** A held add-on not bought again: only the added seats are charged. */
+  seats_only?: boolean;
+  /** Renewal: the subscription end the line was priced against. */
+  subscription_end?: string | null;
 }
 
 export interface UsageQuoteRequest {

@@ -79,6 +79,9 @@ export function addonLineDetail(
     extraSeats?: (seats: number, amount: string) => string;
   },
 ): string {
+  if (line.seats_only) {
+    return labels.extraSeats ? labels.extraSeats(line.extra_units ?? 0, fmt(line.extra_units_vnd ?? 0)) : fmt(line.amount_vnd);
+  }
   const parts = [fmt(line.unit_price_vnd)];
   if (line.units > 1) parts.push(`× ${line.units}`);
   const span: string[] = [];

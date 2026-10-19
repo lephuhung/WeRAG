@@ -105,3 +105,16 @@ describe("renewal line detail", () => {
     );
   });
 });
+
+describe("seats-only line", () => {
+  it("shows only the added seats", () => {
+    assert.equal(
+      addonLineDetail(
+        { agent_id: "a", name: "A", unit_price_vnd: 99000, units: 0, months: 0, seats_only: true, extra_units: 2, extra_units_vnd: 495000, amount_vnd: 495000 },
+        (v) => `${v}đ`,
+        { months: (n) => `${n}`, half: (d) => `${d}`, full: (d) => `${d}`, extraSeats: (n, a) => `${n} ghế thêm ${a}` },
+      ),
+      "2 ghế thêm 495000đ",
+    );
+  });
+});
