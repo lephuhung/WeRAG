@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sync/atomic"
 
 	"github.com/Tencent/WeKnora/internal/agent"
 	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
@@ -208,19 +209,22 @@ func (s *agentService) setNumberCheck(engine *agent.AgentEngine, config *types.A
 	engine.SetNumberCatalog(catalogNumberLookup(s.legalNumbers))
 }
 
-// catalogNumberLookup: an exact number_key hit (FindByNumberKey falls back
-// to a prefix match, which does not count).
+// answerNumberLookupFailures counts failed catalogue lookups of the answer
+// number check since the process started (a metric in the log).
+var answerNumberLookupFailures atomic.Int64
+
+// catalogNumberLookup looks a number key up exactly (number_key equality,
+// no prefix fallback); failed lookups are counted in the log.
 func catalogNumberLookup(catalog interfaces.LegalCatalogRepository) agent.NumberCatalogFunc {
 	return func(ctx context.Context, key string) (bool, error) {
-		docs, err := catalog.FindByNumberKey(ctx, key, 5)
+		found, err := catalog.HasNumberKey(ctx, key)
 		if err != nil {
-			return false, err
+			n := answerNumberLookupFailures.Add(1)
+			logger.Warnf(ctx, "[AnswerNumbers] catalogue lookup failed for %s (%d failure(s) since start): %v", key, n, err)
+			common.PipelineWarn(ctx, "Agent", "answer_number_lookup_failed", map[string]interface{}{
+				"key": key, "failures_since_start": n,
+			})
 		}
-		for _, d := range docs {
-			if d != nil && d.NumberKey == key {
-				return true, nil
-			}
-		}
-		return false, nil
+		return found, err
 	}
 }

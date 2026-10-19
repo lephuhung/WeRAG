@@ -2,14 +2,17 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"regexp"
 	"strings"
 	"sync"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/tracing/langfuse"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
@@ -33,6 +36,12 @@ type NumberCatalogFunc func(ctx context.Context, key string) (bool, error)
 func (e *AgentEngine) SetNumberCatalog(fn NumberCatalogFunc) {
 	e.numberCatalog = fn
 }
+
+// RemoveNumberOnLookupError decides what a failed catalogue lookup does:
+// true removes the number (fail-closed: an unverified number is not shown),
+// false keeps it (fail-open). Fail-closed is the recommendation, pending the
+// user's confirmation; this is the one place to flip it.
+const RemoveNumberOnLookupError = true
 
 // RemovedNumberNote replaces a removed number.
 const RemovedNumberNote = "(số hiệu không có trong cơ sở dữ liệu nên đã lược bỏ)"
@@ -75,19 +84,26 @@ type numberCheck struct {
 	catalog NumberCatalogFunc
 	state   *types.AgentState
 	query   string
+	// history is the conversation the model answers from: earlier turns'
+	// answers and tool results count as evidence (a tenant's own number found
+	// in turn 1 stays in turn 2).
+	history []chat.Message
 
-	mu            sync.Mutex
-	catalogued    map[string]bool // catalogue answers, by key
-	evidence      map[string]bool
-	evidenceSteps int
-	reported      map[string]bool
+	mu              sync.Mutex
+	catalogued      map[string]bool // catalogue answers, by key
+	evidence        map[string]bool
+	evidenceSteps   int
+	evidenceHistory int
+	reported        map[string]bool
 }
 
 type numberCheckKey struct{}
 
 // withNumberCheck puts the turn's number check in ctx for the round's
 // emitters; ctx unchanged when the check is off.
-func (e *AgentEngine) withNumberCheck(ctx context.Context, state *types.AgentState, query string) context.Context {
+func (e *AgentEngine) withNumberCheck(ctx context.Context, state *types.AgentState, query string,
+	history []chat.Message,
+) context.Context {
 	if e.numberCatalog == nil || state == nil {
 		return ctx
 	}
@@ -97,6 +113,9 @@ func (e *AgentEngine) withNumberCheck(ctx context.Context, state *types.AgentSta
 			catalogued: map[string]bool{}, reported: map[string]bool{},
 		}
 	}
+	e.numbers.mu.Lock()
+	e.numbers.history = history
+	e.numbers.mu.Unlock()
 	return context.WithValue(ctx, numberCheckKey{}, e.numbers)
 }
 
@@ -116,46 +135,36 @@ func numberKeys(text string, into map[string]bool) {
 // successful result's text, read_file excepted: a pack's own commentary is
 // not evidence) and the user's question.
 func (c *numberCheck) refreshEvidence() {
-	if c.evidence != nil && c.evidenceSteps == len(c.state.RoundSteps) {
+	if c.evidence != nil && c.evidenceSteps == len(c.state.RoundSteps) && c.evidenceHistory == len(c.history) {
 		return
 	}
 	ev := map[string]bool{}
 	numberKeys(c.query, ev)
+	for _, m := range c.history {
+		// the system prompt carries the pack's own text: not evidence
+		if m.Role == "system" {
+			continue
+		}
+		numberKeys(domainpacks.StripFooter(m.Content), ev)
+		for _, part := range m.MultiContent {
+			numberKeys(part.Text, ev)
+		}
+	}
 	for _, step := range c.state.RoundSteps {
 		for _, tc := range step.ToolCalls {
 			if tc.Result == nil || !tc.Result.Success || tc.ExecutionName() == "read_file" {
 				continue
 			}
 			numberKeys(tc.Result.Output, ev)
-			for _, v := range tc.Result.Data {
-				collectDataNumbers(v, ev, 0)
+			// any shape of Data (typed slices of structs included)
+			if len(tc.Result.Data) > 0 {
+				if raw, err := json.Marshal(tc.Result.Data); err == nil {
+					numberKeys(string(raw), ev)
+				}
 			}
 		}
 	}
-	c.evidence, c.evidenceSteps = ev, len(c.state.RoundSteps)
-}
-
-// collectDataNumbers adds the numbers of the strings of a tool's Data.
-func collectDataNumbers(v interface{}, into map[string]bool, depth int) {
-	if depth > 6 {
-		return
-	}
-	switch x := v.(type) {
-	case string:
-		numberKeys(x, into)
-	case []interface{}:
-		for _, e := range x {
-			collectDataNumbers(e, into, depth+1)
-		}
-	case map[string]interface{}:
-		for _, e := range x {
-			collectDataNumbers(e, into, depth+1)
-		}
-	case []map[string]interface{}:
-		for _, e := range x {
-			collectDataNumbers(e, into, depth+1)
-		}
-	}
+	c.evidence, c.evidenceSteps, c.evidenceHistory = ev, len(c.state.RoundSteps), len(c.history)
 }
 
 // keep reports whether number may be shown. A lookup error counts as not
@@ -175,8 +184,9 @@ func (c *numberCheck) keep(ctx context.Context, number string) bool {
 	found, err := c.catalog(ctx, key)
 	reason := "not_found"
 	if err != nil {
-		found, reason = false, "lookup_failed"
-		logger.Warnf(ctx, "[Agent][AnswerNumbers] catalogue lookup of %s failed: %v", number, err)
+		found, reason = !RemoveNumberOnLookupError, "lookup_failed"
+		logger.Warnf(ctx, "[Agent][AnswerNumbers] catalogue lookup of %s failed (removed: %v): %v",
+			number, RemoveNumberOnLookupError, err)
 	}
 	c.catalogued[key] = found
 	if !found {

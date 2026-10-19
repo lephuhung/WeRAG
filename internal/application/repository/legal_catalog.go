@@ -65,6 +65,15 @@ func (r *legalCatalogRepository) FindByNumberKey(
 	return docs, err
 }
 
+func (r *legalCatalogRepository) HasNumberKey(ctx context.Context, key string) (bool, error) {
+	if strings.TrimSpace(key) == "" {
+		return false, nil
+	}
+	var n int64
+	err := r.db.WithContext(ctx).Model(&types.LegalDocument{}).Where("number_key = ?", key).Limit(1).Count(&n).Error
+	return n > 0, err
+}
+
 func (r *legalCatalogRepository) FindByNumberPrefix(
 	ctx context.Context, key string, limit int,
 ) ([]*types.LegalDocument, error) {

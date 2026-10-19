@@ -71,7 +71,7 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	answerID := generateEventID("answer")
 	logger.Debugf(ctx, "[Agent][FinalAnswer] AnswerID: %s", answerID)
 	ctx = withTurnButtons(ctx, state.RoundSteps)
-	ctx = e.withNumberCheck(ctx, state, query)
+	ctx = e.withNumberCheck(ctx, state, query, conversation)
 	emitBus := func(content string) {
 		e.eventBus.Emit(ctx, event.Event{
 			ID:        answerID,

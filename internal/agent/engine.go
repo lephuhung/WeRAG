@@ -718,7 +718,7 @@ func (e *AgentEngine) runReActIteration(
 	// inviting the user to press a button that does not exist (answer_guard.go)
 	ctx = withTurnButtons(ctx, state.RoundSteps)
 	// invented document numbers never reach the user (answer_numbers.go)
-	ctx = e.withNumberCheck(ctx, state, query)
+	ctx = e.withNumberCheck(ctx, state, query, *messagesPtr)
 
 	var (
 		response      *types.ChatResponse

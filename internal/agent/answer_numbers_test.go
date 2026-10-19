@@ -27,7 +27,7 @@ func numberCtx(t *testing.T, steps []types.AgentStep, query string) context.Cont
 	t.Helper()
 	e := &AgentEngine{}
 	e.SetNumberCatalog(testCatalog)
-	return e.withNumberCheck(context.Background(), &types.AgentState{RoundSteps: steps}, query)
+	return e.withNumberCheck(context.Background(), &types.AgentState{RoundSteps: steps}, query, nil)
 }
 
 func kbStep(text string) types.AgentStep {
@@ -170,4 +170,45 @@ func TestNumberCheckOnBothAnswerPaths(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "Kết luận.\n\n---\nXem 132/2023/NĐ-CP.\n", state.FinalAnswer)
 	})
+}
+
+// Turn 2 answers from history: a tenant's own number found in turn 1 (an
+// earlier answer and tool result) is evidence; the system prompt is not.
+func TestNumberCheckUsesConversationHistory(t *testing.T) {
+	e := &AgentEngine{}
+	e.SetNumberCatalog(testCatalog)
+	history := []chat.Message{
+		{Role: "system", Content: "Gói: Nghị định 777/2025/NĐ-CP"},
+		{Role: "user", Content: "Quyết định của tỉnh về phí là gì?"},
+		{Role: "tool", Content: "… Quyết định 123/QĐ-UBND ngày 2/3/2025 …"},
+		{Role: "assistant", Content: "Đó là Quyết định 456/QĐ-UBND." + "\n\n---\n**Lưu ý về cẩm nang chuyên môn**\nXem 888/2025/NĐ-CP"},
+		{Role: "user", Content: "Văn bản đó còn hiệu lực không?"},
+	}
+	ctx := e.withNumberCheck(context.Background(), &types.AgentState{}, "Văn bản đó còn hiệu lực không?", history)
+	assert.Equal(t, "Quyết định 123/QĐ-UBND và Quyết định 456/QĐ-UBND còn áp dụng.",
+		cleanAnswerNumbers(ctx, "Quyết định 123/QĐ-UBND và Quyết định 456/QĐ-UBND còn áp dụng."))
+	assert.Equal(t, "Một nghị định "+RemovedNumberNote+"; một nghị định "+RemovedNumberNote+".",
+		cleanAnswerNumbers(ctx, "Nghị định 777/2025/NĐ-CP; nghị định 888/2025/NĐ-CP."),
+		"the system prompt and a code-appended footer are not evidence")
+}
+
+// Data of any shape counts: check_legal_status reports are typed structs.
+func TestNumberCheckReadsTypedToolData(t *testing.T) {
+	type report struct {
+		Number string `json:"number"`
+	}
+	step := types.AgentStep{ToolCalls: []types.ToolCall{{Name: "check_legal_status", Result: &types.ToolResult{
+		Success: true, Output: "…", Data: map[string]interface{}{"reports": []report{{Number: "76/2025/QH15"}}}}}}}
+	ctx := numberCtx(t, []types.AgentStep{step}, "")
+	assert.Equal(t, "Luật 76/2025/QH15 sửa đổi.", cleanAnswerNumbers(ctx, "Luật 76/2025/QH15 sửa đổi."))
+}
+
+func TestLookupErrorPolicy(t *testing.T) {
+	ctx := numberCtx(t, nil, "")
+	got := cleanAnswerNumbers(ctx, "Luật 99/2099/QH99.")
+	if RemoveNumberOnLookupError {
+		assert.Equal(t, "Một luật "+RemovedNumberNote+".", got)
+	} else {
+		assert.Equal(t, "Luật 99/2099/QH99.", got)
+	}
 }

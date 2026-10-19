@@ -18,6 +18,9 @@ type LegalCatalogRepository interface {
 	// when none does — starts with key + "/" (a number typed without its
 	// suffix, e.g. "30/2020"). Newest first.
 	FindByNumberKey(ctx context.Context, key string, limit int) ([]*types.LegalDocument, error)
+	// HasNumberKey reports whether a document's number key equals key
+	// exactly (no prefix fallback); the answer number check uses it.
+	HasNumberKey(ctx context.Context, key string) (bool, error)
 	// FindByNumberPrefix returns documents whose number key starts with
 	// key + "/" (every year and suffix of a bare number). Newest first.
 	FindByNumberPrefix(ctx context.Context, key string, limit int) ([]*types.LegalDocument, error)
