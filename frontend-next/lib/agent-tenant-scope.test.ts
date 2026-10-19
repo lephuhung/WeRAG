@@ -2,7 +2,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { scopeSummary, scopeTenantOptions, toggleScopeTenant } from "./agent-tenant-scope.ts";
+import { availableAgentId, scopeSummary, scopeTenantOptions, toggleScopeTenant } from "./agent-tenant-scope.ts";
 
 describe("scopeTenantOptions", () => {
   it("keeps workspaces on a configuration profile, sorted by name", () => {
@@ -37,5 +37,20 @@ describe("scopeSummary", () => {
     assert.deepEqual(scopeSummary([1], (id) => names[id]), { names: ["Phòng A"], more: 0 });
     assert.deepEqual(scopeSummary([1, 2, 3], (id) => names[id]), { names: ["Phòng A", "Phòng B"], more: 1 });
     assert.deepEqual(scopeSummary([7], (id) => names[id]), { names: ["#7"], more: 0 });
+  });
+});
+
+describe("availableAgentId", () => {
+  const listed = ["builtin-smart-reasoning", "builtin-document-assistant", "custom-1"];
+  it("keeps a listed choice", () => {
+    assert.equal(availableAgentId(listed, "custom-1", "builtin-smart-reasoning"), "custom-1");
+  });
+  it("replaces an unlisted custom agent (lost Tổ chức áp dụng) and an unlisted built-in", () => {
+    assert.equal(availableAgentId(listed, "custom-gone", "builtin-smart-reasoning"), "builtin-smart-reasoning");
+    assert.equal(availableAgentId(listed, "builtin-quick-answer", "builtin-smart-reasoning"), "builtin-smart-reasoning");
+  });
+  it("falls back to the first listed agent, or keeps the choice when nothing is listed", () => {
+    assert.equal(availableAgentId(["custom-1"], "custom-gone", "builtin-smart-reasoning"), "custom-1");
+    assert.equal(availableAgentId([], "custom-gone", "builtin-smart-reasoning"), null);
   });
 });

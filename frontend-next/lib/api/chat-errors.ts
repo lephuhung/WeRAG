@@ -6,6 +6,10 @@ import { ApiError } from "../api-client.ts";
 /** Backend error code for "another turn is already running" (HTTP 409). */
 export const ERR_TURN_RUNNING = 1005;
 
+/** Backend error code for "this custom agent does not exist or does not
+ * apply to your Tổ chức" (HTTP 404, "Tổ chức áp dụng"). */
+export const ERR_AGENT_UNAVAILABLE = 2104;
+
 export type ChatErrorKey =
   | "chat.err.turnRunning"
   | "chat.err.usage.noSubscription"
@@ -16,6 +20,7 @@ export type ChatErrorKey =
   | "chat.err.unauthorized"
   | "chat.err.forbidden"
   | "chat.err.notFound"
+  | "chat.err.agentUnavailable"
   | "chat.err.tooMany"
   | "chat.err.tooLarge"
   | "chat.err.server"
@@ -78,6 +83,8 @@ function byStatus(status: number, code?: number, reason?: string): ChatErrorKey 
   if (status === 429 && reason && USAGE_REASON_KEYS[reason]) return USAGE_REASON_KEYS[reason];
   if (status === 401) return "chat.err.unauthorized";
   if (status === 403) return "chat.err.forbidden";
+  // the conversation is fine; its assistant is gone for this Tổ chức
+  if (status === 404 && code === ERR_AGENT_UNAVAILABLE) return "chat.err.agentUnavailable";
   if (status === 404) return "chat.err.notFound";
   if (status === 413) return "chat.err.tooLarge";
   if (status === 429) return "chat.err.tooMany";

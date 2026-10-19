@@ -3,7 +3,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { ChatStreamError, ERR_TURN_RUNNING, chatErrorKey, isSessionLimitError, parseErrorEnvelope } from "./chat-errors.ts";
+import { ChatStreamError, ERR_AGENT_UNAVAILABLE, ERR_TURN_RUNNING, chatErrorKey, isSessionLimitError, parseErrorEnvelope } from "./chat-errors.ts";
 import { ApiError } from "../api-client.ts";
 
 describe("parseErrorEnvelope", () => {
@@ -32,6 +32,13 @@ describe("chatErrorKey", () => {
     assert.equal(chatErrorKey(new ApiError(404, "Session not found")), "chat.err.notFound");
     assert.equal(chatErrorKey(new Error("unauthorized")), "chat.err.unauthorized");
     assert.equal(chatErrorKey(new TypeError("Failed to fetch")), "chat.err.network");
+  });
+  it("tells an unavailable agent apart from a missing conversation", () => {
+    const msg = "Trợ lý này không tồn tại hoặc không áp dụng cho Tổ chức của bạn.";
+    assert.equal(chatErrorKey(new ChatStreamError(404, ERR_AGENT_UNAVAILABLE, msg)), "chat.err.agentUnavailable");
+    const body = { success: false, error: { code: 2104, message: msg } };
+    assert.equal(chatErrorKey(new ApiError(404, msg, body)), "chat.err.agentUnavailable");
+    assert.equal(chatErrorKey(new ChatStreamError(404, 1003, "Session not found")), "chat.err.notFound");
   });
   it("names the usage-package refusal", () => {
     assert.equal(chatErrorKey(new ChatStreamError(429, 1006, "no package", "no_subscription")), "chat.err.usage.noSubscription");

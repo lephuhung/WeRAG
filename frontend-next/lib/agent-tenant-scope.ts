@@ -37,3 +37,14 @@ export function scopeSummary(
   const names = ids.slice(0, max).map((id) => nameOf(id) || `#${id}`);
   return { names, more: Math.max(0, ids.length - max) };
 }
+
+// The agent a chat should use when `selected` (from settings in
+// localStorage, or a session's last_request_state) may no longer be listed:
+// a custom agent outside the Tổ chức's "Tổ chức áp dụng", a deleted one, or
+// a switched-off built-in. Unlisted → `preferred` when listed, else the
+// first listed agent; null when nothing is listed (keep the choice).
+export function availableAgentId(listed: string[], selected: string, preferred: string): string | null {
+  if (listed.length === 0) return null;
+  if (listed.includes(selected)) return selected;
+  return listed.includes(preferred) ? preferred : listed[0];
+}
