@@ -37,6 +37,22 @@ import { getStorageEngineStatus } from "@/lib/api/system";
 import { formatDate } from "@/lib/datetime";
 import { listAllTenants } from "@/lib/api/tenants";
 import {
+  createAgentAddon,
+  formatPriceVND,
+  listAgentAddons,
+  listUsagePlans,
+  updateAgentAddon,
+  type UsageAgentAddon,
+  type UsagePlan,
+} from "@/lib/api/usage";
+import {
+  addonSaleDraft,
+  addonSaleInput,
+  shouldSaveAddonSale,
+  togglePlanId,
+  type AddonSaleDraft,
+} from "@/lib/agent-addon-catalogue";
+import {
   AGENT_DISTRIBUTIONS,
   defaultDistribution,
   normalizeDistribution,
@@ -185,15 +201,47 @@ export function AgentEditorModal({
     normalizeDistribution(agent?.distribution),
   );
   const [distributionTouched, setDistributionTouched] = useState(false);
+  // "Bán kèm gói dịch vụ": the agent's row in the add-on catalogue, saved
+  // through the catalogue API after the agent itself
+  const [addonRow, setAddonRow] = useState<UsageAgentAddon | null>(null);
+  const [addonDraft, setAddonDraft] = useState<AddonSaleDraft>(() => addonSaleDraft(null));
+  const [addonTouched, setAddonTouched] = useState(false);
+  const [addonLoadFailed, setAddonLoadFailed] = useState(false);
+  const [salePlans, setSalePlans] = useState<UsagePlan[]>([]);
 
   useEffect(() => {
     setDraft(draftFrom(agent));
     setScopeIds(agent?.applies_to_tenant_ids ?? []);
     setDistribution(normalizeDistribution(agent?.distribution));
     setDistributionTouched(false);
+    setAddonRow(null);
+    setAddonDraft(addonSaleDraft(null));
+    setAddonTouched(false);
     setTab("basic");
     setError("");
   }, [agent, open]);
+
+  useEffect(() => {
+    if (!open || isBuiltin || readOnly) return;
+    let alive = true;
+    setAddonLoadFailed(false);
+    listUsagePlans(true)
+      .then((plans) => alive && setSalePlans(plans.filter((p) => p.is_active)))
+      .catch(() => alive && setSalePlans([]));
+    if (agent) {
+      listAgentAddons(true)
+        .then((catalogue) => {
+          if (!alive) return;
+          const row = catalogue.addons.find((r) => r.agent_id === agent.id) ?? null;
+          setAddonRow(row);
+          setAddonDraft(addonSaleDraft(row));
+        })
+        .catch(() => alive && setAddonLoadFailed(true));
+    }
+    return () => {
+      alive = false;
+    };
+  }, [agent, open, isBuiltin, readOnly]);
 
   useEffect(() => {
     if (!open || isBuiltin) return;
@@ -346,6 +394,11 @@ export function AgentEditorModal({
     setDistributionTouched(true);
   };
 
+  const patchAddon = <K extends keyof AddonSaleDraft>(k: K, v: AddonSaleDraft[K]) => {
+    setAddonDraft((d) => ({ ...d, [k]: v }));
+    setAddonTouched(true);
+  };
+
   const toggleKb = (kbId: string) => {
     setDraft((prev) => {
       const exists = prev.knowledge_bases.includes(kbId);
@@ -475,6 +528,20 @@ export function AgentEditorModal({
             distribution: dist,
           });
       onSaved(res.data);
+      // the catalogue row needs the agent saved as a specialist first
+      if (!isBuiltin && !addonLoadFailed && shouldSaveAddonSale(addonRow != null, addonTouched, distribution)) {
+        const input = addonSaleInput(res.data.id, addonDraft);
+        try {
+          const saved = addonRow ? await updateAgentAddon(input) : await createAgentAddon(input);
+          setAddonRow(saved);
+          setAddonTouched(false);
+        } catch (e) {
+          setError(
+            t("agent.addonSale.saveFailed", { reason: e instanceof Error ? e.message : String(e) }),
+          );
+          return;
+        }
+      }
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -934,6 +1001,95 @@ export function AgentEditorModal({
                 </div>
                 {distribution === "addon" && (
                   <p className="caption mt-2 text-muted-soft">{t("agent.distribution.addonNote")}</p>
+                )}
+                {distribution === "addon" && !readOnly && (
+                  <div className="mt-3 rounded-md border border-hairline p-3">
+                    <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[13px] font-medium text-ink">{t("agent.addonSale.title")}</span>
+                      {addonRow && (
+                        <span className="caption text-muted">
+                          {t("agent.addonSale.holders", { n: addonRow.holders ?? 0 })}
+                        </span>
+                      )}
+                    </div>
+                    <p className="caption mb-2 text-muted-soft">
+                      {addonRow ? t("agent.addonSale.descListed") : t("agent.addonSale.descNew")}
+                    </p>
+                    {addonLoadFailed ? (
+                      <p className="caption text-error">{t("agent.addonSale.loadFailed")}</p>
+                    ) : (
+                      <div className="space-y-3">
+                        <label className="block">
+                          <span className="caption mb-1 block text-muted">{t("agent.addonSale.price")}</span>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min={0}
+                              step={1000}
+                              className="input w-full pr-14"
+                              value={addonDraft.price_vnd}
+                              onChange={(e) => patchAddon("price_vnd", Math.max(0, Number(e.target.value) || 0))}
+                            />
+                            <span className="caption pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-soft">
+                              VNĐ
+                            </span>
+                          </div>
+                          <span className="caption mt-1 block text-muted-soft">
+                            {addonDraft.price_vnd > 0
+                              ? t("agent.addonSale.priceHint", { price: formatPriceVND(addonDraft.price_vnd) })
+                              : t("agent.addonSale.priceFree")}
+                          </span>
+                        </label>
+                        <div>
+                          <span className="caption mb-1 block text-muted">{t("agent.addonSale.plans")}</span>
+                          {salePlans.length === 0 ? (
+                            <p className="caption text-muted">{t("agent.addonSale.noPlans")}</p>
+                          ) : (
+                            <div className="space-y-1">
+                              {salePlans.map((plan) => (
+                                <label key={plan.id} className="flex cursor-pointer items-center gap-2 px-1 py-0.5 select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={addonDraft.plan_ids.includes(plan.id)}
+                                    onChange={() => patchAddon("plan_ids", togglePlanId(addonDraft.plan_ids, plan.id))}
+                                  />
+                                  <span className="text-[13px] text-ink">{plan.name}</span>
+                                  {plan.mode === "seat" && (
+                                    <span className="caption text-muted-soft">{t("agent.addonSale.perSeat")}</span>
+                                  )}
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                          <span className="caption mt-1 block text-muted-soft">
+                            {addonDraft.plan_ids.length === 0
+                              ? t("agent.addonSale.allPlans")
+                              : t("agent.addonSale.somePlans", { n: addonDraft.plan_ids.length })}
+                          </span>
+                        </div>
+                        <label className="block">
+                          <span className="caption mb-1 block text-muted">{t("agent.addonSale.buyerDesc")}</span>
+                          <textarea
+                            className="input w-full h-auto min-h-[56px] resize-y"
+                            value={addonDraft.description}
+                            placeholder={t("agent.addonSale.buyerDescPlaceholder")}
+                            onChange={(e) => patchAddon("description", e.target.value)}
+                          />
+                        </label>
+                        <label className="flex cursor-pointer items-center gap-2 select-none">
+                          <input
+                            type="checkbox"
+                            checked={addonDraft.is_active}
+                            onChange={(e) => patchAddon("is_active", e.target.checked)}
+                          />
+                          <span className="text-[13px] text-ink">{t("agent.addonSale.active")}</span>
+                        </label>
+                        {addonRow && addonRow.agent_available === false && (
+                          <p className="caption text-amber-600">{t("agent.addonSale.wasOff")}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
                 {distribution === "internal" && (
                   <details className="mt-3" open={(agent?.applies_to_tenant_ids?.length ?? 0) > 0}>

@@ -123,9 +123,56 @@ export interface UsagePlan {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  /** GET /billing/plans only: the basic agents the plan includes. */
+  included_agents?: UsagePlanAgent[];
+  /** GET /billing/plans only: specialist agents sold with the plan. */
+  addons?: UsagePlanAddonOffer[];
 }
 
-export type UsagePlanInput = Omit<UsagePlan, "id" | "created_at" | "updated_at">;
+export type UsagePlanInput = Omit<UsagePlan, "id" | "created_at" | "updated_at" | "included_agents" | "addons">;
+
+export interface UsagePlanAgent {
+  id: string;
+  name: string;
+}
+
+export interface UsagePlanAddonOffer {
+  agent_id: string;
+  name: string;
+  description: string;
+  /** Per month; × seats when per_seat. */
+  price_vnd: number;
+  per_seat: boolean;
+}
+
+/** A row of the add-on catalogue (usage_agent_addons). */
+export interface UsageAgentAddon {
+  agent_id: string;
+  /** Per month; per seat per month on a seat plan. */
+  price_vnd: number;
+  /** [] = sold with every plan. */
+  plan_ids: string[];
+  description: string;
+  is_active: boolean;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
+  agent_name?: string;
+  /** False once the agent is deleted or no longer a specialist agent. */
+  agent_available?: boolean;
+  /** Current subscriptions holding the add-on. */
+  holders?: number;
+}
+
+export type UsageAgentAddonInput = Pick<
+  UsageAgentAddon,
+  "agent_id" | "price_vnd" | "plan_ids" | "description" | "is_active" | "sort_order"
+>;
+
+export interface UsageAgentAddonCatalogue {
+  addons: UsageAgentAddon[];
+  included_agents: UsagePlanAgent[];
+}
 
 export interface UsageSubscription {
   id: string;
@@ -181,6 +228,27 @@ export interface UsageSeat {
 }
 
 const ADMIN = "/api/v1/system/admin/usage";
+
+export function listAgentAddons(includeInactive = true): Promise<UsageAgentAddonCatalogue> {
+  return apiGet<{ data?: UsageAgentAddonCatalogue }>(
+    `${ADMIN}/agent-addons${includeInactive ? "" : "?include_inactive=false"}`,
+  ).then((r) => ({ addons: r.data?.addons ?? [], included_agents: r.data?.included_agents ?? [] }));
+}
+
+export function createAgentAddon(input: UsageAgentAddonInput): Promise<UsageAgentAddon> {
+  return apiPost<{ data: UsageAgentAddon }>(`${ADMIN}/agent-addons`, input).then((r) => r.data);
+}
+
+export function updateAgentAddon(input: UsageAgentAddonInput): Promise<UsageAgentAddon> {
+  return apiPut<{ data: UsageAgentAddon }>(
+    `${ADMIN}/agent-addons/${encodeURIComponent(input.agent_id)}`,
+    input,
+  ).then((r) => r.data);
+}
+
+export function deleteAgentAddon(agentId: string): Promise<void> {
+  return apiDel(`${ADMIN}/agent-addons/${encodeURIComponent(agentId)}`).then(() => undefined);
+}
 
 export function listUsagePlans(includeInactive = true): Promise<UsagePlan[]> {
   return apiGet<{ data?: UsagePlan[] }>(`${ADMIN}/plans${includeInactive ? "?include_inactive=true" : ""}`).then(

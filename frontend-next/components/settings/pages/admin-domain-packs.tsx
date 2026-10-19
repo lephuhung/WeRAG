@@ -19,6 +19,7 @@ import { ApiError } from "@/lib/api-client";
 import { getCurrentUser } from "@/lib/api/auth";
 import { formatDate } from "@/lib/datetime";
 import { normalizeDistribution } from "@/lib/agent-tenant-scope";
+import { formatPriceVND } from "@/lib/api/usage";
 import { adminSectionHref } from "@/components/admin/admin-routes";
 import {
   getDomainPack,
@@ -591,6 +592,8 @@ function AgentsTab({ detail }: { detail: DomainPackDetail }) {
             <th className="px-5 py-3 font-medium">{t("dpk.agent.name")}</th>
             <th className="px-5 py-3 font-medium">{t("dpk.agent.org")}</th>
             <th className="px-5 py-3 font-medium">{t("dpk.agent.distribution")}</th>
+            <th className="px-5 py-3 font-medium">{t("dpk.agent.sale")}</th>
+            <th className="px-5 py-3 font-medium">{t("dpk.agent.holders")}</th>
             <th className="px-5 py-3 font-medium">{t("dpk.agent.scope")}</th>
           </tr>
         </thead>
@@ -604,6 +607,20 @@ function AgentsTab({ detail }: { detail: DomainPackDetail }) {
               <td className="px-5 py-3 text-[13px] text-body">
                 {t(`agent.distribution.${normalizeDistribution(a.distribution)}` as LocaleKey)}
               </td>
+              <td className="px-5 py-3 text-[13px] text-body">
+                {a.addon_price_vnd == null ? (
+                  <span className="text-muted">{t("dpk.agent.notListed")}</span>
+                ) : (
+                  <>
+                    {a.addon_price_vnd > 0 ? formatPriceVND(a.addon_price_vnd) : t("usg.addonFree")}
+                    {t("usg.perMonth")}{" "}
+                    <span className={`caption ${a.addon_active ? "text-primary" : "text-muted"}`}>
+                      · {a.addon_active ? t("dpk.agent.onSale") : t("dpk.agent.offSale")}
+                    </span>
+                  </>
+                )}
+              </td>
+              <td className="px-5 py-3 text-[13px] tabular-nums text-body">{a.addon_holders ?? 0}</td>
               <td className="px-5 py-3 text-[13px] text-body">
                 {normalizeDistribution(a.distribution) !== "internal" ? (
                   <span className="text-muted">—</span>
@@ -623,7 +640,7 @@ function AgentsTab({ detail }: { detail: DomainPackDetail }) {
           ))}
           {detail.agents.length === 0 && (
             <tr>
-              <td colSpan={4} className="px-5 py-10 text-center text-[14px] text-muted">
+              <td colSpan={6} className="px-5 py-10 text-center text-[14px] text-muted">
                 {t("dpk.agent.empty")}
               </td>
             </tr>

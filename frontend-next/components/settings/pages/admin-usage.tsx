@@ -35,8 +35,11 @@ import {
   type UsageSubscriptionView,
   type UsageTenantOverview,
   formatPriceVND,
+  listAgentAddons,
   planPrice,
+  type UsageAgentAddonCatalogue,
 } from "@/lib/api/usage";
+import { addonsForPlan } from "@/lib/agent-addon-catalogue";
 
 const emptyPlan: UsagePlanInput = {
   code: "",
@@ -220,6 +223,8 @@ export default function AdminUsage() {
   const [plans, setPlans] = useState<UsagePlan[]>([]);
   const [tenants, setTenants] = useState<UsageTenantOverview[]>([]);
   const [personal, setPersonal] = useState<UsageSubscriptionView[]>([]);
+  // basic agents every plan includes + specialist agents sold with plans
+  const [catalogue, setCatalogue] = useState<UsageAgentAddonCatalogue>({ addons: [], included_agents: [] });
   const [q, setQ] = useState("");
 
   const [planOpen, setPlanOpen] = useState(false);
@@ -247,6 +252,10 @@ export default function AdminUsage() {
       setTenants(tn);
       setPersonal(ps);
       setError("");
+      // the plan cards still render if the catalogue cannot be read
+      listAgentAddons(true)
+        .then(setCatalogue)
+        .catch(() => setCatalogue({ addons: [], included_agents: [] }));
     } catch (e) {
       setError(e instanceof Error ? e.message : t("usg.loadFailed"));
     }
@@ -448,6 +457,27 @@ export default function AdminUsage() {
                     {planPrice(p) ? ` · ${planPrice(p)}${p.mode === "seat" ? t("usg.perSeatMonth") : t("usg.perMonth")}` : ""}
                     {p.description ? ` · ${p.description}` : ""}
                   </div>
+                  {catalogue.included_agents.length > 0 && (
+                    <div className="caption text-muted">
+                      {t("usg.includedAgents", {
+                        n: catalogue.included_agents.length,
+                        names: catalogue.included_agents.map((a) => a.name).join(", "),
+                      })}
+                    </div>
+                  )}
+                  {addonsForPlan(catalogue.addons, p).length > 0 && (
+                    <div className="caption text-muted">
+                      {t("usg.addonAgents")}{" "}
+                      {addonsForPlan(catalogue.addons, p)
+                        .map(
+                          (a) =>
+                            `${a.agent_name || a.agent_id} (${
+                              a.price_vnd > 0 ? formatPriceVND(a.price_vnd) : t("usg.addonFree")
+                            }${t("usg.perMonth")}${p.mode === "seat" ? t("usg.addonPerSeat") : ""})`,
+                        )
+                        .join(", ")}
+                    </div>
+                  )}
                 </div>
                 <div className="caption text-body">
                   {p.limits.length ? p.limits.map((l) => limitText(l, t as never)).join(" · ") : t("usg.unlimited")}
