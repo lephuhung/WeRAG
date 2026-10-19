@@ -2,7 +2,15 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { availableAgentId, scopeSummary, scopeTenantOptions, toggleScopeTenant } from "./agent-tenant-scope.ts";
+import {
+  availableAgentId,
+  defaultDistribution,
+  normalizeDistribution,
+  scopeForSave,
+  scopeSummary,
+  scopeTenantOptions,
+  toggleScopeTenant,
+} from "./agent-tenant-scope.ts";
 
 describe("scopeTenantOptions", () => {
   it("keeps workspaces on a configuration profile, sorted by name", () => {
@@ -52,5 +60,24 @@ describe("availableAgentId", () => {
   it("falls back to the first listed agent, or keeps the choice when nothing is listed", () => {
     assert.equal(availableAgentId(["custom-1"], "custom-gone", "builtin-smart-reasoning"), "custom-1");
     assert.equal(availableAgentId([], "custom-gone", "builtin-smart-reasoning"), null);
+  });
+});
+
+describe("distribution", () => {
+  it("normalizes unknown values to basic", () => {
+    assert.equal(normalizeDistribution("addon"), "addon");
+    assert.equal(normalizeDistribution("internal"), "internal");
+    assert.equal(normalizeDistribution(undefined), "basic");
+    assert.equal(normalizeDistribution("everyone"), "basic");
+  });
+  it("defaults like the server: list → internal, skill set → addon, else basic", () => {
+    assert.equal(defaultDistribution([], []), "basic");
+    assert.equal(defaultDistribution(["opc-vn-business-law"], []), "addon");
+    assert.equal(defaultDistribution(["opc-vn-business-law"], [10003]), "internal");
+  });
+  it("keeps the list only for internal", () => {
+    assert.deepEqual(scopeForSave("internal", [10003]), [10003]);
+    assert.deepEqual(scopeForSave("basic", [10003]), []);
+    assert.deepEqual(scopeForSave("addon", [10003]), []);
   });
 });

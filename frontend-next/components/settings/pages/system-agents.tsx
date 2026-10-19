@@ -28,7 +28,7 @@ import { AgentEditorModal } from "@/components/agents/agent-editor";
 import { Modal } from "@/components/modal";
 import { listModels, type ModelConfig } from "@/lib/api/models";
 import { listAllTenants } from "@/lib/api/tenants";
-import { scopeSummary } from "@/lib/agent-tenant-scope";
+import { normalizeDistribution, scopeSummary } from "@/lib/agent-tenant-scope";
 import { RequireSystemAccess } from "@/components/require-system-access";
 import { useInSettingsModal } from "@/components/system/in-modal-nav";
 
@@ -161,7 +161,8 @@ function AgentsPanel() {
         {(agents ?? []).map((a) => {
           const isBuiltin = isBuiltinAgent(a.id);
           const modelName = getModelDisplayName(a.config?.model_id);
-          const scope = isBuiltin ? null : scopeSummary(a.applies_to_tenant_ids, (id) => tenantNames[id]);
+          const distribution = isBuiltin ? "basic" : normalizeDistribution(a.distribution);
+          const scope = distribution === "internal" ? scopeSummary(a.applies_to_tenant_ids, (id) => tenantNames[id]) : null;
           const scopeAll = (a.applies_to_tenant_ids ?? []).map((id) => tenantNames[id] || `#${id}`).join(", ");
 
           return (
@@ -182,6 +183,19 @@ function AgentsPanel() {
                   {isBuiltin && (
                     <span className="rounded-full bg-surface-strong px-2 py-0.5 text-[11px] font-medium text-muted shrink-0">
                       {t("agentp.builtin")}
+                    </span>
+                  )}
+                  {distribution === "addon" && (
+                    <span
+                      className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
+                      title={t("agent.distribution.addonDesc")}
+                    >
+                      {t("agent.distribution.addon")}
+                    </span>
+                  )}
+                  {distribution === "internal" && !scope && (
+                    <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                      {t("agent.distribution.internal")}
                     </span>
                   )}
                   {scope && (

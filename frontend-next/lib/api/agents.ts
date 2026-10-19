@@ -169,6 +169,8 @@ export interface CustomAgent {
   // "Tổ chức áp dụng": the workspaces allowed to use the agent; [] = every
   // Tổ chức. Always [] on built-in agents.
   applies_to_tenant_ids?: number[];
+  // "Cách phân phối": basic | addon | internal (always basic on built-ins)
+  distribution?: "basic" | "addon" | "internal";
   created_at?: string;
   updated_at?: string;
 }
@@ -182,6 +184,8 @@ export interface CreateAgentRequest {
   avatar?: string;
   config?: CustomAgentConfig;
   applies_to_tenant_ids?: number[];
+  // absent: internal with a list, addon with domain packs, else basic
+  distribution?: "basic" | "addon" | "internal";
 }
 
 export interface UpdateAgentRequest {
@@ -191,6 +195,8 @@ export interface UpdateAgentRequest {
   config?: CustomAgentConfig;
   // absent keeps the stored list; [] = every Tổ chức
   applies_to_tenant_ids?: number[];
+  // absent keeps the stored distribution
+  distribution?: "basic" | "addon" | "internal";
 }
 
 // Built-in agent ids

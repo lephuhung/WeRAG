@@ -1,6 +1,6 @@
 "use client";
 
-/* SuperAdmin "Gói chuyên môn": the domain packs shipped in this build and,
+/* SuperAdmin "Bộ kỹ năng chuyên môn": the domain packs shipped in this build and,
  * per pack, the single place to see what must be updated — its cited
  * documents ("Văn bản trích dẫn") checked against the legal catalogue, its
  * formulas ("Công thức") with the state of their legal basis, and the
@@ -18,6 +18,7 @@ import { useT, type LocaleKey } from "@/lib/i18n";
 import { ApiError } from "@/lib/api-client";
 import { getCurrentUser } from "@/lib/api/auth";
 import { formatDate } from "@/lib/datetime";
+import { normalizeDistribution } from "@/lib/agent-tenant-scope";
 import { adminSectionHref } from "@/components/admin/admin-routes";
 import {
   getDomainPack,
@@ -589,6 +590,7 @@ function AgentsTab({ detail }: { detail: DomainPackDetail }) {
           <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
             <th className="px-5 py-3 font-medium">{t("dpk.agent.name")}</th>
             <th className="px-5 py-3 font-medium">{t("dpk.agent.org")}</th>
+            <th className="px-5 py-3 font-medium">{t("dpk.agent.distribution")}</th>
             <th className="px-5 py-3 font-medium">{t("dpk.agent.scope")}</th>
           </tr>
         </thead>
@@ -600,7 +602,12 @@ function AgentsTab({ detail }: { detail: DomainPackDetail }) {
                 {a.tenant_name || "—"} <span className="caption tabular-nums text-muted">#{a.tenant_id}</span>
               </td>
               <td className="px-5 py-3 text-[13px] text-body">
-                {a.applies_to && a.applies_to.length > 0 ? (
+                {t(`agent.distribution.${normalizeDistribution(a.distribution)}` as LocaleKey)}
+              </td>
+              <td className="px-5 py-3 text-[13px] text-body">
+                {normalizeDistribution(a.distribution) !== "internal" ? (
+                  <span className="text-muted">—</span>
+                ) : a.applies_to && a.applies_to.length > 0 ? (
                   <ul className="space-y-0.5">
                     {a.applies_to.map((s) => (
                       <li key={s.tenant_id}>
@@ -616,7 +623,7 @@ function AgentsTab({ detail }: { detail: DomainPackDetail }) {
           ))}
           {detail.agents.length === 0 && (
             <tr>
-              <td colSpan={3} className="px-5 py-10 text-center text-[14px] text-muted">
+              <td colSpan={4} className="px-5 py-10 text-center text-[14px] text-muted">
                 {t("dpk.agent.empty")}
               </td>
             </tr>

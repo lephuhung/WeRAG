@@ -48,3 +48,28 @@ export function availableAgentId(listed: string[], selected: string, preferred: 
   if (listed.includes(selected)) return selected;
   return listed.includes(preferred) ? preferred : listed[0];
 }
+
+/* "Cách phân phối" of a custom agent (docs/agent-addon-plans.md §3):
+ * basic = every Tổ chức, addon = only buyers (a service-plan add-on),
+ * internal = the "Tổ chức áp dụng" list. Built-ins are always basic. */
+export type AgentDistribution = "basic" | "addon" | "internal";
+
+export const AGENT_DISTRIBUTIONS: AgentDistribution[] = ["basic", "addon", "internal"];
+
+export function normalizeDistribution(value: unknown): AgentDistribution {
+  return value === "addon" || value === "internal" ? value : "basic";
+}
+
+// The distribution a new agent starts with, mirroring the server default:
+// internal with a list, addon with a skill set, else basic.
+export function defaultDistribution(skillSets: string[], scopeIds: number[]): AgentDistribution {
+  if (scopeIds.length > 0) return "internal";
+  if (skillSets.length > 0) return "addon";
+  return "basic";
+}
+
+// The "Tổ chức áp dụng" list to save: only an internal agent keeps one; the
+// server refuses a list with basic or addon, so [] clears it there.
+export function scopeForSave(distribution: AgentDistribution, scopeIds: number[]): number[] {
+  return distribution === "internal" ? scopeIds : [];
+}
