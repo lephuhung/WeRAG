@@ -48,3 +48,19 @@ documents:
     title: Luật Đấu thầu
     used_for: ưu đãi doanh nghiệp nhỏ và vừa trong mua sắm công
     articles: ["Điều 10 khoản 2 điểm đ"]
+  - number: 68/2026/NĐ-CP
+    title: Nghị định quy định về chính sách thuế và quản lý thuế đối với hộ kinh doanh, cá nhân kinh doanh
+    used_for: ngưỡng doanh thu, GTGT và TNCN của hộ kinh doanh, phương pháp tính TNCN, khai thuế theo quý
+    articles: ["Điều 3", "Điều 4", "Điều 10"]
+  - number: 141/2026/NĐ-CP
+    title: Nghị định sửa đổi, bổ sung một số điều của Nghị định số 68/2026/NĐ-CP và Nghị định số 320/2025/NĐ-CP
+    used_for: nâng ngưỡng doanh thu của hộ kinh doanh từ 500 triệu lên 01 tỷ đồng
+    articles: ["Điều 1"]
+  - number: 109/2025/QH15
+    title: Luật Thuế thu nhập cá nhân
+    used_for: thuế suất TNCN trên lợi nhuận và tỷ lệ % trên doanh thu của cá nhân kinh doanh
+    articles: ["Điều 7"]
+  - number: 43/2026/QH16
+    title: Nghị quyết về giảm thuế thu nhập cá nhân, thuế thu nhập doanh nghiệp đối với cá nhân và doanh nghiệp
+    used_for: giảm 30% thuế TNCN kỳ tính thuế 2026, 2027 khi doanh thu năm không quá 10 tỷ đồng
+    articles: ["Điều 1"]

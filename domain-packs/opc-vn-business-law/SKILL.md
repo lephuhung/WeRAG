@@ -7,14 +7,14 @@ description: >-
   Luật Phát triển doanh nghiệp nhỏ và vừa ("doanh nghiệp một người"). Không dùng cho
   tranh chấp, tố tụng, M&A, đầu tư nước ngoài, phá sản.
 metadata:
-  version: 1.1.0
-  as_of: 2026-10-17
+  version: 1.2.0
+  as_of: 2026-10-19
   review_by: 2027-04-17
   domain: doanh-nghiep-nho
   licence: CC-BY-4.0
   attribution: "Nội dung gốc: Diginno (opc-vn-business-law), CC BY 4.0, đã chỉnh sửa cho WeRAG"
   origin: https://github.com/lephuhung/opc-vn-business-law@1cb90548d6d8385cffdfd475798b0cfd1c01688f
-  required_tools: [search_knowledge, compare_tax_methods]
+  required_tools: [search_knowledge, compare_tax_methods, calculate_household_tax]
   answer_footer: >-
     Thông tin tham khảo dựa trên cẩm nang của Diginno (CC BY 4.0), không phải tư vấn
     pháp lý, thuế hay kế toán; hãy đối chiếu văn bản gốc và hỏi luật sư hoặc kế toán
@@ -63,6 +63,8 @@ Ngành nghề (có điều kiện?); doanh thu, lao động đóng BHXH; loại 
 ## Quy trình E — Kế toán và thuế
 
 Đọc `references/04-accounting.md`, `references/05-tax.md`. Xác định siêu nhỏ theo ngưỡng tra được (Nghị định 80/2021/NĐ-CP). Không bắt buộc kế toán trưởng không có nghĩa là không cần kế toán. So sánh % doanh thu và kê khai bằng `compare_tax_methods` (doanh thu, lợi nhuận từ người dùng; tỷ lệ %, thuế suất tra trong kho tri thức); thiếu số thì hỏi hoặc tra trước. Đưa khối "Giả định" vào câu trả lời, nhắc GTGT đầu vào.
+
+Thuế hộ kinh doanh (GTGT, TNCN): tính bằng `calculate_household_tax`, không tự nhân chia; ngưỡng hiện hành, tỷ lệ theo ngành tra trong kho.
 
 ## Từ chối và chuyển chuyên gia
 

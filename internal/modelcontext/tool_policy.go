@@ -135,6 +135,8 @@ var toolHandlePolicies = map[string]toolHandlePolicy{
 	// compare_tax_methods takes four numbers and returns figures: no source
 	// or KB identifiers.
 	"compare_tax_methods": {},
+	// calculate_household_tax likewise: figures in, figures out.
+	"calculate_household_tax": {},
 	"query_knowledge_graph": {
 		sourceIDKeys: map[string]struct{}{"knowledge_base_ids": {}},
 		sourceOutput: true,

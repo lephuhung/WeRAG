@@ -173,6 +173,11 @@ func AvailableToolDefinitions() []AvailableTool {
 			Label:       "So sánh phương pháp thuế TNDN",
 			Description: "Tính thuế TNDN theo % doanh thu và theo lợi nhuận kê khai, kèm điểm hòa vốn và giả định (gói chuyên môn opc-vn-business-law)",
 		},
+		{
+			Name:        ToolCalculateHouseholdTax,
+			Label:       "Tính thuế hộ kinh doanh",
+			Description: "Tính thuế GTGT và TNCN của hộ kinh doanh theo % doanh thu và trên lợi nhuận, kèm mức giảm thuế, hòa vốn và giả định (gói chuyên môn opc-vn-business-law)",
+		},
 	}
 }
 

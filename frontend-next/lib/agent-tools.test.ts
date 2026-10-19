@@ -17,7 +17,7 @@ describe("agent tools", () => {
     const names = AGENT_TOOLS.map((t) => t.name);
     assert.equal(new Set(names).size, names.length);
     for (const t of AGENT_TOOLS) assert.ok(TOOL_GROUPS.includes(t.group), t.name);
-    for (const n of ["draw_diagram", "generate_illustration", "check_spelling", "check_document_format", "compare_tax_methods"]) {
+    for (const n of ["draw_diagram", "generate_illustration", "check_spelling", "check_document_format", "compare_tax_methods", "calculate_household_tax"]) {
       assert.ok(names.includes(n), n);
     }
   });
