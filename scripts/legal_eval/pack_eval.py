@@ -92,6 +92,8 @@ FOOTER_MARKER = "\n\n---\n**Lưu ý về cẩm nang chuyên môn**\n"
 # types.ToolAnswerBlockMarker: the code-appended "Kết quả tính" block
 # domainpacks.DraftNoticeMarker: the code-appended draft notice
 DRAFT_NOTICE_MARKER = "\n\n---\n**Lưu ý về dự thảo**\n"
+# agent.RemovedNumberNote: what replaces a số hiệu the system removed
+REMOVED_NUMBER_NOTE = "(số hiệu không có trong cơ sở dữ liệu nên đã lược bỏ)"
 # domainpacks.ScopeNoticeMarker: the code-appended exclusions / refusals notice
 SCOPE_NOTICE_MARKER = "\n\n---\n**Lưu ý về phạm vi**\n"
 ANSWER_BLOCK_MARKER = "\n\n---\n**Kết quả tính (do hệ thống tính — nếu phần trên khác, lấy khối này làm chuẩn)**\n"
@@ -857,6 +859,11 @@ def summarize(cases: list, rows: dict, lookup_state: str = "") -> str:
             by = sum(1 for x in runs_ if x.get("notice"))
             lines.append(f"[info] {label} trong lời của model (không chặn): {ok}/{len(runs_)}; "
                          f"lưu ý phạm vi do hệ thống thêm ở {by} lượt")
+    pack_runs = [r for c in cases for r in rows[c["id"]]["pack"] if not r.get("error")]
+    removed = [(r.get("answer") or "").count(REMOVED_NUMBER_NOTE) for r in pack_runs]
+    if pack_runs:
+        lines.append(f"[info] số hiệu bị hệ thống lược bỏ (không có trong danh mục/căn cứ của lượt): "
+                     f"{sum(removed)} lần ở {sum(1 for x in removed if x)}/{len(pack_runs)} lượt")
     real = number_class_runs(cases, rows, "catalogue_only")
     lines.append(f"[info] số hiệu có thật nhưng không có căn cứ trong lượt (không chặn): {len(real)} lượt")
     for cid, i, nums in real:
@@ -966,6 +973,7 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
                                                        lookup)
         compact_tools_for_report(r["tools"])
         r["answer_block"] = has_answer_block(r.get("answer") or "")
+        r["removed_numbers"] = (r.get("answer") or "").count(REMOVED_NUMBER_NOTE)
         with lock:
             rows[case["id"]][agent].append(r)
             done[0] += 1
@@ -1002,6 +1010,7 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
 # ---- self-check ----------------------------------------------------------------
 REPO_ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
 GO_MARKERS = {
+    "REMOVED_NUMBER_NOTE": ("internal/agent/answer_numbers.go", "RemovedNumberNote"),
     "SCOPE_NOTICE_MARKER": ("internal/agent/domainpacks/scope.go", "ScopeNoticeMarker"),
     "DRAFT_NOTICE_MARKER": ("internal/agent/domainpacks/draft_notice.go", "DraftNoticeMarker"),
     "ANSWER_BLOCK_MARKER": ("internal/types/tool_answer_block.go", "ToolAnswerBlockMarker"),

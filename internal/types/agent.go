@@ -172,6 +172,9 @@ type AgentConfig struct {
 	// DomainPacks: CustomAgentConfig.DomainPacks, resolved against the
 	// shipped packs when the skills manager is built (runtime only).
 	DomainPacks []string `json:"-"`
+	// VerifyDocumentNumbers: CustomAgentConfig.DocumentNumberCheck, resolved
+	// per turn (runtime only).
+	VerifyDocumentNumbers bool `json:"-"`
 	// QuestionOrigin is the knowledge source of a suggested question the user
 	// picked, already checked to be inside KnowledgeBases (runtime only;
 	// rendered into runtime_context as a retrieval hint).

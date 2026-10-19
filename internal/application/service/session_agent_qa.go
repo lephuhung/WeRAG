@@ -591,6 +591,7 @@ func (s *sessionService) buildAgentConfig(
 	s.configureSkillsFromAgent(ctx, agentConfig, customAgent)
 	// Domain packs do not depend on the skill picker or the sandbox.
 	agentConfig.DomainPacks = s.resolveAgentDomainPacks(ctx, customAgent)
+	agentConfig.VerifyDocumentNumbers = customAgent.Config.DocumentNumberCheck(len(agentConfig.DomainPacks) > 0)
 
 	// Then add the skills installed into the sandbox config this run boots.
 	//

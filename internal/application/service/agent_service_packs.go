@@ -10,6 +10,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 // Domain packs (docs/domain-pack-standard.md §6) are kept in this file so
@@ -188,4 +189,38 @@ func domainPackPrompts(ctx context.Context, packs []*domainpacks.Pack) []agent.D
 		common.PipelineWarn(ctx, "Agent", "domain_pack_prompt_cap", map[string]interface{}{"packs": deferred})
 	}
 	return out
+}
+
+// SetLegalNumberLookup gives the agents the catalogue the answer number
+// check looks numbers up in (agent/answer_numbers.go).
+func (s *agentService) SetLegalNumberLookup(catalog interfaces.LegalCatalogRepository) {
+	s.legalNumbers = catalog
+}
+
+// setNumberCheck turns the answer number check on for an agent that has it
+// (types.CustomAgentConfig.DocumentNumberCheck: on with domain packs by
+// default). A number is kept when legal_documents holds its number_key
+// exactly — the gate's normalisation — or this turn's evidence holds it.
+func (s *agentService) setNumberCheck(engine *agent.AgentEngine, config *types.AgentConfig) {
+	if config == nil || !config.VerifyDocumentNumbers || s.legalNumbers == nil || config.SkillInstallMode() {
+		return
+	}
+	engine.SetNumberCatalog(catalogNumberLookup(s.legalNumbers))
+}
+
+// catalogNumberLookup: an exact number_key hit (FindByNumberKey falls back
+// to a prefix match, which does not count).
+func catalogNumberLookup(catalog interfaces.LegalCatalogRepository) agent.NumberCatalogFunc {
+	return func(ctx context.Context, key string) (bool, error) {
+		docs, err := catalog.FindByNumberKey(ctx, key, 5)
+		if err != nil {
+			return false, err
+		}
+		for _, d := range docs {
+			if d != nil && d.NumberKey == key {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
 }

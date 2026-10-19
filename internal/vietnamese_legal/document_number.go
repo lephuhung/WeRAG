@@ -79,3 +79,50 @@ func IsNormativeDocumentNumber(number string) bool {
 	code = strings.TrimRight(code, "0123456789")
 	return normativeTypeCodes[code]
 }
+
+// administrativeNumberRe matches a số hiệu written without a year
+// ("123/QĐ-UBND", "45/BTC-TCT"): an upper-case code with at least one
+// hyphen, so "01/GT" or "41/VPQH" do not count.
+var administrativeNumberRe = regexp.MustCompile(`\d{1,5}/[A-ZĐ][A-ZĐ0-9]*(?:[-–—‐][A-ZĐ0-9]+)+`)
+
+// CitedNumberSpans returns the byte spans [start, end) in text, as written
+// (not normalised), of the full số hiệu (FindDocumentNumbers' shape) and of
+// year-less administrative numbers, in order and without overlap. A match
+// right after "/" or a digit is part of a longer number and is skipped.
+func CitedNumberSpans(text string) [][2]int {
+	var spans [][2]int
+	add := func(locs [][]int) {
+		for _, loc := range locs {
+			if loc[0] > 0 {
+				if c := text[loc[0]-1]; c == '/' || (c >= '0' && c <= '9') {
+					continue
+				}
+			}
+			spans = append(spans, [2]int{loc[0], loc[1]})
+		}
+	}
+	add(documentNumberRe.FindAllStringIndex(text, -1))
+	full := len(spans)
+	add(administrativeNumberRe.FindAllStringIndex(text, -1))
+	// keep a year-less match only where no full number is
+	out := append([][2]int(nil), spans[:full]...)
+	for _, s := range spans[full:] {
+		overlaps := false
+		for _, f := range spans[:full] {
+			if s[0] < f[1] && f[0] < s[1] {
+				overlaps = true
+				break
+			}
+		}
+		if !overlaps {
+			out = append(out, s)
+		}
+	}
+	// in text order
+	for i := 1; i < len(out); i++ {
+		for j := i; j > 0 && out[j][0] < out[j-1][0]; j-- {
+			out[j], out[j-1] = out[j-1], out[j]
+		}
+	}
+	return out
+}
