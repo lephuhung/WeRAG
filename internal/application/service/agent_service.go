@@ -310,9 +310,10 @@ func (s *agentService) CreateAgentEngine(
 		}
 	}
 
-	// Legal instruction skills are always readable by ordinary Smart Reasoning
-	// agents. Tenant/host skills still follow SkillsEnabled and their sandbox
-	// selection; install mode remains a separate privileged workflow.
+	// Legal instruction skills are readable by ordinary Smart Reasoning agents
+	// unless the agent opted out (BuiltinSkillsDisabled). Tenant/host skills
+	// still follow SkillsEnabled and their sandbox selection; install mode
+	// remains a separate privileged workflow.
 	if !config.SkillInstallMode() {
 		skillsManager, err := s.initializeSkillsManager(ctx, sessionID, config, toolRegistry)
 		if err != nil {
@@ -686,9 +687,15 @@ func (s *agentService) initializeSkillsManager(
 	config *types.AgentConfig,
 	toolRegistry *tools.ToolRegistry,
 ) (*skills.Manager, error) {
-	builtins, err := skills.NewBuiltinSource(legalskillassets.FS)
-	if err != nil {
-		return nil, err
+	if config.BuiltinSkillsDisabled && !config.SkillsEnabled {
+		return nil, nil
+	}
+	var builtins *skills.BuiltinSource
+	if !config.BuiltinSkillsDisabled {
+		var err error
+		if builtins, err = skills.NewBuiltinSource(legalskillassets.FS); err != nil {
+			return nil, err
+		}
 	}
 	tenantID, _ := types.TenantIDFromContext(ctx)
 	sandboxMgr, configID, err := resolveSandboxForExecution(
@@ -705,7 +712,11 @@ func (s *agentService) initializeSkillsManager(
 
 	logger.Infof(ctx, "Workspace sandbox in use: config=%s type=%s", configID, sandboxMgr.GetType())
 
-	// Tenant/host selections do not restrict the application's four legal skills.
+	if builtins == nil && sandboxUnavailable {
+		return nil, nil
+	}
+
+	// Tenant/host selections do not restrict the application's legal skills.
 	skillsConfig := &skills.ManagerConfig{Enabled: true}
 	if config.SkillsEnabled && !sandboxUnavailable {
 		skillsConfig.SkillDirs = config.SkillDirs

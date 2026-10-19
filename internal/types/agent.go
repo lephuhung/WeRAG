@@ -143,6 +143,9 @@ type AgentConfig struct {
 	SkillsEnabled bool     `json:"skills_enabled"` // Whether skills are enabled (default: false)
 	SkillDirs     []string `json:"skill_dirs"`     // Directories to search for skills
 	AllowedSkills []string `json:"allowed_skills"` // Skill names whitelist (empty = allow all)
+	// BuiltinSkillsDisabled hides the bundled legal skills from agents whose
+	// work they do not cover (document assistant, data analysis, wiki).
+	BuiltinSkillsDisabled bool `json:"-"`
 
 	// Runtime-only fields (not persisted)
 	ChatModelSupportsVision bool   `json:"-"` // Resolved model capability, never supplied by tool input.

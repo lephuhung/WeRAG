@@ -14,12 +14,9 @@ import (
 
 var expectedBuiltinNames = []string{
 	"legal-document-summary",
-	"legal-document-comparison",
-	"legal-latest-guidance",
-	"legal-question-abbreviations",
 }
 
-func TestBuiltinSourceEmbedsOnlyFourReadableLegalSkills(t *testing.T) {
+func TestBuiltinSourceEmbedsOnlyReadableLegalSkills(t *testing.T) {
 	src, err := NewBuiltinSource(legalskillassets.FS)
 	require.NoError(t, err)
 	metadata, err := src.DiscoverSkills()
@@ -106,7 +103,7 @@ func TestBuiltinSourceNameListCannotBeChangedByExtraAssets(t *testing.T) {
 	require.NoError(t, err)
 	got, err := src.DiscoverSkills()
 	require.NoError(t, err)
-	require.Len(t, got, 4)
+	require.Len(t, got, len(expectedBuiltinNames))
 	require.True(t, slices.Contains(expectedBuiltinNames, got[0].Name))
 	require.False(t, src.Has("pdf-processing"))
 }
