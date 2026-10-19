@@ -123,3 +123,33 @@ func TestCustomAgentSwitchHidesFromEveryone(t *testing.T) {
 	_, err = svc.SetAgentEnabled(profile, "no-such-agent", false)
 	require.ErrorIs(t, err, ErrAgentNotFound)
 }
+
+// Review item 4: a SuperAdmin deletes a switched-off custom agent.
+func TestSuperAdminDeletesSwitchedOffAgent(t *testing.T) {
+	svc, _ := newAgentScopeService(t)
+	profile := scopeSuperAdminCtx(9)
+	_, err := svc.SetAgentEnabled(profile, "everyone", false)
+	require.NoError(t, err)
+	require.NoError(t, svc.DeleteAgent(profile, "everyone"))
+	_, err = svc.GetAgentByID(profile, "everyone")
+	require.ErrorIs(t, err, ErrAgentNotFound)
+}
+
+// Review item 9: a platform API key (which the ConfigProfile middleware lets
+// through with its own tenant) still writes the switch on the profile.
+func TestAgentSwitchFromAWorkspaceWritesTheProfile(t *testing.T) {
+	withSwitchableBuiltins(t)
+	svc, db := newAgentScopeService(t)
+	profileID := uint64(9)
+	ctx := scopeSuperAdminCtx(1)
+	ctx = context.WithValue(ctx, types.TenantInfoContextKey, &types.Tenant{ID: 1, Kind: types.TenantKindWorkspace,
+		ConfigProfileID: &profileID})
+	_, err := svc.SetAgentEnabled(ctx, types.BuiltinQuickAnswerID, true)
+	require.NoError(t, err)
+	var tenants []uint64
+	require.NoError(t, db.Model(&types.CustomAgent{}).Where("id = ?", types.BuiltinQuickAnswerID).Pluck("tenant_id", &tenants).Error)
+	require.Equal(t, []uint64{9}, tenants, "the row is the profile's, not the workspace's")
+	list, err := svc.ListAgents(scopeMemberCtx(2))
+	require.NoError(t, err)
+	require.True(t, listedIDs(t, list)[types.BuiltinQuickAnswerID], "every workspace on the profile sees it")
+}
