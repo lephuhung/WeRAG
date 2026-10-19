@@ -228,8 +228,6 @@ func basisText(basis []FormulaBasis) string {
 	return strings.Join(parts, "; ")
 }
 
-// documentNumberPattern finds full số hiệu (number/year/symbol) in pack text.
-var documentNumberPattern = regexp.MustCompile(`\b\d{1,4}/\d{4}/[\p{L}\p{N}]+(?:[-–—‐‑−][\p{L}\p{N}]+)*`)
 
 // citations maps each number key cited in the pack's SKILL.md, references
 // and assets to the files citing it, and the key to the number as written.
@@ -238,7 +236,8 @@ func citations(texts map[string]string) (map[string][]string, map[string]string)
 	written := map[string]string{}
 	for _, rel := range sortedKeys(texts) {
 		seen := map[string]bool{}
-		for _, n := range documentNumberPattern.FindAllString(texts[rel], -1) {
+		// the shape the legal request gate and the answer number check use
+		for _, n := range vietnamese_legal.FindDocumentNumbers(texts[rel]) {
 			key := vietnamese_legal.CatalogNumberKey(n)
 			if seen[key] {
 				continue

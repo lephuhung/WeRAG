@@ -45,6 +45,7 @@ thì agent dùng KB đã cấu hình. Báo cáo JSON: `results/pack-<gói>-<th�
 | `must_ask_clarification` | có ít nhất một dòng kết thúc bằng "?" |
 | `must_match` / `must_not_match` | regex (không phân biệt hoa thường) |
 | `must_state_status` | số hiệu được nhắc; nếu `check_legal_status`/`find_related_legal_documents` trả trạng thái thì đoạn nhắc số hiệu nói khớp (hết hiệu lực/bị thay thế ↔ còn hiệu lực); không có trạng thái từ tool → đạt nhưng ghi `unverified` |
+| `any_of` | danh sách ≥ 2 đối tượng checks; đạt khi một đối tượng đạt trọn (ví dụ orig-5: gọi `compare_tax_methods` + khối kết quả, **hoặc** hỏi lại tỷ lệ/thuế suất) |
 | `must_have_answer_block` | câu trả lời có khối "Kết quả tính" do mã chèn (agent có gói; câu do mã viết thì không chấm) |
 | `must_have_footer` | có dấu mốc footer (chỉ chấm agent có gói; không chấm khi câu trả lời do mã viết: câu trả lời bắt đầu bằng `final_message` của một tool/thẻ trong lượt — thẻ của cổng, thẻ chọn từ viết tắt, thẻ của tool — hoặc câu cố định "Tôi không tìm thấy căn cứ…") |
 
@@ -53,3 +54,5 @@ Ngưỡng: trạng thái ≥ 95 % (lần chạy có `must_state_status`), dự t
 0 câu `draft_trap`/`status`/`refusal` mà agent có gói trượt còn đối chứng đạt, độ trễ trung vị ≤ +40 %, 0 lượt lỗi.
 Kết luận `OVERALL`: `FAIL` (mã thoát 1) khi có ngưỡng trượt; `INCOMPLETE` (mã thoát 2) khi một ngưỡng không đo được
 (không có câu nào, mọi lượt lỗi, có câu không so được với đối chứng, có lượt lỗi) — không bao giờ tính là đạt; `PASS` (0).
+
+Số hiệu trong suite `pack` là **số hiệu đầy đủ** (số/năm 4 chữ số/ký hiệu có chữ, như `vietnamese_legal.FindDocumentNumbers` của cổng văn bản và bộ quét `cited_in`): "01/GT", "41/VPQH", ngày tháng không tính. Khoá so sánh = `CatalogNumberKey` (NFC, bỏ khoảng trắng, Đ→D, gộp gạch nối). `--self-check` đối chiếu với `internal/vietnamese_legal/testdata/document_numbers.json` (sinh lại: `UPDATE_DOCUMENT_NUMBERS=1 go test ./internal/vietnamese_legal/`).
