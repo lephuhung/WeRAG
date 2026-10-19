@@ -8,6 +8,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 const lookupPortalID uint64 = 50
@@ -121,4 +122,52 @@ func TestFilterPlatformPublicKBIDs(t *testing.T) {
 		nil,
 	}
 	require.Equal(t, []string{"pub"}, filterPlatformPublicKBIDs(kbs, agent))
+}
+
+// publicScopeKBList serves a readable listing with two public bases and the
+// caller's own and a published one.
+type publicScopeKBList struct {
+	interfaces.KnowledgeBaseService
+}
+
+func (publicScopeKBList) ListKnowledgeBases(context.Context) ([]*types.KnowledgeBase, error) {
+	rag := types.IndexingStrategy{VectorEnabled: true, KeywordEnabled: true}
+	return []*types.KnowledgeBase{
+		{ID: "pub-1", TenantID: 10000, Visibility: types.KBVisibilityPublic, IndexingStrategy: rag},
+		{ID: "pub-2", TenantID: 10000, Visibility: types.KBVisibilityPublic, IndexingStrategy: rag},
+		{ID: "own", TenantID: 7, OwnerTenantID: 7, Visibility: types.KBVisibilityTenant, IndexingStrategy: rag},
+		{ID: "published", TenantID: 5, OwnerTenantID: 5, Visibility: types.KBVisibilityPublished, IndexingStrategy: rag},
+	}, nil
+}
+
+// In public mode an @mention or request id never widens the scope; a
+// request naming public bases (an MCP endpoint restricted to them) narrows
+// it, and documents and tags of other bases are dropped.
+func TestResolveKnowledgeBasesPublicMode(t *testing.T) {
+	svc := &sessionService{knowledgeBaseService: publicScopeKBList{}}
+	agent := &types.CustomAgent{Config: types.CustomAgentConfig{
+		AgentMode: types.AgentModeSmartReasoning, KBSelectionMode: types.KBSelectionModePublic,
+		AllowedTools: []string{"search_knowledge"},
+	}}
+	session := &types.Session{TenantID: 7}
+
+	kbIDs, knowledgeIDs, err := svc.resolveKnowledgeBases(context.Background(), &types.QARequest{
+		Session: session, CustomAgent: agent})
+	require.NoError(t, err)
+	require.Equal(t, []string{"pub-1", "pub-2"}, kbIDs)
+	require.Empty(t, knowledgeIDs)
+
+	req := &types.QARequest{Session: session, CustomAgent: agent,
+		KnowledgeBaseIDs: []string{"own", "published"}, KnowledgeIDs: []string{"doc-own"},
+		TagScopes: []types.TagScope{{KnowledgeBaseID: "own", TagIDs: []string{"t"}}}}
+	kbIDs, knowledgeIDs, err = svc.resolveKnowledgeBases(context.Background(), req)
+	require.NoError(t, err)
+	require.Empty(t, kbIDs, "tenant and published bases never join the public scope")
+	require.Empty(t, knowledgeIDs)
+	require.Empty(t, req.TagScopes)
+
+	kbIDs, _, err = svc.resolveKnowledgeBases(context.Background(), &types.QARequest{
+		Session: session, CustomAgent: agent, KnowledgeBaseIDs: []string{"pub-2", "own"}})
+	require.NoError(t, err)
+	require.Equal(t, []string{"pub-2"}, kbIDs)
 }
