@@ -133,6 +133,23 @@ func TestAgentDistributionVisibilityPostgres(t *testing.T) {
 	agents, err := NewDomainPackAgentRepository(db).ListAgentsUsingPack(ctx, "none")
 	require.NoError(t, err)
 	require.Empty(t, agents)
+
+	// never shorten, and pin, on timestamptz
+	long, short := distNow.AddDate(0, 3, 0), distNow.AddDate(0, 1, 0)
+	require.NoError(t, plans.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+		SubscriptionID: "sub-t2", AgentID: "addon", StartsAt: distNow, EndsAt: &long}))
+	require.NoError(t, plans.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+		SubscriptionID: "sub-t2", AgentID: "addon", StartsAt: distNow, EndsAt: &short}))
+	held, err := plans.ListSubscriptionAddons(ctx, "sub-t2")
+	require.NoError(t, err)
+	require.True(t, long.Equal(*held[0].EndsAt))
+	require.NoError(t, plans.PinSubscriptionAddonEnd(ctx, "sub-t1", "addon", short))
+	held, err = plans.ListSubscriptionAddons(ctx, "sub-t1")
+	require.NoError(t, err)
+	require.True(t, short.Equal(*held[0].EndsAt))
+	rows2, err := plans.ProfileBuiltinAgents(ctx, types.UsageIncludedAgentIDs)
+	require.NoError(t, err)
+	require.Empty(t, rows2)
 }
 
 func checkVisibilityByCaller(t *testing.T, repo *customAgentRepository) {
@@ -314,5 +331,8 @@ func TestUsageOrderAddonLinesPostgres(t *testing.T) {
 	require.Len(t, got.Addons, 1)
 	require.Equal(t, int64(495000), got.Addons[0].AmountVND)
 	require.True(t, end.Equal(*got.Addons[0].PaidUntil))
+	pending, err := NewUsagePlanRepository(db).PendingOrderAddons(ctx, "tenant", "1")
+	require.NoError(t, err)
+	require.Equal(t, []string{"addon"}, pending["o-pg"])
 	require.NoError(t, db.Exec("DELETE FROM usage_orders WHERE id = 'o-pg'").Error)
 }
