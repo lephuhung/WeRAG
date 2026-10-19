@@ -174,3 +174,7 @@ Mỗi giai đoạn: Opus làm, Fable rà (khi còn hạn mức), migration theo 
 2. Đơn `addon` dùng `plan_id` của thuê bao đích (cột bắt buộc), `months` = 0.
 3. Word add-in: không đổi (panel gói của add-in đọc `/me/usage`, không có danh sách add-on; không đơn giản để thêm trong repo này).
 4. Huỷ/hết hạn đơn chưa trả không đụng tới quyền dùng.
+
+## 9. Rà soát
+
+- 2026-10-19: Fable hết hạn mức (HTTP 429) khi rà nhánh này; theo quyết định của người dùng, một agent Opus độc lập rà trước (bản rà: scratchpad `review-agent-addons-opus.md`, kết quả ghi bên dưới khi xong). **Còn nợ: Fable rà lại toàn bộ `38e230f7..HEAD` (giai đoạn A, B, C, nút bật/tắt) khi có hạn mức**, kể cả khi đã merge.
