@@ -20,14 +20,24 @@ import { useT } from "@/lib/i18n";
 export function SkillsSettings() {
   const { t } = useT();
   const auth = useAuth();
-  const activeTenantId = Number(auth.selectedTenantId ?? auth.tenant?.id ?? 0);
-  const currentRole =
-    auth.memberships.find((m) => String(m.tenant_id) === String(activeTenantId))?.role ?? "";
-  const isSystemAdmin = auth.user?.is_system_admin === true;
-  /* Skill catalog writes (POST /skills/catalog, install, DELETE) are
-   * Admin+ on the backend, so all Tenant Admins may manage — not just
-   * legacy owners. Catalog reads stay Admin+ server-side as well. */
-  const canManage = currentRole === "owner" || currentRole === "admin" || isSystemAdmin;
+  /* Skill catalog writes (POST /skills/catalog, install, DELETE) and the
+   * per-config skill routes are SystemAdmin-only on the backend: an install
+   * bakes a root shell's output into a sandbox image. */
+  const canManage = auth.user?.is_system_admin === true;
+  const installStatusLabel = (status: string) => {
+    switch (status) {
+      case "installing":
+        return t("skillc.status.installing");
+      case "ready":
+        return t("skillc.status.ready");
+      case "failed":
+        return t("skillc.status.failed");
+      case "removing":
+        return t("skillc.status.removing");
+      default:
+        return status;
+    }
+  };
 
   const [catalog, setCatalog] = useState<SkillCatalogItem[]>([]);
   const [sandboxes, setSandboxes] = useState<SandboxConfigRecord[]>([]);
@@ -298,14 +308,14 @@ export function SkillsSettings() {
                       <span
                         key={inst.sandbox_config_id}
                         className={`badge-pill text-[11px] font-medium ${
-                          inst.status === "installed"
+                          inst.status === "ready"
                             ? "bg-emerald-500/10 text-emerald-700 border border-emerald-500/20"
                             : inst.status === "failed"
                             ? "bg-rose-500/10 text-rose-700 border border-rose-500/20"
                             : ""
                         }`}
                       >
-                        {inst.sandbox_config_name || inst.sandbox_config_id} ({inst.status})
+                        {inst.sandbox_config_name || inst.sandbox_config_id} ({installStatusLabel(inst.status)})
                       </span>
                     ))}
                   </div>
