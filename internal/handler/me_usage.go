@@ -36,7 +36,12 @@ func (h *MeUsageHandler) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	tenantID, _ := types.TenantIDFromContext(ctx)
 	userID, _ := types.UserIDFromContext(ctx)
-	summary, err := h.meter.Summary(ctx, tenantID, userID)
+	countersTenantID := tenantID
+	if types.InPublicPortal(ctx) {
+		// the portal's counters add up every Guest: not this caller's to see
+		countersTenantID = 0
+	}
+	summary, err := h.meter.Summary(ctx, countersTenantID, userID)
 	if err != nil {
 		c.Error(apperrors.NewInternalServerError("Failed to load usage").WithDetails(err.Error()))
 		return
