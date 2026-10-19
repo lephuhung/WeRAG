@@ -11,6 +11,7 @@ import (
 var componentNames = map[string]string{
 	"quoc_hieu":           "Quốc hiệu",
 	"tieu_ngu":            "Tiêu ngữ",
+	"tieu_de_dang":        "Tiêu đề Đảng",
 	"co_quan_chu_quan":    "Cơ quan chủ quản",
 	"co_quan_ban_hanh":    "Cơ quan ban hành",
 	"so_ky_hieu":          "Số, ký hiệu",
@@ -62,7 +63,7 @@ func RenderText(r *Report) string {
 	dt := r.DocumentType
 	fmt.Fprintf(&b, "Văn bản: %s\nLoại văn bản: %s — bộ luật: %s\n", r.Source, dt.Detected, dt.RuleSet)
 	if !r.FullScope() {
-		fmt.Fprintf(&b, "Phạm vi kiểm tra: %s (%s) — %s\n", ScopeName(r.Scope.Used), r.Scope.Used, r.Scope.Reason)
+		fmt.Fprintf(&b, "Phạm vi kiểm tra: %s (%s) — %s\n", r.ScopeLabel(), r.Scope.Used, r.Scope.Reason)
 	}
 	if s := r.Segmentation; s != nil {
 		fmt.Fprintf(&b, "Gán thành phần: %s", s.Method)
@@ -102,7 +103,11 @@ func RenderText(r *Report) string {
 		}
 		fmt.Fprintf(&b, "- %s: %s\n", ComponentName(c.Key), truncateRunes(strings.ReplaceAll(comp.Text, "\n", " / "), 120))
 	}
-	b.WriteString("\nLưu ý: kiểm tra tự động theo NĐ30/2020 Phụ lục I trên file .docx; số trang chỉ đo được trường PAGE trong header; con dấu, chữ ký cần rà soát thủ công.\n")
+	source := "NĐ30/2020 Phụ lục I"
+	if r.Party() {
+		source = PartyGuide + " (văn bản của Đảng)"
+	}
+	b.WriteString("\nLưu ý: kiểm tra tự động theo " + source + " trên file .docx; số trang chỉ đo được trường PAGE trong header; con dấu, chữ ký cần rà soát thủ công.\n")
 	return b.String()
 }
 
@@ -398,7 +403,7 @@ func RenderJudgment(r *Report) string {
 	fmt.Fprintf(&b, "Văn bản: %s\n", r.Source)
 	fmt.Fprintf(&b, "Loại: %s (nhận diện: %s; bộ quy tắc: %s)\n", dt.Used, dt.Detected, dt.RuleSet)
 	if !r.FullScope() {
-		fmt.Fprintf(&b, "Phạm vi kiểm tra: %s — %s\n", ScopeName(r.Scope.Used), r.Scope.Reason)
+		fmt.Fprintf(&b, "Phạm vi kiểm tra: %s — %s\n", r.ScopeLabel(), r.Scope.Reason)
 	}
 	if s := r.Segmentation; s != nil && s.Error != "" {
 		// the components were assigned by position only: say so
@@ -441,7 +446,15 @@ func RenderJudgment(r *Report) string {
 		}
 	}
 
-	b.WriteString("\n## Thành phần ([số] là ô theo NĐ30 Phụ lục I)\n")
+	party := r.Party()
+	if party {
+		b.WriteString("\n## Thành phần ([số] là ô theo " + PartyGuide + " Phụ lục 1; văn bản của Đảng, không có quốc hiệu, tiêu ngữ)\n")
+		if s := joined("tieu_de_dang"); s != "" {
+			fmt.Fprintf(&b, "[1] Tiêu đề: %s\n", s)
+		}
+	} else {
+		b.WriteString("\n## Thành phần ([số] là ô theo NĐ30 Phụ lục I)\n")
+	}
 	if s := joined("co_quan_chu_quan"); s != "" {
 		fmt.Fprintf(&b, "[2] Cơ quan chủ quản: %s\n", s)
 	}
@@ -463,7 +476,7 @@ func RenderJudgment(r *Report) string {
 	if s := joined("trich_yeu"); s != "" {
 		// công văn has no tên loại line (ô 5b); other types print it (ô 5a)
 		line := "[5a] Tên loại, trích yếu: " + s
-		if dt.Used == "cong_van" {
+		if dt.Used == "cong_van" || dt.Used == "dang_cong_van" {
 			line = "[5b] Trích yếu công văn (công văn không có dòng tên loại): " + s
 		}
 		if tq := joined("tham_quyen_ban_hanh"); tq != "" {
@@ -474,7 +487,11 @@ func RenderJudgment(r *Report) string {
 		fmt.Fprintf(&b, "[5] Thẩm quyền ban hành: %s\n", tq)
 	}
 	list("[6] Căn cứ", "can_cu")
-	list("[9a] Kính gửi", "kinh_gui")
+	if party {
+		list("[5a/9b] Kính gửi", "kinh_gui")
+	} else {
+		list("[9a] Kính gửi", "kinh_gui")
+	}
 
 	if r.BodyParas == 0 {
 		b.WriteString("[6] Thân văn bản: không có\n")
@@ -506,7 +523,11 @@ func RenderJudgment(r *Report) string {
 		}
 	}
 	if cf, ok := format["noi_nhan"]; ok && len(cf.Lines) > 0 {
-		fmt.Fprintf(&b, "[9b] Nơi nhận (%s; dòng đầu là nhãn, các dòng sau là danh sách):\n", zoneName(cf.Lines[0].Zone))
+		cell := "[9b]"
+		if party {
+			cell = "[9a]"
+		}
+		fmt.Fprintf(&b, "%s Nơi nhận (%s; dòng đầu là nhãn, các dòng sau là danh sách):\n", cell, zoneName(cf.Lines[0].Zone))
 		for _, lf := range cf.Lines {
 			b.WriteString("  - " + judgmentLine(lf) + "\n")
 		}
@@ -541,6 +562,10 @@ func RenderJudgment(r *Report) string {
 	}
 	for _, c := range Components {
 		if c.Key == "khac" || found(c.Key) {
+			continue
+		}
+		// a văn bản của Đảng has no quốc hiệu, tiêu ngữ; the others no tiêu đề Đảng
+		if party && (c.Key == "quoc_hieu" || c.Key == "tieu_ngu") || !party && c.Key == "tieu_de_dang" {
 			continue
 		}
 		if required[c.Key] {

@@ -33,7 +33,9 @@ var checkDocumentFormatTool = BaseTool{
 Call it ONLY when the user asks to check the format ("kiểm tra thể thức", "đúng Nghị định 30 không", "soát lỗi căn lề / cỡ chữ") — not because a .docx is attached, nor to summarise or answer questions about its content. Layout only: spelling is check_spelling when available, else proofread yourself.
 
 - file_name: the uploaded file to check; omit when only one .docx was uploaded (the newest .docx is used).
-- document_type: omit it (detected); pass it only when the user names or confirms the type, never guess.
+- document_type: omit it (detected); pass it only when the user names or confirms the type, never guess (dang_<loại>, e.g. dang_nghi_quyet, for a party document).
+
+A văn bản của Đảng ("ĐẢNG CỘNG SẢN VIỆT NAM", no quốc hiệu) is detected and checked against Hướng dẫn 36-HD/VPTW, not NĐ30; never call such a result an NĐ30 check.
 
 A document that is not one of the 29 văn bản hành chính (Điều 7 NĐ30) gets only technical layout checks; a văn bản "ban hành kèm theo" also gets tên loại/trích yếu and its "kèm theo" line; the result says which scope applied.
 
@@ -47,7 +49,7 @@ Usually it returns a finished evaluation: present it as is, do not re-judge it. 
     },
     "document_type": {
       "type": "string",
-      "description": "Rule set named by the user (cong_van, quyet_dinh, bao_cao, to_trinh…); omit to auto-detect. Forces the full NĐ30 check"
+      "description": "Rule set named by the user, e.g. cong_van, quyet_dinh, bao_cao, to_trinh (dang_cong_van, dang_nghi_quyet … for a văn bản của Đảng); omit to auto-detect (default). Naming a type forces the full check"
     }
   }
 }`),
@@ -353,7 +355,7 @@ const formatCheckStartedMessage = "Mình đang kiểm tra thể thức văn bả
 	"Bạn cứ tiếp tục soạn thảo hoặc hỏi việc khác; khi có kết quả sẽ hiện thông báo để bạn bấm mở báo cáo."
 
 // formatCheckStartedNote is the result of a check sent to the background.
-const formatCheckStartedNote = "Chưa có kết quả: việc kiểm tra thể thức %s theo Nghị định 30/2020/NĐ-CP vừa bắt đầu ở chế độ nền (thường xong trong vòng một phút). " +
+const formatCheckStartedNote = "Chưa có kết quả: việc kiểm tra thể thức %s vừa bắt đầu ở chế độ nền (thường xong trong vòng một phút). " +
 	"Trả lời người dùng ngắn gọn, theo ý: «Mình đang kiểm tra thể thức văn bản ở chế độ nền, thường xong trong vòng một phút. Bạn cứ tiếp tục soạn thảo hoặc hỏi việc khác; " +
 	"khi có kết quả sẽ hiện thông báo để bạn bấm mở báo cáo.» Không nêu nhận xét thể thức nào và không gọi lại công cụ này trong lượt này. " +
 	"Ở lượt sau, khi người dùng hỏi kết quả hoặc muốn sửa lỗi thể thức, GỌI LẠI check_document_format: kết quả có sẵn được trả về ngay."
@@ -804,12 +806,25 @@ func isBackgroundRun(ctx context.Context) bool {
 // full check.
 func scopedEvaluationOutput(report *docformat.Report, text string) string {
 	sc := report.Scope
+	full := "Muốn kiểm tra đầy đủ theo NĐ30/2020/NĐ-CP thì gọi lại công cụ với document_type là loại văn bản hành chính " +
+		"(ví dụ quyet_dinh, cong_van, quy_che) khi người dùng xác nhận loại.)\n\n"
+	if report.Party() {
+		full = "Muốn kiểm tra đầy đủ theo " + report.StandardName() + " thì gọi lại công cụ với document_type là loại văn bản của Đảng " +
+			"(ví dụ dang_nghi_quyet, dang_cong_van, dang_bao_cao) khi người dùng xác nhận loại.)\n\n"
+	}
 	return "# Đánh giá thể thức văn bản " + report.Source + "\n" +
-		"(phạm vi kiểm tra: " + docformat.ScopeName(sc.Used) + " — " + sc.Reason + ". " +
-		"Muốn kiểm tra đầy đủ theo NĐ30/2020/NĐ-CP thì gọi lại công cụ với document_type là loại văn bản hành chính " +
-		"(ví dụ quyet_dinh, cong_van, quy_che) khi người dùng xác nhận loại.)\n\n" +
+		"(phạm vi kiểm tra: " + report.ScopeLabel() + " — " + sc.Reason + ". " + full +
 		text + "\n\n---\nTrình bày đánh giá trên cho người dùng, nói rõ phạm vi kiểm tra và cách chọn loại văn bản để kiểm tra đầy đủ; " +
 		"giữ nguyên các kết luận, không tự chấm lại."
+}
+
+// standardShort names what a report was checked against, as the
+// evaluation header writes it.
+func standardShort(report *docformat.Report) string {
+	if report.Party() {
+		return report.StandardName() + " (văn bản của Đảng)"
+	}
+	return "NĐ30/2020/NĐ-CP"
 }
 
 // formatEvalOptions tune the skill evaluation; tests set ForceLLM to
@@ -841,7 +856,7 @@ func (t *CheckDocumentFormatTool) evaluate(ctx context.Context, report *docforma
 		if err == nil {
 			report.Evaluation = text
 			return "# Đánh giá thể thức văn bản " + report.Source + "\n" +
-				"(đã thẩm định theo NĐ30/2020/NĐ-CP: số đo từ file và các skill " + strings.Join(report.Skills, ", ") + ")\n\n" +
+				"(đã thẩm định theo " + standardShort(report) + ": số đo từ file và các skill " + strings.Join(report.Skills, ", ") + ")\n\n" +
 				text + "\n\n---\nTrình bày đánh giá trên cho người dùng; giữ nguyên các kết luận, không tự chấm lại.", true
 		}
 		logger.Warnf(ctx, "check_document_format: skill evaluation failed, returning data: %v", err)

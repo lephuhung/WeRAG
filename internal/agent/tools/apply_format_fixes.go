@@ -21,6 +21,8 @@ var applyFormatFixesTool = BaseTool{
 
 Two steps, so nothing is changed before the user agrees: without apply it reviews — returns the plan and underlines the paragraphs it would change and the manual findings; apply=true applies the plan (Ctrl+Z undoes it). dry_run=true returns the plan without underlining, only when the user asks for the plan alone ("chỉ xem kế hoạch").
 
+A văn bản của Đảng ("ĐẢNG CỘNG SẢN VIỆT NAM") is fixed to Hướng dẫn 36-HD/VPTW instead: its own sizes and emphasis, A4, margins top/bottom 20, left 30, right 15 mm.
+
 If the structure cannot be identified (quốc hiệu or chữ ký not found, unknown type), nothing is changed and the plan carries a warning: confirm with the user, ask the document type, then call again with that document_type and force=true.`,
 	schema: json.RawMessage(`{
   "type": "object",

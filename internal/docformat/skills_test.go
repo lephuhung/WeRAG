@@ -17,7 +17,7 @@ func TestEverySkillIsWellFormed(t *testing.T) {
 		if !ok || s.Description == "" || strings.HasPrefix(s.Body, "---") || !strings.Contains(s.Body, "# ") {
 			t.Errorf("skill %s: frontmatter/body malformed (desc=%q)", name, s.Description)
 		}
-		if name != GeneralSkill && !strings.Contains(s.Body, GeneralSkill) {
+		if name != GeneralSkill && name != PartySkill && !strings.Contains(s.Body, GeneralSkill) {
 			t.Errorf("skill %s should point to %s", name, GeneralSkill)
 		}
 	}
