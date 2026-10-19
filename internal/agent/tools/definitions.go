@@ -171,7 +171,7 @@ func AvailableToolDefinitions() []AvailableTool {
 		{
 			Name:        ToolCompareTaxMethods,
 			Label:       "So sánh phương pháp thuế TNDN",
-			Description: "Tính thuế TNDN theo % doanh thu và theo lợi nhuận kê khai, kèm điểm hòa vốn và giả định (gói chuyên môn opc-vn-business-law)",
+			Description: "Tính thuế TNDN theo % doanh thu và theo lợi nhuận kê khai, kèm điểm hòa vốn và giả định (bộ kỹ năng opc-vn-business-law)",
 		},
 	}
 }

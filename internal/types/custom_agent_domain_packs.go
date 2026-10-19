@@ -24,7 +24,7 @@ func (c *CustomAgentConfig) ValidateDomainPacks(lookup DomainPackLookup, default
 		return nil
 	}
 	if c.AgentMode != AgentModeSmartReasoning {
-		return fmt.Errorf("gói chuyên môn chỉ dùng được cho trợ lý suy luận (smart-reasoning)")
+		return fmt.Errorf("bộ kỹ năng chỉ dùng được cho trợ lý suy luận (smart-reasoning)")
 	}
 	effective := c.AllowedTools
 	if len(effective) == 0 {
@@ -38,22 +38,22 @@ func (c *CustomAgentConfig) ValidateDomainPacks(lookup DomainPackLookup, default
 	for _, raw := range c.DomainPacks {
 		name := strings.TrimSpace(raw)
 		if name == "" {
-			return fmt.Errorf("tên gói chuyên môn không được để trống")
+			return fmt.Errorf("tên bộ kỹ năng không được để trống")
 		}
 		if seen[name] {
-			return fmt.Errorf("gói chuyên môn %q được chọn hai lần", name)
+			return fmt.Errorf("bộ kỹ năng %q được chọn hai lần", name)
 		}
 		seen[name] = true
 		required, ok := lookup(name)
 		if !ok {
-			return fmt.Errorf("gói chuyên môn %q không tồn tại trong phiên bản này", name)
+			return fmt.Errorf("bộ kỹ năng %q không tồn tại trong phiên bản này", name)
 		}
 		for _, tool := range required {
 			if !slices.Contains(effective, tool) {
-				return fmt.Errorf("gói chuyên môn %q cần công cụ %q; hãy bật công cụ này cho trợ lý", name, tool)
+				return fmt.Errorf("bộ kỹ năng %q cần công cụ %q; hãy bật công cụ này cho trợ lý", name, tool)
 			}
 			if noKnowledge && slices.Contains(knowledgeScoped, tool) {
-				return fmt.Errorf("gói chuyên môn %q cần công cụ %q, công cụ này chỉ chạy khi trợ lý có kho tri thức; hãy chọn kho tri thức cho trợ lý", name, tool)
+				return fmt.Errorf("bộ kỹ năng %q cần công cụ %q, công cụ này chỉ chạy khi trợ lý có kho tri thức; hãy chọn kho tri thức cho trợ lý", name, tool)
 			}
 		}
 	}
