@@ -137,6 +137,26 @@ func TestPhraseAmendsClauses(t *testing.T) {
 			[]Amend{{Document: "Luật Xây dựng số 50/2014/QH13", Article: "56", Phrase: true, From: "A", To: "B"}}},
 		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 3 Luật Quản lý thuế ngày 13 tháng 6 năm 2019`,
 			[]Amend{{Document: "Luật Quản lý thuế", Article: "3", Phrase: true, From: "A", To: "B"}}},
+		// third review: a ";" segment with a verb ends the list
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 26 Điều 2; Điều 5 được sửa đổi như sau`,
+			[]Amend{{Article: "2", Khoan: "26", Phrase: true, From: "A", To: "B"}}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 26 Điều 2; các khoản 3, 4 Điều 5 hết hiệu lực`,
+			[]Amend{{Article: "2", Khoan: "26", Phrase: true, From: "A", To: "B"}}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 1 Điều 4; khoản 2 Điều 9 (được sửa đổi bởi khoản 1 Điều 1 Nghị định số 136/2021/NĐ-CP) Nghị định số 83/2017/NĐ-CP`,
+			[]Amend{{Document: "Nghị định số 83/2017/NĐ-CP", Article: "4", Khoan: "1", Phrase: true, From: "A", To: "B"}, {Document: "Nghị định số 83/2017/NĐ-CP", Article: "9", Khoan: "2", Phrase: true, From: "A", To: "B"}}},
+		// another document's number after a comma
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 3 Nghị định này, Nghị định số 12/2020/NĐ-CP`, nil},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 3 Luật Đất đai, được hướng dẫn tại Nghị định số 43/2014/NĐ-CP`,
+			[]Amend{{Document: "Luật Đất đai", Article: "3", Phrase: true, From: "A", To: "B"}}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 380 Bộ luật Tố tụng hình sự số 101/2015/QH13`,
+			[]Amend{{Document: "Bộ luật Tố tụng hình sự số 101/2015/QH13", Article: "380", Phrase: true, From: "A", To: "B"}}},
+		// điểm b1, a spaced number, "khấu trừ", "tên Điều"
+		{`Thay thế cụm từ “cấp mới” bằng cụm từ “cấp lại” tại điểm b1 khoản 2 Điều 19 Thông tư số 36/2024/TT- BGTVT`,
+			[]Amend{{Document: "Thông tư số 36/2024/TT-BGTVT", Article: "19", Khoan: "2", Diem: "b1", Phrase: true, From: "cấp mới", To: "cấp lại"}}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 4 Điều 7 về khấu trừ thuế`,
+			[]Amend{{Article: "7", Khoan: "4", Phrase: true, From: "A", To: "B"}}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại tên Điều 31 và khoản 1 Điều 31`,
+			[]Amend{{Article: "31", Khoan: "1", Phrase: true, From: "A", To: "B"}}},
 		// the amending document's own provisions
 		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 5 Nghị định này`, nil},
 	}

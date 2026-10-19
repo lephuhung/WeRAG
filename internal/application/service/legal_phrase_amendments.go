@@ -103,7 +103,7 @@ func (h *legalHistory) phraseChanges(chunks []legalHistoryChunk) map[string][]le
 	if err := h.db.Raw(legalHistorySelect+` AND jsonb_exists(c.metadata->'legal', 'amends')
 		AND (`+strings.Join(conds, " OR ")+`)
 		ORDER BY (`+strings.Join(ranks, " OR ")+`) DESC,
-			c.metadata->'legal'->>'amends' !~ '[0-9]+/[0-9]{4}' DESC
+			c.metadata->'legal'->>'amends' !~ '[0-9]+/[0-9]{4}' DESC, c.id
 		LIMIT ?`, args...).Scan(&rows).Error; err != nil {
 		logger.Warnf(h.ctx, "[LegalWording] amending chunks: %v", err)
 		return nil

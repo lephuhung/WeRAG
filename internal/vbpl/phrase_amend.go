@@ -34,12 +34,25 @@ var (
 	// not run on into a word.
 	// Only the keywords ignore case: a capital after "," ("…, Điều 4") is
 	// not a bare điểm letter.
-	phraseProvRe = regexp.MustCompile(`((?i:điểm|khoản|điều))\s+(\d+[a-zđ]?|[a-zđ])|(?:,|\svà)\s*(\d+[a-zđ]?)|(?:,|\svà)\s*([a-zđ])`)
+	phraseProvRe = regexp.MustCompile(`((?i:điểm|khoản|điều))\s+(\d+[a-zđ]?|[a-zđ]\d*)|(?:,|\svà)\s*(\d+[a-zđ]?)|(?:,|\svà)\s*([a-zđ]\d*)`)
 	// phraseBareNextRe is what may follow a bare label: the list goes on or
 	// ends ("Điều 3, 4 Luật …"), not a quantity ("Điều 3, 15 ngày").
 	phraseBareNextRe = regexp.MustCompile(`(?i)^(?:\s*[,;.)]|\s*$|\s+(?:và|khoản|điểm|điều|của|tại|bộ luật|luật|pháp lệnh|nghị định|nghị quyết|thông tư|quyết định)(?:\s|$))`)
-	// phraseListMoreRe starts the next group of a provision list after ";".
-	phraseListMoreRe = regexp.MustCompile(`(?i)^(?:các\s+|tên\s+)?(?:khoản|điểm|điều)\s`)
+	// phraseListMoreRe is a segment after ";" that only goes on with the
+	// provision list: labels and connectors, then at most a document name
+	// ("; khoản 6 Điều 5; Điều 74 Nghị định số 53/2024/NĐ-CP"), not "; Điều 5
+	// được sửa đổi như sau".
+	phraseListMoreRe = regexp.MustCompile(`(?i)^\s*(?:(?:các|tên)\s+)?(?:điểm|khoản|điều)\s+[0-9a-zđ]+(?:(?:\s*,\s*|\s+và\s+|\s+)(?:(?:các|tên)\s+)?(?:(?:điểm|khoản|điều)\s+)?[0-9a-zđ]+)*(?:\s+(?:của\s+)?(?:` + "Bộ luật|Luật|Pháp lệnh|Nghị định|Nghị quyết|Thông tư liên tịch|Thông tư|Quyết định" + `)\s[^;()]*)?\s*[.]?\s*$`)
+	// phraseBracketRe is a bracketed remark in a provision list.
+	phraseBracketRe = regexp.MustCompile(`\([^()]*\)`)
+	// phraseOtherDocRe, inside a title before its number, means the number
+	// is another document's ("Nghị định này, Nghị định số 12/2020/NĐ-CP",
+	// "Luật Đất đai, được hướng dẫn tại Nghị định số …").
+	phraseOtherDocRe = regexp.MustCompile(`(?i)(?:^|\s)(?:` + "Bộ luật|Luật|Pháp lệnh|Nghị định|Nghị quyết|Thông tư liên tịch|Thông tư|Quyết định" + `|này|được|tại|theo)(?:\s|,|$)`)
+	// phraseDocTypeRe is the document type a title starts with.
+	phraseDocTypeRe = regexp.MustCompile(`(?i)^(?:Bộ luật|Luật|Pháp lệnh|Nghị định|Nghị quyết|Thông tư liên tịch|Thông tư|Quyết định)\s`)
+	// phraseSpacedNumberRe joins "36/2024/TT- BGTVT".
+	phraseSpacedNumberRe = regexp.MustCompile(`(\d+/\d{4}/[A-ZĐ]+)-\s+([A-ZĐ])`)
 	// phraseExceptRe marks an exception ("trừ …"): such a list is not read.
 	phraseExceptRe = regexp.MustCompile(`(?i)(?:^|[\s,(])(?:ngoại trừ|trừ|không áp dụng)(?:[\s,:]|$)`)
 	fileNumberRe   = regexp.MustCompile(`\b(\d+)-(\d{4})-([A-ZĐ])`)
@@ -64,6 +77,7 @@ func (b *builder) phraseAmends(text string) []Amend {
 // parsePhraseAmends reads text sentence by sentence; enclosing names the
 // amended document when a sentence names none.
 func parsePhraseAmends(text string, enclosing func() string) []Amend {
+	text = phraseSpacedNumberRe.ReplaceAllString(text, "$1-$2")
 	var out []Amend
 	for _, s := range splitSentences(text) {
 		out = append(out, phraseSentence(s, enclosing)...)
@@ -186,7 +200,7 @@ func phraseClause(rest string, remove bool, enclosing func() string) []Amend {
 			continue
 		}
 		if doc == "" {
-			doc = enclosing()
+			doc = phraseSpacedNumberRe.ReplaceAllString(enclosing(), "$1-$2")
 		}
 		for _, p := range pending {
 			from := strings.TrimSpace(p.from)
@@ -203,11 +217,25 @@ func phraseClause(rest string, remove bool, enclosing func() string) []Amend {
 	return out
 }
 
+// hasException reports a "trừ" / "ngoại trừ" / "không áp dụng" in tail,
+// not the "trừ" of "khấu trừ".
+func hasException(tail string) bool {
+	for _, m := range phraseExceptRe.FindAllStringIndex(tail, -1) {
+		if !strings.HasSuffix(strings.ToLower(strings.TrimRight(tail[:m[0]+1], " ,(")), "khấu") {
+			return true
+		}
+	}
+	return false
+}
+
 // readPhraseTail reads the provisions of a tail and the document named
 // right after them; a tail with an exception gives none. ok is false when
 // that document is the amending one itself ("Nghị định này").
 func readPhraseTail(tail string) (provs []phraseProv, doc string, ok bool) {
-	if phraseExceptRe.MatchString(tail) {
+	// "khoản 2 Điều 9 (được sửa đổi bởi khoản 1 Điều 1 Nghị định số …)":
+	// a bracket says where the provision comes from, it is not a target
+	tail = phraseBracketRe.ReplaceAllString(tail, " ")
+	if hasException(tail) {
 		// "tại khoản 2 Điều 9, trừ điểm a": what is excepted cannot be
 		// told apart reliably, so the amendment is left out
 		return nil, "", true
@@ -217,7 +245,7 @@ func readPhraseTail(tail string) (provs []phraseProv, doc string, ok bool) {
 		return nil, "", true
 	}
 	var name string
-	if m := phraseDocNumberRe.FindStringSubmatch(tail[end:]); m != nil {
+	if m := phraseDocNumberRe.FindStringSubmatch(tail[end:]); m != nil && !phraseOtherDocRe.MatchString(phraseDocTypeRe.ReplaceAllString(m[1], "")) {
 		name = m[1]
 	} else if m := phraseDocRe.FindStringSubmatch(tail[end:]); m != nil {
 		name = m[1]
@@ -237,6 +265,26 @@ func readPhraseTail(tail string) (provs []phraseProv, doc string, ok bool) {
 	return provs, sentenceCase(name), true
 }
 
+// nextSegment is text up to its next ";" outside quoted phrases.
+func nextSegment(text string) string {
+	inQuote := false
+	for i, r := range text {
+		switch r {
+		case '“':
+			inQuote = true
+		case '”':
+			inQuote = false
+		case '"':
+			inQuote = !inQuote
+		case ';':
+			if !inQuote {
+				return text[:i]
+			}
+		}
+	}
+	return text
+}
+
 // splitClauses cuts a sentence, outside quoted phrases, at ";" — unless a
 // provision label follows, going on with the list — and before another
 // verb after "," or "và".
@@ -254,7 +302,7 @@ func splitClauses(text string) []string {
 			inQuote = !inQuote
 		case ';':
 			// "tại khoản 2 Điều 4; khoản 6 Điều 5; Điều 74" is one list
-			if !inQuote && !phraseListMoreRe.MatchString(strings.TrimLeft(text[i+1:], " ")) {
+			if !inQuote && !phraseListMoreRe.MatchString(phraseBracketRe.ReplaceAllString(nextSegment(text[i+1:]), " ")) {
 				out = append(out, text[start:i])
 				start = i + 1
 			}
@@ -386,6 +434,9 @@ func provMatches(s string) []provMatch {
 		if r, _ := utf8.DecodeRuneInString(s[m[1]:]); m[1] >= len(s) || !(unicode.IsLetter(r) || unicode.IsDigit(r)) {
 			bare := lastEnd == m[0] && phraseBareNextRe.MatchString(s[m[1]:])
 			switch {
+			case m[2] >= 0 && strings.HasSuffix(strings.ToLower(s[:m[0]]), "tên "):
+				// "tên Điều 31": the title, not the provisions — not read
+				last = ""
 			case m[2] >= 0:
 				last = strings.ToLower(s[m[2]:m[3]])
 				out = append(out, provMatch{kw: last, label: s[m[4]:m[5]], end: m[1]})
