@@ -309,7 +309,20 @@ export function BillingPage() {
             )}
             <div className="flex justify-between font-medium text-ink"><span>{t("bill.total")}</span><span className="tabular-nums">{formatPriceVND(order.total_vnd)}</span></div>
           </div>
-          {pending && (
+          {pending && order.total_vnd <= 0 && (
+            <div className="border-t border-hairline px-4 py-3 text-[14px] text-muted">
+              <p>{t("bill.freeOrderWaits")}</p>
+              <p className="caption mt-1 flex items-center gap-1 text-muted">
+                <IconRefresh className="h-3.5 w-3.5 animate-spin" /> {t("bill.waiting")}
+              </p>
+              <div className="mt-3 flex justify-end">
+                <button type="button" className="btn btn-outline btn-sm text-rose-600" disabled={busy} onClick={() => cancelOrder(order)}>
+                  {t("bill.cancel")}
+                </button>
+              </div>
+            </div>
+          )}
+          {pending && order.total_vnd > 0 && (
             <div className="border-t border-hairline px-4 py-3">
               <div className="text-[14px] font-medium text-ink">{t("bill.payTitle")}</div>
               <div className="mt-3 flex flex-wrap gap-5">
