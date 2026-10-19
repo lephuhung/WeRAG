@@ -8,6 +8,8 @@ import { defaultWebSearchFor } from "@/lib/api/agent-doc-defaults";
 import { useMobileChat } from "@/components/use-mobile-chat";
 import { resolveChatMode } from "@/lib/mobile-chat-policy";
 import { availableAgentId } from "@/lib/agent-tenant-scope";
+import { useTenantRole } from "@/lib/auth";
+import { BUILTIN_PUBLIC_LOOKUP_ID, guestChatSettings } from "@/lib/guest-chat";
 
 /* Ports the chat-input slice of frontend/src/stores/settings.ts +
  * chatResources.ts + organization.ts into one React context:
@@ -20,6 +22,7 @@ export const BUILTIN_QUICK_ANSWER_ID = "builtin-quick-answer";
 export const BUILTIN_SMART_REASONING_ID = "builtin-smart-reasoning";
 /** Document assistant: chat + embedded ONLYOFFICE editor (two-pane workspace). */
 export const BUILTIN_DOCUMENT_ASSISTANT_ID = "builtin-document-assistant";
+export { BUILTIN_PUBLIC_LOOKUP_ID };
 
 // "document": an editable document of the session (document assistant);
 // managed per turn by the chat, not stored in the settings below.
@@ -150,6 +153,9 @@ function persist(s: ChatSettings) {
 
 type Ctx = {
   settings: ChatSettings;
+  /** Signed in without an organization: chats with the public-lookup
+   * assistant only (lib/guest-chat.ts); every picker is hidden. */
+  isGuest: boolean;
   isMobile: boolean;
   documentReadOnly: boolean;
   // True once settings have been hydrated from localStorage. Anything that
@@ -193,15 +199,21 @@ const ChatContext = createContext<Ctx | null>(null);
 export function ChatProvider({ children, newChat = false, sessionId = "" }: { children: React.ReactNode; newChat?: boolean; sessionId?: string }) {
   const [storedSettings, setSettings] = useState<ChatSettings>(DEFAULTS);
   const isMobile = useMobileChat();
+  // Known before the first render: the platform shell renders only once
+  // /auth/me answered (RequireAuth), so no tenant call starts for a guest.
+  const { isGuest } = useTenantRole();
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [sessionMode, setSessionMode] = useState<{ sessionId: string; agentId: string } | null>(null);
   const sessionAgentId = sessionMode?.sessionId === sessionId ? sessionMode.agentId : null;
   const mode = resolveChatMode(storedSettings.selectedAgentId, isMobile, newChat, sessionAgentId);
-  const documentReadOnly = mode.readOnly;
+  const documentReadOnly = !isGuest && mode.readOnly;
   const settings = useMemo<ChatSettings>(() => {
+    // A guest's turn carries the public-lookup agent and nothing else,
+    // whatever a member left in this browser's stored settings.
+    if (isGuest) return guestChatSettings(storedSettings);
     if (mode.agentId === storedSettings.selectedAgentId) return storedSettings;
     return { ...storedSettings, selectedAgentId: mode.agentId, isAgentEnabled: true };
-  }, [storedSettings, mode.agentId]);
+  }, [storedSettings, mode.agentId, isGuest]);
   const [knowledgeBases, setKnowledgeBases] = useState<KbSummary[]>([]);
   const [models, setModels] = useState<ModelSummary[]>([]);
   const [mcpServices, setMcpServices] = useState<Ctx["mcpServices"]>([]);
@@ -225,6 +237,14 @@ export function ChatProvider({ children, newChat = false, sessionId = "" }: { ch
   }, []);
 
   const refresh = useCallback(async () => {
+    if (isGuest) {
+      // Only GET /agents is open to a guest (it lists the public-lookup
+      // assistant alone); KBs, models, MCP, skills and web-search providers
+      // answer TENANT_REQUIRED, and a guest gets no picker for them anyway.
+      const agentsRes = await apiGet<{ success: boolean; data?: AgentSummary[] }>(`/api/v1/agents`).catch(() => null);
+      if (agentsRes?.data) setAgents(agentsRes.data);
+      return;
+    }
     try {
       /* Chat KB selection uses the same invitation-aware source as the KB
        * list and agent selectors: listKnowledgeBases() already includes
@@ -299,7 +319,7 @@ export function ChatProvider({ children, newChat = false, sessionId = "" }: { ch
     } catch {
       /* toolbar degrades to unscoped mode */
     }
-  }, []);
+  }, [isGuest]);
 
   useEffect(() => {
     if (loaded.current) return;
@@ -392,7 +412,7 @@ export function ChatProvider({ children, newChat = false, sessionId = "" }: { ch
   );
   const selectAgent = useCallback(
     (id: string) => {
-      if (isMobile && id !== BUILTIN_SMART_REASONING_ID) return;
+      if (isGuest || (isMobile && id !== BUILTIN_SMART_REASONING_ID)) return;
       // Mirrors settings.selectAgent: switching agent resets the per-turn
       // websearch flag — to the agent's default (web_search_default_on &&
       // web_search_enabled) instead of always off.
@@ -406,7 +426,7 @@ export function ChatProvider({ children, newChat = false, sessionId = "" }: { ch
         ...(agentModelId ? { selectedChatModelId: agentModelId } : {}),
       });
     },
-    [agents, update, isMobile],
+    [agents, update, isMobile, isGuest],
   );
   const toggleWebSearch = useCallback((on: boolean) => update({ webSearchEnabled: on }), [update]);
   const toggleLocalBrowser = useCallback((on: boolean) => update({ localBrowserEnabled: on }), [update]);
@@ -425,7 +445,9 @@ export function ChatProvider({ children, newChat = false, sessionId = "" }: { ch
 
   const hydrateSessionState = useCallback(
     (state?: SessionLastRequestState | null) => {
-      if (!state) return;
+      // a guest's session always runs the public-lookup agent unscoped:
+      // nothing to restore, and a member's stored choices stay as they were
+      if (!state || isGuest) return;
       // A session's last agent may no longer be listed (deleted, or outside
       // this Tổ chức's "Tổ chức áp dụng"): continue with the Q&A agent.
       // Before the list loads the id is kept; the load corrects it.
@@ -457,7 +479,7 @@ export function ChatProvider({ children, newChat = false, sessionId = "" }: { ch
         ...(typeof state.local_browser_enabled === "boolean" ? { localBrowserEnabled: state.local_browser_enabled } : {}),
       });
     },
-    [agents, settings.selectedAgentId, update, sessionId],
+    [agents, settings.selectedAgentId, update, sessionId, isGuest],
   );
 
   const selectedAgent = useMemo<AgentSummary | null>(
@@ -525,6 +547,7 @@ export function ChatProvider({ children, newChat = false, sessionId = "" }: { ch
   const value = useMemo<Ctx>(
     () => ({
       settings,
+      isGuest,
       isMobile,
       documentReadOnly,
       hydrated,
@@ -559,6 +582,7 @@ export function ChatProvider({ children, newChat = false, sessionId = "" }: { ch
     }),
     [
       settings,
+      isGuest,
       isMobile,
       documentReadOnly,
       hydrated,

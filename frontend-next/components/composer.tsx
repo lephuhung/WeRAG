@@ -93,7 +93,7 @@ export function Composer({
 }) {
   const ctx = useChatContext();
   const { t } = useT();
-  const { settings, mentionItems, webSearchReady, toggleWebSearch, selectedAgent } = ctx;
+  const { settings, mentionItems, webSearchReady, toggleWebSearch, selectedAgent, isGuest } = ctx;
   useAgentModelSync();
 
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -123,7 +123,8 @@ export function Composer({
     const before = v.slice(0, cursor);
     const at = before.lastIndexOf("@");
     // Mirror onInput: @ opens the menu, space closes it, text after @ filters.
-    if (at >= 0 && !before.slice(at + 1).includes(" ") && !before.slice(at + 1).includes("\n")) {
+    // A guest has nothing to mention (no KBs, files, MCP or skills).
+    if (!isGuest && at >= 0 && !before.slice(at + 1).includes(" ") && !before.slice(at + 1).includes("\n")) {
       setMentionAnchor(at);
       setMentionKeyword(before.slice(at + 1));
       setMentionOpen(true);
@@ -226,8 +227,9 @@ export function Composer({
 
   const imageCapable = selectedAgent?.config?.image_upload_enabled === true;
   const websearchOn = settings.webSearchEnabled;
-  const placeholder =
-    documents.length > 1 && documentMentions.length === 0
+  const placeholder = isGuest
+    ? t("guest.composerPlaceholder")
+    : documents.length > 1 && documentMentions.length === 0
       ? t("docws.mentionHint")
       : selectedAgent && !selectedAgent.is_builtin
       ? selectedAgent.description || t("composer.askAgent", { name: selectedAgent.name })
@@ -278,7 +280,15 @@ export function Composer({
 
   const showStop = isReplying && canStop !== false && !value.trim();
 
-  const agentControl = (
+  const agentControl = isGuest ? (
+    // fixed: a guest chats with the public-lookup assistant only
+    <span
+      className="flex h-7 max-w-[160px] items-center rounded-full bg-[#edf5ff] px-2.5 text-[12.5px] font-medium text-[#0f2d59] sm:max-w-[260px] dark:bg-[#15273f] dark:text-[#dce9fe]"
+      title={t("guest.agentLocked")}
+    >
+      <span className="min-w-0 truncate">{selectedAgent?.name ?? t("guest.agentName")}</span>
+    </span>
+  ) : (
     <div className={uploadsBecomeSources ? "relative min-w-0 [&>button]:max-w-full" : "relative"}>
       <AgentModeButton locked={!!agentLockFileName} onOpen={() => { closePopups(); setAgentOpen(true); }} />
       {agentLockFileName ? (
@@ -437,7 +447,7 @@ export function Composer({
       {dictationMsg && <p className="caption text-error">{dictationMsg}</p>}
       {dictating && <p className="caption text-muted">{t("dictation.listening")}</p>}
 
-      <MentionChips />
+      {!isGuest && <MentionChips />}
 
       <div className="relative" onClick={(e) => e.stopPropagation()}>
         {documentMentions.length > 0 && (
@@ -479,7 +489,7 @@ export function Composer({
           placeholder={placeholder}
           className={`relative max-h-[160px] w-full flex-1 resize-none break-words bg-transparent ${compact ? "py-1.5 text-[13px]" : "py-2 text-[14px]"} leading-relaxed ${documentMentions.length > 0 ? "text-transparent caret-ink" : "text-ink"} outline-none placeholder:text-muted-soft`}
         />
-        <MentionPicker
+        {!isGuest && <MentionPicker
           open={mentionOpen}
           keyword={mentionKeyword}
           activeIndex={mentionIndex}
@@ -488,14 +498,21 @@ export function Composer({
           onClose={() => setMentionOpen(false)}
           onItems={setMentionList}
           documents={documents}
-        />
+        />}
       </div>
 
       <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
         {/* Left group wraps internally on narrow screens; send stays pinned
             right on the first row instead of dropping to a line of its own. */}
         <div className={uploadsBecomeSources ? "flex shrink-0 items-center gap-1.5" : "flex min-w-0 flex-1 flex-wrap items-center gap-1.5 sm:gap-2"}>
-          {uploadsBecomeSources ? <>{attachmentControl}{webControl}{toolbarStart}</> : <>{agentControl}{webControl}{attachmentControl}{toolbarStart}</>}
+          {isGuest ? (
+            // no web search, attachments or images for a guest
+            <>{agentControl}{toolbarStart}</>
+          ) : uploadsBecomeSources ? (
+            <>{attachmentControl}{webControl}{toolbarStart}</>
+          ) : (
+            <>{agentControl}{webControl}{attachmentControl}{toolbarStart}</>
+          )}
 
           <DictationButton
             value={value}

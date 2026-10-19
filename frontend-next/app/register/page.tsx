@@ -61,17 +61,20 @@ function RegisterForm() {
       localStorage.setItem("weknora_token", res.token);
       if (res.refresh_token) localStorage.setItem("weknora_refresh_token", res.refresh_token);
       // Mirror persistLoginResponse: probe /auth/me, then onboard only when
-      // this deployment lets users create workspaces. Otherwise a new
-      // account waits (tenantless) until a SuperAdmin or Tenant Admin adds
-      // it to a unit; the KB list explains that.
+      // this deployment lets users create organizations (onboarding offers
+      // to skip to the chat). Otherwise a new account stays a Guest until a
+      // SuperAdmin or Tenant Admin adds it to an organization, and meanwhile
+      // chats with the public-lookup assistant.
       const me = await apiGet<{
         success: boolean;
         data?: { tenant?: unknown; capabilities?: { can_create_tenant?: boolean } };
       }>(`/api/v1/auth/me`).catch(() => null);
       router.push(
-        me?.data?.tenant || !me?.data?.capabilities?.can_create_tenant
+        me?.data?.tenant
           ? "/platform/knowledge-bases"
-          : "/onboarding/workspace",
+          : me?.data?.capabilities?.can_create_tenant
+            ? "/onboarding/workspace"
+            : "/platform/creatChat",
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Đăng ký không thành công");

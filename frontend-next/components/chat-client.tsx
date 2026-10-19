@@ -118,6 +118,7 @@ import {
   type AgentStepItem,
 } from "@/components/chat/agent-steps";
 import { AbbreviationSuggestionCard } from "@/components/chat/abbreviation-suggestion-card";
+import { GuestChatNote } from "@/components/chat/guest-chat-note";
 import { ReferencesDrawer, type KnowledgeReferenceItem } from "@/components/chat/references-drawer";
 import { copyToClipboard } from "@/lib/clipboard";
 
@@ -892,9 +893,13 @@ const AssistantMessage = memo(function AssistantMessage({
   onIllustrationInsert,
   onIllustrationInserted,
   compact = false,
+  guest = false,
 }: {
   m: UiMessage;
   index: number;
+  /** Guest chat: no fork, follow-up suggestions, abbreviation or memory
+   * cards — their routes need an organization. */
+  guest?: boolean;
   /** Sends the message of a picked option (choice list under the answer). */
   onChoicePick?: (option: ChoiceOption) => Promise<void>;
   /** The cards are live only on the last turn; older ones show their text. */
@@ -973,7 +978,7 @@ const AssistantMessage = memo(function AssistantMessage({
         {hasPeopleCard && (
           <PeopleCard people={m.peopleData!} isLoadingMore={m.streaming} />
         )}
-        {(m.savedMemories?.length ?? 0) > 0 && <SavedMemoryNotice memories={m.savedMemories!} compact={compact} />}
+        {!guest && (m.savedMemories?.length ?? 0) > 0 && <SavedMemoryNotice memories={m.savedMemories!} compact={compact} />}
         {/* the card itself sits above the composer (see pendingScopeCard) */}
         {!m.streaming && m.scopeCard && scopeCardActive && (
           <p className="caption mt-2 text-muted-soft">{t("docws.scopeCard.pickBelow")}</p>
@@ -1017,7 +1022,7 @@ const AssistantMessage = memo(function AssistantMessage({
               onInserted={onIllustrationInserted}
             />
           ))}
-        {!m.streaming && (m.abbreviationCandidates?.length ?? 0) > 0 && (
+        {!guest && !m.streaming && (m.abbreviationCandidates?.length ?? 0) > 0 && (
           <AbbreviationSuggestionCard
             candidates={m.abbreviationCandidates!}
             refreshKey={abbreviationRefreshKey}
@@ -1033,8 +1038,8 @@ const AssistantMessage = memo(function AssistantMessage({
           <BotMessageActions
             content={m.content}
             createdAt={m.createdAt}
-            canFork={sessionId !== "new" && Boolean(m.assistantMessageId)}
-            onFork={m.assistantMessageId ? () => onFork(m) : undefined}
+            canFork={!guest && sessionId !== "new" && Boolean(m.assistantMessageId)}
+            onFork={!guest && m.assistantMessageId ? () => onFork(m) : undefined}
             onRegenerate={!busy ? () => onRegenerate(index) : undefined}
             feedback={
               sessionId !== "new" && m.assistantMessageId && m.isCompleted === true && !m.isError
@@ -1048,7 +1053,7 @@ const AssistantMessage = memo(function AssistantMessage({
             }
           />
         )}
-        {sessionId !== "new" && !compact && (
+        {sessionId !== "new" && !compact && !guest && (
           <FollowUpSuggestions
             sessionId={sessionId}
             messageId={m.assistantMessageId ?? null}
@@ -1101,6 +1106,9 @@ function ChatBody({ id }: { id: string }) {
     handoffCacheRef.current.resolved,
   );
   const ctx = useChatContext();
+  // Guest chat (no organization): public-lookup assistant only — no
+  // documents, forks, follow-ups or other organization-only calls.
+  const guest = ctx.isGuest;
   const { t: tr } = useT();
   const { user } = useAuth();
   // Non-admin callers never send a model override; the server resolves the
@@ -1258,7 +1266,8 @@ function ChatBody({ id }: { id: string }) {
     [id],
   );
   useEffect(() => {
-    if (id === "new") return;
+    // a guest's session holds no document (and the route needs an organization)
+    if (id === "new" || guest) return;
     let alive = true;
     getDocumentWorkspace(id)
       .then((v) => {
@@ -1270,7 +1279,7 @@ function ChatBody({ id }: { id: string }) {
     return () => {
       alive = false;
     };
-  }, [id, noteSessionDocument]);
+  }, [id, noteSessionDocument, guest]);
   useEffect(() => {
     if (docFileName && ctx.hydrated && ctx.settings.selectedAgentId !== BUILTIN_DOCUMENT_ASSISTANT_ID) {
       if (ctx.isMobile) ctx.hydrateSessionState({ agent_id: BUILTIN_DOCUMENT_ASSISTANT_ID, agent_enabled: true });
@@ -2835,11 +2844,19 @@ function ChatBody({ id }: { id: string }) {
   );
   const runChoicePick = useCallback(
     async (option: ChoiceOption) => {
-      if (option.handoff) return runHandoff(option);
+      if (option.handoff) {
+        // a hand-off opens a Word file with the document assistant, which
+        // needs an organization
+        if (guest) {
+          toast.info(tr("chat.err.tenantRequired"));
+          return;
+        }
+        return runHandoff(option);
+      }
       const blank = { attachments: [], imageFiles: [], mentionedItems: [], modelId: "" };
       void sendRef.current({ query: option.resend, ...blank });
     },
-    [runHandoff],
+    [runHandoff, guest, toast, tr],
   );
   // "Không phải?": the question goes again and the gate asks about the
   // words it had read on its own
@@ -3055,7 +3072,7 @@ function ChatBody({ id }: { id: string }) {
               <UserMessageBubble
                 message={m}
                 onEdit={handleEditQuestion}
-                onFork={id !== "new" ? handleFork : undefined}
+                onFork={id !== "new" && !guest ? handleFork : undefined}
                 onRejectReading={index === lastUserIndex ? rejectReading : undefined}
                 compact={compact}
               />
@@ -3086,6 +3103,7 @@ function ChatBody({ id }: { id: string }) {
                   onIllustrationInsert={insertIllustration}
                   onIllustrationInserted={markIllustrationInserted}
                   compact={compact}
+                  guest={guest}
                 />
                 {m.contextCompacted && (
                   <ContextCompactedDivider summary={m.contextCompacted.summary} degraded={m.contextCompacted.degraded} />
@@ -3281,7 +3299,9 @@ function ChatBody({ id }: { id: string }) {
             }
           />}
           </div>
-          {!compact && (
+          {guest ? (
+            <GuestChatNote className="mt-3" />
+          ) : !compact && (
             <p className="caption mt-3 text-center text-muted-soft">
               Answers are grounded in your knowledge bases — verify important details.
             </p>

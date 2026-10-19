@@ -22,6 +22,7 @@ import { questionOriginFromSuggestion } from "@/lib/question-origin";
 import { useT } from "@/lib/i18n";
 import { SplitPane } from "@/components/doc-workspace/split-pane";
 import { DocWorkspace } from "@/components/doc-workspace/doc-workspace";
+import { GuestChatNote } from "@/components/chat/guest-chat-note";
 
 const FALLBACK_SUGGESTIONS = [
   "Summarize the latest release notes",
@@ -179,7 +180,8 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
       setSuggested([]);
     }
   };
-  if (suggested === null && typeof window !== "undefined") void loadSuggested();
+  // a guest gets no suggestions: the route needs an organization
+  if (suggested === null && typeof window !== "undefined" && !ctx.isGuest) void loadSuggested();
 
   const isDocumentAssistant = ctx.settings.selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID;
 
@@ -193,7 +195,10 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
 
       <div className="relative my-auto w-full max-w-[768px] shrink-0 py-6 sm:py-10">
         <h1 className="display-xl mb-3 text-center">{t("cc.title")}</h1>
-        <p className="mb-10 text-center text-muted">{t("cc.subtitle")}</p>
+        <p className={`${ctx.isGuest ? "mb-3" : "mb-10"} text-center text-muted`}>
+          {t(ctx.isGuest ? "guest.ccSubtitle" : "cc.subtitle")}
+        </p>
+        {ctx.isGuest && <GuestChatNote className="mx-auto mb-8 max-w-[560px]" />}
         {isDocumentAssistant && (
           <p className="body-sm -mt-6 mb-6 text-center text-muted">{t("docws.createChatHint")}</p>
         )}
@@ -239,7 +244,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
         {error && <p className="body-sm mt-4 text-center text-error">{error}</p>}
 
         {/* Generic suggestions do not apply to the document assistant. */}
-        {!isDocumentAssistant && (
+        {!isDocumentAssistant && !ctx.isGuest && (
         <div className="mt-6 flex flex-wrap justify-center gap-2.5">
           {suggested?.length
             ? suggested.map((item) => (

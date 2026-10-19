@@ -62,14 +62,33 @@ function isTenantHeaderRejection(message: string | null): boolean {
  * not sign the user out. */
 export const TENANT_MEMBERSHIP_REQUIRED = "TENANT_MEMBERSHIP_REQUIRED";
 
+/* The same middleware answers 409 {error, code: "TENANT_REQUIRED"} when the
+ * account has no organization at all (a Guest) and the route needs one.
+ * Also a tenant problem, never invalid auth. */
+export const TENANT_REQUIRED = "TENANT_REQUIRED";
+
+/* String code of a tenant rejection: the flat middleware body
+ * {error: "…", code: "…"} or, should a handler wrap it, the nested
+ * {error: {code: "…"}} envelope. Number codes are not tenant codes. */
+export function tenantErrorCode(payload: unknown): string | null {
+  if (!payload || typeof payload !== "object") return null;
+  const record = payload as { code?: unknown; error?: unknown };
+  if (typeof record.code === "string" && record.code) return record.code;
+  if (record.error && typeof record.error === "object") {
+    const nested = (record.error as { code?: unknown }).code;
+    if (typeof nested === "string" && nested) return nested;
+  }
+  return null;
+}
+
 export function isTenantMembershipRequired(error: unknown): boolean {
   if (!(error instanceof ApiError) || error.status !== 403) return false;
-  const payload = error.payload;
-  return (
-    !!payload &&
-    typeof payload === "object" &&
-    (payload as { code?: unknown }).code === TENANT_MEMBERSHIP_REQUIRED
-  );
+  return tenantErrorCode(error.payload) === TENANT_MEMBERSHIP_REQUIRED;
+}
+
+export function isTenantRequired(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 409) return false;
+  return tenantErrorCode(error.payload) === TENANT_REQUIRED;
 }
 
 /* /auth/me served tenantless to a non-SuperAdmin (tenant_required) means
@@ -89,7 +108,7 @@ export function isStaleTenantGuest(data: {
  * tokens) rather than clearing a valid session as invalid-auth. */
 function rejectionKind(error: unknown): "auth" | "tenant" | "transient" {
   if (!(error instanceof ApiError)) return "transient";
-  if (isTenantMembershipRequired(error)) return "tenant";
+  if (isTenantMembershipRequired(error) || isTenantRequired(error)) return "tenant";
   if (error.status === 401 || error.status === 403) return "auth";
   return isTenantHeaderRejection(tenantHeaderErrorMessage(error))
     ? "tenant"

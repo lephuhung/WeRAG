@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { apiPost } from "@/lib/api-client";
@@ -78,6 +79,13 @@ export default function WorkspaceOnboarding() {
             {busy ? t("onb.creating") : t("tnp.create")}
           </button>
         </form>
+        {/* without an organization the account is a Guest: it can still
+            chat with the public-lookup assistant */}
+        <p className="caption mt-5 text-center">
+          <Link href="/platform/creatChat" className="text-muted underline underline-offset-2 hover:text-ink">
+            {t("guest.onboardingSkip")}
+          </Link>
+        </p>
       </div>
     </div>
   );

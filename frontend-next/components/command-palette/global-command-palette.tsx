@@ -24,7 +24,7 @@ import {
 } from "@/lib/api/knowledge";
 import { searchMessages, type MessageSearchGroupItem } from "@/lib/api/chat";
 import { listAgents, type AgentRow } from "@/lib/api/agents";
-import { useAuth } from "@/lib/auth";
+import { useAuth, useTenantRole } from "@/lib/auth";
 import { canSeeSection } from "@/components/settings/nav-config";
 import { SYSTEM_TABS } from "@/components/system/system-nav";
 import { adminSectionHref } from "@/components/admin/admin-routes";
@@ -44,6 +44,8 @@ export function GlobalCommandPalette() {
   const router = useRouter();
   const { user, memberships, selectedTenantId, tenant } = useAuth();
   const isSystemAdmin = user?.is_system_admin === true;
+  // message search needs an organization; a guest's would only answer 409
+  const { isGuest } = useTenantRole();
   const currentRole =
     memberships.find(
       (m) => String(m.tenant_id) === String(selectedTenantId ?? tenant?.id ?? ""),
@@ -102,7 +104,7 @@ export function GlobalCommandPalette() {
       try {
         const [chunkRes, msgRes] = await Promise.allSettled([
           knowledgeSemanticSearch({ query: q }),
-          searchMessages({ query: q, mode: "hybrid", limit: 6 }),
+          isGuest ? Promise.resolve(null) : searchMessages({ query: q, mode: "hybrid", limit: 6 }),
         ]);
 
         if (chunkRes.status === "fulfilled" && chunkRes.value?.data) {
@@ -122,7 +124,7 @@ export function GlobalCommandPalette() {
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, isGuest]);
 
   // Build items list
   const q = query.trim().toLowerCase();
