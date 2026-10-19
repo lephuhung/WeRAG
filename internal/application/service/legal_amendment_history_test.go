@@ -3,6 +3,8 @@ package service
 import (
 	"testing"
 	"time"
+
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 )
 
 func TestMentionsDoc(t *testing.T) {
@@ -123,5 +125,50 @@ func TestLegalHistoryNamesByCitation(t *testing.T) {
 	}
 	if h.names("43/2019/QH14", "c-2") || h.names("43/2019/QH14", "") {
 		t.Fatal("an uncited chunk does not")
+	}
+}
+
+func TestAnswerUsesPhrase(t *testing.T) {
+	cases := []struct {
+		answer, phrase string
+		want           bool
+	}{
+		{"doanh thu năm từ 500 triệu đồng trở xuống", "500 triệu đồng", true},
+		{"doanh thu năm từ 500  Triệu đồng trở xuống", "500 triệu đồng", true},
+		{"doanh thu 1.500 triệu đồng", "500 triệu đồng", false},
+		{"ngưỡng 1 tỷ đồng", "01 tỷ đồng", true},
+		{"ngưỡng 11 tỷ đồng", "01 tỷ đồng", false},
+		{"Ủy ban nhân dân cấp huyện", "cấp huyện", true},
+		{"cấp huyện,", "cấp huyện,", true},
+		{"", "500 triệu đồng", false},
+		{"ab", "ab", false},
+	}
+	for _, c := range cases {
+		if got := answerUsesPhrase(c.answer, c.phrase); got != c.want {
+			t.Errorf("answerUsesPhrase(%q, %q) = %v", c.answer, c.phrase, got)
+		}
+	}
+}
+
+func TestPhraseLines(t *testing.T) {
+	h := &legalHistory{phrases: map[string]*phraseChange{}, now: time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)}
+	old := legalHistoryDoc{Number: "68/2026/NĐ-CP", Type: "Nghị định"}
+	amender := legalHistoryDoc{Number: "141/2026/NĐ-CP", Type: "Nghị định", EffFrom: "2026-01-01"}
+	for _, art := range []string{"3", "4", "3", "8", "9", "10"} {
+		h.addPhrase(old, amender, vietnamese_legal.AmendRef{Article: art, Phrase: true, From: "500 triệu đồng", To: "01 tỷ đồng"})
+	}
+	h.addPhrase(old, amender, vietnamese_legal.AmendRef{Article: "11", Khoan: "1", Phrase: true, From: "cấp huyện,"})
+	lines := h.phraseLines()
+	want := []string{
+		"Điều 3, Điều 4, Điều 8, Điều 9, … Nghị định 68/2026/NĐ-CP: cụm từ “500 triệu đồng” được thay bằng “01 tỷ đồng” bởi Nghị định 141/2026/NĐ-CP, có hiệu lực từ 01/01/2026.",
+		"khoản 1 Điều 11 Nghị định 68/2026/NĐ-CP: cụm từ “cấp huyện,” được bãi bỏ bởi Nghị định 141/2026/NĐ-CP, có hiệu lực từ 01/01/2026.",
+	}
+	if len(lines) != len(want) {
+		t.Fatalf("lines = %+v", lines)
+	}
+	for i := range want {
+		if lines[i].text != want[i] {
+			t.Errorf("line %d = %q\nwant %q", i, lines[i].text, want[i])
+		}
 	}
 }

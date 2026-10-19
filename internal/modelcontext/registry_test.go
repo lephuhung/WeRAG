@@ -754,3 +754,23 @@ func TestModelOutputRendersSnippetRowsWithoutContent(t *testing.T) {
 	require.Contains(t, out, "call read_document with the chunk id")
 	require.True(t, len(out) > 0 && out[len(out)-len("</retrieval>"):] == "</retrieval>")
 }
+
+// A legal row with in-place amendments applied carries model_content /
+// model_match: the model reads those, the stored content is not shown.
+func TestModelOutputPrefersModelContent(t *testing.T) {
+	registry := NewRegistry(true)
+	row := map[string]interface{}{
+		"chunk_id": "chunk-1", "knowledge_id": "doc-1", "knowledge_base_id": "kb-1",
+		"knowledge_title": "Doc", "content": "trên 500 triệu đồng", "match_snippet": "500 triệu đồng",
+		"model_content": "trên 01 tỷ đồng [thay cho “500 triệu đồng”]", "model_match": "01 tỷ đồng [thay",
+	}
+	out := registry.ModelToolResultForTool("search_knowledge", &types.ToolResult{
+		Success: true, Data: map[string]any{
+			"display_type": "search_results", "mode": "hybrid",
+			"results": []map[string]interface{}{row},
+		},
+	})
+	require.Contains(t, out, "<content>trên 01 tỷ đồng [thay cho “500 triệu đồng”]</content>")
+	require.Contains(t, out, "<match>01 tỷ đồng [thay</match>")
+	require.NotContains(t, out, "<content>trên 500 triệu đồng</content>")
+}

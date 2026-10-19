@@ -1235,7 +1235,8 @@ func (s *agentService) registerTools(
 				config.SearchTargets,
 				rerankModel,
 				s.cfg,
-			).WithAbbreviationService(s.abbreviationService).WithLegalCatalog(s.legalCatalog)
+			).WithAbbreviationService(s.abbreviationService).WithLegalCatalog(s.legalCatalog).
+				WithCurrentWording(s.legalWordingFunc(searchTargetKBIDs(config.SearchTargets)))
 		case tools.ToolReadDocument:
 			toolToRegister = tools.NewReadDocumentTool(s.knowledgeService, s.chunkService, config.SearchTargets)
 		case tools.ToolListDocuments:

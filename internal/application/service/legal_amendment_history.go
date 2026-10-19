@@ -76,7 +76,7 @@ func LegalAmendmentHistory(
 	}
 	ctx, cancel := context.WithTimeout(ctx, legalHistoryTimeout)
 	defer cancel()
-	h := &legalHistory{amended: map[string]string{}, ctx: ctx, db: db.WithContext(ctx), kbIDs: kbIDs, answer: answer, now: now}
+	h := &legalHistory{amended: map[string]string{}, phrases: map[string]*phraseChange{}, ctx: ctx, db: db.WithContext(ctx), kbIDs: kbIDs, answer: answer, now: now}
 	chunks, err := h.loadChunks(chunkIDs)
 	if err != nil {
 		logger.Warnf(ctx, "[LegalHistory] load chunks: %v", err)
@@ -99,6 +99,14 @@ func LegalAmendmentHistory(
 		}
 		for _, l := range h.backward(c) {
 			add(l)
+		}
+	}
+	// phrase changes come first: one short line each, over all provisions
+	if pl := h.phraseLines(); len(pl) > 0 {
+		rest := lines
+		lines, seen = nil, map[string]bool{}
+		for _, l := range append(pl, rest...) {
+			add(&l)
 		}
 	}
 	// the amendments of a document no longer in force are not its current
@@ -132,11 +140,15 @@ func LegalAmendmentHistory(
 type legalHistory struct {
 	// amended caches amendedNumber by amending document and name.
 	amended map[string]string
-	ctx     context.Context
-	db      *gorm.DB
-	kbIDs   []string
-	answer  string
-	now     time.Time
+	// phrases collects the phrase amendments the answer relies on, by
+	// amended document, amender and phrase; phraseOrder keeps first sight.
+	phrases     map[string]*phraseChange
+	phraseOrder []string
+	ctx         context.Context
+	db          *gorm.DB
+	kbIDs       []string
+	answer      string
+	now         time.Time
 }
 
 type legalHistoryRow struct {
@@ -191,6 +203,13 @@ func parseLegalHistoryRows(rows []legalHistoryRow) []legalHistoryChunk {
 func (h *legalHistory) forward(c legalHistoryChunk, a vietnamese_legal.AmendRef) *legalHistoryLine {
 	old := h.amendedNumber(c.Doc, a.Document)
 	if old == "" || a.Article == "" || !(mentionsDoc(h.answer, old) || h.names(c.Doc.Number, c.ID)) {
+		return nil
+	}
+	if a.Phrase {
+		// the answer repeats the replaced (or the new) wording
+		if answerUsesPhrase(h.answer, a.From) || answerUsesPhrase(h.answer, a.To) {
+			h.addPhrase(legalHistoryDoc{Number: old}, c.Doc, a)
+		}
 		return nil
 	}
 	prov := vietnamese_legal.AmendRef{Article: a.Article, Khoan: a.Khoan, Diem: a.Diem}.String()
@@ -249,6 +268,15 @@ func (h *legalHistory) backward(c legalHistoryChunk) []*legalHistoryLine {
 			if a.Khoan != "" && len(khoans) > 0 && !khoans[a.Khoan] {
 				continue
 			}
+			if a.Phrase {
+				// the retrieved text still holds the replaced words and the
+				// answer relies on them
+				if a.From != "" && strings.Contains(foldSpaces(c.Content), foldSpaces(a.From)) &&
+					(answerUsesPhrase(h.answer, a.From) || answerUsesProvision(h.answer, a.Article, a.Khoan, provisionText(c.Content, a.Khoan))) {
+					h.addPhrase(c.Doc, ac.Doc, a)
+				}
+				continue
+			}
 			if !answerUsesProvision(h.answer, a.Article, a.Khoan, provisionText(c.Content, a.Khoan)) {
 				continue
 			}
@@ -274,6 +302,122 @@ func (h *legalHistory) backward(c legalHistoryChunk) []*legalHistoryLine {
 		lines = append(lines, &legalHistoryLine{key: c.Doc.Number + "|" + prov, text: text})
 	}
 	return lines
+}
+
+// phraseChange is one phrase amendment over the provisions it touches:
+// "cụm từ “500 triệu đồng” được thay bằng “01 tỷ đồng”".
+type phraseChange struct {
+	old, amender legalHistoryDoc
+	from, to     string
+	provs        []string
+}
+
+// legalPhraseProvs caps the provisions named on one phrase line.
+const legalPhraseProvs = 4
+
+func (h *legalHistory) addPhrase(old, amender legalHistoryDoc, a vietnamese_legal.AmendRef) {
+	key := old.Number + "|" + amender.Number + "|" + a.From + "|" + a.To
+	p := h.phrases[key]
+	if p == nil {
+		p = &phraseChange{old: old, amender: amender, from: a.From, to: a.To}
+		h.phrases[key] = p
+		h.phraseOrder = append(h.phraseOrder, key)
+	}
+	if old.Type != "" && p.old.Type == "" {
+		p.old = old
+	}
+	prov := vietnamese_legal.AmendRef{Article: a.Article, Khoan: a.Khoan}.String()
+	for _, have := range p.provs {
+		if have == prov {
+			return
+		}
+	}
+	p.provs = append(p.provs, prov)
+}
+
+// phraseLines renders the collected phrase changes, one line each.
+func (h *legalHistory) phraseLines() []legalHistoryLine {
+	var out []legalHistoryLine
+	for _, key := range h.phraseOrder {
+		p := h.phrases[key]
+		if p.old.Type == "" {
+			if d, ok := h.documentByNumber(p.old.Number); ok {
+				p.old = d
+			}
+		}
+		provs := p.provs
+		more := ""
+		if len(provs) > legalPhraseProvs {
+			provs, more = provs[:legalPhraseProvs], ", …"
+		}
+		change := "được thay bằng “" + p.to + "”"
+		if p.to == "" {
+			change = "được bãi bỏ"
+		}
+		text := fmt.Sprintf("%s%s %s: cụm từ “%s” %s bởi %s%s.",
+			strings.Join(provs, ", "), more, p.old.label(), p.from, change, p.amender.label(), h.dateText(p.amender))
+		out = append(out, legalHistoryLine{key: p.old.Number + "|phrase|" + key, text: text})
+	}
+	return out
+}
+
+// documentByNumber reads a searched document's identity by số hiệu.
+func (h *legalHistory) documentByNumber(number string) (legalHistoryDoc, bool) {
+	var rows []legalHistoryRow
+	if err := h.db.Raw(legalHistorySelect+` AND k.metadata->>'doc_number' = ? AND c.metadata->'legal' IS NOT NULL LIMIT 1`,
+		h.kbIDs, number).Scan(&rows).Error; err != nil || len(rows) == 0 {
+		return legalHistoryDoc{}, false
+	}
+	cs := parseLegalHistoryRows(rows)
+	if len(cs) == 0 {
+		return legalHistoryDoc{}, false
+	}
+	return cs[0].Doc, true
+}
+
+// answerUsesPhrase reports whether the answer repeats phrase ("01 tỷ đồng"
+// also as "1 tỷ đồng"), ignoring case and spacing.
+func answerUsesPhrase(answer, phrase string) bool {
+	phrase = foldSpaces(phrase)
+	if utf8.RuneCountInString(phrase) < 3 {
+		return false
+	}
+	a := foldSpaces(answer)
+	return containsWord(a, phrase) || containsWord(a, strings.TrimLeft(phrase, "0"))
+}
+
+// containsWord reports whether s holds sub not glued to a longer word or
+// number ("500 triệu" is not in "1.500 triệu").
+func containsWord(s, sub string) bool {
+	if sub == "" {
+		return false
+	}
+	alnum := func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
+	for i := 0; ; {
+		j := strings.Index(s[i:], sub)
+		if j < 0 {
+			return false
+		}
+		j += i
+		before, n := utf8.DecodeLastRuneInString(s[:j])
+		glued := j > 0 && alnum(before)
+		if !glued && (before == '.' || before == ',') {
+			prev, _ := utf8.DecodeLastRuneInString(s[:j-n])
+			glued = unicode.IsDigit(prev)
+		}
+		if after, _ := utf8.DecodeRuneInString(s[j+len(sub):]); j+len(sub) < len(s) && alnum(after) {
+			glued = true
+		}
+		if !glued {
+			return true
+		}
+		i = j + len(sub)
+	}
+}
+
+// foldSpaces lower-cases s and collapses its whitespace.
+func foldSpaces(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), " "))
 }
 
 // provisionChunk finds, in the searched KBs, the chunk holding Điều article

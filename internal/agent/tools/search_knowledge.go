@@ -131,6 +131,8 @@ type SearchKnowledgeTool struct {
 	patternFilter       *regexp.Regexp
 	abbreviationService interfaces.AbbreviationService
 	legalCatalog        interfaces.LegalCatalogService
+	// currentWording returns legal chunks with in-place amendments applied.
+	currentWording func(ctx context.Context, chunkIDs []string) map[string]string
 	// fullContentTop is how many top-ranked results carry their full text;
 	// 0 means defaultSearchFullContentTop.
 	fullContentTop int
@@ -405,6 +407,7 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 	}
 
 	result := t.formatOutput(ctx, final, kbIDs, query, mode)
+	t.applyCurrentWording(ctx, result.Data)
 	annotateModeFallback(result.Data, mode, kbModes)
 	if rerankRejected > 0 {
 		result.Data["rerank_rejected"] = rerankRejected
