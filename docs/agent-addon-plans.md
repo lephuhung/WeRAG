@@ -2,7 +2,7 @@
 
 - Ngày: 2026-10-19.
 - Nhánh: `feat/agent-addons` (worktree `/home/WeRAG-wt/agent-addons`), tách từ `feat/document-assistant` tại `38e230f7`.
-- Trạng thái: bản thiết kế chờ người dùng chốt các câu hỏi ở mục 7; chưa sửa code.
+- Trạng thái: người dùng đã chốt mục 7 (19/10/2026, trừ 7.4 đang dùng đề xuất); bắt đầu giai đoạn A.
 - Liên quan: `docs/domain-pack-standard.md` (bộ kỹ năng), `docs/billing-payment-webhook.md`, mục "Tổ chức áp dụng" trong `docs/tenant-kb-permissions-implementation-plan.md` §8.
 
 ## 1. Vì sao đổi
@@ -57,8 +57,8 @@ Mỗi agent tuỳ chỉnh có đúng một **cách phân phối** (trường m�
 **Tổ chức (Tenant Admin) — trang "Mua gói"**
 1. Chọn gói dịch vụ (Go/Plus…), số tháng, số ghế (gói ghế).
 2. Thấy "Đã gồm: <2 agent cơ bản>" và danh sách **Agent chuyên ngành** (tên, mô tả, giá/tháng) để tick thêm.
-3. Báo giá = giá gói + Σ giá agent × số tháng (− khuyến mãi). Đặt hàng → chuyển khoản → SuperAdmin/webhook xác nhận → thuê bao + quyền dùng agent được kích hoạt.
-4. Mua thêm agent giữa kỳ: báo giá theo số ngày còn lại của thuê bao (cùng chính sách tính theo ngày đã dùng cho ghế), hết hạn cùng thuê bao.
+3. Báo giá = giá gói + Σ giá agent × số tháng (× số ghế với gói ghế) (− khuyến mãi). Đặt hàng → chuyển khoản → SuperAdmin/webhook xác nhận → thuê bao + quyền dùng agent được kích hoạt.
+4. Mua thêm agent giữa kỳ: báo giá theo 7.3 (tháng còn lại tính đủ; tháng lẻ ≤ 15 ngày tính 1/2, > 15 ngày tính đủ), × số ghế nếu gói ghế; hết hạn cùng thuê bao.
 5. Trang "Gói sử dụng" của Tổ chức liệt kê agent đang có và ngày hết hạn.
 
 **Thành viên**
@@ -78,17 +78,17 @@ thấy(agent, caller) =
                            (tenant của caller, hoặc thuê bao cá nhân của caller) chứa agent
 ```
 
-- Khi `usage.enforce` tắt (dev, trước khi bật thu phí): agent `addon` vẫn chỉ hiện khi đã mua — quyền dùng tính theo dữ liệu thuê bao, không theo công tắc kiểm hạn mức (câu hỏi 7.4).
+- Khi `usage.enforce` tắt (dev, trước khi bật thu phí): agent `addon` vẫn chỉ hiện khi đã mua — quyền dùng tính theo dữ liệu thuê bao, không theo công tắc kiểm hạn mức (7.4).
 - IM, embed, MCP, API key: cùng điều kiện qua tenant của kênh (đã có khung kiểm từ "Tổ chức áp dụng").
 
-## 7. Câu hỏi cần người dùng chốt
+## 7. Quyết định (19/10/2026)
 
-1. **Hai agent cơ bản** là: *Trợ lý văn bản* (`builtin-document-assistant`) và *Hỏi đáp pháp luật* (`builtin-smart-reasoning`)? Các built-in khác (wiki, phân tích dữ liệu, trả lời nhanh) đang tắt — giữ tắt.
-2. **Giá agent chuyên ngành** tính theo Tổ chức/tháng, không nhân số ghế (gói Go là gói ghế)? Hay theo ghế/tháng?
-3. **Mua thêm giữa kỳ** tính theo ngày còn lại của thuê bao và hết hạn cùng thuê bao?
-4. **Khi chưa bật kiểm hạn mức** (`usage.enforce` tắt): agent chuyên ngành vẫn chỉ hiện cho Tổ chức đã mua (đề xuất) hay hiện cho tất cả?
-5. **Gói cá nhân** (thuê bao theo người dùng, như `system-admin`): có bán kèm agent chuyên ngành không, hay chỉ gói Tổ chức?
-6. Tên hiển thị **"Bộ kỹ năng chuyên môn"** cho domain pack — dùng tên này?
+1. **Hai agent cơ bản**: *Trợ lý văn bản* (`builtin-document-assistant`) và *Hỏi đáp pháp luật* (`builtin-smart-reasoning`). Các built-in khác giữ tắt.
+2. **Giá agent chuyên ngành nhân số ghế** với gói ghế (Go): giá/tháng × số ghế; gói pool: giá/tháng cho cả Tổ chức.
+3. **Mua thêm giữa kỳ — chỉ 2 mốc**: mỗi tháng còn lại tính đủ giá; phần tháng lẻ còn lại ≤ 15 ngày tính **1/2**, > 15 ngày tính **đủ**. Hết hạn cùng thuê bao.
+4. **Khi chưa bật kiểm hạn mức** (`usage.enforce` tắt): agent chuyên ngành vẫn **chỉ hiện cho Tổ chức/người đã mua** (đề xuất, chờ người dùng xác nhận; một chỗ để đổi).
+5. **Gói cá nhân cũng mua kèm được** agent chuyên ngành (quyền dùng gắn vào thuê bao cá nhân).
+6. Tên hiển thị **"Bộ kỹ năng chuyên môn"** (ngắn: "Bộ kỹ năng") cho domain pack.
 
 ## 8. Giai đoạn
 
