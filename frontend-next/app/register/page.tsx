@@ -5,7 +5,8 @@ import { Suspense, useEffect, useState } from "react";
 import { apiGet, apiPost, getTokens } from "@/lib/api-client";
 import { getAuthConfig, getInvitationByToken } from "@/lib/api/auth";
 import { acceptInvitationByToken } from "@/lib/api/tenants";
-import { Orb } from "@/components/orb";
+import Link from "next/link";
+import { AuthShell, authStyles as styles } from "@/components/auth/auth-shell";
 
 function RegisterForm() {
   const router = useRouter();
@@ -56,7 +57,7 @@ function RegisterForm() {
         token?: string;
         refresh_token?: string;
       }>(path, token ? { token, username, email, password } : { username, email, password });
-      if (!res.success || !res.token) throw new Error(res.message ?? "Register failed");
+      if (!res.success || !res.token) throw new Error(res.message ?? "Đăng ký không thành công");
       localStorage.setItem("weknora_token", res.token);
       if (res.refresh_token) localStorage.setItem("weknora_refresh_token", res.refresh_token);
       // Mirror persistLoginResponse: probe /auth/me, then onboard only when
@@ -73,7 +74,7 @@ function RegisterForm() {
           : "/onboarding/workspace",
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Register failed");
+      setError(err instanceof Error ? err.message : "Đăng ký không thành công");
     } finally {
       setBusy(false);
     }
@@ -84,83 +85,91 @@ function RegisterForm() {
     setError(null);
     try {
       const res = await acceptInvitationByToken(token);
-      if (!res.success) throw new Error(res.message ?? "Join failed");
+      if (!res.success) throw new Error(res.message ?? "Tham gia không thành công");
       router.push("/platform/knowledge-bases");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Join failed");
+      setError(err instanceof Error ? err.message : "Tham gia không thành công");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-canvas px-6">
-      <Orb color="peach" size={520} className="-top-40 right-[-100px]" />
-      <div className="relative w-full max-w-[400px]">
-        <div className="display-lg mb-2 text-center">
-          {token ? `Join ${tenantName ?? "organization"}` : "Create account"}
-        </div>
-        <p className="body-sm mb-10 text-center text-muted">
+    <AuthShell mode="register">
+        <p className={styles.kicker}>BẮT ĐẦU CÙNG WERAG</p>
+        <h2 className={styles.title}>{token ? "Tham gia tổ chức" : "Tạo tài khoản"}</h2>
+        <p className={styles.subtitle}>
           {token
             ? showJoinCard
-              ? "You were invited — join with your current account or create a new one."
-              : "You were invited — pick a username to join."
-            : "Self-serve registration."}
-          {inviteOnly && !token ? " This deployment is invite-only." : ""}
+              ? `Bạn được mời tham gia ${tenantName ?? "tổ chức"}. Tiếp tục với tài khoản hiện tại hoặc tạo tài khoản mới.`
+              : `Tạo tài khoản để tham gia ${tenantName ?? "tổ chức"}.`
+            : "Mở lối đến tri thức pháp luật. Bắt đầu không gian tra cứu và hỏi đáp của bạn."}
         </p>
+        {inviteOnly && !token ? (
+          <div role="status" className={styles.error}>Hệ thống chỉ cho phép đăng ký qua lời mời. Vui lòng liên hệ quản trị viên để nhận liên kết mời.
+            <div className={styles.links}><Link href="/login">Quay lại đăng nhập →</Link></div>
+          </div>
+        ) : (
+        <>
         {showJoinCard ? (
-          <div className="card p-6 sm:p-8">
-            {error && <p className="body-sm mb-4 text-error">{error}</p>}
+          <div className={styles.form}>
+            {error && <p role="alert" className={styles.error}>{error}</p>}
             <button
               type="button"
-              className="btn btn-primary w-full"
+              className={styles.primary}
               disabled={busy}
               onClick={() => void joinWithSession()}
             >
-              {busy ? "Joining…" : "Join organization"}
+              {busy ? "Đang tham gia…" : "Tham gia tổ chức →"}
             </button>
             <button
               type="button"
-              className="btn btn-outline mt-3 w-full"
+              className={styles.secondary}
               onClick={() => setUseNewAccount(true)}
             >
-              Create a new account instead
+              Tạo tài khoản mới
             </button>
           </div>
         ) : (
-        <form className="card p-6 sm:p-8" onSubmit={submit}>
+        <form className={styles.form} onSubmit={submit}>
           <label className="mb-4 block">
-            <span className="caption mb-1.5 block text-muted">Username</span>
-            <input className="input" required value={username} onChange={(e) => setUsername(e.target.value)} />
+            <span className="caption mb-1.5 block text-muted">Tên người dùng</span>
+            <input className="input" autoComplete="username" placeholder="Tên hiển thị của bạn" required value={username} onChange={(e) => setUsername(e.target.value)} />
           </label>
           <label className="mb-4 block">
             <span className="caption mb-1.5 block text-muted">Email</span>
             <input
               className="input"
               type="email"
+              autoComplete="email"
+              placeholder="ban@donvi.vn"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
           </label>
           <label className="mb-6 block">
-            <span className="caption mb-1.5 block text-muted">Password</span>
+            <span className="caption mb-1.5 block text-muted">Mật khẩu</span>
             <input
               className="input"
               type="password"
+              autoComplete="new-password"
+              placeholder="Tạo mật khẩu của bạn"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
           </label>
-          {error && <p className="body-sm mb-4 text-error">{error}</p>}
-          <button type="submit" className="btn btn-primary w-full" disabled={busy}>
-            {busy ? "Creating…" : token ? "Join organization" : "Register"}
+          {error && <p role="alert" className={styles.error}>{error}</p>}
+          <button type="submit" className={styles.primary} disabled={busy}>
+            {busy ? "Đang tạo tài khoản…" : token ? "Tạo tài khoản và tham gia →" : "Tạo tài khoản →"}
           </button>
         </form>
         )}
-      </div>
-    </div>
+        </>
+        )}
+        <p className={styles.note}>Tra cứu thông minh · Hỏi đáp tài liệu · Đối chiếu nguồn</p>
+    </AuthShell>
   );
 }
 

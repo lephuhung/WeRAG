@@ -3233,19 +3233,8 @@ function ChatBody({ id }: { id: string }) {
             documents={isDocumentAssistant ? documentMentionOptions : undefined}
             uploadsBecomeSources={isDocumentAssistant}
             onOpenAttachmentForEditing={isDocumentAssistant ? (a) => void openAttachmentForEditing(a) : undefined}
-            toolbarEnd={
-              <div className="flex shrink-0 items-center gap-1">
-                <ContextRing sessionId={id === "new" ? null : id} busy={busy} refreshKey={compactionCount} placement="above" usage={contextUsage} />
-                {isDocumentAssistant && spellingStatus && (
-                  <SpellingRing
-                    placement="above"
-                    status={spellingStatus}
-                    formatCheckLabel={formatCheck && !formatCheckInProgress(formatCheck) ? tr("docws.fcRecheck") : undefined}
-                    onGoTo={(m) => spellingActionsRef.current?.goTo(m) ?? Promise.resolve<GoToResult>("noAnswer")}
-                    onDismiss={(m) => spellingActionsRef.current?.dismiss(m) ?? Promise.resolve(false)}
-                    onFormatCheck={() => void startFormatCheck()}
-                  />
-                )}
+            toolbarStart={
+              <>
                 {isDocumentAssistant && !formatCheck && id !== "new" &&
                   (spellingStatus?.phase === "done" || spellingStatus?.phase === "failed") && (
                     <FormatCheckButton iconOnly busy={false} onClick={() => void startFormatCheck()} />
@@ -3262,6 +3251,21 @@ function ChatBody({ id }: { id: string }) {
                     onView={() => setFormatReportOpen(true)}
                     onRecheck={() => void startFormatCheck()}
                     onFix
+                  />
+                )}
+              </>
+            }
+            toolbarEnd={
+              <div className="flex shrink-0 items-center gap-1">
+                <ContextRing sessionId={id === "new" ? null : id} busy={busy} refreshKey={compactionCount} placement="above" usage={contextUsage} />
+                {isDocumentAssistant && spellingStatus && (
+                  <SpellingRing
+                    placement="above"
+                    status={spellingStatus}
+                    formatCheckLabel={formatCheck && !formatCheckInProgress(formatCheck) ? tr("docws.fcRecheck") : undefined}
+                    onGoTo={(m) => spellingActionsRef.current?.goTo(m) ?? Promise.resolve<GoToResult>("noAnswer")}
+                    onDismiss={(m) => spellingActionsRef.current?.dismiss(m) ?? Promise.resolve(false)}
+                    onFormatCheck={() => void startFormatCheck()}
                   />
                 )}
               </div>
@@ -3295,6 +3299,7 @@ function ChatBody({ id }: { id: string }) {
   // identity when the agent (hydrated after getSession) flips the editor on.
   return (
     <SplitPane
+      documentMode={isDocumentAssistant}
       left={
         isDocumentAssistant ? (
           <DocWorkspace

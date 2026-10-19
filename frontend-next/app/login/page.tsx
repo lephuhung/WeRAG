@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { Orb } from "@/components/orb";
-import { BrandLogo } from "@/components/brand-logo";
+import { AuthShell, authStyles as styles } from "@/components/auth/auth-shell";
 import { resolveSafeNextPath } from "@/lib/safe-next";
 
 function LoginForm() {
@@ -86,14 +85,14 @@ function LoginForm() {
       ) {
         // Correct password but a 6-digit authenticator code is required.
         setTotpRequired(true);
-        setError("Enter the 6-digit code from your authenticator app");
+        setError("Nhập mã 6 chữ số từ ứng dụng xác thực của bạn");
         return;
       }
       if (!res.ok || !token) {
         const msg =
           data && typeof data === "object" && "message" in data
-            ? String((data as { message?: unknown }).message ?? "Sign in failed")
-            : "Sign in failed";
+            ? String((data as { message?: unknown }).message ?? "Đăng nhập không thành công")
+            : "Đăng nhập không thành công";
         setError(msg);
         return;
       }
@@ -115,51 +114,45 @@ function LoginForm() {
       }
       router.push(resolveSafeNextPath(searchParams.get("next")));
     } catch {
-      setError("Network error — is the backend reachable?");
+      setError("Không thể kết nối đến hệ thống. Vui lòng thử lại.");
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-canvas px-6">
-      <Orb color="lavender" size={560} className="-left-40 top-[-180px]" />
-      <Orb color="mint" size={480} className="bottom-[-160px] right-[-120px]" />
-      <Orb color="peach" size={320} className="right-[20%] top-[-120px]" />
+    <AuthShell mode="login">
+        <p className={styles.kicker}>CHÀO MỪNG TRỞ LẠI</p>
+        <h2 className={styles.title}>Đăng nhập</h2>
+        <p className={styles.subtitle}>Tiếp tục khám phá tri thức pháp luật<br />trong tổ chức của bạn.</p>
 
-      <div className="relative w-full max-w-[400px]">
-        <div className="mb-6 flex justify-center">
-          <BrandLogo size={68} priority />
-        </div>
-        <p className="body-sm mb-8 text-center text-muted">Sign in to your organization's knowledge base</p>
-
-        <form className="card p-6 sm:p-8" onSubmit={submit}>
+        <form className={styles.form} onSubmit={submit}>
           <label className="mb-4 block">
             <span className="caption mb-1.5 block text-muted">Email</span>
             <input
-              className="input"
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@company.com"
+              placeholder="ban@donvi.vn"
+              autoComplete="email"
             />
           </label>
           <label className="mb-6 block">
-            <span className="caption mb-1.5 block text-muted">Password</span>
+            <span className="caption mb-1.5 block text-muted">Mật khẩu</span>
             <input
-              className="input"
               type="password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
+              placeholder="Nhập mật khẩu của bạn"
+              autoComplete="current-password"
             />
           </label>
           {totpRequired && (
-            <div className="mb-6">
-              <span className="caption mb-1.5 block text-muted">Authenticator code</span>
-              <div className="flex justify-between gap-2" onPaste={onTotpPaste}>
+            <div className={styles.totp}>
+              <span className="caption mb-1.5 block text-muted">Mã xác thực hai bước</span>
+              <div className={styles.totpRow} onPaste={onTotpPaste}>
                 {totpDigits.map((digit, i) => (
                   <input
                     key={i}
@@ -173,7 +166,7 @@ function LoginForm() {
                     maxLength={1}
                     autoFocus={i === 0}
                     required
-                    aria-label={`Digit ${i + 1}`}
+                    aria-label={`Chữ số ${i + 1}`}
                     value={digit}
                     onChange={(e) => setDigit(i, e.target.value)}
                     onKeyDown={(e) => onTotpKeyDown(i, e)}
@@ -182,25 +175,15 @@ function LoginForm() {
               </div>
             </div>
           )}
-          {error && <p className="body-sm mb-4 text-error">{error}</p>}
-          <button type="submit" className="btn btn-primary w-full" disabled={busy}>
-            {busy ? "Signing in…" : "Sign in"}
+          {error && <p role="alert" className={styles.error}>{error}</p>}
+          <button type="submit" className={styles.primary} disabled={busy}>
+            {busy ? "Đang đăng nhập…" : "Đăng nhập →"}
           </button>
-          <div className="caption mt-5 flex items-center justify-between text-muted">
-            <Link href="/register" className="hover:text-ink">
-              Register by invite
-            </Link>
-            <Link href="/onboarding/workspace" className="hover:text-ink">
-              SSO / OIDC
-            </Link>
-          </div>
         </form>
-
-        <p className="caption mt-8 text-center text-muted-soft">
-          Tra cứu tài liệu — retrieval-augmented knowledge platform
-        </p>
-      </div>
-    </div>
+        <div className={styles.divider}>HOẶC</div>
+        <Link href="/onboarding/workspace" className={styles.sso}>Đăng nhập qua tổ chức <span aria-hidden="true">↗</span></Link>
+        <p className={styles.note}>Truy cập tài liệu và trợ lý AI<br />trong tổ chức của bạn.</p>
+    </AuthShell>
   );
 }
 

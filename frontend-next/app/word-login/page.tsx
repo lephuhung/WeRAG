@@ -1,8 +1,9 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { Orb } from "@/components/orb";
+import styles from "./word-login.module.css";
 import { BrandLogo } from "@/components/brand-logo";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { I18nProvider, useT } from "@/lib/i18n";
@@ -82,16 +83,12 @@ function WordLoginApproval() {
   const name = auth.user?.username || auth.user?.email || "";
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-canvas px-4">
-      <Orb color="lavender" size={560} className="-left-40 top-[-180px]" />
-      <Orb color="mint" size={480} className="bottom-[-160px] right-[-120px]" />
-
-      <div className="relative w-full max-w-[420px]">
-        <div className="mb-6 flex justify-center">
-          <BrandLogo size={60} priority />
-        </div>
-        <div className="card p-6 sm:p-8">
-          <h1 className="title-sm mb-4">{t("wordLogin.title")}</h1>
+    <main className={styles.page}>
+      <div className={styles.panel}>
+        <div className={styles.card}>
+          <div className={styles.logo}><BrandLogo size={56} priority /></div>
+          <p className={styles.eyebrow}>WERAG · MICROSOFT WORD</p>
+          <h1 className={styles.title}>{t("wordLogin.title")}</h1>
 
           {phase === "loading" && <p className="body-sm animate-pulse text-muted">{t("workspace.loading")}</p>}
 
@@ -136,7 +133,7 @@ function WordLoginApproval() {
                   {t("wordLogin.deny")}
                 </button>
               </div>
-              <button className="caption self-start text-muted underline" onClick={() => void switchAccount()}>
+              <button className="caption self-center text-muted underline" onClick={() => void switchAccount()}>
                 {t("wordLogin.switchAccount")}
               </button>
             </div>
@@ -148,7 +145,7 @@ function WordLoginApproval() {
             <div className="flex flex-col gap-3">
               <p className="body-sm text-error">{t("wordLogin.expired")}</p>
               <button
-                className="btn btn-outline self-start"
+                className="btn btn-outline self-center"
                 onClick={() => {
                   setTyped("");
                   setCode("");
@@ -158,9 +155,12 @@ function WordLoginApproval() {
               </button>
             </div>
           )}
+          <div className={styles.navigation}>
+            <Link href="/" className={styles.home}><span aria-hidden="true">←</span> Về trang chủ</Link>
+          </div>
         </div>
       </div>
-    </div>
+    </main>
   );
 }
 
