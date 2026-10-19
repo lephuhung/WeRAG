@@ -15609,6 +15609,143 @@ const docTemplate = `{
                 }
             }
         },
+        "/system/admin/usage/agent-addons": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Rows with the agent name, whether the agent is still an addon agent and how many current subscriptions hold it; also the basic agents every plan includes.",
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Catalogue of specialist agents sold with service plans",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "include deactivated rows (default true)",
+                        "name": "include_inactive",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Put a specialist (addon) agent in the catalogue",
+                "parameters": [
+                    {
+                        "description": "catalogue row (plan_ids [] = every plan)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsageAgentAddon"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/usage/agent-addons/{agent_id}": {
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Update a catalogue row",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "agent id",
+                        "name": "agent_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "catalogue row",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsageAgentAddon"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Take an agent out of the catalogue (bought rights stay until they end)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "agent id",
+                        "name": "agent_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/system/admin/usage/orders": {
             "get": {
                 "security": [
@@ -21120,6 +21257,16 @@ const docTemplate = `{
         "github_com_Tencent_WeKnora_internal_types.DomainPackAgent": {
             "type": "object",
             "properties": {
+                "addon_active": {
+                    "type": "boolean"
+                },
+                "addon_holders": {
+                    "type": "integer"
+                },
+                "addon_price_vnd": {
+                    "description": "AddonPriceVND and AddonActive are the agent's row in the add-on\ncatalogue (usage_agent_addons); nil = not in the catalogue.\nAddonHolders counts the current subscriptions holding the add-on.",
+                    "type": "integer"
+                },
                 "applies_to": {
                     "type": "array",
                     "items": {
@@ -25126,6 +25273,50 @@ const docTemplate = `{
                 "success": {
                     "description": "Whether the tool executed successfully",
                     "type": "boolean"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.UsageAgentAddon": {
+            "type": "object",
+            "properties": {
+                "agent_available": {
+                    "type": "boolean"
+                },
+                "agent_id": {
+                    "type": "string"
+                },
+                "agent_name": {
+                    "description": "Filled by listings, not stored: the agent's name, whether it is still\na live addon agent (deleted or converted agents are never sold), and\nhow many current subscriptions hold it.",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "holders": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "plan_ids": {
+                    "description": "PlanIDs are the plans it is sold with; [] = every plan.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "price_vnd": {
+                    "description": "PriceVND per month: for a seat-mode plan per seat per month.",
+                    "type": "integer"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },
