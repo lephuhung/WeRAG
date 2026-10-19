@@ -134,6 +134,9 @@ type agentService struct {
 	// domainPacks are the packs shipped in this build (SetDomainPacks);
 	// nil offers none.
 	domainPacks *domainpacks.Registry
+	// legalNumbers is where the answer number check looks numbers up
+	// (SetLegalNumberLookup); nil leaves the check off.
+	legalNumbers interfaces.LegalCatalogRepository
 }
 
 // NewAgentService creates a new agent service
@@ -292,6 +295,7 @@ func (s *agentService) CreateAgentEngine(
 		engine.SetLegalHistory(fn)
 	}
 	s.setDomainFooter(ctx, engine, config, toolRegistry)
+	s.setNumberCheck(engine, config)
 	if s.documentWorkspaces != nil && s.documentWorkspaces.DocumentsEnabled() {
 		docs := s.documentWorkspaces
 		engine.SetSourceEditNote(func(ctx context.Context, query string) string {

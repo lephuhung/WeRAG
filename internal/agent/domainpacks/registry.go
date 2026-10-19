@@ -21,6 +21,7 @@ type Pack struct {
 	files     map[string]string
 	catalogue *Catalogue
 	formulas  *Formulas
+	scope     *Scope
 	raw       string // SKILL.md as written
 	// citedIn maps a number key cited in SKILL.md, references or assets to
 	// the files citing it; citedWritten keeps the number as first written.

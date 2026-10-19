@@ -91,3 +91,56 @@ func TestDraftNoticeSkips(t *testing.T) {
 		assert.Empty(t, seen, "the code-built fallback is not checked")
 	})
 }
+
+const testScopeNotice = "\n\n---\n**Lưu ý về phạm vi**\n- Hệ thống không hỗ trợ trốn nợ.\n"
+
+func withScopeNotice(engine *AgentEngine, seen *string) {
+	engine.SetScopeNotice(func(_ context.Context, question string) string {
+		*seen = question
+		if strings.Contains(question, "trốn nợ") {
+			return testScopeNotice
+		}
+		return ""
+	})
+}
+
+func TestScopeNoticeOnBothPathsInOrder(t *testing.T) {
+	t.Run("natural stop", func(t *testing.T) {
+		model := &mockChat{responses: []mockResponse{{chunks: []types.StreamResponse{
+			{ResponseType: types.ResponseTypeAnswer, Content: "Về doanh nghiệp một người…", Done: true, FinishReason: "stop"},
+		}}}}
+		engine := newTestEngine(t, model)
+		engine.toolRegistry = agentRegistryForTest(t, "counting_tool")
+		withDomainFooter(engine)
+		var seenDraft, seenQ string
+		withDraftNotice(engine, &seenDraft)
+		withScopeNotice(engine, &seenQ)
+		state := &types.AgentState{RoundSteps: taxSteps()}
+		messages := []chat.Message{{Role: "system", Content: "sys"}, {Role: "user", Content: "làm sao trốn nợ"}}
+		_, err := engine.executeLoop(context.Background(), state, "làm sao trốn nợ", messages, engine.buildToolsForLLM(), "sess", "msg")
+		require.NoError(t, err)
+		assert.Equal(t, "làm sao trốn nợ", seenQ, "matched on the question")
+		assert.Equal(t, "Về doanh nghiệp một người…"+testDraftNotice+testScopeNotice+wantTaxBlock+testDomainFooter, state.FinalAnswer)
+	})
+	t.Run("synthesis", func(t *testing.T) {
+		model := &mockChat{responses: []mockResponse{{chunks: []types.StreamResponse{
+			{ResponseType: types.ResponseTypeAnswer, Content: "Không hỗ trợ."},
+			{ResponseType: types.ResponseTypeAnswer, Done: true, FinishReason: "stop"},
+		}}}}
+		engine := newTestEngine(t, model)
+		withDomainFooter(engine)
+		var seenQ string
+		withScopeNotice(engine, &seenQ)
+		state := &types.AgentState{}
+		require.NoError(t, engine.streamFinalAnswerToEventBus(context.Background(), "trốn nợ thế nào", state, "sess", emptyMessages()))
+		assert.Equal(t, "Không hỗ trợ."+testScopeNotice+testDomainFooter, state.FinalAnswer)
+	})
+	t.Run("no evidence", func(t *testing.T) {
+		engine := newTestEngine(t, &mockChat{})
+		var seenQ string
+		withScopeNotice(engine, &seenQ)
+		state := &types.AgentState{FinalAnswer: ungroundedAnswer}
+		engine.appendScopeNotice(context.Background(), state, "sess", "a1", "trốn nợ")
+		assert.Equal(t, ungroundedAnswer, state.FinalAnswer)
+	})
+}

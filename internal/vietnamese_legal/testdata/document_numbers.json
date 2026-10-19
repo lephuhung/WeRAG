@@ -1,0 +1,88 @@
+[
+ {
+  "input": "Nghị định 53/2022/NĐ-CP và Thông tư 01/2024/TT-BCA.",
+  "numbers": [
+   "53/2022/NĐ-CP",
+   "01/2024/TT-BCA"
+  ],
+  "keys": [
+   "53/2022/ND-CP",
+   "01/2024/TT-BCA"
+  ]
+ },
+ {
+  "input": "Công văn 01/GT và 41/VPQH không phải số hiệu đầy đủ.",
+  "numbers": [],
+  "keys": []
+ },
+ {
+  "input": "Ngày 15/11/2018 không phải số hiệu.",
+  "numbers": [],
+  "keys": []
+ },
+ {
+  "input": "Luật 59/2020/QH14, 59/2020/qh14 (trùng khoá).",
+  "numbers": [
+   "59/2020/QH14"
+  ],
+  "keys": [
+   "59/2020/QH14"
+  ]
+ },
+ {
+  "input": "Số 1153/2022/NĐ-CP không phải 53/2022/NĐ-CP; 12345/2022/NĐ-CP.",
+  "numbers": [
+   "1153/2022/NĐ-CP",
+   "53/2022/NĐ-CP"
+  ],
+  "keys": [
+   "1153/2022/ND-CP",
+   "53/2022/ND-CP"
+  ]
+ },
+ {
+  "input": "Gạch khác: 168/2025/NĐ–CP, 76/2025/QH15.",
+  "numbers": [
+   "168/2025/NĐ–CP",
+   "76/2025/QH15"
+  ],
+  "keys": [
+   "168/2025/ND-CP",
+   "76/2025/QH15"
+  ]
+ },
+ {
+  "input": "Quyết định 12/2024/QĐ-UBND tỉnh; nghị quyết 198/2025/QH15.",
+  "numbers": [
+   "12/2024/QĐ-UBND",
+   "198/2025/QH15"
+  ],
+  "keys": [
+   "12/2024/QD-UBND",
+   "198/2025/QH15"
+  ]
+ },
+ {
+  "input": "Văn bản 123/QĐ-UBND của tỉnh (không có năm).",
+  "numbers": [],
+  "keys": []
+ },
+ {
+  "input": "Thông tư 58/2026/TT-BTC (NFD).",
+  "numbers": [
+   "58/2026/TT-BTC"
+  ],
+  "keys": [
+   "58/2026/TT-BTC"
+  ]
+ },
+ {
+  "input": "x58/2026/TT-BTC/y và 58/2026/TT-BTC.",
+  "numbers": [
+   "58/2026/TT-BTC"
+  ],
+  "keys": [
+   "58/2026/TT-BTC"
+  ]
+ }
+]

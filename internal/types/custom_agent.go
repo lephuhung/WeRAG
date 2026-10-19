@@ -184,6 +184,11 @@ type CustomAgentConfig struct {
 	// answer footer. Independent of SkillsSelectionMode and of the sandbox
 	// (docs/domain-pack-standard.md §6).
 	DomainPacks []string `yaml:"domain_packs,omitempty" json:"domain_packs,omitempty"`
+	// VerifyDocumentNumbers removes every số hiệu of the answer that is in
+	// neither the legal catalogue nor this turn's evidence, before the user
+	// sees it (agent/answer_numbers.go). nil: on for an agent with domain
+	// packs, off for others; set it to turn the check on or off explicitly.
+	VerifyDocumentNumbers *bool `yaml:"verify_document_numbers,omitempty" json:"verify_document_numbers,omitempty"`
 
 	// ===== Sandbox Settings =====
 	// SandboxConfigID selects which organization sandbox config this agent's
@@ -749,4 +754,13 @@ func GetBuiltinAgent(id string, tenantID uint64) *CustomAgent {
 // answer without tools, reasoning reading but never changing it).
 func IsWordGeneralAgent(agentID string) bool {
 	return agentID == BuiltinQuickAnswerID || agentID == BuiltinSmartReasoningID
+}
+
+// DocumentNumberCheck reports whether the answer number check runs for this
+// agent: VerifyDocumentNumbers when set, else whether it has domain packs.
+func (c CustomAgentConfig) DocumentNumberCheck(hasPacks bool) bool {
+	if c.VerifyDocumentNumbers != nil {
+		return *c.VerifyDocumentNumbers
+	}
+	return hasPacks
 }

@@ -71,13 +71,20 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	answerID := generateEventID("answer")
 	logger.Debugf(ctx, "[Agent][FinalAnswer] AnswerID: %s", answerID)
 	ctx = withTurnButtons(ctx, state.RoundSteps)
-	emitChunk := func(content string) {
+	ctx = e.withNumberCheck(ctx, state, query, conversation)
+	emitBus := func(content string) {
 		e.eventBus.Emit(ctx, event.Event{
 			ID:        answerID,
 			Type:      event.EventAgentFinalAnswer,
 			SessionID: sessionID,
 			Data:      event.AgentFinalAnswerData{Content: content},
 		})
+	}
+	// the button guard emits through the number guard (answer_numbers.go)
+	emitChunk := emitBus
+	numbers := newNumberGuard(ctx, emitBus)
+	if numbers != nil {
+		emitChunk = numbers.Write
 	}
 	guard := newAnswerGuard(ctx, emitChunk)
 
@@ -113,10 +120,16 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 			if chunk.Done && guard != nil {
 				guard.Flush()
 			}
+			if chunk.Done && numbers != nil {
+				numbers.Flush()
+			}
 		},
 	)
 	if guard != nil {
 		guard.Flush()
+	}
+	if numbers != nil {
+		numbers.Flush()
 	}
 	if err != nil {
 		logger.Errorf(ctx, "[Agent][FinalAnswer] Final answer generation failed: %v", err)
@@ -128,7 +141,7 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	}
 
 	// Safety net: strip any residual <think> blocks that may have leaked through
-	state.FinalAnswer = cleanAnswerInContext(ctx, agenttools.StripThinkBlocks(llmResult.Content))
+	state.FinalAnswer = cleanAnswerNumbers(ctx, cleanAnswerInContext(ctx, agenttools.StripThinkBlocks(llmResult.Content)))
 	synthesized := strings.TrimSpace(state.FinalAnswer) != ""
 	if !synthesized {
 		// never end a turn on an empty answer: say what was gathered
@@ -143,6 +156,7 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	if synthesized {
 		// the code-built fallback names no draft of its own
 		e.appendDraftNotice(ctx, state, sessionID, answerID, modelText)
+		e.appendScopeNotice(ctx, state, sessionID, answerID, query)
 	}
 	// computed results reach the user even on the fallback answer, and
 	// then the pack's footer goes with them

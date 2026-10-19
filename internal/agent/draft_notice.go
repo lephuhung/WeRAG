@@ -43,3 +43,36 @@ func (e *AgentEngine) appendDraftNotice(ctx context.Context, state *types.AgentS
 	})
 	state.FinalAnswer += block
 }
+
+// ScopeNoticeFunc returns the scope notice for the user's question: the
+// pack exclusions (see a lawyer) and refusals it touches, "" when none
+// (domainpacks.Source.ScopeNotice). Matched on the question in code, never
+// left to the model.
+type ScopeNoticeFunc func(ctx context.Context, question string) string
+
+// SetScopeNotice installs the scope check.
+func (e *AgentEngine) SetScopeNotice(fn ScopeNoticeFunc) {
+	e.scopeNotice = fn
+}
+
+// appendScopeNotice streams the scope notice after the draft notice and
+// before the tool answer block and the footer. Code-written answers get
+// none.
+func (e *AgentEngine) appendScopeNotice(ctx context.Context, state *types.AgentState, sessionID, answerID, question string) {
+	if e.scopeNotice == nil || e.eventBus == nil || answerID == "" || state == nil ||
+		strings.TrimSpace(state.FinalAnswer) == "" || strings.HasPrefix(state.FinalAnswer, ungroundedAnswer) {
+		return
+	}
+	block := e.scopeNotice(ctx, question)
+	if block == "" {
+		return
+	}
+	logger.Infof(ctx, "[Agent] Appending scope notice (%d chars)", len(block))
+	_ = e.eventBus.Emit(ctx, event.Event{
+		ID:        answerID,
+		Type:      event.EventAgentFinalAnswer,
+		SessionID: sessionID,
+		Data:      event.AgentFinalAnswerData{Content: block},
+	})
+	state.FinalAnswer += block
+}

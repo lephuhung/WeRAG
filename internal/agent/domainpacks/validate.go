@@ -110,7 +110,7 @@ func validatePack(fsys fs.FS, name string) (*Pack, error) {
 
 	pack := &Pack{files: map[string]string{}}
 	seen := map[string]bool{}
-	var skillData, catalogueData, evalsData, formulasData []byte
+	var skillData, catalogueData, evalsData, formulasData, scopeData []byte
 
 	walkErr := fs.WalkDir(fsys, name, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -152,7 +152,8 @@ func validatePack(fsys fs.FS, name string) (*Pack, error) {
 			fail("%s: executable files are not allowed", rel)
 		}
 		switch {
-		case rel == skillFile, rel == catalogueFile, rel == attributionFile, rel == evalsFile, rel == formulasFile:
+		case rel == skillFile, rel == catalogueFile, rel == attributionFile, rel == evalsFile, rel == formulasFile,
+			rel == scopeFile:
 		case nested && (top == referencesDir || top == assetsDir) && strings.HasSuffix(rel, ".md"):
 		default:
 			fail("%s: file is not allowed in a pack", rel)
@@ -172,6 +173,8 @@ func validatePack(fsys fs.FS, name string) (*Pack, error) {
 			evalsData = data
 		case formulasFile:
 			formulasData = data
+		case scopeFile:
+			scopeData = data
 		case attributionFile:
 		default:
 			if len(data) > maxResourceBytes {
@@ -208,6 +211,11 @@ func validatePack(fsys fs.FS, name string) (*Pack, error) {
 			fail("%s: %v", catalogueFile, err)
 		}
 		pack.catalogue = catalogue
+	}
+	if scopeData != nil {
+		scope, serrs := parseScope(scopeData)
+		errs = append(errs, serrs...)
+		pack.scope = scope
 	}
 	if formulasData != nil {
 		formulas, ferrs := parseFormulas(formulasData, pack.Manifest, pack.catalogue)

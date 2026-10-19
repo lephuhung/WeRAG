@@ -20877,6 +20877,10 @@ const docTemplate = `{
                     "description": "Vector retrieval threshold",
                     "type": "number"
                 },
+                "verify_document_numbers": {
+                    "description": "VerifyDocumentNumbers removes every số hiệu of the answer that is in\nneither the legal catalogue nor this turn's evidence, before the user\nsees it (agent/answer_numbers.go). nil: on for an agent with domain\npacks, off for others; set it to turn the check on or off explicitly.",
+                    "type": "boolean"
+                },
                 "vlm_model_id": {
                     "description": "VLM model ID for image analysis (optional, falls back to organization-level VLM)",
                     "type": "string"

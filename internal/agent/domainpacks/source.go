@@ -128,7 +128,7 @@ func (s *Source) Footer(now time.Time, answer string) string {
 // or the footer, whichever comes first, and anything after it.
 func StripFooter(answer string) string {
 	cut := len(answer)
-	for _, marker := range []string{DraftNoticeMarker, types.ToolAnswerBlockMarker, FooterMarker} {
+	for _, marker := range []string{DraftNoticeMarker, ScopeNoticeMarker, types.ToolAnswerBlockMarker, FooterMarker} {
 		if i := strings.Index(answer, marker); i >= 0 && i < cut {
 			cut = i
 		}

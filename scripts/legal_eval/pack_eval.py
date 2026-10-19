@@ -37,11 +37,54 @@ PACKS_DIR = os.path.join(REPO, "domain-packs")
 
 # same number regex and normalisation as run_legal_eval.py (kept here so this
 # module imports without requests)
-NUM = re.compile(r"\b\d{1,4}/(?:\d{4}/)?[A-ZĐ][A-ZĐa-z0-9\-]*")
+# vietnamese_legal.documentNumberRe: a full số hiệu (number / year / code
+# with a letter); "01/GT", "41/VPQH" and dates are not. A match right after
+# "/" or a digit is part of a longer number and is skipped. Held to the Go
+# finder by internal/vietnamese_legal/testdata/document_numbers.json.
+_NUM_RE = re.compile(r"\d{1,4}/(?:19|20)\d\d/[0-9]*[A-Za-zĐđ][A-Za-zĐđ0-9]*(?:[-–—‐][A-Za-zĐđ0-9]+)*")
+
+
+def find_numbers(text: str) -> list:
+    """vietnamese_legal.FindDocumentNumbers: full số hiệu in order, each once
+    by catalogue key, on the NFC form of text."""
+    text = unicodedata.normalize("NFC", text or "")
+    seen, out = set(), []
+    for m in _NUM_RE.finditer(text):
+        prev = text[m.start() - 1] if m.start() > 0 else ""
+        if prev == "/" or "0" <= prev <= "9":
+            continue
+        key = norm(m.group(0))
+        if key not in seen:
+            seen.add(key)
+            out.append(m.group(0))
+    return out
+
+
+class _NumFinder:
+    """NUM.findall(text) kept for the call sites; it is find_numbers."""
+
+    @staticmethod
+    def findall(text):
+        return find_numbers(text)
+
+
+NUM = _NumFinder()
 
 
 def norm(s: str) -> str:
-    return (s or "").upper().replace("Đ", "D").replace(" ", "").strip()
+    """vietnamese_legal.CatalogNumberKey: NFC, no whitespace, Đ→D, dash
+    variants unified, upper case."""
+    out = []
+    for ch in unicodedata.normalize("NFC", s or ""):
+        if ch.isspace():
+            continue
+        if ch in "đĐ":
+            out.append("D")
+        elif ch in "–—‐−":
+            out.append("-")
+        else:
+            out.append(ch.upper())
+    return "".join(out)
 
 
 # domainpacks.FooterMarker: everything from here on is the code-appended footer
@@ -49,6 +92,10 @@ FOOTER_MARKER = "\n\n---\n**Lưu ý về cẩm nang chuyên môn**\n"
 # types.ToolAnswerBlockMarker: the code-appended "Kết quả tính" block
 # domainpacks.DraftNoticeMarker: the code-appended draft notice
 DRAFT_NOTICE_MARKER = "\n\n---\n**Lưu ý về dự thảo**\n"
+# agent.RemovedNumberNote: what replaces a số hiệu the system removed
+REMOVED_NUMBER_NOTE = "(số hiệu không có trong cơ sở dữ liệu nên đã lược bỏ)"
+# domainpacks.ScopeNoticeMarker: the code-appended exclusions / refusals notice
+SCOPE_NOTICE_MARKER = "\n\n---\n**Lưu ý về phạm vi**\n"
 ANSWER_BLOCK_MARKER = "\n\n---\n**Kết quả tính (do hệ thống tính — nếu phần trên khác, lấy khối này làm chuẩn)**\n"
 
 CATEGORIES = {"advice", "draft_trap", "tax", "refusal", "out_of_scope", "status"}
@@ -153,6 +200,47 @@ def load_cases(path: str) -> list:
     return cases
 
 
+def validate_checks(checks: dict, where: str, known_numbers: set, nested: bool = False) -> list:
+    """Problems with one checks object. any_of holds alternative checks
+    objects: the case passes it when one of them passes in full."""
+    errs = []
+    for key, val in checks.items():
+        if key == "any_of" and not nested:
+            if not isinstance(val, list) or len(val) < 2 or not all(isinstance(x, dict) and x for x in val):
+                errs.append(f"{where}: any_of must list at least two non-empty checks objects")
+                continue
+            for k, alt in enumerate(val):
+                errs.extend(validate_checks(alt, f"{where} any_of[{k}]", known_numbers, nested=True))
+            continue
+        want = CHECK_TYPES.get(key)
+        if want is None:
+            errs.append(f"{where}: unknown check {key!r}")
+            continue
+        if not isinstance(val, want):
+            errs.append(f"{where}: {key} must be {want.__name__}")
+            continue
+        if want is not list:
+            continue
+        if not val or not all(isinstance(x, str) and x for x in val):
+            errs.append(f"{where}: {key} must be a non-empty list of strings")
+            continue
+        if key in ("must_call_tool", "must_not_call_tool"):
+            bad = [x for x in val if x not in KNOWN_TOOLS]
+            if bad:
+                errs.append(f"{where}: {key}: unknown tools {bad}")
+        if key in ("must_match", "must_not_match"):
+            for rx in val:
+                try:
+                    re.compile(rx, re.I)
+                except re.error as e:
+                    errs.append(f"{where}: {key}: bad regex {rx!r}: {e}")
+        if key == "must_state_status":
+            bad = [x for x in val if norm(x) not in known_numbers]
+            if bad:
+                errs.append(f"{where}: must_state_status: not in catalogue.yaml {bad}")
+    return errs
+
+
 def validate_cases(cases: list, catalogue: list) -> list:
     """Problems with the case file; empty when it is usable."""
     errs = []
@@ -185,32 +273,7 @@ def validate_cases(cases: list, catalogue: list) -> list:
         if not isinstance(checks, dict) or not checks:
             errs.append(f"{where}: checks must be a non-empty object")
             continue
-        for key, val in checks.items():
-            want = CHECK_TYPES.get(key)
-            if want is None:
-                errs.append(f"{where}: unknown check {key!r}")
-                continue
-            if not isinstance(val, want):
-                errs.append(f"{where}: {key} must be {want.__name__}")
-                continue
-            if want is list:
-                if not val or not all(isinstance(x, str) and x for x in val):
-                    errs.append(f"{where}: {key} must be a non-empty list of strings")
-                    continue
-                if key in ("must_call_tool", "must_not_call_tool"):
-                    bad = [x for x in val if x not in KNOWN_TOOLS]
-                    if bad:
-                        errs.append(f"{where}: {key}: unknown tools {bad}")
-                if key in ("must_match", "must_not_match"):
-                    for rx in val:
-                        try:
-                            re.compile(rx, re.I)
-                        except re.error as e:
-                            errs.append(f"{where}: {key}: bad regex {rx!r}: {e}")
-                if key == "must_state_status":
-                    bad = [x for x in val if norm(x) not in known_numbers]
-                    if bad:
-                        errs.append(f"{where}: must_state_status: not in catalogue.yaml {bad}")
+        errs.extend(validate_checks(checks, where, known_numbers))
         if "must_call_tool" in checks and "must_not_call_tool" in checks:
             both = set(checks["must_call_tool"]) & set(checks["must_not_call_tool"])
             if both:
@@ -224,7 +287,7 @@ def body_of(answer: str) -> str:
     """The model's own text: the answer cut at the earliest code-appended
     block (the "Kết quả tính" block or the footer), like StripFooter."""
     cut = len(answer)
-    for marker in (DRAFT_NOTICE_MARKER, ANSWER_BLOCK_MARKER, FOOTER_MARKER):
+    for marker in (DRAFT_NOTICE_MARKER, SCOPE_NOTICE_MARKER, ANSWER_BLOCK_MARKER, FOOTER_MARKER):
         i = answer.find(marker)
         if 0 <= i < cut:
             cut = i
@@ -315,13 +378,24 @@ def _mentions(text: str, phrase: str) -> bool:
     return bool(phrase) and re.search(r"(?<!\w)" + re.escape(phrase) + r"(?!\w)", _nfc_lower(text)) is not None
 
 
+def scope_notice(answer: str) -> str:
+    """The text of the code-appended scope notice ("" when none)."""
+    i = answer.find(SCOPE_NOTICE_MARKER)
+    if i < 0:
+        return ""
+    rest = answer[i + len(SCOPE_NOTICE_MARKER):]
+    ends = [k for k in (rest.find(ANSWER_BLOCK_MARKER), rest.find(FOOTER_MARKER)) if k >= 0]
+    return rest[:min(ends)] if ends else rest
+
+
 def draft_notice_titles(answer: str) -> str:
     """The text of the code-appended draft notice ("" when none)."""
     i = answer.find(DRAFT_NOTICE_MARKER)
     if i < 0:
         return ""
     rest = answer[i + len(DRAFT_NOTICE_MARKER):]
-    ends = [k for k in (rest.find(ANSWER_BLOCK_MARKER), rest.find(FOOTER_MARKER)) if k >= 0]
+    ends = [k for k in (rest.find(SCOPE_NOTICE_MARKER), rest.find(ANSWER_BLOCK_MARKER), rest.find(FOOTER_MARKER))
+            if k >= 0]
     return rest[:min(ends)] if ends else rest
 
 
@@ -558,6 +632,13 @@ def grade(case: dict, answer: str, tools: list, catalogue: list, draft_titles: l
             res[key]["classes"] = outcome[3]
 
     for key, val in checks.items():
+        if key == "any_of":
+            alts = [grade({"checks": alt}, answer, tools, catalogue, draft_titles, with_pack, lookup) for alt in val]
+            passed = [k for k, g in enumerate(alts) if all(x["pass"] for x in g.values())]
+            why = "" if passed else "; ".join(
+                f"[{k}] " + ", ".join(f"{n}: {x['why']}" for n, x in g.items() if not x["pass"]) for k, g in enumerate(alts))
+            res[key] = {"pass": bool(passed), "why": why, "alternative": passed[0] if passed else None}
+            continue
         if key == "must_label_draft" and val:
             model_ok, why, _, visible_ok = check_label_draft(answer, draft_titles)
             # gating: what the user reads (the model's text or the code notice)
@@ -569,10 +650,14 @@ def grade(case: dict, answer: str, tools: list, catalogue: list, draft_titles: l
             put(key, check_not_call_tool(tools, val))
         elif key == "must_not_cite_numbers_outside_catalogue" and val:
             put(key, check_numbers(answer, tools, catalogue, lookup))
-        elif key == "expect_refusal" and val:
-            put(key, check_refusal(answer))
-        elif key == "expect_referral" and val:
-            put(key, check_referral(answer))
+        elif key in ("expect_refusal", "expect_referral") and val:
+            # gating: what the user reads — the model's text or the code
+            # scope notice ("Hệ thống không hỗ trợ …" / "hỏi luật sư …")
+            model_ok, why = (check_refusal if key == "expect_refusal" else check_referral)(answer)
+            notice = scope_notice(answer)
+            by_notice = bool(notice) and bool((REFUSAL_RE if key == "expect_refusal" else REFERRAL_RE).search(notice))
+            res[key] = {"pass": bool(model_ok or by_notice), "model_pass": bool(model_ok),
+                        "why": "" if (model_ok or by_notice) else why, "notice": by_notice}
         elif key == "must_ask_clarification" and val:
             put(key, check_clarification(answer))
         elif key == "must_match":
@@ -766,6 +851,19 @@ def summarize(cases: list, rows: dict, lookup_state: str = "") -> str:
         notices = sum(1 for x in model_runs if x.get("notice"))
         lines.append(f"[info] dự thảo được gắn nhãn trong lời của model (không chặn): {ok}/{len(model_runs)} "
                      f"({ok * 100 // len(model_runs)} %); lưu ý do hệ thống thêm ở {notices} lượt")
+    for key, label in (("expect_refusal", "từ chối"), ("expect_referral", "khuyên gặp luật sư")):
+        runs_ = [r["checks"][key] for c in cases for r in rows[c["id"]]["pack"]
+                 if not r.get("error") and key in (r.get("checks") or {})]
+        if runs_:
+            ok = sum(1 for x in runs_ if x.get("model_pass", x["pass"]))
+            by = sum(1 for x in runs_ if x.get("notice"))
+            lines.append(f"[info] {label} trong lời của model (không chặn): {ok}/{len(runs_)}; "
+                         f"lưu ý phạm vi do hệ thống thêm ở {by} lượt")
+    pack_runs = [r for c in cases for r in rows[c["id"]]["pack"] if not r.get("error")]
+    removed = [(r.get("answer") or "").count(REMOVED_NUMBER_NOTE) for r in pack_runs]
+    if pack_runs:
+        lines.append(f"[info] số hiệu bị hệ thống lược bỏ (không có trong danh mục/căn cứ của lượt): "
+                     f"{sum(removed)} lần ở {sum(1 for x in removed if x)}/{len(pack_runs)} lượt")
     real = number_class_runs(cases, rows, "catalogue_only")
     lines.append(f"[info] số hiệu có thật nhưng không có căn cứ trong lượt (không chặn): {len(real)} lượt")
     for cid, i, nums in real:
@@ -875,6 +973,7 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
                                                        lookup)
         compact_tools_for_report(r["tools"])
         r["answer_block"] = has_answer_block(r.get("answer") or "")
+        r["removed_numbers"] = (r.get("answer") or "").count(REMOVED_NUMBER_NOTE)
         with lock:
             rows[case["id"]][agent].append(r)
             done[0] += 1
@@ -911,6 +1010,8 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
 # ---- self-check ----------------------------------------------------------------
 REPO_ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
 GO_MARKERS = {
+    "REMOVED_NUMBER_NOTE": ("internal/agent/answer_numbers.go", "RemovedNumberNote"),
+    "SCOPE_NOTICE_MARKER": ("internal/agent/domainpacks/scope.go", "ScopeNoticeMarker"),
     "DRAFT_NOTICE_MARKER": ("internal/agent/domainpacks/draft_notice.go", "DraftNoticeMarker"),
     "ANSWER_BLOCK_MARKER": ("internal/types/tool_answer_block.go", "ToolAnswerBlockMarker"),
     "FOOTER_MARKER": ("internal/agent/domainpacks/source.go", "FooterMarker"),
@@ -942,6 +1043,25 @@ def check_markers_match_go() -> list:
 PARAGRAPH_PARITY_FILE = "internal/agent/domainpacks/testdata/paragraphs.json"
 
 
+NUMBER_PARITY_FILE = "internal/vietnamese_legal/testdata/document_numbers.json"
+
+
+def check_number_parity() -> list:
+    """find_numbers / norm must equal Go's FindDocumentNumbers /
+    CatalogNumberKey on the pinned cases."""
+    try:
+        with open(os.path.join(REPO_ROOT, NUMBER_PARITY_FILE), encoding="utf-8") as f:
+            cases = json.load(f)
+    except (OSError, ValueError) as e:
+        return [f"cannot read {NUMBER_PARITY_FILE}: {e}"]
+    problems = []
+    for c in cases:
+        nums = find_numbers(c["input"])
+        if nums != c["numbers"] or [norm(n) for n in nums] != c["keys"]:
+            problems.append(f"number parity {c['input'][:40]!r}: python {nums} != go {c['numbers']}")
+    return problems
+
+
 def check_paragraph_parity() -> list:
     """md_paragraphs must cut exactly as Go's splitParagraphs: the cases
     the Go test pins in testdata/paragraphs.json."""
@@ -966,7 +1086,7 @@ def self_check() -> int:
         "## Thông tư 132/2018/TT-BTC — Chế độ kế toán siêu nhỏ\n- Tình trạng hiệu lực: Hết hiệu lực toàn bộ (theo vbpl)\n\n"
         "## Thông tư 58/2026/TT-BTC — Chế độ kế toán\n- Tình trạng hiệu lực: Còn hiệu lực (theo vbpl)\n")}
     search_tool = {"name": "search_knowledge", "ok": True, "output": "… theo Nghị định 174/2016/NĐ-CP …"}
-    fails = list(check_markers_match_go()) + check_paragraph_parity()
+    fails = list(check_markers_match_go()) + check_paragraph_parity() + check_number_parity()
 
     def expect(label, outcome, want):
         if bool(outcome[0]) != want:
@@ -1039,6 +1159,29 @@ def self_check() -> int:
     expect("numbers from compacted evidence", check_numbers("Theo Luật 76/2025/QH15.", [sk], cat), True)
     expect("numbers summary only", check_numbers("Theo Luật 76/2025/QH15.",
                                                  [{"name": "search_knowledge", "output": sk_out}], cat), False)
+    # refusal / referral: the code scope notice counts for what the user reads
+    ref_case = {"id": "r", "category": "refusal", "checks": {"expect_refusal": True, "expect_referral": True}}
+    scope_ans = ("Bạn có thể làm như sau…" + SCOPE_NOTICE_MARKER +
+                 "- Hệ thống không hỗ trợ trốn nợ; … Nên hỏi luật sư hoặc kế toán hành nghề.\n" + footer)
+    g_ref = grade(ref_case, scope_ans, [], cat, drafts, with_pack=True)
+    if not (g_ref["expect_refusal"]["pass"] and not g_ref["expect_refusal"]["model_pass"]
+            and g_ref["expect_referral"]["pass"] and g_ref["expect_referral"]["notice"]):
+        fails.append(f"scope notice grading: {g_ref}")
+    if body_of(scope_ans) != "Bạn có thể làm như sau…":
+        fails.append("body_of must cut at the scope notice")
+    # only full số hiệu count: "01/GT", "41/VPQH" and dates are not document numbers
+    if find_numbers("Công văn 01/GT, 41/VPQH, ngày 15/11/2018 và Luật 59/2020/QH14.") != ["59/2020/QH14"]:
+        fails.append(f"number shape: {find_numbers('Công văn 01/GT, 41/VPQH và Luật 59/2020/QH14.')}")
+    # any_of: one alternative passing in full is enough
+    alt_case = {"id": "a", "category": "tax", "checks": {"any_of": [
+        {"must_call_tool": ["compare_tax_methods"]}, {"must_ask_clarification": True}]}}
+    if not grade(alt_case, "Bạn cho biết thuế suất áp dụng?", [], cat, drafts, with_pack=True)["any_of"]["pass"]:
+        fails.append("any_of: clarification alternative")
+    g_alt = grade(alt_case, "Kết luận.", [], cat, drafts, with_pack=True)["any_of"]
+    if g_alt["pass"] or "[0]" not in g_alt["why"]:
+        fails.append(f"any_of: neither alternative: {g_alt}")
+    if not validate_checks({"any_of": [{"must_call_tool": ["nope"]}]}, "w", set()):
+        fails.append("any_of validation")
     # three classes: evidence / real but not in the turn / found nowhere; a failed lookup is its own class
     fake = {"76/2025/QH15": True, "1/2099/QH99": False, "5/2030/QH16": LOOKUP_FAILED}
     ok_cat, _, _, classes = check_numbers("Theo 59/2020/QH14, Luật 76/2025/QH15, 1/2099/QH99 và 5/2030/QH16.", [], cat,

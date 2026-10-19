@@ -1,0 +1,23 @@
+# What the pack does not cover and what the system refuses to help with
+# (docs/domain-pack-standard.md §3.6). Matched on the USER'S QUESTION only
+# (NFC, case-insensitive, whole words); a match appends a fixed "Lưu ý về
+# phạm vi" block in code. Phrases are kept specific: an ordinary question
+# about choosing a business model, tax or accounting must not match.
+exclusions:
+  - name: tranh chấp, tố tụng
+    phrases: [kiện ra tòa, khởi kiện, bị kiện, bản tự khai, tố tụng]
+  - name: M&A, đầu tư nước ngoài
+    phrases: [nhà đầu tư nước ngoài, nhà đầu tư Singapore, nhà đầu tư Hàn Quốc, nhà đầu tư Nhật,
+              nhà đầu tư Trung Quốc, nhà đầu tư Mỹ, sáp nhập công ty, sáp nhập doanh nghiệp, mua bán doanh nghiệp, mua lại công ty]
+  - name: phá sản
+    phrases: [phá sản, mất khả năng thanh toán]
+refusals:
+  - name: lập hai sổ kế toán hoặc trốn thuế
+    phrases: [hai sổ kế toán, hai hệ thống sổ, sổ kép, trốn thuế, giấu doanh thu, ẩn doanh thu]
+    alternative: kê khai đủ doanh thu, dùng chi phí hợp lệ có chứng từ và chọn phương pháp tính thuế phù hợp
+  - name: tẩu tán tài sản hoặc trốn nợ
+    phrases: [không phải trả nợ cũ, chủ nợ không đòi được, tẩu tán tài sản, trốn nợ, né nợ]
+    alternative: xử lý hoặc thỏa thuận trả nợ trước khi chuyển đổi, vì chuyển đổi không xoá nghĩa vụ cũ
+  - name: lập công ty hoặc hồ sơ gian dối
+    phrases: [công ty rỗng, công ty ma, hồ sơ khống, hồ sơ gian dối, làm giả hồ sơ, hóa đơn khống]
+    alternative: dự thầu bằng năng lực thật của doanh nghiệp hoặc liên danh hợp pháp, hồ sơ trung thực

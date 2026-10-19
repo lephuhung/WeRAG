@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"sync/atomic"
 
 	"github.com/Tencent/WeKnora/internal/agent"
 	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
@@ -10,6 +11,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/common"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 // Domain packs (docs/domain-pack-standard.md §6) are kept in this file so
@@ -158,6 +160,9 @@ func (s *agentService) setDomainFooter(
 	engine.SetDraftNotice(func(_ context.Context, modelText string) string {
 		return source.DraftNotice(modelText)
 	})
+	engine.SetScopeNotice(func(_ context.Context, question string) string {
+		return source.ScopeNotice(question)
+	})
 	engine.SetDomainPackPrompts(domainPackPrompts(ctx, packs))
 }
 
@@ -185,4 +190,41 @@ func domainPackPrompts(ctx context.Context, packs []*domainpacks.Pack) []agent.D
 		common.PipelineWarn(ctx, "Agent", "domain_pack_prompt_cap", map[string]interface{}{"packs": deferred})
 	}
 	return out
+}
+
+// SetLegalNumberLookup gives the agents the catalogue the answer number
+// check looks numbers up in (agent/answer_numbers.go).
+func (s *agentService) SetLegalNumberLookup(catalog interfaces.LegalCatalogRepository) {
+	s.legalNumbers = catalog
+}
+
+// setNumberCheck turns the answer number check on for an agent that has it
+// (types.CustomAgentConfig.DocumentNumberCheck: on with domain packs by
+// default). A number is kept when legal_documents holds its number_key
+// exactly — the gate's normalisation — or this turn's evidence holds it.
+func (s *agentService) setNumberCheck(engine *agent.AgentEngine, config *types.AgentConfig) {
+	if config == nil || !config.VerifyDocumentNumbers || s.legalNumbers == nil || config.SkillInstallMode() {
+		return
+	}
+	engine.SetNumberCatalog(catalogNumberLookup(s.legalNumbers))
+}
+
+// answerNumberLookupFailures counts failed catalogue lookups of the answer
+// number check since the process started (a metric in the log).
+var answerNumberLookupFailures atomic.Int64
+
+// catalogNumberLookup looks a number key up exactly (number_key equality,
+// no prefix fallback); failed lookups are counted in the log.
+func catalogNumberLookup(catalog interfaces.LegalCatalogRepository) agent.NumberCatalogFunc {
+	return func(ctx context.Context, key string) (bool, error) {
+		found, err := catalog.HasNumberKey(ctx, key)
+		if err != nil {
+			n := answerNumberLookupFailures.Add(1)
+			logger.Warnf(ctx, "[AnswerNumbers] catalogue lookup failed for %s (%d failure(s) since start): %v", key, n, err)
+			common.PipelineWarn(ctx, "Agent", "answer_number_lookup_failed", map[string]interface{}{
+				"key": key, "failures_since_start": n,
+			})
+		}
+		return found, err
+	}
 }

@@ -308,7 +308,16 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	// answer guard first when the turn has one (answer_guard.go)
 	var emitAnswerRaw func(content string)
 	var guard *answerGuard
-	guard = newAnswerGuard(ctx, func(s string) { emitAnswerRaw(s) })
+	// button guard → number guard (answer_numbers.go) → event bus
+	numbers := newNumberGuard(ctx, func(s string) { emitAnswerRaw(s) })
+	toNumbers := func(s string) {
+		if numbers != nil {
+			numbers.Write(s)
+			return
+		}
+		emitAnswerRaw(s)
+	}
+	guard = newAnswerGuard(ctx, toNumbers)
 
 	emitThought := func(content string, done bool) {
 		if content == "" && !done {
@@ -343,7 +352,7 @@ func (e *AgentEngine) streamThinkingToEventBus(
 			guard.Write(content)
 			return
 		}
-		emitAnswerRaw(content)
+		toNumbers(content)
 	}
 	emitAnswerRaw = func(content string) {
 		// Suppress whitespace-only content emitted before the real answer has
@@ -471,6 +480,9 @@ func (e *AgentEngine) streamThinkingToEventBus(
 				if guard != nil {
 					guard.Flush()
 				}
+				if numbers != nil {
+					numbers.Flush()
+				}
 				closeThinking()
 			}
 		},
@@ -484,7 +496,13 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	logger.Infof(ctx, "[Agent][Thinking] Iteration-%d completed: content=%d chars, tool_calls=%d, emitted_events=%v",
 		iteration+1, len(llmResult.Content), len(llmResult.ToolCalls), emittedEventTypes)
 
-	fullContent := cleanAnswerInContext(ctx, agenttools.StripThinkBlocks(llmResult.Content))
+	if guard != nil {
+		guard.Flush()
+	}
+	if numbers != nil {
+		numbers.Flush()
+	}
+	fullContent := cleanAnswerNumbers(ctx, cleanAnswerInContext(ctx, agenttools.StripThinkBlocks(llmResult.Content)))
 
 	// Use actual finish_reason from LLM stream instead of hardcoding "stop".
 	// Fallback to "stop" when the stream did not report a finish_reason

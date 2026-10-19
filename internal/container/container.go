@@ -721,6 +721,17 @@ func BuildContainer(container *dig.Container) *dig.Container {
 			}
 		}
 	}))
+	// the answer number check looks số hiệu up in the legal catalogue
+	must(container.Invoke(func(agents interfaces.AgentService, catalog interfaces.LegalCatalogRepository) error {
+		u, ok := agents.(interface {
+			SetLegalNumberLookup(interfaces.LegalCatalogRepository)
+		})
+		if !ok {
+			return fmt.Errorf("%T cannot take the legal catalogue", agents)
+		}
+		u.SetLegalNumberLookup(catalog)
+		return nil
+	}))
 	// the agent, session and custom-agent services read the shipped domain packs
 	must(container.Invoke(func(registry *domainpacks.Registry, agents interfaces.AgentService,
 		sessions interfaces.SessionService, customAgents interfaces.CustomAgentService) error {
