@@ -158,6 +158,9 @@ func (s *agentService) setDomainFooter(
 	engine.SetDraftNotice(func(_ context.Context, modelText string) string {
 		return source.DraftNotice(modelText)
 	})
+	engine.SetScopeNotice(func(_ context.Context, question string) string {
+		return source.ScopeNotice(question)
+	})
 	engine.SetDomainPackPrompts(domainPackPrompts(ctx, packs))
 }
 

@@ -58,6 +58,7 @@ domain-packs/<name>/
   SKILL.md          # frontmatter manifest + quy trình (lớp a)
   catalogue.yaml    # "Văn bản trích dẫn": số hiệu + điều trích (lớp b) — không có cột trạng thái
   formulas.yaml     # "Công thức": công thức cố định của tool Go (lớp d) — tuỳ chọn, xem 3.5
+  scope.yaml        # ngoài phạm vi / phải từ chối, khớp trên câu hỏi (lớp d) — tuỳ chọn, xem 3.6
   references/*.md   # bình luận, cẩm nang (lớp c)
   assets/*.md       # mẫu, checklist (lớp c)
   evals/cases.jsonl # bộ kiểm (lớp e)
@@ -147,6 +148,23 @@ formulas:
 - `formulas.yaml` không phục vụ qua `read_file`; model nhận những gì cần qua kết quả tool.
 - Đổi công thức = sửa `formulas.yaml` + mã Go, review, build lại (không sửa lúc chạy).
 
+### 3.6 Phạm vi (`scope.yaml`)
+
+```yaml
+exclusions:                       # ngoài phạm vi → khuyên gặp luật sư
+  - name: tranh chấp, tố tụng
+    phrases: [kiện ra tòa, khởi kiện, bản tự khai]
+refusals:                         # hệ thống từ chối hỗ trợ
+  - name: tẩu tán tài sản hoặc trốn nợ
+    phrases: [không phải trả nợ cũ, tẩu tán tài sản, trốn nợ]
+    alternative: xử lý hoặc thỏa thuận trả nợ trước khi chuyển đổi, vì chuyển đổi không xoá nghĩa vụ cũ
+```
+
+- Tệp riêng (không nằm trong frontmatter) vì `SKILL.md` giới hạn 6 KB; đọc strict; không phục vụ qua `read_file`.
+- Validator: `name` bắt buộc; mỗi cụm ≥ 4 ký tự, không trùng trong cả gói (sau NFC + chữ thường); `alternative` bắt buộc cho `refusals`, cấm cho `exclusions`; không URL.
+- Khớp trên **câu hỏi của người dùng** (NFC, không phân biệt hoa thường, ranh giới từ như nhãn dự thảo), không trên lời của model. Khớp → khối "Lưu ý về phạm vi" do mã chèn (§6), câu cố định: ngoài phạm vi "Nội dung này nằm ngoài phạm vi cẩm nang (<tên>); hãy hỏi luật sư hoặc người có chứng chỉ hành nghề trước khi làm hồ sơ."; từ chối "Hệ thống không hỗ trợ <tên>; hành vi này có thể bị xử lý hành chính hoặc hình sự. Phương án hợp pháp: <alternative>. Nên hỏi luật sư hoặc kế toán hành nghề." Không có gợi ý nào cho model.
+- Giữ cụm từ hẹp: test bắt buộc trong 30 câu eval của gói chỉ orig-6, refusal-*, oos-* khớp.
+
 Hạn chế đã biết: khối "Công thức áp dụng" gộp công thức của mọi gói mô tả cùng một tool, không lọc theo gói của agent. Vô hại khi mỗi tool chỉ thuộc một gói; khi gói thứ hai dùng lại tool thì phải truyền danh sách gói của agent vào `FormulaBlock`.
 
 ## 4. Quy tắc 4+1 lớp
@@ -194,7 +212,8 @@ Cái giá của tool Go là **gắn kết**: mỗi gói có tool thì thêm mã 
 - **Footer**: `appendDomainFooter` gọi sau `appendSourceEditNote` ở **cả hai** đường trả lời: `internal/agent/engine.go` (model dừng tự nhiên) và `internal/agent/finalize.go` (tổng hợp, gồm cả hết vòng lặp). Chunk phải emit trên cùng `answerID` **trước** sự kiện `Done` — handler stream cộng dồn theo id nên footer vừa hiện vừa được lưu; emit sau `Done` thì không vào DB. Footer là khối cuối cùng (sau "Lịch sử sửa đổi"), đúng một lần; bỏ qua khi câu trả lời rỗng và trên các câu cố định do mã ("không tìm thấy căn cứ", fallback, forced final, synthesis fallback, vòng lặp lặp lại). Khối mở bằng dấu mốc cố định `\n\n---\n**Lưu ý về cẩm nang chuyên môn**\n` (`domainpacks.FooterMarker`); khi câu trả lời được phát lại làm lịch sử cho lượt sau, mọi thứ từ dấu mốc trở đi bị cắt (như "Lịch sử sửa đổi"), nếu không Qwen chép footer và câu trả lời có hai footer. Phòng thủ thêm: câu footer nào đã có trong câu trả lời thì không chèn lại.
 - **Khối "Kết quả tính"**: tool để Markdown trong `ToolResult.Data["answer_block"]` (`types.ToolDataAnswerBlock`), dựng từ kết quả có cấu trúc (không phân tích lại văn bản). `appendToolAnswerBlocks` chèn, ở cả hai đường trả lời, khối của lần gọi thành công **cuối** của mỗi tool, đúng một lần, sau ghi chú nguồn và **trước** footer, dưới dấu mốc `types.ToolAnswerBlockMarker`; có cả ở synthesis fallback, không có ở câu "không tìm thấy căn cứ". Một phép tính = một khối kết quả: các lần gọi cho ra cùng khối (dù tham số viết khác, "1" hay 1.0) tính một lần; khối khác nhau → mỗi khối "Lần tính n/m". Tiêu đề: "Kết quả tính (do hệ thống tính — nếu phần trên khác, lấy khối này làm chuẩn)". Ở synthesis fallback, nếu đã chèn khối kết quả thì chèn cả footer. `compare_tax_methods` đưa số liệu, dòng "Đọc kết quả" (nói rõ chiều so sánh với biên hòa vốn), khuyến nghị, "Giả định" và "Công thức áp dụng"; output cho model dặn chỉ nêu kết luận và lưu ý GTGT, không tự suy luận lại biên hòa vốn (lý do: eval 18/10/2026 — model bỏ khối giả định và đọc ngược biên hòa vốn). `domainpacks.StripFooter` cắt từ dấu mốc nào đến trước khi phát lại lịch sử.
 - **Nhãn dự thảo bằng mã (khối "Lưu ý về dự thảo")**: `draft_documents[].aliases` (cụm từ chỉ đúng dự thảo đó; tiêu đề luôn tính; validator: không rỗng, ≥ 4 ký tự, không chung chung như "luật mới"/"dự thảo", không trùng giữa các dự thảo). `Source.DraftNotice` chia **lời của model** thành đoạn (dòng trống, mục danh sách, dòng bảng, tiêu đề — tiêu đề thuộc đoạn ngay sau nó; mục danh sách mang theo đoạn dẫn kết thúc bằng ":" hoặc tiêu đề mở danh sách; `testdata/paragraphs.json` giữ thuật toán trùng với eval), so khớp tên dự thảo (NFC, không phân biệt hoa thường, ranh giới từ); đoạn nhắc dự thảo mà không có "dự thảo"/"dự án luật" → một dòng cho dự thảo đó: "<tiêu đề> là dự thảo (<lần>, ngày dd/mm/yyyy), chưa có hiệu lực; không áp dụng như quy định hiện hành." (chưa rõ lần: "… là dự án luật (chưa rõ lần dự thảo), chưa được thông qua …"). Không sửa lời của model. Chèn ở cả hai đường trả lời, không có ở synthesis fallback và câu "không tìm thấy căn cứ". Lý do: eval 18/10/2026 (`--runs 3`) — nhãn dự thảo trong lời của model chỉ 54 %.
-- **Thứ tự các khối do mã chèn**: lời của model → "Lịch sử sửa đổi"/lưu ý wiki/ghi chú nguồn → "Lưu ý về dự thảo" (`domainpacks.DraftNoticeMarker`) → "Kết quả tính" (`types.ToolAnswerBlockMarker`) → footer (`domainpacks.FooterMarker`). Khi phát lại lịch sử, `StripFooter` cắt từ dấu mốc sớm nhất trong ba dấu mốc này; eval (`pack_eval.body_of`) cắt giống vậy và self-check đối chiếu ba hằng số.
+- **Khối "Lưu ý về phạm vi"** (§3.6): `Source.ScopeNotice(câu hỏi)`, ở cả hai đường trả lời, không có ở synthesis fallback và câu "không tìm thấy căn cứ". Eval: `expect_refusal`/`expect_referral` đạt khi lời model **hoặc** khối này có câu từ chối/khuyên gặp luật sư; tỷ lệ chỉ trong lời model là dòng `[info]`.
+- **Thứ tự các khối do mã chèn**: lời của model → "Lịch sử sửa đổi"/lưu ý wiki/ghi chú nguồn → "Lưu ý về dự thảo" (`domainpacks.DraftNoticeMarker`) → "Lưu ý về phạm vi" (`domainpacks.ScopeNoticeMarker`) → "Kết quả tính" (`types.ToolAnswerBlockMarker`) → footer (`domainpacks.FooterMarker`). Khi phát lại lịch sử, `StripFooter` cắt từ dấu mốc sớm nhất trong bốn dấu mốc này; eval (`pack_eval.body_of`) cắt giống vậy và self-check đối chiếu các hằng số.
 - **Gói chỉ hiệu lực khi đủ tool**: lúc chạy, gói có `required_tools` không nằm hết trong tool thực sự đăng ký cho lượt đó (allowlist hoặc mặc định, sau khi `registerTools` tước tool không dùng được, ví dụ `search_knowledge` khi không có KB) bị bỏ qua (log), cả trong skill lẫn footer. Tên gói được giải một lần trong `buildAgentConfig` (cắt khoảng trắng, bỏ trùng, chỉ tên có trong build, chỉ agent smart-reasoning).
 - **Hết hạn rà soát**: `now > review_by` (theo `types.PromptNow()`) → footer thêm câu "Nội dung cẩm nang có mốc dd/mm/yyyy, đã quá hạn rà soát" và API liệt kê gói trả `overdue`. **Không** tự tắt gói theo đồng hồ (trái nguyên tắc 3); muốn ngắt thì SuperAdmin bỏ gói khỏi agent.
 - **Lưu agent**: từ chối tên gói không tồn tại; từ chối khi tool hiệu lực thiếu `required_tools` — tool hiệu lực = `allowed_tools`, rỗng thì `tools.DefaultAllowedTools()`; `search_knowledge` còn cần `kb_selection_mode != "none"` (lúc chạy tool này bị tước nếu không có KB). Tool luôn-bật (`check_legal_status`, `find_related_legal_documents`, `resolve_abbreviation`, `search_document_section`) không được khai trong `required_tools`. Chỉ SuperAdmin sửa agent (đã đúng theo route).

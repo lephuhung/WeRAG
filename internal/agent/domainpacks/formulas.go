@@ -228,7 +228,6 @@ func basisText(basis []FormulaBasis) string {
 	return strings.Join(parts, "; ")
 }
 
-
 // citations maps each number key cited in the pack's SKILL.md, references
 // and assets to the files citing it, and the key to the number as written.
 func citations(texts map[string]string) (map[string][]string, map[string]string) {

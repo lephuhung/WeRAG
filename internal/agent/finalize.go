@@ -143,6 +143,7 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	if synthesized {
 		// the code-built fallback names no draft of its own
 		e.appendDraftNotice(ctx, state, sessionID, answerID, modelText)
+		e.appendScopeNotice(ctx, state, sessionID, answerID, query)
 	}
 	// computed results reach the user even on the fallback answer, and
 	// then the pack's footer goes with them

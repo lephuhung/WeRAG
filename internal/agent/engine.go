@@ -50,6 +50,7 @@ type AgentEngine struct {
 	memoryPrompt              string                // Long-term memory envelope appended to the system prompt
 	skillsManager             *skills.Manager       // Skills manager for Progressive Disclosure (optional)
 	draftNotice               DraftNoticeFunc       // domain-pack draft labels (optional)
+	scopeNotice               ScopeNoticeFunc       // domain-pack exclusions / refusals (optional)
 	domainPackPrompts         []DomainPackPrompt    // domain pack bodies rendered in the system prompt
 	appConfig                 *appconfig.Config     // Application config for prompt template resolution (optional)
 	imageDescriber            ImageDescriberFunc    // VLM function for describing images in tool results (optional)
@@ -966,6 +967,7 @@ func (e *AgentEngine) runReActIteration(
 		e.appendWikiCaveat(ctx, state, sessionID, verdict.answerID)
 		e.appendSourceEditNote(ctx, state, sessionID, verdict.answerID, query)
 		e.appendDraftNotice(ctx, state, sessionID, verdict.answerID, modelText)
+		e.appendScopeNotice(ctx, state, sessionID, verdict.answerID, query)
 		e.appendToolAnswerBlocks(ctx, state, sessionID, verdict.answerID)
 		e.appendDomainFooter(ctx, state, sessionID, verdict.answerID)
 		e.closeAnswerStream(ctx, sessionID, verdict.answerID)

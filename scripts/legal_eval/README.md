@@ -45,6 +45,7 @@ thì agent dùng KB đã cấu hình. Báo cáo JSON: `results/pack-<gói>-<th�
 | `must_ask_clarification` | có ít nhất một dòng kết thúc bằng "?" |
 | `must_match` / `must_not_match` | regex (không phân biệt hoa thường) |
 | `must_state_status` | số hiệu được nhắc; nếu `check_legal_status`/`find_related_legal_documents` trả trạng thái thì đoạn nhắc số hiệu nói khớp (hết hiệu lực/bị thay thế ↔ còn hiệu lực); không có trạng thái từ tool → đạt nhưng ghi `unverified` |
+| `expect_refusal` / `expect_referral` (bổ sung) | đạt khi lời model **hoặc** khối "Lưu ý về phạm vi" do hệ thống thêm có câu từ chối / khuyên gặp luật sư; `model_pass` = chỉ lời model (dòng `[info]`) |
 | `any_of` | danh sách ≥ 2 đối tượng checks; đạt khi một đối tượng đạt trọn (ví dụ orig-5: gọi `compare_tax_methods` + khối kết quả, **hoặc** hỏi lại tỷ lệ/thuế suất) |
 | `must_have_answer_block` | câu trả lời có khối "Kết quả tính" do mã chèn (agent có gói; câu do mã viết thì không chấm) |
 | `must_have_footer` | có dấu mốc footer (chỉ chấm agent có gói; không chấm khi câu trả lời do mã viết: câu trả lời bắt đầu bằng `final_message` của một tool/thẻ trong lượt — thẻ của cổng, thẻ chọn từ viết tắt, thẻ của tool — hoặc câu cố định "Tôi không tìm thấy căn cứ…") |
