@@ -2,7 +2,7 @@
 
 - Ngày: 2026-10-19.
 - Nhánh: `feat/agent-addons` (worktree `/home/WeRAG-wt/agent-addons`), tách từ `feat/document-assistant` tại `38e230f7`.
-- Trạng thái: giai đoạn A, B, C và nút bật/tắt đã làm, **đã merge vào `feat/document-assistant` (3a3ea4ce)**, migration 000166–000169 **đã chạy trên DB dev**; các sửa sau rà soát (§8.4) nằm trên `feat/agent-addons` chờ merge. Người dùng đã chốt toàn bộ mục 7 (19/10/2026, gồm 7.7–7.9). Fable còn nợ một lượt rà (§9).
+- Trạng thái: giai đoạn A, B, C và nút bật/tắt đã làm, **đã merge vào `feat/document-assistant` (3a3ea4ce)**, migration 000166–000169 **đã chạy trên DB dev**; các sửa sau rà soát (§8.4, gồm migration 000171) nằm trên `feat/agent-addons` chờ merge. Người dùng đã chốt toàn bộ mục 7 (19/10/2026, gồm 7.7–7.9). Fable còn nợ một lượt rà (§9).
 - Liên quan: `docs/domain-pack-standard.md` (bộ kỹ năng), `docs/billing-payment-webhook.md`, mục "Tổ chức áp dụng" trong `docs/tenant-kb-permissions-implementation-plan.md` §8.
 
 ## 1. Vì sao đổi
@@ -187,6 +187,13 @@ Mỗi giai đoạn: Opus làm, Fable rà (khi còn hạn mức), migration theo 
 - **Thẻ gói** dùng tên agent cơ bản đang lưu trong hồ sơ (ví dụ "Suy luận" trên dev), bỏ agent cơ bản đang tắt; **công tắc qua API key nền tảng** ghi vào hồ sơ cấu hình, không vào Tổ chức của key (mục 9).
 - Quyết định 7.7–7.9 (mã khuyến mãi, lịch giờ Việt Nam, đơn 0 đồng) đã làm như §7.
 - Chưa làm (mục 9 rà soát, mức thấp): SuperAdmin đổi gói tay không chuyển add-on; add-on của agent thuộc hồ sơ cấu hình khác (khi có nhiều hồ sơ).
+
+**Rà lại lần 2 (R1–R4, 19/10/2026)**
+
+- **R1** — cộng tháng từ một ngày hết đã lưu (00:00 VN ngày hôm sau) bước từ ngày cuối được phủ: hết 30/10 + 1 tháng = hết 30/11 (trước đây hết 29/11), hết 31/1 + 1 tháng = hết 28/2 (29/2 năm nhuận); quyền hết 30/10 nối tới hết 30/11 là đúng 1 tháng (trước đây 1 tháng + 1 ngày = 1,5 tháng). Mọi phép cộng tháng đi qua `types.SubscriptionEndVN`.
+- **R2** — migration **000171**: thuê bao đang chạy và quyền dùng còn hiệu lực có ngày hết lẻ giờ được làm tròn lên 24:00 VN kế tiếp; hàng đã hết hạn, đã huỷ, không có ngày hết hoặc đã ở nửa đêm VN giữ nguyên; down là no-op. Số hàng trên dev **chưa đếm được** từ máy này (Postgres dev chỉ có trong mạng Docker, cổng 5432/5433 trên host không phải DB dev); câu đếm: `SELECT count(*) FROM usage_subscriptions WHERE status='active' AND ends_at > now() AND ends_at <> date_trunc('day', ends_at AT TIME ZONE 'Asia/Ho_Chi_Minh') AT TIME ZONE 'Asia/Ho_Chi_Minh';` (và tương tự cho `usage_subscription_addons`, bỏ điều kiện `status`).
+- **R3** — dòng add-on của đơn gia hạn ghi `subscription_end` lúc báo giá; khi xác nhận mà thuê bao đã đổi hạn (đơn khác gia hạn trước) → 409 `subscription_changed` (webhook ghi `confirm_failed`). Tăng ghế khi gia hạn/đổi gói mà **không** mua lại add-on đang giữ: thêm dòng `seats_only` tính ghế thêm cho thời gian quyền còn chạy (giá đã chốt của quyền), không gia hạn quyền.
+- **R4** — `docs/billing-payment-webhook.md` ghi trường hợp đơn hết hạn được mở lại sau khi đã mua lại agent (và đơn gia hạn bị đổi hạn) → `confirm_failed`, hoàn tiền tay.
 
 ## 9. Rà soát
 
