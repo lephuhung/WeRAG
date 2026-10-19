@@ -17,6 +17,11 @@ type Amend struct {
 	Article  string `json:"article,omitempty"`
 	Khoan    string `json:"khoan,omitempty"`
 	Diem     string `json:"diem,omitempty"`
+	// Phrase marks a phrase amendment (phrase_amend.go): the words From
+	// become To in the provision (To empty: removed), nothing is quoted.
+	Phrase bool   `json:"phrase,omitempty"`
+	From   string `json:"from,omitempty"`
+	To     string `json:"to,omitempty"`
 }
 
 var (

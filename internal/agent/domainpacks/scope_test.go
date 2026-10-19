@@ -31,7 +31,7 @@ func TestOpcScopeMatchesOnlyTheIntendedEvalPrompts(t *testing.T) {
 		n++
 		assert.Equal(t, want[c.ID], src.ScopeNotice(c.Prompt) != "", "%s: %q", c.ID, c.Prompt)
 	}
-	assert.Equal(t, 30, n)
+	assert.Equal(t, 32, n)
 }
 
 func TestScopeNoticeText(t *testing.T) {

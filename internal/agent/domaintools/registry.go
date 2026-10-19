@@ -33,6 +33,7 @@ var formulas = func() map[string]Formula {
 		}
 	}
 	add(opcvn.ToolCompareTaxMethods, opcvn.Formulas())
+	add(opcvn.ToolHouseholdTax, opcvn.HouseholdFormulas())
 	return out
 }()
 

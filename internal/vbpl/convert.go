@@ -99,6 +99,9 @@ type Block struct {
 	// Amend is, on quote blocks, what the quoted span amends; nil when the
 	// lead-in does not read as an amendment. Blocks of one span share it.
 	Amend *Amend `json:"amend,omitempty"`
+	// Phrases are the phrase amendments a clause, item or content
+	// paragraph states ("Sửa đổi cụm từ “X” thành “Y” tại Điều 3").
+	Phrases []Amend `json:"phrases,omitempty"`
 }
 
 // Document is the conversion result.
@@ -612,6 +615,10 @@ func (b *builder) emit(blk Block, md string) int {
 		b.runes += 2
 	}
 	blk.Start = b.runes
+	switch blk.Kind {
+	case KindClause, KindItem, KindContent:
+		blk.Phrases = b.phraseAmends(blk.Text)
+	}
 	b.md.WriteString(md)
 	b.runes += utf8.RuneCountInString(md)
 	blk.End = b.runes

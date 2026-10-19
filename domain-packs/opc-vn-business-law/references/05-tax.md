@@ -91,6 +91,18 @@ Lịch cụ thể có thể thay đổi; luôn kiểm tra thông báo của cơ 
 
 Các hành vi này có thể dẫn đến truy thu, phạt, cấm hành nghề, hoặc trách nhiệm hình sự. Cẩm nang này **không hỗ trợ** các phương án đó.
 
+## Thuế hộ kinh doanh, cá nhân kinh doanh (từ năm 2026)
+
+Hộ kinh doanh không còn nộp thuế khoán; doanh thu năm trên ngưỡng thì nộp cả GTGT lẫn TNCN. Văn bản cần tra (đọc điều khoản hiện hành, không lấy số từ cẩm nang):
+
+- Nghị định 68/2026/NĐ-CP: Điều 3 (GTGT), Điều 4 (TNCN, mức trừ ngưỡng), Điều 10 (khai, nộp theo quý).
+- Nghị định 141/2026/NĐ-CP, Điều 1: sửa ngưỡng doanh thu của Nghị định 68/2026/NĐ-CP — luôn dùng ngưỡng sau sửa đổi.
+- Luật Thuế thu nhập cá nhân 109/2025/QH15, Điều 7: tỷ lệ % TNCN trên doanh thu theo ngành nghề, thuế suất trên lợi nhuận theo mức doanh thu.
+- Luật Thuế giá trị gia tăng 48/2024/QH15, Điều 12: tỷ lệ % GTGT trên doanh thu theo ngành nghề, tính trên toàn bộ doanh thu.
+- Nghị quyết 43/2026/QH16: mức giảm thuế TNCN các kỳ tính thuế được nêu và điều kiện doanh thu.
+
+Hai phương pháp TNCN (theo % doanh thu vượt ngưỡng, hoặc trên lợi nhuận) chọn theo lợi nhuận thực tế và sổ sách; phương pháp lợi nhuận phải giữ ổn định trong thời gian luật định. Tính bằng `calculate_household_tax`.
+
 ## Checklist thuế cho công ty mới
 
 - [ ] Đăng ký thuế, xác nhận phương pháp tính GTGT.

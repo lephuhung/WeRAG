@@ -176,3 +176,25 @@ func TestSearchKnowledgeIgnoresModelBaseFilter(t *testing.T) {
 		t.Fatalf("replacement reported out of scope:\n%s", note)
 	}
 }
+
+func TestSearchKnowledgeAppliesCurrentWording(t *testing.T) {
+	tool := (&SearchKnowledgeTool{}).WithCurrentWording(func(_ context.Context, ids []string) map[string]string {
+		if len(ids) != 2 {
+			t.Fatalf("ids = %v", ids)
+		}
+		return map[string]string{"c-1": "trên 01 tỷ đồng [thay cho “500 triệu đồng”]"}
+	})
+	amended := map[string]interface{}{"chunk_id": "c-1", "content": "trên 500 triệu đồng", "content_head": "trên 500"}
+	other := map[string]interface{}{"chunk_id": "c-2", "content": "khác"}
+	data := map[string]interface{}{"query": "01 tỷ đồng", "results": []map[string]interface{}{amended, other}}
+	tool.applyCurrentWording(context.Background(), data)
+	if amended["content"] != "trên 500 triệu đồng" {
+		t.Fatalf("stored content changed: %v", amended["content"])
+	}
+	if amended["model_content"] != "trên 01 tỷ đồng [thay cho “500 triệu đồng”]" || amended["content_head"] == "trên 500" || amended["model_match"] == "" {
+		t.Fatalf("amended row: %+v", amended)
+	}
+	if _, ok := other["model_content"]; ok {
+		t.Fatalf("other row: %+v", other)
+	}
+}

@@ -30,6 +30,18 @@ func (s *agentService) legalHistoryFunc(
 	}
 }
 
+// legalWordingFunc returns the current-wording lookup over the given KBs
+// (LegalCurrentWording), or nil when the database cannot serve it.
+func (s *agentService) legalWordingFunc(kbIDs []string) func(ctx context.Context, chunkIDs []string) map[string]string {
+	if s.db == nil || s.db.Dialector.Name() != "postgres" || len(kbIDs) == 0 {
+		return nil
+	}
+	db := s.db
+	return func(ctx context.Context, chunkIDs []string) map[string]string {
+		return LegalCurrentWording(ctx, db, kbIDs, chunkIDs, types.PromptNow())
+	}
+}
+
 // legalHistoryBus appends the "Lịch sử sửa đổi" block to the quick answer:
 // it collects each final-answer stream and, when the stream ends, emits
 // the block on the same answer id before the terminal event, so the stored

@@ -81,6 +81,7 @@ export const AGENT_TOOLS: AgentToolDef[] = [
 
   // fixed-formula tools of domain packs (docs/domain-pack-standard.md §4.1)
   { name: "compare_tax_methods", group: "calc" },
+  { name: "calculate_household_tax", group: "calc" },
 ];
 
 const KNOWN = new Set(AGENT_TOOLS.map((t) => t.name));

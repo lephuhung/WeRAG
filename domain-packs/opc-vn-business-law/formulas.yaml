@@ -61,3 +61,82 @@ formulas:
       - inputs: {doanh_thu: 1000000000, loi_nhuan: 100000000, ty_le_doanh_thu: 5, thue_suat: 0.2}
         expected: {thue_theo_doanh_thu: 50000000, thue_theo_loi_nhuan: 20000000, bien_loi_nhuan: 0.1,
                    bien_hoa_von: 0.25, chenh_lech: -30000000}
+  # Hộ kinh doanh, cá nhân kinh doanh: GTGT và TNCN theo doanh thu, TNCN trên
+  # lợi nhuận, giảm thuế TNCN. Ngưỡng, tỷ lệ, thuế suất, mức giảm tra trong kho.
+  - id: gtgt_ho_kinh_doanh
+    name: Thuế GTGT của hộ kinh doanh
+    expression: Thuế GTGT = Doanh thu năm × Tỷ lệ % GTGT theo ngành nghề (0 nếu doanh thu năm không vượt ngưỡng)
+    variables:
+      - {name: doanh_thu, description: Doanh thu năm, unit: đồng, source: input}
+      - {name: nguong_doanh_thu, description: Ngưỡng doanh thu năm không chịu GTGT, unit: đồng, source: kb}
+      - {name: ty_le_gtgt, description: Tỷ lệ % GTGT trên doanh thu theo ngành nghề, unit: "%", source: kb}
+    basis:
+      - {number: 48/2024/QH15, article: Điều 12}
+      - {number: 68/2026/NĐ-CP, article: Điều 3}
+      - {number: 141/2026/NĐ-CP, article: Điều 1}
+    tool: calculate_household_tax
+    examples:
+      - inputs: {doanh_thu: 2400000000, nguong_doanh_thu: 1000000000, ty_le_gtgt: 1}
+        expected: {thue_gtgt: 24000000}
+      - inputs: {doanh_thu: 900000000, nguong_doanh_thu: 1000000000, ty_le_gtgt: 1}
+        expected: {thue_gtgt: 0}
+  - id: tncn_ho_theo_doanh_thu
+    name: Thuế TNCN của hộ kinh doanh theo % doanh thu
+    expression: Thuế TNCN = (Doanh thu năm − Ngưỡng doanh thu) × Tỷ lệ % TNCN theo ngành nghề (chỉ khi doanh thu năm không quá mức được tính theo % doanh thu)
+    variables:
+      - {name: doanh_thu, description: Doanh thu năm, unit: đồng, source: input}
+      - {name: nguong_doanh_thu, description: Ngưỡng doanh thu năm không phải nộp TNCN, unit: đồng, source: kb}
+      - {name: ty_le_tncn, description: Tỷ lệ % TNCN trên doanh thu theo ngành nghề, unit: "%", source: kb}
+      - {name: tran_doanh_thu_theo_doanh_thu, description: Doanh thu năm tối đa được tính TNCN theo % doanh thu, unit: đồng, source: kb}
+    basis:
+      - {number: 109/2025/QH15, article: Điều 7}
+      - {number: 68/2026/NĐ-CP, article: Điều 4}
+      - {number: 141/2026/NĐ-CP, article: Điều 1}
+    tool: calculate_household_tax
+    examples:
+      - inputs: {doanh_thu: 2400000000, nguong_doanh_thu: 1000000000, ty_le_tncn: 0.5, tran_doanh_thu_theo_doanh_thu: 3000000000}
+        expected: {thue_tncn_doanh_thu: 7000000}
+  - id: tncn_ho_theo_loi_nhuan
+    name: Thuế TNCN của hộ kinh doanh trên lợi nhuận
+    expression: Thuế TNCN = (Doanh thu năm − Chi phí được trừ) × Thuế suất TNCN theo mức doanh thu năm
+    variables:
+      - {name: doanh_thu, description: Doanh thu năm, unit: đồng, source: input}
+      - {name: nguong_doanh_thu, description: Ngưỡng doanh thu năm không phải nộp TNCN, unit: đồng, source: kb}
+      - {name: chi_phi, description: Chi phí được trừ cả năm, unit: đồng, source: input}
+      - {name: thue_suat_tncn, description: Thuế suất TNCN trên thu nhập tính thuế, unit: phân số (0–1), source: kb}
+    basis:
+      - {number: 109/2025/QH15, article: Điều 7}
+      - {number: 68/2026/NĐ-CP, article: Điều 4}
+    tool: calculate_household_tax
+    examples:
+      - inputs: {doanh_thu: 2400000000, nguong_doanh_thu: 1000000000, chi_phi: 2300000000, thue_suat_tncn: 0.15}
+        expected: {thue_tncn_loi_nhuan: 15000000}
+  - id: giam_thue_tncn
+    name: Giảm thuế TNCN theo tỷ lệ
+    expression: Thuế TNCN sau giảm = Thuế TNCN × (1 − Tỷ lệ giảm ÷ 100)
+    variables:
+      - {name: thue_tncn, description: Thuế TNCN phải nộp trước giảm, unit: đồng, source: input}
+      - {name: ty_le_giam_tncn, description: Tỷ lệ giảm số thuế TNCN phải nộp, unit: "%", source: kb}
+    basis:
+      - {number: 43/2026/QH16, article: Điều 1}
+    tool: calculate_household_tax
+    examples:
+      - inputs: {thue_tncn: 7000000, ty_le_giam_tncn: 30}
+        expected: {thue_tncn_sau_giam: 4900000}
+  - id: loi_nhuan_hoa_von_ho
+    name: Lợi nhuận hòa vốn giữa hai phương pháp TNCN của hộ kinh doanh
+    expression: >-
+      Lợi nhuận hòa vốn = Thuế TNCN theo % doanh thu ÷ Thuế suất TNCN trên lợi nhuận; lợi nhuận cả năm thấp hơn
+      mức này thì tính TNCN trên lợi nhuận nộp ít hơn
+    variables:
+      - {name: doanh_thu, description: Doanh thu năm, unit: đồng, source: input}
+      - {name: nguong_doanh_thu, description: Ngưỡng doanh thu năm không phải nộp TNCN, unit: đồng, source: kb}
+      - {name: ty_le_tncn, description: Tỷ lệ % TNCN trên doanh thu theo ngành nghề, unit: "%", source: kb}
+      - {name: thue_suat_tncn, description: Thuế suất TNCN trên thu nhập tính thuế, unit: phân số (0–1), source: kb}
+      - {name: tran_doanh_thu_theo_doanh_thu, description: Doanh thu năm tối đa được tính TNCN theo % doanh thu, unit: đồng, source: kb}
+    basis:
+      - {number: 109/2025/QH15, article: Điều 7}
+    tool: calculate_household_tax
+    examples:
+      - inputs: {doanh_thu: 2400000000, nguong_doanh_thu: 1000000000, ty_le_tncn: 0.5, thue_suat_tncn: 0.15, tran_doanh_thu_theo_doanh_thu: 3000000000}
+        expected: {loi_nhuan_hoa_von: 46666666.67}
