@@ -261,8 +261,8 @@ func (g *usageGuard) Entitlement(ctx context.Context, tenantID uint64, userID st
 		}
 		// a SuperAdmin package outlives a revoked SuperAdmin role, and a
 		// guest package the account's Guest days: ignore both
-		if sub != nil && !(sub.Plan != nil && sub.Plan.Code == types.UsageSystemAdminPlanCode && !systemAdmin) &&
-			!(sub.Plan != nil && sub.Plan.Code == types.UsageGuestPlanCode) {
+		role := rolePlan(subPlan(sub))
+		if sub != nil && !(role == types.UsageSystemAdminPlanCode && !systemAdmin) && role != types.UsageGuestPlanCode {
 			ent := entitlementFrom(sub, types.UsageScopeUser, now)
 			ent.HasSeat = true
 			ent.CountedScope = types.UsageScopeUser
@@ -299,12 +299,12 @@ func (g *usageGuard) personalPlanEntitlement(
 	if err != nil {
 		return nil, err
 	}
-	if sub != nil && sub.Plan != nil && sub.Plan.Code != planCode && isRolePlanCode(sub.Plan.Code) {
+	if role := rolePlan(subPlan(sub)); role != "" && role != planCode {
 		sub.Status = types.UsageSubscriptionCancelled
 		if err := g.plans.UpdateSubscription(ctx, sub); err != nil {
 			return nil, err
 		}
-		logger.Infof(ctx, "usage guard: %s package of %s closed for %s", sub.Plan.Code, userID, planCode)
+		logger.Infof(ctx, "usage guard: %s package of %s closed for %s", role, userID, planCode)
 		sub = nil
 	}
 	if sub == nil {
@@ -334,7 +334,7 @@ func (g *usageGuard) personalPlanEntitlement(
 	// expired subscription stays the scope's one active row (billing renews
 	// it), so the guest plan applies without a subscription of its own.
 	if planCode == types.UsageGuestPlanCode && !sub.IsCurrentAt(now) &&
-		!(sub.Plan != nil && sub.Plan.Code == types.UsageGuestPlanCode) {
+		rolePlan(sub.Plan) != types.UsageGuestPlanCode {
 		plan, err := g.planByCode(ctx, planCode)
 		if err != nil {
 			return nil, err
@@ -360,19 +360,39 @@ func (g *usageGuard) personalPlanEntitlement(
 	return ent, nil
 }
 
-// isRolePlanCode reports the packages that follow an account's kind rather
-// than a purchase: system-admin (SuperAdmin) and guest (Guest).
-func isRolePlanCode(code string) bool {
-	return code == types.UsageSystemAdminPlanCode || code == types.UsageGuestPlanCode
+// rolePlan names the role package p is — the packages that follow an
+// account's kind rather than a purchase: UsageSystemAdminPlanCode
+// (SuperAdmin, found by code) or UsageGuestPlanCode (Guest, found by the
+// fixed id migration 000172 seeds, so a plan someone else named "guest" is
+// never taken for it). "" for any other plan.
+func rolePlan(p *types.UsagePlan) string {
+	switch {
+	case p == nil:
+		return ""
+	case p.ID == types.UsageGuestPlanID:
+		return types.UsageGuestPlanCode
+	case p.Code == types.UsageSystemAdminPlanCode:
+		return types.UsageSystemAdminPlanCode
+	}
+	return ""
 }
 
+// subPlan is sub's plan, nil for no subscription.
+func subPlan(sub *types.UsageSubscription) *types.UsagePlan {
+	if sub == nil {
+		return nil
+	}
+	return sub.Plan
+}
+
+// planByCode finds a role package (see rolePlan).
 func (g *usageGuard) planByCode(ctx context.Context, code string) (*types.UsagePlan, error) {
 	plans, err := g.plans.ListPlans(ctx, true)
 	if err != nil {
 		return nil, err
 	}
 	for _, p := range plans {
-		if p.Code == code {
+		if rolePlan(p) == code {
 			return p, nil
 		}
 	}

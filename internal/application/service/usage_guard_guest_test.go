@@ -27,7 +27,7 @@ func (f *rolePlanRepo) UpdateSubscription(_ context.Context, sub *types.UsageSub
 }
 
 func guestPlan() *types.UsagePlan {
-	return &types.UsagePlan{ID: "plan-guest", Code: types.UsageGuestPlanCode, Name: "Khách", ScopeKind: "user", Mode: "pool",
+	return &types.UsagePlan{ID: types.UsageGuestPlanID, Code: types.UsageGuestPlanCode, Name: "Khách", ScopeKind: "user", Mode: "pool",
 		Limits: types.UsageLimits{{Metric: types.UsageMetricQuestions, Period: types.UsagePeriodDay, Limit: 10}}}
 }
 
@@ -61,7 +61,7 @@ func TestUsageGuardGuestGetsGuestPackageInPortal(t *testing.T) {
 	require.NoError(t, checkTurn(g, portalCtx(), testPortalID, "guest-1"))
 	sub := plans.active["user/guest-1"]
 	require.NotNil(t, sub, "the guest subscription is created on the first lookup")
-	require.Equal(t, "plan-guest", sub.PlanID)
+	require.Equal(t, types.UsageGuestPlanID, sub.PlanID)
 	require.Equal(t, types.UsageScopeUser, sub.ScopeType)
 
 	ent, err := g.Entitlement(portalCtx(), testPortalID, "guest-1")
@@ -95,13 +95,35 @@ func TestUsageGuardGuestKeepsOwnPackage(t *testing.T) {
 func TestUsageGuardGuestPackageIgnoredOutsidePortal(t *testing.T) {
 	plans := &rolePlanRepo{adminPlanRepo: adminPlanRepo{
 		fakeUsagePlanRepo: fakeUsagePlanRepo{active: map[string]*types.UsageSubscription{
-			"user/user-1": {ID: "sub-g", PlanID: "plan-guest", Mode: "pool", Status: "active", Plan: guestPlan()},
+			"user/user-1": {ID: "sub-g", PlanID: types.UsageGuestPlanID, Mode: "pool", Status: "active", Plan: guestPlan()},
 		}},
 		plans: []*types.UsagePlan{guestPlan()},
 	}}
 	g := guestGuard(plans, &countingRepo{})
 	err := checkTurn(g, context.Background(), 10003, "user-1")
 	require.Equal(t, types.UsageDenialNoSubscription, denialReason(t, err))
+}
+
+// A plan someone else coded "guest" is never taken for the guest plan: the
+// guard finds it by the seeded id only.
+func TestUsageGuardGuestPlanFoundByIDNotCode(t *testing.T) {
+	other := &types.UsagePlan{ID: "plan-other", Code: types.UsageGuestPlanCode, ScopeKind: "user", Mode: "pool"}
+	seeded := guestPlan()
+	seeded.Code = "guest-chat"
+	plans := &rolePlanRepo{adminPlanRepo: adminPlanRepo{
+		fakeUsagePlanRepo: fakeUsagePlanRepo{active: map[string]*types.UsageSubscription{}},
+		plans:             []*types.UsagePlan{other, seeded},
+	}}
+	g := guestGuard(plans, &countingRepo{})
+	require.NoError(t, checkTurn(g, portalCtx(), testPortalID, "guest-1"))
+	require.Equal(t, types.UsageGuestPlanID, plans.active["user/guest-1"].PlanID)
+
+	// a personal subscription to the other "guest" plan is an ordinary package
+	plans.active["user/user-2"] = &types.UsageSubscription{ID: "sub-o", PlanID: "plan-other", Mode: "pool",
+		Status: "active", Plan: other}
+	ent, err := g.Entitlement(context.Background(), 10003, "user-2")
+	require.NoError(t, err)
+	require.Equal(t, "plan-other", ent.PlanID)
 }
 
 // Without the guest plan (deleted by a SuperAdmin) a Guest is refused.
@@ -120,7 +142,7 @@ func TestUsageGuardSystemAdminReplacesGuestPackage(t *testing.T) {
 	adminPlan := &types.UsagePlan{ID: "plan-sa", Code: types.UsageSystemAdminPlanCode, ScopeKind: "user", Mode: "pool"}
 	plans := &rolePlanRepo{adminPlanRepo: adminPlanRepo{
 		fakeUsagePlanRepo: fakeUsagePlanRepo{active: map[string]*types.UsageSubscription{
-			"user/admin-1": {ID: "sub-g", ScopeType: "user", ScopeID: "admin-1", PlanID: "plan-guest", Mode: "pool",
+			"user/admin-1": {ID: "sub-g", ScopeType: "user", ScopeID: "admin-1", PlanID: types.UsageGuestPlanID, Mode: "pool",
 				Status: "active", Plan: guestPlan()},
 		}},
 		plans: []*types.UsagePlan{guestPlan(), adminPlan},
