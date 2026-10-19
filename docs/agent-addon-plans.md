@@ -125,3 +125,21 @@ Mỗi giai đoạn: Opus làm, Fable rà (khi còn hạn mức), migration theo 
 7. Gắn agent vào kênh IM/embed/MCP lúc cấu hình (SuperAdmin đọc không lọc) chỉ kiểm danh sách "Nội bộ"; agent Chuyên ngành mà Tổ chức của kênh chưa mua vẫn gắn được, kênh trả lời "trợ lý không áp dụng" ở tin nhắn đầu. Có thể chặn lúc gắn ở giai đoạn sau.
 8. Đổi gói (`CreateSubscription` huỷ thuê bao cũ) không chuyển add-on sang thuê bao mới — giai đoạn C phải chép.
 9. Thông báo 2104 giữ nguyên câu "không tồn tại hoặc không áp dụng cho Tổ chức của bạn" (frontend và eval dựa vào); docs/error-codes.md ghi thêm trường hợp chưa mua/hết hạn.
+
+### 8.2 Giai đoạn B — đã làm (19/10/2026, cùng nhánh, commit riêng sau giai đoạn A; chưa merge, chưa chạy migration trên dev)
+
+**Đã giao**
+
+- Migration **000167** `usage_agent_addons`: khoá chính `agent_id` (một dòng mỗi agent), `price_vnd` ≥ 0 mỗi tháng (× số ghế với gói ghế), `plan_ids` jsonb (`[]` = bán kèm mọi gói), `description` cho người mua, `is_active`, `sort_order`, `created_at`/`updated_at`; chỉ mục phần các dòng đang bán. Dữ liệu lúc chạy, không seed.
+- API SuperAdmin (cùng nhóm `/system/admin` với gói): `GET /api/v1/system/admin/usage/agent-addons` (mặc định gồm dòng tắt; `?include_inactive=false` để bỏ), `POST`, `PUT …/:agent_id` (agent lấy từ đường dẫn), `DELETE …/:agent_id`. Kiểm: giá ≥ 0, gói phải tồn tại, agent phải là Chuyên ngành (400), chưa có dòng (409). Danh sách trả kèm tên agent, `agent_available` (còn là agent Chuyên ngành), `holders` (số thuê bao còn hiệu lực đang giữ add-on) và `included_agents`.
+- **Agent bị xoá hoặc đổi khỏi Chuyên ngành → dòng danh mục bị tắt** (không chặn việc đổi/xoá agent): `customAgentService` gọi `DeactivateUnsellableAgentAddon` sau mỗi lần sửa/xoá agent; đổi lại thành Chuyên ngành **không** tự bật lại — SuperAdmin bật "Đang bán". Ngoài ra, báo giá cho người mua luôn bỏ qua dòng mà agent không còn là Chuyên ngành, nên không bán nhầm dù bước tắt có lỗi.
+- `GET /billing/plans` (thành viên đã đăng nhập): mỗi gói giữ nguyên các trường cũ ở cấp ngoài cùng, thêm `included_agents` (2 agent cơ bản, tên theo `builtin_agents.yaml` theo ngôn ngữ người gọi) và `addons` (tên, mô tả, `price_vnd`, `per_seat` = gói theo ghế) — chỉ các dòng đang bán, agent còn là Chuyên ngành, bán kèm gói đó. Chưa có mua (giai đoạn C).
+- Trình sửa agent, Chuyên ngành: mục "Bán kèm gói dịch vụ" (giá/tháng VNĐ có xem trước "49.000 VNĐ", chọn gói — không chọn = mọi gói, mô tả cho người mua, "Đang bán"), lưu qua API danh mục sau khi lưu agent; chỉ tạo dòng mới khi SuperAdmin đã nhập vào mục này. Trang Gói sử dụng: mỗi gói hiện "Gồm 2 agent cơ bản: …" và "Agent chuyên ngành bán kèm: tên (giá/tháng × số ghế)". Trang Bộ kỹ năng, tab "Agent đang dùng": cách phân phối, giá/trạng thái trong danh mục, số thuê bao đang có.
+- Kiểm thử: repository (CRUD, tên/khả dụng/số thuê bao, tắt khi đổi/xoá agent; chạy cả trên PostgreSQL 16), service (kiểm hợp lệ, 409/404/400, báo giá theo gói, `per_seat`, gói lọc, agent đổi phân phối không còn được chào, JSON giữ trường gói ở ngoài), đồng bộ danh mục khi sửa/xoá agent qua `customAgentService`, router (danh mục chỉ SuperAdmin; `/billing/plans` cho thành viên với payload mới), trang chi tiết bộ kỹ năng; frontend `tsc` + node test; migration lên–xuống–lên trên PostgreSQL 16.
+
+**Khác với thiết kế / cần biết**
+
+1. Tên 2 agent cơ bản lấy từ `builtin_agents.yaml` (hiện là "Soạn thảo văn bản", "Suy luận thông minh"), không phải chữ "Trợ lý văn bản", "Hỏi đáp pháp luật" trong §2 — một nguồn tên duy nhất với ô chọn agent; đổi tên trong YAML nếu muốn đúng chữ ở §2. Danh sách 2 agent nằm ở `types.UsageIncludedAgentIDs`.
+2. Agent cơ bản tuỳ chỉnh (cách phân phối Cơ bản, không phải built-in) không được liệt kê trên thẻ gói.
+3. Xoá dòng danh mục không thu hồi quyền dùng đã bán (`usage_subscription_addons` giữ nguyên tới khi hết hạn).
+4. Tên agent trong danh mục lấy từ dòng agent của hồ sơ cấu hình (Tổ chức ghi đè tên riêng không ảnh hưởng).
