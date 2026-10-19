@@ -64,6 +64,19 @@ func TestHandoffTemplateID(t *testing.T) {
 	if got := HandoffTemplateID("Tạo file Word giúp tôi", []string{"Soạn giúp bản báo cáo tháng 10"}); got != "bao-cao" {
 		t.Errorf("bản báo cáo: %q", got)
 	}
+	// documents a legal chat cites are no type to draft…
+	for _, cited := range []string{"Nghị quyết 18-NQ/TW còn hiệu lực không?", "Công điện 05/CĐ-TTg nói gì?", "Khi nào lập biên bản vi phạm hành chính?"} {
+		if got := HandoffTemplateID("Tạo file Word giúp tôi", []string{cited}); got != "" {
+			t.Errorf("%q taken for the type: %q", cited, got)
+		}
+	}
+	// …unless named as one
+	if got := HandoffTemplateID("Tạo file Word giúp tôi", []string{"Viết dự thảo nghị quyết về chuyển đổi số"}); got != "nghi-quyet" {
+		t.Errorf("dự thảo nghị quyết: %q", got)
+	}
+	if got := HandoffTemplateID("Đưa giấy mời này vào file Word", nil); got != "giay-moi" {
+		t.Errorf("giấy mời: %q", got)
+	}
 }
 
 func TestAgentHandoffCard(t *testing.T) {
@@ -76,12 +89,12 @@ func TestAgentHandoffCard(t *testing.T) {
 	if !strings.Contains(c.Message(), "Soạn thảo văn bản") || !strings.Contains(c.Message(), "soạn kế hoạch") {
 		t.Fatalf("message %q", c.Message())
 	}
-	if opts, _ := d["options"].([]map[string]interface{}); len(opts) != 6 || opts[0]["template_id"] != "ke-hoach" {
+	if opts, _ := d["options"].([]map[string]interface{}); len(opts) != len(handoffTemplateWords) || opts[0]["template_id"] != "ke-hoach" {
 		t.Fatalf("the guess first among all types: %v", d["options"])
 	}
 	d = (&AgentHandoffCard{}).Data()
 	opts, _ := d["options"].([]map[string]interface{})
-	if len(opts) != 6 || d["resend"] != nil || opts[0]["resend"] != "Soạn công văn từ nội dung đã trao đổi" {
+	if len(opts) != len(handoffTemplateWords) || d["resend"] != nil || opts[0]["resend"] != "Soạn công văn từ nội dung đã trao đổi" {
 		t.Fatalf("no type: %v", d)
 	}
 }

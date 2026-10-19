@@ -36,6 +36,9 @@ var (
 var handoffTemplateWords = []struct{ id, word string }{
 	{"cong-van", "công văn"}, {"ke-hoach", "kế hoạch"}, {"bao-cao", "báo cáo"},
 	{"to-trinh", "tờ trình"}, {"thong-bao", "thông báo"}, {"quyet-dinh", "quyết định"},
+	{"nghi-quyet", "nghị quyết"}, {"chi-thi", "chỉ thị"}, {"cong-dien", "công điện"},
+	{"giay-moi", "giấy mời"}, {"giay-gioi-thieu", "giấy giới thiệu"}, {"bien-ban", "biên bản"},
+	{"giay-nghi-phep", "giấy nghỉ phép"},
 }
 
 // WantsWordFile tells whether a chat message asks for a Word file to be
@@ -51,9 +54,12 @@ func WantsWordFile(query string) bool {
 }
 
 // handoffVerbTypes are the type words that are also everyday verbs
-// ("lãnh đạo đã quyết định", "báo cáo lên"): in earlier messages they name
-// the type only after "bản" / "văn bản" / "dự thảo".
-var handoffVerbTypes = map[string]bool{"quyet-dinh": true, "bao-cao": true, "thong-bao": true}
+// ("lãnh đạo đã quyết định", "báo cáo lên") or documents a legal chat
+// cites: in earlier messages they name the type only after "bản" / "văn
+// bản" / "dự thảo".
+var handoffVerbTypes = map[string]bool{"quyet-dinh": true, "bao-cao": true, "thong-bao": true,
+	// named all day in a legal chat ("Nghị quyết 18-NQ/TW", "lập biên bản vi phạm")
+	"chi-thi": true, "nghi-quyet": true, "cong-dien": true, "bien-ban": true}
 
 // HandoffTemplateID guesses the document type of the file: from the
 // message, else from the earlier messages of the conversation, latest
@@ -63,13 +69,15 @@ func HandoffTemplateID(query string, earlier []string) string {
 		t := strings.ToLower(norm.NFC.String(text))
 		best, at := "", -1
 		for _, w := range handoffTemplateWords {
-			word := w.word
+			words := []string{w.word}
 			if n > 0 && handoffVerbTypes[w.id] {
-				word = "bản " + word
+				words = []string{"bản " + w.word, "dự thảo " + w.word}
 			}
 			// the type named last in a message is the one it is about
-			if i := strings.LastIndex(t, word); i > at {
-				best, at = w.id, i
+			for _, word := range words {
+				if i := strings.LastIndex(t, word); i > at {
+					best, at = w.id, i
+				}
 			}
 		}
 		if best != "" {
@@ -104,7 +112,7 @@ func (c *AgentHandoffCard) Message() string {
 
 // Data is the card payload: the agent to switch to and what the click
 // sends (resend, with a template request seeded from the conversation);
-// options list the six types, the guessed one (template_id) first.
+// options list the types, the guessed one (template_id) first.
 func (c *AgentHandoffCard) Data() map[string]interface{} {
 	data := map[string]interface{}{
 		"display_type":      AgentHandoffType,
