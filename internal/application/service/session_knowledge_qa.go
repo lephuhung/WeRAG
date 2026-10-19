@@ -400,6 +400,7 @@ func (s *sessionService) selectChatModelID(
 //   - "all": fetches all knowledge bases for the tenant
 //   - "selected": uses the explicitly configured knowledge bases
 //   - "none": returns empty slice
+//   - "public": the platform public knowledge bases only
 //   - default: falls back to configured knowledge bases for backward compatibility
 func (s *sessionService) resolveKnowledgeBasesFromAgent(
 	ctx context.Context,
@@ -411,6 +412,10 @@ func (s *sessionService) resolveKnowledgeBasesFromAgent(
 	}
 
 	switch customAgent.Config.KBSelectionMode {
+	case types.KBSelectionModePublic:
+		kbIDs := s.platformPublicKBIDs(ctx, customAgent)
+		logger.Infof(ctx, "KBSelectionMode=public: loaded %d platform public knowledge bases", len(kbIDs))
+		return kbIDs
 	case "all":
 		// Authoritative capability filter for the runtime path. The frontend
 		// editor and @mention dropdown apply the same filter, but we don't
@@ -475,6 +480,37 @@ func (s *sessionService) resolveKnowledgeBasesFromAgent(
 		}
 		return customAgent.Config.KnowledgeBases
 	}
+}
+
+// platformPublicKBIDs lists the platform public knowledge bases (owner 0,
+// visibility public) the agent's tools can use: the whole scope of
+// KBSelectionModePublic. The caller's own, published, invited and granted
+// bases are left out even though the readable listing includes them.
+func (s *sessionService) platformPublicKBIDs(ctx context.Context, customAgent *types.CustomAgent) []string {
+	allKBs, err := s.knowledgeBaseService.ListKnowledgeBases(ctx)
+	if err != nil {
+		logger.Warnf(ctx, "Failed to list knowledge bases for the public scope: %v", err)
+		return nil
+	}
+	return filterPlatformPublicKBIDs(allKBs, customAgent)
+}
+
+// filterPlatformPublicKBIDs keeps the platform public bases that satisfy
+// the agent's tool requirements.
+func filterPlatformPublicKBIDs(kbs []*types.KnowledgeBase, customAgent *types.CustomAgent) []string {
+	capFilter := tools.DeriveKBFilterForAgent(customAgent.Config.AgentMode, customAgent.Config.AllowedTools)
+	kbIDs := make([]string, 0, len(kbs))
+	for _, kb := range kbs {
+		if !access.IsPlatformPublicKB(kb) {
+			continue
+		}
+		if !capFilter.IsEmpty() &&
+			!tools.KBSatisfiesAgentRequirements(kb.Capabilities(), customAgent.Config.AgentMode, customAgent.Config.AllowedTools) {
+			continue
+		}
+		kbIDs = append(kbIDs, kb.ID)
+	}
+	return kbIDs
 }
 
 // buildSearchTargets computes the unified search targets from knowledgeBaseIDs and knowledgeIDs.

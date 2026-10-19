@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
@@ -61,7 +62,9 @@ func (c *InfoCommand) Execute(ctx context.Context, cmdCtx *CommandContext, _ []s
 	// KBSelectionMode: "all" uses every KB under the tenant (IDs list is empty),
 	// "selected" uses the explicit KnowledgeBases list, "none"/empty means disabled.
 	sb.WriteString("\n📚 **Kho tri thức**\n")
-	if cfg.KBSelectionMode == "all" {
+	if cfg.KBSelectionMode == types.KBSelectionModePublic {
+		sb.WriteString("  Các kho tri thức công khai của nền tảng\n")
+	} else if cfg.KBSelectionMode == "all" {
 		kbs, err := c.kbService.ListKnowledgeBasesByTenantID(ctx, cmdCtx.TenantID)
 		if err == nil && len(kbs) > 0 {
 			for _, kb := range kbs {

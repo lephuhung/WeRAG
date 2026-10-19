@@ -30,7 +30,16 @@ const (
 	BuiltinWikiFixerID = "builtin-wiki-fixer"
 	// BuiltinSkillInstallerID is the ID for the built-in skill installer agent
 	BuiltinSkillInstallerID = "builtin-skill-installer"
+	// BuiltinPublicLookupID is the public-lookup agent of guest chat: the
+	// only agent a Guest runs, in the public portal, and it reads platform
+	// public knowledge bases only (KBSelectionModePublic).
+	BuiltinPublicLookupID = "builtin-public-lookup"
 )
+
+// KBSelectionModePublic limits an agent to the platform public knowledge
+// bases (owner_tenant_id 0, visibility public): never the caller's own,
+// published, invited or granted ones, and never an @-mentioned one.
+const KBSelectionModePublic = "public"
 
 // AgentMode constants for agent running mode
 const (
@@ -218,7 +227,8 @@ type CustomAgentConfig struct {
 	SandboxConfigID string `yaml:"sandbox_config_id" json:"sandbox_config_id,omitempty"`
 
 	// ===== Knowledge Base Settings =====
-	// Knowledge base selection mode: "all" = all KBs, "selected" = specific KBs, "none" = no KB
+	// Knowledge base selection mode: "all" = all KBs, "selected" = specific KBs, "none" = no KB,
+	// "public" = platform public KBs only (KBSelectionModePublic)
 	KBSelectionMode string `yaml:"kb_selection_mode" json:"kb_selection_mode"`
 	// Associated knowledge base IDs (only used when KBSelectionMode is "selected")
 	KnowledgeBases []string `yaml:"knowledge_bases" json:"knowledge_bases"`

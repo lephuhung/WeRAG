@@ -35,7 +35,16 @@ func (s *sessionService) resolveKnowledgeBases(
 			hasExplicitMention, customAgent.Config.RetrieveKBOnlyWhenMentioned, customAgent.Config.KBSelectionMode)
 	}
 
-	if hasExplicitMention {
+	if customAgent != nil && customAgent.Config.KBSelectionMode == types.KBSelectionModePublic {
+		// The public scope is fixed: an @mention or a request KB id cannot
+		// widen it to a tenant, published or invited base.
+		if hasExplicitMention {
+			logger.Infof(ctx, "KBSelectionMode=public: ignoring request-specified targets kbs=%v docs=%v", kbIDs, knowledgeIDs)
+		}
+		kbIDs = s.resolveKnowledgeBasesFromAgent(ctx, customAgent, req.Session.TenantID)
+		knowledgeIDs = nil
+		req.TagScopes = nil
+	} else if hasExplicitMention {
 		logger.Infof(ctx, "Using request-specified targets: kbs=%v, docs=%v", kbIDs, knowledgeIDs)
 		// When using a shared agent, restrict @mentions to the agent's allowed KB scope
 		// to prevent users from injecting KB/knowledge IDs outside the agent's configured range.
