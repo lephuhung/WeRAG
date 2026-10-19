@@ -83,7 +83,8 @@ export interface CustomAgentConfig {
   sandbox_config_id?: string;
 
   // ===== knowledge bases =====
-  kb_selection_mode?: "all" | "selected" | "none";
+  // "public": platform public KBs only (the guest assistant; not selectable)
+  kb_selection_mode?: "all" | "selected" | "none" | "public";
   knowledge_bases?: string[];
   // true: only retrieve when the user explicitly @-mentions a KB/document
   retrieve_kb_only_when_mentioned?: boolean;

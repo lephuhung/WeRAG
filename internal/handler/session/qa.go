@@ -174,6 +174,8 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 	portal := types.InPublicPortal(ctx)
 	if portal {
 		restrictPublicPortalRequest(ctx, &request)
+		// a Guest cannot see or delete memory: none is recalled or saved
+		ctx = types.WithMemoryDisabled(ctx)
 	}
 
 	// Validate query content
@@ -244,6 +246,7 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		if err := publicLookupUnavailable(customAgent); err != nil {
 			return nil, nil, err
 		}
+		customAgent = enforcePublicLookupConfig(customAgent)
 	}
 
 	// Merge @mentioned items into knowledge_base_ids and knowledge_ids

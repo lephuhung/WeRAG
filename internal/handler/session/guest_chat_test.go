@@ -58,3 +58,40 @@ func TestPublicLookupUnavailable(t *testing.T) {
 	require.Error(t, publicLookupUnavailable(&types.CustomAgent{ID: types.BuiltinPublicLookupID, Switch: &off}))
 	require.NoError(t, publicLookupUnavailable(&types.CustomAgent{ID: types.BuiltinPublicLookupID, Switch: &on}))
 }
+
+// A SuperAdmin save from the agent editor cannot widen a Guest's turn: the
+// scope and the tool boundary are reapplied, models and prompt are kept.
+func TestEnforcePublicLookupConfig(t *testing.T) {
+	stored := &types.CustomAgent{ID: types.BuiltinPublicLookupID, Config: types.CustomAgentConfig{
+		ModelID: "chat-1", SystemPrompt: "riêng", KBSelectionMode: "all", KnowledgeBases: []string{"kb-tenant"},
+		RetrieveKBOnlyWhenMentioned: true, WebSearchEnabled: true, WebSearchDefaultOn: true, WebFetchEnabled: true,
+		MCPSelectionMode: "all", MCPServices: []string{"mcp-1"}, SkillsSelectionMode: "all",
+		SelectedSkills: []string{"s"}, SandboxConfigID: "sb", DomainPacks: []string{"tax"},
+		ImageUploadEnabled: true, AudioUploadEnabled: true, DataAnalysisEnabled: true,
+		AllowedTools: []string{"search_knowledge", "rewrite_paragraphs", "data_analysis", "check_legal_status"},
+	}}
+	got := enforcePublicLookupConfig(stored)
+	require.Equal(t, "chat-1", got.Config.ModelID)
+	require.Equal(t, "riêng", got.Config.SystemPrompt)
+	require.Equal(t, types.KBSelectionModePublic, got.Config.KBSelectionMode)
+	require.Nil(t, got.Config.KnowledgeBases)
+	require.False(t, got.Config.RetrieveKBOnlyWhenMentioned)
+	require.False(t, got.Config.WebSearchEnabled || got.Config.WebSearchDefaultOn || got.Config.WebFetchEnabled)
+	require.Equal(t, "none", got.Config.MCPSelectionMode)
+	require.Nil(t, got.Config.MCPServices)
+	require.Equal(t, "none", got.Config.SkillsSelectionMode)
+	require.Empty(t, got.Config.SandboxConfigID)
+	require.Nil(t, got.Config.DomainPacks)
+	require.False(t, got.Config.ImageUploadEnabled || got.Config.AudioUploadEnabled || got.Config.DataAnalysisEnabled)
+	require.NotNil(t, got.Config.MemoryEnabled)
+	require.False(t, *got.Config.MemoryEnabled)
+	require.Equal(t, []string{"search_knowledge", "check_legal_status"}, got.Config.AllowedTools)
+	// the stored row is untouched
+	require.Equal(t, "all", stored.Config.KBSelectionMode)
+
+	// an allow-list with nothing allowed falls back to the read tools, never
+	// to the runtime default set
+	stored.Config.AllowedTools = []string{"rewrite_paragraphs"}
+	require.Equal(t, []string{"search_knowledge", "read_document", "list_documents"},
+		enforcePublicLookupConfig(stored).Config.AllowedTools)
+}

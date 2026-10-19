@@ -135,6 +135,11 @@ func (s *Service) enabledScope(ctx context.Context) (interfaces.MemoryScope, *ty
 	if !types.MemoryAllowedForAgent(ctx) {
 		return scope, cfg, false
 	}
+	// Guests in the public portal have no memory: they could neither see nor
+	// delete what would be saved (the memory routes are Member-only).
+	if types.InPublicPortal(ctx) {
+		return scope, cfg, false
+	}
 	// The per-user opt-out stored on the subject row is deliberately not
 	// consulted: memory is a platform setting the SuperAdmin owns, and users
 	// have no switch of their own.

@@ -81,7 +81,7 @@ type Draft = {
   thinking: boolean;
   citation_enabled: boolean;
   // KB binding & retrieval
-  kb_selection_mode: "all" | "selected" | "none";
+  kb_selection_mode: "all" | "selected" | "none" | "public";
   knowledge_bases: string[];
   retrieve_kb_only_when_mentioned: boolean;
   embedding_top_k: number;
@@ -608,7 +608,7 @@ export function AgentEditorModal({
               tab === "knowledge" ? "bg-surface-card text-ink shadow-sm" : "text-muted hover:text-ink"
             }`}
           >
-            Knowledge Bases ({draft.kb_selection_mode === "all" ? "All" : draft.knowledge_bases.length})
+            Knowledge Bases ({draft.kb_selection_mode === "all" ? "All" : draft.kb_selection_mode === "public" ? t("agent.kbMode.publicShort") : draft.knowledge_bases.length})
           </button>
           <button
             type="button"
@@ -1198,6 +1198,14 @@ export function AgentEditorModal({
           <div className="space-y-4">
             <div>
               <span className="caption mb-1.5 block text-muted">Knowledge Retrieval Scope</span>
+              {draft.kb_selection_mode === "public" ? (
+                /* the guest assistant's fixed scope: kept as is on save, and
+                   the server reapplies it on every guest turn anyway */
+                <div className="rounded-[10px] border border-primary bg-primary/10 px-3.5 py-2">
+                  <div className="font-medium text-primary">{t("agent.kbMode.public")}</div>
+                  <p className="caption mt-0.5 text-muted">{t("agent.kbMode.publicHint")}</p>
+                </div>
+              ) : (
               <div className="flex gap-2">
                 {(["all", "selected", "none"] as const).map((mode) => (
                   <button
@@ -1215,6 +1223,7 @@ export function AgentEditorModal({
                   </button>
                 ))}
               </div>
+              )}
             </div>
 
             {draft.kb_selection_mode === "selected" && (

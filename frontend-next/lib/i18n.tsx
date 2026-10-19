@@ -1775,6 +1775,10 @@ const en = {
   "agent.rerankModel": "ReRank model",
   "agent.rerankPlaceholder": "Select a ReRank model...",
   "agent.rerankRequired": "ReRank model is required when Knowledge Base is enabled.",
+  "agent.kbMode.public": "Platform public knowledge bases",
+  "agent.kbMode.publicShort": "Public",
+  "agent.kbMode.publicHint":
+    "Fixed scope of the guest assistant: platform public knowledge bases only. Saving keeps it; the server reapplies it on every guest turn.",
   "agent.thinking": "Thinking mode (deep reasoning)",
   "agent.docAssist.title": "Document assistant",
   "agent.docAssist.desc": "Settings used when this agent edits a document in the workspace editor.",
@@ -4981,6 +4985,10 @@ const vi: Record<keyof typeof en, string> = {
   "agent.rerankModel": "Mô hình ReRank",
   "agent.rerankPlaceholder": "Chọn mô hình ReRank...",
   "agent.rerankRequired": "Mô hình ReRank là bắt buộc khi kích hoạt Cơ sở tri thức.",
+  "agent.kbMode.public": "Kho tri thức công khai của nền tảng",
+  "agent.kbMode.publicShort": "Công khai",
+  "agent.kbMode.publicHint":
+    "Phạm vi cố định của trợ lý dành cho khách: chỉ các kho công khai của nền tảng. Khi lưu, phạm vi này được giữ nguyên; máy chủ luôn áp dụng lại nó cho mọi lượt hỏi của khách.",
   "agent.thinking": "Chế độ suy nghĩ (suy luận sâu)",
   "agent.docAssist.title": "Soạn thảo văn bản",
   "agent.docAssist.desc": "Thiết lập dùng khi agent này làm việc với văn bản trong khung soạn thảo.",
