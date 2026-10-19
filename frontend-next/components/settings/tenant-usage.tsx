@@ -111,6 +111,20 @@ export function TenantUsage() {
               <span className="caption text-body">{formatDate(sub.ends_at)}</span>
             </Row>
           )}
+          <Row label={t("tus.addons")} desc={t("tus.addonsDesc")}>
+            {(data.addons ?? []).length === 0 ? (
+              <span className="caption text-muted">{t("tus.noAddons")}</span>
+            ) : (
+              <ul className="caption space-y-0.5 text-right text-body">
+                {(data.addons ?? []).map((a) => (
+                  <li key={a.agent_id}>
+                    {a.agent_name || a.agent_id}
+                    {a.ends_at ? ` — ${t("tus.addonUntil", { date: formatDate(a.ends_at) })}` : ""}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Row>
           <Row label={sub.mode === "seat" ? t("tus.limitsPerSeat") : t("tus.limitsPool")} desc={t("tus.limitsDesc")}>
             <LimitStatusList items={sub.mode === "seat" ? (myEntitlement?.limits ?? []) : sub.limit_status} />
           </Row>

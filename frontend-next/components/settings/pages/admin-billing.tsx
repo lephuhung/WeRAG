@@ -313,7 +313,8 @@ export default function AdminBilling() {
                       {o.scope_name} <span className="caption text-muted-soft">({o.scope_type === "tenant" ? t("usg.scopeTenant") : t("usg.scopeUser")})</span>
                     </td>
                     <td className="break-words px-2.5 py-2 text-ink">
-                      {o.plan_name} · {t("bill.monthsN", { n: o.months })}{o.mode === "seat" ? ` · ${t("bill.seatsN", { n: o.seats })}` : ""}
+                      {o.plan_name} · {o.kind === "addon" ? t("bill.addonOrder") : t("bill.monthsN", { n: o.months })}{o.mode === "seat" ? ` · ${t("bill.seatsN", { n: o.seats })}` : ""}
+                      {(o.addons ?? []).length > 0 ? ` · ${(o.addons ?? []).map((a) => a.name || a.agent_id).join(", ")}` : ""}
                       {o.promo_code ? <span className="caption block text-muted">{o.promo_code} −{formatPriceVND(o.discount_vnd)}</span> : null}
                     </td>
                     <td className="px-2.5 py-2 text-right tabular-nums text-ink">{formatPriceVND(o.total_vnd)}</td>

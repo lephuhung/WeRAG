@@ -6,6 +6,9 @@ import {
   addonSaleDraft,
   addonSaleInput,
   addonsForPlan,
+  addonLineDetail,
+  keepOffered,
+  toggleAddonId,
   shouldSaveAddonSale,
   togglePlanId,
 } from "./agent-addon-catalogue.ts";
@@ -56,5 +59,29 @@ describe("addonsForPlan", () => {
     ];
     assert.deepEqual(addonsForPlan(rows, { id: "go" }).map((r) => r.agent_id), ["go-only", "all"]);
     assert.deepEqual(addonsForPlan(rows, { id: "plus" }).map((r) => r.agent_id), ["plus-only", "all"]);
+  });
+});
+
+describe("buyer add-on choice", () => {
+  it("toggles and keeps only offered add-ons", () => {
+    assert.deepEqual(toggleAddonId(["a"], "b"), ["a", "b"]);
+    assert.deepEqual(toggleAddonId(["a", "b"], "a"), ["b"]);
+    assert.deepEqual(keepOffered(["a", "b"], [{ agent_id: "b" }]), ["b"]);
+  });
+  it("explains how a line was priced", () => {
+    const fmt = (v: number) => `${v}đ`;
+    const labels = {
+      months: (n: number) => `${n} tháng`,
+      half: (d: number) => `½ tháng (${d} ngày)`,
+      full: (d: number) => `1 tháng (${d} ngày)`,
+    };
+    assert.equal(
+      addonLineDetail({ agent_id: "a", name: "A", unit_price_vnd: 99000, units: 4, months: 2, leftover_days: 10, leftover_factor: "half", amount_vnd: 0 }, fmt, labels),
+      "99000đ × 4 × (2 tháng + ½ tháng (10 ngày))",
+    );
+    assert.equal(
+      addonLineDetail({ agent_id: "a", name: "A", unit_price_vnd: 99000, units: 1, months: 3, amount_vnd: 0 }, fmt, labels),
+      "99000đ × (3 tháng)",
+    );
   });
 });

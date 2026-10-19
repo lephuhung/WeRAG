@@ -326,6 +326,27 @@ export interface UsageTenantUsage {
   enforced: boolean;
   subscription?: UsageSubscriptionView | null;
   seats: UsageSeat[];
+  /** Specialist agents the subscription holds, with their end. */
+  addons?: UsageSubscriptionAddon[];
+}
+
+/** A right of a subscription to a specialist agent. */
+export interface UsageSubscriptionAddon {
+  subscription_id: string;
+  agent_id: string;
+  agent_name?: string;
+  starts_at: string;
+  ends_at: string | null;
+  price_vnd: number;
+  order_id: string | null;
+}
+
+/** GET /billing/subscription: the scope's current subscription, the
+ * add-ons it holds and those it may still buy on it. */
+export interface UsageScopeAddons {
+  subscription?: UsageSubscription | null;
+  held: UsageSubscriptionAddon[];
+  purchasable: UsagePlanAddonOffer[];
 }
 
 export function getTenantUsage(tenantId: number | string): Promise<UsageTenantUsage> {
@@ -401,12 +422,33 @@ export interface UsageOrder {
   expires_at: string | null;
   subscription_id: string | null;
   note: string;
+  /** "plan" (a plan, optional add-ons) or "addon" (add-ons on the current subscription). */
+  kind?: UsageOrderKind;
+  target_subscription_id?: string | null;
+  addons?: UsageOrderAddonLine[];
   created_at: string;
   updated_at: string;
   /** What to write in the bank transfer so the payment matches the order. */
   transfer_content: string;
   /** VietQR image for a pending order; "" when billing is not configured. */
   qr_url: string;
+}
+
+export type UsageOrderKind = "plan" | "addon";
+
+/** One add-on of a quote/order, priced when ordered. */
+export interface UsageOrderAddonLine {
+  agent_id: string;
+  name: string;
+  unit_price_vnd: number;
+  /** Seats on a seat plan, else 1. */
+  units: number;
+  months: number;
+  /** Mid-term purchase: days after the whole months, at half price when ≤ 15. */
+  leftover_days?: number;
+  leftover_factor?: "half" | "full" | "";
+  amount_vnd: number;
+  paid_until?: string | null;
 }
 
 export interface UsageQuoteRequest {
@@ -416,6 +458,8 @@ export interface UsageQuoteRequest {
   seats?: number;
   promo_code?: string;
   note?: string;
+  kind?: UsageOrderKind;
+  addon_agent_ids?: string[];
 }
 
 /** Mirrors types.UsageQuote. promo_error is a reason label (see promoErrorKey). */
@@ -436,6 +480,10 @@ export interface UsageQuote {
   promo_error: string;
   discount_vnd: number;
   total_vnd: number;
+  kind?: UsageOrderKind;
+  target_subscription_id?: string;
+  addons?: UsageOrderAddonLine[];
+  addons_vnd?: number;
 }
 
 /** Mirrors types.UsageBillingInfo. */
@@ -453,6 +501,14 @@ const BILLING = "/api/v1/billing";
 
 export function getBillingInfo(): Promise<UsageBillingInfo> {
   return apiGet<{ data: UsageBillingInfo }>(`${BILLING}/info`).then((r) => r.data);
+}
+
+export function getScopeAddons(scope: UsageScopeKind): Promise<UsageScopeAddons> {
+  return apiGet<{ data?: UsageScopeAddons }>(`${BILLING}/subscription?scope=${scope}`).then((r) => ({
+    subscription: r.data?.subscription ?? null,
+    held: r.data?.held ?? [],
+    purchasable: r.data?.purchasable ?? [],
+  }));
 }
 
 export function listPurchasablePlans(scope: UsageScopeKind): Promise<UsagePlan[]> {
