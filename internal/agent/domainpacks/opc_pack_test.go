@@ -33,7 +33,7 @@ func TestOpcVNBusinessLawPackShips(t *testing.T) {
 	assert.Contains(t, block, "Công thức áp dụng:\n")
 	assert.Contains(t, block, "Thuế theo % doanh thu = Doanh thu × Tỷ lệ % doanh thu (căn cứ: 67/2025/QH15)")
 	household := reg.FormulaBlock("calculate_household_tax")
-	assert.Contains(t, household, "Thuế TNCN = (Doanh thu năm − Ngưỡng doanh thu) × Tỷ lệ % TNCN theo ngành nghề (căn cứ: Điều 7 109/2025/QH15")
+	assert.Contains(t, household, "Thuế TNCN = (Doanh thu năm − Ngưỡng doanh thu) × Tỷ lệ % TNCN theo ngành nghề (chỉ khi doanh thu năm không quá mức được tính theo % doanh thu) (căn cứ: Điều 7 109/2025/QH15")
 	assert.NotContains(t, household, "Doanh thu × Tỷ lệ % doanh thu (căn cứ: 67/2025/QH15)")
 
 	evals, err := domainpackassets.FS.ReadFile("opc-vn-business-law/evals/cases.jsonl")

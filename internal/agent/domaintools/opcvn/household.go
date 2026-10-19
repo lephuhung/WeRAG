@@ -36,6 +36,10 @@ type HouseholdInput struct {
 	// VATRatio and PITRatio are the ratios on revenue in PERCENT
 	// (ty_le_gtgt, ty_le_tncn): 1 means 1 %, 0.5 means 0.5 %.
 	VATRatio, PITRatio float64
+	// RevenueMethodCap is the annual revenue up to which PIT may be paid as
+	// a ratio of revenue, in đồng (tran_doanh_thu_theo_doanh_thu); above it
+	// only PIT on profit applies.
+	RevenueMethodCap float64
 	// Cost (chi_phi, đồng) and ProfitRate (thue_suat_tncn, fraction) are
 	// set to compare with PIT on profit; ProfitRate alone gives the
 	// break-even profit.
@@ -50,6 +54,7 @@ type HouseholdInput struct {
 type HouseholdTax struct {
 	In              HouseholdInput
 	Liable          bool    // revenue above the threshold
+	RevenueMethod   bool    // PIT as a ratio of revenue allowed (revenue ≤ cap)
 	VAT             float64 // thue_gtgt
 	PITRevenue      float64 // thue_tncn_doanh_thu (before reduction)
 	PITProfit       float64 // thue_tncn_loi_nhuan (before reduction), when HasProfit
@@ -75,13 +80,16 @@ func CalculateHouseholdTax(in HouseholdInput) (*HouseholdTax, error) {
 	case !finite(in.Threshold) || in.Threshold < 0 || in.Threshold > maxAmount:
 		return nil, errors.New("Ngưỡng doanh thu phải là số đồng không âm (ví dụ 1 tỷ = 1000000000)")
 	}
-	vat, err := NormalizeRatio(in.VATRatio)
+	vat, err := householdRatio("Tỷ lệ GTGT", in.VATRatio)
 	if err != nil {
-		return nil, fmt.Errorf("Tỷ lệ GTGT: %w", err)
+		return nil, err
 	}
-	pit, err := NormalizeRatio(in.PITRatio)
+	pit, err := householdRatio("Tỷ lệ TNCN", in.PITRatio)
 	if err != nil {
-		return nil, fmt.Errorf("Tỷ lệ TNCN: %w", err)
+		return nil, err
+	}
+	if !finite(in.RevenueMethodCap) || in.RevenueMethodCap < in.Threshold || in.RevenueMethodCap > maxAmount {
+		return nil, errors.New("Mức doanh thu tối đa được tính TNCN theo % doanh thu phải là số đồng, không nhỏ hơn ngưỡng (ví dụ 3 tỷ = 3000000000)")
 	}
 	reduction := 0.0
 	if in.Reduction != nil {
@@ -109,10 +117,16 @@ func CalculateHouseholdTax(in HouseholdInput) (*HouseholdTax, error) {
 		}
 	}
 
-	out := &HouseholdTax{In: in, Liable: in.Revenue > in.Threshold}
+	out := &HouseholdTax{In: in, Liable: in.Revenue > in.Threshold, RevenueMethod: in.Revenue <= in.RevenueMethodCap}
+	if out.Liable && !out.RevenueMethod && (in.Cost == nil || in.ProfitRate == nil) {
+		return nil, fmt.Errorf("Doanh thu năm trên %s chỉ được tính TNCN trên lợi nhuận: cần chi phí (chi_phi) từ người dùng và thuế suất (thue_suat_tncn) tra trong kho tri thức",
+			FormatVND(in.RevenueMethodCap))
+	}
 	if out.Liable {
 		out.VAT = in.Revenue * vat
-		out.PITRevenue = (in.Revenue - in.Threshold) * pit
+		if out.RevenueMethod {
+			out.PITRevenue = (in.Revenue - in.Threshold) * pit
+		}
 		if in.PeriodRevenue != nil {
 			out.PeriodVAT = *in.PeriodRevenue * vat
 		}
@@ -122,7 +136,7 @@ func CalculateHouseholdTax(in HouseholdInput) (*HouseholdTax, error) {
 				out.PITProfit = profit * *in.ProfitRate
 			}
 		}
-		if in.ProfitRate != nil {
+		if in.ProfitRate != nil && out.RevenueMethod {
 			out.HasBreakEven = true
 			out.BreakEvenProfit = out.PITRevenue / *in.ProfitRate
 		}
@@ -131,6 +145,19 @@ func CalculateHouseholdTax(in HouseholdInput) (*HouseholdTax, error) {
 	out.PITProfitNet = out.PITProfit * (1 - reduction)
 	out.Assumptions = householdAssumptions(out, vat, pit, reduction)
 	return out, nil
+}
+
+// householdRatio checks a ratio given in percent. The lowest legal ratio is
+// 0,5 %: a value under 0,1 is a fraction typed by mistake (0.01 for 1 %).
+func householdRatio(name string, percent float64) (float64, error) {
+	if finite(percent) && percent > 0 && percent < 0.1 {
+		return 0, fmt.Errorf("%s ghi theo PHẦN TRĂM (1 cho 1%%, 0.5 cho 0,5%%); %v quá nhỏ", name, percent)
+	}
+	r, err := NormalizeRatio(percent)
+	if err != nil {
+		return 0, fmt.Errorf("%s: %w", name, err)
+	}
+	return r, nil
 }
 
 func householdAssumptions(c *HouseholdTax, vat, pit, reduction float64) []string {
@@ -145,10 +172,11 @@ func householdAssumptions(c *HouseholdTax, vat, pit, reduction float64) []string
 			FormatPercent(*in.ProfitRate, -1)+" theo mức doanh thu năm.")
 	}
 	if reduction > 0 {
-		a = append(a, "Giảm "+FormatPercent(reduction, -1)+" số thuế TNCN phải nộp áp dụng khi đủ điều kiện của văn bản giảm thuế (kỳ tính thuế, mức doanh thu).")
+		a = append(a, "Giảm "+FormatPercent(reduction, -1)+" số thuế TNCN phải nộp chỉ áp dụng khi đủ điều kiện của văn bản giảm thuế (kỳ tính thuế, mức doanh thu năm tối đa); kiểm tra điều kiện trước khi dùng số sau giảm.")
 	}
 	a = append(a,
-		"Phương pháp tính TNCN theo % doanh thu chỉ được chọn khi doanh thu năm không vượt mức luật cho phép; vượt thì phải tính trên lợi nhuận.",
+		"Phương pháp tính TNCN theo % doanh thu chỉ được chọn khi doanh thu năm không quá "+FormatVND(in.RevenueMethodCap)+" (mức tra trong văn bản); vượt thì chỉ tính trên lợi nhuận.",
+		"Một ngành nghề, một tỷ lệ: hộ có nhiều ngành nghề tính riêng từng ngành, mức trừ ngưỡng chỉ trừ một lần trong năm.",
 		"Tạm nộp theo quý/tháng: GTGT tính trên doanh thu của kỳ; mức trừ "+FormatVND(in.Threshold)+" tính cho cả năm, nên TNCN của từng kỳ không lấy số năm chia đều.",
 		HouseholdNotIncluded,
 	)
@@ -168,9 +196,13 @@ func (c *HouseholdTax) Render() string {
 			"hộ kinh doanh thông báo doanh thu theo quy định thay vì khai thuế.\n")
 	} else {
 		row("Thuế GTGT ("+FormatPercent(in.VATRatio/100, -1)+" × doanh thu)", FormatVND(c.VAT))
-		row("Thuế TNCN theo % doanh thu ("+FormatPercent(in.PITRatio/100, -1)+" × (doanh thu − ngưỡng))", FormatVND(c.PITRevenue))
-		if in.Reduction != nil && *in.Reduction > 0 {
-			row("Thuế TNCN theo % doanh thu sau giảm "+FormatPercent(*in.Reduction/100, -1), FormatVND(c.PITRevenueNet))
+		if c.RevenueMethod {
+			row("Thuế TNCN theo % doanh thu ("+FormatPercent(in.PITRatio/100, -1)+" × (doanh thu − ngưỡng))", FormatVND(c.PITRevenue))
+			if in.Reduction != nil && *in.Reduction > 0 {
+				row("Thuế TNCN theo % doanh thu sau giảm "+FormatPercent(*in.Reduction/100, -1), FormatVND(c.PITRevenueNet))
+			}
+		} else {
+			row("Thuế TNCN theo % doanh thu", "không áp dụng (doanh thu năm trên "+FormatVND(in.RevenueMethodCap)+")")
 		}
 		if c.HasProfit {
 			row("Thuế TNCN trên lợi nhuận ("+FormatPercent(*in.ProfitRate, -1)+" × (doanh thu − chi phí))", FormatVND(c.PITProfit))
@@ -181,7 +213,12 @@ func (c *HouseholdTax) Render() string {
 		if c.HasBreakEven {
 			row("Lợi nhuận hòa vốn giữa hai phương pháp TNCN", FormatVND(c.BreakEvenProfit))
 		}
-		row("Tổng GTGT + TNCN cả năm (TNCN theo % doanh thu)", FormatVND(c.VAT+c.PITRevenueNet))
+		if c.RevenueMethod {
+			row("Tổng GTGT + TNCN cả năm (TNCN theo % doanh thu)", FormatVND(c.VAT+c.PITRevenueNet))
+		}
+		if c.HasProfit {
+			row("Tổng GTGT + TNCN cả năm (TNCN trên lợi nhuận)", FormatVND(c.VAT+c.PITProfitNet))
+		}
 		if in.PeriodRevenue != nil {
 			row("Thuế GTGT của kỳ (doanh thu kỳ "+FormatVND(*in.PeriodRevenue)+")", FormatVND(c.PeriodVAT))
 		}
@@ -197,6 +234,8 @@ func (c *HouseholdTax) Render() string {
 // Reading states which PIT method pays less, in words.
 func (c *HouseholdTax) Reading() string {
 	switch {
+	case !c.RevenueMethod:
+		return "doanh thu năm vượt mức được tính TNCN theo % doanh thu, nên TNCN tính trên lợi nhuận; thuế GTGT vẫn tính theo % trên toàn bộ doanh thu."
 	case c.HasProfit && c.PITProfit < c.PITRevenue:
 		return "thuế TNCN trên lợi nhuận thấp hơn thuế TNCN theo % doanh thu; phương pháp lợi nhuận cần sổ sách, chứng từ chi phí và giữ ổn định 02 năm."
 	case c.HasProfit && c.PITProfit > c.PITRevenue:
@@ -218,9 +257,9 @@ func HouseholdFormulas() map[string]func(map[string]float64) (map[string]float64
 		if err != nil {
 			return HouseholdInput{}, err
 		}
-		// each formula sets the ratio it uses; the other one only has to
-		// pass validation and is not read
-		return HouseholdInput{Revenue: v[0], Threshold: v[1], VATRatio: 1, PITRatio: 1}, nil
+		// each formula sets the ratio (and cap) it uses; the others only
+		// have to pass validation and are not read
+		return HouseholdInput{Revenue: v[0], Threshold: v[1], VATRatio: 1, PITRatio: 1, RevenueMethodCap: maxAmount}, nil
 	}
 	return map[string]func(map[string]float64) (map[string]float64, error){
 		FormulaHouseholdVAT: func(in map[string]float64) (map[string]float64, error) {
@@ -244,11 +283,11 @@ func HouseholdFormulas() map[string]func(map[string]float64) (map[string]float64
 			if err != nil {
 				return nil, err
 			}
-			v, err := need(in, "ty_le_tncn")
+			v, err := need(in, "ty_le_tncn", "tran_doanh_thu_theo_doanh_thu")
 			if err != nil {
 				return nil, err
 			}
-			h.PITRatio = v[0]
+			h.PITRatio, h.RevenueMethodCap = v[0], v[1]
 			c, err := CalculateHouseholdTax(h)
 			if err != nil {
 				return nil, err
@@ -289,11 +328,11 @@ func HouseholdFormulas() map[string]func(map[string]float64) (map[string]float64
 			if err != nil {
 				return nil, err
 			}
-			v, err := need(in, "ty_le_tncn", "thue_suat_tncn")
+			v, err := need(in, "ty_le_tncn", "thue_suat_tncn", "tran_doanh_thu_theo_doanh_thu")
 			if err != nil {
 				return nil, err
 			}
-			h.PITRatio, h.ProfitRate = v[0], &v[1]
+			h.PITRatio, h.ProfitRate, h.RevenueMethodCap = v[0], &v[1], v[2]
 			c, err := CalculateHouseholdTax(h)
 			if err != nil {
 				return nil, err

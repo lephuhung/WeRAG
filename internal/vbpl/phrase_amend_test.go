@@ -25,7 +25,7 @@ func TestPhraseAmends(t *testing.T) {
 			{Document: nd, Article: "12", Khoan: "1", Phrase: true, From: "500 triệu đồng", To: "01 tỷ đồng"},
 			{Document: nd, Article: "12", Khoan: "2", Phrase: true, From: "500 triệu đồng", To: "01 tỷ đồng"},
 		},
-		"2. Thay thế": {{Document: nd, Article: "34", Khoan: "2", Phrase: true, From: "cấp huyện", To: "cấp xã"}},
+		"2. Thay thế": {{Document: nd, Article: "34", Khoan: "2", Diem: "a", Phrase: true, From: "cấp huyện", To: "cấp xã"}},
 		"3. Thay thế": {{Document: nd, Article: "73", Khoan: "12", Phrase: true, From: "Bộ Lao động - Thương binh và Xã hội", To: "Bộ Nội vụ"}},
 		"4. Bãi bỏ":   {{Document: nd, Article: "11", Khoan: "1", Phrase: true, From: "cấp huyện,"}},
 		"5. Thay thế": {{Document: "Thông tư số 09/2015/TT-BGTVT", Article: "14", Phrase: true, From: "Tổng Cục trưởng", To: "Cục trưởng"}},
@@ -88,5 +88,47 @@ func TestPhraseAmendsInChunk(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+// Sentences from the dev KB (review 2026-10-19) and the shapes around them.
+func TestPhraseAmendsClauses(t *testing.T) {
+	none := func() string { return "" }
+	cases := []struct {
+		text string
+		want []Amend
+	}{
+		// a ";" ends the provisions: khoản 14 Điều 3 is repealed, not rewritten
+		{`Sửa đổi cụm từ "Thanh tra" thành "Kiểm tra" tại khoản 26 Điều 2; bãi bỏ khoản 14 Điều 3 của Nghị định số 28/2025/NĐ-CP.`,
+			[]Amend{{Article: "2", Khoan: "26", Phrase: true, From: "Thanh tra", To: "Kiểm tra"}}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 3; bãi bỏ cụm từ “C” tại Điều 4 Luật số 12/2020/QH14`,
+			[]Amend{{Article: "3", Phrase: true, From: "A", To: "B"}, {Document: "Luật số 12/2020/QH14", Article: "4", Phrase: true, From: "C"}}},
+		// each verb reads its own phrases
+		{`Bãi bỏ cụm từ "Thanh tra,", sửa đổi cụm từ "thanh tra chuyên ngành" thành "kiểm tra chuyên ngành" tại khoản 38 Điều 2; bãi bỏ khoản 7 Điều 3`,
+			[]Amend{{Article: "2", Khoan: "38", Phrase: true, From: "thanh tra chuyên ngành", To: "kiểm tra chuyên ngành"}}},
+		// a clause going on with the same verb
+		{`Thay thế từ “huyện” bằng từ “xã” tại khoản 2 Điều 6; cụm từ “pháp lệnh” bằng cụm từ “pháp luật” tại điểm a khoản 1 Điều 28;`,
+			[]Amend{{Article: "6", Khoan: "2", Phrase: true, From: "huyện", To: "xã"}, {Article: "28", Khoan: "1", Diem: "a", Phrase: true, From: "pháp lệnh", To: "pháp luật"}}},
+		// exceptions are not targets
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 3, trừ trường hợp quy định tại khoản 2 Điều 9`,
+			[]Amend{{Article: "3", Phrase: true, From: "A", To: "B"}}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” trong toàn bộ Nghị định, trừ Điều 5`, nil},
+		// điểm lists, a stray number after a comma
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại điểm a và c khoản 2 Điều 14`,
+			[]Amend{{Article: "14", Khoan: "2", Diem: "a", Phrase: true, From: "A", To: "B"}, {Article: "14", Khoan: "2", Diem: "c", Phrase: true, From: "A", To: "B"}}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 2 Điều 3, Điều 4 kể từ ngày 01 tháng 7 năm 2026, 15 ngày`,
+			[]Amend{{Article: "3", Khoan: "2", Phrase: true, From: "A", To: "B"}, {Article: "4", Phrase: true, From: "A", To: "B"}}},
+		// the document after the provisions, with a title or none
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 56 của Luật Xây dựng số 50/2014/QH13 đã được sửa đổi, bổ sung theo Luật số 03/2016/QH14`,
+			[]Amend{{Document: "Luật Xây dựng số 50/2014/QH13", Article: "56", Phrase: true, From: "A", To: "B"}}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 3 Luật Quản lý thuế ngày 13 tháng 6 năm 2019`,
+			[]Amend{{Document: "Luật Quản lý thuế", Article: "3", Phrase: true, From: "A", To: "B"}}},
+		// the amending document's own provisions
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 5 Nghị định này`, nil},
+	}
+	for _, c := range cases {
+		if got := parsePhraseAmends(c.text, none); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s\n got %+v\nwant %+v", c.text, got, c.want)
+		}
 	}
 }

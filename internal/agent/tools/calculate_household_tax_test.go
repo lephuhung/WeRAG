@@ -12,7 +12,7 @@ import (
 func TestCalculateHouseholdTaxTool(t *testing.T) {
 	tool := NewCalculateHouseholdTaxTool().WithFormulaBlock("Công thức áp dụng:\n- x")
 	res, err := tool.Execute(context.Background(), json.RawMessage(
-		`{"doanh_thu": 2400000000, "nguong_doanh_thu": "1000000000", "ty_le_gtgt": 1, "ty_le_tncn": 0.5, "ty_le_giam_tncn": 30}`))
+		`{"doanh_thu": 2400000000, "nguong_doanh_thu": "1000000000", "ty_le_gtgt": 1, "ty_le_tncn": 0.5, "tran_doanh_thu_theo_doanh_thu": 3000000000, "ty_le_giam_tncn": 30}`))
 	if err != nil || !res.Success {
 		t.Fatalf("%v %+v", err, res)
 	}
@@ -34,7 +34,7 @@ func TestCalculateHouseholdTaxToolRefusesMissing(t *testing.T) {
 	if err == nil || res.Success || !strings.Contains(res.Error, "nguong_doanh_thu") {
 		t.Fatalf("%v %+v", err, res)
 	}
-	res, err = tool.Execute(context.Background(), json.RawMessage(`{"doanh_thu": 2400000000, "nguong_doanh_thu": 1000000000, "ty_le_gtgt": 1, "ty_le_tncn": "0,5"}`))
+	res, err = tool.Execute(context.Background(), json.RawMessage(`{"doanh_thu": 2400000000, "nguong_doanh_thu": 1000000000, "ty_le_gtgt": 1, "ty_le_tncn": "0,5", "tran_doanh_thu_theo_doanh_thu": 3000000000}`))
 	if err == nil || !strings.Contains(res.Error, "ty_le_tncn") {
 		t.Fatalf("%v %+v", err, res)
 	}

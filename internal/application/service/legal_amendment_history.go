@@ -90,7 +90,11 @@ func LegalAmendmentHistory(
 			lines = append(lines, *l)
 		}
 	}
+	var named []legalHistoryChunk
 	for _, c := range chunks {
+		if len(c.Legal.Amends) == 0 && h.names(c.Doc.Number, c.ID) {
+			named = append(named, c)
+		}
 		if len(c.Legal.Amends) > 0 {
 			for _, a := range c.Legal.Amends {
 				add(h.forward(c, a))
@@ -101,13 +105,11 @@ func LegalAmendmentHistory(
 			add(l)
 		}
 	}
-	// phrase changes come first: one short line each, over all provisions
-	if pl := h.phraseLines(); len(pl) > 0 {
-		rest := lines
-		lines, seen = nil, map[string]bool{}
-		for _, l := range append(pl, rest...) {
-			add(&l)
-		}
+	// phrase changes of the named provisions, after the quoted rewrites
+	// (which carry the new text): one line each over its provisions
+	h.backwardPhrases(named)
+	for _, l := range h.phraseLines() {
+		add(&l)
 	}
 	// the amendments of a document no longer in force are not its current
 	// rule; LegalValidityNote reports the document instead
@@ -206,8 +208,8 @@ func (h *legalHistory) forward(c legalHistoryChunk, a vietnamese_legal.AmendRef)
 		return nil
 	}
 	if a.Phrase {
-		// the answer repeats the replaced (or the new) wording
-		if answerUsesPhrase(h.answer, a.From) || answerUsesPhrase(h.answer, a.To) {
+		// the answer repeats the replaced wording
+		if answerUsesPhrase(h.answer, a.From) {
 			h.addPhrase(legalHistoryDoc{Number: old}, c.Doc, a)
 		}
 		return nil
@@ -241,9 +243,9 @@ func (h *legalHistory) backward(c legalHistoryChunk) []*legalHistoryLine {
 	// Common article numbers are amended in many documents: first those
 	// naming this document's số hiệu, then those naming a document by title.
 	if err := h.db.Raw(legalHistorySelect+` AND c.knowledge_id <> ?
-		AND c.metadata->'legal'->'amends' @> ?::jsonb
-		ORDER BY strpos(c.metadata->'legal'->>'amends', ?) > 0 DESC,
-			c.metadata->'legal'->>'amends' !~ '[0-9]+/[0-9]{4}' DESC
+		AND jsonb_exists(c.metadata->'legal', 'amends') AND c.metadata->'legal'->'amends' @> ?::jsonb
+		ORDER BY strpos(`+legalQuotedAmends+`, ?) > 0 DESC,
+			`+legalQuotedAmends+` !~ '[0-9]+/[0-9]{4}' DESC
 		LIMIT ?`,
 		h.kbIDs, c.KnowledgeID, string(filter), c.Doc.Number, legalHistoryCandidates).Scan(&rows).Error; err != nil {
 		logger.Warnf(h.ctx, "[LegalHistory] amending chunks: %v", err)
@@ -269,13 +271,7 @@ func (h *legalHistory) backward(c legalHistoryChunk) []*legalHistoryLine {
 				continue
 			}
 			if a.Phrase {
-				// the retrieved text still holds the replaced words and the
-				// answer relies on them
-				if a.From != "" && strings.Contains(foldSpaces(c.Content), foldSpaces(a.From)) &&
-					(answerUsesPhrase(h.answer, a.From) || answerUsesProvision(h.answer, a.Article, a.Khoan, provisionText(c.Content, a.Khoan))) {
-					h.addPhrase(c.Doc, ac.Doc, a)
-				}
-				continue
+				continue // backwardPhrases
 			}
 			if !answerUsesProvision(h.answer, a.Article, a.Khoan, provisionText(c.Content, a.Khoan)) {
 				continue
@@ -326,7 +322,7 @@ func (h *legalHistory) addPhrase(old, amender legalHistoryDoc, a vietnamese_lega
 	if old.Type != "" && p.old.Type == "" {
 		p.old = old
 	}
-	prov := vietnamese_legal.AmendRef{Article: a.Article, Khoan: a.Khoan}.String()
+	prov := vietnamese_legal.AmendRef{Article: a.Article, Khoan: a.Khoan, Diem: a.Diem}.String()
 	for _, have := range p.provs {
 		if have == prov {
 			return
@@ -376,48 +372,49 @@ func (h *legalHistory) documentByNumber(number string) (legalHistoryDoc, bool) {
 }
 
 // answerUsesPhrase reports whether the answer repeats phrase ("01 tỷ đồng"
-// also as "1 tỷ đồng"), ignoring case and spacing.
+// also as "1 tỷ đồng"), ignoring case and spacing, not inside a longer word
+// or number (findPhrase).
 func answerUsesPhrase(answer, phrase string) bool {
-	phrase = foldSpaces(phrase)
-	if utf8.RuneCountInString(phrase) < 3 {
+	if utf8.RuneCountInString(foldSpaces(phrase)) < 3 {
 		return false
 	}
-	a := foldSpaces(answer)
-	return containsWord(a, phrase) || containsWord(a, strings.TrimLeft(phrase, "0"))
-}
-
-// containsWord reports whether s holds sub not glued to a longer word or
-// number ("500 triệu" is not in "1.500 triệu").
-func containsWord(s, sub string) bool {
-	if sub == "" {
-		return false
-	}
-	alnum := func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
-	for i := 0; ; {
-		j := strings.Index(s[i:], sub)
-		if j < 0 {
-			return false
-		}
-		j += i
-		before, n := utf8.DecodeLastRuneInString(s[:j])
-		glued := j > 0 && alnum(before)
-		if !glued && (before == '.' || before == ',') {
-			prev, _ := utf8.DecodeLastRuneInString(s[:j-n])
-			glued = unicode.IsDigit(prev)
-		}
-		if after, _ := utf8.DecodeRuneInString(s[j+len(sub):]); j+len(sub) < len(s) && alnum(after) {
-			glued = true
-		}
-		if !glued {
-			return true
-		}
-		i = j + len(sub)
-	}
+	return len(findPhrase(answer, phrase)) > 0 || len(findPhrase(answer, strings.TrimLeft(strings.TrimSpace(phrase), "0"))) > 0
 }
 
 // foldSpaces lower-cases s and collapses its whitespace.
 func foldSpaces(s string) string {
 	return strings.ToLower(strings.Join(strings.Fields(s), " "))
+}
+
+// legalQuotedAmends is the text of a chunk's quoted-rewrite amendments,
+// its phrase amendments left out, for ranking amending chunks.
+// (No "?" in it: gorm would read it as a placeholder.)
+const legalQuotedAmends = `(SELECT coalesce(jsonb_agg(e), '[]'::jsonb) FROM jsonb_array_elements(c.metadata->'legal'->'amends') e
+	WHERE NOT jsonb_exists(e, 'phrase'))::text`
+
+// backwardPhrases records the phrase amendments in force of the named
+// chunks whose replaced words they still hold and the answer repeats.
+func (h *legalHistory) backwardPhrases(chunks []legalHistoryChunk) {
+	if len(chunks) == 0 {
+		return
+	}
+	for id, changes := range h.phraseChanges(chunks) {
+		var c legalHistoryChunk
+		for _, x := range chunks {
+			if x.ID == id {
+				c = x
+			}
+		}
+		for _, ch := range changes {
+			at, known := phraseEffect(ch.Amender, h.now.Location())
+			if !known || at.After(h.now) || len(findPhrase(c.Content, ch.From)) == 0 || !answerUsesPhrase(h.answer, ch.From) {
+				continue
+			}
+			h.addPhrase(c.Doc, ch.Amender, vietnamese_legal.AmendRef{
+				Article: c.Legal.ArticleNos[0], Khoan: ch.Khoan, Diem: ch.Diem, Phrase: true, From: ch.From, To: ch.To,
+			})
+		}
+	}
 }
 
 // provisionChunk finds, in the searched KBs, the chunk holding Điều article

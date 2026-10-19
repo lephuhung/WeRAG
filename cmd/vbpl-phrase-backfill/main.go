@@ -2,8 +2,11 @@
 // đồng” thành “01 tỷ đồng” tại Điều 3 …") on vbpl chunks ingested before the
 // converter read them, so the amendment history and the current wording
 // shown to agents cover them without re-ingesting (no re-embedding, no
-// graph re-extraction). Only metadata.legal.amends changes: earlier phrase
-// entries are replaced, quoted-text entries kept.
+// graph re-extraction). Only metadata.legal.amends changes (jsonb_set, so a
+// concurrent write to other metadata keys is kept): phrase entries are
+// added, quoted-text entries kept. A chunk that already has phrase entries
+// — ingested by the converter that reads them, which sees more context than
+// this — is skipped unless -force.
 //
 // Dry run by default; -apply writes. The database comes from the same DB_*
 // environment as the server.
@@ -40,6 +43,7 @@ func main() {
 	apply := flag.Bool("apply", false, "write the metadata (default: dry run)")
 	kb := flag.String("kb", "", "only this knowledge base id")
 	verbose := flag.Bool("v", false, "print every changed chunk")
+	force := flag.Bool("force", false, "recompute chunks that already have phrase entries")
 	flag.Parse()
 
 	db, err := openDB()
@@ -78,13 +82,18 @@ func main() {
 			}
 		}
 		var kept []interface{}
+		hasPhrases := false
 		if old, ok := legal["amends"].([]interface{}); ok {
 			for _, a := range old {
 				if m, ok := a.(map[string]interface{}); ok && m["phrase"] == true {
+					hasPhrases = true
 					continue
 				}
 				kept = append(kept, a)
 			}
+		}
+		if hasPhrases && !*force {
+			continue
 		}
 		phrases := vbpl.PhraseAmendsInChunk(r.Content, path, r.Title)
 		next := append([]interface{}{}, kept...)
@@ -107,16 +116,15 @@ func main() {
 				fmt.Printf("    %s | Điều %s khoản %s | %q → %q\n", a.Document, a.Article, a.Khoan, a.From, a.To)
 			}
 		}
-		if len(next) == 0 {
-			delete(legal, "amends")
-		} else {
-			legal["amends"] = next
-		}
 		if !*apply {
 			continue
 		}
-		out, _ := json.Marshal(meta)
-		if err := db.Exec(`UPDATE chunks SET metadata = ?::jsonb WHERE id = ?`, string(out), r.ID).Error; err != nil {
+		amends, _ := json.Marshal(next)
+		if len(next) == 0 {
+			amends = []byte("[]")
+		}
+		if err := db.Exec(`UPDATE chunks SET metadata = jsonb_set(metadata, '{legal,amends}', ?::jsonb) WHERE id = ?`,
+			string(amends), r.ID).Error; err != nil {
 			log.Fatalf("update %s: %v", r.ID, err)
 		}
 	}

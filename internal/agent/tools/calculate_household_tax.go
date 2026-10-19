@@ -18,7 +18,7 @@ const ToolCalculateHouseholdTax = opcvn.ToolHouseholdTax
 
 var calculateHouseholdTaxTool = BaseTool{
 	name:        ToolCalculateHouseholdTax,
-	description: `Tính thuế GTGT và thuế TNCN của hộ kinh doanh, cá nhân kinh doanh: GTGT = doanh thu năm × tỷ lệ % GTGT; TNCN theo % doanh thu = (doanh thu năm − ngưỡng) × tỷ lệ % TNCN; tùy chọn TNCN trên lợi nhuận, lợi nhuận hòa vốn, mức giảm thuế TNCN, GTGT của một kỳ. Trả về bảng kết quả và khối "Giả định" (hệ thống tự chèn vào câu trả lời). Doanh thu năm (và chi phí, doanh thu kỳ) lấy từ người dùng; ngưỡng doanh thu, các tỷ lệ, thuế suất, mức giảm lấy từ văn bản thuế hiện hành tìm được trong kho tri thức (văn bản sửa đổi có thể đã thay ngưỡng) — thiếu thì hỏi hoặc tìm trước, không tự đoán. Dùng thay cho việc tự nhân chia.`,
+	description: `Tính thuế GTGT và thuế TNCN của hộ kinh doanh, cá nhân kinh doanh: GTGT = doanh thu năm × tỷ lệ % GTGT; TNCN theo % doanh thu = (doanh thu năm − ngưỡng) × tỷ lệ % TNCN; chỉ khi doanh thu năm không quá mức được tính theo % doanh thu, vượt thì TNCN trên lợi nhuận; tùy chọn TNCN trên lợi nhuận, lợi nhuận hòa vốn, mức giảm thuế TNCN, GTGT của một kỳ. Trả về bảng kết quả và khối "Giả định" (hệ thống tự chèn vào câu trả lời). Doanh thu năm (và chi phí, doanh thu kỳ) lấy từ người dùng; ngưỡng doanh thu, các tỷ lệ, thuế suất, mức giảm lấy từ văn bản thuế hiện hành tìm được trong kho tri thức (văn bản sửa đổi có thể đã thay ngưỡng) — thiếu thì hỏi hoặc tìm trước, không tự đoán. Dùng thay cho việc tự nhân chia.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -38,6 +38,10 @@ var calculateHouseholdTaxTool = BaseTool{
       "type": "number",
       "description": "Tỷ lệ % TNCN trên doanh thu theo ngành nghề, ghi theo PHẦN TRĂM: 0.5 nghĩa là 0,5%"
     },
+    "tran_doanh_thu_theo_doanh_thu": {
+      "type": "number",
+      "description": "Doanh thu năm tối đa được tính TNCN theo % doanh thu theo văn bản hiện hành, đơn vị đồng (ví dụ 3 tỷ = 3000000000); vượt mức này chỉ tính trên lợi nhuận và cần chi_phi, thue_suat_tncn"
+    },
     "chi_phi": {
       "type": "number",
       "description": "Tùy chọn: chi phí được trừ cả năm, đơn vị đồng, để so sánh với TNCN trên lợi nhuận (cần thue_suat_tncn)"
@@ -55,7 +59,7 @@ var calculateHouseholdTaxTool = BaseTool{
       "description": "Tùy chọn: doanh thu của một quý hoặc tháng, đơn vị đồng, để tính GTGT của kỳ đó"
     }
   },
-  "required": ["doanh_thu", "nguong_doanh_thu", "ty_le_gtgt", "ty_le_tncn"]
+  "required": ["doanh_thu", "nguong_doanh_thu", "ty_le_gtgt", "ty_le_tncn", "tran_doanh_thu_theo_doanh_thu"]
 }`),
 }
 
@@ -81,7 +85,7 @@ const householdTaxAnswerNote = "Hệ thống tự chèn bảng kết quả này,
 	"Trong câu trả lời nêu kết luận theo dòng \"Đọc kết quả\" và căn cứ đã tra; không tự tính lại các số.\n"
 
 var (
-	householdTaxRequired = []string{"doanh_thu", "nguong_doanh_thu", "ty_le_gtgt", "ty_le_tncn"}
+	householdTaxRequired = []string{"doanh_thu", "nguong_doanh_thu", "ty_le_gtgt", "ty_le_tncn", "tran_doanh_thu_theo_doanh_thu"}
 	householdTaxOptional = []string{"chi_phi", "thue_suat_tncn", "ty_le_giam_tncn", "doanh_thu_ky"}
 )
 
@@ -125,14 +129,15 @@ func (t *CalculateHouseholdTaxTool) Execute(_ context.Context, args json.RawMess
 		return nil
 	}
 	result, err := opcvn.CalculateHouseholdTax(opcvn.HouseholdInput{
-		Revenue:       values["doanh_thu"],
-		Threshold:     values["nguong_doanh_thu"],
-		VATRatio:      values["ty_le_gtgt"],
-		PITRatio:      values["ty_le_tncn"],
-		Cost:          opt("chi_phi"),
-		ProfitRate:    opt("thue_suat_tncn"),
-		Reduction:     opt("ty_le_giam_tncn"),
-		PeriodRevenue: opt("doanh_thu_ky"),
+		Revenue:          values["doanh_thu"],
+		Threshold:        values["nguong_doanh_thu"],
+		VATRatio:         values["ty_le_gtgt"],
+		PITRatio:         values["ty_le_tncn"],
+		RevenueMethodCap: values["tran_doanh_thu_theo_doanh_thu"],
+		Cost:             opt("chi_phi"),
+		ProfitRate:       opt("thue_suat_tncn"),
+		Reduction:        opt("ty_le_giam_tncn"),
+		PeriodRevenue:    opt("doanh_thu_ky"),
 	})
 	if err != nil {
 		return t.fail("Lỗi: " + err.Error())
@@ -148,6 +153,7 @@ func (t *CalculateHouseholdTaxTool) Execute(_ context.Context, args json.RawMess
 		"thue_gtgt":               result.VAT,
 		"thue_tncn_doanh_thu":     result.PITRevenue,
 		"thue_tncn_doanh_thu_net": result.PITRevenueNet,
+		"theo_doanh_thu":          result.RevenueMethod,
 		"gia_dinh":                result.Assumptions,
 		types.ToolDataAnswerBlock: block,
 	}
