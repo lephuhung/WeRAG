@@ -18136,7 +18136,8 @@ paths:
       consumes:
       - application/json
       description: Manual grant by a SuperAdmin (tests, negotiated deals). Re-granting
-        replaces the period and price.
+        replaces the price and can only extend the period (a right is never shortened;
+        revoke with DELETE).
       parameters:
       - description: subscription id
         in: path
