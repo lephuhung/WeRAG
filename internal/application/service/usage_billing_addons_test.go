@@ -92,7 +92,7 @@ func TestConfirmPlanOrderGrantsAddonsAndRenewalExtendsThem(t *testing.T) {
 	_, err = f.svc.ConfirmOrder(ctx, o.ID, "sa")
 	require.NoError(t, err)
 	sub := f.plans.active["tenant/10003"]
-	end := billingNow.AddDate(0, 2, 0)
+	end := vnEnd(2)
 	r := f.right(sub.ID, "thue")
 	require.NotNil(t, r)
 	require.Equal(t, end, *r.EndsAt, "ends with the subscription")
@@ -107,7 +107,7 @@ func TestConfirmPlanOrderGrantsAddonsAndRenewalExtendsThem(t *testing.T) {
 	require.Equal(t, int64(49_000*3+99_000*3), o2.TotalVND)
 	_, err = f.svc.ConfirmOrder(ctx, o2.ID, "sa")
 	require.NoError(t, err)
-	newEnd := billingNow.AddDate(0, 3, 0)
+	newEnd := vnEnd(3)
 	require.Equal(t, newEnd, *f.right(sub.ID, "thue").EndsAt)
 	require.Equal(t, billingNow, f.right(sub.ID, "thue").StartsAt, "an extended right keeps its start")
 	require.Equal(t, end, *f.right(sub.ID, "kt").EndsAt)
@@ -129,7 +129,7 @@ func TestRenewalFreezesOpenEndedAddonItDoesNotPayFor(t *testing.T) {
 	require.NoError(t, err)
 	_, err = f.svc.ConfirmOrder(ctx, o2.ID, "sa")
 	require.NoError(t, err)
-	require.Equal(t, billingNow.AddDate(0, 1, 0), *f.right(sub.ID, "thue").EndsAt,
+	require.Equal(t, vnEnd(1), *f.right(sub.ID, "thue").EndsAt,
 		"not extended for free by the renewal")
 }
 
@@ -142,7 +142,7 @@ func TestPlanChangeCarriesAddonsToTheirPaidEnd(t *testing.T) {
 	require.NoError(t, err)
 	_, err = f.svc.ConfirmOrder(ctx, o.ID, "sa")
 	require.NoError(t, err)
-	paidEnd := billingNow.AddDate(0, 3, 0)
+	paidEnd := vnEnd(3)
 
 	// to the pool plan for 1 month, ticking "thue" again: it is already paid
 	// to +3 months, beyond the new period, so the line is refused
@@ -164,7 +164,7 @@ func TestPlanChangeCarriesAddonsToTheirPaidEnd(t *testing.T) {
 	require.NoError(t, err)
 	next := f.plans.active["tenant/10003"]
 	require.Equal(t, "pool", next.PlanID)
-	require.Equal(t, billingNow.AddDate(0, 6, 0), *f.right(next.ID, "thue").EndsAt)
+	require.Equal(t, vnEnd(6), *f.right(next.ID, "thue").EndsAt)
 	// "kt" (not sold with pool) is carried to its paid end
 	kt := f.right(next.ID, "kt")
 	require.NotNil(t, kt, "carried over")
@@ -179,7 +179,7 @@ func TestQuoteAddonLinesAgainstWhatIsHeld(t *testing.T) {
 		end  *time.Time // nil: with the subscription
 		none bool
 	}
-	at := func(m, d int) *time.Time { v := billingNow.AddDate(0, m, d); return &v }
+	at := func(m, d int) *time.Time { v := types.EndOfDayVN(billingNow.AddDate(0, m, d)); return &v }
 	cases := []struct {
 		name      string
 		subPlan   string
@@ -289,7 +289,7 @@ func TestMidTermAddonPurchase(t *testing.T) {
 	require.Equal(t, "no_subscription", badRequestReason(t, err))
 
 	// a 4-seat subscription with 2 months and 10 days left
-	end := billingNow.AddDate(0, 2, 10)
+	end := types.EndOfDayVN(billingNow.AddDate(0, 2, 10))
 	f.plans.active["tenant/10003"] = &types.UsageSubscription{ID: "sub-1", ScopeType: "tenant", ScopeID: "10003",
 		PlanID: "seat", Mode: "seat", Seats: 4, StartsAt: billingNow.AddDate(0, -1, 0), EndsAt: &end,
 		Status: types.UsageSubscriptionActive}
@@ -469,4 +469,39 @@ func appErrHTTP(t *testing.T, err error) int {
 	appErr, ok := err.(*apperrors.AppError)
 	require.True(t, ok, "%v", err)
 	return appErr.HTTPCode
+}
+
+// User decision 5: a valid promo code applies to an add-on-only order too,
+// with its use counted like any order's.
+func TestPromoCodeOnAddonOrder(t *testing.T) {
+	f := newBillingFixture(t)
+	withAddonCatalogue(f)
+	ctx := context.Background()
+	end := types.EndOfDayVN(billingNow.AddDate(0, 1, 0))
+	f.plans.active["tenant/10003"] = &types.UsageSubscription{ID: "sub-1", ScopeType: "tenant", ScopeID: "10003",
+		PlanID: "pool", Mode: "pool", StartsAt: billingNow.AddDate(0, -1, 0), EndsAt: &end,
+		Status: types.UsageSubscriptionActive}
+	p := f.promo(t, types.UsagePromoCode{Code: "MOT", DiscountType: types.UsagePromoPercent, DiscountValue: 50,
+		MaxUses: 1, IsActive: true})
+	req := types.UsageQuoteRequest{ScopeType: "tenant", Kind: "addon", AddonAgentIDs: []string{"thue"}, PromoCode: "mot"}
+
+	q, err := f.svc.Quote(ctx, req, "10003")
+	require.NoError(t, err)
+	require.Equal(t, q.SubtotalVND/2, q.DiscountVND)
+
+	o, err := f.svc.CreateOrder(ctx, req, "10003", "u1")
+	require.NoError(t, err)
+	require.Equal(t, "MOT", o.PromoCode)
+	require.Equal(t, 1, f.repo.promos[p.ID].UsedCount, "the single use is taken")
+	// used up: a plan order cannot take it now (quote notes why)
+	q, err = f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1, PromoCode: "MOT"}, "10003")
+	require.NoError(t, err)
+	require.NotEmpty(t, q.PromoError)
+	// cancelling gives it back
+	_, err = f.svc.CancelOrder(ctx, o.ID)
+	require.NoError(t, err)
+	require.Equal(t, 0, f.repo.promos[p.ID].UsedCount)
+	q, err = f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1, PromoCode: "MOT"}, "10003")
+	require.NoError(t, err)
+	require.Empty(t, q.PromoError)
 }

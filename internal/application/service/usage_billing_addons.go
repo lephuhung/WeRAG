@@ -113,7 +113,7 @@ func (s *usageBillingService) priceAddonsWithPlan(
 		switch {
 		case renewal && cur.EndsAt != nil && cur.EndsAt.After(now):
 			oldEnd := *cur.EndsAt
-			newEnd := oldEnd.AddDate(0, q.Months, 0)
+			newEnd := types.SubscriptionEndVN(oldEnd, q.Months)
 			covered := now
 			if h != nil {
 				covered = oldEnd
@@ -142,7 +142,7 @@ func (s *usageBillingService) priceAddonsWithPlan(
 			}
 		case !renewal && h != nil:
 			// plan change: the held right is carried over to its paid end
-			newEnd := now.AddDate(0, q.Months, 0)
+			newEnd := types.SubscriptionEndVN(now, q.Months)
 			carried := h.EndsAt
 			if carried == nil {
 				carried = cur.EndsAt
@@ -188,9 +188,12 @@ func addonHeldError(agentID string, until time.Time) error {
 			"covered_until": until.Format(time.RFC3339)})
 }
 
-// addonOrderPromoAllowed is review item 5, awaiting the user's decision,
-// kept in this one place: whether a promo code (checked against the plan of
-// the subscription) also discounts an add-on-only order. Today: yes.
+// addonOrderPromoAllowed is review item 5 in one place: whether a promo
+// code also discounts an add-on-only (mid-term) order. User decision
+// 19/10/2026: yes — a code that is still valid (active, inside its dates,
+// uses left, and — when it names plans — for the subscription's plan)
+// applies to any order at any time; its use is reserved, released on
+// cancel/expiry, exactly as for plan orders.
 func addonOrderPromoAllowed() bool { return true }
 
 // refusePendingAddons refuses an order for an add-on that another pending

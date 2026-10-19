@@ -75,7 +75,7 @@ func TestGrantAndRevokeSubscriptionAddon(t *testing.T) {
 	require.Equal(t, 404, appErrCode(t, err))
 	_, err = svc.GrantSubscriptionAddon(ctx, "sub-1", types.UsageSubscriptionAddonGrant{AgentID: "chung"}, "")
 	require.Equal(t, 400, appErrCode(t, err), "a basic agent is already everyone's")
-	past := time.Now().Add(-time.Hour)
+	past := time.Now().AddDate(0, 0, -2) // ends snap to 24:00 VN: an earlier date
 	_, err = svc.GrantSubscriptionAddon(ctx, "sub-1", types.UsageSubscriptionAddonGrant{AgentID: "thue", EndsAt: &past}, "")
 	require.Equal(t, 400, appErrCode(t, err))
 	_, err = svc.GrantSubscriptionAddon(ctx, "sub-1", types.UsageSubscriptionAddonGrant{AgentID: "thue", PriceVND: -1}, "")

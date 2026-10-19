@@ -89,7 +89,7 @@ func TestPaymentConfirmsMatchingOrder(t *testing.T) {
 	require.True(t, again.Duplicate)
 	require.Equal(t, types.UsagePaymentMatched, again.Transaction.Status)
 	require.Equal(t, types.UsageOrderPaid, again.Order.Status)
-	require.Equal(t, billingNow.AddDate(0, 1, 0), *f.plans.active["tenant/10003"].EndsAt)
+	require.Equal(t, vnEnd(1), *f.plans.active["tenant/10003"].EndsAt)
 	require.Len(t, f.repo.payments, 1)
 }
 
@@ -117,7 +117,7 @@ func TestPaymentThatCannotConfirmIsKeptWithReason(t *testing.T) {
 	require.Equal(t, "overpaid by 20000 VND", res.Transaction.Reason)
 	res = f.pay(t, types.UsagePaymentWebhookRequest{TransactionID: "f", AmountVND: 100_000, Content: o.OrderCode})
 	require.Equal(t, types.UsagePaymentOrderClosed, res.Transaction.Status)
-	require.Equal(t, billingNow.AddDate(0, 1, 0), *f.plans.active["tenant/10003"].EndsAt)
+	require.Equal(t, vnEnd(1), *f.plans.active["tenant/10003"].EndsAt)
 }
 
 func TestPaymentMadeBeforeExpiryReopensExpiredOrder(t *testing.T) {

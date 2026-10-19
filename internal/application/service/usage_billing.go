@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"math"
 	"net/url"
 	"strings"
 	"time"
@@ -231,7 +230,8 @@ func (s *usageBillingService) priceSeatRenewal(ctx context.Context, q *types.Usa
 	if q.Seats == cur.Seats || cur.EndsAt == nil || !cur.EndsAt.After(now) {
 		return nil
 	}
-	days := int(math.Ceil(cur.EndsAt.Sub(now).Hours() / 24))
+	// Vietnamese calendar days left, a started day counting (usage_calendar.go)
+	days := types.CalendarDaysVN(now, *cur.EndsAt)
 	added := int64(q.Seats - cur.Seats)
 	q.ProratedDays = days
 	// rounded up: a partial đồng is not given away
@@ -364,10 +364,9 @@ func (s *usageBillingService) CreateOrder(
 	if err != nil {
 		return nil, err
 	}
-	if order.TotalVND <= 0 {
-		// Nothing to pay: a free trial or a 100% code.
-		return s.ConfirmOrder(ctx, order.ID, createdBy)
-	}
+	// A 0-đồng order (a 100 % code, a free add-on) waits for a SuperAdmin
+	// like any other: nothing is ever confirmed automatically (user
+	// decision 19/10/2026), and the payment webhook ignores amounts ≤ 0.
 	return s.view(ctx, order), nil
 }
 
@@ -530,7 +529,7 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 		if cur.EndsAt != nil && cur.EndsAt.After(now) {
 			from = *cur.EndsAt
 		}
-		ends := from.AddDate(0, o.Months, 0)
+		ends := types.SubscriptionEndVN(from, o.Months)
 		cur.EndsAt = &ends
 		if o.Mode == types.UsageModeSeat && o.Seats > cur.Seats {
 			cur.Seats = o.Seats
@@ -559,7 +558,7 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 		}
 		return cur.ID, nil
 	}
-	ends := now.AddDate(0, o.Months, 0)
+	ends := types.SubscriptionEndVN(now, o.Months)
 	sub := &types.UsageSubscription{
 		ScopeType: o.ScopeType,
 		ScopeID:   o.ScopeID,

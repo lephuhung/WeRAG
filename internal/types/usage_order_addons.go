@@ -150,21 +150,23 @@ type UsageScopeAddons struct {
 }
 
 // AddonPeriodSplit splits [from, until) into whole months and the days left
-// over — the one place the day counting of decision 7.3 is defined (review
-// item 7, awaiting the user's decision). Today: months step with Go's
-// AddDate from `from` (31/1 + 1 month = 3/3), and the leftover counts
-// started 24-hour periods from the instant of purchase, not calendar days
-// in GMT+7.
+// over — the one place the day counting of decision 7.3 is defined (user
+// decision 19/10/2026, see usage_calendar.go). A day ends at 24:00 GMT+7:
+// k whole months from `from` run to the end of the Vietnamese date k months
+// later (SubscriptionEndVN, the same end a k-month subscription bought at
+// `from` gets; months clamp at the month's end, 31/1 → 28/2 → 31/3), and the
+// leftover counts the Vietnamese calendar dates after that (CalendarDaysVN;
+// with no whole month, from `from`, the purchase date counting as a day).
 func AddonPeriodSplit(from, until time.Time) (months, leftoverDays int) {
 	if !until.After(from) {
 		return 0, 0
 	}
-	for !from.AddDate(0, months+1, 0).After(until) {
+	for !SubscriptionEndVN(from, months+1).After(until) {
 		months++
 	}
-	rest := until.Sub(from.AddDate(0, months, 0))
-	if rest > 0 {
-		leftoverDays = int((rest + 24*time.Hour - 1) / (24 * time.Hour))
+	start := from
+	if months > 0 {
+		start = SubscriptionEndVN(from, months)
 	}
-	return months, leftoverDays
+	return months, CalendarDaysVN(start, until)
 }

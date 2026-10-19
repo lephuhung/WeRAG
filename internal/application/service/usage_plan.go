@@ -191,6 +191,11 @@ func (s *usagePlanService) normalizeSubscription(ctx context.Context, sub *types
 	if sub.StartsAt.IsZero() {
 		sub.StartsAt = s.now()
 	}
+	if sub.EndsAt != nil {
+		// a day ends at 24:00 Vietnam time (usage_calendar.go)
+		end := types.EndOfDayVN(*sub.EndsAt)
+		sub.EndsAt = &end
+	}
 	if sub.EndsAt != nil && !sub.EndsAt.After(sub.StartsAt) {
 		return apperrors.NewBadRequestError("ends_at must be after starts_at")
 	}
@@ -562,6 +567,10 @@ func (s *usagePlanService) GrantSubscriptionAddon(
 	}
 	if grant.StartsAt != nil && !grant.StartsAt.IsZero() {
 		addon.StartsAt = *grant.StartsAt
+	}
+	if addon.EndsAt != nil {
+		end := types.EndOfDayVN(*addon.EndsAt)
+		addon.EndsAt = &end
 	}
 	if addon.EndsAt != nil && !addon.EndsAt.After(addon.StartsAt) {
 		return nil, apperrors.NewBadRequestError("ends_at must be after starts_at")
