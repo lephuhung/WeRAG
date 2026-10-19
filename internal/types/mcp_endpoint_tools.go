@@ -221,7 +221,9 @@ func MCPEndpointAgentAllowed(agent *CustomAgent, tenantID uint64) bool {
 		}
 		return false
 	}
-	return agent.TenantID == tenantID
+	// A SuperAdmin reads every agent, so the endpoint's workspace must also
+	// be in the agent's "Tổ chức áp dụng" list.
+	return agent.TenantID == tenantID && agent.AppliesToTenant(tenantID)
 }
 
 // MCPEndpointAgentSelectable is MCPEndpointAgentAllowed for configuring an

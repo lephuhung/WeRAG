@@ -68,6 +68,9 @@ type CreateAgentRequest struct {
 	Description string                  `json:"description"`
 	Avatar      string                  `json:"avatar"`
 	Config      types.CustomAgentConfig `json:"config"`
+	// AppliesToTenantIDs is "Tổ chức áp dụng": the workspaces allowed to use
+	// the agent. Empty or absent = every Tổ chức.
+	AppliesToTenantIDs types.AgentTenantScope `json:"applies_to_tenant_ids"`
 }
 
 // UpdateAgentRequest defines the request body for updating an agent
@@ -80,6 +83,9 @@ type UpdateAgentRequest struct {
 	// that PUT only a config silently zeroed the avatar and still got a 200.
 	Avatar *string                 `json:"avatar"`
 	Config types.CustomAgentConfig `json:"config"`
+	// AppliesToTenantIDs is "Tổ chức áp dụng". A pointer for the same reason
+	// as Avatar: absent keeps the stored list, [] clears it (every Tổ chức).
+	AppliesToTenantIDs *types.AgentTenantScope `json:"applies_to_tenant_ids"`
 }
 
 // CreateAgent godoc
@@ -125,10 +131,11 @@ func (h *CustomAgentHandler) CreateAgent(c *gin.Context) {
 
 	// Build agent object
 	agent := &types.CustomAgent{
-		Name:        req.Name,
-		Description: req.Description,
-		Avatar:      req.Avatar,
-		Config:      req.Config,
+		Name:               req.Name,
+		Description:        req.Description,
+		Avatar:             req.Avatar,
+		Config:             req.Config,
+		AppliesToTenantIDs: req.AppliesToTenantIDs,
 	}
 	agent.EnsureDefaults()
 	// The DB column (varchar(64)) has no application-level guard, so an
@@ -150,7 +157,7 @@ func (h *CustomAgentHandler) CreateAgent(c *gin.Context) {
 	createdAgent, err := h.service.CreateAgent(ctx, agent)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
-		if err == service.ErrAgentNameRequired {
+		if err == service.ErrAgentNameRequired || isAgentTenantScopeError(err) {
 			c.Error(errors.NewBadRequestError(err.Error()))
 			return
 		}
@@ -401,6 +408,11 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 		Description: req.Description,
 		Config:      req.Config,
 	}
+	// nil tells the service the list was not sent; Normalized never returns
+	// nil, so a sent [] still clears the stored list.
+	if req.AppliesToTenantIDs != nil {
+		agent.AppliesToTenantIDs = req.AppliesToTenantIDs.Normalized()
+	}
 	agent.EnsureDefaults()
 	if err := agent.Config.QuestionSuggestions.Validate(); err != nil {
 		c.Error(errors.NewBadRequestError(err.Error()))
@@ -423,7 +435,7 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 			c.Error(errors.NewForbiddenError("Cannot modify built-in agent"))
 		case service.ErrBuiltinModelManagedByAdmin:
 			c.Error(errors.NewForbiddenError(err.Error()))
-		case service.ErrAgentNameRequired:
+		case service.ErrAgentNameRequired, service.ErrBuiltinAgentNotScopable, service.ErrAgentTenantScopeInvalid:
 			c.Error(errors.NewBadRequestError(err.Error()))
 		default:
 			// Reached only after the typed sentinels and *errors.AppError above, so
@@ -807,4 +819,9 @@ func authorizeAgentKnowledgeScope(ctx context.Context, cfg types.CustomAgentConf
 		}
 		return types.AuthorizeTenantAPIKeyKnowledgeBases(ctx, cfg.KnowledgeBases...)
 	}
+}
+
+// isAgentTenantScopeError reports a refused "Tổ chức áp dụng" list.
+func isAgentTenantScopeError(err error) bool {
+	return err == service.ErrBuiltinAgentNotScopable || err == service.ErrAgentTenantScopeInvalid
 }
