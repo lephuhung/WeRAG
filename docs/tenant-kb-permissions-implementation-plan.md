@@ -264,3 +264,12 @@ Migration 146 → 148 chạy tự động khi backend khởi động; không tà
 - Gửi `visibility` và `member_default` cùng lúc là hai lần ghi không chung transaction (UI hiện không gửi kiểu này).
 - Chú thích của `hideUnreadableReferences` trong `message.go` nằm dính trên `isWebSearchReference`.
 - Ba commit 3b, bốn commit 4–5 và bốn commit sửa mang Co-Authored-By Opus 5.5 (đúng người viết); các commit trước ghi Fable 5.1.
+
+## 8. Trợ lý theo Tổ chức — "Tổ chức áp dụng" (2026-10-19)
+
+Ngoài phạm vi KB ở trên, quyền thấy trợ lý (agent) được quyết định như sau:
+
+- Trợ lý do SuperAdmin tạo nằm ở hồ sơ cấu hình chung (Tổ chức ẩn 10009); mỗi Tổ chức có `config_profile_id` trỏ tới hồ sơ thì thấy trợ lý của hồ sơ cùng với trợ lý của chính mình.
+- Cột `custom_agents.applies_to_tenant_ids` (migration 000165, giao diện "Tổ chức áp dụng") giới hạn trợ lý của hồ sơ cho một danh sách Tổ chức; để trống = mọi Tổ chức (hành vi cũ). Lọc ngay trong repository (`GetAgentByID`, `ListAgentsByTenantID`), nên mọi đường đều theo: danh sách, xem, chat và cuộc trò chuyện con, gợi ý câu hỏi, nhân bản, kênh IM, embed, công cụ ask của MCP, API key.
+- Ngoài danh sách, trợ lý coi như không tồn tại: 404 giống id sai. Lượt chat mới trong cuộc trò chuyện cũ bị chặn (404, mã 2104, "Trợ lý này không tồn tại hoặc không áp dụng cho Tổ chức của bạn…"); giao diện chuyển lựa chọn về trợ lý hỏi đáp.
+- Hàng trợ lý thuộc chính Tổ chức không bị lọc; trợ lý tích hợp sẵn không giới hạn được; SuperAdmin (người thật, không phải API key) thấy mọi trợ lý. Danh sách chỉ nhận Tổ chức đang dùng hồ sơ chứa trợ lý; nhân bản giữ nguyên danh sách.

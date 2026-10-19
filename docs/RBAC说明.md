@@ -42,7 +42,6 @@ Owner 的数量约束是“至少一位”，而不是“只能一位”。系�
 - `knowledge_bases.creator_id` —— 老数据回填为该空间的 Owner；空串/NULL 表示「空间共有，仅 Admin+ 可变更」。
 - `custom_agents.creator_id` —— Agent 创建者。
 - `custom_agents.runnable_by_viewer` —— 默认 `true`，允许 Viewer 在对话中调用该 Agent；置 `false` 则提升到 Contributor 起步。
-- `custom_agents.applies_to_tenant_ids`（迁移 `000165`，界面名 "Tổ chức áp dụng"）—— 继承自配置档（config profile）的 Agent 只对列表中的空间可见；空列表 = 所有空间。列表外的空间读取、对话、复制、绑定 IM/嵌入/MCP 时一律按「不存在」处理（404）。空间自己的 Agent 行不受影响；内置 Agent 不可限定；人类 SuperAdmin 可见全部。
 
 子资源沿着归属链回溯到 KB 的 `creator_id`：
 
