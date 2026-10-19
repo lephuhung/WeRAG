@@ -23,9 +23,17 @@ type publicBillingStub struct {
 	plans []*types.UsagePlan
 }
 
-func (s *publicBillingStub) PurchasablePlans(_ context.Context, scope string) ([]*types.UsagePlan, error) {
+func (s *publicBillingStub) PurchasablePlans(_ context.Context, scope string) ([]*types.UsagePlanOffer, error) {
 	s.scope = scope
-	return s.plans, s.err
+	offers := make([]*types.UsagePlanOffer, 0, len(s.plans))
+	for _, p := range s.plans {
+		if p == nil {
+			offers = append(offers, nil)
+			continue
+		}
+		offers = append(offers, &types.UsagePlanOffer{UsagePlan: p})
+	}
+	return offers, s.err
 }
 
 func publicBillingTestRouter(s *publicBillingStub) *gin.Engine {
