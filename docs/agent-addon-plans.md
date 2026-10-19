@@ -2,7 +2,7 @@
 
 - Ngày: 2026-10-19.
 - Nhánh: `feat/agent-addons` (worktree `/home/WeRAG-wt/agent-addons`), tách từ `feat/document-assistant` tại `38e230f7`.
-- Trạng thái: người dùng đã chốt mục 7 (19/10/2026, trừ 7.4 đang dùng đề xuất); bắt đầu giai đoạn A.
+- Trạng thái: người dùng đã chốt toàn bộ mục 7 (19/10/2026); giai đoạn A đang làm.
 - Liên quan: `docs/domain-pack-standard.md` (bộ kỹ năng), `docs/billing-payment-webhook.md`, mục "Tổ chức áp dụng" trong `docs/tenant-kb-permissions-implementation-plan.md` §8.
 
 ## 1. Vì sao đổi
@@ -30,7 +30,7 @@ Mỗi agent tuỳ chỉnh có đúng một **cách phân phối** (trường m�
 
 | Cách phân phối | Ai thấy | Dùng cho |
 | --- | --- | --- |
-| **Cơ bản** | mọi Tổ chức có gói dịch vụ còn hạn (và mọi người khi chưa bật kiểm hạn mức) | 2 agent cơ bản |
+| **Cơ bản** | mọi Tổ chức (lượt hỏi vẫn qua kiểm gói dịch vụ `usage.enforce`, mặc định bật) | 2 agent cơ bản |
 | **Chuyên ngành (bán kèm)** | thành viên của Tổ chức có gói dịch vụ còn hạn **và** đã mua agent này | agent có bộ kỹ năng |
 | **Nội bộ** | chỉ các Tổ chức trong "Tổ chức áp dụng" | agent thử, agent riêng một đơn vị không bán |
 
@@ -78,7 +78,7 @@ thấy(agent, caller) =
                            (tenant của caller, hoặc thuê bao cá nhân của caller) chứa agent
 ```
 
-- Khi `usage.enforce` tắt (dev, trước khi bật thu phí): agent `addon` vẫn chỉ hiện khi đã mua — quyền dùng tính theo dữ liệu thuê bao, không theo công tắc kiểm hạn mức (7.4).
+- `usage.enforce` mặc định **bật**; công tắc chỉ để tắt khi kiểm thử. Dù tắt, agent `addon` vẫn chỉ hiện khi đã mua — quyền dùng tính theo dữ liệu thuê bao, không theo công tắc kiểm hạn mức (7.4).
 - IM, embed, MCP, API key: cùng điều kiện qua tenant của kênh (đã có khung kiểm từ "Tổ chức áp dụng").
 
 ## 7. Quyết định (19/10/2026)
@@ -86,7 +86,7 @@ thấy(agent, caller) =
 1. **Hai agent cơ bản**: *Trợ lý văn bản* (`builtin-document-assistant`) và *Hỏi đáp pháp luật* (`builtin-smart-reasoning`). Các built-in khác giữ tắt.
 2. **Giá agent chuyên ngành nhân số ghế** với gói ghế (Go): giá/tháng × số ghế; gói pool: giá/tháng cho cả Tổ chức.
 3. **Mua thêm giữa kỳ — chỉ 2 mốc**: mỗi tháng còn lại tính đủ giá; phần tháng lẻ còn lại ≤ 15 ngày tính **1/2**, > 15 ngày tính **đủ**. Hết hạn cùng thuê bao.
-4. **Khi chưa bật kiểm hạn mức** (`usage.enforce` tắt): agent chuyên ngành vẫn **chỉ hiện cho Tổ chức/người đã mua** (đề xuất, chờ người dùng xác nhận; một chỗ để đổi).
+4. **Agent chuyên ngành chỉ hiện cho Tổ chức/người đã mua**, kể cả khi `usage.enforce` tắt (một chỗ trong mã để đổi: `addonsVisibleWithoutPurchase`). **`usage.enforce` mặc định bật** (registry + giá trị dự phòng của `usageGuard.Enforced`); tắt chỉ để kiểm thử.
 5. **Gói cá nhân cũng mua kèm được** agent chuyên ngành (quyền dùng gắn vào thuê bao cá nhân).
 6. Tên hiển thị **"Bộ kỹ năng chuyên môn"** (ngắn: "Bộ kỹ năng") cho domain pack.
 

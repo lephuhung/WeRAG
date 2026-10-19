@@ -33,11 +33,15 @@ func NewUsageGuard(
 	return &usageGuard{plans: plans, counters: counters, settings: settings, now: time.Now}
 }
 
+// Enforced reports usage.enforce, ON unless a SuperAdmin saved false (the
+// switch exists for testing only). A guard without a settings service is
+// only built by unit tests, which expect no enforcement; production wiring
+// (container, NewUsagePlanService) always passes one.
 func (g *usageGuard) Enforced(ctx context.Context) bool {
 	if g.settings == nil {
 		return false
 	}
-	return g.settings.GetBool(ctx, types.UsageEnforceSettingKey, "", false)
+	return g.settings.GetBool(ctx, types.UsageEnforceSettingKey, "", types.UsageEnforceDefault)
 }
 
 func (g *usageGuard) CheckTurn(

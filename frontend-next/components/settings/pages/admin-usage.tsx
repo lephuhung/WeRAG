@@ -215,7 +215,8 @@ export default function AdminUsage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const [enforced, setEnforced] = useState(false);
+  // usage.enforce is ON unless a SuperAdmin saved false (off = testing only)
+  const [enforced, setEnforced] = useState(true);
   const [plans, setPlans] = useState<UsagePlan[]>([]);
   const [tenants, setTenants] = useState<UsageTenantOverview[]>([]);
   const [personal, setPersonal] = useState<UsageSubscriptionView[]>([]);
@@ -241,7 +242,7 @@ export default function AdminUsage() {
         listUsageTenantOverview(),
         listUsageSubscriptions({ scope_type: "user" }),
       ]);
-      setEnforced(setting.value === true || setting.value === "true");
+      setEnforced(!(setting.value === false || setting.value === "false"));
       setPlans(pl);
       setTenants(tn);
       setPersonal(ps);

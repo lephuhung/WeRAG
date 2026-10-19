@@ -36,10 +36,12 @@ const (
 	UsageSubscriptionActive    = "active"
 	UsageSubscriptionCancelled = "cancelled"
 
-	// UsageEnforceSettingKey is the system_settings switch that turns the
-	// pre-flight check on. Off by default so a deployment can assign
-	// subscriptions to its organizations before anyone is refused.
+	// UsageEnforceSettingKey is the system_settings switch of the
+	// pre-flight check. ON by default (UsageEnforceDefault): the product
+	// always enforces packages; turning it off is for testing only.
 	UsageEnforceSettingKey = "usage.enforce"
+	// UsageEnforceDefault is usage.enforce when no SuperAdmin saved a value.
+	UsageEnforceDefault = true
 )
 
 // UsageLimit caps one metric over one period. Limit <= 0 means unlimited.

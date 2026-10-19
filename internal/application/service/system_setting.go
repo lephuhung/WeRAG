@@ -395,8 +395,8 @@ var registry = map[string]settingSpec{
 	},
 	// usage.enforce turns the usage-package pre-flight check on: a turn
 	// is refused (HTTP 429) when the workspace or person has no current
-	// subscription, holds no seat, or has used up a limit. Off by default
-	// so subscriptions can be assigned first. SystemAdmins are exempt.
+	// subscription, holds no seat, or has used up a limit. ON by default;
+	// switching it off is for testing only. SystemAdmins are exempt.
 	// Read live per QA turn.
 	// document_template.font_sizes: the platform-wide font sizes of the
 	// NĐ30 templates drafted from chat, within the NĐ30 ranges
@@ -413,10 +413,11 @@ var registry = map[string]settingSpec{
 	types.UsageEnforceSettingKey: {
 		Type:     "bool",
 		EnvName:  "",
-		Default:  false,
+		Default:  types.UsageEnforceDefault,
 		Category: "chat",
 		Description: "Bật kiểm tra gói sử dụng trước mỗi lượt hỏi: không có thuê bao, hết hạn, " +
-			"không có seat hoặc hết hạn mức → từ chối (429). Quản trị hệ thống không bị chặn. Có hiệu lực ngay.",
+			"không có seat hoặc hết hạn mức → từ chối (429). Quản trị hệ thống không bị chặn. Có hiệu lực ngay. " +
+			"Mặc định bật; chỉ tắt khi kiểm thử.",
 	},
 	types.SettingChatAttachmentSectionPicker: {
 		Type: "bool", Default: true, Category: "chat",
