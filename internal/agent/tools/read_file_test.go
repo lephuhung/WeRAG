@@ -125,3 +125,10 @@ func TestReadFileInstalledSkillSelectsShellAndDisabledSkillsStayHidden(t *testin
 	require.NoError(t, err)
 	require.False(t, result.Success)
 }
+
+func TestReadFileSchemaOmitsSandboxPathsWithoutSandbox(t *testing.T) {
+	noSandbox := string(NewReadFileTool(nil).Parameters())
+	require.NotContains(t, noSandbox, "/workspace")
+	require.Contains(t, noSandbox, "skill://")
+	require.Contains(t, string(NewReadFileTool(&fakeSandboxFileSource{}).Parameters()), "/workspace")
+}
