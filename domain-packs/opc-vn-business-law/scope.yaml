@@ -8,12 +8,12 @@ exclusions:
     phrases: [kiện ra tòa, khởi kiện, bị kiện, bản tự khai, tố tụng]
   - name: M&A, đầu tư nước ngoài
     phrases: [nhà đầu tư nước ngoài, nhà đầu tư Singapore, nhà đầu tư Hàn Quốc, nhà đầu tư Nhật,
-              nhà đầu tư Trung Quốc, nhà đầu tư Mỹ, sáp nhập, mua bán doanh nghiệp, mua lại công ty]
+              nhà đầu tư Trung Quốc, nhà đầu tư Mỹ, sáp nhập công ty, sáp nhập doanh nghiệp, mua bán doanh nghiệp, mua lại công ty]
   - name: phá sản
     phrases: [phá sản, mất khả năng thanh toán]
 refusals:
   - name: lập hai sổ kế toán hoặc trốn thuế
-    phrases: [hai sổ, trốn thuế, giấu doanh thu, ẩn doanh thu]
+    phrases: [hai sổ kế toán, hai hệ thống sổ, sổ kép, trốn thuế, giấu doanh thu, ẩn doanh thu]
     alternative: kê khai đủ doanh thu, dùng chi phí hợp lệ có chứng từ và chọn phương pháp tính thuế phù hợp
   - name: tẩu tán tài sản hoặc trốn nợ
     phrases: [không phải trả nợ cũ, chủ nợ không đòi được, tẩu tán tài sản, trốn nợ, né nợ]

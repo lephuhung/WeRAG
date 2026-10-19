@@ -36,7 +36,7 @@ func TestOpcScopeMatchesOnlyTheIntendedEvalPrompts(t *testing.T) {
 
 func TestScopeNoticeText(t *testing.T) {
 	src := opcSource(t)
-	got := src.ScopeNotice("Tôi muốn làm HAI SỔ kế toán, và công ty đang bị kiện.")
+	got := src.ScopeNotice("Tôi muốn làm HAI SỔ KẾ TOÁN, và công ty đang bị kiện.")
 	assert.Equal(t, ScopeNoticeMarker+
 		"- Nội dung này nằm ngoài phạm vi cẩm nang (tranh chấp, tố tụng); hãy hỏi luật sư hoặc người có chứng chỉ hành nghề trước khi làm hồ sơ.\n"+
 		"- Hệ thống không hỗ trợ lập hai sổ kế toán hoặc trốn thuế; hành vi này có thể bị xử lý hành chính hoặc hình sự. "+
@@ -45,6 +45,18 @@ func TestScopeNoticeText(t *testing.T) {
 	assert.NotEmpty(t, src.ScopeNotice(norm.NFD.String("Công ty sắp PHÁ SẢN")), "NFD and case")
 	assert.Empty(t, src.ScopeNotice("Thủ tục phá sảnx"), "word boundary")
 	assert.Empty(t, src.ScopeNotice(""))
+	// everyday questions that must not match
+	for _, q := range []string{
+		"Tôi có hai sổ tiết kiệm ở hai ngân hàng, có cần khai không?",
+		"Nhà tôi có hai sổ đỏ, chuyển một sổ vào công ty thế nào?",
+		"Công ty sáp nhập phòng ban thì có phải đăng ký thay đổi không?",
+		"Thủ tục góp vốn bằng tiền vào công ty TNHH một thành viên?",
+		"Tôi muốn mở sổ kế toán cho công ty mới.",
+		"Kiện toàn bộ máy kế toán thế nào cho doanh nghiệp siêu nhỏ?",
+		"Đối tác hỏi về thanh toán chậm, tôi trả lời sao?",
+	} {
+		assert.Empty(t, src.ScopeNotice(q), q)
+	}
 	assert.Equal(t, "x", StripFooter("x"+ScopeNoticeMarker+"- a\n"+types.ToolAnswerBlockMarker+"b"))
 }
 
