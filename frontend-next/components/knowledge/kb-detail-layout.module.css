@@ -1,0 +1,14 @@
+.page { display: flex; min-height: 0; min-width: 0; flex: 1; flex-direction: column; overflow-y: auto; overflow-x: hidden; }
+.content { display: flex; flex: 1 0 auto; min-width: 0; }
+.panes { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 24px; }
+.documents { order: 0; display: flex; min-width: 0; flex-direction: column; }
+.wiki { order: 1; display: flex; min-width: 0; flex-direction: column; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; align-content: start; }
+@media (min-width: 1024px) {
+  .page { overflow-y: auto; overflow-x: hidden; }
+  .content { flex: 1; min-height: 320px; }
+  .panes { min-height: 0; flex-direction: row; }
+  .wiki { order: 0; flex: 0 1 30%; width: 30%; max-width: 320px; min-width: 240px; min-height: 0; overflow: hidden; }
+  .documents { order: 1; flex: 1; min-height: 0; }
+  .grid { flex: 1; min-height: 0; overflow-y: auto; padding-right: 4px; }
+}

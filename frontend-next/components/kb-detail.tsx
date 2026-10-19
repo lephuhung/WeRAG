@@ -1,5 +1,6 @@
 "use client";
 
+import layout from "./knowledge/kb-detail-layout.module.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
@@ -487,12 +488,12 @@ const toast = useToast();
   };
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+    <div className={layout.page}>
       {/* Header */}
       <div className="shrink-0 px-4 pt-5 pb-4 sm:px-6 lg:px-10 lg:pt-7">
         <div className="caption mb-4 flex items-center gap-2 text-muted">
           <Link href="/platform/knowledge-bases" className="hover:text-ink">
-            Knowledge bases
+            {t("nav.knowledgeBases")}
           </Link>
           <span>/</span>
           <span className="text-ink">{kb?.name ?? kbId}</span>
@@ -504,7 +505,7 @@ const toast = useToast();
             <p className="body-sm mt-1.5 max-w-[560px] text-body">{kb?.description ?? ""}</p>
             {error && <p className="caption mt-2 text-error">{error}</p>}
             <div className="caption mt-2.5 flex items-center gap-4 text-muted">
-              <span>{kb?.knowledge_count ?? kb?.document_count ?? docsTotal ?? "—"} documents</span>
+              <span>{t("kbUi.documentCount", { count: kb?.knowledge_count ?? kb?.document_count ?? docsTotal ?? "—" })}</span>
               {/* Public identity keys off owner + visibility: a converted
                * row's foreign data scope must never mislabel it "Shared".
                * Invited rows keep the Shared marker. */}
@@ -512,10 +513,10 @@ const toast = useToast();
               {(accessBadge === "shared" || isForeignKb) && <span className="badge-pill bg-violet-500/15 text-violet-700 dark:text-violet-400">{t("kbList.sharedBadge")}</span>}
               {accessBadge === "published" && <span className="badge-pill bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">{t("kbPublished.badge")}</span>}
               {accessBadge === "restricted" && <span className="badge-pill bg-amber-500/15 text-amber-700 dark:text-amber-400">{t("kbAccess.badgeRestricted")}</span>}
-              {kb?.updated_at && <span className="whitespace-nowrap">Updated {fmtShortDate(kb.updated_at)}</span>}
+              {kb?.updated_at && <span className="whitespace-nowrap">{t("kbUi.updated", { date: fmtShortDate(kb.updated_at) })}</span>}
             </div>
           </div>
-          <div className="flex gap-3">
+          <div className="flex min-w-0 flex-wrap gap-2 sm:gap-3">
             {/* Share grants don't expand public visibility: no share
              * affordance on public rows. Backend remains authoritative. */}
             {!denied && (
@@ -527,7 +528,7 @@ const toast = useToast();
               <>
                 {canManageKb && (
                   <button className="btn btn-outline" onClick={() => setSettingsOpen(true)}>
-                    <IconSettings className="h-4 w-4" /> Settings
+                    <IconSettings className="h-4 w-4" /> {t("nav.settings")}
                   </button>
                 )}
                 {/* Upload follows viewer capabilities: own members and
@@ -535,7 +536,7 @@ const toast = useToast();
                  * public viewers never see it. */}
                 {kbCaps.canUpload && (
                   <button className="btn btn-outline" onClick={() => setUploadOpen(true)}>
-                    <IconPlus className="h-4 w-4" /> Upload files
+                    <IconPlus className="h-4 w-4" /> {t("kbUi.upload")}
                   </button>
                 )}
               </>
@@ -552,7 +553,7 @@ const toast = useToast();
         </div>
 
         {/* Page Main Navigation Tabs */}
-        <div className="mt-5 flex items-center gap-1 rounded-full bg-surface-strong p-1 w-fit">
+        <div className="mt-5 flex max-w-full items-center gap-1 overflow-x-auto rounded-full bg-surface-strong p-1 [&>button]:shrink-0 [&>button]:whitespace-nowrap">
           <button
             onClick={() => setActiveTab("docs-wiki")}
             className={`flex items-center gap-2 rounded-full px-4 py-1.5 text-[13px] font-medium transition-colors ${
@@ -579,7 +580,7 @@ const toast = useToast();
             }`}
           >
             <IconGraph className="h-4 w-4" />
-            <span>Knowledge graph</span>
+            <span>{t("kbUi.graph")}</span>
           </button>
 
           {!denied && (
@@ -614,31 +615,32 @@ const toast = useToast();
           </div>
         </div>
       ) : (
-      <div className="flex min-h-0 flex-1 px-4 pb-4 sm:px-6 lg:px-10 lg:pb-6">
+      <div className={`${layout.content} px-4 pb-4 sm:px-6 lg:px-10 lg:pb-6`}>
         {activeTab === "access" ? (
           <div className="flex min-h-0 flex-1 overflow-y-auto">
             <KbAccessTab kbId={kbId} onChanged={reloadKb} />
           </div>
         ) : activeTab === "docs-wiki" ? (
           /* TAB 1: Split view — Left Wiki (smaller width), Right Document Cards */
-          <div className="flex min-h-0 flex-1 flex-col gap-6 lg:flex-row">
+          <div className={layout.panes}>
             {/* Left: Wiki Section (increased width). On mobile the stacked
              * column would otherwise size to the full wiki tree and push the
              * document list off-screen — cap it to a scrollable 45vh. */}
-            <section className="card flex h-[45vh] min-h-0 flex-col overflow-hidden w-full lg:h-auto lg:w-[440px] xl:w-[480px] shrink-0">
+            {kb?.indexing_strategy?.wiki_enabled !== false && (
+            <section className={`card ${layout.wiki}`}>
               {/* Wiki Search & Header */}
               <div className="flex shrink-0 items-center justify-between border-b border-hairline px-4 py-2.5">
                 <div className="flex items-center gap-2 font-medium text-[13.5px] text-ink">
                   <IconDoc className="h-4 w-4 text-muted" />
                   <span>Wiki</span>
                 </div>
-                <span className="text-[11.5px] text-muted-soft">Mục lục tri thức</span>
+                <span className="text-[11.5px] text-muted-soft">{t("kbUi.wikiContents")}</span>
               </div>
               <div className="caption flex items-center gap-2 border-b border-hairline px-4 py-2">
                 <IconSearch className="h-3.5 w-3.5 text-muted-soft shrink-0" />
                 <input
                   className="w-full bg-transparent text-[12.5px] outline-none placeholder:text-muted-soft"
-                  placeholder="Search wiki pages…"
+                  placeholder={t("kbUi.searchWiki")}
                   value={wikiQ}
                   onChange={(e) => setWikiQ(e.target.value)}
                 />
@@ -648,17 +650,18 @@ const toast = useToast();
                 <WikiBrowser kbId={kbId} q={wikiQ} canMutate={canManageKb} />
               </div>
             </section>
+            )}
 
             {/* Right: Document Cards Grid */}
-            <section className="flex min-h-0 flex-1 flex-col min-w-0">
+            <section className={layout.documents}>
               {/* Document Search and Action Bar — wraps to two rows when the
                * column is narrow instead of squeezing the right group. */}
               <div className="mb-3.5 flex shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2.5">
-                <div className="relative w-full max-w-[320px] min-w-[180px]">
+                <div className="relative min-w-0 w-full max-w-[320px]">
                   <IconSearch className="pointer-events-none absolute left-3.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-soft" />
                   <input
                     className="input h-9 pl-9 text-[13px]"
-                    placeholder="Search documents…"
+                    placeholder={t("kbUi.searchDocuments")}
                     value={q}
                     onChange={(e) => setQ(e.target.value)}
                   />
@@ -666,13 +669,13 @@ const toast = useToast();
                 <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
                   {defaultsLocked && (
                     <span
-                      className="caption hidden min-w-0 truncate text-muted md:inline"
+                      className="caption hidden min-w-0 max-w-full truncate text-muted md:inline"
                       title={t("pd.lockedBanner")}
                     >
                       {t("pd.lockedBanner")}
                     </span>
                   )}
-                  <span className="caption whitespace-nowrap text-muted">{docsTotal ?? "—"} files</span>
+                  <span className="caption whitespace-nowrap text-muted">{t("kbUi.files", { count: docsTotal ?? "—" })}</span>
                   {!denied && isPublicKb && isSystemAdmin && (
                     <KbLegalReviewBar items={legalReview.items} onScanned={legalReview.reload} />
                   )}
@@ -686,7 +689,7 @@ const toast = useToast();
                       onClick={() => setUploadOpen(true)}
                       className="btn btn-outline btn-sm h-8"
                     >
-                      <IconPlus className="h-3.5 w-3.5" /> Upload
+                      <IconPlus className="h-3.5 w-3.5" /> {t("kbUi.upload")}
                     </button>
                   )}
                 </div>
@@ -695,7 +698,7 @@ const toast = useToast();
               {/* Cards Grid: at most 4 cards per row (5 made them too narrow) */}
               <div
                 ref={gridRef}
-                className={`grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-3 overflow-y-auto pr-1 transition-opacity sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 ${
+                className={`${layout.grid} transition-opacity ${
                   docsLoading && docs !== null ? "opacity-60" : ""
                 }`}
               >
@@ -713,7 +716,7 @@ const toast = useToast();
                           setOpenDoc(d);
                         }
                       }}
-                      className="card card-hover group relative flex flex-col justify-between p-3 text-left transition-all hover:border-ink/20"
+                      className="card card-hover group relative flex min-w-0 flex-col justify-between p-3 text-left transition-all hover:border-ink/20"
                     >
                       <div className="absolute right-2 top-2">
                         <DocActionsMenu

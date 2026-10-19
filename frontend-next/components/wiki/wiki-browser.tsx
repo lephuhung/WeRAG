@@ -109,12 +109,12 @@ export function WikiBrowser({
           <Markdown text={index.intro} />
         </div>
       )}
-      {error && <p className="caption mb-3 text-error">{error}</p>}
-      {loading && <p className="caption mb-3 text-muted">Loading wiki…</p>}
+      {error && <div className="mb-3"><p className="caption text-error">{t("kbUi.wikiLoadFailed")}</p><button className="btn btn-outline btn-sm mt-2" onClick={() => void load()}>{t("artifactLibrary.retry")}</button></div>}
+      {loading && <p className="caption mb-3 text-muted">{t("kbUi.wikiLoading")}</p>}
 
       {/* tree */}
       <div className="flex min-h-0 flex-1 flex-col">
-        {(index?.groups ?? []).map((g) => {
+        {(!error && !loading ? index?.groups ?? [] : []).map((g) => {
           /* group-level search filter */
           const items = g.items.filter(
             (i) =>
@@ -184,9 +184,9 @@ export function WikiBrowser({
             </div>
           );
         })}
-        {!loading && (index?.groups ?? []).length === 0 && (
-          <p className="caption text-muted-soft">
-            No wiki pages yet — they are generated after documents are indexed.
+        {!loading && !error && (index?.groups ?? []).length === 0 && (
+          <p className="caption text-muted">
+            {t("kbUi.wikiEmpty")}
           </p>
         )}
       </div>

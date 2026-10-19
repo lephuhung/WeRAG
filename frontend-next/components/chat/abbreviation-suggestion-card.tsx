@@ -189,17 +189,17 @@ export function AbbreviationSuggestionCard({
                     }}
                   >
                     <div>
-                      <label className="mb-1 block text-[12px] text-subtle">
+                      <label className="mb-1 block text-[12px] text-muted">
                         Từ viết tắt
                       </label>
                       <input
                         value={short}
                         readOnly
-                        className="w-full rounded-md border border-hairline bg-surface px-3 py-1.5 text-[13px] text-subtle"
+                        className="w-full rounded-md border border-hairline bg-surface-card px-3 py-1.5 text-[13px] text-muted"
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-[12px] text-subtle">
+                      <label className="mb-1 block text-[12px] text-muted">
                         Nghĩa đầy đủ <span className="text-red-500">*</span>
                       </label>
                       <input
@@ -208,18 +208,18 @@ export function AbbreviationSuggestionCard({
                         maxLength={255}
                         required
                         placeholder="Ví dụ: Ủy ban nhân dân"
-                        className="w-full rounded-md border border-hairline bg-surface px-3 py-1.5 text-[13px] text-ink"
+                        className="w-full rounded-md border border-hairline bg-surface-card px-3 py-1.5 text-[13px] text-ink"
                       />
                     </div>
                     <div>
-                      <label className="mb-1 block text-[12px] text-subtle">
+                      <label className="mb-1 block text-[12px] text-muted">
                         Mô tả (không bắt buộc)
                       </label>
                       <input
                         value={description}
                         onChange={(e) => setDescription(e.target.value)}
                         maxLength={2000}
-                        className="w-full rounded-md border border-hairline bg-surface px-3 py-1.5 text-[13px] text-ink"
+                        className="w-full rounded-md border border-hairline bg-surface-card px-3 py-1.5 text-[13px] text-ink"
                       />
                     </div>
                     {error && <p className="text-[12px] text-red-500">{error}</p>}
@@ -227,7 +227,7 @@ export function AbbreviationSuggestionCard({
                       <button
                         type="submit"
                         disabled={submitting || !fullForm.trim()}
-                        className="rounded-full bg-ink px-3.5 py-1.5 text-[13px] text-surface transition-opacity disabled:opacity-50"
+                        className="rounded-full bg-ink px-3.5 py-1.5 text-[13px] text-on-primary transition-opacity disabled:opacity-50"
                       >
                         {submitting ? "Đang gửi..." : "Gửi đề xuất"}
                       </button>
