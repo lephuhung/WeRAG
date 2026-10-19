@@ -360,7 +360,7 @@ export default function KnowledgeBaseList() {
             does not depend on membership); for a Guest it means the account
             belongs to no unit yet. */}
         {!hasTenant && (
-          <p className="body-sm mb-6 rounded-xl border border-hairline bg-surface px-4 py-3 text-body">
+          <p className="body-sm mb-6 rounded-xl border border-hairline bg-surface-card px-4 py-3 text-body">
             {isExplicitSuperAdmin
               ? t("kbPublic.superAdminNoUnitNotice")
               : t("kbPublic.tenantlessNotice")}

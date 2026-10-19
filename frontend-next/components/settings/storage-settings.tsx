@@ -116,7 +116,7 @@ export function StorageSettings() {
 
   return (
     <div>
-      <div className="flex items-center justify-between border-b border-hairline pb-4">
+      <div className="flex flex-col items-start gap-3 border-b border-hairline pb-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="title-md">{t("stor.title")}</h2>
           <p className="caption mt-1 text-muted">
@@ -125,7 +125,7 @@ export function StorageSettings() {
         </div>
         <button
           onClick={() => setModalOpen(true)}
-          className="btn btn-primary btn-sm flex items-center gap-1.5"
+          className="btn btn-primary btn-sm flex shrink-0 items-center gap-1.5"
         >
           <IconPlus className="h-4 w-4" /> {t("stor.add")}
         </button>
@@ -151,7 +151,7 @@ export function StorageSettings() {
             return (
               <div
                 key={b.id}
-                className="flex items-center justify-between rounded-xl border border-hairline bg-surface p-4 transition-colors hover:border-hairline-strong"
+                className="flex items-center justify-between rounded-xl border border-hairline bg-surface-card p-4 transition-colors hover:border-hairline-strong"
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">

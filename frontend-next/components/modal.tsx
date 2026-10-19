@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useDialogFocus } from "./use-dialog-focus";
 import { createPortal } from "react-dom";
 import { HostedSubPage, useInSubPageHost } from "@/components/settings/sub-page-host";
 
@@ -41,12 +42,8 @@ function OverlayModal({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus({ open: open && mounted, containerRef: dialogRef, onClose });
 
   if (!open || !mounted) return null;
 
@@ -54,7 +51,9 @@ function OverlayModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6">
       <div className="absolute inset-0 bg-ink/20" onClick={onClose} />
       <div
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
         aria-label={title}
         className={`card relative ${width} max-h-[calc(100dvh-1.5rem)] max-w-full overflow-y-auto p-4 sm:max-h-[calc(100dvh-3rem)] sm:p-6`}
       >

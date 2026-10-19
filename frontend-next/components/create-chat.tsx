@@ -181,16 +181,17 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
   };
   if (suggested === null && typeof window !== "undefined") void loadSuggested();
 
-  const suggestions = suggested?.length ? suggested.map((s) => s.question) : FALLBACK_SUGGESTIONS;
   const isDocumentAssistant = ctx.settings.selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID;
 
   const column = (
-    <div className="relative flex flex-1 flex-col items-center justify-center overflow-hidden px-4 sm:px-8">
-      <Orb color="sky" size={560} className="-top-48 left-1/2 -translate-x-1/2" />
-      <Orb color="rose" size={380} className="bottom-[-140px] right-[8%]" />
-      <Orb color="mint" size={300} className="bottom-[-100px] left-[10%]" />
+    <div className="relative flex min-h-0 min-w-0 flex-1 flex-col items-center overflow-y-auto overflow-x-hidden px-4 sm:px-8">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        <Orb color="sky" size={560} className="-top-48 left-1/2 -translate-x-1/2" />
+        <Orb color="rose" size={380} className="bottom-[-140px] right-[8%]" />
+        <Orb color="mint" size={300} className="bottom-[-100px] left-[10%]" />
+      </div>
 
-      <div className="relative w-full max-w-[768px]">
+      <div className="relative my-auto w-full max-w-[768px] shrink-0 py-6 sm:py-10">
         <h1 className="display-xl mb-3 text-center">{t("cc.title")}</h1>
         <p className="mb-10 text-center text-muted">{t("cc.subtitle")}</p>
         {isDocumentAssistant && (
@@ -257,7 +258,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
                     )
                   }
                   disabled={busy || docPaneBusy}
-                  className="line-clamp-2 rounded-full border border-hairline-strong bg-surface-card px-3 py-1.5 text-left text-[12px] leading-snug text-body transition-colors hover:border-ink hover:text-ink disabled:opacity-50 sm:px-4 sm:py-2 sm:text-[14px]"
+                  className="h-auto max-w-full shrink-0 whitespace-normal break-words rounded-[20px] border border-hairline-strong bg-surface-card px-3 py-2 text-left text-[12px] leading-relaxed text-body transition-colors hover:border-ink hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50 sm:px-4 sm:text-[14px]"
                 >
                   {item.question}
                 </button>
@@ -275,7 +276,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
                     )
                   }
                   disabled={busy || docPaneBusy}
-                  className="line-clamp-2 rounded-full border border-hairline-strong bg-surface-card px-3 py-1.5 text-left text-[12px] leading-snug text-body transition-colors hover:border-ink hover:text-ink disabled:opacity-50 sm:px-4 sm:py-2 sm:text-[14px]"
+                  className="h-auto max-w-full shrink-0 whitespace-normal break-words rounded-[20px] border border-hairline-strong bg-surface-card px-3 py-2 text-left text-[12px] leading-relaxed text-body transition-colors hover:border-ink hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50 sm:px-4 sm:text-[14px]"
                 >
                   {s}
                 </button>
@@ -312,7 +313,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
 
 export function CreateChat({ kbId }: { kbId?: string }) {
   return (
-    <ChatProvider>
+    <ChatProvider newChat>
       <CreateChatBody kbId={kbId} />
     </ChatProvider>
   );

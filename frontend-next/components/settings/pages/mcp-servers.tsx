@@ -95,7 +95,7 @@ function McpServersPanel() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             className="btn btn-outline btn-sm"
             onClick={loadMcp}
@@ -124,7 +124,7 @@ function McpServersPanel() {
               className={`flex flex-col justify-between rounded-xl border p-4.5 transition-all shadow-sm ${
                 s.enabled
                   ? "border-hairline bg-surface-card hover:border-hairline-strong hover:shadow-md"
-                  : "border-hairline/60 bg-surface/60 opacity-80"
+                  : "border-hairline/60 bg-surface-card/60 opacity-80"
               }`}
             >
               <div>

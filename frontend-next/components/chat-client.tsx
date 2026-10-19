@@ -50,6 +50,7 @@ import {
 } from "@/lib/document-scope";
 import { DocumentScopeCard } from "@/components/chat/document-scope-card";
 import { ChoiceListView } from "@/components/chat/choice-list";
+import { isMobileChatViewport } from "@/components/use-mobile-chat";
 import { parseChoiceList, takeChoiceList, type ChoiceList, type ChoiceOption } from "@/lib/choice-list";
 import { LegalRequestCardView } from "@/components/chat/legal-request-card";
 import { parseLegalRequestCard, takeLegalRequestCard, type LegalRequestCard } from "@/lib/legal-request-card";
@@ -1272,10 +1273,11 @@ function ChatBody({ id }: { id: string }) {
   }, [id, noteSessionDocument]);
   useEffect(() => {
     if (docFileName && ctx.hydrated && ctx.settings.selectedAgentId !== BUILTIN_DOCUMENT_ASSISTANT_ID) {
-      ctx.selectAgent(BUILTIN_DOCUMENT_ASSISTANT_ID);
+      if (ctx.isMobile) ctx.hydrateSessionState({ agent_id: BUILTIN_DOCUMENT_ASSISTANT_ID, agent_enabled: true });
+      else ctx.selectAgent(BUILTIN_DOCUMENT_ASSISTANT_ID);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [docFileName, ctx.hydrated, ctx.settings.selectedAgentId]);
+  }, [docFileName, ctx.hydrated, ctx.settings.selectedAgentId, ctx.isMobile]);
 
   // Background format check of the open document → progress ring in the
   // composer toolbar; a finished result shows a dot until it is opened once.
@@ -2024,6 +2026,7 @@ function ChatBody({ id }: { id: string }) {
   };
 
   const send = async (s: ComposerSend) => {
+    if (ctx.documentReadOnly || (ctx.isMobile && id !== "new" && session?.id !== id)) return;
     const t = s.query.trim();
     if (!t || busy || docPaneBusyRef.current) return;
     // "bỏ qua" under the template offer, no type picked: the document stays
@@ -2807,6 +2810,7 @@ function ChatBody({ id }: { id: string }) {
   const startTemplateHandoff = docTemplate.handoff;
   const runHandoff = useCallback(
     async (option: ChoiceOption) => {
+      if (ctx.isMobile || isMobileChatViewport()) throw new Error(tr("docws.mobileWordUnavailable"));
       const h = option.handoff;
       if (!h) return;
       // no session yet (the page has not moved to the new one): say so
@@ -2913,6 +2917,7 @@ function ChatBody({ id }: { id: string }) {
   // hydration, and firing early would send DEFAULTS — web_search_enabled=false,
   // no KB scope — for the user's very first question.
   useEffect(() => {
+    if (ctx.isMobile && id !== "new" && session?.id !== id) return;
     if (initialQ && !sentInitial.current && ctx.hydrated) {
       sentInitial.current = true;
       // Flagged file handoff but the one-shot record is gone (reload, other
@@ -2928,10 +2933,14 @@ function ChatBody({ id }: { id: string }) {
         setError(resolved.handoffError);
         return;
       }
+      if (ctx.documentReadOnly) {
+        setInput(initialQ);
+        return;
+      }
       void send({ query: initialQ, modelId: ctx.settings.selectedChatModelId, mentionedItems: [], imageFiles: [], attachments: [] });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialQ, id, ctx.hydrated]);
+  }, [initialQ, id, ctx.hydrated, ctx.isMobile, ctx.documentReadOnly, session?.id]);
 
   // Follow the stream only while the user is parked near the bottom — scrolling
   // up releases the lock. Setting scrollTop directly (not smooth scrollIntoView):
@@ -3209,7 +3218,7 @@ function ChatBody({ id }: { id: string }) {
             />
           )}
           <div ref={composerBoxRef}>
-          <Composer
+          {!ctx.documentReadOnly && <Composer
             sessionId={id === "new" ? undefined : id}
             value={input}
             onChange={setInput}
@@ -3270,7 +3279,7 @@ function ChatBody({ id }: { id: string }) {
                 )}
               </div>
             }
-          />
+          />}
           </div>
           {!compact && (
             <p className="caption mt-3 text-center text-muted-soft">
@@ -3299,9 +3308,9 @@ function ChatBody({ id }: { id: string }) {
   // identity when the agent (hydrated after getSession) flips the editor on.
   return (
     <SplitPane
-      documentMode={isDocumentAssistant}
+      documentMode={isDocumentAssistant || ctx.documentReadOnly}
       left={
-        isDocumentAssistant ? (
+        isDocumentAssistant && !ctx.documentReadOnly ? (
           <DocWorkspace
             key={id}
             sessionId={id === "new" ? undefined : id}
@@ -3321,7 +3330,15 @@ function ChatBody({ id }: { id: string }) {
           />
         ) : null
       }
-      right={chatColumn}
+      right={ctx.documentReadOnly ? (
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <p role="status" className="border-b border-hairline bg-surface-card px-4 py-3 text-[13px] leading-relaxed text-body">
+            {tr("docws.mobileReadOnly")}
+            <a href="/platform/creatChat" className="ml-1 underline underline-offset-2">{tr("docws.mobileNewReasoning")}</a>
+          </p>
+          <fieldset disabled className="m-0 flex min-h-0 min-w-0 flex-1 border-0 p-0">{chatColumn}</fieldset>
+        </div>
+      ) : chatColumn}
     />
   );
 }
@@ -3545,7 +3562,7 @@ function SelectionChip({
 
 export function ChatClient({ id }: { id: string }) {
   return (
-    <ChatProvider>
+    <ChatProvider sessionId={id} newChat={id === "new"}>
       <ChatBody id={id} />
     </ChatProvider>
   );

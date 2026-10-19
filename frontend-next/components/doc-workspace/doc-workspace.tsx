@@ -42,6 +42,7 @@ import { IconBookmark, IconClose, IconDoc, IconPlus, IconRefresh } from "@/compo
 import { FileTypeIcon } from "@/components/files/file-type-icon";
 import { formatFileSize } from "@/components/use-attachments";
 import { DocumentPane } from "./document-pane";
+import { DocumentAddMenu } from "./document-add-menu";
 
 type Phase =
   | { kind: "loading" }
@@ -166,6 +167,7 @@ export const DocWorkspace = memo(function DocWorkspace({
   const [busyMsg, setBusyMsg] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const addButtonRef = useRef<HTMLButtonElement>(null);
   // Pre-session mode: last failure and the file kept for a retry.
   const [openError, setOpenError] = useState<string | null>(null);
   const [retryFile, setRetryFile] = useState<File | null>(null);
@@ -660,7 +662,7 @@ export const DocWorkspace = memo(function DocWorkspace({
             dragOver ? "border-ink/40 bg-surface-strong" : "border-hairline"
           }`}
         >
-          <IconDoc className="mb-3 h-9 w-9 text-muted-soft" />
+          <FileTypeIcon name="document.docx" className="mb-3 h-12 w-10" />
           <p className="text-[15px] font-medium text-ink">{dragOver ? t("docws.dropHere") : t("docws.emptyTitle")}</p>
           <p className="body-sm mt-1 text-muted">{t("docws.emptyDesc")}</p>
           <p className="caption mt-2 text-muted-soft">
@@ -730,7 +732,7 @@ export const DocWorkspace = memo(function DocWorkspace({
     >
       {fileInput}
       <div className="hairline-b flex h-14 shrink-0 items-center gap-2 px-2 sm:px-3">
-        <div role="tablist" className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+        <div role="tablist" data-document-tabs className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
           {docs.map((d) => {
             const selected = d.id === activeId;
             return (
@@ -794,15 +796,14 @@ export const DocWorkspace = memo(function DocWorkspace({
               className="btn btn-ghost btn-sm h-9 w-9 p-0"
               disabled={Boolean(busyMsg)}
               title={atLimit ? t("docws.limitReached", { n: maxDocs }) : t("docws.addDocument")}
+              ref={addButtonRef}
+              aria-expanded={addOpen}
               aria-label={t("docws.addDocument")}
               onClick={() => setAddOpen((o) => !o)}
             >
               <IconPlus className="h-4 w-4" />
             </button>
-            {addOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setAddOpen(false)} />
-                <div className="card absolute left-0 top-full z-[60] mt-1 max-h-[70vh] w-[320px] overflow-y-auto p-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
+            <DocumentAddMenu anchorRef={addButtonRef} open={addOpen} onClose={() => setAddOpen(false)}>
                   <button
                     type="button"
                     disabled={atLimit}
@@ -825,9 +826,7 @@ export const DocWorkspace = memo(function DocWorkspace({
                     <IconDoc className="h-3.5 w-3.5" /> {t("docws.newDocument")}
                   </button>
                   {sources.length + uploads.length > 0 && <div className="px-1.5 pb-1 pt-2">{sourcesList}</div>}
-                </div>
-              </>
-            )}
+            </DocumentAddMenu>
           </div>
           {busyMsg && (
             <span className="caption shrink-0 truncate text-muted" role="status">

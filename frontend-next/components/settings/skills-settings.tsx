@@ -329,7 +329,7 @@ export function SkillsSettings() {
               onClick={() => setRegTab("file")}
               className={`text-sm font-medium pb-2 transition-colors border-b-2 -mb-2.5 ${
                 regTab === "file"
-                  ? "border-brand text-brand font-semibold"
+                  ? "border-primary text-primary font-semibold"
                   : "border-transparent text-muted hover:text-ink"
               }`}
             >
@@ -340,7 +340,7 @@ export function SkillsSettings() {
               onClick={() => setRegTab("source")}
               className={`text-sm font-medium pb-2 transition-colors border-b-2 -mb-2.5 ${
                 regTab === "source"
-                  ? "border-brand text-brand font-semibold"
+                  ? "border-primary text-primary font-semibold"
                   : "border-transparent text-muted hover:text-ink"
               }`}
             >
@@ -380,7 +380,7 @@ export function SkillsSettings() {
             {uploadProgress > 0 && uploadProgress < 100 && (
               <div className="w-full bg-surface-strong rounded-full h-2">
                 <div
-                  className="bg-brand h-2 rounded-full transition-all"
+                  className="bg-primary h-2 rounded-full transition-all"
                   style={{ width: `${uploadProgress}%` }}
                 />
               </div>
@@ -489,7 +489,7 @@ export function SkillsSettings() {
                 onClick={() => void handleSelectFile(f.path)}
                 className={`w-full text-left px-2.5 py-1.5 rounded text-xs truncate transition-colors ${
                   selectedFilePath === f.path
-                    ? "bg-brand text-white font-medium"
+                    ? "bg-primary text-on-primary font-medium"
                     : "text-muted hover:bg-surface-strong hover:text-ink"
                 }`}
               >

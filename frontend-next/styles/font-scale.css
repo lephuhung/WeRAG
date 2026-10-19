@@ -1,0 +1,38 @@
+/* Typography-only scaling; spacing, icons and editor canvases keep their sizes. */
+  [class~="text-[8px]"] { font-size: calc(8px * var(--app-font-scale, 1)); }
+  [class~="text-[9px]"] { font-size: calc(9px * var(--app-font-scale, 1)); }
+  [class~="text-[9.5px]"] { font-size: calc(9.5px * var(--app-font-scale, 1)); }
+  [class~="text-[10px]"] { font-size: calc(10px * var(--app-font-scale, 1)); }
+  [class~="text-[10.5px]"] { font-size: calc(10.5px * var(--app-font-scale, 1)); }
+  [class~="text-[11px]"] { font-size: calc(11px * var(--app-font-scale, 1)); }
+  [class~="text-[11.5px]"] { font-size: calc(11.5px * var(--app-font-scale, 1)); }
+  [class~="text-[12px]"] { font-size: calc(12px * var(--app-font-scale, 1)); }
+  [class~="text-[12.5px]"] { font-size: calc(12.5px * var(--app-font-scale, 1)); }
+  [class~="text-[13px]"] { font-size: calc(13px * var(--app-font-scale, 1)); }
+  [class~="text-[13.5px]"] { font-size: calc(13.5px * var(--app-font-scale, 1)); }
+  [class~="text-[14px]"] { font-size: calc(14px * var(--app-font-scale, 1)); }
+  [class~="text-[14.5px]"] { font-size: calc(14.5px * var(--app-font-scale, 1)); }
+  [class~="text-[15px]"] { font-size: calc(15px * var(--app-font-scale, 1)); }
+  [class~="text-[16px]"] { font-size: calc(16px * var(--app-font-scale, 1)); }
+  [class~="text-[18px]"] { font-size: calc(18px * var(--app-font-scale, 1)); }
+  [class~="text-[20px]"] { font-size: calc(20px * var(--app-font-scale, 1)); }
+  [class~="text-[22px]"] { font-size: calc(22px * var(--app-font-scale, 1)); }
+@media (min-width: 640px) {
+  [class~="sm:text-[14px]"] { font-size: calc(14px * var(--app-font-scale, 1)); }
+}
+.text-xs { font-size: calc(12px * var(--app-font-scale, 1)); }
+.text-sm { font-size: calc(14px * var(--app-font-scale, 1)); }
+.text-base { font-size: calc(16px * var(--app-font-scale, 1)); }
+.text-lg { font-size: calc(18px * var(--app-font-scale, 1)); }
+.text-xl { font-size: calc(20px * var(--app-font-scale, 1)); }
+.text-2xl { font-size: calc(24px * var(--app-font-scale, 1)); }
+.text-3xl { font-size: calc(30px * var(--app-font-scale, 1)); }
+.text-4xl { font-size: calc(36px * var(--app-font-scale, 1)); }
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]), textarea, select, [data-composer-highlight] { font-size: max(16px, calc(16px * var(--app-font-scale, 1))) !important; }
+  input:not([type="checkbox"]):not([type="radio"]), select { min-height: 44px; }
+  [data-document-tabs] [role="tab"] { min-height: 48px; min-width: 180px; }
+  .btn, button[aria-label]:not([role="switch"]):not([role="tab"]) { min-height: 44px; min-width: 44px; }
+}
+
+input::placeholder, textarea::placeholder { color: var(--color-muted); opacity: 1; }

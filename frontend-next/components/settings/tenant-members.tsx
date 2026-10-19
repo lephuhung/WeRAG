@@ -346,7 +346,7 @@ export function TenantMembers() {
               onClick={() => setRoleFilter(r.id)}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                 roleFilter === r.id
-                  ? "bg-ink text-white dark:bg-white dark:text-ink"
+                  ? "bg-ink text-on-primary"
                   : "text-muted hover:bg-surface-strong hover:text-ink"
               }`}
             >
@@ -400,7 +400,7 @@ export function TenantMembers() {
                               {m.username || m.email}
                             </span>
                             {isMe && (
-                              <span className="rounded bg-brand/10 px-1.5 py-0.5 text-[10px] font-bold text-brand uppercase">
+                              <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold uppercase leading-4 tracking-wide text-white">
                                 {t("mem.you")}
                               </span>
                             )}
@@ -555,7 +555,7 @@ export function TenantMembers() {
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-ink">{r.label}</span>
                 {currentRole === r.id && (
-                  <span className="badge-pill bg-brand/10 text-brand text-[10px] font-bold">
+                  <span className="badge-pill bg-primary/10 text-primary text-[10px] font-bold">
                     {t("mem.currentRole")}
                   </span>
                 )}

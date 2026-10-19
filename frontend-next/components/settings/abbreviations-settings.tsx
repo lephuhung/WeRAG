@@ -17,7 +17,6 @@ import {
 } from "@/lib/api/abbreviations";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
-import { formatDate } from "@/lib/datetime";
 
 const PAGE_SIZE = 20;
 type StatusFilter = "all" | "active" | "pending";
@@ -25,15 +24,6 @@ type StatusFilter = "all" | "active" | "pending";
 /* Lets the account-menu pending badge refresh after any mutation here. */
 function notifyAbbreviationsChanged() {
   window.dispatchEvent(new Event("weknora:abbreviations-changed"));
-}
-
-function fmtDate(v?: string): string {
-  if (!v) return "-";
-  try {
-    return formatDate(v) || v;
-  } catch {
-    return v;
-  }
 }
 
 export function AbbreviationsSettings() {
@@ -434,7 +424,7 @@ export function AbbreviationsSettings() {
               }}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                 statusFilter === f.id
-                  ? "bg-ink text-white dark:bg-white dark:text-ink"
+                  ? "bg-ink text-on-primary"
                   : "text-muted hover:bg-surface-strong hover:text-ink"
               }`}
             >
@@ -489,7 +479,7 @@ export function AbbreviationsSettings() {
       {/* Table */}
       <div className="overflow-hidden rounded-xl border border-hairline">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left border-collapse text-sm">
+          <table className="w-full min-w-[720px] table-fixed text-left border-collapse text-sm">
           <thead>
             <tr className="border-b border-hairline bg-surface-strong/50 text-xs font-semibold text-muted">
               {canManage && (
@@ -504,30 +494,28 @@ export function AbbreviationsSettings() {
                   />
                 </th>
               )}
-              <th className="py-3 px-4 w-36">{t("abbrev.shortForm")}</th>
-              <th className="py-3 px-4">{t("abbrev.fullForm")}</th>
+              <th className="py-3 px-4 w-32">{t("abbrev.shortForm")}</th>
+              <th className="py-3 px-4 w-[22%]">{t("abbrev.fullForm")}</th>
               <th className="py-3 px-4">{t("abbrev.description")}</th>
-              <th className="py-3 px-4 w-36">{t("abbrev.status")}</th>
-              <th className="py-3 px-4 w-28">{t("abbrev.createdAt")}</th>
-              <th className={`py-3 px-4 text-right ${canManage ? "w-44" : "w-24"}`}>{t("abbrev.actions")}</th>
+              <th className={`py-3 px-4 text-right ${canManage ? "w-40" : "w-24"}`}>{t("abbrev.actions")}</th>
             </tr>
           </thead>
           <tbody className={`divide-y divide-hairline transition-opacity ${loading && rows.length > 0 ? "opacity-60" : ""}`}>
             {loading && rows.length === 0 ? (
               <tr>
-                <td colSpan={canManage ? 7 : 6} className="py-12 text-center text-muted">
+                <td colSpan={canManage ? 5 : 4} className="py-12 text-center text-muted">
                   {t("common.loading")}
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={canManage ? 7 : 6} className="py-12 text-center text-muted">
+                <td colSpan={canManage ? 5 : 4} className="py-12 text-center text-muted">
                   {t("abbrev.empty")}
                 </td>
               </tr>
             ) : (
               rows.map((r) => (
-                <tr key={r.id} className="hover:bg-surface-strong/30 transition-colors">
+                <tr key={r.id} className="hover:bg-surface-strong/30 transition-colors [&>td]:align-top">
                   {canManage && (
                     <td className="py-3 pl-4">
                       {!r.is_active && (
@@ -541,50 +529,50 @@ export function AbbreviationsSettings() {
                     </td>
                   )}
                   <td className="py-3 px-4">
-                    <code className="rounded bg-surface-strong px-1.5 py-0.5 text-[12.5px] font-semibold text-ink">
-                      {r.short_form}
-                    </code>
-                    {r.is_proper_name && (
-                      <span className="ml-1.5 rounded border border-hairline-strong px-1 py-0.5 text-[11px] text-muted" title={t("abbrev.properNameHint")}>
-                        {t("abbrev.properName")}
-                      </span>
-                    )}
+                    <div className="flex flex-col items-start gap-1.5">
+                      <div className="flex max-w-full items-center gap-1">
+                        <code className="min-w-0 break-words rounded bg-surface-strong px-1.5 py-0.5 text-[12.5px] font-semibold text-ink">
+                          {r.short_form}
+                        </code>
+                        {canManage ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleToggleActive(r)}
+                            disabled={busyIds.has(r.id)}
+                            title={`${r.is_active ? t("abbrev.active") : t("abbrev.pending")} — ${r.is_active ? t("abbrev.deactivate") : t("abbrev.activate")}`}
+                            aria-label={`${r.is_active ? t("abbrev.active") : t("abbrev.pending")} — ${r.is_active ? t("abbrev.deactivate") : t("abbrev.activate")}`}
+                            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-surface-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50"
+                          >
+                            <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${r.is_active ? "bg-emerald-500" : "bg-amber-400"}`} />
+                          </button>
+                        ) : (
+                          <span
+                            title={r.is_active ? t("abbrev.active") : t("abbrev.pending")}
+                            className="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                          >
+                            <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${r.is_active ? "bg-emerald-500" : "bg-amber-400"}`} />
+                            <span className="sr-only">{r.is_active ? t("abbrev.active") : t("abbrev.pending")}</span>
+                          </span>
+                        )}
+                      </div>
+                      {r.is_proper_name && (
+                        <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-[11px] font-semibold leading-4 text-blue-700 dark:text-blue-300" title={t("abbrev.properNameHint")}>
+                          {t("abbrev.properName")}
+                        </span>
+                      )}
+                    </div>
                   </td>
-                  <td className="py-3 px-4 text-ink">{r.full_form}</td>
-                  <td className="py-3 px-4 text-muted text-xs">{r.description || "—"}</td>
-                  <td className="py-3 px-4">
-                    {canManage ? (
-                      <button
-                        type="button"
-                        onClick={() => void handleToggleActive(r)}
-                        disabled={busyIds.has(r.id)}
-                        title={r.is_active ? t("abbrev.deactivate") : t("abbrev.activate")}
-                        className={`badge-pill text-[11px] font-semibold cursor-pointer ${
-                          r.is_active
-                            ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
-                            : "bg-amber-500/10 text-amber-600 border border-amber-500/20"
-                        }`}
-                      >
-                        {r.is_active ? t("abbrev.active") : t("abbrev.pending")}
-                      </button>
-                    ) : (
-                      <span
-                        className={`badge-pill text-[11px] font-semibold ${
-                          r.is_active
-                            ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
-                            : "bg-amber-500/10 text-amber-600 border border-amber-500/20"
-                        }`}
-                      >
-                        {r.is_active ? t("abbrev.active") : t("abbrev.pending")}
-                      </span>
-                    )}
+                  <td className="py-3 px-4 break-words text-ink">{r.full_form}</td>
+                  <td className="py-3 px-4 break-words text-muted text-xs leading-relaxed">
+                    <p className="line-clamp-3" title={r.description || undefined}>
+                      {r.description || "—"}
+                    </p>
                   </td>
-                  <td className="py-3 px-4 text-muted text-xs">{fmtDate(r.created_at)}</td>
                   <td className="py-3 px-4 text-right">
                     {canManage && (
-                      <div className="flex items-center justify-end gap-1">
+                      <div className="flex flex-col items-end gap-1">
                         {!r.is_active && (
-                          <>
+                          <div className="flex items-center justify-end gap-1 whitespace-nowrap">
                             <button
                               type="button"
                               onClick={() => void handleToggleActive(r)}
@@ -605,24 +593,26 @@ export function AbbreviationsSettings() {
                               <IconClose className="h-3.5 w-3.5" />
                               {t("abbrev.reject")}
                             </button>
-                          </>
+                          </div>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => openEdit(r)}
-                          className="btn btn-ghost btn-sm text-muted hover:text-ink p-1.5"
-                          title={t("common.edit")}
-                        >
-                          <IconEdit className="h-4 w-4" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setDeleting(r)}
-                          className="btn btn-ghost btn-sm text-muted hover:text-rose-600 p-1.5"
-                          title={t("common.delete")}
-                        >
-                          <IconTrash className="h-4 w-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => openEdit(r)}
+                            className="btn btn-ghost btn-sm text-muted hover:text-ink p-1.5"
+                            title={t("common.edit")}
+                          >
+                            <IconEdit className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setDeleting(r)}
+                            className="btn btn-ghost btn-sm text-muted hover:text-rose-600 p-1.5"
+                            title={t("common.delete")}
+                          >
+                            <IconTrash className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
                     )}
                   </td>

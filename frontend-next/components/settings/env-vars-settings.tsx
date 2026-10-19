@@ -116,7 +116,7 @@ export function EnvVarsSettings() {
               </div>
 
               {group.vars.length > 0 && (
-                <div className="rounded-xl border border-hairline bg-surface p-4 space-y-3">
+                <div className="rounded-xl border border-hairline bg-surface-card p-4 space-y-3">
                   <div className="caption-uppercase text-muted-soft">{t("envv.sandboxVars")}</div>
                   <div className="divide-y divide-hairline">
                     {group.vars.map((v) => (
@@ -143,7 +143,7 @@ export function EnvVarsSettings() {
               {group.skills.map((s) => (
                 <div
                   key={s.skill_id}
-                  className="rounded-xl border border-hairline bg-surface p-4 space-y-3"
+                  className="rounded-xl border border-hairline bg-surface-card p-4 space-y-3"
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-[14px] font-medium text-ink">{s.skill_name}</span>
@@ -246,7 +246,7 @@ function VarRow({
           <span
             className={`badge-pill text-[10px] ${
               item.source === "user"
-                ? "bg-accent/15 text-accent"
+                ? "bg-primary/15 text-primary"
                 : item.source === "workspace"
                 ? "bg-surface-strong text-muted"
                 : "bg-error/15 text-error"

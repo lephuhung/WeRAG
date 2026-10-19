@@ -162,8 +162,8 @@ export function BrowserConnectionSettings() {
 
         {/* Pairing link generated */}
         {pairingLink && !status?.connected && (
-          <div className="rounded-xl border border-brand/30 bg-brand/5 p-4 space-y-2 mt-4">
-            <span className="caption font-semibold text-brand block">
+          <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-2 mt-4">
+            <span className="caption font-semibold text-primary block">
               {t("browser.pairingLink")}
             </span>
             <div className="flex items-center gap-2">

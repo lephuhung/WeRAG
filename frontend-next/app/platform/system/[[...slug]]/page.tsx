@@ -11,6 +11,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { SECTION_ROUTES } from "@/components/settings-modal";
 import { ADMIN_SECTION_ROUTES } from "@/components/admin/admin-sections";
 import { adminSectionHref } from "@/components/admin/admin-routes";
+import { queueSettingsRedirect } from "@/lib/settings-deep-link";
 
 export default function SystemRedirect() {
   const router = useRouter();
@@ -22,18 +23,8 @@ export default function SystemRedirect() {
       router.replace(adminSectionHref(adminKey));
       return;
     }
-    router.replace("/platform");
-    /* account-menu (always mounted) listens for this event and opens the
-     * modal at the given section. Dispatch after the navigation settles so
-     * the new page's listener is attached. */
-    const timer = window.setTimeout(() => {
-      window.dispatchEvent(
-        new CustomEvent("weknora:open-settings", {
-          detail: SECTION_ROUTES[pathname] ?? "general",
-        }),
-      );
-    }, 150);
-    return () => window.clearTimeout(timer);
+    queueSettingsRedirect(window.sessionStorage, SECTION_ROUTES[pathname] ?? "general");
+    router.replace("/platform/creatChat");
   }, [pathname, router]);
 
   return null;

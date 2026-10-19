@@ -60,7 +60,7 @@ export function DocumentTemplatePicker({
             key={id}
             disabled={disabled}
             onClick={() => onChoose(id)}
-            className={`rounded-[10px] border border-hairline-strong bg-surface font-medium text-ink transition-colors hover:bg-surface-strong disabled:opacity-40 ${
+            className={`rounded-[10px] border border-hairline-strong bg-surface-card font-medium text-ink transition-colors hover:bg-surface-strong disabled:opacity-40 ${
               compact ? "px-2.5 py-1 text-[12px]" : "px-2 py-2.5 text-[13px]"
             }`}
           >
@@ -122,7 +122,7 @@ export function DocumentTemplateBar({
             <button
               type="button"
               disabled={disabled}
-              className="mt-1.5 block rounded-[8px] border border-hairline-strong bg-surface px-2.5 py-1 text-[12px] font-medium text-ink hover:bg-surface-card disabled:opacity-40"
+              className="mt-1.5 block rounded-[8px] border border-hairline-strong bg-surface-card px-2.5 py-1 text-[12px] font-medium text-ink hover:bg-surface-card disabled:opacity-40"
               onClick={onSkip}
             >
               {t("docws.tplSkip")}

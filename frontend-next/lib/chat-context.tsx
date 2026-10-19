@@ -5,6 +5,8 @@ import { apiGet } from "@/lib/api-client";
 import { listKnowledgeBases } from "@/lib/api/knowledge";
 import type { SessionLastRequestState } from "@/lib/api/chat";
 import { defaultWebSearchFor } from "@/lib/api/agent-doc-defaults";
+import { useMobileChat } from "@/components/use-mobile-chat";
+import { resolveChatMode } from "@/lib/mobile-chat-policy";
 
 /* Ports the chat-input slice of frontend/src/stores/settings.ts +
  * chatResources.ts + organization.ts into one React context:
@@ -147,6 +149,8 @@ function persist(s: ChatSettings) {
 
 type Ctx = {
   settings: ChatSettings;
+  isMobile: boolean;
+  documentReadOnly: boolean;
   // True once settings have been hydrated from localStorage. Anything that
   // fires on mount (the ?q= auto-send) must wait for it — child effects run
   // before this provider's hydration effect, so they otherwise send the
@@ -185,9 +189,18 @@ type Ctx = {
 
 const ChatContext = createContext<Ctx | null>(null);
 
-export function ChatProvider({ children }: { children: React.ReactNode }) {
-  const [settings, setSettings] = useState<ChatSettings>(DEFAULTS);
+export function ChatProvider({ children, newChat = false, sessionId = "" }: { children: React.ReactNode; newChat?: boolean; sessionId?: string }) {
+  const [storedSettings, setSettings] = useState<ChatSettings>(DEFAULTS);
+  const isMobile = useMobileChat();
   const [agents, setAgents] = useState<AgentSummary[]>([]);
+  const [sessionMode, setSessionMode] = useState<{ sessionId: string; agentId: string } | null>(null);
+  const sessionAgentId = sessionMode?.sessionId === sessionId ? sessionMode.agentId : null;
+  const mode = resolveChatMode(storedSettings.selectedAgentId, isMobile, newChat, sessionAgentId);
+  const documentReadOnly = mode.readOnly;
+  const settings = useMemo<ChatSettings>(() => {
+    if (mode.agentId === storedSettings.selectedAgentId) return storedSettings;
+    return { ...storedSettings, selectedAgentId: mode.agentId, isAgentEnabled: true };
+  }, [storedSettings, mode.agentId]);
   const [knowledgeBases, setKnowledgeBases] = useState<KbSummary[]>([]);
   const [models, setModels] = useState<ModelSummary[]>([]);
   const [mcpServices, setMcpServices] = useState<Ctx["mcpServices"]>([]);
@@ -378,6 +391,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   );
   const selectAgent = useCallback(
     (id: string) => {
+      if (isMobile && id !== BUILTIN_SMART_REASONING_ID) return;
       // Mirrors settings.selectAgent: switching agent resets the per-turn
       // websearch flag — to the agent's default (web_search_default_on &&
       // web_search_enabled) instead of always off.
@@ -391,7 +405,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         ...(agentModelId ? { selectedChatModelId: agentModelId } : {}),
       });
     },
-    [agents, update],
+    [agents, update, isMobile],
   );
   const toggleWebSearch = useCallback((on: boolean) => update({ webSearchEnabled: on }), [update]);
   const toggleLocalBrowser = useCallback((on: boolean) => update({ localBrowserEnabled: on }), [update]);
@@ -411,6 +425,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const hydrateSessionState = useCallback(
     (state?: SessionLastRequestState | null) => {
       if (!state) return;
+      if (state.agent_id) setSessionMode({ sessionId, agentId: state.agent_id });
       const hydrateAgent = agents.find((a) => a.id === (state.agent_id || settings.selectedAgentId));
       update({
         ...(typeof state.agent_enabled === "boolean" ? { isAgentEnabled: state.agent_enabled } : {}),
@@ -430,7 +445,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         ...(typeof state.local_browser_enabled === "boolean" ? { localBrowserEnabled: state.local_browser_enabled } : {}),
       });
     },
-    [agents, settings.selectedAgentId, update],
+    [agents, settings.selectedAgentId, update, sessionId],
   );
 
   const selectedAgent = useMemo<AgentSummary | null>(
@@ -498,6 +513,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<Ctx>(
     () => ({
       settings,
+      isMobile,
+      documentReadOnly,
       hydrated,
       update,
       addKnowledgeBase,
@@ -530,6 +547,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       settings,
+      isMobile,
+      documentReadOnly,
       hydrated,
       update,
       addKnowledgeBase,

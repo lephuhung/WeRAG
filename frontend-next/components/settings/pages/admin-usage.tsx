@@ -486,7 +486,7 @@ export default function AdminUsage() {
                     {t("usg.monthUsage", { questions: row.month.questions.toLocaleString(), tokens: formatTokens(row.month.tokens) })}
                   </div>
                 </div>
-                <div className="min-w-[220px] flex-1">
+                <div className="min-w-[240px] basis-[280px] flex-1">
                   {sub ? (
                     <>
                       <div className="flex items-center gap-2">
@@ -506,14 +506,16 @@ export default function AdminUsage() {
                     <span className="badge-pill text-[11px] text-amber-700">{t("usg.noSubscription")}</span>
                   )}
                 </div>
-                <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => openAssign("tenant", String(row.tenant_id), row.tenant_name, sub)}>
-                  {sub ? t("usg.changePlan") : t("usg.assignPlan")}
-                </button>
-                {sub && (
-                  <button type="button" className="btn btn-outline btn-sm text-rose-600" disabled={busy} onClick={() => cancelSub(sub)}>
-                    {t("usg.cancelSub")}
+                <div className="flex shrink-0 flex-col gap-1.5">
+                  <button type="button" className="btn btn-outline btn-sm min-w-[86px]" disabled={busy} onClick={() => openAssign("tenant", String(row.tenant_id), row.tenant_name, sub)}>
+                    {sub ? t("usg.changePlan") : t("usg.assignPlan")}
                   </button>
-                )}
+                  {sub && (
+                    <button type="button" className="btn btn-outline btn-sm min-w-[86px] text-rose-600" disabled={busy} onClick={() => cancelSub(sub)}>
+                      {t("usg.cancelSub")}
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}

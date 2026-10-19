@@ -373,7 +373,7 @@ export function GraphCanvas({
           {toolbarExtra}
         </div>
         <div className="flex items-center gap-2 text-muted">
-          <div className="flex items-center rounded-lg border border-hairline bg-surface p-0.5">
+          <div className="flex items-center rounded-lg border border-hairline bg-surface-card p-0.5">
             <button className="btn btn-ghost btn-sm h-7 w-7 p-0 text-[14px]" onClick={() => zoomBy(1.2)} title={t("graph.zoomIn")}>
               +
             </button>
@@ -490,7 +490,7 @@ export function GraphCanvas({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-hairline bg-surface/50 px-6 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-hairline bg-surface-card/50 px-6 py-2.5">
         <div className="flex flex-wrap items-center gap-5">
           {presentTypes.map((type) => (
             <span key={type} className="caption flex items-center gap-2 text-muted">
