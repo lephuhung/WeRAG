@@ -114,6 +114,8 @@ func TestAgentTenantScopeHandlerValidatesList(t *testing.T) {
 
 	rec := agentScopeDo(router, http.MethodPut, "/agents/group", `{"name":"Thuế",`+cfg+`,"applies_to_tenant_ids":[1,42]}`, super)
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	require.Contains(t, rec.Body.String(), "#42", "the message names the offending ids")
+	require.NotContains(t, rec.Body.String(), "#1,")
 	rec = agentScopeDo(router, http.MethodPost, "/agents", `{"name":"Mới",`+cfg+`,"applies_to_tenant_ids":[9]}`, super)
 	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
 

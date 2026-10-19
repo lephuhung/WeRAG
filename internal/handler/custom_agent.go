@@ -435,9 +435,13 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 			c.Error(errors.NewForbiddenError("Cannot modify built-in agent"))
 		case service.ErrBuiltinModelManagedByAdmin:
 			c.Error(errors.NewForbiddenError(err.Error()))
-		case service.ErrAgentNameRequired, service.ErrBuiltinAgentNotScopable, service.ErrAgentTenantScopeInvalid:
+		case service.ErrAgentNameRequired:
 			c.Error(errors.NewBadRequestError(err.Error()))
 		default:
+			if service.IsAgentTenantScopeError(err) {
+				c.Error(errors.NewBadRequestError(err.Error()))
+				break
+			}
 			// Reached only after the typed sentinels and *errors.AppError above, so
 			// whatever lands here is a raw repository/driver error. Its text
 			// (SQLSTATE, column names) must not reach the client; the full detail
@@ -823,5 +827,5 @@ func authorizeAgentKnowledgeScope(ctx context.Context, cfg types.CustomAgentConf
 
 // isAgentTenantScopeError reports a refused "Tổ chức áp dụng" list.
 func isAgentTenantScopeError(err error) bool {
-	return err == service.ErrBuiltinAgentNotScopable || err == service.ErrAgentTenantScopeInvalid
+	return service.IsAgentTenantScopeError(err)
 }

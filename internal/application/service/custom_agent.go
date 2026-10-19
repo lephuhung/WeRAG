@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand"
 	"strings"
 	"time"
@@ -37,6 +38,12 @@ var (
 	ErrAgentTenantScopeInvalid = errors.New("\"Tổ chức áp dụng\" chỉ được chọn trong các Tổ chức dùng cấu hình chung của trợ lý này")
 )
 
+// IsAgentTenantScopeError reports a refused "Tổ chức áp dụng" list (the
+// invalid-list error carries the offending ids, so compare with errors.Is).
+func IsAgentTenantScopeError(err error) bool {
+	return errors.Is(err, ErrBuiltinAgentNotScopable) || errors.Is(err, ErrAgentTenantScopeInvalid)
+}
+
 // ignoresAgentTenantScope reports whether the caller reads agents past their
 // "Tổ chức áp dụng" list: only an explicit human SuperAdmin, who authors and
 // manages every agent. API keys and every tenant role stay scoped.
@@ -70,7 +77,11 @@ func (s *customAgentService) validateTenantScope(ctx context.Context, agent *typ
 	if len(invalid) > 0 {
 		logger.Warnf(ctx, "Agent %s: applies_to_tenant_ids %v are not workspaces of profile %d",
 			agent.ID, invalid, ownerTenantID)
-		return ErrAgentTenantScopeInvalid
+		ids := make([]string, 0, len(invalid))
+		for _, id := range invalid {
+			ids = append(ids, fmt.Sprintf("#%d", id))
+		}
+		return fmt.Errorf("%w (không hợp lệ: %s)", ErrAgentTenantScopeInvalid, strings.Join(ids, ", "))
 	}
 	return nil
 }
