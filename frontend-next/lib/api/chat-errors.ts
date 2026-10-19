@@ -135,3 +135,31 @@ export function chatErrorKey(e: unknown): ChatErrorKey | null {
   }
   return null;
 }
+
+/** Translation keys a chat error turns into: the error keys plus the guest
+ * variants of the usage refusals. */
+export type ChatErrorTextKey = ChatErrorKey | "chat.err.guest.usageLimit" | "chat.err.guest.unavailable";
+
+/** The text key for a chat error key as this account reads it. A guest has
+ * no organization admin to contact: its usage refusals get their own texts
+ * (daily allowance used up; public lookup not available for the account).
+ * Members keep the usage texts as they are. */
+export function chatErrorTextKey(key: ChatErrorKey, isGuest: boolean): ChatErrorTextKey;
+export function chatErrorTextKey(key: ChatErrorKey | null, isGuest: boolean): ChatErrorTextKey | null;
+export function chatErrorTextKey(key: ChatErrorKey | null, isGuest: boolean): ChatErrorTextKey | null {
+  if (!isGuest || !key) return key;
+  if (key === "chat.err.usage.limit") return "chat.err.guest.usageLimit";
+  if (key === "chat.err.usage.noSubscription" || key === "chat.err.usage.expired" || key === "chat.err.usage.noSeat") {
+    return "chat.err.guest.unavailable";
+  }
+  return key;
+}
+
+/** HTTP status and top-level string code of a failed request, when known. */
+export function errorStatusAndCode(e: unknown): { status?: number; errorCode?: string } {
+  if (e instanceof ChatStreamError) return { status: e.status, errorCode: e.errorCode };
+  if (e instanceof ApiError) {
+    return { status: e.status, errorCode: parseErrorEnvelope(JSON.stringify(e.payload ?? {})).errorCode };
+  }
+  return {};
+}

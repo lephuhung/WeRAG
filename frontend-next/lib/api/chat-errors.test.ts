@@ -3,7 +3,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { ChatStreamError, ERR_AGENT_UNAVAILABLE, ERR_TURN_RUNNING, chatErrorKey, isSessionLimitError, parseErrorEnvelope } from "./chat-errors.ts";
+import { ChatStreamError, ERR_AGENT_UNAVAILABLE, ERR_TURN_RUNNING, chatErrorKey, chatErrorTextKey, isSessionLimitError, parseErrorEnvelope } from "./chat-errors.ts";
 import { ApiError } from "../api-client.ts";
 
 describe("parseErrorEnvelope", () => {
@@ -81,5 +81,20 @@ describe("organization required", () => {
     assert.equal(chatErrorKey(new ApiError(403, stale.error, stale)), "chat.err.tenantRequired");
     // a plain 409 is still the running turn
     assert.equal(chatErrorKey(new ChatStreamError(409)), "chat.err.turnRunning");
+  });
+});
+
+describe("chatErrorTextKey", () => {
+  it("gives a guest its own usage texts", () => {
+    assert.equal(chatErrorTextKey("chat.err.usage.limit", true), "chat.err.guest.usageLimit");
+    assert.equal(chatErrorTextKey("chat.err.usage.noSubscription", true), "chat.err.guest.unavailable");
+    assert.equal(chatErrorTextKey("chat.err.usage.expired", true), "chat.err.guest.unavailable");
+    assert.equal(chatErrorTextKey("chat.err.turnRunning", true), "chat.err.turnRunning");
+    assert.equal(chatErrorTextKey(null, true), null);
+  });
+  it("keeps the member texts", () => {
+    for (const k of ["chat.err.usage.limit", "chat.err.usage.noSubscription", "chat.err.usage.expired"] as const) {
+      assert.equal(chatErrorTextKey(k, false), k);
+    }
   });
 });
