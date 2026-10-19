@@ -9,9 +9,11 @@
 import { useId, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { AGENT_HANDOFF_TYPE, optionMessage, type ChoiceList, type ChoiceOption } from "@/lib/choice-list";
+import { availableChatChoices } from "@/lib/mobile-chat-policy";
+import { useMobileChat } from "@/components/use-mobile-chat";
 
 export function ChoiceListView({
-  card,
+  card: sourceCard,
   disabled = false,
   onPick,
 }: {
@@ -22,6 +24,8 @@ export function ChoiceListView({
   onPick: (option: ChoiceOption) => Promise<void> | void;
 }) {
   const { t } = useT();
+  const mobile = useMobileChat();
+  const card = { ...sourceCard, options: availableChatChoices(sourceCard.options, mobile) };
   const group = useId();
   const [selected, setSelected] = useState<number | null>(null);
   const [working, setWorking] = useState(false);
@@ -50,6 +54,10 @@ export function ChoiceListView({
       setWorking(false);
     }
   };
+
+  if (mobile && sourceCard.kind === AGENT_HANDOFF_TYPE) {
+    return <p className="mt-2 text-[13px] leading-relaxed text-muted">{t("docws.mobileWordUnavailable")}</p>;
+  }
 
   if (picked) {
     return <p className="caption mt-1 text-muted-soft">{t("docws.choice.done", { label: picked })}</p>;
@@ -125,7 +133,7 @@ export function ChoiceListView({
                           void pick(i);
                         }
                       }}
-                      className="min-w-0 flex-1 rounded-[6px] border border-hairline-strong bg-surface px-2 py-1 text-[13px] text-ink outline-none focus:border-[#3b82f6]"
+                      className="min-w-0 flex-1 rounded-[6px] border border-hairline-strong bg-surface-card px-2 py-1 text-[13px] text-ink outline-none focus:border-[#3b82f6]"
                     />
                     <button
                       type="button"
