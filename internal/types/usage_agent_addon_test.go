@@ -113,3 +113,39 @@ func TestMergeSubscriptionAddonNeverShortens(t *testing.T) {
 	in := &UsageSubscriptionAddon{PriceVND: 3}
 	require.Same(t, in, MergeSubscriptionAddon(nil, in), "a new right is written as is")
 }
+
+// Review R1: months added from a stored end (a VN midnight = 24:00 of the
+// previous date) step from that previous date.
+func TestSubscriptionEndFromAStoredEnd(t *testing.T) {
+	endOf := func(y int, m time.Month, d int) time.Time { return vn(y, m, d+1, 0, 0) }
+	cases := []struct {
+		name   string
+		from   time.Time
+		months int
+		want   time.Time
+	}{
+		{"end of 30/10 + 1 month = end of 30/11", endOf(2026, 10, 30), 1, endOf(2026, 11, 30)},
+		{"end of 31/10 + 1 month = end of 30/11 (clamped)", endOf(2026, 10, 31), 1, endOf(2026, 11, 30)},
+		{"end of 31/1 + 1 month = end of 28/2", endOf(2027, 1, 31), 1, endOf(2027, 2, 28)},
+		{"end of 31/1 + 1 month = end of 29/2 in a leap year", endOf(2028, 1, 31), 1, endOf(2028, 2, 29)},
+		{"end of 28/2 + 1 month = end of 28/3", endOf(2027, 2, 28), 1, endOf(2027, 3, 28)},
+		{"end of 30/10 + 0 months = itself", endOf(2026, 10, 30), 0, endOf(2026, 10, 30)},
+		{"bought 10:00 on 30/9 + 1 month = end of 30/10", vn(2026, 9, 30, 10, 0), 1, endOf(2026, 10, 30)},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			require.Equal(t, c.want, SubscriptionEndVN(c.from, c.months))
+		})
+	}
+	// a right ending at the end of 30/10, extended to the end of 30/11, is
+	// exactly one month (not 1 month + 1 day → 1.5 months)
+	months, days := AddonPeriodSplit(endOf(2026, 10, 30), endOf(2026, 11, 30))
+	require.Equal(t, 1, months)
+	require.Equal(t, 0, days)
+	months, days = AddonPeriodSplit(endOf(2027, 1, 31), endOf(2027, 2, 28))
+	require.Equal(t, 1, months)
+	require.Equal(t, 0, days)
+	_, _, factor, amount := PriceAddonRemainder(99_000, 1, endOf(2026, 10, 30), endOf(2026, 11, 30))
+	require.Equal(t, "", factor)
+	require.Equal(t, int64(99_000), amount)
+}
