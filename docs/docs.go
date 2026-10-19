@@ -21007,12 +21007,36 @@ const docTemplate = `{
         "github_com_Tencent_WeKnora_internal_types.DomainPackAgent": {
             "type": "object",
             "properties": {
+                "applies_to": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackAgentScope"
+                    }
+                },
+                "applies_to_tenant_ids": {
+                    "description": "AppliesToTenantIDs is the agent's \"Tổ chức áp dụng\" list ([] = every\nTổ chức on its configuration profile); AppliesTo names them.",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
                 "id": {
                     "type": "string"
                 },
                 "name": {
                     "type": "string"
                 },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "tenant_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackAgentScope": {
+            "type": "object",
+            "properties": {
                 "tenant_id": {
                     "type": "integer"
                 },
@@ -23517,7 +23541,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "paddleocr_vl_repetition_penalty": {
-                    "description": "openai mode: repetition_penalty for /chat/completions (vLLM extension);\ndefault 1.05 breaks degenerate loops, \"1\"/\"0\" disables.",
+                    "description": "openai mode: repetition_penalty for /chat/completions (vLLM extension);\n\"1.1\" is the value to configure for SenOCR-Vi (measured 2026-10-18:\n1.05 still loops on big table pages, 1.15 alters plain text), \"1\"/\"0\"\ndisables. Only an explicit value is sent.",
                     "type": "string"
                 },
                 "paddleocr_vl_use_chart_recognition": {
@@ -26424,6 +26448,13 @@ const docTemplate = `{
                 "name"
             ],
             "properties": {
+                "applies_to_tenant_ids": {
+                    "description": "AppliesToTenantIDs is \"Tổ chức áp dụng\": the workspaces allowed to use\nthe agent. Empty or absent = every Tổ chức.",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
                 "avatar": {
                     "type": "string"
                 },
@@ -27786,6 +27817,13 @@ const docTemplate = `{
         "internal_handler.UpdateAgentRequest": {
             "type": "object",
             "properties": {
+                "applies_to_tenant_ids": {
+                    "description": "AppliesToTenantIDs is \"Tổ chức áp dụng\". A pointer for the same reason\nas Avatar: absent keeps the stored list, [] clears it (every Tổ chức).",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
                 "avatar": {
                     "description": "Avatar travels as a pointer so an omitted field can be told apart from\nan explicit clear: nil keeps the stored avatar, a pointer to \"\" wipes\nit. As a plain string the two cases were indistinguishable, so a caller\nthat PUT only a config silently zeroed the avatar and still got a 200.",
                     "type": "string"
