@@ -31,10 +31,10 @@ var (
 	// built-in agent: built-ins fall back to the registry default when no row
 	// is visible, and core flows pin them by id (document assistant, wiki
 	// fixer, skill installer), so a list could not hide them, only break them.
-	ErrBuiltinAgentNotScopable = errors.New("built-in agents apply to every Tổ chức; applies_to_tenant_ids must be empty")
+	ErrBuiltinAgentNotScopable = errors.New("trợ lý tích hợp sẵn áp dụng cho mọi Tổ chức, không giới hạn \"Tổ chức áp dụng\" được")
 	// ErrAgentTenantScopeInvalid refuses a "Tổ chức áp dụng" list naming a
 	// tenant that does not inherit the agent (see InvalidScopeTenantIDs).
-	ErrAgentTenantScopeInvalid = errors.New("applies_to_tenant_ids may only list Tổ chức that use this agent's shared configuration")
+	ErrAgentTenantScopeInvalid = errors.New("\"Tổ chức áp dụng\" chỉ được chọn trong các Tổ chức dùng cấu hình chung của trợ lý này")
 )
 
 // ignoresAgentTenantScope reports whether the caller reads agents past their
