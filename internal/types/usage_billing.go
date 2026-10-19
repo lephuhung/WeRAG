@@ -142,8 +142,14 @@ type UsageOrder struct {
 	ExpiresAt      *time.Time `json:"expires_at"`
 	SubscriptionID *string    `json:"subscription_id" gorm:"type:varchar(36)"`
 	Note           string     `json:"note"            gorm:"type:text"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	// Kind is "plan" (a plan, with optional add-ons) or "addon" (add-ons
+	// bought on the current subscription TargetSubscriptionID).
+	Kind                 string  `json:"kind"                   gorm:"type:varchar(16);default:'plan'"`
+	TargetSubscriptionID *string `json:"target_subscription_id" gorm:"type:varchar(36)"`
+	// Addons are the add-on lines, prices frozen when the order was made.
+	Addons    UsageOrderAddonLines `json:"addons"   gorm:"type:jsonb"`
+	CreatedAt time.Time            `json:"created_at"`
+	UpdatedAt time.Time            `json:"updated_at"`
 }
 
 // TableName returns the table name.
@@ -157,6 +163,12 @@ type UsageQuoteRequest struct {
 	Seats     int    `json:"seats"`
 	PromoCode string `json:"promo_code"`
 	Note      string `json:"note"`
+	// Kind "plan" (default) or "addon": add-ons on the scope's current
+	// subscription, priced for the rest of its period (PlanID, Months and
+	// Seats are then taken from the subscription).
+	Kind string `json:"kind"`
+	// AddonAgentIDs are the specialist agents bought with it.
+	AddonAgentIDs []string `json:"addon_agent_ids"`
 }
 
 // UsageQuote prices a request. PromoError is set (and no discount applied)
@@ -180,6 +192,12 @@ type UsageQuote struct {
 	PromoError   string `json:"promo_error"`
 	DiscountVND  int64  `json:"discount_vnd"`
 	TotalVND     int64  `json:"total_vnd"`
+	// Kind, TargetSubscriptionID: see UsageQuoteRequest/UsageOrder.
+	Kind                 string `json:"kind"`
+	TargetSubscriptionID string `json:"target_subscription_id,omitempty"`
+	// Addons are the add-on lines; AddonsVND their sum (in SubtotalVND).
+	Addons    UsageOrderAddonLines `json:"addons"`
+	AddonsVND int64                `json:"addons_vnd"`
 }
 
 // UsageBillingInfo is what the payment page needs besides the order.

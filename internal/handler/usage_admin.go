@@ -268,3 +268,143 @@ func (h *UsageAdminHandler) RevokeSeat(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
+
+// ListSubscriptionAddons godoc
+// @Summary      Specialist agents a subscription may use
+// @Tags         Gói sử dụng
+// @Param        id path string true "subscription id"
+// @Success      200 {object} map[string]interface{}
+// @Security     Bearer
+// @Router       /system/admin/usage/subscriptions/{id}/addons [get]
+func (h *UsageAdminHandler) ListSubscriptionAddons(c *gin.Context) {
+	addons, err := h.plans.ListSubscriptionAddons(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": addons})
+}
+
+// GrantSubscriptionAddon godoc
+// @Summary      Grant a specialist (addon) agent to a subscription
+// @Description  Manual grant by a SuperAdmin (tests, negotiated deals). Re-granting replaces the period and price.
+// @Tags         Gói sử dụng
+// @Accept       json
+// @Param        id path string true "subscription id"
+// @Param        body body types.UsageSubscriptionAddonGrant true "add-on"
+// @Success      200 {object} map[string]interface{}
+// @Security     Bearer
+// @Router       /system/admin/usage/subscriptions/{id}/addons [post]
+func (h *UsageAdminHandler) GrantSubscriptionAddon(c *gin.Context) {
+	var req types.UsageSubscriptionAddonGrant
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewBadRequestError("invalid add-on body").WithDetails(err.Error()))
+		return
+	}
+	if strings.TrimSpace(req.AgentID) == "" {
+		c.Error(apperrors.NewBadRequestError("agent_id is required"))
+		return
+	}
+	by, _ := types.UserIDFromContext(c.Request.Context())
+	addon, err := h.plans.GrantSubscriptionAddon(c.Request.Context(), c.Param("id"), req, by)
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": addon})
+}
+
+// RevokeSubscriptionAddon godoc
+// @Summary      Take a specialist agent back from a subscription
+// @Tags         Gói sử dụng
+// @Param        id path string true "subscription id"
+// @Param        agent_id path string true "agent id"
+// @Success      200 {object} map[string]interface{}
+// @Security     Bearer
+// @Router       /system/admin/usage/subscriptions/{id}/addons/{agent_id} [delete]
+func (h *UsageAdminHandler) RevokeSubscriptionAddon(c *gin.Context) {
+	if err := h.plans.RevokeSubscriptionAddon(c.Request.Context(), c.Param("id"), c.Param("agent_id")); err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// ListAgentAddons godoc
+// @Summary      Catalogue of specialist agents sold with service plans
+// @Description  Rows with the agent name, whether the agent is still an addon agent and how many current subscriptions hold it; also the basic agents every plan includes.
+// @Tags         Gói sử dụng
+// @Param        include_inactive query bool false "include deactivated rows (default true)"
+// @Success      200 {object} map[string]interface{}
+// @Security     Bearer
+// @Router       /system/admin/usage/agent-addons [get]
+func (h *UsageAdminHandler) ListAgentAddons(c *gin.Context) {
+	includeInactive := c.Query("include_inactive") != "false" && c.Query("include_inactive") != "0"
+	catalogue, err := h.plans.ListAgentAddons(c.Request.Context(), includeInactive)
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": catalogue})
+}
+
+// CreateAgentAddon godoc
+// @Summary      Put a specialist (addon) agent in the catalogue
+// @Tags         Gói sử dụng
+// @Accept       json
+// @Param        body body types.UsageAgentAddon true "catalogue row (plan_ids [] = every plan)"
+// @Success      200 {object} map[string]interface{}
+// @Security     Bearer
+// @Router       /system/admin/usage/agent-addons [post]
+func (h *UsageAdminHandler) CreateAgentAddon(c *gin.Context) {
+	var row types.UsageAgentAddon
+	if err := c.ShouldBindJSON(&row); err != nil {
+		c.Error(apperrors.NewBadRequestError("invalid add-on body").WithDetails(err.Error()))
+		return
+	}
+	created, err := h.plans.CreateAgentAddon(c.Request.Context(), &row)
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": created})
+}
+
+// UpdateAgentAddon godoc
+// @Summary      Update a catalogue row
+// @Tags         Gói sử dụng
+// @Accept       json
+// @Param        agent_id path string true "agent id"
+// @Param        body body types.UsageAgentAddon true "catalogue row"
+// @Success      200 {object} map[string]interface{}
+// @Security     Bearer
+// @Router       /system/admin/usage/agent-addons/{agent_id} [put]
+func (h *UsageAdminHandler) UpdateAgentAddon(c *gin.Context) {
+	var row types.UsageAgentAddon
+	if err := c.ShouldBindJSON(&row); err != nil {
+		c.Error(apperrors.NewBadRequestError("invalid add-on body").WithDetails(err.Error()))
+		return
+	}
+	row.AgentID = c.Param("agent_id")
+	updated, err := h.plans.UpdateAgentAddon(c.Request.Context(), &row)
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": updated})
+}
+
+// DeleteAgentAddon godoc
+// @Summary      Take an agent out of the catalogue (bought rights stay until they end)
+// @Tags         Gói sử dụng
+// @Param        agent_id path string true "agent id"
+// @Success      200 {object} map[string]interface{}
+// @Security     Bearer
+// @Router       /system/admin/usage/agent-addons/{agent_id} [delete]
+func (h *UsageAdminHandler) DeleteAgentAddon(c *gin.Context) {
+	if err := h.plans.DeleteAgentAddon(c.Request.Context(), c.Param("agent_id")); err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}

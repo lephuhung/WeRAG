@@ -50,6 +50,8 @@ func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomA
 		agentsWrite.DELETE("/:id", g.SystemAdmin(), g.ConfigProfile(), agentHandler.DeleteAgent)
 		// Copy agent — SystemAdmin (a copy is still an authored agent)
 		agentsWrite.POST("/:id/copy", g.SystemAdmin(), g.ConfigProfile(), agentHandler.CopyAgent)
+		// SuperAdmin runtime on/off switch (built-in and custom agents)
+		agentsWrite.PUT("/:id/enabled", g.SystemAdmin(), g.ConfigProfile(), agentHandler.SetAgentEnabled)
 	}
 	// Registered outside the group to avoid Gin route conflict with /agents/:id/shares in organization routes
 	g.apiKeyRoute(r, http.MethodGet, "/agents/:id/suggested-questions",

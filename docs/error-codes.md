@@ -69,7 +69,7 @@ Một số endpoint cũ trả `{"success":false,"message":"…"}` không có `er
 | 2101 | 400 | `NewAgentMissingAllowedToolsError()` | cần chọn ít nhất một công cụ được phép |
 | 2102 | 400 | `NewAgentInvalidMaxIterationsError()` | số vòng lặp tối đa phải là số nguyên dương, hoặc -1 nếu không giới hạn |
 | 2103 | 400 | `NewAgentInvalidTemperatureError()` | tham số temperature phải nằm trong khoảng 0-2 |
-| 2104 | 404 | `NewAgentUnavailableError()` | trợ lý không tồn tại hoặc không áp dụng cho Tổ chức của người gọi (lượt chat; đã xoá, id sai hoặc ngoài "Tổ chức áp dụng" đều cùng mã) |
+| 2104 | 404 | `NewAgentUnavailableError()` | trợ lý không tồn tại hoặc không áp dụng cho Tổ chức của người gọi (lượt chat; đã xoá, id sai, ngoài "Tổ chức áp dụng", hoặc agent Chuyên ngành chưa mua / quyền dùng đã hết hạn đều cùng mã) |
 
 ### 2.4 Kho vector và mô hình (2200–2300)
 

@@ -101,3 +101,11 @@ func TestCustomAgentAvatarAndErrorResponses(t *testing.T) {
 		})
 	}
 }
+
+// GetVisibleAgentByID answers like GetAgentByID: the stub has no
+// visibility rule to apply.
+func (r *agentAvatarRepository) GetVisibleAgentByID(
+	ctx context.Context, id string, viewer types.AgentViewer,
+) (*types.CustomAgent, error) {
+	return r.GetAgentByID(ctx, id, viewer.TenantID)
+}

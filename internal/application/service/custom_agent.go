@@ -36,19 +36,55 @@ var (
 	// ErrAgentTenantScopeInvalid refuses a "Tổ chức áp dụng" list naming a
 	// tenant that does not inherit the agent (see InvalidScopeTenantIDs).
 	ErrAgentTenantScopeInvalid = errors.New("\"Tổ chức áp dụng\" chỉ được chọn trong các Tổ chức dùng cấu hình chung của trợ lý này")
+	// ErrAgentDistributionInvalid refuses an unknown "Cách phân phối".
+	ErrAgentDistributionInvalid = errors.New("\"Cách phân phối\" phải là Cơ bản (basic), Chuyên ngành (addon) hoặc Nội bộ (internal)")
+	// ErrBuiltinAgentDistribution refuses a distribution other than basic on
+	// a built-in agent (same reason as ErrBuiltinAgentNotScopable).
+	ErrBuiltinAgentDistribution = errors.New("trợ lý tích hợp sẵn luôn có cách phân phối Cơ bản")
+	// ErrAgentScopeNeedsInternal refuses a "Tổ chức áp dụng" list on an
+	// agent whose distribution is not internal: the visibility rule ignores
+	// the list there, so storing it would read like a restriction that is
+	// not applied.
+	ErrAgentSwitchForbidden    = errors.New("chỉ quản trị hệ thống mới bật/tắt trợ lý được")
+	ErrAgentScopeNeedsInternal = errors.New("\"Tổ chức áp dụng\" chỉ dùng cho cách phân phối Nội bộ; với Cơ bản hoặc Chuyên ngành hãy để trống")
 )
 
-// IsAgentTenantScopeError reports a refused "Tổ chức áp dụng" list (the
-// invalid-list error carries the offending ids, so compare with errors.Is).
+// IsAgentTenantScopeError reports a refused "Tổ chức áp dụng" list or
+// "Cách phân phối" (the invalid-list error carries the offending ids, so
+// compare with errors.Is).
 func IsAgentTenantScopeError(err error) bool {
-	return errors.Is(err, ErrBuiltinAgentNotScopable) || errors.Is(err, ErrAgentTenantScopeInvalid)
+	return errors.Is(err, ErrBuiltinAgentNotScopable) || errors.Is(err, ErrAgentTenantScopeInvalid) ||
+		errors.Is(err, ErrAgentDistributionInvalid) || errors.Is(err, ErrBuiltinAgentDistribution) ||
+		errors.Is(err, ErrAgentScopeNeedsInternal)
 }
 
-// ignoresAgentTenantScope reports whether the caller reads agents past their
-// "Tổ chức áp dụng" list: only an explicit human SuperAdmin, who authors and
-// manages every agent. API keys and every tenant role stay scoped.
+// ignoresAgentTenantScope reports whether the caller reads agents past the
+// visibility rule (distribution, "Tổ chức áp dụng"): only an explicit human
+// SuperAdmin, who authors and manages every agent. API keys and every tenant
+// role stay scoped.
 func ignoresAgentTenantScope(ctx context.Context) bool {
 	return access.IsExplicitHumanSuperAdmin(ctx, types.CallerFromContext(ctx))
+}
+
+// addonsVisibleWithoutPurchase is decision 7.4 of docs/agent-addon-plans.md,
+// kept in this one place so it can be flipped: whether "addon" (specialist)
+// agents are shown to every Tổ chức without a purchase. Today: never — the
+// right to use one follows subscription data (usage_subscription_addons on a
+// current subscription) whether or not usage.enforce is on, so switching
+// enforcement on later changes no one's agent list.
+func addonsVisibleWithoutPurchase(context.Context) bool {
+	return false
+}
+
+// agentViewer is who a scoped agent read answers for: the tenant of the
+// call and, for a human, the person (personal-subscription add-ons).
+// Synthetic API-key users and anonymous callers carry no person.
+func agentViewer(ctx context.Context, tenantID uint64) types.AgentViewer {
+	viewer := types.AgentViewer{TenantID: tenantID, AllAddons: addonsVisibleWithoutPurchase(ctx)}
+	if uid, ok := types.UserIDFromContext(ctx); ok && uid != "" && !types.IsSyntheticUserID(uid) {
+		viewer.UserID = uid
+	}
+	return viewer
 }
 
 // repoGetAgent reads one agent for the caller, scoped unless the caller is a
@@ -57,18 +93,47 @@ func (s *customAgentService) repoGetAgent(ctx context.Context, id string, tenant
 	if ignoresAgentTenantScope(ctx) {
 		return s.repo.GetAgentByIDIgnoringTenantScope(ctx, id, tenantID)
 	}
-	return s.repo.GetAgentByID(ctx, id, tenantID)
+	return s.repo.GetVisibleAgentByID(ctx, id, agentViewer(ctx, tenantID))
 }
 
-// validateTenantScope normalizes an agent's "Tổ chức áp dụng" list in place
-// and checks it may be stored on an agent owned by ownerTenantID.
+// validateDistribution normalizes a custom agent's "Cách phân phối" in place:
+// a known value, basic for built-ins. Callers fill an absent value first
+// (CreateAgent: DefaultAgentDistribution; UpdateAgent: the stored one).
+func validateDistribution(agent *types.CustomAgent) error {
+	d := types.NormalizeAgentDistribution(agent.Distribution)
+	if agent.IsBuiltin || types.IsBuiltinAgentID(agent.ID) {
+		if d != "" && d != types.AgentDistributionBasic {
+			return ErrBuiltinAgentDistribution
+		}
+		agent.Distribution = types.AgentDistributionBasic
+		return nil
+	}
+	if d == "" {
+		d = types.AgentDistributionBasic
+	}
+	if !types.IsValidAgentDistribution(d) {
+		return ErrAgentDistributionInvalid
+	}
+	agent.Distribution = d
+	return nil
+}
+
+// validateTenantScope normalizes an agent's distribution and "Tổ chức áp
+// dụng" list in place and checks the list may be stored on an agent owned by
+// ownerTenantID: only an internal agent carries one.
 func (s *customAgentService) validateTenantScope(ctx context.Context, agent *types.CustomAgent, ownerTenantID uint64) error {
 	agent.AppliesToTenantIDs = agent.AppliesToTenantIDs.Normalized()
+	if err := validateDistribution(agent); err != nil {
+		return err
+	}
 	if len(agent.AppliesToTenantIDs) == 0 {
 		return nil
 	}
 	if agent.IsBuiltin || types.IsBuiltinAgentID(agent.ID) {
 		return ErrBuiltinAgentNotScopable
+	}
+	if agent.Distribution != types.AgentDistributionInternal {
+		return ErrAgentScopeNeedsInternal
 	}
 	invalid, err := s.repo.InvalidScopeTenantIDs(ctx, ownerTenantID, agent.AppliesToTenantIDs)
 	if err != nil {
@@ -107,6 +172,26 @@ type customAgentService struct {
 	knowledgeRepo        interfaces.KnowledgeRepository
 	// domainPacks are the packs shipped in this build (SetDomainPacks).
 	domainPacks *domainpacks.Registry
+	// addonCatalogue switches an add-on catalogue row off once its agent
+	// is deleted or no longer an addon agent (SetAgentAddonCatalogue).
+	addonCatalogue interfaces.AgentAddonCatalogueSync
+}
+
+// SetAgentAddonCatalogue wires the add-on catalogue (usage_agent_addons).
+func (s *customAgentService) SetAgentAddonCatalogue(c interfaces.AgentAddonCatalogueSync) {
+	s.addonCatalogue = c
+}
+
+// syncAddonCatalogue deactivates the catalogue row of an agent that can no
+// longer be sold. A failure is logged, not returned: the agent change is
+// already saved, and the billing offer re-checks the agent on every read.
+func (s *customAgentService) syncAddonCatalogue(ctx context.Context, agentID string) {
+	if s.addonCatalogue == nil {
+		return
+	}
+	if err := s.addonCatalogue.DeactivateUnsellableAgentAddon(ctx, agentID); err != nil {
+		logger.Warnf(ctx, "Agent %s: could not sync the add-on catalogue: %v", agentID, err)
+	}
 }
 
 // NewCustomAgentService creates a new custom agent service
@@ -174,6 +259,12 @@ func (s *customAgentService) CreateAgent(ctx context.Context, agent *types.Custo
 	agent.EnsureDefaults()
 	if err := agent.Config.QuestionSuggestions.Validate(); err != nil {
 		return nil, err
+	}
+	// No "Cách phân phối" sent: an agent with a skill set starts as a
+	// specialist add-on nobody has bought, so creating one never hands it
+	// to every Tổ chức (docs/agent-addon-plans.md §3).
+	if types.NormalizeAgentDistribution(agent.Distribution) == "" {
+		agent.Distribution = types.DefaultAgentDistribution(agent)
 	}
 	if err := s.validateTenantScope(ctx, agent, tenantID); err != nil {
 		return nil, err
@@ -257,21 +348,37 @@ func (s *customAgentService) GetAgentByIDAndTenant(ctx context.Context, id strin
 	return agent, nil
 }
 
-// ListAgents lists all agents for the current tenant (including built-in agents)
+// ListAgents lists the agents the caller may pick for the current tenant
+// (including built-in agents), leaving out those switched off.
 func (s *customAgentService) ListAgents(ctx context.Context) ([]*types.CustomAgent, error) {
+	return s.listAgents(ctx, false)
+}
+
+// ListAllAgents is ListAgents with switched-off agents included, for the
+// SuperAdmin agent page where they are switched back on. Anyone else gets
+// the ordinary list.
+func (s *customAgentService) ListAllAgents(ctx context.Context) ([]*types.CustomAgent, error) {
+	return s.listAgents(ctx, ignoresAgentTenantScope(ctx))
+}
+
+func (s *customAgentService) listAgents(ctx context.Context, includeDisabled bool) ([]*types.CustomAgent, error) {
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok {
 		return nil, ErrInvalidTenantID
 	}
 
 	// Get all agents from database (including built-in agents with customized
-	// config). A SuperAdmin sees every agent; anyone else only those whose
-	// "Tổ chức áp dụng" list includes the tenant (or is empty).
-	listAgents := s.repo.ListAgentsByTenantID
+	// config). A SuperAdmin sees every agent; anyone else only those the
+	// visibility rule lets them use (basic, bought add-on, internal list).
+	var (
+		allAgents []*types.CustomAgent
+		err       error
+	)
 	if ignoresAgentTenantScope(ctx) {
-		listAgents = s.repo.ListAgentsByTenantIDIgnoringTenantScope
+		allAgents, err = s.repo.ListAgentsByTenantIDIgnoringTenantScope(ctx, tenantID)
+	} else {
+		allAgents, err = s.repo.ListVisibleAgents(ctx, agentViewer(ctx, tenantID))
 	}
-	allAgents, err := listAgents(ctx, tenantID)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"tenant_id": tenantID,
@@ -289,32 +396,35 @@ func (s *customAgentService) ListAgents(ctx context.Context) ([]*types.CustomAge
 	}
 
 	// Build result: built-in agents first, then custom agents
-	builtinIDs := types.GetBuiltinAgentIDs()
+	builtinIDs := types.GetAllBuiltinAgentIDs()
 	result := make([]*types.CustomAgent, 0, len(allAgents)+len(builtinIDs))
 
-	// Add built-in agents in order; GetBuiltinAgentIDs leaves out one
-	// switched off in builtin_agents.yaml even when a tenant row exists for it.
+	// Add built-in agents in order, leaving out one switched off (the
+	// SuperAdmin's stored switch, else builtin_agents.yaml) unless asked.
 	for _, builtinID := range builtinIDs {
+		var agent *types.CustomAgent
 		if builtinInDB[builtinID] {
 			// Use customized config from database
-			for _, agent := range allAgents {
-				if agent.ID == builtinID {
-					types.ApplyBuiltinAgentLocalization(ctx, agent)
-					result = append(result, agent)
+			for _, row := range allAgents {
+				if row.ID == builtinID {
+					types.ApplyBuiltinAgentLocalization(ctx, row)
+					agent = row
 					break
 				}
 			}
 		} else {
 			// Use default built-in agent (i18n-aware)
-			if agent := types.GetBuiltinAgentWithContext(ctx, builtinID, tenantID); agent != nil {
-				result = append(result, agent)
-			}
+			agent = types.GetBuiltinAgentWithContext(ctx, builtinID, tenantID)
+		}
+		if agent != nil && (includeDisabled || agent.EffectiveEnabled()) {
+			result = append(result, agent)
 		}
 	}
 
-	// Add custom agents
+	// Add custom agents (a switched-off one only reaches here for a
+	// SuperAdmin, who reads unscoped)
 	for _, agent := range allAgents {
-		if !types.IsBuiltinAgentID(agent.ID) {
+		if !types.IsBuiltinAgentID(agent.ID) && (includeDisabled || agent.EffectiveEnabled()) {
 			result = append(result, agent)
 		}
 	}
@@ -385,6 +495,15 @@ func (s *customAgentService) UpdateAgent(
 	if agent.AppliesToTenantIDs != nil {
 		existingAgent.AppliesToTenantIDs = agent.AppliesToTenantIDs
 	}
+	// "" = distribution not sent: keep the stored one. Leaving internal
+	// without sending a list drops the stored list (it would no longer
+	// apply); a list sent with another distribution is refused below.
+	if d := types.NormalizeAgentDistribution(agent.Distribution); d != "" {
+		if d != types.AgentDistributionInternal && agent.AppliesToTenantIDs == nil {
+			existingAgent.AppliesToTenantIDs = types.AgentTenantScope{}
+		}
+		existingAgent.Distribution = d
+	}
 	existingAgent.UpdatedAt = time.Now()
 
 	// Ensure defaults
@@ -409,6 +528,7 @@ func (s *customAgentService) UpdateAgent(
 		return nil, err
 	}
 
+	s.syncAddonCatalogue(ctx, agent.ID)
 	logger.Infof(ctx, "Custom agent updated successfully, ID: %s", agent.ID)
 	return existingAgent, nil
 }
@@ -417,6 +537,9 @@ func (s *customAgentService) UpdateAgent(
 func (s *customAgentService) updateBuiltinAgent(ctx context.Context, agent *types.CustomAgent, tenantID uint64) (*types.CustomAgent, error) {
 	if len(agent.AppliesToTenantIDs.Normalized()) > 0 {
 		return nil, ErrBuiltinAgentNotScopable
+	}
+	if d := types.NormalizeAgentDistribution(agent.Distribution); d != "" && d != types.AgentDistributionBasic {
+		return nil, ErrBuiltinAgentDistribution
 	}
 	// Persist locale-independent display fields (the YAML "default" locale) so
 	// read paths that skip builtin localization see a stable language.
@@ -559,6 +682,7 @@ func (s *customAgentService) DeleteAgent(ctx context.Context, id string) error {
 		return err
 	}
 
+	s.syncAddonCatalogue(ctx, id)
 	logger.Infof(ctx, "Custom agent deleted successfully, ID: %s", id)
 	return nil
 }
@@ -596,8 +720,12 @@ func (s *customAgentService) CopyAgent(ctx context.Context, id string) (*types.C
 		// (not re-validated): dropping a since-deleted tenant could empty
 		// the list, and an empty list means "every Tổ chức".
 		AppliesToTenantIDs: append(types.AgentTenantScope{}, sourceAgent.AppliesToTenantIDs...),
-		CreatedAt:          time.Now(),
-		UpdatedAt:          time.Now(),
+		// and its distribution, for the same reason: a copy of a
+		// specialist add-on must not become a basic agent everyone sees.
+		// A copy of a built-in is a basic custom agent.
+		Distribution: sourceAgent.EffectiveDistribution(),
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
 	// a pack this build no longer ships would make the copy unsavable
 	newAgent.Config.DomainPacks = s.shippedDomainPacks(ctx, sourceAgent.Config.DomainPacks)
@@ -1311,4 +1439,70 @@ func isEnglishLocale(locale string) bool {
 		return true
 	}
 	return false
+}
+
+// SetAgentEnabled is the SuperAdmin's runtime on/off switch of an agent,
+// stored on its row in the caller's tenant (the configuration profile under
+// the ConfigProfile middleware). A built-in without a row gets one with the
+// default configuration, like its first customisation. Only an explicit
+// human SuperAdmin or a platform caller reaches it (route gate); the
+// service checks the human SuperAdmin flag again for direct callers.
+func (s *customAgentService) SetAgentEnabled(ctx context.Context, id string, enabled bool) (*types.CustomAgent, error) {
+	if id == "" {
+		return nil, errors.New("agent ID cannot be empty")
+	}
+	if !types.IsSystemAdminFromContext(ctx) {
+		return nil, ErrAgentSwitchForbidden
+	}
+	tenantID, ok := types.TenantIDFromContext(ctx)
+	if !ok {
+		return nil, ErrInvalidTenantID
+	}
+	// the row the caller's tenant reads (its own, else the profile's,
+	// rebound to it): saving writes the caller's tenant, the configuration
+	// profile under the ConfigProfile middleware
+	existing, err := s.repo.GetAgentByIDIgnoringTenantScope(ctx, id, tenantID)
+	if err != nil && !errors.Is(err, repository.ErrCustomAgentNotFound) {
+		return nil, err
+	}
+	if existing != nil {
+		if err := s.saveSwitch(ctx, existing, enabled); err != nil {
+			return nil, err
+		}
+		existing.EnsureDefaults()
+		if existing.IsBuiltin || types.IsBuiltinAgentID(id) {
+			types.ApplyBuiltinAgentLocalization(ctx, existing)
+		}
+		return existing, nil
+	}
+	if !types.IsBuiltinAgentID(id) {
+		return nil, ErrAgentNotFound
+	}
+	def := types.GetBuiltinAgent(id, tenantID)
+	if def == nil {
+		return nil, ErrAgentNotFound
+	}
+	row := &types.CustomAgent{
+		ID: def.ID, Name: def.Name, Description: def.Description, Avatar: def.Avatar,
+		IsBuiltin: true, TenantID: tenantID, Config: def.Config,
+		Distribution: types.AgentDistributionBasic, Switch: &enabled,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	row.EnsureDefaults()
+	if err := s.repo.CreateAgent(ctx, row); err != nil {
+		return nil, err
+	}
+	logger.Infof(ctx, "Built-in agent %s switched %v (new row in tenant %d)", id, enabled, tenantID)
+	types.ApplyBuiltinAgentLocalization(ctx, row)
+	return row, nil
+}
+
+func (s *customAgentService) saveSwitch(ctx context.Context, agent *types.CustomAgent, enabled bool) error {
+	agent.Switch = &enabled
+	agent.UpdatedAt = time.Now()
+	if err := s.repo.UpdateAgent(ctx, agent); err != nil {
+		return err
+	}
+	logger.Infof(ctx, "Agent %s switched %v", agent.ID, enabled)
+	return nil
 }

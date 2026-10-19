@@ -749,6 +749,18 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		logger.Infof(ctx, "[Container] Domain packs shipped: %v", registry.Names())
 		return nil
 	}))
+	// the add-on catalogue follows agents deleted or converted away from
+	// "addon" (docs/agent-addon-plans.md §8)
+	must(container.Invoke(func(customAgents interfaces.CustomAgentService, plans interfaces.UsagePlanRepository) error {
+		u, ok := customAgents.(interface {
+			SetAgentAddonCatalogue(interfaces.AgentAddonCatalogueSync)
+		})
+		if !ok {
+			return fmt.Errorf("%T cannot take the add-on catalogue", customAgents)
+		}
+		u.SetAgentAddonCatalogue(plans)
+		return nil
+	}))
 	// answers to the chat gate's "unclear word" question are kept as
 	// training data for the spell-check model
 	must(container.Invoke(func(c *service.AbbreviationTurnCoordinator, f interfaces.AbbreviationFeedbackRepository) {

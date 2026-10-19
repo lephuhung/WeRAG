@@ -265,7 +265,7 @@ func (r *DomainPackReconciler) request(ctx context.Context, run reconcileRun,
 	row := *base
 	row.LastTenantID = run.caller.TenantID
 	row.LastUserID = run.caller.UserID
-	row.LastQuery = "Danh mục gói chuyên môn " + run.pack.Name() + ": " + ref.UsedFor
+	row.LastQuery = "Danh mục bộ kỹ năng " + run.pack.Name() + ": " + ref.UsedFor
 	row.Detail = types.JSON(detail)
 	stored, err := r.requests.Record(ctx, &row)
 	if err != nil {

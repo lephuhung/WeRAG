@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -154,4 +155,68 @@ func (r *usagePlanRepository) AddSeat(ctx context.Context, seat *types.UsageSeat
 func (r *usagePlanRepository) RemoveSeat(ctx context.Context, subscriptionID, userID string) error {
 	return r.conn(ctx).
 		Where("subscription_id = ? AND user_id = ?", subscriptionID, userID).Delete(&types.UsageSeat{}).Error
+}
+
+func (r *usagePlanRepository) ListSubscriptionAddons(
+	ctx context.Context, subscriptionID string,
+) ([]*types.UsageSubscriptionAddon, error) {
+	var addons []*types.UsageSubscriptionAddon
+	if err := r.conn(ctx).Where("subscription_id = ?", subscriptionID).
+		Order("created_at ASC").Find(&addons).Error; err != nil {
+		return nil, err
+	}
+	if len(addons) == 0 {
+		return addons, nil
+	}
+	ids := make([]string, 0, len(addons))
+	for _, a := range addons {
+		ids = append(ids, a.AgentID)
+	}
+	var rows []struct {
+		ID   string
+		Name string
+	}
+	if err := r.conn(ctx).Table("custom_agents").Select("id, name").
+		Where("id IN ? AND deleted_at IS NULL", ids).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	names := make(map[string]string, len(rows))
+	for _, row := range rows {
+		names[row.ID] = row.Name
+	}
+	for _, a := range addons {
+		a.AgentName = names[a.AgentID]
+	}
+	return addons, nil
+}
+
+func (r *usagePlanRepository) UpsertSubscriptionAddon(ctx context.Context, addon *types.UsageSubscriptionAddon) error {
+	now := time.Now()
+	if addon.CreatedAt.IsZero() {
+		addon.CreatedAt = now
+	}
+	addon.UpdatedAt = now
+	return r.conn(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "subscription_id"}, {Name: "agent_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"starts_at", "ends_at", "price_vnd", "order_id", "granted_by", "updated_at"}),
+	}).Create(addon).Error
+}
+
+func (r *usagePlanRepository) DeleteSubscriptionAddon(ctx context.Context, subscriptionID, agentID string) (bool, error) {
+	res := r.conn(ctx).Where("subscription_id = ? AND agent_id = ?", subscriptionID, agentID).
+		Delete(&types.UsageSubscriptionAddon{})
+	return res.RowsAffected > 0, res.Error
+}
+
+func (r *usagePlanRepository) CustomAgentDistribution(ctx context.Context, agentID string) (string, bool, error) {
+	var rows []struct{ Distribution string }
+	if err := r.conn(ctx).Table("custom_agents").Select("distribution").
+		Where("id = ? AND is_builtin = ? AND deleted_at IS NULL", agentID, false).
+		Limit(1).Scan(&rows).Error; err != nil {
+		return "", false, err
+	}
+	if len(rows) == 0 {
+		return "", false, nil
+	}
+	return rows[0].Distribution, true, nil
 }

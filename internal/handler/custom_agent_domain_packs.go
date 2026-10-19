@@ -23,12 +23,12 @@ type DomainPackInfo struct {
 }
 
 // ListDomainPacks godoc
-// @Summary      Lấy danh sách gói chuyên môn
-// @Description  Trả về các gói chuyên môn có trong phiên bản này để chọn cho trợ lý suy luận: phiên bản, mốc dữ liệu, hạn rà soát (overdue = đã quá hạn) và công cụ bắt buộc
+// @Summary      Lấy danh sách bộ kỹ năng chuyên môn (domain pack)
+// @Description  Trả về các bộ kỹ năng chuyên môn có trong phiên bản này để chọn cho trợ lý suy luận: phiên bản, mốc dữ liệu, hạn rà soát (overdue = đã quá hạn) và công cụ bắt buộc
 // @Tags         Trợ lý
 // @Accept       json
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}  "danh sách gói chuyên môn"
+// @Success      200  {object}  map[string]interface{}  "danh sách bộ kỹ năng"
 // @Security     Bearer
 // @Security     ApiKeyAuth
 // @Router       /agents/domain-packs [get]

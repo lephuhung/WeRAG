@@ -98,6 +98,11 @@ Dùng một **tổ chức hoặc tài khoản thử** — giao dịch giả sẽ
    `"confirmed_by":"payment:test"`. Trang đơn của người mua chuyển sang đã thanh toán.
 4. Gửi lại đúng lệnh trên → `"duplicate": true`, gói **không** được gia hạn thêm.
 
+> Từ 19/10/2026 (`docs/agent-addon-plans.md` §8.3): đơn có thể kèm agent chuyên ngành
+> (`addons`) hoặc chỉ mua agent cho gói đang dùng (`kind = "addon"`). Webhook xác nhận
+> các đơn này như mọi đơn: quyền dùng agent được ghi cùng transaction; đơn mua agent cho
+> một thuê bao đã bị thay thế bị từ chối và giao dịch ghi `confirm_failed`.
+
 ## 3. Việc hằng ngày của SuperAdmin
 
 Giao dịch không tự xác nhận được nằm trong danh sách (chưa có màn hình riêng,

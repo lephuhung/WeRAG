@@ -74,7 +74,8 @@ func TestSetChannelAgentIDRequiresAgentID(t *testing.T) {
 func TestSetChannelAgentIDRejectsAgentOutsideTenantScope(t *testing.T) {
 	svc := &Service{
 		agentService: &stubIMAgentService{
-			agent: &types.CustomAgent{ID: "agent-new", TenantID: 42, AppliesToTenantIDs: types.AgentTenantScope{7}},
+			agent: &types.CustomAgent{ID: "agent-new", TenantID: 42, Distribution: types.AgentDistributionInternal,
+				AppliesToTenantIDs: types.AgentTenantScope{7}},
 		},
 	}
 	channel := &IMChannel{ID: "im-1", TenantID: 42, AgentID: "agent-old"}

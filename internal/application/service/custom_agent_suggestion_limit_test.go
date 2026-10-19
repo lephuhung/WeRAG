@@ -101,3 +101,11 @@ func TestGetSuggestedQuestions_LimitBoundedByMax(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, got, suggestionMaxLimit)
 }
+
+// GetVisibleAgentByID answers like GetAgentByID: the stub has no
+// visibility rule to apply.
+func (r *suggestionLimitAgentRepo) GetVisibleAgentByID(
+	ctx context.Context, id string, viewer types.AgentViewer,
+) (*types.CustomAgent, error) {
+	return r.GetAgentByID(ctx, id, viewer.TenantID)
+}

@@ -22,7 +22,7 @@ func NewDomainPackReconcileHandler(reconciler *service.DomainPackReconciler) *Do
 }
 
 // ReconcileDomainPack godoc
-// @Summary      Đối chiếu danh mục của gói chuyên môn
+// @Summary      Đối chiếu danh mục của bộ kỹ năng chuyên môn
 // @Description  Tra từng số hiệu trong catalogue.yaml của gói theo
 // @Description  legal_documents.number_key: found (một văn bản, kèm
 // @Description  status_note khi danh mục ghi hết hiệu lực hoặc bị thay thế),
@@ -31,7 +31,7 @@ func NewDomainPackReconcileHandler(reconciler *service.DomainPackReconciler) *Do
 // @Description  (nhiều văn bản cùng số hiệu). Không sửa legal_documents.
 // @Tags         Rà soát pháp lý
 // @Produce      json
-// @Param        name path string true "Tên gói chuyên môn"
+// @Param        name path string true "Tên bộ kỹ năng (domain pack)"
 // @Success      200 {object} types.DomainPackReconcileResult "Kết quả đối chiếu"
 // @Security     Bearer
 // @Router       /system/domain-packs/{name}/reconcile [post]
@@ -47,8 +47,8 @@ func (h *DomainPackReconcileHandler) ReconcileDomainPack(c *gin.Context) {
 }
 
 // ListSystemDomainPacks godoc
-// @Summary      Danh sách gói chuyên môn (SuperAdmin)
-// @Description  Các gói chuyên môn có trong bản build: phiên bản, mốc dữ
+// @Summary      Danh sách bộ kỹ năng chuyên môn (SuperAdmin)
+// @Description  Các bộ kỹ năng chuyên môn có trong bản build: phiên bản, mốc dữ
 // @Description  liệu, hạn rà soát, số văn bản trích dẫn, số công thức, số
 // @Description  agent đang dùng (mọi Tổ chức).
 // @Tags         Rà soát pháp lý
@@ -71,14 +71,14 @@ func (h *DomainPackReconcileHandler) ListSystemDomainPacks(c *gin.Context) {
 }
 
 // GetSystemDomainPack godoc
-// @Summary      Chi tiết gói chuyên môn (SuperAdmin)
+// @Summary      Chi tiết bộ kỹ năng chuyên môn (SuperAdmin)
 // @Description  Văn bản trích dẫn (tra danh mục chỉ đọc: trạng thái, có
 // @Description  trong KB, ghi chú hiệu lực, tệp trích, công thức dùng),
 // @Description  công thức (căn cứ ok/warning), agent đang dùng. Không ghi
 // @Description  yêu cầu nào; POST …/reconcile mới ghi.
 // @Tags         Rà soát pháp lý
 // @Produce      json
-// @Param        name path string true "Tên gói chuyên môn"
+// @Param        name path string true "Tên bộ kỹ năng (domain pack)"
 // @Success      200 {object} types.DomainPackDetail "Chi tiết gói"
 // @Security     Bearer
 // @Router       /system/domain-packs/{name} [get]

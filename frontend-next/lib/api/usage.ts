@@ -123,9 +123,56 @@ export interface UsagePlan {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  /** GET /billing/plans only: the basic agents the plan includes. */
+  included_agents?: UsagePlanAgent[];
+  /** GET /billing/plans only: specialist agents sold with the plan. */
+  addons?: UsagePlanAddonOffer[];
 }
 
-export type UsagePlanInput = Omit<UsagePlan, "id" | "created_at" | "updated_at">;
+export type UsagePlanInput = Omit<UsagePlan, "id" | "created_at" | "updated_at" | "included_agents" | "addons">;
+
+export interface UsagePlanAgent {
+  id: string;
+  name: string;
+}
+
+export interface UsagePlanAddonOffer {
+  agent_id: string;
+  name: string;
+  description: string;
+  /** Per month; × seats when per_seat. */
+  price_vnd: number;
+  per_seat: boolean;
+}
+
+/** A row of the add-on catalogue (usage_agent_addons). */
+export interface UsageAgentAddon {
+  agent_id: string;
+  /** Per month; per seat per month on a seat plan. */
+  price_vnd: number;
+  /** [] = sold with every plan. */
+  plan_ids: string[];
+  description: string;
+  is_active: boolean;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
+  agent_name?: string;
+  /** False once the agent is deleted or no longer a specialist agent. */
+  agent_available?: boolean;
+  /** Current subscriptions holding the add-on. */
+  holders?: number;
+}
+
+export type UsageAgentAddonInput = Pick<
+  UsageAgentAddon,
+  "agent_id" | "price_vnd" | "plan_ids" | "description" | "is_active" | "sort_order"
+>;
+
+export interface UsageAgentAddonCatalogue {
+  addons: UsageAgentAddon[];
+  included_agents: UsagePlanAgent[];
+}
 
 export interface UsageSubscription {
   id: string;
@@ -181,6 +228,27 @@ export interface UsageSeat {
 }
 
 const ADMIN = "/api/v1/system/admin/usage";
+
+export function listAgentAddons(includeInactive = true): Promise<UsageAgentAddonCatalogue> {
+  return apiGet<{ data?: UsageAgentAddonCatalogue }>(
+    `${ADMIN}/agent-addons${includeInactive ? "" : "?include_inactive=false"}`,
+  ).then((r) => ({ addons: r.data?.addons ?? [], included_agents: r.data?.included_agents ?? [] }));
+}
+
+export function createAgentAddon(input: UsageAgentAddonInput): Promise<UsageAgentAddon> {
+  return apiPost<{ data: UsageAgentAddon }>(`${ADMIN}/agent-addons`, input).then((r) => r.data);
+}
+
+export function updateAgentAddon(input: UsageAgentAddonInput): Promise<UsageAgentAddon> {
+  return apiPut<{ data: UsageAgentAddon }>(
+    `${ADMIN}/agent-addons/${encodeURIComponent(input.agent_id)}`,
+    input,
+  ).then((r) => r.data);
+}
+
+export function deleteAgentAddon(agentId: string): Promise<void> {
+  return apiDel(`${ADMIN}/agent-addons/${encodeURIComponent(agentId)}`).then(() => undefined);
+}
 
 export function listUsagePlans(includeInactive = true): Promise<UsagePlan[]> {
   return apiGet<{ data?: UsagePlan[] }>(`${ADMIN}/plans${includeInactive ? "?include_inactive=true" : ""}`).then(
@@ -258,6 +326,27 @@ export interface UsageTenantUsage {
   enforced: boolean;
   subscription?: UsageSubscriptionView | null;
   seats: UsageSeat[];
+  /** Specialist agents the subscription holds, with their end. */
+  addons?: UsageSubscriptionAddon[];
+}
+
+/** A right of a subscription to a specialist agent. */
+export interface UsageSubscriptionAddon {
+  subscription_id: string;
+  agent_id: string;
+  agent_name?: string;
+  starts_at: string;
+  ends_at: string | null;
+  price_vnd: number;
+  order_id: string | null;
+}
+
+/** GET /billing/subscription: the scope's current subscription, the
+ * add-ons it holds and those it may still buy on it. */
+export interface UsageScopeAddons {
+  subscription?: UsageSubscription | null;
+  held: UsageSubscriptionAddon[];
+  purchasable: UsagePlanAddonOffer[];
 }
 
 export function getTenantUsage(tenantId: number | string): Promise<UsageTenantUsage> {
@@ -333,12 +422,33 @@ export interface UsageOrder {
   expires_at: string | null;
   subscription_id: string | null;
   note: string;
+  /** "plan" (a plan, optional add-ons) or "addon" (add-ons on the current subscription). */
+  kind?: UsageOrderKind;
+  target_subscription_id?: string | null;
+  addons?: UsageOrderAddonLine[];
   created_at: string;
   updated_at: string;
   /** What to write in the bank transfer so the payment matches the order. */
   transfer_content: string;
   /** VietQR image for a pending order; "" when billing is not configured. */
   qr_url: string;
+}
+
+export type UsageOrderKind = "plan" | "addon";
+
+/** One add-on of a quote/order, priced when ordered. */
+export interface UsageOrderAddonLine {
+  agent_id: string;
+  name: string;
+  unit_price_vnd: number;
+  /** Seats on a seat plan, else 1. */
+  units: number;
+  months: number;
+  /** Mid-term purchase: days after the whole months, at half price when ≤ 15. */
+  leftover_days?: number;
+  leftover_factor?: "half" | "full" | "";
+  amount_vnd: number;
+  paid_until?: string | null;
 }
 
 export interface UsageQuoteRequest {
@@ -348,6 +458,8 @@ export interface UsageQuoteRequest {
   seats?: number;
   promo_code?: string;
   note?: string;
+  kind?: UsageOrderKind;
+  addon_agent_ids?: string[];
 }
 
 /** Mirrors types.UsageQuote. promo_error is a reason label (see promoErrorKey). */
@@ -368,6 +480,10 @@ export interface UsageQuote {
   promo_error: string;
   discount_vnd: number;
   total_vnd: number;
+  kind?: UsageOrderKind;
+  target_subscription_id?: string;
+  addons?: UsageOrderAddonLine[];
+  addons_vnd?: number;
 }
 
 /** Mirrors types.UsageBillingInfo. */
@@ -385,6 +501,14 @@ const BILLING = "/api/v1/billing";
 
 export function getBillingInfo(): Promise<UsageBillingInfo> {
   return apiGet<{ data: UsageBillingInfo }>(`${BILLING}/info`).then((r) => r.data);
+}
+
+export function getScopeAddons(scope: UsageScopeKind): Promise<UsageScopeAddons> {
+  return apiGet<{ data?: UsageScopeAddons }>(`${BILLING}/subscription?scope=${scope}`).then((r) => ({
+    subscription: r.data?.subscription ?? null,
+    held: r.data?.held ?? [],
+    purchasable: r.data?.purchasable ?? [],
+  }));
 }
 
 export function listPurchasablePlans(scope: UsageScopeKind): Promise<UsagePlan[]> {

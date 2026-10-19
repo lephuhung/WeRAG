@@ -433,7 +433,8 @@ func (s *usagePlanService) RevokeSeat(ctx context.Context, subscriptionID, userI
 }
 
 func (s *usagePlanService) TenantUsage(ctx context.Context, tenantID uint64) (*types.UsageTenantUsage, error) {
-	out := &types.UsageTenantUsage{Enforced: s.guard.Enforced(ctx), Seats: []*types.UsageSeat{}}
+	out := &types.UsageTenantUsage{Enforced: s.guard.Enforced(ctx), Seats: []*types.UsageSeat{},
+		Addons: []*types.UsageSubscriptionAddon{}}
 	sub, err := s.repo.GetActiveSubscription(ctx, types.UsageScopeTenant, types.UsageTenantScopeID(tenantID))
 	if err != nil {
 		return nil, err
@@ -446,6 +447,19 @@ func (s *usagePlanService) TenantUsage(ctx context.Context, tenantID uint64) (*t
 		return nil, err
 	}
 	out.Subscription = v
+	addons, err := s.repo.ListSubscriptionAddons(ctx, sub.ID)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	for _, a := range addons {
+		if a.IsCurrentAt(now) {
+			if a.EndsAt == nil {
+				a.EndsAt = sub.EndsAt // shown as "ends with the subscription"
+			}
+			out.Addons = append(out.Addons, a)
+		}
+	}
 	if sub.Mode == types.UsageModeSeat {
 		seats, err := s.repo.ListSeats(ctx, sub.ID)
 		if err != nil {
@@ -492,4 +506,180 @@ func (s *usagePlanService) RevokeTenantSeat(ctx context.Context, tenantID uint64
 		return err
 	}
 	return s.repo.RemoveSeat(ctx, sub.ID, userID)
+}
+
+func (s *usagePlanService) ListSubscriptionAddons(
+	ctx context.Context, subscriptionID string,
+) ([]*types.UsageSubscriptionAddon, error) {
+	if _, err := s.repo.GetSubscription(ctx, subscriptionID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperrors.NewNotFoundError("subscription not found")
+		}
+		return nil, err
+	}
+	return s.repo.ListSubscriptionAddons(ctx, subscriptionID)
+}
+
+// GrantSubscriptionAddon gives a subscription the right to use one
+// specialist agent, or replaces the period and price of an existing grant.
+// Only an "addon" agent can be granted: a basic one is already everyone's
+// and an internal one follows its "Tổ chức áp dụng" list.
+func (s *usagePlanService) GrantSubscriptionAddon(
+	ctx context.Context, subscriptionID string, grant types.UsageSubscriptionAddonGrant, grantedBy string,
+) (*types.UsageSubscriptionAddon, error) {
+	if _, err := s.repo.GetSubscription(ctx, subscriptionID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperrors.NewNotFoundError("subscription not found")
+		}
+		return nil, err
+	}
+	agentID := strings.TrimSpace(grant.AgentID)
+	if agentID == "" {
+		return nil, apperrors.NewBadRequestError("agent_id is required")
+	}
+	distribution, found, err := s.repo.CustomAgentDistribution(ctx, agentID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, apperrors.NewNotFoundError("agent not found")
+	}
+	if distribution != types.AgentDistributionAddon {
+		return nil, apperrors.NewBadRequestError(
+			"chỉ cấp quyền dùng cho trợ lý có cách phân phối Chuyên ngành (addon)")
+	}
+	if grant.PriceVND < 0 {
+		return nil, apperrors.NewBadRequestError("price_vnd must be >= 0")
+	}
+	addon := &types.UsageSubscriptionAddon{
+		SubscriptionID: subscriptionID,
+		AgentID:        agentID,
+		StartsAt:       s.now(),
+		EndsAt:         grant.EndsAt,
+		PriceVND:       grant.PriceVND,
+		GrantedBy:      grantedBy,
+	}
+	if grant.StartsAt != nil && !grant.StartsAt.IsZero() {
+		addon.StartsAt = *grant.StartsAt
+	}
+	if addon.EndsAt != nil && !addon.EndsAt.After(addon.StartsAt) {
+		return nil, apperrors.NewBadRequestError("ends_at must be after starts_at")
+	}
+	if err := s.repo.UpsertSubscriptionAddon(ctx, addon); err != nil {
+		return nil, err
+	}
+	return addon, nil
+}
+
+// RevokeSubscriptionAddon takes an add-on back: the agent disappears from
+// the subscription holders' lists and their next turn with it gets 2104.
+func (s *usagePlanService) RevokeSubscriptionAddon(ctx context.Context, subscriptionID, agentID string) error {
+	deleted, err := s.repo.DeleteSubscriptionAddon(ctx, subscriptionID, strings.TrimSpace(agentID))
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return apperrors.NewNotFoundError("add-on not found")
+	}
+	return nil
+}
+
+// includedPlanAgents names the basic agents every plan includes, in the
+// caller's locale, as builtin_agents.yaml names them; one switched off in
+// this build is left out.
+func includedPlanAgents(ctx context.Context) []types.UsagePlanAgent {
+	out := make([]types.UsagePlanAgent, 0, len(types.UsageIncludedAgentIDs))
+	for _, id := range types.UsageIncludedAgentIDs {
+		if a := types.GetBuiltinAgentWithContext(ctx, id, 0); a != nil {
+			out = append(out, types.UsagePlanAgent{ID: id, Name: a.Name})
+		}
+	}
+	return out
+}
+
+func (s *usagePlanService) ListAgentAddons(ctx context.Context, includeInactive bool) (*types.UsageAgentAddonCatalogue, error) {
+	rows, err := s.repo.ListAgentAddons(ctx, includeInactive)
+	if err != nil {
+		return nil, err
+	}
+	return &types.UsageAgentAddonCatalogue{Addons: rows, IncludedAgents: includedPlanAgents(ctx)}, nil
+}
+
+// validateAgentAddon normalizes a catalogue row and checks it: an addon
+// agent, a price >= 0, plans that exist.
+func (s *usagePlanService) validateAgentAddon(ctx context.Context, row *types.UsageAgentAddon) error {
+	row.AgentID = strings.TrimSpace(row.AgentID)
+	row.Description = strings.TrimSpace(row.Description)
+	row.PlanIDs = row.PlanIDs.Normalized()
+	if row.AgentID == "" {
+		return apperrors.NewBadRequestError("agent_id is required")
+	}
+	if row.PriceVND < 0 {
+		return apperrors.NewBadRequestError("price_vnd must be >= 0")
+	}
+	distribution, found, err := s.repo.CustomAgentDistribution(ctx, row.AgentID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return apperrors.NewNotFoundError("agent not found")
+	}
+	if distribution != types.AgentDistributionAddon {
+		return apperrors.NewBadRequestError(
+			"chỉ trợ lý có cách phân phối Chuyên ngành (addon) mới bán kèm gói dịch vụ được")
+	}
+	for _, id := range row.PlanIDs {
+		if _, err := s.repo.GetPlan(ctx, id); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apperrors.NewBadRequestError(fmt.Sprintf("plan %q does not exist", id))
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *usagePlanService) CreateAgentAddon(ctx context.Context, row *types.UsageAgentAddon) (*types.UsageAgentAddon, error) {
+	if err := s.validateAgentAddon(ctx, row); err != nil {
+		return nil, err
+	}
+	if _, err := s.repo.GetAgentAddon(ctx, row.AgentID); err == nil {
+		return nil, apperrors.NewConflictError("this agent is already in the add-on catalogue")
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if err := s.repo.CreateAgentAddon(ctx, row); err != nil {
+		return nil, err
+	}
+	return s.repo.GetAgentAddon(ctx, row.AgentID)
+}
+
+func (s *usagePlanService) UpdateAgentAddon(ctx context.Context, row *types.UsageAgentAddon) (*types.UsageAgentAddon, error) {
+	if _, err := s.repo.GetAgentAddon(ctx, strings.TrimSpace(row.AgentID)); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperrors.NewNotFoundError("add-on not found")
+		}
+		return nil, err
+	}
+	if err := s.validateAgentAddon(ctx, row); err != nil {
+		return nil, err
+	}
+	if err := s.repo.UpdateAgentAddon(ctx, row); err != nil {
+		return nil, err
+	}
+	return s.repo.GetAgentAddon(ctx, row.AgentID)
+}
+
+// DeleteAgentAddon takes an agent out of the catalogue. Subscriptions that
+// already hold it keep their rights until they end (usage_subscription_addons
+// is untouched).
+func (s *usagePlanService) DeleteAgentAddon(ctx context.Context, agentID string) error {
+	deleted, err := s.repo.DeleteAgentAddon(ctx, strings.TrimSpace(agentID))
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return apperrors.NewNotFoundError("add-on not found")
+	}
+	return nil
 }

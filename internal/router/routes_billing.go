@@ -23,6 +23,7 @@ func RegisterBillingRoutes(r *gin.RouterGroup, h *handler.UsageBillingHandler, g
 	billing := r.Group("/billing", g.Member())
 	billing.GET("/info", h.Info)
 	billing.GET("/plans", h.Plans)
+	billing.GET("/subscription", h.Subscription)
 	billing.POST("/quote", h.Quote)
 	billing.GET("/orders", h.ListOrders)
 	billing.POST("/orders", h.CreateOrder)

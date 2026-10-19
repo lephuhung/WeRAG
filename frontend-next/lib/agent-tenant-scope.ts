@@ -48,3 +48,44 @@ export function availableAgentId(listed: string[], selected: string, preferred: 
   if (listed.includes(selected)) return selected;
   return listed.includes(preferred) ? preferred : listed[0];
 }
+
+/* "Cách phân phối" of a custom agent (docs/agent-addon-plans.md §3):
+ * basic = every Tổ chức, addon = only buyers (a service-plan add-on),
+ * internal = the "Tổ chức áp dụng" list. Built-ins are always basic. */
+export type AgentDistribution = "basic" | "addon" | "internal";
+
+export const AGENT_DISTRIBUTIONS: AgentDistribution[] = ["basic", "addon", "internal"];
+
+export function normalizeDistribution(value: unknown): AgentDistribution {
+  return value === "addon" || value === "internal" ? value : "basic";
+}
+
+// The distribution a new agent starts with, mirroring the server default:
+// internal with a list, addon with a skill set, else basic.
+export function defaultDistribution(skillSets: string[], scopeIds: number[]): AgentDistribution {
+  if (scopeIds.length > 0) return "internal";
+  if (skillSets.length > 0) return "addon";
+  return "basic";
+}
+
+// The "Tổ chức áp dụng" list to save: only an internal agent keeps one; the
+// server refuses a list with basic or addon, so [] clears it there.
+export function scopeForSave(distribution: AgentDistribution, scopeIds: number[]): number[] {
+  return distribution === "internal" ? scopeIds : [];
+}
+
+/* The basic agents every service plan includes (backend
+ * types.UsageIncludedAgentIDs, plan decision 7.1). Switching one off asks
+ * for confirmation. */
+export const PLAN_BASIC_AGENT_IDS = ["builtin-document-assistant", "builtin-smart-reasoning"];
+
+// Whether switching `agentId` to `next` needs the "every plan includes it"
+// confirmation.
+export function switchOffNeedsConfirm(agentId: string, next: boolean): boolean {
+  return !next && PLAN_BASIC_AGENT_IDS.includes(agentId);
+}
+
+// An agent's on/off state as the API reports it; absent = on.
+export function agentEnabled(agent: { enabled?: boolean | null }): boolean {
+  return agent.enabled !== false;
+}

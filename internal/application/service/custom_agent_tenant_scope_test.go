@@ -19,7 +19,8 @@ func newAgentScopeService(t *testing.T) (*customAgentService, *gorm.DB) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.CustomAgent{}))
+	require.NoError(t, db.AutoMigrate(&types.CustomAgent{}, &types.UsageSubscription{}, &types.UsageSubscriptionAddon{},
+		&types.UsageAgentAddon{}))
 	require.NoError(t, db.Exec(`CREATE TABLE tenants (id INTEGER PRIMARY KEY, name TEXT,
 		kind TEXT NOT NULL DEFAULT 'workspace', config_profile_id INTEGER, deleted_at DATETIME)`).Error)
 	require.NoError(t, db.Exec(`INSERT INTO tenants (id, name, kind, config_profile_id) VALUES
@@ -27,8 +28,9 @@ func newAgentScopeService(t *testing.T) (*customAgentService, *gorm.DB) {
 		(2, 'Phòng khác', 'workspace', 9), (3, 'Phòng ba', 'workspace', 9)`).Error)
 	repo := repository.NewCustomAgentRepository(db)
 	require.NoError(t, repo.CreateAgent(context.Background(), &types.CustomAgent{
-		ID: "group", Name: "Thuế", TenantID: 9, AppliesToTenantIDs: types.AgentTenantScope{1},
-		Config: types.CustomAgentConfig{AgentMode: types.AgentModeSmartReasoning},
+		ID: "group", Name: "Thuế", TenantID: 9, Distribution: types.AgentDistributionInternal,
+		AppliesToTenantIDs: types.AgentTenantScope{1},
+		Config:             types.CustomAgentConfig{AgentMode: types.AgentModeSmartReasoning},
 	}))
 	require.NoError(t, repo.CreateAgent(context.Background(), &types.CustomAgent{
 		ID: "everyone", Name: "Chung", TenantID: 9,

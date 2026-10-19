@@ -159,3 +159,11 @@ func TestUpdateBuiltinAgentRejectsDocumentModelChangeForNonAdmin(t *testing.T) {
 	assert.False(t, got.Config.FormatCheckOnOpenEnabled())
 	assert.Equal(t, 5000, got.Config.OpenDocumentMaxRunes())
 }
+
+// GetVisibleAgentByID answers like GetAgentByID: the stub has no
+// visibility rule to apply.
+func (r *builtinModelAgentRepo) GetVisibleAgentByID(
+	ctx context.Context, id string, viewer types.AgentViewer,
+) (*types.CustomAgent, error) {
+	return r.GetAgentByID(ctx, id, viewer.TenantID)
+}

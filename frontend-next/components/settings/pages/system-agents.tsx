@@ -18,6 +18,7 @@ import {
   deleteAgent,
   copyAgent,
   isBuiltinAgent,
+  setAgentEnabled,
   type CustomAgent,
 } from "@/lib/api/agents";
 import { useAuth } from "@/lib/auth";
@@ -28,7 +29,8 @@ import { AgentEditorModal } from "@/components/agents/agent-editor";
 import { Modal } from "@/components/modal";
 import { listModels, type ModelConfig } from "@/lib/api/models";
 import { listAllTenants } from "@/lib/api/tenants";
-import { scopeSummary } from "@/lib/agent-tenant-scope";
+import { agentEnabled, normalizeDistribution, scopeSummary, switchOffNeedsConfirm } from "@/lib/agent-tenant-scope";
+import { Toggle } from "@/components/settings/toggle";
 import { RequireSystemAccess } from "@/components/require-system-access";
 import { useInSettingsModal } from "@/components/system/in-modal-nav";
 
@@ -64,10 +66,35 @@ function AgentsPanel() {
   const [embedAgent, setEmbedAgent] = useState<CustomAgent | null>(null);
   // Tổ chức names for the "Tổ chức áp dụng" badge
   const [tenantNames, setTenantNames] = useState<Record<number, string>>({});
+  // on/off switch: the agent waiting for the "every plan includes it"
+  // confirmation, and the one being saved
+  const [switchConfirm, setSwitchConfirm] = useState<CustomAgent | null>(null);
+  const [switching, setSwitching] = useState<string | null>(null);
+
+  const applySwitch = async (agent: CustomAgent, next: boolean) => {
+    setSwitchConfirm(null);
+    setSwitching(agent.id);
+    try {
+      const res = await setAgentEnabled(agent.id, next);
+      setAgents((prev) => (prev ?? []).map((x) => (x.id === agent.id ? { ...x, enabled: res.data?.enabled ?? next } : x)));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("agentp.switchFailed"));
+    } finally {
+      setSwitching(null);
+    }
+  };
+
+  const requestSwitch = (agent: CustomAgent, next: boolean) => {
+    if (switchOffNeedsConfirm(agent.id, next)) {
+      setSwitchConfirm(agent);
+      return;
+    }
+    void applySwitch(agent, next);
+  };
 
   const load = () => {
     let alive = true;
-    listAgents()
+    listAgents({ includeDisabled: true })
       .then((res) => {
         if (alive) setAgents(res.data ?? []);
       })
@@ -161,7 +188,8 @@ function AgentsPanel() {
         {(agents ?? []).map((a) => {
           const isBuiltin = isBuiltinAgent(a.id);
           const modelName = getModelDisplayName(a.config?.model_id);
-          const scope = isBuiltin ? null : scopeSummary(a.applies_to_tenant_ids, (id) => tenantNames[id]);
+          const distribution = isBuiltin ? "basic" : normalizeDistribution(a.distribution);
+          const scope = distribution === "internal" ? scopeSummary(a.applies_to_tenant_ids, (id) => tenantNames[id]) : null;
           const scopeAll = (a.applies_to_tenant_ids ?? []).map((id) => tenantNames[id] || `#${id}`).join(", ");
 
           return (
@@ -184,6 +212,19 @@ function AgentsPanel() {
                       {t("agentp.builtin")}
                     </span>
                   )}
+                  {distribution === "addon" && (
+                    <span
+                      className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
+                      title={t("agent.distribution.addonDesc")}
+                    >
+                      {t("agent.distribution.addon")}
+                    </span>
+                  )}
+                  {distribution === "internal" && !scope && (
+                    <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                      {t("agent.distribution.internal")}
+                    </span>
+                  )}
                   {scope && (
                     <span
                       className="min-w-0 truncate rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary"
@@ -198,6 +239,13 @@ function AgentsPanel() {
                   className="flex items-center gap-1 text-muted shrink-0"
                   onClick={(e) => e.stopPropagation()}
                 >
+                  <Toggle
+                    size="sm"
+                    checked={agentEnabled(a)}
+                    disabled={switching === a.id}
+                    title={agentEnabled(a) ? t("agentp.switchOn") : t("agentp.switchOff")}
+                    onChange={(v) => requestSwitch(a, v)}
+                  />
                   <button
                     type="button"
                     className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-strong hover:text-ink"
@@ -265,10 +313,13 @@ function AgentsPanel() {
               </div>
 
               {/* Content: Title and Description */}
-              <div className="min-w-0 flex-1">
+              <div className={`min-w-0 flex-1 ${agentEnabled(a) ? "" : "opacity-60"}`}>
                 <h2 className="title-md truncate text-ink group-hover:text-primary transition-colors">
                   {a.name}
                 </h2>
+                {!agentEnabled(a) && (
+                  <span className="caption text-muted">{t("agentp.offNote")}</span>
+                )}
                 <p className="body-sm mt-1 text-muted line-clamp-2 min-h-[40px]">
                   {a.description || "—"}
                 </p>
@@ -315,6 +366,25 @@ function AgentsPanel() {
         onClose={() => setEditorOpen(false)}
         onSaved={() => load()}
       />
+      <Modal
+        open={switchConfirm !== null}
+        title={t("agentp.switchOffBasicTitle")}
+        onClose={() => setSwitchConfirm(null)}
+        width="w-[440px]"
+      >
+        <p className="body-sm text-body">{t("agentp.switchOffBasicBody", { name: switchConfirm?.name ?? "" })}</p>
+        <div className="mt-4 flex justify-end gap-2">
+          <button className="btn btn-outline btn-sm" onClick={() => setSwitchConfirm(null)}>
+            {t("common.cancel")}
+          </button>
+          <button
+            className="btn btn-sm bg-[var(--color-error)] text-white"
+            onClick={() => switchConfirm && void applySwitch(switchConfirm, false)}
+          >
+            {t("agentp.switchOffConfirm")}
+          </button>
+        </div>
+      </Modal>
       <Modal
         open={removing !== null}
         title={t("agent.deleteConfirmTitle")}

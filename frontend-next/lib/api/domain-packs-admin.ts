@@ -107,6 +107,13 @@ export interface DomainPackAgent {
   // "Tổ chức áp dụng"; [] = every Tổ chức
   applies_to_tenant_ids?: number[];
   applies_to?: { tenant_id: number; tenant_name: string }[];
+  // "Cách phân phối"; the list above only counts for internal
+  distribution?: "basic" | "addon" | "internal";
+  // the agent's row in the add-on catalogue (null = not listed) and the
+  // current subscriptions holding the add-on
+  addon_price_vnd?: number | null;
+  addon_active?: boolean | null;
+  addon_holders?: number;
 }
 
 export interface DomainPackError {

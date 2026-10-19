@@ -65,12 +65,19 @@ func (s *usageBillingService) BillingInfo(ctx context.Context) *types.UsageBilli
 	return info
 }
 
-func (s *usageBillingService) PurchasablePlans(ctx context.Context, scopeKind string) ([]*types.UsagePlan, error) {
+func (s *usageBillingService) PurchasablePlans(ctx context.Context, scopeKind string) ([]*types.UsagePlanOffer, error) {
 	all, err := s.plans.ListPlans(ctx, false)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*types.UsagePlan, 0, len(all))
+	// one catalogue read for every plan; only rows whose agent is still a
+	// live addon agent are offered
+	catalogue, err := s.planRepo.ListAgentAddons(ctx, false)
+	if err != nil {
+		return nil, err
+	}
+	included := includedPlanAgents(ctx)
+	out := make([]*types.UsagePlanOffer, 0, len(all))
 	for _, p := range all {
 		if scopeKind != "" && p.ScopeKind != scopeKind {
 			continue
@@ -78,7 +85,24 @@ func (s *usageBillingService) PurchasablePlans(ctx context.Context, scopeKind st
 		if p.PriceVND <= 0 {
 			continue
 		}
-		out = append(out, p)
+		offer := &types.UsagePlanOffer{
+			UsagePlan:      p,
+			IncludedAgents: included,
+			Addons:         []types.UsagePlanAddonOffer{},
+		}
+		for _, a := range catalogue {
+			if !a.IsActive || !a.AgentAvailable || !a.PlanIDs.Includes(p.ID) {
+				continue
+			}
+			offer.Addons = append(offer.Addons, types.UsagePlanAddonOffer{
+				AgentID:     a.AgentID,
+				Name:        a.AgentName,
+				Description: a.Description,
+				PriceVND:    a.PriceVND,
+				PerSeat:     p.Mode == types.UsageModeSeat,
+			})
+		}
+		out = append(out, offer)
 	}
 	return out, nil
 }
@@ -90,6 +114,19 @@ func (s *usageBillingService) quote(
 ) (*types.UsageQuote, *types.UsagePromoCode, error) {
 	if req.ScopeType != types.UsageScopeTenant && req.ScopeType != types.UsageScopeUser {
 		return nil, nil, apperrors.NewBadRequestError("scope_type must be tenant or user")
+	}
+	switch req.Kind {
+	case "", types.UsageOrderKindPlan:
+		req.Kind = types.UsageOrderKindPlan
+	case types.UsageOrderKindAddon:
+		q, err := s.quoteAddonOnly(ctx, req, scopeID)
+		if err != nil {
+			return nil, nil, err
+		}
+		promo, err := s.applyPromo(ctx, q, req.PromoCode, strict)
+		return q, promo, err
+	default:
+		return nil, nil, apperrors.NewBadRequestError("kind must be plan or addon")
 	}
 	plan, err := s.plans.GetPlan(ctx, strings.TrimSpace(req.PlanID))
 	if err != nil {
@@ -124,29 +161,42 @@ func (s *usageBillingService) quote(
 		q.Mode = types.UsageModePool
 		q.SubtotalVND = plan.PriceVND * int64(req.Months)
 	}
-	q.TotalVND = q.SubtotalVND
-
-	var promo *types.UsagePromoCode
-	if code := types.NormalizeUsagePromoCode(req.PromoCode); code != "" {
-		q.PromoCode = code
-		p, err := s.repo.GetPromoByCode(ctx, code)
-		if err != nil {
-			return nil, nil, err
-		}
-		ok, reason := p.AppliesTo(plan.ID, s.now())
-		if !ok {
-			if strict {
-				return nil, nil, apperrors.NewBadRequestError("promo code cannot be used").WithDetails(map[string]string{"reason": reason})
-			}
-			q.PromoError = reason
-		} else {
-			promo = p
-			q.PromoName = p.Name
-			q.DiscountVND = p.Discount(q.SubtotalVND)
-			q.TotalVND = q.SubtotalVND - q.DiscountVND
-		}
+	q.Kind = types.UsageOrderKindPlan
+	if err := s.priceAddonsWithPlan(ctx, q, req.AddonAgentIDs); err != nil {
+		return nil, nil, err
 	}
-	return q, promo, nil
+	q.TotalVND = q.SubtotalVND
+	promo, err := s.applyPromo(ctx, q, req.PromoCode, strict)
+	return q, promo, err
+}
+
+// applyPromo discounts the whole subtotal (plan and add-ons) with code;
+// when strict, an unusable code is an error rather than a note.
+func (s *usageBillingService) applyPromo(
+	ctx context.Context, q *types.UsageQuote, rawCode string, strict bool,
+) (*types.UsagePromoCode, error) {
+	q.TotalVND = q.SubtotalVND
+	code := types.NormalizeUsagePromoCode(rawCode)
+	if code == "" {
+		return nil, nil
+	}
+	q.PromoCode = code
+	p, err := s.repo.GetPromoByCode(ctx, code)
+	if err != nil {
+		return nil, err
+	}
+	ok, reason := p.AppliesTo(q.Plan.ID, s.now())
+	if !ok {
+		if strict {
+			return nil, apperrors.NewBadRequestError("promo code cannot be used").WithDetails(map[string]string{"reason": reason})
+		}
+		q.PromoError = reason
+		return nil, nil
+	}
+	q.PromoName = p.Name
+	q.DiscountVND = p.Discount(q.SubtotalVND)
+	q.TotalVND = q.SubtotalVND - q.DiscountVND
+	return p, nil
 }
 
 // usageProrationDaysPerMonth turns a monthly seat price into a daily one
@@ -241,8 +291,14 @@ func (s *usageBillingService) CreateOrder(
 		PaymentMethod: types.UsagePaymentBankTransfer,
 		CreatedBy:     createdBy,
 		Note:          strings.TrimSpace(req.Note),
+		Kind:          q.Kind,
+		Addons:        q.Addons,
 		CreatedAt:     now,
 		UpdatedAt:     now,
+	}
+	if q.TargetSubscriptionID != "" {
+		target := q.TargetSubscriptionID
+		order.TargetSubscriptionID = &target
 	}
 	if promo != nil {
 		id := promo.ID
@@ -430,6 +486,9 @@ func (s *usageBillingService) ConfirmOrder(ctx context.Context, id, confirmedBy 
 // subscription of the same plan is extended, otherwise a new one starts
 // now and replaces whatever the scope had.
 func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, now time.Time) (string, error) {
+	if o.Kind == types.UsageOrderKindAddon {
+		return s.applyAddonOrder(ctx, o, now)
+	}
 	cur, err := s.planRepo.GetActiveSubscription(ctx, o.ScopeType, o.ScopeID)
 	if err != nil {
 		return "", err
@@ -443,6 +502,11 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 				"the subscription now has %d seats but order %s pays for %d; cancel it and order again",
 				cur.Seats, o.OrderCode, o.Seats))
 		}
+		held, err := s.planRepo.ListSubscriptionAddons(ctx, cur.ID)
+		if err != nil {
+			return "", err
+		}
+		oldEnd := cur.EndsAt
 		from := now
 		if cur.EndsAt != nil && cur.EndsAt.After(now) {
 			from = *cur.EndsAt
@@ -454,6 +518,18 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 		}
 		cur.Note = appendOrderNote(cur.Note, o.OrderCode)
 		if err := s.planRepo.UpdateSubscription(ctx, cur); err != nil {
+			return "", err
+		}
+		// the renewal extends the add-ons it pays for; the others keep
+		// their paid end
+		if err := s.freezeUnrenewedAddons(ctx, cur, o, oldEnd, held); err != nil {
+			return "", err
+		}
+		heldBy := map[string]*types.UsageSubscriptionAddon{}
+		for _, h := range held {
+			heldBy[h.AgentID] = h
+		}
+		if err := s.grantOrderAddons(ctx, o, cur, now, heldBy); err != nil {
 			return "", err
 		}
 		return cur.ID, nil
@@ -470,8 +546,22 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 		Status:    types.UsageSubscriptionActive,
 		Note:      appendOrderNote("", o.OrderCode),
 	}
+	// the subscription being replaced, as it was before CreateSubscription
+	// cancels it
+	var replaced *types.UsageSubscription
+	if cur != nil && cur.IsCurrentAt(now) {
+		c := *cur
+		replaced = &c
+	}
 	v, err := s.plans.CreateSubscription(ctx, sub)
 	if err != nil {
+		return "", err
+	}
+	// a plan change keeps the add-ons already paid for (to their paid end)
+	if err := s.carryAddonsOver(ctx, replaced, v.UsageSubscription, o, now); err != nil {
+		return "", err
+	}
+	if err := s.grantOrderAddons(ctx, o, v.UsageSubscription, now, map[string]*types.UsageSubscriptionAddon{}); err != nil {
 		return "", err
 	}
 	return v.ID, nil

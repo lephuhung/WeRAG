@@ -3115,6 +3115,14 @@ func (s *installCustomAgentService) ListAgents(context.Context) ([]*types.Custom
 	return nil, nil
 }
 
+func (s *installCustomAgentService) ListAllAgents(context.Context) ([]*types.CustomAgent, error) {
+	return nil, nil
+}
+
+func (s *installCustomAgentService) SetAgentEnabled(context.Context, string, bool) (*types.CustomAgent, error) {
+	return nil, nil
+}
+
 func (s *installCustomAgentService) UpdateAgent(
 	_ context.Context, agent *types.CustomAgent, avatar *string,
 ) (*types.CustomAgent, error) {
