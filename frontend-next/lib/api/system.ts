@@ -279,6 +279,8 @@ export interface SystemAdminUser {
   is_active: boolean;
   is_system_admin: boolean;
   memberships?: SystemUserMembership[];
+  /** Profile answers; work_unit is the đơn vị công tác given at sign-up. */
+  preferences?: { work_unit?: string; [key: string]: unknown };
   created_at: string;
   updated_at: string;
 }

@@ -5,7 +5,7 @@
  * personal subscriptions. Limits are a list of {metric, period, limit};
  * a subscription may override its plan's list. */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "@/components/modal";
 import { Toggle } from "@/components/settings/toggle";
 import { LimitStatusList } from "@/components/settings/usage-limits";
@@ -40,6 +40,8 @@ import {
   type UsageAgentAddonCatalogue,
 } from "@/lib/api/usage";
 import { addonsForPlan } from "@/lib/agent-addon-catalogue";
+
+const USER_PAGE = 30;
 
 const emptyPlan: UsagePlanInput = {
   code: "",
@@ -238,6 +240,8 @@ export default function AdminUsage() {
   const [userPickOpen, setUserPickOpen] = useState(false);
   const [userQ, setUserQ] = useState("");
   const [userHits, setUserHits] = useState<SystemAdminUser[]>([]);
+  const [userTotal, setUserTotal] = useState(0);
+  const [userLoading, setUserLoading] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -383,19 +387,30 @@ export default function AdminUsage() {
     });
   };
 
-  const searchUsers = async (text: string) => {
-    setUserQ(text);
-    if (!text.trim()) {
-      setUserHits([]);
-      return;
-    }
+  /* The picker lists every account (newest first) as soon as it opens;
+   * typing narrows it by name or e-mail, "show more" pages on. */
+  const userSeq = useRef(0);
+  const fetchUsers = async (text: string, offset: number) => {
+    const seq = ++userSeq.current;
+    setUserLoading(true);
     try {
-      const res = await listSystemUsers({ q: text.trim(), limit: 8 });
-      setUserHits(res.users ?? []);
+      const res = await listSystemUsers({ q: text.trim() || undefined, limit: USER_PAGE, offset });
+      if (seq !== userSeq.current) return;
+      setUserHits((prev) => (offset === 0 ? res.users ?? [] : [...prev, ...(res.users ?? [])]));
+      setUserTotal(res.total ?? 0);
     } catch {
-      setUserHits([]);
+      if (seq === userSeq.current && offset === 0) setUserHits([]);
+    } finally {
+      if (seq === userSeq.current) setUserLoading(false);
     }
   };
+  useEffect(() => {
+    if (!userPickOpen) return;
+    const timer = window.setTimeout(() => void fetchUsers(userQ, 0), userQ ? 250 : 0);
+    return () => window.clearTimeout(timer);
+    // fetchUsers only reads its arguments and stable setters
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userPickOpen, userQ]);
 
   if (allowed === null) {
     return <div className="mx-auto w-full max-w-[1100px] px-5 py-12 text-muted">…</div>;
@@ -568,6 +583,7 @@ export default function AdminUsage() {
             onClick={() => {
               setUserQ("");
               setUserHits([]);
+              setUserTotal(0);
               setUserPickOpen(true);
             }}
           >
@@ -795,26 +811,58 @@ export default function AdminUsage() {
         <div className="space-y-3">
           <div className="relative">
             <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft" />
-            <input className="input h-9 py-0 pl-9" autoFocus placeholder={t("usg.searchUser")} value={userQ} onChange={(e) => void searchUsers(e.target.value)} />
+            <input className="input h-9 py-0 pl-9" autoFocus placeholder={t("usg.searchUser")} value={userQ} onChange={(e) => setUserQ(e.target.value)} />
           </div>
-          <div className="max-h-72 divide-y divide-hairline overflow-y-auto">
-            {userHits.map((u) => (
-              <button
-                key={u.id}
-                type="button"
-                className="flex w-full items-center justify-between px-2 py-2 text-left text-[14px] hover:bg-surface-strong/40"
-                onClick={() => {
-                  setUserPickOpen(false);
-                  const existing = personal.find((s) => s.scope_id === u.id && s.status === "active") ?? null;
-                  openAssign("user", u.id, u.username || u.email, existing);
-                }}
-              >
-                <span className="truncate text-ink">{u.username}</span>
-                <span className="caption truncate text-muted">{u.email}</span>
-              </button>
-            ))}
-            {userQ && userHits.length === 0 && <p className="caption px-2 py-2 text-muted-soft">{t("usg.noUserHits")}</p>}
+          <p className="caption text-muted">{t("usg.userCount", { n: userTotal })}</p>
+          <div className="max-h-96 divide-y divide-hairline overflow-y-auto">
+            {userHits.map((u) => {
+              const sub = personal.find((s) => s.scope_id === u.id && s.status === "active" && !s.implicit) ?? null;
+              const guestRow = personal.find((s) => s.scope_id === u.id && s.implicit);
+              const orgs = (u.memberships ?? []).map((m) => m.tenant_name).filter(Boolean);
+              const unit = u.preferences?.work_unit;
+              return (
+                <button
+                  key={u.id}
+                  type="button"
+                  disabled={!u.is_active}
+                  className="flex w-full flex-wrap items-start justify-between gap-x-3 gap-y-1 px-2 py-2 text-left text-[14px] hover:bg-surface-strong/40 disabled:opacity-50"
+                  onClick={() => {
+                    setUserPickOpen(false);
+                    openAssign("user", u.id, u.username || u.email, sub);
+                  }}
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-ink">{u.username || u.email}</span>
+                    <span className="caption block truncate text-muted">
+                      {u.email}
+                      {unit ? ` · ${unit}` : ""}
+                    </span>
+                  </span>
+                  <span className="flex flex-wrap justify-end gap-1">
+                    {u.is_system_admin ? (
+                      <span className="badge-pill text-[11px]">{t("usg.kindSuperAdmin")}</span>
+                    ) : orgs.length > 0 ? (
+                      <span className="badge-pill max-w-[220px] truncate text-[11px]" title={orgs.join(", ")}>
+                        {orgs.join(", ")}
+                      </span>
+                    ) : (
+                      <span className="badge-pill text-[11px]">{t("usg.kindGuest")}</span>
+                    )}
+                    {!u.is_active && <span className="badge-pill text-[11px]">{t("usg.kindInactive")}</span>}
+                    <span className="badge-pill text-[11px] text-muted">
+                      {sub?.plan?.name ?? guestRow?.plan?.name ?? t("usg.noOwnPlan")}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+            {!userLoading && userHits.length === 0 && <p className="caption px-2 py-2 text-muted-soft">{t("usg.noUserHits")}</p>}
           </div>
+          {userHits.length < userTotal && (
+            <button type="button" className="btn btn-outline btn-sm w-full" disabled={userLoading} onClick={() => void fetchUsers(userQ, userHits.length)}>
+              {t("usg.moreUsers", { n: userTotal - userHits.length })}
+            </button>
+          )}
         </div>
       </Modal>
     </div>
