@@ -49,6 +49,15 @@ var guestChatRoutes = []guestChatRoute{
 	{http.MethodPut, []string{"messages", "*", "*", "feedback"}},
 	{http.MethodGet, []string{"agents"}},
 	{http.MethodGet, []string{"me", "usage"}},
+	// A Guest's own package: billingScope refuses them the tenant scope.
+	{http.MethodGet, []string{"billing", "info"}},
+	{http.MethodGet, []string{"billing", "plans"}},
+	{http.MethodGet, []string{"billing", "subscription"}},
+	{http.MethodPost, []string{"billing", "quote"}},
+	{http.MethodGet, []string{"billing", "orders"}},
+	{http.MethodPost, []string{"billing", "orders"}},
+	{http.MethodGet, []string{"billing", "orders", "*"}},
+	{http.MethodPost, []string{"billing", "orders", "*", "cancel"}},
 }
 
 // guestChatReservedSessionSegs are /sessions/<x> words that name another

@@ -68,5 +68,7 @@ func RegisterDomainPackReconcileRoutes(r *gin.RouterGroup, h *handler.DomainPack
 		packs.GET("", h.ListSystemDomainPacks)
 		packs.GET("/:name", h.GetSystemDomainPack)
 		packs.POST("/:name/reconcile", h.ReconcileDomainPack)
+		packs.PUT("/:name/formulas/:id", h.UpdateDomainPackFormula)
+		packs.DELETE("/:name/formulas/:id", h.ResetDomainPackFormula)
 	}
 }

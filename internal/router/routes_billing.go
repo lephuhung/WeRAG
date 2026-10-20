@@ -20,7 +20,7 @@ func RegisterBillingRoutes(r *gin.RouterGroup, h *handler.UsageBillingHandler, g
 	// limits, wrong secrets counted apart.
 	r.POST("/billing/payments/webhook", middleware.PaymentWebhookAuth(h.PaymentWebhookSecret), h.PaymentWebhook)
 
-	billing := r.Group("/billing", g.Member())
+	billing := r.Group("/billing", g.GuestChat())
 	billing.GET("/info", h.Info)
 	billing.GET("/plans", h.Plans)
 	billing.GET("/subscription", h.Subscription)

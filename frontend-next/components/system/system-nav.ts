@@ -143,7 +143,7 @@ export const SYSTEM_TABS: SystemTab[] = [
             key: "queues",
             label: "Runtime queues",
             labelKey: "systemNav.queues",
-            href: "/platform/system/engines/queues",
+            href: "/platform/admin?section=queues",
             minRole: "system",
           },
         ],

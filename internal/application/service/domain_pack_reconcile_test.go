@@ -40,7 +40,9 @@ func newReconcileFixture(t *testing.T) (*DomainPackReconciler, *gorm.DB) {
 	packs, err := domainpacks.Load(domainpackassets.FS)
 	require.NoError(t, err)
 	r := NewDomainPackReconciler(packs, repository.NewLegalCatalogRepository(db),
-		repository.NewLegalRequestRepository(db), repository.NewLegalReviewRepository(db), repository.NewDomainPackAgentRepository(db))
+		repository.NewLegalRequestRepository(db), repository.NewLegalReviewRepository(db), repository.NewDomainPackAgentRepository(db),
+		repository.NewDomainPackFormulaOverrideRepository(db), nil)
+	require.NoError(t, db.AutoMigrate(&types.DomainPackFormulaOverride{}))
 	r.now = func() time.Time { return time.Date(2026, 10, 18, 9, 0, 0, 0, time.UTC) }
 	return r, db
 }

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/agent/skills"
@@ -27,6 +28,9 @@ type Pack struct {
 	// the files citing it; citedWritten keeps the number as first written.
 	citedIn      map[string][]string
 	citedWritten map[string]string
+	// overrides are the SuperAdmin's edits of formulas (formula_edit.go)
+	mu        sync.RWMutex
+	overrides map[string]Formula
 }
 
 // Name is the pack's skill name.

@@ -101,6 +101,9 @@ var guestChatPaths = []struct{ method, path string }{
 	{http.MethodGet, "/api/v1/messages/s1/load"},
 	{http.MethodGet, "/api/v1/agents"},
 	{http.MethodGet, "/api/v1/me/usage"},
+	{http.MethodGet, "/api/v1/billing/plans"},
+	{http.MethodPost, "/api/v1/billing/orders"},
+	{http.MethodGet, "/api/v1/billing/orders/WR123"},
 }
 
 // A Guest with no tenant at all chats in the public portal, role-less; the

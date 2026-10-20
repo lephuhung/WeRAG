@@ -4,7 +4,7 @@
  * legal knowledge bases. The server forces the agent and strips every other
  * scope for a guest; the UI offers none of it either, and keeps a guest's
  * calls inside the tenantless chat routes (sessions, agent-chat, messages,
- * GET /agents, GET /me/usage).
+ * GET /agents, GET /me/usage) and the personal-package /billing routes.
  *
  * Shared with the Word add-in (scripts/shared-files.json there). */
 

@@ -59,7 +59,20 @@ map $scheme $werag_forwarded_proto {
 EOF
 fi
 
-HOSTNAME=127.0.0.1 PORT="$NEXT_PORT" node /app/server.js &
+if [ "${NEXT_DEV:-}" = "1" ]; then
+  # Hot reload (docker-compose.hotreload.yml): `next dev` on the mounted
+  # source instead of the standalone build. Dev asset URLs are not
+  # content-hashed, so nginx must not cache them as immutable.
+  sed -i 's/max-age=31536000, immutable/no-store/' /etc/nginx/http.d/default.conf
+  cd "${NEXT_DEV_DIR:-/src}"
+  if ! cmp -s package-lock.json node_modules/.werag-lock 2>/dev/null; then
+    npm ci --no-audit --no-fund
+    cp package-lock.json node_modules/.werag-lock
+  fi
+  NODE_ENV=development npx next dev --turbopack -H 127.0.0.1 -p "$NEXT_PORT" &
+else
+  HOSTNAME=127.0.0.1 PORT="$NEXT_PORT" node /app/server.js &
+fi
 next_pid=$!
 nginx -g 'daemon off;' &
 nginx_pid=$!

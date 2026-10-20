@@ -349,14 +349,14 @@ export default function AdminLegalDocuments() {
           </div>
 
           <div className="card overflow-x-auto shadow-sm">
-            <table className="w-full min-w-[760px] border-collapse text-left">
+            <table className="w-full min-w-[760px] table-fixed border-collapse text-left">
               <thead>
                 <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
-                  <th className="min-w-[220px] px-5 py-3 font-medium">{t("lrev.col.document")}</th>
-                  <th className="w-[170px] px-5 py-3 font-medium">{t("lrev.col.number")}</th>
-                  <th className="w-[110px] px-5 py-3 font-medium">{t("lrev.col.issued")}</th>
-                  <th className="w-[160px] px-5 py-3 font-medium">{t("lrev.col.validity")}</th>
-                  <th className={`${alerts ? "min-w-[260px]" : "w-[120px]"} px-5 py-3 font-medium`}>
+                  <th className={`${alerts ? "w-[28%]" : "w-[34%]"} px-3 py-3 font-medium`}>{t("lrev.col.document")}</th>
+                  <th className="w-[18%] px-3 py-3 font-medium">{t("lrev.col.number")}</th>
+                  <th className="w-[14%] px-3 py-3 font-medium">{t("lrev.col.issued")}</th>
+                  <th className="w-[14%] px-3 py-3 font-medium">{t("lrev.col.validity")}</th>
+                  <th className={`${alerts ? "w-[26%]" : "w-[20%]"} px-3 py-3 font-medium`}>
                     {alerts ? t("lrev.col.supersededBy") : t("lrev.col.review")}
                   </th>
                 </tr>
@@ -426,9 +426,9 @@ function ReviewRow({
   const pending = doc?.source_pending && Object.keys(doc.source_pending).length > 0;
   const issued = doc ? isoDay(doc.issued_on) : dmyToDay(item.suggestion?.issued_on);
   return (
-    <tr className="cursor-pointer align-top transition-colors hover:bg-surface-strong/20" onClick={onOpen}>
-      <td className="px-5 py-3.5">
-        <div className="truncate text-[13px] font-medium text-ink" title={item.knowledge_title}>
+    <tr className="cursor-pointer align-top break-words transition-colors hover:bg-surface-strong/20" onClick={onOpen}>
+      <td className="px-3 py-3">
+        <div className="line-clamp-2 text-[13px] font-medium text-ink" title={item.knowledge_title}>
           {item.knowledge_title}
         </div>
         <div className="caption truncate text-muted">{item.knowledge_base_name}</div>
@@ -443,7 +443,7 @@ function ReviewRow({
           </span>
         )}
       </td>
-      <td className="px-5 py-3.5">
+      <td className="px-3 py-3">
         <div className="font-mono text-[12px] text-ink">{doc?.document_number || parsed || "—"}</div>
         {doc && parsed && mm.number && (
           <div className="caption mt-0.5 text-amber-700 dark:text-amber-400">
@@ -463,7 +463,7 @@ function ReviewRow({
           </div>
         )}
       </td>
-      <td className="px-5 py-3.5">
+      <td className="px-3 py-3">
         <span className={`caption tabular-nums ${mm.issued ? "text-amber-700 dark:text-amber-400" : "text-body"}`}>
           {showDay(issued)}
         </span>
@@ -473,7 +473,7 @@ function ReviewRow({
           </div>
         )}
       </td>
-      <td className="px-5 py-3.5">
+      <td className="px-3 py-3">
         {doc?.status ? (
           <span className={`badge-pill inline-block whitespace-normal text-[10px] leading-snug ${statusTone(doc.status)}`}>{doc.status}</span>
         ) : (
@@ -485,9 +485,9 @@ function ReviewRow({
           </div>
         )}
       </td>
-      <td className="px-5 py-3.5">
+      <td className="px-3 py-3">
         {alerts ? (
-          <Supersessions item={item} />
+          <div className="max-h-36 overflow-y-auto pr-1"><Supersessions item={item} /></div>
         ) : (
           <span className="caption text-muted">{t(`lrev.state.${item.link.review_status}` as LocaleKey)}</span>
         )}

@@ -1,12 +1,14 @@
-/* Role model matches the backend human model: member < admin, with the
- * legacy "owner" alias normalized to admin (see normalizeNavRole), and
- * "system" gating on the platform-wide system-admin flag.
+/* Role model matches the backend human model: guest < member < admin, with
+ * the legacy "owner" alias normalized to admin (see normalizeNavRole), and
+ * "system" gating on the platform-wide system-admin flag. "guest" is any
+ * signed-in person, a Guest with no membership included (no role at all).
  * Server-side guards stay authoritative; this only hides UI entries.
  */
 
-export type SettingsRoleKey = "member" | "admin" | "owner" | "system";
+export type SettingsRoleKey = "guest" | "member" | "admin" | "owner" | "system";
 
 const ROLE_LEVEL: Record<string, number> = {
+  guest: 0,
   member: 10,
   admin: 30,
 };

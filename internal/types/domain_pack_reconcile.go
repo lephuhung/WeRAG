@@ -1,5 +1,7 @@
 package types
 
+import "time"
+
 // DomainPackRequestOriginPrefix marks a legal document request recorded by
 // the reconcile of a domain pack's catalogue: Detail["origin"] is
 // "pack:<name>". Source keeps the chat gate's meaning ("catalogue" when the
@@ -169,7 +171,49 @@ type DomainPackFormulaView struct {
 	Examples   []DomainPackFormulaSample `json:"examples"`
 	// Warning: one of its basis documents has a warning.
 	Warning bool `json:"warning"`
+	// Edited: a SuperAdmin's edit replaces the wording of formulas.yaml;
+	// EditedBy / EditedAt say who and when (Shipped is the original).
+	Edited   bool                   `json:"edited"`
+	EditedBy string                 `json:"edited_by,omitempty"`
+	EditedAt *time.Time             `json:"edited_at,omitempty"`
+	Shipped  *DomainPackFormulaEdit `json:"shipped,omitempty"`
+	// EditNotApplied: an edit is stored but this build refuses it (the
+	// formula or the catalogue changed); formulas.yaml applies.
+	EditNotApplied bool `json:"edit_not_applied,omitempty"`
 }
+
+// DomainPackFormulaEdit is a SuperAdmin's wording of a shipped formula (the
+// PUT body, and the row kept in domain_pack_formula_overrides). The id,
+// tool and variable names are those of formulas.yaml: the Go
+// implementation is bound to them.
+type DomainPackFormulaEdit struct {
+	Name       string                      `json:"name"`
+	Expression string                      `json:"expression"`
+	Variables  []DomainPackFormulaVar      `json:"variables"`
+	Basis      []DomainPackFormulaBasisRef `json:"basis"`
+	Examples   []DomainPackFormulaSample   `json:"examples"`
+}
+
+// DomainPackFormulaBasisRef is one basis provision as written: số hiệu (in
+// the pack's catalogue) and optionally the article.
+type DomainPackFormulaBasisRef struct {
+	Number  string `json:"number"`
+	Article string `json:"article,omitempty"`
+}
+
+// DomainPackFormulaOverride is one stored edit, applied over the shipped
+// formula at startup and on save; deleting it restores formulas.yaml.
+type DomainPackFormulaOverride struct {
+	PackName  string                `json:"pack_name"  gorm:"primaryKey"`
+	FormulaID string                `json:"formula_id" gorm:"primaryKey"`
+	Formula   DomainPackFormulaEdit `json:"formula"    gorm:"serializer:json;type:jsonb;not null"`
+	UpdatedBy string                `json:"updated_by"`
+	CreatedAt time.Time             `json:"created_at"`
+	UpdatedAt time.Time             `json:"updated_at"`
+}
+
+// TableName names the table of DomainPackFormulaOverride.
+func (DomainPackFormulaOverride) TableName() string { return "domain_pack_formula_overrides" }
 
 // DomainPackFormulaVar is one variable of a formula.
 type DomainPackFormulaVar struct {

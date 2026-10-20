@@ -32,7 +32,6 @@ import { listAllTenants } from "@/lib/api/tenants";
 import { agentEnabled, normalizeDistribution, scopeSummary, switchOffNeedsConfirm } from "@/lib/agent-tenant-scope";
 import { Toggle } from "@/components/settings/toggle";
 import { RequireSystemAccess } from "@/components/require-system-access";
-import { useInSettingsModal } from "@/components/system/in-modal-nav";
 
 export default function AgentsPage() {
   return (
@@ -43,7 +42,6 @@ export default function AgentsPage() {
 }
 
 function AgentsPanel() {
-  const inModal = useInSettingsModal();
   const auth = useAuth();
   const user = auth.user;
   const router = useRouter();
@@ -183,7 +181,7 @@ function AgentsPanel() {
       )}
 
       <div
-        className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${inModal ? "" : "xl:grid-cols-3"}`}
+        className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,360px),1fr))] gap-5"
       >
         {(agents ?? []).map((a) => {
           const isBuiltin = isBuiltinAgent(a.id);
@@ -195,7 +193,7 @@ function AgentsPanel() {
           return (
             <div
               key={a.id}
-              className="card card-hover group flex min-w-0 flex-col p-5 cursor-pointer transition-all duration-150 hover:border-hairline-strong"
+              className="card card-hover group flex min-w-0 flex-col p-5 sm:p-6 cursor-pointer transition-colors duration-150 hover:border-hairline-strong"
               onClick={() => {
                 setEditing(a);
                 setEditorOpen(true);
@@ -203,7 +201,7 @@ function AgentsPanel() {
             >
               {/* Header: Avatar + Built-in badge (left) & Action icons (right) */}
               <div className="flex items-center justify-between gap-3 mb-3.5">
-                <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex flex-wrap items-center gap-2.5 min-w-0">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-surface-strong text-ink">
                     <IconAgent className="h-5 w-5" />
                   </div>
@@ -235,10 +233,7 @@ function AgentsPanel() {
                   )}
                 </div>
 
-                <div
-                  className="flex items-center gap-1 text-muted shrink-0"
-                  onClick={(e) => e.stopPropagation()}
-                >
+                <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
                   <Toggle
                     size="sm"
                     checked={agentEnabled(a)}
@@ -246,6 +241,54 @@ function AgentsPanel() {
                     title={agentEnabled(a) ? t("agentp.switchOn") : t("agentp.switchOff")}
                     onChange={(v) => requestSwitch(a, v)}
                   />
+                </div>
+              </div>
+
+              {/* Content: Title and Description */}
+              <div className={`min-w-0 flex-1 ${agentEnabled(a) ? "" : "opacity-60"}`}>
+                <h2 className="title-md break-words text-ink group-hover:text-primary transition-colors">
+                  {a.name}
+                </h2>
+                {!agentEnabled(a) && (
+                  <span className="caption text-muted">{t("agentp.offNote")}</span>
+                )}
+                <p className="body-sm mt-2 text-muted line-clamp-3 leading-relaxed min-h-[48px]">
+                  {a.description || "—"}
+                </p>
+              </div>
+
+              {/* Footer: Compact metadata */}
+              <div className="mt-4 space-y-2 rounded-xl bg-surface-strong/40 p-3 text-xs">
+                <div className="flex flex-col items-start gap-2 min-w-0">
+                  {modelName ? (
+                    <span
+                      className="max-w-full break-all text-[12px] font-medium leading-relaxed text-ink"
+                      title={t("agentp.chatModel", { name: modelName, id: a.config?.model_id ?? "" })}
+                    >
+                      {modelName}
+                    </span>
+                  ) : (
+                    <span className="text-[11.5px] text-muted-soft">{t("agentp.defaultModel")}</span>
+                  )}
+                  {a.config?.rerank_model_id && (
+                    <span
+                      className="max-w-full break-all text-[12px] leading-relaxed text-emerald-700 dark:text-emerald-400"
+                      title={t("agentp.rerank", { name: getModelDisplayName(a.config?.rerank_model_id) })}
+                    >
+                      RR: {getModelDisplayName(a.config?.rerank_model_id)}
+                    </span>
+                  )}
+                </div>
+                {a.config?.agent_mode === "smart-reasoning" && (
+                  <span className="caption block text-[11.5px] text-muted-soft">
+                    {t("agent.modeSmart")}
+                  </span>
+                )}
+              </div>
+                <div
+                  className="mt-4 flex flex-wrap items-center justify-end gap-1 border-t border-hairline pt-3 text-muted"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <button
                     type="button"
                     className="flex h-8 w-8 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-strong hover:text-ink"
@@ -310,49 +353,6 @@ function AgentsPanel() {
                     </button>
                   )}
                 </div>
-              </div>
-
-              {/* Content: Title and Description */}
-              <div className={`min-w-0 flex-1 ${agentEnabled(a) ? "" : "opacity-60"}`}>
-                <h2 className="title-md truncate text-ink group-hover:text-primary transition-colors">
-                  {a.name}
-                </h2>
-                {!agentEnabled(a) && (
-                  <span className="caption text-muted">{t("agentp.offNote")}</span>
-                )}
-                <p className="body-sm mt-1 text-muted line-clamp-2 min-h-[40px]">
-                  {a.description || "—"}
-                </p>
-              </div>
-
-              {/* Footer: Compact metadata */}
-              <div className="mt-4 flex items-center justify-between gap-2 border-t border-hairline pt-3 min-h-[38px] text-xs">
-                <div className="flex items-center gap-1.5 min-w-0">
-                  {modelName ? (
-                    <span
-                      className="badge-pill truncate max-w-[150px]"
-                      title={t("agentp.chatModel", { name: modelName, id: a.config?.model_id ?? "" })}
-                    >
-                      {modelName}
-                    </span>
-                  ) : (
-                    <span className="text-[11.5px] text-muted-soft">{t("agentp.defaultModel")}</span>
-                  )}
-                  {a.config?.rerank_model_id && (
-                    <span
-                      className="badge-pill truncate max-w-[140px] bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
-                      title={t("agentp.rerank", { name: getModelDisplayName(a.config?.rerank_model_id) })}
-                    >
-                      RR: {getModelDisplayName(a.config?.rerank_model_id)}
-                    </span>
-                  )}
-                </div>
-                {a.config?.agent_mode === "smart-reasoning" && (
-                  <span className="caption text-[11.5px] text-muted-soft shrink-0">
-                    {t("agent.modeSmart")}
-                  </span>
-                )}
-              </div>
             </div>
           );
         })}

@@ -6,7 +6,7 @@
  * themselves are assigned by the SuperAdmin. */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAuth } from "@/lib/auth";
+import { useAuth, useTenantRole } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { IconRefresh } from "@/components/icons";
 import { LimitStatusList } from "@/components/settings/usage-limits";
@@ -21,8 +21,87 @@ import {
   type UsageTenantUsage,
 } from "@/lib/api/usage";
 import { formatDate } from "@/lib/datetime";
+import { useInModalNav } from "@/components/system/in-modal-nav";
 
 export function TenantUsage() {
+  const { isGuest } = useTenantRole();
+  return isGuest ? <PersonalUsage /> : <OrganizationUsage />;
+}
+
+/* A Guest has no organization: their own package (the free guest plan or
+ * one they bought) and the way to the purchase page. */
+function PersonalUsage() {
+  const { t } = useT();
+  const inModalNav = useInModalNav();
+  const [mine, setMine] = useState<UsageSummary | null>(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      setMine((await getMyUsage()).data);
+      setError("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("tus.loadFailed"));
+    }
+  }, [t]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const ent = mine?.entitlement ?? null;
+  const month = mine?.user?.month;
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-3">
+        <div>
+          <h3 className="title-sm">{t("tus.personalTitle")}</h3>
+          <p className="caption mt-1 text-muted">{t("tus.personalDesc")}</p>
+        </div>
+        <button className="btn btn-outline btn-sm ml-auto" onClick={() => void load()}>
+          <IconRefresh className="h-3.5 w-3.5" /> {t("common.refresh")}
+        </button>
+      </div>
+      {error && <p className="caption text-error">{error}</p>}
+
+      {!mine ? (
+        <p className="caption text-muted">…</p>
+      ) : !ent ? (
+        <div className="card p-4">
+          <p className="text-[14px] text-ink">{t("tus.personalNone")}</p>
+        </div>
+      ) : (
+        <div className="card divide-y divide-hairline">
+          <Row label={t("tus.plan")} desc="">
+            <span className="text-[14px] text-ink">{ent.plan_name || ent.plan_code}</span>
+            {ent.expired && <span className="badge-pill ml-2 text-[11px] text-error">{t("usg.expired")}</span>}
+          </Row>
+          {ent.ends_at && (
+            <Row label={t("tus.endsAt")} desc="">
+              <span className="caption text-body">{formatDate(ent.ends_at)}</span>
+            </Row>
+          )}
+          <Row label={t("tus.personalLimits")} desc={t("tus.limitsDesc")}>
+            <LimitStatusList items={ent.limits} />
+          </Row>
+          <Row label={t("tus.monthUsage")} desc={t("tus.monthUsageDesc")}>
+            <span className="caption text-body">
+              {month ? t("acct.usageLine", { questions: month.questions.toLocaleString(), tokens: formatTokens(month.tokens) }) : "—"}
+            </span>
+          </Row>
+        </div>
+      )}
+
+      {inModalNav && (
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => inModalNav("billing")}>
+          {t("acct.buyPlan")}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function OrganizationUsage() {
   const { t } = useT();
   const auth = useAuth();
   const tenantId = Number(auth.selectedTenantId ?? auth.tenant?.id ?? 0);

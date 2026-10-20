@@ -210,6 +210,9 @@ export interface UsageSubscriptionView extends UsageSubscription {
   current: boolean;
   limit_status: UsageLimitStatus[];
   seats_used: number;
+  /* A Guest's guest plan before their first question: no row yet (id is
+   * empty), created by the usage guard on that turn. */
+  implicit?: boolean;
 }
 
 export interface UsageTenantOverview {
@@ -529,7 +532,17 @@ export function listPurchasablePlans(scope: UsageScopeKind): Promise<UsagePlan[]
   return apiGet<{ data?: UsagePlan[] }>(`${BILLING}/plans?scope=${scope}`).then((r) => r.data ?? []);
 }
 
-export type PublicUsagePlan = Pick<UsagePlan, "id" | "name" | "description" | "scope_kind" | "mode" | "limits" | "price_vnd" | "price_label" | "sort_order">;
+/** A plan's per-turn and per-session caps (usage_plans.features, known keys
+ * only); an absent key is no cap. */
+export interface UsagePlanCaps {
+  "agent.turn_token_cap"?: number;
+  "agent.max_iterations"?: number;
+  "context.history_tokens"?: number;
+  "session.max_turns"?: number;
+  "session.max_tokens"?: number;
+}
+
+export type PublicUsagePlan = Pick<UsagePlan, "id" | "name" | "description" | "scope_kind" | "mode" | "limits" | "price_vnd" | "price_label" | "sort_order" | "included_agents" | "addons"> & { caps?: UsagePlanCaps };
 
 // Anonymous landing-page catalogue: plain fetch, no tokens and no refresh-on-401.
 export async function listPublicPlans(scope: UsageScopeKind, signal?: AbortSignal): Promise<PublicUsagePlan[]> {

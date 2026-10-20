@@ -72,7 +72,14 @@ export function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   // hidden on desktop by a full-width page (the legal draft review); the
   // tab at the left edge brings it back from any page
-  const desktopHidden = useSidebarHidden();
+  const savedSidebarHidden = useSidebarHidden();
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const inAdmin = pathname === "/platform/admin" || pathname.startsWith("/platform/admin/");
+  const desktopHidden = inAdmin ? !adminMenuOpen : savedSidebarHidden;
+
+  useEffect(() => {
+    setAdminMenuOpen(false);
+  }, [inAdmin]);
 
   const confirmDelete = async () => {
     if (!removing || deleting) return;
@@ -96,10 +103,16 @@ export function Sidebar() {
   // Below lg the sidebar is an off-canvas drawer: the header's menu button
   // dispatches this event; navigation and the backdrop close it.
   useEffect(() => {
-    const toggle = () => setMobileOpen((v) => !v);
+    const toggle = () => {
+      if (inAdmin && window.matchMedia("(min-width: 1024px)").matches) {
+        setAdminMenuOpen((open) => !open);
+      } else {
+        setMobileOpen((v) => !v);
+      }
+    };
     window.addEventListener("weknora:toggle-sidebar", toggle);
     return () => window.removeEventListener("weknora:toggle-sidebar", toggle);
-  }, []);
+  }, [inAdmin]);
 
   useEffect(() => setMobileOpen(false), [pathname]);
 
@@ -223,7 +236,7 @@ export function Sidebar() {
       {/* Desktop: the translate makes the rail its own stacking layer, so it
        * needs a z-index above the page (the ONLYOFFICE pane is z-10) or the
        * account menu, wider than the rail, opens under the editor. */}
-      {desktopHidden && (
+      {desktopHidden && !inAdmin && (
         <button
           type="button"
           onClick={() => setSidebarHidden(false)}
@@ -235,9 +248,9 @@ export function Sidebar() {
         </button>
       )}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex h-dvh w-[264px] shrink-0 flex-col border-r border-hairline bg-canvas transition-transform duration-200 ease-out lg:relative lg:z-30 lg:translate-x-0 lg:transition-none ${
+        className={`fixed inset-y-0 left-0 z-50 flex h-dvh w-[264px] shrink-0 flex-col border-r border-hairline bg-canvas transition-[margin,transform,opacity,visibility] duration-250 ease-in-out motion-reduce:transition-none lg:relative lg:z-30 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
-        } ${desktopHidden ? "lg:hidden" : ""}`}
+        } ${desktopHidden ? "lg:invisible lg:-ml-[264px] lg:-translate-x-full lg:opacity-0 lg:pointer-events-none" : "lg:visible lg:ml-0 lg:translate-x-0 lg:opacity-100"}`}
       >
       <div className="flex h-16 items-center px-5">
         <Link

@@ -1,7 +1,7 @@
 /* Sections of the SystemAdmin console at /platform/admin: the dashboard and
  * the administration pages, which used to live in the settings modal's
  * "Administration" group and had too little room for their tables. System
- * configuration (models, engines, queues) stays in the modal. Every section
+ * configuration (models, engines) stays in the modal. Every section
  * is SystemAdmin-only (server guards stay authoritative). `route` is the
  * old /platform/system path — the catch-all redirect maps it to ?section=. */
 "use client";
@@ -11,6 +11,7 @@ import type { LocaleKey } from "@/lib/i18n";
 import {
   IconBook,
   IconCreditCard,
+  IconClock,
   IconDocReader,
   IconFileSearch,
   IconIdCard,
@@ -27,6 +28,7 @@ const AdminLegalDocumentsPage = lazy(() => import("@/components/settings/pages/a
 const AdminDomainPacksPage = lazy(() => import("@/components/settings/pages/admin-domain-packs"));
 const AdminUsagePage = lazy(() => import("@/components/settings/pages/admin-usage"));
 const AdminBillingPage = lazy(() => import("@/components/settings/pages/admin-billing"));
+const RuntimeQueuesPage = lazy(() => import("@/components/settings/pages/runtime-queues"));
 
 export interface AdminSection {
   key: string;
@@ -64,6 +66,7 @@ export const ADMIN_GROUPS: AdminSectionGroup[] = [
       { key: "domain-packs", labelKey: "systemNav.domainPacks", fallback: "Skill sets", icon: IconBook, render: () => <AdminDomainPacksPage /> },
       { key: "usage", labelKey: "systemNav.usage", fallback: "Usage packages", icon: IconIdCard, render: () => <AdminUsagePage />, route: `${SYS}/admin/usage` },
       { key: "billing", labelKey: "systemNav.billing", fallback: "Billing & promo codes", icon: IconCreditCard, render: () => <AdminBillingPage />, route: `${SYS}/admin/billing` },
+      { key: "queues", labelKey: "systemNav.queues", fallback: "Runtime queues", icon: IconClock, render: () => <RuntimeQueuesPage />, route: `${SYS}/engines/queues` },
     ],
   },
 ];

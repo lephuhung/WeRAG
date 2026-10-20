@@ -284,6 +284,10 @@ type UsageSubscriptionView struct {
 	Current   bool               `json:"current"`
 	Limits    []UsageLimitStatus `json:"limit_status"`
 	SeatsUsed int64              `json:"seats_used"`
+	// Implicit marks a Guest's guest plan before their first question: no
+	// subscription row exists yet (the usage guard creates it on that turn),
+	// so ID is empty and the row cannot be cancelled or edited.
+	Implicit bool `json:"implicit,omitempty"`
 }
 
 // UsageTenantOverview lists one organization next to its subscription so the
