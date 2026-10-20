@@ -69,8 +69,14 @@ func VBPLRelationEdge(docID, otherID, label string) (from, to string, rel types.
 // CleanVBPLNumber strips the wording vbpl.vn sometimes leaves around a số
 // ký hiệu ("số 99/2025/QH15", "Luật số: 118/2025/QH15", "'41/2025/NQ-HĐND").
 // Values the number parser cannot read (old "01 /CT-UB", "Không số") are
-// kept as written.
+// kept as written. The look-alike "Ð" of old rows becomes "Đ", and a
+// dotted number keeps its prefix ("66.12/2026/NQ-CP", not "12/2026/NQ-CP").
 func CleanVBPLNumber(raw string) string {
+	raw = strings.NewReplacer("Ð", "Đ", "ð", "đ").Replace(raw)
+	if cits := vietnamese_legal.FindCitations(raw); len(cits) > 0 &&
+		cits[0].Kind == vietnamese_legal.CitationFull && strings.Contains(cits[0].No, ".") {
+		return cits[0].Number
+	}
 	if n := vietnamese_legal.NormalizeOwnDocumentNumber(vietnamese_legal.RecoverDocumentNumber(raw)); n != "" {
 		return n
 	}

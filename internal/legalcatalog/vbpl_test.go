@@ -40,6 +40,9 @@ func TestCleanVBPLNumber(t *testing.T) {
 		"'41/2025/NQ-HĐND":       "41/2025/NQ-HĐND",
 		"30/2020/NĐ-CP":          "30/2020/NĐ-CP",
 		" Không số ":             "Không số",
+		"66.12/2026/NQ-CP":       "66.12/2026/NQ-CP",
+		"02/2000/QÐ-BTC":         "02/2000/QĐ-BTC",
+		"66.24":                  "66.24",
 	} {
 		if got := CleanVBPLNumber(in); got != want {
 			t.Errorf("CleanVBPLNumber(%q) = %q, want %q", in, got, want)
