@@ -98,9 +98,11 @@ const (
 	// "TTLT-BTP-BCA-BTC", "QH13". Stray spaces around a dash are read only
 	// right after a short type code ("TT- BNNPTNT", "NĐ - CP"), so in
 	// "15/2023/QĐ-UBND - UBND tỉnh" the code ends at "UBND". A tail after a
-	// second slash is kept: "44/2007/TTLT/BTC-BKH&CN".
-	citeCode = `(?:[A-ZĐ]{1,5}` + citeSp + `-` + citeSp + `[A-ZĐ][A-ZĐ0-9&]*(?:-[A-Za-zĐđ0-9&]+)*|[A-Za-zĐđ][A-Za-zĐđ0-9&]*(?:-[A-Za-zĐđ0-9&]+)*)` +
-		`(?:/[A-ZĐ][A-ZĐ0-9&]*(?:-[A-ZĐ0-9&]+)*)?`
+	// second slash is kept when the code before it has no hyphen
+	// ("44/2007/TTLT/BTC-BKH&CN"); "01/2021/NĐ-CP/NĐ" stays "…/NĐ-CP".
+	citeCode = `(?:[A-Za-zĐđ][A-Za-zĐđ0-9&]*/[A-ZĐ][A-ZĐ0-9&]*(?:-[A-ZĐ0-9&]+)*` +
+		`|[A-ZĐ]{1,5}` + citeSp + `-` + citeSp + `[A-ZĐ][A-ZĐ0-9&]*(?:-[A-Za-zĐđ0-9&]+)*` +
+		`|[A-Za-zĐđ][A-Za-zĐđ0-9&]*(?:-[A-Za-zĐđ0-9&]+)*)`
 	// citeYear also takes OCR's "2O22"; FindCitations checks it reads 19xx/20xx.
 	citeYear = `([12][0-9O]{3})`
 	// citeTypeWords are the type words a partial reference starts with.
@@ -144,6 +146,13 @@ var citeTypeNames = map[string]string{
 	"bộ luật": "Bộ luật", "luật": "Luật", "hiến pháp": "Hiến pháp",
 	"nđ": "Nghị định", "ttlt": "Thông tư liên tịch", "tt": "Thông tư", "qđ": "Quyết định", "nq": "Nghị quyết",
 }
+
+// citeVerbTypes are lower-case type words that are also verbs ("Hội đồng
+// quyết định 2 phương án"): read as a type only before "số" or a year.
+var citeVerbTypes = map[string]bool{"quyết định": true, "nghị quyết": true, "chỉ thị": true}
+
+// citeListGapRe joins names of one list: ", ", " và ", ", và ".
+var citeListGapRe = regexp.MustCompile(`^[ \t]*(?:,[ \t]*(?:và[ \t]+)?|và[ \t]+)$`)
 
 // citeSpan is a citation while FindCitations works on the folded text.
 type citeSpan struct {
@@ -250,8 +259,8 @@ func FindCitations(text string) []Citation {
 			continue // a constitution is named by year, never numbered
 		case lw == "luật" && (word == "luật" || precededByWord(folded, m[0], "pháp")):
 			continue // "pháp luật 1.", "luật" as a common noun
-		case sub(m, 1) != "" && !unicode.IsUpper(firstRune(word)) && !hasSo && year == "":
-			continue // "quyết định 3 phương án": lower case needs "số" or a year
+		case citeVerbTypes[word] && !hasSo && year == "":
+			continue // "Tòa án quyết định 3 …": a verb in lower case needs "số" or a year
 		case !hasSo && year == "" && len(no) == 4 && (strings.HasPrefix(no, "19") || strings.HasPrefix(no, "20")):
 			continue // "Luật 2013", "Nghị định 2020": a year, not a number
 		}
@@ -293,6 +302,15 @@ func FindCitations(text string) []Citation {
 		add(c)
 	}
 	sort.Slice(spans, func(i, j int) bool { return spans[i].fs < spans[j].fs })
+	// a role carries along a list: "… của Luật Quy hoạch, Luật Đầu tư và
+	// Luật Đấu thầu" — every name of the list is in the amending title
+	for i := 1; i < len(spans); i++ {
+		prev, c := spans[i-1], &spans[i]
+		if prev.Role != "" && c.Role == "" && c.Kind == CitationName && prev.Kind == CitationName &&
+			citeListGapRe.MatchString(folded[prev.fe:c.fs]) {
+			c.Role = prev.Role
+		}
+	}
 	out := make([]Citation, len(spans))
 	for i, c := range spans {
 		if c.DocType == "" && c.Kind != CitationStandard {
@@ -527,6 +545,10 @@ func scanLawName(s string, i int) (end int, year string) {
 			break
 		}
 		if words > 0 && unicode.IsUpper(first) && citeTypeNames[lw] != "" && lw != "tt" {
+			break
+		}
+		// "Căn cứ Luật Đất đai Nghị định 43/2014/NĐ-CP": a new type starts
+		if next, _ := nextWord(s, k); words > 0 && unicode.IsUpper(first) && citeTypeNames[lw+" "+strings.ToLower(next)] != "" {
 			break
 		}
 		if words == 0 && !unicode.IsUpper(first) {

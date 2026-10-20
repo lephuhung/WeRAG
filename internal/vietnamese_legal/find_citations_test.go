@@ -159,6 +159,18 @@ func TestFindCitationsReview(t *testing.T) {
 		// 8: a dash with spaces after a full code is not part of it
 		{"Quyết định 15/2023/QĐ-UBND - UBND tỉnh Huế", []string{"full 15/2023/QĐ-UBND 15/2023/QD-UBND Quyết định"}},
 		{"Quyết định 123/QĐ-UBND - UBND tỉnh", []string{"admin 123/QĐ-UBND 123/QD-UBND Quyết định"}},
+		// re-review C: lower-case chat questions; only verb-like types need "số" or a year
+		{"nghị định 53 quy định gì", []string{"partial 53  Nghị định"}},
+		{"thông tư 15 của bộ công an", []string{"partial 15  Thông tư"}},
+		{"thông tư liên tịch 02 còn hiệu lực không", []string{"partial 02  Thông tư liên tịch"}},
+		{"pháp lệnh 3 về gì", []string{"partial 3  Pháp lệnh"}},
+		{"nghị định 53/2022 thay thế văn bản nào", []string{"partial 53/2022  Nghị định"}},
+		{"quyết định 1461 năm 2022", []string{"partial 1461/2022  Quyết định"}},
+		{"chỉ thị 05 về phòng dịch", nil},
+		// re-review NIT 1: no slash tail after a hyphenated code
+		{"Nghị định 01/2021/NĐ-CP/NĐ", []string{"full 01/2021/NĐ-CP 01/2021/ND-CP Nghị định"}},
+		// re-review A: a name stops where a capitalised type starts
+		{"Căn cứ Luật Đất đai Nghị định 43/2014/NĐ-CP", []string{"name Luật Đất đai", "full 43/2014/NĐ-CP 43/2014/ND-CP Nghị định"}},
 	}
 	for _, c := range cases {
 		var got []string
@@ -177,6 +189,16 @@ func TestFindCitationsReview(t *testing.T) {
 	cits = FindCitations("Căn cứ Luật sửa đổi, bổ sung một số điều của Luật Đất đai;")
 	if len(cits) != 1 || cits[0].Name != "Luật Đất đai" || cits[0].Role != CitationRoleInAmendingTitle {
 		t.Fatalf("amending title: %+v", cits)
+	}
+	// re-review D: the role carries along a list joined by "," and "và"
+	cits = FindCitations("Căn cứ Luật sửa đổi, bổ sung một số điều của Luật Quy hoạch, Luật Đầu tư và Luật Đấu thầu; Luật Nhà ở.")
+	if len(cits) != 4 {
+		t.Fatalf("list: %+v", cits)
+	}
+	for i, want := range []string{CitationRoleInAmendingTitle, CitationRoleInAmendingTitle, CitationRoleInAmendingTitle, ""} {
+		if cits[i].Role != want {
+			t.Errorf("list %d %q role %q, want %q", i, cits[i].Name, cits[i].Role, want)
+		}
 	}
 	cits = FindCitations("Điều 1. Sửa đổi, bổ sung một số điều của Luật Đất đai như sau:")
 	if len(cits) != 1 || cits[0].Role != CitationRoleAmendTarget {
