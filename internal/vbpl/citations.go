@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"golang.org/x/net/html"
@@ -121,8 +122,10 @@ func isAncestor(n, x *html.Node) bool {
 // the words before it, first after the previous link so that a number
 // cited twice keeps its order, else anywhere (pages put some links out of
 // reading order); failing that by its text alone after the previous link.
-// A link whose text is not found is dropped.
-func CitationLinks(d *Document, chunks []Chunk) [][]vietnamese_legal.CitationLink {
+// The text must stand alone: "5/2020/NĐ-CP" is not found inside
+// "15/2020/NĐ-CP". Links to the document itself (ownID, e.g. "?go=" links
+// to its own provisions) and links whose text is not found are dropped.
+func CitationLinks(d *Document, chunks []Chunk, ownID string) [][]vietnamese_legal.CitationLink {
 	out := make([][]vietnamese_legal.CitationLink, len(chunks))
 	if d == nil || len(d.Links) == 0 {
 		return out
@@ -130,33 +133,39 @@ func CitationLinks(d *Document, chunks []Chunk) [][]vietnamese_legal.CitationLin
 	md := d.Markdown
 	cursor := 0 // byte offset in md after the last link found with its context
 	used := map[int]bool{}
-	find := func(from int, needle string) int {
+	// find returns the byte offset of the first free, standalone
+	// occurrence of text at or after from, preceded by before.
+	find := func(from int, before, text string) int {
+		needle := before + text
 		for from <= len(md) {
 			i := strings.Index(md[from:], needle)
 			if i < 0 {
 				return -1
 			}
-			if !used[from+i] {
-				return from + i
+			at := from + i + len(before)
+			if !used[at] && standsAlone(md, at, at+len(text)) {
+				return at
 			}
 			from += i + 1
 		}
 		return -1
 	}
 	for _, l := range d.Links {
+		if ownID != "" && l.VBPLID == ownID {
+			continue
+		}
 		at := -1
 		if l.before != "" {
-			if i := find(cursor, l.before+l.Text); i >= 0 {
-				at = i + len(l.before)
+			if at = find(cursor, l.before, l.Text); at >= 0 {
 				cursor = at + len(l.Text)
-			} else if i := find(0, l.before+l.Text); i >= 0 {
-				at = i + len(l.before)
+			} else {
+				at = find(0, l.before, l.Text)
 			}
 		}
 		if at < 0 {
-			at = find(cursor, l.Text)
+			at = find(cursor, "", l.Text)
 		}
-		if at < 0 || used[at] {
+		if at < 0 {
 			continue
 		}
 		used[at] = true
@@ -175,4 +184,27 @@ func CitationLinks(d *Document, chunks []Chunk) [][]vietnamese_legal.CitationLin
 		sort.Slice(cs, func(i, j int) bool { return cs[i].Start < cs[j].Start })
 	}
 	return out
+}
+
+// standsAlone: md[s:e] is not glued to a letter, digit, "/" or "." on
+// either side.
+func standsAlone(md string, s, e int) bool {
+	glued := func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '/' || r == '.' }
+	if s > 0 {
+		if r, _ := utf8.DecodeLastRuneInString(md[:s]); glued(r) {
+			return false
+		}
+	}
+	if e < len(md) {
+		r, _ := utf8.DecodeRuneInString(md[e:])
+		// a sentence-ending "." after the number is fine
+		if r == '.' {
+			n, _ := utf8.DecodeRuneInString(md[e+1:])
+			return !(unicode.IsLetter(n) || unicode.IsDigit(n))
+		}
+		if glued(r) {
+			return false
+		}
+	}
+	return true
 }
