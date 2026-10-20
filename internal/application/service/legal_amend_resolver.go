@@ -50,6 +50,9 @@ type LegalProvisionChunk struct {
 type LegalCatalogAmendment struct {
 	Amender LegalAmendDoc
 	EffFrom LegalAmendDate
+	// NeverInForce: the catalogue records B expiring on or before the day
+	// it takes effect, so its changes may never have applied.
+	NeverInForce bool
 }
 
 // LegalResolveOptions are the resolver's inputs besides the chunk.
@@ -76,7 +79,7 @@ type LegalProvisionResult struct {
 	Original   string              // stored text of the unit
 	Text       string              // what the model is shown
 	Reasons    []string            // why the state is not ORIGINAL / CURRENT
-	Notes      []string            // pending changes, ended intervals
+	Notes      []string            // pending changes (shown as "[Sắp có hiệu lực: …]")
 	Applied    []*LegalAmendEdge   // edges that took effect
 	Added      bool                // a provision bo_sung adds, not stored in A
 }
@@ -96,9 +99,13 @@ type LegalResolution struct {
 	AsOf    time.Time
 	State   LegalProvisionState // the most severe unit state
 	Units   []LegalProvisionResult
-	// ModelContent is the chunk as the model reads it: each unit replaced
-	// by its Text, chunk-level notes first.
+	// ModelContent is the chunk as the model reads it: Body, then the
+	// chunk-level notes (after the text, so a content head shows the text).
 	ModelContent string
+	// Body is the units' texts; Notes the chunk-level notes (catalogue,
+	// identity), which a result set shows once per document.
+	Body  string
+	Notes []string
 	// Ignored are the rejected edges (kept for review).
 	Ignored []*LegalAmendEdge
 }
@@ -107,26 +114,38 @@ type LegalResolution struct {
 type legalUnit struct {
 	prov       LegalProvisionRef
 	start, end int
+	// labelled: the unit starts at its own label (not a continuation)
+	labelled bool
 }
 
 var legalDieuHeadRe = regexp.MustCompile(`(?m)^[ \t]*(?:#{1,6}[ \t]*)?(?:[*_]{1,3}[ \t]*)?Điều[ \t]+(\d+[a-zA-Zđ]?)[ \t]*[*_]{0,3}[ \t]*[.:]`)
 
 // legalUnits splits content at its Điều headings and khoản / điểm labels
 // (the marks provisionScope reads), so the units cover the content exactly.
+// Labels on quoted lines ("> 1. …", another document's text quoted in
+// this one) are not this document's structure.
 func legalUnits(content string, meta *vietnamese_legal.LegalMetadata) []legalUnit {
 	type mark struct {
 		at, kind int
 		label    string
+	}
+	quoted := func(labelAt int) bool {
+		line := content[strings.LastIndexByte(content[:labelAt], '\n')+1 : labelAt]
+		return strings.HasPrefix(strings.TrimSpace(line), ">")
 	}
 	var marks []mark
 	for _, m := range legalDieuHeadRe.FindAllStringSubmatchIndex(content, -1) {
 		marks = append(marks, mark{m[0], 0, strings.ToLower(content[m[2]:m[3]])})
 	}
 	for _, m := range khoanStartRe.FindAllStringSubmatchIndex(content, -1) {
-		marks = append(marks, mark{m[0], 1, strings.ToLower(content[m[2]:m[3]])})
+		if !quoted(m[2]) {
+			marks = append(marks, mark{m[0], 1, strings.ToLower(content[m[2]:m[3]])})
+		}
 	}
 	for _, m := range diemStartRe.FindAllStringSubmatchIndex(content, -1) {
-		marks = append(marks, mark{m[0], 2, strings.ToLower(content[m[2]:m[3]])})
+		if !quoted(m[2]) {
+			marks = append(marks, mark{m[0], 2, strings.ToLower(content[m[2]:m[3]])})
+		}
 	}
 	sort.SliceStable(marks, func(i, j int) bool {
 		if marks[i].at != marks[j].at {
@@ -151,11 +170,12 @@ func legalUnits(content string, meta *vietnamese_legal.LegalMetadata) []legalUni
 		}
 	}
 	var units []legalUnit
-	start := 0
+	start, labelled := 0, false
 	for _, m := range marks {
 		if m.at > start {
-			units = append(units, legalUnit{cur, start, m.at})
+			units = append(units, legalUnit{cur, start, m.at, labelled})
 		}
+		labelled = true
 		switch m.kind {
 		case 0:
 			cur = LegalProvisionRef{Article: m.label}
@@ -166,13 +186,15 @@ func legalUnits(content string, meta *vietnamese_legal.LegalMetadata) []legalUni
 		}
 		start = m.at
 	}
-	units = append(units, legalUnit{cur, start, len(content)})
+	units = append(units, legalUnit{cur, start, len(content), labelled})
 	return units
 }
 
 // unitRun is the state of one unit while edges apply.
 type unitRun struct {
 	u          legalUnit
+	idx        int
+	chunk      *chunkRun
 	orig       string
 	state      LegalProvisionState
 	underlying LegalProvisionState
@@ -190,6 +212,14 @@ type unitRun struct {
 	replace *LegalAmendEdge
 	display []*LegalAmendEdge
 	removed bool
+}
+
+// chunkRun is what the units of one chunk share.
+type chunkRun struct {
+	// missing gives, for a khoản / điểm phrase edge whose words no unit of
+	// its provision holds while the chunk holds the whole provision, the
+	// unit that reports it (the provision's first)
+	missing map[*LegalAmendEdge]int
 }
 
 func (r *unitRun) raise(state LegalProvisionState, reason string) {
@@ -223,10 +253,11 @@ func ResolveLegalProvisions(c LegalProvisionChunk, edges []LegalAmendEdge, asOf 
 		live = append(live, e)
 	}
 	units := legalUnits(c.Content, c.Legal)
+	cr := &chunkRun{missing: legalMissingPhrases(c.Content, units, live)}
 	runs := make([]*unitRun, len(units))
 	for i, u := range units {
 		orig := c.Content[u.start:u.end]
-		runs[i] = &unitRun{u: u, orig: orig, plain: orig, resolved: true,
+		runs[i] = &unitRun{u: u, idx: i, chunk: cr, orig: orig, plain: orig, resolved: true,
 			state: LegalStateOriginalInForce, underlying: LegalStateOriginalInForce}
 	}
 	var adds []*LegalAmendEdge
@@ -274,9 +305,6 @@ func ResolveLegalProvisions(c LegalProvisionChunk, edges []LegalAmendEdge, asOf 
 
 	shown := map[string]bool{}
 	var b strings.Builder
-	if len(chunkNotes) > 0 {
-		b.WriteString("[LỜI VĂN HIỆN HÀNH CHƯA XÁC MINH: " + strings.Join(chunkNotes, "; ") + "]\n\n")
-	}
 	for i, r := range runs {
 		text := unitText(r, i, head, asOf, chunkNotes, shown)
 		b.WriteString(text)
@@ -299,8 +327,69 @@ func ResolveLegalProvisions(c LegalProvisionChunk, edges []LegalAmendEdge, asOf 
 			res.State = worseState(res.State, ar.State)
 		}
 	}
-	res.ModelContent = b.String()
+	res.Body, res.Notes = b.String(), chunkNotes
+	res.ModelContent = res.Body + legalNotesBlock(chunkNotes)
 	return res
+}
+
+// legalNotesBlock renders chunk-level notes, after the text.
+func legalNotesBlock(notes []string) string {
+	if len(notes) == 0 {
+		return ""
+	}
+	return "\n\n[LỜI VĂN HIỆN HÀNH CHƯA XÁC MINH: " + strings.Join(notes, "; ") + "]"
+}
+
+// legalManyPhrases reports a lead-in changing several phrases over one
+// list of provisions ("cụm từ “A” bằng “B”; cụm từ “C” bằng “D” tại khoản
+// 1, 2 …"): each phrase need not be in every provision listed.
+func legalManyPhrases(leadIn string) bool {
+	return strings.Count(leadIn, "“")+strings.Count(leadIn, `"`)/2 > 2
+}
+
+// legalMissingPhrases finds the khoản / điểm phrase edges whose words are
+// in no unit of their provision although the chunk holds the provision
+// whole (its own label and a later unit outside it): the version before
+// the amender cannot be what the edge says. Words an edge's change brings
+// in are not counted missing.
+func legalMissingPhrases(content string, units []legalUnit, live []*LegalAmendEdge) map[*LegalAmendEdge]int {
+	out := map[*LegalAmendEdge]int{}
+	for _, e := range live {
+		if !e.phrase() || e.Provision.Khoan == "" || legalManyPhrases(e.LeadInText) {
+			continue
+		}
+		brought := false
+		for _, o := range live {
+			if o != e && (len(findPhrase(o.To, e.From)) > 0 || len(findPhrase(o.QuoteText, e.From)) > 0) {
+				brought = true
+				break
+			}
+		}
+		if brought {
+			continue
+		}
+		first, last, startsHere, found := -1, -1, false, false
+		for i, u := range units {
+			if u.prov.Article == "" || !e.Provision.covers(u.prov) {
+				continue
+			}
+			if first < 0 {
+				first = i
+			}
+			last = i
+			if u.labelled && u.prov == e.Provision {
+				startsHere = true
+			}
+			if len(findPhrase(content[u.start:u.end], e.From)) > 0 {
+				found = true
+			}
+		}
+		endsHere := last >= 0 && last+1 < len(units) && units[last+1].prov.Article != ""
+		if first >= 0 && startsHere && endsHere && !found {
+			out[e] = first
+		}
+	}
+	return out
 }
 
 // resolveUnit applies the edges covering one unit in date order.
@@ -314,10 +403,10 @@ func resolveUnit(r *unitRun, edges []*LegalAmendEdge, asOf time.Time, opt LegalR
 			if e.phrase() && e.Tier.verifiedWording() && !e.TextWithheld && e.Unresolved == "" {
 				r.display = append(r.display, e) // applyPhraseChanges notes it as pending
 			} else if !e.phrase() || len(findPhrase(r.orig, e.From)) > 0 {
-				r.notes = append(r.notes, "sẽ "+legalOpPhrase(e)+" theo "+e.Amender.label()+", từ "+e.EffFrom.text())
+				r.notes = append(r.notes, legalOpPhrase(e)+" theo "+e.Amender.label()+", từ "+e.EffFrom.text())
 			}
 		case e.interval() && e.EffTo.Known && !asOf.Before(e.EffTo.At):
-			r.notes = append(r.notes, legalOpPhrase(e)+" theo "+e.Amender.label()+" đến "+e.EffTo.text()+" (đã hết thời hạn)")
+			// its interval ended: nothing to show
 		default:
 			applicable = append(applicable, e)
 		}
@@ -374,6 +463,9 @@ func applyGroup(r *unitRun, group []*LegalAmendEdge, opt LegalResolveOptions) {
 		if e.phrase() && len(findPhrase(base, e.From)) == 0 && len(findPhrase(r.orig, e.From)) == 0 {
 			continue
 		}
+		if !e.phrase() && e.Unresolved != "" {
+			continue // already UNRESOLVED; its text is no rival
+		}
 		if prev, dup := seen[key]; dup {
 			_, prevContent, _ := legalGroupKey(prev)
 			if prevContent != content {
@@ -394,9 +486,16 @@ func applyGroup(r *unitRun, group []*LegalAmendEdge, opt LegalResolveOptions) {
 		}
 		if e.phrase() {
 			found := len(findPhrase(base, e.From)) > 0
+			if !found && len(findPhrase(r.orig, e.From)) == 0 {
+				// the words are elsewhere; report them missing once, when
+				// the whole provision is here and holds them nowhere
+				if at, ok := r.chunk.missing[e]; ok && at == r.idx && priorResolved && e.Unresolved == "" {
+					r.raise(LegalStateUnresolved, "không thấy cụm từ “"+e.From+"” trong "+e.Provision.String()+" ở bản ngay trước "+e.Amender.label())
+					r.resolved = false
+				}
+				continue
+			}
 			switch {
-			case !found && len(findPhrase(r.orig, e.From)) == 0 && !legalTargetsUnit(e, r.u.prov):
-				continue // the words are elsewhere in the Điều
 			case e.Unresolved != "":
 				r.raise(LegalStateUnresolved, legalOpPhrase(e)+via+": "+e.Unresolved)
 				r.resolved = false
@@ -450,7 +549,7 @@ func applyGroup(r *unitRun, group []*LegalAmendEdge, opt LegalResolveOptions) {
 				r.raise(LegalStateCurrentVerified, "")
 			} else {
 				r.raise(LegalStateUnverified, e.Provision.String()+" có thể đã được sửa đổi"+via+src+
-					". Lời văn mới theo nguồn này: “"+e.QuoteText+"”")
+					". Lời văn mới theo nguồn này: “"+legalCapQuote(e.QuoteText)+"”")
 			}
 		case LegalOpBaiBo, LegalOpBaiBoVanBan, LegalOpThayTheVanBan:
 			r.applied = append(r.applied, e)
@@ -492,10 +591,20 @@ func applyGroup(r *unitRun, group []*LegalAmendEdge, opt LegalResolveOptions) {
 	}
 }
 
-// legalTargetsUnit reports whether e names the unit itself (khoản / điểm
-// level), not only its Điều: absent words are then an error.
-func legalTargetsUnit(e *LegalAmendEdge, u LegalProvisionRef) bool {
-	return e.Provision.Khoan != "" && e.Provision.covers(u)
+// legalQuoteRunes caps B's new text quoted in an unverified note.
+const legalQuoteRunes = 400
+
+// legalCapQuote shortens an unverified new text for a note.
+func legalCapQuote(s string) string {
+	r := []rune(s)
+	if len(r) <= legalQuoteRunes {
+		return s
+	}
+	cut := string(r[:legalQuoteRunes])
+	if k := strings.LastIndexByte(cut, ' '); k > len(cut)/2 {
+		cut = cut[:k]
+	}
+	return cut + " …"
 }
 
 // replacePhrasesAtOnce replaces each edge's From with its To in one pass.
@@ -622,6 +731,12 @@ func unitText(r *unitRun, i int, head map[*LegalAmendEdge]int, asOf time.Time, c
 	}
 	var pre []string
 	pre = append(pre, r.markers...)
+	for _, n := range r.notes {
+		if !shown["pending|"+n] {
+			shown["pending|"+n] = true
+			pre = append(pre, "[Sắp có hiệu lực: "+n+"]")
+		}
+	}
 	if r.state.Gated() && r.state != LegalStateCurrentVerified {
 		// a reason is shown once per chunk, at the first unit it concerns
 		// (an edge on a khoản covers its điểm too)
@@ -751,7 +866,7 @@ func resolveAdded(e *LegalAmendEdge, adds []*LegalAmendEdge, asOf time.Time) *Le
 		return res
 	default:
 		res.State = LegalStateUnverified
-		res.Reasons = append(res.Reasons, prov.String()+" có thể đã được bổ sung"+via+src+". Lời văn bổ sung theo nguồn này: “"+e.QuoteText+"”")
+		res.Reasons = append(res.Reasons, prov.String()+" có thể đã được bổ sung"+via+src+". Lời văn bổ sung theo nguồn này: “"+legalCapQuote(e.QuoteText)+"”")
 	}
 	res.Text = "[LỜI VĂN HIỆN HÀNH CHƯA XÁC MINH: " + strings.Join(res.Reasons, "; ") + "]\n"
 	return res
@@ -770,13 +885,15 @@ func legalCatalogueNotes(c LegalProvisionChunk, runs []*unitRun, live []*LegalAm
 		}
 		var mine []*LegalAmendEdge
 		for _, e := range live {
-			if e.Amender.CatalogID == ca.Amender.CatalogID {
+			if ca.Amender.CatalogID != "" && e.Amender.CatalogID == ca.Amender.CatalogID {
 				mine = append(mine, e)
 			}
 		}
 		var state LegalProvisionState
 		var note string
 		switch {
+		case ca.NeverInForce:
+			state, note = LegalStateUnresolved, "danh mục ghi văn bản này bị sửa đổi bởi "+ca.Amender.label()+" nhưng văn bản đó hết hiệu lực trước hoặc ngay khi có hiệu lực"
 		case !ca.EffFrom.Known:
 			state, note = LegalStateUnresolved, "danh mục ghi văn bản này bị sửa đổi bởi "+ca.Amender.label()+", chưa rõ ngày hiệu lực"
 		case len(mine) == 0:

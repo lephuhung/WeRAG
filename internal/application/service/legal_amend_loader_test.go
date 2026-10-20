@@ -279,7 +279,8 @@ func TestLoadLegalAmendments(t *testing.T) {
 	require.Equal(t, LegalStateUnresolved, k2.State, k2.Reasons)
 	require.Equal(t, []string{"danh mục ghi văn bản này bị sửa đổi bởi Nghị định 200/2026/NĐ-CP, chưa rõ ngày hiệu lực"}, k2.Reasons)
 	require.Contains(t, k2.Text, "trên 01 tỷ đồng [thay cho “500 triệu đồng”", "the verified change is still applied")
-	require.True(t, strings.HasPrefix(a3.ModelContent, "[LỜI VĂN HIỆN HÀNH CHƯA XÁC MINH: danh mục ghi văn bản này bị sửa đổi bởi Nghị định 200/2026/NĐ-CP, chưa rõ ngày hiệu lực]\n\n"))
+	require.True(t, strings.HasSuffix(a3.ModelContent, "\n\n[LỜI VĂN HIỆN HÀNH CHƯA XÁC MINH: danh mục ghi văn bản này bị sửa đổi bởi Nghị định 200/2026/NĐ-CP, chưa rõ ngày hiệu lực]"),
+		"the chunk note comes after the text")
 
 	a8 := after["a8"]
 	require.Contains(t, a8.ModelContent, "Doanh thu trên 01 tỷ đồng [thay cho “500 triệu đồng” theo Nghị định 141/2026/NĐ-CP, từ 01/01/2026] phải khai.")
@@ -321,4 +322,81 @@ func TestLoadLegalAmendmentsIdentity(t *testing.T) {
 	r := load.Resolve(amendAt("2026-10-20"), nil)["a3"]
 	require.Equal(t, LegalStateUnresolved, r.State)
 	require.Contains(t, r.ModelContent, "[LỜI VĂN HIỆN HÀNH CHƯA XÁC MINH: chưa xác định được văn bản này trong danh mục")
+}
+
+// Review S3, S5, S6 on the loader: a document-level entry is a catalogue
+// fact, an amender expiring before it took effect is UNRESOLVED, and a
+// shared số hiệu still names this document when one of its rows is it.
+func TestLoadLegalAmendmentsCatalogueFacts(t *testing.T) {
+	db := legalAmendTestDB(t)
+	ctx := context.Background()
+	day := func(s string) *time.Time { d, _ := time.Parse("2006-01-02", s); return &d }
+	catalog := repository.NewLegalCatalogRepository(db)
+	require.NoError(t, catalog.UpsertDocuments(ctx, []*types.LegalDocument{
+		// NĐ 300: amends NĐ 68 "as a whole" only (no provision), expired the day it took effect
+		{ID: "nd300", Source: "vbpl", DocumentNumber: "300/2026/NĐ-CP", NumberKey: vietnamese_legal.CatalogNumberKey("300/2026/NĐ-CP"), DocType: "Nghị định",
+			Title: "Nghị định 300/2026/NĐ-CP", IssuedOn: day("2026-05-01"), EffectiveOn: day("2026-06-01"), ExpiredOn: day("2026-06-01")},
+		// a second catalogue row sharing NĐ 68's number
+		{ID: "nd68-dup", Source: "vbpl", DocumentNumber: "68/2026/NĐ-CP", NumberKey: vietnamese_legal.CatalogNumberKey("68/2026/NĐ-CP"), DocType: "Nghị định",
+			Title: "Nghị định 68/2026/NĐ-CP (bản khác)", IssuedOn: day("2026-03-05")},
+	}))
+	meta, _ := json.Marshal(map[string]string{"doc_number": "300/2026/NĐ-CP", "external_id": "nd300", "doc_type": "Nghị định"})
+	require.NoError(t, db.Create(&types.Knowledge{ID: "k300", KnowledgeBaseID: "kb-pub", Title: "300", ParseStatus: types.ParseStatusCompleted, Metadata: meta}).Error)
+	legal := vietnamese_legal.LegalMetadata{Source: "vbpl", ArticleNos: []string{"1"}, SourceDocID: "nd300",
+		Amends: []vietnamese_legal.AmendRef{
+			{Document: "Nghị định số 68/2026/NĐ-CP"},
+			{Document: "Nghị định số 68/2026/NĐ-CP"},
+			{Document: "Nghị định số 68/2026/NĐ-CP", Article: "3", Phrase: true, From: "trở xuống", To: "trở xuống (mới)"},
+		}}
+	cm, _ := json.Marshal(types.DocumentChunkMetadata{Legal: &legal})
+	require.NoError(t, db.Create(&types.Chunk{ID: "b3", KnowledgeID: "k300", KnowledgeBaseID: "kb-pub", ChunkIndex: 1,
+		ChunkType: types.ChunkTypeText, IsEnabled: true, Content: "#### Điều 1. Sửa đổi Nghị định số 68/2026/NĐ-CP\n\n1. Sửa đổi cụm từ “trở xuống” thành “trở xuống (mới)” tại Điều 3.", Metadata: cm}).Error)
+
+	load, err := LoadLegalAmendments(ctx, db, []string{"kb-pub"}, []string{"a3"}, []string{"kb-pub"}, time.UTC)
+	require.NoError(t, err)
+	var whole, phrase int
+	for _, e := range load.Edges["nd68"] {
+		if e.Amender.CatalogID == "nd300" {
+			if e.Provision.Article == "" {
+				whole++
+			}
+			if e.phrase() {
+				phrase++
+				require.Contains(t, e.Unresolved, "hết hiệu lực trước hoặc ngay khi có hiệu lực")
+			}
+		}
+	}
+	require.Zero(t, whole, "a document-level entry is no rewrite of the whole document")
+	require.Equal(t, 1, phrase, "the shared số hiệu still names NĐ 68 (one of its rows)")
+	var facts []LegalCatalogAmendment
+	for _, f := range load.Catalogue["nd68"] {
+		if f.Amender.CatalogID == "nd300" {
+			facts = append(facts, f)
+		}
+	}
+	require.Len(t, facts, 1, "one fact for two document-level entries")
+	require.True(t, facts[0].NeverInForce)
+
+	r := load.Resolve(amendAt("2026-10-20"), map[string]bool{"kb-pub": true})["a3"]
+	require.NotContains(t, r.ModelContent, "xung đột")
+	require.NotContains(t, r.ModelContent, "trở xuống (mới) [thay cho")
+	require.Equal(t, LegalStateUnresolved, unitByProv(t, r, LegalProvisionRef{Article: "3", Khoan: "1"}).State)
+}
+
+// A phrase change's lead-in is the sentence quoting the words, not the
+// first place they occur (a heading may name them: "… của Bộ Công
+// Thương"); with the heading, the verb check demoted the change.
+func TestParserEdgePhraseLeadIn(t *testing.T) {
+	content := "#### Điều 10. Sửa đổi Thông tư số 1/2024/TT-BCT của Bộ trưởng Bộ Công Thương\n\n" +
+		"1. Thay thế cụm từ “Bộ Công Thương” bằng cụm từ “Ủy ban nhân dân cấp tỉnh” tại Điều 10."
+	l := &legalAmendLoader{allowed: map[string]bool{"kb": true}}
+	legal := &vietnamese_legal.LegalMetadata{ArticleNos: []string{"10"}}
+	a := vietnamese_legal.AmendRef{Article: "10", Phrase: true, From: "Bộ Công Thương", To: "Ủy ban nhân dân cấp tỉnh"}
+	e := l.parserEdge(legalAmendRow{ID: "c", KnowledgeBaseID: "kb", Content: content}, legal, newProvisionScope(content), a,
+		legalQuoteGroups(content), LegalAmendDoc{KnowledgeBaseID: "kb"}, LegalAmendDoc{}, amendDay("2025-07-01"), nil)
+	require.True(t, strings.HasPrefix(e.LeadInText, "1. Thay thế cụm từ"), e.LeadInText)
+	require.Equal(t, LegalProvisionRef{Article: "10", Khoan: "1"}, e.Origin)
+	ValidateLegalAmendEdge(&e, nil)
+	require.Empty(t, e.Unresolved)
+	require.Equal(t, LegalTierLegacyParserPhrase, e.Tier)
 }

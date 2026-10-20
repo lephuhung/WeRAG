@@ -3,6 +3,7 @@ package service
 import (
 	"regexp"
 	"strings"
+	"sync"
 	"unicode/utf8"
 )
 
@@ -222,9 +223,21 @@ func legalQuoteFor(groups []legalQuoteGroup, prov LegalProvisionRef, newLabel st
 	return best[0].g, best[0].b, "", true
 }
 
-// legalMentions reports whether t names "<keyword> <label>" ("khoản 6"), not
-// "khoản 60".
+// legalMentions reports whether t names "<keyword> <label>" ("khoản 6"),
+// not "khoản 60".
 func legalMentions(t, keyword, label string) bool {
-	re, err := regexp.Compile(`(?i)(?:^|[^\p{L}])` + keyword + `\s+` + regexp.QuoteMeta(label) + `(?:[^\p{L}\p{N}]|$)`)
-	return err == nil && re.MatchString(t)
+	key := keyword + "\x00" + label
+	re, ok := legalMentionsCache.Load(key)
+	if !ok {
+		c, err := regexp.Compile(`(?i)(?:^|[^\p{L}])` + keyword + `\s+` + regexp.QuoteMeta(label) + `(?:[^\p{L}\p{N}]|$)`)
+		if err != nil {
+			return false
+		}
+		re, _ = legalMentionsCache.LoadOrStore(key, c)
+	}
+	return re.(*regexp.Regexp).MatchString(t)
 }
+
+// legalMentionsCache holds the compiled legalMentions patterns; keywords
+// are few and labels short, so it stays small.
+var legalMentionsCache sync.Map

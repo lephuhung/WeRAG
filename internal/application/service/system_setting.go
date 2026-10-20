@@ -515,12 +515,12 @@ var registry = map[string]settingSpec{
 	},
 	// legal.current_wording.resolver switches the wording of retrieved legal
 	// provisions and the "Lịch sử sửa đổi" block to the amendment resolver
-	// (legal_amend_wiring.go). Off = the previous phrase-only wording and
-	// history. Read live on every call.
+	// (legal_amend_wiring.go). Off (the default until reviewed) = the
+	// previous phrase-only wording and history. Read live on every call.
 	LegalWordingResolverSetting: {
 		Type:     "bool",
 		EnvName:  "",
-		Default:  true,
+		Default:  legalResolverDefault,
 		Category: "chat",
 		Description: "Đọc lời văn hiện hành của điều khoản pháp luật qua bộ giải sửa đổi (trạng thái từng khoản, điểm; lời văn sửa đổi chưa xác minh được đánh dấu). " +
 			"Khi tắt, dùng lại cách cũ (chỉ thay cụm từ). Có hiệu lực ngay sau khi thay đổi.",

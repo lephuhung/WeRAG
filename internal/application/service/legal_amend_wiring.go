@@ -17,10 +17,15 @@ import (
 
 // The answer path reads the current wording and the amendment history
 // through the resolver (legal_amend_resolver.go) when the platform switch
-// LegalWordingResolverSetting is on (default). Off — or on any error or
-// timeout of the resolver for a call — the previous code
-// (LegalCurrentWording, LegalAmendmentHistory) answers that call, so
+// LegalWordingResolverSetting is on (default off until reviewed). Off — or
+// on any error, panic or timeout of the resolver for a call — the previous
+// code (LegalCurrentWording, LegalAmendmentHistory) answers that call, so
 // turning the switch off restores the old behaviour at once.
+//
+// INTERIM: plan §4.7 says a failing graph marks every legal provision
+// UNVERIFIED ("chưa kiểm tra được lời văn hiện hành"). Until the answer
+// gate (step 4) exists, a resolver failure falls back to the previous
+// phrase-only wording instead, which is what users had before.
 
 // LegalWordingResolverSetting is the system setting switching the legal
 // current wording and amendment history to the amendment resolver.
@@ -30,13 +35,23 @@ const LegalWordingResolverSetting = "legal.current_wording.resolver"
 // the old path still has time to answer when it falls back.
 const legalResolverTimeout = legalHistoryTimeout / 2
 
+// SetLegalWordingSettings gives the agents the settings service the
+// resolver switch (LegalWordingResolverSetting) is read from.
+func (s *agentService) SetLegalWordingSettings(settings interfaces.SystemSettingService) {
+	s.legalSettings = settings
+}
+
+// legalResolverDefault is the switch's value when unset: off until the
+// re-review passes.
+const legalResolverDefault = false
+
 // legalResolverOn reads the switch per call (the settings service caches);
-// on when no settings service is wired.
+// the default when no settings service is wired.
 func legalResolverOn(ctx context.Context, settings interfaces.SystemSettingService) bool {
 	if settings == nil {
-		return true
+		return legalResolverDefault
 	}
-	return settings.GetBool(ctx, LegalWordingResolverSetting, "", true)
+	return settings.GetBool(ctx, LegalWordingResolverSetting, "", legalResolverDefault)
 }
 
 // legalWordingChoice runs the resolver when on, else — and when it fails —
@@ -47,7 +62,7 @@ func legalWordingChoice(ctx context.Context, on bool,
 	if !on {
 		return old()
 	}
-	out, err := resolved()
+	out, err := legalRecover(resolved)
 	if err != nil {
 		logger.Warnf(ctx, "[LegalWording] resolver failed, using the phrase-only wording: %v", err)
 		return old()
@@ -55,12 +70,23 @@ func legalWordingChoice(ctx context.Context, on bool,
 	return out
 }
 
+// legalRecover runs fn, turning a panic into an error.
+func legalRecover[T any](fn func() (T, error)) (out T, err error) {
+	defer func() {
+		if p := recover(); p != nil {
+			var zero T
+			out, err = zero, fmt.Errorf("panic: %v", p)
+		}
+	}()
+	return fn()
+}
+
 // legalHistoryChoice is legalWordingChoice for the history block.
 func legalHistoryChoice(ctx context.Context, on bool, resolved func() (string, error), old func() string) string {
 	if !on {
 		return old()
 	}
-	out, err := resolved()
+	out, err := legalRecover(resolved)
 	if err != nil {
 		logger.Warnf(ctx, "[LegalHistory] resolver failed, using the previous history: %v", err)
 		return old()
@@ -69,10 +95,11 @@ func legalHistoryChoice(ctx context.Context, on bool, resolved func() (string, e
 }
 
 // legalAllowedKBs are the KBs whose amending text a question may read
-// (plan §10.2): its own search scope plus the public platform KBs.
+// (plan §10.2): its own search scope plus the public platform KBs (public
+// and owned by no tenant, as access.IsPlatformPublicKB).
 func legalAllowedKBs(ctx context.Context, db *gorm.DB, scope []string) ([]string, map[string]bool, error) {
 	var public []string
-	if err := db.WithContext(ctx).Raw(`SELECT id FROM knowledge_bases WHERE deleted_at IS NULL AND visibility = ?`,
+	if err := db.WithContext(ctx).Raw(`SELECT id FROM knowledge_bases WHERE deleted_at IS NULL AND visibility = ? AND owner_tenant_id = 0`,
 		string(types.KBVisibilityPublic)).Scan(&public).Error; err != nil {
 		return nil, nil, fmt.Errorf("public KBs: %w", err)
 	}
@@ -121,10 +148,25 @@ func LegalCurrentWordingResolved(ctx context.Context, db *gorm.DB, kbIDs, chunkI
 	if err != nil {
 		return nil, err
 	}
+	// a document's chunk-level notes are shown once per result set, on its
+	// first chunk
+	noted := map[string]bool{}
 	out := map[string]string{}
 	for _, c := range load.Chunks {
-		if r, ok := res[c.ID]; ok && r.ModelContent != c.Content {
-			out[c.ID] = r.ModelContent
+		r, ok := res[c.ID]
+		if !ok {
+			continue
+		}
+		text := r.Body
+		if len(r.Notes) > 0 {
+			key := legalDocKey(c.Doc) + "|" + strings.Join(r.Notes, "|")
+			if !noted[key] {
+				noted[key] = true
+				text = r.ModelContent
+			}
+		}
+		if text != c.Content {
+			out[c.ID] = text
 		}
 	}
 	return out, nil
@@ -236,6 +278,7 @@ func (h *legalHistory) resolvedLines(c legalHistoryChunk, pc LegalProvisionChunk
 		return false
 	}
 	best := map[string]*LegalAmendEdge{}
+	var out []*legalHistoryLine
 	for i := range edges {
 		e := &edges[i]
 		if e.Rejected != "" || (e.Target.CatalogID != "" && pc.Doc.CatalogID != "" && e.Target.CatalogID != pc.Doc.CatalogID) {
@@ -252,6 +295,13 @@ func (h *legalHistory) resolvedLines(c legalHistoryChunk, pc LegalProvisionChunk
 		}
 		if e.phrase() {
 			if !e.EffFrom.Known || e.EffFrom.At.After(h.now) || len(findPhrase(c.Content, e.From)) == 0 || !answerUsesPhrase(h.answer, e.From) {
+				continue
+			}
+			if e.TextWithheld {
+				// §10.2: B's new words stay out, as in the wording
+				out = append(out, &legalHistoryLine{key: c.Doc.Number + "|phrase-withheld|" + e.Amender.Number + "|" + e.From,
+					text: fmt.Sprintf("%s %s: cụm từ “%s” đã được sửa đổi bởi %s%s (lời văn mới không thuộc phạm vi được dùng).",
+						prov.String(), c.Doc.label(), e.From, e.Amender.label(), h.effText(e.EffFrom.iso()))})
 				continue
 			}
 			h.addPhrase(c.Doc, legalHistoryDoc{ExternalID: e.Amender.CatalogID, Number: e.Amender.Number, Type: e.Amender.Type, EffFrom: e.EffFrom.iso()},
@@ -275,7 +325,6 @@ func (h *legalHistory) resolvedLines(c legalHistoryChunk, pc LegalProvisionChunk
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	var out []*legalHistoryLine
 	for _, k := range keys {
 		e := best[k]
 		prov := e.Provision

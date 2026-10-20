@@ -140,7 +140,7 @@ func TestResolveLegalProvisionStates(t *testing.T) {
 			chunks: "b) bản sao giấy phép.\n\n[Bổ sung theo Nghị định 1/2025/NĐ-CP, từ 01/07/2025]\n\nc) bản sao căn cước.\n\n3. Cơ quan thuế"},
 		{name: "bo_sung of a Điều goes after the Điều it extends",
 			edges: []LegalAmendEdge{{Op: LegalOpBoSung, Amender: b1, Target: nd68, NewLabel: "5a", QuoteText: "Điều 5a. Mới", EffFrom: amendDay("2025-07-01"), Tier: LegalTierVerified}},
-			prov: LegalProvisionRef{Article: "5a"}, state: LegalStateCurrentVerified,
+			prov:  LegalProvisionRef{Article: "5a"}, state: LegalStateCurrentVerified,
 			chunks: "trả lời trong 10 ngày.\n\n[Bổ sung theo Nghị định 1/2025/NĐ-CP, từ 01/07/2025]\n\nĐiều 5a. Mới\n"},
 		{name: "phrase chain A→B→C (two amenders, newer last)",
 			edges: []LegalAmendEdge{
@@ -226,7 +226,7 @@ func TestResolveLegalProvisionStates(t *testing.T) {
 		{name: "catalogue says amended, no edge of that amender at all",
 			opt:  LegalResolveOptions{Catalogue: []LegalCatalogAmendment{{Amender: b3, EffFrom: amendDay("2026-01-01")}}},
 			prov: k1, state: LegalStateAmendedTextMissing, gated: true,
-			chunks: "[LỜI VĂN HIỆN HÀNH CHƯA XÁC MINH: văn bản này đã bị sửa đổi bởi Nghị định 3/2026/NĐ-CP (từ 01/01/2026) theo danh mục; chưa có lời văn sửa đổi]\n\n#### Điều 5."},
+			chunks: "trả lời trong 10 ngày.\n\n[LỜI VĂN HIỆN HÀNH CHƯA XÁC MINH: văn bản này đã bị sửa đổi bởi Nghị định 3/2026/NĐ-CP (từ 01/01/2026) theo danh mục; chưa có lời văn sửa đổi]"},
 		{name: "catalogue amender with edges elsewhere",
 			edges: []LegalAmendEdge{quote(LegalOpSuaDoi, LegalProvisionRef{Article: "9"}, "Điều 9. x", b3, "2026-01-01", LegalTierVerified)},
 			opt:   LegalResolveOptions{Catalogue: []LegalCatalogAmendment{{Amender: b3, EffFrom: amendDay("2026-01-01")}}},
@@ -307,4 +307,116 @@ func TestLegalUnitsCoverContent(t *testing.T) {
 	require.Equal(t, LegalProvisionRef{Article: "4", Khoan: "4", Diem: "a"}, units[0].prov, "continues the open điểm")
 	require.Equal(t, LegalProvisionRef{Article: "4", Khoan: "4", Diem: "b"}, units[1].prov)
 	require.Equal(t, LegalProvisionRef{Article: "4", Khoan: "5"}, units[2].prov)
+}
+
+// Review B3: a khoản-level phrase change is not "missing" in the units of
+// the khoản that do not hold the words, nor in a chunk holding only part
+// of the khoản; it is when the whole khoản is here without them.
+func TestResolvePhraseScopeWithinKhoan(t *testing.T) {
+	a := LegalAmendDoc{CatalogID: "A", Number: "1/2020/NĐ-CP"}
+	b := LegalAmendDoc{CatalogID: "B", Number: "2/2021/NĐ-CP", Type: "Nghị định", KnowledgeBaseID: "kb"}
+	eff := amendDay("2021-01-01")
+	edge := func(from string) []LegalAmendEdge {
+		return []LegalAmendEdge{{Op: LegalOpThayCumTu, Amender: b, Target: a, Provision: LegalProvisionRef{Article: "5", Khoan: "2"},
+			From: from, To: "Sở Nội vụ", EffFrom: eff, Tier: LegalTierLegacyParserPhrase}}
+	}
+	at := amendAt("2026-01-01")
+	opt := LegalResolveOptions{AllowedKBs: map[string]bool{"kb": true}}
+
+	// the words sit in điểm a: the lead line and điểm b are untouched
+	whole := LegalProvisionChunk{ID: "a1", Doc: a, Content: "#### Điều 5. X\n\n1. Khoản một.\n\n2. Hồ sơ gồm:\n\na) Văn bản của Sở Tư pháp;\n\nb) Giấy tờ khác.\n\n3. Khoản ba.",
+		Legal: &vietnamese_legal.LegalMetadata{ArticleNos: []string{"5"}}}
+	r := ResolveLegalProvisions(whole, edge("Sở Tư pháp"), at, opt)
+	require.Equal(t, LegalStateCurrentVerified, r.State, r.ModelContent)
+	require.NotContains(t, r.ModelContent, "không thấy")
+	require.Contains(t, r.ModelContent, "a) Văn bản của Sở Nội vụ [thay cho “Sở Tư pháp”")
+
+	// a continuation chunk with only điểm c, d of khoản 2: nothing to say
+	cont := LegalProvisionChunk{ID: "a2", Doc: a, Content: "c) Hồ sơ bổ sung;\n\nd) Giấy tờ khác.",
+		Legal: &vietnamese_legal.LegalMetadata{ArticleNos: []string{"5"}, SubdivisionRefs: []string{"khoan:2", "khoan:2/diem:c", "khoan:2/diem:d"}}}
+	r = ResolveLegalProvisions(cont, edge("Sở Tư pháp"), at, opt)
+	require.Equal(t, LegalStateOriginalInForce, r.State, r.ModelContent)
+	require.Equal(t, cont.Content, r.ModelContent)
+
+	// the whole khoản 2 is here and holds the words nowhere: one note
+	r = ResolveLegalProvisions(whole, edge("Sở Xây dựng"), at, opt)
+	require.Equal(t, LegalStateUnresolved, r.State)
+	require.Equal(t, 1, strings.Count(r.ModelContent, "không thấy cụm từ “Sở Xây dựng” trong khoản 2 Điều 5"), r.ModelContent)
+	require.Contains(t, r.ModelContent, "[LỜI VĂN HIỆN HÀNH CHƯA XÁC MINH: không thấy cụm từ “Sở Xây dựng” trong khoản 2 Điều 5 ở bản ngay trước Nghị định 2/2021/NĐ-CP]\n\n2. Hồ sơ gồm:")
+
+	// khoản 2 runs on into the next chunk: absence is not proven
+	open := LegalProvisionChunk{ID: "a3", Doc: a, Content: "#### Điều 5. X\n\n1. Khoản một.\n\n2. Hồ sơ gồm:\n\na) Văn bản;",
+		Legal: &vietnamese_legal.LegalMetadata{ArticleNos: []string{"5"}}}
+	r = ResolveLegalProvisions(open, edge("Sở Xây dựng"), at, opt)
+	require.Equal(t, LegalStateOriginalInForce, r.State, r.ModelContent)
+}
+
+// Review B3: labels on quoted lines ("> 1.") are another document's text,
+// not this document's khoản.
+func TestLegalUnitsSkipQuotedLabels(t *testing.T) {
+	content := "#### Điều 1. Sửa đổi Nghị định X\n\n1. Sửa đổi khoản 2 Điều 5 như sau:\n\n> “2. Khoản hai mới:\n\n> a) điểm a mới.”.\n\n2. Bãi bỏ Điều 7."
+	units := legalUnits(content, &vietnamese_legal.LegalMetadata{ArticleNos: []string{"1"}})
+	var provs []LegalProvisionRef
+	for _, u := range units {
+		provs = append(provs, u.prov)
+	}
+	require.Equal(t, []LegalProvisionRef{{Article: "1"}, {Article: "1", Khoan: "1"}, {Article: "1", Khoan: "2"}}, provs)
+}
+
+// Review S3: entries naming only a document are no rewrite of it; two such
+// entries are no CONFLICT.
+func TestResolveUnresolvedRewritesNoConflict(t *testing.T) {
+	c := LegalProvisionChunk{ID: "a", Content: "#### Điều 3. X\n\n1. Một.\n\n2. Hai.", Legal: &vietnamese_legal.LegalMetadata{ArticleNos: []string{"3"}},
+		Doc: LegalAmendDoc{CatalogID: "A", Number: "1/2020/NĐ-CP"}}
+	b := LegalAmendDoc{CatalogID: "B", Number: "2/2021/NĐ-CP", Type: "Nghị định", KnowledgeBaseID: "kb"}
+	eff := amendDay("2021-01-01")
+	edges := []LegalAmendEdge{
+		{Op: LegalOpSuaDoi, Amender: b, Target: c.Doc, EffFrom: eff, Tier: LegalTierUnverified, QuoteText: "x", Unresolved: "lời văn trích không mở đầu bằng nhãn"},
+		{Op: LegalOpSuaDoi, Amender: b, Target: c.Doc, EffFrom: eff, Tier: LegalTierUnverified, QuoteText: "y", Unresolved: "lời văn trích không mở đầu bằng nhãn"},
+	}
+	r := ResolveLegalProvisions(c, edges, amendAt("2026-01-01"), LegalResolveOptions{AllowedKBs: map[string]bool{"kb": true}})
+	require.Equal(t, LegalStateUnresolved, r.State, r.ModelContent)
+	require.NotContains(t, r.ModelContent, "xung đột")
+}
+
+// Review: a pending change is shown, not only collected; a long tier-2
+// quote is capped in the note.
+func TestResolvePendingAndQuoteCap(t *testing.T) {
+	c := nd68Chunk(dieu5, "5", "1", "2", "3")
+	b := LegalAmendDoc{CatalogID: "b9", Number: "9/2027/NĐ-CP", Type: "Nghị định", KnowledgeBaseID: "kb-pub"}
+	long := "1. " + strings.Repeat("rất dài ", 200)
+	edges := []LegalAmendEdge{
+		{Op: LegalOpSuaDoi, Amender: b, Target: nd68, Provision: LegalProvisionRef{Article: "5", Khoan: "3"}, QuoteText: "3. Mới.", EffFrom: amendDay("2027-01-01"), Tier: LegalTierUnverified},
+		{Op: LegalOpSuaDoi, Amender: b, Target: nd68, Provision: LegalProvisionRef{Article: "5", Khoan: "1"}, QuoteText: long, EffFrom: amendDay("2026-01-01"), Tier: LegalTierUnverified},
+	}
+	r := ResolveLegalProvisions(c, edges, amendAt("2026-10-20"), LegalResolveOptions{})
+	require.Contains(t, r.ModelContent, "[Sắp có hiệu lực: khoản 3 Điều 5 được sửa đổi theo Nghị định 9/2027/NĐ-CP, từ 01/01/2027]\n\n3. Cơ quan thuế")
+	require.NotContains(t, r.ModelContent, "3. Mới.", "a pending tier-2 text is not shown")
+	require.Less(t, len([]rune(r.ModelContent)), len([]rune(dieu5))+legalQuoteRunes+300)
+	require.Contains(t, r.ModelContent, " …”]")
+}
+
+// Review S5: an amender the catalogue records expiring on or before its
+// effective date never applied.
+func TestResolveCatalogueNeverInForce(t *testing.T) {
+	c := nd68Chunk(dieu5, "5", "1", "2", "3")
+	b := LegalAmendDoc{CatalogID: "bx", Number: "7/2025/NĐ-CP", Type: "Nghị định"}
+	r := ResolveLegalProvisions(c, nil, amendAt("2026-10-20"), LegalResolveOptions{
+		Catalogue: []LegalCatalogAmendment{{Amender: b, EffFrom: amendDay("2025-07-01"), NeverInForce: true}}})
+	require.Equal(t, LegalStateUnresolved, r.State)
+	require.Contains(t, r.ModelContent, "hết hiệu lực trước hoặc ngay khi có hiệu lực")
+}
+
+// NĐ 150/2016 → NĐ 48/2013: one list of khoản for two phrase pairs; a
+// listed khoản holding only one of them is no error.
+func TestResolveSharedPhraseList(t *testing.T) {
+	a := LegalAmendDoc{CatalogID: "A", Number: "48/2013/NĐ-CP"}
+	b := LegalAmendDoc{CatalogID: "B", Number: "150/2016/NĐ-CP", Type: "Nghị định", KnowledgeBaseID: "kb"}
+	lead := `2. Thay thế cụm từ "Bộ Tư pháp" bằng cụm từ "Văn phòng Chính phủ"; cụm từ "Bộ trưởng Bộ Tư pháp" bằng cụm từ "Bộ trưởng, Chủ nhiệm Văn phòng Chính phủ" tại khoản 1, 2 Điều 1`
+	c := LegalProvisionChunk{ID: "a", Doc: a, Content: "#### Điều 1. X\n\n1. Một.\n\n2. Sửa đổi Điều 9: Bộ Tư pháp cho ý kiến.\n\n3. Ba.",
+		Legal: &vietnamese_legal.LegalMetadata{ArticleNos: []string{"1"}}}
+	edges := []LegalAmendEdge{{Op: LegalOpThayCumTu, Amender: b, Target: a, Provision: LegalProvisionRef{Article: "1", Khoan: "2"},
+		From: "Bộ trưởng Bộ Tư pháp", To: "Bộ trưởng, Chủ nhiệm Văn phòng Chính phủ", LeadInText: lead, EffFrom: amendDay("2016-12-15"), Tier: LegalTierLegacyParserPhrase}}
+	r := ResolveLegalProvisions(c, edges, amendAt("2026-10-20"), LegalResolveOptions{AllowedKBs: map[string]bool{"kb": true}})
+	require.Equal(t, LegalStateOriginalInForce, r.State, r.ModelContent)
 }

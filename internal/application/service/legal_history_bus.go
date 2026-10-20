@@ -25,7 +25,7 @@ func (s *agentService) legalHistoryFunc(
 		return nil
 	}
 	db := s.db
-	settings := s.spelling.aux.settings
+	settings := s.legalSettings
 	return func(ctx context.Context, chunkIDs []string, answer string) string {
 		now := types.PromptNow()
 		history := legalHistoryChoice(ctx, legalResolverOn(ctx, settings),
@@ -44,7 +44,7 @@ func (s *agentService) legalWordingFunc(kbIDs []string) func(ctx context.Context
 		return nil
 	}
 	db := s.db
-	settings := s.spelling.aux.settings
+	settings := s.legalSettings
 	return func(ctx context.Context, chunkIDs []string) map[string]string {
 		now := types.PromptNow()
 		return legalWordingChoice(ctx, legalResolverOn(ctx, settings),

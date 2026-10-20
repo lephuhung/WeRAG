@@ -731,6 +731,17 @@ func BuildContainer(container *dig.Container) *dig.Container {
 			}
 		}
 	}))
+	// the legal amendment resolver's switch is a system setting
+	must(container.Invoke(func(settings interfaces.SystemSettingService, agents interfaces.AgentService) error {
+		u, ok := agents.(interface {
+			SetLegalWordingSettings(interfaces.SystemSettingService)
+		})
+		if !ok {
+			return fmt.Errorf("%T cannot take the legal wording settings", agents)
+		}
+		u.SetLegalWordingSettings(settings)
+		return nil
+	}))
 	// the answer number check looks số hiệu up in the legal catalogue
 	must(container.Invoke(func(agents interfaces.AgentService, catalog interfaces.LegalCatalogRepository) error {
 		u, ok := agents.(interface {
