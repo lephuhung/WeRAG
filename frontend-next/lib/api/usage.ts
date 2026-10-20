@@ -210,6 +210,9 @@ export interface UsageSubscriptionView extends UsageSubscription {
   current: boolean;
   limit_status: UsageLimitStatus[];
   seats_used: number;
+  /* A Guest's guest plan before their first question: no row yet (id is
+   * empty), created by the usage guard on that turn. */
+  implicit?: boolean;
 }
 
 export interface UsageTenantOverview {

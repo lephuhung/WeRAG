@@ -340,6 +340,8 @@ export default function AdminUsage() {
 
   // ---- subscriptions
   const openAssign = (kind: UsageScopeKind, id: string, name: string, existing?: UsageSubscriptionView | null) => {
+    // a Guest's implicit guest plan has no row yet: assigning creates one
+    if (existing?.implicit) existing = null;
     setSubTarget({ kind, id, name, existing });
     setSubForm(subFormFrom(existing, plans, kind));
     setSubOpen(true);
@@ -577,11 +579,12 @@ export default function AdminUsage() {
         ) : (
           <div className="divide-y divide-hairline">
             {personal.map((sub) => (
-              <div key={sub.id} className="flex flex-wrap items-start gap-3 py-2.5 text-[14px]">
+              <div key={sub.id || `implicit-${sub.scope_id}`} className="flex flex-wrap items-start gap-3 py-2.5 text-[14px]">
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium text-ink">{sub.scope_name}</div>
                   <div className="caption text-muted">
                     {sub.plan?.name ?? sub.plan_id}
+                    {sub.implicit ? ` · ${t("usg.implicitGuest")}` : ""}
                     {sub.status !== "active" ? ` · ${t("usg.cancelled")}` : !sub.current ? ` · ${notStarted(sub) ? t("usg.notStarted", { date: dateFromEndsAt(sub.starts_at) }) : t("usg.expired")}` : ""}
                     {sub.ends_at ? ` · ${t("usg.endsAt", { date: dateFromEndsAt(sub.ends_at) })}` : ""}
                   </div>
@@ -594,9 +597,11 @@ export default function AdminUsage() {
                     <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => openAssign("user", sub.scope_id, sub.scope_name, sub)}>
                       {t("usg.changePlan")}
                     </button>
-                    <button type="button" className="btn btn-outline btn-sm text-rose-600" disabled={busy} onClick={() => cancelSub(sub)}>
-                      {t("usg.cancelSub")}
-                    </button>
+                    {!sub.implicit && (
+                      <button type="button" className="btn btn-outline btn-sm text-rose-600" disabled={busy} onClick={() => cancelSub(sub)}>
+                        {t("usg.cancelSub")}
+                      </button>
+                    )}
                   </>
                 )}
               </div>
