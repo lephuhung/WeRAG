@@ -40,7 +40,7 @@ func publicBillingTestRouter(s *publicBillingStub) *gin.Engine {
 
 func TestPublicBillingPlansAnonymousCatalogue(t *testing.T) {
 	s := &publicBillingStub{plans: []*types.UsagePlanOffer{
-		{UsagePlan: &types.UsagePlan{ID: "live", Name: "Live plan", IsActive: true, PriceVND: 100000, Features: types.JSON(`{"internal":"hidden"}`)}},
+		{UsagePlan: &types.UsagePlan{ID: "live", Name: "Live plan", IsActive: true, PriceVND: 100000, Features: types.JSON(`{"internal":"hidden","session.max_turns":30,"context.history_tokens":100000}`)}},
 		{UsagePlan: &types.UsagePlan{ID: "inactive", IsActive: false, PriceVND: 100000}},
 		{UsagePlan: &types.UsagePlan{ID: "not-for-sale", IsActive: true, PriceVND: 0}},
 		{},
@@ -69,6 +69,10 @@ func TestPublicBillingPlansAnonymousCatalogue(t *testing.T) {
 		if _, exists := body.Data[0][key]; exists {
 			t.Fatalf("unexpected field %q", key)
 		}
+	}
+	caps, _ := json.Marshal(body.Data[0]["caps"])
+	if string(caps) != `{"context.history_tokens":100000,"session.max_turns":30}` {
+		t.Fatalf("caps = %s", caps)
 	}
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/private", nil))

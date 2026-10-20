@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { BrandLogo } from "@/components/brand-logo";
+import { LandingAccount } from "./account";
 import { LandingPricing } from "./pricing";
 import styles from "./page.module.css";
 
@@ -24,7 +25,7 @@ export default function MarketingLandingPage() {
     <header className={styles.header}>
       <Link href="/" className={styles.brand} aria-label="weRAG — Trợ lý pháp luật — Trang chủ"><BrandLogo size={38} priority /><span className={styles.brandText}><strong>weRAG</strong><small>Trợ lý pháp luật</small></span></Link>
       <nav aria-label="Điều hướng chính"><a href="#tinh-nang">Tính năng</a><a href="#cach-hoat-dong">Cách hoạt động</a><a href="#goi-cuoc">Gói cước</a></nav>
-      <div className={styles.headerActions}><Link href="/login" className={styles.login}>Đăng nhập</Link><Link href="/platform/creatChat" className={styles.primary}>Vào ứng dụng <span aria-hidden="true">↗</span></Link></div>
+      <LandingAccount />
     </header>
     <main id="noi-dung">
       <section className={styles.hero}>

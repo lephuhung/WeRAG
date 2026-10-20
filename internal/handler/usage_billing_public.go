@@ -35,11 +35,17 @@ func (h *UsageBillingHandler) PublicPlans(c *gin.Context) {
 		if addons == nil {
 			addons = []types.UsagePlanAddonOffer{}
 		}
+		// The per-turn and per-session caps buyers compare plans on, typed so
+		// unknown keys in the stored features never leave the server.
+		caps, err := types.ParseUsagePlanFeatures(p.Features)
+		if err != nil {
+			caps = types.UsagePlanFeatures{}
+		}
 		data = append(data, gin.H{
 			"id": p.ID, "name": p.Name, "description": p.Description,
 			"scope_kind": p.ScopeKind, "mode": p.Mode, "limits": p.Limits,
 			"price_vnd": p.PriceVND, "price_label": p.PriceLabel, "sort_order": p.SortOrder,
-			"included_agents": included, "addons": addons,
+			"included_agents": included, "addons": addons, "caps": caps,
 		})
 	}
 	c.Header("Cache-Control", "no-store")

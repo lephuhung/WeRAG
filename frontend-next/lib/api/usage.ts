@@ -532,7 +532,17 @@ export function listPurchasablePlans(scope: UsageScopeKind): Promise<UsagePlan[]
   return apiGet<{ data?: UsagePlan[] }>(`${BILLING}/plans?scope=${scope}`).then((r) => r.data ?? []);
 }
 
-export type PublicUsagePlan = Pick<UsagePlan, "id" | "name" | "description" | "scope_kind" | "mode" | "limits" | "price_vnd" | "price_label" | "sort_order" | "included_agents" | "addons">;
+/** A plan's per-turn and per-session caps (usage_plans.features, known keys
+ * only); an absent key is no cap. */
+export interface UsagePlanCaps {
+  "agent.turn_token_cap"?: number;
+  "agent.max_iterations"?: number;
+  "context.history_tokens"?: number;
+  "session.max_turns"?: number;
+  "session.max_tokens"?: number;
+}
+
+export type PublicUsagePlan = Pick<UsagePlan, "id" | "name" | "description" | "scope_kind" | "mode" | "limits" | "price_vnd" | "price_label" | "sort_order" | "included_agents" | "addons"> & { caps?: UsagePlanCaps };
 
 // Anonymous landing-page catalogue: plain fetch, no tokens and no refresh-on-401.
 export async function listPublicPlans(scope: UsageScopeKind, signal?: AbortSignal): Promise<PublicUsagePlan[]> {
