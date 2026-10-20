@@ -630,16 +630,24 @@ func (h *legalHistory) amendedNumber(amender legalHistoryDoc, name string) strin
 
 // lookupAmended resolves a name with ResolveLegalDocumentName as of the
 // amending document's issue date; a name that stays ambiguous (a newer
-// law of that name issued but not yet in force) names nothing.
+// law of that name issued but not yet in force) names nothing, and so does
+// an issue date that does not parse.
 func (h *legalHistory) lookupAmended(amender legalHistoryDoc, name string) string {
 	var at time.Time
 	if amender.IssueDate != "" {
-		at, _ = time.Parse("2006-01-02", amender.IssueDate)
+		var err error
+		if at, err = time.Parse("2006-01-02", amender.IssueDate); err != nil {
+			logger.Debugf(h.ctx, "[LegalHistory] amender %s: issue date %q: %v", amender.Number, amender.IssueDate, err)
+			return ""
+		}
 	}
-	m, err := ResolveLegalDocumentName(h.ctx, h.db, name, at, amender.ExternalID)
+	m, err := ResolveLegalDocumentName(h.ctx, h.db, LegalNameQuery{Name: name, At: at, AmenderID: amender.ExternalID})
 	if err != nil {
 		logger.Warnf(h.ctx, "[LegalHistory] catalogue by name: %v", err)
 		return ""
+	}
+	if m.Resolution == LegalNameAmbiguous {
+		logger.Debugf(h.ctx, "[LegalHistory] %q named by %s is ambiguous (%d candidates)", name, amender.Number, len(m.Candidates))
 	}
 	if m.Chosen == nil {
 		return ""

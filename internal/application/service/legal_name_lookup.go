@@ -52,7 +52,7 @@ type LegalNameMatch struct {
 	// a shorter prefix of it when the reader ran past its end.
 	Base       string
 	Resolution LegalNameResolution
-	Candidates []LegalNameCandidate // issued before the citing document, newest first
+	Candidates []LegalNameCandidate // issued before the citing document (or undated), newest first
 	Chosen     *types.LegalDocument // set when Resolution is unique
 }
 
@@ -61,85 +61,143 @@ type LegalNameMatch struct {
 var legalLikeEscaper = strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
 
 // legalNameCandidatesMax bounds the catalogue rows read for one name.
-const legalNameCandidatesMax = 200
+const legalNameCandidatesMax = 500
+
+// LegalNameUndated marks a same-name document without an issue date: it
+// cannot be placed in time, so the name stays ambiguous.
+const LegalNameUndated = "undated"
+
+// LegalNameQuery is a document cited by name.
+type LegalNameQuery struct {
+	// Name as read ("Luật Đấu thầu"); it may run on past the name ("Luật
+	// Đấu thầu, theo đó") or end with a year ("Luật Đấu thầu 2013").
+	Name string
+	// Year narrows the candidates to those issued that year ("2013");
+	// empty: the year written at the end of Name, if any.
+	Year string
+	// At is the citing document's issue date; zero: today.
+	At time.Time
+	// AmenderID is the citing document's catalogue id, if known: a
+	// document it is recorded to amend, replace or repeal under exactly
+	// that name wins.
+	AmenderID string
+}
 
 // ResolveLegalDocumentName finds the catalogue document a name cites as
-// of at, the issue date of the citing document (zero: today). amenderID,
-// when set, is the citing document's catalogue id: a document it is
-// recorded to amend, replace or repeal under exactly that name wins.
-func ResolveLegalDocumentName(
-	ctx context.Context, db *gorm.DB, name string, at time.Time, amenderID string,
-) (LegalNameMatch, error) {
-	bases := legalNameBases(name)
-	if db == nil || len(bases) == 0 {
-		return LegalNameMatch{Resolution: LegalNameNone}, nil
+// of q.At. The full name is tried first, then shorter prefixes of it; a
+// prefix that drops a comma-separated read-on ("…, theo đó") or a clause
+// ("… có hiệu lực") may resolve uniquely, but one that drops words that
+// could belong to the name ("Luật Đầu tư | theo phương thức …", "Luật Quy
+// hoạch đô thị | và nông thôn") never names a shorter law uniquely: the
+// match is then ambiguous.
+func ResolveLegalDocumentName(ctx context.Context, db *gorm.DB, q LegalNameQuery) (LegalNameMatch, error) {
+	prefixes := legalNamePrefixes(q.Name)
+	none := LegalNameMatch{Resolution: LegalNameNone}
+	if db == nil || len(prefixes) == 0 {
+		return none, nil
 	}
+	at := q.At
 	if at.IsZero() {
 		at = time.Now()
 	}
-	docType := legalNameType(bases[0])
+	year := q.Year
+	if year == "" {
+		year = legalNameYear(q.Name)
+	}
+	full := prefixes[0].base
+	docType := legalNameType(full)
 	db = db.WithContext(ctx)
 
-	if amenderID != "" {
+	if q.AmenderID != "" {
 		var targets []*types.LegalDocument
 		if err := db.Raw(`SELECT t.* FROM legal_document_relations r
 			JOIN legal_documents t ON t.id = r.to_id
-			WHERE r.from_id = ? AND r.relation IN ('amends', 'replaces', 'repeals')`, amenderID).
+			WHERE r.from_id = ? AND r.relation IN ('amends', 'replaces', 'repeals')`, q.AmenderID).
 			Scan(&targets).Error; err != nil {
-			return LegalNameMatch{Resolution: LegalNameNone}, err
+			return none, err
 		}
-		for _, base := range bases {
+		for _, p := range prefixes {
 			var hits []LegalNameCandidate
 			keys := map[string]bool{}
 			for _, t := range targets {
-				if LegalTitleBase(t.Title, t.DocType) == base {
+				if LegalTitleBase(t.Title, t.DocType) == p.base {
 					hits = append(hits, LegalNameCandidate{Document: t, State: LegalNameRelation})
-					keys[t.NumberKey] = true
+					key := t.NumberKey
+					if key == "" {
+						key = "id:" + t.ID
+					}
+					keys[key] = true
 				}
 			}
-			if len(keys) == 1 {
-				return LegalNameMatch{Base: base, Resolution: LegalNameUnique, Candidates: hits, Chosen: hits[0].Document}, nil
+			if len(hits) == 0 {
+				continue
 			}
-			if len(hits) > 0 {
-				return LegalNameMatch{Base: base, Resolution: LegalNameAmbiguous, Candidates: hits}, nil
+			m := LegalNameMatch{Base: p.base, Resolution: LegalNameAmbiguous, Candidates: hits}
+			if len(keys) == 1 && p.safe {
+				m.Resolution, m.Chosen = LegalNameUnique, hits[0].Document
 			}
-		}
-	}
-
-	q := db.Model(&types.LegalDocument{}).Where("issued_on IS NOT NULL")
-	if docType != "" {
-		q = q.Where("lower(doc_type) = ?", docType)
-	}
-	if db.Dialector.Name() == "postgres" {
-		// the shortest base is in every longer one; SQLite's lower() folds
-		// ASCII only, so its rows are filtered below
-		short := bases[len(bases)-1]
-		q = q.Where("lower(title) LIKE ?", "%"+legalLikeEscaper.Replace(strings.TrimPrefix(short, docType+" "))+"%")
-	}
-	var docs []*types.LegalDocument
-	if err := q.Order("issued_on DESC").Limit(legalNameCandidatesMax).Find(&docs).Error; err != nil {
-		return LegalNameMatch{Resolution: LegalNameNone}, err
-	}
-	for _, base := range bases {
-		var same []*types.LegalDocument
-		for _, d := range docs {
-			if d.IssuedOn != nil && d.IssuedOn.Before(at) && LegalTitleBase(d.Title, d.DocType) == base {
-				same = append(same, d)
-			}
-		}
-		if len(same) > 0 {
-			m := resolveByDates(same, at)
-			m.Base = base
 			return m, nil
 		}
 	}
-	return LegalNameMatch{Resolution: LegalNameNone}, nil
+
+	query := db.Model(&types.LegalDocument{})
+	if docType != "" {
+		query = query.Where("lower(doc_type) = ?", docType)
+	}
+	if db.Dialector.Name() == "postgres" {
+		// every prefix shares the name's first words; SQLite's lower()
+		// folds ASCII only, so its rows are filtered below
+		words := strings.Fields(strings.TrimPrefix(full, docType+" "))
+		if len(words) > 2 {
+			words = words[:2]
+		}
+		query = query.Where("lower(title) LIKE ?", "%"+legalLikeEscaper.Replace(strings.TrimRight(strings.Join(words, " "), ","))+"%")
+	}
+	var docs []*types.LegalDocument
+	if err := query.Order("issued_on DESC").Limit(legalNameCandidatesMax).Find(&docs).Error; err != nil {
+		return none, err
+	}
+	for _, p := range prefixes {
+		var named, same []*types.LegalDocument
+		for _, d := range docs {
+			if LegalTitleBase(d.Title, d.DocType) == p.base {
+				named = append(named, d)
+			}
+		}
+		if len(named) == 0 {
+			continue // no law of this name: try a shorter one
+		}
+		for _, d := range named {
+			if d.IssuedOn == nil {
+				same = append(same, d) // undated: cannot be ruled out
+				continue
+			}
+			if year != "" && d.IssuedOn.Format("2006") != year {
+				continue
+			}
+			if d.IssuedOn.Before(at) {
+				same = append(same, d)
+			}
+		}
+		if len(same) == 0 {
+			return LegalNameMatch{Base: p.base, Resolution: LegalNameNone}, nil
+		}
+		m := resolveByDates(same, at)
+		m.Base = p.base
+		if !p.safe && m.Resolution == LegalNameUnique {
+			m.Resolution, m.Chosen = LegalNameAmbiguous, nil
+		}
+		return m, nil
+	}
+	return none, nil
 }
 
 // resolveByDates states each same-name document at the date at and picks
 // the one in force: the newest by effective (else issue) date among those
-// in force; a pending one makes the name ambiguous, as do two in force
-// from the same date under different numbers.
+// in force. The name is ambiguous when a document is pending (issued, not
+// yet in force — also a newer one without an effective date while an
+// older one is in force), undated, or when two are in force from the same
+// date under different numbers.
 func resolveByDates(docs []*types.LegalDocument, at time.Time) LegalNameMatch {
 	since := func(d *types.LegalDocument) time.Time {
 		if d.EffectiveOn != nil {
@@ -147,22 +205,49 @@ func resolveByDates(docs []*types.LegalDocument, at time.Time) LegalNameMatch {
 		}
 		return *d.IssuedOn
 	}
-	sort.SliceStable(docs, func(i, j int) bool { return docs[i].IssuedOn.After(*docs[j].IssuedOn) })
+	sort.SliceStable(docs, func(i, j int) bool {
+		a, b := docs[i].IssuedOn, docs[j].IssuedOn
+		if a == nil || b == nil {
+			return a == nil && b != nil
+		}
+		return a.After(*b)
+	})
 	m := LegalNameMatch{Resolution: LegalNameNone}
-	var inForce []*types.LegalDocument
-	pending := false
-	for _, d := range docs {
-		state := LegalNameInForce
+	states := make([]string, len(docs))
+	for i, d := range docs {
 		switch {
 		case d.ExpiredOn != nil && !d.ExpiredOn.After(at):
-			state = LegalNameExpired
+			states[i] = LegalNameExpired
+		case d.IssuedOn == nil:
+			states[i] = LegalNameUndated
 		case d.EffectiveOn != nil && d.EffectiveOn.After(at):
-			state = LegalNamePending
-			pending = true
+			states[i] = LegalNamePending
 		default:
-			inForce = append(inForce, d)
+			states[i] = LegalNameInForce
 		}
-		m.Candidates = append(m.Candidates, LegalNameCandidate{Document: d, State: state})
+	}
+	// a newer document with no effective date while an older one is in
+	// force may not be in force yet
+	for i, d := range docs {
+		if states[i] != LegalNameInForce || d.EffectiveOn != nil {
+			continue
+		}
+		for j, o := range docs {
+			if j != i && states[j] == LegalNameInForce && o.IssuedOn.Before(*d.IssuedOn) {
+				states[i] = LegalNamePending
+				break
+			}
+		}
+	}
+	var inForce []*types.LegalDocument
+	unsure := false
+	for i, d := range docs {
+		switch states[i] {
+		case LegalNameInForce:
+			inForce = append(inForce, d)
+		case LegalNamePending, LegalNameUndated:
+			unsure = true
+		}
 	}
 	sort.SliceStable(inForce, func(i, j int) bool { return since(inForce[i]).After(since(inForce[j])) })
 	var current []*types.LegalDocument
@@ -171,13 +256,14 @@ func resolveByDates(docs []*types.LegalDocument, at time.Time) LegalNameMatch {
 			current = append(current, d)
 		}
 	}
-	for i := range m.Candidates {
-		if c := &m.Candidates[i]; c.State == LegalNameInForce && !containsDoc(current, c.Document) {
-			c.State = LegalNameSuperseded
+	for i, d := range docs {
+		if states[i] == LegalNameInForce && !containsDoc(current, d) {
+			states[i] = LegalNameSuperseded
 		}
+		m.Candidates = append(m.Candidates, LegalNameCandidate{Document: d, State: states[i]})
 	}
 	switch {
-	case pending || len(current) > 1:
+	case unsure || len(current) > 1:
 		m.Resolution = LegalNameAmbiguous
 	case len(current) == 1:
 		m.Resolution, m.Chosen = LegalNameUnique, current[0]
@@ -194,48 +280,85 @@ func containsDoc(docs []*types.LegalDocument, d *types.LegalDocument) bool {
 	return false
 }
 
-// legalTitleNumberCutRe is where a title's số hiệu starts: "… số 43/2019/QH14".
-var legalTitleNumberCutRe = regexp.MustCompile(`\s+số\s*:?\s*\d`)
+var (
+	// legalTitleNumberCutRe is where a title's số hiệu starts: "… số 43/2019/QH14".
+	legalTitleNumberCutRe = regexp.MustCompile(`\s+số\s*:?\s*\d`)
+	// legalTitleEndYearRe is a year closing a title: "… công tư 2020", "… năm 2013".
+	legalTitleEndYearRe = regexp.MustCompile(`\s+(?:năm\s+)?((?:19|20)\d\d)$`)
+)
 
-// LegalTitleBase is a catalogue title without its số hiệu, lower-cased
-// and with its type in front: "Luật Giáo dục số 43/2019/QH14" → "luật
-// giáo dục"; "An ninh mạng" of type Luật → "luật an ninh mạng". docType
-// may be empty.
+// LegalTitleBase is a catalogue title without its số hiệu or closing
+// year, lower-cased and with its type in front: "Luật Giáo dục số
+// 43/2019/QH14" → "luật giáo dục"; "Luật Đầu tư theo phương thức đối tác
+// công tư 2020" → "luật đầu tư theo phương thức đối tác công tư"; "An ninh
+// mạng" of type Luật → "luật an ninh mạng". docType may be empty.
 func LegalTitleBase(title, docType string) string {
 	t := strings.ToLower(strings.Join(strings.Fields(norm.NFC.String(title)), " "))
 	if loc := legalTitleNumberCutRe.FindStringIndex(t); loc != nil && loc[0] > 0 {
 		t = t[:loc[0]]
 	}
 	t = strings.TrimRight(t, " .,;:")
+	if loc := legalTitleEndYearRe.FindStringIndex(t); loc != nil && loc[0] > 0 {
+		t = strings.TrimRight(t[:loc[0]], " .,;:")
+	}
 	if typ := strings.ToLower(strings.Join(strings.Fields(docType), " ")); typ != "" && t != typ && !strings.HasPrefix(t, typ+" ") {
 		t = typ + " " + t
 	}
 	return t
 }
 
-// legalNameCutRe marks where a name read from running text may have run
-// past its end: before a comma or a joining word.
-var legalNameCutRe = regexp.MustCompile(`,| (?:của|và|về|đối với|trong|theo|tại|cho|với) `)
+// legalNameYear is the year a name ends with ("Luật Đấu thầu 2013"), or "".
+func legalNameYear(name string) string {
+	t := strings.ToLower(strings.Join(strings.Fields(norm.NFC.String(name)), " "))
+	if loc := legalTitleNumberCutRe.FindStringIndex(t); loc != nil && loc[0] > 0 {
+		t = t[:loc[0]]
+	}
+	if m := legalTitleEndYearRe.FindStringSubmatch(strings.TrimRight(t, " .,;:")); m != nil {
+		return m[1]
+	}
+	return ""
+}
 
-// legalNameBases is the name's base, then the shorter bases it may have
-// run past ("luật đấu thầu, theo đó" → "luật đấu thầu"), longest first.
-// "Luật Giáo dục đại học" has no cut point, so it never falls back to
-// "Luật Giáo dục".
-func legalNameBases(name string) []string {
+// legalNamePrefix is a base to look up; safe when what it drops from the
+// name is read-on text, not words the name may hold.
+type legalNamePrefix struct {
+	base string
+	safe bool
+}
+
+// legalReadOn are the words a clause after a name starts with: dropping
+// them never shortens the name itself.
+var legalReadOn = map[string]bool{
+	"có": true, "được": true, "đã": true, "đang": true, "sẽ": true, "thì": true, "là": true,
+	"này": true, "nêu": true, "quy": true, "hướng": true, "sửa": true, "bổ": true, "bãi": true,
+	"thay": true, "ngày": true, "số": true, "năm": true, "hiện": true, "hết": true,
+}
+
+// legalNamePrefixes is the name's base, then its shorter word prefixes
+// down to the type and one word, longest first. A prefix is safe when the
+// words it drops start after a comma before a lower-case word ("Luật Đấu
+// thầu, theo đó") or with a clause word ("… có hiệu lực").
+func legalNamePrefixes(name string) []legalNamePrefix {
 	base := LegalTitleBase(name, "")
 	if base == "" {
 		return nil
 	}
-	out := []string{base}
-	locs := legalNameCutRe.FindAllStringIndex(base, -1)
-	for i := len(locs) - 1; i >= 0; i-- {
-		if p := strings.TrimRight(base[:locs[i][0]], " ,"); strings.Contains(p, " ") && p != out[len(out)-1] {
-			out = append(out, p)
-		}
+	words := strings.Fields(base)
+	min := 2
+	if t := legalNameType(base); t != "" {
+		min = len(strings.Fields(t)) + 1
 	}
-	// a base that is only a type ("luật") names nothing
-	if legalNameType(out[len(out)-1]) == out[len(out)-1] {
-		out = out[:len(out)-1]
+	if len(words) < min {
+		return nil
+	}
+	out := []legalNamePrefix{{base: base, safe: true}}
+	for k := len(words) - 1; k >= min; k-- {
+		p := strings.TrimRight(strings.Join(words[:k], " "), ",")
+		if p == out[len(out)-1].base {
+			continue
+		}
+		safe := strings.HasSuffix(words[k-1], ",") || legalReadOn[strings.Trim(words[k], ",")]
+		out = append(out, legalNamePrefix{base: p, safe: safe})
 	}
 	return out
 }
