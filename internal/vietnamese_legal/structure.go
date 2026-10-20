@@ -410,6 +410,24 @@ type LegalMetadata struct {
 	// document by its vbpl id (= catalogue id), at rune offsets in the
 	// chunk content as stored.
 	Citations []CitationLink `json:"citations,omitempty"`
+	// EditorLinks are the provision-level relation tags vbpl.vn editors put
+	// on this document's provisions in the chunk: which provision of which
+	// document B acts on them (vbpl.EditorTags). The amendment resolver
+	// reads them from legal_provision_links; this copy keeps them with the
+	// chunk for later ingests and rebuilds.
+	EditorLinks []EditorLink `json:"editor_links,omitempty"`
+}
+
+// EditorLink is one vbpl editor tag on a provision of the chunk:
+// provision ProvisionID (path "dieu:5/khoan:2") is acted on with relation
+// Code (10 sửa đổi bổ sung, 1 bãi bỏ, 13 bổ sung, 12 thay thế, 14 giải
+// thích, 6 đính chính, 11 tạm ngưng, 5 đình chỉ) by the provision
+// SourceProvisionID of another document ("PHU-LUC": a phụ lục part, no id).
+type EditorLink struct {
+	ProvisionID       string `json:"provision_id"`
+	Path              string `json:"path,omitempty"`
+	Code              int    `json:"code"`
+	SourceProvisionID string `json:"source_provision_id"`
 }
 
 // CitationLink is one linked citation in a chunk: Content runes

@@ -80,12 +80,23 @@ func (s *knowledgeService) processVBPLFile(
 	sourceDocID := vbplSourceDocID(knowledge)
 	appendixFiles := vbpl.LinkAttachedAppendices(planned, vbplAppendixFiles(knowledge))
 	citations := vbpl.CitationLinks(doc, planned, sourceDocID)
+	// the vbpl editors' provision relation tags (legal_provision_links is
+	// their source of truth; the chunk keeps a copy for later rebuilds)
+	editorTags, err := vbpl.EditorTags(raw)
+	if err != nil {
+		logger.Warnf(ctx, "[vbpl] knowledge %s: editor tags not read: %v", knowledge.ID, err)
+	}
+	var places map[string]vbpl.ProvisionPlace
+	if len(editorTags) > 0 {
+		places = vbpl.ProvisionPlaces(doc)
+	}
 	chunks := make([]types.ParsedChunk, len(planned))
 	for i, c := range planned {
 		legal := c.Legal()
 		legal.SourceDocID = sourceDocID
 		legal.AppendixFiles = appendixFiles[i]
 		legal.Citations = citations[i]
+		legal.EditorLinks = vbpl.EditorLinks(doc, c, editorTags, places)
 		chunks[i] = types.ParsedChunk{
 			Content:       c.Content,
 			ContextHeader: c.ContextHeader(),
