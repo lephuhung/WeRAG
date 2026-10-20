@@ -72,6 +72,7 @@ export default function AdminBilling() {
   const [secretShown, setSecretShown] = useState("");
   const [secretCopied, setSecretCopied] = useState(false);
   const [bankOpen, setBankOpen] = useState(false);
+  const [webhookOpen, setWebhookOpen] = useState(false);
   const [plans, setPlans] = useState<UsagePlan[]>([]);
   const [promos, setPromos] = useState<UsagePromoCode[]>([]);
   const [orders, setOrders] = useState<UsageOrder[]>([]);
@@ -262,9 +263,14 @@ export default function AdminBilling() {
         >
           {t("badm.promos")}
         </button>
-        <button type="button" className="btn btn-outline btn-sm mb-2 ml-auto shrink-0" onClick={() => setBankOpen(true)}>
+        <div className="mb-2 ml-auto flex flex-wrap gap-2">
+        <button type="button" className="btn btn-outline btn-sm shrink-0" onClick={() => setWebhookOpen(true)}>
+          {t("badm.webhookTitle")}
+        </button>
+        <button type="button" className="btn btn-outline btn-sm shrink-0" onClick={() => setBankOpen(true)}>
           <IconEdit className="h-3.5 w-3.5" /> {t("badm.bankTitle")}
         </button>
+        </div>
       </div>
 
       {/* Orders */}
@@ -404,8 +410,7 @@ export default function AdminBilling() {
       </Modal>
 
       {/* Payment webhook */}
-      <section className="rounded-lg border border-hairline p-4">
-        <h3 className="text-[14px] font-medium text-ink">{t("badm.webhookTitle")}</h3>
+      <Modal open={webhookOpen} title={t("badm.webhookTitle")} onClose={() => setWebhookOpen(false)} width="w-[760px]">
         <p className="caption mb-3 text-muted">{t("badm.webhookDesc")}</p>
         <div className="flex flex-wrap items-center gap-3">
           <span className="caption text-muted">{t("badm.webhookSecret")}</span>
@@ -434,7 +439,7 @@ export default function AdminBilling() {
         )}
         <p className="caption mt-3 text-muted-soft">{t("badm.webhookHelp")}</p>
         <WebhookGuide key={secretShown} enabled={!!secretMasked} secretShown={secretShown} />
-      </section>
+      </Modal>
 
       {/* Promo modal */}
       <Modal open={promoOpen} title={promoEditing ? t("badm.editPromo") : t("badm.newPromo")} onClose={() => setPromoOpen(false)}>

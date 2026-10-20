@@ -5,13 +5,11 @@ import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api-client";
 import { getRuntimeQueues, type QueueStat, type WikiRunWindowStatus } from "@/lib/api/system";
 import { IconRefresh } from "@/components/icons";
-import { useInSettingsModal } from "@/components/system/in-modal-nav";
 import { WikiRunWindowCard } from "@/components/settings/wiki-run-window-card";
 import { InputLimitsCard } from "@/components/settings/input-limits-card";
 import { useT } from "@/lib/i18n";
 
 export default function RuntimeQueuesPage() {
-  const inModal = useInSettingsModal();
   const { t } = useT();
   const [queues, setQueues] = useState<QueueStat[] | null>(null);
   const [wikiWindow, setWikiWindow] = useState<WikiRunWindowStatus | null>(null);
@@ -42,10 +40,9 @@ export default function RuntimeQueuesPage() {
   }, []);
 
   return (
-    <div>
+    <div className="mx-auto w-full max-w-[1400px]">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="title-md font-semibold text-ink">{t("q.title")}</h2>
           <p className="caption text-muted">
             {loading ? t("q.checking") : t("q.count", { n: (queues ?? []).length })}
           </p>
@@ -65,12 +62,8 @@ export default function RuntimeQueuesPage() {
           {t("q.unavailable")}
         </p>
       )}
-      {wikiWindow && !unavailable && (
-        <WikiRunWindowCard status={wikiWindow} onSaved={() => void load()} />
-      )}
-      {!denied && <InputLimitsCard />}
       <div
-        className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${inModal ? "" : "xl:grid-cols-4"}`}
+        className="mb-6 grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-4"
       >
         {(queues ?? []).map((q) => (
           <div key={q.name} className="card p-5">
@@ -101,6 +94,10 @@ export default function RuntimeQueuesPage() {
       {queues !== null && queues.length === 0 && !denied && (
         <p className="caption mt-2 text-muted-soft">{t("q.empty")}</p>
       )}
+      {wikiWindow && !unavailable && (
+        <WikiRunWindowCard status={wikiWindow} onSaved={() => void load()} />
+      )}
+      {!denied && <InputLimitsCard />}
     </div>
   );
 }

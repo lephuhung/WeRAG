@@ -5,7 +5,7 @@
  * account or a new one. SuperAdmins can also add or remove members of any
  * unit without joining it themselves. */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Modal } from "@/components/modal";
 import { IconEdit, IconPlus, IconSearch } from "@/components/icons";
 import { useT } from "@/lib/i18n";
@@ -113,6 +113,8 @@ export default function AdminTenants() {
 
   const [selected, setSelected] = useState<TenantDirectoryEntry | null>(null);
   const [members, setMembers] = useState<SystemTenantMember[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const memberRequest = useRef(0);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [unitName, setUnitName] = useState("");
@@ -141,11 +143,18 @@ export default function AdminTenants() {
   }, []);
 
   const loadMembers = useCallback(async (unit: TenantDirectoryEntry) => {
+    const request = ++memberRequest.current;
+    setMembers([]);
+    setMembersLoading(true);
     try {
-      setMembers(await listSystemTenantMembers(unit.id));
+      const result = await listSystemTenantMembers(unit.id);
+      if (request === memberRequest.current) setMembers(result);
     } catch (e) {
+      if (request !== memberRequest.current) return;
       setMembers([]);
       setError(e instanceof Error ? e.message : t("tnp.loadFailed"));
+    } finally {
+      if (request === memberRequest.current) setMembersLoading(false);
     }
   }, []);
 
@@ -168,6 +177,7 @@ export default function AdminTenants() {
     setRenameTo(null);
     setNameError("");
     if (selected) void loadMembers(selected);
+    return () => { memberRequest.current += 1; };
   }, [selected, loadMembers]);
 
   const run = async (fn: () => Promise<void>) => {
@@ -300,38 +310,34 @@ export default function AdminTenants() {
         </div>
       )}
 
-      <div className="grid gap-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        <div className="card p-4">
-          <div className="relative mb-3">
+          <div className="relative mb-5 max-w-md">
             <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft" />
             <input className="input h-9 pl-9" placeholder={t("tnp.searchPh")} value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
-          <div className="max-h-[520px] divide-y divide-hairline overflow-y-auto">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-4">
             {filtered.map((u) => (
               <button
                 key={u.id}
                 type="button"
-                onClick={() => setSelected(u)}
-                className={`flex w-full items-center justify-between px-2 py-2.5 text-left text-[14px] transition-colors hover:bg-surface-strong/40 ${
-                  selected?.id === u.id ? "bg-surface-strong/60 font-medium text-ink" : "text-body"
-                }`}
+                onClick={() => { setError(""); setSelected(u); }}
+                aria-haspopup="dialog"
+                className="card flex min-w-0 flex-col items-start gap-4 p-5 text-left transition-colors hover:border-ink/30 hover:bg-surface-strong/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
               >
-                <span className="truncate">{u.name}</span>
-                <span className="caption text-muted-soft">#{u.id}</span>
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-strong text-lg font-semibold text-ink" aria-hidden="true">{u.name.slice(0, 1).toUpperCase()}</span>
+                <span className="w-full break-words text-[15px] font-semibold leading-snug text-ink">{u.name}</span>
+                <span className="caption font-mono text-muted-soft">#{u.id}</span>
               </button>
             ))}
           </div>
-        </div>
-
-        <div className="card p-4">
+      <Modal open={!!selected && !addOpen && !oneTime} title={t("tnp.title")} onClose={() => setSelected(null)} width="w-[880px]">
           {!selected ? (
             <p className="caption py-10 text-center text-muted">{t("tnp.select")}</p>
           ) : (
             <>
-              <div className="mb-4 flex items-center gap-3">
+              <div className="mb-4 flex flex-wrap items-center gap-3">
                 {renameTo === null ? (
                   <>
-                    <h3 className="title-sm truncate">{selected.name}</h3>
+                    <h3 className="title-sm min-w-0 break-words">{selected.name}</h3>
                     <button
                       type="button"
                       onClick={() => {
@@ -344,7 +350,6 @@ export default function AdminTenants() {
                     >
                       <IconEdit className="h-3.5 w-3.5" />
                     </button>
-                    <span className="caption text-muted">{t("tnp.members")}</span>
                   </>
                 ) : (
                   <form className="flex min-w-0 flex-1 items-center gap-2" onSubmit={submitRename}>
@@ -387,17 +392,20 @@ export default function AdminTenants() {
                   <IconPlus className="h-3.5 w-3.5" /> {t("tnp.addMember")}
                 </button>
               </div>
+              <p className="caption mb-4 font-mono text-muted-soft">#{selected.id}</p>
+              {error && <p role="alert" className="caption mb-3 text-error">{error}</p>}
+              <h4 className="mb-3 border-t border-hairline pt-4 text-[14px] font-medium text-ink">{t("tnp.members")}{!membersLoading && ` (${members.length})`}</h4>
               {renameTo !== null && nameError && (
                 <p role="alert" className="caption -mt-2 mb-3 text-error">
                   {nameError}
                 </p>
               )}
-              {members.length === 0 ? (
+              {membersLoading ? <p className="caption text-muted" role="status">{t("workspace.loading")}</p> : members.length === 0 ? (
                 <p className="caption text-muted-soft">{t("tnp.noMembers")}</p>
               ) : (
                 <div className="divide-y divide-hairline">
                   {members.map((m) => (
-                    <div key={m.user_id} className="flex items-center gap-3 py-2.5 text-[14px]">
+                    <div key={m.user_id} className="flex flex-wrap items-center gap-3 py-2.5 text-[14px]">
                       <div className="min-w-0 flex-1">
                         <div className="truncate font-medium text-ink">{m.username || m.user_id}</div>
                         <div className="caption truncate text-muted">{m.email}</div>
@@ -419,8 +427,7 @@ export default function AdminTenants() {
               )}
             </>
           )}
-        </div>
-      </div>
+      </Modal>
 
       <Modal
         open={createOpen}

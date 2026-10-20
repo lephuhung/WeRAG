@@ -59,7 +59,6 @@ import {
   IconBulb,
   IconChevronLeft,
   IconChat,
-  IconClock,
   IconClose,
   IconCode,
   IconExternal,
@@ -90,7 +89,6 @@ const IMChannelsPage = lazy(() => import("@/components/settings/pages/im-channel
 const ModelCatalogPage = lazy(() => import("@/components/settings/pages/model-catalog"));
 const ModelOllamaPage = lazy(() => import("@/components/settings/pages/model-ollama"));
 const ModelWeknoraCloudPage = lazy(() => import("@/components/settings/pages/model-weknoracloud"));
-const RuntimeQueuesPage = lazy(() => import("@/components/settings/pages/runtime-queues"));
 
 type IconCmp = ComponentType<{ className?: string }>;
 
@@ -176,7 +174,6 @@ const GROUPS: SettingsGroup[] = [
       { key: "search", labelKey: "settingsNav.websearch", fallback: "Web search", icon: IconSearch, minRole: "system", render: () => <WebSearchSettings />, route: `${SYS}/engines/search` },
       { key: "sandbox", labelKey: "settingsNav.sandbox", fallback: "Sandbox", icon: IconPower, minRole: "system", render: () => <SandboxSettings />, route: `${SYS}/engines/sandbox` },
 
-      { key: "queues", labelKey: "systemNav.queues", fallback: "Runtime queues", icon: IconClock, minRole: "system", render: () => <RuntimeQueuesPage />, route: `${SYS}/engines/queues` },
     ],
   },
 ];

@@ -296,13 +296,13 @@ function PackHeader({
 }) {
   const { t } = useT();
   return (
-    <div className="card p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <div className="card divide-y divide-hairline overflow-hidden shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4 p-5 sm:p-6">
         <div className="min-w-0">
-          <h3 className="title-md">
+          <h3 className="title-md break-words">
             {detail.name} <span className="caption tabular-nums text-muted">v{detail.version}</span>
           </h3>
-          {detail.description && <p className="body-sm mt-1 max-w-[900px] text-body">{detail.description}</p>}
+          {detail.description && <p className="body-sm mt-3 max-w-[900px] leading-relaxed text-body">{detail.description}</p>}
         </div>
         <div className="flex items-center gap-2">
           <button type="button" className="btn btn-outline btn-sm h-8 w-8 p-0" onClick={onReload} disabled={loading} title={t("dpk.reload")}>
@@ -313,7 +313,7 @@ function PackHeader({
           </button>
         </div>
       </div>
-      <dl className="mt-4 grid grid-cols-1 gap-x-8 gap-y-2 text-[13px] sm:grid-cols-2 lg:grid-cols-3">
+      <dl className="grid grid-cols-1 gap-4 p-5 text-[13px] sm:grid-cols-3 sm:gap-6 sm:p-6">
         <Field label={t("dpk.col.asOf")} value={formatDate(detail.as_of)} />
         <Field
           label={t("dpk.col.reviewBy")}
@@ -325,14 +325,14 @@ function PackHeader({
           }
         />
         <Field label={t("dpk.licence")} value={detail.licence} />
-        <Field label={t("dpk.col.attribution")} value={detail.attribution} />
-        <Field label={t("dpk.origin")} value={<span className="break-all">{detail.origin}</span>} />
-        <Field label={t("dpk.requiredTools")} value={detail.required_tools.join(", ") || "—"} />
+      </dl>
+      <dl className="p-5 text-[13px] sm:p-6">
+        <Field label={t("dpk.requiredTools")} value={detail.required_tools.length ? <div className="flex flex-wrap gap-2">{detail.required_tools.map((tool) => <code key={tool} className="max-w-full break-all rounded-md border border-hairline bg-surface-strong/60 px-2 py-1 text-xs">{tool}</code>)}</div> : "—"} />
       </dl>
       {detail.draft_documents.length > 0 && (
-        <div className="mt-4">
-          <div className="caption-uppercase mb-1 text-muted">{t("dpk.drafts")}</div>
-          <ul className="space-y-0.5 text-[13px] text-body">
+        <div className="p-5 sm:p-6">
+          <div className="caption-uppercase mb-3 text-muted">{t("dpk.drafts")}</div>
+          <ul className="list-disc space-y-2 pl-4 text-[13px] leading-relaxed text-body marker:text-muted-soft">
             {detail.draft_documents.map((d) => (
               <li key={d.title}>
                 {d.title} — {d.version}
@@ -343,7 +343,7 @@ function PackHeader({
         </div>
       )}
       {detail.errors.length > 0 && (
-        <div className="caption mt-3 text-red-600">
+        <div className="caption p-5 text-red-600 sm:p-6">
           {detail.errors.map((e) => `${e.number}: ${e.error}`).join(" · ")}
         </div>
       )}
@@ -355,7 +355,7 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0">
       <dt className="caption text-muted">{label}</dt>
-      <dd className="text-ink">{value || "—"}</dd>
+      <dd className="mt-1 break-words leading-relaxed text-ink">{value || "—"}</dd>
     </div>
   );
 }
@@ -421,31 +421,31 @@ function DocumentsTab({ docs }: { docs: DomainPackDocumentView[] }) {
         {t("dpk.onlyWarnings")}
       </label>
       <div className="card overflow-x-auto shadow-sm">
-        <table className="w-full min-w-[1150px] border-collapse text-left">
+        <table className="w-full min-w-[1100px] table-fixed border-collapse text-left">
           <thead>
             <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
-              <th className="min-w-[240px] px-4 py-3 font-medium">{t("dpk.doc.document")}</th>
-              <th className="min-w-[140px] px-4 py-3 font-medium">{t("dpk.doc.articles")}</th>
-              <th className="min-w-[170px] px-4 py-3 font-medium">{t("dpk.doc.status")}</th>
-              <th className="w-[110px] px-4 py-3 font-medium">{t("dpk.doc.inKB")}</th>
-              <th className="min-w-[220px] px-4 py-3 font-medium">{t("dpk.doc.note")}</th>
-              <th className="min-w-[160px] px-4 py-3 font-medium">{t("dpk.doc.citedIn")}</th>
-              <th className="min-w-[150px] px-4 py-3 font-medium">{t("dpk.doc.formulas")}</th>
+              <th className="w-[20%] px-4 py-3 font-medium">{t("dpk.doc.document")}</th>
+              <th className="w-[11%] px-4 py-3 font-medium">{t("dpk.doc.articles")}</th>
+              <th className="w-[14%] px-4 py-3 font-medium">{t("dpk.doc.status")}</th>
+              <th className="w-[6%] px-2 py-3 font-medium">{t("dpk.doc.inKB")}</th>
+              <th className="w-[26%] px-4 py-3 font-medium">{t("dpk.doc.note")}</th>
+              <th className="w-[15%] px-4 py-3 font-medium">{t("dpk.doc.citedIn")}</th>
+              <th className="w-[8%] px-2 py-3 font-medium">{t("dpk.doc.formulas")}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-hairline">
             {rows.map((d) => (
-              <tr key={d.number} className={`align-top ${d.warning ? WARN_ROW : ""}`}>
+              <tr key={d.number} className={`align-top break-words ${d.warning ? WARN_ROW : ""}`}>
                 <td className="px-4 py-3">
                   <div className="text-[13px] font-semibold text-ink">{d.number}</div>
                   {documentTitle(d) && <div className="caption mt-0.5 text-body">{documentTitle(d)}</div>}
-                  {d.used_for && <div className="caption mt-0.5 text-muted">{t("dpk.doc.usedFor", { text: d.used_for })}</div>}
+                  {d.used_for && <div className="caption mt-0.5 line-clamp-2 text-muted" title={d.used_for}>{t("dpk.doc.usedFor", { text: d.used_for })}</div>}
                 </td>
                 <td className="px-4 py-3 caption text-body">{d.articles.length ? d.articles.join(", ") : "—"}</td>
                 <td className="px-4 py-3">
                   <CatalogueStatus doc={d} />
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-2 py-3">
                   {d.documents.length === 0 ? (
                     <span className="caption text-muted-soft">—</span>
                   ) : heldInKB(d.documents) ? (
@@ -455,10 +455,10 @@ function DocumentsTab({ docs }: { docs: DomainPackDocumentView[] }) {
                   )}
                 </td>
                 <td className="px-4 py-3 caption text-body">
-                  {d.documents.map((r) => r.status_note).filter(Boolean).join(" · ") || "—"}
+                  <CompactPackText text={d.documents.map((r) => r.status_note).filter(Boolean).join(" · ")} />
                 </td>
-                <td className="px-4 py-3 caption text-body">{d.cited_in.length ? d.cited_in.join(", ") : "—"}</td>
-                <td className="px-4 py-3 caption text-body">{d.formulas.length ? d.formulas.join(", ") : "—"}</td>
+                <td className="px-4 py-3 caption text-body"><CompactPackText text={d.cited_in.join(", ")} /></td>
+                <td className="px-2 py-3 text-[11px] leading-relaxed text-muted"><CompactPackText text={d.formulas.join(", ")} /></td>
               </tr>
             ))}
             {rows.length === 0 && (
@@ -473,6 +473,20 @@ function DocumentsTab({ docs }: { docs: DomainPackDocumentView[] }) {
       </div>
     </>
   );
+}
+
+function CompactPackText({ text }: { text: string }) {
+  const { t } = useT();
+  if (!text) return <span className="text-muted-soft">—</span>;
+  if (text.length <= 100) return <span className="break-words leading-relaxed">{text}</span>;
+  return <details className="group">
+    <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+      <span className="line-clamp-3 break-words text-left leading-relaxed group-open:hidden">{text}</span>
+      <span className="mt-1 block font-medium text-teal-700 group-open:hidden dark:text-teal-300">{t("dpk.doc.expandText")}</span>
+      <span className="hidden font-medium text-teal-700 group-open:inline dark:text-teal-300">{t("dpk.doc.collapseText")}</span>
+    </summary>
+    <p className="mt-2 break-words whitespace-pre-line text-left leading-relaxed">{text}</p>
+  </details>;
 }
 
 function CatalogueStatus({ doc }: { doc: DomainPackDocumentView }) {
@@ -508,24 +522,27 @@ function FormulasTab({ formulas }: { formulas: DomainPackFormulaView[] }) {
     return <div className="card px-5 py-10 text-center text-[14px] text-muted shadow-sm">{t("dpk.formula.empty")}</div>;
   }
   return (
-    <div className="space-y-3">
+    <div className="space-y-5">
       {formulas.map((f) => (
-        <div key={f.id} className={`card p-4 shadow-sm ${f.warning ? WARN_ROW : ""}`}>
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <div className="text-[14px] font-semibold text-ink">{f.name}</div>
-            <code className="caption text-muted">
+        <div key={f.id} className="card min-w-0 overflow-hidden p-5 shadow-sm sm:p-6">
+          <div className="space-y-2">
+            <h3 className="text-[16px] font-semibold leading-relaxed text-ink">{f.name}</h3>
+            <code className="caption block break-all text-muted-soft">
               {f.id} · {f.tool}
             </code>
           </div>
-          <div className="mt-2 rounded-md bg-surface-strong/50 px-3 py-2 text-[13px] text-ink">{f.expression}</div>
+          <div className="mt-4 rounded-r-lg border-l-4 border-teal-600 bg-teal-50 px-4 py-3 dark:bg-teal-950/40">
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-teal-700 dark:text-teal-300">{t("dpk.formula.expression")}</p>
+            <p className="break-words text-[15px] font-medium leading-relaxed text-teal-950 dark:text-teal-100">{f.expression}</p>
+          </div>
 
-          <div className="mt-3 grid gap-4 lg:grid-cols-3">
-            <div>
+          <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-x-6 gap-y-5">
+            <div className="order-1 min-w-0">
               <div className="caption-uppercase mb-1 text-muted">{t("dpk.formula.variables")}</div>
-              <ul className="space-y-1 text-[13px]">
+              <ul className="divide-y divide-hairline text-[13px]">
                 {f.variables.map((v) => (
-                  <li key={v.name}>
-                    <code className="text-ink">{v.name}</code>{" "}
+                  <li key={v.name} className="py-2 first:pt-0">
+                    <code className="break-all text-ink">{v.name}</code>{" "}
                     <span className={`badge-pill text-[10px] ${v.source === "kb" ? BADGE_WARN : BADGE_NEUTRAL}`}>
                       {v.source === "kb" ? t("dpk.formula.sourceKB") : t("dpk.formula.sourceInput")}
                     </span>
@@ -536,12 +553,12 @@ function FormulasTab({ formulas }: { formulas: DomainPackFormulaView[] }) {
                 ))}
               </ul>
             </div>
-            <div>
+            <div className="order-3 col-span-full min-w-0 border-t border-hairline pt-4">
               <div className="caption-uppercase mb-1 text-muted">{t("dpk.formula.basis")}</div>
               {f.basis.length === 0 ? (
                 <span className="caption text-muted">—</span>
               ) : (
-                <ul className="space-y-1 text-[13px]">
+                <ul className="space-y-3 text-[13px]">
                   {f.basis.map((b) => (
                     <li key={`${b.number}-${b.article ?? ""}`}>
                       <span className="text-ink">
@@ -551,17 +568,24 @@ function FormulasTab({ formulas }: { formulas: DomainPackFormulaView[] }) {
                       <span className={`badge-pill text-[10px] ${b.status === "ok" ? BADGE_OK : BADGE_WARN}`}>
                         {b.status === "ok" ? t("dpk.formula.basisOk") : t("dpk.formula.basisWarning")}
                       </span>
-                      {b.note && <div className="caption text-body">{b.note}</div>}
+                      {b.note && <details className="group mt-2 border-l-2 border-amber-400 pl-3">
+                        <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                          <span className="caption line-clamp-2 leading-relaxed text-body group-open:hidden">{b.note}</span>
+                          <span className="caption mt-1 block font-medium text-amber-700 group-open:hidden dark:text-amber-300">{t("dpk.formula.expandNote")}</span>
+                          <span className="caption hidden font-medium text-amber-700 group-open:inline dark:text-amber-300">{t("dpk.formula.collapseNote")}</span>
+                        </summary>
+                        <p className="caption mt-2 whitespace-pre-line leading-relaxed text-body">{b.note}</p>
+                      </details>}
                     </li>
                   ))}
                 </ul>
               )}
             </div>
-            <div>
+            <div className="order-2 min-w-0">
               <div className="caption-uppercase mb-1 text-muted">{t("dpk.formula.examples")}</div>
               <ul className="space-y-1.5">
                 {f.examples.map((ex, i) => (
-                  <li key={i} className="caption text-body">
+                  <li key={i} className="caption break-words leading-relaxed text-body">
                     {Object.entries(ex.inputs)
                       .map(([k, v]) => `${k} = ${formatFormulaValue(v)}`)
                       .join("; ")}

@@ -555,11 +555,6 @@ export function AbbreviationsSettings() {
                           </span>
                         )}
                       </div>
-                      {r.is_proper_name && (
-                        <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full border border-blue-500/20 bg-blue-500/10 px-2 py-0.5 text-[11px] font-semibold leading-4 text-blue-700 dark:text-blue-300" title={t("abbrev.properNameHint")}>
-                          {t("abbrev.properName")}
-                        </span>
-                      )}
                     </div>
                   </td>
                   <td className="py-3 px-4 break-words text-ink">{r.full_form}</td>

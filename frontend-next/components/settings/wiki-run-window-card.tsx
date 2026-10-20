@@ -68,42 +68,46 @@ export function WikiRunWindowCard({
         </span>
       </div>
       <p className="caption mb-4 text-muted">{t("q.wikiWindowDesc")}</p>
-      <div className="flex flex-wrap items-end gap-4">
+      <div className="mb-4 flex items-center gap-3 border-b border-hairline pb-4">
         <Toggle
           checked={draft.enabled}
           onChange={(enabled) => setDraft({ ...draft, enabled })}
           label={t("q.wikiWindowEnabled")}
         />
         <span className="caption text-ink">{t("q.wikiWindowEnabled")}</span>
-        <label className="caption flex flex-col gap-1 text-muted">
+      </div>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,180px),1fr))] gap-4">
+        <label className="caption flex min-w-0 flex-col gap-2 text-muted">
           {t("q.wikiWindowStart")}
           <input
-            className="input w-28"
+            className="input w-full min-w-0"
             type="time"
             value={draft.start}
             disabled={!draft.enabled}
             onChange={(e) => setDraft({ ...draft, start: e.target.value })}
           />
         </label>
-        <label className="caption flex flex-col gap-1 text-muted">
+        <label className="caption flex min-w-0 flex-col gap-2 text-muted">
           {t("q.wikiWindowEnd")}
           <input
-            className="input w-28"
+            className="input w-full min-w-0"
             type="time"
             value={draft.end}
             disabled={!draft.enabled}
             onChange={(e) => setDraft({ ...draft, end: e.target.value })}
           />
         </label>
-        <label className="caption flex flex-col gap-1 text-muted">
+        <label className="caption flex min-w-0 flex-col gap-2 text-muted">
           {t("q.wikiWindowTz")}
           <input
-            className="input w-48"
+            className="input w-full min-w-0"
             value={draft.timezone}
             disabled={!draft.enabled}
             onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
           />
         </label>
+      </div>
+      <div className="mt-4 flex justify-end">
         <button className="btn btn-primary btn-sm" disabled={!dirty || saving} onClick={() => void save()}>
           {t("common.save")}
         </button>

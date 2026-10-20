@@ -83,14 +83,14 @@ export function InputLimitsCard() {
   };
 
   const group = (prefix: "limits.chat.pdf" | "limits.chat.docx" | "limits.kb." | "limits.chat.question" | "limits.parse.", title: string) => (
-    <div className="min-w-0 w-full basis-[260px] flex-1">
+    <div className="min-w-0 rounded-xl border border-hairline p-4">
       <div className="caption mb-2 font-medium text-ink">{title}</div>
-      <div className="flex flex-wrap gap-3">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,130px),1fr))] gap-3">
         {INPUT_LIMIT_KEYS.filter((k) => k.key.startsWith(prefix)).map((k) => (
-          <label key={k.key} className="caption flex flex-col gap-1 text-muted">
-            {t(k.labelKey)}
+          <label key={k.key} className="caption grid min-w-0 grid-rows-[minmax(2.5rem,auto)_auto] gap-1 text-muted">
+            <span>{t(k.labelKey)}</span>
             <input
-              className="input w-24"
+              className="input w-full min-w-0"
               type="number"
               min={0}
               step={1}
@@ -112,15 +112,15 @@ export function InputLimitsCard() {
         <span className="text-[14px] font-medium text-ink">{t("q.limits")}</span>
       </div>
       <p className="caption mb-4 text-muted">{t("q.limitsDesc")}</p>
-      <div className="flex flex-wrap gap-6">
-        <div className="min-w-0 w-full basis-[260px] flex-1">
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,320px),1fr))] gap-4">
+        <div className="min-w-0 rounded-xl border border-hairline p-4">
           <div className="caption mb-2 font-medium text-ink">{t("q.limitsChat")}</div>
-          <div className="flex flex-wrap gap-3">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,130px),1fr))] gap-3">
             {INPUT_LIMIT_KEYS.filter((k) => k.key.startsWith("limits.chat.pdf") || k.key.startsWith("limits.chat.docx")).map((k) => (
-              <label key={k.key} className="caption flex flex-col gap-1 text-muted">
-                {t(k.labelKey)}
+              <label key={k.key} className="caption grid min-w-0 grid-rows-[minmax(2.5rem,auto)_auto] gap-1 text-muted">
+                <span>{t(k.labelKey)}</span>
                 <input
-                  className="input w-24"
+                  className="input w-full min-w-0"
                   type="number"
                   min={0}
                   step={1}
@@ -133,10 +133,10 @@ export function InputLimitsCard() {
         </div>
         {group("limits.kb.", t("q.limitsKb"))}
       </div>
-      <div className="mt-4 flex flex-wrap gap-6">
+      <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,320px),1fr))] gap-4">
         {group("limits.chat.question", t("q.limitsQuestions"))}
         {group("limits.parse.", t("q.limitsParsing"))}
-        <div className="min-w-0 w-full basis-[260px] flex-1">
+        <div className="col-span-full min-w-0 rounded-xl border border-hairline p-4">
           <div className="caption mb-2 font-medium text-ink">{t("q.limitsBroad")}</div>
           <div className="flex items-center gap-2">
             <Toggle checked={broadDraft} onChange={setBroadDraft} label={t("q.limitsBroadOn")} />
@@ -145,7 +145,7 @@ export function InputLimitsCard() {
           <p className="caption mt-1 text-muted">{t("q.limitsBroadDesc")}</p>
         </div>
       </div>
-      <div className="mt-4 flex items-center gap-3">
+      <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
         <button className="btn btn-primary btn-sm" disabled={!dirty || saving} onClick={() => void save()}>
           {saving ? t("q.limitsSaving") : t("common.save")}
         </button>

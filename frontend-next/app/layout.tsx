@@ -43,8 +43,8 @@ export const metadata: Metadata = {
   title: "weRAG — Trợ lý pháp luật",
   description: "weRAG — Trợ lý pháp luật: tra cứu, hỏi đáp văn bản pháp luật và đối chiếu nguồn trích dẫn.",
   icons: {
-    icon: "/icon.png",
-    apple: "/icon.png",
+    icon: "/icon.png?v=2",
+    apple: "/icon.png?v=2",
   },
 };
 

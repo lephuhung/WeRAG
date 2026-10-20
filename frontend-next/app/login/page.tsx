@@ -5,12 +5,14 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { AuthShell, authStyles as styles } from "@/components/auth/auth-shell";
 import { resolveSafeNextPath } from "@/lib/safe-next";
+import { IconEye } from "@/components/icons";
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [totpRequired, setTotpRequired] = useState(false);
   const [totpDigits, setTotpDigits] = useState<string[]>(Array(6).fill(""));
   const totpRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -93,7 +95,7 @@ function LoginForm() {
           data && typeof data === "object" && "message" in data
             ? String((data as { message?: unknown }).message ?? "Đăng nhập không thành công")
             : "Đăng nhập không thành công";
-        setError(msg);
+        setError(msg === "Invalid email or password" ? "Email hoặc mật khẩu không đúng. Vui lòng kiểm tra lại." : msg);
         return;
       }
       localStorage.setItem("weknora_token", token);
@@ -138,17 +140,36 @@ function LoginForm() {
               autoComplete="email"
             />
           </label>
-          <label className="mb-6 block">
+          <div className="mb-6">
+            <label htmlFor="login-password" style={{ marginBottom: 8 }}>
             <span className="caption mb-1.5 block text-muted">Mật khẩu</span>
+            </label>
+            <div className="relative">
             <input
-              type="password"
+              id="login-password"
+              type={showPassword ? "text" : "password"}
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Nhập mật khẩu của bạn"
               autoComplete="current-password"
+              style={{ paddingRight: 52 }}
             />
-          </label>
+            <button
+              type="button"
+              className="absolute inset-y-0 right-1 flex w-11 items-center justify-center rounded text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2"
+              aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+              aria-pressed={showPassword}
+              aria-controls="login-password"
+              onClick={() => setShowPassword((visible) => !visible)}
+            >
+              <span className="relative" aria-hidden="true">
+                <IconEye className="h-5 w-5" />
+                {showPassword && <span className="absolute left-0 top-1/2 h-px w-5 -rotate-45 bg-current" />}
+              </span>
+            </button>
+            </div>
+          </div>
           {totpRequired && (
             <div className={styles.totp}>
               <span className="caption mb-1.5 block text-muted">Mã xác thực hai bước</span>

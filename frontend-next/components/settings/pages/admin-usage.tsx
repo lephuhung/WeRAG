@@ -92,20 +92,20 @@ function LimitsEditor({ value, onChange }: { value: UsageLimit[]; onChange: (v: 
   return (
     <div className="space-y-2">
       {value.map((l, i) => (
-        <div key={i} className="flex items-center gap-2">
-          <select className="input h-9 py-0 w-36" value={l.metric} onChange={(e) => set(i, { metric: e.target.value as UsageLimit["metric"] })}>
+        <div key={i} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:flex">
+          <select className="input h-9 min-w-0 py-0 sm:w-36" value={l.metric} onChange={(e) => set(i, { metric: e.target.value as UsageLimit["metric"] })}>
             <option value="questions">{t("usg.metricQuestions")}</option>
             <option value="tokens">{t("usg.metricTokens")}</option>
           </select>
           <span className="caption text-muted">/</span>
-          <select className="input h-9 py-0 w-28" value={l.period} onChange={(e) => set(i, { period: e.target.value as UsageLimit["period"] })}>
+          <select className="input h-9 min-w-0 py-0 sm:w-28" value={l.period} onChange={(e) => set(i, { period: e.target.value as UsageLimit["period"] })}>
             <option value="day">{t("usg.periodDay")}</option>
             <option value="month">{t("usg.periodMonth")}</option>
           </select>
           <input
             type="number"
             min={0}
-            className="input h-9 py-0 w-32"
+            className="input col-span-2 h-9 min-w-0 py-0 sm:w-32"
             value={l.limit}
             onChange={(e) => set(i, { limit: Math.max(0, Number(e.target.value) || 0) })}
           />
@@ -442,21 +442,21 @@ export default function AdminUsage() {
         {plans.length === 0 ? (
           <p className="caption text-muted-soft">{t("usg.noPlans")}</p>
         ) : (
-          <div className="divide-y divide-hairline">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-4">
             {plans.map((p) => (
-              <div key={p.id} className="flex flex-wrap items-center gap-3 py-2.5 text-[14px]">
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate font-medium text-ink">{p.name}</span>
-                    <span className="caption font-mono text-muted-soft">{p.code}</span>
+              <article key={p.id} className="flex min-w-0 flex-col rounded-xl border border-hairline bg-surface-card p-5 text-[14px]">
+                <div className="min-w-0 flex-1 space-y-3 break-words">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <h4 className="text-lg font-semibold leading-snug text-ink">{p.name}</h4>
                     {!p.is_active && <span className="badge-pill text-[11px]">{t("usg.inactive")}</span>}
                   </div>
+                  <div className="caption break-all font-mono text-muted-soft">{p.code}</div>
                   <div className="caption text-muted">
                     {p.scope_kind === "tenant" ? t("usg.scopeTenant") : t("usg.scopeUser")}
                     {p.scope_kind === "tenant" ? ` · ${p.mode === "seat" ? t("usg.modeSeat") : t("usg.modePool")}` : ""}
-                    {planPrice(p) ? ` · ${planPrice(p)}${p.mode === "seat" ? t("usg.perSeatMonth") : t("usg.perMonth")}` : ""}
-                    {p.description ? ` · ${p.description}` : ""}
                   </div>
+                  {planPrice(p) && <p className="text-xl font-semibold tracking-tight text-ink">{planPrice(p)}<span className="caption ml-1 font-normal tracking-normal text-muted">{p.mode === "seat" ? t("usg.perSeatMonth") : t("usg.perMonth")}</span></p>}
+                  {p.description && <p className="caption whitespace-pre-line leading-relaxed text-muted">{p.description}</p>}
                   {catalogue.included_agents.length > 0 && (
                     <div className="caption text-muted">
                       {t("usg.includedAgents", {
@@ -479,16 +479,18 @@ export default function AdminUsage() {
                     </div>
                   )}
                 </div>
-                <div className="caption text-body">
+                <div className="caption mt-4 border-t border-hairline pt-4 leading-relaxed text-body">
                   {p.limits.length ? p.limits.map((l) => limitText(l, t as never)).join(" · ") : t("usg.unlimited")}
                 </div>
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
                 <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => openEditPlan(p)}>
                   <IconEdit className="h-3.5 w-3.5" /> {t("common.edit")}
                 </button>
                 <button type="button" className="btn btn-outline btn-sm text-rose-600" disabled={busy} onClick={() => removePlan(p)}>
                   {t("common.delete")}
                 </button>
-              </div>
+                </div>
+              </article>
             ))}
           </div>
         )}
@@ -604,7 +606,7 @@ export default function AdminUsage() {
       </section>
 
       {/* Plan modal */}
-      <Modal open={planOpen} title={planEditing ? t("usg.editPlan") : t("usg.newPlan")} onClose={() => setPlanOpen(false)}>
+      <Modal open={planOpen} title={planEditing ? t("usg.editPlan") : t("usg.newPlan")} onClose={() => setPlanOpen(false)} width="w-[880px]">
         <form className="space-y-4" onSubmit={submitPlan}>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
