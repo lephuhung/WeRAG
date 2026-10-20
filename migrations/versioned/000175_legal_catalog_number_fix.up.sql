@@ -1,4 +1,4 @@
--- Migration: 000174_legal_catalog_number_fix
+-- Migration: 000175_legal_catalog_number_fix
 -- Two repairs of legal_documents numbers, matching the code shipped with
 -- this migration:
 --
@@ -21,12 +21,12 @@
 --    already catalogued on a row it does not fix itself (66.13 is
 --    catalogued twice; both rows move together).
 --
--- The previous values are kept in legal_documents_number_fix_000174 for
+-- The previous values are kept in legal_documents_number_fix_000175 for
 -- the down migration. A later full catalogue import writes Đ and the
 -- dotted number (CleanVBPLNumber) for every row, twins included.
-DO $$ BEGIN RAISE NOTICE '[Migration 000174] Repairing legal catalogue number keys (Ð, Nghị quyết 66.x)'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000175] Repairing legal catalogue number keys (Ð, Nghị quyết 66.x)'; END $$;
 
-CREATE TABLE IF NOT EXISTS legal_documents_number_fix_000174 (
+CREATE TABLE IF NOT EXISTS legal_documents_number_fix_000175 (
     id              VARCHAR(64)  PRIMARY KEY,
     document_number VARCHAR(128) NOT NULL,
     number_key      VARCHAR(128) NOT NULL,
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS legal_documents_number_fix_000174 (
 );
 
 -- 2 first: a dotted row whose number also had Ð would take both fixes
-INSERT INTO legal_documents_number_fix_000174 (id, document_number, number_key, new_number, new_key, fix)
+INSERT INTO legal_documents_number_fix_000175 (id, document_number, number_key, new_number, new_key, fix)
 SELECT id, document_number, number_key, num, num, 'dotted_66'
 FROM (
     SELECT id, document_number, number_key,
@@ -48,7 +48,7 @@ WHERE document_number = substring(num from '^66\.(.*)$')
 ON CONFLICT (id) DO NOTHING;
 
 -- twins (folded key held by a row without Ð) stay as they are
-INSERT INTO legal_documents_number_fix_000174 (id, document_number, number_key, new_number, new_key, fix)
+INSERT INTO legal_documents_number_fix_000175 (id, document_number, number_key, new_number, new_key, fix)
 SELECT e.id, e.document_number, e.number_key,
        translate(e.document_number, 'Ðð', 'Đđ'), translate(e.number_key, 'Ðð', 'DD'), 'eth_fold'
 FROM legal_documents e
@@ -65,24 +65,24 @@ DECLARE
     shared INT;
 BEGIN
     SELECT string_agg(f.new_key || ' (' || f.id || ' vs ' || d.id || ')', ', ') INTO clash
-    FROM legal_documents_number_fix_000174 f
+    FROM legal_documents_number_fix_000175 f
     JOIN legal_documents d ON d.number_key = f.new_key AND d.id <> f.id
     WHERE f.fix = 'dotted_66'
       -- the same Nghị quyết imported twice (66.13) moves together
-      AND d.id NOT IN (SELECT id FROM legal_documents_number_fix_000174 WHERE fix = 'dotted_66');
+      AND d.id NOT IN (SELECT id FROM legal_documents_number_fix_000175 WHERE fix = 'dotted_66');
     IF clash IS NOT NULL THEN
-        RAISE EXCEPTION '[Migration 000174] dotted number already catalogued: %', clash;
+        RAISE EXCEPTION '[Migration 000175] dotted number already catalogued: %', clash;
     END IF;
     SELECT count(*) INTO shared
     FROM legal_documents e
     WHERE e.number_key ~ '[Ðð]'
-      AND e.id NOT IN (SELECT id FROM legal_documents_number_fix_000174);
-    RAISE NOTICE '[Migration 000174] % Ð twin rows left as they are', shared;
+      AND e.id NOT IN (SELECT id FROM legal_documents_number_fix_000175);
+    RAISE NOTICE '[Migration 000175] % Ð twin rows left as they are', shared;
 END $$;
 
 UPDATE legal_documents d
 SET document_number = f.new_number, number_key = f.new_key
-FROM legal_documents_number_fix_000174 f
+FROM legal_documents_number_fix_000175 f
 WHERE d.id = f.id;
 
 -- requests are keyed the same way (none carry Ð today)

@@ -15,7 +15,7 @@ import (
 )
 
 // TestCatalogNumberKeyFoldCallers: once CatalogNumberKey folds the
-// look-alike "Ð" and migration 000174 rekeyed the Ð rows without a twin, a
+// look-alike "Ð" and migration 000175 rekeyed the Ð rows without a twin, a
 // number written with Đ, Ð or D finds the same rows through the catalogue
 // lookup, the candidates list and the request gate's exact filter. A twin
 // (an Ð row whose folded key a Đ/D row already holds) keeps its Ð key and
@@ -28,7 +28,7 @@ func TestCatalogNumberKeyFoldCallers(t *testing.T) {
 	catalog := repository.NewLegalCatalogRepository(db)
 	svc := NewLegalCatalogService(catalog, repository.NewLegalReviewRepository(db))
 	day := func(s string) *time.Time { d, _ := time.Parse("2006-01-02", s); return &d }
-	// as migration 000174 leaves them
+	// as migration 000175 leaves them
 	rows := []*types.LegalDocument{
 		{ID: "5583", DocumentNumber: "02/2000/QĐ-BTC", NumberKey: "02/2000/QD-BTC", DocType: "Quyết định",
 			Title: "Quyết định số 02/2000/QĐ-BTC", IssuedOn: day("2000-01-06")},

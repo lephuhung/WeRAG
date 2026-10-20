@@ -104,7 +104,7 @@ chunks.metadata.legal.amend_ops (nguồn gốc) ─▶ Neo4j (bản chiếu, d�
 - `LegalAmendmentHistory` dùng cùng bộ giải.
 
 ### 4.8 Yêu cầu bổ sung văn bản
-Migration `000175` (000173 đã dùng cho domain_pack_formula_overrides, 000174 cho sửa khoá danh mục) `requesters jsonb not null default '[]'` + backfill. `Record`: hợp tập nguyên tử ở mọi nhánh; yêu cầu từ đồ thị không ghi đè `last_*`, không tăng `request_count`, gộp `detail.amended_by[]` có giới hạn; khoá `(number_key, legal_document_id)` với id danh mục khi đã ghép. API lọc `?requester=`; UI huy hiệu + bộ lọc (en/vi).
+Migration `000176` (000173 domain_pack_formula_overrides, 000174 drop_replaced_guest_subscriptions, 000175 sửa khoá danh mục) `requesters jsonb not null default '[]'` + backfill. `Record`: hợp tập nguyên tử ở mọi nhánh; yêu cầu từ đồ thị không ghi đè `last_*`, không tăng `request_count`, gộp `detail.amended_by[]` có giới hạn; khoá `(number_key, legal_document_id)` với id danh mục khi đã ghép. API lọc `?requester=`; UI huy hiệu + bộ lọc (en/vi).
 
 ### 4.9 Chạy hàng loạt
 `cmd/legal-amend-graph` (extract | build | stats); khung đêm (`wiki.run_window`), 1 luồng (tăng sau khi chạy thử sạch), giới hạn token, ngắt mạch (5xx/từ chối kết nối → dừng 10 phút; 3 lần → dừng hẳn), thử lại chunk lỗi; không chạy cùng lúc với wiki. Ước tính 16,8 nghìn đoạn × ~3–12 s ≈ 2–5 đêm. Văn bản mới: hook sau parse → hàng đợi đêm.
