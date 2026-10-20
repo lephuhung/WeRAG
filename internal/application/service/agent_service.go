@@ -137,6 +137,9 @@ type agentService struct {
 	// legalNumbers is where the answer number check looks numbers up
 	// (SetLegalNumberLookup); nil leaves the check off.
 	legalNumbers interfaces.LegalCatalogRepository
+	// legalSettings holds the switch of the legal amendment resolver
+	// (SetLegalWordingSettings); nil leaves it at its default (off).
+	legalSettings interfaces.SystemSettingService
 }
 
 // NewAgentService creates a new agent service

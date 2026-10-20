@@ -46,6 +46,7 @@ Qwen3.6-AWQ trên vLLM 0.31 sập (CUDA illegal memory access, Xid 31) 4 lần (
 3. **Hai mức tin cậy** (20/10):
    - **Mức 1 — thay lời văn:** ít nhất hai nguồn cùng ra một cạnh **giống hệt theo quy tắc 6.1**, và đường đồng thuận × loại op đó **đã đạt cổng 6.2** trên bộ khoá kín. Chưa đường nào đạt cho tới khi đo (con số 0,99 của Qwen + bộ đọc chưa gồm ngày và phạm vi).
    - **Mức 2 — chưa xác minh:** một nguồn đã qua kiểm chứng, hoặc đường chưa đạt cổng → điều khoản mang trạng thái `UNVERIFIED` (4.12) và chịu cổng câu trả lời (4.11); vào hàng duyệt SuperAdmin; được chấp nhận → mức 1.
+   - **Tạm thời (20/10, người dùng yêu cầu nối ngay):** khi chưa có nguồn Qwen, cạnh **thay/bãi bỏ cụm từ do bộ đọc tìm ra** giữ hành vi hiện nay (thay vào lời văn, ghi nguồn, mức `legacy_parser_phrase`; độ chính xác bộ đọc nhóm này 0,98) để không thụt lùi ca NĐ 68/141; cạnh sửa đổi/bổ sung có lời văn trích của bộ đọc là mức 2 (mô hình thấy lời văn mới kèm "chưa xác minh" trước khi trả lời). Bỏ chế độ tạm này khi đường Qwen + bộ đọc đạt cổng 6.2. Có công tắc `legal.current_wording.resolver`.
    - Ca "không xác định" (đích ngoài danh mục, tên ứng nhiều văn bản, Qwen chọn `none`) **không bao giờ** vào mức 1.
 4. Yêu cầu bổ sung văn bản có **cờ người yêu cầu** (`user`, `domain_pack`, `amendment_graph`).
 5. Mô hình trích chính: **Qwen** (Gemma prompt không đạt). Mô hình nhỏ (nhận diện số hiệu + gán cạnh) là hướng thử nghiệm ở mục 8.
@@ -127,7 +128,7 @@ Migration `000176` (000173 domain_pack_formula_overrides, 000174 drop_replaced_g
 | `UNVERIFIED` | có cạnh mức 2 | gốc + bọc chưa xác minh | có |
 | `UNRESOLVED` | ngày không rõ, cạnh trước chưa giải, ánh xạ danh tính (4.13) mơ hồ | như trên | có |
 | `CONFLICT` | hai cạnh cùng phạm vi cùng ngày khác nội dung | các bản + nguồn | có |
-| `AMENDED_TEXT_MISSING` | danh mục báo A bị sửa nhưng không có / không được dùng chunk B | gốc + "đã bị sửa đổi bởi <số hiệu B>" | có |
+| `AMENDED_TEXT_MISSING` | danh mục báo A bị sửa nhưng chunk B **không có / không được dùng / chưa được đọc đủ / không có danh sách sửa đổi**. Khi B có trong KB được phép và đã đọc đủ mà không nêu khoản này → `ORIGINAL_IN_FORCE` + tối đa một dòng thông tin mỗi văn bản (không qua cổng); B có nhắc "Điều N" của A ngoài các cạnh đã đọc → `UNVERIFIED` cho Điều đó (20/10, sau review: tránh chặn nhầm ~93 % chunk văn bản bị sửa) | gốc + "đã bị sửa đổi bởi <số hiệu B>" | có |
 | `NOT_APPLICABLE_IN_PERIOD` | `tam_ngung` phủ ngày tham chiếu | "[Tạm ngưng hiệu lực từ … đến … theo <B>]" + gốc | có |
 | `PARTIALLY_EXPIRED` | `het_hieu_luc` (một phần) từ ngày X, **không có ngày kết thúc** (khác tạm ngưng) | "[Hết hiệu lực từ … theo <B>]" | có |
 | `CONDITIONALLY_NOT_APPLICABLE` | `khong_ap_dung` có điều kiện đối tượng/phạm vi | gốc + "[Không áp dụng đối với <điều kiện> theo <B>]" + kết quả so điều kiện với câu hỏi `match`/`no_match`/`unknown` (so khớp tất định; mặc định `unknown`) | `match`/`unknown` → có |
@@ -148,7 +149,7 @@ Migration `000176` (000173 domain_pack_formula_overrides, 000174 drop_replaced_g
 8. Trích bằng Qwen prompt v2 (danh sách đóng + `none`, op mới) → đo trên bộ khoá kín + bộ "không áp dụng" → cổng 6.2 theo đường × op.
 9. Chạy đêm toàn kho → `amend_ops`; hook sau ingest.
 10. Dựng đồ thị đầy đủ → kiểm NĐ 68/141, tên trùng, số `DocRef`.
-11. Nối vào `LegalCurrentWording`, `applyCurrentWording`, `LegalAmendmentHistory`, cổng 4.11; eval đầu-cuối.
+11. (Phần nối đã kéo lên bước 3 theo yêu cầu người dùng 20/10; bước này còn: nối dữ liệu Qwen/đồ thị) Nối vào `LegalCurrentWording`, `applyCurrentWording`, `LegalAmendmentHistory`, cổng 4.11; eval đầu-cuối.
 12. Bật theo từng đường × op đã đạt cổng (mặc định mọi thứ ở mức 2).
 13. (Thử nghiệm, mục 8) mô hình nhỏ.
 
