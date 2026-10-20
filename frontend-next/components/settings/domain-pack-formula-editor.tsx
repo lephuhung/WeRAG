@@ -44,12 +44,16 @@ function draftFrom(f: DomainPackFormulaView | DomainPackFormulaEdit): Draft {
   };
 }
 
-/* "1.234,5" and "1 234.5" both read as numbers; "" or junk → null. */
+/* Vietnamese "500.000" / "1.234.567,5" and English "1,234.5" thousands
+ * groups both read as numbers (a group never starts "0.", so "0.075" is a
+ * decimal); otherwise a lone comma is the decimal mark ("1,5"). "" or
+ * junk → null. */
 function parseNumber(text: string): number | null {
   let s = text.trim().replace(/\s/g, "");
   if (!s) return null;
-  if (s.includes(",") && !s.includes(".")) s = s.replace(",", ".");
-  else if (s.includes(",") && s.includes(".")) s = s.replace(/\./g, "").replace(",", ".");
+  if (/^-?[1-9]\d{0,2}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, "").replace(",", ".");
+  else if (/^-?[1-9]\d{0,2}(,\d{3})+(\.\d+)?$/.test(s)) s = s.replace(/,/g, "");
+  else if (/^-?\d+,\d+$/.test(s)) s = s.replace(",", ".");
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
 }
@@ -343,7 +347,7 @@ export function FormulaEditor({
         )}
 
         <div className="flex flex-wrap items-center gap-2 border-t border-hairline pt-4">
-          {formula.edited && (
+          {(formula.edited || formula.edit_not_applied) && (
             <button type="button" className="btn btn-outline btn-sm text-rose-600" disabled={busy} onClick={() => void reset()}>
               {t("dpk.edit.reset")}
             </button>

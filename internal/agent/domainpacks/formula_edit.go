@@ -16,6 +16,14 @@ import (
 // An edit is stored outside the pack (see the domain pack formula override
 // repository) and applied over the shipped formula until it is reset.
 
+// Limits of an edit: the formula block goes into every output of its tool.
+const (
+	maxFormulaNameRunes       = 200
+	maxFormulaExpressionRunes = 1000
+	maxFormulaTextRunes       = 300
+	maxFormulaExamples        = 20
+)
+
 // ShippedFormula is formula id as formulas.yaml writes it.
 func (p *Pack) ShippedFormula(id string) (Formula, bool) {
 	if p.formulas == nil {
@@ -89,6 +97,34 @@ func (p *Pack) CheckFormulaEdit(edit Formula) (Formula, []string) {
 			problems = append(problems, fmt.Sprintf("variable %q is not a variable of the Go implementation", name))
 		}
 	}
+	// FormulaBlock writes each formula on one line of every tool output
+	for field, text := range map[string]string{"name": edit.Name, "expression": edit.Expression} {
+		if strings.ContainsAny(text, "\r\n") {
+			problems = append(problems, fmt.Sprintf("the %s must be one line", field))
+		}
+	}
+	if n := len([]rune(edit.Name)); n > maxFormulaNameRunes {
+		problems = append(problems, fmt.Sprintf("the name has %d characters, at most %d", n, maxFormulaNameRunes))
+	}
+	if n := len([]rune(edit.Expression)); n > maxFormulaExpressionRunes {
+		problems = append(problems, fmt.Sprintf("the expression has %d characters, at most %d", n, maxFormulaExpressionRunes))
+	}
+	for _, v := range edit.Variables {
+		if len([]rune(v.Description)) > maxFormulaTextRunes || len([]rune(v.Unit)) > maxFormulaTextRunes {
+			problems = append(problems, fmt.Sprintf("variable %q: description and unit are at most %d characters", v.Name, maxFormulaTextRunes))
+		}
+	}
+	seenBasis := map[string]bool{}
+	for _, b := range edit.Basis {
+		key := vietnamese_legal.CatalogNumberKey(b.Number) + "|" + strings.ToLower(b.Article)
+		if seenBasis[key] {
+			problems = append(problems, fmt.Sprintf("basis %s %s is listed twice", b.Article, b.Number))
+		}
+		seenBasis[key] = true
+	}
+	if len(edit.Examples) > maxFormulaExamples {
+		problems = append(problems, fmt.Sprintf("at most %d examples", maxFormulaExamples))
+	}
 	if constantRatePattern.MatchString(edit.Expression) {
 		problems = append(problems, "the expression writes a rate as a constant; make it a variable with source kb")
 	}
@@ -122,7 +158,7 @@ func checkExamples(fm Formula) []string {
 			if math.Abs(want) >= 1 {
 				tol = 1 // money: ±1 đ
 			}
-			if math.IsNaN(want) || math.Abs(v-want) > tol {
+			if math.IsNaN(want) || math.IsNaN(v) || math.IsInf(v, 0) || math.Abs(v-want) > tol {
 				problems = append(problems, fmt.Sprintf("examples[%d]: %s is %v, not %v", i, key, v, want))
 			}
 		}

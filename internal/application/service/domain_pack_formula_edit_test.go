@@ -90,11 +90,17 @@ func TestDomainPackFormulaEditRefused(t *testing.T) {
 		"basis not in catalogue": func(e *types.DomainPackFormulaEdit) {
 			e.Basis = append(e.Basis, types.DomainPackFormulaBasisRef{Number: "999/2099/NĐ-CP"})
 		},
-		"empty name":    func(e *types.DomainPackFormulaEdit) { e.Name = "  " },
-		"bad source":    func(e *types.DomainPackFormulaEdit) { e.Variables[1].Source = "const" },
-		"no examples":   func(e *types.DomainPackFormulaEdit) { e.Examples = nil },
-		"missing input": func(e *types.DomainPackFormulaEdit) { delete(e.Examples[0].Inputs, "thue_suat") },
+		"empty name":          func(e *types.DomainPackFormulaEdit) { e.Name = "  " },
+		"bad source":          func(e *types.DomainPackFormulaEdit) { e.Variables[1].Source = "const" },
+		"no examples":         func(e *types.DomainPackFormulaEdit) { e.Examples = nil },
+		"missing input":       func(e *types.DomainPackFormulaEdit) { delete(e.Examples[0].Inputs, "thue_suat") },
+		"two-line expression": func(e *types.DomainPackFormulaEdit) { e.Expression += "\nthêm dòng" },
+		"duplicate basis":     func(e *types.DomainPackFormulaEdit) { e.Basis = append(e.Basis, e.Basis[0]) },
+		"unknown output": func(e *types.DomainPackFormulaEdit) {
+			e.Examples[0].Expected["khong_co"] = 1
+		},
 	}
+	shipped := shippedEdit(t, r, "bien_hoa_von")
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
 			edit := shippedEdit(t, r, "bien_hoa_von")
@@ -108,7 +114,11 @@ func TestDomainPackFormulaEditRefused(t *testing.T) {
 			require.False(t, pack.FormulaEdited("bien_hoa_von"))
 		})
 	}
-	_, err := r.UpdateFormula(ctx, editPack, "khong_co", shippedEdit(t, r, "bien_hoa_von"))
+	// the cases changed copies only: the shipped formula is still accepted
+	require.Equal(t, shipped, shippedEdit(t, r, "bien_hoa_von"))
+	_, err := r.UpdateFormula(ctx, editPack, "bien_hoa_von", shipped)
+	require.NoError(t, err)
+	_, err = r.UpdateFormula(ctx, editPack, "khong_co", shippedEdit(t, r, "bien_hoa_von"))
 	require.Error(t, err)
 	_, err = r.UpdateFormula(ctx, "khong-co-goi", "bien_hoa_von", shippedEdit(t, r, "bien_hoa_von"))
 	require.Error(t, err)

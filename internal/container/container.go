@@ -617,6 +617,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		if err := r.LoadFormulaOverrides(ctx); err != nil {
 			logger.Warnf(ctx, "[Container] %v", err)
 		}
+		// edits saved on another backend reach this one within a minute
+		r.StartFormulaOverrideRefresh(ctx, time.Minute)
 	}))
 	must(container.Provide(handler.NewDomainPackReconcileHandler))
 	must(container.Provide(handler.NewCustomAgentHandler))

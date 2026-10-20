@@ -51,13 +51,11 @@ func (r *DomainPackReconciler) Detail(ctx context.Context, name string) (*types.
 		return nil, apperrors.NewNotFoundError(fmt.Sprintf("domain pack %q is not in this build", name))
 	}
 	// stored edits may come from another backend: apply them first
-	if err := r.LoadFormulaOverrides(ctx); err != nil {
-		return nil, err
-	}
-	edits, err := r.formulaEdits(ctx, pack.Name())
+	rows, err := r.loadFormulaOverrides(ctx)
 	if err != nil {
 		return nil, err
 	}
+	edits := formulaEdits(rows, pack.Name())
 	now := r.now()
 	m := pack.Manifest.Metadata
 	out := &types.DomainPackDetail{

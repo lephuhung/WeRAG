@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
@@ -21,12 +23,18 @@ import (
 // build no longer accepts is logged and skipped (the shipped formula
 // applies); the row is kept for the SuperAdmin to fix or reset.
 func (r *DomainPackReconciler) LoadFormulaOverrides(ctx context.Context) error {
+	_, err := r.loadFormulaOverrides(ctx)
+	return err
+}
+
+// loadFormulaOverrides is LoadFormulaOverrides returning the stored rows.
+func (r *DomainPackReconciler) loadFormulaOverrides(ctx context.Context) ([]*types.DomainPackFormulaOverride, error) {
 	if r == nil || r.packs == nil || r.overrides == nil {
-		return nil
+		return nil, nil
 	}
 	rows, err := r.overrides.List(ctx)
 	if err != nil {
-		return fmt.Errorf("domain pack formula edits: %w", err)
+		return nil, fmt.Errorf("domain pack formula edits: %w", err)
 	}
 	byPack := map[string]map[string]domainpacks.Formula{}
 	for _, row := range rows {
@@ -46,7 +54,30 @@ func (r *DomainPackReconciler) LoadFormulaOverrides(ctx context.Context) error {
 			logger.Warnf(ctx, "domain pack %s: formula edit %s not applied: %s", name, id, strings.Join(problems, "; "))
 		}
 	}
-	return nil
+	return rows, nil
+}
+
+// StartFormulaOverrideRefresh reapplies the stored edits every interval
+// until ctx ends, so a save or reset on another backend reaches this one's
+// chats without a restart.
+func (r *DomainPackReconciler) StartFormulaOverrideRefresh(ctx context.Context, interval time.Duration) {
+	if r == nil || r.overrides == nil || interval <= 0 {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := r.LoadFormulaOverrides(ctx); err != nil {
+					logger.Warnf(ctx, "%v", err)
+				}
+			}
+		}
+	}()
 }
 
 // UpdateFormula stores and applies the edit of formula id of pack name and
@@ -105,22 +136,15 @@ func (r *DomainPackReconciler) editablePack(name string) (*domainpacks.Pack, err
 }
 
 // formulaEdits are the stored edits of pack name by formula id, for the
-// detail view (who and when). Nil when edits are not available.
-func (r *DomainPackReconciler) formulaEdits(ctx context.Context, name string) (map[string]*types.DomainPackFormulaOverride, error) {
-	if r.overrides == nil {
-		return nil, nil
-	}
-	rows, err := r.overrides.List(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("domain pack formula edits: %w", err)
-	}
+// detail view (who and when).
+func formulaEdits(rows []*types.DomainPackFormulaOverride, name string) map[string]*types.DomainPackFormulaOverride {
 	out := map[string]*types.DomainPackFormulaOverride{}
 	for _, row := range rows {
 		if row.PackName == name {
 			out[row.FormulaID] = row
 		}
 	}
-	return out, nil
+	return out
 }
 
 // editorName is the user name (or e-mail) of user id, the id when unknown.
@@ -149,7 +173,7 @@ func formulaFromEdit(id string, e types.DomainPackFormulaEdit) domainpacks.Formu
 		fm.Basis = append(fm.Basis, domainpacks.FormulaBasis{Number: b.Number, Article: b.Article})
 	}
 	for _, ex := range e.Examples {
-		fm.Examples = append(fm.Examples, domainpacks.FormulaExample{Inputs: ex.Inputs, Expected: ex.Expected})
+		fm.Examples = append(fm.Examples, domainpacks.FormulaExample{Inputs: maps.Clone(ex.Inputs), Expected: maps.Clone(ex.Expected)})
 	}
 	return fm
 }
@@ -170,7 +194,7 @@ func editFromFormula(fm domainpacks.Formula) types.DomainPackFormulaEdit {
 		e.Basis = append(e.Basis, types.DomainPackFormulaBasisRef{Number: b.Number, Article: b.Article})
 	}
 	for _, ex := range fm.Examples {
-		e.Examples = append(e.Examples, types.DomainPackFormulaSample{Inputs: ex.Inputs, Expected: ex.Expected})
+		e.Examples = append(e.Examples, types.DomainPackFormulaSample{Inputs: maps.Clone(ex.Inputs), Expected: maps.Clone(ex.Expected)})
 	}
 	return e
 }
