@@ -5,6 +5,13 @@
 #   docker compose -f docker-compose.hotreload.yml up -d app-dev
 #   docker compose -f docker-compose.hotreload.yml logs -f app-dev
 #
+# Dev frontend with hot reload — `next dev` on ./frontend-next behind the
+# image's nginx (same /api, /onlyoffice, /word and /asr routing):
+#   docker compose -f docker-compose.yml stop frontend
+#   docker compose -f docker-compose.hotreload.yml up -d frontend-dev
+# The first start runs `npm ci` into a volume (a few minutes); it runs again
+# whenever package-lock.json changes.
+#
 # Shares the prod compose project name, so WeKnora-network / data-files /
 # docreader-tmp resolve to the same resources the prod app used — the dev
 # backend sees the same DB, Redis, docreader and uploaded files.
@@ -32,6 +39,39 @@ services:
       sh -c "go install github.com/air-verse/air@latest && exec air"
     restart: unless-stopped
 
+  frontend-dev:
+    # Built from frontend-next/Dockerfile (docker compose build frontend);
+    # only its nginx and entrypoint are used, Next runs from the source.
+    image: wechatopenai/werag-frontend-next:${WEKNORA_VERSION:-latest}
+    container_name: WeKnora-frontend-dev
+    entrypoint: ["/bin/sh", "/src/docker/docker-entrypoint.sh"]
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    environment:
+      - NEXT_DEV=1
+      - NEXT_TELEMETRY_DISABLED=1
+      - WERAG_BACKEND_URL=http://${APP_HOST:-app}:8080
+      # Origins allowed to load dev assets and the HMR socket.
+      - WERAG_DEV_ORIGINS=${WERAG_DEV_ORIGINS:-localhost,127.0.0.1}
+      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
+      - MAX_SKILL_BUNDLE_SIZE_MB=${MAX_SKILL_BUNDLE_SIZE_MB:-256}
+      - APP_HOST=${APP_HOST:-app}
+      - APP_PORT=${APP_BACKEND_PORT:-8080}
+      - APP_SCHEME=${APP_SCHEME:-http}
+      - REAL_IP_FROM=${REAL_IP_FROM:-}
+      - ASR_URL=${ASR_URL:-http://sherpa-asr:8110}
+      - WERAG_WORD_ADDIN_ORIGIN=${WERAG_WORD_ADDIN_ORIGIN:-}
+      - ONLYOFFICE_URL=${ONLYOFFICE_PROXY_URL:-http://documentserver}
+    volumes:
+      - ./frontend-next:/src
+      # Linux/musl dependencies and the dev build stay out of the host tree.
+      - frontend-dev-node-modules:/src/node_modules
+      - frontend-dev-next:/src/.next
+      - ${WORD_ADDIN_DIST_DIR:-./docker/word-addin/dist}:/srv/werag-word-addin:ro
+    networks:
+      - WeKnora-network
+    restart: unless-stopped
+
 networks:
   WeKnora-network:
     name: spec-airag-refactor_WeKnora-network
@@ -46,3 +86,5 @@ volumes:
     external: true
   gomod-cache:
   gobuild-cache:
+  frontend-dev-node-modules:
+  frontend-dev-next:
