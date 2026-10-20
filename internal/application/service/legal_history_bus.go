@@ -29,7 +29,9 @@ func (s *agentService) legalHistoryFunc(
 	return func(ctx context.Context, chunkIDs []string, answer string) string {
 		now := types.PromptNow()
 		history := legalHistoryChoice(ctx, legalResolverOn(ctx, settings),
-			func() (string, error) { return LegalAmendmentHistoryResolved(ctx, db, kbIDs, chunkIDs, answer, now) },
+			func() (string, error) {
+				return LegalAmendmentHistoryResolvedWith(ctx, db, kbIDs, chunkIDs, answer, now, legalLoadOptions(ctx, settings))
+			},
 			func() string { return LegalAmendmentHistory(ctx, db, kbIDs, chunkIDs, answer, now) })
 		return history + LegalValidityNote(ctx, db, answer)
 	}
@@ -48,7 +50,9 @@ func (s *agentService) legalWordingFunc(kbIDs []string) func(ctx context.Context
 	return func(ctx context.Context, chunkIDs []string) map[string]string {
 		now := types.PromptNow()
 		return legalWordingChoice(ctx, legalResolverOn(ctx, settings),
-			func() (map[string]string, error) { return LegalCurrentWordingResolved(ctx, db, kbIDs, chunkIDs, now) },
+			func() (map[string]string, error) {
+				return LegalCurrentWordingResolvedWith(ctx, db, kbIDs, chunkIDs, now, legalLoadOptions(ctx, settings))
+			},
 			func() map[string]string { return LegalCurrentWording(ctx, db, kbIDs, chunkIDs, now) })
 	}
 }

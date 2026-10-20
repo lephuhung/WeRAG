@@ -49,6 +49,8 @@ type LegalAmendLoad struct {
 	Catalogue map[string][]LegalCatalogAmendment
 	// Took records the time of each phase, for the log.
 	Took map[string]time.Duration
+	// Editor is what the vbpl editor source did (nil when off).
+	Editor *LegalEditorMergeStats
 }
 
 // legalDocKey keys a document by catalogue id, else by its number.
@@ -143,6 +145,15 @@ type legalNameMemo struct {
 // and from vbpl copies anywhere — the latter only for the fact and the
 // number of B, their text is withheld.
 func LoadLegalAmendments(ctx context.Context, db *gorm.DB, scopeKBs, chunkIDs, allowedKBs []string, loc *time.Location) (*LegalAmendLoad, error) {
+	return LoadLegalAmendmentsWith(ctx, db, scopeKBs, chunkIDs, allowedKBs, loc, LegalAmendLoadOptions{})
+}
+
+// LoadLegalAmendmentsWith is LoadLegalAmendments with the optional sources
+// of opt (the vbpl editor edges); zero options load exactly as
+// LoadLegalAmendments.
+func LoadLegalAmendmentsWith(ctx context.Context, db *gorm.DB, scopeKBs, chunkIDs, allowedKBs []string, loc *time.Location,
+	opt LegalAmendLoadOptions,
+) (*LegalAmendLoad, error) {
 	if loc == nil {
 		loc = time.UTC
 	}
@@ -408,6 +419,20 @@ func LoadLegalAmendments(ctx context.Context, db *gorm.DB, scopeKBs, chunkIDs, a
 		return nil, err
 	}
 	lap("chain+reads")
+	if opt.EditorSource {
+		targets := make(map[string]legalEditorTarget, len(docs))
+		for key, d := range docs {
+			targets[key] = legalEditorTarget{doc: d.doc, articles: d.articles}
+		}
+		st, err := l.editorEdges(load, targets, opt)
+		if err != nil {
+			return nil, err
+		}
+		load.Editor = &st
+		lap("editor")
+		logger.Debugf(l.ctx, "[LegalAmend] editor source: %d links, %d agreed, %d explained, %d alone (%d with text), %d date mismatches, %v",
+			st.Links, st.Agreed, st.Explained, st.EditorOnly, st.WithText, st.DateMismatch, load.Took["editor"])
+	}
 	return load, nil
 }
 

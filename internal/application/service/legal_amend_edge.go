@@ -38,6 +38,8 @@ const (
 	LegalOpHetHieuLuc    LegalAmendOp = "het_hieu_luc"     // expires from EffFrom, no end
 	LegalOpTiepTucApDung LegalAmendOp = "tiep_tuc_ap_dung" // transition: still applies
 	LegalOpKhac          LegalAmendOp = "khac"             // anything else: read B
+	LegalOpGiaiThich     LegalAmendOp = "giai_thich"       // B interprets the provision: no change
+	LegalOpDinhChinh     LegalAmendOp = "dinh_chinh"       // B corrects an error in it: noted, no change
 )
 
 // LegalAmendTier is how far an edge may be trusted (plan §3.3).
@@ -219,6 +221,17 @@ type LegalAmendEdge struct {
 	// định này không áp dụng …"); it is kept for review, the resolver
 	// ignores it.
 	Rejected string
+	// SourceText is, for an editor edge whose change is neither a quote
+	// nor a phrase, B's source provision in its own words (shown, never
+	// applied); EditorProvisionID is that provision's vbpl id.
+	SourceText        string
+	EditorProvisionID string
+}
+
+// informational reports an operation that changes no text (giải thích,
+// đính chính): an informational line only.
+func (e *LegalAmendEdge) informational() bool {
+	return e.Op == LegalOpGiaiThich || e.Op == LegalOpDinhChinh
 }
 
 // carriesText reports whether the edge's change is B's words.
@@ -256,6 +269,8 @@ func (e *LegalAmendEdge) sourceText() string {
 			names = append(names, "danh mục vbpl")
 		case LegalAmendSourceChain:
 			names = append(names, "suy ra qua văn bản sửa đổi")
+		case LegalAmendSourceEditor:
+			names = append(names, "biên tập viên vbpl")
 		default:
 			names = append(names, s)
 		}

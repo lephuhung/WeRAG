@@ -116,13 +116,13 @@ func legalAllowedKBs(ctx context.Context, db *gorm.DB, scope []string) ([]string
 
 // resolveLegalChunks loads and resolves the chunks as of now, within the
 // resolver's time budget.
-func resolveLegalChunks(ctx context.Context, db *gorm.DB, kbIDs, chunkIDs []string, now time.Time,
+func resolveLegalChunks(ctx context.Context, db *gorm.DB, kbIDs, chunkIDs []string, now time.Time, opt LegalAmendLoadOptions,
 ) (*LegalAmendLoad, map[string]LegalResolution, error) {
 	list, set, err := legalAllowedKBs(ctx, db, kbIDs)
 	if err != nil {
 		return nil, nil, err
 	}
-	load, err := LoadLegalAmendments(ctx, db, kbIDs, chunkIDs, list, now.Location())
+	load, err := LoadLegalAmendmentsWith(ctx, db, kbIDs, chunkIDs, list, now.Location(), opt)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -139,12 +139,20 @@ func resolveLegalChunks(ctx context.Context, db *gorm.DB, kbIDs, chunkIDs []stri
 // chunk whose wording or state differs from the stored text. An error
 // (including the timeout) means no answer: the caller falls back.
 func LegalCurrentWordingResolved(ctx context.Context, db *gorm.DB, kbIDs, chunkIDs []string, now time.Time) (map[string]string, error) {
+	return LegalCurrentWordingResolvedWith(ctx, db, kbIDs, chunkIDs, now, LegalAmendLoadOptions{})
+}
+
+// LegalCurrentWordingResolvedWith is LegalCurrentWordingResolved with the
+// load's optional sources (the vbpl editor edges).
+func LegalCurrentWordingResolvedWith(ctx context.Context, db *gorm.DB, kbIDs, chunkIDs []string, now time.Time,
+	opt LegalAmendLoadOptions,
+) (map[string]string, error) {
 	if db == nil || len(kbIDs) == 0 || len(chunkIDs) == 0 {
 		return nil, nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, legalResolverTimeout)
 	defer cancel()
-	load, res, err := resolveLegalChunks(ctx, db, kbIDs, chunkIDs, now)
+	load, res, err := resolveLegalChunks(ctx, db, kbIDs, chunkIDs, now, opt)
 	if err != nil {
 		return nil, err
 	}
@@ -186,6 +194,14 @@ func LegalCurrentWordingResolved(ctx context.Context, db *gorm.DB, kbIDs, chunkI
 func LegalAmendmentHistoryResolved(
 	ctx context.Context, db *gorm.DB, kbIDs, chunkIDs []string, answer string, now time.Time,
 ) (string, error) {
+	return LegalAmendmentHistoryResolvedWith(ctx, db, kbIDs, chunkIDs, answer, now, LegalAmendLoadOptions{})
+}
+
+// LegalAmendmentHistoryResolvedWith is LegalAmendmentHistoryResolved with
+// the load's optional sources (the vbpl editor edges).
+func LegalAmendmentHistoryResolvedWith(
+	ctx context.Context, db *gorm.DB, kbIDs, chunkIDs []string, answer string, now time.Time, opt LegalAmendLoadOptions,
+) (string, error) {
 	if db == nil || len(kbIDs) == 0 || len(chunkIDs) == 0 || strings.TrimSpace(answer) == "" {
 		return "", nil
 	}
@@ -219,7 +235,7 @@ func LegalAmendmentHistoryResolved(
 		}
 	}
 	if len(named) > 0 {
-		load, _, err := resolveLegalChunks(ctx, db, kbIDs, namedIDs, now)
+		load, _, err := resolveLegalChunks(ctx, db, kbIDs, namedIDs, now, opt)
 		if err != nil {
 			return "", err
 		}

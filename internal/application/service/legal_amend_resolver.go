@@ -417,6 +417,13 @@ func resolveUnit(r *unitRun, edges []*LegalAmendEdge, asOf time.Time, opt LegalR
 	var applicable, unknown []*LegalAmendEdge
 	for _, e := range edges {
 		switch {
+		case e.informational():
+			// giải thích / đính chính: noted, the text unchanged
+			if e.Unresolved == "" && !(e.EffFrom.Known && e.EffFrom.At.After(asOf)) {
+				if m := legalInfoMarker(e); !containsString(r.markers, m) {
+					r.markers = append(r.markers, m)
+				}
+			}
 		case !e.EffFrom.Known:
 			unknown = append(unknown, e)
 		case e.EffFrom.At.After(asOf):
@@ -566,6 +573,14 @@ func applyGroup(r *unitRun, group []*LegalAmendEdge, opt LegalResolveOptions) {
 				r.raise(LegalStateAmendedTextMissing, e.Provision.String()+" đã bị sửa đổi"+via+"; lời văn sửa đổi không thuộc phạm vi được dùng")
 				r.resolved = false
 				continue
+			case strings.TrimSpace(e.QuoteText) == "" && strings.TrimSpace(e.SourceText) != "":
+				// an editor edge whose change is B's own words: shown, not applied
+				r.applied = append(r.applied, e)
+				r.effect(LegalStateCurrentVerified)
+				r.raise(LegalStateUnverified, e.Provision.String()+" có thể đã được sửa đổi"+via+src+
+					". Nội dung văn bản sửa đổi: “"+legalCapQuote(e.SourceText)+"”")
+				r.resolved = false
+				continue
 			case strings.TrimSpace(e.QuoteText) == "":
 				r.raise(LegalStateAmendedTextMissing, e.Provision.String()+" đã bị sửa đổi"+via+"; không có lời văn sửa đổi")
 				r.resolved = false
@@ -709,6 +724,10 @@ func legalOpPhrase(e *LegalAmendEdge) string {
 		return p + " không áp dụng"
 	case LegalOpTiepTucApDung:
 		return p + " tiếp tục được áp dụng"
+	case LegalOpGiaiThich:
+		return p + " được giải thích"
+	case LegalOpDinhChinh:
+		return p + " được đính chính"
 	}
 	return p + " bị tác động (" + string(e.Op) + ")"
 }
@@ -739,6 +758,19 @@ func legalIntervalMarker(e *LegalAmendEdge) (LegalProvisionState, string) {
 		return LegalStateNotApplicable, "[Không áp dụng từ " + e.EffFrom.text() + until + by + "]"
 	}
 	return "", "[Tiếp tục được áp dụng" + by + ", từ " + e.EffFrom.text() + until + "]"
+}
+
+// legalInfoMarker is the line of an operation that changes no text.
+func legalInfoMarker(e *LegalAmendEdge) string {
+	where := ""
+	if e.Origin.Article != "" {
+		where = " tại " + e.Origin.String()
+	}
+	verb := "Được giải thích"
+	if e.Op == LegalOpDinhChinh {
+		verb = "Được đính chính"
+	}
+	return "[" + verb + where + " của " + e.Amender.label() + "]"
 }
 
 // unitText is what the model reads for a unit.
@@ -928,6 +960,9 @@ func legalCatalogueNotes(c LegalProvisionChunk, runs []*unitRun, live []*LegalAm
 		}
 		var mine []*LegalAmendEdge
 		for _, e := range live {
+			if e.informational() {
+				continue // explains, does not change: no operation of B here
+			}
 			if ca.Amender.CatalogID != "" && e.Amender.CatalogID == ca.Amender.CatalogID {
 				mine = append(mine, e)
 			}
