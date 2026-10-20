@@ -16,7 +16,8 @@ import (
 // ("1461/QĐ-TTg"), Party numbers ("36-NQ/TW"), technical standards
 // ("QCVN 06:2022/BXD"), partial references ("Nghị định 68", "NĐ 68/2026",
 // "Luật 59/2024") and laws named without a number ("Luật Đấu thầu").
-// Dates, money, "khoản 2" or "Điều 5" never match.
+// Dates, money, quantities ("quyết định 3 năm tù"), "khoản 2" or "Điều 5"
+// never match. Linear in the text: it runs on whole documents.
 
 // CitationKind classifies a Citation.
 type CitationKind string
@@ -41,8 +42,8 @@ const (
 
 // Citation is one document reference found by FindCitations.
 type Citation struct {
-	// Start and End are byte offsets of Raw in the NFC form of the text
-	// (the text itself when it is NFC, as stored chunks are).
+	// Start and End are rune offsets of Raw in the text as given (also
+	// when it is not NFC), the unit chunk offsets use.
 	Start, End int
 	Raw        string // as written: "NĐ 68/2026", "01/2020/TT- BNNPTNT"
 	Kind       CitationKind
@@ -61,9 +62,22 @@ type Citation struct {
 	// Name is the title a law is named by: the whole reference for
 	// CitationName ("Luật Đấu thầu"), or the words before "số" of a
 	// numbered one ("Luật Bình đẳng giới" in "Luật Bình đẳng giới số
-	// 73/2006/QH11").
+	// 73/2006/QH11"). It may run past the name ("Luật Đấu thầu có hiệu
+	// lực"); the catalogue lookup tries its prefixes.
 	Name string
+	// Role is empty for a plain citation. CitationRoleAmendTarget marks
+	// the document a "sửa đổi, bổ sung … của" phrase amends; within the
+	// title of an amending law ("Luật sửa đổi, bổ sung một số điều của
+	// Luật Đất đai") it is CitationRoleInAmendingTitle: the words name the
+	// amending law, never Luật Đất đai itself.
+	Role string
 }
+
+// Citation roles.
+const (
+	CitationRoleAmendTarget     = "amend_target"
+	CitationRoleInAmendingTitle = "in_amending_title"
+)
 
 // citationFold maps look-alike runes onto the ones số hiệu are written
 // with: Eth "Ð" (U+00D0) for "Đ", Cyrillic capitals from OCR or bad
@@ -73,7 +87,7 @@ var citationFold = map[rune]rune{
 	'А': 'A', 'В': 'B', 'С': 'C', 'Е': 'E', 'Н': 'H', 'К': 'K', 'М': 'M',
 	'О': 'O', 'Р': 'P', 'Т': 'T', 'Х': 'X',
 	'–': '-', '—': '-', '‐': '-', '‑': '-', '−': '-',
-	' ': ' ',
+	'\u00a0': ' ',
 }
 
 const (
@@ -81,10 +95,16 @@ const (
 	// citeEnd: a number never runs into a following letter or digit.
 	citeEnd = `(?:[^\p{L}\p{N}&]|$)`
 	// citeCode is the code after the year: "NĐ-CP", "nđ-cp", "QĐ-TTg",
-	// "TTLT-BTP-BCA-BTC", "QH13", with stray spaces around a dash
-	// ("TT- BNNPTNT", "NĐ - CP") when an upper-case part follows.
-	citeCode = `[A-Za-zĐđ][A-Za-zĐđ0-9&]*(?:-[A-Za-zĐđ0-9&]+|` + citeSp + `-` + citeSp + `[A-ZĐ][A-ZĐ0-9&]*)*`
-	citeYear = `([12][0-9O]{3})` // OCR "2O22"; checked by citeYearOK
+	// "TTLT-BTP-BCA-BTC", "QH13". Stray spaces around a dash are read only
+	// right after a short type code ("TT- BNNPTNT", "NĐ - CP"), so in
+	// "15/2023/QĐ-UBND - UBND tỉnh" the code ends at "UBND". A tail after a
+	// second slash is kept: "44/2007/TTLT/BTC-BKH&CN".
+	citeCode = `(?:[A-ZĐ]{1,5}` + citeSp + `-` + citeSp + `[A-ZĐ][A-ZĐ0-9&]*(?:-[A-Za-zĐđ0-9&]+)*|[A-Za-zĐđ][A-Za-zĐđ0-9&]*(?:-[A-Za-zĐđ0-9&]+)*)` +
+		`(?:/[A-ZĐ][A-ZĐ0-9&]*(?:-[A-ZĐ0-9&]+)*)?`
+	// citeYear also takes OCR's "2O22"; FindCitations checks it reads 19xx/20xx.
+	citeYear = `([12][0-9O]{3})`
+	// citeTypeWords are the type words a partial reference starts with.
+	citeTypeWords = `(?:(?i:(thông tư liên tịch|nghị quyết liên tịch|nghị định|nghị quyết|quyết định|thông tư|chỉ thị|pháp lệnh|bộ luật|luật|hiến pháp))|(NĐ|TTLT|TT|QĐ|NQ))`
 )
 
 var (
@@ -95,21 +115,24 @@ var (
 	// "53/2022 NĐ-CP": the code after a space must be TYPE-ISSUER
 	citeSpacedRe = regexp.MustCompile(`(\d{1,4})` + citeSp + `/` + citeSp + `((?:19|20)\d\d)[ \t]+([A-ZĐ]{1,5}-[A-ZĐ][A-Za-zĐđ0-9&]*(?:-[A-Za-zĐđ0-9&]+)*)` + citeEnd)
 	// "1461/QĐ-TTg", "45/BTC-TCT": at least one hyphen, so "01/GLP" is not
-	citeAdminRe = regexp.MustCompile(`(\d{1,5})` + citeSp + `/` + citeSp + `([A-ZĐ][A-Za-zĐđ0-9]*(?:-[A-Za-zĐđ0-9&]+|` + citeSp + `-` + citeSp + `[A-ZĐ][A-ZĐ0-9&]*)+)` + citeEnd)
+	citeAdminRe = regexp.MustCompile(`(\d{1,5})` + citeSp + `/` + citeSp +
+		`((?:[A-ZĐ]{1,5}` + citeSp + `-` + citeSp + `[A-ZĐ][A-ZĐ0-9&]*(?:-[A-Za-zĐđ0-9&]+)*|[A-ZĐ][A-Za-zĐđ0-9]*(?:-[A-Za-zĐđ0-9&]+)+))` + citeEnd)
 	// "36-NQ/TW", "21-LCT/HĐNN8"
 	citePartyRe = regexp.MustCompile(`(\d{1,4})` + citeSp + `-` + citeSp + `([A-ZĐ]{1,6})` + citeSp + `/` + citeSp + `([A-ZĐ][A-ZĐ0-9]*(?:-[A-ZĐ0-9]+)*)` + citeEnd)
 	// "QCVN 06:2022/BXD", "QCVN 01-1:2018/BYT", "TCVN 5574:2018", "QTKĐ 12-2017/BCT"
 	citeStandardRe = regexp.MustCompile(`(QCVN|TCVN|QCĐP|QTKĐ)` + citeSp + `(\d{1,4}[A-Za-z]?(?:[-.]\d{1,4})*?)` + citeSp + `([:-])` + citeSp + `((?:19|20)\d\d)(?:` + citeSp + `/` + citeSp + `([A-ZĐ][A-ZĐ0-9]*(?:-[A-ZĐ0-9]+)*))?` + citeEnd)
 	// "Nghị định 68", "Thông tư số 01", "NĐ 68/2026", "Luật 59/2024",
 	// "Nghị quyết 12 năm 2026"
-	citePartialRe = regexp.MustCompile(`(?:(?i:(thông tư liên tịch|nghị quyết liên tịch|nghị định|nghị quyết|quyết định|thông tư|chỉ thị|pháp lệnh|bộ luật|luật))|(NĐ|TTLT|TT|QĐ|NQ))` +
-		citeSp + `(?:(?i:số)` + citeSp + `:?` + citeSp + `)?(\d{1,4}(?:\.\d{1,3})?)(?:` + citeSp + `/` + citeSp + `((?:19|20)\d\d)|[ \t]+(?i:năm)[ \t]+((?:19|20)\d\d))?`)
+	citePartialRe = regexp.MustCompile(citeTypeWords + citeSp + `((?i:số)` + citeSp + `:?` + citeSp + `)?(\d{1,4}(?:\.\d{1,3})?)(?:` +
+		citeSp + `/` + citeSp + `((?:19|20)\d\d)|[ \t]+(?i:năm)[ \t]+((?:19|20)\d\d))?`)
 	// a law named by title: "Luật Đấu thầu", "Bộ luật Tố tụng hình sự"
 	citeNameRe = regexp.MustCompile(`(Bộ luật|BỘ LUẬT|Luật|LUẬT|Pháp lệnh|PHÁP LỆNH)[ \t]+\p{Lu}`)
 	// the type written before a number: "Nghị định số ", "NĐ "
-	citeTypeBeforeRe = regexp.MustCompile(`(?:(?i:(thông tư liên tịch|nghị quyết liên tịch|nghị định|nghị quyết|quyết định|thông tư|chỉ thị|pháp lệnh|bộ luật|luật|hiến pháp))|(NĐ|TTLT|TT|QĐ|NQ))` +
-		citeSp + `(?:(?i:số)` + citeSp + `:?` + citeSp + `)?$`)
-	citeSoAfterRe = regexp.MustCompile(`^[ \t]+(?i:số)` + citeSp + `:?` + citeSp)
+	citeTypeBeforeRe = regexp.MustCompile(citeTypeWords + citeSp + `(?:(?i:số)` + citeSp + `:?` + citeSp + `)?$`)
+	citeSoAfterRe    = regexp.MustCompile(`^[ \t]+(?i:số)` + citeSp + `:?` + citeSp)
+	// "sửa đổi, bổ sung một số điều của " right before a name; with a type
+	// word before "sửa đổi" the name sits in an amending law's title
+	citeAmendBeforeRe = regexp.MustCompile(`(?i)(?:(luật|bộ luật|pháp lệnh|nghị định|nghị quyết|thông tư)[ \t]+)?(?:sửa đổi|bổ sung|sửa đổi, bổ sung)(?:[ \t]+một số điều)?(?:[ \t]+(?:của|tại))?[ \t]+$`)
 )
 
 // citeTypeNames maps a lower-cased type word or abbreviation to its
@@ -122,26 +145,34 @@ var citeTypeNames = map[string]string{
 	"nđ": "Nghị định", "ttlt": "Thông tư liên tịch", "tt": "Thông tư", "qđ": "Quyết định", "nq": "Nghị quyết",
 }
 
+// citeSpan is a citation while FindCitations works on the folded text.
+type citeSpan struct {
+	Citation
+	fs, fe int // byte offsets in the folded text
+}
+
 // FindCitations returns the documents cited in text, in text order and
 // without overlap. A full number wins over a partial reading of the same
 // words, and a law named right before its number ("Luật Đất đai số
 // 31/2024/QH15") is one citation carrying both.
 func FindCitations(text string) []Citation {
-	text = norm.NFC.String(text)
-	folded, orig := foldCitationText(text)
-	var cits []Citation
+	folded, origRune := foldCitationText(text)
+	orig := []rune(text)
+	var spans []citeSpan
+	covered := make([]bool, len(folded)+1)
 	taken := func(s, e int) bool {
-		for _, c := range cits {
-			if s < c.End && c.Start < e {
+		for i := s; i < e; i++ {
+			if covered[i] {
 				return true
 			}
 		}
 		return false
 	}
-	add := func(c Citation) {
-		c.Start, c.End = orig[c.Start], orig[c.End]
-		c.Raw = text[c.Start:c.End]
-		cits = append(cits, c)
+	add := func(c citeSpan) {
+		for i := c.fs; i < c.fe; i++ {
+			covered[i] = true
+		}
+		spans = append(spans, c)
 	}
 	// each match without the trailing boundary rune citeEnd consumed
 	matches := func(re *regexp.Regexp) [][]int {
@@ -160,6 +191,7 @@ func FindCitations(text string) []Citation {
 		}
 		return folded[m[2*i]:m[2*i+1]]
 	}
+	span := func(m []int, c Citation) citeSpan { return citeSpan{Citation: c, fs: m[0], fe: m[1]} }
 
 	for _, m := range matches(citeStandardRe) {
 		if gluedLetterBefore(folded, m[0]) || taken(m[0], m[1]) {
@@ -173,7 +205,7 @@ func FindCitations(text string) []Citation {
 		if iss := sub(m, 5); iss != "" {
 			num += "/" + iss
 		}
-		add(Citation{Start: m[0], End: m[1], Kind: CitationStandard, Number: num, Key: CatalogNumberKey(num), Year: sub(m, 4)})
+		add(span(m, Citation{Kind: CitationStandard, Number: num, Key: CatalogNumberKey(num), Year: sub(m, 4)}))
 	}
 	for _, re := range []*regexp.Regexp{citeFullRe, citeDashRe, citeSpacedRe} {
 		for _, m := range matches(re) {
@@ -185,8 +217,7 @@ func FindCitations(text string) []Citation {
 				continue
 			}
 			num := sub(m, 1) + "/" + year + "/" + normalizeCitationCode(sub(m, 3))
-			add(Citation{Start: m[0], End: m[1], Kind: CitationFull, Number: num, Key: CatalogNumberKey(num),
-				No: sub(m, 1), Year: year})
+			add(span(m, Citation{Kind: CitationFull, Number: num, Key: CatalogNumberKey(num), No: sub(m, 1), Year: year}))
 		}
 	}
 	for _, m := range matches(citePartyRe) {
@@ -194,30 +225,45 @@ func FindCitations(text string) []Citation {
 			continue
 		}
 		num := sub(m, 1) + "-" + sub(m, 2) + "/" + sub(m, 3)
-		add(Citation{Start: m[0], End: m[1], Kind: CitationParty, Number: num, Key: CatalogNumberKey(num), No: sub(m, 1)})
+		add(span(m, Citation{Kind: CitationParty, Number: num, Key: CatalogNumberKey(num), No: sub(m, 1)}))
 	}
 	for _, m := range matches(citeAdminRe) {
 		if gluedNumberBefore(folded, m[0]) || taken(m[0], m[1]) {
 			continue
 		}
 		num := sub(m, 1) + "/" + normalizeCitationCode(sub(m, 2))
-		add(Citation{Start: m[0], End: m[1], Kind: CitationAdmin, Number: num, Key: CatalogNumberKey(num), No: sub(m, 1)})
+		add(span(m, Citation{Kind: CitationAdmin, Number: num, Key: CatalogNumberKey(num), No: sub(m, 1)}))
 	}
 	for _, m := range citePartialRe.FindAllStringSubmatchIndex(folded, -1) {
-		if gluedLetterBefore(folded, m[0]) || taken(m[0], m[1]) || !partialEndsClean(folded[m[1]:]) {
+		if gluedLetterBefore(folded, m[0]) || taken(m[0], m[1]) {
 			continue
 		}
 		word := sub(m, 1) + sub(m, 2)
-		if lw := strings.ToLower(word); lw == "luật" && (word == "luật" || precededByWord(folded, m[0], "pháp")) {
-			continue // "pháp luật 1.", "luật" as a common noun
+		lw := strings.ToLower(word)
+		hasSo := sub(m, 3) != ""
+		no, year := sub(m, 4), sub(m, 5)+sub(m, 6)
+		if !partialEndsClean(folded[m[1]:], year != "") {
+			continue
 		}
-		no, year := sub(m, 3), sub(m, 4)+sub(m, 5)
+		switch {
+		case lw == "hiến pháp":
+			continue // a constitution is named by year, never numbered
+		case lw == "luật" && (word == "luật" || precededByWord(folded, m[0], "pháp")):
+			continue // "pháp luật 1.", "luật" as a common noun
+		case sub(m, 1) != "" && !unicode.IsUpper(firstRune(word)) && !hasSo && year == "":
+			continue // "quyết định 3 phương án": lower case needs "số" or a year
+		case !hasSo && year == "" && len(no) == 4 && (strings.HasPrefix(no, "19") || strings.HasPrefix(no, "20")):
+			continue // "Luật 2013", "Nghị định 2020": a year, not a number
+		}
 		num := no
 		if year != "" {
 			num += "/" + year
 		}
-		add(Citation{Start: m[0], End: m[1], Kind: CitationPartial, Number: num,
-			DocType: citeTypeNames[strings.ToLower(word)], No: no, Year: year})
+		add(span(m, Citation{Kind: CitationPartial, Number: num, DocType: citeTypeNames[lw], No: no, Year: year}))
+	}
+	byStart := map[int]int{}
+	for i := range spans {
+		byStart[spans[i].fs] = i
 	}
 	for _, m := range citeNameRe.FindAllStringSubmatchIndex(folded, -1) {
 		if gluedLetterBefore(folded, m[0]) || taken(m[0], m[0]+1) {
@@ -228,35 +274,39 @@ func FindCitations(text string) []Citation {
 		if end <= m[3] || taken(m[0], end) {
 			continue
 		}
-		name := citeTypeNames[strings.ToLower(word)] + folded[m[3]:end]
+		docType := citeTypeNames[strings.ToLower(word)]
+		name := docType + folded[m[3]:end]
 		// "Luật X số 73/2006/QH11": the name belongs to the number after it
 		if loc := citeSoAfterRe.FindStringIndex(folded[end:]); loc != nil {
-			attached := false
-			for i := range cits {
-				if orig[end+loc[1]] == cits[i].Start && cits[i].Kind != CitationPartial {
-					cits[i].Name, cits[i].DocType = name, citeTypeNames[strings.ToLower(word)]
-					attached = true
-				}
-			}
-			if attached {
+			if i, ok := byStart[end+loc[1]]; ok && spans[i].Kind != CitationPartial {
+				spans[i].Name, spans[i].DocType = name, docType
 				continue
 			}
 		}
-		add(Citation{Start: m[0], End: end, Kind: CitationName, Name: name,
-			DocType: citeTypeNames[strings.ToLower(word)], Year: year})
-	}
-	sort.Slice(cits, func(i, j int) bool { return cits[i].Start < cits[j].Start })
-	for i := range cits {
-		if cits[i].DocType != "" || cits[i].Kind == CitationStandard {
-			continue
+		c := citeSpan{Citation: Citation{Kind: CitationName, Name: name, DocType: docType, Year: year}, fs: m[0], fe: end}
+		if am := citeAmendBeforeRe.FindStringSubmatch(folded[max(0, m[0]-80):m[0]]); am != nil {
+			c.Role = CitationRoleAmendTarget
+			if am[1] != "" {
+				c.Role = CitationRoleInAmendingTitle
+			}
 		}
-		if m := citeTypeBeforeRe.FindStringSubmatch(text[max(0, cits[i].Start-60):cits[i].Start]); m != nil {
-			cits[i].DocType = citeTypeNames[strings.ToLower(m[1]+m[2])]
-		} else if d := DocTypeFromNumber(cits[i].Number); d != nil {
-			cits[i].DocType = d.Name
-		}
+		add(c)
 	}
-	return cits
+	sort.Slice(spans, func(i, j int) bool { return spans[i].fs < spans[j].fs })
+	out := make([]Citation, len(spans))
+	for i, c := range spans {
+		if c.DocType == "" && c.Kind != CitationStandard {
+			if m := citeTypeBeforeRe.FindStringSubmatch(folded[max(0, c.fs-60):c.fs]); m != nil {
+				c.DocType = citeTypeNames[strings.ToLower(m[1]+m[2])]
+			} else if d := DocTypeFromNumber(c.Number); d != nil {
+				c.DocType = d.Name
+			}
+		}
+		c.Start, c.End = origRune[c.fs], origRune[c.fe]
+		c.Raw = string(orig[c.Start:c.End])
+		out[i] = c.Citation
+	}
+	return out
 }
 
 // NormalizeCitationNumber returns the display form of one written số
@@ -273,21 +323,32 @@ func NormalizeCitationNumber(s string) string {
 	return ""
 }
 
-// foldCitationText applies citationFold and returns, for each byte of the
-// folded text (and its end), the byte offset in text.
+// foldCitationText returns the NFC form of text with citationFold applied
+// and, for each of its bytes (and its end), the rune offset in text of the
+// normalisation segment the byte comes from.
 func foldCitationText(text string) (string, []int) {
 	var b strings.Builder
-	orig := make([]int, 0, len(text)+1)
-	for i, r := range text {
-		if f, ok := citationFold[r]; ok {
-			r = f
-		}
-		n, _ := b.WriteRune(r)
-		for k := 0; k < n; k++ {
-			orig = append(orig, i)
+	origRune := make([]int, 0, len(text)+1)
+	var it norm.Iter
+	it.InitString(norm.NFC, text)
+	runeAt, prev := 0, 0
+	for !it.Done() {
+		seg := it.Next()
+		start := runeAt
+		pos := it.Pos()
+		runeAt += utf8.RuneCountInString(text[prev:pos])
+		prev = pos
+		for _, r := range string(seg) {
+			if f, ok := citationFold[r]; ok {
+				r = f
+			}
+			n, _ := b.WriteRune(r)
+			for k := 0; k < n; k++ {
+				origRune = append(origRune, start)
+			}
 		}
 	}
-	return b.String(), append(orig, len(text))
+	return b.String(), append(origRune, runeAt)
 }
 
 // normalizeCitationCode drops the spaces of a code and upper-cases one
@@ -302,6 +363,11 @@ func normalizeCitationCode(code string) string {
 }
 
 func isCiteBodyRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '&' }
+
+func firstRune(s string) rune {
+	r, _ := utf8.DecodeRuneInString(s)
+	return r
+}
 
 // gluedNumberBefore: a match right after a digit, "/" or "." is the tail
 // of a longer number ("1153/2022/…" is not "53/2022/…").
@@ -322,63 +388,90 @@ func gluedLetterBefore(s string, i int) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
+// nextWord returns the word starting after the spaces at s[i:] and the
+// offset just past it; it reads only that far.
+func nextWord(s string, i int) (string, int) {
+	for i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+		i++
+	}
+	j := i
+	for j < len(s) {
+		r, size := utf8.DecodeRuneInString(s[j:])
+		if !(unicode.IsLetter(r) || unicode.IsDigit(r)) {
+			break
+		}
+		j += size
+	}
+	return s[i:j], j
+}
+
 // partialEndsClean: a bare number is complete — not followed by a letter,
-// a digit, or "/", "-", "." / ":" leading to more of a number.
-func partialEndsClean(rest string) bool {
+// a digit, or "/", "-", "." / ":" leading to more of a number — and,
+// without a year, is not a quantity ("quyết định 15 ngày", "3 năm tù").
+func partialEndsClean(rest string, hasYear bool) bool {
 	r, size := utf8.DecodeRuneInString(rest)
 	if size == 0 {
 		return true
 	}
-	if unicode.IsLetter(r) || unicode.IsDigit(r) {
+	if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '%' {
 		return false
 	}
 	if r == '/' || r == '-' || r == '.' || r == ':' {
-		n, _ := utf8.DecodeRuneInString(strings.TrimLeft(rest[size:], " \t"))
+		i := size
+		for i < len(rest) && (rest[i] == ' ' || rest[i] == '\t') {
+			i++
+		}
+		n, _ := utf8.DecodeRuneInString(rest[i:])
 		return !(unicode.IsLetter(n) || unicode.IsDigit(n))
 	}
-	if r == '%' {
-		return false
+	if hasYear {
+		return true
 	}
-	// "quyết định 15 ngày", "thông tư 3 lần": a quantity, not a number
-	if f := strings.Fields(rest); len(f) > 0 && citeQuantityUnits[strings.ToLower(strings.Trim(f[0], ",.;:"))] {
-		return false
-	}
-	return true
+	w, _ := nextWord(rest, 0)
+	return !citeQuantityUnits[strings.ToLower(w)]
 }
 
+// citeQuantityUnits follow a count, never a document number.
 var citeQuantityUnits = map[string]bool{
-	"ngày": true, "tháng": true, "giờ": true, "phút": true, "lần": true, "người": true,
-	"đồng": true, "triệu": true, "tỷ": true, "nghìn": true, "điều": true, "khoản": true, "văn": true,
+	"ngày": true, "tháng": true, "năm": true, "giờ": true, "phút": true, "lần": true, "người": true,
+	"đồng": true, "triệu": true, "tỷ": true, "nghìn": true, "văn": true, "bản": true, "phương": true,
+	"nội": true, "trường": true, "hợp": true, "loại": true, "nhóm": true, "mức": true, "bước": true,
+	"tuổi": true, "kỳ": true, "vụ": true, "cái": true, "chiếc": true, "lượt": true, "tù": true,
 }
 
 func precededByWord(s string, i int, word string) bool {
-	before := strings.TrimRight(s[:i], " \t")
+	before := strings.TrimRight(s[max(0, i-len(word)-8):i], " \t")
 	return len(before) >= len(word) && strings.EqualFold(before[len(before)-len(word):], word) &&
 		!gluedLetterBefore(before, len(before)-len(word))
 }
 
-// lawNameStops end a law's name: the word itself is not part of it.
+// lawNameStops end a law's name: words of a clause, never of a title.
+// "không", "có", "theo", "hiện" are not among them: "Luật Hàng không dân
+// dụng Việt Nam", "Pháp lệnh Ưu đãi người có công với cách mạng", "Luật
+// Đầu tư theo phương thức đối tác công tư", "Luật Thực hiện dân chủ ở cơ
+// sở". A run that reads on past the name is trimmed by the catalogue
+// lookup.
 var lawNameStops = map[string]bool{
 	"số": true, "năm": true, "ngày": true, "được": true, "đã": true, "đang": true, "sẽ": true,
-	"thì": true, "là": true, "này": true, "nêu": true, "tại": true, "theo": true, "hiện": true,
-	"có": true, "không": true, "phải": true, "cho": true, "đối": true, "khi": true,
+	"thì": true, "là": true, "này": true, "nêu": true,
 }
 
 // lawNameStopPairs end a name at a verb that is two words: "Luật Đấu thầu
 // quy định", while "Luật Tiêu chuẩn và quy chuẩn kỹ thuật" keeps "quy".
 var lawNameStopPairs = map[string]bool{
 	"quy định": true, "sửa đổi": true, "bổ sung": true, "hướng dẫn": true, "bãi bỏ": true, "thay thế": true,
+	"có hiệu": true, "hết hiệu": true,
 }
 
-const lawNameMaxWords = 14
+const lawNameMaxWords = 16
 
 // scanLawName reads a law's name from i (just after the type word, at the
 // space before its first capitalised word) and returns where it ends and
 // the year written right after it ("Luật Đấu thầu 2023", "… năm 2013").
-// It stops at punctuation, a number, a stop word, a following type word
+// It stops at punctuation, a number, a clause word, a following type word
 // ("…, Luật Đầu tư", "… và Luật Nhà ở") or a comma before a capital; a
 // comma before a lower-case word stays inside ("Luật Khám bệnh, chữa
-// bệnh"). Too long a run is cut — the catalogue lookup tries prefixes.
+// bệnh"). It reads word by word, never the rest of the text.
 func scanLawName(s string, i int) (end int, year string) {
 	end = i
 	words := 0
@@ -388,6 +481,9 @@ func scanLawName(s string, i int) (end int, year string) {
 		comma := false
 		for j < len(s) && (s[j] == ' ' || s[j] == '\t' || s[j] == ',') {
 			if s[j] == ',' {
+				if comma {
+					break
+				}
 				comma = true
 			}
 			j++
@@ -404,7 +500,7 @@ func scanLawName(s string, i int) (end int, year string) {
 			break
 		}
 		w := s[j:k]
-		first, _ := utf8.DecodeRuneInString(w)
+		first := firstRune(w)
 		lw := strings.ToLower(w)
 		if unicode.IsDigit(first) {
 			if len(w) == 4 && (strings.HasPrefix(w, "19") || strings.HasPrefix(w, "20")) && !comma {
@@ -412,17 +508,14 @@ func scanLawName(s string, i int) (end int, year string) {
 			}
 			break
 		}
-		if next := strings.Fields(s[k:]); len(next) > 0 && lawNameStopPairs[lw+" "+strings.ToLower(strings.Trim(next[0], ",.;:"))] {
+		if next, _ := nextWord(s, k); next != "" && lawNameStopPairs[lw+" "+strings.ToLower(next)] {
 			break
 		}
 		if lawNameStops[lw] {
 			if lw == "năm" {
-				rest := strings.TrimLeft(s[k:], " \t")
-				if len(rest) >= 4 && (strings.HasPrefix(rest, "19") || strings.HasPrefix(rest, "20")) {
-					y := rest[:4]
-					if strings.Trim(y, "0123456789") == "" {
-						year = y
-					}
+				if y, _ := nextWord(s, k); len(y) == 4 && (strings.HasPrefix(y, "19") || strings.HasPrefix(y, "20")) &&
+					strings.Trim(y, "0123456789") == "" {
+					year = y
 				}
 			}
 			break
@@ -430,7 +523,7 @@ func scanLawName(s string, i int) (end int, year string) {
 		if comma && unicode.IsUpper(first) {
 			break
 		}
-		if (lw == "và" || lw == "hoặc") && startsTypeWord(s[k:]) {
+		if (lw == "và" || lw == "hoặc") && startsTypeWord(s[k:min(len(s), k+24)]) {
 			break
 		}
 		if words > 0 && unicode.IsUpper(first) && citeTypeNames[lw] != "" && lw != "tt" {

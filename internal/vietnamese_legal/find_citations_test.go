@@ -8,6 +8,9 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 // citeSummary is "kind number key doctype" for one citation, the name for
@@ -89,14 +92,15 @@ func TestFindCitations(t *testing.T) {
 }
 
 func TestFindCitationsSpans(t *testing.T) {
+	runeSpan := func(in string, c Citation) string { return string([]rune(in)[c.Start:c.End]) }
 	in := "Theo NĐ 68/2026 và Thông tư số 01/2020/TT- BNNPTNT, ngày 15/11/2018"
 	cits := FindCitations(in)
 	if len(cits) != 2 {
 		t.Fatalf("got %+v", cits)
 	}
 	for _, c := range cits {
-		if in[c.Start:c.End] != c.Raw {
-			t.Errorf("span %d:%d = %q, raw %q", c.Start, c.End, in[c.Start:c.End], c.Raw)
+		if runeSpan(in, c) != c.Raw {
+			t.Errorf("span %d:%d = %q, raw %q", c.Start, c.End, runeSpan(in, c), c.Raw)
 		}
 	}
 	if cits[0].Raw != "NĐ 68/2026" || cits[1].Raw != "01/2020/TT- BNNPTNT" {
@@ -105,8 +109,106 @@ func TestFindCitationsSpans(t *testing.T) {
 	// offsets stay in the original text across folded runes of other widths
 	in = "QĐ–TTg: Nghị định 53/2022/NÐ–CP."
 	cits = FindCitations(in)
-	if len(cits) != 1 || cits[0].Raw != "53/2022/NÐ–CP" || in[cits[0].Start:cits[0].End] != cits[0].Raw {
+	if len(cits) != 1 || cits[0].Raw != "53/2022/NÐ–CP" || runeSpan(in, cits[0]) != cits[0].Raw {
 		t.Fatalf("got %+v", cits)
+	}
+	// review #9: decomposed input (NFD) — offsets are runes of the input as given
+	in = norm.NFD.String("Căn cứ Nghị định số 68/2026/NĐ-CP và Luật Đấu thầu.")
+	cits = FindCitations(in)
+	if len(cits) != 2 {
+		t.Fatalf("NFD: got %+v", cits)
+	}
+	for _, c := range cits {
+		if runeSpan(in, c) != c.Raw || norm.NFC.String(c.Raw) == "" {
+			t.Errorf("NFD span %d:%d = %q, raw %q", c.Start, c.End, runeSpan(in, c), c.Raw)
+		}
+	}
+	if norm.NFC.String(cits[0].Raw) != "68/2026/NĐ-CP" || norm.NFC.String(cits[1].Raw) != "Luật Đấu thầu" {
+		t.Errorf("NFD raw = %q, %q", cits[0].Raw, cits[1].Raw)
+	}
+}
+
+// Review findings 3, 5–8, 11: each scenario as reported.
+func TestFindCitationsReview(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		// 3: real names are not cut at "không", "hiện", "có", "theo"
+		{"Luật Hàng không dân dụng Việt Nam;", []string{"name Luật Hàng không dân dụng Việt Nam"}},
+		{"theo Luật Thực hiện dân chủ ở cơ sở.", []string{"name Luật Thực hiện dân chủ ở cơ sở"}},
+		{"Luật Phòng không nhân dân.", []string{"name Luật Phòng không nhân dân"}},
+		{"Pháp lệnh Ưu đãi người có công với cách mạng;", []string{"name Pháp lệnh Ưu đãi người có công với cách mạng"}},
+		{"Luật Đầu tư theo phương thức đối tác công tư;", []string{"name Luật Đầu tư theo phương thức đối tác công tư"}},
+		{"Luật Đấu thầu quy định", []string{"name Luật Đấu thầu"}},
+		// 5: a tail after a second slash stays in the key
+		{"Thông tư liên tịch 44/2007/TTLT/BTC-BKH&CN.", []string{"full 44/2007/TTLT/BTC-BKH&CN 44/2007/TTLT/BTC-BKH&CN Thông tư liên tịch"}},
+		// 6: a partial with a year, followed by ngày / điều / khoản
+		{"Nghị định 86/2013 ngày 29/7/2013", []string{"partial 86/2013  Nghị định"}},
+		{"Nghị định 100/2019 điều 5 quy định gì", []string{"partial 100/2019  Nghị định"}},
+		{"NĐ 100/2019 khoản 2", []string{"partial 100/2019  Nghị định"}},
+		{"Theo NĐ 15 điều 3", []string{"partial 15  Nghị định"}},
+		// 7: quantities and years are not numbers
+		{"Tòa án quyết định 3 năm tù", nil},
+		{"Hội đồng quyết định 2 phương án", nil},
+		{"nghị quyết 3 nội dung", nil},
+		{"thông tư 2 bản", nil},
+		{"Bộ luật 2015 quy định", nil},
+		{"Luật 2013 và Nghị định 2020", nil},
+		{"quyết định số 3 của UBND", []string{"partial 3  Quyết định"}},
+		// 8: a dash with spaces after a full code is not part of it
+		{"Quyết định 15/2023/QĐ-UBND - UBND tỉnh Huế", []string{"full 15/2023/QĐ-UBND 15/2023/QD-UBND Quyết định"}},
+		{"Quyết định 123/QĐ-UBND - UBND tỉnh", []string{"admin 123/QĐ-UBND 123/QD-UBND Quyết định"}},
+	}
+	for _, c := range cases {
+		var got []string
+		for _, cit := range FindCitations(c.in) {
+			got = append(got, citeSummary(cit))
+		}
+		if strings.Join(got, "\n") != strings.Join(c.want, "\n") {
+			t.Errorf("FindCitations(%q)\n got %q\nwant %q", c.in, got, c.want)
+		}
+	}
+	// 11: the law named inside an amending law's title is not cited as itself
+	cits := FindCitations("Luật sửa đổi, bổ sung một số điều của Luật Đất đai số 43/2024/QH15")
+	if len(cits) != 1 || cits[0].Kind != CitationFull || cits[0].Number != "43/2024/QH15" {
+		t.Fatalf("amending law with its number: %+v", cits)
+	}
+	cits = FindCitations("Căn cứ Luật sửa đổi, bổ sung một số điều của Luật Đất đai;")
+	if len(cits) != 1 || cits[0].Name != "Luật Đất đai" || cits[0].Role != CitationRoleInAmendingTitle {
+		t.Fatalf("amending title: %+v", cits)
+	}
+	cits = FindCitations("Điều 1. Sửa đổi, bổ sung một số điều của Luật Đất đai như sau:")
+	if len(cits) != 1 || cits[0].Role != CitationRoleAmendTarget {
+		t.Fatalf("amend target: %+v", cits)
+	}
+	if cits := FindCitations("theo Luật Đất đai."); len(cits) != 1 || cits[0].Role != "" {
+		t.Fatalf("plain citation: %+v", cits)
+	}
+}
+
+// review #12: linear on a ~1 MB text
+func BenchmarkFindCitationsMegabyte(b *testing.B) {
+	unit := "Căn cứ Luật Đấu thầu, Luật Hàng không dân dụng Việt Nam và Nghị định số 68/2026/NĐ-CP ngày 15/11/2018; quyết định 3 năm tù, khoản 2 Điều 5. "
+	text := strings.Repeat(unit, 1<<20/len(unit))
+	b.SetBytes(int64(len(text)))
+	for i := 0; i < b.N; i++ {
+		if len(FindCitations(text)) == 0 {
+			b.Fatal("no citations")
+		}
+	}
+}
+
+func TestFindCitationsMegabyteIsFast(t *testing.T) {
+	unit := "Căn cứ Luật Đấu thầu, Luật Hàng không dân dụng Việt Nam và Nghị định số 68/2026/NĐ-CP ngày 15/11/2018; quyết định 3 năm tù, khoản 2 Điều 5. "
+	text := strings.Repeat(unit, 1<<20/len(unit))
+	start := time.Now()
+	n := len(FindCitations(text))
+	if d := time.Since(start); d > 10*time.Second {
+		t.Fatalf("1 MB took %v", d)
+	}
+	if n < 3*(1<<20/len(unit)) {
+		t.Fatalf("found %d", n)
 	}
 }
 
