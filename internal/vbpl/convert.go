@@ -114,6 +114,9 @@ type Document struct {
 	Structured bool     `json:"structured"`
 	Warnings   []string `json:"warnings,omitempty"`
 	Stats      Stats    `json:"stats"`
+	// Links are the page's links to cited vbpl.vn documents, in page
+	// order; CitationLinks places them in chunks.
+	Links []Link `json:"links,omitempty"`
 }
 
 // Stats is diagnostic counters for pilots and logs.
@@ -556,7 +559,9 @@ func Convert(r io.Reader) (*Document, error) {
 	b := newBuilder()
 	b.doc.Stats.Images = col.images
 	b.run(col.units)
-	return b.finish(), nil
+	d := b.finish()
+	d.Links = collectLinks(root)
+	return d, nil
 }
 
 // ConvertBytes is Convert for an in-memory document.

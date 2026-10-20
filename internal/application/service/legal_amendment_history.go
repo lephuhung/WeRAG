@@ -605,18 +605,12 @@ func shortQuote(s string) string {
 	return string(r) + "…"
 }
 
-// legalHistoryTarget is a catalogue document an amendment may name.
-type legalHistoryTarget struct {
-	DocumentNumber string
-	Title          string
-}
-
 // amendedNumber is the số hiệu of the document an amendment names: written
 // in the text ("Nghị định số 75/2019/NĐ-CP"), else — when the text names it
 // only by title ("Luật Giáo dục") — the catalogue document of exactly that
 // title (not "Luật Giáo dục đại học"): one the amending document is
-// recorded to amend, else the latest one issued before it and not fully
-// expired.
+// recorded to amend, else the one in force when it was issued, read from
+// the catalogue dates (ResolveLegalDocumentName).
 func (h *legalHistory) amendedNumber(amender legalHistoryDoc, name string) string {
 	if n := legalDocNumberRe.FindString(name); n != "" {
 		return n
@@ -634,47 +628,35 @@ func (h *legalHistory) amendedNumber(amender legalHistoryDoc, name string) strin
 	return n
 }
 
+// lookupAmended resolves a name with ResolveLegalDocumentName as of the
+// amending document's issue date; a name that stays ambiguous (a newer
+// law of that name issued but not yet in force) names nothing, and so do a
+// trimmed match (a shorter law than the name written) and an issue date
+// that does not parse.
 func (h *legalHistory) lookupAmended(amender legalHistoryDoc, name string) string {
-	var targets []legalHistoryTarget
-	if amender.ExternalID != "" {
-		if err := h.db.Raw(`SELECT t.document_number, t.title FROM legal_document_relations r
-			JOIN legal_documents t ON t.id = r.to_id
-			WHERE r.from_id = ? AND r.relation IN ('amends', 'replaces', 'repeals')`, amender.ExternalID).
-			Scan(&targets).Error; err != nil {
-			logger.Warnf(h.ctx, "[LegalHistory] catalogue targets: %v", err)
+	var at time.Time
+	if amender.IssueDate != "" {
+		var err error
+		if at, err = time.Parse("2006-01-02", amender.IssueDate); err != nil {
+			logger.Debugf(h.ctx, "[LegalHistory] amender %s: issue date %q: %v", amender.Number, amender.IssueDate, err)
+			return ""
 		}
 	}
-	for _, t := range targets {
-		if titleBase(t.Title) == name {
-			return t.DocumentNumber
-		}
-	}
-	issued := amender.IssueDate
-	if issued == "" {
-		issued = "9999-12-31"
-	}
-	targets = nil
-	if err := h.db.Raw(`SELECT document_number, title FROM legal_documents
-		WHERE lower(title) LIKE ? AND coalesce(status, '') NOT LIKE 'Hết hiệu lực toàn bộ%'
-		AND issued_on < ? ORDER BY issued_on DESC LIMIT 10`, name+" số %", issued).
-		Scan(&targets).Error; err != nil {
-		logger.Warnf(h.ctx, "[LegalHistory] catalogue by title: %v", err)
+	m, err := ResolveLegalDocumentName(h.ctx, h.db, LegalNameQuery{Name: name, At: at, AmenderID: amender.ExternalID})
+	if err != nil {
+		logger.Warnf(h.ctx, "[LegalHistory] catalogue by name: %v", err)
 		return ""
 	}
-	for _, t := range targets {
-		if titleBase(t.Title) == name {
-			return t.DocumentNumber
-		}
+	if m.Resolution == LegalNameAmbiguous {
+		logger.Debugf(h.ctx, "[LegalHistory] %q named by %s is ambiguous (%d candidates)", name, amender.Number, len(m.Candidates))
 	}
-	return ""
-}
-
-// titleBase is a catalogue title without its số hiệu, lower-cased: "Luật
-// Giáo dục số 43/2019/QH14" → "luật giáo dục".
-func titleBase(title string) string {
-	title = strings.ToLower(strings.Join(strings.Fields(title), " "))
-	if i := strings.Index(title, " số "); i > 0 {
-		return title[:i]
+	if m.Chosen == nil {
+		return ""
 	}
-	return title
+	if m.Trimmed {
+		// the catalogue may lack the law written; a shorter title is a guess
+		logger.Debugf(h.ctx, "[LegalHistory] %q read as %s after dropping %q: skipped", name, m.Chosen.DocumentNumber, m.Dropped)
+		return ""
+	}
+	return m.Chosen.DocumentNumber
 }

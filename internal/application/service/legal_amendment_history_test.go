@@ -97,15 +97,15 @@ func TestAnswerUsesProvisionByWording(t *testing.T) {
 	}
 }
 
-func TestTitleBase(t *testing.T) {
+func TestLegalTitleBase(t *testing.T) {
 	for in, want := range map[string]string{
 		"Luật Giáo dục số 43/2019/QH14":          "luật giáo dục",
 		"Luật GIÁO DỤC ĐẠI HỌC số 125/2025/QH15": "luật giáo dục đại học",
 		"Nghị định  số 75/2019/NĐ-CP":            "nghị định",
 		"Bộ luật Lao động":                       "bộ luật lao động",
 	} {
-		if got := titleBase(in); got != want {
-			t.Errorf("titleBase(%q) = %q, want %q", in, got, want)
+		if got := LegalTitleBase(in, ""); got != want {
+			t.Errorf("LegalTitleBase(%q) = %q, want %q", in, got, want)
 		}
 	}
 }
