@@ -101,3 +101,41 @@ func TestPublicBillingPlansScopeAndFailures(t *testing.T) {
 		})
 	}
 }
+
+func TestPublicBillingPlansAgentOffers(t *testing.T) {
+	s := &publicBillingStub{plans: []*types.UsagePlanOffer{
+		{
+			UsagePlan:      &types.UsagePlan{ID: "seat", IsActive: true, PriceVND: 49000},
+			IncludedAgents: []types.UsagePlanAgent{{ID: "writer", Name: "Soạn thảo văn bản"}},
+			Addons:         []types.UsagePlanAddonOffer{{AgentID: "specialist", Name: "Tư vấn doanh nghiệp", Description: "Tra cứu chuyên ngành", PriceVND: 99000, PerSeat: true}},
+		},
+		{UsagePlan: &types.UsagePlan{ID: "empty", IsActive: true, PriceVND: 49000}},
+	}}
+	w := httptest.NewRecorder()
+	publicBillingTestRouter(s).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/public/billing/plans?scope=user", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Data []struct {
+			IncludedAgents []types.UsagePlanAgent      `json:"included_agents"`
+			Addons         []types.UsagePlanAddonOffer `json:"addons"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Data) != 2 {
+		t.Fatalf("catalogue = %s", w.Body.String())
+	}
+	first := body.Data[0]
+	if len(first.IncludedAgents) != 1 || first.IncludedAgents[0].Name != "Soạn thảo văn bản" {
+		t.Fatalf("included agents = %+v", first.IncludedAgents)
+	}
+	if len(first.Addons) != 1 || first.Addons[0].AgentID != "specialist" || first.Addons[0].PriceVND != 99000 || !first.Addons[0].PerSeat || first.Addons[0].Description != "Tra cứu chuyên ngành" {
+		t.Fatalf("add-ons = %+v", first.Addons)
+	}
+	if body.Data[1].IncludedAgents == nil || body.Data[1].Addons == nil {
+		t.Fatalf("empty offers must be arrays: %s", w.Body.String())
+	}
+}
