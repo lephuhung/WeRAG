@@ -66,6 +66,19 @@ func TestLegalQuoteGroups(t *testing.T) {
 	require.Equal(t, "3. Khoản ba mới.", b3.text)
 	require.Equal(t, "3. Khoản ba mới.", string([]rune(multi)[b3.span.Start:b3.span.End]))
 	require.Equal(t, utf8.RuneCountInString(multi[:strings.Index(multi, "3. Khoản ba")]), b3.span.Start)
+
+	// NĐ 266/2025: "khoản 4" quoted under another Điều and under a parent
+	// lead-in naming Điều 27 — the parent decides
+	nested := "15. Sửa đổi, bổ sung khoản 4 Điều 24 như sau:\n\n> “4. Khoản bốn của Điều 24.”.\n\n" +
+		"17. Sửa đổi, bổ sung khoản 1, khoản 4 Điều 27 như sau:\n\na) Sửa đổi, bổ sung khoản 1 như sau:\n\n> “1. Khoản một của Điều 27.”.\n\n" +
+		"b) Sửa đổi, bổ sung khoản 4 như sau:\n\n> “4. Khoản bốn của Điều 27.”."
+	ng := legalQuoteGroups(nested)
+	_, b4, reason, ok := legalQuoteFor(ng, LegalProvisionRef{Article: "27", Khoan: "4"}, "")
+	require.True(t, ok, reason)
+	require.Equal(t, "4. Khoản bốn của Điều 27.", b4.text)
+	_, b4, _, ok = legalQuoteFor(ng, LegalProvisionRef{Article: "24", Khoan: "4"}, "")
+	require.True(t, ok)
+	require.Equal(t, "4. Khoản bốn của Điều 24.", b4.text)
 }
 
 func TestValidateLegalAmendEdge(t *testing.T) {

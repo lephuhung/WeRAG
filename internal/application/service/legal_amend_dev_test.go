@@ -106,6 +106,53 @@ func TestLegalAmendDev(t *testing.T) {
 	}
 }
 
+// TestLegalAmendDevWiring compares the answer-path functions, old and
+// resolver, on the same chunks: wording per chunk and the history block
+// for LEGAL_AMEND_ANSWER.
+func TestLegalAmendDevWiring(t *testing.T) {
+	dsn := os.Getenv("LEGAL_AMEND_DSN")
+	if dsn == "" {
+		t.Skip("LEGAL_AMEND_DSN not set")
+	}
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY`).Error; err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	var public []string
+	if err := db.Raw(`SELECT id FROM knowledge_bases WHERE deleted_at IS NULL AND visibility = 'public'`).Scan(&public).Error; err != nil {
+		t.Fatal(err)
+	}
+	ids := strings.Split(os.Getenv("LEGAL_AMEND_CHUNKS"), ",")
+	now := time.Now().In(func() *time.Location { l, _ := time.LoadLocation("Asia/Ho_Chi_Minh"); return l }())
+	start := time.Now()
+	oldW := LegalCurrentWording(ctx, db, public, ids, now)
+	tOld := time.Since(start)
+	start = time.Now()
+	newW, err := LegalCurrentWordingResolved(ctx, db, public, ids, now)
+	tNew := time.Since(start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fmt.Printf("wording: old %v, resolver %v\n", tOld.Round(time.Millisecond), tNew.Round(time.Millisecond))
+	for _, id := range ids {
+		fmt.Printf("\n######## chunk %s — same: %v\n", id, oldW[id] == newW[id])
+		fmt.Printf("--- BEFORE (old model_content%s) ---\n%s\n", map[bool]string{true: "", false: " = stored content"}[oldW[id] != ""], oldW[id])
+		fmt.Printf("--- AFTER (resolver model_content) ---\n%s\n", newW[id])
+	}
+	if answer := os.Getenv("LEGAL_AMEND_ANSWER"); answer != "" {
+		fmt.Printf("\n--- history (old) ---%s\n", LegalAmendmentHistory(ctx, db, public, ids, answer, now))
+		h, err := LegalAmendmentHistoryResolved(ctx, db, public, ids, answer, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Printf("--- history (resolver) ---%s\n", h)
+	}
+}
+
 func envOr(k, def string) string {
 	if v := os.Getenv(k); v != "" {
 		return v

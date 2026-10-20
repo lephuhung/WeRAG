@@ -138,6 +138,10 @@ func TestResolveLegalProvisionStates(t *testing.T) {
 			prov: LegalProvisionRef{Article: "5", Khoan: "2", Diem: "c"}, state: LegalStateCurrentVerified,
 			has:    []string{"[Bổ sung theo Nghị định 1/2025/NĐ-CP, từ 01/07/2025]\n\nc) bản sao căn cước."},
 			chunks: "b) bản sao giấy phép.\n\n[Bổ sung theo Nghị định 1/2025/NĐ-CP, từ 01/07/2025]\n\nc) bản sao căn cước.\n\n3. Cơ quan thuế"},
+		{name: "bo_sung of a Điều goes after the Điều it extends",
+			edges: []LegalAmendEdge{{Op: LegalOpBoSung, Amender: b1, Target: nd68, NewLabel: "5a", QuoteText: "Điều 5a. Mới", EffFrom: amendDay("2025-07-01"), Tier: LegalTierVerified}},
+			prov: LegalProvisionRef{Article: "5a"}, state: LegalStateCurrentVerified,
+			chunks: "trả lời trong 10 ngày.\n\n[Bổ sung theo Nghị định 1/2025/NĐ-CP, từ 01/07/2025]\n\nĐiều 5a. Mới\n"},
 		{name: "phrase chain A→B→C (two amenders, newer last)",
 			edges: []LegalAmendEdge{
 				{Op: LegalOpThayCumTu, Amender: b1, Target: nd68, Provision: LegalProvisionRef{Article: "5"}, From: "Tổng cục Thuế", To: "Cục Thuế", EffFrom: amendDay("2025-03-01"), Tier: LegalTierLegacyParserPhrase},
@@ -247,7 +251,7 @@ func TestResolveLegalProvisionStates(t *testing.T) {
 			prov:  k1, state: LegalStateCurrentVerified, chunks: "[Văn bản đã bị thay thế theo Nghị định 2/2026/NĐ-CP, từ 01/01/2026]"},
 		{name: "bai_bo_van_ban tier 2",
 			edges: []LegalAmendEdge{{Op: LegalOpBaiBoVanBan, Amender: b2, Target: nd68, EffFrom: amendDay("2026-01-01"), Tier: LegalTierUnverified}},
-			prov:  k3, state: LegalStateUnverified, has: []string{"có thể văn bản bị bãi bỏ theo Nghị định 2/2026/NĐ-CP"}},
+			prov:  k3, state: LegalStateUnverified, chunks: "[LỜI VĂN HIỆN HÀNH CHƯA XÁC MINH: có thể văn bản bị bãi bỏ theo Nghị định 2/2026/NĐ-CP, từ 01/01/2026]\n\n#### Điều 5."},
 		{name: "identity problem",
 			prov: k1, state: LegalStateUnresolved, chunks: "chưa xác định được văn bản này trong danh mục"},
 	}

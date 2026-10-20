@@ -21,7 +21,11 @@ import (
 
 // legalQuoteGroup is a lead-in and the quoted blocks after it.
 type legalQuoteGroup struct {
-	leadIn     string
+	leadIn string
+	// parent is the nearest earlier lead-in naming a Điều, when leadIn
+	// names none ("17. Sửa đổi khoản 1, khoản 4 Điều 27 như sau:" over
+	// "b) Sửa đổi, bổ sung khoản 4 như sau:")
+	parent     string
 	leadInSpan LegalRuneSpan
 	leadInByte int
 	blocks     []legalQuoteBlock
@@ -36,9 +40,10 @@ type legalQuoteBlock struct {
 }
 
 var (
-	quoteOpenRe  = regexp.MustCompile(`^>\s?\s*[“"]`)
-	quoteMarkRe  = regexp.MustCompile(`[“"]`)
-	quoteCloseRe = regexp.MustCompile(`[”"]\s*[.;,]*\s*$`)
+	quoteOpenRe         = regexp.MustCompile(`^>\s?\s*[“"]`)
+	legalNamesArticleRe = regexp.MustCompile(`(?i)(?:^|[^\p{L}])Điều\s+\d`)
+	quoteMarkRe         = regexp.MustCompile(`[“"]`)
+	quoteCloseRe        = regexp.MustCompile(`[”"]\s*[.;,]*\s*$`)
 	// quoteLabelRe reads the label a quoted text starts with.
 	quoteLabelRe = regexp.MustCompile(`(?i)^\s*(?:(Điều)\s+(\d+[a-zđ]?)\s*[.:]|(\d+[a-zđ]?)\.(?:\s|$)|([a-zđ])\)(?:\s|$))`)
 )
@@ -52,6 +57,7 @@ func legalQuoteGroups(content string) []legalQuoteGroup {
 		lines     []string
 	}
 	var open *openBlock
+	parent := ""
 	runeAt := func(b int) int { return utf8.RuneCountInString(content[:b]) }
 	pos := 0
 	for pos <= len(content) {
@@ -99,8 +105,13 @@ func legalQuoteGroups(content string) []legalQuoteGroup {
 		case strings.HasPrefix(trimmed, ">"):
 			// a quoted line outside a block (continuation of nothing)
 		default:
-			groups = append(groups, legalQuoteGroup{leadIn: trimmed, leadInByte: pos,
-				leadInSpan: LegalRuneSpan{runeAt(pos), runeAt(end)}})
+			g := legalQuoteGroup{leadIn: trimmed, leadInByte: pos, leadInSpan: LegalRuneSpan{runeAt(pos), runeAt(end)}}
+			if legalNamesArticleRe.MatchString(trimmed) {
+				parent = trimmed
+			} else {
+				g.parent = parent
+			}
+			groups = append(groups, g)
 			cur = &groups[len(groups)-1]
 		}
 		if end == len(content) {
@@ -168,14 +179,21 @@ func legalQuoteFor(groups []legalQuoteGroup, prov LegalProvisionRef, newLabel st
 	}
 	var best []hit
 	for _, g := range groups {
+		lead := g.leadIn
+		if g.parent != "" {
+			lead = g.parent + " " + g.leadIn
+		}
 		named := 0
-		if prov.Article != "" && legalMentions(g.leadIn, "điều", prov.Article) {
+		if prov.Article != "" && legalNamesArticleRe.MatchString(lead) {
+			if !legalMentions(lead, "điều", prov.Article) {
+				continue // a lead-in about another Điều
+			}
 			named++
 		}
-		if want.Khoan != "" && legalMentions(g.leadIn, "khoản", want.Khoan) {
+		if want.Khoan != "" && legalMentions(lead, "khoản", want.Khoan) {
 			named++
 		}
-		if want.Diem != "" && legalMentions(g.leadIn, "điểm", want.Diem) {
+		if want.Diem != "" && legalMentions(lead, "điểm", want.Diem) {
 			named++
 		}
 		for _, b := range g.blocks {

@@ -15,8 +15,9 @@ type legalHistorySource interface {
 	legalHistoryFunc(kbIDs []string) func(ctx context.Context, chunkIDs []string, answer string) string
 }
 
-// legalHistoryFunc returns the amendment-history lookup over the given KBs,
-// or nil when the database cannot serve it.
+// legalHistoryFunc returns the amendment-history lookup over the given KBs
+// (resolver or previous path, as legalWordingFunc), or nil when the
+// database cannot serve it.
 func (s *agentService) legalHistoryFunc(
 	kbIDs []string,
 ) func(ctx context.Context, chunkIDs []string, answer string) string {
@@ -24,21 +25,31 @@ func (s *agentService) legalHistoryFunc(
 		return nil
 	}
 	db := s.db
+	settings := s.spelling.aux.settings
 	return func(ctx context.Context, chunkIDs []string, answer string) string {
-		history := LegalAmendmentHistory(ctx, db, kbIDs, chunkIDs, answer, types.PromptNow())
+		now := types.PromptNow()
+		history := legalHistoryChoice(ctx, legalResolverOn(ctx, settings),
+			func() (string, error) { return LegalAmendmentHistoryResolved(ctx, db, kbIDs, chunkIDs, answer, now) },
+			func() string { return LegalAmendmentHistory(ctx, db, kbIDs, chunkIDs, answer, now) })
 		return history + LegalValidityNote(ctx, db, answer)
 	}
 }
 
 // legalWordingFunc returns the current-wording lookup over the given KBs
-// (LegalCurrentWording), or nil when the database cannot serve it.
+// (LegalCurrentWordingResolved, or LegalCurrentWording when the switch
+// LegalWordingResolverSetting is off or the resolver fails), or nil when
+// the database cannot serve it. The switch is read on every call.
 func (s *agentService) legalWordingFunc(kbIDs []string) func(ctx context.Context, chunkIDs []string) map[string]string {
 	if s.db == nil || s.db.Dialector.Name() != "postgres" || len(kbIDs) == 0 {
 		return nil
 	}
 	db := s.db
+	settings := s.spelling.aux.settings
 	return func(ctx context.Context, chunkIDs []string) map[string]string {
-		return LegalCurrentWording(ctx, db, kbIDs, chunkIDs, types.PromptNow())
+		now := types.PromptNow()
+		return legalWordingChoice(ctx, legalResolverOn(ctx, settings),
+			func() (map[string]string, error) { return LegalCurrentWordingResolved(ctx, db, kbIDs, chunkIDs, now) },
+			func() map[string]string { return LegalCurrentWording(ctx, db, kbIDs, chunkIDs, now) })
 	}
 }
 

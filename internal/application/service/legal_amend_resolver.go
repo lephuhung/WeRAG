@@ -190,9 +190,6 @@ type unitRun struct {
 	replace *LegalAmendEdge
 	display []*LegalAmendEdge
 	removed bool
-	// short marks the long reasons (those quoting B's new text): one is
-	// shown once per chunk; maps to a brief form for logs
-	short map[string]string
 }
 
 func (r *unitRun) raise(state LegalProvisionState, reason string) {
@@ -413,7 +410,7 @@ func applyGroup(r *unitRun, group []*LegalAmendEdge, opt LegalResolveOptions) {
 				r.resolved = false
 				continue
 			case e.TextWithheld:
-				r.raise(LegalStateAmendedTextMissing, r.u.prov.String()+" bị sửa đổi cụm từ “"+e.From+"”"+via+"; lời văn của văn bản sửa đổi không thuộc phạm vi được dùng")
+				r.raise(LegalStateAmendedTextMissing, e.Provision.String()+" bị sửa đổi cụm từ “"+e.From+"”"+via+"; lời văn của văn bản sửa đổi không thuộc phạm vi được dùng")
 				r.resolved = false
 				continue
 			}
@@ -437,11 +434,11 @@ func applyGroup(r *unitRun, group []*LegalAmendEdge, opt LegalResolveOptions) {
 		case LegalOpSuaDoi, LegalOpBoSung:
 			switch {
 			case e.TextWithheld:
-				r.raise(LegalStateAmendedTextMissing, r.u.prov.String()+" đã bị sửa đổi"+via+"; lời văn sửa đổi không thuộc phạm vi được dùng")
+				r.raise(LegalStateAmendedTextMissing, e.Provision.String()+" đã bị sửa đổi"+via+"; lời văn sửa đổi không thuộc phạm vi được dùng")
 				r.resolved = false
 				continue
 			case strings.TrimSpace(e.QuoteText) == "":
-				r.raise(LegalStateAmendedTextMissing, r.u.prov.String()+" đã bị sửa đổi"+via+"; không có lời văn sửa đổi")
+				r.raise(LegalStateAmendedTextMissing, e.Provision.String()+" đã bị sửa đổi"+via+"; không có lời văn sửa đổi")
 				r.resolved = false
 				continue
 			}
@@ -452,13 +449,8 @@ func applyGroup(r *unitRun, group []*LegalAmendEdge, opt LegalResolveOptions) {
 				r.replace, r.display = e, nil
 				r.raise(LegalStateCurrentVerified, "")
 			} else {
-				brief := e.Provision.String() + " có thể đã được sửa đổi" + via + src
-				long := brief + ". Lời văn mới theo nguồn này: “" + e.QuoteText + "”"
-				r.raise(LegalStateUnverified, long)
-				if r.short == nil {
-					r.short = map[string]string{}
-				}
-				r.short[long] = brief + " (lời văn mới ở ghi chú trên)"
+				r.raise(LegalStateUnverified, e.Provision.String()+" có thể đã được sửa đổi"+via+src+
+					". Lời văn mới theo nguồn này: “"+e.QuoteText+"”")
 			}
 		case LegalOpBaiBo, LegalOpBaiBoVanBan, LegalOpThayTheVanBan:
 			r.applied = append(r.applied, e)
@@ -631,16 +623,14 @@ func unitText(r *unitRun, i int, head map[*LegalAmendEdge]int, asOf time.Time, c
 	var pre []string
 	pre = append(pre, r.markers...)
 	if r.state.Gated() && r.state != LegalStateCurrentVerified {
-		// a long reason (B's new text) is shown once per chunk, at the
-		// first unit of the provision it rewrites
+		// a reason is shown once per chunk, at the first unit it concerns
+		// (an edge on a khoản covers its điểm too)
 		var own []string
 		for _, reason := range ownReasons(r.reasons, chunkNotes) {
-			if _, long := r.short[reason]; long {
-				if shown[reason] {
-					continue
-				}
-				shown[reason] = true
+			if shown[reason] {
+				continue
 			}
+			shown[reason] = true
 			own = append(own, reason)
 		}
 		if len(own) > 0 {
@@ -700,9 +690,21 @@ func phraseChangesFor(edges []*LegalAmendEdge, u LegalProvisionRef) []legalPhras
 func addedAfter(runs []*unitRun, i int, adds []*LegalAmendEdge) []*LegalAmendEdge {
 	var out []*LegalAmendEdge
 	for _, e := range adds {
+		parent := e.Provision
+		if parent.Article == "" {
+			// a new Điều goes after the one it follows: After, else the
+			// number it extends ("6a" after Điều 6)
+			parent.Article = strings.ToLower(e.After)
+			if parent.Article == "" {
+				parent.Article = strings.TrimRight(strings.ToLower(e.NewLabel), "abcdđeghiklmnopqrstuvxy")
+			}
+			if parent.Article == "" || parent.Article == strings.ToLower(e.NewLabel) {
+				continue
+			}
+		}
 		last := -1
 		for j, r := range runs {
-			if r.u.prov.Article != "" && e.Provision.covers(r.u.prov) {
+			if r.u.prov.Article != "" && parent.covers(r.u.prov) {
 				last = j
 			}
 		}
