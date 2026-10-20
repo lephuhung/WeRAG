@@ -2,10 +2,13 @@
  * documents ("Văn bản trích dẫn") inspected against the legal catalogue,
  * their formulas ("Công thức") and the agents using them. Reading is
  * side-effect free; only reconcile records legal document requests.
- * Backend: /api/v1/system/domain-packs (+ /:name, /:name/reconcile),
+ * A SuperAdmin may edit a formula's wording (PUT …/formulas/:id, DELETE
+ * restores formulas.yaml); the calculation stays Go code.
+ * Backend: /api/v1/system/domain-packs (+ /:name, /:name/reconcile,
+ * /:name/formulas/:id),
  * SuperAdmin-only (the server enforces it). Mirrors
  * internal/types/domain_pack_reconcile.go. */
-import { apiGet, apiPost } from "@/lib/api-client";
+import { ApiError, apiDel, apiGet, apiPost, apiPut } from "@/lib/api-client";
 
 export interface DomainPackSummary {
   name: string;
@@ -97,6 +100,24 @@ export interface DomainPackFormulaView {
   basis: DomainPackFormulaBasis[];
   examples: DomainPackFormulaSample[];
   warning: boolean;
+  // a SuperAdmin's edit replaces the wording of formulas.yaml
+  edited?: boolean;
+  edited_by?: string;
+  edited_at?: string;
+  shipped?: DomainPackFormulaEdit;
+  // an edit is stored but this build refuses it; formulas.yaml applies
+  edit_not_applied?: boolean;
+}
+
+/* The editable wording of a formula. Variable names are fixed (the Go
+ * implementation is bound to them); every example must be reproduced by
+ * that implementation or the server refuses the edit. */
+export interface DomainPackFormulaEdit {
+  name: string;
+  expression: string;
+  variables: DomainPackFormulaVar[];
+  basis: { number: string; article?: string }[];
+  examples: DomainPackFormulaSample[];
 }
 
 export interface DomainPackAgent {
@@ -156,4 +177,28 @@ export function getDomainPack(name: string): Promise<{ success: boolean; data: D
 /** Checks the catalogue and records requests for texts no public KB holds. */
 export function reconcileDomainPack(name: string): Promise<{ success: boolean; data: DomainPackReconcileResult }> {
   return apiPost(`/api/v1/system/domain-packs/${encodeURIComponent(name)}/reconcile`, {});
+}
+
+const formulaPath = (name: string, id: string) =>
+  `/api/v1/system/domain-packs/${encodeURIComponent(name)}/formulas/${encodeURIComponent(id)}`;
+
+/** Saves the edit of a formula; returns the pack detail. */
+export function updateDomainPackFormula(
+  name: string,
+  id: string,
+  edit: DomainPackFormulaEdit,
+): Promise<{ success: boolean; data: DomainPackDetail }> {
+  return apiPut(formulaPath(name, id), edit);
+}
+
+/** Drops the edit: formulas.yaml applies again; returns the pack detail. */
+export function resetDomainPackFormula(name: string, id: string): Promise<{ success: boolean; data: DomainPackDetail }> {
+  return apiDel(formulaPath(name, id));
+}
+
+/** The server's list of reasons an edit was refused (error.details). */
+export function formulaEditProblems(e: unknown): string[] {
+  if (!(e instanceof ApiError) || !e.payload || typeof e.payload !== "object") return [];
+  const details = (e.payload as { error?: { details?: unknown } }).error?.details;
+  return Array.isArray(details) ? details.filter((d): d is string => typeof d === "string") : [];
 }

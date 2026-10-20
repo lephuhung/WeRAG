@@ -609,7 +609,15 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	}))
 	// SuperAdmin check of a pack's catalogue against legal_documents
 	must(container.Provide(repository.NewDomainPackAgentRepository))
+	must(container.Provide(repository.NewDomainPackFormulaOverrideRepository))
 	must(container.Provide(service.NewDomainPackReconciler))
+	// the SuperAdmin's formula edits apply from startup; a failed read
+	// leaves the shipped formulas (the pack page reloads them)
+	must(container.Invoke(func(r *service.DomainPackReconciler) {
+		if err := r.LoadFormulaOverrides(ctx); err != nil {
+			logger.Warnf(ctx, "[Container] %v", err)
+		}
+	}))
 	must(container.Provide(handler.NewDomainPackReconcileHandler))
 	must(container.Provide(handler.NewCustomAgentHandler))
 	must(container.Provide(handler.NewUserResourceFavoriteHandler))

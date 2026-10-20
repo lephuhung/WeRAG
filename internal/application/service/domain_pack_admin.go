@@ -50,6 +50,14 @@ func (r *DomainPackReconciler) Detail(ctx context.Context, name string) (*types.
 	if !ok {
 		return nil, apperrors.NewNotFoundError(fmt.Sprintf("domain pack %q is not in this build", name))
 	}
+	// stored edits may come from another backend: apply them first
+	if err := r.LoadFormulaOverrides(ctx); err != nil {
+		return nil, err
+	}
+	edits, err := r.formulaEdits(ctx, pack.Name())
+	if err != nil {
+		return nil, err
+	}
 	now := r.now()
 	m := pack.Manifest.Metadata
 	out := &types.DomainPackDetail{
@@ -141,6 +149,17 @@ func (r *DomainPackReconciler) Detail(ctx context.Context, name string) (*types.
 		}
 		for _, ex := range fm.Examples {
 			fv.Examples = append(fv.Examples, types.DomainPackFormulaSample{Inputs: ex.Inputs, Expected: ex.Expected})
+		}
+		if row := edits[fm.ID]; row != nil && !pack.FormulaEdited(fm.ID) {
+			// stored but refused by this build (see LoadFormulaOverrides)
+			fv.EditNotApplied = true
+		} else if row != nil {
+			at := row.UpdatedAt
+			fv.Edited, fv.EditedBy, fv.EditedAt = true, r.editorName(ctx, row.UpdatedBy), &at
+			if shipped, ok := pack.ShippedFormula(fm.ID); ok {
+				orig := editFromFormula(shipped)
+				fv.Shipped = &orig
+			}
 		}
 		out.Formulas = append(out.Formulas, fv)
 	}
