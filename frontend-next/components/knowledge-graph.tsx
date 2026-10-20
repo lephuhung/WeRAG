@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getWikiGraph, type WikiGraphData } from "@/lib/api/wiki";
 import { getEntityGraph, getLegalGraph, type EntityGraphResponse, type GraphView } from "@/lib/api/graph";
 import { GraphCanvas, RelationList, type CanvasEdge, type CanvasNode, type TypeStyle } from "@/components/graph-canvas";
+import { GRAPH_FAMILY, type GraphFamily } from "@/components/graph/graph-palette";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { formatDate as vnFormatDate } from "@/lib/datetime";
 
@@ -69,17 +70,33 @@ function errorText(e: unknown) {
 
 /* ---------- Wiki link graph ---------- */
 
-const WIKI_COLORS: Record<string, [string, string]> = {
-  document: ["#64748b", "#475569"],
-  entity: ["#a855f7", "#7e22ce"],
-  concept: ["#38bdf8", "#0284c7"],
-  synthesis: ["#f59e0b", "#b45309"],
-  comparison: ["#f43f5e", "#be123c"],
-  index: ["#0f766e", "#134e4a"],
-  field: ["#10b981", "#047857"],
-  agency: ["#6366f1", "#4338ca"],
-  page: ["#94a3b8", "#64748b"],
+/* The node types map onto the shared graph palette (CSS custom
+ * properties) — the same values the canvas and the legend read, so the
+ * dark mode and the Anthropic preset override them all at once. */
+const WIKI_FAMILY: Record<string, GraphFamily> = {
+  document: "slate",
+  entity: "purple",
+  concept: "sky",
+  synthesis: "amber",
+  comparison: "rose",
+  index: "teal",
+  field: "emerald",
+  agency: "indigo",
+  page: "slate",
 };
+
+/** The canvas type styles of a node-type map. */
+function typeStyles(
+  families: Record<string, GraphFamily>,
+  label: (key: string) => string,
+): Record<string, TypeStyle> {
+  return Object.fromEntries(
+    Object.entries(families).map(([key, family]) => [
+      key,
+      { fill: GRAPH_FAMILY[family].fill, stroke: GRAPH_FAMILY[family].stroke, label: label(key) },
+    ]),
+  );
+}
 
 /* wikiNodeType maps a page to its colour group. Catalogue-mode wikis only
  * have summary and index pages, so index pages split by slug: lĩnh vực,
@@ -100,7 +117,7 @@ function wikiNodeType(pageType: string, slug: string) {
       }
       return "index";
     }
-    if (WIKI_COLORS[type] && type !== "page") return type;
+    if (WIKI_FAMILY[type] && type !== "page") return type;
   }
   return "page";
 }
@@ -126,13 +143,7 @@ function WikiGraph({ kbId, onSelectSlug }: { kbId: string; onSelectSlug?: (slug:
   }, [kbId]);
 
   const types: Record<string, TypeStyle> = useMemo(
-    () =>
-      Object.fromEntries(
-        Object.entries(WIKI_COLORS).map(([k, [fill, stroke]]) => [
-          k,
-          { fill, stroke, label: t(`graph.wiki.${k}` as LocaleKey) },
-        ])
-      ),
+    () => typeStyles(WIKI_FAMILY, (k) => t(`graph.wiki.${k}` as LocaleKey)),
     [t]
   );
   const nodes: CanvasNode[] = useMemo(
@@ -172,14 +183,14 @@ function WikiGraph({ kbId, onSelectSlug }: { kbId: string; onSelectSlug?: (slug:
 
 /* ---------- Entity graph (Neo4j) ---------- */
 
-const ENTITY_COLORS: Record<string, [string, string]> = {
-  Document: ["#334155", "#1e293b"],
-  Article: ["#64748b", "#475569"],
-  Organization: ["#0284c7", "#0369a1"],
-  Person: ["#f59e0b", "#d97706"],
-  Task: ["#a855f7", "#7e22ce"],
-  Location: ["#10b981", "#059669"],
-  other: ["#94a3b8", "#64748b"],
+const ENTITY_FAMILY: Record<string, GraphFamily> = {
+  Document: "slateDeep",
+  Article: "slate",
+  Organization: "skyDeep",
+  Person: "amber",
+  Task: "purple",
+  Location: "emerald",
+  other: "slate",
 };
 
 function EntityGraph({ kbId }: { kbId: string }) {
@@ -203,13 +214,7 @@ function EntityGraph({ kbId }: { kbId: string }) {
   }, [kbId, applied]);
 
   const types: Record<string, TypeStyle> = useMemo(
-    () =>
-      Object.fromEntries(
-        Object.entries(ENTITY_COLORS).map(([k, [fill, stroke]]) => [
-          k,
-          { fill, stroke, label: t(`graph.type.${k}` as LocaleKey) },
-        ])
-      ),
+    () => typeStyles(ENTITY_FAMILY, (k) => t(`graph.type.${k}` as LocaleKey)),
     [t]
   );
   const view = resp?.data;
@@ -218,7 +223,7 @@ function EntityGraph({ kbId }: { kbId: string }) {
       (view?.nodes ?? []).map((n) => ({
         id: n.id,
         title: n.name,
-        type: ENTITY_COLORS[n.type] ? n.type : "other",
+        type: ENTITY_FAMILY[n.type] ? n.type : "other",
         weight: n.degree,
       })),
     [view]
@@ -297,12 +302,12 @@ const LEGAL_GROUPS: Record<string, string[]> = {
   circular: ["Thông tư", "Thông tư liên tịch", "Thông tư liên bộ"],
   decision: ["Quyết định", "Nghị quyết", "Nghị quyết liên tịch", "Chỉ thị"],
 };
-const LEGAL_COLORS: Record<string, [string, string]> = {
-  law: ["#b91c1c", "#7f1d1d"],
-  decree: ["#0284c7", "#0369a1"],
-  circular: ["#10b981", "#047857"],
-  decision: ["#f59e0b", "#b45309"],
-  other: ["#94a3b8", "#64748b"],
+const LEGAL_FAMILY: Record<string, GraphFamily> = {
+  law: "red",
+  decree: "skyDeep",
+  circular: "emerald",
+  decision: "amber",
+  other: "slate",
 };
 
 function legalGroup(docType: string) {
@@ -331,13 +336,7 @@ function LegalGraph({ kbId, onOpenKnowledge }: { kbId: string; onOpenKnowledge?:
   }, [kbId]);
 
   const types: Record<string, TypeStyle> = useMemo(
-    () =>
-      Object.fromEntries(
-        Object.entries(LEGAL_COLORS).map(([k, [fill, stroke]]) => [
-          k,
-          { fill, stroke, label: t(`graph.legal.${k}` as LocaleKey) },
-        ])
-      ),
+    () => typeStyles(LEGAL_FAMILY, (k) => t(`graph.legal.${k}` as LocaleKey)),
     [t]
   );
   const meta = useMemo(() => new Map((view?.nodes ?? []).map((n) => [n.id, n.meta ?? {}])), [view]);

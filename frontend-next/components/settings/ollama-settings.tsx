@@ -9,6 +9,7 @@ import {
   type OllamaModelInfo,
 } from "@/lib/api/initialization";
 import { useT } from "@/lib/i18n";
+import { Notice } from "@/components/settings/notice";
 
 export function OllamaSettings() {
   const { t } = useT();
@@ -84,7 +85,19 @@ export function OllamaSettings() {
         </button>
       </div>
 
-      {error && <div className="card mb-4 p-4 text-error text-xs">{error}</div>}
+      {error && (
+        <Notice
+          tone="error"
+          className="mb-4"
+          action={
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => void refresh()}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {error}
+        </Notice>
+      )}
 
       {/* Connection status card */}
       <div className="card p-5 mb-6">
@@ -93,7 +106,7 @@ export function OllamaSettings() {
             <span
               className={`h-3 w-3 rounded-full ${
                 running === true
-                  ? "bg-success shadow-[0_0_8px_rgba(34,197,94,0.6)]"
+                  ? "bg-success shadow-[0_0_8px_var(--color-success)]"
                   : running === false
                   ? "bg-error"
                   : "bg-muted"

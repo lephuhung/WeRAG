@@ -8,6 +8,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Modal } from "@/components/modal";
 import { IconEdit, IconPlus, IconSearch } from "@/components/icons";
+import { useToast } from "@/components/toast";
+import { useConfirm } from "@/components/confirm-dialog";
+import { FieldLabel } from "@/components/settings/field";
+import { Loading } from "@/components/settings/loading";
+import { Notice } from "@/components/settings/notice";
+import { Pill, PillGroup } from "@/components/settings/pill";
+import { ROW_HOVER } from "@/components/settings/data-table";
+import { SystemSection } from "@/components/settings/system-section";
 import { useT } from "@/lib/i18n";
 import { getCurrentUser } from "@/lib/api/auth";
 import {
@@ -20,6 +28,7 @@ import {
   type TenantMemberTarget,
 } from "@/lib/api/system";
 import { listTenantDirectory, type TenantDirectoryEntry } from "@/lib/api/tenants";
+import { ApiError } from "@/lib/api-client";
 import {
   TENANT_NAME_MAX_LENGTH,
   normalizeTenantName,
@@ -50,54 +59,67 @@ function toTarget(p: PersonForm): TenantMemberTarget | null {
   };
 }
 
-function PersonFields({ value, onChange }: { value: PersonForm; onChange: (p: PersonForm) => void }) {
+function PersonFields({
+  value,
+  onChange,
+  idPrefix,
+}: {
+  value: PersonForm;
+  onChange: (p: PersonForm) => void;
+  /* Prefix for the input ids — the form appears twice on the page. */
+  idPrefix: string;
+}) {
   const { t } = useT();
   return (
     <div className="space-y-3">
-      <div className="inline-flex items-center gap-0.5 rounded-full border border-hairline bg-surface-strong/60 p-0.5">
+      <PillGroup ariaLabel={t("tnp.adminSection")}>
         {(["existing", "new"] as const).map((m) => (
-          <button
+          <Pill
             key={m}
-            type="button"
+            active={value.mode === m}
             onClick={() => onChange({ ...value, mode: m })}
-            className={`rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${
-              value.mode === m ? "bg-surface-card text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]" : "text-muted hover:text-ink"
-            }`}
           >
             {m === "existing" ? t("tnp.adminExisting") : t("tnp.adminNew")}
-          </button>
+          </Pill>
         ))}
-      </div>
+      </PillGroup>
       {value.mode === "new" && (
-        <label className="block">
-          <span className="caption mb-1 block text-muted">{t("tnp.username")}</span>
+        <div>
+          <FieldLabel htmlFor={`${idPrefix}-username`}>{t("tnp.username")}</FieldLabel>
           <input
+            id={`${idPrefix}-username`}
             className="input"
             value={value.username}
             onChange={(e) => onChange({ ...value, username: e.target.value })}
           />
-        </label>
+        </div>
       )}
-      <label className="block">
-        <span className="caption mb-1 block text-muted">{t("tnp.email")}</span>
+      <div>
+        <FieldLabel htmlFor={`${idPrefix}-email`} required>
+          {t("tnp.email")}
+        </FieldLabel>
         <input
+          id={`${idPrefix}-email`}
           type="email"
           className="input"
+          required
+          aria-required="true"
           value={value.email}
           onChange={(e) => onChange({ ...value, email: e.target.value })}
         />
-      </label>
+      </div>
       {value.mode === "new" && (
-        <label className="block">
-          <span className="caption mb-1 block text-muted">{t("tnp.password")}</span>
+        <div>
+          <FieldLabel htmlFor={`${idPrefix}-password`}>{t("tnp.password")}</FieldLabel>
           <input
+            id={`${idPrefix}-password`}
             type="password"
             className="input"
             autoComplete="new-password"
             value={value.password}
             onChange={(e) => onChange({ ...value, password: e.target.value })}
           />
-        </label>
+        </div>
       )}
     </div>
   );
@@ -105,8 +127,11 @@ function PersonFields({ value, onChange }: { value: PersonForm; onChange: (p: Pe
 
 export default function AdminTenants() {
   const { t } = useT();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [units, setUnits] = useState<TenantDirectoryEntry[]>([]);
+  const [unitsLoading, setUnitsLoading] = useState(false);
   const [q, setQ] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -134,11 +159,15 @@ export default function AdminTenants() {
   const [oneTime, setOneTime] = useState<{ user: string; password: string } | null>(null);
 
   const loadUnits = useCallback(async () => {
+    setUnitsLoading(true);
     try {
       setUnits(await listTenantDirectory());
       setError("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("tnp.loadFailed"));
+      if (e instanceof ApiError && e.status === 403) setAllowed(false);
+      else setError(e instanceof Error ? e.message : t("tnp.loadFailed"));
+    } finally {
+      setUnitsLoading(false);
     }
   }, []);
 
@@ -152,7 +181,8 @@ export default function AdminTenants() {
     } catch (e) {
       if (request !== memberRequest.current) return;
       setMembers([]);
-      setError(e instanceof Error ? e.message : t("tnp.loadFailed"));
+      if (e instanceof ApiError && e.status === 403) setAllowed(false);
+      else setError(e instanceof Error ? e.message : t("tnp.loadFailed"));
     } finally {
       if (request === memberRequest.current) setMembersLoading(false);
     }
@@ -221,6 +251,7 @@ export default function AdminTenants() {
       setAdmin(emptyPerson);
       await loadUnits();
       if (res.tenant) setSelected({ id: res.tenant.id, name: res.tenant.name });
+      toast.success(t("tnp.created"));
     });
   };
 
@@ -237,6 +268,7 @@ export default function AdminTenants() {
       setPerson(emptyPerson);
       setRole("member");
       await loadMembers(selected);
+      toast.success(t("common.saved"));
     });
   };
 
@@ -260,33 +292,31 @@ export default function AdminTenants() {
       setUnits((list) => list.map((u) => (u.id === renamed.id ? renamed : u)));
       setSelected(renamed);
       setRenameTo(null);
+      toast.success(t("common.saved"));
     });
   };
 
-  const remove = (m: SystemTenantMember) => {
+  const remove = async (m: SystemTenantMember) => {
     if (!selected) return;
-    void run(async () => {
+    const ok = await confirm({
+      title: t("mem.removeTitle"),
+      message: t("mem.removeBody", { name: m.username || m.email }),
+      confirmLabel: t("mem.removeCta"),
+      danger: true,
+    });
+    if (!ok) return;
+    const name = m.username || m.email;
+    const removed = await run(async () => {
       await removeSystemTenantMember(selected.id, m.user_id);
       await loadMembers(selected);
     });
+    if (removed) toast.success(t("mem.removed", { name }));
   };
-
-  if (allowed === null) {
-    return <div className="mx-auto w-full max-w-[1100px] px-5 py-12 text-muted">…</div>;
-  }
-  if (!allowed) {
-    return (
-      <div className="mx-auto w-full max-w-[1100px] px-5 py-16 text-center">
-        <h2 className="title-md mb-2">{t("tnp.title")}</h2>
-        <p className="body-sm text-muted">{t("tnp.denied")}</p>
-      </div>
-    );
-  }
 
   const filtered = units.filter((u) => !q || u.name.toLowerCase().includes(q.toLowerCase()));
 
   return (
-    <div className="mx-auto w-full max-w-[1400px]">
+    <SystemSection allowed={allowed} title={t("tnp.title")} deniedMessage={t("tnp.denied")}>
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <span className="caption text-muted">{t("tnp.summary", { n: units.length })}</span>
         <button className="btn btn-primary btn-sm ml-auto" onClick={() => {
@@ -297,38 +327,81 @@ export default function AdminTenants() {
         </button>
       </div>
 
-      {error && <p className="caption mb-4 text-error">{error}</p>}
+      {error && (
+        <Notice
+          tone="error"
+          className="mb-4"
+          action={
+            <button className="btn btn-outline btn-sm" onClick={() => void loadUnits()}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {error}
+        </Notice>
+      )}
       {oneTime && (
-        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300">
-          <p>{t("tnp.generatedPassword", { user: oneTime.user })}</p>
-          <div className="mt-2 flex items-center gap-2">
-            <input readOnly className="input font-mono text-xs" value={oneTime.password} onFocus={(e) => e.target.select()} />
-            <button type="button" className="btn btn-outline btn-sm" onClick={() => setOneTime(null)}>
+        <Notice
+          tone="warning"
+          className="mb-4"
+          action={
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={() => setOneTime(null)}
+              aria-label={t("common.close")}
+              title={t("common.close")}
+            >
               ✕
             </button>
+          }
+        >
+          <div className="flex flex-col gap-2">
+            <p>{t("tnp.generatedPassword", { user: oneTime.user })}</p>
+            <input
+              readOnly
+              id="tnp-one-time-password"
+              aria-label={t("tnp.password")}
+              className="input font-mono text-xs"
+              value={oneTime.password}
+              onFocus={(e) => e.target.select()}
+            />
           </div>
-        </div>
+        </Notice>
       )}
 
-          <div className="relative mb-5 max-w-md">
-            <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft" />
-            <input className="input h-9 pl-9" placeholder={t("tnp.searchPh")} value={q} onChange={(e) => setQ(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-4">
-            {filtered.map((u) => (
-              <button
-                key={u.id}
-                type="button"
-                onClick={() => { setError(""); setSelected(u); }}
-                aria-haspopup="dialog"
-                className="card flex min-w-0 flex-col items-start gap-4 p-5 text-left transition-colors hover:border-ink/30 hover:bg-surface-strong/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
-              >
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-strong text-lg font-semibold text-ink" aria-hidden="true">{u.name.slice(0, 1).toUpperCase()}</span>
-                <span className="w-full break-words text-[15px] font-semibold leading-snug text-ink">{u.name}</span>
-                <span className="caption font-mono text-muted-soft">#{u.id}</span>
-              </button>
-            ))}
-          </div>
+      <div className="relative mb-5 max-w-md">
+        <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft" />
+        <input
+          id="tnp-search"
+          className="input h-9 pl-9"
+          placeholder={t("tnp.searchPh")}
+          aria-label={t("tnp.searchPh")}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+      </div>
+      {unitsLoading ? (
+        <Loading className="py-12" />
+      ) : filtered.length === 0 ? (
+        <p className="card px-5 py-12 text-center text-[14px] text-muted">{t("common.noResults")}</p>
+      ) : (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,260px),1fr))] gap-4">
+          {filtered.map((u) => (
+            <button
+              key={u.id}
+              type="button"
+              onClick={() => { setError(""); setSelected(u); }}
+              aria-haspopup="dialog"
+              className="card flex min-w-0 flex-col items-start gap-4 p-5 text-left transition-colors hover:border-ink/30 hover:bg-surface-strong/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
+            >
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-strong text-lg font-semibold text-ink" aria-hidden="true">{u.name.slice(0, 1).toUpperCase()}</span>
+              <span className="w-full break-words text-[15px] font-semibold leading-snug text-ink">{u.name}</span>
+              <span className="caption font-mono text-muted-soft">#{u.id}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <Modal open={!!selected && !addOpen && !oneTime} title={t("tnp.title")} onClose={() => setSelected(null)} width="w-[880px]">
           {!selected ? (
             <p className="caption py-10 text-center text-muted">{t("tnp.select")}</p>
@@ -393,19 +466,33 @@ export default function AdminTenants() {
                 </button>
               </div>
               <p className="caption mb-4 font-mono text-muted-soft">#{selected.id}</p>
-              {error && <p role="alert" className="caption mb-3 text-error">{error}</p>}
+              {error && (
+                <Notice
+                  tone="error"
+                  className="mb-3"
+                  action={
+                    <button className="btn btn-outline btn-sm" onClick={() => void loadMembers(selected)}>
+                      {t("common.retry")}
+                    </button>
+                  }
+                >
+                  {error}
+                </Notice>
+              )}
               <h4 className="mb-3 border-t border-hairline pt-4 text-[14px] font-medium text-ink">{t("tnp.members")}{!membersLoading && ` (${members.length})`}</h4>
               {renameTo !== null && nameError && (
                 <p role="alert" className="caption -mt-2 mb-3 text-error">
                   {nameError}
                 </p>
               )}
-              {membersLoading ? <p className="caption text-muted" role="status">{t("workspace.loading")}</p> : members.length === 0 ? (
+              {membersLoading ? (
+                <Loading />
+              ) : members.length === 0 ? (
                 <p className="caption text-muted-soft">{t("tnp.noMembers")}</p>
               ) : (
                 <div className="divide-y divide-hairline">
                   {members.map((m) => (
-                    <div key={m.user_id} className="flex flex-wrap items-center gap-3 py-2.5 text-[14px]">
+                    <div key={m.user_id} className={`flex flex-wrap items-center gap-3 py-2.5 text-[14px] ${ROW_HOVER}`}>
                       <div className="min-w-0 flex-1">
                         <div className="truncate font-medium text-ink">{m.username || m.user_id}</div>
                         <div className="caption truncate text-muted">{m.email}</div>
@@ -415,9 +502,9 @@ export default function AdminTenants() {
                       </span>
                       <button
                         type="button"
-                        className="btn btn-outline btn-sm py-1 text-xs text-rose-600"
+                        className="btn btn-danger btn-sm py-1 text-xs"
                         disabled={busy}
-                        onClick={() => remove(m)}
+                        onClick={() => void remove(m)}
                       >
                         {t("tnp.remove")}
                       </button>
@@ -438,11 +525,15 @@ export default function AdminTenants() {
         }}
       >
         <form className="space-y-4" onSubmit={submitCreate}>
-          <label className="block">
-            <span className="caption mb-1 block text-muted">{t("tnp.name")}</span>
+          <div>
+            <FieldLabel htmlFor="tnp-create-name" required>
+              {t("tnp.name")}
+            </FieldLabel>
             <input
+              id="tnp-create-name"
               className="input"
               required
+              aria-required="true"
               maxLength={TENANT_NAME_MAX_LENGTH}
               placeholder={t("tnp.namePh")}
               aria-invalid={nameError ? true : undefined}
@@ -453,16 +544,21 @@ export default function AdminTenants() {
               }}
             />
             {nameError && <span className="caption mt-1 block text-error">{nameError}</span>}
-          </label>
-          <label className="block">
-            <span className="caption mb-1 block text-muted">{t("tnp.desc")}</span>
-            <input className="input" value={unitDesc} onChange={(e) => setUnitDesc(e.target.value)} />
-          </label>
+          </div>
+          <div>
+            <FieldLabel htmlFor="tnp-create-desc">{t("tnp.desc")}</FieldLabel>
+            <input
+              id="tnp-create-desc"
+              className="input"
+              value={unitDesc}
+              onChange={(e) => setUnitDesc(e.target.value)}
+            />
+          </div>
           <div className="border-t border-hairline pt-4">
             <span className="caption mb-3 block font-medium text-ink">{t("tnp.adminSection")}</span>
-            <PersonFields value={admin} onChange={setAdmin} />
+            <PersonFields idPrefix="tnp-create-admin" value={admin} onChange={setAdmin} />
           </div>
-          {error && <p className="caption text-error">{error}</p>}
+          {error && <Notice tone="error">{error}</Notice>}
           <div className="flex justify-end">
             <button type="submit" className="btn btn-primary" disabled={busy || !unitName.trim() || !toTarget(admin)}>
               {t("tnp.create")}
@@ -473,14 +569,20 @@ export default function AdminTenants() {
 
       <Modal open={addOpen} title={t("tnp.addMember")} onClose={() => setAddOpen(false)}>
         <form className="space-y-4" onSubmit={submitAdd}>
-          <PersonFields value={person} onChange={setPerson} />
-          <label className="block">
-            <span className="caption mb-1 block text-muted">{t("tnp.role")}</span>
-            <select className="input" value={role} onChange={(e) => setRole(e.target.value as "admin" | "member")}>
+          <PersonFields idPrefix="tnp-add-member" value={person} onChange={setPerson} />
+          <div>
+            <FieldLabel htmlFor="tnp-add-role">{t("tnp.role")}</FieldLabel>
+            <select
+              id="tnp-add-role"
+              className="input"
+              value={role}
+              onChange={(e) => setRole(e.target.value as "admin" | "member")}
+            >
               <option value="member">{t("usrp.roleMember")}</option>
               <option value="admin">{t("usrp.roleAdmin")}</option>
             </select>
-          </label>
+          </div>
+          {error && <Notice tone="error">{error}</Notice>}
           <div className="flex justify-end">
             <button type="submit" className="btn btn-primary" disabled={busy || !toTarget(person)}>
               {t("tnp.addMember")}
@@ -488,6 +590,6 @@ export default function AdminTenants() {
           </div>
         </form>
       </Modal>
-    </div>
+    </SystemSection>
   );
 }

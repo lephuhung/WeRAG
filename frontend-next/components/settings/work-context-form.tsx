@@ -9,16 +9,19 @@ import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { getProvinces, updateMyPreferences, type Province } from "@/lib/api/auth";
 import { Select } from "@/components/select";
+import { useToast } from "@/components/toast";
+import { Notice } from "@/components/settings/notice";
+import { FieldLabel } from "@/components/settings/field";
 
 export function WorkContextForm({ onSaved, compact = false }: { onSaved?: () => void; compact?: boolean }) {
   const { t } = useT();
   const auth = useAuth();
+  const toast = useToast();
   const prefs = auth.user?.preferences;
   const [provinces, setProvinces] = useState<Province[]>([]);
   const [unit, setUnit] = useState(prefs?.work_unit ?? "");
   const [provinceId, setProvinceId] = useState(prefs?.province_id ?? "");
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -50,13 +53,12 @@ export function WorkContextForm({ onSaved, compact = false }: { onSaved?: () => 
 
   const save = async () => {
     setSaving(true);
-    setSaved(false);
     setError("");
     try {
       const res = await updateMyPreferences({ work_unit: unit.trim(), province_id: provinceId });
       if (!res.success) throw new Error(res.message || t("common.error"));
       await auth.refreshMe();
-      setSaved(true);
+      toast.success(t("common.saved"));
       onSaved?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : t("common.error"));
@@ -68,40 +70,35 @@ export function WorkContextForm({ onSaved, compact = false }: { onSaved?: () => 
   return (
     <div className="flex flex-col gap-3">
       {!compact && <p className="caption text-muted">{t("workCtx.hint")}</p>}
-      <label className="block">
-        <span className="caption mb-1.5 block text-muted">{t("workCtx.unit")}</span>
+      <div>
+        <FieldLabel htmlFor="workCtx.unit">{t("workCtx.unit")}</FieldLabel>
         <input
+          id="workCtx.unit"
           className="input"
           value={unit}
           maxLength={200}
           placeholder={t("workCtx.unitPlaceholder")}
-          onChange={(e) => {
-            setUnit(e.target.value);
-            setSaved(false);
-          }}
+          onChange={(e) => setUnit(e.target.value)}
         />
-      </label>
-      <label className="block">
-        <span className="caption mb-1.5 block text-muted">{t("workCtx.province")}</span>
+      </div>
+      <div>
+        <FieldLabel htmlFor="workCtx.province">{t("workCtx.province")}</FieldLabel>
         <Select
+          id="workCtx.province"
           value={provinceId}
-          onChange={(v) => {
-            setProvinceId(v);
-            setSaved(false);
-          }}
+          onChange={setProvinceId}
           options={options}
           placeholder={t("workCtx.provincePlaceholder")}
           searchable
           searchPlaceholder={t("workCtx.provinceSearch")}
         />
-      </label>
+      </div>
       <div className="flex items-center gap-3">
         <button className="btn btn-primary btn-sm" onClick={() => void save()} disabled={saving || !dirty}>
           {saving ? "…" : t("common.save")}
         </button>
-        {saved && <span className="caption text-emerald-600 dark:text-emerald-400">{t("common.saved")}</span>}
-        {error && <span className="caption text-error">{error}</span>}
       </div>
+      {error && <Notice tone="error">{error}</Notice>}
     </div>
   );
 }

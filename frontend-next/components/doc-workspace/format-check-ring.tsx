@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useContainedPopup } from "@/components/hooks/use-contained-popup";
+import { Ring } from "@/components/ui/ring";
 import { useT } from "@/lib/i18n";
 import { IconEye, IconRefresh } from "@/components/icons";
 import { IconAction, IconUnderlineMark, IconWand } from "./icon-action";
@@ -10,8 +11,6 @@ import { PROFILE_EXPECTED_MS, formatCheckInProgress, formatCheckProgress } from 
 
 const SIZE = 22;
 const STROKE = 2;
-const RADIUS = (SIZE - STROKE) / 2;
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 /* Background work on the open document, as a small progress ring in the
  * composer toolbar. Reading (its profile is being made, before the format
@@ -127,28 +126,14 @@ export function FormatCheckRing({
           busy ? "cursor-default" : "cursor-pointer hover:bg-surface-strong"
         }`}
       >
-        <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} aria-hidden="true" className="-rotate-90">
-          <circle
-            cx={SIZE / 2}
-            cy={SIZE / 2}
-            r={RADIUS}
-            fill="none"
-            strokeWidth={STROKE}
-            style={{ stroke: "var(--color-hairline-strong)" }}
-          />
-          <circle
-            cx={SIZE / 2}
-            cy={SIZE / 2}
-            r={RADIUS}
-            fill="none"
-            strokeWidth={STROKE}
-            strokeLinecap="round"
-            strokeDasharray={CIRCUMFERENCE}
-            strokeDashoffset={CIRCUMFERENCE * (1 - progress)}
-            className="transition-[stroke-dashoffset] duration-500 ease-out motion-reduce:transition-none"
-            style={{ stroke: status === "failed" ? "var(--color-error)" : "var(--color-primary)" }}
-          />
-        </svg>
+        <Ring
+          value={progress}
+          size={SIZE}
+          stroke={STROKE}
+          tone={status === "failed" ? "var(--color-error)" : "var(--color-primary)"}
+          track="var(--color-hairline-strong)"
+          transitionMs={500}
+        />
         <span className="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-ink" aria-hidden="true">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
             <path d="M13 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10l-7-7ZM13 3v7h7M8 15l2 2 5-5" />

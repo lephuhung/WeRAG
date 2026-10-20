@@ -5,7 +5,7 @@
  * else reads the sizes in use. The server checks the NĐ30 ranges. */
 "use client";
 
-import { Fragment, useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   getTemplateStyle,
   updatePlatformTemplateStyle,
@@ -14,6 +14,11 @@ import {
   type TemplateStyle,
 } from "@/lib/api/template-style";
 import { useT, type LocaleKey } from "@/lib/i18n";
+import { DataTable } from "@/components/settings/data-table";
+import { SectionHeader } from "@/components/settings/section-header";
+import { Notice } from "@/components/settings/notice";
+import { Loading } from "@/components/settings/loading";
+import { useToast } from "@/components/toast";
 
 /* What each component looks like in a document (document text, the same in
  * every UI language). */
@@ -42,13 +47,12 @@ export function TemplateFontSizesSettings({
   isSystemAdmin: boolean;
 }) {
   const { t } = useT();
+  const toast = useToast();
   const [style, setStyle] = useState<TemplateStyle | null>(null);
   const [platform, setPlatform] = useState<TemplateFontSizes>({});
   const [tenant, setTenant] = useState<TemplateFontSizes>({});
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(
-    null,
-  );
+  const [error, setError] = useState("");
 
   const apply = (s: TemplateStyle) => {
     setStyle(s);
@@ -64,10 +68,7 @@ export function TemplateFontSizesSettings({
     try {
       apply((await getTemplateStyle()).data);
     } catch (e) {
-      setMessage({
-        ok: false,
-        text: e instanceof Error ? e.message : String(e),
-      });
+      setError(e instanceof Error ? e.message : String(e));
     }
   }, []);
 
@@ -77,80 +78,65 @@ export function TemplateFontSizesSettings({
 
   const run = async (save: () => Promise<unknown>) => {
     setSaving(true);
-    setMessage(null);
+    setError("");
     try {
       await save();
       await load();
-      setMessage({ ok: true, text: t("templateStyle.saved") });
+      toast.success(t("templateStyle.saved"));
     } catch (e) {
-      setMessage({
-        ok: false,
-        text: t("templateStyle.saveFailed", {
+      setError(
+        t("templateStyle.saveFailed", {
           error: e instanceof Error ? e.message : String(e),
         }),
-      });
+      );
     } finally {
       setSaving(false);
     }
   };
 
   if (!style)
-    return message ? (
-      <p className="caption text-error">{message.text}</p>
-    ) : null;
+    return error ? (
+      <Notice tone="error" className="mt-4">{error}</Notice>
+    ) : (
+      <Loading className="py-8" />
+    );
 
   const range = (min: number, max: number) =>
     Array.from({ length: max - min + 1 }, (_, i) => min + i);
 
   return (
     <div className="flex flex-col gap-3 border-t border-hairline pt-4">
-      <div>
-        <h2 className="text-base font-semibold">{t("templateStyle.title")}</h2>
-        <p className="caption mt-1 text-muted">{t("templateStyle.desc")}</p>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="caption text-left text-muted">
-              <th className="py-1.5 pr-3 font-normal">
-                {t("templateStyle.component")}
-              </th>
-              <th className="py-1.5 pr-3 font-normal">
-                {t("templateStyle.range")}
-              </th>
-              <th className="py-1.5 pr-3 font-normal">
-                {t("templateStyle.platform")}
-              </th>
-              <th className="py-1.5 pr-3 font-normal">
-                {t("templateStyle.tenant")}
-              </th>
-              <th className="py-1.5 font-normal">
-                {t("templateStyle.effective")}
-              </th>
+      <SectionHeader title={t("templateStyle.title")} subtitle={t("templateStyle.desc")} />
+      <DataTable
+        columns={[
+          { key: "component", header: t("templateStyle.component") },
+          { key: "range", header: t("templateStyle.range") },
+          { key: "platform", header: t("templateStyle.platform") },
+          { key: "tenant", header: t("templateStyle.tenant") },
+          { key: "effective", header: t("templateStyle.effective") },
+        ]}
+        rows={style.components}
+        rowKey={(c) => c.key}
+        minWidth="min-w-[720px]"
+        renderGroupRow={(c) =>
+          c.unit !== style.components[style.components.indexOf(c) - 1]?.unit ? (
+            <tr>
+              <td colSpan={5} className="px-5 pb-1 pt-3 text-[13px] font-medium text-ink">
+                {t(
+                  c.unit === "mm"
+                    ? "templateStyle.groupMargins"
+                    : "templateStyle.groupFonts",
+                )}
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {style.components.map((c, i) => {
+          ) : null
+        }
+        renderRow={(c) => {
               const inherited = platform[c.key] ?? c.default;
               const inUse = tenant[c.key] ?? inherited;
               return (
-                <Fragment key={c.key}>
-                  {c.unit !== style.components[i - 1]?.unit && (
-                    <tr>
-                      <td
-                        colSpan={5}
-                        className="pb-1 pt-3 text-[13px] font-medium"
-                      >
-                        {t(
-                          c.unit === "mm"
-                            ? "templateStyle.groupMargins"
-                            : "templateStyle.groupFonts",
-                        )}
-                      </td>
-                    </tr>
-                  )}
-                  <tr className="border-t border-hairline">
-                    <td className="py-1.5 pr-3">
+                <>
+                    <td className="px-5 py-3.5 align-middle">
                       {t(`templateStyle.c.${c.key}` as LocaleKey)}
                       {EXAMPLES[c.key] && (
                         <span className="caption block text-muted">
@@ -160,13 +146,14 @@ export function TemplateFontSizesSettings({
                         </span>
                       )}
                     </td>
-                    <td className="caption py-1.5 pr-3 text-muted">
+                    <td className="caption px-5 py-3.5 align-middle text-muted">
                       {c.min === c.max ? c.min : `${c.min}–${c.max}`}
                     </td>
-                    <td className="py-1.5 pr-3">
+                    <td className="px-5 py-3.5 align-middle">
                       {isSystemAdmin ? (
                         <select
                           className="input h-9 w-auto min-w-20 py-0 text-[13px]"
+                          aria-label={`${t("templateStyle.platform")} — ${t(`templateStyle.c.${c.key}` as LocaleKey)}`}
                           value={inherited}
                           disabled={saving}
                           onChange={(e) =>
@@ -186,10 +173,11 @@ export function TemplateFontSizesSettings({
                         inherited
                       )}
                     </td>
-                    <td className="py-1.5 pr-3">
+                    <td className="px-5 py-3.5 align-middle">
                       {canEditTenant ? (
                         <select
                           className="input h-9 w-auto min-w-20 py-0 text-[13px]"
+                          aria-label={`${t("templateStyle.tenant")} — ${t(`templateStyle.c.${c.key}` as LocaleKey)}`}
                           value={tenant[c.key] ?? ""}
                           disabled={saving}
                           onChange={(e) => {
@@ -212,19 +200,12 @@ export function TemplateFontSizesSettings({
                         (tenant[c.key] ?? "—")
                       )}
                     </td>
-                    <td className="py-1.5 font-medium">{inUse}</td>
-                  </tr>
-                </Fragment>
+                    <td className="px-5 py-3.5 align-middle font-medium">{inUse}</td>
+                </>
               );
-            })}
-          </tbody>
-        </table>
-      </div>
-      {message && (
-        <p className={`caption ${message.ok ? "text-muted" : "text-error"}`}>
-          {message.text}
-        </p>
-      )}
+            }}
+        />
+      {error && <Notice tone="error">{error}</Notice>}
       {(isSystemAdmin || canEditTenant) && (
         <div className="flex flex-wrap items-center gap-3">
           {isSystemAdmin && (

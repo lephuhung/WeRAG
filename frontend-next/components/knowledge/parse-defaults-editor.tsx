@@ -225,12 +225,12 @@ export function ParseDefaultsEditor() {
           </div>
         </div>
         {saved && (
-          <div className="mt-3 rounded-[8px] bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 text-[13px] text-emerald-600 font-medium">
+          <div className="mt-3 rounded-md2 border border-success/20 bg-success-surface px-3 py-2 text-[13px] font-medium text-success">
             ✓ {t("pd.saved")}
           </div>
         )}
         {error && (
-          <div className="mt-3 rounded-[8px] bg-rose-500/10 border border-rose-500/20 px-3 py-2 text-[13px] text-rose-600 font-medium">
+          <div className="mt-3 rounded-md2 border border-error/20 bg-error-surface px-3 py-2 text-[13px] font-medium text-error">
             ⚠ {error}
           </div>
         )}

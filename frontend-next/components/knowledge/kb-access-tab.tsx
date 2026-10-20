@@ -168,7 +168,7 @@ export function KbAccessTab({ kbId, onChanged }: { kbId: string; onChanged?: () 
           <p className="caption text-muted">{t("kbAccess.publicMoveHint")}</p>
         )}
         {confirmPublic && (
-          <div className="flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+          <div className="flex flex-wrap items-center gap-2 rounded-lg bg-warning-surface px-3 py-2 text-warning">
             <span className="caption">{t("kbAccess.scope.publicConfirm")}</span>
             <button
               type="button"
@@ -208,7 +208,7 @@ export function KbAccessTab({ kbId, onChanged }: { kbId: string; onChanged?: () 
               <span
                 key={k}
                 className={`badge-pill text-[11px] ${
-                  on ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400" : "text-muted line-through"
+                  on ? "bg-success-surface text-success" : "text-muted line-through"
                 }`}
               >
                 {on ? "✓" : "✕"} {t(label)}

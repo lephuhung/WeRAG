@@ -12,6 +12,11 @@ import Link from "next/link";
 import { IconRefresh } from "@/components/icons";
 import { useConfirm } from "@/components/confirm-dialog";
 import { useToast } from "@/components/toast";
+import { ConsolePage } from "@/components/settings/console-page";
+import { DataTable } from "@/components/settings/data-table";
+import { Pager } from "@/components/settings/pager";
+import { Pill, PillGroup } from "@/components/settings/pill";
+import { Notice } from "@/components/settings/notice";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { ApiError } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/datetime";
@@ -40,17 +45,17 @@ const FILTERS: { key: LegalDraftFilter; labelKey: LocaleKey }[] = [
 export function draftStatusTone(status: string): string {
   switch (status) {
     case "approved":
-      return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
+      return "badge-success";
     case "reviewing":
-      return "bg-sky-500/10 text-sky-700 dark:text-sky-400";
+      return "badge-info";
     case "failed":
-      return "bg-red-500/10 text-red-700 dark:text-red-400";
+      return "badge-error";
     case "ready":
     case "fetching":
     case "ocr":
-      return "bg-amber-500/10 text-amber-700 dark:text-amber-400";
+      return "badge-warning";
     default:
-      return "bg-surface-strong text-muted";
+      return "badge-neutral";
   }
 }
 
@@ -68,6 +73,7 @@ export default function LegalDraftsSection({ onDenied }: { onDenied?: () => void
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
 
   const load = useCallback(
@@ -111,12 +117,13 @@ export default function LegalDraftsSection({ onDenied }: { onDenied?: () => void
     });
     if (!ok) return;
     setDeleting(d.id);
+    setActionError("");
     try {
       await discardLegalDraft(d.id);
       toast.success(t("ldraft.discarded"));
       await load(true);
     } catch (e) {
-      toast.error(e instanceof Error && e.message ? e.message : t("ldraft.discardFailed"));
+      setActionError(e instanceof Error && e.message ? e.message : t("ldraft.discardFailed"));
     } finally {
       setDeleting(null);
     }
@@ -125,7 +132,7 @@ export default function LegalDraftsSection({ onDenied }: { onDenied?: () => void
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <div>
+    <ConsolePage size="wide">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <span className="caption text-muted">{t("ldraft.desc")}</span>
         <div className="ml-auto flex items-center gap-2">
@@ -141,147 +148,153 @@ export default function LegalDraftsSection({ onDenied }: { onDenied?: () => void
         </div>
       </div>
 
-      {error && <p className="caption mb-3 text-error">{error}</p>}
+      {error && (
+        <Notice
+          tone="error"
+          className="mb-3"
+          action={
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {error}
+        </Notice>
+      )}
+      {actionError && <Notice tone="error" className="mb-3">{actionError}</Notice>}
 
-      <div className="mb-5 inline-flex flex-wrap items-center gap-0.5 rounded-full border border-hairline bg-surface-strong/60 p-0.5">
+      <PillGroup ariaLabel={t("common.filters")} className="mb-5 flex-wrap">
         {FILTERS.map((f) => (
-          <button
+          <Pill
             key={f.key}
-            type="button"
+            active={filter === f.key}
             onClick={() => {
               setFilter(f.key);
               setPage(1);
             }}
-            className={`rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${
-              filter === f.key
-                ? "bg-surface-card text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
-                : "text-muted hover:text-ink"
-            }`}
           >
             {t(f.labelKey)}
-          </button>
+          </Pill>
         ))}
-      </div>
+      </PillGroup>
 
-      <div className="card overflow-x-auto shadow-sm">
-        <table className="w-full min-w-[980px] border-collapse text-left">
-          <thead>
-            <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
-              <th className="min-w-[280px] px-5 py-3 font-medium">{t("ldraft.col.document")}</th>
-              <th className="w-[80px] px-5 py-3 font-medium">{t("ldraft.col.pages")}</th>
-              <th className="w-[150px] px-5 py-3 font-medium">{t("ldraft.col.status")}</th>
-              <th className="w-[150px] px-5 py-3 font-medium">{t("ldraft.col.reviewer")}</th>
-              <th className="w-[170px] px-5 py-3 font-medium">{t("ldraft.col.dates")}</th>
-              <th className="min-w-[200px] px-5 py-3 font-medium">{t("ldraft.col.action")}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-hairline">
-            {items.map((d) => {
-              const label = draftLabel(d);
-              const reviewer = d.approved_by || d.reviewed_by;
-              return (
-                <tr key={d.id} className="align-top">
-                  <td className="px-5 py-3.5">
-                    <div className="text-[13px] font-semibold text-ink">{label || "—"}</div>
-                    {d.title && (
-                      <div className="caption mt-0.5 line-clamp-2 text-body" title={d.title}>
-                        {d.title}
-                      </div>
-                    )}
-                    {d.pdf_file_name && <div className="caption mt-0.5 truncate text-muted">{d.pdf_file_name}</div>}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <span className="text-[13px] tabular-nums text-ink">{d.ocr_pages || "—"}</span>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <span className={`badge-pill inline-block w-fit text-[10px] ${draftStatusTone(d.status)}`}>
-                      {t(`ldraft.status.${d.status}` as LocaleKey)}
-                    </span>
-                    {d.status === "failed" && d.error && (
-                      <div className="caption mt-0.5 line-clamp-3 text-error" title={d.error}>
-                        {d.error}
-                      </div>
-                    )}
-                    {d.structure && d.status !== "approved" && (
-                      <div className={`caption mt-0.5 ${d.structure.ready_to_approve ? "text-emerald-700 dark:text-emerald-400" : "text-muted"}`}>
-                        {d.structure.ready_to_approve
-                          ? t("ldraft.structureReady")
-                          : t("ldraft.structureBlocking", { n: d.structure.blocking })}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <span className="caption text-body">{reviewer || "—"}</span>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <div className="caption tabular-nums text-body">
-                      {t("ldraft.createdAt", { time: formatDateTime(d.created_at, locale) || "—" })}
-                    </div>
-                    {d.approved_at && (
-                      <div className="caption tabular-nums text-muted">
-                        {t("ldraft.approvedAt", { time: formatDateTime(d.approved_at, locale) })}
-                      </div>
-                    )}
-                    {!d.approved_at && d.updated_at && d.updated_at !== d.created_at && (
-                      <div className="caption tabular-nums text-muted">
-                        {t("ldraft.updatedAt", { time: formatDateTime(d.updated_at, locale) })}
-                      </div>
-                    )}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <div className="flex flex-wrap gap-1.5">
-                      {legalDraftEditable(d.status) && (
-                        <Link href={legalDraftHref(d.id)} className="btn btn-primary btn-sm py-0.5 text-[12px]">
-                          {t("ldraft.edit")}
-                        </Link>
-                      )}
-                      {d.status === "approved" && d.approved_kb_id && d.approved_knowledge_id && (
-                        <Link
-                          href={`/platform/knowledge-bases/${encodeURIComponent(d.approved_kb_id)}?knowledge_id=${encodeURIComponent(d.approved_knowledge_id)}`}
-                          className="btn btn-outline btn-sm py-0.5 text-[12px]"
-                        >
-                          {t("ldraft.openKnowledge")}
-                        </Link>
-                      )}
-                      {d.status !== "approved" && (
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm py-0.5 text-[12px] text-error"
-                          disabled={deleting === d.id}
-                          onClick={() => void discard(d)}
-                        >
-                          {deleting === d.id ? "…" : t("ldraft.discard")}
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-            {items.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-5 py-12 text-center text-[14px] text-muted">
-                  {loading ? t("usrp.loading") : t("ldraft.empty")}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable<LegalDraftItem>
+        columns={[
+          { key: "document", header: t("ldraft.col.document"), className: "min-w-[280px]" },
+          { key: "pages", header: t("ldraft.col.pages"), className: "w-[80px]" },
+          { key: "status", header: t("ldraft.col.status"), className: "w-[150px]" },
+          { key: "reviewer", header: t("ldraft.col.reviewer"), className: "w-[150px]" },
+          { key: "dates", header: t("ldraft.col.dates"), className: "w-[170px]" },
+          { key: "action", header: t("ldraft.col.action"), className: "min-w-[200px]" },
+        ]}
+        rows={items}
+        rowKey={(d) => d.id}
+        renderRow={(d) => (
+          <DraftCells d={d} locale={locale} deleting={deleting} onDiscard={() => void discard(d)} />
+        )}
+        rowClassName="align-top"
+        loading={loading}
+        loadingLabel={t("common.loading")}
+        emptyLabel={t("ldraft.empty")}
+        minWidth="min-w-[980px]"
+      />
 
-      {pages > 1 && (
-        <div className="mt-4 flex items-center justify-center gap-3">
-          <button className="btn btn-outline btn-sm" disabled={page <= 1 || loading} onClick={() => setPage(page - 1)}>
-            ‹
-          </button>
-          <span className="caption text-muted tabular-nums">
-            {page} / {pages}
-          </span>
-          <button className="btn btn-outline btn-sm" disabled={page >= pages || loading} onClick={() => setPage(page + 1)}>
-            ›
-          </button>
+      <Pager page={page} pageCount={pages} onPage={setPage} loading={loading} />
+    </ConsolePage>
+  );
+}
+
+/* The cells of one draft row (the <tr> comes from <DataTable>). */
+function DraftCells({
+  d,
+  locale,
+  deleting,
+  onDiscard,
+}: {
+  d: LegalDraftItem;
+  locale: string;
+  deleting: string | null;
+  onDiscard: () => void;
+}) {
+  const { t } = useT();
+  const label = draftLabel(d);
+  const reviewer = d.approved_by || d.reviewed_by;
+  return (
+    <>
+      <td className="px-5 py-3.5 align-middle">
+        <div className="text-[13px] font-semibold text-ink">{label || "—"}</div>
+        {d.title && (
+          <div className="caption mt-0.5 line-clamp-2 text-body" title={d.title}>
+            {d.title}
+          </div>
+        )}
+        {d.pdf_file_name && <div className="caption mt-0.5 truncate text-muted">{d.pdf_file_name}</div>}
+      </td>
+      <td className="px-5 py-3.5 align-middle">
+        <span className="text-[13px] tabular-nums text-ink">{d.ocr_pages || "—"}</span>
+      </td>
+      <td className="px-5 py-3.5 align-middle">
+        <span className={`badge-pill inline-block w-fit text-[10px] ${draftStatusTone(d.status)}`}>
+          {t(`ldraft.status.${d.status}` as LocaleKey)}
+        </span>
+        {d.status === "failed" && d.error && (
+          <div className="caption mt-0.5 line-clamp-3 text-error" title={d.error}>
+            {d.error}
+          </div>
+        )}
+        {d.structure && d.status !== "approved" && (
+          <div className={`caption mt-0.5 ${d.structure.ready_to_approve ? "text-success" : "text-muted"}`}>
+            {d.structure.ready_to_approve
+              ? t("ldraft.structureReady")
+              : t("ldraft.structureBlocking", { n: d.structure.blocking })}
+          </div>
+        )}
+      </td>
+      <td className="px-5 py-3.5 align-middle">
+        <span className="caption text-body">{reviewer || "—"}</span>
+      </td>
+      <td className="px-5 py-3.5 align-middle">
+        <div className="caption tabular-nums text-body">
+          {t("ldraft.createdAt", { time: formatDateTime(d.created_at, locale) || "—" })}
         </div>
-      )}
-    </div>
+        {d.approved_at && (
+          <div className="caption tabular-nums text-muted">
+            {t("ldraft.approvedAt", { time: formatDateTime(d.approved_at, locale) })}
+          </div>
+        )}
+        {!d.approved_at && d.updated_at && d.updated_at !== d.created_at && (
+          <div className="caption tabular-nums text-muted">
+            {t("ldraft.updatedAt", { time: formatDateTime(d.updated_at, locale) })}
+          </div>
+        )}
+      </td>
+      <td className="px-5 py-3.5 align-middle">
+        <div className="flex flex-wrap gap-1.5">
+          {legalDraftEditable(d.status) && (
+            <Link href={legalDraftHref(d.id)} className="btn btn-primary btn-sm py-0.5 text-[12px]">
+              {t("ldraft.edit")}
+            </Link>
+          )}
+          {d.status === "approved" && d.approved_kb_id && d.approved_knowledge_id && (
+            <Link
+              href={`/platform/knowledge-bases/${encodeURIComponent(d.approved_kb_id)}?knowledge_id=${encodeURIComponent(d.approved_knowledge_id)}`}
+              className="btn btn-outline btn-sm py-0.5 text-[12px]"
+            >
+              {t("ldraft.openKnowledge")}
+            </Link>
+          )}
+          {d.status !== "approved" && (
+            <button
+              type="button"
+              className="btn btn-danger btn-sm py-0.5 text-[12px]"
+              disabled={deleting === d.id}
+              onClick={onDiscard}
+            >
+              {deleting === d.id ? t("common.loading") : t("ldraft.discard")}
+            </button>
+          )}
+        </div>
+      </td>
+    </>
   );
 }

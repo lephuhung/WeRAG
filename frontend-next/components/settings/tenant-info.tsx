@@ -15,6 +15,10 @@ import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { formatDateTime } from "@/lib/datetime";
 import { useConfirm } from "@/components/confirm-dialog";
+import { ConsolePage } from "@/components/settings/console-page";
+import { InfoRow } from "@/components/settings/info-row";
+import { Loading } from "@/components/settings/loading";
+import { Notice } from "@/components/settings/notice";
 import { useRouter } from "next/navigation";
 import {
   TENANT_NAME_MAX_LENGTH,
@@ -192,26 +196,35 @@ export function TenantInfo() {
     : 0;
 
   if (loading) {
-    return <p className="caption text-muted">{t("tenant.loading")}</p>;
+    return <Loading label={t("tenant.loading")} />;
   }
   if (error && !info) {
     return (
-      <div className="flex items-center gap-3">
-        <p className="caption text-error">{error}</p>
-        <button className="btn btn-outline btn-sm" onClick={() => void load()}>{t("tenant.retry")}</button>
-      </div>
+      <Notice
+        tone="error"
+        action={
+          <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+            {t("common.retry")}
+          </button>
+        }
+      >
+        {error}
+      </Notice>
     );
   }
   if (!info) return null;
 
   return (
+    <ConsolePage size="form">
     <div className="flex flex-col gap-8">
       <div className="flex flex-col divide-y divide-hairline">
-        <Row label={t("tenant.id")} desc={t("tenant.idDesc")} value={String(info.id)} />
-        <Row label={t("tenant.name")} desc={t("tenant.nameDesc")}>
+        <InfoRow label={t("tenant.id")} desc={t("tenant.idDesc")} value={String(info.id)} />
+        <InfoRow label={t("tenant.name")} desc={t("tenant.nameDesc")}>
           {editingName ? (
             <div className="flex items-center gap-2">
               <input
+                id="tenant-name"
+                aria-label={t("tenant.name")}
                 className="input h-9 w-[240px]"
                 maxLength={TENANT_NAME_MAX_LENGTH}
                 placeholder={t("tnp.namePh")}
@@ -238,11 +251,13 @@ export function TenantInfo() {
               )}
             </div>
           )}
-        </Row>
-        <Row label={t("tenant.description")} desc={t("tenant.descriptionDesc")}>
+        </InfoRow>
+        <InfoRow label={t("tenant.description")} desc={t("tenant.descriptionDesc")}>
           {editingDesc ? (
             <div className="flex flex-col items-end gap-2">
               <textarea
+                id="tenant-description"
+                aria-label={t("tenant.description")}
                 className="input h-auto min-h-[64px] w-[320px]"
                 value={descDraft}
                 autoFocus
@@ -269,43 +284,43 @@ export function TenantInfo() {
               )}
             </div>
           )}
-        </Row>
-        <Row label={t("tenant.status")} desc={t("tenant.statusDesc")}>
+        </InfoRow>
+        <InfoRow label={t("tenant.status")} desc={t("tenant.statusDesc")}>
           <span className={`badge-pill ${info.status === "active" ? "text-success" : "text-muted"}`}>
             {statusText(info.status)}
           </span>
-        </Row>
-        <Row label={t("tenant.createdAt")} desc={t("tenant.createdAtDesc")}>
+        </InfoRow>
+        <InfoRow label={t("tenant.createdAt")} desc={t("tenant.createdAtDesc")}>
           <span className="caption text-body">
             {info.created_at
               ? formatDateTime(info.created_at, locale)
               : "-"}
           </span>
-        </Row>
+        </InfoRow>
         {info.storage_quota !== undefined && (
           <>
-            <Row label={t("tenant.storage")} desc={t("tenant.storageDesc")}>
+            <InfoRow label={t("tenant.storage")} desc={t("tenant.storageDesc")}>
               <span className="caption text-body">{formatBytes(info.storage_quota)}</span>
-            </Row>
-            <Row label={t("tenant.storageUsed")} desc={t("tenant.storageUsedDesc")}>
+            </InfoRow>
+            <InfoRow label={t("tenant.storageUsed")} desc={t("tenant.storageUsedDesc")}>
               <span className="caption text-body">{formatBytes(info.storage_used || 0)}</span>
-            </Row>
-            <Row label={t("tenant.storageUsage")} desc={t("tenant.storageUsageDesc")}>
+            </InfoRow>
+            <InfoRow label={t("tenant.storageUsage")} desc={t("tenant.storageUsageDesc")}>
               <div className="flex w-[240px] items-center gap-3">
                 <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-strong">
                   <div
-                    className={`h-full rounded-full ${usage > 80 ? "bg-[var(--color-error)]" : "bg-[var(--color-success)]"}`}
+                    className={`h-full rounded-full ${usage > 80 ? "bg-error" : "bg-success"}`}
                     style={{ width: `${usage}%` }}
                   />
                 </div>
                 <span className="caption text-muted">{usage}%</span>
               </div>
-            </Row>
+            </InfoRow>
           </>
         )}
       </div>
 
-      {error && <p className="caption text-error">{error}</p>}
+      {error && <Notice tone="error">{error}</Notice>}
 
       {activeTenantMatch && canLeave && (
         <DangerZone
@@ -332,6 +347,8 @@ export function TenantInfo() {
             {t("tenant.deleteConfirmHint").replace("{name}", info.name)}
           </p>
           <input
+            id="tenant-delete-confirm"
+            aria-label={t("tenant.deleteConfirmTitle")}
             className="input"
             value={deleteConfirm}
             placeholder={info.name}
@@ -342,7 +359,7 @@ export function TenantInfo() {
               {t("common.cancel")}
             </button>
             <button
-              className="btn btn-sm bg-[var(--color-error)] text-white"
+              className="btn btn-danger btn-sm"
               disabled={deleting || deleteConfirm.trim() !== info.name}
               onClick={() => void remove()}
             >
@@ -352,26 +369,11 @@ export function TenantInfo() {
         </div>
       </Modal>
     </div>
+    </ConsolePage>
   );
 }
 
 
-function Row({ label, desc, value, children }: {
-  label: string;
-  desc: string;
-  value?: string;
-  children?: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-8 py-4">
-      <div className="min-w-0">
-        <label className="title-sm block">{label}</label>
-        <p className="caption mt-1 text-muted">{desc}</p>
-      </div>
-      <div className="shrink-0">{children ?? <span className="caption text-body">{value}</span>}</div>
-    </div>
-  );
-}
 
 function DangerZone({ title, desc, cta, onClick, variant }: {
   title: string;
@@ -382,14 +384,15 @@ function DangerZone({ title, desc, cta, onClick, variant }: {
 }) {
   return (
     <div className={`card flex items-center justify-between gap-6 border p-5 ${
-      variant === "danger" ? "border-[color-mix(in_srgb,var(--color-error)_35%,transparent)]" : "border-hairline-strong"
+      variant === "danger" ? "border-error/30" : "border-hairline-strong"
     }`}>
       <div className="min-w-0">
         <div className="title-sm">{title}</div>
         <p className="caption mt-1 text-muted">{desc}</p>
       </div>
       <button
-        className={`btn btn-sm shrink-0 ${variant === "danger" ? "bg-[var(--color-error)] text-white" : "border border-[var(--color-error)] text-error"}`}
+        type="button"
+        className={`btn btn-sm shrink-0 ${variant === "danger" ? "btn-danger" : "btn-outline"}`}
         onClick={onClick}
       >
         {cta}

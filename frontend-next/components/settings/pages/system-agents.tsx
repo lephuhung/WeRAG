@@ -2,7 +2,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   IconAgent,
   IconChat,
@@ -28,6 +27,9 @@ import { AgentEmbedChannels } from "@/components/agents/embed-channels";
 import { AgentEditorModal } from "@/components/agents/agent-editor";
 import { Modal } from "@/components/modal";
 import { listModels, type ModelConfig } from "@/lib/api/models";
+import { DeniedView } from "@/components/settings/system-section";
+import { Notice } from "@/components/settings/notice";
+import { Loading } from "@/components/settings/loading";
 import { listAllTenants } from "@/lib/api/tenants";
 import { agentEnabled, normalizeDistribution, scopeSummary, switchOffNeedsConfirm } from "@/lib/agent-tenant-scope";
 import { Toggle } from "@/components/settings/toggle";
@@ -43,16 +45,7 @@ export default function AgentsPage() {
 
 function AgentsPanel() {
   const auth = useAuth();
-  const user = auth.user;
-  const router = useRouter();
   const { t } = useT();
-
-  // Superadmin guard
-  useEffect(() => {
-    if (auth.ready && auth.user && !auth.user.is_system_admin) {
-      router.replace("/platform/system/workspace");
-    }
-  }, [auth.ready, auth.user, router]);
 
   const [agents, setAgents] = useState<CustomAgent[] | null>(null);
   const [models, setModels] = useState<ModelConfig[]>([]);
@@ -155,7 +148,7 @@ function AgentsPanel() {
   };
 
   if (auth.ready && !auth.user?.is_system_admin) {
-    return null;
+    return <DeniedView />;
   }
 
   return (
@@ -175,7 +168,20 @@ function AgentsPanel() {
         </button>
       </div>
 
-      {error && <p className="caption mb-6 text-error">{error}</p>}
+      {error && (
+        <Notice
+          tone="error"
+          className="mb-6"
+          action={
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {error}
+        </Notice>
+      )}
+      {agents === null && !error && <Loading className="py-8" />}
       {agents !== null && agents.length === 0 && !error && (
         <p className="caption mb-6 text-muted-soft">{t("agentp.empty")}</p>
       )}
@@ -212,7 +218,7 @@ function AgentsPanel() {
                   )}
                   {distribution === "addon" && (
                     <span
-                      className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-300"
+                      className="badge-pill badge-warning shrink-0 text-[11px]"
                       title={t("agent.distribution.addonDesc")}
                     >
                       {t("agent.distribution.addon")}
@@ -272,7 +278,7 @@ function AgentsPanel() {
                   )}
                   {a.config?.rerank_model_id && (
                     <span
-                      className="max-w-full break-all text-[12px] leading-relaxed text-emerald-700 dark:text-emerald-400"
+                      className="max-w-full break-all text-[12px] leading-relaxed text-success"
                       title={t("agentp.rerank", { name: getModelDisplayName(a.config?.rerank_model_id) })}
                     >
                       RR: {getModelDisplayName(a.config?.rerank_model_id)}
@@ -378,7 +384,7 @@ function AgentsPanel() {
             {t("common.cancel")}
           </button>
           <button
-            className="btn btn-sm bg-[var(--color-error)] text-white"
+            className="btn btn-danger btn-sm"
             onClick={() => switchConfirm && void applySwitch(switchConfirm, false)}
           >
             {t("agentp.switchOffConfirm")}
@@ -399,7 +405,7 @@ function AgentsPanel() {
             {t("common.cancel")}
           </button>
           <button
-            className="btn btn-sm bg-[var(--color-error)] text-white"
+            className="btn btn-danger btn-sm"
             onClick={() => void remove()}
           >
             {t("common.delete")}

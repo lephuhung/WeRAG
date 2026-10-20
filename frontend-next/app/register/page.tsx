@@ -2,15 +2,18 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { apiGet, apiPost, getTokens } from "@/lib/api-client";
+import { apiGet, apiPost, getTokens, setTokens } from "@/lib/api-client";
 import { getAuthConfig, getInvitationByToken } from "@/lib/api/auth";
 import { acceptInvitationByToken } from "@/lib/api/tenants";
 import Link from "next/link";
 import { AuthShell, authStyles as styles } from "@/components/auth/auth-shell";
+import { AuthCard } from "@/components/auth/auth-card";
+import { useT } from "@/lib/i18n";
 
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useT();
   const token = searchParams.get("token") ?? "";
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -57,7 +60,7 @@ function RegisterForm() {
         token?: string;
         refresh_token?: string;
       }>(path, token ? { token, username, email, password } : { username, email, password });
-      if (!res.success) throw new Error(res.message ?? "Đăng ký không thành công");
+      if (!res.success) throw new Error(res.message ?? t("auth.registerFailed"));
       // Self-serve registration answers with the account only (the invite
       // path also signs in): sign in with what was just typed.
       const session = res.token
@@ -70,8 +73,7 @@ function RegisterForm() {
         router.push("/login");
         return;
       }
-      localStorage.setItem("weknora_token", session.token);
-      if (session.refresh_token) localStorage.setItem("weknora_refresh_token", session.refresh_token);
+      setTokens(session.token, session.refresh_token ?? "");
       // Mirror persistLoginResponse: probe /auth/me, then onboard only when
       // this deployment lets users create organizations (onboarding offers
       // to skip to the chat). Otherwise a new account stays a Guest until a
@@ -89,7 +91,7 @@ function RegisterForm() {
             : "/platform/creatChat",
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Đăng ký không thành công");
+      setError(err instanceof Error ? err.message : t("auth.registerFailed"));
     } finally {
       setBusy(false);
     }
@@ -100,90 +102,113 @@ function RegisterForm() {
     setError(null);
     try {
       const res = await acceptInvitationByToken(token);
-      if (!res.success) throw new Error(res.message ?? "Tham gia không thành công");
+      if (!res.success) throw new Error(res.message ?? t("auth.joinFailed"));
       router.push("/platform/knowledge-bases");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Tham gia không thành công");
+      setError(err instanceof Error ? err.message : t("auth.joinFailed"));
     } finally {
       setBusy(false);
     }
   };
 
+  const tenant = tenantName ?? t("auth.orgFallback");
+
   return (
     <AuthShell mode="register">
-        <p className={styles.kicker}>BẮT ĐẦU CÙNG WERAG</p>
-        <h2 className={styles.title}>{token ? "Tham gia tổ chức" : "Tạo tài khoản"}</h2>
-        <p className={styles.subtitle}>
-          {token
+      <AuthCard
+        kicker={t("auth.registerKicker")}
+        title={token ? t("auth.joinOrgTitle") : t("auth.createAccountTitle")}
+        subtitle={
+          token
             ? showJoinCard
-              ? `Bạn được mời tham gia ${tenantName ?? "tổ chức"}. Tiếp tục với tài khoản hiện tại hoặc tạo tài khoản mới.`
-              : `Tạo tài khoản để tham gia ${tenantName ?? "tổ chức"}.`
-            : "Mở lối đến tri thức pháp luật. Bắt đầu không gian tra cứu và hỏi đáp của bạn."}
-        </p>
+              ? t("auth.joinOrgSubtitleSession", { tenant })
+              : t("auth.joinOrgSubtitle", { tenant })
+            : t("auth.createAccountSubtitle")
+        }
+        note={t("auth.registerNote")}
+      >
         {inviteOnly && !token ? (
-          <div role="status" className={styles.error}>Hệ thống chỉ cho phép đăng ký qua lời mời. Vui lòng liên hệ quản trị viên để nhận liên kết mời.
-            <div className={styles.links}><Link href="/login">Quay lại đăng nhập →</Link></div>
+          <div role="status" className={styles.error}>
+            {t("auth.inviteOnly")}
+            <div className={styles.links}>
+              <Link href="/login">{t("auth.backToLogin")}</Link>
+            </div>
           </div>
-        ) : (
-        <>
-        {showJoinCard ? (
-          <div className={styles.form}>
-            {error && <p role="alert" className={styles.error}>{error}</p>}
+        ) : showJoinCard ? (
+          <>
+            {error && (
+              <p role="alert" className={styles.error}>
+                {error}
+              </p>
+            )}
             <button
               type="button"
-              className={styles.primary}
+              className="btn btn-primary h-11 w-full"
               disabled={busy}
               onClick={() => void joinWithSession()}
             >
-              {busy ? "Đang tham gia…" : "Tham gia tổ chức →"}
+              {busy ? t("auth.joiningBusy") : t("auth.joinOrgSubmit")}
             </button>
             <button
               type="button"
-              className={styles.secondary}
+              className="btn btn-outline h-11 w-full"
               onClick={() => setUseNewAccount(true)}
             >
-              Tạo tài khoản mới
+              {t("auth.createNewAccount")}
             </button>
-          </div>
+          </>
         ) : (
-        <form className={styles.form} onSubmit={submit}>
-          <label className="mb-4 block">
-            <span className="caption mb-1.5 block text-muted">Tên người dùng</span>
-            <input className="input" autoComplete="username" placeholder="Tên hiển thị của bạn" required value={username} onChange={(e) => setUsername(e.target.value)} />
-          </label>
-          <label className="mb-4 block">
-            <span className="caption mb-1.5 block text-muted">Email</span>
-            <input
-              className="input"
-              type="email"
-              autoComplete="email"
-              placeholder="ban@donvi.vn"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </label>
-          <label className="mb-6 block">
-            <span className="caption mb-1.5 block text-muted">Mật khẩu</span>
-            <input
-              className="input"
-              type="password"
-              autoComplete="new-password"
-              placeholder="Tạo mật khẩu của bạn"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </label>
-          {error && <p role="alert" className={styles.error}>{error}</p>}
-          <button type="submit" className={styles.primary} disabled={busy}>
-            {busy ? "Đang tạo tài khoản…" : token ? "Tạo tài khoản và tham gia →" : "Tạo tài khoản →"}
-          </button>
-        </form>
+          <form onSubmit={submit}>
+            <label className="mb-4 block">
+              <span className="caption mb-1.5 block text-muted">{t("auth.username")}</span>
+              <input
+                className="input"
+                autoComplete="username"
+                placeholder={t("auth.usernamePlaceholder")}
+                required
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </label>
+            <label className="mb-4 block">
+              <span className="caption mb-1.5 block text-muted">{t("auth.email")}</span>
+              <input
+                className="input"
+                type="email"
+                autoComplete="email"
+                placeholder={t("auth.emailPlaceholder")}
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </label>
+            <label className="mb-6 block">
+              <span className="caption mb-1.5 block text-muted">{t("auth.password")}</span>
+              <input
+                className="input"
+                type="password"
+                autoComplete="new-password"
+                placeholder={t("auth.passwordPlaceholderNew")}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </label>
+            {error && (
+              <p role="alert" className={styles.error}>
+                {error}
+              </p>
+            )}
+            <button type="submit" className="btn btn-primary h-11 w-full" disabled={busy}>
+              {busy
+                ? t("auth.registerBusy")
+                : token
+                  ? t("auth.registerJoinSubmit")
+                  : t("auth.registerSubmit")}
+            </button>
+          </form>
         )}
-        </>
-        )}
-        <p className={styles.note}>Tra cứu thông minh · Hỏi đáp tài liệu · Đối chiếu nguồn</p>
+      </AuthCard>
     </AuthShell>
   );
 }

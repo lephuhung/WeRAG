@@ -15,6 +15,7 @@ import {
   type TwoFactorSetupResponse,
 } from "@/lib/api/auth";
 import { useT } from "@/lib/i18n";
+import { Notice } from "@/components/settings/notice";
 
 type Step = "idle" | "setup" | "recovery" | "disabling";
 
@@ -129,7 +130,7 @@ export function TwoFactorSettings() {
   };
 
   const badge = enabled ? (
-    <span className="badge-pill bg-emerald-500/10 text-emerald-600">{t("userSettings.2faEnabled")}</span>
+    <span className="badge-pill badge-success">{t("userSettings.2faEnabled")}</span>
   ) : (
     <span className="badge-pill bg-surface-strong text-muted">{t("userSettings.2faDisabled")}</span>
   );
@@ -188,13 +189,13 @@ export function TwoFactorSettings() {
               {t("userSettings.verify")}
             </button>
           </div>
-          {error && <span className="caption text-error">{error}</span>}
+          {error && <Notice tone="error" className="mt-3">{error}</Notice>}
         </div>
       )}
 
       {step === "recovery" && (
         <div className="mt-5 flex flex-col gap-3 rounded-xl border border-hairline p-4">
-          <span className="caption text-success">{t("userSettings.2faLinked")}</span>
+          <Notice tone="success">{t("userSettings.2faLinked")}</Notice>
           <p className="caption text-muted">{t("twofa.recoveryHint")}</p>
           {recoveryCodes.length > 0 ? (
             <>
@@ -243,11 +244,11 @@ export function TwoFactorSettings() {
               {t("common.cancel")}
             </button>
           </div>
-          {error && <span className="caption text-error">{error}</span>}
+          {error && <Notice tone="error" className="mt-3">{error}</Notice>}
         </div>
       )}
 
-      {step === "idle" && error && <span className="caption mt-3 block text-error">{error}</span>}
+      {step === "idle" && error && <Notice tone="error" className="mt-3">{error}</Notice>}
     </div>
   );
 }

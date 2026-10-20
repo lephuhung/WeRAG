@@ -5,6 +5,7 @@ import { MemoryPersonalSettings } from "@/components/settings/memory-personal-se
 import { MemoryWorkspaceSettings } from "@/components/settings/memory-workspace-settings";
 import { ChatHistorySettings } from "@/components/settings/chat-history-settings";
 import { useT } from "@/lib/i18n";
+import { TabStrip } from "@/components/settings/tab-strip";
 
 export type MemoryHubTab = "mine" | "config" | "chathistory";
 
@@ -24,27 +25,23 @@ export function MemoryHub({ initialTab = "mine" }: { initialTab?: MemoryHubTab }
 
   return (
     <div className="space-y-5">
-      <div className="flex items-center gap-6 overflow-x-auto border-b border-hairline" role="tablist">
-        {tabs.map((it) => (
-          <button
-            key={it.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === it.id}
-            onClick={() => setTab(it.id)}
-            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-1 pb-3 pt-1 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ink ${
-              tab === it.id
-                ? "border-ink font-semibold text-ink"
-                : "border-transparent font-medium text-muted hover:border-hairline-strong hover:text-ink"
-            }`}
-          >
-            {it.label}
-          </button>
-        ))}
-      </div>
-      {tab === "mine" && <MemoryPersonalSettings />}
-      {tab === "config" && <MemoryWorkspaceSettings />}
-      {tab === "chathistory" && <ChatHistorySettings />}
+      <TabStrip tabs={tabs} value={tab} onChange={setTab} ariaLabel={t("settingsNav.memory")} />
+
+      {tab === "mine" && (
+        <div id="tabpanel-mine" role="tabpanel" aria-labelledby="tab-mine">
+          <MemoryPersonalSettings />
+        </div>
+      )}
+      {tab === "config" && (
+        <div id="tabpanel-config" role="tabpanel" aria-labelledby="tab-config">
+          <MemoryWorkspaceSettings />
+        </div>
+      )}
+      {tab === "chathistory" && (
+        <div id="tabpanel-chathistory" role="tabpanel" aria-labelledby="tab-chathistory">
+          <ChatHistorySettings />
+        </div>
+      )}
     </div>
   );
 }

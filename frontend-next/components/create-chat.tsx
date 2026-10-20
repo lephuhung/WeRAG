@@ -68,19 +68,13 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
     });
   };
 
-  // KB variant: the chat page reads its KB scope from WeKnora_settings.
+  /* KB variant: the chat page reads its KB scope from the chat context, so
+   * the picked knowledge base joins the scope of this conversation and of
+   * the next one — through the context, not by writing localStorage behind
+   * its back (that would race the sticky scope and ignore a removal). */
   const persistKbScope = () => {
     if (!kbId) return;
-    try {
-      const raw = localStorage.getItem("WeKnora_settings");
-      const parsed = raw ? (JSON.parse(raw) as { selectedKnowledgeBases?: string[] }) : {};
-      const ids = parsed.selectedKnowledgeBases ?? [];
-      if (!ids.includes(kbId)) {
-        localStorage.setItem("WeKnora_settings", JSON.stringify({ ...parsed, selectedKnowledgeBases: [...ids, kbId] }));
-      }
-    } catch {
-      /* ignore */
-    }
+    ctx.addKnowledgeBase(kbId);
   };
 
   // Session create takes title/description only (CreateSessionRequest); the

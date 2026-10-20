@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useT, type LocaleKey } from "@/lib/i18n";
+import { SHELL_HEADER_HEIGHT_PX } from "@/components/shell-breakpoints";
 
 const SECTION_KEYS: [RegExp, LocaleKey][] = [
   [/^\/platform\/chat/, "nav.chat"],
@@ -24,11 +25,14 @@ export function Header() {
     SECTION_KEYS.find(([re]) => re.test(pathname))?.[1] ?? "hdr.workspace";
 
   return (
-    <header className="relative flex h-14 shrink-0 items-center gap-3 border-b border-hairline bg-canvas px-4 sm:px-8">
+    <header
+      className="relative flex shrink-0 items-center gap-3 border-b border-hairline bg-canvas px-4 sm:px-8"
+      style={{ height: SHELL_HEADER_HEIGHT_PX }}
+    >
       <button
         onClick={() => window.dispatchEvent(new Event("weknora:toggle-sidebar"))}
-        aria-label={inAdmin ? "Bật/tắt menu chính" : "Toggle navigation menu"}
-        title={inAdmin ? "Bật/tắt menu chính" : undefined}
+        aria-label={t("header.toggleNav")}
+        title={t("header.toggleNav")}
         className={`-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-strong hover:text-ink ${inAdmin ? "" : "lg:hidden"}`}
       >
         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">

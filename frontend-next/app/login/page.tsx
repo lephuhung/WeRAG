@@ -4,17 +4,25 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { AuthShell, authStyles as styles } from "@/components/auth/auth-shell";
+import { AuthCard } from "@/components/auth/auth-card";
+import { AuthProvider, useAuth } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 import { resolveSafeNextPath } from "@/lib/safe-next";
 import { IconEye } from "@/components/icons";
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useT();
+  /* The sign-in API lives in lib/auth.tsx — the page must not re-implement
+   * the token handling (it used to store the tokens itself). */
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [totpRequired, setTotpRequired] = useState(false);
   const [totpDigits, setTotpDigits] = useState<string[]>(Array(6).fill(""));
+  const [resetHelp, setResetHelp] = useState(false);
   const totpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const totpCode = totpDigits.join("");
 
@@ -66,57 +74,24 @@ function LoginForm() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/v1/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Accept-Language": "vi-VN" },
-        body: JSON.stringify({ email, password, two_factor_code: totpCode }),
-      });
-      const data = await res.json().catch(() => null);
-      const token =
-        data && typeof data === "object" && "token" in data
-          ? (data as { token?: string }).token
-          : undefined;
-      const refreshToken =
-        data && typeof data === "object" && "refresh_token" in data
-          ? (data as { refresh_token?: string }).refresh_token
-          : undefined;
-      if (
-        data &&
-        typeof data === "object" &&
-        (data as { two_factor_required?: boolean }).two_factor_required
-      ) {
+      const result = await login(email, password, totpCode);
+      if (!result) {
+        router.push(resolveSafeNextPath(searchParams.get("next")));
+        return;
+      }
+      if (result.twoFactorRequired) {
         // Correct password but a 6-digit authenticator code is required.
         setTotpRequired(true);
-        setError("Nhập mã 6 chữ số từ ứng dụng xác thực của bạn");
+        setError(t("auth.totpRequired"));
         return;
       }
-      if (!res.ok || !token) {
-        const msg =
-          data && typeof data === "object" && "message" in data
-            ? String((data as { message?: unknown }).message ?? "Đăng nhập không thành công")
-            : "Đăng nhập không thành công";
-        setError(msg === "Invalid email or password" ? "Email hoặc mật khẩu không đúng. Vui lòng kiểm tra lại." : msg);
-        return;
-      }
-      localStorage.setItem("weknora_token", token);
-      if (refreshToken) localStorage.setItem("weknora_refresh_token", refreshToken);
-      const rawPayload = data as {
-        active_tenant?: { id?: number | string };
-        tenant?: { id?: number | string };
-        user?: { tenant_id?: number | string };
-      };
-      const tenantId =
-        rawPayload?.active_tenant?.id ??
-        rawPayload?.tenant?.id ??
-        rawPayload?.user?.tenant_id;
-      if (tenantId && Number(tenantId) > 0) {
-        localStorage.setItem("weknora_selected_tenant_id", String(tenantId));
-      } else {
-        localStorage.removeItem("weknora_selected_tenant_id");
-      }
-      router.push(resolveSafeNextPath(searchParams.get("next")));
+      setError(
+        result.error === "Invalid email or password"
+          ? t("auth.loginInvalid")
+          : result.error,
+      );
     } catch {
-      setError("Không thể kết nối đến hệ thống. Vui lòng thử lại.");
+      setError(t("auth.loginNetwork"));
     } finally {
       setBusy(false);
     }
@@ -124,55 +99,75 @@ function LoginForm() {
 
   return (
     <AuthShell mode="login">
-        <p className={styles.kicker}>CHÀO MỪNG TRỞ LẠI</p>
-        <h2 className={styles.title}>Đăng nhập</h2>
-        <p className={styles.subtitle}>Tiếp tục khám phá tri thức pháp luật<br />trong tổ chức của bạn.</p>
-
-        <form className={styles.form} onSubmit={submit}>
+      <AuthCard
+        kicker={t("auth.loginKicker")}
+        title={t("auth.loginTitle")}
+        subtitle={t("auth.loginSubtitle")}
+        note={t("auth.loginNote")}
+      >
+        <form onSubmit={submit}>
           <label className="mb-4 block">
-            <span className="caption mb-1.5 block text-muted">Email</span>
+            <span className="caption mb-1.5 block text-muted">{t("auth.email")}</span>
             <input
+              className="input"
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="ban@donvi.vn"
+              placeholder={t("auth.emailPlaceholder")}
               autoComplete="email"
             />
           </label>
-          <div className="mb-6">
-            <label htmlFor="login-password" style={{ marginBottom: 8 }}>
-            <span className="caption mb-1.5 block text-muted">Mật khẩu</span>
+          <div className="mb-2">
+            <label htmlFor="login-password" className="block">
+              <span className="caption mb-1.5 block text-muted">{t("auth.password")}</span>
             </label>
             <div className="relative">
-            <input
-              id="login-password"
-              type={showPassword ? "text" : "password"}
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="Nhập mật khẩu của bạn"
-              autoComplete="current-password"
-              style={{ paddingRight: 52 }}
-            />
+              <input
+                id="login-password"
+                className="input pr-12"
+                type={showPassword ? "text" : "password"}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={t("auth.passwordPlaceholder")}
+                autoComplete="current-password"
+              />
+              <button
+                type="button"
+                className="absolute inset-y-0 right-1 flex w-10 items-center justify-center rounded text-muted transition-colors hover:text-ink"
+                aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
+                aria-pressed={showPassword}
+                aria-controls="login-password"
+                onClick={() => setShowPassword((visible) => !visible)}
+              >
+                <span className="relative" aria-hidden="true">
+                  <IconEye className="h-5 w-5" />
+                  {showPassword && (
+                    <span className="absolute left-0 top-1/2 h-px w-5 -rotate-45 bg-current" />
+                  )}
+                </span>
+              </button>
+            </div>
+          </div>
+          <div className="mb-6 text-right">
             <button
               type="button"
-              className="absolute inset-y-0 right-1 flex w-11 items-center justify-center rounded text-muted hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2"
-              aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
-              aria-pressed={showPassword}
-              aria-controls="login-password"
-              onClick={() => setShowPassword((visible) => !visible)}
+              className="caption text-muted underline underline-offset-2 transition-colors hover:text-ink"
+              aria-expanded={resetHelp}
+              onClick={() => setResetHelp((shown) => !shown)}
             >
-              <span className="relative" aria-hidden="true">
-                <IconEye className="h-5 w-5" />
-                {showPassword && <span className="absolute left-0 top-1/2 h-px w-5 -rotate-45 bg-current" />}
-              </span>
+              {t("auth.forgotPassword")}
             </button>
-            </div>
+            {resetHelp && (
+              <p role="status" className="caption mt-2 text-muted">
+                {t("auth.forgotPasswordSoon")}
+              </p>
+            )}
           </div>
           {totpRequired && (
             <div className={styles.totp}>
-              <span className="caption mb-1.5 block text-muted">Mã xác thực hai bước</span>
+              <span className="caption mb-1.5 block text-muted">{t("auth.totpLabel")}</span>
               <div className={styles.totpRow} onPaste={onTotpPaste}>
                 {totpDigits.map((digit, i) => (
                   <input
@@ -180,14 +175,14 @@ function LoginForm() {
                     ref={(el) => {
                       totpRefs.current[i] = el;
                     }}
-                    className="h-12 w-full max-w-[48px] rounded-[10px] border border-hairline bg-surface-card text-center text-[20px] font-semibold tracking-normal text-ink outline-none transition-colors focus:border-ink"
+                    className="input h-12 max-w-[48px] px-0 text-center text-[20px] font-semibold"
                     type="text"
                     inputMode="numeric"
                     autoComplete={i === 0 ? "one-time-code" : "off"}
                     maxLength={1}
                     autoFocus={i === 0}
                     required
-                    aria-label={`Chữ số ${i + 1}`}
+                    aria-label={t("auth.totpDigit", { n: i + 1 })}
                     value={digit}
                     onChange={(e) => setDigit(i, e.target.value)}
                     onKeyDown={(e) => onTotpKeyDown(i, e)}
@@ -196,22 +191,30 @@ function LoginForm() {
               </div>
             </div>
           )}
-          {error && <p role="alert" className={styles.error}>{error}</p>}
-          <button type="submit" className={styles.primary} disabled={busy}>
-            {busy ? "Đang đăng nhập…" : "Đăng nhập →"}
+          {error && (
+            <p role="alert" className={styles.error}>
+              {error}
+            </p>
+          )}
+          <button type="submit" className="btn btn-primary h-11 w-full" disabled={busy}>
+            {busy ? t("auth.loginBusy") : t("auth.loginSubmit")}
           </button>
         </form>
-        <div className={styles.divider}>HOẶC</div>
-        <Link href="/onboarding/workspace" className={styles.sso}>Đăng nhập qua tổ chức <span aria-hidden="true">↗</span></Link>
-        <p className={styles.note}>Truy cập tài liệu và trợ lý AI<br />trong tổ chức của bạn.</p>
+        <div className={styles.divider}>{t("auth.or")}</div>
+        <Link href="/onboarding/workspace" className="btn btn-outline h-11 w-full">
+          {t("auth.loginViaOrg")}
+        </Link>
+      </AuthCard>
     </AuthShell>
   );
 }
 
 export default function Login() {
   return (
-    <Suspense>
-      <LoginForm />
-    </Suspense>
+    <AuthProvider>
+      <Suspense>
+        <LoginForm />
+      </Suspense>
+    </AuthProvider>
   );
 }

@@ -22,6 +22,7 @@ import {
   type KnowledgeFolderNode,
 } from "@/lib/api/knowledge";
 import { waitForKnowledgeDeletion } from "@/lib/knowledge-deletion";
+import { useDialogFocus } from "@/components/use-dialog-focus";
 import { useT } from "@/lib/i18n";
 
 /* Ported from frontend/src/views/knowledge/components/DocumentActionMenu.vue,
@@ -115,6 +116,26 @@ export function DocActionsMenu({
       setPos({ top, left });
     }
     setOpen(true);
+  };
+
+  /* The menu is portalled to the document body: it owns its focus (the
+   * focus moves in, stays inside and returns to the trigger on close). */
+  useDialogFocus({ open, containerRef: menuRef, onClose: close });
+
+  /* Arrow keys move between the menu items (the roving focus of a menu). */
+  const onMenuKeyDown = (e: React.KeyboardEvent) => {
+    if (mode !== "main") return;
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+    if (items.length === 0) return;
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    let next = -1;
+    if (e.key === "ArrowDown") next = index < 0 ? 0 : (index + 1) % items.length;
+    else if (e.key === "ArrowUp") next = index < 0 ? items.length - 1 : (index - 1 + items.length) % items.length;
+    else if (e.key === "Home") next = 0;
+    else if (e.key === "End") next = items.length - 1;
+    if (next < 0) return;
+    e.preventDefault();
+    items[next].focus();
   };
 
   useEffect(() => {
@@ -236,9 +257,11 @@ export function DocActionsMenu({
   const menu = (
     <div
       ref={menuRef}
-      className="fixed z-50 w-[220px] rounded-[12px] border border-hairline bg-surface-card p-1 shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
+      className="fixed z-50 w-[220px] rounded-md2 border border-hairline bg-surface-card p-1 shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
       style={pos ?? undefined}
-      role="menu"
+      role={mode === "main" ? "menu" : "dialog"}
+      aria-label={mode === "main" ? t("doc.actions") : undefined}
+      onKeyDown={onMenuKeyDown}
       onClick={(e) => e.stopPropagation()}
     >
       {mode === "confirm-cancel" &&
@@ -304,7 +327,7 @@ export function DocActionsMenu({
       {mode === "main" && (
         <>
           {canDownload && (
-            <button type="button" className={itemCls} onClick={() => void download()}>
+            <button type="button" role="menuitem" className={itemCls} onClick={() => void download()}>
               <IconDownload className="h-4 w-4 text-muted" />
               {t("doc.download")}
             </button>
@@ -315,6 +338,7 @@ export function DocActionsMenu({
                * "already parsing" toast); mirror that with an inline note. */}
               <button
                 type="button"
+                role="menuitem"
                 className={itemCls}
                 disabled={busy}
                 onClick={() => {
@@ -330,19 +354,19 @@ export function DocActionsMenu({
                 {t("doc.rebuild")}
               </button>
               {inFlight && (
-                <button type="button" className={itemCls} onClick={() => setMode("confirm-cancel")}>
+                <button type="button" role="menuitem" className={itemCls} onClick={() => setMode("confirm-cancel")}>
                   <IconMinusCircle className="h-4 w-4 text-muted" />
                   {t("doc.cancelParse")}
                 </button>
               )}
               {(canMoveFolder ?? canMutate) && (
-                <button type="button" className={itemCls} onClick={openFolderPicker}>
+                <button type="button" role="menuitem" className={itemCls} onClick={openFolderPicker}>
                   <IconFolder className="h-4 w-4 text-muted" />
                   {t("doc.moveToFolder")}
                 </button>
               )}
               <div className="mx-2 my-1 border-t border-hairline" />
-              <button type="button" className={dangerCls} onClick={() => setMode("confirm-delete")}>
+              <button type="button" role="menuitem" className={dangerCls} onClick={() => setMode("confirm-delete")}>
                 <IconTrash className="h-4 w-4" />
                 {t("doc.delete")}
               </button>
@@ -359,9 +383,10 @@ export function DocActionsMenu({
       <button
         ref={btnRef}
         type="button"
-        aria-label="Document actions"
+        aria-label={t("doc.actions")}
         aria-expanded={open}
-        className="grid h-6 w-6 place-items-center rounded-[6px] text-muted-soft opacity-0 transition-opacity hover:bg-surface-strong hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 data-[open=true]:opacity-100"
+        aria-haspopup="menu"
+        className="grid h-7 w-7 place-items-center rounded-[6px] text-muted-soft opacity-0 transition-opacity hover:bg-surface-strong hover:text-ink focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 data-[open=true]:opacity-100"
         data-open={open}
         onClick={(e) => {
           e.stopPropagation();

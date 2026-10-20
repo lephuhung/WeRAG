@@ -7,6 +7,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Modal } from "@/components/modal";
 import { IconCopy, IconEdit, IconPlus, IconRefresh } from "@/components/icons";
+import { SystemSection } from "@/components/settings/system-section";
+import { Notice } from "@/components/settings/notice";
+import { DataTable, ROW_HOVER } from "@/components/settings/data-table";
+import { TabStrip } from "@/components/settings/tab-strip";
+import { Pill, PillGroup } from "@/components/settings/pill";
+import { FieldLabel } from "@/components/settings/field";
+import { useConfirm } from "@/components/confirm-dialog";
+import { useToast } from "@/components/toast";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { getCurrentUser } from "@/lib/api/auth";
@@ -64,8 +72,13 @@ export default function AdminBilling() {
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const confirm = useConfirm();
+  const toast = useToast();
   const [bank, setBank] = useState<BankForm>(emptyBank);
-  const [bankSaved, setBankSaved] = useState(false);
+  /* The values the bank form was loaded with: the save button stays
+   * disabled until the form differs from them. */
+  const [bankBase, setBankBase] = useState<BankForm>(emptyBank);
   // masked current secret ("" = webhook off); the full one only right after
   // it was generated, until the page is left
   const [secretMasked, setSecretMasked] = useState("");
@@ -95,16 +108,20 @@ export default function AdminBilling() {
         getSystemSetting(K.webhookSecret), listUsagePlans(true), listUsagePromos(true),
       ]);
       setSecretMasked(String(secret.value ?? ""));
-      setBank({
+      const bankForm: BankForm = {
         bankBin: String(bin.value ?? ""), bankName: String(name.value ?? ""), accountNo: String(no.value ?? ""),
         accountName: String(acct.value ?? ""), orderTTLHours: String(ttl.value ?? "72"), contact: String(contact.value ?? ""),
-      });
+      };
+      setBank(bankForm);
+      setBankBase(bankForm);
       setPlans(pl);
       setPromos(pr);
       await loadOrders(filter);
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : t("badm.loadFailed"));
+    } finally {
+      setLoading(false);
     }
   }, [filter, loadOrders, t]);
 
@@ -137,8 +154,10 @@ export default function AdminBilling() {
     }
   };
 
-  const saveBank = () =>
-    run(async () => {
+  const bankDirty = JSON.stringify(bank) !== JSON.stringify(bankBase);
+
+  const saveBank = async (): Promise<boolean> => {
+    const ok = await run(async () => {
       const K = BILLING_SETTING_KEYS;
       await updateSystemSetting(K.bankBin, bank.bankBin.trim());
       await updateSystemSetting(K.bankName, bank.bankName.trim());
@@ -146,28 +165,45 @@ export default function AdminBilling() {
       await updateSystemSetting(K.accountName, bank.accountName.trim());
       await updateSystemSetting(K.orderTTLHours, Math.max(1, Number(bank.orderTTLHours) || 72));
       await updateSystemSetting(K.contact, bank.contact.trim());
-      setBankSaved(true);
-      setTimeout(() => setBankSaved(false), 2000);
     });
+    if (!ok) return false;
+    setBankBase({ ...bank, orderTTLHours: String(Math.max(1, Number(bank.orderTTLHours) || 72)) });
+    toast.success(t("common.saved"));
+    return true;
+  };
 
   // ---- payment webhook secret
-  const generateSecret = () => {
-    if (secretMasked && !window.confirm(t("badm.webhookRegenConfirm"))) return;
-    void run(async () => {
+  const generateSecret = async () => {
+    if (secretMasked) {
+      const yes = await confirm({
+        title: t("badm.webhookGenerate"),
+        message: t("badm.webhookRegenConfirm"),
+        danger: true,
+      });
+      if (!yes) return;
+    }
+    const ok = await run(async () => {
       const secret = newWebhookSecret();
       const row = await updateSystemSetting(BILLING_SETTING_KEYS.webhookSecret, secret);
       setSecretMasked(String(row.value ?? ""));
       setSecretShown(secret);
       setSecretCopied(false);
     });
+    if (ok) toast.success(t("common.saved"));
   };
-  const disableWebhook = () => {
-    if (!window.confirm(t("badm.webhookOffConfirm"))) return;
-    void run(async () => {
+  const disableWebhook = async () => {
+    const yes = await confirm({
+      title: t("badm.webhookDisable"),
+      message: t("badm.webhookOffConfirm"),
+      danger: true,
+    });
+    if (!yes) return;
+    const ok = await run(async () => {
       await updateSystemSetting(BILLING_SETTING_KEYS.webhookSecret, "");
       setSecretMasked("");
       setSecretShown("");
     });
+    if (ok) toast.success(t("common.saved"));
   };
   const copySecret = async () => setSecretCopied(await copyToClipboard(secretShown));
 
@@ -198,72 +234,93 @@ export default function AdminBilling() {
       else await createUsagePromo(input);
       setPromos(await listUsagePromos(true));
     });
-    if (ok) setPromoOpen(false);
+    if (ok) {
+      toast.success(t("common.saved"));
+      setPromoOpen(false);
+    }
   };
-  const removePromo = (p: UsagePromoCode) => {
-    if (!window.confirm(t("badm.deletePromoConfirm", { code: p.code }))) return;
-    void run(async () => {
+  const removePromo = async (p: UsagePromoCode) => {
+    const yes = await confirm({
+      title: t("common.delete"),
+      message: t("badm.deletePromoConfirm", { code: p.code }),
+      danger: true,
+    });
+    if (!yes) return;
+    const ok = await run(async () => {
       await deleteUsagePromo(p.id);
       setPromos(await listUsagePromos(true));
     });
+    if (ok) toast.success(t("common.saved"));
   };
 
   // ---- orders
-  const confirm = (o: UsageOrder) => {
-    if (!window.confirm(t("badm.confirmConfirm", { code: o.order_code, total: formatPriceVND(o.total_vnd) }))) return;
-    void run(async () => {
+  const confirmOrder = async (o: UsageOrder) => {
+    const yes = await confirm({
+      title: t("badm.confirm"),
+      message: t("badm.confirmConfirm", { code: o.order_code, total: formatPriceVND(o.total_vnd) }),
+    });
+    if (!yes) return;
+    const ok = await run(async () => {
       await confirmUsageOrder(o.id);
       await loadOrders(filter);
     });
+    if (ok) toast.success(t("common.saved"));
   };
-  const cancel = (o: UsageOrder) => {
-    if (!window.confirm(t("badm.cancelConfirm", { code: o.order_code }))) return;
-    void run(async () => {
+  const cancelOrder = async (o: UsageOrder) => {
+    const yes = await confirm({
+      title: t("badm.cancelOrder"),
+      message: t("badm.cancelConfirm", { code: o.order_code }),
+      danger: true,
+    });
+    if (!yes) return;
+    const ok = await run(async () => {
       await cancelUsageOrder(o.id);
       await loadOrders(filter);
     });
+    if (ok) toast.success(t("common.saved"));
   };
   const changeFilter = (f: UsageOrderStatus | "") => {
     setFilter(f);
     void run(() => loadOrders(f));
   };
 
-  if (allowed === null) return <div className="mx-auto w-full max-w-[1100px] px-5 py-12 text-muted">…</div>;
-  if (!allowed) {
-    return (
-      <div className="mx-auto w-full max-w-[1100px] px-5 py-16 text-center">
-        <p className="body-sm text-muted">{t("badm.denied")}</p>
-      </div>
-    );
-  }
-
   const planName = (id: string) => plans.find((p) => p.id === id)?.name ?? id;
   const statusKey = (s: UsageOrderStatus): LocaleKey => `bill.status.${s}` as LocaleKey;
 
   return (
-    <div className="mx-auto w-full max-w-[1100px] px-5 py-6">
-      {error && <p className="caption text-error">{error}</p>}
+    <SystemSection
+      allowed={allowed}
+      title={t("systemNav.billing")}
+      deniedMessage={t("badm.denied")}
+      loading={loading}
+      loadingLabel={t("common.loading")}
+    >
+      <div className="py-6">
+      {error && (
+        <Notice
+          tone="error"
+          action={
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {error}
+        </Notice>
+      )}
 
-      <div className="mb-6 flex flex-wrap items-center gap-3 border-b border-hairline" role="tablist" aria-label={t("badm.orders")}>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "orders"}
-          className={`border-b-2 px-1 pb-3 text-[14px] font-medium transition-colors ${activeTab === "orders" ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink"}`}
-          onClick={() => setActiveTab("orders")}
-        >
-          {t("badm.orders")}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={activeTab === "promos"}
-          className={`border-b-2 px-1 pb-3 text-[14px] font-medium transition-colors ${activeTab === "promos" ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink"}`}
-          onClick={() => setActiveTab("promos")}
-        >
-          {t("badm.promos")}
-        </button>
-        <div className="mb-2 ml-auto flex flex-wrap gap-2">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <TabStrip<"orders" | "promos">
+          tabs={[
+            { id: "orders", label: t("badm.orders") },
+            { id: "promos", label: t("badm.promos") },
+          ]}
+          value={activeTab}
+          onChange={setActiveTab}
+          ariaLabel={t("badm.orders")}
+          className="min-w-0 flex-1"
+        />
+        <div className="flex flex-wrap gap-2">
         <button type="button" className="btn btn-outline btn-sm shrink-0" onClick={() => setWebhookOpen(true)}>
           {t("badm.webhookTitle")}
         </button>
@@ -274,80 +331,78 @@ export default function AdminBilling() {
       </div>
 
       {/* Orders */}
-      {activeTab === "orders" && <section>
+      {activeTab === "orders" && (
+      <section id="tabpanel-orders" role="tabpanel" aria-labelledby="tab-orders">
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <h3 className="text-[14px] font-medium text-ink">{t("badm.orders")}</h3>
-          <select className="input h-9 w-44 py-0" value={filter} onChange={(e) => changeFilter(e.target.value as UsageOrderStatus | "")}>
-            <option value="">{t("badm.filterAll")}</option>
+          <PillGroup ariaLabel={t("common.filters")}>
+            <Pill active={filter === ""} onClick={() => changeFilter("")}>
+              {t("badm.filterAll")}
+            </Pill>
             {(["pending", "paid", "cancelled", "expired"] as UsageOrderStatus[]).map((s) => (
-              <option key={s} value={s}>{t(statusKey(s))}</option>
+              <Pill key={s} active={filter === s} onClick={() => changeFilter(s)}>
+                {t(statusKey(s))}
+              </Pill>
             ))}
-          </select>
-          <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => void run(() => loadOrders(filter))} title={t("badm.refresh")}>
+          </PillGroup>
+          <button
+            type="button"
+            className="btn btn-outline btn-sm h-9 w-9 p-0"
+            disabled={busy}
+            onClick={() => void run(() => loadOrders(filter))}
+            title={t("badm.refresh")}
+            aria-label={t("badm.refresh")}
+          >
             <IconRefresh className="h-3.5 w-3.5" />
           </button>
         </div>
-        {orders.length === 0 ? (
-          <p className="caption text-muted-soft">{t("badm.noOrders")}</p>
-        ) : (
-          <div className="min-w-0 overflow-hidden rounded-lg border border-hairline">
-            <table className="w-full table-fixed text-[13px]">
-              <colgroup>
-                <col className="w-[14%]" />
-                <col className="w-[15%]" />
-                <col className="w-[16%]" />
-                <col className="w-[11%]" />
-                <col className="w-[17%]" />
-                <col className="w-[17%]" />
-                <col className="w-[10%]" />
-              </colgroup>
-              <thead className="caption text-muted">
-                <tr className="border-b border-hairline text-left">
-                  <th className="px-3 py-2 font-normal">{t("badm.colCode")}</th>
-                  <th className="px-3 py-2 font-normal">{t("badm.colBuyer")}</th>
-                  <th className="px-3 py-2 font-normal">{t("badm.colPlan")}</th>
-                  <th className="px-3 py-2 text-right font-normal">{t("badm.colTotal")}</th>
-                  <th className="px-3 py-2 font-normal">{t("badm.colStatus")}</th>
-                  <th className="px-3 py-2 font-normal">{t("badm.colCreated")}</th>
-                  <th className="px-3 py-2" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-hairline">
-                {orders.map((o) => (
-                  <tr key={o.id}>
-                    <td className="whitespace-nowrap px-2.5 py-2 font-mono text-[12px] text-ink">{o.order_code}</td>
-                    <td className="break-words px-2.5 py-2 text-ink">
-                      {o.scope_name} <span className="caption text-muted-soft">({o.scope_type === "tenant" ? t("usg.scopeTenant") : t("usg.scopeUser")})</span>
-                    </td>
-                    <td className="break-words px-2.5 py-2 text-ink">
-                      {o.plan_name} · {o.kind === "addon" ? t("bill.addonOrder") : t("bill.monthsN", { n: o.months })}{o.mode === "seat" ? ` · ${t("bill.seatsN", { n: o.seats })}` : ""}
-                      {(o.addons ?? []).length > 0 ? ` · ${(o.addons ?? []).map((a) => a.name || a.agent_id).join(", ")}` : ""}
-                      {o.promo_code ? <span className="caption block text-muted">{o.promo_code} −{formatPriceVND(o.discount_vnd)}</span> : null}
-                    </td>
-                    <td className="px-2.5 py-2 text-right tabular-nums text-ink">{formatPriceVND(o.total_vnd)}</td>
-                    <td className="px-2.5 py-2">
-                      <span className={`badge-pill text-[11px] ${o.status === "paid" ? "text-emerald-700" : o.status === "pending" ? "text-amber-700" : "text-muted"}`}>{t(statusKey(o.status))}</span>
-                      {o.status === "paid" && o.paid_at ? <span className="caption block text-muted-soft">{fmtDateTime(o.paid_at)}</span> : null}
-                    </td>
-                    <td className="caption whitespace-nowrap px-2.5 py-2 text-muted">{fmtDateTime(o.created_at)}</td>
-                    <td className="px-2 py-2 text-right">
-                      {o.status === "pending" && (
-                        <div className="flex flex-col items-stretch gap-1.5">
-                          <button type="button" className="btn btn-primary btn-sm w-full px-2" disabled={busy} onClick={() => confirm(o)}>{t("badm.confirm")}</button>
-                          <button type="button" className="btn btn-outline btn-sm w-full px-2 text-rose-600" disabled={busy} onClick={() => cancel(o)}>{t("badm.cancelOrder")}</button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>}
+        <DataTable<UsageOrder>
+          columns={[
+            { key: "code", header: t("badm.colCode"), className: "w-[14%]" },
+            { key: "buyer", header: t("badm.colBuyer"), className: "w-[15%]" },
+            { key: "plan", header: t("badm.colPlan"), className: "w-[16%]" },
+            { key: "total", header: t("badm.colTotal"), className: "w-[11%]", align: "right" },
+            { key: "status", header: t("badm.colStatus"), className: "w-[17%]" },
+            { key: "created", header: t("badm.colCreated"), className: "w-[17%]" },
+            { key: "actions", header: "", className: "w-[10%]", align: "right" },
+          ]}
+          rows={orders}
+          rowKey={(o) => o.id}
+          emptyLabel={t("badm.noOrders")}
+          renderRow={(o) => (
+            <>
+              <td className="whitespace-nowrap px-5 py-3.5 align-middle font-mono text-[12px] text-ink">{o.order_code}</td>
+              <td className="break-words px-5 py-3.5 align-middle text-ink">
+                {o.scope_name} <span className="caption text-muted-soft">({o.scope_type === "tenant" ? t("usg.scopeTenant") : t("usg.scopeUser")})</span>
+              </td>
+              <td className="break-words px-5 py-3.5 align-middle text-ink">
+                {o.plan_name} · {o.kind === "addon" ? t("bill.addonOrder") : t("bill.monthsN", { n: o.months })}{o.mode === "seat" ? ` · ${t("bill.seatsN", { n: o.seats })}` : ""}
+                {(o.addons ?? []).length > 0 ? ` · ${(o.addons ?? []).map((a) => a.name || a.agent_id).join(", ")}` : ""}
+                {o.promo_code ? <span className="caption block text-muted">{o.promo_code} −{formatPriceVND(o.discount_vnd)}</span> : null}
+              </td>
+              <td className="px-5 py-3.5 text-right align-middle tabular-nums text-ink">{formatPriceVND(o.total_vnd)}</td>
+              <td className="px-5 py-3.5 align-middle">
+                <span className={`badge-pill text-[11px] ${o.status === "paid" ? "text-success" : o.status === "pending" ? "text-warning" : "text-muted"}`}>{t(statusKey(o.status))}</span>
+                {o.status === "paid" && o.paid_at ? <span className="caption block text-muted-soft">{fmtDateTime(o.paid_at)}</span> : null}
+              </td>
+              <td className="caption whitespace-nowrap px-5 py-3.5 align-middle text-muted">{fmtDateTime(o.created_at)}</td>
+              <td className="px-5 py-3.5 text-right align-middle">
+                {o.status === "pending" && (
+                  <div className="flex flex-col items-stretch gap-1.5">
+                    <button type="button" className="btn btn-primary btn-sm w-full px-2" disabled={busy} onClick={() => void confirmOrder(o)}>{t("badm.confirm")}</button>
+                    <button type="button" className="btn btn-danger btn-sm w-full px-2" disabled={busy} onClick={() => void cancelOrder(o)}>{t("badm.cancelOrder")}</button>
+                  </div>
+                )}
+              </td>
+            </>
+          )}
+        />
+      </section>
+      )}
 
       {/* Promo codes */}
-      {activeTab === "promos" && <section>
+      {activeTab === "promos" && (
+      <section id="tabpanel-promos" role="tabpanel" aria-labelledby="tab-promos">
         <div className="mb-3 flex items-center gap-3">
           <h3 className="text-[14px] font-medium text-ink">{t("badm.promos")}</h3>
           <button type="button" className="btn btn-outline btn-sm ml-auto" onClick={openNewPromo}>
@@ -359,7 +414,7 @@ export default function AdminBilling() {
         ) : (
           <div className="divide-y divide-hairline rounded-lg border border-hairline px-3">
             {promos.map((p) => (
-              <div key={p.id} className="flex flex-wrap items-center gap-3 py-2.5 text-[14px]">
+              <div key={p.id} className={`flex flex-wrap items-center gap-3 py-2.5 text-[14px] ${ROW_HOVER}`}>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
                     <span className="font-mono font-medium text-ink">{p.code}</span>
@@ -376,33 +431,51 @@ export default function AdminBilling() {
                 <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => openEditPromo(p)}>
                   <IconEdit className="h-3.5 w-3.5" /> {t("common.edit")}
                 </button>
-                <button type="button" className="btn btn-outline btn-sm text-rose-600" disabled={busy} onClick={() => removePromo(p)}>
+                <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void removePromo(p)}>
                   {t("common.delete")}
                 </button>
               </div>
             ))}
           </div>
         )}
-      </section>}
+      </section>
+      )}
 
       {/* Bank account modal */}
       <Modal open={bankOpen} title={t("badm.bankTitle")} onClose={() => setBankOpen(false)} width="w-[680px]">
         <p className="caption mb-4 text-muted">{t("badm.bankDesc")}</p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <label className="min-w-0"><span className="caption mb-1 block text-muted">{t("badm.bankName")}</span><input className="input w-full" value={bank.bankName} onChange={(e) => setBank({ ...bank, bankName: e.target.value })} placeholder="Vietcombank" /></label>
-          <label className="min-w-0"><span className="caption mb-1 block text-muted">{t("badm.bankBin")}</span><input className="input w-full" inputMode="numeric" value={bank.bankBin} onChange={(e) => setBank({ ...bank, bankBin: e.target.value.replace(/[^\d]/g, "") })} placeholder="970436" /></label>
-          <label className="min-w-0"><span className="caption mb-1 block text-muted">{t("badm.accountNo")}</span><input className="input w-full" value={bank.accountNo} onChange={(e) => setBank({ ...bank, accountNo: e.target.value })} /></label>
-          <label className="min-w-0"><span className="caption mb-1 block text-muted">{t("badm.accountName")}</span><input className="input w-full" value={bank.accountName} onChange={(e) => setBank({ ...bank, accountName: e.target.value })} /></label>
-          <label className="min-w-0"><span className="caption mb-1 block text-muted">{t("badm.ttl")}</span><input className="input w-full" type="number" min={1} value={bank.orderTTLHours} onChange={(e) => setBank({ ...bank, orderTTLHours: e.target.value })} /></label>
-          <label className="min-w-0"><span className="caption mb-1 block text-muted">{t("badm.contact")}</span><input className="input w-full" value={bank.contact} onChange={(e) => setBank({ ...bank, contact: e.target.value })} /></label>
+          <div className="min-w-0">
+            <FieldLabel htmlFor="bank-name">{t("badm.bankName")}</FieldLabel>
+            <input id="bank-name" className="input w-full" value={bank.bankName} onChange={(e) => setBank({ ...bank, bankName: e.target.value })} placeholder="Vietcombank" />
+          </div>
+          <div className="min-w-0">
+            <FieldLabel htmlFor="bank-bin">{t("badm.bankBin")}</FieldLabel>
+            <input id="bank-bin" className="input w-full" inputMode="numeric" value={bank.bankBin} onChange={(e) => setBank({ ...bank, bankBin: e.target.value.replace(/[^\d]/g, "") })} placeholder="970436" />
+          </div>
+          <div className="min-w-0">
+            <FieldLabel htmlFor="bank-account-no">{t("badm.accountNo")}</FieldLabel>
+            <input id="bank-account-no" className="input w-full" value={bank.accountNo} onChange={(e) => setBank({ ...bank, accountNo: e.target.value })} />
+          </div>
+          <div className="min-w-0">
+            <FieldLabel htmlFor="bank-account-name">{t("badm.accountName")}</FieldLabel>
+            <input id="bank-account-name" className="input w-full" value={bank.accountName} onChange={(e) => setBank({ ...bank, accountName: e.target.value })} />
+          </div>
+          <div className="min-w-0">
+            <FieldLabel htmlFor="bank-ttl">{t("badm.ttl")}</FieldLabel>
+            <input id="bank-ttl" className="input w-full" type="number" min={1} value={bank.orderTTLHours} onChange={(e) => setBank({ ...bank, orderTTLHours: e.target.value })} />
+          </div>
+          <div className="min-w-0">
+            <FieldLabel htmlFor="bank-contact">{t("badm.contact")}</FieldLabel>
+            <input id="bank-contact" className="input w-full" value={bank.contact} onChange={(e) => setBank({ ...bank, contact: e.target.value })} />
+          </div>
         </div>
         <div className="mt-5 flex items-center justify-end gap-3">
-          {bankSaved && <span className="caption text-emerald-700">{t("badm.saved")}</span>}
           <button
             type="button"
             className="btn btn-primary"
-            disabled={busy}
-            onClick={() => void saveBank().then((ok) => ok && setBankOpen(false))}
+            disabled={busy || !bankDirty}
+            onClick={() => void saveBank().then((ok) => { if (ok) setBankOpen(false); })}
           >
             {t("common.save")}
           </button>
@@ -421,21 +494,23 @@ export default function AdminBilling() {
           )}
           <div className="ml-auto flex gap-2">
             {secretMasked && (
-              <button type="button" className="btn btn-outline btn-sm text-rose-600" disabled={busy} onClick={disableWebhook}>{t("badm.webhookDisable")}</button>
+              <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void disableWebhook()}>{t("badm.webhookDisable")}</button>
             )}
-            <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={generateSecret}>{t("badm.webhookGenerate")}</button>
+            <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void generateSecret()}>{t("badm.webhookGenerate")}</button>
           </div>
         </div>
         {secretShown && (
-          <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
-            <p className="caption mb-2">{t("badm.webhookShownOnce")}</p>
-            <div className="flex items-center gap-2">
-              <code className="min-w-0 flex-1 break-all rounded bg-surface-strong px-2 py-1 font-mono text-[12px] text-ink">{secretShown}</code>
-              <button type="button" className="btn btn-outline btn-sm" onClick={() => void copySecret()}>
-                <IconCopy className="h-3.5 w-3.5" /> {secretCopied ? t("badm.webhookCopied") : t("badm.webhookCopy")}
-              </button>
-            </div>
-          </div>
+          <Notice tone="warning" className="mt-3">
+            <span className="block w-full">
+              <span className="caption mb-2 block">{t("badm.webhookShownOnce")}</span>
+              <span className="flex items-center gap-2">
+                <code className="min-w-0 flex-1 break-all rounded bg-surface-strong px-2 py-1 font-mono text-[12px] text-ink">{secretShown}</code>
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => void copySecret()}>
+                  <IconCopy className="h-3.5 w-3.5" /> {secretCopied ? t("badm.webhookCopied") : t("badm.webhookCopy")}
+                </button>
+              </span>
+            </span>
+          </Notice>
         )}
         <p className="caption mt-3 text-muted-soft">{t("badm.webhookHelp")}</p>
         <WebhookGuide key={secretShown} enabled={!!secretMasked} secretShown={secretShown} />
@@ -445,41 +520,41 @@ export default function AdminBilling() {
       <Modal open={promoOpen} title={promoEditing ? t("badm.editPromo") : t("badm.newPromo")} onClose={() => setPromoOpen(false)}>
         <form className="space-y-4" onSubmit={submitPromo}>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="caption mb-1 block text-muted">{t("badm.code")}</span>
-              <input className="input uppercase" required value={promoForm.code} onChange={(e) => setPromoForm({ ...promoForm, code: e.target.value.toUpperCase() })} />
-            </label>
-            <label className="block">
-              <span className="caption mb-1 block text-muted">{t("badm.name")}</span>
-              <input className="input" value={promoForm.name} onChange={(e) => setPromoForm({ ...promoForm, name: e.target.value })} />
-            </label>
+            <div className="block">
+              <FieldLabel htmlFor="promo-code" required>{t("badm.code")}</FieldLabel>
+              <input id="promo-code" className="input uppercase" required aria-required="true" value={promoForm.code} onChange={(e) => setPromoForm({ ...promoForm, code: e.target.value.toUpperCase() })} />
+            </div>
+            <div className="block">
+              <FieldLabel htmlFor="promo-name">{t("badm.name")}</FieldLabel>
+              <input id="promo-name" className="input" value={promoForm.name} onChange={(e) => setPromoForm({ ...promoForm, name: e.target.value })} />
+            </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
-            <label className="block">
-              <span className="caption mb-1 block text-muted">{t("badm.type")}</span>
-              <select className="input" value={promoForm.discount_type} onChange={(e) => setPromoForm({ ...promoForm, discount_type: e.target.value as "percent" | "amount" })}>
+            <div className="block">
+              <FieldLabel htmlFor="promo-type">{t("badm.type")}</FieldLabel>
+              <select id="promo-type" className="input" value={promoForm.discount_type} onChange={(e) => setPromoForm({ ...promoForm, discount_type: e.target.value as "percent" | "amount" })}>
                 <option value="percent">{t("badm.percent")}</option>
                 <option value="amount">{t("badm.amount")}</option>
               </select>
-            </label>
-            <label className="block">
-              <span className="caption mb-1 block text-muted">{promoForm.discount_type === "percent" ? "%" : "VNĐ"}</span>
-              <input className="input" type="number" min={1} max={promoForm.discount_type === "percent" ? 100 : undefined} value={promoForm.discount_value} onChange={(e) => setPromoForm({ ...promoForm, discount_value: Math.max(0, Number(e.target.value) || 0) })} />
-            </label>
-            <label className="block">
-              <span className="caption mb-1 block text-muted">{t("badm.maxUses")}</span>
-              <input className="input" type="number" min={0} value={promoForm.max_uses} onChange={(e) => setPromoForm({ ...promoForm, max_uses: Math.max(0, Number(e.target.value) || 0) })} />
-            </label>
+            </div>
+            <div className="block">
+              <FieldLabel htmlFor="promo-value">{promoForm.discount_type === "percent" ? "%" : "VNĐ"}</FieldLabel>
+              <input id="promo-value" className="input" type="number" min={1} max={promoForm.discount_type === "percent" ? 100 : undefined} value={promoForm.discount_value} onChange={(e) => setPromoForm({ ...promoForm, discount_value: Math.max(0, Number(e.target.value) || 0) })} />
+            </div>
+            <div className="block">
+              <FieldLabel htmlFor="promo-max-uses">{t("badm.maxUses")}</FieldLabel>
+              <input id="promo-max-uses" className="input" type="number" min={0} value={promoForm.max_uses} onChange={(e) => setPromoForm({ ...promoForm, max_uses: Math.max(0, Number(e.target.value) || 0) })} />
+            </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="caption mb-1 block text-muted">{t("badm.startsAt")}</span>
-              <input className="input" type="date" value={promoForm.starts_at} onChange={(e) => setPromoForm({ ...promoForm, starts_at: e.target.value })} />
-            </label>
-            <label className="block">
-              <span className="caption mb-1 block text-muted">{t("badm.endsAt")}</span>
-              <input className="input" type="date" value={promoForm.ends_at} onChange={(e) => setPromoForm({ ...promoForm, ends_at: e.target.value })} />
-            </label>
+            <div className="block">
+              <FieldLabel htmlFor="promo-start">{t("badm.startsAt")}</FieldLabel>
+              <input id="promo-start" className="input" type="date" value={promoForm.starts_at} onChange={(e) => setPromoForm({ ...promoForm, starts_at: e.target.value })} />
+            </div>
+            <div className="block">
+              <FieldLabel htmlFor="promo-end">{t("badm.endsAt")}</FieldLabel>
+              <input id="promo-end" className="input" type="date" value={promoForm.ends_at} onChange={(e) => setPromoForm({ ...promoForm, ends_at: e.target.value })} />
+            </div>
           </div>
           <div>
             <span className="caption mb-1 block text-muted">{t("badm.plans")}</span>
@@ -497,10 +572,10 @@ export default function AdminBilling() {
             </div>
             <span className="caption mt-1 block text-muted-soft">{t("badm.plansHint")}</span>
           </div>
-          <label className="block">
-            <span className="caption mb-1 block text-muted">{t("badm.note")}</span>
-            <input className="input" value={promoForm.note} onChange={(e) => setPromoForm({ ...promoForm, note: e.target.value })} />
-          </label>
+          <div className="block">
+            <FieldLabel htmlFor="promo-note">{t("badm.note")}</FieldLabel>
+            <input id="promo-note" className="input" value={promoForm.note} onChange={(e) => setPromoForm({ ...promoForm, note: e.target.value })} />
+          </div>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={promoForm.is_active} onChange={(e) => setPromoForm({ ...promoForm, is_active: e.target.checked })} />
             <span className="caption text-muted">{t("badm.active")}</span>
@@ -510,6 +585,7 @@ export default function AdminBilling() {
           </div>
         </form>
       </Modal>
-    </div>
+      </div>
+    </SystemSection>
   );
 }

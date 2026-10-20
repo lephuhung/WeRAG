@@ -7,6 +7,9 @@ import { getRuntimeQueues, type QueueStat, type WikiRunWindowStatus } from "@/li
 import { IconRefresh } from "@/components/icons";
 import { WikiRunWindowCard } from "@/components/settings/wiki-run-window-card";
 import { InputLimitsCard } from "@/components/settings/input-limits-card";
+import { ConsolePage } from "@/components/settings/console-page";
+import { DeniedView } from "@/components/settings/system-section";
+import { Notice } from "@/components/settings/notice";
 import { useT } from "@/lib/i18n";
 
 export default function RuntimeQueuesPage() {
@@ -16,9 +19,13 @@ export default function RuntimeQueuesPage() {
   const [denied, setDenied] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
   const [loading, setLoading] = useState(true);
+  /* Every failure that is not a 403 lands here — the page used to swallow
+   * them and render an empty grid with no way to retry. */
+  const [error, setError] = useState("");
 
   const load = async () => {
     setLoading(true);
+    setError("");
     try {
       const res = await getRuntimeQueues();
       setQueues(res.queues ?? []);
@@ -29,6 +36,9 @@ export default function RuntimeQueuesPage() {
       if (e instanceof ApiError && e.status === 403) {
         setDenied(true);
         setQueues([]);
+        setWikiWindow(null);
+      } else {
+        setError(e instanceof Error ? e.message : t("sys.loadFailed"));
       }
     } finally {
       setLoading(false);
@@ -37,25 +47,38 @@ export default function RuntimeQueuesPage() {
 
   useEffect(() => {
     void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  if (denied) {
+    return <DeniedView />;
+  }
+
   return (
-    <div className="mx-auto w-full max-w-[1400px]">
+    <ConsolePage>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="caption text-muted">
             {loading ? t("q.checking") : t("q.count", { n: (queues ?? []).length })}
           </p>
         </div>
-        <button className="btn btn-outline btn-sm" onClick={() => void load()}>
-          <IconRefresh className="h-3.5 w-3.5" /> {t("common.refresh")}
+        <button className="btn btn-outline btn-sm" onClick={() => void load()} disabled={loading}>
+          <IconRefresh className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> {t("common.refresh")}
         </button>
       </div>
 
-      {denied && (
-        <p className="caption mb-4 text-muted">
-          {t("q.denied")}
-        </p>
+      {error && (
+        <Notice
+          tone="error"
+          className="mb-4"
+          action={
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {error}
+        </Notice>
       )}
       {unavailable && (
         <p className="caption mb-4 text-muted">
@@ -91,13 +114,13 @@ export default function RuntimeQueuesPage() {
           </div>
         ))}
       </div>
-      {queues !== null && queues.length === 0 && !denied && (
+      {queues !== null && queues.length === 0 && !denied && !error && (
         <p className="caption mt-2 text-muted-soft">{t("q.empty")}</p>
       )}
       {wikiWindow && !unavailable && (
         <WikiRunWindowCard status={wikiWindow} onSaved={() => void load()} />
       )}
       {!denied && <InputLimitsCard />}
-    </div>
+    </ConsolePage>
   );
 }

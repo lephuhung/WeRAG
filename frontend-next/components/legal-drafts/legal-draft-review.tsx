@@ -402,48 +402,72 @@ export function LegalDraftReview({ id }: { id: string }) {
           </div>
           {panelOpen && (
             <aside className="flex w-[340px] max-w-[45vw] shrink-0 flex-col border-l border-hairline bg-canvas">
-              <div className="flex items-center gap-1 border-b border-hairline px-3">
+              <div role="tablist" aria-label={t("ldraft.panel.label")} className="flex items-center gap-1 border-b border-hairline px-3">
                 {(["structure", "spelling"] as const).map((k) => (
                   <button
                     key={k}
                     type="button"
+                    role="tab"
+                    id={`ldraft-tab-${k}`}
+                    aria-selected={panelTab === k}
+                    aria-controls={`ldraft-panel-${k}`}
+                    tabIndex={panelTab === k ? 0 : -1}
                     onClick={() => setPanelTab(k)}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+                        e.preventDefault();
+                        const next = panelTab === "structure" ? "spelling" : "structure";
+                        setPanelTab(next);
+                        document.getElementById(`ldraft-tab-${next}`)?.focus();
+                      }
+                    }}
                     className={`-mb-px flex items-center gap-1.5 border-b-2 px-2.5 py-2 text-[13px] font-medium transition-colors ${
                       panelTab === k ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink"
                     }`}
                   >
                     {t(k === "structure" ? "ldraft.panel.structure" : "ldraft.panel.spelling")}
                     {k === "structure" && structure && structure.blocking > 0 && (
-                      <span className="badge-pill bg-red-500/10 text-[10px] tabular-nums text-red-700 dark:text-red-400">
+                      <span className="badge-pill bg-error-surface text-[10px] tabular-nums text-error">
                         {structure.blocking}
                       </span>
                     )}
                     {k === "spelling" && spelling.phase === "done" && spelling.found > 0 && (
-                      <span className="badge-pill bg-amber-500/15 text-[10px] tabular-nums text-amber-700 dark:text-amber-400">
+                      <span className="badge-pill bg-warning-surface text-[10px] tabular-nums text-warning">
                         {spelling.found}
                       </span>
                     )}
                   </button>
                 ))}
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto p-3">
-                {panelTab === "structure" ? (
-                  <LegalDraftStructurePanel
-                    structure={structure}
-                    checking={checking}
-                    error={checkError}
-                    locale={locale}
-                    onCheck={() => void checkStructure()}
-                    onGoTo={goToParagraph}
-                  />
-                ) : (
-                  <LegalDraftSpellingPanel
-                    status={spelling}
-                    onRun={() => setSpellingRunToken((n) => n + 1)}
-                    onGoTo={(m) => spellingActionsRef.current?.goTo(m) ?? Promise.resolve("noAnswer")}
-                    onDismiss={(m) => spellingActionsRef.current?.dismiss(m) ?? Promise.resolve(false)}
-                  />
-                )}
+              <div
+                role="tabpanel"
+                id="ldraft-panel-structure"
+                aria-labelledby="ldraft-tab-structure"
+                hidden={panelTab !== "structure"}
+                className="min-h-0 flex-1 overflow-y-auto p-3"
+              >
+                <LegalDraftStructurePanel
+                  structure={structure}
+                  checking={checking}
+                  error={checkError}
+                  locale={locale}
+                  onCheck={() => void checkStructure()}
+                  onGoTo={goToParagraph}
+                />
+              </div>
+              <div
+                role="tabpanel"
+                id="ldraft-panel-spelling"
+                aria-labelledby="ldraft-tab-spelling"
+                hidden={panelTab !== "spelling"}
+                className="min-h-0 flex-1 overflow-y-auto p-3"
+              >
+                <LegalDraftSpellingPanel
+                  status={spelling}
+                  onRun={() => setSpellingRunToken((n) => n + 1)}
+                  onGoTo={(m) => spellingActionsRef.current?.goTo(m) ?? Promise.resolve("noAnswer")}
+                  onDismiss={(m) => spellingActionsRef.current?.dismiss(m) ?? Promise.resolve(false)}
+                />
               </div>
             </aside>
           )}

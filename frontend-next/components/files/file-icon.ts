@@ -46,7 +46,10 @@ export function getFileKind(input: string | { type?: string; file_type?: string;
   return "file";
 }
 
-const KIND_COLOR: Record<FileKind, string> = {
+/** The colour of every file kind — the single source for the file-type
+ * palettes (the icons, the parser-rule glyphs, the mention picker's file
+ * badges). */
+export const KIND_COLOR: Record<FileKind, string> = {
   "file-pdf": "#c56868",
   "file-word": "#5381c4",
   "file-excel": "#419781",
@@ -61,16 +64,12 @@ const KIND_COLOR: Record<FileKind, string> = {
   link: "#5d95ad",
 };
 
-/** Same SVG geometry as the Vue artifact-file-icon, colored inline. */
-export function renderFileIconSvg(fileName: string, fileType?: string, docType?: string): string {
+/** Same SVG geometry as the Vue artifact-file-icon, colored inline. The
+ * banner shows the file extension — one rule for every file badge. */
+export function renderFileIconSvg(fileName: string, fileType?: string): string {
   const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
   const kind = getFileKind(fileName);
   const badge = /^[a-z0-9]{1,4}$/.test(ext) ? ext.toUpperCase() : "FILE";
-  // doc_type from the model-written profile (e.g. "user manual") replaces the
-  // extension label on the banner when available.
-  const label = docType
-    ? docType.slice(0, 6).toUpperCase()
-    : badge;
   const color = KIND_COLOR[kind];
   return (
     `<svg viewBox="0 0 32 38" fill="none" aria-hidden="true" style="width:100%;height:100%">` +

@@ -4,6 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import { Toggle } from "@/components/settings/toggle";
 import { IconRefresh } from "@/components/icons";
 import { Select } from "@/components/select";
+import { Notice } from "@/components/settings/notice";
+import { SectionHeader } from "@/components/settings/section-header";
+import { Pill, PillGroup } from "@/components/settings/pill";
+import { Loading } from "@/components/settings/loading";
+import { FieldLabel } from "@/components/settings/field";
+import { useToast } from "@/components/toast";
 import {
   getTenantMemoryConfig,
   updateTenantMemoryConfig,
@@ -43,7 +49,7 @@ export function MemoryWorkspaceSettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const toast = useToast();
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -72,12 +78,11 @@ export function MemoryWorkspaceSettings() {
     const payload = { ...config, ...(updated || {}) };
     setSaving(true);
     setError("");
-    setSuccess("");
     try {
       const res = await updateTenantMemoryConfig(payload);
       if (res.success && res.data) {
         setConfig(res.data);
-        setSuccess(t("memw.saved"));
+        toast.success(t("memw.saved"));
       } else {
         setError(t("memw.saveFailed"));
       }
@@ -94,45 +99,51 @@ export function MemoryWorkspaceSettings() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-5">
-        <div>
-          <h2 className="title-md font-semibold text-ink">{t("memw.title")}</h2>
-          <p className="caption text-muted mt-1">
-            {t("memw.subtitle")}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {canEdit && (
+      <SectionHeader
+        title={t("memw.title")}
+        subtitle={t("memw.subtitle")}
+        actions={
+          <>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => void handleSave()}
+                disabled={saving}
+                className="btn btn-primary btn-sm"
+              >
+                {saving ? t("memp.saving") : t("memp.saveChanges")}
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => void handleSave()}
-              disabled={saving}
-              className="btn btn-primary btn-sm"
+              onClick={() => void loadData()}
+              className="btn btn-outline btn-sm p-1.5"
+              title={t("common.refresh")}
+              aria-label={t("common.refresh")}
             >
-              {saving ? t("memp.saving") : t("memp.saveChanges")}
+              <IconRefresh className="h-3.5 w-3.5" />
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => void loadData()}
-            className="btn btn-outline btn-sm p-1.5"
-            title={t("common.refresh")}
-          >
-            <IconRefresh className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
+          </>
+        }
+      />
+
+      {loading && <Loading />}
 
       {error && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-400">
+        <Notice
+          tone="error"
+          action={
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={() => void loadData()}
+            >
+              {t("common.retry")}
+            </button>
+          }
+        >
           {error}
-        </div>
-      )}
-      {success && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-400">
-          {success}
-        </div>
+        </Notice>
       )}
 
       {/* Main Switch */}
@@ -144,6 +155,7 @@ export function MemoryWorkspaceSettings() {
           </span>
         </div>
         <Toggle
+          label={t("memw.enable")}
           checked={config.enabled}
           disabled={!canEdit}
           onChange={(checked) => {
@@ -164,79 +176,71 @@ export function MemoryWorkspaceSettings() {
                   {t("memw.modeDesc")}
                 </span>
               </div>
-              <div className="flex items-center gap-1 rounded-lg border border-hairline p-1 bg-surface-strong/40">
-                <button
-                  type="button"
+              <PillGroup ariaLabel={t("memw.mode")}>
+                <Pill
+                  active={config.write_mode === "auto"}
                   disabled={!canEdit}
                   onClick={() => setConfig({ ...config, write_mode: "auto" })}
-                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                    config.write_mode === "auto"
-                      ? "bg-white text-ink shadow-sm dark:bg-surface-card"
-                      : "text-muted hover:text-ink"
-                  }`}
                 >
                   {t("memw.modeAuto")}
-                </button>
-                <button
-                  type="button"
+                </Pill>
+                <Pill
+                  active={config.write_mode === "explicit_only"}
                   disabled={!canEdit}
                   onClick={() => setConfig({ ...config, write_mode: "explicit_only" })}
-                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
-                    config.write_mode === "explicit_only"
-                      ? "bg-white text-ink shadow-sm dark:bg-surface-card"
-                      : "text-muted hover:text-ink"
-                  }`}
                 >
                   {t("memw.modeExplicit")}
-                </button>
-              </div>
+                </Pill>
+              </PillGroup>
             </div>
           </div>
 
           {/* Model selection */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="rounded-xl border border-hairline p-5 space-y-2">
-              <label className="block">
-                <span className="text-sm font-medium text-ink block">{t("memw.extractModel")}</span>
-                <span className="caption text-muted block mt-0.5 mb-2">
-                  {t("memw.extractModelDesc")}
-                </span>
-                <Select
-                  disabled={!canEdit}
-                  className="text-sm"
-                  value={config.extract_model_id}
-                  onChange={(v) => setConfig({ ...config, extract_model_id: v })}
-                  options={[
-                    { value: "", label: t("memw.defaultModel") },
-                    ...chatModels.map((m) => ({
-                      value: m.id ?? "",
-                      label: `${m.display_name || m.name} (${m.parameters?.provider || "remote"})`,
-                    })),
-                  ]}
-                />
-              </label>
+              <FieldLabel htmlFor="memw-extract-model" className="text-sm font-medium text-ink">
+                {t("memw.extractModel")}
+              </FieldLabel>
+              <span className="caption text-muted block mt-0.5 mb-2">
+                {t("memw.extractModelDesc")}
+              </span>
+              <Select
+                id="memw-extract-model"
+                disabled={!canEdit}
+                className="text-sm"
+                value={config.extract_model_id}
+                onChange={(v) => setConfig({ ...config, extract_model_id: v })}
+                options={[
+                  { value: "", label: t("memw.defaultModel") },
+                  ...chatModels.map((m) => ({
+                    value: m.id ?? "",
+                    label: `${m.display_name || m.name} (${m.parameters?.provider || "remote"})`,
+                  })),
+                ]}
+              />
             </div>
 
             <div className="rounded-xl border border-hairline p-5 space-y-2">
-              <label className="block">
-                <span className="text-sm font-medium text-ink block">{t("memw.embeddingModel")}</span>
-                <span className="caption text-muted block mt-0.5 mb-2">
-                  {t("memw.embeddingModelDesc")}
-                </span>
-                <Select
-                  disabled={!canEdit || !config.vector_recall}
-                  className="text-sm"
-                  value={config.embedding_model_id}
-                  onChange={(v) => setConfig({ ...config, embedding_model_id: v })}
-                  options={[
-                    { value: "", label: t("memw.embeddingNone") },
-                    ...embeddingModels.map((m) => ({
-                      value: m.id ?? "",
-                      label: m.display_name || m.name,
-                    })),
-                  ]}
-                />
-              </label>
+              <FieldLabel htmlFor="memw-embedding-model" className="text-sm font-medium text-ink">
+                {t("memw.embeddingModel")}
+              </FieldLabel>
+              <span className="caption text-muted block mt-0.5 mb-2">
+                {t("memw.embeddingModelDesc")}
+              </span>
+              <Select
+                id="memw-embedding-model"
+                disabled={!canEdit || !config.vector_recall}
+                className="text-sm"
+                value={config.embedding_model_id}
+                onChange={(v) => setConfig({ ...config, embedding_model_id: v })}
+                options={[
+                  { value: "", label: t("memw.embeddingNone") },
+                  ...embeddingModels.map((m) => ({
+                    value: m.id ?? "",
+                    label: m.display_name || m.name,
+                  })),
+                ]}
+              />
             </div>
           </div>
 
@@ -250,6 +254,7 @@ export function MemoryWorkspaceSettings() {
                 </span>
               </div>
               <Toggle
+                label={t("memw.vectorRecall")}
                 checked={config.vector_recall}
                 disabled={!canEdit}
                 onChange={(checked) => setConfig({ ...config, vector_recall: checked })}
@@ -264,6 +269,7 @@ export function MemoryWorkspaceSettings() {
                 </span>
               </div>
               <Toggle
+                label={t("memw.retrieval")}
                 checked={config.retrieval_conditioning}
                 disabled={!canEdit}
                 onChange={(checked) => setConfig({ ...config, retrieval_conditioning: checked })}
@@ -274,72 +280,78 @@ export function MemoryWorkspaceSettings() {
           {/* Timing and Limits */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="rounded-xl border border-hairline p-5 space-y-1.5">
-              <label className="block">
-                <span className="text-sm font-medium text-ink block">{t("memw.delay")}</span>
-                <span className="caption text-muted block text-xs">
-                  {t("memw.delayDesc")}
-                </span>
-                <input
-                  type="number"
-                  min={5}
-                  max={3600}
-                  disabled={!canEdit}
-                  className="input mt-2"
-                  value={config.extract_delay_seconds}
-                  onChange={(e) =>
-                    setConfig({ ...config, extract_delay_seconds: Number(e.target.value) })
-                  }
-                />
-              </label>
+              <FieldLabel htmlFor="memw-delay" className="text-sm font-medium text-ink">
+                {t("memw.delay")}
+              </FieldLabel>
+              <span className="caption text-muted block text-xs">
+                {t("memw.delayDesc")}
+              </span>
+              <input
+                id="memw-delay"
+                type="number"
+                min={5}
+                max={3600}
+                disabled={!canEdit}
+                className="input mt-2"
+                value={config.extract_delay_seconds}
+                onChange={(e) =>
+                  setConfig({ ...config, extract_delay_seconds: Number(e.target.value) })
+                }
+              />
             </div>
 
             <div className="rounded-xl border border-hairline p-5 space-y-1.5">
-              <label className="block">
-                <span className="text-sm font-medium text-ink block">{t("memw.minInterval")}</span>
-                <span className="caption text-muted block text-xs">
-                  {t("memw.minIntervalDesc")}
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  max={86400}
-                  disabled={!canEdit}
-                  className="input mt-2"
-                  value={config.extract_min_interval_seconds}
-                  onChange={(e) =>
-                    setConfig({ ...config, extract_min_interval_seconds: Number(e.target.value) })
-                  }
-                />
-              </label>
+              <FieldLabel htmlFor="memw-min-interval" className="text-sm font-medium text-ink">
+                {t("memw.minInterval")}
+              </FieldLabel>
+              <span className="caption text-muted block text-xs">
+                {t("memw.minIntervalDesc")}
+              </span>
+              <input
+                id="memw-min-interval"
+                type="number"
+                min={0}
+                max={86400}
+                disabled={!canEdit}
+                className="input mt-2"
+                value={config.extract_min_interval_seconds}
+                onChange={(e) =>
+                  setConfig({ ...config, extract_min_interval_seconds: Number(e.target.value) })
+                }
+              />
             </div>
 
             <div className="rounded-xl border border-hairline p-5 space-y-1.5">
-              <label className="block">
-                <span className="text-sm font-medium text-ink block">{t("memw.maxItems")}</span>
-                <span className="caption text-muted block text-xs">
-                  {t("memw.maxItemsDesc")}
-                </span>
-                <input
-                  type="number"
-                  min={10}
-                  max={2000}
-                  disabled={!canEdit}
-                  className="input mt-2"
-                  value={config.max_items}
-                  onChange={(e) => setConfig({ ...config, max_items: Number(e.target.value) })}
-                />
-              </label>
+              <FieldLabel htmlFor="memw-max-items" className="text-sm font-medium text-ink">
+                {t("memw.maxItems")}
+              </FieldLabel>
+              <span className="caption text-muted block text-xs">
+                {t("memw.maxItemsDesc")}
+              </span>
+              <input
+                id="memw-max-items"
+                type="number"
+                min={10}
+                max={2000}
+                disabled={!canEdit}
+                className="input mt-2"
+                value={config.max_items}
+                onChange={(e) => setConfig({ ...config, max_items: Number(e.target.value) })}
+              />
             </div>
           </div>
 
           {/* Custom instructions */}
           <div className="rounded-xl border border-hairline p-5 space-y-2">
-            <label className="block">
-              <span className="text-sm font-medium text-ink block">{t("memw.guidelines")}</span>
+            <div>
+              <FieldLabel htmlFor="memw-guidelines" className="text-sm font-medium text-ink">
+                {t("memw.guidelines")}
+              </FieldLabel>
               <span className="caption text-muted block text-xs mb-2">
                 {t("memw.guidelinesDesc")}
               </span>
               <textarea
+                id="memw-guidelines"
                 rows={3}
                 disabled={!canEdit}
                 placeholder={t("memw.guidelinesPh")}
@@ -347,7 +359,7 @@ export function MemoryWorkspaceSettings() {
                 value={config.extract_instructions}
                 onChange={(e) => setConfig({ ...config, extract_instructions: e.target.value })}
               />
-            </label>
+            </div>
           </div>
         </div>
       )}

@@ -72,7 +72,7 @@ export function KbTransferOwnerDialog({
       ) : (
         <div className="space-y-4">
           <p className="body-sm text-body">{t("kbAccess.transferDesc")}</p>
-          <p className="body-sm rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
+          <p className="body-sm rounded-xl border border-warning/40 bg-warning-surface px-3 py-2 text-warning">
             {t("kbAccess.transferWarn")}
           </p>
           <label className="block">

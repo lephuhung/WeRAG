@@ -11,6 +11,7 @@ import { useEffect, useState } from "react";
 import { getTokens, setTokens } from "@/lib/api-client";
 import { useAvatarUrl } from "@/lib/avatar";
 import type { UserInfo } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 import styles from "./page.module.css";
 
 async function fetchMe(token: string): Promise<Response> {
@@ -44,6 +45,7 @@ async function loadSignedInUser(signal: AbortSignal): Promise<UserInfo | null> {
 }
 
 export function LandingAccount() {
+  const { t } = useT();
   const [user, setUser] = useState<UserInfo | null>(null);
 
   useEffect(() => {
@@ -66,7 +68,7 @@ export function LandingAccount() {
         </span>
         <span className={styles.accountName}>{name}</span>
       </Link>
-      : <Link href="/login" className={styles.login}>Đăng nhập</Link>}
-    <Link href="/platform/creatChat" className={styles.primary}>Vào ứng dụng <span aria-hidden="true">↗</span></Link>
+      : <Link href="/login" className={styles.login}>{t("auth.signIn")}</Link>}
+    <Link href="/platform/creatChat" className={styles.primary}>{t("landing.enterApp")} <span aria-hidden="true">↗</span></Link>
   </div>;
 }

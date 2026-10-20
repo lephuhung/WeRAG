@@ -20,6 +20,8 @@ import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { copyToClipboard } from "@/lib/clipboard";
 import { formatDate } from "@/lib/datetime";
+import { Notice } from "@/components/settings/notice";
+import { Loading } from "@/components/settings/loading";
 
 const CAPABILITIES: { id: TenantAPIKeyCapability; labelEn: string; labelVi: string }[] = [
   { id: "retrieve", labelEn: "Retrieve", labelVi: "Truy xuất" },
@@ -84,8 +86,8 @@ export function ApiKeysSection() {
         )}
       </div>
 
-      {error && <p className="caption text-error">{error}</p>}
-      {loading && <p className="caption text-muted">…</p>}
+      {error && <Notice tone="error" className="mb-3">{error}</Notice>}
+      {loading && <Loading className="py-4" />}
 
       <div className="flex flex-col divide-y divide-hairline">
         {(keys ?? []).map((k) => (
@@ -203,7 +205,7 @@ function CreateKeyModal({ onClose, onCreated }: {
   return (
     <Modal open title={t("apiKeys.create")} onClose={onClose} width="w-[600px]">
       <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto pr-1">
-        {error && <p className="caption text-error">{error}</p>}
+        {error && <Notice tone="error">{error}</Notice>}
         <label className="block">
           <span className="caption mb-1.5 block text-muted">{t("apiKeys.nameLabel")}</span>
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus />

@@ -24,7 +24,7 @@ export function LimitStatusList({ items, compact = false }: { items: UsageLimitS
             </span>
             {l.limit > 0 && (
               <span className="h-1.5 w-16 overflow-hidden rounded-full bg-surface-strong">
-                <span className={`block h-full ${l.exhausted ? "bg-rose-500" : "bg-emerald-500"}`} style={{ width: `${pct}%` }} />
+                <span className={`block h-full ${l.exhausted ? "bg-error" : "bg-success"}`} style={{ width: `${pct}%` }} />
               </span>
             )}
           </div>

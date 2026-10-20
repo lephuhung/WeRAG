@@ -8,6 +8,7 @@ import {
   type DataStorageTab,
 } from "@/lib/data-storage-tabs";
 import { useT } from "@/lib/i18n";
+import { TabStrip } from "@/components/settings/tab-strip";
 
 export function DataStorageHub({ initialTab = "vector" }: { initialTab?: DataStorageTab }) {
   const { t } = useT();
@@ -22,31 +23,18 @@ export function DataStorageHub({ initialTab = "vector" }: { initialTab?: DataSto
 
   return (
     <div className="space-y-5">
-      <div
-        className="flex items-center gap-6 overflow-x-auto border-b border-hairline"
-        role="tablist"
-        aria-label={t("settingsNav.dataStorage")}
-      >
-        {tabs.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            role="tab"
-            aria-selected={tab === item.id}
-            onClick={() => setTab(item.id)}
-            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-1 pb-3 pt-1 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ink ${
-              tab === item.id
-                ? "border-ink font-semibold text-ink"
-                : "border-transparent font-medium text-muted hover:border-hairline-strong hover:text-ink"
-            }`}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+      <TabStrip tabs={tabs} value={tab} onChange={setTab} ariaLabel={t("settingsNav.dataStorage")} />
 
-      {tab === "vector" && <VectorStoreSettings />}
-      {tab === "storage" && <StorageSettings />}
+      {tab === "vector" && (
+        <div id="tabpanel-vector" role="tabpanel" aria-labelledby="tab-vector">
+          <VectorStoreSettings />
+        </div>
+      )}
+      {tab === "storage" && (
+        <div id="tabpanel-storage" role="tabpanel" aria-labelledby="tab-storage">
+          <StorageSettings />
+        </div>
+      )}
     </div>
   );
 }

@@ -6,6 +6,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/modal";
 import { IconRefresh, IconSearch } from "@/components/icons";
+import { DataTable } from "@/components/settings/data-table";
+import { LoadMore } from "@/components/settings/pager";
+import { Notice } from "@/components/settings/notice";
+import { Pill, PillGroup } from "@/components/settings/pill";
+import { SystemSection } from "@/components/settings/system-section";
 import { useT } from "@/lib/i18n";
 import { vnIntl } from "@/lib/datetime";
 import { useAuth } from "@/lib/auth";
@@ -47,9 +52,9 @@ const WARN_ACTIONS = new Set([
 ]);
 
 const LEVEL_BADGE_STYLES: Record<Level, string> = {
-  info: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-  warn: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  error: "bg-red-500/10 text-red-700 dark:text-red-400",
+  info: "badge-success",
+  warn: "badge-warning",
+  error: "badge-error",
 };
 
 const ROLE_LABEL_KEYS = {
@@ -73,12 +78,12 @@ function levelFor(row: AuditLog): Level {
 
 function actionTone(row: AuditLog): string {
   if (DANGER_ACTIONS.has(row.action) || levelFor(row) === "error") {
-    return "bg-red-500/10 text-red-700 dark:text-red-400";
+    return "badge-error";
   }
   if (WARN_ACTIONS.has(row.action) || levelFor(row) === "warn") {
-    return "bg-amber-500/10 text-amber-700 dark:text-amber-400";
+    return "badge-warning";
   }
-  return "bg-sky-500/10 text-sky-700 dark:text-sky-400";
+  return "badge-info";
 }
 
 /* Human-readable target: prefer the username/email recorded in details,
@@ -138,6 +143,9 @@ export default function SystemAuditLogs() {
   const [cursor, setCursor] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
+  /* A request has completed at least once — until then the list shows the
+   * loading row instead of the (still unknown) empty state. */
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
   const [level, setLevel] = useState<Level | "all">("all");
@@ -161,6 +169,7 @@ export default function SystemAuditLogs() {
       else setError(e instanceof Error ? e.message : t("ulogs.loadFailed"));
     } finally {
       setLoading(false);
+      setLoaded(true);
     }
   }, [cursor, loading, t]);
 
@@ -209,21 +218,8 @@ export default function SystemAuditLogs() {
     });
   }, [entries, q, level]);
 
-  if (allowed === null) {
-    return <div className="mx-auto w-full max-w-[1100px] px-5 py-12 text-muted">{t("usrp.loading")}</div>;
-  }
-
-  if (!allowed) {
-    return (
-      <div className="mx-auto w-full max-w-[1100px] px-5 py-16 text-center">
-        <h2 className="title-md mb-2">{t("adm.cardLogs")}</h2>
-        <p className="body-sm text-muted">{t("ulogs.denied")}</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="mx-auto w-full max-w-[1400px]">
+    <SystemSection allowed={allowed} title={t("adm.cardLogs")} deniedMessage={t("ulogs.denied")}>
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <span className="caption text-muted">{t("adm.cardLogsDesc")}</span>
         <button
@@ -237,111 +233,102 @@ export default function SystemAuditLogs() {
         </button>
       </div>
 
-      {error && <p className="caption mb-4 text-error">{error}</p>}
+      {error && (
+        <Notice
+          tone="error"
+          className="mb-4"
+          action={
+            <button className="btn btn-outline btn-sm" onClick={() => void load(true)}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {error}
+        </Notice>
+      )}
 
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <div className="relative min-w-[220px] flex-1">
           <IconSearch className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft" />
           <input
+            id="ulogs-filter"
             className="input h-10 pl-10 text-[14px]"
             placeholder={t("ulogs.filterPh")}
+            aria-label={t("ulogs.filterPh")}
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
-        <div className="inline-flex items-center gap-0.5 rounded-full border border-hairline bg-surface-strong/60 p-0.5">
+        <PillGroup ariaLabel={t("common.filters")}>
           {(["all", ...LEVELS] as const).map((lv) => (
-            <button
-              key={lv}
-              type="button"
-              onClick={() => setLevel(lv)}
-              className={`rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${
-                level === lv
-                  ? "bg-surface-card text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
-                  : "text-muted hover:text-ink"
-              }`}
-            >
+            <Pill key={lv} active={level === lv} onClick={() => setLevel(lv)}>
               {lv === "all" ? t("ulogs.level.all") : t(`ulogs.level.${lv}`)}
-            </button>
+            </Pill>
           ))}
-        </div>
+        </PillGroup>
       </div>
 
-      <div className="card overflow-x-auto shadow-sm">
-        <table className="w-full min-w-[900px] border-collapse text-left">
-          <thead>
-            <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
-              <th className="w-[170px] px-5 py-3 font-medium">{t("ulogs.colTime")}</th>
-              <th className="w-[170px] px-5 py-3 font-medium">{t("ulogs.colActor")}</th>
-              <th className="w-[200px] px-5 py-3 font-medium">{t("ulogs.colAction")}</th>
-              <th className="min-w-[220px] px-5 py-3 font-medium">{t("ulogs.colTarget")}</th>
-              <th className="w-24 px-5 py-3 font-medium">{t("ulogs.colLevel")}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-hairline">
-            {filtered.map((row) => {
-              const actorName =
-                row.actor_user_id === meId && (auth.user?.username || auth.user?.email)
-                  ? auth.user?.username || auth.user?.email
-                  : shortId(row.actor_user_id);
-              return (
-                <tr
-                  key={row.id}
-                  className="cursor-pointer transition-colors hover:bg-surface-strong/20"
-                  onClick={() => setDetail(row)}
-                >
-                  <td className="px-5 py-3.5 align-middle whitespace-nowrap">
-                    <span className="caption text-muted tabular-nums">
-                      {formatTime(row.created_at, locale)}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 align-middle">
-                    {row.actor_user_id ? (
-                      <div className="min-w-0">
-                        <div className="truncate text-[13px] font-medium text-ink">{actorName}</div>
-                        {row.actor_role && (
-                          <div className="caption truncate text-muted">{t(roleLabelKey(row.actor_role))}</div>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="caption text-muted">{t("ulogs.role.system")}</span>
+      <DataTable
+        columns={[
+          { key: "time", header: t("ulogs.colTime"), className: "w-[170px]" },
+          { key: "actor", header: t("ulogs.colActor"), className: "w-[170px]" },
+          { key: "action", header: t("ulogs.colAction"), className: "w-[200px]" },
+          { key: "target", header: t("ulogs.colTarget"), className: "min-w-[220px]" },
+          { key: "level", header: t("ulogs.colLevel"), className: "w-24" },
+        ]}
+        rows={filtered}
+        rowKey={(row) => String(row.id)}
+        minWidth="min-w-[900px]"
+        loading={!loaded || loading}
+        loadingLabel={t("common.loading")}
+        emptyLabel={t("ulogs.empty")}
+        onRowClick={(row) => setDetail(row)}
+        renderRow={(row) => {
+          const actorName =
+            row.actor_user_id === meId && (auth.user?.username || auth.user?.email)
+              ? auth.user?.username || auth.user?.email
+              : shortId(row.actor_user_id);
+          return (
+            <>
+              <td className="px-5 py-3.5 align-middle whitespace-nowrap">
+                <span className="caption text-muted tabular-nums">
+                  {formatTime(row.created_at, locale)}
+                </span>
+              </td>
+              <td className="px-5 py-3.5 align-middle">
+                {row.actor_user_id ? (
+                  <div className="min-w-0">
+                    <div className="truncate text-[13px] font-medium text-ink">{actorName}</div>
+                    {row.actor_role && (
+                      <div className="caption truncate text-muted">{t(roleLabelKey(row.actor_role))}</div>
                     )}
-                  </td>
-                  <td className="px-5 py-3.5 align-middle">
-                    <span className={`badge-pill inline-block max-w-full truncate font-mono text-[11px] ${actionTone(row)}`}>
-                      {row.action}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 align-middle">
-                    <span className="block truncate font-mono text-[12px] text-body" title={targetKey(row)}>
-                      {targetKey(row) || <span className="text-muted-soft">—</span>}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 align-middle">
-                    <span className={`badge-pill inline-block text-[10px] ${LEVEL_BADGE_STYLES[levelFor(row)]}`}>
-                      {t(`ulogs.level.${levelFor(row)}`)}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-            {filtered.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-5 py-12 text-center text-[14px] text-muted">
-                  {t("ulogs.empty")}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+                  </div>
+                ) : (
+                  <span className="caption text-muted">{t("ulogs.role.system")}</span>
+                )}
+              </td>
+              <td className="px-5 py-3.5 align-middle">
+                <span className={`badge-pill inline-block max-w-full truncate font-mono text-[11px] ${actionTone(row)}`}>
+                  {row.action}
+                </span>
+              </td>
+              <td className="px-5 py-3.5 align-middle">
+                <span className="block truncate font-mono text-[12px] text-body" title={targetKey(row)}>
+                  {targetKey(row) || <span className="text-muted-soft">—</span>}
+                </span>
+              </td>
+              <td className="px-5 py-3.5 align-middle">
+                <span className={`badge-pill inline-block text-[10px] ${LEVEL_BADGE_STYLES[levelFor(row)]}`}>
+                  {t(`ulogs.level.${levelFor(row)}`)}
+                </span>
+              </td>
+            </>
+          );
+        }}
+      />
 
       {hasMore && !q && level === "all" && (
-        <div className="mt-4 text-center">
-          <button className="btn btn-outline btn-sm" onClick={() => void load(false)} disabled={loading}>
-            {loading ? "…" : t("ulogs.loadMore")}
-          </button>
-        </div>
+        <LoadMore onMore={() => void load(false)} loading={loading} label={t("ulogs.loadMore")} />
       )}
 
       <Modal
@@ -382,6 +369,6 @@ export default function SystemAuditLogs() {
           </div>
         )}
       </Modal>
-    </div>
+    </SystemSection>
   );
 }

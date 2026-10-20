@@ -88,7 +88,7 @@ function ArtifactThumb({ item }: { item: ArtifactLibraryItem }) {
   return (
     <div ref={holderRef} className="flex h-full w-full items-center justify-center">
       <span
-        className="h-12 w-11 opacity-70"
+        className="inline-block h-12 w-11 opacity-70"
         dangerouslySetInnerHTML={{ __html: renderFileIconSvg(item.file_name) }}
       />
     </div>
@@ -284,7 +284,7 @@ function ArtifactsInner() {
         </div>
 
         {loading && items.length === 0 ? (
-          <p className="caption text-muted">Loading…</p>
+          <p className="caption text-muted">{t("common.loading")}</p>
         ) : loadError && items.length === 0 ? (
           <div className="card flex flex-col items-center px-4 py-16 text-center">
             <h2 className="title-md">{t("artifactLibrary.loadFailed")}</h2>
@@ -332,7 +332,7 @@ function ArtifactsInner() {
                             </div>
                           )}
                           {a.version_count > 1 && (
-                            <span className="caption absolute left-3 top-3 rounded-full bg-ink/60 px-2 py-0.5 text-[11px] font-semibold text-white">
+                            <span className="caption absolute left-3 top-3 rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-on-primary">
                               ×{a.version_count}
                             </span>
                           )}
@@ -378,7 +378,7 @@ function ArtifactsInner() {
             ))}
             <div ref={sentinelRef} className="flex items-center justify-center py-4">
               {loading ? (
-                <span className="caption text-muted">Loading…</span>
+                <span className="caption text-muted">{t("common.loading")}</span>
               ) : (
                 hasMore && (
                   <button className="btn btn-outline btn-sm" onClick={() => fetchPage(page + 1, keyword, category)}>

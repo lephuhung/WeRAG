@@ -3,6 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Modal } from "@/components/modal";
 import { IconPlus, IconSearch } from "@/components/icons";
+import { useToast } from "@/components/toast";
+import { DataTable } from "@/components/settings/data-table";
+import { Notice } from "@/components/settings/notice";
+import { FieldLabel } from "@/components/settings/field";
+import { Pill, PillGroup } from "@/components/settings/pill";
+import { Pager } from "@/components/settings/pager";
+import { SystemSection } from "@/components/settings/system-section";
 import { useT } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import { getCurrentUser } from "@/lib/api/auth";
@@ -33,10 +40,13 @@ type AddMode = "create" | "promote";
 const WORKSPACE_ROLES: TenantRole[] = ["member", "admin"];
 
 const ROLE_BADGE_STYLES: Record<TenantRole, string> = {
-  owner: "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  admin: "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400",
+  owner: "border-warning/30 bg-warning-surface text-warning",
+  admin: "border-info/30 bg-info-surface text-info",
   member: "border-hairline bg-surface-strong/70 text-body",
 };
+
+/* Page size of the user list — the API is offset/limit based. */
+const USERS_PAGE_SIZE = 200;
 
 /* Three-role segmented pill — click a segment to switch the user's role. */
 function RolePillToggle({
@@ -50,36 +60,35 @@ function RolePillToggle({
 }) {
   const { t } = useT();
   return (
-    <div className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-hairline bg-surface-strong/60 p-0.5">
+    <PillGroup ariaLabel={t("usrp.wsRolesTitle")} className="shrink-0">
       {WORKSPACE_ROLES.map((r) => (
-        <button
+        <Pill
           key={r}
-          type="button"
+          active={r === value}
           disabled={busy || r === value}
-          onClick={(e) => {
-            e.stopPropagation();
-            onChange(r);
-          }}
-          className={`rounded-full px-2.5 py-0.5 text-[11px] font-medium capitalize transition-colors disabled:cursor-default ${
-            r === value
-              ? "bg-surface-card text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
-              : "text-muted hover:text-ink"
-          }`}
+          onClick={() => onChange(r)}
+          className="capitalize"
         >
           {r === "admin" ? t("usrp.roleAdmin") : r === "owner" ? t("usrp.roleOwner") : t("usrp.roleMember")}
-        </button>
+        </Pill>
       ))}
-    </div>
+    </PillGroup>
   );
 }
 
 export default function SystemUsers() {
   const { t } = useT();
+  const toast = useToast();
   const auth = useAuth();
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [meId, setMeId] = useState("");
   const [users, setUsers] = useState<SystemAdminUser[]>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(false);
+  /* A request has completed at least once — until then the table shows the
+   * loading row instead of the (still unknown) empty state. */
+  const [loaded, setLoaded] = useState(false);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -96,27 +105,40 @@ export default function SystemUsers() {
   const [revoking, setRevoking] = useState<SystemAdminUser | null>(null);
   const [promoting, setPromoting] = useState<SystemAdminUser | null>(null);
 
-  const load = useCallback(async (query: string) => {
+  const load = useCallback(async (query: string, pageNum: number) => {
+    setLoading(true);
     try {
-      const res = await listSystemUsers({ limit: 200, q: query || undefined });
+      const res = await listSystemUsers({
+        limit: USERS_PAGE_SIZE,
+        offset: (pageNum - 1) * USERS_PAGE_SIZE,
+        q: query || undefined,
+      });
       setUsers(res.users ?? []);
       setTotal(res.total ?? 0);
       setError("");
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) setAllowed(false);
       else setError(e instanceof Error ? e.message : t("usrp.loadFailed"));
+    } finally {
+      setLoading(false);
+      setLoaded(true);
     }
   }, []);
 
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchTimer = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (!allowed) return;
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => void load(q.trim()), 250);
+    clearTimeout(searchTimer.current);
+    searchTimer.current = window.setTimeout(() => void load(q.trim(), page), 250);
     return () => {
-      if (searchTimer.current) clearTimeout(searchTimer.current);
+      clearTimeout(searchTimer.current);
     };
-  }, [q, allowed, load]);
+  }, [q, page, allowed, load]);
+
+  /* A new search always starts on the first page. */
+  useEffect(() => {
+    setPage(1);
+  }, [q]);
 
   useEffect(() => {
     let alive = true;
@@ -144,7 +166,7 @@ export default function SystemUsers() {
     setError("");
     try {
       await fn();
-      await load(q.trim());
+      await load(q.trim(), page);
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : t("usrp.opFailed"));
@@ -166,12 +188,16 @@ export default function SystemUsers() {
         // Show the one-time generated password in-place instead of closing.
         if (res.generated_password) setGeneratedPassword(res.generated_password);
         else setModalOpen(false);
+        toast.success(t("common.saved"));
       });
       return;
     }
     if (!form.email.trim()) return;
     void run(() => promoteUserToSystemAdmin({ email: form.email.trim() })).then((ok) => {
-      if (ok) setModalOpen(false);
+      if (ok) {
+        setModalOpen(false);
+        toast.success(t("common.saved"));
+      }
     });
   };
 
@@ -183,6 +209,7 @@ export default function SystemUsers() {
       if (ok) {
         setResetting(null);
         setNewPassword("");
+        toast.success(t("common.saved"));
       }
     });
   };
@@ -190,14 +217,20 @@ export default function SystemUsers() {
   const submitRevoke = () => {
     if (!revoking) return;
     void run(() => revokeSystemAdmin(revoking.id)).then((ok) => {
-      if (ok) setRevoking(null);
+      if (ok) {
+        setRevoking(null);
+        toast.success(t("common.saved"));
+      }
     });
   };
 
   const submitPromote = () => {
     if (!promoting) return;
     void run(() => promoteUserToSystemAdmin({ user_id: promoting.id })).then((ok) => {
-      if (ok) setPromoting(null);
+      if (ok) {
+        setPromoting(null);
+        toast.success(t("common.saved"));
+      }
     });
   };
 
@@ -223,6 +256,7 @@ export default function SystemUsers() {
       await updateSystemUserRole(tenantId, u.id, role);
       setUsers((prev) => prev.map((x) => (x.id === u.id ? patchMembershipRole(x, tenantId, role) : x)));
       setDetail((d) => (d && d.id === u.id ? patchMembershipRole(d, tenantId, role) : d));
+      toast.success(t("common.saved"));
     } catch (e) {
       setDetailError(e instanceof Error ? e.message : t("usrp.roleFailed"));
     } finally {
@@ -239,25 +273,11 @@ export default function SystemUsers() {
       return adm !== 0 ? adm : a.tenant_name.localeCompare(b.tenant_name);
     });
 
-  if (allowed === null) {
-    return <div className="mx-auto w-full max-w-[1100px] px-5 py-12 text-muted">{t("usrp.loading")}</div>;
-  }
-
-  if (!allowed) {
-    return (
-      <div className="mx-auto w-full max-w-[1100px] px-5 py-16 text-center">
-        <h2 className="title-md mb-2">{t("usrp.title")}</h2>
-        <p className="body-sm text-muted">
-          {t("usrp.denied")}
-        </p>
-      </div>
-    );
-  }
-
   const adminCount = users.filter((u) => u.is_system_admin).length;
+  const pageCount = Math.max(1, Math.ceil(total / USERS_PAGE_SIZE));
 
   return (
-    <div className="mx-auto w-full max-w-[1400px]">
+    <SystemSection allowed={allowed} title={t("usrp.title")} deniedMessage={t("usrp.denied")}>
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <span className="caption text-muted">
           {t("usrp.summary", {
@@ -278,172 +298,186 @@ export default function SystemUsers() {
         </button>
       </div>
 
-      {error && <p className="caption mb-4 text-error">{error}</p>}
+      {error && (
+        <Notice
+          tone="error"
+          className="mb-4"
+          action={
+            <button className="btn btn-outline btn-sm" onClick={() => void load(q.trim(), page)}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {error}
+        </Notice>
+      )}
 
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <div className="relative min-w-[220px] flex-1">
           <IconSearch className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft" />
           <input
+            id="usrp-search"
             className="input h-10 pl-10 text-[14px]"
             placeholder={t("usrp.searchPh")}
+            aria-label={t("usrp.searchPh")}
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
       </div>
 
-      <div className="card overflow-x-auto shadow-sm">
-        <table className="w-full min-w-[960px] border-collapse text-left">
-          <thead>
-            <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
-              <th className="min-w-[260px] px-5 py-3 font-medium">{t("usrp.colUser")}</th>
-              <th className="min-w-[280px] px-5 py-3 font-medium">
-                <span className="inline-flex flex-wrap items-center gap-2">
-                  {t("usrp.colUnits")}
-                  {/* Badge colors = role in that unit. */}
-                  <span className={`badge-pill border px-1.5 py-0 text-[10px] normal-case ${ROLE_BADGE_STYLES.admin}`}>
-                    {t("usrp.roleAdmin")}
-                  </span>
-                  <span className={`badge-pill border px-1.5 py-0 text-[10px] normal-case ${ROLE_BADGE_STYLES.member}`}>
-                    {t("usrp.roleMember")}
-                  </span>
+      <DataTable
+        columns={[
+          { key: "user", header: t("usrp.colUser"), className: "min-w-[260px]" },
+          {
+            key: "units",
+            header: (
+              <span className="inline-flex flex-wrap items-center gap-2">
+                {t("usrp.colUnits")}
+                {/* Badge colors = role in that unit. */}
+                <span className={`badge-pill border px-1.5 py-0 text-[10px] normal-case ${ROLE_BADGE_STYLES.admin}`}>
+                  {t("usrp.roleAdmin")}
                 </span>
-              </th>
-              <th className="w-28 px-5 py-3 font-medium">{t("usrp.colStatus")}</th>
-              <th className="w-32 px-5 py-3 font-medium">{t("usrp.colCreated")}</th>
-              <th className="w-[280px] px-5 py-3 font-medium text-right">{t("users.actions")}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-hairline">
-            {users.map((u) => {
-              const memberships = sortedMemberships(u);
-              return (
-              <tr
-                key={u.id}
-                className="cursor-pointer transition-colors hover:bg-surface-strong/20"
-                onClick={() => {
-                  setDetailError("");
-                  setDetail(u);
-                }}
-              >
-                <td className="px-5 py-3.5 align-middle">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[12px] font-semibold text-ink border border-hairline">
-                      {initials(u.username)}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 text-[14px] font-medium text-ink">
-                        <span className="truncate">{u.username}</span>
-                        {u.is_system_admin ? (
-                          <span className="badge-pill shrink-0 bg-surface-dark text-on-dark text-[10px] py-0.5 px-2">
-                            {t("users.superadmin")}
-                          </span>
-                        ) : (
-                          <span className="badge-pill shrink-0 bg-surface-strong text-muted-soft text-[10px] py-0.5 px-2">
-                            {t("usrp.roleUser")}
-                          </span>
-                        )}
-                        {u.id === meId && (
-                          <span className="caption shrink-0 text-muted-soft font-normal">{t("usrp.you")}</span>
-                        )}
-                      </div>
-                      <div className="caption truncate text-muted">{u.email}</div>
-                    </div>
+                <span className={`badge-pill border px-1.5 py-0 text-[10px] normal-case ${ROLE_BADGE_STYLES.member}`}>
+                  {t("usrp.roleMember")}
+                </span>
+              </span>
+            ),
+            className: "min-w-[280px]",
+          },
+          { key: "status", header: t("usrp.colStatus"), className: "w-28" },
+          { key: "created", header: t("usrp.colCreated"), className: "w-32" },
+          { key: "actions", header: t("users.actions"), className: "w-[280px]", align: "right" },
+        ]}
+        rows={users}
+        rowKey={(u) => u.id}
+        minWidth="min-w-[960px]"
+        loading={!loaded || loading}
+        loadingLabel={t("common.loading")}
+        emptyLabel={t("usrp.empty")}
+        onRowClick={(u) => {
+          setDetailError("");
+          setDetail(u);
+        }}
+        renderRow={(u) => {
+          const memberships = sortedMemberships(u);
+          return (
+            <>
+              <td className="px-5 py-3.5 align-middle">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[12px] font-semibold text-ink border border-hairline">
+                    {initials(u.username)}
                   </div>
-                </td>
-                <td className="px-5 py-3.5 align-middle">
-                  {memberships.length > 0 ? (
-                    <div className="flex max-w-[420px] flex-wrap gap-1">
-                      {memberships.map((m) => {
-                        const roleLabel =
-                          m.role === "admin" ? t("usrp.roleAdmin") : m.role === "owner" ? t("usrp.roleOwner") : t("usrp.roleMember");
-                        return (
-                          <span
-                            key={m.tenant_id}
-                            title={`${m.tenant_name} — ${roleLabel}`}
-                            className={`badge-pill inline-block max-w-[160px] truncate border text-[11px] ${ROLE_BADGE_STYLES[m.role] ?? ROLE_BADGE_STYLES.member} ${
-                              String(m.tenant_id) === currentTenantId ? "font-semibold" : ""
-                            }`}
-                          >
-                            {m.tenant_name}
-                          </span>
-                        );
-                      })}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-[14px] font-medium text-ink">
+                      <span className="truncate">{u.username}</span>
+                      {u.is_system_admin ? (
+                        <span className="badge-pill shrink-0 bg-surface-dark text-on-dark text-[10px] py-0.5 px-2">
+                          {t("users.superadmin")}
+                        </span>
+                      ) : (
+                        <span className="badge-pill shrink-0 bg-surface-strong text-muted-soft text-[10px] py-0.5 px-2">
+                          {t("usrp.roleUser")}
+                        </span>
+                      )}
+                      {u.id === meId && (
+                        <span className="caption shrink-0 text-muted-soft font-normal">{t("usrp.you")}</span>
+                      )}
                     </div>
-                  ) : (
-                    <span className="caption text-muted-soft">—</span>
-                  )}
-                </td>
-                <td className="px-5 py-3.5 align-middle whitespace-nowrap">
-                  <span
-                    className={`inline-flex items-center gap-1.5 text-xs font-medium ${
-                      u.is_active ? "text-emerald-700 dark:text-emerald-400" : "text-muted"
-                    }`}
-                  >
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${
-                        u.is_active ? "bg-emerald-500" : "bg-muted-soft"
-                      }`}
-                    />
-                    {u.is_active ? t("mdl.active") : t("mdl.disabled")}
-                  </span>
-                </td>
-                <td className="px-5 py-3.5 align-middle whitespace-nowrap">
-                  <span className="caption text-muted">
-                    {u.created_at ? formatDate(u.created_at) : "—"}
-                  </span>
-                </td>
-                <td
-                  className="px-5 py-3.5 align-middle text-right whitespace-nowrap"
-                  onClick={(e) => e.stopPropagation()}
+                    <div className="caption truncate text-muted">{u.email}</div>
+                  </div>
+                </div>
+              </td>
+              <td className="px-5 py-3.5 align-middle">
+                {memberships.length > 0 ? (
+                  <div className="flex max-w-[420px] flex-wrap gap-1">
+                    {memberships.map((m) => {
+                      const roleLabel =
+                        m.role === "admin" ? t("usrp.roleAdmin") : m.role === "owner" ? t("usrp.roleOwner") : t("usrp.roleMember");
+                      return (
+                        <span
+                          key={m.tenant_id}
+                          title={`${m.tenant_name} — ${roleLabel}`}
+                          className={`badge-pill inline-block max-w-[160px] truncate border text-[11px] ${ROLE_BADGE_STYLES[m.role] ?? ROLE_BADGE_STYLES.member} ${
+                            String(m.tenant_id) === currentTenantId ? "font-semibold" : ""
+                          }`}
+                        >
+                          {m.tenant_name}
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <span className="caption text-muted-soft">—</span>
+                )}
+              </td>
+              <td className="px-5 py-3.5 align-middle whitespace-nowrap">
+                <span
+                  className={`inline-flex items-center gap-1.5 text-xs font-medium ${
+                    u.is_active ? "text-success" : "text-muted"
+                  }`}
                 >
-                  <div className="flex items-center justify-end gap-2">
-                    {!(u.is_system_admin && u.id === meId) && (
-                      <button
-                        className={`btn btn-outline btn-sm h-7.5 px-3 text-xs font-medium transition-colors ${
-                          u.is_system_admin
-                            ? "text-error border-error/30 hover:border-error hover:bg-error/10"
-                            : "hover:bg-surface-strong/60"
-                        }`}
-                        onClick={() => (u.is_system_admin ? setRevoking(u) : setPromoting(u))}
-                        disabled={busy}
-                        title={
-                          u.is_system_admin
-                            ? t("usrp.revokeTip")
-                            : t("usrp.promoteTip")
-                        }
-                      >
-                        {u.is_system_admin ? t("usrp.revokeCta") : t("usrp.promoteCta")}
-                      </button>
-                    )}
-                    {!u.is_system_admin && (
-                      <button
-                        className="btn btn-outline btn-sm h-7.5 px-3 text-xs font-medium transition-colors hover:bg-surface-strong/60"
-                        onClick={() => {
-                          setNewPassword("");
-                          setResetting(u);
-                        }}
-                        disabled={u.id === meId}
-                        title={u.id === meId ? t("usrp.resetSelfTip") : ""}
-                      >
-                        {t("usrp.resetCta")}
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-              );
-            })}
-            {users.length === 0 && (
-              <tr>
-                <td colSpan={5} className="px-5 py-12 text-center text-[14px] text-muted">
-                  {t("usrp.empty")}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${
+                      u.is_active ? "bg-success" : "bg-muted-soft"
+                    }`}
+                  />
+                  {u.is_active ? t("mdl.active") : t("mdl.disabled")}
+                </span>
+              </td>
+              <td className="px-5 py-3.5 align-middle whitespace-nowrap">
+                <span className="caption text-muted">
+                  {u.created_at ? formatDate(u.created_at) : "—"}
+                </span>
+              </td>
+              <td
+                className="px-5 py-3.5 align-middle text-right whitespace-nowrap"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-end gap-2">
+                  {!(u.is_system_admin && u.id === meId) && (
+                    <button
+                      className={`btn btn-sm px-3 text-xs font-medium ${
+                        u.is_system_admin ? "btn-danger" : "btn-outline"
+                      }`}
+                      onClick={() => (u.is_system_admin ? setRevoking(u) : setPromoting(u))}
+                      disabled={busy}
+                      title={
+                        u.is_system_admin
+                          ? t("usrp.revokeTip")
+                          : t("usrp.promoteTip")
+                      }
+                      aria-label={
+                        u.is_system_admin
+                          ? t("usrp.revokeTip")
+                          : t("usrp.promoteTip")
+                      }
+                    >
+                      {u.is_system_admin ? t("usrp.revokeCta") : t("usrp.promoteCta")}
+                    </button>
+                  )}
+                  {!u.is_system_admin && (
+                    <button
+                      className="btn btn-outline btn-sm px-3 text-xs font-medium"
+                      onClick={() => {
+                        setNewPassword("");
+                        setResetting(u);
+                      }}
+                      disabled={u.id === meId}
+                      title={u.id === meId ? t("usrp.resetSelfTip") : t("usrp.resetCta")}
+                      aria-label={t("usrp.resetCta")}
+                    >
+                      {t("usrp.resetCta")}
+                    </button>
+                  )}
+                </div>
+              </td>
+            </>
+          );
+        }}
+      />
+
+      <Pager page={page} pageCount={pageCount} onPage={setPage} loading={loading} />
 
       {/* user detail — per-workspace role pills */}
       <Modal
@@ -471,7 +505,7 @@ export default function SystemUsers() {
               </div>
             </div>
 
-            {detailError && <p className="caption text-error">{detailError}</p>}
+            {detailError && <Notice tone="error">{detailError}</Notice>}
 
             <div className="flex flex-col gap-2">
               {(detail.memberships ?? []).length === 0 && (
@@ -523,58 +557,66 @@ export default function SystemUsers() {
         width="w-[500px]"
       >
         <div className="flex flex-col gap-4">
-          <div className="flex items-center gap-1 rounded-full bg-surface-strong p-1">
+          <PillGroup ariaLabel={t("users.addUser")}>
             {(
               [
                 { id: "create", label: t("usrp.modeCreate") },
                 { id: "promote", label: t("usrp.modePromote") },
               ] as const
             ).map((m) => (
-              <button
+              <Pill
                 key={m.id}
+                active={addMode === m.id}
                 onClick={() => setAddMode(m.id)}
-                className={`rounded-full px-3.5 py-1.5 text-[13px] font-medium transition-colors ${
-                  addMode === m.id
-                    ? "bg-surface-card text-ink shadow-[0_1px_3px_rgba(0,0,0,0.06)]"
-                    : "text-muted hover:text-ink"
-                }`}
+                className="px-3.5 py-1.5 text-[13px]"
               >
                 {m.label}
-              </button>
+              </Pill>
             ))}
-          </div>
+          </PillGroup>
 
           {addMode === "create" && (
-            <label className="block">
-              <span className="caption mb-1.5 block text-muted">{t("users.fullName")}</span>
+            <div>
+              <FieldLabel htmlFor="usrp-new-username" required>
+                {t("users.fullName")}
+              </FieldLabel>
               <input
+                id="usrp-new-username"
                 className="input"
+                required
+                aria-required="true"
                 value={form.username}
                 onChange={(e) => setForm({ ...form, username: e.target.value })}
                 placeholder={t("usrp.namePh")}
               />
-            </label>
+            </div>
           )}
-          <label className="block">
-            <span className="caption mb-1.5 block text-muted">{t("userSettings.email")}</span>
+          <div>
+            <FieldLabel htmlFor="usrp-new-email" required>
+              {t("userSettings.email")}
+            </FieldLabel>
             <input
+              id="usrp-new-email"
               className="input"
               type="email"
+              required
+              aria-required="true"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
             />
-          </label>
+          </div>
           {addMode === "create" && (
-            <label className="block">
-              <span className="caption mb-1.5 block text-muted">{t("usrp.pwOptional")}</span>
+            <div>
+              <FieldLabel htmlFor="usrp-new-password">{t("usrp.pwOptional")}</FieldLabel>
               <input
+                id="usrp-new-password"
                 className="input"
                 type="password"
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 placeholder={t("usrp.pwPh")}
               />
-            </label>
+            </div>
           )}
 
           {generatedPassword && (
@@ -612,13 +654,21 @@ export default function SystemUsers() {
             <span className="font-medium text-ink">{resetting?.email}</span>.{" "}
             {t("usrp.resetBody2")}
           </p>
-          <input
-            className="input"
-            type="password"
-            placeholder={t("usrp.newPwPh")}
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-          />
+          <div>
+            <FieldLabel htmlFor="usrp-reset-password" required>
+              {t("usrp.newPwPh")}
+            </FieldLabel>
+            <input
+              id="usrp-reset-password"
+              className="input"
+              type="password"
+              required
+              aria-required="true"
+              placeholder={t("usrp.newPwPh")}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
+          </div>
           <div className="flex justify-end gap-3">
             <button className="btn btn-outline" onClick={() => setResetting(null)}>
               {t("common.cancel")}
@@ -646,7 +696,7 @@ export default function SystemUsers() {
           <button className="btn btn-outline" onClick={() => setRevoking(null)}>
             {t("common.cancel")}
           </button>
-          <button className="btn btn-primary" onClick={submitRevoke} disabled={busy}>
+          <button className="btn btn-danger" onClick={submitRevoke} disabled={busy}>
             {t("usrp.revokeBtn")}
           </button>
         </div>
@@ -673,6 +723,6 @@ export default function SystemUsers() {
           </button>
         </div>
       </Modal>
-    </div>
+    </SystemSection>
   );
 }

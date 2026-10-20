@@ -26,6 +26,8 @@ import {
 } from "@/lib/api/mcp";
 import { Chip } from "@/components/settings/chips";
 import { Toggle } from "@/components/settings/toggle";
+import { Notice } from "@/components/settings/notice";
+import { Loading } from "@/components/settings/loading";
 
 export function McpServiceForm({ service, onClose, onSaved }: {
   service: MCPService | null;
@@ -254,8 +256,8 @@ export function McpToolsPanel({ service, onClose }: { service: MCPService; onClo
     <SlidePanel open onClose={onClose} label={service.name} width="w-[520px]">
       <SlidePanelHeader title={`${service.name} — ${t("mcp.tools")}`} onClose={onClose} />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5">
-        {error && <p className="caption mb-3 text-error">{error}</p>}
-        {loading && <p className="caption text-muted">…</p>}
+        {error && <Notice tone="error" className="mb-3">{error}</Notice>}
+        {loading && <Loading className="py-4" />}
         {(tools ?? []).map((tool) => (
           <div key={tool.name} className="flex items-center gap-3 border-b border-hairline py-3">
             <div className="min-w-0 flex-1">

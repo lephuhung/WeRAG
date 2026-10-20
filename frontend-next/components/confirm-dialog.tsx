@@ -81,7 +81,7 @@ function ConfirmButtons({
       <button
         type="button"
         ref={confirmRef}
-        className={`btn ${options.danger ? "bg-red-600 text-white hover:bg-red-700" : "btn-primary"}`}
+        className={`btn ${options.danger ? "btn-danger" : "btn-primary"}`}
         onClick={() => onSettle(true)}
       >
         {options.confirmLabel ?? t("common.confirm")}
@@ -128,14 +128,14 @@ function OverlayConfirm({
   if (!mounted) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6">
-      <div className="absolute inset-0 bg-ink/30 backdrop-blur-[2px]" onClick={() => onSettle(false)} />
+    <div className="fixed inset-0 z-60 flex items-center justify-center p-0 sm:p-6">
+      <div className="absolute inset-0 z-40 bg-scrim/40 backdrop-blur-sm" onClick={() => onSettle(false)} />
       <div
         ref={dialogRef}
         role="alertdialog"
         aria-modal="true"
         aria-label={options.title}
-        className="card relative w-[420px] max-w-full p-5 sm:p-6"
+        className="card relative z-50 flex h-full w-full max-w-none flex-col justify-center overflow-y-auto rounded-none p-5 sm:h-auto sm:w-[420px] sm:max-w-full sm:rounded-[16px] sm:p-6"
       >
         <h2 className="title-md">{options.title}</h2>
         <p className="mt-2 text-[13.5px] leading-relaxed text-muted">{options.message}</p>

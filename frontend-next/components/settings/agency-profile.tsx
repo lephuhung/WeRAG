@@ -10,6 +10,8 @@ import { getAgencyProfile, updateAgencyProfile, type AgencyProfile } from "@/lib
 import { useAuth } from "@/lib/auth";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { TemplateFontSizesSettings } from "@/components/settings/template-font-sizes";
+import { useToast } from "@/components/toast";
+import { Notice } from "@/components/settings/notice";
 
 const EMPTY: AgencyProfile = {
   parent_agency: "", agency_name: "", agency_abbr: "", locality: "",
@@ -30,6 +32,7 @@ const FIELDS: { key: TextField; label: LocaleKey; hint: LocaleKey; max: number }
 export function AgencyProfileSettings() {
   const { t } = useT();
   const auth = useAuth();
+  const toast = useToast();
   const isSystemAdmin = auth.user?.is_system_admin === true;
   const currentRole = auth.memberships.find(
     (m) => String(m.tenant_id) === String(auth.selectedTenantId ?? auth.tenant?.id ?? ""),
@@ -40,7 +43,6 @@ export function AgencyProfileSettings() {
   const [recipients, setRecipients] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
 
   const apply = (p: AgencyProfile | null) => {
@@ -68,13 +70,12 @@ export function AgencyProfileSettings() {
 
   const save = async () => {
     setSaving(true);
-    setSaved(false);
     setError("");
     try {
       const lines = recipients.split("\n").map((l) => l.trim()).filter(Boolean);
       const res = await updateAgencyProfile({ ...profile, default_recipients: lines });
       apply(res.data);
-      setSaved(true);
+      toast.success(t("common.saved"));
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) setError(t("agencyProfile.conflict"));
       else setError(e instanceof Error ? e.message : t("agencyProfile.saveFailed"));
@@ -102,10 +103,7 @@ export function AgencyProfileSettings() {
               maxLength={f.max}
               disabled={!canEdit || saving}
               required={f.key === "agency_name"}
-              onChange={(e) => {
-                setProfile({ ...profile, [f.key]: e.target.value });
-                setSaved(false);
-              }}
+              onChange={(e) => setProfile({ ...profile, [f.key]: e.target.value })}
             />
             <span className="caption mt-1 block text-muted">{t(f.hint)}</span>
           </label>
@@ -118,14 +116,11 @@ export function AgencyProfileSettings() {
           value={recipients}
           disabled={!canEdit || saving}
           placeholder={"- UBND tỉnh (để b/c);\n- Các phòng thuộc Sở;"}
-          onChange={(e) => {
-            setRecipients(e.target.value);
-            setSaved(false);
-          }}
+          onChange={(e) => setRecipients(e.target.value)}
         />
         <span className="caption mt-1 block text-muted">{t("agencyProfile.recipientsHint")}</span>
       </label>
-      {error && <p className="caption text-error">{error}</p>}
+      {error && <Notice tone="error" className="mb-3">{error}</Notice>}
       {canEdit && (
         <div className="flex items-center gap-3">
           <button
@@ -136,7 +131,6 @@ export function AgencyProfileSettings() {
           >
             {saving ? t("agencyProfile.saving") : t("common.save")}
           </button>
-          {saved && <span className="caption text-muted">{t("agencyProfile.saved")}</span>}
         </div>
       )}
       <TemplateFontSizesSettings canEditTenant={canEdit} isSystemAdmin={isSystemAdmin} />

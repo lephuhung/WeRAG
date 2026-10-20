@@ -1,13 +1,15 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { CHAT_MOBILE_QUERY } from "@/components/shell-breakpoints";
 
-const QUERY = "(max-width: 767px)";
+/* The chat surface collapses into a sheet on narrow screens — the
+ * breakpoint lives with the shell's breakpoints (components/shell-breakpoints.ts). */
 export function isMobileChatViewport() {
-  return typeof window !== "undefined" && window.matchMedia(QUERY).matches;
+  return typeof window !== "undefined" && window.matchMedia(CHAT_MOBILE_QUERY).matches;
 }
 function subscribe(onChange: () => void) {
-  const media = window.matchMedia(QUERY);
+  const media = window.matchMedia(CHAT_MOBILE_QUERY);
   media.addEventListener("change", onChange);
   return () => media.removeEventListener("change", onChange);
 }

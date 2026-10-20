@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/modal";
+import { useConfirm } from "@/components/confirm-dialog";
 import { Select } from "@/components/select";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import {
@@ -179,6 +180,7 @@ export function AgentEditorModal({
   onSaved: (a: CustomAgent) => void;
 }) {
   const { t } = useT();
+  const confirm = useConfirm();
   const isBuiltin = agent ? isBuiltinAgent(agent.id) : false;
   // "Document assistant" settings: the built-in one or any agent allowed to
   // run check_document_format. Its fields are saved only when shown.
@@ -456,7 +458,12 @@ export function AgentEditorModal({
 
     const wasEnabled = agent ? agentEnabled(agent) : true;
     if (enabled !== wasEnabled && switchOffNeedsConfirm(agent?.id ?? "", enabled)) {
-      if (!window.confirm(t("agentp.switchOffBasicBody", { name: agent?.name ?? "" }))) return;
+      const ok = await confirm({
+        title: t("agentp.switchOffBasicTitle"),
+        message: t("agentp.switchOffBasicBody", { name: agent?.name ?? "" }),
+        danger: true,
+      });
+      if (!ok) return;
     }
 
     setSaving(true);

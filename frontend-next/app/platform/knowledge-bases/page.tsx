@@ -268,16 +268,16 @@ export default function KnowledgeBaseList() {
                * through an invite or unit grant), else owner + visibility —
                * never the data tenant_id. */}
               {kbAccessBadge(kb.row) === "public" && (
-                <span className="badge-pill shrink-0 bg-sky-500/15 text-sky-700 dark:text-sky-400">{t("kbList.publicBadge")}</span>
+                <span className="badge-pill shrink-0 bg-info-surface text-info">{t("kbList.publicBadge")}</span>
               )}
               {(kbAccessBadge(kb.row) === "shared" || (kb.caps.kind === "invited" && !kb.row.access_source)) && (
-                <span className="badge-pill shrink-0 bg-violet-500/15 text-violet-700 dark:text-violet-400">{t("kbList.sharedBadge")}</span>
+                <span className="badge-pill shrink-0 bg-accent-surface text-accent">{t("kbList.sharedBadge")}</span>
               )}
               {kbAccessBadge(kb.row) === "published" && (
-                <span className="badge-pill shrink-0 bg-emerald-500/15 text-emerald-700 dark:text-emerald-400">{t("kbPublished.badge")}</span>
+                <span className="badge-pill shrink-0 bg-success-surface text-success">{t("kbPublished.badge")}</span>
               )}
               {kbAccessBadge(kb.row) === "restricted" && (
-                <span className="badge-pill shrink-0 bg-amber-500/15 text-amber-700 dark:text-amber-400">{t("kbAccess.badgeRestricted")}</span>
+                <span className="badge-pill shrink-0 bg-warning-surface text-warning">{t("kbAccess.badgeRestricted")}</span>
               )}
             </div>
             {kb.caps.kind === "published" && kb.row.owner_tenant_name && (
@@ -322,7 +322,7 @@ export default function KnowledgeBaseList() {
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4 sm:mb-10 sm:gap-6">
           <div>
             <div className="caption-uppercase mb-3 text-muted">{t("settingsNav.groups.workspace")}</div>
-            <h1 className="display-xl">Knowledge bases</h1>
+            <h1 className="display-xl">{t("nav.knowledgeBases")}</h1>
             <p className="mt-3 max-w-[520px] text-body">
               {t("kbList.subtitle")}
             </p>

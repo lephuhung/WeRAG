@@ -12,7 +12,8 @@ import {
   type SimulationLinkDatum,
   type SimulationNodeDatum,
 } from "d3-force";
-import { IconSearch } from "@/components/icons";
+import { IconClose, IconMinus, IconPlus, IconSearch } from "@/components/icons";
+import { GRAPH_EDGE_COLOR, GRAPH_FAMILY } from "@/components/graph/graph-palette";
 import { useT } from "@/lib/i18n";
 
 /* Force-directed SVG graph with pan, zoom, node drag, type filter, search
@@ -48,8 +49,15 @@ interface SimNode extends CanvasNode, SimulationNodeDatum {
 
 const ZOOM_MIN = 0.1;
 const ZOOM_MAX = 5;
-const EDGE_COLOR = "#94a3b8";
-const DEFAULT_STYLE: TypeStyle = { fill: "#10b981", stroke: "#059669", label: "" };
+/* Every colour comes from the shared graph palette (CSS custom properties),
+   so the dark mode and the Anthropic preset override the whole set at
+   once and the legend swatches read the same values as the canvas. */
+const EDGE_COLOR = GRAPH_EDGE_COLOR;
+const DEFAULT_STYLE: TypeStyle = {
+  fill: GRAPH_FAMILY.emerald.fill,
+  stroke: GRAPH_FAMILY.emerald.stroke,
+  label: "",
+};
 /* Pointer travel (px) past which a press is a pan/drag, not a click. */
 const CLICK_SLOP = 4;
 
@@ -326,10 +334,17 @@ export function GraphCanvas({
     );
   }, [nodes, filterType, searchQuery]);
   const styleOf = useCallback((type: string) => types[type] ?? { ...DEFAULT_STYLE, label: type }, [types]);
-  const markerColors = useMemo(
-    () => Array.from(new Set([EDGE_COLOR, ...presentTypes.map((type) => styleOf(type).fill)])),
-    [presentTypes, styleOf]
-  );
+  const markerIds = useMemo(() => {
+    const colors = Array.from(new Set([EDGE_COLOR, ...presentTypes.map((type) => styleOf(type).fill)]));
+    const ids: Record<string, string> = {};
+    colors.forEach((color, i) => {
+      ids[color] = `arrow-${i}`;
+    });
+    return ids;
+  }, [presentTypes, styleOf]);
+  /* The marker id of a colour (the colours are CSS variables, so they
+     cannot be turned into an id by slicing off a leading "#"). */
+  const markerIdOf = useCallback((color: string) => markerIds[color] ?? "", [markerIds]);
   // At low zoom only the biggest hubs and the focused neighbourhood keep
   // their labels, drawn at a constant screen size so they stay readable.
   const labelAll = zoom >= 0.8;
@@ -374,11 +389,21 @@ export function GraphCanvas({
         </div>
         <div className="flex items-center gap-2 text-muted">
           <div className="flex items-center rounded-lg border border-hairline bg-surface-card p-0.5">
-            <button className="btn btn-ghost btn-sm h-7 w-7 p-0 text-[14px]" onClick={() => zoomBy(1.2)} title={t("graph.zoomIn")}>
-              +
+            <button
+              className="btn btn-ghost btn-sm h-7 w-7 p-0"
+              onClick={() => zoomBy(1.2)}
+              title={t("graph.zoomIn")}
+              aria-label={t("graph.zoomIn")}
+            >
+              <IconPlus className="h-3.5 w-3.5" />
             </button>
-            <button className="btn btn-ghost btn-sm h-7 w-7 p-0 text-[14px]" onClick={() => zoomBy(1 / 1.2)} title={t("graph.zoomOut")}>
-              −
+            <button
+              className="btn btn-ghost btn-sm h-7 w-7 p-0"
+              onClick={() => zoomBy(1 / 1.2)}
+              title={t("graph.zoomOut")}
+              aria-label={t("graph.zoomOut")}
+            >
+              <IconMinus className="h-3.5 w-3.5" />
             </button>
           </div>
           <button className="btn btn-outline btn-sm h-7 text-[12px]" onClick={fitView} title={t("graph.fitTitle")}>
@@ -420,10 +445,10 @@ export function GraphCanvas({
             }}
           >
             <defs>
-              {markerColors.map((c) => (
+              {Object.entries(markerIds).map(([color, id]) => (
                 <marker
-                  key={c}
-                  id={`arrow-${c.slice(1)}`}
+                  key={id}
+                  id={id}
                   viewBox="0 0 10 10"
                   refX="10"
                   refY="5"
@@ -431,7 +456,7 @@ export function GraphCanvas({
                   markerHeight="6"
                   orient="auto-start-reverse"
                 >
-                  <path d="M 0 0 L 10 5 L 0 10 z" fill={c} />
+                  <path d="M 0 0 L 10 5 L 0 10 z" style={{ fill: color }} />
                 </marker>
               ))}
             </defs>
@@ -451,6 +476,7 @@ export function GraphCanvas({
                 labelScale={labelScale}
                 directed={directed}
                 styleOf={styleOf}
+                markerIdOf={markerIdOf}
                 setHovered={setHovered}
                 setSelectedId={setSelectedId}
                 nodeDragRef={nodeDragRef}
@@ -471,10 +497,11 @@ export function GraphCanvas({
             </div>
             <button
               onClick={() => setSelectedId(null)}
-              className="btn btn-ghost btn-sm h-6 w-6 p-0 text-muted hover:text-ink"
+              className="btn btn-ghost btn-sm h-7 w-7 p-0 text-muted hover:text-ink"
               title={t("graph.close")}
+              aria-label={t("graph.close")}
             >
-              ✕
+              <IconClose className="h-3.5 w-3.5" />
             </button>
           </div>
           <h4 className="body-md mt-1.5 break-words font-semibold text-ink">{selected.title}</h4>
@@ -526,6 +553,7 @@ const GraphLayer = memo(function GraphLayer({
   labelScale,
   directed,
   styleOf,
+  markerIdOf,
   setHovered,
   setSelectedId,
   nodeDragRef,
@@ -546,6 +574,7 @@ const GraphLayer = memo(function GraphLayer({
   labelScale: number;
   directed: boolean;
   styleOf: (type: string) => TypeStyle;
+  markerIdOf: (color: string) => string;
   setHovered: (id: string | null) => void;
   setSelectedId: (id: string | null) => void;
   nodeDragRef: MutableRefObject<string | null>;
@@ -583,10 +612,10 @@ const GraphLayer = memo(function GraphLayer({
               y1={a.y}
               x2={x2}
               y2={y2}
-              stroke={color}
               strokeWidth={active ? 1.8 : 1}
               strokeOpacity={dimmed ? 0.08 : active ? 0.85 : 0.35}
-              markerEnd={directed && !dimmed ? `url(#arrow-${color.slice(1)})` : undefined}
+              style={{ stroke: color }}
+              markerEnd={directed && !dimmed ? `url(#${markerIdOf(color)})` : undefined}
             />
             {active && e.label && (
               <text
@@ -594,11 +623,9 @@ const GraphLayer = memo(function GraphLayer({
                 y={(a.y + b.y) / 2 - 4}
                 textAnchor="middle"
                 fontSize={9.5}
-                fill="#0369a1"
-                stroke="var(--bg-surface-card, #ffffff)"
                 strokeWidth={3}
                 paintOrder="stroke fill"
-                style={{ pointerEvents: "none" }}
+                style={{ pointerEvents: "none", fill: "var(--color-info)", stroke: "var(--color-surface-card)" }}
               >
                 {e.label}
               </text>
@@ -620,6 +647,9 @@ const GraphLayer = memo(function GraphLayer({
           <g
             key={n.id}
             transform={`translate(${n.x},${n.y})`}
+            role="button"
+            tabIndex={0}
+            aria-label={n.title}
             onMouseEnter={() => setHovered(n.id)}
             onMouseLeave={() => setHovered(null)}
             onPointerDown={(e) => {
@@ -627,6 +657,12 @@ const GraphLayer = memo(function GraphLayer({
               if (e.button !== 0) return;
               pressRef.current = { x: e.clientX, y: e.clientY, moved: false };
               nodeDragRef.current = n.id;
+            }}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter" && e.key !== " ") return;
+              e.preventDefault();
+              setSelectedId(n.id === selectedId ? null : n.id);
+              onNodeClick?.(n);
             }}
             onClick={() => {
               // A drag keeps the node selected and does not open it.
@@ -637,19 +673,18 @@ const GraphLayer = memo(function GraphLayer({
               setSelectedId(n.id === selectedId ? null : n.id);
               onNodeClick?.(n);
             }}
-            className="cursor-pointer"
+            className="cursor-pointer focus:outline-none"
           >
             {(isHovered || isSelected) && (
-              <circle r={n.radius + 4} fill="none" stroke={s.fill} strokeWidth={2} strokeOpacity={0.45} />
+              <circle r={n.radius + 4} fill="none" strokeWidth={2} strokeOpacity={0.45} style={{ stroke: s.fill }} />
             )}
             <circle r={n.radius + 6} fill="transparent" />
             <circle
               r={n.radius}
-              fill={s.fill}
               fillOpacity={isDimmed ? 0.15 : 0.9}
-              stroke={isSelected ? "#0c0a09" : s.stroke}
               strokeWidth={isSelected ? 2 : 1}
               strokeOpacity={isDimmed ? 0.2 : 1}
+              style={{ fill: s.fill, stroke: isSelected ? "var(--color-ink)" : s.stroke }}
             />
             {showLabel && (
               <text
@@ -657,13 +692,16 @@ const GraphLayer = memo(function GraphLayer({
                 textAnchor="middle"
                 fontSize={fontSize}
                 fontWeight={isHovered || isSelected ? 600 : 500}
-                stroke="var(--bg-surface-card, #ffffff)"
                 strokeWidth={3 * labelScale}
                 strokeLinejoin="round"
                 paintOrder="stroke fill"
-                fill={isFocused ? "#0f172a" : "#475569"}
                 fillOpacity={isDimmed ? 0.2 : 1}
-                style={{ fontFamily: "var(--font-sans)", pointerEvents: "none" }}
+                style={{
+                  fontFamily: "var(--font-sans)",
+                  pointerEvents: "none",
+                  fill: isFocused ? "var(--color-ink)" : "var(--color-body)",
+                  stroke: "var(--color-surface-card)",
+                }}
               >
                 {isHovered || isSelected || n.title.length <= 20 ? n.title : `${n.title.slice(0, 18)}…`}
               </text>

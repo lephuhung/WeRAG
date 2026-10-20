@@ -11,7 +11,7 @@ import {
   IconRefresh,
 } from "@/components/icons";
 import { renderFileIconSvg } from "@/components/files/file-icon";
-import { ProgressRing } from "@/components/upload-tasks/progress-ring";
+import { Ring } from "@/components/ui/ring";
 import { itemPhase, type UploadItem } from "@/lib/upload-tasks-state";
 import { useT, type LocaleKey } from "@/lib/i18n";
 
@@ -29,7 +29,16 @@ type RowAction = "cancel" | "retry" | "open";
 
 function StatusIcon({ phase, ratio }: { phase: string; ratio: number }) {
   const cls = "h-5 w-5";
-  if (phase === "uploading") return <ProgressRing value={ratio} size={20} stroke={2.5} />;
+  if (phase === "uploading")
+    return (
+      <Ring
+        value={ratio}
+        size={20}
+        stroke={2}
+        tone="currentColor"
+        track="color-mix(in srgb, currentColor 18%, transparent)"
+      />
+    );
   if (phase === "waiting") return <IconClock className={cls} />;
   if (phase === "saving" || phase === "parsing")
     return (
@@ -116,13 +125,15 @@ export function UploadTaskRow({
   };
 
   const statusColor =
-    phase === "uploading" || phase === "saving" || phase === "parsing" || phase === "ready"
-      ? "text-ink"
-      : phase === "failed"
-        ? "text-error"
-        : phase === "duplicate"
-          ? "text-amber-600"
-          : "text-muted-soft";
+    phase === "uploading" || phase === "saving" || phase === "parsing"
+      ? "text-running"
+      : phase === "ready"
+        ? "text-success"
+        : phase === "failed"
+          ? "text-error"
+          : phase === "duplicate"
+            ? "text-warning"
+            : "text-muted-soft";
 
   return (
     <div
@@ -143,7 +154,7 @@ export function UploadTaskRow({
         </span>
         <span
           className={`truncate text-[11.5px] leading-[18px] tabular-nums ${
-            phase === "failed" ? "text-error" : phase === "duplicate" ? "text-amber-600" : "text-muted-soft"
+            phase === "failed" ? "text-error" : phase === "duplicate" ? "text-warning" : "text-muted-soft"
           }`}
           title={reason || undefined}
         >

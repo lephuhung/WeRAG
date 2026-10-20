@@ -21,6 +21,9 @@ import { Toggle } from "@/components/settings/toggle";
 import { RequireSystemAccess } from "@/components/require-system-access";
 import { useInSettingsModal } from "@/components/system/in-modal-nav";
 import { useT } from "@/lib/i18n";
+import { ConsolePage } from "@/components/settings/console-page";
+import { Notice } from "@/components/settings/notice";
+import { SectionHeader } from "@/components/settings/section-header";
 
 export default function McpServersPage() {
   return (
@@ -85,33 +88,43 @@ function McpServersPanel() {
   };
 
   return (
-    <div>
-      {/* Header bar */}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="title-md font-semibold text-ink">{t("mcpp.title")}</h2>
-          <p className="caption text-muted">
-            {t("mcpp.subtitle")}
-          </p>
-        </div>
+    <ConsolePage size="form">
+      <SectionHeader
+        title={t("mcpp.title")}
+        subtitle={t("mcpp.subtitle")}
+        actions={
+          <>
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={loadMcp}
+              disabled={mcpLoading}
+              title={t("mcpp.refreshTip")}
+              aria-label={t("mcpp.refreshTip")}
+            >
+              <IconRefresh className={`h-3.5 w-3.5 ${mcpLoading ? "animate-spin" : ""}`} />
+              {t("common.refresh")}
+            </button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={() => setCreatingMcp(true)}>
+              <IconPlus className="h-3.5 w-3.5" /> {t("mcpp.add")}
+            </button>
+          </>
+        }
+      />
 
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            className="btn btn-outline btn-sm"
-            onClick={loadMcp}
-            disabled={mcpLoading}
-            title={t("mcpp.refreshTip")}
-          >
-            <IconRefresh className={`h-3.5 w-3.5 ${mcpLoading ? "animate-spin" : ""}`} />
-            {t("common.refresh")}
-          </button>
-          <button className="btn btn-primary btn-sm" onClick={() => setCreatingMcp(true)}>
-            <IconPlus className="h-3.5 w-3.5" /> {t("mcpp.add")}
-          </button>
-        </div>
-      </div>
-
-      {mcpError && <p className="caption mb-4 text-error">{mcpError}</p>}
+      {mcpError && (
+        <Notice
+          tone="error"
+          className="mt-4"
+          action={
+            <button type="button" className="btn btn-outline btn-sm" onClick={loadMcp}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {mcpError}
+        </Notice>
+      )}
 
       <div
         className={`grid grid-cols-1 gap-4 md:grid-cols-2 ${inModal ? "" : "lg:grid-cols-3"}`}
@@ -136,22 +149,22 @@ function McpServersPanel() {
                         {s.name}
                       </span>
                       {s.is_builtin && (
-                        <span className="rounded bg-surface-strong px-1.5 py-0.5 text-[10px] font-medium text-muted">
+                        <span className="badge-neutral rounded px-1.5 py-0.5 text-[10px] font-medium">
                           {t("mcpp.builtin")}
                         </span>
                       )}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                      <span className="badge-pill text-[11px] uppercase tracking-wider">
+                      <span className="badge-neutral badge-pill text-[11px] uppercase tracking-wider">
                         {s.transport_type}
                       </span>
                       {s.catalog && (
-                        <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] font-medium text-primary">
+                        <span className="badge-accent rounded px-1.5 py-0.5 text-[11px] font-medium">
                           {t("mcpp.toolCount", { n: s.catalog.tool_count })}
                         </span>
                       )}
                       {s.catalog?.stale && (
-                        <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-[11px] font-medium text-amber-600">
+                        <span className="badge-warning rounded px-1.5 py-0.5 text-[11px] font-medium">
                           {t("mcp.stale")}
                         </span>
                       )}
@@ -186,10 +199,10 @@ function McpServersPanel() {
                 {/* Test result message if available */}
                 {testResult && (
                   <div
-                    className={`caption mb-3 rounded p-2 text-[11px] ${
+                    className={`caption mb-3 rounded border p-2 text-[11px] ${
                       testResult.success
-                        ? "bg-emerald-500/10 text-emerald-600 border border-emerald-500/20"
-                        : "bg-rose-500/10 text-rose-600 border border-rose-500/20"
+                        ? "border-success/30 bg-success-surface text-success"
+                        : "border-error/30 bg-error-surface text-error"
                     }`}
                   >
                     {testResult.success
@@ -225,9 +238,11 @@ function McpServersPanel() {
 
                 {!s.is_builtin && (
                   <button
-                    className="btn btn-tertiary btn-sm text-[12px] text-error hover:bg-rose-500/10"
+                    type="button"
+                    className="btn btn-tertiary btn-sm text-[12px] text-error"
                     onClick={() => setRemovingMcp(s)}
                     title={t("mcp.deleteTitle")}
+                    aria-label={t("mcp.deleteTitle")}
                   >
                     <IconTrash className="h-3.5 w-3.5" />
                   </button>
@@ -238,16 +253,17 @@ function McpServersPanel() {
         })}
 
         {/* Quick Add Card */}
-        <div
+        <button
+          type="button"
           onClick={() => setCreatingMcp(true)}
-          className="flex min-h-[160px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-hairline-strong bg-surface-card/40 p-6 text-center transition-all hover:border-primary hover:bg-surface-card"
+          className="flex min-h-[160px] cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-hairline-strong bg-surface-card/40 p-6 text-center transition-all hover:border-primary hover:bg-surface-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
         >
           <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-surface-strong text-muted group-hover:text-primary">
             <IconPlus className="h-5 w-5" />
           </div>
           <span className="text-[14px] font-medium text-ink">{t("mcpp.register")}</span>
           <span className="caption mt-1 text-muted">{t("mcpp.registerDesc")}</span>
-        </div>
+        </button>
       </div>
 
       {/* Modals & SlidePanels for MCP */}
@@ -287,7 +303,8 @@ function McpServersPanel() {
             {t("common.cancel")}
           </button>
           <button
-            className="btn btn-sm bg-[var(--color-error)] text-white"
+            type="button"
+            className="btn btn-danger btn-sm"
             onClick={() => {
               if (removingMcp) {
                 void deleteMCPService(removingMcp.id).then(() => {
@@ -301,6 +318,6 @@ function McpServersPanel() {
           </button>
         </div>
       </Modal>
-    </div>
+    </ConsolePage>
   );
 }

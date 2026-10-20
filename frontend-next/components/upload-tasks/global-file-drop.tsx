@@ -82,7 +82,7 @@ export function GlobalFileDrop() {
   if (!mask) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-[60] grid place-items-center bg-ink/10">
+    <div className="pointer-events-none fixed inset-0 z-[60] grid place-items-center bg-scrim/10">
       <div className="flex flex-col items-center rounded-[24px] border-2 border-dashed border-ink/30 bg-surface-card/95 px-16 py-12">
         <span className="grid h-14 w-14 place-items-center rounded-full bg-surface-strong text-ink">
           <IconArrowUp className="h-6 w-6" />

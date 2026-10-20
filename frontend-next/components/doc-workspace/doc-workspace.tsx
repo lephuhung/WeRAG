@@ -751,8 +751,8 @@ export const DocWorkspace = memo(function DocWorkspace({
                 }}
                 className={`group relative flex h-9 min-w-[96px] max-w-[200px] shrink cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 text-[13px] transition-colors ${
                   selected
-                    ? // the open document: blue like the chat's own turns, with an underline accent
-                      "border-[#cfe1fd] bg-[#edf5ff] font-semibold text-[#0f2d59] shadow-2xs after:absolute after:inset-x-2.5 after:-bottom-px after:h-[2px] after:rounded-full after:bg-[#1d5bd8] dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe] dark:after:bg-[#8ab4ff]"
+                    ? // the open document: the accent tint like the chat's own turns, with an underline accent
+                      "border-accent/30 bg-accent-surface font-semibold text-ink shadow-2xs after:absolute after:inset-x-2.5 after:-bottom-px after:h-[2px] after:rounded-full after:bg-accent"
                     : "border-transparent text-muted hover:bg-surface-strong hover:text-ink"
                 }`}
               >
@@ -793,7 +793,7 @@ export const DocWorkspace = memo(function DocWorkspace({
           <div className="relative shrink-0">
             <button
               type="button"
-              className="btn btn-ghost btn-sm h-9 w-9 p-0"
+              className="btn btn-ghost btn-sm h-7 w-7 p-0"
               disabled={Boolean(busyMsg)}
               title={atLimit ? t("docws.limitReached", { n: maxDocs }) : t("docws.addDocument")}
               ref={addButtonRef}

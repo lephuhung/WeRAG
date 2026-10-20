@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { IconCheck, IconChevronDown } from "@/components/icons";
 
 /* Styled replacement for the native <select>: same .input trigger look,
@@ -41,6 +41,9 @@ export function Select({
   menuClassName = "",
   searchable = false,
   searchPlaceholder = "",
+  id,
+  ariaLabel,
+  ariaDescribedBy,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -52,10 +55,20 @@ export function Select({
   /* Show a filter box atop the list; typing on the closed trigger opens it. */
   searchable?: boolean;
   searchPlaceholder?: string;
+  /* id of the trigger, so a <label htmlFor> can name the field. */
+  id?: string;
+  /* Accessible name for the combobox. The trigger's own content is the
+     selected value, which is not a label — call sites should pass the field
+     label here (or an id + <label htmlFor>). */
+  ariaLabel?: string;
+  ariaDescribedBy?: string;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const baseId = useId();
+  const listboxId = `${baseId}-listbox`;
+  const optionId = (i: number) => `${baseId}-opt-${i}`;
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const folded = foldText(query.trim());
@@ -165,9 +178,14 @@ export function Select({
       <button
         ref={triggerRef}
         type="button"
+        id={id}
         role="combobox"
         aria-expanded={open}
         aria-haspopup="listbox"
+        aria-controls={open ? listboxId : undefined}
+        aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
+        aria-activedescendant={open && highlight >= 0 ? optionId(highlight) : undefined}
         disabled={disabled}
         onClick={() => (open ? setOpen(false) : openMenu())}
         onKeyDown={onTriggerKey}
@@ -184,7 +202,9 @@ export function Select({
       {open && pos && (
         <div
           ref={menuRef}
+          id={listboxId}
           role="listbox"
+          aria-labelledby={ariaLabel ? undefined : id}
           className={`card fixed z-[80] overflow-y-auto p-1 shadow-[0_8px_24px_rgba(0,0,0,0.10)] ${menuClassName}`}
           style={{
             left: pos.left,
@@ -223,6 +243,7 @@ export function Select({
             return (
               <button
                 key={o.value || `__empty-${i}`}
+                id={optionId(i)}
                 type="button"
                 role="option"
                 aria-selected={isSel}

@@ -9,7 +9,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "@/components/modal";
 import { Toggle } from "@/components/settings/toggle";
 import { LimitStatusList } from "@/components/settings/usage-limits";
-import { IconEdit, IconPlus, IconSearch } from "@/components/icons";
+import { SystemSection } from "@/components/settings/system-section";
+import { Notice } from "@/components/settings/notice";
+import { Loading } from "@/components/settings/loading";
+import { FieldLabel } from "@/components/settings/field";
+import { LoadMore } from "@/components/settings/pager";
+import { ROW_HOVER } from "@/components/settings/data-table";
+import { useConfirm } from "@/components/confirm-dialog";
+import { useToast } from "@/components/toast";
+import { IconClose, IconEdit, IconPlus, IconSearch } from "@/components/icons";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { planFeatureValue, withPlanFeature, type PlanFeatureKey } from "@/lib/session-limits";
 import { getCurrentUser } from "@/lib/api/auth";
@@ -95,12 +103,22 @@ function LimitsEditor({ value, onChange }: { value: UsageLimit[]; onChange: (v: 
     <div className="space-y-2">
       {value.map((l, i) => (
         <div key={i} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:flex">
-          <select className="input h-9 min-w-0 py-0 sm:w-36" value={l.metric} onChange={(e) => set(i, { metric: e.target.value as UsageLimit["metric"] })}>
+          <select
+            className="input h-9 min-w-0 py-0 sm:w-36"
+            aria-label={l.metric === "tokens" ? t("usg.metricTokens") : t("usg.metricQuestions")}
+            value={l.metric}
+            onChange={(e) => set(i, { metric: e.target.value as UsageLimit["metric"] })}
+          >
             <option value="questions">{t("usg.metricQuestions")}</option>
             <option value="tokens">{t("usg.metricTokens")}</option>
           </select>
           <span className="caption text-muted">/</span>
-          <select className="input h-9 min-w-0 py-0 sm:w-28" value={l.period} onChange={(e) => set(i, { period: e.target.value as UsageLimit["period"] })}>
+          <select
+            className="input h-9 min-w-0 py-0 sm:w-28"
+            aria-label={l.period === "day" ? t("usg.periodDay") : t("usg.periodMonth")}
+            value={l.period}
+            onChange={(e) => set(i, { period: e.target.value as UsageLimit["period"] })}
+          >
             <option value="day">{t("usg.periodDay")}</option>
             <option value="month">{t("usg.periodMonth")}</option>
           </select>
@@ -108,11 +126,18 @@ function LimitsEditor({ value, onChange }: { value: UsageLimit[]; onChange: (v: 
             type="number"
             min={0}
             className="input col-span-2 h-9 min-w-0 py-0 sm:w-32"
+            aria-label={t("usg.planLimits")}
             value={l.limit}
             onChange={(e) => set(i, { limit: Math.max(0, Number(e.target.value) || 0) })}
           />
-          <button type="button" className="btn btn-outline btn-sm" onClick={() => onChange(value.filter((_, j) => j !== i))}>
-            ✕
+          <button
+            type="button"
+            className="btn btn-outline btn-sm"
+            aria-label={t("common.delete")}
+            title={t("common.delete")}
+            onClick={() => onChange(value.filter((_, j) => j !== i))}
+          >
+            <IconClose className="h-3.5 w-3.5" />
           </button>
         </div>
       ))}
@@ -219,6 +244,9 @@ export default function AdminUsage() {
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const confirm = useConfirm();
+  const toast = useToast();
 
   // usage.enforce is ON unless a SuperAdmin saved false (off = testing only)
   const [enforced, setEnforced] = useState(true);
@@ -232,10 +260,14 @@ export default function AdminUsage() {
   const [planOpen, setPlanOpen] = useState(false);
   const [planEditing, setPlanEditing] = useState<UsagePlan | null>(null);
   const [planForm, setPlanForm] = useState<UsagePlanInput>(emptyPlan);
+  /* The values the modal was opened with: the save button stays disabled
+   * until the form differs from them. */
+  const [planBase, setPlanBase] = useState<UsagePlanInput>(emptyPlan);
 
   const [subOpen, setSubOpen] = useState(false);
   const [subTarget, setSubTarget] = useState<{ kind: UsageScopeKind; id: string; name: string; existing?: UsageSubscriptionView | null } | null>(null);
   const [subForm, setSubForm] = useState<SubForm>(subFormFrom(null, [], "tenant"));
+  const [subBase, setSubBase] = useState<SubForm>(subFormFrom(null, [], "tenant"));
 
   const [userPickOpen, setUserPickOpen] = useState(false);
   const [userQ, setUserQ] = useState("");
@@ -262,6 +294,8 @@ export default function AdminUsage() {
         .catch(() => setCatalogue({ addons: [], included_agents: [] }));
     } catch (e) {
       setError(e instanceof Error ? e.message : t("usg.loadFailed"));
+    } finally {
+      setLoading(false);
     }
   }, [t]);
 
@@ -296,21 +330,24 @@ export default function AdminUsage() {
 
   const withoutPlan = useMemo(() => tenants.filter((x) => !x.subscription?.current).length, [tenants]);
 
-  const toggleEnforce = (v: boolean) =>
-    run(async () => {
+  const toggleEnforce = async (v: boolean) => {
+    const ok = await run(async () => {
       await updateSystemSetting(USAGE_ENFORCE_SETTING_KEY, v);
       setEnforced(v);
     });
+    if (ok) toast.success(t("common.saved"));
+  };
 
   // ---- plans
   const openNewPlan = () => {
     setPlanEditing(null);
     setPlanForm(emptyPlan);
+    setPlanBase(emptyPlan);
     setPlanOpen(true);
   };
   const openEditPlan = (p: UsagePlan) => {
     setPlanEditing(p);
-    setPlanForm({
+    const form: UsagePlanInput = {
       code: p.code,
       name: p.name,
       description: p.description,
@@ -322,9 +359,12 @@ export default function AdminUsage() {
       price_vnd: p.price_vnd ?? 0,
       sort_order: p.sort_order,
       is_active: p.is_active,
-    });
+    };
+    setPlanForm(form);
+    setPlanBase(form);
     setPlanOpen(true);
   };
+  const planDirty = JSON.stringify(planForm) !== JSON.stringify(planBase);
   const submitPlan = async (e: React.FormEvent) => {
     e.preventDefault();
     const ok = await run(async () => {
@@ -332,14 +372,23 @@ export default function AdminUsage() {
       else await createUsagePlan(planForm);
       await load();
     });
-    if (ok) setPlanOpen(false);
+    if (ok) {
+      toast.success(t("common.saved"));
+      setPlanOpen(false);
+    }
   };
-  const removePlan = (p: UsagePlan) => {
-    if (!window.confirm(t("usg.deletePlanConfirm", { name: p.name }))) return;
-    void run(async () => {
+  const removePlan = async (p: UsagePlan) => {
+    const yes = await confirm({
+      title: t("common.delete"),
+      message: t("usg.deletePlanConfirm", { name: p.name }),
+      danger: true,
+    });
+    if (!yes) return;
+    const ok = await run(async () => {
       await deleteUsagePlan(p.id);
       await load();
     });
+    if (ok) toast.success(t("common.saved"));
   };
 
   // ---- subscriptions
@@ -347,9 +396,12 @@ export default function AdminUsage() {
     // a Guest's implicit guest plan has no row yet: assigning creates one
     if (existing?.implicit) existing = null;
     setSubTarget({ kind, id, name, existing });
-    setSubForm(subFormFrom(existing, plans, kind));
+    const form = subFormFrom(existing, plans, kind);
+    setSubForm(form);
+    setSubBase(form);
     setSubOpen(true);
   };
+  const subDirty = JSON.stringify(subForm) !== JSON.stringify(subBase);
   const submitSub = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!subTarget) return;
@@ -377,14 +429,23 @@ export default function AdminUsage() {
       else await createUsageSubscription(input);
       await load();
     });
-    if (ok) setSubOpen(false);
+    if (ok) {
+      toast.success(t("common.saved"));
+      setSubOpen(false);
+    }
   };
-  const cancelSub = (sub: UsageSubscriptionView) => {
-    if (!window.confirm(t("usg.cancelSubConfirm", { name: sub.scope_name }))) return;
-    void run(async () => {
+  const cancelSub = async (sub: UsageSubscriptionView) => {
+    const yes = await confirm({
+      title: t("usg.cancelSub"),
+      message: t("usg.cancelSubConfirm", { name: sub.scope_name }),
+      danger: true,
+    });
+    if (!yes) return;
+    const ok = await run(async () => {
       await deleteUsageSubscription(sub.id);
       await load();
     });
+    if (ok) toast.success(t("common.saved"));
   };
 
   /* The picker lists every account (newest first) as soon as it opens;
@@ -412,26 +473,32 @@ export default function AdminUsage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userPickOpen, userQ]);
 
-  if (allowed === null) {
-    return <div className="mx-auto w-full max-w-[1100px] px-5 py-12 text-muted">…</div>;
-  }
-  if (!allowed) {
-    return (
-      <div className="mx-auto w-full max-w-[1100px] px-5 py-16 text-center">
-        <h2 className="title-md mb-2">{t("usg.title")}</h2>
-        <p className="body-sm text-muted">{t("usg.denied")}</p>
-      </div>
-    );
-  }
-
   const planByID = (id: string) => plans.find((p) => p.id === id);
   const endsBeforeStart = !!subForm.ends_at && !!subForm.starts_at && subForm.ends_at < subForm.starts_at;
   const selectablePlans = plans.filter((p) => p.scope_kind === (subTarget?.kind ?? "tenant") && (p.is_active || p.id === subForm.plan_id));
   const filteredTenants = tenants.filter((x) => !q || x.tenant_name.toLowerCase().includes(q.toLowerCase()));
 
   return (
-    <div className="mx-auto w-full max-w-[1400px] space-y-6">
-      {error && <p className="caption text-error">{error}</p>}
+    <SystemSection
+      allowed={allowed}
+      title={t("usg.title")}
+      deniedMessage={t("usg.denied")}
+      loading={loading}
+      loadingLabel={t("common.loading")}
+    >
+      <div className="space-y-6">
+      {error && (
+        <Notice
+          tone="error"
+          action={
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {error}
+        </Notice>
+      )}
 
       {/* Enforcement */}
       <div className="card flex flex-wrap items-center gap-4 p-4">
@@ -439,7 +506,7 @@ export default function AdminUsage() {
           <div className="text-[14px] font-medium text-ink">{t("usg.enforceTitle")}</div>
           <p className="caption text-muted">{t("usg.enforceDesc")}</p>
           {withoutPlan > 0 && (
-            <p className={`caption mt-1 ${enforced ? "text-error" : "text-amber-600"}`}>
+            <p className={`caption mt-1 ${enforced ? "text-error" : "text-warning"}`}>
               {t("usg.enforceWarn", { n: withoutPlan })}
             </p>
           )}
@@ -503,7 +570,7 @@ export default function AdminUsage() {
                 <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => openEditPlan(p)}>
                   <IconEdit className="h-3.5 w-3.5" /> {t("common.edit")}
                 </button>
-                <button type="button" className="btn btn-outline btn-sm text-rose-600" disabled={busy} onClick={() => removePlan(p)}>
+                <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void removePlan(p)}>
                   {t("common.delete")}
                 </button>
                 </div>
@@ -520,14 +587,17 @@ export default function AdminUsage() {
           <span className="caption text-muted">{t("usg.tenantsCount", { n: tenants.length, missing: withoutPlan })}</span>
           <div className="relative ml-auto">
             <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft" />
-            <input className="input h-9 py-0 w-56 pl-9" placeholder={t("usg.searchTenant")} value={q} onChange={(e) => setQ(e.target.value)} />
+            <input className="input h-9 py-0 w-56 pl-9" aria-label={t("usg.searchTenant")} placeholder={t("usg.searchTenant")} value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
         </div>
+        {filteredTenants.length === 0 ? (
+          <p className="caption py-6 text-center text-muted-soft">{q ? t("common.noResults") : t("common.empty")}</p>
+        ) : (
         <div className="divide-y divide-hairline">
           {filteredTenants.map((row) => {
             const sub = row.subscription;
             return (
-              <div key={row.tenant_id} className="flex flex-wrap items-start gap-3 py-2.5 text-[14px]">
+              <div key={row.tenant_id} className={`flex flex-wrap items-start gap-3 py-2.5 text-[14px] ${ROW_HOVER}`}>
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium text-ink">
                     {row.tenant_name} <span className="caption text-muted-soft">#{row.tenant_id}</span>
@@ -553,7 +623,7 @@ export default function AdminUsage() {
                       {sub.ends_at && <div className="caption text-muted-soft">{t("usg.endsAt", { date: dateFromEndsAt(sub.ends_at) })}</div>}
                     </>
                   ) : (
-                    <span className="badge-pill text-[11px] text-amber-700">{t("usg.noSubscription")}</span>
+                    <span className="badge-pill text-[11px] text-warning">{t("usg.noSubscription")}</span>
                   )}
                 </div>
                 <div className="flex shrink-0 flex-col gap-1.5">
@@ -561,7 +631,7 @@ export default function AdminUsage() {
                     {sub ? t("usg.changePlan") : t("usg.assignPlan")}
                   </button>
                   {sub && (
-                    <button type="button" className="btn btn-outline btn-sm min-w-[86px] text-rose-600" disabled={busy} onClick={() => cancelSub(sub)}>
+                    <button type="button" className="btn btn-danger btn-sm min-w-[86px]" disabled={busy} onClick={() => void cancelSub(sub)}>
                       {t("usg.cancelSub")}
                     </button>
                   )}
@@ -570,6 +640,7 @@ export default function AdminUsage() {
             );
           })}
         </div>
+        )}
       </section>
 
       {/* Personal subscriptions */}
@@ -595,7 +666,7 @@ export default function AdminUsage() {
         ) : (
           <div className="divide-y divide-hairline">
             {personal.map((sub) => (
-              <div key={sub.id || `implicit-${sub.scope_id}`} className="flex flex-wrap items-start gap-3 py-2.5 text-[14px]">
+              <div key={sub.id || `implicit-${sub.scope_id}`} className={`flex flex-wrap items-start gap-3 py-2.5 text-[14px] ${ROW_HOVER}`}>
                 <div className="min-w-0 flex-1">
                   <div className="truncate font-medium text-ink">{sub.scope_name}</div>
                   <div className="caption text-muted">
@@ -614,7 +685,7 @@ export default function AdminUsage() {
                       {t("usg.changePlan")}
                     </button>
                     {!sub.implicit && (
-                      <button type="button" className="btn btn-outline btn-sm text-rose-600" disabled={busy} onClick={() => cancelSub(sub)}>
+                      <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void cancelSub(sub)}>
                         {t("usg.cancelSub")}
                       </button>
                     )}
@@ -630,40 +701,41 @@ export default function AdminUsage() {
       <Modal open={planOpen} title={planEditing ? t("usg.editPlan") : t("usg.newPlan")} onClose={() => setPlanOpen(false)} width="w-[880px]">
         <form className="space-y-4" onSubmit={submitPlan}>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="caption mb-1 block text-muted">{t("usg.planCode")}</span>
-              <input className="input" required value={planForm.code} onChange={(e) => setPlanForm({ ...planForm, code: e.target.value })} />
-            </label>
-            <label className="block">
-              <span className="caption mb-1 block text-muted">{t("usg.planName")}</span>
-              <input className="input" required value={planForm.name} onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })} />
-            </label>
+            <div className="block">
+              <FieldLabel htmlFor="plan-code" required>{t("usg.planCode")}</FieldLabel>
+              <input id="plan-code" className="input" required aria-required="true" value={planForm.code} onChange={(e) => setPlanForm({ ...planForm, code: e.target.value })} />
+            </div>
+            <div className="block">
+              <FieldLabel htmlFor="plan-name" required>{t("usg.planName")}</FieldLabel>
+              <input id="plan-name" className="input" required aria-required="true" value={planForm.name} onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })} />
+            </div>
           </div>
-          <label className="block">
-            <span className="caption mb-1 block text-muted">{t("usg.planDesc")}</span>
-            <input className="input" value={planForm.description} onChange={(e) => setPlanForm({ ...planForm, description: e.target.value })} />
-          </label>
+          <div className="block">
+            <FieldLabel htmlFor="plan-desc">{t("usg.planDesc")}</FieldLabel>
+            <input id="plan-desc" className="input" value={planForm.description} onChange={(e) => setPlanForm({ ...planForm, description: e.target.value })} />
+          </div>
           <div className="grid gap-3 sm:grid-cols-3">
-            <label className="block">
-              <span className="caption mb-1 block text-muted">{t("usg.planScope")}</span>
-              <select className="input" value={planForm.scope_kind} disabled={!!planEditing} onChange={(e) => setPlanForm({ ...planForm, scope_kind: e.target.value as UsageScopeKind })}>
+            <div className="block">
+              <FieldLabel htmlFor="plan-scope">{t("usg.planScope")}</FieldLabel>
+              <select id="plan-scope" className="input" value={planForm.scope_kind} disabled={!!planEditing} onChange={(e) => setPlanForm({ ...planForm, scope_kind: e.target.value as UsageScopeKind })}>
                 <option value="tenant">{t("usg.scopeTenant")}</option>
                 <option value="user">{t("usg.scopeUser")}</option>
               </select>
-            </label>
+            </div>
             {planForm.scope_kind === "tenant" && (
-              <label className="block">
-                <span className="caption mb-1 block text-muted">{t("usg.planMode")}</span>
-                <select className="input" value={planForm.mode} onChange={(e) => setPlanForm({ ...planForm, mode: e.target.value as UsageMode })}>
+              <div className="block">
+                <FieldLabel htmlFor="plan-mode">{t("usg.planMode")}</FieldLabel>
+                <select id="plan-mode" className="input" value={planForm.mode} onChange={(e) => setPlanForm({ ...planForm, mode: e.target.value as UsageMode })}>
                   <option value="pool">{t("usg.modePool")}</option>
                   <option value="seat">{t("usg.modeSeat")}</option>
                 </select>
-              </label>
+              </div>
             )}
-            <label className="block">
-              <span className="caption mb-1 block text-muted">{t("usg.planPrice")}</span>
+            <div className="block">
+              <FieldLabel htmlFor="plan-price">{t("usg.planPrice")}</FieldLabel>
               <div className="relative">
                 <input
+                  id="plan-price"
                   className="input pr-14"
                   inputMode="numeric"
                   placeholder="0"
@@ -675,7 +747,7 @@ export default function AdminUsage() {
               <span className="caption mt-1 block text-muted-soft">
                 {planForm.price_vnd > 0 ? t("usg.planPriceHint", { price: formatPriceVND(planForm.price_vnd) }) : t("usg.planPriceFree")}
               </span>
-            </label>
+            </div>
           </div>
           <p className="caption text-muted-soft">{planForm.mode === "seat" && planForm.scope_kind === "tenant" ? t("usg.modeSeatHint") : t("usg.modePoolHint")}</p>
           <div>
@@ -690,17 +762,17 @@ export default function AdminUsage() {
             />
           </div>
           <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2">
-              <span className="caption text-muted">{t("usg.planOrder")}</span>
-              <input type="number" className="input h-9 py-0 w-20" value={planForm.sort_order} onChange={(e) => setPlanForm({ ...planForm, sort_order: Number(e.target.value) || 0 })} />
-            </label>
+            <div className="flex items-center gap-2">
+              <FieldLabel htmlFor="plan-order" className="mb-0">{t("usg.planOrder")}</FieldLabel>
+              <input id="plan-order" type="number" className="input h-9 py-0 w-20" value={planForm.sort_order} onChange={(e) => setPlanForm({ ...planForm, sort_order: Number(e.target.value) || 0 })} />
+            </div>
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={planForm.is_active} onChange={(e) => setPlanForm({ ...planForm, is_active: e.target.checked })} />
               <span className="caption text-muted">{t("usg.planActive")}</span>
             </label>
           </div>
           <div className="flex justify-end">
-            <button type="submit" className="btn btn-primary" disabled={busy || !planForm.code.trim() || !planForm.name.trim()}>
+            <button type="submit" className="btn btn-primary" disabled={busy || !planDirty || !planForm.code.trim() || !planForm.name.trim()}>
               {t("common.save")}
             </button>
           </div>
@@ -710,11 +782,13 @@ export default function AdminUsage() {
       {/* Subscription modal */}
       <Modal open={subOpen} title={subTarget ? `${subTarget.existing ? t("usg.changePlan") : t("usg.assignPlan")} · ${subTarget.name}` : ""} onClose={() => setSubOpen(false)}>
         <form className="space-y-4" onSubmit={submitSub}>
-          <label className="block">
-            <span className="caption mb-1 block text-muted">{t("usg.plan")}</span>
+          <div className="block">
+            <FieldLabel htmlFor="sub-plan" required>{t("usg.plan")}</FieldLabel>
             <select
+              id="sub-plan"
               className="input"
               required
+              aria-required="true"
               value={subForm.plan_id}
               onChange={(e) => {
                 const p = planByID(e.target.value);
@@ -739,28 +813,29 @@ export default function AdminUsage() {
                 </option>
               ))}
             </select>
-          </label>
+          </div>
           {subTarget?.kind === "tenant" && (
             <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block">
-                <span className="caption mb-1 block text-muted">{t("usg.planMode")}</span>
-                <select className="input" value={subForm.mode} onChange={(e) => setSubForm({ ...subForm, mode: e.target.value as UsageMode })}>
+              <div className="block">
+                <FieldLabel htmlFor="sub-mode">{t("usg.planMode")}</FieldLabel>
+                <select id="sub-mode" className="input" value={subForm.mode} onChange={(e) => setSubForm({ ...subForm, mode: e.target.value as UsageMode })}>
                   <option value="pool">{t("usg.modePool")}</option>
                   <option value="seat">{t("usg.modeSeat")}</option>
                 </select>
-              </label>
+              </div>
               {subForm.mode === "seat" && (
-                <label className="block">
-                  <span className="caption mb-1 block text-muted">{t("usg.seats")}</span>
-                  <input type="number" min={1} className="input" value={subForm.seats} onChange={(e) => setSubForm({ ...subForm, seats: Math.max(0, Number(e.target.value) || 0) })} />
-                </label>
+                <div className="block">
+                  <FieldLabel htmlFor="sub-seats">{t("usg.seats")}</FieldLabel>
+                  <input id="sub-seats" type="number" min={1} className="input" value={subForm.seats} onChange={(e) => setSubForm({ ...subForm, seats: Math.max(0, Number(e.target.value) || 0) })} />
+                </div>
               )}
             </div>
           )}
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
-              <span className="caption mb-1 block text-muted">{t("usg.startsAtLabel")}</span>
+              <FieldLabel htmlFor="sub-start">{t("usg.startsAtLabel")}</FieldLabel>
               <input
+                id="sub-start"
                 type="date"
                 className="input"
                 disabled={!subForm.custom_start}
@@ -776,16 +851,16 @@ export default function AdminUsage() {
                 <span className="caption text-muted-soft">{subTarget?.existing ? t("usg.startsKeep") : t("usg.startsCustom")}</span>
               </label>
             </div>
-            <label className="block">
-              <span className="caption mb-1 block text-muted">{t("usg.endsAtLabel")}</span>
-              <input type="date" className="input" value={subForm.ends_at} onChange={(e) => setSubForm({ ...subForm, ends_at: e.target.value })} />
+            <div className="block">
+              <FieldLabel htmlFor="sub-end">{t("usg.endsAtLabel")}</FieldLabel>
+              <input id="sub-end" type="date" className="input" value={subForm.ends_at} onChange={(e) => setSubForm({ ...subForm, ends_at: e.target.value })} />
               {endsBeforeStart && <span className="caption mt-1 block text-error">{t("usg.endsBeforeStart")}</span>}
-            </label>
+            </div>
           </div>
-          <label className="block">
-            <span className="caption mb-1 block text-muted">{t("usg.note")}</span>
-            <input className="input" value={subForm.note} onChange={(e) => setSubForm({ ...subForm, note: e.target.value })} />
-          </label>
+          <div className="block">
+            <FieldLabel htmlFor="sub-note">{t("usg.note")}</FieldLabel>
+            <input id="sub-note" className="input" value={subForm.note} onChange={(e) => setSubForm({ ...subForm, note: e.target.value })} />
+          </div>
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -799,7 +874,7 @@ export default function AdminUsage() {
             <p className="caption text-muted-soft">{t("usg.changePlanHint")}</p>
           )}
           <div className="flex justify-end">
-            <button type="submit" className="btn btn-primary" disabled={busy || !subForm.plan_id || endsBeforeStart || (subForm.mode === "seat" && subTarget?.kind === "tenant" && subForm.seats < 1)}>
+            <button type="submit" className="btn btn-primary" disabled={busy || !subDirty || !subForm.plan_id || endsBeforeStart || (subForm.mode === "seat" && subTarget?.kind === "tenant" && subForm.seats < 1)}>
               {t("common.save")}
             </button>
           </div>
@@ -811,10 +886,11 @@ export default function AdminUsage() {
         <div className="space-y-3">
           <div className="relative">
             <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft" />
-            <input className="input h-9 py-0 pl-9" autoFocus placeholder={t("usg.searchUser")} value={userQ} onChange={(e) => setUserQ(e.target.value)} />
+            <input className="input h-9 py-0 pl-9" autoFocus aria-label={t("usg.searchUser")} placeholder={t("usg.searchUser")} value={userQ} onChange={(e) => setUserQ(e.target.value)} />
           </div>
           <p className="caption text-muted">{t("usg.userCount", { n: userTotal })}</p>
           <div className="max-h-96 divide-y divide-hairline overflow-y-auto">
+            {userLoading && <Loading label={t("common.loading")} className="py-4" />}
             {userHits.map((u) => {
               const sub = personal.find((s) => s.scope_id === u.id && s.status === "active" && !s.implicit) ?? null;
               const guestRow = personal.find((s) => s.scope_id === u.id && s.implicit);
@@ -825,7 +901,7 @@ export default function AdminUsage() {
                   key={u.id}
                   type="button"
                   disabled={!u.is_active}
-                  className="flex w-full flex-wrap items-start justify-between gap-x-3 gap-y-1 px-2 py-2 text-left text-[14px] hover:bg-surface-strong/40 disabled:opacity-50"
+                  className={`flex w-full flex-wrap items-start justify-between gap-x-3 gap-y-1 px-2 py-2 text-left text-[14px] disabled:opacity-50 ${ROW_HOVER}`}
                   onClick={() => {
                     setUserPickOpen(false);
                     openAssign("user", u.id, u.username || u.email, sub);
@@ -859,12 +935,16 @@ export default function AdminUsage() {
             {!userLoading && userHits.length === 0 && <p className="caption px-2 py-2 text-muted-soft">{t("usg.noUserHits")}</p>}
           </div>
           {userHits.length < userTotal && (
-            <button type="button" className="btn btn-outline btn-sm w-full" disabled={userLoading} onClick={() => void fetchUsers(userQ, userHits.length)}>
-              {t("usg.moreUsers", { n: userTotal - userHits.length })}
-            </button>
+            <LoadMore
+              loading={userLoading}
+              label={t("usg.moreUsers", { n: userTotal - userHits.length })}
+              onMore={() => void fetchUsers(userQ, userHits.length)}
+              className="mt-2"
+            />
           )}
         </div>
       </Modal>
-    </div>
+      </div>
+    </SystemSection>
   );
 }

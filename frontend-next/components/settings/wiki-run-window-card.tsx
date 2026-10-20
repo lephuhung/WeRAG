@@ -12,6 +12,8 @@ import {
 import { Toggle } from "@/components/settings/toggle";
 import { useT } from "@/lib/i18n";
 import { formatDateTime } from "@/lib/datetime";
+import { useToast } from "@/components/toast";
+import { Notice } from "@/components/settings/notice";
 
 export function WikiRunWindowCard({
   status,
@@ -21,9 +23,10 @@ export function WikiRunWindowCard({
   onSaved: () => void;
 }) {
   const { t, locale } = useT();
+  const toast = useToast();
   const [draft, setDraft] = useState<WikiRunWindow>(status);
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     setDraft({ enabled: status.enabled, start: status.start, end: status.end, timezone: status.timezone });
@@ -37,13 +40,13 @@ export function WikiRunWindowCard({
 
   const save = async () => {
     setSaving(true);
-    setMessage(null);
+    setError("");
     try {
       await updateSystemSetting(WIKI_RUN_WINDOW_KEY, draft);
-      setMessage({ ok: true, text: t("q.wikiWindowSaved") });
+      toast.success(t("q.wikiWindowSaved"));
       onSaved();
     } catch (e) {
-      setMessage({ ok: false, text: t("q.wikiWindowSaveFailed", { error: (e as Error).message }) });
+      setError(t("q.wikiWindowSaveFailed", { error: (e as Error).message }));
     } finally {
       setSaving(false);
     }
@@ -112,9 +115,7 @@ export function WikiRunWindowCard({
           {t("common.save")}
         </button>
       </div>
-      {message && (
-        <p className={`caption mt-3 ${message.ok ? "text-muted" : "text-error"}`}>{message.text}</p>
-      )}
+      {error && <Notice tone="error" className="mt-3">{error}</Notice>}
     </div>
   );
 }

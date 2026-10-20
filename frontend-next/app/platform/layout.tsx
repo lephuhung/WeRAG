@@ -2,7 +2,6 @@ import { Header } from "@/components/header";
 import { RequireAuth } from "@/components/require-auth";
 import { Sidebar } from "@/components/sidebar";
 import { AuthProvider } from "@/lib/auth";
-import { I18nProvider } from "@/lib/i18n";
 import { CommandPaletteProvider } from "@/components/command-palette/command-palette-context";
 import { GlobalCommandPalette } from "@/components/command-palette/global-command-palette";
 import { UploadTasksProvider } from "@/lib/upload-tasks";
@@ -14,11 +13,11 @@ import { WorkContextPrompt } from "@/components/work-context-prompt";
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
   return (
-    <I18nProvider>
-      <AuthProvider>
-        <RequireAuth>
-          <ToastProvider>
-            <ConfirmProvider>
+    /* The i18n provider lives in the root layout — every route shares it. */
+    <AuthProvider>
+      <RequireAuth>
+        <ToastProvider>
+          <ConfirmProvider>
           <CommandPaletteProvider>
             <UploadTasksProvider>
               <div className="flex h-dvh min-h-0 w-full bg-canvas">
@@ -35,10 +34,9 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
             </UploadTasksProvider>
           </CommandPaletteProvider>
           </ConfirmProvider>
-          </ToastProvider>
-        </RequireAuth>
-      </AuthProvider>
-    </I18nProvider>
+        </ToastProvider>
+      </RequireAuth>
+    </AuthProvider>
   );
 }
 

@@ -22,7 +22,7 @@ const HEADING = {
 export function LegalRequestCardView({ card }: { card: LegalRequestCard }) {
   const { t } = useT();
   return (
-    <div className="mb-2 mt-1 w-full min-w-0 rounded-[8px] border border-hairline bg-surface-strong/30 px-3 py-2">
+    <div className="mb-2 mt-1 w-full min-w-0 rounded-lg2 border border-hairline bg-surface-strong/30 p-3">
       <p className="text-[12.5px] font-semibold text-ink">{t(HEADING[card.mode])}</p>
       {card.documents.length > 0 && (
         <ul className="mt-1 flex flex-col gap-0.5">
@@ -60,14 +60,12 @@ function DocumentRow({ doc }: { doc: LegalRequestCardDocument }) {
   const label = [doc.docType, doc.documentNumber].filter(Boolean).join(" ");
   const meta = [doc.issuer, doc.issuedOn ? showIssuedOn(doc.issuedOn) : ""].filter(Boolean).join(" · ");
   return (
-    <li className="rounded-[6px] px-1 py-1 text-[13px] text-body">
+    <li className="rounded-md2 px-1 py-1 text-[13px] text-body">
       <span className="font-semibold text-ink">{label || doc.title}</span>
       {doc.status && (
         <span
           className={`badge-pill ml-2 inline-block text-[10.5px] ${
-            statusInForce(doc.status)
-              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-              : "bg-surface-strong text-muted"
+            statusInForce(doc.status) ? "badge-success" : "badge-neutral"
           }`}
         >
           {doc.status}
@@ -80,7 +78,7 @@ function DocumentRow({ doc }: { doc: LegalRequestCardDocument }) {
           {doc.url && (
             <>
               {meta && " · "}
-              <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-[#1f6feb] hover:underline">
+              <a href={doc.url} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
                 {t("legalRequestCard.viewOnVbpl")}
               </a>
             </>

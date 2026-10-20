@@ -83,8 +83,9 @@ export function LegalDraftSpellingPanel({
                 onClick={() => void goTo(m)}
                 className="min-w-0 flex-1 rounded-[6px] px-1.5 py-1.5 text-left hover:bg-surface-strong disabled:cursor-wait"
               >
+                <span className="sr-only">{t("docws.spGoTo")}: </span>
                 <span className="block text-[13px] leading-snug text-ink">
-                  <span className="font-semibold underline decoration-[var(--color-warning,#a15c00)] underline-offset-2">{m.text}</span>
+                  <span className="font-semibold underline decoration-[var(--color-warning)] underline-offset-2">{m.text}</span>
                   {m.suggestion && (
                     <>
                       <span className="mx-1 text-muted-soft">→</span>
@@ -95,14 +96,16 @@ export function LegalDraftSpellingPanel({
                 </span>
                 <span className="mt-0.5 block text-[12px] leading-snug text-muted">{mistakeContext(m)}</span>
                 {lost && sameMistake(lost.m, m) && (
-                  <span className="mt-0.5 block text-[11.5px] leading-snug text-error">
+                  <span role="status" className="mt-0.5 block text-[11.5px] leading-snug text-error">
                     {t(
                       lost.r === "outdated" ? "docws.spGoToOutdated" : lost.r === "noAnswer" ? "docws.spGoToNoAnswer" : "docws.spGoToFailed",
                     )}
                   </span>
                 )}
                 {dismissFailed && sameMistake(dismissFailed, m) && (
-                  <span className="mt-0.5 block text-[11.5px] leading-snug text-error">{t("docws.spDismissFailed")}</span>
+                  <span role="status" className="mt-0.5 block text-[11.5px] leading-snug text-error">
+                    {t("docws.spDismissFailed")}
+                  </span>
                 )}
               </button>
               <button

@@ -112,9 +112,9 @@ export function FormatCheckReportModal({
         <>
           {report.summary && (
             <div className="mb-4 grid grid-cols-3 gap-2">
-              <Stat label={t("docws.fcReportPass")} value={report.summary.pass} tone="text-[#1f7a3d] dark:text-[#6fd08f]" />
+              <Stat label={t("docws.fcReportPass")} value={report.summary.pass} tone="text-success" />
               <Stat label={t("docws.fcReportFail")} value={report.summary.fail} tone="text-error" />
-              <Stat label={t("docws.fcReportWarn")} value={report.summary.warn} tone="text-[#a15c00] dark:text-[#f0b35a]" />
+              <Stat label={t("docws.fcReportWarn")} value={report.summary.warn} tone="text-warning" />
             </div>
           )}
           {report.scope === "technical" && report.scope_reason && (
@@ -216,7 +216,7 @@ function FormatFeedback({
   const findings = report.findings ?? [];
   const reportId = report.report_id ?? "";
 
-  if (sent) return <p className="caption mt-3 text-[#1f7a3d] dark:text-[#6fd08f]">{t("docws.fcFeedbackThanks")}</p>;
+  if (sent) return <p className="caption mt-3 text-success">{t("docws.fcFeedbackThanks")}</p>;
   if (!open)
     return (
       <button type="button" className="caption mt-3 text-muted underline hover:text-ink" onClick={() => setOpen(true)}>

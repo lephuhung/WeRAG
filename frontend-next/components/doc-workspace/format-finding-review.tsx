@@ -127,7 +127,7 @@ export function FormatFindingReview({
                     at === index
                       ? "w-4 bg-ink"
                       : statuses[item.id] === "verified"
-                        ? "w-1.5 bg-[#1f7a3d] dark:bg-[#6fd08f]"
+                        ? "w-1.5 bg-success"
                         : "w-1.5 bg-hairline-strong"
                   }`}
                 />
@@ -188,7 +188,7 @@ export function FormatFindingReview({
           </p>
         )}
         {finding.expected && (
-          <p className="rounded-lg bg-[#e8f4ec] px-3 py-2 text-[13px] text-[#14532d] dark:bg-[#12301e] dark:text-[#c7ecd3]">
+          <p className="rounded-md2 bg-success-surface px-3 py-2 text-[13px] text-success">
             <strong>{t("docws.fcRvExpected")}</strong> {finding.expected}
           </p>
         )}
@@ -202,7 +202,7 @@ export function FormatFindingReview({
         {statuses[finding.id] && (
           <p
             role="status"
-            className={`caption ${statuses[finding.id] === "verified" ? "text-[#1f7a3d] dark:text-[#6fd08f]" : "text-muted"}`}
+            className={`caption ${statuses[finding.id] === "verified" ? "text-success" : "text-muted"}`}
           >
             {t(statuses[finding.id] === "verified" ? "docws.fcRvVerified" : "docws.fcRvUnverified")}
           </p>

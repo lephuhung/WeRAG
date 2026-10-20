@@ -40,11 +40,20 @@ type AuthState = {
   ready: boolean;
 };
 
+/* Result of a sign-in attempt: `null` means the sign-in worked, otherwise
+ * the object carries the message to show and whether the server asked for a
+ * two-factor code. The `null` case keeps the old contract (a string error
+ * or nothing) for the other consumers of this module. */
+export type LoginResult = {
+  error: string | null;
+  twoFactorRequired: boolean;
+};
+
 /* Exported for the Word add-in's browser preview (src/dev/preview-app.tsx
  * there), which provides a fake session. */
 export const AuthContext = createContext<
   AuthState & {
-    login: (email: string, password: string) => Promise<string | null>;
+    login: (email: string, password: string, twoFactorCode?: string) => Promise<LoginResult | null>;
     logout: () => Promise<void>;
     refreshMe: () => Promise<boolean>;
     selectedTenantId: string | null;
@@ -187,7 +196,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [setLocale]);
 
   const login = useCallback(
-    async (email: string, password: string, twoFactorCode?: string) => {
+    async (email: string, password: string, twoFactorCode?: string): Promise<LoginResult | null> => {
       const res = await fetch("/api/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Accept-Language": "vi-VN" },
@@ -198,12 +207,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         message?: string;
         token?: string;
         refresh_token?: string;
+        two_factor_required?: boolean;
         active_tenant?: { id?: number | string };
         tenant?: { id?: number | string };
         user?: { tenant_id?: number | string };
       };
+      /* The credentials are right but the account needs the 6-digit code
+       * from the authenticator app — no tokens are issued yet. */
+      if (data.two_factor_required) {
+        return { error: null, twoFactorRequired: true };
+      }
       if (!res.ok || !data.success || !data.token) {
-        return data.message ?? "Sign in failed";
+        return { error: data.message ?? "Sign in failed", twoFactorRequired: false };
       }
       setTokens(data.token, data.refresh_token ?? "");
       const tenantId =
@@ -211,6 +226,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (tenantId && Number(tenantId) > 0) {
         localStorage.setItem(TENANT_KEY, String(tenantId));
         setSelectedTenantId(String(tenantId));
+      } else {
+        /* No tenant in the response (a guest account): a previously stored
+         * workspace would be stale, so drop it. */
+        try {
+          localStorage.removeItem(TENANT_KEY);
+        } catch {
+          /* private mode */
+        }
+        setSelectedTenantId(null);
       }
       await refreshMe();
       return null;

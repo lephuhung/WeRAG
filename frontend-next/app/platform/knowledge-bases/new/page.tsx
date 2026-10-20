@@ -65,12 +65,12 @@ export default function NewKnowledgeBase() {
         <div className="caption-uppercase mb-3 text-muted">{t("kbNew.workspace")}</div>
         <h1 className="display-xl mb-10">{t("kbNew.title")}</h1>
         {isGuest ? (
-          <p className="body-sm mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-700">
+          <p className="body-sm mb-6 rounded-xl border border-warning/40 bg-warning-surface px-4 py-3 text-warning">
             {t("kbNew.guestBlocked")}
           </p>
         ) : (
           !isTenantAdmin && (
-            <p className="body-sm mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-700">
+            <p className="body-sm mb-6 rounded-xl border border-warning/40 bg-warning-surface px-4 py-3 text-warning">
               {t("kbNew.adminOnly")}
             </p>
           )

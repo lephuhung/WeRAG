@@ -1,14 +1,18 @@
-/* Route tree for /platform/system — five tabs, each rendered as a card hub
- * of real routes (deep-linkable, indexable by the command palette).
- * The first item of every tab lives on the tab's index route; deeper items
- * get their own path. minRole mirrors nav-config.ts: undefined/member = any
- * signed-in user, tenant roles gate on membership, "system" gates on the
- * platform-wide system-admin flag. Server-side guards stay authoritative. */
+/* Route tree for /platform/system — the index of every deep link of the
+ * settings surfaces (indexable by the command palette). Each tab points at
+ * a real section: the /platform/system/* paths are not pages of their own,
+ * the catch-all turns them into the settings modal (or the admin console),
+ * so a path that is not a section would land on "general".
+ * minRole mirrors nav-config.ts: undefined/member = any signed-in user,
+ * tenant roles gate on membership, "system" gates on the platform-wide
+ * system-admin flag. Server-side guards stay authoritative. */
 
 import {
   WORKSPACE_NAV_GROUPS,
   type SettingsRoleKey,
 } from "@/components/settings/nav-config";
+import { ADMIN_GROUPS } from "@/components/admin/admin-sections";
+import { adminSectionHref } from "@/components/admin/admin-routes";
 
 export interface SystemNavItem {
   key: string;
@@ -92,19 +96,14 @@ export const SYSTEM_TABS: SystemTab[] = [
     key: "engines",
     label: "Engines",
     labelKey: "systemNav.engines",
-    href: "/platform/system/engines",
+    /* The tab itself points at a real section: /platform/system/engines is
+     * not a section (the catch-all would fall back to "general"). */
+    href: "/platform/system/engines/vector",
     minRole: "system",
     groups: [
       {
         key: "engines",
         items: [
-          {
-            key: "engines",
-            label: "Engines",
-            labelKey: "systemNav.engines",
-            href: "/platform/system/engines",
-            minRole: "system",
-          },
           {
             key: "vector",
             label: "Vector store",
@@ -143,7 +142,7 @@ export const SYSTEM_TABS: SystemTab[] = [
             key: "queues",
             label: "Runtime queues",
             labelKey: "systemNav.queues",
-            href: "/platform/admin?section=queues",
+            href: adminSectionHref("queues"),
             minRole: "system",
           },
         ],
@@ -157,7 +156,8 @@ export const SYSTEM_TABS: SystemTab[] = [
     key: "extensions",
     label: "Extensions",
     labelKey: "systemNav.extensions",
-    href: "/platform/system/extensions",
+    /* Same rule as the engines tab: point at a real section. */
+    href: "/platform/system/extensions/browserconnection",
     groups: [
       {
         key: "platform",
@@ -228,39 +228,19 @@ export const SYSTEM_TABS: SystemTab[] = [
     labelKey: "systemNav.admin",
     href: "/platform/system/admin",
     minRole: "system",
+    /* Derived from the console's own section list, so every admin section
+     * (tenants, users, logs, legal documents, skill sets, usage, billing,
+     * runtime queues) is reachable from the ⌘K palette. */
     groups: [
       {
         key: "admin",
-        items: [
-          {
-            key: "overview",
-            label: "Overview",
-            labelKey: "systemNav.overview",
-            href: "/platform/system/admin",
-            minRole: "system",
-          },
-          {
-            key: "users",
-            label: "Users",
-            labelKey: "systemNav.users",
-            href: "/platform/system/admin/users",
-            minRole: "system",
-          },
-          {
-            key: "logs",
-            label: "Audit logs",
-            labelKey: "systemNav.logs",
-            href: "/platform/system/admin/logs",
-            minRole: "system",
-          },
-          {
-            key: "legal-documents",
-            label: "Legal documents",
-            labelKey: "systemNav.legalDocuments",
-            href: "/platform/system/admin/legal-documents",
-            minRole: "system",
-          },
-        ],
+        items: ADMIN_GROUPS.flatMap((g) => g.items).map((s) => ({
+          key: s.key,
+          label: s.fallback,
+          labelKey: s.labelKey,
+          href: adminSectionHref(s.key),
+          minRole: "system" as const,
+        })),
       },
     ],
   },

@@ -27,9 +27,10 @@ export function AgentModeButton({ onOpen, locked = false }: { onOpen: () => void
     <button
       onClick={onOpen}
       aria-haspopup="dialog"
+      aria-pressed={isAgentStreamMode}
       className={`flex h-7 max-w-[120px] items-center gap-1.5 rounded-full px-2.5 text-[12.5px] font-medium transition-colors sm:max-w-[240px] ${
         isAgentStreamMode
-          ? "bg-[#edf5ff] text-[#0f2d59] dark:bg-[#15273f] dark:text-[#dce9fe]"
+          ? "bg-accent-surface text-accent"
           : "text-body hover:bg-surface-strong hover:text-ink"
       }`}
       title={locked ? t("docws.modeLockedShort") : (selectedAgent?.description ?? label)}
@@ -178,7 +179,8 @@ function AgentRow({
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-center gap-3 rounded-[8px] px-3 py-2 text-left transition-colors ${
+      aria-pressed={active}
+      className={`flex w-full items-center gap-3 rounded-md2 px-3 py-2 text-left transition-colors ${
         active ? "bg-surface-strong" : "hover:bg-surface-strong"
       }`}
     >

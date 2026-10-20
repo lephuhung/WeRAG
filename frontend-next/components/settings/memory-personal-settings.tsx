@@ -3,6 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { Modal } from "@/components/modal";
 import { IconPlus, IconRefresh, IconTrash } from "@/components/icons";
+import { Notice } from "@/components/settings/notice";
+import { DataTable } from "@/components/settings/data-table";
+import { Pill, PillGroup } from "@/components/settings/pill";
+import { SectionHeader } from "@/components/settings/section-header";
+import { TabStrip } from "@/components/settings/tab-strip";
+import { Loading } from "@/components/settings/loading";
+import { FieldLabel } from "@/components/settings/field";
+import { useToast } from "@/components/toast";
 import { Select } from "@/components/select";
 import {
   getMemorySettings,
@@ -34,6 +42,7 @@ import { formatDate, vnDayKey } from "@/lib/datetime";
 
 export function MemoryPersonalSettings() {
   const { t } = useT();
+  const toast = useToast();
 
   const KINDS: { id: MemoryKind; label: string; desc: string }[] = [
     { id: "profile", label: t("memp.kProfile"), desc: t("memp.kProfileDesc") },
@@ -52,7 +61,6 @@ export function MemoryPersonalSettings() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
   const [busyAction, setBusyAction] = useState(false);
 
   // Add modal
@@ -118,7 +126,7 @@ export function MemoryPersonalSettings() {
       const res = await updateMemoryEnabled(checked);
       if (res.success && res.data) {
         setSettings(res.data);
-        setSuccess(t(checked ? "memp.enabledMsg" : "memp.disabledMsg"));
+        toast.success(t(checked ? "memp.enabledMsg" : "memp.disabledMsg"));
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : t("memp.updateFailed"));
@@ -129,7 +137,7 @@ export function MemoryPersonalSettings() {
   const handleConfirm = async (id: string) => {
     try {
       await confirmMemoryItem(id);
-      setSuccess(t("memp.approved"));
+      toast.success(t("memp.approved"));
       await loadData();
     } catch (e) {
       setError(e instanceof Error ? e.message : t("memp.confirmFailed"));
@@ -140,7 +148,7 @@ export function MemoryPersonalSettings() {
   const handleReject = async (id: string) => {
     try {
       await rejectMemoryItem(id);
-      setSuccess(t("memp.rejected"));
+      toast.success(t("memp.rejected"));
       await loadData();
     } catch (e) {
       setError(e instanceof Error ? e.message : t("memp.rejectFailed"));
@@ -151,7 +159,7 @@ export function MemoryPersonalSettings() {
   const handleDelete = async (id: string) => {
     try {
       await deleteMemoryItem(id);
-      setSuccess(t("memp.deleted"));
+      toast.success(t("memp.deleted"));
       await loadData();
     } catch (e) {
       setError(e instanceof Error ? e.message : t("memp.deleteFailed"));
@@ -165,7 +173,7 @@ export function MemoryPersonalSettings() {
     try {
       const res = await consolidateMemory();
       if (res.success && res.data) {
-        setSuccess(
+        toast.success(
           t("memp.consolidateDone", {
             a: res.data.reviewed,
             b: res.data.merged,
@@ -207,7 +215,7 @@ export function MemoryPersonalSettings() {
     try {
       const res = await clearMemoryItems();
       if (res.success) {
-        setSuccess(t("memp.cleared", { n: res.removed }));
+        toast.success(t("memp.cleared", { n: res.removed }));
         setConfirmClearOpen(false);
         await loadData();
       }
@@ -231,7 +239,7 @@ export function MemoryPersonalSettings() {
         importance: draftImportance,
       });
       if (res.success) {
-        setSuccess(t("memp.created"));
+        toast.success(t("memp.created"));
         setAddModalOpen(false);
         setDraftContent("");
         await loadData();
@@ -255,7 +263,7 @@ export function MemoryPersonalSettings() {
         importance: editImportance,
       });
       if (res.success) {
-        setSuccess(t("memp.updated"));
+        toast.success(t("memp.updated"));
         setEditingItem(null);
         await loadData();
       }
@@ -269,67 +277,71 @@ export function MemoryPersonalSettings() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-5">
-        <div>
-          <h2 className="title-md font-semibold text-ink">{t("memp.title")}</h2>
-          <p className="caption text-muted mt-1">
-            {t("memp.subtitle")}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setAddModalOpen(true)}
-            className="btn btn-primary btn-sm flex items-center gap-1.5"
-          >
-            <IconPlus className="h-3.5 w-3.5" />
-            <span>{t("memp.add")}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleConsolidate()}
-            disabled={busyAction}
-            className="btn btn-outline btn-sm text-xs"
-            title={t("memp.consolidateTip")}
-          >
-            {busyAction ? t("memp.consolidating") : t("memp.consolidate")}
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleExport()}
-            className="btn btn-outline btn-sm text-xs"
-            title={t("memp.exportTip")}
-          >
-            {t("memp.export")}
-          </button>
-          <button
-            type="button"
-            onClick={() => void loadData()}
-            className="btn btn-outline btn-sm p-1.5"
-            title={t("common.refresh")}
-          >
-            <IconRefresh className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
+      <SectionHeader
+        title={t("memp.title")}
+        subtitle={t("memp.subtitle")}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => setAddModalOpen(true)}
+              className="btn btn-primary btn-sm flex items-center gap-1.5"
+            >
+              <IconPlus className="h-3.5 w-3.5" />
+              <span>{t("memp.add")}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleConsolidate()}
+              disabled={busyAction}
+              className="btn btn-outline btn-sm text-xs"
+              title={t("memp.consolidateTip")}
+            >
+              {busyAction ? t("memp.consolidating") : t("memp.consolidate")}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleExport()}
+              className="btn btn-outline btn-sm text-xs"
+              title={t("memp.exportTip")}
+            >
+              {t("memp.export")}
+            </button>
+            <button
+              type="button"
+              onClick={() => void loadData()}
+              className="btn btn-outline btn-sm p-1.5"
+              title={t("common.refresh")}
+              aria-label={t("common.refresh")}
+            >
+              <IconRefresh className="h-3.5 w-3.5" />
+            </button>
+          </>
+        }
+      />
 
       {/* Workspace disabled banner if applicable */}
       {settings && !settings.workspace_enabled && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-400">
-          <strong>{t("memp.workspaceDisabled")}</strong> {t("memp.workspaceDisabledBody")}
-        </div>
+        <Notice tone="warning" title={t("memp.workspaceDisabled")}>
+          {t("memp.workspaceDisabledBody")}
+        </Notice>
       )}
 
       {error && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-400">
+        <Notice
+          tone="error"
+          action={
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={() => void loadData()}
+            >
+              {t("common.retry")}
+            </button>
+          }
+        >
           {error}
-        </div>
-      )}
-      {success && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-400">
-          {success}
-        </div>
+        </Notice>
       )}
 
       {/* Switch Row */}
@@ -341,6 +353,7 @@ export function MemoryPersonalSettings() {
           </span>
         </div>
         <Toggle
+          label={t("memp.enableTitle")}
           checked={settings?.user_enabled ?? true}
           disabled={!settings || !settings.workspace_enabled}
           onChange={(v) => void handleToggle(v)}
@@ -348,68 +361,39 @@ export function MemoryPersonalSettings() {
       </div>
 
       {/* Main navigation tabs: Items | Topics | Documents */}
-      <div className="flex items-center justify-between border-b border-hairline pb-2">
-        <div className="flex gap-4">
-          <button
-            type="button"
-            onClick={() => setMainTab("items")}
-            className={`text-sm font-medium pb-2 border-b-2 -mb-2.5 transition-colors ${
-              mainTab === "items"
-                ? "border-primary text-primary font-semibold"
-                : "border-transparent text-muted hover:text-ink"
-            }`}
-          >
-            {t("memp.tabItems")} ({items.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setMainTab("topics")}
-            className={`text-sm font-medium pb-2 border-b-2 -mb-2.5 transition-colors ${
-              mainTab === "topics"
-                ? "border-primary text-primary font-semibold"
-                : "border-transparent text-muted hover:text-ink"
-            }`}
-          >
-            {t("memp.tabTopics")}
-          </button>
-          <button
-            type="button"
-            onClick={() => setMainTab("docs")}
-            className={`text-sm font-medium pb-2 border-b-2 -mb-2.5 transition-colors ${
-              mainTab === "docs"
-                ? "border-primary text-primary font-semibold"
-                : "border-transparent text-muted hover:text-ink"
-            }`}
-          >
-            {t("memp.tabDocs")}
-          </button>
-        </div>
+      <div className="space-y-3">
+        <TabStrip
+          ariaLabel={t("memp.title")}
+          value={mainTab}
+          onChange={setMainTab}
+          tabs={[
+            { id: "items", label: t("memp.tabItems"), badge: items.length },
+            { id: "topics", label: t("memp.tabTopics") },
+            { id: "docs", label: t("memp.tabDocs") },
+          ]}
+        />
 
         {mainTab === "items" && (
-          <div className="flex items-center gap-1.5">
+          <PillGroup ariaLabel={t("memp.tabItems")}>
             {(["active", "pending", "superseded", "archived"] as MemoryStatus[]).map((st) => (
-              <button
-                key={st}
-                type="button"
-                onClick={() => setStatusFilter(st)}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  statusFilter === st
-                    ? "bg-ink text-on-primary"
-                    : "text-muted hover:bg-surface-strong hover:text-ink"
-                }`}
-              >
+              <Pill key={st} active={statusFilter === st} onClick={() => setStatusFilter(st)}>
                 {t(`memp.st.${st}`)}
-              </button>
+              </Pill>
             ))}
-          </div>
+          </PillGroup>
         )}
       </div>
 
       {/* Tab: Items */}
       {mainTab === "items" && (
-        <div className="space-y-3">
+        <div
+          id="tabpanel-items"
+          role="tabpanel"
+          aria-labelledby="tab-items"
+          className="space-y-3"
+        >
           {loading ? (
-            <p className="caption text-muted text-center py-12">{t("memp.loading")}</p>
+            <Loading label={t("memp.loading")} />
           ) : items.length === 0 ? (
             <div className="rounded-xl border border-hairline py-16 text-center text-sm text-muted">
               {t("memp.emptyItems")}
@@ -423,7 +407,7 @@ export function MemoryPersonalSettings() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="badge-pill uppercase text-[10.5px] font-semibold bg-primary/10 text-primary">
+                      <span className="badge-pill badge-accent uppercase text-[10.5px] font-semibold">
                         {it.kind}
                       </span>
                       {it.topic && (
@@ -455,7 +439,7 @@ export function MemoryPersonalSettings() {
                           <button
                             type="button"
                             onClick={() => void handleReject(it.id)}
-                            className="btn btn-outline btn-sm text-xs py-1 text-rose-600"
+                            className="btn btn-danger btn-sm text-xs py-1"
                           >
                             {t("memp.reject")}
                           </button>
@@ -475,8 +459,9 @@ export function MemoryPersonalSettings() {
                       <button
                         type="button"
                         onClick={() => void handleDelete(it.id)}
-                        className="btn btn-ghost btn-sm p-1 text-muted hover:text-rose-600"
+                        className="btn btn-danger btn-sm p-1"
                         title={t("common.delete")}
+                        aria-label={t("common.delete")}
                       >
                         <IconTrash className="h-3.5 w-3.5" />
                       </button>
@@ -507,7 +492,7 @@ export function MemoryPersonalSettings() {
               <button
                 type="button"
                 onClick={() => setConfirmClearOpen(true)}
-                className="btn btn-outline btn-sm text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                className="btn btn-danger btn-sm text-xs"
               >
                 {t("memp.clearAll")}
               </button>
@@ -518,69 +503,74 @@ export function MemoryPersonalSettings() {
 
       {/* Tab: Topics */}
       {mainTab === "topics" && (
-        <div className="space-y-3">
-          {topics.length === 0 ? (
-            <div className="rounded-xl border border-hairline py-16 text-center text-sm text-muted">
-              {t("memp.emptyTopics")}
-            </div>
-          ) : (
-            <div className="overflow-hidden rounded-xl border border-hairline">
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-left border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-hairline bg-surface-strong/50 text-xs font-semibold text-muted">
-                    <th className="py-3 px-4">{t("memp.colTopic")}</th>
-                    <th className="py-3 px-4">{t("memp.colHits")}</th>
-                    <th className="py-3 px-4">{t("memp.colLastSeen")}</th>
-                    <th className="py-3 px-4 text-right">{t("mem.colActions")}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-hairline">
-                  {topics.map((tp) => (
-                    <tr key={tp.id} className="hover:bg-surface-strong/30 transition-colors">
-                      <td className="py-3 px-4 font-medium text-ink">#{tp.topic}</td>
-                      <td className="py-3 px-4 text-muted text-xs">
-                        {t("memp.mentions", { n: tp.hits })}
-                      </td>
-                      <td className="py-3 px-4 text-muted text-xs">
-                        {tp.last_seen_at ? formatDate(tp.last_seen_at) : "—"}
-                      </td>
-                      <td className="py-3 px-4 text-right space-x-1">
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await promoteMemoryTopic(tp.id);
-                            await loadTopics();
-                            setSuccess(t("memp.promoted", { topic: tp.topic }));
-                          }}
-                          className="btn btn-outline btn-sm text-xs py-1"
-                        >
-                          {t("memp.promote")}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await deleteMemoryTopic(tp.id);
-                            await loadTopics();
-                          }}
-                          className="btn btn-ghost btn-sm p-1.5 text-muted hover:text-rose-600"
-                        >
-                          <IconTrash className="h-3.5 w-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+        <div
+          id="tabpanel-topics"
+          role="tabpanel"
+          aria-labelledby="tab-topics"
+          className="space-y-3"
+        >
+          <DataTable<MemoryTopic>
+            columns={[
+              { key: "topic", header: t("memp.colTopic") },
+              { key: "hits", header: t("memp.colHits") },
+              { key: "lastSeen", header: t("memp.colLastSeen") },
+              { key: "actions", header: t("mem.colActions"), align: "right" },
+            ]}
+            rows={topics}
+            rowKey={(tp) => String(tp.id)}
+            emptyLabel={t("memp.emptyTopics")}
+            minWidth="min-w-[640px]"
+            caption={t("memp.tabTopics")}
+            renderRow={(tp) => (
+              <>
+                <td className="px-5 py-3.5 align-middle font-medium text-ink">#{tp.topic}</td>
+                <td className="px-5 py-3.5 align-middle text-muted text-xs whitespace-nowrap">
+                  {t("memp.mentions", { n: tp.hits })}
+                </td>
+                <td className="px-5 py-3.5 align-middle text-muted text-xs whitespace-nowrap">
+                  {tp.last_seen_at ? formatDate(tp.last_seen_at) : "—"}
+                </td>
+                <td className="px-5 py-3.5 align-middle text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await promoteMemoryTopic(tp.id);
+                        await loadTopics();
+                        toast.success(t("memp.promoted", { topic: tp.topic }));
+                      }}
+                      className="btn btn-outline btn-sm text-xs py-1"
+                    >
+                      {t("memp.promote")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await deleteMemoryTopic(tp.id);
+                        await loadTopics();
+                      }}
+                      className="btn btn-danger btn-sm p-1.5"
+                      title={t("common.delete")}
+                      aria-label={t("common.delete")}
+                    >
+                      <IconTrash className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                </td>
+              </>
+            )}
+          />
         </div>
       )}
 
       {/* Tab: Documents */}
       {mainTab === "docs" && (
-        <div className="space-y-3">
+        <div
+          id="tabpanel-docs"
+          role="tabpanel"
+          aria-labelledby="tab-docs"
+          className="space-y-3"
+        >
           {docs.length === 0 ? (
             <div className="rounded-xl border border-hairline py-16 text-center text-sm text-muted">
               {t("memp.emptyDocs")}
@@ -601,7 +591,9 @@ export function MemoryPersonalSettings() {
                       await deleteMemoryDocument(dc.id);
                       await loadDocs();
                     }}
-                    className="btn btn-ghost btn-sm p-1.5 text-muted hover:text-rose-600"
+                    className="btn btn-danger btn-sm p-1.5"
+                    title={t("common.delete")}
+                    aria-label={t("common.delete")}
                   >
                     <IconTrash className="h-3.5 w-3.5" />
                   </button>
@@ -615,33 +607,37 @@ export function MemoryPersonalSettings() {
       {/* Add Memory Modal */}
       <Modal open={addModalOpen} title={t("memp.addTitle")} onClose={() => setAddModalOpen(false)}>
         <form onSubmit={handleCreate} className="space-y-4">
-          <label className="block">
-            <span className="caption mb-1.5 block text-muted">{t("memp.category")}</span>
+          <div>
+            <FieldLabel htmlFor="memp-category">{t("memp.category")}</FieldLabel>
             <Select
+              id="memp-category"
               value={draftKind}
               onChange={(v) => setDraftKind(v as MemoryKind)}
               options={KINDS.map((k) => ({ value: k.id, label: `${k.label} — ${k.desc}` }))}
             />
-          </label>
+          </div>
 
-          <label className="block">
-            <span className="caption mb-1.5 block text-muted">{t("memp.content")}</span>
+          <div>
+            <FieldLabel htmlFor="memp-content" required>
+              {t("memp.content")}
+            </FieldLabel>
             <textarea
+              id="memp-content"
               required
+              aria-required="true"
               rows={4}
               placeholder={t("memp.contentPh")}
               className="input resize-none"
               value={draftContent}
               onChange={(e) => setDraftContent(e.target.value)}
             />
-          </label>
+          </div>
 
-          <label className="block">
-            <span className="caption mb-1.5 block text-muted">
-              {t("memp.importanceRange")}
-            </span>
+          <div>
+            <FieldLabel htmlFor="memp-importance">{t("memp.importanceRange")}</FieldLabel>
             <div className="flex items-center gap-3">
               <input
+                id="memp-importance"
                 type="range"
                 min={1}
                 max={5}
@@ -651,7 +647,7 @@ export function MemoryPersonalSettings() {
               />
               <span className="font-semibold text-sm w-4">{draftImportance}</span>
             </div>
-          </label>
+          </div>
 
           <div className="flex justify-end gap-3 pt-3">
             <button
@@ -679,21 +675,26 @@ export function MemoryPersonalSettings() {
         onClose={() => setEditingItem(null)}
       >
         <form onSubmit={handleSaveEdit} className="space-y-4">
-          <label className="block">
-            <span className="caption mb-1.5 block text-muted">{t("memp.contentLabel")}</span>
+          <div>
+            <FieldLabel htmlFor="memp-edit-content" required>
+              {t("memp.contentLabel")}
+            </FieldLabel>
             <textarea
+              id="memp-edit-content"
               required
+              aria-required="true"
               rows={4}
               className="input resize-none"
               value={editContent}
               onChange={(e) => setEditContent(e.target.value)}
             />
-          </label>
+          </div>
 
-          <label className="block">
-            <span className="caption mb-1.5 block text-muted">{t("memp.importance")}</span>
+          <div>
+            <FieldLabel htmlFor="memp-edit-importance">{t("memp.importance")}</FieldLabel>
             <div className="flex items-center gap-3">
               <input
+                id="memp-edit-importance"
                 type="range"
                 min={1}
                 max={5}
@@ -703,7 +704,7 @@ export function MemoryPersonalSettings() {
               />
               <span className="font-semibold text-sm w-4">{editImportance}</span>
             </div>
-          </label>
+          </div>
 
           <div className="flex justify-end gap-3 pt-3">
             <button
@@ -746,7 +747,7 @@ export function MemoryPersonalSettings() {
               type="button"
               disabled={busyAction}
               onClick={() => void handleClearAll()}
-              className="btn btn-primary bg-rose-600 hover:bg-rose-700 text-white"
+              className="btn btn-danger"
             >
               {busyAction ? t("memp.clearing") : t("memp.clearCta")}
             </button>

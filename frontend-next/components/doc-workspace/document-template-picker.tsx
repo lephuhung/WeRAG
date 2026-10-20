@@ -43,7 +43,7 @@ export function DocumentTemplatePicker({
   return (
     <section
       aria-label={t("docws.tplTitle")}
-      className={`rounded-[14px] border border-hairline bg-surface-card ${compact ? "mb-2 px-3 py-2.5" : "p-4"}`}
+      className={`rounded-lg2 border border-hairline bg-surface-card ${compact ? "mb-2 px-3 py-2.5" : "p-4"}`}
     >
       <div className={`flex items-start justify-between gap-2 ${compact ? "mb-2" : "mb-1"}`}>
         <p className={`${compact ? "text-[13px]" : "text-[15px]"} font-semibold text-ink`}>{t("docws.tplTitle")}</p>
@@ -118,7 +118,7 @@ export function DocumentTemplateBar({
           role="status"
           className={`mt-1 rounded-[10px] px-3 py-2 ${
             notice?.kind === "done"
-              ? "bg-[#e8f4ec] text-[#14532d] dark:bg-[#12301e] dark:text-[#c7ecd3]"
+              ? "bg-success-surface text-success"
               : notice?.kind === "failed" || notice?.kind === "invalid" || notice?.kind === "notEmpty"
                 ? "bg-surface-strong text-error"
                 : "bg-surface-strong text-ink"

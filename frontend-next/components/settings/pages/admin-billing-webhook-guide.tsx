@@ -7,6 +7,7 @@
 
 import { useState, type ReactNode } from "react";
 import { IconCopy } from "@/components/icons";
+import { DataTable } from "@/components/settings/data-table";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useT, type LocaleKey } from "@/lib/i18n";
 
@@ -87,26 +88,28 @@ async function checkSecret(secret: string): Promise<CheckResult> {
 
 function Table({ head, rows }: { head: string[]; rows: ReactNode[][] }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-hairline">
-      <table className="w-full text-[13px]">
-        <thead className="caption text-muted">
-          <tr className="border-b border-hairline text-left">
-            {head.map((h) => (
-              <th key={h} className="px-3 py-2 font-normal">{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-hairline">
-          {rows.map((r, i) => (
-            <tr key={i}>
-              {r.map((cell, j) => (
-                <td key={j} className={j === 0 ? "whitespace-nowrap px-3 py-2 align-top font-mono text-ink" : "px-3 py-2 align-top text-ink"}>{cell}</td>
-              ))}
-            </tr>
+    <DataTable<ReactNode[]>
+      minWidth="min-w-[420px]"
+      columns={head.map((h, i) => ({ key: `col-${i}`, header: h }))}
+      rows={rows}
+      rowKey={(r) => String(r[0])}
+      renderRow={(r) => (
+        <>
+          {r.map((cell, j) => (
+            <td
+              key={j}
+              className={
+                j === 0
+                  ? "whitespace-nowrap px-5 py-3.5 align-middle font-mono text-ink"
+                  : "px-5 py-3.5 align-middle text-ink"
+              }
+            >
+              {cell}
+            </td>
           ))}
-        </tbody>
-      </table>
-    </div>
+        </>
+      )}
+    />
   );
 }
 
@@ -142,7 +145,7 @@ export function WebhookGuide({ enabled, secretShown }: { enabled: boolean; secre
             {secretShown ? (
               <span className="mt-1.5 flex flex-wrap items-center gap-2">
                 <button type="button" className="btn btn-outline btn-sm" disabled={checking} onClick={() => void runCheck()}>{t("bwg.checkButton")}</button>
-                {check && <span className={check.ok ? "text-emerald-700 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}>{t(check.message, { seconds: check.retryAfter ?? "" })}</span>}
+                {check && <span className={check.ok ? "text-success" : "text-error"}>{t(check.message, { seconds: check.retryAfter ?? "" })}</span>}
               </span>
             ) : (
               <span className="mt-1 block text-muted-soft">{enabled ? t("bwg.checkNeedsNewSecret") : t("bwg.checkNeedsSecret")}</span>

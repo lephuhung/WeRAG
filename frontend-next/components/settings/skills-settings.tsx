@@ -14,11 +14,21 @@ import {
   type SkillCatalogItem,
 } from "@/lib/api/skills";
 import { listSandboxConfigs, type SandboxConfigRecord } from "@/lib/api/sandbox";
+import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { Notice } from "@/components/settings/notice";
+import { SectionHeader } from "@/components/settings/section-header";
+import { Loading } from "@/components/settings/loading";
+import { DeniedView } from "@/components/settings/system-section";
+import { FieldLabel } from "@/components/settings/field";
+import { TabStrip } from "@/components/settings/tab-strip";
+import { ConsolePage } from "@/components/settings/console-page";
+import { useToast } from "@/components/toast";
 
 export function SkillsSettings() {
   const { t } = useT();
+  const toast = useToast();
   const auth = useAuth();
   const activeTenantId = Number(auth.selectedTenantId ?? auth.tenant?.id ?? 0);
   const currentRole =
@@ -33,7 +43,7 @@ export function SkillsSettings() {
   const [sandboxes, setSandboxes] = useState<SandboxConfigRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const [denied, setDenied] = useState(false);
 
   // Register Modal
   const [registerModalOpen, setRegisterModalOpen] = useState(false);
@@ -42,6 +52,9 @@ export function SkillsSettings() {
   const [sourceUrl, setSourceUrl] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [registering, setRegistering] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [installError, setInstallError] = useState("");
+  const [deleteError, setDeleteError] = useState("");
 
   // Install Modal
   const [installSkill, setInstallSkill] = useState<SkillCatalogItem | null>(null);
@@ -69,8 +82,14 @@ export function SkillsSettings() {
       ]);
       setCatalog(cRes.data ?? []);
       setSandboxes(sRes.data ?? []);
+      setDenied(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("skillc.loadFailed"));
+      if (e instanceof ApiError && e.status === 403) {
+        setDenied(true);
+        setCatalog([]);
+      } else {
+        setError(e instanceof Error ? e.message : t("skillc.loadFailed"));
+      }
     } finally {
       setLoading(false);
     }
@@ -85,20 +104,26 @@ export function SkillsSettings() {
     e.preventDefault();
     setRegistering(true);
     setError("");
+    setFormError("");
     try {
       if (regTab === "file" && selectedFile) {
         await registerSkillCatalogFromFile(selectedFile, (p) => setUploadProgress(p));
-        setSuccess(t("skillc.registeredFile", { name: selectedFile.name }));
+        toast.success(t("skillc.registeredFile", { name: selectedFile.name }));
       } else if (regTab === "source" && sourceUrl.trim()) {
         await registerSkillCatalogFromSource(sourceUrl.trim());
-        setSuccess(t("skillc.registeredSrc"));
+        toast.success(t("skillc.registeredSrc"));
       }
       setRegisterModalOpen(false);
       setSelectedFile(null);
       setSourceUrl("");
       await loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("skillc.registerFailed"));
+      if (e instanceof ApiError && e.status === 403) {
+        setDenied(true);
+        setRegisterModalOpen(false);
+        return;
+      }
+      setFormError(e instanceof Error ? e.message : t("skillc.registerFailed"));
     } finally {
       setRegistering(false);
       setUploadProgress(0);
@@ -109,14 +134,19 @@ export function SkillsSettings() {
   const handleInstall = async () => {
     if (!installSkill || targetSandboxIds.length === 0) return;
     setInstalling(true);
-    setError("");
+    setInstallError("");
     try {
       await installSkillCatalog(installSkill.id, targetSandboxIds);
-      setSuccess(t("skillc.installed", { name: installSkill.name }));
+      toast.success(t("skillc.installed", { name: installSkill.name }));
       setInstallSkill(null);
       await loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("skillc.installFailed"));
+      if (e instanceof ApiError && e.status === 403) {
+        setDenied(true);
+        setInstallSkill(null);
+        return;
+      }
+      setInstallError(e instanceof Error ? e.message : t("skillc.installFailed"));
     } finally {
       setInstalling(false);
     }
@@ -163,380 +193,410 @@ export function SkillsSettings() {
   const handleDelete = async () => {
     if (!deletingSkill) return;
     setDeletingBusy(true);
-    setError("");
+    setDeleteError("");
     try {
       await deleteSkillCatalog(deletingSkill.id);
-      setSuccess(t("skillc.deleted", { name: deletingSkill.name }));
+      toast.success(t("skillc.deleted", { name: deletingSkill.name }));
       setDeletingSkill(null);
       await loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("skillc.deleteFailed"));
+      if (e instanceof ApiError && e.status === 403) {
+        setDenied(true);
+        return;
+      }
+      setDeleteError(e instanceof Error ? e.message : t("skillc.deleteFailed"));
     } finally {
       setDeletingBusy(false);
     }
   };
 
+  if (denied) {
+    return <DeniedView />;
+  }
+
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-5">
-        <div>
-          <h2 className="title-md font-semibold text-ink">{t("skillc.title")}</h2>
-          <p className="caption text-muted mt-1">
-            {t("skillc.subtitle")}
-          </p>
-        </div>
+    <ConsolePage size="form">
+      <div className="space-y-8">
+        {/* Header */}
+        <SectionHeader
+          title={t("skillc.title")}
+          subtitle={t("skillc.subtitle")}
+          actions={
+            <>
+              {canManage && (
+                <button
+                  type="button"
+                  onClick={() => setRegisterModalOpen(true)}
+                  className="btn btn-primary btn-sm flex items-center gap-1.5"
+                >
+                  <IconPlus className="h-3.5 w-3.5" />
+                  <span>{t("skillc.register")}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => void loadData()}
+                className="btn btn-outline btn-sm p-1.5"
+                title={t("common.refresh")}
+                aria-label={t("common.refresh")}
+              >
+                <IconRefresh className="h-3.5 w-3.5" />
+              </button>
+            </>
+          }
+        />
 
-        <div className="flex items-center gap-2">
-          {canManage && (
-            <button
-              type="button"
-              onClick={() => setRegisterModalOpen(true)}
-              className="btn btn-primary btn-sm flex items-center gap-1.5"
-            >
-              <IconPlus className="h-3.5 w-3.5" />
-              <span>{t("skillc.register")}</span>
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => void loadData()}
-            className="btn btn-outline btn-sm p-1.5"
-            title={t("common.refresh")}
+        {error && (
+          <Notice
+            tone="error"
+            action={
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => void loadData()}>
+                {t("common.retry")}
+              </button>
+            }
           >
-            <IconRefresh className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
+            {error}
+          </Notice>
+        )}
 
-      {error && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-400">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-400">
-          {success}
-        </div>
-      )}
+        {/* Catalog Grid */}
+        {loading ? (
+          <Loading label={t("skillc.loading")} className="py-12" />
+        ) : catalog.length === 0 ? (
+          <div className="rounded-xl border border-hairline py-16 text-center text-sm text-muted">
+            {t("skillc.empty")}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {catalog.map((sk) => (
+              <div
+                key={sk.id}
+                className="card p-5 hover:border-ink/20 transition-all flex flex-col justify-between gap-4"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-semibold text-ink leading-snug">
+                        {sk.name}
+                      </h3>
+                      {sk.version && (
+                        <span className="badge-pill text-[10.5px] mt-1 font-mono">
+                          v{sk.version}
+                        </span>
+                      )}
+                    </div>
 
-      {/* Catalog Grid */}
-      {loading ? (
-        <p className="caption text-muted text-center py-12">{t("skillc.loading")}</p>
-      ) : catalog.length === 0 ? (
-        <div className="rounded-xl border border-hairline py-16 text-center text-sm text-muted">
-          {t("skillc.empty")}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {catalog.map((sk) => (
-            <div
-              key={sk.id}
-              className="card p-5 hover:border-ink/20 transition-all flex flex-col justify-between gap-4"
-            >
-              <div>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h3 className="text-base font-semibold text-ink leading-snug">
-                      {sk.name}
-                    </h3>
-                    {sk.version && (
-                      <span className="badge-pill text-[10.5px] mt-1 font-mono">
-                        v{sk.version}
-                      </span>
+                    {canManage && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => void handleOpenFiles(sk)}
+                          className="btn btn-outline btn-sm text-xs py-1"
+                        >
+                          {t("skillc.files")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInstallSkill(sk);
+                            setTargetSandboxIds(
+                              sk.installations?.map((i) => i.sandbox_config_id) ?? [],
+                            );
+                          }}
+                          className="btn btn-outline btn-sm text-xs py-1"
+                        >
+                          {t("skillc.install")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeletingSkill(sk)}
+                          className="btn btn-danger btn-sm p-1.5"
+                          title={t("skillc.deleteTip")}
+                          aria-label={t("skillc.deleteTip")}
+                        >
+                          <IconTrash className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     )}
                   </div>
 
-                  {canManage && (
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => void handleOpenFiles(sk)}
-                        className="btn btn-outline btn-sm text-xs py-1"
-                      >
-                        {t("skillc.files")}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setInstallSkill(sk);
-                          setTargetSandboxIds(
-                            sk.installations?.map((i) => i.sandbox_config_id) ?? [],
-                          );
-                        }}
-                        className="btn btn-outline btn-sm text-xs py-1"
-                      >
-                        {t("skillc.install")}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDeletingSkill(sk)}
-                        className="btn btn-ghost btn-sm p-1 text-muted hover:text-rose-600"
-                        title={t("skillc.deleteTip")}
-                      >
-                        <IconTrash className="h-3.5 w-3.5" />
-                      </button>
+                  <p className="text-sm text-muted mt-2 line-clamp-3 leading-relaxed">
+                    {sk.description || t("skillc.noDesc")}
+                  </p>
+                </div>
+
+                {/* Installations */}
+                <div className="border-t border-hairline pt-3 space-y-1.5 text-xs">
+                  <span className="caption font-medium text-muted block">{t("skillc.activeInst")}</span>
+                  {!sk.installations || sk.installations.length === 0 ? (
+                    <span className="caption text-muted-soft block">
+                      {t("skillc.noInst")}
+                    </span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {sk.installations.map((inst) => (
+                        <span
+                          key={inst.sandbox_config_id}
+                          className={`badge-pill text-xs font-medium ${
+                            inst.status === "installed"
+                              ? "badge-success"
+                              : inst.status === "failed"
+                              ? "badge-error"
+                              : ""
+                          }`}
+                        >
+                          {inst.sandbox_config_name || inst.sandbox_config_id} ({inst.status})
+                        </span>
+                      ))}
                     </div>
                   )}
                 </div>
-
-                <p className="text-sm text-muted mt-2 line-clamp-3 leading-relaxed">
-                  {sk.description || t("skillc.noDesc")}
-                </p>
               </div>
-
-              {/* Installations */}
-              <div className="border-t border-hairline pt-3 space-y-1.5 text-xs">
-                <span className="caption font-medium text-muted block">{t("skillc.activeInst")}</span>
-                {!sk.installations || sk.installations.length === 0 ? (
-                  <span className="caption text-muted-soft block">
-                    {t("skillc.noInst")}
-                  </span>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {sk.installations.map((inst) => (
-                      <span
-                        key={inst.sandbox_config_id}
-                        className={`badge-pill text-[11px] font-medium ${
-                          inst.status === "installed"
-                            ? "bg-emerald-500/10 text-emerald-700 border border-emerald-500/20"
-                            : inst.status === "failed"
-                            ? "bg-rose-500/10 text-rose-700 border border-rose-500/20"
-                            : ""
-                        }`}
-                      >
-                        {inst.sandbox_config_name || inst.sandbox_config_id} ({inst.status})
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Register Skill Modal */}
-      <Modal
-        open={registerModalOpen}
-        title={t("skillc.registerTitle")}
-        onClose={() => setRegisterModalOpen(false)}
-      >
-        <div className="space-y-4">
-          <div className="flex border-b border-hairline pb-2 gap-4">
-            <button
-              type="button"
-              onClick={() => setRegTab("file")}
-              className={`text-sm font-medium pb-2 transition-colors border-b-2 -mb-2.5 ${
-                regTab === "file"
-                  ? "border-primary text-primary font-semibold"
-                  : "border-transparent text-muted hover:text-ink"
-              }`}
-            >
-              {t("skillc.tabFile")}
-            </button>
-            <button
-              type="button"
-              onClick={() => setRegTab("source")}
-              className={`text-sm font-medium pb-2 transition-colors border-b-2 -mb-2.5 ${
-                regTab === "source"
-                  ? "border-primary text-primary font-semibold"
-                  : "border-transparent text-muted hover:text-ink"
-              }`}
-            >
-              {t("skillc.tabSource")}
-            </button>
+            ))}
           </div>
+        )}
 
-          <form onSubmit={handleRegister} className="space-y-4 pt-2">
-            {regTab === "file" ? (
-              <label className="block">
-                <span className="caption mb-1.5 block text-muted">{t("skillc.archive")}</span>
-                <input
-                  type="file"
-                  accept=".zip"
-                  required
-                  className="input file:mr-3 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:bg-surface-strong file:text-xs"
-                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                />
-                <span className="caption text-muted block text-xs mt-1">
-                  {t("skillc.archiveHint")}
-                </span>
-              </label>
-            ) : (
-              <label className="block">
-                <span className="caption mb-1.5 block text-muted">{t("skillc.sourceRepo")}</span>
-                <input
-                  type="url"
-                  required
-                  placeholder="https://github.com/org/repo.git"
-                  className="input"
-                  value={sourceUrl}
-                  onChange={(e) => setSourceUrl(e.target.value)}
-                />
-              </label>
+        {/* Register Skill Modal */}
+        <Modal
+          open={registerModalOpen}
+          title={t("skillc.registerTitle")}
+          onClose={() => setRegisterModalOpen(false)}
+        >
+          <div className="space-y-4">
+            <TabStrip
+              tabs={[
+                { id: "file", label: t("skillc.tabFile") },
+                { id: "source", label: t("skillc.tabSource") },
+              ]}
+              value={regTab}
+              onChange={setRegTab}
+              ariaLabel={t("skillc.registerTitle")}
+            />
+
+            <form onSubmit={handleRegister} className="space-y-4 pt-2">
+            {formError && (
+              <Notice tone="error" className="mb-4">
+                {formError}
+              </Notice>
             )}
+              {regTab === "file" ? (
+                <>
+                  <div id="tabpanel-file" role="tabpanel" aria-labelledby="tab-file">
+                    <FieldLabel htmlFor="skillc-archive" required>
+                      {t("skillc.archive")}
+                    </FieldLabel>
+                    <input
+                      id="skillc-archive"
+                      type="file"
+                      accept=".zip"
+                      required
+                      aria-required="true"
+                      className="input file:mr-3 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:bg-surface-strong file:text-xs"
+                      onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                    />
+                    <p className="caption text-muted block text-xs mt-1">
+                      {t("skillc.archiveHint")}
+                    </p>
+                  </div>
+                  <div id="tabpanel-source" role="tabpanel" aria-labelledby="tab-source" hidden />
+                </>
+              ) : (
+                <>
+                  <div id="tabpanel-source" role="tabpanel" aria-labelledby="tab-source">
+                    <FieldLabel htmlFor="skillc-source" required>
+                      {t("skillc.sourceRepo")}
+                    </FieldLabel>
+                    <input
+                      id="skillc-source"
+                      type="url"
+                      required
+                      aria-required="true"
+                      placeholder="https://github.com/org/repo.git"
+                      className="input"
+                      value={sourceUrl}
+                      onChange={(e) => setSourceUrl(e.target.value)}
+                    />
+                  </div>
+                  <div id="tabpanel-file" role="tabpanel" aria-labelledby="tab-file" hidden />
+                </>
+              )}
 
-            {uploadProgress > 0 && uploadProgress < 100 && (
-              <div className="w-full bg-surface-strong rounded-full h-2">
-                <div
-                  className="bg-primary h-2 rounded-full transition-all"
-                  style={{ width: `${uploadProgress}%` }}
-                />
+              {uploadProgress > 0 && uploadProgress < 100 && (
+                <div className="w-full bg-surface-strong rounded-full h-2">
+                  <div
+                    className="bg-primary h-2 rounded-full transition-all"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-3">
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setRegisterModalOpen(false)}
+                >
+                  {t("common.cancel")}
+                </button>
+                <button
+                  type="submit"
+                  disabled={registering || (regTab === "file" && !selectedFile) || (regTab === "source" && !sourceUrl.trim())}
+                  className="btn btn-primary"
+                >
+                  {registering ? t("skillc.registering") : t("skillc.registerCta")}
+                </button>
               </div>
+            </form>
+          </div>
+        </Modal>
+
+        {/* Install Skill Modal */}
+        <Modal
+          open={installSkill !== null}
+          title={t("skillc.installTitle", { name: installSkill?.name || "Skill" })}
+          onClose={() => setInstallSkill(null)}
+        >
+          <div className="space-y-4">
+            <p className="caption text-muted">
+              {t("skillc.installDesc")}
+            </p>
+
+            {installError && (
+              <Notice tone="error" className="mb-4">
+                {installError}
+              </Notice>
             )}
 
-            <div className="flex justify-end gap-3 pt-3">
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {sandboxes.length === 0 ? (
+                <p className="caption text-muted text-center py-4">
+                  {t("skillc.noSandboxes")}
+                </p>
+              ) : (
+                sandboxes.map((sb) => {
+                  const checked = targetSandboxIds.includes(sb.id);
+                  return (
+                    <label
+                      key={sb.id}
+                      htmlFor={`skillc-install-${sb.id}`}
+                      className="flex items-center gap-3 rounded-lg border border-hairline p-3 cursor-pointer hover:bg-surface-strong/40"
+                    >
+                      <input
+                        id={`skillc-install-${sb.id}`}
+                        type="checkbox"
+                        aria-label={sb.name}
+                        checked={checked}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setTargetSandboxIds([...targetSandboxIds, sb.id]);
+                          } else {
+                            setTargetSandboxIds(targetSandboxIds.filter((id) => id !== sb.id));
+                          }
+                        }}
+                        className="rounded accent-ink"
+                      />
+                      <div>
+                        <span className="font-medium text-sm text-ink block">{sb.name}</span>
+                        <span className="caption text-muted text-xs block">
+                          {t("skillc.sandboxType")}: {sb.sandbox_type}
+                        </span>
+                      </div>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 pt-2">
               <button
                 type="button"
                 className="btn btn-outline"
-                onClick={() => setRegisterModalOpen(false)}
+                onClick={() => setInstallSkill(null)}
               >
                 {t("common.cancel")}
               </button>
               <button
-                type="submit"
-                disabled={registering || (regTab === "file" && !selectedFile) || (regTab === "source" && !sourceUrl.trim())}
+                type="button"
+                disabled={installing || targetSandboxIds.length === 0}
+                onClick={() => void handleInstall()}
                 className="btn btn-primary"
               >
-                {registering ? t("skillc.registering") : t("skillc.registerCta")}
+                {installing ? t("skillc.installing") : t("skillc.installCta")}
               </button>
             </div>
-          </form>
-        </div>
-      </Modal>
+          </div>
+        </Modal>
 
-      {/* Install Skill Modal */}
-      <Modal
-        open={installSkill !== null}
-        title={t("skillc.installTitle", { name: installSkill?.name || "Skill" })}
-        onClose={() => setInstallSkill(null)}
-      >
-        <div className="space-y-4">
-          <p className="caption text-muted">
-            {t("skillc.installDesc")}
-          </p>
+        {/* View Bundle Files Modal */}
+        <Modal
+          open={viewFilesSkill !== null}
+          title={t("skillc.filesTitle", { name: viewFilesSkill?.name || "Skill" })}
+          onClose={() => setViewFilesSkill(null)}
+        >
+          <div className="flex gap-4 h-96">
+            <div className="w-1/3 border-r border-hairline pr-3 overflow-y-auto space-y-1">
+              {files.map((f) => (
+                <button
+                  key={f.path}
+                  type="button"
+                  onClick={() => void handleSelectFile(f.path)}
+                  className={`w-full text-left px-2.5 py-1.5 rounded text-xs truncate transition-colors ${
+                    selectedFilePath === f.path
+                      ? "bg-primary text-on-primary font-medium"
+                      : "text-muted hover:bg-surface-strong hover:text-ink"
+                  }`}
+                >
+                  {f.path}
+                </button>
+              ))}
+            </div>
 
-          <div className="space-y-2 max-h-60 overflow-y-auto">
-            {sandboxes.length === 0 ? (
-              <p className="caption text-muted text-center py-4">
-                {t("skillc.noSandboxes")}
-              </p>
-            ) : (
-              sandboxes.map((sb) => {
-                const checked = targetSandboxIds.includes(sb.id);
-                return (
-                  <label
-                    key={sb.id}
-                    className="flex items-center gap-3 rounded-lg border border-hairline p-3 cursor-pointer hover:bg-surface-strong/40"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setTargetSandboxIds([...targetSandboxIds, sb.id]);
-                        } else {
-                          setTargetSandboxIds(targetSandboxIds.filter((id) => id !== sb.id));
-                        }
-                      }}
-                      className="rounded accent-brand"
-                    />
-                    <div>
-                      <span className="font-medium text-sm text-ink block">{sb.name}</span>
-                      <span className="caption text-muted text-xs block">
-                        {t("skillc.sandboxType")}: {sb.sandbox_type}
-                      </span>
-                    </div>
-                  </label>
-                );
-              })
+            <div className="w-2/3 overflow-auto bg-surface-strong/30 rounded-lg p-3 font-mono text-xs text-ink whitespace-pre-wrap">
+              {loadingFiles ? (
+                <Loading label={t("skillc.loadingFile")} />
+              ) : (
+                fileContent || t("skillc.emptyFile")
+              )}
+            </div>
+          </div>
+        </Modal>
+
+        {/* Delete Skill Modal */}
+        <Modal
+          open={deletingSkill !== null}
+          title={t("skillc.deleteTitle")}
+          onClose={() => setDeletingSkill(null)}
+        >
+          <div className="space-y-4">
+            <p className="body-sm text-body">
+              {t("skillc.deleteBody1")} <strong>{deletingSkill?.name}</strong> {t("skillc.deleteBody2")}
+            </p>
+
+            {deleteError && (
+              <Notice tone="error" className="mb-4">
+                {deleteError}
+              </Notice>
             )}
-          </div>
-
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              className="btn btn-outline"
-              onClick={() => setInstallSkill(null)}
-            >
-              {t("common.cancel")}
-            </button>
-            <button
-              type="button"
-              disabled={installing || targetSandboxIds.length === 0}
-              onClick={() => void handleInstall()}
-              className="btn btn-primary"
-            >
-              {installing ? t("skillc.installing") : t("skillc.installCta")}
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* View Bundle Files Modal */}
-      <Modal
-        open={viewFilesSkill !== null}
-        title={t("skillc.filesTitle", { name: viewFilesSkill?.name || "Skill" })}
-        onClose={() => setViewFilesSkill(null)}
-      >
-        <div className="flex gap-4 h-96">
-          <div className="w-1/3 border-r border-hairline pr-3 overflow-y-auto space-y-1">
-            {files.map((f) => (
+            <div className="flex justify-end gap-3 pt-2">
               <button
-                key={f.path}
                 type="button"
-                onClick={() => void handleSelectFile(f.path)}
-                className={`w-full text-left px-2.5 py-1.5 rounded text-xs truncate transition-colors ${
-                  selectedFilePath === f.path
-                    ? "bg-primary text-on-primary font-medium"
-                    : "text-muted hover:bg-surface-strong hover:text-ink"
-                }`}
+                className="btn btn-outline"
+                onClick={() => setDeletingSkill(null)}
               >
-                {f.path}
+                {t("common.cancel")}
               </button>
-            ))}
+              <button
+                type="button"
+                disabled={deletingBusy}
+                onClick={() => void handleDelete()}
+                className="btn btn-danger"
+              >
+                {deletingBusy ? t("skillc.deleting") : t("skillc.deleteTitle")}
+              </button>
+            </div>
           </div>
-
-          <div className="w-2/3 overflow-auto bg-surface-strong/30 rounded-lg p-3 font-mono text-xs text-ink whitespace-pre-wrap">
-            {loadingFiles ? (
-              <span className="text-muted">{t("skillc.loadingFile")}</span>
-            ) : (
-              fileContent || t("skillc.emptyFile")
-            )}
-          </div>
-        </div>
-      </Modal>
-
-      {/* Delete Skill Modal */}
-      <Modal
-        open={deletingSkill !== null}
-        title={t("skillc.deleteTitle")}
-        onClose={() => setDeletingSkill(null)}
-      >
-        <div className="space-y-4">
-          <p className="body-sm text-body">
-            {t("skillc.deleteBody1")} <strong>{deletingSkill?.name}</strong> {t("skillc.deleteBody2")}
-          </p>
-          <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              className="btn btn-outline"
-              onClick={() => setDeletingSkill(null)}
-            >
-              {t("common.cancel")}
-            </button>
-            <button
-              type="button"
-              disabled={deletingBusy}
-              onClick={() => void handleDelete()}
-              className="btn btn-primary bg-rose-600 hover:bg-rose-700 text-white"
-            >
-              {deletingBusy ? t("skillc.deleting") : t("skillc.deleteTitle")}
-            </button>
-          </div>
-        </div>
-      </Modal>
-    </div>
+        </Modal>
+      </div>
+    </ConsolePage>
   );
 }

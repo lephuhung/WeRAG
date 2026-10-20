@@ -10,16 +10,18 @@ import { updateMyProfile, uploadMyAvatar } from "@/lib/api/auth";
 import { useAvatarUrl } from "@/lib/avatar";
 import { ApiError } from "@/lib/api-client";
 import { WorkContextForm } from "@/components/settings/work-context-form";
+import { useToast } from "@/components/toast";
+import { Notice } from "@/components/settings/notice";
 
 const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
 
 export function ProfileSettings() {
   const { t } = useT();
   const auth = useAuth();
+  const toast = useToast();
   const [nameDraft, setNameDraft] = useState(auth.user?.username ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [saved, setSaved] = useState(false);
   /* Avatar upload state lives beside the name form: uploading shows a
    * spinner on the disc, failures surface under it like name errors. */
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -44,12 +46,11 @@ export function ProfileSettings() {
     if (!next || next === (auth.user?.username ?? "")) return;
     setSaving(true);
     setError("");
-    setSaved(false);
     try {
       const res = await updateMyProfile(next);
       if (!res.success) throw new Error(res.message || t("common.error"));
       await auth.refreshMe();
-      setSaved(true);
+      toast.success(t("common.saved"));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : t("common.error"));
     } finally {
@@ -102,13 +103,13 @@ export function ProfileSettings() {
           onClick={pickAvatar}
           disabled={uploadingAvatar}
           title={t("userSettings.changePhoto")}
-          className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-full outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+          className="group relative h-16 w-16 shrink-0 overflow-hidden rounded-full outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
         >
           {avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- authenticated blob URL, not a Next asset
             <img src={avatarUrl} alt={name} className="h-16 w-16 object-cover" />
           ) : (
-            <span className="flex h-16 w-16 items-center justify-center bg-gradient-to-br from-sky-500 to-indigo-500 text-[18px] font-semibold text-white">
+            <span className="flex h-16 w-16 items-center justify-center bg-gradient-to-br from-info to-accent text-[18px] font-semibold text-white">
               {(name || "?").slice(0, 2).toUpperCase()}
             </span>
           )}
@@ -153,7 +154,6 @@ export function ProfileSettings() {
             maxLength={50}
             onChange={(e) => {
               setNameDraft(e.target.value);
-              setSaved(false);
               setError("");
             }}
           />
@@ -165,8 +165,7 @@ export function ProfileSettings() {
             {saving ? "…" : t("common.save")}
           </button>
         </div>
-        {saved && <p className="caption mt-1.5 text-emerald-600 dark:text-emerald-400">{t("common.saved")}</p>}
-        {error && <p className="caption mt-1.5 text-error">{error}</p>}
+        {error && <Notice tone="error" className="mt-1.5">{error}</Notice>}
       </label>
       <label className="block">
         <span className="caption mb-1.5 block text-muted">

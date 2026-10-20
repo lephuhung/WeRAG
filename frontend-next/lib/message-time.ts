@@ -36,6 +36,19 @@ export function dayLabel(iso: string | undefined, now: Date = new Date()): DayLa
   return { kind: "date", text: formatDate(v) };
 }
 
+/** The coarse day group a timestamp belongs to — the buckets the session
+ * list is grouped by. Shares the day maths of dayLabel(). */
+export type DayBucket = "today" | "yesterday" | "week" | "older";
+
+export function dayBucket(iso: string | undefined, now: Date = new Date()): DayBucket {
+  const v = valid(iso);
+  if (!v) return "older";
+  const label = dayLabel(v, now);
+  if (label?.kind === "today") return "today";
+  if (label?.kind === "yesterday") return "yesterday";
+  return vnDaysAgo(v, now) <= 7 ? "week" : "older";
+}
+
 /** Indexes of the messages that start a new day — a divider goes above
  * each. Messages without a timestamp never start a day. */
 export function dayStarts(times: (string | undefined)[]): Set<number> {

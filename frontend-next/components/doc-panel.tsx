@@ -16,20 +16,12 @@ import { IconDoc, IconExternal, IconPulse } from "@/components/icons";
 import { DocPreviewModal, type DocPreviewSource } from "@/components/doc-preview-modal";
 import {
   ProcessingTimeline,
-  ProcessingTimelineDrawer,
   type TimelineSummary,
 } from "@/components/knowledge/processing-timeline";
+import { ProcessingTimelineDrawer } from "@/components/knowledge/processing-timeline/timeline-drawer";
+import { knowledgeStatusStyle } from "@/components/knowledge/trace-status";
 import { useT } from "@/lib/i18n";
 import { formatDate } from "@/lib/datetime";
-
-const STATUS_STYLE: Record<string, { label: string; cls: string; dot: string }> = {
-  completed: { label: "Indexed", cls: "text-success", dot: "#16a34a" },
-  processing: { label: "Processing", cls: "text-muted", dot: "#a8a29e" },
-  finalizing: { label: "Processing", cls: "text-muted", dot: "#a8a29e" },
-  pending: { label: "Pending", cls: "text-muted", dot: "#a8a29e" },
-  failed: { label: "Failed", cls: "text-error", dot: "#dc2626" },
-  cancelled: { label: "Cancelled", cls: "text-muted", dot: "#a8a29e" },
-};
 
 type ChunkRow = { id?: string; content?: string };
 
@@ -98,7 +90,7 @@ export function DocPanel({
     };
   }, [docId]);
 
-  const st = doc ? (STATUS_STYLE[doc.parse_status ?? doc.status ?? ""] ?? STATUS_STYLE.pending) : null;
+  const st = doc ? knowledgeStatusStyle(doc.parse_status ?? doc.status) : null;
   const name = doc ? (doc.title || doc.file_name || doc.id) : "";
 
   const download = async () => {
@@ -141,7 +133,7 @@ export function DocPanel({
       : traceSummary && ["failed"].includes(traceSummary.status)
         ? "text-error"
         : traceSummary && ["running", "processing", "pending"].includes(traceSummary.status)
-          ? "text-amber-500"
+          ? "text-running"
           : "text-muted";
 
   const traceTitle = (() => {
@@ -164,10 +156,10 @@ export function DocPanel({
 
   return (
     <>
-      <SlidePanel open={doc !== null} onClose={closePanel} label="Document" width="w-[560px]">
+      <SlidePanel open={doc !== null} onClose={closePanel} label={t("docpanel.label")} width="w-[560px]">
         <SlidePanelHeader
           title={name}
-          subtitle="Extracted chunks"
+          subtitle={t("docpanel.subtitle")}
           onClose={closePanel}
           actions={
             doc && hasTrace ? (
@@ -185,9 +177,9 @@ export function DocPanel({
         >
           {doc && (
             <span
-              className="w-[30px] shrink-0"
+              className="inline-block h-[36px] w-[30px] shrink-0"
               dangerouslySetInnerHTML={{
-                __html: renderFileIconSvg(doc.file_name ?? name, doc.file_type, doc.profile?.doc_type),
+                __html: renderFileIconSvg(doc.file_name ?? name, doc.file_type),
               }}
             />
           )}
@@ -220,7 +212,6 @@ export function DocPanel({
                   return dot >= 0 ? n.slice(dot + 1).toUpperCase() : "FILE";
                 })()}
               </span>
-              {doc.profile?.doc_type && <span className="badge-pill">{doc.profile.doc_type}</span>}
               {doc.profile?.document_number && (
                 <span
                   className="badge-pill font-mono"
@@ -234,26 +225,30 @@ export function DocPanel({
                   className="inline-block h-1.5 w-1.5 rounded-full"
                   style={{ background: st.dot }}
                 />
-                {st.label}
+                {t(st.labelKey)}
               </span>
               <span className="caption ml-auto whitespace-nowrap text-muted">
-                {doc.chunk_count ? `${doc.chunk_count} chunks · ` : ""}
+                {doc.chunk_count ? `${t("docpanel.chunks", { n: doc.chunk_count })} · ` : ""}
                 {fmtShortDate(doc.updated_at ?? "")}
               </span>
             </div>
 
             {/* extracted text */}
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-              <div className="caption-uppercase mb-3 text-muted-soft">Extracted text</div>
-              {chunks === null && !chunksError && <p className="caption text-muted">Loading…</p>}
+              <div className="caption-uppercase mb-3 text-muted-soft">{t("docpanel.extractedText")}</div>
+              {chunks === null && !chunksError && <p className="caption text-muted">{t("docpanel.loading")}</p>}
               {chunks !== null && chunks.length === 0 && !chunksError && (
-                <p className="caption text-muted">No extracted text available.</p>
+                <p className="caption text-muted">{t("docpanel.noText")}</p>
               )}
               {chunksError && (
                 <p className="caption text-error">
                   {chunks !== null && chunks.length > 0
-                    ? `Only showing ${chunks.length}${chunksTotal !== null ? ` of ${chunksTotal}` : ""} chunks — failed to load the rest: ${chunksError}`
-                    : `Failed to load extracted text: ${chunksError}`}
+                    ? t("docpanel.partialError", {
+                        shown: chunks.length,
+                        total: chunksTotal ?? chunks.length,
+                        error: chunksError,
+                      })
+                    : t("docpanel.loadError", { error: chunksError })}
                 </p>
               )}
               <div className="flex flex-col gap-4">
@@ -269,7 +264,7 @@ export function DocPanel({
                   className="btn btn-primary btn-sm"
                   onClick={openPreview}
                 >
-                  <IconExternal className="h-3.5 w-3.5" /> Preview file
+                  <IconExternal className="h-3.5 w-3.5" /> {t("docpanel.preview")}
                 </button>
                 {canDownloadOriginal && (
                   <button
@@ -278,7 +273,7 @@ export function DocPanel({
                     disabled={downloading}
                   >
                     <IconDoc className="h-3.5 w-3.5" />{" "}
-                    {downloading ? "Downloading…" : "Download original"}
+                    {downloading ? t("docpanel.downloading") : t("docpanel.download")}
                   </button>
                 )}
               </div>

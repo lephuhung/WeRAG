@@ -3,8 +3,9 @@
  * content pane. Every section renders inline — heavyweight management pages
  * are lazy-imported from their route modules. Cards inside embedded pages
  * resolve through InModalNavContext into a modal-local sub-page stack with a
- * back button, so the modal never navigates away. A small external-link
- * button still offers the full-page route for deep-linking.
+ * back button, so the modal never navigates away. Every section lives
+ * inside the modal — the /platform/system/* paths are deep links that
+ * re-open the modal at the matching section, not standalone pages.
  * Role gating mirrors nav-config: "system" = platform admin, admin/owner gate
  * on the tenant membership role. Server-side guards stay authoritative.
  * Dialogs opened by a section (Modal, confirm) never stack on top of this
@@ -27,7 +28,7 @@ import {
 } from "react";
 import { useDialogFocus } from "./use-dialog-focus";
 import { createPortal } from "react-dom";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { canSeeSection, type SettingsRoleKey } from "@/components/settings/nav-config";
@@ -36,6 +37,7 @@ import { InModalNavContext } from "@/components/system/in-modal-nav";
 import { SubPageHostProvider, useSubPageHost } from "@/components/settings/sub-page-host";
 import { ConfirmProvider } from "@/components/confirm-dialog";
 import { GeneralSettings } from "@/components/settings/general-settings";
+import { Loading } from "@/components/settings/loading";
 import { ProfileSettings } from "@/components/settings/profile-settings";
 import { SecuritySettings } from "@/components/settings/security-settings";
 import { MemoryHub } from "@/components/settings/memory-hub";
@@ -61,7 +63,6 @@ import {
   IconChat,
   IconClose,
   IconCode,
-  IconExternal,
   IconGlobe,
   IconGraph,
   IconInfoCircle,
@@ -99,8 +100,9 @@ interface SettingsItem {
   icon: IconCmp;
   minRole?: SettingsRoleKey;
   render: () => ReactNode;
-  /* Canonical route — used to map in-modal card links to sub-pages and for
-   * the "open full page" affordance. */
+  /* Deep-link path of this section. It is NOT a standalone page: the
+   * /platform/system/* catch-all maps it back to this modal
+   * (SECTION_ROUTES), and in-modal card links use it to open a sub-page. */
   route?: string;
   /* Sub-page only: hidden from the nav (a hub page's cards already reach it)
    * but reachable via in-modal card links and search. `parent` is the hub
@@ -207,7 +209,6 @@ export function SettingsModal({
   pendingAbbrev?: number;
 }) {
   const { t } = useT();
-  const router = useRouter();
   const pathname = usePathname();
   const auth = useAuth();
   const [mounted, setMounted] = useState(false);
@@ -317,7 +318,7 @@ export function SettingsModal({
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6">
-      <div className="absolute inset-0 bg-ink/20" onClick={onClose} />
+      <div className="absolute inset-0 bg-scrim/20" onClick={onClose} />
       <div
         ref={dialogRef}
         role="dialog"
@@ -369,7 +370,7 @@ export function SettingsModal({
                     <it.icon className="h-[18px] w-[18px] shrink-0" />
                     <span className="min-w-0 flex-1 truncate text-left">{label(it)}</span>
                     {it.key === "abbreviations" && pendingAbbrev > 0 && (
-                      <span className="badge-pill border border-amber-500/20 bg-amber-500/10 text-amber-600">
+                      <span className="badge-pill badge-warning">
                         {pendingAbbrev}
                       </span>
                     )}
@@ -382,6 +383,7 @@ export function SettingsModal({
           <div className="px-3 py-3 sm:hidden">
             <Select
               value={activeKey}
+              ariaLabel={t("user.settings")}
               onChange={(key) => {
                 const it = visibleGroups.flatMap((grp) => grp.items).find((x) => x.key === key);
                 if (it) openSection(it);
@@ -408,19 +410,9 @@ export function SettingsModal({
             <h2 className="title-md min-w-0 flex-1 truncate">
               {sub.top ? sub.top.title : active ? label(active) : ""}
             </h2>
-            {active?.route && !sub.top && (
-              <button
-                onClick={() => {
-                  router.push(active.route!);
-                  onClose();
-                }}
-                title={t("settingsModal.openFull")}
-                aria-label={t("settingsModal.openFull")}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-soft transition-colors hover:bg-surface-strong hover:text-ink"
-              >
-                <IconExternal className="h-3.5 w-3.5" />
-              </button>
-            )}
+            {/* No "open full page" affordance: every section of this modal
+             * lives inside the modal — the /platform/system/* deep links
+             * only re-open it at the same section. */}
           </div>
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
             <SubPageHostProvider api={sub.api} state={sub.state}>
@@ -429,13 +421,7 @@ export function SettingsModal({
                   {/* The section stays mounted under an open sub-page so
                    * its state (filters, half-filled forms) survives. */}
                   <div hidden={!!sub.top}>
-                    <Suspense
-                      fallback={
-                        <div className="flex items-center justify-center py-16">
-                          <span className="caption text-muted">Loading…</span>
-                        </div>
-                      }
-                    >
+                    <Suspense fallback={<Loading className="py-16" />}>
                       {active?.render()}
                     </Suspense>
                   </div>

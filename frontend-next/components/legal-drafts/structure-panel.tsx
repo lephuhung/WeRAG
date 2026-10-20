@@ -7,7 +7,7 @@
  * editor. */
 
 import { useMemo } from "react";
-import { IconRefresh } from "@/components/icons";
+import { IconErrorCircleFilled, IconInfoCircle, IconInfoCircleFilled, IconRefresh } from "@/components/icons";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { formatDateTime } from "@/lib/datetime";
 import { headingLead, type LegalDraftHeading, type LegalDraftStructure, type LegalDraftWarning } from "@/lib/api/legal-drafts";
@@ -87,9 +87,7 @@ export function LegalDraftStructurePanel({
       <div className="flex flex-col gap-1">
         <span
           className={`badge-pill inline-block w-fit text-[11px] ${
-            structure.ready_to_approve
-              ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-              : "bg-red-500/10 text-red-700 dark:text-red-400"
+            structure.ready_to_approve ? "bg-success-surface text-success" : "bg-error-surface text-error"
           }`}
         >
           {structure.ready_to_approve
@@ -121,12 +119,12 @@ export function LegalDraftStructurePanel({
           {t("ldraft.structure.accepted", { accepted: sub.diem_accepted, total: sub.diem_candidates })}
         </dd>
         <dt className="text-muted">{t("ldraft.structure.rejected")}</dt>
-        <dd className={`tabular-nums ${sub.rejected > 0 ? "text-amber-700 dark:text-amber-400" : "text-ink"}`}>{sub.rejected}</dd>
+        <dd className={`tabular-nums ${sub.rejected > 0 ? "text-warning" : "text-ink"}`}>{sub.rejected}</dd>
         <dt className="text-muted">{t("ldraft.structure.pageMarkers")}</dt>
         <dd className="tabular-nums text-ink">{structure.page_markers}</dd>
       </dl>
 
-      {/* warnings */}
+      {/* warnings — one disclosure model for every severity */}
       {SEVERITIES.map((sev) => {
         const list = grouped[sev];
         if (list.length === 0) return null;
@@ -138,20 +136,15 @@ export function LegalDraftStructurePanel({
           </ul>
         );
         const title = `${t(`ldraft.sev.${sev}` as LocaleKey)} (${list.length})`;
-        return sev === "info" ? (
-          <details key={sev} className="group">
-            <summary className="caption-uppercase cursor-pointer text-muted-soft">{title}</summary>
-            <div className="mt-1.5">{body}</div>
-          </details>
-        ) : (
-          <section key={sev}>
-            <h3
-              className={`caption-uppercase mb-1.5 ${sev === "error" ? "text-red-700 dark:text-red-400" : "text-amber-700 dark:text-amber-400"}`}
+        return (
+          <details key={sev} className="group" open={sev !== "info"}>
+            <summary
+              className={`caption-uppercase cursor-pointer ${sev === "error" ? "text-error" : sev === "warning" ? "text-warning" : "text-muted-soft"}`}
             >
               {title}
-            </h3>
-            {body}
-          </section>
+            </summary>
+            <div className="mt-1.5">{body}</div>
+          </details>
         );
       })}
 
@@ -204,18 +197,28 @@ function WarningRow({
 }) {
   const { t } = useT();
   const positions = [...new Set([w.paragraph, ...(w.paragraphs ?? [])].filter((p) => p >= 0))].slice(0, 12);
+  /* The severity is carried by three channels, not by the colour alone:
+     the left border, a distinct glyph and a screen-reader prefix. */
   const tone =
     severity === "error"
-      ? "border-red-500/30 bg-red-500/5"
+      ? "border border-error/30 border-l-4 border-l-error bg-error-surface"
       : severity === "warning"
-        ? "border-amber-500/30 bg-amber-500/5"
-        : "border-hairline bg-canvas-soft";
+        ? "border border-warning/30 border-l-4 border-l-warning bg-warning-surface"
+        : "border border-hairline border-l-4 border-l-muted-soft bg-canvas-soft";
+  const severityLabel = t(`ldraft.sev.${severity}` as LocaleKey);
+  const SeverityIcon = severity === "error" ? IconErrorCircleFilled : severity === "warning" ? IconInfoCircleFilled : IconInfoCircle;
+  const severityIconCls =
+    severity === "error" ? "text-error" : severity === "warning" ? "text-warning" : "text-muted-soft";
   return (
-    <li className={`rounded-[8px] border px-2.5 py-1.5 ${tone}`}>
-      <div className={`text-[12px] font-medium ${severity === "info" ? "text-muted" : "text-ink"}`}>
-        {WARNING_CODES.has(w.code) ? t(`ldraft.w.${w.code}` as LocaleKey) : w.code}
+    <li className={`rounded-md2 border px-2.5 py-1.5 ${tone}`}>
+      <div className={`flex items-start gap-1.5 text-[12px] font-medium ${severity === "info" ? "text-muted" : "text-ink"}`}>
+        <SeverityIcon className={`mt-[1px] h-3.5 w-3.5 shrink-0 ${severityIconCls}`} />
+        <span>
+          <span className="sr-only">{severityLabel}: </span>
+          {WARNING_CODES.has(w.code) ? t(`ldraft.w.${w.code}` as LocaleKey) : w.code}
+        </span>
       </div>
-      {w.message && <div className={`text-[12px] leading-snug ${severity === "info" ? "text-muted" : "text-body"}`}>{w.message}</div>}
+      {w.message && <div className={`mt-0.5 text-[12px] leading-snug ${severity === "info" ? "text-muted" : "text-body"}`}>{w.message}</div>}
       {positions.length > 0 && (
         <div className="mt-1 flex flex-wrap gap-1">
           {positions.map((p) => (

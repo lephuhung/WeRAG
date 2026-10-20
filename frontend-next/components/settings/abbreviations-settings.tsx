@@ -17,6 +17,13 @@ import {
 } from "@/lib/api/abbreviations";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { Notice } from "@/components/settings/notice";
+import { DataTable } from "@/components/settings/data-table";
+import { Pill, PillGroup } from "@/components/settings/pill";
+import { SectionHeader } from "@/components/settings/section-header";
+import { Pager } from "@/components/settings/pager";
+import { FieldLabel } from "@/components/settings/field";
+import { useToast } from "@/components/toast";
 
 const PAGE_SIZE = 20;
 type StatusFilter = "all" | "active" | "pending";
@@ -53,7 +60,7 @@ export function AbbreviationsSettings() {
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const toast = useToast();
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -87,7 +94,6 @@ export function AbbreviationsSettings() {
     if (statusFilter === "active") return r.is_active;
     return !(r.is_active && fetched.active[r.id] === false);
   }).length;
-  const hasNext = offset + fetched.count < fetched.total;
   const nextOffset = offset + keptAhead;
   /* Rows approved (or un-approved) here have left a status filter. */
   const leftFilter =
@@ -183,7 +189,6 @@ export function AbbreviationsSettings() {
     if (!short || !full) return;
     setFormBusy(true);
     setError("");
-    setSuccess("");
     try {
       if (editing) {
         const res = await updateAbbreviation(editing.id, {
@@ -212,7 +217,7 @@ export function AbbreviationsSettings() {
           is_proper_name: formProper,
         });
         if (res.success) {
-          setSuccess(t("abbrev.suggestSaved"));
+          toast.success(t("abbrev.suggestSaved"));
           setFormOpen(false);
           await load();
           notifyAbbreviationsChanged();
@@ -234,7 +239,6 @@ export function AbbreviationsSettings() {
     if (!canManage || busyIds.has(row.id)) return;
     const next = !row.is_active;
     setError("");
-    setSuccess("");
     setBusyIds((s) => new Set(s).add(row.id));
     setRows((rs) => rs.map((r) => (r.id === row.id ? { ...r, is_active: next } : r)));
     const revert = () =>
@@ -270,7 +274,6 @@ export function AbbreviationsSettings() {
   const handleReject = async (row: Abbreviation) => {
     if (!canManage || busyIds.has(row.id)) return;
     setError("");
-    setSuccess("");
     setBusyIds((s) => new Set(s).add(row.id));
     try {
       const res = await deleteAbbreviation(row.id);
@@ -306,13 +309,12 @@ export function AbbreviationsSettings() {
     if (!canManage || ids.length === 0 || bulkBusy) return;
     setBulkBusy(true);
     setError("");
-    setSuccess("");
     const results = await Promise.allSettled(
       ids.map((id) => (approve ? updateAbbreviation(id, { is_active: true }) : deleteAbbreviation(id))),
     );
     const ok = results.filter((r) => r.status === "fulfilled" && r.value.success).length;
     const failed = ids.length - ok;
-    setSuccess(t("abbrev.bulkDone", { approved: approve ? ok : 0, rejected: approve ? 0 : ok }));
+    toast.success(t("abbrev.bulkDone", { approved: approve ? ok : 0, rejected: approve ? 0 : ok }));
     if (failed > 0) setError(t("abbrev.bulkPartial", { failed }));
     setBulkBusy(false);
     setSelected(new Set());
@@ -365,40 +367,47 @@ export function AbbreviationsSettings() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-5">
-        <div>
-          <h2 className="title-md font-semibold text-ink">{t("abbrev.title")}</h2>
-          <p className="caption text-muted mt-1 max-w-2xl">{t("abbrev.desc")}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={openCreate}
-            className="btn btn-primary btn-sm flex items-center gap-1.5"
-          >
-            <IconPlus className="h-3.5 w-3.5" />
-            <span>{t("abbrev.add")}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="btn btn-outline btn-sm flex items-center gap-1.5"
-            title={t("common.loading")}
-          >
-            <IconRefresh className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
+      <SectionHeader
+        title={t("abbrev.title")}
+        subtitle={t("abbrev.desc")}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={openCreate}
+              className="btn btn-primary btn-sm flex items-center gap-1.5"
+            >
+              <IconPlus className="h-3.5 w-3.5" />
+              <span>{t("abbrev.add")}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="btn btn-outline btn-sm flex items-center gap-1.5"
+              title={t("common.refresh")}
+              aria-label={t("common.refresh")}
+            >
+              <IconRefresh className="h-3.5 w-3.5" />
+            </button>
+          </>
+        }
+      />
 
       {error && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-400">
+        <Notice
+          tone="error"
+          action={
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={() => void load()}
+            >
+              {t("common.retry")}
+            </button>
+          }
+        >
           {error}
-        </div>
-      )}
-      {success && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-400">
-          {success}
-        </div>
+        </Notice>
       )}
 
       {/* Search + status filter */}
@@ -406,48 +415,49 @@ export function AbbreviationsSettings() {
         <div className="relative w-full max-w-sm">
           <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-muted h-4 w-4" />
           <input
+            id="abbrev-search"
             type="text"
             className="input pl-9 text-sm"
             placeholder={t("abbrev.search")}
+            aria-label={t("abbrev.search")}
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
           />
         </div>
-        <div className="flex items-center gap-1.5">
+        <PillGroup ariaLabel={t("abbrev.actions")}>
           {filterChips.map((f) => (
-            <button
+            <Pill
               key={f.id}
-              type="button"
+              active={statusFilter === f.id}
               onClick={() => {
                 setStatusFilter(f.id);
                 setOffset(0);
               }}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                statusFilter === f.id
-                  ? "bg-ink text-on-primary"
-                  : "text-muted hover:bg-surface-strong hover:text-ink"
-              }`}
             >
               {f.label}
-            </button>
+            </Pill>
           ))}
-        </div>
+        </PillGroup>
       </div>
 
       {canManage && pendingTotal > 0 && statusFilter !== "pending" && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400">
-          <span>{t("abbrev.pendingBanner", { n: pendingTotal })}</span>
-          <button
-            type="button"
-            className="btn btn-outline btn-sm"
-            onClick={() => {
-              setStatusFilter("pending");
-              setOffset(0);
-            }}
-          >
-            {t("abbrev.reviewPending")}
-          </button>
-        </div>
+        <Notice
+          tone="warning"
+          action={
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={() => {
+                setStatusFilter("pending");
+                setOffset(0);
+              }}
+            >
+              {t("abbrev.reviewPending")}
+            </button>
+          }
+        >
+          {t("abbrev.pendingBanner", { n: pendingTotal })}
+        </Notice>
       )}
 
       {canManage && selectedCount > 0 && (
@@ -467,7 +477,7 @@ export function AbbreviationsSettings() {
               type="button"
               disabled={bulkBusy}
               onClick={() => void handleBulk(false)}
-              className="btn btn-outline btn-sm flex items-center gap-1.5 text-rose-600 disabled:opacity-50"
+              className="btn btn-danger btn-sm flex items-center gap-1.5 disabled:opacity-50"
             >
               <IconClose className="h-3.5 w-3.5" />
               {t("abbrev.rejectSelected", { n: selectedCount })}
@@ -477,176 +487,173 @@ export function AbbreviationsSettings() {
       )}
 
       {/* Table */}
-      <div className="overflow-hidden rounded-xl border border-hairline">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] table-fixed text-left border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-hairline bg-surface-strong/50 text-xs font-semibold text-muted">
-              {canManage && (
-                <th className="py-3 pl-4 w-8">
+      <DataTable<Abbreviation>
+        columns={[
+          ...(canManage
+            ? [
+                {
+                  key: "select",
+                  header: (
+                    <input
+                      type="checkbox"
+                      aria-label={t("abbrev.selectPage")}
+                      title={t("abbrev.selectPage")}
+                      checked={allPendingSelected}
+                      disabled={pendingOnPage.length === 0}
+                      onChange={toggleSelectPage}
+                    />
+                  ),
+                  className: "w-8",
+                },
+              ]
+            : []),
+          { key: "short", header: t("abbrev.shortForm"), className: "w-32" },
+          { key: "full", header: t("abbrev.fullForm"), className: "w-[22%]" },
+          { key: "desc", header: t("abbrev.description") },
+          { key: "actions", header: t("abbrev.actions"), align: "right" as const },
+        ]}
+        rows={rows}
+        rowKey={(r) => r.id}
+        loading={loading && rows.length === 0}
+        loadingLabel={t("common.loading")}
+        emptyLabel={t("abbrev.empty")}
+        minWidth="min-w-[720px]"
+        rowClassName={loading && rows.length > 0 ? "opacity-60 transition-opacity" : ""}
+        caption={t("abbrev.title")}
+        renderRow={(r) => (
+          <>
+            {canManage && (
+              <td className="px-5 py-3.5 align-middle">
+                {!r.is_active && (
                   <input
                     type="checkbox"
-                    aria-label={t("abbrev.selectPage")}
-                    title={t("abbrev.selectPage")}
-                    checked={allPendingSelected}
-                    disabled={pendingOnPage.length === 0}
-                    onChange={toggleSelectPage}
+                    aria-label={r.short_form}
+                    checked={selected.has(r.id)}
+                    onChange={() => toggleSelect(r.id)}
                   />
-                </th>
-              )}
-              <th className="py-3 px-4 w-32">{t("abbrev.shortForm")}</th>
-              <th className="py-3 px-4 w-[22%]">{t("abbrev.fullForm")}</th>
-              <th className="py-3 px-4">{t("abbrev.description")}</th>
-              <th className={`py-3 px-4 text-right ${canManage ? "w-40" : "w-24"}`}>{t("abbrev.actions")}</th>
-            </tr>
-          </thead>
-          <tbody className={`divide-y divide-hairline transition-opacity ${loading && rows.length > 0 ? "opacity-60" : ""}`}>
-            {loading && rows.length === 0 ? (
-              <tr>
-                <td colSpan={canManage ? 5 : 4} className="py-12 text-center text-muted">
-                  {t("common.loading")}
-                </td>
-              </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={canManage ? 5 : 4} className="py-12 text-center text-muted">
-                  {t("abbrev.empty")}
-                </td>
-              </tr>
-            ) : (
-              rows.map((r) => (
-                <tr key={r.id} className="hover:bg-surface-strong/30 transition-colors [&>td]:align-top">
-                  {canManage && (
-                    <td className="py-3 pl-4">
-                      {!r.is_active && (
-                        <input
-                          type="checkbox"
-                          aria-label={r.short_form}
-                          checked={selected.has(r.id)}
-                          onChange={() => toggleSelect(r.id)}
-                        />
-                      )}
-                    </td>
-                  )}
-                  <td className="py-3 px-4">
-                    <div className="flex flex-col items-start gap-1.5">
-                      <div className="flex max-w-full items-center gap-1">
-                        <code className="min-w-0 break-words rounded bg-surface-strong px-1.5 py-0.5 text-[12.5px] font-semibold text-ink">
-                          {r.short_form}
-                        </code>
-                        {canManage ? (
-                          <button
-                            type="button"
-                            onClick={() => void handleToggleActive(r)}
-                            disabled={busyIds.has(r.id)}
-                            title={`${r.is_active ? t("abbrev.active") : t("abbrev.pending")} — ${r.is_active ? t("abbrev.deactivate") : t("abbrev.activate")}`}
-                            aria-label={`${r.is_active ? t("abbrev.active") : t("abbrev.pending")} — ${r.is_active ? t("abbrev.deactivate") : t("abbrev.activate")}`}
-                            className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-surface-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50"
-                          >
-                            <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${r.is_active ? "bg-emerald-500" : "bg-amber-400"}`} />
-                          </button>
-                        ) : (
-                          <span
-                            title={r.is_active ? t("abbrev.active") : t("abbrev.pending")}
-                            className="inline-flex h-6 w-6 shrink-0 items-center justify-center"
-                          >
-                            <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${r.is_active ? "bg-emerald-500" : "bg-amber-400"}`} />
-                            <span className="sr-only">{r.is_active ? t("abbrev.active") : t("abbrev.pending")}</span>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 break-words text-ink">{r.full_form}</td>
-                  <td className="py-3 px-4 break-words text-muted text-xs leading-relaxed">
-                    <p className="line-clamp-3" title={r.description || undefined}>
-                      {r.description || "—"}
-                    </p>
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    {canManage && (
-                      <div className="flex flex-col items-end gap-1">
-                        {!r.is_active && (
-                          <div className="flex items-center justify-end gap-1 whitespace-nowrap">
-                            <button
-                              type="button"
-                              onClick={() => void handleToggleActive(r)}
-                              disabled={busyIds.has(r.id)}
-                              className="btn btn-ghost btn-sm flex items-center gap-1 px-2 py-1 text-xs text-emerald-600 hover:bg-emerald-500/10 disabled:opacity-50"
-                              title={t("abbrev.approve")}
-                            >
-                              <IconCheck className="h-3.5 w-3.5" />
-                              {t("abbrev.approve")}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleReject(r)}
-                              disabled={busyIds.has(r.id)}
-                              className="btn btn-ghost btn-sm flex items-center gap-1 px-2 py-1 text-xs text-rose-600 hover:bg-rose-500/10 disabled:opacity-50"
-                              title={t("abbrev.rejectHint")}
-                            >
-                              <IconClose className="h-3.5 w-3.5" />
-                              {t("abbrev.reject")}
-                            </button>
-                          </div>
-                        )}
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            type="button"
-                            onClick={() => openEdit(r)}
-                            className="btn btn-ghost btn-sm text-muted hover:text-ink p-1.5"
-                            title={t("common.edit")}
-                          >
-                            <IconEdit className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setDeleting(r)}
-                            className="btn btn-ghost btn-sm text-muted hover:text-rose-600 p-1.5"
-                            title={t("common.delete")}
-                          >
-                            <IconTrash className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))
+                )}
+              </td>
             )}
-          </tbody>
-          </table>
-        </div>
-      </div>
+            <td className="px-5 py-3.5 align-middle">
+              <div className="flex flex-col items-start gap-1.5">
+                <div className="flex max-w-full items-center gap-1">
+                  <code className="min-w-0 break-words rounded bg-surface-strong px-1.5 py-0.5 text-[12.5px] font-semibold text-ink">
+                    {r.short_form}
+                  </code>
+                  {canManage ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleToggleActive(r)}
+                      disabled={busyIds.has(r.id)}
+                      title={`${r.is_active ? t("abbrev.active") : t("abbrev.pending")} — ${r.is_active ? t("abbrev.deactivate") : t("abbrev.activate")}`}
+                      aria-label={`${r.is_active ? t("abbrev.active") : t("abbrev.pending")} — ${r.is_active ? t("abbrev.deactivate") : t("abbrev.activate")}`}
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors hover:bg-surface-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{
+                          background: r.is_active
+                            ? "var(--color-success)"
+                            : "var(--color-warning)",
+                        }}
+                      />
+                    </button>
+                  ) : (
+                    <span
+                      title={r.is_active ? t("abbrev.active") : t("abbrev.pending")}
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center"
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="h-2.5 w-2.5 rounded-full"
+                        style={{
+                          background: r.is_active
+                            ? "var(--color-success)"
+                            : "var(--color-warning)",
+                        }}
+                      />
+                      <span className="sr-only">{r.is_active ? t("abbrev.active") : t("abbrev.pending")}</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+            </td>
+            <td className="px-5 py-3.5 align-middle break-words text-ink">{r.full_form}</td>
+            <td className="px-5 py-3.5 align-middle break-words text-muted text-xs leading-relaxed">
+              <p className="line-clamp-3" title={r.description || undefined}>
+                {r.description || "—"}
+              </p>
+            </td>
+            <td className="px-5 py-3.5 align-middle text-right">
+              {canManage && (
+                <div className="flex flex-col items-end gap-1">
+                  {!r.is_active && (
+                    <div className="flex items-center justify-end gap-1 whitespace-nowrap">
+                      <button
+                        type="button"
+                        onClick={() => void handleToggleActive(r)}
+                        disabled={busyIds.has(r.id)}
+                        className="btn btn-ghost btn-sm flex items-center gap-1 px-2 py-1 text-xs text-success hover:bg-success-surface disabled:opacity-50"
+                        title={t("abbrev.approve")}
+                      >
+                        <IconCheck className="h-3.5 w-3.5" />
+                        {t("abbrev.approve")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleReject(r)}
+                        disabled={busyIds.has(r.id)}
+                        className="btn btn-danger btn-sm flex items-center gap-1 px-2 py-1 text-xs disabled:opacity-50"
+                        title={t("abbrev.rejectHint")}
+                      >
+                        <IconClose className="h-3.5 w-3.5" />
+                        {t("abbrev.reject")}
+                      </button>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-end gap-1">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(r)}
+                      className="btn btn-ghost btn-sm text-muted hover:text-ink p-1.5"
+                      title={t("common.edit")}
+                      aria-label={t("common.edit")}
+                    >
+                      <IconEdit className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDeleting(r)}
+                      className="btn btn-danger btn-sm p-1.5"
+                      title={t("common.delete")}
+                      aria-label={t("common.delete")}
+                    >
+                      <IconTrash className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </td>
+          </>
+        )}
+      />
 
       {/* Pagination */}
       {(totalPages > 1 || offset > 0) && (
-        <div className="flex items-center justify-between text-xs text-muted">
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-muted">
           <span>{t("abbrev.total", { total: shownTotal })}</span>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={offset <= 0}
-              onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
-              className="btn btn-outline btn-sm text-xs py-1 disabled:opacity-50"
-            >
-              ‹
-            </button>
-            <span>
-              {page} / {totalPages}
-            </span>
-            <button
-              type="button"
-              disabled={!hasNext}
-              onClick={() => {
-                setOffset(nextOffset);
-                setReloadTick((n) => n + 1);
-              }}
-              className="btn btn-outline btn-sm text-xs py-1 disabled:opacity-50"
-            >
-              ›
-            </button>
-          </div>
+          <Pager
+            page={page}
+            pageCount={totalPages}
+            loading={loading}
+            onPage={(p) => {
+              /* The server lists pending rows first, so the next page starts
+               * after the rows that are still ahead of the first unseen one. */
+              setOffset(nextOffset + (p - page - 1) * PAGE_SIZE);
+              setReloadTick((n) => n + 1);
+            }}
+          />
         </div>
       )}
 
@@ -658,20 +665,27 @@ export function AbbreviationsSettings() {
       >
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
           <div>
-            <label className="caption mb-1.5 block text-muted">{t("abbrev.shortForm")}</label>
+            <FieldLabel htmlFor="abbrev-short-form" required>
+              {t("abbrev.shortForm")}
+            </FieldLabel>
             <input
+              id="abbrev-short-form"
               type="text"
               className="input text-sm"
               value={formShort}
               onChange={(e) => setFormShort(e.target.value)}
               maxLength={50}
               required
+              aria-required="true"
               placeholder="BMNN"
             />
           </div>
           <div>
-            <label className="caption mb-1.5 block text-muted">{t("abbrev.fullForm")}</label>
+            <FieldLabel htmlFor="abbrev-full-form" required={!formProper}>
+              {t("abbrev.fullForm")}
+            </FieldLabel>
             <input
+              id="abbrev-full-form"
               type="text"
               className="input text-sm"
               value={formProper ? formShort : formFull}
@@ -679,11 +693,13 @@ export function AbbreviationsSettings() {
               maxLength={255}
               disabled={formProper}
               required={!formProper}
+              aria-required={!formProper ? "true" : undefined}
               placeholder={formProper ? t("abbrev.properNameFullPlaceholder") : t("abbrev.fullForm")}
             />
           </div>
           <label className="flex items-start gap-2.5 text-sm text-ink">
             <input
+              id="abbrev-proper-name"
               type="checkbox"
               className="mt-0.5 h-4 w-4 accent-primary"
               checked={formProper}
@@ -695,8 +711,9 @@ export function AbbreviationsSettings() {
             </span>
           </label>
           <div>
-            <label className="caption mb-1.5 block text-muted">{t("abbrev.description")}</label>
+            <FieldLabel htmlFor="abbrev-description">{t("abbrev.description")}</FieldLabel>
             <textarea
+              id="abbrev-description"
               className="input text-sm min-h-[72px]"
               value={formDesc}
               onChange={(e) => setFormDesc(e.target.value)}
@@ -750,7 +767,7 @@ export function AbbreviationsSettings() {
             </button>
             <button
               type="button"
-              className="btn btn-primary btn-sm bg-rose-600 border-rose-600 hover:bg-rose-700"
+              className="btn btn-danger btn-sm"
               disabled={actionBusy}
               onClick={() => void handleDelete()}
             >

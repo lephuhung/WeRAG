@@ -98,20 +98,20 @@ export function KbAccessGrantees({ overview, onChanged }: { overview: KBAccessOv
                       type="button"
                       disabled={busy !== null}
                       onClick={() => askRevoke(g)}
-                      className="btn btn-outline btn-sm py-1 text-xs text-rose-600"
+                      className="btn btn-outline btn-sm py-1 text-xs text-error"
                     >
                       {t("kbAccess.revoke")}
                     </button>
                   )}
                 </div>
                 {confirming === key && keeps && (
-                  <div className="flex flex-wrap items-center gap-2 rounded-lg bg-amber-50 px-2.5 py-1.5 text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+                  <div className="flex flex-wrap items-center gap-2 rounded-lg bg-warning-surface px-2.5 py-1.5 text-warning">
                     <span className="caption">
                       {keeps === "published" ? t("kbAccess.revokeKeepsPublished") : t("kbAccess.revokeKeepsTenant")}
                     </span>
                     <button
                       type="button"
-                      className="btn btn-outline btn-sm py-0.5 text-xs text-rose-600"
+                      className="btn btn-outline btn-sm py-0.5 text-xs text-error"
                       disabled={busy !== null}
                       onClick={() => void revoke(g)}
                     >

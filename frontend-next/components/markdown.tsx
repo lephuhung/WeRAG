@@ -20,11 +20,15 @@ type HoveredArtifact = {
 export const Markdown = memo(function Markdown({
   text,
   streaming,
+  live = false,
   artifacts,
   imageContext,
 }: {
   text: string;
   streaming?: boolean;
+  /** The rendered text is the live region of its turn: a screen reader
+   *  follows the answer while it streams in. */
+  live?: boolean;
   /** This message's artifacts — artifact image destinations resolve here. */
   artifacts?: ArtifactMeta[] | null;
   /** Session/message identity for authenticated artifact downloads. */
@@ -185,6 +189,9 @@ export const Markdown = memo(function Markdown({
         className="chat-markdown"
         dangerouslySetInnerHTML={{ __html: html }}
         data-streaming={streaming ? "1" : undefined}
+        role={live ? "log" : undefined}
+        aria-live={live ? "polite" : undefined}
+        aria-busy={live ? Boolean(streaming) : undefined}
         onClick={onRootClick}
         onMouseOver={onRootMouseOver}
         onMouseLeave={scheduleHoverHide}

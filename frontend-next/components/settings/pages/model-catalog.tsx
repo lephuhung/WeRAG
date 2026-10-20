@@ -21,6 +21,13 @@ import {
 import { Select } from "@/components/select";
 import { useInSettingsModal } from "@/components/system/in-modal-nav";
 import { useT } from "@/lib/i18n";
+import { ConsolePage } from "@/components/settings/console-page";
+import { FieldLabel } from "@/components/settings/field";
+import { Loading } from "@/components/settings/loading";
+import { Notice } from "@/components/settings/notice";
+import { Pill, PillGroup } from "@/components/settings/pill";
+import { SectionHeader } from "@/components/settings/section-header";
+import { useToast } from "@/components/toast";
 
 const EMPTY_FORM = {
   name: "",
@@ -179,54 +186,54 @@ type TypeConfig = {
 const TYPE_CONFIG: Record<string, TypeConfig> = {
   KnowledgeQA: {
     icon: IconModelChat,
-    color: "text-blue-600 dark:text-blue-400",
-    bg: "bg-blue-50 dark:bg-blue-950/40",
-    border: "border-blue-200 dark:border-blue-900/60",
-    badge: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20",
+    color: "text-info",
+    bg: "bg-info-surface",
+    border: "border-info/30",
+    badge: "badge-info",
   },
   Embedding: {
     icon: IconModelEmbedding,
-    color: "text-purple-600 dark:text-purple-400",
-    bg: "bg-purple-50 dark:bg-purple-950/40",
-    border: "border-purple-200 dark:border-purple-900/60",
-    badge: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20",
+    color: "text-accent",
+    bg: "bg-accent-surface",
+    border: "border-accent/30",
+    badge: "badge-accent",
   },
   Rerank: {
     icon: IconModelRerank,
-    color: "text-amber-600 dark:text-amber-400",
-    bg: "bg-amber-50 dark:bg-amber-950/40",
-    border: "border-amber-200 dark:border-amber-900/60",
-    badge: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20",
+    color: "text-warning",
+    bg: "bg-warning-surface",
+    border: "border-warning/30",
+    badge: "badge-warning",
   },
   VLLM: {
     icon: IconModelVLM,
-    color: "text-emerald-600 dark:text-emerald-400",
-    bg: "bg-emerald-50 dark:bg-emerald-950/40",
-    border: "border-emerald-200 dark:border-emerald-900/60",
-    badge: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
+    color: "text-success",
+    bg: "bg-success-surface",
+    border: "border-success/30",
+    badge: "badge-success",
   },
   ASR: {
     icon: IconModelASR,
-    color: "text-rose-600 dark:text-rose-400",
-    bg: "bg-rose-50 dark:bg-rose-950/40",
-    border: "border-rose-200 dark:border-rose-900/60",
-    badge: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20",
+    color: "text-error",
+    bg: "bg-error-surface",
+    border: "border-error/30",
+    badge: "badge-error",
   },
   Decision: {
     icon: IconModelDecision,
-    color: "text-cyan-600 dark:text-cyan-400",
-    bg: "bg-cyan-50 dark:bg-cyan-950/40",
-    border: "border-cyan-200 dark:border-cyan-900/60",
-    badge: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20",
+    color: "text-accent",
+    bg: "bg-accent-surface",
+    border: "border-accent/30",
+    badge: "badge-accent",
   },
 };
 
 const DEFAULT_TYPE_CONFIG: TypeConfig = {
   icon: IconModelDefault,
-  color: "text-stone-600 dark:text-stone-400",
+  color: "text-muted",
   bg: "bg-surface-strong",
   border: "border-hairline",
-  badge: "bg-surface-strong text-muted border border-hairline",
+  badge: "badge-neutral",
 };
 
 function toUi(m: ModelConfig, i: number): UiModel {
@@ -259,6 +266,7 @@ const PROVIDER_ROUTES: Record<string, string> = {
 function SystemModels() {
   const inModal = useInSettingsModal();
   const { t } = useT();
+  const toast = useToast();
   const searchParams = useSearchParams();
   const router = useRouter();
   const tabParam = searchParams.get("tab");
@@ -380,6 +388,7 @@ function SystemModels() {
       }
       setModalOpen(false);
       await load();
+      toast.success(t("common.saved"));
     } catch (e) {
       setActionError(e instanceof Error ? e.message : t("mdl.saveFailed"));
     } finally {
@@ -486,54 +495,58 @@ function SystemModels() {
   const defaultTypeMeta = { name: t("mdl.typeDefault"), sub: t("mdl.typeDefaultSub") };
 
   return (
-    <div className="mx-auto w-full max-w-[1200px]">
-      {loadError && <p className="caption mb-4 text-error">{loadError}</p>}
-      {actionError && <p className="caption mb-4 text-error">{actionError}</p>}
+    <ConsolePage size="form">
+      {loadError && (
+        <Notice
+          tone="error"
+          className="mb-4"
+          action={
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {loadError}
+        </Notice>
+      )}
+      {actionError && (
+        <Notice tone="error" className="mb-4">
+          {actionError}
+        </Notice>
+      )}
 
       {/* Header bar */}
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h2 className="title-md font-semibold text-ink">{t("mdl.title")}</h2>
-          <p className="caption text-muted">
-            {loaded ? t("mdl.count", { n: models.length }) : t("mdl.loading")}
-          </p>
-        </div>
+      <SectionHeader
+        title={t("mdl.title")}
+        subtitle={loaded ? t("mdl.count", { n: models.length }) : t("mdl.loading")}
+        actions={
+          <button type="button" className="btn btn-primary btn-sm" onClick={openAdd}>
+            <IconPlus className="h-3.5 w-3.5" /> {t("mdl.add")}
+          </button>
+        }
+      />
 
-        <button className="btn btn-primary btn-sm" onClick={openAdd}>
-          <IconPlus className="h-3.5 w-3.5" /> {t("mdl.add")}
-        </button>
-      </div>
+      {!loaded && !loadError && <Loading />}
 
       {/* Type filter tabs */}
-      <div className="mb-6 flex flex-wrap items-center gap-1.5 border-b border-hairline pb-3">
-        {filterOptions.map((opt) => {
-          const count = typeCounts[opt.id];
-          const isSelected = filterType === opt.id;
-          return (
-            <button
-              key={opt.id}
-              onClick={() => setFilterType(opt.id)}
-              className={`flex items-center gap-1.5 rounded-full px-3 py-1 text-[12.5px] font-medium transition-colors ${
-                isSelected
-                  ? "bg-ink text-on-primary"
-                  : "text-muted hover:bg-surface-strong hover:text-ink"
-              }`}
-            >
-              <span>{opt.label}</span>
-              {count !== undefined && (
-                <span
-                  className={`rounded-full px-1.5 py-0.2 text-[10.5px] ${
-                    isSelected
-                      ? "bg-on-primary/20 text-on-primary"
-                      : "bg-surface-strong text-muted"
-                  }`}
-                >
-                  {count}
-                </span>
-              )}
-            </button>
-          );
-        })}
+      <div className="my-5">
+        <PillGroup ariaLabel={t("common.filters")}>
+          {filterOptions.map((opt) => {
+            const count = typeCounts[opt.id];
+            const isSelected = filterType === opt.id;
+            return (
+              <Pill
+                key={opt.id}
+                active={isSelected}
+                onClick={() => setFilterType(opt.id)}
+                title={count !== undefined ? `${opt.label} (${count})` : opt.label}
+              >
+                <span>{opt.label}</span>
+                {count !== undefined && <span className="ml-1 opacity-80">{count}</span>}
+              </Pill>
+            );
+          })}
+        </PillGroup>
       </div>
 
       {/* Card Grid */}
@@ -598,8 +611,8 @@ function SystemModels() {
                     type="button"
                     className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors hover:bg-surface-strong ${
                       isActive
-                        ? "text-emerald-600 hover:text-amber-600"
-                        : "text-muted hover:text-emerald-600"
+                        ? "text-success hover:text-warning"
+                        : "text-muted hover:text-success"
                     }`}
                     title={isActive ? t("mdl.disable") : t("mdl.enable")}
                     aria-label={isActive ? t("mdl.disable") : t("mdl.enable")}
@@ -653,7 +666,7 @@ function SystemModels() {
                 <div className="flex items-center gap-1.5 shrink-0">
                   <span
                     className={`h-2 w-2 rounded-full ${
-                      isActive ? "bg-emerald-500" : "bg-stone-300 dark:bg-stone-600"
+                      isActive ? "bg-success" : "bg-muted-soft"
                     }`}
                   />
                   <span className="text-[11.5px] font-medium text-muted">
@@ -678,18 +691,23 @@ function SystemModels() {
         title={editing ? t("mdl.edit") : t("mdl.add")}
         onClose={() => setModalOpen(false)}
       >
-        <label className="mb-4 block">
-          <span className="caption mb-1.5 block text-muted">{t("mdl.name")}</span>
+        <div className="mb-4">
+          <FieldLabel htmlFor="mdl-name" required>{t("mdl.name")}</FieldLabel>
           <input
+            id="mdl-name"
             className="input"
             placeholder="e.g. Qwen/Qwen3.6-35B-A3B-FP8"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
+            required
+            aria-required="true"
           />
-        </label>
-        <label className="mb-4 block">
-          <span className="caption mb-1.5 block text-muted">{t("mdl.type")}</span>
+        </div>
+        <div className="mb-4">
+          <FieldLabel htmlFor="mdl-type">{t("mdl.type")}</FieldLabel>
           <Select
+            id="mdl-type"
+            ariaLabel={t("mdl.type")}
             value={form.type}
             disabled={!!editing}
             onChange={setType}
@@ -702,12 +720,14 @@ function SystemModels() {
               { value: "Decision", label: t("mdl.optDecision") },
             ]}
           />
-        </label>
+        </div>
         {isDecision && <p className="caption -mt-2 mb-4 text-muted-soft">{t("mdl.decisionHint")}</p>}
-        <label className="mb-4 block">
-          <span className="caption mb-1.5 block text-muted">{t("mdl.providerField")}</span>
+        <div className="mb-4">
+          <FieldLabel htmlFor="mdl-provider">{t("mdl.providerField")}</FieldLabel>
           {isDecision ? (
             <Select
+              id="mdl-provider"
+              ariaLabel={t("mdl.providerField")}
               value={form.provider}
               disabled={!!editing}
               onChange={(v) => {
@@ -723,47 +743,53 @@ function SystemModels() {
             />
           ) : (
             <input
+              id="mdl-provider"
               className="input"
               placeholder={t("mdl.providerPh")}
               value={form.provider}
               onChange={(e) => setForm({ ...form, provider: e.target.value })}
             />
           )}
-        </label>
+        </div>
         {needsAccountId && (
-          <label className="mb-4 block">
-            <span className="caption mb-1.5 block text-muted">
+          <div className="mb-4">
+            <FieldLabel htmlFor="mdl-account-id" required>
               {t("mdl.accountId")}
               {editing ? t("mdl.apiKeyKeep") : ""}
-            </span>
+            </FieldLabel>
             <input
+              id="mdl-account-id"
               className="input font-mono"
               placeholder={t("mdl.accountIdPh")}
               value={form.accountId}
               onChange={(e) => setForm({ ...form, accountId: e.target.value })}
+              required
+              aria-required="true"
             />
-          </label>
+          </div>
         )}
-        <label className="mb-4 block">
-          <span className="caption mb-1.5 block text-muted">{t("mdl.baseUrl")}</span>
+        <div className="mb-4">
+          <FieldLabel htmlFor="mdl-base-url">{t("mdl.baseUrl")}</FieldLabel>
           <input
+            id="mdl-base-url"
             className="input"
             placeholder={decisionProvider ? decisionProvider.baseUrl : "https://api.openai.com/v1"}
             value={form.baseUrl}
             onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
           />
-        </label>
-        <label className="mb-4 block">
-          <span className="caption mb-1.5 block text-muted">
+        </div>
+        <div className="mb-4">
+          <FieldLabel htmlFor="mdl-api-key">
             {t("mdl.apiKey")}{editing ? t("mdl.apiKeyKeep") : ""}
-          </span>
+          </FieldLabel>
           <input
+            id="mdl-api-key"
             className="input"
             type="password"
             value={form.apiKey}
             onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
           />
-        </label>
+        </div>
         <div className="flex gap-3">
           <button className="btn btn-primary" onClick={() => void save()} disabled={saving}>
             {saving ? t("memp.saving") : t("common.save")}
@@ -784,7 +810,7 @@ function SystemModels() {
       <Modal open={deleting !== null} title={t("mdl.deleteTitle")} onClose={() => setDeleting(null)}>
         <p className="body-sm mb-6 text-body">{t("mdl.deleteBody", { name: deleting?.name ?? "" })}</p>
         <div className="flex gap-3">
-          <button className="btn btn-primary" onClick={() => void remove()}>
+          <button type="button" className="btn btn-danger" onClick={() => void remove()}>
             {t("common.delete")}
           </button>
           <button className="btn btn-outline" onClick={() => setDeleting(null)}>
@@ -792,6 +818,6 @@ function SystemModels() {
           </button>
         </div>
       </Modal>
-    </div>
+    </ConsolePage>
   );
 }

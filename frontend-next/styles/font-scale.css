@@ -17,6 +17,7 @@
   [class~="text-[18px]"] { font-size: calc(18px * var(--app-font-scale, 1)); }
   [class~="text-[20px]"] { font-size: calc(20px * var(--app-font-scale, 1)); }
   [class~="text-[22px]"] { font-size: calc(22px * var(--app-font-scale, 1)); }
+  [class~="text-[23px]"] { font-size: calc(23px * var(--app-font-scale, 1)); }
 @media (min-width: 640px) {
   [class~="sm:text-[14px]"] { font-size: calc(14px * var(--app-font-scale, 1)); }
 }

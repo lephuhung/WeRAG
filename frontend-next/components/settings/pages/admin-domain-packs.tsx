@@ -16,6 +16,12 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { IconRefresh } from "@/components/icons";
+import { SystemSection } from "@/components/settings/system-section";
+import { Notice } from "@/components/settings/notice";
+import { Loading } from "@/components/settings/loading";
+import { DataTable } from "@/components/settings/data-table";
+import { TabStrip } from "@/components/settings/tab-strip";
+import { Pill, PillGroup } from "@/components/settings/pill";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { ApiError } from "@/lib/api-client";
 import { getCurrentUser } from "@/lib/api/auth";
@@ -28,6 +34,7 @@ import {
   getDomainPack,
   listDomainPacks,
   reconcileDomainPack,
+  type DomainPackAgent,
   type DomainPackCatalogueDocument,
   type DomainPackDetail,
   type DomainPackDocumentView,
@@ -53,11 +60,11 @@ const TABS: { key: Tab; labelKey: LocaleKey }[] = [
   { key: "agents", labelKey: "dpk.tab.agents" },
 ];
 
-const WARN_ROW = "bg-amber-500/[0.07]";
-const BADGE_WARN = "bg-amber-500/15 text-amber-700 dark:text-amber-400";
-const BADGE_OK = "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
-const BADGE_BAD = "bg-red-500/10 text-red-700 dark:text-red-400";
-const BADGE_NEUTRAL = "bg-surface-strong text-muted";
+const WARN_ROW = "bg-warning/10";
+const BADGE_WARN = "badge-warning";
+const BADGE_OK = "badge-success";
+const BADGE_BAD = "badge-error";
+const BADGE_NEUTRAL = "badge-neutral";
 
 function statusTone(status: string): string {
   if (status.startsWith("Còn hiệu lực")) return BADGE_OK;
@@ -92,17 +99,11 @@ export default function AdminDomainPacks() {
     };
   }, []);
 
-  if (allowed === null) {
-    return <div className="px-5 py-12 text-muted">{t("usrp.loading")}</div>;
-  }
-  if (!allowed) {
-    return (
-      <div className="px-5 py-16 text-center">
-        <p className="body-sm text-muted">{t("dpk.denied")}</p>
-      </div>
-    );
-  }
-  return pack ? <PackDetail name={pack} /> : <PackList />;
+  return (
+    <SystemSection allowed={allowed} title={t("systemNav.domainPacks")} deniedMessage={t("dpk.denied")}>
+      {pack ? <PackDetail name={pack} /> : <PackList />}
+    </SystemSection>
+  );
 }
 
 /* ---- list ------------------------------------------------------------------ */
@@ -124,9 +125,11 @@ function PackList() {
   const [items, setItems] = useState<DomainPackSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let alive = true;
+    setError("");
     (async () => {
       try {
         const res = await listDomainPacks();
@@ -140,57 +143,61 @@ function PackList() {
     return () => {
       alive = false;
     };
-  }, [t]);
+  }, [t, reloadKey]);
 
   return (
-    <div className="mx-auto w-full max-w-[1400px]">
+    <div>
       <p className="body-sm mb-4 max-w-[860px] text-muted">{t("dpk.intro")}</p>
-      {error && <div className="caption mb-3 text-red-600">{error}</div>}
-      <div className="card overflow-x-auto shadow-sm">
-        <table className="w-full min-w-[900px] border-collapse text-left">
-          <thead>
-            <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
-              <th className="min-w-[220px] px-5 py-3 font-medium">{t("dpk.col.pack")}</th>
-              <th className="w-[90px] px-5 py-3 font-medium">{t("dpk.col.version")}</th>
-              <th className="w-[120px] px-5 py-3 font-medium">{t("dpk.col.asOf")}</th>
-              <th className="w-[170px] px-5 py-3 font-medium">{t("dpk.col.reviewBy")}</th>
-              <th className="w-[100px] px-5 py-3 font-medium">{t("dpk.col.documents")}</th>
-              <th className="w-[100px] px-5 py-3 font-medium">{t("dpk.col.formulas")}</th>
-              <th className="w-[90px] px-5 py-3 font-medium">{t("dpk.col.agents")}</th>
-              <th className="min-w-[220px] px-5 py-3 font-medium">{t("dpk.col.attribution")}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-hairline">
-            {items.map((p) => (
-              <tr key={p.name} className="align-top">
-                <td className="px-5 py-3.5">
-                  <Link href={packHref(p.name)} className="text-[13px] font-semibold text-[#1f6feb] hover:underline">
-                    {p.name}
-                  </Link>
-                  {p.description && <div className="caption mt-0.5 line-clamp-2 text-body">{p.description}</div>}
-                </td>
-                <td className="px-5 py-3.5 text-[13px] tabular-nums text-ink">{p.version}</td>
-                <td className="px-5 py-3.5 caption tabular-nums text-body">{formatDate(p.as_of)}</td>
-                <td className="px-5 py-3.5">
-                  <span className="caption tabular-nums text-body">{formatDate(p.review_by)}</span>
-                  {p.overdue && <span className={`badge-pill ml-2 text-[10.5px] ${BADGE_BAD}`}>{t("dpk.overdue")}</span>}
-                </td>
-                <td className="px-5 py-3.5 text-[13px] tabular-nums text-ink">{p.document_count}</td>
-                <td className="px-5 py-3.5 text-[13px] tabular-nums text-ink">{p.formula_count}</td>
-                <td className="px-5 py-3.5 text-[13px] tabular-nums text-ink">{p.agent_count}</td>
-                <td className="px-5 py-3.5 caption text-body">{p.attribution}</td>
-              </tr>
-            ))}
-            {items.length === 0 && (
-              <tr>
-                <td colSpan={8} className="px-5 py-12 text-center text-[14px] text-muted">
-                  {loading ? t("usrp.loading") : t("dpk.empty")}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {error && (
+        <Notice
+          tone="error"
+          className="mb-3"
+          action={
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => setReloadKey((k) => k + 1)}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {error}
+        </Notice>
+      )}
+      <DataTable<DomainPackSummary>
+        columns={[
+          { key: "pack", header: t("dpk.col.pack"), className: "min-w-[220px]" },
+          { key: "version", header: t("dpk.col.version"), className: "w-[90px]" },
+          { key: "asOf", header: t("dpk.col.asOf"), className: "w-[120px]" },
+          { key: "reviewBy", header: t("dpk.col.reviewBy"), className: "w-[170px]" },
+          { key: "documents", header: t("dpk.col.documents"), className: "w-[100px]" },
+          { key: "formulas", header: t("dpk.col.formulas"), className: "w-[100px]" },
+          { key: "agents", header: t("dpk.col.agents"), className: "w-[90px]" },
+          { key: "attribution", header: t("dpk.col.attribution"), className: "min-w-[220px]" },
+        ]}
+        rows={items}
+        rowKey={(p) => p.name}
+        loading={loading}
+        loadingLabel={t("usrp.loading")}
+        emptyLabel={t("dpk.empty")}
+        renderRow={(p) => (
+          <>
+            <td className="px-5 py-3.5 align-top">
+              <Link href={packHref(p.name)} className="text-[13px] font-semibold text-accent hover:underline">
+                {p.name}
+              </Link>
+              {p.description && <div className="caption mt-0.5 line-clamp-2 text-body">{p.description}</div>}
+            </td>
+            <td className="px-5 py-3.5 align-top text-[13px] tabular-nums text-ink">{p.version}</td>
+            <td className="px-5 py-3.5 align-top caption tabular-nums text-body">{formatDate(p.as_of)}</td>
+            <td className="px-5 py-3.5 align-top">
+              <span className="caption tabular-nums text-body">{formatDate(p.review_by)}</span>
+              {p.overdue && <span className={`badge-pill ml-2 text-[10.5px] ${BADGE_BAD}`}>{t("dpk.overdue")}</span>}
+            </td>
+            <td className="px-5 py-3.5 align-top text-[13px] tabular-nums text-ink">{p.document_count}</td>
+            <td className="px-5 py-3.5 align-top text-[13px] tabular-nums text-ink">{p.formula_count}</td>
+            <td className="px-5 py-3.5 align-top text-[13px] tabular-nums text-ink">{p.agent_count}</td>
+            <td className="px-5 py-3.5 align-top caption text-body">{p.attribution}</td>
+          </>
+        )}
+      />
     </div>
   );
 }
@@ -243,48 +250,66 @@ function PackDetail({ name }: { name: string }) {
   const warnFormulas = detail?.formulas.filter((f) => f.warning).length ?? 0;
 
   return (
-    <div className="mx-auto w-full max-w-[1400px]">
+    <div>
       <button type="button" className="btn btn-ghost btn-sm mb-3 px-2" onClick={() => router.push(packHref(""))}>
         ← {t("dpk.back")}
       </button>
 
-      {error && <div className="caption mb-3 text-red-600">{error}</div>}
+      {error && (
+        <Notice
+          tone="error"
+          className="mb-3"
+          action={
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {error}
+        </Notice>
+      )}
       {!detail ? (
-        <div className="py-12 text-muted">{loading ? t("usrp.loading") : t("dpk.loadFailed")}</div>
+        <Loading label={loading ? t("usrp.loading") : t("dpk.loadFailed")} className="py-12" />
       ) : (
         <>
           <PackHeader detail={detail} reconciling={reconciling} onReconcile={() => void reconcile()} onReload={() => void load()} loading={loading} />
           {result && <ReconcilePanel result={result} onClose={() => setResult(null)} />}
 
-          <div className="mb-4 mt-5 flex items-center gap-1 border-b border-hairline">
-            {TABS.map(({ key, labelKey }) => {
+          <TabStrip
+            className="mb-4 mt-5"
+            tabs={TABS.map(({ key, labelKey }) => {
               const count = key === "documents" ? warnDocs : key === "formulas" ? warnFormulas : 0;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setTab(key)}
-                  className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] font-medium transition-colors ${
-                    tab === key ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink"
-                  }`}
-                >
-                  {t(labelKey)}
-                  {count > 0 && <span className={`badge-pill text-[10.5px] tabular-nums ${BADGE_WARN}`}>{count}</span>}
-                </button>
-              );
+              return {
+                id: key,
+                label: t(labelKey),
+                badge: count > 0 ? <span className={`badge-pill text-[10.5px] tabular-nums ${BADGE_WARN}`}>{count}</span> : undefined,
+              };
             })}
-          </div>
+            value={tab}
+            onChange={setTab}
+            ariaLabel={t("dpk.col.pack")}
+          />
 
-          {tab === "documents" && <DocumentsTab docs={detail.documents} />}
-          {tab === "formulas" && (
-            <FormulasTab
-              pack={detail.name}
-              formulas={detail.formulas}
-              catalogueNumbers={detail.documents.map((d) => d.number)}
-              onSaved={setDetail}
-            />
+          {tab === "documents" && (
+            <div id="tabpanel-documents" role="tabpanel" aria-labelledby="tab-documents">
+              <DocumentsTab docs={detail.documents} />
+            </div>
           )}
-          {tab === "agents" && <AgentsTab detail={detail} />}
+          {tab === "formulas" && (
+            <div id="tabpanel-formulas" role="tabpanel" aria-labelledby="tab-formulas">
+              <FormulasTab
+                pack={detail.name}
+                formulas={detail.formulas}
+                catalogueNumbers={detail.documents.map((d) => d.number)}
+                onSaved={setDetail}
+              />
+            </div>
+          )}
+          {tab === "agents" && (
+            <div id="tabpanel-agents" role="tabpanel" aria-labelledby="tab-agents">
+              <AgentsTab detail={detail} />
+            </div>
+          )}
         </>
       )}
     </div>
@@ -315,7 +340,7 @@ function PackHeader({
           {detail.description && <p className="body-sm mt-3 max-w-[900px] leading-relaxed text-body">{detail.description}</p>}
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" className="btn btn-outline btn-sm h-8 w-8 p-0" onClick={onReload} disabled={loading} title={t("dpk.reload")}>
+          <button type="button" className="btn btn-outline btn-sm h-8 w-8 p-0" onClick={onReload} disabled={loading} title={t("dpk.reload")} aria-label={t("dpk.reload")}>
             <IconRefresh className="h-4 w-4" />
           </button>
           <button type="button" className="btn btn-primary btn-sm" onClick={onReconcile} disabled={reconciling}>
@@ -353,7 +378,7 @@ function PackHeader({
         </div>
       )}
       {detail.errors.length > 0 && (
-        <div className="caption p-5 text-red-600 sm:p-6">
+        <div className="caption p-5 text-error sm:p-6">
           {detail.errors.map((e) => `${e.number}: ${e.error}`).join(" · ")}
         </div>
       )}
@@ -374,7 +399,7 @@ function ReconcilePanel({ result, onClose }: { result: DomainPackReconcileResult
   const { t } = useT();
   const { created, existing } = reconcileRequests(result);
   return (
-    <div className="card mt-4 border-[#1f6feb]/30 p-4 shadow-sm">
+    <div className="card mt-4 border-accent/30 p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="text-[13px] text-ink">
           {t("dpk.result.summary", {
@@ -410,9 +435,9 @@ function ReconcilePanel({ result, onClose }: { result: DomainPackReconcileResult
           </div>
         )}
         {result.errors.length > 0 && (
-          <div className="caption mt-2 text-red-600">{result.errors.map((e) => `${e.number}: ${e.error}`).join(" · ")}</div>
+          <div className="caption mt-2 text-error">{result.errors.map((e) => `${e.number}: ${e.error}`).join(" · ")}</div>
         )}
-        <Link href={REQUESTS_HREF} className="caption mt-2 inline-block text-[#1f6feb] hover:underline">
+        <Link href={REQUESTS_HREF} className="caption mt-2 inline-block text-accent hover:underline">
           {t("dpk.result.openQueue")}
         </Link>
       </div>
@@ -426,61 +451,60 @@ function DocumentsTab({ docs }: { docs: DomainPackDocumentView[] }) {
   const rows = visibleDocuments(docs, onlyWarnings);
   return (
     <>
-      <label className="caption mb-3 flex w-fit cursor-pointer items-center gap-2 text-body">
-        <input type="checkbox" checked={onlyWarnings} onChange={(e) => setOnlyWarnings(e.target.checked)} />
-        {t("dpk.onlyWarnings")}
-      </label>
-      <div className="card overflow-x-auto shadow-sm">
-        <table className="w-full min-w-[1100px] table-fixed border-collapse text-left">
-          <thead>
-            <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
-              <th className="w-[20%] px-4 py-3 font-medium">{t("dpk.doc.document")}</th>
-              <th className="w-[11%] px-4 py-3 font-medium">{t("dpk.doc.articles")}</th>
-              <th className="w-[14%] px-4 py-3 font-medium">{t("dpk.doc.status")}</th>
-              <th className="w-[6%] px-2 py-3 font-medium">{t("dpk.doc.inKB")}</th>
-              <th className="w-[26%] px-4 py-3 font-medium">{t("dpk.doc.note")}</th>
-              <th className="w-[15%] px-4 py-3 font-medium">{t("dpk.doc.citedIn")}</th>
-              <th className="w-[8%] px-2 py-3 font-medium">{t("dpk.doc.formulas")}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-hairline">
-            {rows.map((d) => (
-              <tr key={d.number} className={`align-top break-words ${d.warning ? WARN_ROW : ""}`}>
-                <td className="px-4 py-3">
-                  <div className="text-[13px] font-semibold text-ink">{d.number}</div>
-                  {documentTitle(d) && <div className="caption mt-0.5 text-body">{documentTitle(d)}</div>}
-                  {d.used_for && <div className="caption mt-0.5 line-clamp-2 text-muted" title={d.used_for}>{t("dpk.doc.usedFor", { text: d.used_for })}</div>}
-                </td>
-                <td className="px-4 py-3 caption text-body">{d.articles.length ? d.articles.join(", ") : "—"}</td>
-                <td className="px-4 py-3">
-                  <CatalogueStatus doc={d} />
-                </td>
-                <td className="px-2 py-3">
-                  {d.documents.length === 0 ? (
-                    <span className="caption text-muted-soft">—</span>
-                  ) : heldInKB(d.documents) ? (
-                    <span className={`badge-pill text-[10.5px] ${BADGE_OK}`}>{t("dpk.doc.held")}</span>
-                  ) : (
-                    <span className={`badge-pill text-[10.5px] ${BADGE_WARN}`}>{t("dpk.doc.notHeld")}</span>
-                  )}
-                </td>
-                <td className="px-4 py-3 caption text-body">
-                  <CompactPackText text={d.documents.map((r) => r.status_note).filter(Boolean).join(" · ")} />
-                </td>
-                <td className="px-4 py-3 caption text-body"><CompactPackText text={d.cited_in.join(", ")} /></td>
-                <td className="px-2 py-3 text-[11px] leading-relaxed text-muted"><CompactPackText text={d.formulas.join(", ")} /></td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-5 py-10 text-center text-[14px] text-muted">
-                  {t("dpk.doc.empty")}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <PillGroup className="mb-3" ariaLabel={t("common.filters")}>
+        <Pill active={!onlyWarnings} onClick={() => setOnlyWarnings(false)}>
+          {t("common.all")}
+        </Pill>
+        <Pill active={onlyWarnings} onClick={() => setOnlyWarnings(true)}>
+          {t("dpk.onlyWarnings")}
+        </Pill>
+      </PillGroup>
+      <DataTable<DomainPackDocumentView>
+        minWidth="min-w-[1100px]"
+        columns={[
+          { key: "document", header: t("dpk.doc.document"), className: "w-[20%]" },
+          { key: "articles", header: t("dpk.doc.articles"), className: "w-[11%]" },
+          { key: "status", header: t("dpk.doc.status"), className: "w-[14%]" },
+          { key: "inkb", header: t("dpk.doc.inKB"), className: "w-[6%]" },
+          { key: "note", header: t("dpk.doc.note"), className: "w-[26%]" },
+          { key: "citedIn", header: t("dpk.doc.citedIn"), className: "w-[15%]" },
+          { key: "formulas", header: t("dpk.doc.formulas"), className: "w-[8%]" },
+        ]}
+        rows={rows}
+        rowKey={(d) => d.number}
+        rowClassName="align-top break-words"
+        emptyLabel={t("dpk.doc.empty")}
+        renderRow={(d) => {
+          const warn = d.warning ? WARN_ROW : "";
+          return (
+            <>
+              <td className={`px-5 py-3.5 align-top ${warn}`}>
+                <div className="text-[13px] font-semibold text-ink">{d.number}</div>
+                {documentTitle(d) && <div className="caption mt-0.5 text-body">{documentTitle(d)}</div>}
+                {d.used_for && <div className="caption mt-0.5 line-clamp-2 text-muted" title={d.used_for}>{t("dpk.doc.usedFor", { text: d.used_for })}</div>}
+              </td>
+              <td className={`px-5 py-3.5 align-top caption text-body ${warn}`}>{d.articles.length ? d.articles.join(", ") : "—"}</td>
+              <td className={`px-5 py-3.5 align-top ${warn}`}>
+                <CatalogueStatus doc={d} />
+              </td>
+              <td className={`px-5 py-3.5 align-top ${warn}`}>
+                {d.documents.length === 0 ? (
+                  <span className="caption text-muted-soft">—</span>
+                ) : heldInKB(d.documents) ? (
+                  <span className={`badge-pill text-[10.5px] ${BADGE_OK}`}>{t("dpk.doc.held")}</span>
+                ) : (
+                  <span className={`badge-pill text-[10.5px] ${BADGE_WARN}`}>{t("dpk.doc.notHeld")}</span>
+                )}
+              </td>
+              <td className={`px-5 py-3.5 align-top caption text-body ${warn}`}>
+                <CompactPackText text={d.documents.map((r) => r.status_note).filter(Boolean).join(" · ")} />
+              </td>
+              <td className={`px-5 py-3.5 align-top caption text-body ${warn}`}><CompactPackText text={d.cited_in.join(", ")} /></td>
+              <td className={`px-5 py-3.5 align-top text-[11px] leading-relaxed text-muted ${warn}`}><CompactPackText text={d.formulas.join(", ")} /></td>
+            </>
+          );
+        }}
+      />
     </>
   );
 }
@@ -492,8 +516,8 @@ function CompactPackText({ text }: { text: string }) {
   return <details className="group">
     <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
       <span className="line-clamp-3 break-words text-left leading-relaxed group-open:hidden">{text}</span>
-      <span className="mt-1 block font-medium text-teal-700 group-open:hidden dark:text-teal-300">{t("dpk.doc.expandText")}</span>
-      <span className="hidden font-medium text-teal-700 group-open:inline dark:text-teal-300">{t("dpk.doc.collapseText")}</span>
+      <span className="mt-1 block font-medium text-accent group-open:hidden">{t("dpk.doc.expandText")}</span>
+      <span className="hidden font-medium text-accent group-open:inline">{t("dpk.doc.collapseText")}</span>
     </summary>
     <p className="mt-2 break-words whitespace-pre-line text-left leading-relaxed">{text}</p>
   </details>;
@@ -502,11 +526,11 @@ function CompactPackText({ text }: { text: string }) {
 function CatalogueStatus({ doc }: { doc: DomainPackDocumentView }) {
   const { t } = useT();
   if (doc.lookup === "missing") return <span className={`badge-pill text-[10.5px] ${BADGE_WARN}`}>{t("dpk.doc.missing")}</span>;
-  if (doc.lookup === "") return <span className="caption text-red-600">{t("dpk.doc.lookupFailed")}</span>;
+  if (doc.lookup === "") return <span className="caption text-error">{t("dpk.doc.lookupFailed")}</span>;
   const rows: DomainPackCatalogueDocument[] = doc.documents;
   return (
     <div className="space-y-1">
-      {doc.lookup === "ambiguous" && <div className="caption text-amber-700 dark:text-amber-400">{t("dpk.doc.ambiguous")}</div>}
+      {doc.lookup === "ambiguous" && <div className="caption text-warning">{t("dpk.doc.ambiguous")}</div>}
       {rows.map((r) => (
         <div key={r.id}>
           <span className={`badge-pill inline-block whitespace-normal text-[10.5px] leading-snug ${statusTone(r.status)}`}>
@@ -575,9 +599,9 @@ function FormulasTab({
               {t("dpk.edit.open")}
             </button>
           </div>
-          <div className="mt-4 rounded-r-lg border-l-4 border-teal-600 bg-teal-50 px-4 py-3 dark:bg-teal-950/40">
-            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-teal-700 dark:text-teal-300">{t("dpk.formula.expression")}</p>
-            <p className="break-words text-[15px] font-medium leading-relaxed text-teal-950 dark:text-teal-100">{f.expression}</p>
+          <div className="mt-4 rounded-r-lg border-l-4 border-accent bg-accent-surface px-4 py-3">
+            <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-accent">{t("dpk.formula.expression")}</p>
+            <p className="break-words text-[15px] font-medium leading-relaxed text-ink">{f.expression}</p>
           </div>
 
           <div className="mt-5 grid grid-cols-[repeat(auto-fit,minmax(min(100%,260px),1fr))] gap-x-6 gap-y-5">
@@ -612,11 +636,11 @@ function FormulasTab({
                       <span className={`badge-pill text-[10px] ${b.status === "ok" ? BADGE_OK : BADGE_WARN}`}>
                         {b.status === "ok" ? t("dpk.formula.basisOk") : t("dpk.formula.basisWarning")}
                       </span>
-                      {b.note && <details className="group mt-2 border-l-2 border-amber-400 pl-3">
+                      {b.note && <details className="group mt-2 border-l-2 border-warning pl-3">
                         <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
                           <span className="caption line-clamp-2 leading-relaxed text-body group-open:hidden">{b.note}</span>
-                          <span className="caption mt-1 block font-medium text-amber-700 group-open:hidden dark:text-amber-300">{t("dpk.formula.expandNote")}</span>
-                          <span className="caption hidden font-medium text-amber-700 group-open:inline dark:text-amber-300">{t("dpk.formula.collapseNote")}</span>
+                          <span className="caption mt-1 block font-medium text-warning group-open:hidden">{t("dpk.formula.expandNote")}</span>
+                          <span className="caption hidden font-medium text-warning group-open:inline">{t("dpk.formula.collapseNote")}</span>
                         </summary>
                         <p className="caption mt-2 whitespace-pre-line leading-relaxed text-body">{b.note}</p>
                       </details>}
@@ -653,68 +677,59 @@ function FormulasTab({
 function AgentsTab({ detail }: { detail: DomainPackDetail }) {
   const { t } = useT();
   return (
-    <div className="card overflow-x-auto shadow-sm">
-      <table className="w-full min-w-[600px] border-collapse text-left">
-        <thead>
-          <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
-            <th className="px-5 py-3 font-medium">{t("dpk.agent.name")}</th>
-            <th className="px-5 py-3 font-medium">{t("dpk.agent.org")}</th>
-            <th className="px-5 py-3 font-medium">{t("dpk.agent.distribution")}</th>
-            <th className="px-5 py-3 font-medium">{t("dpk.agent.sale")}</th>
-            <th className="px-5 py-3 font-medium">{t("dpk.agent.holders")}</th>
-            <th className="px-5 py-3 font-medium">{t("dpk.agent.scope")}</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-hairline">
-          {detail.agents.map((a) => (
-            <tr key={`${a.tenant_id}-${a.id}`}>
-              <td className="px-5 py-3 text-[13px] text-ink">{a.name || a.id}</td>
-              <td className="px-5 py-3 text-[13px] text-body">
-                {a.tenant_name || "—"} <span className="caption tabular-nums text-muted">#{a.tenant_id}</span>
-              </td>
-              <td className="px-5 py-3 text-[13px] text-body">
-                {t(`agent.distribution.${normalizeDistribution(a.distribution)}` as LocaleKey)}
-              </td>
-              <td className="px-5 py-3 text-[13px] text-body">
-                {a.addon_price_vnd == null ? (
-                  <span className="text-muted">{t("dpk.agent.notListed")}</span>
-                ) : (
-                  <>
-                    {a.addon_price_vnd > 0 ? formatPriceVND(a.addon_price_vnd) : t("usg.addonFree")}
-                    {t("usg.perMonth")}{" "}
-                    <span className={`caption ${a.addon_active ? "text-primary" : "text-muted"}`}>
-                      · {a.addon_active ? t("dpk.agent.onSale") : t("dpk.agent.offSale")}
-                    </span>
-                  </>
-                )}
-              </td>
-              <td className="px-5 py-3 text-[13px] tabular-nums text-body">{a.addon_holders ?? 0}</td>
-              <td className="px-5 py-3 text-[13px] text-body">
-                {normalizeDistribution(a.distribution) !== "internal" ? (
-                  <span className="text-muted">—</span>
-                ) : a.applies_to && a.applies_to.length > 0 ? (
-                  <ul className="space-y-0.5">
-                    {a.applies_to.map((s) => (
-                      <li key={s.tenant_id}>
-                        {s.tenant_name || "—"} <span className="caption tabular-nums text-muted">#{s.tenant_id}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <span className="text-muted">{t("dpk.agent.scopeAll")}</span>
-                )}
-              </td>
-            </tr>
-          ))}
-          {detail.agents.length === 0 && (
-            <tr>
-              <td colSpan={6} className="px-5 py-10 text-center text-[14px] text-muted">
-                {t("dpk.agent.empty")}
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-    </div>
+    <DataTable<DomainPackAgent>
+      minWidth="min-w-[600px]"
+      columns={[
+        { key: "name", header: t("dpk.agent.name") },
+        { key: "org", header: t("dpk.agent.org") },
+        { key: "distribution", header: t("dpk.agent.distribution") },
+        { key: "sale", header: t("dpk.agent.sale") },
+        { key: "holders", header: t("dpk.agent.holders") },
+        { key: "scope", header: t("dpk.agent.scope") },
+      ]}
+      rows={detail.agents}
+      rowKey={(a) => `${a.tenant_id}-${a.id}`}
+      emptyLabel={t("dpk.agent.empty")}
+      renderRow={(a) => (
+        <>
+          <td className="px-5 py-3.5 align-middle text-[13px] text-ink">{a.name || a.id}</td>
+          <td className="px-5 py-3.5 align-middle text-[13px] text-body">
+            {a.tenant_name || "—"} <span className="caption tabular-nums text-muted">#{a.tenant_id}</span>
+          </td>
+          <td className="px-5 py-3.5 align-middle text-[13px] text-body">
+            {t(`agent.distribution.${normalizeDistribution(a.distribution)}` as LocaleKey)}
+          </td>
+          <td className="px-5 py-3.5 align-middle text-[13px] text-body">
+            {a.addon_price_vnd == null ? (
+              <span className="text-muted">{t("dpk.agent.notListed")}</span>
+            ) : (
+              <>
+                {a.addon_price_vnd > 0 ? formatPriceVND(a.addon_price_vnd) : t("usg.addonFree")}
+                {t("usg.perMonth")}{" "}
+                <span className={`caption ${a.addon_active ? "text-accent" : "text-muted"}`}>
+                  · {a.addon_active ? t("dpk.agent.onSale") : t("dpk.agent.offSale")}
+                </span>
+              </>
+            )}
+          </td>
+          <td className="px-5 py-3.5 align-middle text-[13px] tabular-nums text-body">{a.addon_holders ?? 0}</td>
+          <td className="px-5 py-3.5 align-middle text-[13px] text-body">
+            {normalizeDistribution(a.distribution) !== "internal" ? (
+              <span className="text-muted">—</span>
+            ) : a.applies_to && a.applies_to.length > 0 ? (
+              <ul className="space-y-0.5">
+                {a.applies_to.map((s) => (
+                  <li key={s.tenant_id}>
+                    {s.tenant_name || "—"} <span className="caption tabular-nums text-muted">#{s.tenant_id}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <span className="text-muted">{t("dpk.agent.scopeAll")}</span>
+            )}
+          </td>
+        </>
+      )}
+    />
   );
 }

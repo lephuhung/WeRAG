@@ -548,7 +548,7 @@ export function Pill({ tone, children }: { tone: "ok" | "warn" | "muted"; childr
     tone === "ok"
       ? "bg-success/10 text-success"
       : tone === "warn"
-        ? "bg-amber-500/15 text-amber-600" // same as processing chips in knowledge/processing-timeline
+        ? "bg-running/15 text-running" // same as processing chips in knowledge/processing-timeline
         : "bg-surface-strong text-muted";
   return <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-medium ${cls}`}>{children}</span>;
 }

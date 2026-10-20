@@ -265,14 +265,14 @@ export function ParseSettingsDialog({
   const title = mode === "reparse" ? t("ps.titleReparse") : t("ps.title");
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-6">
-      <div className="absolute inset-0 bg-ink/20" onClick={onCancel} />
+    <div className="fixed inset-0 z-60 flex items-center justify-center p-0 sm:p-6">
+      <div className="absolute inset-0 z-40 bg-scrim/40 backdrop-blur-sm" onClick={onCancel} />
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="card relative flex h-[600px] max-h-[calc(100dvh-1.5rem)] w-[920px] max-w-full flex-col overflow-hidden p-0"
+        className="card relative z-50 flex h-[100dvh] w-full max-w-none flex-col overflow-hidden rounded-none p-0 sm:h-[600px] sm:max-h-[calc(100dvh-1.5rem)] sm:w-[920px] sm:max-w-full sm:rounded-[16px]"
       >
         <button
           onClick={onCancel}

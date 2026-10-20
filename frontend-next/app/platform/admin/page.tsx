@@ -64,6 +64,7 @@ function AdminConsole() {
           <Select
             value={active.key}
             onChange={open}
+            ariaLabel={t("adminPage.title")}
             options={ALL_SECTIONS.map((s) => ({ value: s.key, label: label(s) }))}
           />
         </div>

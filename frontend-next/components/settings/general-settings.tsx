@@ -20,6 +20,11 @@ import {
 import { readPreferences, savePreferences, type ThemeMode, type FontSizeKey } from "@/lib/ui-preferences";
 export type { ThemeMode, FontSizeKey } from "@/lib/ui-preferences";
 
+import { ConsolePage } from "@/components/settings/console-page";
+import { FieldLabel } from "@/components/settings/field";
+import { Pill, PillGroup } from "@/components/settings/pill";
+import { Notice } from "@/components/settings/notice";
+
 export function GeneralSettings() {
   const { t, locale, setLocale } = useT();
   const [theme, setThemeState] = useState<ThemeMode>("system");
@@ -73,88 +78,98 @@ export function GeneralSettings() {
   };
 
   return (
-    <div className="flex flex-col divide-y divide-hairline">
-      {/* language */}
-      <div className="flex flex-col items-start gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
-        <div className="min-w-0">
-          <label className="title-sm block">{t("settings.langTitle")}</label>
-          <p className="caption mt-1 text-muted">{t("settings.langDesc")}</p>
-        </div>
-        <Select
-          className="w-full sm:w-[280px] sm:shrink-0"
-          value={locale}
-          onChange={(v) => {
-            if (v === "en" || v === "vi") setLocale(v);
-          }}
-          options={[
-            { value: "en", label: t("settings.langEn") },
-            { value: "vi", label: t("settings.langVi") },
-          ]}
-        />
-      </div>
-
-      {/* theme */}
-      <div className="flex flex-col items-start gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
-        <div className="min-w-0">
-          <label className="title-sm block">{t("settings.themeTitle")}</label>
-          <p className="caption mt-1 text-muted">{t("settings.themeDesc")}</p>
-        </div>
-        <Select
-          className="w-full sm:w-[280px] sm:shrink-0"
-          value={theme}
-          onChange={(v) => setTheme(v as ThemeMode)}
-          options={[
-            { value: "light", label: t("settings.themeLight") },
-            { value: "dark", label: t("settings.themeDark") },
-            { value: "system", label: t("settings.themeSystem") },
-          ]}
-        />
-      </div>
-
-      {/* system theme (SuperAdmin only, global) */}
-      {isSystemAdmin && (
+    <ConsolePage size="form">
+      <div className="flex flex-col divide-y divide-hairline">
+        {/* language */}
         <div className="flex flex-col items-start gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
           <div className="min-w-0">
-            <label className="title-sm block">{t("settings.systemThemeTitle")}</label>
-            <p className="caption mt-1 text-muted">{t("settings.systemThemeDesc")}</p>
-            {systemThemeError && (
-              <p className="caption mt-1 text-error">{t("settings.systemThemeError")}</p>
-            )}
+            <FieldLabel htmlFor="settings-language" className="text-[15px] font-medium text-ink">
+              {t("settings.langTitle")}
+            </FieldLabel>
+            <p className="caption mt-1 text-muted">{t("settings.langDesc")}</p>
           </div>
           <Select
+            id="settings-language"
             className="w-full sm:w-[280px] sm:shrink-0"
-            value={systemTheme}
-            onChange={changeSystemTheme}
+            value={locale}
+            onChange={(v) => {
+              if (v === "en" || v === "vi") setLocale(v);
+            }}
             options={[
-              { value: "elevenlabs", label: t("settings.systemThemeElevenlabs") },
-              { value: "anthropic", label: t("settings.systemThemeAnthropic") },
+              { value: "en", label: t("settings.langEn") },
+              { value: "vi", label: t("settings.langVi") },
             ]}
           />
         </div>
-      )}
 
-      {/* font size */}
-      <div className="flex flex-col items-start gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
-        <div className="min-w-0">
-          <label className="title-sm block">{t("settings.fontSizeTitle")}</label>
-          <p className="caption mt-1 text-muted">{t("settings.fontSizeDesc")}</p>
+        {/* theme */}
+        <div className="flex flex-col items-start gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+          <div className="min-w-0">
+            <FieldLabel htmlFor="settings-theme" className="text-[15px] font-medium text-ink">
+              {t("settings.themeTitle")}
+            </FieldLabel>
+            <p className="caption mt-1 text-muted">{t("settings.themeDesc")}</p>
+          </div>
+          <Select
+            id="settings-theme"
+            className="w-full sm:w-[280px] sm:shrink-0"
+            value={theme}
+            onChange={(v) => setTheme(v as ThemeMode)}
+            options={[
+              { value: "light", label: t("settings.themeLight") },
+              { value: "dark", label: t("settings.themeDark") },
+              { value: "system", label: t("settings.themeSystem") },
+            ]}
+          />
         </div>
-        <div className="flex items-center gap-1">
-          {fontSizeOptions.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setFontSize(opt.value, opt.scale)}
-              className={`btn-sm px-4 py-2 font-medium transition-colors first:rounded-l-full last:rounded-r-full ${
-                fontSize === opt.value
-                  ? "bg-primary text-on-primary"
-                  : "bg-surface-strong text-body hover:text-ink"
-              }`}
-            >
-              {t(opt.labelKey)}
-            </button>
-          ))}
+
+        {/* system theme (SuperAdmin only, global) */}
+        {isSystemAdmin && (
+          <div className="flex flex-col items-start gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+            <div className="min-w-0">
+              <FieldLabel htmlFor="settings-system-theme" className="text-[15px] font-medium text-ink">
+                {t("settings.systemThemeTitle")}
+              </FieldLabel>
+              <p className="caption mt-1 text-muted">{t("settings.systemThemeDesc")}</p>
+              {systemThemeError && (
+                <Notice tone="error" className="mt-1">{t("settings.systemThemeError")}</Notice>
+              )}
+            </div>
+            <Select
+              id="settings-system-theme"
+              className="w-full sm:w-[280px] sm:shrink-0"
+              value={systemTheme}
+              onChange={changeSystemTheme}
+              options={[
+                { value: "elevenlabs", label: t("settings.systemThemeElevenlabs") },
+                { value: "anthropic", label: t("settings.systemThemeAnthropic") },
+              ]}
+            />
+          </div>
+        )}
+
+        {/* font size */}
+        <div className="flex flex-col items-start gap-3 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+          <div className="min-w-0">
+            <div className="text-[15px] font-medium text-ink">{t("settings.fontSizeTitle")}</div>
+            <p className="caption mt-1 text-muted">{t("settings.fontSizeDesc")}</p>
+          </div>
+          <div className="flex items-center gap-1">
+            <PillGroup ariaLabel={t("settings.fontSizeTitle")}>
+              {fontSizeOptions.map((opt) => (
+                <Pill
+                  key={opt.value}
+                  active={fontSize === opt.value}
+                  onClick={() => setFontSize(opt.value, opt.scale)}
+                  title={`${t(opt.labelKey)} (${opt.scale})`}
+                >
+                  {t(opt.labelKey)}
+                </Pill>
+              ))}
+            </PillGroup>
+          </div>
         </div>
       </div>
-    </div>
+    </ConsolePage>
   );
 }

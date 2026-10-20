@@ -67,7 +67,7 @@ export function ChoiceListView({
   // draft it), the other types as small buttons to correct the guess
   if (card.kind === AGENT_HANDOFF_TYPE) {
     const main = card.options.findIndex((o) => o.primary);
-    const small = "rounded-[6px] border border-hairline-strong px-2 py-0.5 text-[12px] text-body hover:bg-surface-strong disabled:opacity-50";
+    const small = "rounded-md2 border border-hairline-strong px-2 py-0.5 text-[12px] text-body hover:bg-surface-strong disabled:opacity-50";
     return (
       <div className="mt-2 w-full min-w-0">
         {main >= 0 && (
@@ -75,7 +75,7 @@ export function ChoiceListView({
             type="button"
             disabled={disabled || working}
             onClick={() => void pick(main)}
-            className="rounded-[6px] bg-[#1f6feb] px-2.5 py-1 text-[12.5px] font-semibold text-white disabled:opacity-50"
+            className="rounded-md2 bg-accent px-2.5 py-1 text-[12.5px] font-semibold text-on-primary disabled:opacity-50"
           >
             {t("docws.handoff.switch", { type: card.options[main].label.toLocaleLowerCase("vi-VN") })}
           </button>
@@ -102,7 +102,7 @@ export function ChoiceListView({
       <ul className="flex flex-col gap-0.5" role="radiogroup" aria-label={t("docws.choice.listLabel")}>
         {card.options.map((o, i) => (
           <li key={`${i}-${o.label}`}>
-            <label className="flex cursor-pointer items-start gap-2 rounded-[6px] px-1 py-1 text-[13px] text-body hover:bg-surface-strong">
+            <label className="flex cursor-pointer items-start gap-2 rounded-md2 px-1 py-1 text-[13px] text-body hover:bg-surface-strong">
               <input
                 type="radio"
                 name={group}
@@ -133,13 +133,13 @@ export function ChoiceListView({
                           void pick(i);
                         }
                       }}
-                      className="min-w-0 flex-1 rounded-[6px] border border-hairline-strong bg-surface-card px-2 py-1 text-[13px] text-ink outline-none focus:border-[#3b82f6]"
+                      className="min-w-0 flex-1 rounded-md2 border border-hairline-strong bg-surface-card px-2 py-1 text-[13px] text-ink outline-none focus:border-accent"
                     />
                     <button
                       type="button"
                       disabled={disabled || working || !text.trim()}
                       onClick={() => void pick(i)}
-                      className="rounded-[6px] bg-[#1f6feb] px-2.5 py-1 text-[12.5px] font-semibold text-white disabled:opacity-50"
+                      className="rounded-md2 bg-accent px-2.5 py-1 text-[12.5px] font-semibold text-on-primary disabled:opacity-50"
                     >
                       {t("docws.choice.send")}
                     </button>

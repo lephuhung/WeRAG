@@ -14,6 +14,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Modal } from "@/components/modal";
 import { IconRefresh } from "@/components/icons";
+import { useToast } from "@/components/toast";
+import { ConsolePage } from "@/components/settings/console-page";
+import { DataTable } from "@/components/settings/data-table";
+import { Pager } from "@/components/settings/pager";
+import { Pill, PillGroup } from "@/components/settings/pill";
+import { Notice } from "@/components/settings/notice";
+import { Loading } from "@/components/settings/loading";
+import { FieldLabel } from "@/components/settings/field";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { ApiError } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/datetime";
@@ -52,8 +60,8 @@ const FILTERS: { key: LegalRequestFilter; labelKey: LocaleKey }[] = [
 type Action = "ingest" | "reject" | "added";
 
 function statusTone(status: string): string {
-  if (status.startsWith("Còn hiệu lực")) return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
-  return "bg-surface-strong text-muted";
+  if (status.startsWith("Còn hiệu lực")) return "badge-success";
+  return "badge-neutral";
 }
 
 function errorText(e: unknown, fallback: string): string {
@@ -82,10 +90,10 @@ function portalKind(p: LegalRequestPortal): PortalKind {
 }
 
 const PORTAL_TONE: Record<PortalKind, string> = {
-  html: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-  pdf: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
-  none: "bg-surface-strong text-muted",
-  gone: "bg-surface-strong text-muted",
+  html: "badge-success",
+  pdf: "badge-warning",
+  none: "badge-neutral",
+  gone: "badge-neutral",
 };
 
 function PortalBadge({ portal, locale }: { portal: LegalRequestPortal; locale: string }) {
@@ -119,6 +127,7 @@ export default function LegalRequestsSection({
   onDenied?: () => void;
 }) {
   const { t, locale } = useT();
+  const toast = useToast();
   const [filter, setFilter] = useState<LegalRequestFilter>("requested");
   const [items, setItems] = useState<LegalRequestItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -126,7 +135,6 @@ export default function LegalRequestsSection({
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [acting, setActing] = useState<{ item: LegalRequestItem; action: Action } | null>(null);
 
   const load = useCallback(async (): Promise<LegalRequestItem[] | null> => {
@@ -160,7 +168,7 @@ export default function LegalRequestsSection({
     counts ? (k === "all" ? countTotal(counts) : (counts[k] ?? 0)) : null;
 
   return (
-    <div>
+    <ConsolePage size="wide">
       <div className="mb-5 flex flex-wrap items-center gap-3">
         <span className="caption text-muted">{t("lreq.desc")}</span>
         <div className="ml-auto flex items-center gap-2">
@@ -176,87 +184,67 @@ export default function LegalRequestsSection({
         </div>
       </div>
 
-      {notice && <p className="caption mb-3 text-emerald-700 dark:text-emerald-400">{notice}</p>}
-      {error && <p className="caption mb-3 text-error">{error}</p>}
+      {error && (
+        <Notice
+          tone="error"
+          className="mb-3"
+          action={
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {error}
+        </Notice>
+      )}
 
-      <div className="mb-5 inline-flex flex-wrap items-center gap-0.5 rounded-full border border-hairline bg-surface-strong/60 p-0.5">
+      <PillGroup ariaLabel={t("common.filters")} className="mb-5 flex-wrap">
         {FILTERS.map((f) => {
           const n = countOf(f.key);
           return (
-            <button
+            <Pill
               key={f.key}
-              type="button"
+              active={filter === f.key}
               onClick={() => {
                 setFilter(f.key);
                 setPage(1);
               }}
-              className={`rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${
-                filter === f.key
-                  ? "bg-surface-card text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
-                  : "text-muted hover:text-ink"
-              }`}
             >
               {t(f.labelKey)}
               {n !== null && <span className="ml-1 tabular-nums text-muted-soft">({n})</span>}
-            </button>
+            </Pill>
           );
         })}
-      </div>
+      </PillGroup>
 
-      <div className="card overflow-x-auto shadow-sm">
-        <table className="w-full min-w-[980px] border-collapse text-left">
-          <thead>
-            <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
-              <th className="min-w-[260px] px-5 py-3 font-medium">{t("lreq.col.document")}</th>
-              <th className="w-[150px] px-5 py-3 font-medium">{t("lreq.col.validity")}</th>
-              <th className="w-[80px] px-5 py-3 font-medium">{t("lreq.col.count")}</th>
-              <th className="w-[150px] px-5 py-3 font-medium">{t("lreq.col.lastAsked")}</th>
-              <th className="min-w-[200px] px-5 py-3 font-medium">{t("lreq.col.lastQuery")}</th>
-              <th className="min-w-[200px] px-5 py-3 font-medium">{t("lreq.col.action")}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-hairline">
-            {items.map((item) => (
-              <RequestRow
-                key={item.id}
-                item={item}
-                locale={locale}
-                onAct={(action) => {
-                  setNotice("");
-                  setActing({ item, action });
-                }}
-                onUpdated={(updated) => setItems((cur) => cur.map((it) => (it.id === updated.id ? updated : it)))}
-                onReload={() => void load()}
-              />
-            ))}
-            {items.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-5 py-12 text-center text-[14px] text-muted">
-                  {loading ? t("usrp.loading") : t("lreq.empty")}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable<LegalRequestItem>
+        columns={[
+          { key: "document", header: t("lreq.col.document"), className: "min-w-[260px]" },
+          { key: "validity", header: t("lreq.col.validity"), className: "w-[150px]" },
+          { key: "count", header: t("lreq.col.count"), className: "w-[80px]" },
+          { key: "lastAsked", header: t("lreq.col.lastAsked"), className: "w-[150px]" },
+          { key: "lastQuery", header: t("lreq.col.lastQuery"), className: "min-w-[200px]" },
+          { key: "action", header: t("lreq.col.action"), className: "min-w-[200px]" },
+        ]}
+        rows={items}
+        rowKey={(item) => item.id}
+        renderRow={(item) => (
+          <RequestCells
+            item={item}
+            locale={locale}
+            onAct={(action) => setActing({ item, action })}
+            onUpdated={(updated) => setItems((cur) => cur.map((it) => (it.id === updated.id ? updated : it)))}
+            onReload={() => void load()}
+          />
+        )}
+        rowClassName="align-top"
+        loading={loading}
+        loadingLabel={t("common.loading")}
+        emptyLabel={t("lreq.empty")}
+        minWidth="min-w-[980px]"
+      />
 
-      {pages > 1 && (
-        <div className="mt-4 flex items-center justify-center gap-3">
-          <button className="btn btn-outline btn-sm" disabled={page <= 1 || loading} onClick={() => setPage(page - 1)}>
-            ‹
-          </button>
-          <span className="caption text-muted tabular-nums">
-            {page} / {pages}
-          </span>
-          <button
-            className="btn btn-outline btn-sm"
-            disabled={page >= pages || loading}
-            onClick={() => setPage(page + 1)}
-          >
-            ›
-          </button>
-        </div>
-      )}
+      <Pager page={page} pageCount={pages} onPage={setPage} loading={loading} />
 
       {acting && (
         <DecisionDialog
@@ -266,7 +254,7 @@ export default function LegalRequestsSection({
           onClose={() => setActing(null)}
           onFetched={(draft) => {
             setActing(null);
-            setNotice(
+            toast.success(
               t(legalDraftBusy(draft.status) ? "lreq.draft.fetchedOcr" : "lreq.draft.fetched", {
                 number: draft.document_number || acting.item.document_number,
                 pages: draft.ocr_pages,
@@ -276,7 +264,7 @@ export default function LegalRequestsSection({
           }}
           onDone={(updated) => {
             setActing(null);
-            setNotice(
+            toast.success(
               t(`lreq.done.${acting.action}` as LocaleKey, {
                 number: updated.document_number || acting.item.document_number,
               }),
@@ -285,11 +273,12 @@ export default function LegalRequestsSection({
           }}
         />
       )}
-    </div>
+    </ConsolePage>
   );
 }
 
-function RequestRow({
+/* The cells of one request row (the <tr> comes from <DataTable>). */
+function RequestCells({
   item,
   locale,
   onAct,
@@ -327,11 +316,11 @@ function RequestRow({
   // a request recorded by a domain pack's catalogue reconcile
   const packOrigin = packOriginName(item.detail);
   return (
-    <tr className="align-top">
-      <td className="px-5 py-3.5">
+    <>
+      <td className="px-5 py-3.5 align-middle">
         <div className="text-[13px] font-semibold text-ink">{label || "—"}</div>
         {packOrigin && (
-          <span className="badge-pill mt-1 inline-block bg-[#1f6feb]/10 text-[10.5px] text-[#1f6feb]">
+          <span className="badge-pill badge-accent mt-1 inline-block text-[10.5px]">
             {t("lreq.packOrigin", { name: packOrigin })}
           </span>
         )}
@@ -346,13 +335,13 @@ function RequestRow({
             href={doc.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="caption mt-0.5 inline-block text-[#1f6feb] hover:underline"
+            className="caption mt-0.5 inline-block text-accent hover:underline"
           >
             vbpl.vn
           </a>
         )}
       </td>
-      <td className="px-5 py-3.5">
+      <td className="px-5 py-3.5 align-middle">
         {!item.legal_document_id ? (
           <span className="caption text-muted">{t("lreq.notInCatalog")}</span>
         ) : doc?.status ? (
@@ -363,25 +352,23 @@ function RequestRow({
           <span className="caption text-muted-soft">—</span>
         )}
       </td>
-      <td className="px-5 py-3.5">
+      <td className="px-5 py-3.5 align-middle">
         <span className="text-[13px] tabular-nums text-ink">{item.request_count}</span>
       </td>
-      <td className="px-5 py-3.5">
+      <td className="px-5 py-3.5 align-middle">
         <span className="caption tabular-nums text-body">{formatDateTime(item.last_requested_at, locale) || "—"}</span>
       </td>
-      <td className="px-5 py-3.5">
+      <td className="px-5 py-3.5 align-middle">
         <div className="caption line-clamp-2 max-w-[320px] text-body" title={item.last_query}>
           {item.last_query || "—"}
         </div>
       </td>
-      <td className="px-5 py-3.5">
+      <td className="px-5 py-3.5 align-middle">
         {decided ? (
           <div className="flex flex-col gap-0.5">
             <span
               className={`badge-pill inline-block w-fit text-[10px] ${
-                item.status === "added"
-                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                  : "bg-red-500/10 text-red-700 dark:text-red-400"
+                item.status === "added" ? "badge-success" : "badge-error"
               }`}
             >
               {t(`lreq.state.${item.status}` as LocaleKey)}
@@ -390,7 +377,7 @@ function RequestRow({
               {[formatDateTime(item.decided_at, locale), item.decided_by].filter(Boolean).join(" · ")}
             </span>
             {draft?.status === "approved" && (
-              <span className="badge-pill inline-block w-fit bg-emerald-500/10 text-[10px] text-emerald-700 dark:text-emerald-400">
+              <span className="badge-pill badge-success inline-block w-fit text-[10px]">
                 {t("lreq.draft.approved")}
               </span>
             )}
@@ -400,12 +387,12 @@ function RequestRow({
               </span>
             )}
             {item.status === "added" && parsing && (
-              <span className="badge-pill inline-block w-fit bg-amber-500/10 text-[10px] text-amber-700 dark:text-amber-400">
+              <span className="badge-pill badge-warning inline-block w-fit text-[10px]">
                 {t("lreq.parse.processing")}
               </span>
             )}
             {item.status === "added" && item.knowledge_parse_status === "failed" && (
-              <span className="badge-pill inline-block w-fit bg-red-500/10 text-[10px] text-red-700 dark:text-red-400">
+              <span className="badge-pill badge-error inline-block w-fit text-[10px]">
                 {t("lreq.parse.failed")}
               </span>
             )}
@@ -436,7 +423,11 @@ function RequestRow({
               )}
             </div>
             {portal && <PortalBadge portal={portal} locale={locale} />}
-            {checkError && <span className="caption text-error">{checkError}</span>}
+            {checkError && (
+              <Notice tone="error" className="mt-1">
+                {checkError}
+              </Notice>
+            )}
             {item.legal_document_id && (draft || (portal && portalKind(portal) === "pdf")) && (
               <DraftControls
                 item={item}
@@ -447,7 +438,7 @@ function RequestRow({
           </div>
         )}
       </td>
-    </tr>
+    </>
   );
 }
 
@@ -565,14 +556,19 @@ function DecisionDialog({
         </div>
 
         {action === "ingest" && !pdfOnly && (
-          <label className="flex flex-col gap-1">
-            <span className="caption text-muted">{t("lreq.f.kb")}</span>
+          <div className="flex flex-col gap-1">
+            <FieldLabel htmlFor="lreq-kb">{t("lreq.f.kb")}</FieldLabel>
             {kbs === null ? (
-              <span className="caption text-muted">{t("usrp.loading")}</span>
+              <span className="caption text-muted">{t("common.loading")}</span>
             ) : kbs.length === 0 ? (
               <span className="caption text-muted">{t("lreq.noKb")}</span>
             ) : (
-              <select className="input h-9 py-0 text-[13px]" value={kbId} onChange={(e) => setKbId(e.target.value)}>
+              <select
+                id="lreq-kb"
+                className="input h-9 py-0 text-[13px]"
+                value={kbId}
+                onChange={(e) => setKbId(e.target.value)}
+              >
                 {kbs.map((k) => (
                   <option key={k.id} value={k.id}>
                     {k.name}
@@ -582,16 +578,16 @@ function DecisionDialog({
               </select>
             )}
             <span className="caption text-muted-soft">{t("lreq.ingestHint")}</span>
-          </label>
+          </div>
         )}
 
         {portal && (
           <div className="flex flex-col gap-1.5">
             <PortalBadge portal={portal} locale={locale} />
             {pdfOnly && (
-              <div className="rounded-[10px] border border-amber-500/30 bg-amber-500/5 p-2.5">
+              <div className="rounded-[10px] border border-warning/30 bg-warning-surface p-2.5">
                 <p className="caption text-body">{t("lreq.pdf.only", { file: portal.pdf_file })}</p>
-                <p className="caption mt-1 text-amber-700 dark:text-amber-400">{t("lreq.draft.hint")}</p>
+                <p className="caption mt-1 text-warning">{t("lreq.draft.hint")}</p>
               </div>
             )}
             {blocked && (
@@ -604,44 +600,55 @@ function DecisionDialog({
         )}
 
         {action !== "ingest" && (
-          <label className="flex flex-col gap-1">
-            <span className="caption text-muted">
+          <div className="flex flex-col gap-1">
+            <FieldLabel htmlFor="lreq-note" required={action === "reject"}>
               {action === "reject" ? t("lreq.f.noteRequired") : t("lreq.f.noteOptional")}
-            </span>
+            </FieldLabel>
             <textarea
+              id="lreq-note"
               className="input min-h-[96px] w-full resize-y py-2 text-[13px] leading-relaxed"
               value={note}
               autoFocus
+              required={action === "reject"}
+              aria-required={action === "reject"}
               onChange={(e) => setNote(e.target.value)}
             />
+            {action === "reject" && note.trim() === "" && (
+              <span className="caption text-error">{t("common.required")}</span>
+            )}
             {action === "reject" && <span className="caption text-muted-soft">{t("lreq.rejectHint")}</span>}
-          </label>
+          </div>
         )}
 
         {action === "added" && (
-          <label className="flex flex-col gap-1">
-            <span className="caption text-muted">{t("lreq.f.knowledgeId")}</span>
+          <div className="flex flex-col gap-1">
+            <FieldLabel htmlFor="lreq-knowledge-id">{t("lreq.f.knowledgeId")}</FieldLabel>
             <input
+              id="lreq-knowledge-id"
               className="input h-9 font-mono text-[13px]"
               value={knowledgeId}
               onChange={(e) => setKnowledgeId(e.target.value)}
             />
-          </label>
+          </div>
         )}
 
-        {error && <p className="caption text-error">{error}</p>}
+        {error && <Notice tone="error">{error}</Notice>}
 
         <div className="flex justify-end gap-2 border-t border-hairline pt-4">
           <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={saving}>
             {t("common.cancel")}
           </button>
-          <button className="btn btn-primary btn-sm" onClick={() => void submit()} disabled={!canSubmit}>
+          <button
+            className={`btn btn-sm ${action === "reject" ? "btn-danger" : "btn-primary"}`}
+            onClick={() => void submit()}
+            disabled={!canSubmit}
+          >
             {saving
               ? pdfOnly
                 ? t("lreq.draft.fetching")
                 : action === "ingest"
                   ? t("lreq.ingesting")
-                  : "…"
+                  : t("common.loading")
               : pdfOnly
                 ? t("lreq.draft.fetch")
                 : t(`lreq.confirm.${action}` as LocaleKey)}
@@ -716,7 +723,7 @@ function DraftControls({
     }
   };
 
-  if (fetching) return <span className="caption text-muted">{t("lreq.draft.fetching")}</span>;
+  if (fetching) return <Loading label={t("lreq.draft.fetching")} className="py-0" />;
 
   if (!draft || draft.status === "failed") {
     return (
@@ -735,14 +742,18 @@ function DraftControls({
         >
           {draft ? t("lreq.draft.retry") : t("lreq.draft.fetch")}
         </button>
-        {error && <span className="caption text-error">{error}</span>}
+        {error && (
+          <Notice tone="error" className="mt-1">
+            {error}
+          </Notice>
+        )}
       </div>
     );
   }
 
   if (busy) {
     return (
-      <span className="badge-pill inline-flex w-fit items-center gap-1 bg-amber-500/10 text-[10px] text-amber-700 dark:text-amber-400">
+      <span className="badge-pill badge-warning inline-flex w-fit items-center gap-1 text-[10px]">
         <IconRefresh className="h-3 w-3 animate-spin motion-reduce:animate-none" />
         {draft.ocr_pages > 0 ? t("lreq.draft.ocrPages", { n: draft.ocr_pages }) : t("lreq.draft.ocr")}
       </span>
@@ -751,7 +762,7 @@ function DraftControls({
 
   if (draft.status === "approved") {
     return (
-      <span className="badge-pill inline-block w-fit bg-emerald-500/10 text-[10px] text-emerald-700 dark:text-emerald-400">
+      <span className="badge-pill badge-success inline-block w-fit text-[10px]">
         {t("lreq.draft.approved")}
       </span>
     );
@@ -762,8 +773,8 @@ function DraftControls({
       <span
         className={`badge-pill inline-block w-fit text-[10px] ${
           draft.status === "reviewing"
-            ? "bg-sky-500/10 text-sky-700 dark:text-sky-400"
-            : "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+            ? "badge-info"
+            : "badge-warning"
         }`}
       >
         {t(draft.status === "reviewing" ? "lreq.draft.reviewing" : "lreq.draft.ready")}

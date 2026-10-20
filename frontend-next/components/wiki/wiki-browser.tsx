@@ -22,7 +22,7 @@ import {
 } from "@/lib/api/wiki";
 import { Markdown } from "@/components/markdown";
 import { useTenantRole } from "@/lib/auth";
-import { useT } from "@/lib/i18n";
+import { useT, type LocaleKey } from "@/lib/i18n";
 import { formatDateTime } from "@/lib/datetime";
 import { IconDoc } from "@/components/icons";
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
@@ -33,6 +33,21 @@ import { Modal } from "@/components/modal";
 function flatten(groups: WikiIndexGroup[]): WikiIndexEntryDTO[] {
   return groups.flatMap((g) => g.items);
 }
+
+/* The index buckets come from the backend as raw type names. The known
+ * ones are translated; an unknown bucket keeps its raw name. */
+const GROUP_LABEL_KEY: Record<string, LocaleKey> = {
+  summary: "wiki.group.summary",
+  document: "wiki.group.document",
+  entity: "wiki.group.entity",
+  concept: "wiki.group.concept",
+  page: "wiki.group.page",
+  index: "wiki.group.index",
+  field: "wiki.group.field",
+  agency: "wiki.group.agency",
+  synthesis: "wiki.group.synthesis",
+  comparison: "wiki.group.comparison",
+};
 
 export function WikiBrowser({
   kbId,
@@ -113,7 +128,7 @@ export function WikiBrowser({
       {loading && <p className="caption mb-3 text-muted">{t("kbUi.wikiLoading")}</p>}
 
       {/* tree */}
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 flex-col" role="tree" aria-label={t("wiki.treeLabel")}>
         {(!error && !loading ? index?.groups ?? [] : []).map((g) => {
           /* group-level search filter */
           const items = g.items.filter(
@@ -123,11 +138,12 @@ export function WikiBrowser({
               i.slug.toLowerCase().includes(q.toLowerCase()),
           );
           if (q && items.length === 0) return null;
+          const groupLabel = GROUP_LABEL_KEY[g.type] ? t(GROUP_LABEL_KEY[g.type]) : g.type;
           return (
-            <div key={g.type} className="mb-3.5">
+            <div key={g.type} role="group" aria-label={groupLabel} className="mb-3.5">
               <div className="mb-1 flex items-center gap-1.5 text-[13px] font-medium text-ink">
                 <IconDoc className="h-3.5 w-3.5 text-muted" />
-                <span className="capitalize">{g.type}</span>
+                <span>{groupLabel}</span>
                 <span className="text-[11px] text-muted-soft">{g.total}</span>
               </div>
               <div className="ml-5 border-l border-hairline pl-3">
@@ -136,13 +152,39 @@ export function WikiBrowser({
                   const isOpen = expanded.has(it.slug);
                   return (
                     <div key={it.slug} className="min-w-0">
-                      <div className="flex min-w-0 items-center gap-1">
-                        <button
-                          onClick={() => toggle(it.slug)}
-                          className={`flex h-4 w-4 shrink-0 items-center justify-center text-muted transition-transform ${
+                      <div
+                        role="treeitem"
+                        aria-level={1}
+                        aria-expanded={kids.length > 0 ? isOpen : undefined}
+                        aria-selected={openSlug === it.slug}
+                        aria-label={it.title}
+                        tabIndex={0}
+                        onClick={() => setOpenSlug(it.slug)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            setOpenSlug(it.slug);
+                          } else if (e.key === "ArrowRight" && kids.length > 0 && !isOpen) {
+                            e.preventDefault();
+                            toggle(it.slug);
+                          } else if (e.key === "ArrowLeft" && isOpen) {
+                            e.preventDefault();
+                            toggle(it.slug);
+                          }
+                        }}
+                        className="flex min-w-0 items-center gap-1 rounded-[6px] outline-none focus-visible:bg-surface-strong"
+                      >
+                        {/* The chevron is the mouse affordance; the treeitem
+                            itself carries the expand state for the keyboard. */}
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggle(it.slug);
+                          }}
+                          aria-hidden="true"
+                          className={`flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center text-muted transition-transform ${
                             kids.length ? "hover:text-ink" : "invisible"
                           }`}
-                          aria-label="Toggle subtree"
                         >
                           <svg
                             viewBox="0 0 12 12"
@@ -153,27 +195,35 @@ export function WikiBrowser({
                           >
                             <path d="M4 2l4 4-4 4" />
                           </svg>
-                        </button>
-                        <button
-                          onClick={() => setOpenSlug(it.slug)}
-                          className="min-w-0 flex-1 truncate py-0.5 text-left text-[12.5px] text-body hover:text-ink"
-                        >
+                        </span>
+                        <span className="min-w-0 flex-1 truncate py-0.5 text-left text-[12.5px] text-body hover:text-ink">
                           {it.title}
                           {kids.length > 0 && (
                             <span className="text-[11px] ml-1.5 text-muted-soft">{kids.length}</span>
                           )}
-                        </button>
+                        </span>
                       </div>
                       {isOpen && kids.length > 0 && (
-                        <div className="ml-4">
+                        <div role="group" className="ml-4">
                           {kids.map((k) => (
-                            <button
+                            <div
                               key={k.slug}
+                              role="treeitem"
+                              aria-level={2}
+                              aria-selected={openSlug === k.slug}
+                              aria-label={k.title}
+                              tabIndex={0}
                               onClick={() => setOpenSlug(k.slug)}
-                              className="block w-full truncate py-0.5 text-left text-[11.5px] text-body hover:text-ink"
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setOpenSlug(k.slug);
+                                }
+                              }}
+                              className="block w-full cursor-pointer truncate rounded-[6px] py-0.5 text-left text-[11.5px] text-body outline-none hover:text-ink focus-visible:bg-surface-strong"
                             >
                               {k.title}
-                            </button>
+                            </div>
                           ))}
                         </div>
                       )}
@@ -256,12 +306,12 @@ export function WikiPageView({
         if (pageData && (pageData.slug || pageData.id)) {
           setPage(pageData as WikiPage);
         } else {
-          setError("Page not found");
+          setError(t("wiki.pageNotFound"));
         }
       })
       .catch((e: unknown) => {
         if (alive) {
-          setError(e instanceof Error ? e.message : "Failed to load page");
+          setError(e instanceof Error ? e.message : t("wiki.loadPageFailed"));
         }
       })
       .finally(() => {
@@ -296,7 +346,7 @@ export function WikiPageView({
       }
       setEditing(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      setError(e instanceof Error ? e.message : t("wiki.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -321,7 +371,7 @@ export function WikiPageView({
       const pageData = (res as any)?.data ?? res;
       setPage((pageData as WikiPage) ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Revert failed");
+      setError(e instanceof Error ? e.message : t("wiki.revertFailed"));
     }
   };
 
@@ -336,10 +386,10 @@ export function WikiPageView({
         {/* meta row */}
         {page && (
           <div className="caption flex flex-wrap items-center gap-4 text-muted">
-            <span className="capitalize">{page.page_type}</span>
+            <span>{GROUP_LABEL_KEY[page.page_type] ? t(GROUP_LABEL_KEY[page.page_type]) : page.page_type}</span>
             <span>{page.status}</span>
             <span>v{page.version}</span>
-            {(page.source_refs?.length ?? 0) > 0 && <span>{page.source_refs?.length} sources</span>}
+            {(page.source_refs?.length ?? 0) > 0 && <span>{t("wiki.sources", { n: page.source_refs?.length ?? 0 })}</span>}
             <div className="ml-auto flex gap-2">
               {!editing && (
                 <>
@@ -368,7 +418,7 @@ export function WikiPageView({
         )}
 
         {/* content */}
-        {loading && <p className="caption text-muted">Loading page…</p>}
+        {loading && <p className="caption text-muted">{t("wiki.loadingPage")}</p>}
         {editing ? (
           <textarea
             className="input min-h-0 flex-1 resize-none font-mono text-[13px]"
@@ -393,7 +443,7 @@ export function WikiPageView({
 
             {page?.in_links && page.in_links.length > 0 && (
               <div className="mt-8 border-t border-hairline pt-4">
-                <div className="caption font-medium text-muted">Linked from</div>
+                <div className="caption font-medium text-muted">{t("wiki.linkedFrom")}</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {page.in_links.map((link) => (
                     <a
@@ -437,7 +487,7 @@ export function WikiPageView({
                 </div>
               ))}
               {revisions !== null && revisions.length === 0 && (
-                <p className="caption text-muted">No revisions recorded yet.</p>
+                <p className="caption text-muted">{t("wiki.noRevisions")}</p>
               )}
             </div>
           </Modal>

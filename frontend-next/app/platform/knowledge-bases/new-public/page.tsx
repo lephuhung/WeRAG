@@ -49,7 +49,7 @@ export default function NewPublicKnowledgeBase() {
         <h1 className="display-xl mb-4">{t("kbPublic.newPublic")}</h1>
         <p className="body-sm mb-10 max-w-[520px] text-body">{t("kbPublic.sectionDesc")}</p>
         {!isSystemAdmin && (
-          <p className="body-sm mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-700">
+          <p className="body-sm mb-6 rounded-xl border border-warning/40 bg-warning-surface px-4 py-3 text-warning">
             Only platform system admins can create public knowledge bases.
           </p>
         )}

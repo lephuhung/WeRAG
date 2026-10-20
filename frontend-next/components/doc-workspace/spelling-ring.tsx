@@ -2,13 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useContainedPopup } from "@/components/hooks/use-contained-popup";
+import { Ring } from "@/components/ui/ring";
 import { useT } from "@/lib/i18n";
 import { mistakeContext, sameMistake, type GoToResult, type LiveMistake, type LiveSpellingStatus } from "@/lib/live-spelling";
 
 const SIZE = 22;
 const STROKE = 2;
-const RADIUS = (SIZE - STROKE) / 2;
-const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 /* The live spellcheck of the open document, as a small progress ring in the
  * composer toolbar (an "ABC ✓" mark inside, the number of mistakes as a
@@ -80,7 +79,7 @@ export function SpellingRing({
             ? t("docws.spFound", { n: found })
             : t("docws.spClean");
   const tone =
-    phase === "failed" ? "var(--color-error)" : phase === "done" && found > 0 ? "var(--color-warning, #a15c00)" : "var(--color-primary)";
+    phase === "failed" ? "var(--color-error)" : phase === "done" && found > 0 ? "var(--color-warning)" : "var(--color-primary)";
 
   const mistakes = phase === "done" ? status.mistakes : [];
   const toggle = () => {
@@ -126,27 +125,15 @@ export function SpellingRing({
           busy ? "cursor-default" : "cursor-pointer hover:bg-surface-strong"
         }`}
       >
-        <svg
-          width={SIZE}
-          height={SIZE}
-          viewBox={`0 0 ${SIZE} ${SIZE}`}
-          aria-hidden="true"
-          className={`-rotate-90 ${phase === "idle" ? "animate-spin motion-reduce:animate-none" : ""}`}
-        >
-          <circle cx={SIZE / 2} cy={SIZE / 2} r={RADIUS} fill="none" strokeWidth={STROKE} style={{ stroke: "var(--color-hairline-strong)" }} />
-          <circle
-            cx={SIZE / 2}
-            cy={SIZE / 2}
-            r={RADIUS}
-            fill="none"
-            strokeWidth={STROKE}
-            strokeLinecap="round"
-            strokeDasharray={CIRCUMFERENCE}
-            strokeDashoffset={CIRCUMFERENCE * (1 - (phase === "idle" ? 0.25 : progress))}
-            className="transition-[stroke-dashoffset] duration-500 ease-out motion-reduce:transition-none"
-            style={{ stroke: tone }}
-          />
-        </svg>
+        <Ring
+          value={phase === "idle" ? 0.25 : progress}
+          size={SIZE}
+          stroke={STROKE}
+          tone={tone}
+          track="var(--color-hairline-strong)"
+          transitionMs={500}
+          className={phase === "idle" ? "animate-spin motion-reduce:animate-none" : undefined}
+        />
         <span className="absolute inset-0 flex items-center justify-center text-[9px] font-semibold text-ink" aria-hidden="true">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
             <text x="1" y="11" fill="currentColor" stroke="none" fontSize="9" fontWeight="700">ABC</text>
@@ -194,7 +181,7 @@ export function SpellingRing({
                     className="min-w-0 flex-1 rounded-[6px] px-1.5 py-1.5 text-left hover:bg-surface-strong disabled:cursor-wait"
                   >
                     <span className="block text-[13px] leading-snug text-ink">
-                      <span className="font-semibold underline decoration-[var(--color-warning,#a15c00)] underline-offset-2">
+                      <span className="font-semibold underline decoration-[var(--color-warning)] underline-offset-2">
                         {m.text}
                       </span>
                       {m.suggestion && (

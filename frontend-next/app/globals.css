@@ -32,6 +32,18 @@
   --color-hairline-soft: #f0efed;
   --color-hairline-strong: #d6d3d1;
 
+  /* The user's own message: a softened accent. A solid accent read as
+     heavy next to the calm page; a 12% tint read as pale. The bubble
+     mixes the accent with the card surface, and its ink follows the
+     theme, so it keeps its contrast in both. */
+  --color-bubble: color-mix(in srgb, var(--color-accent) 38%, var(--color-surface-card));
+  --color-bubble-border: color-mix(in srgb, var(--color-accent) 45%, var(--color-hairline));
+  --color-bubble-ink: var(--color-ink);
+
+  /* the brand mark: one hue, restated for every theme so the logo is
+     never a fixed colour that clashes with the surface it sits on */
+  --color-brand: #009b9d;
+
   /* atmospheric gradient stops (decoration only) */
   --color-orb-mint: #a7e5d3;
   --color-orb-peach: #f4c5a8;
@@ -42,6 +54,26 @@
   /* semantic */
   --color-success: #16a34a;
   --color-error: #dc2626;
+  --color-warning: #b45309;
+  --color-info: #0369a1;
+  --color-accent: #1f6feb;
+  /* "running / in progress" — distinct from warning (a warning is a
+     condition to act on, a running state is transient progress). */
+  --color-running: #d97706;
+
+  /* Translucent tints for chips, banners and pills. RGB with alpha so the
+     same token works over any surface in both themes (a solid tint would
+     need a separate dark value for every pair). */
+  --color-success-surface: rgb(22 163 74 / 0.12);
+  --color-error-surface: rgb(220 38 38 / 0.12);
+  --color-warning-surface: rgb(180 83 9 / 0.12);
+  --color-info-surface: rgb(3 105 161 / 0.12);
+  --color-accent-surface: rgb(31 111 235 / 0.12);
+
+  /* Overlay scrim. Always black in every theme: `--color-ink` flips to
+     near-white in dark mode, so scrims must not derive from it (a
+     light scrim would brighten the page instead of dimming it). */
+  --color-scrim: #0c0a09;
 
   /* fonts — Waldenburg Light substituted by EB Garamond 300 per spec */
   --font-display: var(--font-display-serif), "Times New Roman", serif;
@@ -78,6 +110,17 @@ html.dark {
   --color-hairline-strong: #44403c;
   --color-primary: #f5f5f4;
   --color-primary-active: #e7e5e4;
+  /* semantic — lightened for contrast against the dark canvas */
+  --color-success: #4ade80;
+  --color-error: #f87171;
+  --color-warning: #fbbf24;
+  --color-info: #7dd3fc;
+  --color-accent: #58a6ff;
+  --color-running: #fbbf24;
+  --color-brand: #2fd4c7;
+  /* the user bubble on the dark page: a muted blue, not a bright one */
+  --color-bubble: color-mix(in srgb, var(--color-accent) 32%, var(--color-surface-card));
+  --color-bubble-border: color-mix(in srgb, var(--color-accent) 40%, var(--color-hairline));
   color-scheme: dark;
 }
 
@@ -235,6 +278,36 @@ html.dark {
   .btn-tertiary:hover {
     color: var(--color-muted);
   }
+  /* Borderless secondary action. Kept a 1px transparent border so it lines
+     up with .btn-primary / .btn-outline (same box size when swapped). */
+  .btn-ghost {
+    background: transparent;
+    color: var(--color-ink);
+    border: 1px solid transparent;
+  }
+  .btn-ghost:hover {
+    background: var(--color-surface-strong);
+  }
+  /* Destructive action — one definition for every "delete/revoke" button. */
+  .btn-danger {
+    background: var(--color-error);
+    color: #ffffff;
+    border: 1px solid var(--color-error);
+  }
+  .btn-danger:hover {
+    background: color-mix(in srgb, var(--color-error) 85%, #000000);
+    border-color: color-mix(in srgb, var(--color-error) 85%, #000000);
+  }
+  /* One focus treatment for every button variant. */
+  .btn:focus-visible {
+    outline: 2px solid var(--color-ink);
+    outline-offset: 2px;
+  }
+  .btn:disabled,
+  .btn[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
   .btn-sm {
     height: 30px;
     padding: 5px 12px;
@@ -269,6 +342,32 @@ html.dark {
     text-transform: uppercase;
     white-space: nowrap;
   }
+  /* Tones. Every status pill in the app picks one of these instead of
+     hand-picking a Tailwind hue pair (there were ~8 different pairs). */
+  .badge-neutral {
+    background: var(--color-surface-strong);
+    color: var(--color-ink);
+  }
+  .badge-success {
+    background: var(--color-success-surface);
+    color: var(--color-success);
+  }
+  .badge-error {
+    background: var(--color-error-surface);
+    color: var(--color-error);
+  }
+  .badge-warning {
+    background: var(--color-warning-surface);
+    color: var(--color-warning);
+  }
+  .badge-info {
+    background: var(--color-info-surface);
+    color: var(--color-info);
+  }
+  .badge-accent {
+    background: var(--color-accent-surface);
+    color: var(--color-accent);
+  }
 
   .input {
     width: 100%;
@@ -294,6 +393,11 @@ html.dark {
     appearance: none;
     -webkit-appearance: none;
     -moz-appearance: none;
+    /* A data-URI SVG cannot inherit currentColor, so the chevron cannot
+     * follow --color-muted. One mid grey is used for every theme: it keeps
+     * >= 3:1 contrast against both the light (#ffffff) and the dark
+     * (#1c1917) input surface, instead of the per-theme hardcodes that used
+     * to drift away from the Anthropic preset. */
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23777169' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: right 14px center;
@@ -301,15 +405,20 @@ html.dark {
     padding-right: 38px;
     cursor: pointer;
   }
-  html.dark select.input {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a8a29e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
-  }
   .input::placeholder {
     color: var(--color-muted);
   }
   .input:focus {
     border-color: var(--color-ink);
-    box-shadow: 0 0 0 1px var(--color-ink);
+  }
+  .input:focus-visible {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-ink) 18%, transparent);
+  }
+  .input:disabled,
+  .input[aria-disabled="true"] {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: var(--color-surface-strong);
   }
 
   .hairline-b {
@@ -370,13 +479,9 @@ html.dark {
   }
   .chat-markdown p {
     margin: 0 0 16px;
-    text-align: justify;
   }
   .chat-markdown p:last-child {
     margin-bottom: 0;
-  }
-  .chat-markdown li {
-    text-align: justify;
   }
   .chat-markdown h1,
   .chat-markdown h2,
@@ -651,8 +756,9 @@ html.dark {
 
 .kp-bar-running {
   /* muted amber base; the diagonal stripes carry the "in progress"
-   * signal (CI-style, à la GitHub Actions). */
-  background-color: rgba(245, 158, 11, 0.55);
+   * signal (CI-style, à la GitHub Actions). The hue comes from the theme
+   * token so the running bar matches the status language elsewhere. */
+  background-color: color-mix(in srgb, var(--color-running) 55%, transparent);
   background-image: linear-gradient(
     135deg,
     rgba(255, 255, 255, 0.28) 25%,

@@ -125,9 +125,9 @@ export function DocPreviewModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-0 backdrop-blur-sm animate-in fade-in duration-150 sm:p-4">
       <div
-        className="fixed inset-0"
+        className="fixed inset-0 z-40"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -136,7 +136,7 @@ export function DocPreviewModal({
         role="dialog"
         aria-modal="true"
         aria-label={displayName}
-        className="relative flex h-[88vh] w-full max-w-[1020px] flex-col overflow-hidden rounded-[20px] border border-hairline-strong bg-canvas shadow-[0_32px_64px_rgba(0,0,0,0.3)]"
+        className="relative z-50 flex h-[100dvh] w-full max-w-none flex-col overflow-hidden rounded-none border border-hairline-strong bg-canvas shadow-[0_32px_64px_rgba(0,0,0,0.3)] sm:h-[88vh] sm:max-w-[1020px] sm:rounded-xl2"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}

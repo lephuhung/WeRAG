@@ -2,8 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/modal";
-import { IconPlus, IconRefresh, IconSearch, IconTrash } from "@/components/icons";
+import { IconInfoCircle, IconPlus, IconRefresh, IconSearch, IconTrash } from "@/components/icons";
 import { Select } from "@/components/select";
+import { Notice } from "@/components/settings/notice";
+import { DataTable } from "@/components/settings/data-table";
+import { Pill, PillGroup } from "@/components/settings/pill";
+import { SectionHeader } from "@/components/settings/section-header";
+import { useToast } from "@/components/toast";
 import {
   fetchAllTenantMembers,
   updateMemberRole,
@@ -45,7 +50,7 @@ export function TenantMembers() {
   const [invitations, setInvitations] = useState<TenantInvitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const toast = useToast();
 
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
@@ -102,11 +107,10 @@ export function TenantMembers() {
       return;
     }
     setError("");
-    setSuccess("");
     try {
       const res = await updateMemberRole(activeTenantId, member.user_id, newRole);
       if (res.success) {
-        setSuccess(
+        toast.success(
           t("mem.roleUpdated")
             .replace("{name}", member.username || member.email)
             .replace("{role}", newRole),
@@ -133,7 +137,7 @@ export function TenantMembers() {
     try {
       const res = await removeMember(activeTenantId, removingMember.user_id);
       if (res.success) {
-        setSuccess(
+        toast.success(
           t("mem.removed").replace("{name}", removingMember.username || removingMember.email),
         );
         setRemovingMember(null);
@@ -203,58 +207,58 @@ export function TenantMembers() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-5">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h2 className="title-md font-semibold text-ink">{t("mem.title")}</h2>
+      <SectionHeader
+        title={t("mem.title")}
+        subtitle={t("mem.subtitle")}
+        actions={
+          <>
             <button
               type="button"
               onClick={() => setRbacModalOpen(true)}
-              className="text-muted hover:text-ink transition-colors"
+              className="text-muted transition-colors hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink"
               title={t("mem.rbacTooltip")}
+              aria-label={t("mem.rbacTooltip")}
             >
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8}>
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 16v-4M12 8h.01" />
-              </svg>
+              <IconInfoCircle className="h-4 w-4" />
             </button>
-          </div>
-          <p className="caption text-muted mt-1">
-            {t("mem.subtitle")}
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {canManage && (
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => setInviteModalOpen(true)}
+                className="btn btn-primary btn-sm flex items-center gap-1.5"
+              >
+                <IconPlus className="h-3.5 w-3.5" />
+                <span>{t("mem.invite")}</span>
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => setInviteModalOpen(true)}
-              className="btn btn-primary btn-sm flex items-center gap-1.5"
+              onClick={() => void loadData()}
+              className="btn btn-outline btn-sm flex items-center gap-1.5"
+              title={t("common.refresh")}
+              aria-label={t("common.refresh")}
             >
-              <IconPlus className="h-3.5 w-3.5" />
-              <span>{t("mem.invite")}</span>
+              <IconRefresh className="h-3.5 w-3.5" />
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => void loadData()}
-            className="btn btn-outline btn-sm flex items-center gap-1.5"
-            title={t("common.refresh")}
-          >
-            <IconRefresh className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {error && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-400">
+        <Notice
+          tone="error"
+          action={
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={() => void loadData()}
+            >
+              {t("common.retry")}
+            </button>
+          }
+        >
           {error}
-        </div>
-      )}
-      {success && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-400">
-          {success}
-        </div>
+        </Notice>
       )}
 
       {/* Pending Invitations Section (Managers only) */}
@@ -280,7 +284,11 @@ export function TenantMembers() {
                         ? t("mem.shareLink")
                         : inv.invitee_email || inv.invitee_name || t("mem.unknownUser")}
                     </span>
-                    <span className="badge-pill uppercase text-[10.5px]">
+                    <span
+                      className={`badge-pill uppercase text-[10.5px] ${
+                        inv.role === "admin" || inv.role === "owner" ? "badge-accent" : "badge-neutral"
+                      }`}
+                    >
                       {inv.role === "admin" || inv.role === "owner" ? t("acct.roleAdmin") : t("acct.roleMember")}
                     </span>
                   </div>
@@ -299,7 +307,7 @@ export function TenantMembers() {
                         const full = new URL(inv.invite_url!, window.location.origin).toString();
                         const ok = await copyToClipboard(full);
                         if (ok) {
-                          setSuccess(t("mem.linkCopied"));
+                          toast.success(t("mem.linkCopied"));
                         }
                       }}
                       className="btn btn-outline btn-sm text-xs py-1"
@@ -310,7 +318,7 @@ export function TenantMembers() {
                   <button
                     type="button"
                     onClick={() => void handleRevokeInvite(inv.id)}
-                    className="btn btn-outline btn-sm text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 py-1"
+                    className="btn btn-danger btn-sm text-xs py-1"
                   >
                     {t("mem.revoke")}
                   </button>
@@ -327,150 +335,130 @@ export function TenantMembers() {
           <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-muted h-4 w-4" />
           <input
             type="text"
+            id="member-search"
             className="input pl-9 text-sm"
             placeholder={t("mem.searchPh")}
+            aria-label={t("mem.searchPh")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <PillGroup ariaLabel={t("mem.colRole")}>
           {[
             { id: "all", label: t("common.all") },
             { id: "admin", label: t("acct.roleAdmin") },
             { id: "member", label: t("acct.roleMember") },
           ].map((r) => (
-            <button
-              key={r.id}
-              type="button"
-              onClick={() => setRoleFilter(r.id)}
-              className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                roleFilter === r.id
-                  ? "bg-ink text-on-primary"
-                  : "text-muted hover:bg-surface-strong hover:text-ink"
-              }`}
-            >
+            <Pill key={r.id} active={roleFilter === r.id} onClick={() => setRoleFilter(r.id)}>
               {r.label}
-            </button>
+            </Pill>
           ))}
-        </div>
+        </PillGroup>
       </div>
 
       {/* Members Table */}
-      <div className="overflow-hidden rounded-xl border border-hairline">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-hairline bg-surface-strong/50 text-xs font-semibold text-muted">
-              <th className="py-3 px-4">{t("mem.colMember")}</th>
-              <th className="py-3 px-4">{t("mem.colRole")}</th>
-              <th className="py-3 px-4">{t("mem.colJoined")}</th>
-              <th className="py-3 px-4 text-right">{t("mem.colActions")}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-hairline">
-            {loading ? (
-              <tr>
-                <td colSpan={4} className="py-12 text-center text-muted">
-                  {t("common.loading")}
-                </td>
-              </tr>
-            ) : filteredMembers.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="py-12 text-center text-muted">
-                  {t("mem.empty")}
-                </td>
-              </tr>
-            ) : (
-              filteredMembers.map((m) => {
-                const isMe = m.user_id === auth.user?.id;
-                const canEditThisMember = canManage && (!isMe || isTenantAdmin);
+      <DataTable<TenantMember>
+        columns={[
+          { key: "member", header: t("mem.colMember") },
+          { key: "role", header: t("mem.colRole") },
+          { key: "joined", header: t("mem.colJoined") },
+          { key: "actions", header: t("mem.colActions"), align: "right" },
+        ]}
+        rows={filteredMembers}
+        rowKey={(m) => String(m.user_id)}
+        loading={loading}
+        loadingLabel={t("common.loading")}
+        emptyLabel={t("mem.empty")}
+        caption={t("mem.title")}
+        renderRow={(m) => {
+          const isMe = m.user_id === auth.user?.id;
+          const canEditThisMember = canManage && (!isMe || isTenantAdmin);
+          const memberName = m.username || m.email;
+          const isAdminRole = m.role === "admin" || m.role === "owner";
 
-                return (
-                  <tr key={m.user_id} className="hover:bg-surface-strong/30 transition-colors">
-                    {/* Member info */}
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-strong text-ink font-semibold uppercase text-xs border border-hairline">
-                          {m.username?.slice(0, 2) || m.email?.slice(0, 2) || "U"}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium text-ink truncate">
-                              {m.username || m.email}
-                            </span>
-                            {isMe && (
-                              <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-bold uppercase leading-4 tracking-wide text-white">
-                                {t("mem.you")}
-                              </span>
-                            )}
-                          </div>
-                          <span className="caption text-muted truncate block">
-                            {m.email}
-                          </span>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Role */}
-                    <td className="py-3.5 px-4">
-                      {canEditThisMember ? (
-                        <Select
-                          className="h-8 w-32 py-1 px-2.5 text-xs font-medium"
-                          value={m.role}
-                          onChange={(v) => void handleRoleChange(m, v as TenantRole)}
-                          options={[
-                            { value: "admin", label: t("acct.roleAdmin") },
-                            { value: "member", label: t("acct.roleMember") },
-                          ]}
-                        />
-                      ) : (
-                        <span
-                          className={`badge-pill uppercase text-[11px] font-semibold ${
-                            m.role === "admin" || m.role === "owner"
-                              ? "bg-blue-500/10 text-blue-600 border border-blue-500/20"
-                              : ""
-                          }`}
-                        >
-                          {m.role === "admin" || m.role === "owner" ? t("acct.roleAdmin") : t("acct.roleMember")}
+          return (
+            <>
+              {/* Member info */}
+              <td className="px-5 py-3.5 align-middle">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-strong text-ink font-semibold uppercase text-xs border border-hairline">
+                    {m.username?.slice(0, 2) || m.email?.slice(0, 2) || "U"}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-ink truncate">
+                        {memberName}
+                      </span>
+                      {isMe && (
+                        <span className="badge-pill badge-neutral inline-flex shrink-0 items-center whitespace-nowrap uppercase text-[10px] font-bold leading-4 tracking-wide">
+                          {t("mem.you")}
                         </span>
                       )}
-                    </td>
+                    </div>
+                    <span className="caption text-muted truncate block">
+                      {m.email}
+                    </span>
+                  </div>
+                </div>
+              </td>
 
-                    {/* Joined date */}
-                    <td className="py-3.5 px-4 text-muted text-xs">
-                      {m.joined_at ? formatDate(m.joined_at) : "—"}
-                    </td>
+              {/* Role */}
+              <td className="px-5 py-3.5 align-middle">
+                {canEditThisMember ? (
+                  <Select
+                    id={`member-role-${m.user_id}`}
+                    ariaLabel={`${t("mem.colRole")} — ${memberName}`}
+                    className="h-8 w-32 py-1 px-2.5 text-xs font-medium"
+                    value={m.role}
+                    onChange={(v) => void handleRoleChange(m, v as TenantRole)}
+                    options={[
+                      { value: "admin", label: t("acct.roleAdmin") },
+                      { value: "member", label: t("acct.roleMember") },
+                    ]}
+                  />
+                ) : (
+                  <span
+                    className={`badge-pill uppercase text-[11px] font-semibold ${
+                      isAdminRole ? "badge-accent" : "badge-neutral"
+                    }`}
+                  >
+                    {isAdminRole ? t("acct.roleAdmin") : t("acct.roleMember")}
+                  </span>
+                )}
+              </td>
 
-                    {/* Actions */}
-                    <td className="py-3.5 px-4 text-right">
-                      {isMe ? (
-                        <button
-                          type="button"
-                          onClick={() => setConfirmLeave(true)}
-                          className="btn btn-outline btn-sm text-xs text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30"
-                        >
-                          {t("mem.leaveWs")}
-                        </button>
-                      ) : canEditThisMember ? (
-                        <button
-                          type="button"
-                          onClick={() => setRemovingMember(m)}
-                          className="btn btn-ghost btn-sm text-muted hover:text-rose-600 p-1.5"
-                          title={t("common.remove")}
-                        >
-                          <IconTrash className="h-4 w-4" />
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-          </table>
-        </div>
-      </div>
+              {/* Joined date */}
+              <td className="px-5 py-3.5 align-middle text-muted text-xs whitespace-nowrap">
+                {m.joined_at ? formatDate(m.joined_at) : "—"}
+              </td>
+
+              {/* Actions */}
+              <td className="px-5 py-3.5 align-middle text-right">
+                {isMe ? (
+                  <button
+                    type="button"
+                    onClick={() => setConfirmLeave(true)}
+                    className="btn btn-danger btn-sm text-xs"
+                  >
+                    {t("mem.leaveWs")}
+                  </button>
+                ) : canEditThisMember ? (
+                  <button
+                    type="button"
+                    onClick={() => setRemovingMember(m)}
+                    className="btn btn-danger btn-sm p-1.5"
+                    title={t("common.remove")}
+                    aria-label={t("common.remove")}
+                  >
+                    <IconTrash className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </td>
+            </>
+          );
+        }}
+      />
 
       {/* Invite Member Modal */}
       <InviteMemberModal
@@ -478,7 +466,7 @@ export function TenantMembers() {
         open={inviteModalOpen}
         onClose={() => setInviteModalOpen(false)}
         onInvited={() => {
-          setSuccess(t("mem.inviteSent"));
+          toast.success(t("mem.inviteSent"));
           void loadData();
         }}
       />
@@ -505,7 +493,7 @@ export function TenantMembers() {
               type="button"
               disabled={actionBusy}
               onClick={() => void handleRemoveMember()}
-              className="btn btn-primary bg-rose-600 hover:bg-rose-700 text-white"
+              className="btn btn-danger"
             >
               {actionBusy ? `${t("common.remove")}…` : t("mem.removeCta")}
             </button>
@@ -535,7 +523,7 @@ export function TenantMembers() {
               type="button"
               disabled={actionBusy}
               onClick={() => void handleLeave()}
-              className="btn btn-primary bg-rose-600 hover:bg-rose-700 text-white"
+              className="btn btn-danger"
             >
               {actionBusy ? `${t("mem.leaveCta")}…` : t("mem.leaveCta")}
             </button>

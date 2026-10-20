@@ -4,6 +4,7 @@ import "./globals.css";
 import { UI_PREFERENCES_BOOT_SCRIPT } from "@/lib/ui-preferences";
 
 import { GlobalUiTheme } from "@/components/global-ui-theme";
+import { I18nProvider } from "@/lib/i18n";
 
 const inter = Inter({
   subsets: ["latin", "vietnamese"],
@@ -43,8 +44,11 @@ export const metadata: Metadata = {
   title: "weRAG — Trợ lý pháp luật",
   description: "weRAG — Trợ lý pháp luật: tra cứu, hỏi đáp văn bản pháp luật và đối chiếu nguồn trích dẫn.",
   icons: {
-    icon: "/icon.png?v=2",
-    apple: "/icon.png?v=2",
+    /* Both files are in public/ (copied from the app icon files) — the
+     * metadata points at assets that really exist, so the favicon never
+     * 404s on any page. */
+    icon: "/icon.svg",
+    apple: "/icon.png",
   },
 };
 
@@ -66,14 +70,16 @@ export default function RootLayout({
   return (
     /* the boot script sets data-theme before hydration */
     <html
-      lang="en"
+      lang="vi"
       suppressHydrationWarning
       className={`${inter.variable} ${displaySerif.variable} ${plexSans.variable} ${plexMono.variable}`}
     >
       <body>
         <script dangerouslySetInnerHTML={{ __html: UI_THEME_BOOT_SCRIPT + UI_PREFERENCES_BOOT_SCRIPT }} />
         <GlobalUiTheme />
-        {children}
+        {/* One provider for the whole app: every route (landing, auth,
+            onboarding) reads its strings from the same dictionary. */}
+        <I18nProvider>{children}</I18nProvider>
       </body>
     </html>
   );

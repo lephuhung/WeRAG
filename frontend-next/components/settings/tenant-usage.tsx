@@ -22,6 +22,11 @@ import {
 } from "@/lib/api/usage";
 import { formatDate } from "@/lib/datetime";
 import { useInModalNav } from "@/components/system/in-modal-nav";
+import { ConsolePage } from "@/components/settings/console-page";
+import { InfoRow } from "@/components/settings/info-row";
+import { Loading } from "@/components/settings/loading";
+import { Notice } from "@/components/settings/notice";
+import { SectionHeader } from "@/components/settings/section-header";
 
 export function TenantUsage() {
   const { isGuest } = useTenantRole();
@@ -52,43 +57,55 @@ function PersonalUsage() {
   const ent = mine?.entitlement ?? null;
   const month = mine?.user?.month;
   return (
+    <ConsolePage size="form">
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div>
-          <h3 className="title-sm">{t("tus.personalTitle")}</h3>
-          <p className="caption mt-1 text-muted">{t("tus.personalDesc")}</p>
-        </div>
-        <button className="btn btn-outline btn-sm ml-auto" onClick={() => void load()}>
-          <IconRefresh className="h-3.5 w-3.5" /> {t("common.refresh")}
-        </button>
-      </div>
-      {error && <p className="caption text-error">{error}</p>}
+      <SectionHeader
+        title={t("tus.personalTitle")}
+        subtitle={t("tus.personalDesc")}
+        actions={
+          <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+            <IconRefresh className="h-3.5 w-3.5" /> {t("common.refresh")}
+          </button>
+        }
+      />
+      {error && (
+        <Notice
+          tone="error"
+          action={
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {error}
+        </Notice>
+      )}
 
       {!mine ? (
-        <p className="caption text-muted">…</p>
+        <Loading />
       ) : !ent ? (
         <div className="card p-4">
           <p className="text-[14px] text-ink">{t("tus.personalNone")}</p>
         </div>
       ) : (
         <div className="card divide-y divide-hairline">
-          <Row label={t("tus.plan")} desc="">
+          <InfoRow label={t("tus.plan")} desc="" className="px-4">
             <span className="text-[14px] text-ink">{ent.plan_name || ent.plan_code}</span>
             {ent.expired && <span className="badge-pill ml-2 text-[11px] text-error">{t("usg.expired")}</span>}
-          </Row>
+          </InfoRow>
           {ent.ends_at && (
-            <Row label={t("tus.endsAt")} desc="">
+            <InfoRow label={t("tus.endsAt")} desc="" className="px-4">
               <span className="caption text-body">{formatDate(ent.ends_at)}</span>
-            </Row>
+            </InfoRow>
           )}
-          <Row label={t("tus.personalLimits")} desc={t("tus.limitsDesc")}>
+          <InfoRow label={t("tus.personalLimits")} desc={t("tus.limitsDesc")} className="px-4">
             <LimitStatusList items={ent.limits} />
-          </Row>
-          <Row label={t("tus.monthUsage")} desc={t("tus.monthUsageDesc")}>
+          </InfoRow>
+          <InfoRow label={t("tus.monthUsage")} desc={t("tus.monthUsageDesc")} className="px-4">
             <span className="caption text-body">
               {month ? t("acct.usageLine", { questions: month.questions.toLocaleString(), tokens: formatTokens(month.tokens) }) : "—"}
             </span>
-          </Row>
+          </InfoRow>
         </div>
       )}
 
@@ -98,6 +115,7 @@ function PersonalUsage() {
         </button>
       )}
     </div>
+    </ConsolePage>
   );
 }
 
@@ -155,20 +173,32 @@ function OrganizationUsage() {
   const myEntitlement = mine?.entitlement ?? null;
 
   return (
+    <ConsolePage size="form">
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <div>
-          <h3 className="title-sm">{t("tus.title")}</h3>
-          <p className="caption mt-1 text-muted">{t("tus.desc")}</p>
-        </div>
-        <button className="btn btn-outline btn-sm ml-auto" disabled={busy} onClick={() => void load()}>
-          <IconRefresh className="h-3.5 w-3.5" /> {t("common.refresh")}
-        </button>
-      </div>
-      {error && <p className="caption text-error">{error}</p>}
+      <SectionHeader
+        title={t("tus.title")}
+        subtitle={t("tus.desc")}
+        actions={
+          <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => void load()}>
+            <IconRefresh className="h-3.5 w-3.5" /> {t("common.refresh")}
+          </button>
+        }
+      />
+      {error && (
+        <Notice
+          tone="error"
+          action={
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {error}
+        </Notice>
+      )}
 
       {!data ? (
-        <p className="caption text-muted">…</p>
+        <Loading />
       ) : !sub ? (
         <div className="card p-4">
           <p className="text-[14px] text-ink">{t("tus.none")}</p>
@@ -176,21 +206,21 @@ function OrganizationUsage() {
         </div>
       ) : (
         <div className="card divide-y divide-hairline">
-          <Row label={t("tus.plan")} desc={sub.plan?.description || ""}>
+          <InfoRow label={t("tus.plan")} desc={sub.plan?.description || ""} className="px-4">
             <span className="text-[14px] text-ink">{sub.plan?.name ?? sub.plan_id}</span>
             {!sub.current && <span className="badge-pill ml-2 text-[11px] text-error">{t("usg.expired")}</span>}
-          </Row>
-          <Row label={t("tus.mode")} desc={sub.mode === "seat" ? t("usg.modeSeatHint") : t("usg.modePoolHint")}>
+          </InfoRow>
+          <InfoRow label={t("tus.mode")} desc={sub.mode === "seat" ? t("usg.modeSeatHint") : t("usg.modePoolHint")} className="px-4">
             <span className="caption text-body">
               {sub.mode === "seat" ? t("usg.seatsUsed", { used: sub.seats_used, total: sub.seats }) : t("usg.modePool")}
             </span>
-          </Row>
+          </InfoRow>
           {sub.ends_at && (
-            <Row label={t("tus.endsAt")} desc="">
+            <InfoRow label={t("tus.endsAt")} desc="" className="px-4">
               <span className="caption text-body">{formatDate(sub.ends_at)}</span>
-            </Row>
+            </InfoRow>
           )}
-          <Row label={t("tus.addons")} desc={t("tus.addonsDesc")}>
+          <InfoRow label={t("tus.addons")} desc={t("tus.addonsDesc")} className="px-4">
             {(data.addons ?? []).length === 0 ? (
               <span className="caption text-muted">{t("tus.noAddons")}</span>
             ) : (
@@ -203,11 +233,11 @@ function OrganizationUsage() {
                 ))}
               </ul>
             )}
-          </Row>
-          <Row label={sub.mode === "seat" ? t("tus.limitsPerSeat") : t("tus.limitsPool")} desc={t("tus.limitsDesc")}>
+          </InfoRow>
+          <InfoRow label={sub.mode === "seat" ? t("tus.limitsPerSeat") : t("tus.limitsPool")} desc={t("tus.limitsDesc")} className="px-4">
             <LimitStatusList items={sub.mode === "seat" ? (myEntitlement?.limits ?? []) : sub.limit_status} />
-          </Row>
-          <Row label={t("tus.monthUsage")} desc={t("tus.monthUsageDesc")}>
+          </InfoRow>
+          <InfoRow label={t("tus.monthUsage")} desc={t("tus.monthUsageDesc")} className="px-4">
             <span className="caption text-body">
               {(() => {
                 const month = sub.mode === "seat" && mine?.user ? mine.user.month : mine?.tenant?.month;
@@ -218,7 +248,7 @@ function OrganizationUsage() {
                   : line;
               })()}
             </span>
-          </Row>
+          </InfoRow>
         </div>
       )}
 
@@ -243,7 +273,11 @@ function OrganizationUsage() {
                   });
                 }}
               >
-                <select className="input h-9 w-56 py-0" value={pick} onChange={(e) => setPick(e.target.value)} disabled={busy || data!.seats.length >= sub.seats}>
+                <select
+                  id="tenant-usage-pick-member"
+                  aria-label={t("tus.pickMember")}
+                  className="input h-9 w-56 py-0"
+                  value={pick} onChange={(e) => setPick(e.target.value)} disabled={busy || data!.seats.length >= sub.seats}>
                   <option value="">{t("tus.pickMember")}</option>
                   {free.map((m) => (
                     <option key={m.user_id} value={m.user_id}>
@@ -273,7 +307,7 @@ function OrganizationUsage() {
                       <div className="caption text-muted">{formatDate(s.assigned_at)}</div>
                     </div>
                     {isAdmin && (
-                      <button type="button" className="btn btn-outline btn-sm text-rose-600" disabled={busy} onClick={() => void run(() => revokeTenantSeat(tenantId, s.user_id))}>
+                      <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void run(() => revokeTenantSeat(tenantId, s.user_id))}>
                         {t("tus.revokeSeat")}
                       </button>
                     )}
@@ -286,17 +320,6 @@ function OrganizationUsage() {
         </div>
       )}
     </div>
-  );
-}
-
-function Row({ label, desc, children }: { label: string; desc: string; children: React.ReactNode }) {
-  return (
-    <div className="flex items-center justify-between gap-8 px-4 py-3">
-      <div className="min-w-0">
-        <div className="text-[13px] font-medium text-ink">{label}</div>
-        {desc && <p className="caption mt-0.5 text-muted">{desc}</p>}
-      </div>
-      <div className="shrink-0 text-right">{children}</div>
-    </div>
+    </ConsolePage>
   );
 }

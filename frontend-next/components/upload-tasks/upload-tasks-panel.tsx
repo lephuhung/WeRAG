@@ -14,7 +14,7 @@ import {
   IconCheckCircleFilled,
   IconRefresh,
 } from "@/components/icons";
-import { ProgressRing } from "@/components/upload-tasks/progress-ring";
+import { Ring } from "@/components/ui/ring";
 import { UploadTaskRow } from "@/components/upload-tasks/upload-task-row";
 import {
   estimateRate,
@@ -45,17 +45,17 @@ type BadgeTone = "brand" | "success" | "warning" | "neutral";
 
 const BADGE_CLS: Record<BadgeTone, string> = {
   brand: "bg-surface-strong text-ink",
-  success: "bg-green-500/10 text-success",
-  warning: "bg-amber-500/10 text-amber-600",
+  success: "bg-success-surface text-success",
+  warning: "bg-warning-surface text-warning",
   neutral: "bg-surface-strong text-muted-soft",
 };
 
 const LEGEND_DOT: Record<string, string> = {
-  ready: "bg-ink",
-  active: "bg-ink/40",
+  ready: "bg-success",
+  active: "bg-running",
   waiting: "bg-hairline-strong",
   failed: "bg-error",
-  duplicate: "bg-amber-500",
+  duplicate: "bg-warning",
 };
 
 export function UploadTasksPanel() {
@@ -269,7 +269,7 @@ export function UploadTasksPanel() {
 
   return (
     <section
-      className="fixed bottom-6 right-6 z-40 flex max-h-[calc(100vh-80px)] w-[380px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-[16px] border border-hairline bg-surface-card shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
+      className="fixed bottom-6 right-6 z-40 flex max-h-[calc(100vh-80px)] w-[380px] max-w-[calc(100vw-32px)] flex-col overflow-hidden rounded-xl2 border border-hairline bg-surface-card shadow-[0_8px_30px_rgba(0,0,0,0.12)]"
       role="region"
       aria-label={t("uploadTasks.panelLabel")}
       onMouseEnter={() => setHovering(true)}
@@ -281,7 +281,14 @@ export function UploadTasksPanel() {
           aria-hidden="true"
         >
           {badge.ring !== null && (
-            <ProgressRing className="absolute inset-0" value={badge.ring} size={36} stroke={2.5} />
+            <Ring
+              className="absolute inset-0 h-full w-full"
+              value={badge.ring}
+              size={36}
+              stroke={2}
+              tone="currentColor"
+              track="color-mix(in srgb, currentColor 18%, transparent)"
+            />
           )}
           {badge.icon}
         </span>
@@ -329,7 +336,7 @@ export function UploadTasksPanel() {
           />
           <span className="h-full bg-error transition-all" style={{ width: percent(summary.bar.failed) }} />
           <span
-            className="h-full bg-amber-500 transition-all"
+            className="h-full bg-running transition-all"
             style={{ width: percent(summary.bar.duplicate) }}
           />
         </div>

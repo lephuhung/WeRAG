@@ -11,6 +11,15 @@ import { useCallback, useEffect, useState } from "react";
 import { Modal } from "@/components/modal";
 import { IconRefresh, IconSearch, IconFileSearch } from "@/components/icons";
 import { useT, type LocaleKey } from "@/lib/i18n";
+import { useToast } from "@/components/toast";
+import { ConsolePage } from "@/components/settings/console-page";
+import { DataTable } from "@/components/settings/data-table";
+import { TabStrip } from "@/components/settings/tab-strip";
+import { Pager } from "@/components/settings/pager";
+import { Pill, PillGroup } from "@/components/settings/pill";
+import { Notice } from "@/components/settings/notice";
+import { Loading } from "@/components/settings/loading";
+import { DeniedView } from "@/components/settings/system-section";
 import { getCurrentUser } from "@/lib/api/auth";
 import { ApiError } from "@/lib/api-client";
 import {
@@ -119,11 +128,10 @@ function showDay(day: string): string {
 }
 
 function statusTone(status: string): string {
-  if (status.startsWith("Còn hiệu lực")) return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400";
-  if (status === "Hết hiệu lực toàn bộ" || status.startsWith("Ngưng"))
-    return "bg-red-500/10 text-red-700 dark:text-red-400";
-  if (status.startsWith("Hết hiệu lực")) return "bg-amber-500/10 text-amber-700 dark:text-amber-400";
-  return "bg-surface-strong text-muted";
+  if (status.startsWith("Còn hiệu lực")) return "badge-success";
+  if (status === "Hết hiệu lực toàn bộ" || status.startsWith("Ngưng")) return "badge-error";
+  if (status.startsWith("Hết hiệu lực")) return "badge-warning";
+  return "badge-neutral";
 }
 
 function docLabel(d: LegalDocument): string {
@@ -178,6 +186,7 @@ export function mismatches(item: LegalReviewItem): { number: boolean; type: bool
 
 export default function AdminLegalDocuments() {
   const { t } = useT();
+  const toast = useToast();
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [filter, setFilter] = useState<LegalReviewFilter>("pending");
   const [items, setItems] = useState<LegalReviewItem[]>([]);
@@ -186,7 +195,6 @@ export default function AdminLegalDocuments() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [scanning, setScanning] = useState(false);
-  const [notice, setNotice] = useState("");
   const [editing, setEditing] = useState<LegalReviewItem | null>(null);
   const searchParams = useSearchParams();
   const [view, setView] = useState<PageView>(() => pageViewOf(searchParams.get("view")));
@@ -246,11 +254,10 @@ export default function AdminLegalDocuments() {
 
   const scan = async () => {
     setScanning(true);
-    setNotice("");
     setError("");
     try {
       const res = await scanLegalReviews();
-      setNotice(t("lrev.scanDone", { count: res.data?.created ?? 0 }));
+      toast.success(t("lrev.scanDone", { count: res.data?.created ?? 0 }));
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : t("lrev.loadFailed"));
@@ -260,165 +267,142 @@ export default function AdminLegalDocuments() {
   };
 
   if (allowed === null) {
-    return <div className="mx-auto w-full max-w-[1100px] px-5 py-12 text-muted">{t("usrp.loading")}</div>;
+    return (
+      <ConsolePage>
+        <Loading className="py-12" />
+      </ConsolePage>
+    );
   }
   if (!allowed) {
-    return (
-      <div className="mx-auto w-full max-w-[1100px] px-5 py-16 text-center">
-        <h2 className="title-md mb-2">{t("systemNav.legalDocuments")}</h2>
-        <p className="body-sm text-muted">{t("lrev.denied")}</p>
-      </div>
-    );
+    return <DeniedView title={t("systemNav.legalDocuments")} message={t("lrev.denied")} />;
   }
 
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const alerts = filter === "alerts";
 
   return (
-    <div className="mx-auto w-full max-w-[1400px]">
-      <div className="mb-5 flex items-center gap-1 border-b border-hairline">
-        {VIEWS.map(({ key: v, labelKey }) => (
-          <button
-            key={v}
-            type="button"
-            onClick={() => setView(v)}
-            className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-[13px] font-medium transition-colors ${
-              view === v ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink"
-            }`}
-          >
-            {t(labelKey)}
-            {v === "requests" && (requestCounts?.requested ?? 0) > 0 && (
-              <span className="badge-pill bg-amber-500/15 text-[10.5px] tabular-nums text-amber-700 dark:text-amber-400">
-                {requestCounts?.requested}
-              </span>
+    <ConsolePage size="wide">
+      <TabStrip
+        ariaLabel={t("systemNav.legalDocuments")}
+        value={view}
+        onChange={(v) => setView(v)}
+        tabs={VIEWS.map(({ key: v, labelKey }) => ({
+          id: v,
+          label: t(labelKey),
+          badge:
+            v === "requests" && (requestCounts?.requested ?? 0) > 0 ? (
+              <span className="badge-pill badge-warning text-[10.5px] tabular-nums">{requestCounts?.requested}</span>
+            ) : undefined,
+        }))}
+      />
+
+      <div id={`tabpanel-${view}`} role="tabpanel" aria-labelledby={`tab-${view}`} className="mt-5">
+        {view === "requests" ? (
+          <LegalRequestsSection onCounts={setRequestCounts} onDenied={denyRequests} />
+        ) : view === "drafts" ? (
+          <LegalDraftsSection onDenied={denyRequests} />
+        ) : (
+          <>
+            <div className="mb-5 flex flex-wrap items-center gap-3">
+              <span className="caption text-muted">{t("lrev.desc")}</span>
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  className="btn btn-primary btn-sm flex items-center gap-1.5"
+                  onClick={() => void scan()}
+                  disabled={scanning}
+                >
+                  <IconFileSearch className="h-3.5 w-3.5" />
+                  {scanning ? t("lrev.scanning") : t("lrev.scan")}
+                </button>
+                <button
+                  className="btn btn-outline btn-sm h-8 w-8 p-0"
+                  onClick={() => void load()}
+                  disabled={loading}
+                  title={t("common.refresh")}
+                  aria-label={t("common.refresh")}
+                >
+                  <IconRefresh className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+                </button>
+              </div>
+            </div>
+
+            {error && (
+              <Notice
+                tone="error"
+                className="mb-3"
+                action={
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+                    {t("common.retry")}
+                  </button>
+                }
+              >
+                {error}
+              </Notice>
             )}
-          </button>
-        ))}
-      </div>
 
-      {view === "requests" ? (
-        <LegalRequestsSection onCounts={setRequestCounts} onDenied={denyRequests} />
-      ) : view === "drafts" ? (
-        <LegalDraftsSection onDenied={denyRequests} />
-      ) : (
-        <>
-          <div className="mb-5 flex flex-wrap items-center gap-3">
-            <span className="caption text-muted">{t("lrev.desc")}</span>
-            <div className="ml-auto flex items-center gap-2">
-              <button
-                className="btn btn-primary btn-sm flex items-center gap-1.5"
-                onClick={() => void scan()}
-                disabled={scanning}
-              >
-                <IconFileSearch className="h-3.5 w-3.5" />
-                {scanning ? t("lrev.scanning") : t("lrev.scan")}
-              </button>
-              <button
-                className="btn btn-outline btn-sm h-8 w-8 p-0"
-                onClick={() => void load()}
-                disabled={loading}
-                title={t("common.refresh")}
-                aria-label={t("common.refresh")}
-              >
-                <IconRefresh className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-              </button>
-            </div>
-          </div>
+            <PillGroup ariaLabel={t("common.filters")} className="mb-5 flex-wrap">
+              {FILTERS.map((f) => (
+                <Pill
+                  key={f.key}
+                  active={filter === f.key}
+                  onClick={() => {
+                    setFilter(f.key);
+                    setPage(1);
+                  }}
+                >
+                  {t(f.labelKey)}
+                </Pill>
+              ))}
+            </PillGroup>
 
-          {notice && <p className="caption mb-3 text-emerald-700 dark:text-emerald-400">{notice}</p>}
-          {error && <p className="caption mb-3 text-error">{error}</p>}
-
-          <div className="mb-5 inline-flex items-center gap-0.5 rounded-full border border-hairline bg-surface-strong/60 p-0.5">
-            {FILTERS.map((f) => (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => {
-                  setFilter(f.key);
-                  setPage(1);
-                }}
-                className={`rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${
-                  filter === f.key
-                    ? "bg-surface-card text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
-                    : "text-muted hover:text-ink"
-                }`}
-              >
-                {t(f.labelKey)}
-              </button>
-            ))}
-          </div>
-
-          <div className="card overflow-x-auto shadow-sm">
-            <table className="w-full min-w-[760px] table-fixed border-collapse text-left">
-              <thead>
-                <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
-                  <th className={`${alerts ? "w-[28%]" : "w-[34%]"} px-3 py-3 font-medium`}>{t("lrev.col.document")}</th>
-                  <th className="w-[18%] px-3 py-3 font-medium">{t("lrev.col.number")}</th>
-                  <th className="w-[14%] px-3 py-3 font-medium">{t("lrev.col.issued")}</th>
-                  <th className="w-[14%] px-3 py-3 font-medium">{t("lrev.col.validity")}</th>
-                  <th className={`${alerts ? "w-[26%]" : "w-[20%]"} px-3 py-3 font-medium`}>
-                    {alerts ? t("lrev.col.supersededBy") : t("lrev.col.review")}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-hairline">
-                {items.map((item) => (
-                  <ReviewRow key={item.link.knowledge_id} item={item} alerts={alerts} onOpen={() => setEditing(item)} />
-                ))}
-                {items.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-5 py-12 text-center text-[14px] text-muted">
-                      {loading ? t("usrp.loading") : t("lrev.empty")}
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {pages > 1 && (
-            <div className="mt-4 flex items-center justify-center gap-3">
-              <button className="btn btn-outline btn-sm" disabled={page <= 1 || loading} onClick={() => setPage(page - 1)}>
-                ‹
-              </button>
-              <span className="caption text-muted tabular-nums">
-                {page} / {pages}
-              </span>
-              <button
-                className="btn btn-outline btn-sm"
-                disabled={page >= pages || loading}
-                onClick={() => setPage(page + 1)}
-              >
-                ›
-              </button>
-            </div>
-          )}
-
-          {editing && (
-            <ReviewDialog
-              item={editing}
-              onClose={() => setEditing(null)}
-              onDone={() => {
-                setEditing(null);
-                void load();
-              }}
+            <DataTable<LegalReviewItem>
+              columns={[
+                {
+                  key: "document",
+                  header: t("lrev.col.document"),
+                  className: alerts ? "w-[28%]" : "w-[34%]",
+                },
+                { key: "number", header: t("lrev.col.number"), className: "w-[18%]" },
+                { key: "issued", header: t("lrev.col.issued"), className: "w-[14%]" },
+                { key: "validity", header: t("lrev.col.validity"), className: "w-[14%]" },
+                {
+                  key: "review",
+                  header: alerts ? t("lrev.col.supersededBy") : t("lrev.col.review"),
+                  className: alerts ? "w-[26%]" : "w-[20%]",
+                },
+              ]}
+              rows={items}
+              rowKey={(item) => item.link.knowledge_id}
+              renderRow={(item) => <ReviewCells item={item} alerts={alerts} />}
+              onRowClick={(item) => setEditing(item)}
+              rowClassName="align-top break-words"
+              loading={loading}
+              loadingLabel={t("common.loading")}
+              emptyLabel={t("lrev.empty")}
+              minWidth="min-w-[760px]"
             />
-          )}
-        </>
-      )}
-    </div>
+
+            <Pager page={page} pageCount={pages} onPage={setPage} loading={loading} />
+
+            {editing && (
+              <ReviewDialog
+                item={editing}
+                onClose={() => setEditing(null)}
+                onDone={() => {
+                  setEditing(null);
+                  void load();
+                }}
+              />
+            )}
+          </>
+        )}
+      </div>
+    </ConsolePage>
   );
 }
 
-function ReviewRow({
-  item,
-  alerts,
-  onOpen,
-}: {
-  item: LegalReviewItem;
-  alerts: boolean;
-  onOpen: () => void;
-}) {
+/* The cells of one review row (the <tr> comes from <DataTable>). */
+function ReviewCells({ item, alerts }: { item: LegalReviewItem; alerts: boolean }) {
   const { t } = useT();
   const doc = item.document;
   const parsed = item.suggestion?.document_number ?? "";
@@ -426,8 +410,8 @@ function ReviewRow({
   const pending = doc?.source_pending && Object.keys(doc.source_pending).length > 0;
   const issued = doc ? isoDay(doc.issued_on) : dmyToDay(item.suggestion?.issued_on);
   return (
-    <tr className="cursor-pointer align-top break-words transition-colors hover:bg-surface-strong/20" onClick={onOpen}>
-      <td className="px-3 py-3">
+    <>
+      <td className="px-5 py-3.5 align-middle">
         <div className="line-clamp-2 text-[13px] font-medium text-ink" title={item.knowledge_title}>
           {item.knowledge_title}
         </div>
@@ -438,17 +422,15 @@ function ReviewRow({
           </div>
         )}
         {pending && (
-          <span className="badge-pill mt-1 inline-block bg-amber-500/10 text-[10px] text-amber-700 dark:text-amber-400">
+          <span className="badge-pill badge-warning mt-1 inline-block text-[10px]">
             {t("lrev.sourcePending")}
           </span>
         )}
       </td>
-      <td className="px-3 py-3">
+      <td className="px-5 py-3.5 align-middle">
         <div className="font-mono text-[12px] text-ink">{doc?.document_number || parsed || "—"}</div>
         {doc && parsed && mm.number && (
-          <div className="caption mt-0.5 text-amber-700 dark:text-amber-400">
-            {t("lrev.parsedDiffers", { value: parsed })}
-          </div>
+          <div className="caption mt-0.5 text-warning">{t("lrev.parsedDiffers", { value: parsed })}</div>
         )}
         {!doc && (
           <div className="caption mt-0.5 text-muted">
@@ -458,24 +440,24 @@ function ReviewRow({
           </div>
         )}
         {mm.type && (
-          <div className="caption mt-0.5 text-amber-700 dark:text-amber-400">
+          <div className="caption mt-0.5 text-warning">
             {t("lrev.typeDiffers", { parsed: item.suggestion?.doc_type ?? "", catalog: doc?.doc_type ?? "" })}
           </div>
         )}
       </td>
-      <td className="px-3 py-3">
-        <span className={`caption tabular-nums ${mm.issued ? "text-amber-700 dark:text-amber-400" : "text-body"}`}>
-          {showDay(issued)}
-        </span>
+      <td className="px-5 py-3.5 align-middle">
+        <span className={`caption tabular-nums ${mm.issued ? "text-warning" : "text-body"}`}>{showDay(issued)}</span>
         {mm.issued && (
-          <div className="caption text-amber-700 dark:text-amber-400">
+          <div className="caption text-warning">
             {t("lrev.parsedDiffers", { value: item.suggestion?.issued_on ?? "" })}
           </div>
         )}
       </td>
-      <td className="px-3 py-3">
+      <td className="px-5 py-3.5 align-middle">
         {doc?.status ? (
-          <span className={`badge-pill inline-block whitespace-normal text-[10px] leading-snug ${statusTone(doc.status)}`}>{doc.status}</span>
+          <span className={`badge-pill inline-block whitespace-normal text-[10px] leading-snug ${statusTone(doc.status)}`}>
+            {doc.status}
+          </span>
         ) : (
           <span className="caption text-muted-soft">—</span>
         )}
@@ -485,14 +467,16 @@ function ReviewRow({
           </div>
         )}
       </td>
-      <td className="px-3 py-3">
+      <td className="px-5 py-3.5 align-middle">
         {alerts ? (
-          <div className="max-h-36 overflow-y-auto pr-1"><Supersessions item={item} /></div>
+          <div className="max-h-36 overflow-y-auto pr-1">
+            <Supersessions item={item} />
+          </div>
         ) : (
           <span className="caption text-muted">{t(`lrev.state.${item.link.review_status}` as LocaleKey)}</span>
         )}
       </td>
-    </tr>
+    </>
   );
 }
 
@@ -509,7 +493,7 @@ function Supersessions({ item }: { item: LegalReviewItem }) {
           <span className="text-muted">{t(RELATION_KEYS[s.relation] ?? "lrev.rel.expires")} </span>
           <span className="font-medium text-ink">{docLabel(s.document)}</span>
           {!s.in_kb && (
-            <div className="caption mt-0.5 rounded-[8px] bg-red-500/10 px-2 py-1 text-red-700 dark:text-red-400">
+            <div className="caption mt-0.5 rounded-[8px] bg-error-surface px-2 py-1 text-error">
               {t("lrev.missingInKB")}
             </div>
           )}
@@ -593,25 +577,20 @@ export function ReviewDialog({
 
   return (
     <Modal open title={item.knowledge_title} onClose={touched ? onDone : onClose} width="w-[880px]">
-      <div className="mb-5 inline-flex items-center gap-0.5 rounded-full border border-hairline bg-surface-strong/60 p-0.5">
+      <PillGroup className="mb-5">
         {DIALOG_TABS.map((d) => (
-          <button
+          <Pill
             key={d.key}
-            type="button"
+            active={tab === d.key}
             onClick={() => {
               setTab(d.key);
               if (d.key !== "identity") setTouched(true);
             }}
-            className={`rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${
-              tab === d.key
-                ? "bg-surface-card text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
-                : "text-muted hover:text-ink"
-            }`}
           >
             {t(d.labelKey)}
-          </button>
+          </Pill>
         ))}
-      </div>
+      </PillGroup>
       {/* Tabs stay mounted once opened so unsaved drafts survive switching. */}
       {touched && (
         <div className={tab === "content" ? "" : "hidden"}>
@@ -634,15 +613,15 @@ export function ReviewDialog({
         </div>
 
         {(item.superseded_by?.length ?? 0) > 0 && (
-          <div className="rounded-[12px] border border-red-500/30 bg-red-500/5 p-3">
+          <div className="rounded-[12px] border border-error/30 bg-error-surface p-3">
             <Supersessions item={item} />
           </div>
         )}
 
         {pending && Object.keys(pending).length > 0 && (
-          <div className="rounded-[12px] border border-amber-500/30 bg-amber-500/5 p-3">
+          <div className="rounded-[12px] border border-warning/30 bg-warning-surface p-3">
             <div className="mb-1.5 flex items-center gap-2">
-              <span className="text-[13px] font-medium text-amber-700 dark:text-amber-400">{t("lrev.sourcePending")}</span>
+              <span className="text-[13px] font-medium text-warning">{t("lrev.sourcePending")}</span>
               <button
                 type="button"
                 className="btn btn-outline btn-sm ml-auto py-0.5 text-[12px]"
@@ -669,6 +648,7 @@ export function ReviewDialog({
               <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft" />
               <input
                 className="input h-9 pl-9 text-[13px]"
+                aria-label={t("lrev.searchPh")}
                 placeholder={t("lrev.searchPh")}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -676,7 +656,7 @@ export function ReviewDialog({
               />
             </div>
             <button className="btn btn-outline btn-sm" onClick={() => void search()} disabled={searching}>
-              {searching ? "…" : t("lrev.search")}
+              {searching ? t("common.loading") : t("lrev.search")}
             </button>
           </div>
           <div className="flex max-h-[180px] flex-col gap-1 overflow-y-auto">
@@ -738,7 +718,7 @@ export function ReviewDialog({
           </div>
         </div>
 
-        {error && <p className="caption text-error">{error}</p>}
+        {error && <Notice tone="error">{error}</Notice>}
 
         <div className="flex flex-wrap items-center gap-2 border-t border-hairline pt-4">
           <button className="btn btn-outline btn-sm" onClick={() => void decide("reject")} disabled={saving}>
@@ -749,7 +729,7 @@ export function ReviewDialog({
               {t("common.cancel")}
             </button>
             <button className="btn btn-primary btn-sm" onClick={() => void decide("approve")} disabled={saving}>
-              {saving ? "…" : t("lrev.approve")}
+              {saving ? t("common.loading") : t("lrev.approve")}
             </button>
           </div>
         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDialogFocus } from "@/components/use-dialog-focus";
 import { useRouter } from "next/navigation";
@@ -28,6 +28,7 @@ import { useAuth, useTenantRole } from "@/lib/auth";
 import { canSeeSection } from "@/components/settings/nav-config";
 import { SYSTEM_TABS } from "@/components/system/system-nav";
 import { adminSectionHref } from "@/components/admin/admin-routes";
+import { useT, type LocaleKey } from "@/lib/i18n";
 
 interface CommandItem {
   id: string;
@@ -39,9 +40,13 @@ interface CommandItem {
   onSelect: () => void;
 }
 
+const LISTBOX_ID = "cmdk-listbox";
+const optionId = (index: number) => `cmdk-option-${index}`;
+
 export function GlobalCommandPalette() {
   const { isOpen, close } = useCommandPalette();
   const router = useRouter();
+  const { t } = useT();
   const { user, memberships, selectedTenantId, tenant } = useAuth();
   const isSystemAdmin = user?.is_system_admin === true;
   // message search needs an organization; a guest's would only answer 409
@@ -65,7 +70,6 @@ export function GlobalCommandPalette() {
   useDialogFocus({ open: isOpen, containerRef: dialogRef, onClose: close });
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const [, startTransition] = useTransition();
 
   // Load KBs and Agents once when opened
   useEffect(() => {
@@ -113,8 +117,19 @@ export function GlobalCommandPalette() {
           setChunks([]);
         }
 
-        if (msgRes.status === "fulfilled" && (msgRes.value as any)?.data?.items) {
-          setMessages(((msgRes.value as any).data.items as MessageSearchGroupItem[]).slice(0, 5));
+        if (msgRes.status === "fulfilled") {
+          // The search endpoint answers with an unknown shape: narrow it.
+          const body = msgRes.value;
+          const data = body && typeof body === "object" && "data" in body ? body.data : undefined;
+          const rawItems =
+            data && typeof data === "object" && "items" in data && Array.isArray(data.items)
+              ? data.items
+              : [];
+          setMessages(
+            rawItems
+              .filter((x): x is MessageSearchGroupItem => !!x && typeof x === "object")
+              .slice(0, 5),
+          );
         } else {
           setMessages([]);
         }
@@ -133,8 +148,8 @@ export function GlobalCommandPalette() {
     {
       id: "quick-new-chat",
       category: "quick",
-      title: "New chat",
-      subtitle: "Start a fresh AI conversation",
+      title: t("cmdk.newChat"),
+      subtitle: t("cmdk.newChatSub"),
       icon: <IconChat className="h-4 w-4" />,
       onSelect: () => {
         close();
@@ -144,8 +159,8 @@ export function GlobalCommandPalette() {
     {
       id: "quick-kbs",
       category: "quick",
-      title: "Knowledge bases",
-      subtitle: "Manage documents and datasets",
+      title: t("cmdk.knowledgeBases"),
+      subtitle: t("cmdk.knowledgeBasesSub"),
       icon: <IconBook className="h-4 w-4" />,
       onSelect: () => {
         close();
@@ -157,8 +172,8 @@ export function GlobalCommandPalette() {
           {
             id: "quick-agents",
             category: "quick" as const,
-            title: "Agents",
-            subtitle: "Configure autonomous AI assistants",
+            title: t("cmdk.agents"),
+            subtitle: t("cmdk.agentsSub"),
             icon: <IconAgent className="h-4 w-4" />,
             onSelect: () => {
               close();
@@ -170,8 +185,8 @@ export function GlobalCommandPalette() {
     {
       id: "quick-artifacts",
       category: "quick",
-      title: "Artifacts",
-      subtitle: "Browse generated files and exports",
+      title: t("cmdk.artifacts"),
+      subtitle: t("cmdk.artifactsSub"),
       icon: <IconArtifact className="h-4 w-4" />,
       onSelect: () => {
         close();
@@ -181,8 +196,8 @@ export function GlobalCommandPalette() {
     {
       id: "quick-settings",
       category: "quick",
-      title: "Settings",
-      subtitle: "Preferences, models, and extensions",
+      title: t("cmdk.settings"),
+      subtitle: t("cmdk.settingsSub"),
       icon: <IconSettings className="h-4 w-4" />,
       onSelect: () => {
         close();
@@ -192,8 +207,8 @@ export function GlobalCommandPalette() {
     {
       id: "quick-logs",
       category: "quick",
-      title: "System audit logs",
-      subtitle: "View platform security events",
+      title: t("cmdk.auditLogs"),
+      subtitle: t("cmdk.auditLogsSub"),
       icon: <IconPulse className="h-4 w-4" />,
       onSelect: () => {
         close();
@@ -214,8 +229,8 @@ export function GlobalCommandPalette() {
           id: `kb-${k.id}`,
           category: "kbs",
           title: k.name,
-          subtitle: `${k.doc_count ?? 0} docs`,
-          badge: "Knowledge base",
+          subtitle: t("cmdk.kbDocs", { n: k.doc_count ?? 0 }),
+          badge: t("cmdk.badgeKb"),
           icon: <IconBook className="h-4 w-4" />,
           onSelect: () => {
             close();
@@ -232,8 +247,8 @@ export function GlobalCommandPalette() {
           id: `agent-${a.id}`,
           category: "agents",
           title: a.name,
-          subtitle: a.description || "Custom AI agent",
-          badge: "Agent",
+          subtitle: a.description || t("cmdk.customAgent"),
+          badge: t("cmdk.badgeAgent"),
           icon: <IconAgent className="h-4 w-4" />,
           onSelect: () => {
             close();
@@ -245,9 +260,9 @@ export function GlobalCommandPalette() {
   const chunkItems: CommandItem[] = chunks.map((c, i) => ({
     id: `chunk-${c.id ?? c.chunk_id ?? i}`,
     category: "chunks",
-    title: c.knowledge_title || c.knowledge_filename || "Knowledge chunk",
+    title: c.knowledge_title || c.knowledge_filename || t("cmdk.chunk"),
     subtitle: (c.matched_content || c.content).slice(0, 120),
-    badge: c.match_type === "vector" ? "Semantic" : "Keyword",
+    badge: c.match_type === "vector" ? t("cmdk.badgeSemantic") : t("cmdk.badgeKeyword"),
     icon: <IconDoc className="h-4 w-4" />,
     onSelect: () => {
       close();
@@ -260,9 +275,9 @@ export function GlobalCommandPalette() {
   const messageItems: CommandItem[] = messages.map((m) => ({
     id: `msg-${m.request_id}`,
     category: "messages",
-    title: m.session_title || "Chat session",
+    title: m.session_title || t("cmdk.chatSession"),
     subtitle: (m.query_content || m.answer_content || "").slice(0, 120),
-    badge: "Chat",
+    badge: t("cmdk.badgeChat"),
     icon: <IconChat className="h-4 w-4" />,
     onSelect: () => {
       close();
@@ -290,8 +305,10 @@ export function GlobalCommandPalette() {
             .map((it) => ({
               id: `setting-${tab.key}-${it.key}`,
               category: "settings" as const,
-              title: it.label,
-              subtitle: `Settings · ${tab.label}`,
+              title: it.labelKey ? t(it.labelKey as LocaleKey) : it.label,
+              subtitle: t("cmdk.settingItem", {
+                section: tab.labelKey ? t(tab.labelKey as LocaleKey) : tab.label,
+              }),
               icon: <IconSettings className="h-4 w-4" />,
               onSelect: () => {
                 close();
@@ -307,9 +324,9 @@ export function GlobalCommandPalette() {
         {
           id: "ask-ai",
           category: "ask",
-          title: `Ask AI: "${q}"`,
-          subtitle: "Launch a new chat answering this query",
-          badge: "AI Query",
+          title: t("cmdk.askAi", { q: query.trim() }),
+          subtitle: t("cmdk.askAiSub"),
+          badge: t("cmdk.badgeAi"),
           icon: <IconChat className="h-4 w-4 text-primary" />,
           onSelect: () => {
             close();
@@ -356,8 +373,10 @@ export function GlobalCommandPalette() {
 
   if (!isOpen) return null;
 
+  const activeOptionId = items.length > 0 ? optionId(selectedIndex) : undefined;
+
   return createPortal(
-    <div className="fixed inset-0 z-[90] flex items-start justify-center bg-black/40 p-4 pt-[12vh] backdrop-blur-sm animate-in fade-in duration-150">
+    <div className="fixed inset-0 z-[90] flex items-start justify-center bg-scrim/40 p-4 pt-[12vh] backdrop-blur-sm animate-in fade-in duration-150">
       <div
         className="fixed inset-0"
         onClick={close}
@@ -367,7 +386,7 @@ export function GlobalCommandPalette() {
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Command palette"
+        aria-label={t("cmdk.dialogLabel")}
         className="relative flex w-full max-w-[620px] flex-col overflow-hidden rounded-[20px] border border-hairline-strong bg-surface-card shadow-[0_24px_48px_rgba(0,0,0,0.18)]"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
@@ -378,8 +397,14 @@ export function GlobalCommandPalette() {
           <input
             ref={inputRef}
             className="flex-1 bg-transparent text-[15px] font-medium text-ink outline-none placeholder:text-muted"
-            placeholder="Type a command or search knowledge..."
+            placeholder={t("cmdk.placeholder")}
             value={query}
+            role="combobox"
+            aria-expanded
+            aria-controls={LISTBOX_ID}
+            aria-activedescendant={activeOptionId}
+            aria-autocomplete="list"
+            aria-label={t("cmdk.placeholder")}
             onChange={(e) => {
               setQuery(e.target.value);
               setSelectedIndex(0);
@@ -390,10 +415,13 @@ export function GlobalCommandPalette() {
           )}
           {query ? (
             <button
+              type="button"
               onClick={() => {
                 setQuery("");
                 inputRef.current?.focus();
               }}
+              aria-label={t("cmdk.clear")}
+              title={t("cmdk.clear")}
               className="rounded-full p-1 text-muted hover:bg-surface-strong hover:text-ink"
             >
               <IconClose className="h-4 w-4" />
@@ -408,12 +436,15 @@ export function GlobalCommandPalette() {
         {/* Results list */}
         <div
           ref={listRef}
+          id={LISTBOX_ID}
+          role="listbox"
+          aria-label={t("cmdk.results")}
           className="max-h-[380px] min-h-[140px] overflow-y-auto p-2"
         >
           {items.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-10 text-center text-muted">
               <IconSearch className="mb-2 h-6 w-6 text-muted-soft" />
-              <p className="text-[14px]">No results found for &ldquo;{query}&rdquo;</p>
+              <p className="text-[14px]">{t("cmdk.noResults", { q: query.trim() })}</p>
               <button
                 onClick={() => {
                   close();
@@ -421,7 +452,7 @@ export function GlobalCommandPalette() {
                 }}
                 className="btn btn-outline btn-sm mt-3"
               >
-                Ask AI about this
+                {t("cmdk.askAiAbout")}
               </button>
             </div>
           ) : (
@@ -430,7 +461,10 @@ export function GlobalCommandPalette() {
               return (
                 <div
                   key={item.id}
+                  id={optionId(idx)}
                   data-index={idx}
+                  role="option"
+                  aria-selected={isSelected}
                   onClick={item.onSelect}
                   onMouseEnter={() => setSelectedIndex(idx)}
                   className={`flex cursor-pointer items-center gap-3 rounded-[12px] px-3.5 py-2.5 transition-colors ${
@@ -476,24 +510,29 @@ export function GlobalCommandPalette() {
           )}
         </div>
 
+        {/* How many results the search found — announced to screen readers. */}
+        <p className="sr-only" role="status" aria-live="polite">
+          {t("cmdk.resultsCount", { n: items.length })}
+        </p>
+
         {/* Footer shortcuts */}
         <div className="flex items-center justify-between border-t border-hairline bg-surface-card/50 px-4 py-2.5 text-[12px] text-muted">
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1">
               <kbd className="rounded border border-hairline px-1 text-[10px]">↑</kbd>
               <kbd className="rounded border border-hairline px-1 text-[10px]">↓</kbd>
-              <span>navigate</span>
+              <span>{t("cmdk.navigate")}</span>
             </span>
             <span className="flex items-center gap-1">
               <kbd className="rounded border border-hairline px-1 text-[10px]">↵</kbd>
-              <span>select</span>
+              <span>{t("cmdk.select")}</span>
             </span>
             <span className="flex items-center gap-1">
               <kbd className="rounded border border-hairline px-1 text-[10px]">esc</kbd>
-              <span>close</span>
+              <span>{t("cmdk.close")}</span>
             </span>
           </div>
-          <span className="caption text-muted-soft">WeRAG Command Palette</span>
+          <span className="caption text-muted-soft">{t("cmdk.brand")}</span>
         </div>
       </div>
     </div>, document.body,

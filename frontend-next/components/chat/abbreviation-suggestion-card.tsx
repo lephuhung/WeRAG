@@ -122,7 +122,7 @@ export function AbbreviationSuggestionCard({
         return (
           <div
             key={short}
-            className="rounded-lg border border-amber-200 border-l-4 border-l-amber-400 bg-amber-50/70 p-4 dark:border-amber-500/30 dark:border-l-amber-500/60 dark:bg-amber-500/10"
+            className="rounded-lg2 border border-warning/25 border-l-4 border-l-warning bg-warning-surface p-4"
           >
             {done ? (
               <div className="text-[13px] text-body">
@@ -130,7 +130,7 @@ export function AbbreviationSuggestionCard({
                   {done.short_form} → {done.full_form}
                 </div>
                 <div className="mt-1">
-                  <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-[12px] text-amber-600 dark:text-amber-400">
+                  <span className="inline-flex items-center rounded-full bg-warning-surface px-2 py-0.5 text-[12px] text-warning">
                     Chờ Owner/SuperAdmin duyệt
                   </span>
                   <p className="mt-2">
@@ -144,7 +144,7 @@ export function AbbreviationSuggestionCard({
                 {rows.length > 0 ? (
                   <div className="space-y-1 text-[13px] text-body">
                     <div className="mb-1.5 flex items-center gap-1.5 font-medium text-ink">
-                      <IconBulb className="h-4 w-4 shrink-0 text-amber-500" />
+                      <IconBulb className="h-4 w-4 shrink-0 text-warning" />
                       Có nghĩa đang chờ duyệt cho “{short}”
                     </div>
                     {rows.map((r) => (
@@ -152,7 +152,7 @@ export function AbbreviationSuggestionCard({
                         <span className="text-ink">
                           {r.short_form} → {r.full_form}
                         </span>
-                        <span className="inline-flex items-center rounded-full bg-amber-500/10 px-2 py-0.5 text-[12px] text-amber-600 dark:text-amber-400">
+                        <span className="inline-flex items-center rounded-full bg-warning-surface px-2 py-0.5 text-[12px] text-warning">
                           Chờ Owner/SuperAdmin duyệt
                         </span>
                       </div>
@@ -160,7 +160,7 @@ export function AbbreviationSuggestionCard({
                   </div>
                 ) : (
                   <p className="flex items-center gap-1.5 text-[13px] text-body">
-                    <IconBulb className="h-4 w-4 shrink-0 text-amber-500" />
+                    <IconBulb className="h-4 w-4 shrink-0 text-warning" />
                     <span>
                       Hệ thống chưa có nghĩa được duyệt cho{" "}
                       <strong className="font-semibold text-ink">“{short}”</strong>.
@@ -176,7 +176,7 @@ export function AbbreviationSuggestionCard({
                       setFullForm("");
                       setDescription("");
                     }}
-                    className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-500 px-3.5 py-1.5 text-[13px] font-medium text-white shadow-sm transition-colors hover:bg-amber-600 dark:bg-amber-600 dark:hover:bg-amber-500"
+                    className="mt-2 inline-flex items-center gap-1 rounded-full bg-warning px-3.5 py-1.5 text-[13px] font-medium text-on-primary shadow-sm transition-colors hover:opacity-90"
                   >
                     {rows.length > 0 ? "Đề xuất nghĩa khác" : "Bổ sung nghĩa"}
                   </button>
@@ -200,7 +200,7 @@ export function AbbreviationSuggestionCard({
                     </div>
                     <div>
                       <label className="mb-1 block text-[12px] text-muted">
-                        Nghĩa đầy đủ <span className="text-red-500">*</span>
+                        Nghĩa đầy đủ <span className="text-error">*</span>
                       </label>
                       <input
                         value={fullForm}
@@ -222,7 +222,7 @@ export function AbbreviationSuggestionCard({
                         className="w-full rounded-md border border-hairline bg-surface-card px-3 py-1.5 text-[13px] text-ink"
                       />
                     </div>
-                    {error && <p className="text-[12px] text-red-500">{error}</p>}
+                    {error && <p className="text-[12px] text-error">{error}</p>}
                     <div className="flex gap-2">
                       <button
                         type="submit"

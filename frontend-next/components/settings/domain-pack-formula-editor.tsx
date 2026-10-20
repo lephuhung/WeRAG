@@ -7,7 +7,7 @@
  * every example through the Go code and refuses an edit it does not
  * reproduce, listing the reasons. "Khôi phục bản gốc" drops the edit. */
 
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { Modal } from "@/components/modal";
 import { useT } from "@/lib/i18n";
 import {
@@ -18,6 +18,11 @@ import {
   type DomainPackFormulaEdit,
   type DomainPackFormulaView,
 } from "@/lib/api/domain-packs-admin";
+import { useConfirm } from "@/components/confirm-dialog";
+import { ConsolePage } from "@/components/settings/console-page";
+import { FieldLabel } from "@/components/settings/field";
+import { Notice } from "@/components/settings/notice";
+import { useToast } from "@/components/toast";
 
 type Pair = { key: string; value: string };
 type ExampleDraft = { inputs: Record<string, string>; expected: Pair[] };
@@ -102,11 +107,20 @@ export function FormulaEditor({
   onSaved: (detail: DomainPackDetail) => void;
 }) {
   const { t } = useT();
+  const confirmAction = useConfirm();
+  const toast = useToast();
   const [draft, setDraft] = useState<Draft>(() => draftFrom(formula));
+  const [saved, setSaved] = useState<Draft>(() => draftFrom(formula));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [problems, setProblems] = useState<string[]>([]);
   const listId = `dpk-basis-${formula.id}`;
+  /* The editor saves exactly what changed: the save button stays disabled
+   * until the draft differs from the loaded formula. */
+  const dirty = useMemo(
+    () => JSON.stringify(draft) !== JSON.stringify(saved),
+    [draft, saved],
+  );
 
   const set = (patch: Partial<Draft>) => setDraft((d) => ({ ...d, ...patch }));
   const setExample = (i: number, ex: ExampleDraft) =>
@@ -130,6 +144,8 @@ export function FormulaEditor({
     setProblems([]);
     try {
       const res = await updateDomainPackFormula(pack, formula.id, edit);
+      setSaved(draftFrom(edit));
+      toast.success(t("common.saved"));
       onSaved(res.data);
     } catch (err) {
       fail(err);
@@ -139,7 +155,12 @@ export function FormulaEditor({
   };
 
   const reset = async () => {
-    if (!window.confirm(t("dpk.edit.resetConfirm", { name: formula.shipped?.name ?? formula.name }))) return;
+    const ok = await confirmAction({
+      title: t("common.confirm"),
+      message: t("dpk.edit.resetConfirm", { name: formula.shipped?.name ?? formula.name }),
+      danger: true,
+    });
+    if (!ok) return;
     setBusy(true);
     setError("");
     setProblems([]);
@@ -155,23 +176,33 @@ export function FormulaEditor({
 
   return (
     <Modal open title={`${t("dpk.edit.title")} · ${formula.id}`} onClose={onClose} width="w-[760px]">
+      <ConsolePage size="form">
       <form className="space-y-5" onSubmit={save}>
         <p className="caption text-muted">{t("dpk.edit.hint", { tool: formula.tool })}</p>
 
-        <label className="block">
-          <span className="caption mb-1 block text-muted">{t("dpk.edit.name")}</span>
-          <input className="input w-full" value={draft.name} onChange={(e) => set({ name: e.target.value })} required />
-        </label>
-        <label className="block">
-          <span className="caption mb-1 block text-muted">{t("dpk.formula.expression")}</span>
+        <div className="block">
+          <FieldLabel htmlFor="dpk-name" required>{t("dpk.edit.name")}</FieldLabel>
+          <input
+            id="dpk-name"
+            className="input w-full"
+            value={draft.name}
+            onChange={(e) => set({ name: e.target.value })}
+            required
+            aria-required="true"
+          />
+        </div>
+        <div className="block">
+          <FieldLabel htmlFor="dpk-expression" required>{t("dpk.formula.expression")}</FieldLabel>
           <textarea
+            id="dpk-expression"
             className="input min-h-[84px] w-full"
             value={draft.expression}
             onChange={(e) => set({ expression: e.target.value })}
             required
+            aria-required="true"
           />
           <span className="caption mt-1 block text-muted-soft">{t("dpk.edit.expressionHint")}</span>
-        </label>
+        </div>
 
         <fieldset>
           <legend className="caption-uppercase mb-2 text-muted">{t("dpk.formula.variables")}</legend>
@@ -219,6 +250,7 @@ export function FormulaEditor({
               <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2">
                 <input
                   className="input"
+                  aria-label={t("dpk.edit.number")}
                   list={listId}
                   placeholder={t("dpk.edit.number")}
                   value={b.number}
@@ -226,6 +258,7 @@ export function FormulaEditor({
                 />
                 <input
                   className="input"
+                  aria-label={t("dpk.edit.article")}
                   placeholder={t("dpk.edit.article")}
                   value={b.article}
                   onChange={(e) => set({ basis: draft.basis.map((x, j) => (j === i ? { ...x, article: e.target.value } : x)) })}
@@ -260,15 +293,18 @@ export function FormulaEditor({
                 </div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {draft.variables.map((v) => (
-                    <label key={v.name} className="block">
-                      <code className="caption mb-0.5 block text-muted">{v.name}</code>
+                    <div key={v.name} className="block">
+                      <FieldLabel htmlFor={`dpk-ex-${i}-${v.name}`}>
+                        <code className="caption text-muted">{v.name}</code>
+                      </FieldLabel>
                       <input
+                        id={`dpk-ex-${i}-${v.name}`}
                         className="input w-full"
                         inputMode="decimal"
                         value={ex.inputs[v.name] ?? ""}
                         onChange={(e) => setExample(i, { ...ex, inputs: { ...ex.inputs, [v.name]: e.target.value } })}
                       />
-                    </label>
+                    </div>
                   ))}
                 </div>
                 <div className="caption mb-1 mt-3 text-muted">{t("dpk.edit.expected")}</div>
@@ -277,12 +313,14 @@ export function FormulaEditor({
                     <div key={k} className="grid grid-cols-[1fr_1fr_auto] gap-2">
                       <input
                         className="input font-mono"
+                        aria-label={t("dpk.edit.output")}
                         placeholder={t("dpk.edit.output")}
                         value={p.key}
                         onChange={(e) => setExample(i, { ...ex, expected: ex.expected.map((x, j) => (j === k ? { ...x, key: e.target.value } : x)) })}
                       />
                       <input
                         className="input"
+                        aria-label={t("dpk.edit.value")}
                         inputMode="decimal"
                         placeholder={t("dpk.edit.value")}
                         value={p.value}
@@ -328,27 +366,24 @@ export function FormulaEditor({
         </fieldset>
 
         {error && (
-          <div className="rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-[13px] text-red-700 dark:text-red-400">
+          <Notice tone="error" title={problems.length > 0 ? t("dpk.edit.refused") : undefined}>
             {problems.length > 0 ? (
-              <>
-                <div className="font-medium">{t("dpk.edit.refused")}</div>
-                <ul className="mt-1 list-disc space-y-0.5 pl-4">
-                  {problems.map((p) => (
-                    <li key={p} className="break-words">
-                      {p}
-                    </li>
-                  ))}
-                </ul>
-              </>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                {problems.map((p) => (
+                  <li key={p} className="break-words">
+                    {p}
+                  </li>
+                ))}
+              </ul>
             ) : (
               error
             )}
-          </div>
+          </Notice>
         )}
 
         <div className="flex flex-wrap items-center gap-2 border-t border-hairline pt-4">
           {(formula.edited || formula.edit_not_applied) && (
-            <button type="button" className="btn btn-outline btn-sm text-rose-600" disabled={busy} onClick={() => void reset()}>
+            <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void reset()}>
               {t("dpk.edit.reset")}
             </button>
           )}
@@ -361,12 +396,13 @@ export function FormulaEditor({
             <button type="button" className="btn btn-outline btn-sm" onClick={onClose} disabled={busy}>
               {t("dpk.edit.cancel")}
             </button>
-            <button type="submit" className="btn btn-primary btn-sm" disabled={busy}>
+            <button type="submit" className="btn btn-primary btn-sm" disabled={!dirty || busy}>
               {busy ? t("dpk.edit.saving") : t("dpk.edit.save")}
             </button>
           </div>
         </div>
       </form>
+      </ConsolePage>
     </Modal>
   );
 }

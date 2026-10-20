@@ -23,7 +23,7 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
 const TONE_COLOR: Record<ContextTone, string> = {
   neutral: "var(--color-muted)",
-  amber: "var(--color-warning, #d97706)",
+  amber: "var(--color-warning)",
   red: "var(--color-error)",
 };
 

@@ -11,6 +11,10 @@ import {
 } from "@/lib/api/browser";
 import { copyToClipboard } from "@/lib/clipboard";
 import { useT } from "@/lib/i18n";
+import { Notice } from "@/components/settings/notice";
+import { SectionHeader } from "@/components/settings/section-header";
+import { FieldLabel } from "@/components/settings/field";
+import { useToast } from "@/components/toast";
 import { formatDateTime } from "@/lib/datetime";
 
 export function BrowserConnectionSettings() {
@@ -20,7 +24,7 @@ export function BrowserConnectionSettings() {
   const [loading, setLoading] = useState(true);
   const [actionBusy, setActionBusy] = useState(false);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
+  const toast = useToast();
 
   const loadStatus = useCallback(async () => {
     setLoading(true);
@@ -85,28 +89,37 @@ export function BrowserConnectionSettings() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-5">
-        <div>
-          <h2 className="title-md font-semibold text-ink">{t("browser.title")}</h2>
-          <p className="caption text-muted mt-1">
-            {t("browser.subtitle")}
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => void loadStatus()}
-          className="btn btn-outline btn-sm p-1.5"
-          title={t("browser.refreshTip")}
-        >
-          <IconRefresh className="h-3.5 w-3.5" />
-        </button>
-      </div>
+      <SectionHeader
+        title={t("browser.title")}
+        subtitle={t("browser.subtitle")}
+        actions={
+          <button
+            type="button"
+            onClick={() => void loadStatus()}
+            className="btn btn-outline btn-sm p-1.5"
+            title={t("browser.refreshTip")}
+            aria-label={t("browser.refreshTip")}
+          >
+            <IconRefresh className="h-3.5 w-3.5" />
+          </button>
+        }
+      />
 
       {error && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-400">
+        <Notice
+          tone="error"
+          action={
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={() => void loadStatus()}
+            >
+              {t("common.retry")}
+            </button>
+          }
+        >
           {error}
-        </div>
+        </Notice>
       )}
 
       {/* Connection Status Card */}
@@ -115,8 +128,11 @@ export function BrowserConnectionSettings() {
           <div className="flex items-center gap-3">
             <span
               className={`h-3 w-3 rounded-full ${
-                status?.connected ? "bg-emerald-500 animate-pulse" : "bg-stone-300 dark:bg-stone-600"
+                status?.connected ? "animate-pulse" : "bg-surface-strong"
               }`}
+              style={
+                status?.connected ? { background: "var(--color-success)" } : undefined
+              }
             />
             <div>
               <span className="font-semibold text-ink block text-base">
@@ -143,7 +159,7 @@ export function BrowserConnectionSettings() {
                 type="button"
                 disabled={actionBusy}
                 onClick={() => void handleRevoke()}
-                className="btn btn-outline btn-sm text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 text-xs"
+                className="btn btn-danger btn-sm text-xs"
               >
                 {t("browser.disconnect")}
               </button>
@@ -163,13 +179,15 @@ export function BrowserConnectionSettings() {
         {/* Pairing link generated */}
         {pairingLink && !status?.connected && (
           <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-2 mt-4">
-            <span className="caption font-semibold text-primary block">
+            <FieldLabel htmlFor="browser-pairing-link" className="caption font-semibold text-primary">
               {t("browser.pairingLink")}
-            </span>
+            </FieldLabel>
             <div className="flex items-center gap-2">
               <input
+                id="browser-pairing-link"
                 type="text"
                 readOnly
+                aria-label={t("browser.pairingLink")}
                 value={pairingLink}
                 className="input text-xs font-mono select-all"
               />
@@ -178,13 +196,12 @@ export function BrowserConnectionSettings() {
                 onClick={async () => {
                   const ok = await copyToClipboard(pairingLink);
                   if (ok) {
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
+                    toast.success(t("browser.copied"));
                   }
                 }}
                 className="btn btn-primary btn-sm shrink-0 text-xs"
               >
-                {copied ? t("browser.copied") : t("common.copy")}
+                {t("common.copy")}
               </button>
             </div>
             <p className="caption text-muted text-[11px]">

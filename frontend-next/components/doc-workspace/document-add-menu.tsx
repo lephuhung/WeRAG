@@ -2,6 +2,7 @@
 
 import { useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
+import { useDialogFocus } from "@/components/use-dialog-focus";
 
 /** Escapes the editor's clipping ancestors and stays inside the viewport. */
 export function DocumentAddMenu({ anchorRef, open, onClose, children }: {
@@ -14,6 +15,11 @@ export function DocumentAddMenu({ anchorRef, open, onClose, children }: {
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const [position, setPosition] = useState<{ left: number; top: number; width: number; maxHeight: number } | null>(null);
+
+  /* The menu is portalled out of the editor's DOM, so it manages its own
+   * focus: the focus moves into the menu, stays inside it and returns to
+   * the anchor when the menu closes. */
+  useDialogFocus({ open, containerRef: menuRef, onClose: closeRef.current });
 
   useLayoutEffect(() => {
     if (!open || !anchorRef.current) return;
@@ -47,9 +53,17 @@ export function DocumentAddMenu({ anchorRef, open, onClose, children }: {
     };
   }, [open, anchorRef]);
 
-  if (!open || !position) return null;
+  if (!open) return null;
+  /* The menu stays mounted while it is open (the position is measured in a
+   * layout effect, before the first paint) so the focus can move into it
+   * as soon as it appears. */
   return createPortal(
-    <div ref={menuRef} data-dialog-portal className="card fixed z-[80] overflow-y-auto p-1.5 shadow-soft-drop" style={position}>
+    <div
+      ref={menuRef}
+      data-dialog-portal
+      className="fixed z-[80] overflow-y-auto rounded-md2 border border-hairline bg-surface-card p-1.5 shadow-soft-drop"
+      style={position ?? { left: 0, top: 0, width: 0, maxHeight: 0 }}
+    >
       {children}
     </div>, document.body,
   );
