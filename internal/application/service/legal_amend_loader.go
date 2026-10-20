@@ -16,6 +16,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 )
@@ -267,6 +268,11 @@ func LoadLegalAmendments(ctx context.Context, db *gorm.DB, scopeKBs, chunkIDs, a
 		for aID, bs := range amenders {
 			for _, b := range bs {
 				if row := l.catalog[b]; row != nil {
+					if aRow := l.catalog[aID]; aRow != nil && legalRankInverted(row.DocType, aRow.DocType) {
+						logger.Debugf(l.ctx, "[LegalAmend] catalogue: %s %s cannot amend %s %s: relation skipped",
+							row.DocType, row.DocumentNumber, aRow.DocType, aRow.DocumentNumber)
+						continue
+					}
 					load.Catalogue[aID] = append(load.Catalogue[aID], LegalCatalogAmendment{
 						Amender: l.catalogDoc(row), EffFrom: l.dateOf(row.EffectiveOn), NeverInForce: l.neverInForce(row)})
 				}
@@ -348,6 +354,11 @@ func LoadLegalAmendments(ctx context.Context, db *gorm.DB, scopeKBs, chunkIDs, a
 	// catalogue-level facts, never a rewrite of the whole document
 	for key, list := range facts {
 		for _, f := range list {
+			if d := docs[key]; d != nil && legalRankInverted(f.Amender.Type, d.doc.Type) {
+				logger.Debugf(l.ctx, "[LegalAmend] %s %s cannot amend %s %s: document-level entry skipped",
+					f.Amender.Type, f.Amender.Number, d.doc.Type, d.doc.Number)
+				continue
+			}
 			dup := false
 			for _, have := range load.Catalogue[key] {
 				if have.Amender.CatalogID != "" && have.Amender.CatalogID == f.Amender.CatalogID {
@@ -458,7 +469,7 @@ func (l *legalAmendLoader) amenderReads(load *LegalAmendLoad, docArticles map[st
 	})
 	// the amenders' chunks naming a target (in the text or the heading)
 	type target struct {
-		key, short string
+		key, short, numKey, base string
 	}
 	var targets []target
 	var likes []string
@@ -478,7 +489,11 @@ func (l *legalAmendLoader) amenderReads(load *LegalAmendLoad, docArticles map[st
 		if dup {
 			continue
 		}
-		targets = append(targets, target{key, short})
+		base := ""
+		if row := l.catalog[c.Doc.CatalogID]; row != nil && legalNamedByTitle(row.DocType) {
+			base = LegalTitleBase(row.Title, row.DocType)
+		}
+		targets = append(targets, target{key, short, vietnamese_legal.CatalogNumberKey(c.Doc.Number), base})
 		likes = append(likes, `c.content LIKE ? OR `+heading+` LIKE ?`)
 		pat := "%" + legalLikeEscaper.Replace(short) + "%"
 		likeArgs = append(likeArgs, pat, pat)
@@ -509,24 +524,17 @@ func (l *legalAmendLoader) amenderReads(load *LegalAmendLoad, docArticles map[st
 			if !strings.Contains(r.Content, t.short) && !strings.Contains(r.Heading, t.short) {
 				continue
 			}
-			for _, line := range strings.Split(r.Content, "\n") {
-				line = strings.TrimSpace(line)
-				if line == "" || strings.HasPrefix(line, ">") || strings.HasPrefix(line, "#") {
+			for art := range legalCitedArticlesOf(r.Content, r.Heading, t.numKey, t.base) {
+				if !docArticles[t.key][art] {
 					continue
 				}
-				for _, m := range legalCitedArticleRe.FindAllStringSubmatch(line, -1) {
-					art := strings.ToLower(m[1])
-					if !docArticles[t.key][art] {
-						continue
-					}
-					if cited[r.Ext] == nil {
-						cited[r.Ext] = map[string]map[string]bool{}
-					}
-					if cited[r.Ext][t.key] == nil {
-						cited[r.Ext][t.key] = map[string]bool{}
-					}
-					cited[r.Ext][t.key][art] = true
+				if cited[r.Ext] == nil {
+					cited[r.Ext] = map[string]map[string]bool{}
 				}
+				if cited[r.Ext][t.key] == nil {
+					cited[r.Ext][t.key] = map[string]bool{}
+				}
+				cited[r.Ext][t.key][art] = true
 			}
 		}
 	}
@@ -538,6 +546,91 @@ func (l *legalAmendLoader) amenderReads(load *LegalAmendLoad, docArticles map[st
 		}
 	}
 	return nil
+}
+
+var (
+	// legalBeforeAfterRe ends the text before "Điều N" of an insertion
+	// point ("Bổ sung Điều 2a vào sau Điều 2"): Điều N is not amended.
+	// legalHistoryRefRe ends the text before "Điều N" naming where an
+	// earlier amendment was made ("đã được sửa đổi, bổ sung bởi khoản 5
+	// Điều 1 Thông tư số 41/2020/TT-BGTVT"): a reference, not an operation.
+	legalHistoryRefRe  = regexp.MustCompile(`(?i)được\s+(?:sửa\s+đổi|bổ\s+sung|thay\s+thế)(?:\s*,\s*bổ\s+sung)?\s+(?:bởi|tại|theo)(?:\s+quy\s+định\s+tại)?(?:\s*(?:,|và)?\s*(?:các\s+)?(?:điểm|khoản)\s+[0-9a-zđ]+)*\s*$`)
+	legalParenRe       = regexp.MustCompile(`\([^()]*\)`)
+	legalBeforeAfterRe = regexp.MustCompile(`(?i)(?:vào\s+)?(?:sau|trước)\s*$`)
+	// legalSelfRefRe starts the text after "Điều N" naming B itself
+	// ("Điều 5 Nghị định này").
+	legalSelfRefRe = regexp.MustCompile(`(?i)^[\s,]*(?:(?:khoản|điểm)\s+\S+\s+)?(?:của\s+)?(?:Bộ luật|Luật|Pháp lệnh|Nghị định|Nghị quyết|Thông tư liên tịch|Thông tư|Quyết định|văn bản)\s+này\b`)
+)
+
+// legalCitedArticlesOf lists the Điều of document A (number key aKey,
+// title base aBase for a law) that an amender's chunk cites outside quotes
+// and headings: a "Điều N" counts when the next document cited after it on
+// its line is A, or when its line cites no document and the chunk's
+// heading names A alone. Not an insertion point ("vào sau Điều 2"), not
+// B's own provisions ("Điều 5 Nghị định này").
+func legalCitedArticlesOf(content, heading, aKey, aBase string) map[string]bool {
+	isA := func(c vietnamese_legal.Citation) bool {
+		if c.Key != "" {
+			return c.Key == aKey
+		}
+		if aBase == "" || c.Kind != vietnamese_legal.CitationName {
+			return false
+		}
+		n := strings.ToLower(strings.Join(strings.Fields(c.Name), " "))
+		return n == aBase || strings.HasPrefix(n, aBase+" ") || strings.HasPrefix(n, aBase+",")
+	}
+	headingOnlyA := false
+	if hc := vietnamese_legal.FindCitations(heading); len(hc) > 0 {
+		headingOnlyA = true
+		for _, c := range hc {
+			if (c.Key != "" || c.Kind == vietnamese_legal.CitationName) && !isA(c) {
+				headingOnlyA = false
+			}
+		}
+	}
+	out := map[string]bool{}
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, ">") || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// a bracketed remark is history ("(đã được sửa đổi, bổ sung bởi
+		// khoản 7 Điều 1 Thông tư số 41/2021/TT-BGTVT)"), not an operation
+		for stripped := legalParenRe.ReplaceAllString(line, " "); stripped != line; stripped = legalParenRe.ReplaceAllString(line, " ") {
+			line = stripped // nested brackets, innermost first
+		}
+		var cites []vietnamese_legal.Citation
+		for _, c := range vietnamese_legal.FindCitations(line) {
+			if c.Key != "" || c.Kind == vietnamese_legal.CitationName {
+				cites = append(cites, c)
+			}
+		}
+		for _, m := range legalCitedArticleRe.FindAllStringSubmatchIndex(line, -1) {
+			kw := m[0] + strings.Index(line[m[0]:m[2]], "Điều")
+			if kw < m[0] {
+				kw = m[0]
+			}
+			if legalBeforeAfterRe.MatchString(line[:kw]) || legalHistoryRefRe.MatchString(line[:kw]) || legalSelfRefRe.MatchString(line[m[3]:]) {
+				continue
+			}
+			end := utf8.RuneCountInString(line[:m[3]])
+			var next *vietnamese_legal.Citation
+			for i := range cites {
+				if cites[i].Start >= end {
+					next = &cites[i]
+					break
+				}
+			}
+			switch {
+			case next != nil && isA(*next):
+			case next == nil && len(cites) == 0 && headingOnlyA:
+			default:
+				continue
+			}
+			out[strings.ToLower(line[m[2]:m[3]])] = true
+		}
+	}
+	return out
 }
 
 // chainHop derives C → A edges for the amenders amenderIDs of A, reading
@@ -713,7 +806,7 @@ func (l *legalAmendLoader) amendingChunks(docIDs, articles []string, probes []le
 	if err := g.Wait(); err != nil {
 		return nil, false, err
 	}
-	truncated = len(byDoc) >= legalAmendCandidates
+	truncated = len(byDoc) >= legalAmendCandidates || len(byArticle) >= legalAmendCandidates || len(byPhrase) >= legalAmendPhraseCandidates
 	seen := map[string]bool{}
 	var ids []string
 	for _, r := range append(byDoc, byArticle...) {
