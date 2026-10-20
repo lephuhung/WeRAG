@@ -57,9 +57,21 @@ function RegisterForm() {
         token?: string;
         refresh_token?: string;
       }>(path, token ? { token, username, email, password } : { username, email, password });
-      if (!res.success || !res.token) throw new Error(res.message ?? "Đăng ký không thành công");
-      localStorage.setItem("weknora_token", res.token);
-      if (res.refresh_token) localStorage.setItem("weknora_refresh_token", res.refresh_token);
+      if (!res.success) throw new Error(res.message ?? "Đăng ký không thành công");
+      // Self-serve registration answers with the account only (the invite
+      // path also signs in): sign in with what was just typed.
+      const session = res.token
+        ? res
+        : await apiPost<{ success: boolean; message?: string; token?: string; refresh_token?: string }>(
+            "/api/v1/auth/login",
+            { email, password },
+          );
+      if (!session.success || !session.token) {
+        router.push("/login");
+        return;
+      }
+      localStorage.setItem("weknora_token", session.token);
+      if (session.refresh_token) localStorage.setItem("weknora_refresh_token", session.refresh_token);
       // Mirror persistLoginResponse: probe /auth/me, then onboard only when
       // this deployment lets users create organizations (onboarding offers
       // to skip to the chat). Otherwise a new account stays a Guest until a
