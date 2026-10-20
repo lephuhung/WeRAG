@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/Tencent/WeKnora/internal/application/service"
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
@@ -85,6 +86,62 @@ func (h *DomainPackReconcileHandler) ListSystemDomainPacks(c *gin.Context) {
 func (h *DomainPackReconcileHandler) GetSystemDomainPack(c *gin.Context) {
 	ctx := c.Request.Context()
 	detail, err := h.reconciler.Detail(ctx, c.Param("name"))
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": detail})
+}
+
+// UpdateDomainPackFormula godoc
+// @Summary      Sửa công thức của bộ kỹ năng chuyên môn (SuperAdmin)
+// @Description  Thay lời của một công thức trong formulas.yaml: tên, biểu
+// @Description  thức, mô tả/đơn vị/nguồn của biến, căn cứ (số hiệu phải có
+// @Description  trong catalogue.yaml), ví dụ. Không đổi được id, tool và tên
+// @Description  biến (code Go gắn với chúng); phép tính vẫn là code Go. Mọi
+// @Description  ví dụ phải được code Go tính ra đúng (tiền ±1 đ, tỷ lệ ±1e-9);
+// @Description  biểu thức không được ghi tỷ lệ là hằng số. Lỗi kiểm tra trả
+// @Description  400 kèm danh sách lỗi trong details. Bản sửa áp dụng ngay cho
+// @Description  lượt chat sau; DELETE cùng đường dẫn khôi phục bản gốc.
+// @Tags         Rà soát pháp lý
+// @Accept       json
+// @Produce      json
+// @Param        name    path string                      true "Tên bộ kỹ năng (domain pack)"
+// @Param        id      path string                      true "id công thức"
+// @Param        formula body types.DomainPackFormulaEdit true "Công thức đã sửa"
+// @Success      200 {object} types.DomainPackDetail "Chi tiết gói sau khi sửa"
+// @Security     Bearer
+// @Router       /system/domain-packs/{name}/formulas/{id} [put]
+func (h *DomainPackReconcileHandler) UpdateDomainPackFormula(c *gin.Context) {
+	ctx := c.Request.Context()
+	var edit types.DomainPackFormulaEdit
+	if err := c.ShouldBindJSON(&edit); err != nil {
+		c.Error(apperrors.NewBadRequestError("invalid formula body").WithDetails(err.Error()))
+		return
+	}
+	detail, err := h.reconciler.UpdateFormula(ctx, c.Param("name"), c.Param("id"), edit)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": detail})
+}
+
+// ResetDomainPackFormula godoc
+// @Summary      Khôi phục công thức gốc của bộ kỹ năng chuyên môn (SuperAdmin)
+// @Description  Bỏ bản sửa của công thức: formulas.yaml áp dụng lại.
+// @Tags         Rà soát pháp lý
+// @Produce      json
+// @Param        name path string true "Tên bộ kỹ năng (domain pack)"
+// @Param        id   path string true "id công thức"
+// @Success      200 {object} types.DomainPackDetail "Chi tiết gói"
+// @Security     Bearer
+// @Router       /system/domain-packs/{name}/formulas/{id} [delete]
+func (h *DomainPackReconcileHandler) ResetDomainPackFormula(c *gin.Context) {
+	ctx := c.Request.Context()
+	detail, err := h.reconciler.ResetFormula(ctx, c.Param("name"), c.Param("id"))
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)

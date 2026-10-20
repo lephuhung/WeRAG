@@ -19,9 +19,11 @@ func TestDomainPackReconcileRouteNeedsPlatformSuperAdmin(t *testing.T) {
 	RegisterDomainPackReconcileRoutes(engine.Group("/api/v1"), handler.NewDomainPackReconcileHandler(nil), g)
 
 	want := map[string]bool{
-		"POST /api/v1/system/domain-packs/:name/reconcile": false,
-		"GET /api/v1/system/domain-packs":                  false,
-		"GET /api/v1/system/domain-packs/:name":            false,
+		"POST /api/v1/system/domain-packs/:name/reconcile":      false,
+		"GET /api/v1/system/domain-packs":                       false,
+		"GET /api/v1/system/domain-packs/:name":                 false,
+		"PUT /api/v1/system/domain-packs/:name/formulas/:id":    false,
+		"DELETE /api/v1/system/domain-packs/:name/formulas/:id": false,
 	}
 	for _, r := range engine.Routes() {
 		if _, ok := want[r.Method+" "+r.Path]; ok {
@@ -42,6 +44,8 @@ func TestDomainPackReconcileRouteNeedsPlatformSuperAdmin(t *testing.T) {
 		{types.TenantRoleOwner, http.MethodPost, "/api/v1/system/domain-packs/opc-vn-business-law/reconcile"},
 		{types.TenantRoleOwner, http.MethodGet, "/api/v1/system/domain-packs"},
 		{types.TenantRoleOwner, http.MethodGet, "/api/v1/system/domain-packs/opc-vn-business-law"},
+		{types.TenantRoleOwner, http.MethodPut, "/api/v1/system/domain-packs/opc-vn-business-law/formulas/bien_hoa_von"},
+		{types.TenantRoleOwner, http.MethodDelete, "/api/v1/system/domain-packs/opc-vn-business-law/formulas/bien_hoa_von"},
 	} {
 		role := probe.role
 		req := httptest.NewRequest(probe.method, probe.path, nil)

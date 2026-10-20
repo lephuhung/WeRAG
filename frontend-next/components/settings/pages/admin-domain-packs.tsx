@@ -4,10 +4,12 @@
  * per pack, the single place to see what must be updated — its cited
  * documents ("Văn bản trích dẫn") checked against the legal catalogue, its
  * formulas ("Công thức") with the state of their legal basis, and the
- * agents using it. Packs are files in the repo (domain-packs/<name>):
- * nothing is edited here. "Đối chiếu danh mục" records legal document
+ * agents using it. Packs are files in the repo (domain-packs/<name>); only
+ * a formula's wording can be edited here (the calculation stays Go code,
+ * see domain-pack-formula-editor). "Đối chiếu danh mục" records legal document
  * requests for texts no public KB holds (the legal requests queue).
- * Backend: /api/v1/system/domain-packs (+ /:name, /:name/reconcile). The
+ * Backend: /api/v1/system/domain-packs (+ /:name, /:name/reconcile,
+ * /:name/formulas/:id). The
  * open pack lives in ?pack= so the detail is deep-linkable. */
 
 import { useCallback, useEffect, useState, type ReactNode } from "react";
@@ -17,7 +19,8 @@ import { IconRefresh } from "@/components/icons";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { ApiError } from "@/lib/api-client";
 import { getCurrentUser } from "@/lib/api/auth";
-import { formatDate } from "@/lib/datetime";
+import { formatDate, formatDateTime } from "@/lib/datetime";
+import { FormulaEditor } from "@/components/settings/domain-pack-formula-editor";
 import { normalizeDistribution } from "@/lib/agent-tenant-scope";
 import { formatPriceVND } from "@/lib/api/usage";
 import { adminSectionHref } from "@/components/admin/admin-routes";
@@ -273,7 +276,14 @@ function PackDetail({ name }: { name: string }) {
           </div>
 
           {tab === "documents" && <DocumentsTab docs={detail.documents} />}
-          {tab === "formulas" && <FormulasTab formulas={detail.formulas} />}
+          {tab === "formulas" && (
+            <FormulasTab
+              pack={detail.name}
+              formulas={detail.formulas}
+              catalogueNumbers={detail.documents.map((d) => d.number)}
+              onSaved={setDetail}
+            />
+          )}
           {tab === "agents" && <AgentsTab detail={detail} />}
         </>
       )}
@@ -516,20 +526,54 @@ function CatalogueStatus({ doc }: { doc: DomainPackDocumentView }) {
   );
 }
 
-function FormulasTab({ formulas }: { formulas: DomainPackFormulaView[] }) {
-  const { t } = useT();
+function FormulasTab({
+  pack,
+  formulas,
+  catalogueNumbers,
+  onSaved,
+}: {
+  pack: string;
+  formulas: DomainPackFormulaView[];
+  catalogueNumbers: string[];
+  onSaved: (detail: DomainPackDetail) => void;
+}) {
+  const { t, locale } = useT();
+  const [editing, setEditing] = useState<DomainPackFormulaView | null>(null);
   if (formulas.length === 0) {
     return <div className="card px-5 py-10 text-center text-[14px] text-muted shadow-sm">{t("dpk.formula.empty")}</div>;
   }
   return (
     <div className="space-y-5">
+      {editing && (
+        <FormulaEditor
+          pack={pack}
+          formula={editing}
+          catalogueNumbers={catalogueNumbers}
+          onClose={() => setEditing(null)}
+          onSaved={(d) => {
+            setEditing(null);
+            onSaved(d);
+          }}
+        />
+      )}
       {formulas.map((f) => (
         <div key={f.id} className="card min-w-0 overflow-hidden p-5 shadow-sm sm:p-6">
-          <div className="space-y-2">
-            <h3 className="text-[16px] font-semibold leading-relaxed text-ink">{f.name}</h3>
-            <code className="caption block break-all text-muted-soft">
-              {f.id} · {f.tool}
-            </code>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0 space-y-2">
+              <h3 className="text-[16px] font-semibold leading-relaxed text-ink">{f.name}</h3>
+              <code className="caption block break-all text-muted-soft">
+                {f.id} · {f.tool}
+              </code>
+              {f.edited && (
+                <span className={`badge-pill text-[10.5px] ${BADGE_WARN}`}>
+                  {t("dpk.edit.editedBy", { who: f.edited_by ?? "—", at: formatDateTime(f.edited_at, locale) })}
+                </span>
+              )}
+              {f.edit_not_applied && <span className={`badge-pill text-[10.5px] ${BADGE_BAD}`}>{t("dpk.edit.notApplied")}</span>}
+            </div>
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => setEditing(f)}>
+              {t("dpk.edit.open")}
+            </button>
           </div>
           <div className="mt-4 rounded-r-lg border-l-4 border-teal-600 bg-teal-50 px-4 py-3 dark:bg-teal-950/40">
             <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-teal-700 dark:text-teal-300">{t("dpk.formula.expression")}</p>

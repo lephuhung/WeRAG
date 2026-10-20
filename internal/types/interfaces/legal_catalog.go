@@ -265,3 +265,14 @@ type DomainPackAgentRepository interface {
 	// organization's name; ordered by organization then agent name.
 	ListAgentsUsingPack(ctx context.Context, name string) ([]types.DomainPackAgent, error)
 }
+
+// DomainPackFormulaOverrideRepository keeps the SuperAdmin's edits of
+// domain pack formulas.
+type DomainPackFormulaOverrideRepository interface {
+	// List returns every stored edit.
+	List(ctx context.Context) ([]*types.DomainPackFormulaOverride, error)
+	// Upsert creates or replaces the edit of (pack, formula).
+	Upsert(ctx context.Context, o *types.DomainPackFormulaOverride) error
+	// Delete removes the edit of (pack, formula); none is not an error.
+	Delete(ctx context.Context, packName, formulaID string) error
+}
