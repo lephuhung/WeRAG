@@ -240,3 +240,49 @@ func TestResolveNamesFromText(t *testing.T) {
 		require.Equal(t, want, m.Chosen.DocumentNumber, text)
 	}
 }
+
+// A unique answer from a shorter name than written is flagged Trimmed
+// unless only read-on words were dropped; the amendment history skips it.
+func TestResolveLegalDocumentNameTrimmed(t *testing.T) {
+	db := legalNameTestDB(t)
+	ctx := context.Background()
+	at, _ := time.Parse("2006-01-02", "2025-01-01")
+	resolve := func(name string) LegalNameMatch {
+		m, err := ResolveLegalDocumentName(ctx, db, LegalNameQuery{Name: name, At: at})
+		require.NoError(t, err)
+		return m
+	}
+
+	m := resolve("Luật Đất đai như sau")
+	require.Equal(t, LegalNameUnique, m.Resolution)
+	require.False(t, m.Trimmed, "read-on only")
+
+	m = resolve("Luật Đất đai cho phép")
+	require.Equal(t, LegalNameUnique, m.Resolution)
+	require.Equal(t, "31/2024/QH15", m.Chosen.DocumentNumber)
+	require.True(t, m.Trimmed)
+	require.Equal(t, "cho phép", m.Dropped)
+
+	m = resolve("Luật Đất đai, theo đó")
+	require.Equal(t, LegalNameUnique, m.Resolution)
+	require.False(t, m.Trimmed, "after a comma")
+
+	m = resolve("Luật Đất đai")
+	require.False(t, m.Trimmed)
+
+	// the catalogue lacks Luật Giáo dục đại học: read as Luật Giáo dục, flagged
+	require.NoError(t, db.Delete(&types.LegalDocument{}, "id = ?", "gddh").Error)
+	m = resolve("Luật Giáo dục đại học")
+	require.Equal(t, LegalNameUnique, m.Resolution)
+	require.Equal(t, "43/2019/QH14", m.Chosen.DocumentNumber)
+	require.True(t, m.Trimmed)
+	require.Equal(t, "đại học", m.Dropped)
+
+	h := &legalHistory{amended: map[string]string{}, ctx: ctx, db: db}
+	if got := h.amendedNumber(legalHistoryDoc{Number: "x", IssueDate: "2025-01-01"}, "Luật Giáo dục đại học"); got != "" {
+		t.Errorf("amendment history used a trimmed name: %q", got)
+	}
+	if got := h.amendedNumber(legalHistoryDoc{Number: "y", IssueDate: "2025-01-01"}, "Luật Đất đai như sau"); got != "31/2024/QH15" {
+		t.Errorf("read-on name = %q", got)
+	}
+}

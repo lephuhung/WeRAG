@@ -54,6 +54,16 @@ type LegalNameMatch struct {
 	Resolution LegalNameResolution
 	Candidates []LegalNameCandidate // issued before the citing document (or undated), newest first
 	Chosen     *types.LegalDocument // set when Resolution is unique
+	// Trimmed is set when the answer comes from a shorter name than the
+	// one written, dropping words that are not all read-on (a comma, or
+	// clause words such as "như sau", "có hiệu lực"); Dropped holds them
+	// ("cho phép", "đại học"). The catalogue may simply lack the law
+	// written ("Luật Giáo dục đại học" read as Luật Giáo dục), so a
+	// trimmed answer is a guess: it must never feed tier-1 wording — such
+	// provisions stay UNRESOLVED / UNVERIFIED (plan §3.3, §4.12) — and the
+	// amendment history ignores it.
+	Trimmed bool
+	Dropped string
 }
 
 // legalLikeEscaper escapes LIKE wildcards (backslash is Postgres's default
@@ -136,6 +146,7 @@ func ResolveLegalDocumentName(ctx context.Context, db *gorm.DB, q LegalNameQuery
 			m := LegalNameMatch{Base: p.base, Resolution: LegalNameAmbiguous, Candidates: hits}
 			if len(keys) == 1 && p.safe {
 				m.Resolution, m.Chosen = LegalNameUnique, hits[0].Document
+				m.Trimmed, m.Dropped = p.dropped != "" && !p.readOn, p.dropped
 			}
 			return m, nil
 		}
@@ -203,6 +214,9 @@ func ResolveLegalDocumentName(ctx context.Context, db *gorm.DB, q LegalNameQuery
 					break
 				}
 			}
+		}
+		if m.Resolution == LegalNameUnique && p.dropped != "" {
+			m.Trimmed, m.Dropped = !p.readOn, p.dropped
 		}
 		return m, nil
 	}
@@ -359,6 +373,10 @@ type legalNamePrefix struct {
 	// theo"): a catalogue title starting so means the word may belong to
 	// the name.
 	cont string
+	// dropped are the words cut from the name; readOn when they follow a
+	// comma or are all read-on words.
+	dropped string
+	readOn  bool
 }
 
 // legalReadOn are the words a clause after a name starts with: dropping
@@ -395,8 +413,19 @@ func legalNamePrefixes(name string) []legalNamePrefix {
 		if p == out[len(out)-1].base {
 			continue
 		}
-		safe := strings.HasSuffix(words[k-1], ",") || legalReadOn[strings.Trim(words[k], ",")]
-		out = append(out, legalNamePrefix{base: p, safe: safe, cont: strings.Join(words[:k+1], " ")})
+		comma := strings.HasSuffix(words[k-1], ",")
+		readOn := comma
+		if !comma {
+			readOn = true
+			for _, w := range words[k:] {
+				if !legalReadOn[strings.Trim(w, ",")] {
+					readOn = false
+					break
+				}
+			}
+		}
+		out = append(out, legalNamePrefix{base: p, safe: comma || legalReadOn[strings.Trim(words[k], ",")],
+			cont: strings.Join(words[:k+1], " "), dropped: strings.Join(words[k:], " "), readOn: readOn})
 	}
 	return out
 }
