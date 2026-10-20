@@ -493,3 +493,73 @@ func TestLoadLegalAmendmentsPlacedCopyWins(t *testing.T) {
 	require.Contains(t, out["a3"], "trên 01 tỷ đồng [thay cho “500 triệu đồng”")
 	require.NotContains(t, out["a3"], "thao tác không ghi văn bản bị sửa đổi")
 }
+
+// Final review S1: a "Điều N" an amender's chunk cites counts for A only
+// when the next document cited after it is A, or the line cites none and
+// the heading names A alone; never an insertion point or B's own Điều.
+func TestLegalCitedArticlesOf(t *testing.T) {
+	key := func(n string) string { return vietnamese_legal.CatalogNumberKey(n) }
+	cases := []struct {
+		name, content, heading, a, base string
+		want                            []string
+	}{
+		{"NĐ 220/2025 → 14/2016: bare repeal under a heading naming A only", "8. Bãi bỏ Điều 16.",
+			`["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "", []string{"16"}},
+		{"NĐ 168/2024 → 100/2019: khoản list of one Điều", "Bãi bỏ khoản 1, khoản 2, khoản 9 Điều 24.",
+			`["Điều 1. Sửa đổi Nghị định số 100/2019/NĐ-CP"]`, "100/2019/NĐ-CP", "", []string{"24"}},
+		{"NĐ 193/2026: the Điều belongs to another decree", "3. Bãi bỏ Điều 9; khoản 2 Điều 10 Nghị định số 254/2025/NĐ-CP.",
+			`["Điều 2. Sửa đổi Nghị định số 88/2025/NĐ-CP và Nghị định số 254/2025/NĐ-CP"]`, "88/2025/NĐ-CP", "", nil},
+		{"TT 01/2025: khoản 2 Điều 5 of another circular", "Sửa đổi khoản 2 Điều 5 Thông tư số 36/2021/TT-BYT như sau:",
+			`["Điều 1. Sửa đổi Thông tư số 30/2020/TT-BYT"]`, "30/2020/TT-BYT", "", nil},
+		{"next citation is A", "Bãi bỏ Điều 7 Nghị định số 14/2016/NĐ-CP.", `[]`, "14/2016/NĐ-CP", "", []string{"7"}},
+		{"NĐ 129/2021: insertion point (2a is new, A has no Điều 2a)", "Bổ sung Điều 2a vào sau Điều 2 như sau:",
+			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "", []string{"2a"}},
+		{"insertion point before", "Bổ sung Điều 7a vào trước Điều 8.",
+			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "", []string{"7a"}},
+		{"B's own Điều", "Hiệu lực theo Điều 5 Nghị định này.", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "", nil},
+		{"a heading naming two documents", "Bãi bỏ Điều 16.", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP và Nghị định số 15/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "", nil},
+		{"a law cited by name", "Bãi bỏ Điều 74 Luật Đầu tư công.", `[]`, "39/2019/QH14", "luật đầu tư công", []string{"74"}},
+		{"TT 06/2023 → 41/2021: a bracketed amendment history is no operation on A",
+			"b) Điểm a khoản 2 Điều 8 (đã được sửa đổi, bổ sung tại điểm b khoản 7 Điều 1 của Thông tư số 41/2021/TT-BGTVT ngày 31 tháng 12 năm 2021);",
+			`["Điều 1. Sửa đổi Thông tư số 12/2020/TT-BGTVT và Thông tư số 41/2021/TT-BGTVT"]`, "41/2021/TT-BGTVT", "", nil},
+		{"TT 42/2023 → 41/2020: an unbracketed amendment history",
+			"1. Sửa đổi, bổ sung Điều 5 Thông tư số 13/2019/TT-BGTVT đã được sửa đổi, bổ sung bởi khoản 5, khoản 6 Điều 1 Thông tư số 41/2020/TT-BGTVT như sau:",
+			`["Điều 1. Sửa đổi Thông tư số 13/2019/TT-BGTVT"]`, "41/2020/TT-BGTVT", "", nil},
+		{"TT 60/2019 → 39/2018: repeal of a khoản of an amending circular",
+			"2. Bãi bỏ khoản 15 Điều 1 Thông tư số 39/2018/TT-BTC ngày 20/4/2018 của Bộ trưởng Bộ Tài chính.",
+			`[]`, "39/2018/TT-BTC", "", []string{"1"}},
+		{"quoted text is A's new wording, not a citation", "> “Điều 9. Mới”", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := legalCitedArticlesOf(tc.content, tc.heading, key(tc.a), tc.base)
+			var arts []string
+			for a := range got {
+				arts = append(arts, a)
+			}
+			require.ElementsMatch(t, tc.want, arts)
+		})
+	}
+}
+
+// Final review S2: a catalogue relation of a lower-ranked amender (TT
+// 12/2025/TT-BTC "amending" NĐ 40/2017/NĐ-CP) is skipped: no info line,
+// no UNVERIFIED.
+func TestLoadLegalAmendmentsCatalogueRank(t *testing.T) {
+	db := legalAmendTestDB(t)
+	ctx := context.Background()
+	catalog := repository.NewLegalCatalogRepository(db)
+	day := func(s string) *time.Time { d, _ := time.Parse("2006-01-02", s); return &d }
+	require.NoError(t, catalog.UpsertDocuments(ctx, []*types.LegalDocument{
+		{ID: "tt12", Source: "vbpl", DocumentNumber: "12/2025/TT-BTC", NumberKey: vietnamese_legal.CatalogNumberKey("12/2025/TT-BTC"), DocType: "Thông tư",
+			Title: "Thông tư 12/2025/TT-BTC", IssuedOn: day("2025-03-01"), EffectiveOn: day("2025-04-01")},
+	}))
+	require.NoError(t, db.Create(&types.LegalDocumentRelation{FromID: "tt12", ToID: "nd68", Relation: types.LegalRelationAmends}).Error)
+	load, err := LoadLegalAmendments(ctx, db, []string{"kb-pub"}, []string{"a3"}, []string{"kb-pub"}, time.UTC)
+	require.NoError(t, err)
+	for _, f := range load.Catalogue["nd68"] {
+		require.NotEqual(t, "tt12", f.Amender.CatalogID, "a Thông tư cannot amend a Nghị định")
+	}
+	r := load.Resolve(amendAt("2026-10-20"), map[string]bool{"kb-pub": true})["a3"]
+	require.NotContains(t, r.ModelContent, "12/2025/TT-BTC")
+}
