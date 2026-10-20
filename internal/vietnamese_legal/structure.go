@@ -406,6 +406,19 @@ type LegalMetadata struct {
 	// publishes only as separate files, not in the page text: the answer
 	// links them instead of quoting them.
 	AppendixFiles []AppendixFile `json:"appendix_files,omitempty"`
+	// Citations are the vbpl.vn links of the chunk's text: each cited
+	// document by its vbpl id (= catalogue id), at rune offsets in the
+	// chunk content as stored.
+	Citations []CitationLink `json:"citations,omitempty"`
+}
+
+// CitationLink is one linked citation in a chunk: Content runes
+// [Start, End) read Text and cite vbpl.vn document VBPLID.
+type CitationLink struct {
+	Start  int    `json:"start"`
+	End    int    `json:"end"`
+	VBPLID string `json:"vbpl_id"`
+	Text   string `json:"text"`
 }
 
 // AppendixFile is a phụ lục published as a file attached to the document.

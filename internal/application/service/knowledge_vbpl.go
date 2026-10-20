@@ -79,11 +79,13 @@ func (s *knowledgeService) processVBPLFile(
 	planned := vbpl.Plan(doc, vbplChunkSize(eff.ChunkingConfig))
 	sourceDocID := vbplSourceDocID(knowledge)
 	appendixFiles := vbpl.LinkAttachedAppendices(planned, vbplAppendixFiles(knowledge))
+	citations := vbpl.CitationLinks(doc, planned)
 	chunks := make([]types.ParsedChunk, len(planned))
 	for i, c := range planned {
 		legal := c.Legal()
 		legal.SourceDocID = sourceDocID
 		legal.AppendixFiles = appendixFiles[i]
+		legal.Citations = citations[i]
 		chunks[i] = types.ParsedChunk{
 			Content:       c.Content,
 			ContextHeader: c.ContextHeader(),
