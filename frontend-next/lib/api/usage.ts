@@ -532,7 +532,7 @@ export function listPurchasablePlans(scope: UsageScopeKind): Promise<UsagePlan[]
   return apiGet<{ data?: UsagePlan[] }>(`${BILLING}/plans?scope=${scope}`).then((r) => r.data ?? []);
 }
 
-export type PublicUsagePlan = Pick<UsagePlan, "id" | "name" | "description" | "scope_kind" | "mode" | "limits" | "price_vnd" | "price_label" | "sort_order">;
+export type PublicUsagePlan = Pick<UsagePlan, "id" | "name" | "description" | "scope_kind" | "mode" | "limits" | "price_vnd" | "price_label" | "sort_order" | "included_agents" | "addons">;
 
 // Anonymous landing-page catalogue: plain fetch, no tokens and no refresh-on-401.
 export async function listPublicPlans(scope: UsageScopeKind, signal?: AbortSignal): Promise<PublicUsagePlan[]> {

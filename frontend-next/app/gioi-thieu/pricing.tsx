@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { listPublicPlans, planPrice, type PublicUsagePlan } from "@/lib/api/usage";
+import { formatPriceVND, listPublicPlans, planPrice, type PublicUsagePlan } from "@/lib/api/usage";
 import styles from "./page.module.css";
 
 export function LandingPricing() {
@@ -38,9 +38,23 @@ export function LandingPricing() {
           <p className={styles.eyebrow}>{plan.mode === "seat" ? "THEO SỐ CHỖ" : scope === "user" ? "CÁ NHÂN" : "HẠN MỨC DÙNG CHUNG"}</p>
           <h3>{plan.name}</h3><p>{plan.description}</p>
           <div className={styles.price}>{planPrice(plan)}<small> / {plan.mode === "seat" ? "chỗ / " : ""}tháng</small></div>
-          <ul>{(plan.limits ?? []).map((limit, i) => <li key={i}>
+          <div className={styles.planDetails}>
+          <ul className={styles.planLimits}>{(plan.limits ?? []).map((limit, i) => <li key={i}>
             {limit.limit === 0 ? "Không giới hạn" : limit.limit.toLocaleString("vi-VN")} {limit.metric === "questions" ? "câu hỏi" : "token"} / {limit.period === "day" ? "ngày" : "tháng"}
           </li>)}</ul>
+          {!!plan.included_agents?.length && <div className={styles.planAgents}>
+            <h4>Trợ lý đi kèm</h4>
+            <ul>{plan.included_agents.map(agent => <li key={agent.id}>{agent.name}</li>)}</ul>
+          </div>}
+          {!!plan.addons?.length && <div className={styles.planAddons}>
+            <h4>Trợ lý chuyên ngành mua thêm</h4>
+            <ul>{plan.addons.map(addon => <li key={addon.agent_id}>
+              <strong>{addon.name}</strong>
+              {addon.description && <p>{addon.description}</p>}
+              <span>{addon.price_vnd > 0 ? `+${formatPriceVND(addon.price_vnd)}` : "Không tính thêm phí"}{addon.price_vnd > 0 && (addon.per_seat ? " / chỗ / tháng" : " / tháng")}</span>
+            </li>)}</ul>
+          </div>}
+          </div>
           <Link href="/platform/creatChat" className={styles.secondary}>Chọn gói trong ứng dụng ↗</Link>
         </article>)}</div>}
     </div>

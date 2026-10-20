@@ -27,10 +27,19 @@ func (h *UsageBillingHandler) PublicPlans(c *gin.Context) {
 		if p == nil || p.UsagePlan == nil || !p.IsActive || p.PriceVND <= 0 {
 			continue
 		}
+		included := p.IncludedAgents
+		if included == nil {
+			included = []types.UsagePlanAgent{}
+		}
+		addons := p.Addons
+		if addons == nil {
+			addons = []types.UsagePlanAddonOffer{}
+		}
 		data = append(data, gin.H{
 			"id": p.ID, "name": p.Name, "description": p.Description,
 			"scope_kind": p.ScopeKind, "mode": p.Mode, "limits": p.Limits,
 			"price_vnd": p.PriceVND, "price_label": p.PriceLabel, "sort_order": p.SortOrder,
+			"included_agents": included, "addons": addons,
 		})
 	}
 	c.Header("Cache-Control", "no-store")
