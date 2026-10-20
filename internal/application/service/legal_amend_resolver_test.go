@@ -227,10 +227,19 @@ func TestResolveLegalProvisionStates(t *testing.T) {
 			opt:  LegalResolveOptions{Catalogue: []LegalCatalogAmendment{{Amender: b3, EffFrom: amendDay("2026-01-01")}}},
 			prov: k1, state: LegalStateAmendedTextMissing, gated: true,
 			chunks: "trả lời trong 10 ngày.\n\n[LỜI VĂN HIỆN HÀNH CHƯA XÁC MINH: văn bản này đã bị sửa đổi bởi Nghị định 3/2026/NĐ-CP (từ 01/01/2026) theo danh mục; chưa có lời văn sửa đổi]"},
-		{name: "catalogue amender with edges elsewhere",
+		{name: "catalogue amender, its text not read",
 			edges: []LegalAmendEdge{quote(LegalOpSuaDoi, LegalProvisionRef{Article: "9"}, "Điều 9. x", b3, "2026-01-01", LegalTierVerified)},
 			opt:   LegalResolveOptions{Catalogue: []LegalCatalogAmendment{{Amender: b3, EffFrom: amendDay("2026-01-01")}}},
-			prov:  k1, state: LegalStateUnverified, has: []string{"1. Nộp hồ sơ"}, chunks: "chưa xác định điều khoản này có bị tác động không"},
+			prov:  k1, state: LegalStateAmendedTextMissing, chunks: "chưa có lời văn sửa đổi"},
+		{name: "catalogue amender read whole, khoản never named: original + info",
+			edges: []LegalAmendEdge{quote(LegalOpSuaDoi, LegalProvisionRef{Article: "9"}, "Điều 9. x", b3, "2026-01-01", LegalTierVerified)},
+			opt:   LegalResolveOptions{Catalogue: []LegalCatalogAmendment{{Amender: b3, EffFrom: amendDay("2026-01-01"), TextRead: true}}},
+			prov:  k1, state: LegalStateOriginalInForce, has: []string{"1. Nộp hồ sơ"},
+			chunks: "trả lời trong 10 ngày.\n\n[Văn bản này đã được sửa đổi bởi Nghị định 3/2026/NĐ-CP (từ 01/01/2026) ở các điều khoản khác]"},
+		{name: "catalogue amender read whole, cites this Điều beyond its operations",
+			edges: []LegalAmendEdge{quote(LegalOpSuaDoi, LegalProvisionRef{Article: "9"}, "Điều 9. x", b3, "2026-01-01", LegalTierVerified)},
+			opt:   LegalResolveOptions{Catalogue: []LegalCatalogAmendment{{Amender: b3, EffFrom: amendDay("2026-01-01"), TextRead: true, Cited: map[string]bool{"5": true}}}},
+			prov:  k1, state: LegalStateUnverified, gated: true, chunks: "Nghị định 3/2026/NĐ-CP nhắc tới Điều 5 của văn bản này ngoài các thao tác đã đọc được"},
 		{name: "catalogue amender not yet in force",
 			opt:  LegalResolveOptions{Catalogue: []LegalCatalogAmendment{{Amender: b3, EffFrom: amendDay("2027-01-01")}}},
 			prov: k1, state: LegalStateOriginalInForce},
@@ -419,4 +428,21 @@ func TestResolveSharedPhraseList(t *testing.T) {
 		From: "Bộ trưởng Bộ Tư pháp", To: "Bộ trưởng, Chủ nhiệm Văn phòng Chính phủ", LeadInText: lead, EffFrom: amendDay("2016-12-15"), Tier: LegalTierLegacyParserPhrase}}
 	r := ResolveLegalProvisions(c, edges, amendAt("2026-10-20"), LegalResolveOptions{AllowedKBs: map[string]bool{"kb": true}})
 	require.Equal(t, LegalStateOriginalInForce, r.State, r.ModelContent)
+}
+
+// Review 2 reach: a phrase change after an unresolved one is UNRESOLVED,
+// yet its words are still shown as the phrase-only wording showed them.
+func TestResolvePhraseAfterUnresolvedKeepsWording(t *testing.T) {
+	b1 := LegalAmendDoc{CatalogID: "b1", Number: "1/2025/NĐ-CP", Type: "Nghị định", KnowledgeBaseID: "kb-pub"}
+	b2 := LegalAmendDoc{CatalogID: "b2", Number: "2/2026/NĐ-CP", Type: "Nghị định", KnowledgeBaseID: "kb-pub"}
+	k1 := LegalProvisionRef{Article: "5", Khoan: "1"}
+	edges := []LegalAmendEdge{
+		{Op: LegalOpSuaDoi, Amender: b1, Target: nd68, Provision: k1, QuoteText: "1. x", EffFrom: amendDay("2025-07-01"), Tier: LegalTierUnverified, Unresolved: "văn bản đích không xác định"},
+		{Op: LegalOpThayCumTu, Amender: b2, Target: nd68, Provision: k1, From: "15 ngày", To: "20 ngày", EffFrom: amendDay("2026-02-01"), Tier: LegalTierLegacyParserPhrase},
+	}
+	r := ResolveLegalProvisions(nd68Chunk(dieu5, "5", "1", "2", "3"), edges, amendAt("2026-10-20"), LegalResolveOptions{})
+	u := unitByProv(t, r, k1)
+	require.Equal(t, LegalStateUnresolved, u.State)
+	require.Contains(t, u.Text, "[LỜI VĂN HIỆN HÀNH CHƯA XÁC MINH:")
+	require.Contains(t, u.Text, "trong 20 ngày [thay cho “15 ngày” theo Nghị định 2/2026/NĐ-CP, từ 01/02/2026]")
 }

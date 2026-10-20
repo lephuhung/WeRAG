@@ -13,6 +13,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/errgroup"
 )
 
 // resolverSwitch is a settings service holding only the switch.
@@ -153,4 +154,13 @@ func TestLegalCurrentWordingNoteOncePerDocument(t *testing.T) {
 	note := "[LỜI VĂN HIỆN HÀNH CHƯA XÁC MINH: danh mục ghi văn bản này bị sửa đổi bởi Nghị định 200/2026/NĐ-CP, chưa rõ ngày hiệu lực]"
 	require.True(t, strings.HasSuffix(out["a3"], note), out["a3"])
 	require.NotContains(t, out["a8"], note, "shown on the first chunk of the document only")
+}
+
+// Review 2, S2: a panic in a loader goroutine comes back as an error.
+func TestLegalGoRecovers(t *testing.T) {
+	var g errgroup.Group
+	legalGo(&g, func() error { var m map[string]int; m["x"] = 1; return nil })
+	err := g.Wait()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "panic")
 }

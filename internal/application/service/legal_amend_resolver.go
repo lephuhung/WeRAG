@@ -53,6 +53,14 @@ type LegalCatalogAmendment struct {
 	// NeverInForce: the catalogue records B expiring on or before the day
 	// it takes effect, so its changes may never have applied.
 	NeverInForce bool
+	// TextRead: B is held in a KB the question may read, its operations
+	// were parsed and read without hitting a limit. A provision B never
+	// names is then the original (with one informational line); otherwise
+	// AMENDED_TEXT_MISSING.
+	TextRead bool
+	// Cited are the articles of A that B's text cites (outside quotes and
+	// headings): one B has no operation on stays UNVERIFIED.
+	Cited map[string]bool
 }
 
 // LegalResolveOptions are the resolver's inputs besides the chunk.
@@ -106,6 +114,9 @@ type LegalResolution struct {
 	// identity), which a result set shows once per document.
 	Body  string
 	Notes []string
+	// Info are ungated informational lines ("đã được sửa đổi … ở các điều
+	// khoản khác"), also once per document per result set.
+	Info []string
 	// Ignored are the rejected edges (kept for review).
 	Ignored []*LegalAmendEdge
 }
@@ -294,7 +305,7 @@ func ResolveLegalProvisions(c LegalProvisionChunk, edges []LegalAmendEdge, asOf 
 	}
 
 	// catalogue relations without an edge here
-	chunkNotes := legalCatalogueNotes(c, runs, live, asOf, opt.Catalogue)
+	chunkNotes, infos := legalCatalogueNotes(c, runs, live, asOf, opt.Catalogue)
 	if c.IdentityProblem != "" {
 		reason := "chưa xác định được văn bản này trong danh mục (" + c.IdentityProblem + ")"
 		for _, r := range runs {
@@ -327,9 +338,18 @@ func ResolveLegalProvisions(c LegalProvisionChunk, edges []LegalAmendEdge, asOf 
 			res.State = worseState(res.State, ar.State)
 		}
 	}
-	res.Body, res.Notes = b.String(), chunkNotes
-	res.ModelContent = res.Body + legalNotesBlock(chunkNotes)
+	res.Body, res.Notes, res.Info = b.String(), chunkNotes, infos
+	res.ModelContent = res.Body + legalNotesBlock(chunkNotes) + legalInfoBlock(infos)
 	return res
+}
+
+// legalInfoBlock renders the informational lines, after the notes.
+func legalInfoBlock(infos []string) string {
+	var b strings.Builder
+	for _, i := range infos {
+		b.WriteString("\n\n[" + i + "]")
+	}
+	return b.String()
 }
 
 // legalNotesBlock renders chunk-level notes, after the text.
@@ -500,17 +520,27 @@ func applyGroup(r *unitRun, group []*LegalAmendEdge, opt LegalResolveOptions) {
 				r.raise(LegalStateUnresolved, legalOpPhrase(e)+via+": "+e.Unresolved)
 				r.resolved = false
 				continue
-			case !priorResolved:
-				r.raise(LegalStateUnresolved, legalOpPhrase(e)+via+": chưa giải được các sửa đổi trước đó nên không kiểm được cụm từ")
-				r.resolved = false
-				continue
-			case !found:
-				r.raise(LegalStateUnresolved, "không thấy cụm từ “"+e.From+"” trong "+r.u.prov.String()+" ở bản ngay trước "+e.Amender.label())
-				r.resolved = false
-				continue
 			case e.TextWithheld:
 				r.raise(LegalStateAmendedTextMissing, e.Provision.String()+" bị sửa đổi cụm từ “"+e.From+"”"+via+"; lời văn của văn bản sửa đổi không thuộc phạm vi được dùng")
 				r.resolved = false
+				continue
+			case !priorResolved || !found:
+				// the version before B is uncertain: UNRESOLVED, but a change
+				// shown as words is still shown (applyPhraseChanges picks, as
+				// the phrase-only wording always did), inside the wrapper
+				if !priorResolved {
+					r.raise(LegalStateUnresolved, legalOpPhrase(e)+via+": chưa giải được các sửa đổi trước đó nên không kiểm được cụm từ")
+				} else {
+					r.raise(LegalStateUnresolved, "không thấy cụm từ “"+e.From+"” trong "+r.u.prov.String()+" ở bản ngay trước "+e.Amender.label())
+				}
+				r.resolved = false
+				if e.Tier.verifiedWording() {
+					r.applied = append(r.applied, e)
+					r.display = append(r.display, e)
+					if found {
+						phrases = append(phrases, e)
+					}
+				}
 				continue
 			}
 			r.applied = append(r.applied, e)
@@ -646,6 +676,10 @@ func legalOpPhrase(e *LegalAmendEdge) string {
 	p := e.Provision.String()
 	switch e.Op {
 	case LegalOpThayCumTu:
+		if e.TextWithheld {
+			// §10.2: B's new words stay out of every note
+			return "cụm từ “" + e.From + "” được sửa đổi tại " + p
+		}
 		return "cụm từ “" + e.From + "” được thay bằng “" + e.To + "” tại " + p
 	case LegalOpBaiBoCumTu:
 		return "cụm từ “" + e.From + "” bị bãi bỏ tại " + p
@@ -669,7 +703,7 @@ func legalOpPhrase(e *LegalAmendEdge) string {
 	case LegalOpHetHieuLuc:
 		return p + " hết hiệu lực"
 	case LegalOpKhongApDung:
-		if e.Scope != "" {
+		if e.Scope != "" && !e.TextWithheld {
 			return p + " không áp dụng " + e.Scope
 		}
 		return p + " không áp dụng"
@@ -696,7 +730,11 @@ func legalIntervalMarker(e *LegalAmendEdge) (LegalProvisionState, string) {
 		return LegalStateNotApplicable, "[Bị đình chỉ thi hành từ " + e.EffFrom.text() + until + by + "]"
 	case LegalOpKhongApDung:
 		if strings.TrimSpace(e.Scope) != "" {
-			return LegalStateConditionallyNotApp, "[Không áp dụng " + strings.TrimSpace(e.Scope) + by + ", từ " + e.EffFrom.text() + until + "]"
+			scope := strings.TrimSpace(e.Scope)
+			if e.TextWithheld {
+				scope = "trong một số trường hợp"
+			}
+			return LegalStateConditionallyNotApp, "[Không áp dụng " + scope + by + ", từ " + e.EffFrom.text() + until + "]"
 		}
 		return LegalStateNotApplicable, "[Không áp dụng từ " + e.EffFrom.text() + until + by + "]"
 	}
@@ -872,13 +910,18 @@ func resolveAdded(e *LegalAmendEdge, adds []*LegalAmendEdge, asOf time.Time) *Le
 	return res
 }
 
-// legalCatalogueNotes marks the units no edge of a catalogue amender
-// covers: AMENDED_TEXT_MISSING when that amender has no edge on A at all
-// (its text is not held or not usable), UNVERIFIED when its edges touch
-// other provisions only, UNRESOLVED when its date is unknown. The notes
-// are returned once for the chunk.
-func legalCatalogueNotes(c LegalProvisionChunk, runs []*unitRun, live []*LegalAmendEdge, asOf time.Time, cat []LegalCatalogAmendment) []string {
-	var notes []string
+// legalCatalogueNotes handles the catalogue's "B amends A" for the units
+// no edge of B covers:
+//   - B's date unknown, or B never in force: UNRESOLVED;
+//   - B's text not read (not held in an allowed KB, not parsed, a read
+//     truncated): AMENDED_TEXT_MISSING;
+//   - B's text read, the unit's Điều cited by B beyond its operations:
+//     UNVERIFIED;
+//   - B's text read, the unit never named: unchanged (ORIGINAL_IN_FORCE),
+//     with one informational line for the chunk (infos).
+//
+// notes are the gated notes for the chunk; both are given once.
+func legalCatalogueNotes(c LegalProvisionChunk, runs []*unitRun, live []*LegalAmendEdge, asOf time.Time, cat []LegalCatalogAmendment) (notes, infos []string) {
 	for _, ca := range cat {
 		if ca.EffFrom.Known && ca.EffFrom.At.After(asOf) {
 			continue
@@ -889,6 +932,10 @@ func legalCatalogueNotes(c LegalProvisionChunk, runs []*unitRun, live []*LegalAm
 				mine = append(mine, e)
 			}
 		}
+		opArticles := map[string]bool{}
+		for _, e := range mine {
+			opArticles[e.Provision.Article] = true
+		}
 		var state LegalProvisionState
 		var note string
 		switch {
@@ -896,12 +943,10 @@ func legalCatalogueNotes(c LegalProvisionChunk, runs []*unitRun, live []*LegalAm
 			state, note = LegalStateUnresolved, "danh mục ghi văn bản này bị sửa đổi bởi "+ca.Amender.label()+" nhưng văn bản đó hết hiệu lực trước hoặc ngay khi có hiệu lực"
 		case !ca.EffFrom.Known:
 			state, note = LegalStateUnresolved, "danh mục ghi văn bản này bị sửa đổi bởi "+ca.Amender.label()+", chưa rõ ngày hiệu lực"
-		case len(mine) == 0:
+		case !ca.TextRead:
 			state, note = LegalStateAmendedTextMissing, "văn bản này đã bị sửa đổi bởi "+ca.Amender.label()+" (từ "+ca.EffFrom.text()+") theo danh mục; chưa có lời văn sửa đổi"
-		default:
-			state, note = LegalStateUnverified, "danh mục ghi văn bản này bị sửa đổi bởi "+ca.Amender.label()+" (từ "+ca.EffFrom.text()+"); chưa xác định điều khoản này có bị tác động không"
 		}
-		hit := false
+		hit, info := false, false
 		for _, r := range runs {
 			if strings.TrimSpace(r.orig) == "" {
 				continue
@@ -912,19 +957,30 @@ func legalCatalogueNotes(c LegalProvisionChunk, runs []*unitRun, live []*LegalAm
 					covered = true
 					break
 				}
-				if e.Op == LegalOpBoSung && e.NewLabel != "" && r.u.prov.Article != "" && e.Provision.covers(r.u.prov) {
-					covered = true
-					break
-				}
 			}
-			if !covered {
+			if covered {
+				continue
+			}
+			switch {
+			case state != "":
 				r.raise(state, note)
 				hit = true
+			case r.u.prov.Article != "" && ca.Cited[r.u.prov.Article] && !opArticles[r.u.prov.Article]:
+				reason := ca.Amender.label() + " nhắc tới Điều " + r.u.prov.Article + " của văn bản này ngoài các thao tác đã đọc được; chưa xác minh lời văn hiện hành"
+				r.raise(LegalStateUnverified, reason)
+				if !containsString(notes, reason) {
+					notes = append(notes, reason)
+				}
+			default:
+				info = true
 			}
 		}
 		if hit {
 			notes = append(notes, note)
 		}
+		if info {
+			infos = append(infos, "Văn bản này đã được sửa đổi bởi "+ca.Amender.label()+" (từ "+ca.EffFrom.text()+") ở các điều khoản khác")
+		}
 	}
-	return notes
+	return notes, infos
 }

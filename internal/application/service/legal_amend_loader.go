@@ -32,6 +32,8 @@ import (
 const (
 	// legalAmendCandidates bounds the amending chunks read per call.
 	legalAmendCandidates = 300
+	// legalAmendPhraseCandidates bounds the light phrase-entry read.
+	legalAmendPhraseCandidates = 3000
 	// legalAmendChainDocs bounds the documents amending an amender (C → B).
 	legalAmendChainDocs = 20
 )
@@ -276,10 +278,18 @@ func LoadLegalAmendments(ctx context.Context, db *gorm.DB, scopeKBs, chunkIDs, a
 	// retrieved document, and those naming the article and the document as
 	// the converter writes it ("Nghị định số 68/2026/NĐ-CP"; a law also by
 	// its title)
-	var articles, aKnowledge []string
+	var articles, aKnowledge, aKeys []string
 	var probes []legalAmendProbe
 	for _, d := range docs {
 		aKnowledge = append(aKnowledge, d.knowledge)
+		if k := vietnamese_legal.CatalogNumberKey(d.doc.Number); k != "" {
+			aKeys = append(aKeys, k)
+		}
+		// the number as the converter writes it ("10 /2016/TT-BTNMT" → "10/2016/TT-BTNMT")
+		number := d.doc.Number
+		if n := vietnamese_legal.NormalizeCitationNumber(number); n != "" {
+			number = n
+		}
 		row := l.catalog[d.doc.CatalogID]
 		typ := d.doc.Type
 		if typ == "" && row != nil {
@@ -291,9 +301,9 @@ func LoadLegalAmendments(ctx context.Context, db *gorm.DB, scopeKBs, chunkIDs, a
 		}
 		for a := range d.articles {
 			articles = append(articles, a)
-			if typ != "" && d.doc.Number != "" {
-				probes = append(probes, legalAmendProbe{Article: a, Document: typ + " số " + d.doc.Number},
-					legalAmendProbe{Article: a, Document: typ + " " + d.doc.Number})
+			if typ != "" && number != "" {
+				probes = append(probes, legalAmendProbe{Article: a, Document: typ + " số " + number},
+					legalAmendProbe{Article: a, Document: typ + " " + number})
 			}
 			if base != "" {
 				probes = append(probes, legalAmendProbe{Article: a, TitleBase: base})
@@ -301,14 +311,18 @@ func LoadLegalAmendments(ctx context.Context, db *gorm.DB, scopeKBs, chunkIDs, a
 		}
 	}
 	lap("relations")
-	cands, err := l.amendingChunks(bIDs, articles, probes, aKnowledge)
-	lap("amending")
-	if err != nil {
-		return nil, err
+	// the structure of A (for the target checks) is read meanwhile
+	var byKnowledge map[string]LegalDocStructure
+	sg, _ := errgroup.WithContext(l.ctx)
+	legalGo(sg, func() (err error) {
+		byKnowledge, err = l.structures(aKnowledge)
+		return err
+	})
+	cands, truncated, err := l.amendingChunks(bIDs, articles, probes, aKeys, aKnowledge)
+	if werr := sg.Wait(); err == nil {
+		err = werr
 	}
-
-	// structure of A, for the target checks
-	byKnowledge, err := l.structures(aKnowledge)
+	lap("amending")
 	if err != nil {
 		return nil, err
 	}
@@ -322,7 +336,10 @@ func LoadLegalAmendments(ctx context.Context, db *gorm.DB, scopeKBs, chunkIDs, a
 		targets[key] = d.doc
 	}
 	lap("structure")
-	all, facts := l.edgesFrom(cands, targets, amenders, structures)
+	all, facts, err := l.edgesFrom(cands, targets, amenders, structures)
+	if err != nil {
+		return nil, err
+	}
 	lap("edges")
 	for key, list := range all {
 		load.Edges[key] = list
@@ -344,6 +361,15 @@ func LoadLegalAmendments(ctx context.Context, db *gorm.DB, scopeKBs, chunkIDs, a
 		}
 	}
 
+	// how far each catalogue amender's text was read
+	docArticles := map[string]map[string]bool{}
+	for key, d := range docs {
+		docArticles[key] = d.articles
+	}
+	// read meanwhile with the chain hop (it touches load.Catalogue only)
+	rg, _ := errgroup.WithContext(l.ctx)
+	legalGo(rg, func() error { return l.amenderReads(load, docArticles, truncated) })
+
 	// one hop back: documents amending the amenders (C → B → A)
 	var amenderIDs, origins []string
 	seenB, seenO := map[string]bool{}, map[string]bool{}
@@ -363,11 +389,155 @@ func LoadLegalAmendments(ctx context.Context, db *gorm.DB, scopeKBs, chunkIDs, a
 	}
 	if len(amenderIDs) > 0 {
 		if err := l.chainHop(amenderIDs, origins, load); err != nil {
+			_ = rg.Wait()
 			return nil, err
 		}
 	}
-	lap("chain")
+	if err := rg.Wait(); err != nil {
+		return nil, err
+	}
+	lap("chain+reads")
 	return load, nil
+}
+
+// legalAmendCiteChunks bounds the chunks of the amenders read for their
+// citations of a target's articles.
+const legalAmendCiteChunks = 300
+
+var (
+	// legalCitedArticleRe finds "Điều N" in a line of an amender's text.
+	legalCitedArticleRe = regexp.MustCompile(`(?i)(?:^|[^\p{L}])Điều\s+(\d+[a-zđ]?)(?:[^\p{L}\p{N}]|$)`)
+)
+
+// amenderReads sets, on every catalogue fact of load, whether the
+// amender's text was read whole from a KB the question may read (held
+// there, parsed for operations, no read truncated) and which articles of
+// the target its text cites outside quotes and headings. With the text
+// read, a provision B never names is the original; one whose Điều B cites
+// beyond the operations read stays unverified.
+func (l *legalAmendLoader) amenderReads(load *LegalAmendLoad, docArticles map[string]map[string]bool, truncated bool) error {
+	var bIDs []string
+	seen := map[string]bool{}
+	for _, list := range load.Catalogue {
+		for _, f := range list {
+			if id := f.Amender.CatalogID; id != "" && !seen[id] {
+				seen[id] = true
+				bIDs = append(bIDs, id)
+			}
+		}
+	}
+	if len(bIDs) == 0 {
+		return nil
+	}
+	allowed := make([]string, 0, len(l.allowed)+1)
+	for id := range l.allowed {
+		allowed = append(allowed, id)
+	}
+	allowed = append(allowed, "")
+	ext := legalJSONText(l.db, "k.metadata", "external_id")
+	var held, parsed []string
+	g, _ := errgroup.WithContext(l.ctx)
+	legalGo(g, func() error {
+		if err := l.db.Raw(`SELECT DISTINCT `+ext+` FROM knowledges k WHERE k.deleted_at IS NULL AND `+ext+` IN ? AND k.knowledge_base_id IN ?`,
+			bIDs, allowed).Scan(&held).Error; err != nil {
+			return fmt.Errorf("amenders held: %w", err)
+		}
+		return nil
+	})
+	hasAmends := legalJSONText(l.db, "c.metadata", "legal", "amends") + ` IS NOT NULL`
+	if l.db.Dialector.Name() == "postgres" {
+		hasAmends = `jsonb_exists(c.metadata->'legal', 'amends')`
+	}
+	legalGo(g, func() error {
+		if err := l.db.Raw(`SELECT DISTINCT `+ext+` FROM chunks c JOIN knowledges k ON k.id = c.knowledge_id
+			WHERE c.deleted_at IS NULL AND k.deleted_at IS NULL AND `+ext+` IN ? AND c.knowledge_base_id IN ? AND `+hasAmends,
+			bIDs, allowed).Scan(&parsed).Error; err != nil {
+			return fmt.Errorf("amenders parsed: %w", err)
+		}
+		return nil
+	})
+	// the amenders' chunks naming a target (in the text or the heading)
+	type target struct {
+		key, short string
+	}
+	var targets []target
+	var likes []string
+	var likeArgs []interface{}
+	heading := legalJSONText(l.db, "c.metadata", "legal", "heading_path")
+	for _, c := range load.Chunks {
+		key := legalDocKey(c.Doc)
+		parts := strings.SplitN(vietnamese_legal.NormalizeCitationNumber(c.Doc.Number), "/", 3)
+		if len(parts) < 2 {
+			continue
+		}
+		short := parts[0] + "/" + parts[1]
+		dup := false
+		for _, t := range targets {
+			dup = dup || t.key == key
+		}
+		if dup {
+			continue
+		}
+		targets = append(targets, target{key, short})
+		likes = append(likes, `c.content LIKE ? OR `+heading+` LIKE ?`)
+		pat := "%" + legalLikeEscaper.Replace(short) + "%"
+		likeArgs = append(likeArgs, pat, pat)
+	}
+	var rows []struct {
+		Ext, Content string
+		Heading      string
+	}
+	if len(likes) > 0 {
+		args := append([]interface{}{bIDs, allowed}, likeArgs...)
+		args = append(args, legalAmendCiteChunks)
+		legalGo(g, func() error {
+			if err := l.db.Raw(`SELECT `+ext+` AS ext, c.content, `+heading+` AS heading FROM chunks c JOIN knowledges k ON k.id = c.knowledge_id
+				WHERE c.deleted_at IS NULL AND k.deleted_at IS NULL AND `+ext+` IN ? AND c.knowledge_base_id IN ? AND (`+strings.Join(likes, " OR ")+`)
+				ORDER BY c.id LIMIT ?`, args...).Scan(&rows).Error; err != nil {
+				return fmt.Errorf("amenders' citations: %w", err)
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return err
+	}
+	citeTruncated := len(rows) >= legalAmendCiteChunks
+	cited := map[string]map[string]map[string]bool{} // B → A key → articles
+	for _, r := range rows {
+		for _, t := range targets {
+			if !strings.Contains(r.Content, t.short) && !strings.Contains(r.Heading, t.short) {
+				continue
+			}
+			for _, line := range strings.Split(r.Content, "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, ">") || strings.HasPrefix(line, "#") {
+					continue
+				}
+				for _, m := range legalCitedArticleRe.FindAllStringSubmatch(line, -1) {
+					art := strings.ToLower(m[1])
+					if !docArticles[t.key][art] {
+						continue
+					}
+					if cited[r.Ext] == nil {
+						cited[r.Ext] = map[string]map[string]bool{}
+					}
+					if cited[r.Ext][t.key] == nil {
+						cited[r.Ext][t.key] = map[string]bool{}
+					}
+					cited[r.Ext][t.key][art] = true
+				}
+			}
+		}
+	}
+	for key, list := range load.Catalogue {
+		for i := range list {
+			id := list[i].Amender.CatalogID
+			list[i].TextRead = id != "" && containsString(held, id) && containsString(parsed, id) && !truncated && !citeTruncated
+			list[i].Cited = cited[id][key]
+		}
+	}
+	return nil
 }
 
 // chainHop derives C → A edges for the amenders amenderIDs of A, reading
@@ -390,7 +560,7 @@ func (l *legalAmendLoader) chainHop(amenderIDs, origins []string, load *LegalAme
 	if err := l.loadCatalog(append(cIDs, amenderIDs...), nil); err != nil {
 		return err
 	}
-	cands, err := l.amendingChunks(cIDs, origins, nil, nil)
+	cands, _, err := l.amendingChunks(cIDs, origins, nil, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -400,7 +570,10 @@ func (l *legalAmendLoader) chainHop(amenderIDs, origins []string, load *LegalAme
 			bTargets[id] = l.catalogDoc(row)
 		}
 	}
-	cEdges, _ := l.edgesFrom(cands, bTargets, bAmenders, nil)
+	cEdges, _, err := l.edgesFrom(cands, bTargets, bAmenders, nil)
+	if err != nil {
+		return err
+	}
 	for aKey, list := range load.Edges {
 		for bID, onB := range cEdges {
 			var fromB []LegalAmendEdge
@@ -434,7 +607,13 @@ type legalAmendProbe struct {
 //
 // Entries naming the document in another form ("Luật X số …" for a decree,
 // a typo) are found only through the catalogue relation.
-func (l *legalAmendLoader) amendingChunks(docIDs, articles []string, probes []legalAmendProbe, skip []string) ([]legalAmendRow, error) {
+//   - (Postgres) chunks with a phrase entry for one of articles whose
+//     document cites one of aKeys, however written ("Thông tư số
+//     24/2019/TT-NHNN quy định về …"), read light and filtered here.
+//
+// truncated reports a read that hit its limit (the amenders' changes may
+// not all have been read).
+func (l *legalAmendLoader) amendingChunks(docIDs, articles []string, probes []legalAmendProbe, aKeys, skip []string) (out []legalAmendRow, truncated bool, err error) {
 	scope := `(c.knowledge_base_id IN ? OR ` + legalJSONText(l.db, "c.metadata", "legal", "source") + ` = 'vbpl')`
 	allowed := make([]string, 0, len(l.allowed)+1)
 	for id := range l.allowed {
@@ -464,8 +643,12 @@ func (l *legalAmendLoader) amendingChunks(docIDs, articles []string, probes []le
 			articleArgs = append(articleArgs, string(filter))
 		}
 	}
-	// the two reads run at once
+	// the reads run at once
 	var byDoc, byArticle []legalAmendRow
+	var byPhrase []struct {
+		ID     string
+		Amends []byte
+	}
 	g, _ := errgroup.WithContext(l.ctx)
 	if len(docIDs) > 0 {
 		q := legalAmendIDSelect + ` AND ` + legalJSONText(l.db, "k.metadata", "external_id") + ` IN ? AND ` + scope + notSkip + ` AND ` + hasAmends
@@ -475,7 +658,7 @@ func (l *legalAmendLoader) amendingChunks(docIDs, articles []string, probes []le
 			args = append(args, articleArgs...)
 		}
 		args = append(args, allowed, legalAmendCandidates)
-		g.Go(func() error {
+		legalGo(g, func() error {
 			if err := l.db.Raw(q+order, args...).Scan(&byDoc).Error; err != nil {
 				return fmt.Errorf("amending chunks of amenders: %w", err)
 			}
@@ -501,16 +684,36 @@ func (l *legalAmendLoader) amendingChunks(docIDs, articles []string, probes []le
 			q += ` AND (` + strings.Join(pc, " OR ") + `)`
 		}
 		args = append(args, allowed, legalAmendCandidates)
-		g.Go(func() error {
+		legalGo(g, func() error {
 			if err := l.db.Raw(q+order, args...).Scan(&byArticle).Error; err != nil {
 				return fmt.Errorf("amending chunks by article: %w", err)
 			}
 			return nil
 		})
 	}
-	if err := g.Wait(); err != nil {
-		return nil, err
+	if pg && len(articles) > 0 && len(aKeys) > 0 {
+		var pc []string
+		args := append([]interface{}{allowed}, skipArgs...)
+		for _, a := range articles {
+			filter, _ := json.Marshal([]map[string]interface{}{{"article": a, "phrase": true}})
+			pc = append(pc, `c.metadata->'legal'->'amends' @> ?::jsonb`)
+			args = append(args, string(filter))
+		}
+		q := `SELECT c.id, c.metadata->'legal'->'amends' AS amends FROM chunks c JOIN knowledges k ON k.id = c.knowledge_id
+			WHERE c.deleted_at IS NULL AND k.deleted_at IS NULL AND ` + hasAmends + ` AND ` + scope + notSkip +
+			` AND (` + strings.Join(pc, " OR ") + `)`
+		args = append(args, allowed, legalAmendPhraseCandidates)
+		legalGo(g, func() error {
+			if err := l.db.Raw(q+order, args...).Scan(&byPhrase).Error; err != nil {
+				return fmt.Errorf("amending chunks by phrase: %w", err)
+			}
+			return nil
+		})
 	}
+	if err := g.Wait(); err != nil {
+		return nil, false, err
+	}
+	truncated = len(byDoc) >= legalAmendCandidates
 	seen := map[string]bool{}
 	var ids []string
 	for _, r := range append(byDoc, byArticle...) {
@@ -519,11 +722,28 @@ func (l *legalAmendLoader) amendingChunks(docIDs, articles []string, probes []le
 			ids = append(ids, r.ID)
 		}
 	}
+	// phrase entries naming a target by any wording of its number
+	keys := map[string]bool{}
+	for _, k := range aKeys {
+		keys[k] = true
+	}
+	arts := map[string]bool{}
+	for _, a := range articles {
+		arts[a] = true
+	}
+	for _, r := range byPhrase {
+		if seen[r.ID] {
+			continue
+		}
+		if l.namesPhraseTarget(r.Amends, arts, keys) {
+			seen[r.ID] = true
+			ids = append(ids, r.ID)
+		}
+	}
 	// the rows themselves, read once by id (the filters above read ids only)
-	var out []legalAmendRow
 	if len(ids) > 0 {
 		if err := l.db.Raw(legalAmendSelect+` AND c.id IN ?`, ids).Scan(&out).Error; err != nil {
-			return nil, fmt.Errorf("amending chunks: %w", err)
+			return nil, false, fmt.Errorf("amending chunks: %w", err)
 		}
 	}
 	pos := make(map[string]int, len(ids))
@@ -533,7 +753,41 @@ func (l *legalAmendLoader) amendingChunks(docIDs, articles []string, probes []le
 	sort.SliceStable(out, func(i, j int) bool { return pos[out[i].ID] < pos[out[j].ID] })
 	// the allowed copies first across both reads
 	sort.SliceStable(out, func(i, j int) bool { return l.allowed[out[i].KnowledgeBaseID] && !l.allowed[out[j].KnowledgeBaseID] })
-	return out, nil
+	return out, truncated, nil
+}
+
+// legalGo runs fn in g, turning a panic into the group's error (a panic
+// in a goroutine would bypass the caller's recover).
+func legalGo(g *errgroup.Group, fn func() error) {
+	g.Go(func() (err error) {
+		defer func() {
+			if p := recover(); p != nil {
+				err = fmt.Errorf("panic: %v", p)
+			}
+		}()
+		return fn()
+	})
+}
+
+// namesPhraseTarget reports whether a chunk's amends (JSON) hold a phrase
+// change of one of arts whose document cites one of keys, however the
+// document is written ("Thông tư số 24/2019/TT-NHNN quy định về …").
+func (l *legalAmendLoader) namesPhraseTarget(amends []byte, arts, keys map[string]bool) bool {
+	var entries []vietnamese_legal.AmendRef
+	if json.Unmarshal(amends, &entries) != nil {
+		return false
+	}
+	for _, a := range entries {
+		if !a.Phrase || !arts[strings.ToLower(a.Article)] {
+			continue
+		}
+		for _, c := range l.citations(a.Document) {
+			if keys[c.Key] {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // legalNamedByTitle reports the types texts cite by title alone ("Luật
@@ -650,10 +904,11 @@ func (l *legalAmendLoader) dateOf(t *time.Time) LegalAmendDate {
 // Copies of one amender are one source: the first (allowed) copy wins.
 func (l *legalAmendLoader) edgesFrom(cands []legalAmendRow, targets map[string]LegalAmendDoc,
 	amenders map[string][]string, structures map[string]LegalDocStructure,
-) (map[string][]LegalAmendEdge, map[string][]LegalCatalogAmendment) {
+) (map[string][]LegalAmendEdge, map[string][]LegalCatalogAmendment, error) {
 	out := map[string][]LegalAmendEdge{}
 	facts := map[string][]LegalCatalogAmendment{}
 	seen := map[string]bool{}
+	index := map[string]int{}
 	byNumber := map[string]string{}
 	for key, d := range targets {
 		byNumber[vietnamese_legal.CatalogNumberKey(d.Number)] = key
@@ -713,7 +968,9 @@ func (l *legalAmendLoader) edgesFrom(cands []legalAmendRow, targets map[string]L
 			}
 		}
 	}
-	l.prefetchNames(queries)
+	if err := l.prefetchNames(queries); err != nil {
+		return nil, nil, err
+	}
 	for _, cd := range list {
 		r, legal, km := cd.row, cd.legal, cd.km
 		b := LegalAmendDoc{Number: kmString(km, "doc_number"), Type: kmString(km, "doc_type"),
@@ -768,16 +1025,22 @@ func (l *legalAmendLoader) edgesFrom(cands []legalAmendRow, targets map[string]L
 				e.Tier = LegalTierUnverified
 			}
 			ValidateLegalAmendEdge(&e, structures[tKey])
-			// identity only: two copies of B are one source
+			// identity only: two copies of B are one source; the first
+			// (allowed) copy wins, unless it could not be placed and a copy
+			// as readable could (converter versions differ between copies)
 			k := strings.Join([]string{legalDocKey(b), tKey, string(e.Op), e.Provision.key(), foldSpaces(e.From), foldSpaces(e.To), e.NewLabel}, "|")
-			if seen[k] {
+			if at, dup := index[k]; dup {
+				have := &out[tKey][at]
+				if have.Unresolved != "" && e.Unresolved == "" && (e.TextWithheld == have.TextWithheld || !e.TextWithheld) {
+					*have = e
+				}
 				continue
 			}
-			seen[k] = true
+			index[k] = len(out[tKey])
 			out[tKey] = append(out[tKey], e)
 		}
 	}
-	return out, facts
+	return out, facts, nil
 }
 
 // amendTarget resolves the document an amends entry names to one of the
@@ -1030,21 +1293,21 @@ func (c *legalNameTTLCache) put(key string, m LegalNameMatch) {
 const legalNameLookups = 4
 
 // prefetchNames runs the catalogue name lookups edgesFrom will need, a
-// few at once.
-func (l *legalAmendLoader) prefetchNames(queries map[string]LegalNameQuery) {
+// few at once; a panic in one comes back as the error.
+func (l *legalAmendLoader) prefetchNames(queries map[string]LegalNameQuery) error {
 	if len(queries) == 0 {
-		return
+		return nil
 	}
 	g, _ := errgroup.WithContext(l.ctx)
 	g.SetLimit(legalNameLookups)
 	for _, q := range queries {
 		q := q
-		g.Go(func() error {
+		legalGo(g, func() error {
 			_, _ = l.lookupName(q.Name, q.At, q.AmenderID)
 			return nil
 		})
 	}
-	_ = g.Wait()
+	return g.Wait()
 }
 
 func containsLegalCandidate(m LegalNameMatch, id string) bool {
@@ -1085,20 +1348,11 @@ func (l *legalAmendLoader) parserEdge(r legalAmendRow, legal *vietnamese_legal.L
 			e.Op = LegalOpBaiBoCumTu
 		}
 		e.Tier = LegalTierLegacyParserPhrase
-		// the sentence quoting the words ("cụm từ “X”"), not the first
-		// place the words occur (a heading may name them too)
-		i := strings.Index(r.Content, "“"+a.From+"”")
-		if i < 0 {
-			i = strings.Index(r.Content, `"`+a.From+`"`)
-		}
-		if i >= 0 {
-			start := strings.LastIndexByte(r.Content[:i], '\n') + 1
-			end := strings.IndexByte(r.Content[i:], '\n')
-			if end < 0 {
-				end = len(r.Content)
-			} else {
-				end += i
-			}
+		// the line quoting the words of this very change ("cụm từ “X”
+		// bằng “Y”", "bãi bỏ cụm từ “X”"), not the first place the words
+		// occur (a heading, another change "bổ sung … sau từ “X”"); none
+		// sure: no lead-in, so no verb check
+		if start, end, ok := legalPhraseLeadIn(r.Content, a.From, a.To); ok {
 			e.LeadInText = strings.TrimSpace(r.Content[start:end])
 			e.LeadIn = &LegalRuneSpan{utf8.RuneCountInString(r.Content[:start]), utf8.RuneCountInString(r.Content[:end])}
 			e.Origin = origin(start)
@@ -1128,6 +1382,38 @@ func (l *legalAmendLoader) parserEdge(r legalAmendRow, legal *vietnamese_legal.L
 		}
 	}
 	return e
+}
+
+// legalPhraseLeadIn finds the line of content that writes the phrase
+// change from → to: it quotes from and, after it, to (a replacement) or
+// says "bãi bỏ" (a removal).
+func legalPhraseLeadIn(content, from, to string) (start, end int, ok bool) {
+	for _, q := range [][2]string{{"“", "”"}, {`"`, `"`}} {
+		quotedFrom := q[0] + from + q[1]
+		for off := 0; ; {
+			i := strings.Index(content[off:], quotedFrom)
+			if i < 0 {
+				break
+			}
+			i += off
+			off = i + len(quotedFrom)
+			start = strings.LastIndexByte(content[:i], '\n') + 1
+			end = strings.IndexByte(content[i:], '\n')
+			if end < 0 {
+				end = len(content)
+			} else {
+				end += i
+			}
+			rest := content[off:end]
+			if to != "" && strings.Contains(rest, q[0]+to+q[1]) {
+				return start, end, true
+			}
+			if to == "" && strings.Contains(strings.ToLower(content[start:end]), "bãi bỏ") {
+				return start, end, true
+			}
+		}
+	}
+	return 0, 0, false
 }
 
 // leadInAdds reports a lead-in that only adds ("Bổ sung khoản 15 …").

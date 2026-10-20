@@ -101,12 +101,21 @@ func TestValidateLegalAmendEdge(t *testing.T) {
 			"Các quy định tại khoản 1 Điều 5 của Thông tư liên tịch số 27/2013/TTLT-BTC-BKHĐT không áp dụng đối với dự án ODA."), "", ""},
 		{"verb mismatch", base(LegalOpBaiBo, LegalProvisionRef{Article: "5", Khoan: "1"}, "Sửa đổi khoản 1 Điều 5 như sau:"), "", "động từ"},
 		{"phrase verb ok", base(LegalOpThayCumTu, LegalProvisionRef{Article: "5"}, "1. Sửa đổi cụm từ “500 triệu đồng” thành “01 tỷ đồng” tại Điều 5"), "", ""},
-		{"target missing", base(LegalOpThayCumTu, LegalProvisionRef{Article: "5", Khoan: "7"}, ""), "", "không thấy khoản 7 Điều 5"},
+		{"target missing", base(LegalOpBaiBo, LegalProvisionRef{Article: "5", Khoan: "7"}, ""), "", "không thấy khoản 7 Điều 5"},
+		{"phrase target missing from the metadata: left to the words check", base(LegalOpThayCumTu, LegalProvisionRef{Article: "5", Khoan: "7"}, ""), "", ""},
 		{"bo_sung label already there", LegalAmendEdge{Op: LegalOpBoSung, Provision: LegalProvisionRef{Article: "5", Khoan: "2"}, NewLabel: "a", QuoteText: "a) x"}, "", "đã có trong văn bản"},
 		{"bo_sung new label ok", LegalAmendEdge{Op: LegalOpBoSung, Provision: LegalProvisionRef{Article: "5", Khoan: "2"}, NewLabel: "b", QuoteText: "b) x", LeadInText: "Bổ sung điểm b vào khoản 2 Điều 5"}, "", ""},
 		{"quote label mismatch", LegalAmendEdge{Op: LegalOpSuaDoi, Provision: LegalProvisionRef{Article: "5", Khoan: "2"}, QuoteText: "3. Khác"}, "", "không khớp khoản 2 Điều 5"},
 		{"quote without label", LegalAmendEdge{Op: LegalOpSuaDoi, Provision: LegalProvisionRef{Article: "5", Khoan: "2"}, QuoteText: "Nội dung"}, "", "không mở đầu bằng nhãn"},
 		{"Điều quote", LegalAmendEdge{Op: LegalOpSuaDoi, Provision: LegalProvisionRef{Article: "5"}, QuoteText: "Điều 5. Hồ sơ"}, "", ""},
+		{"rank: a Thông tư cannot amend a Nghị định", LegalAmendEdge{Op: LegalOpSuaDoi, Amender: LegalAmendDoc{Type: "Thông tư"}, Target: LegalAmendDoc{Type: "Nghị định"},
+			Provision: LegalProvisionRef{Article: "5", Khoan: "2"}, QuoteText: "2. x"}, "không thể sửa đổi Nghị định", ""},
+		{"rank: a Nghị định cannot amend a Luật", LegalAmendEdge{Op: LegalOpThayCumTu, Amender: LegalAmendDoc{Type: "Nghị định"}, Target: LegalAmendDoc{Type: "Luật"},
+			Provision: LegalProvisionRef{Article: "5"}}, "không thể sửa đổi Luật", ""},
+		{"rank: a Luật may amend a Nghị định", LegalAmendEdge{Op: LegalOpThayCumTu, Amender: LegalAmendDoc{Type: "Luật"}, Target: LegalAmendDoc{Type: "Nghị định"},
+			Provision: LegalProvisionRef{Article: "5"}}, "", ""},
+		{"rank: Nghị quyết not ranked", LegalAmendEdge{Op: LegalOpThayCumTu, Amender: LegalAmendDoc{Type: "Nghị quyết"}, Target: LegalAmendDoc{Type: "Luật"},
+			Provision: LegalProvisionRef{Article: "5"}}, "", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -399,4 +408,88 @@ func TestParserEdgePhraseLeadIn(t *testing.T) {
 	ValidateLegalAmendEdge(&e, nil)
 	require.Empty(t, e.Unresolved)
 	require.Equal(t, LegalTierLegacyParserPhrase, e.Tier)
+}
+
+// Review 2, S1: a phrase entry naming the target in any wording is read.
+func TestNamesPhraseTarget(t *testing.T) {
+	l := &legalAmendLoader{cites: map[string][]vietnamese_legal.Citation{}}
+	keys := map[string]bool{
+		vietnamese_legal.CatalogNumberKey("24/2019/TT-NHNN"):   true,
+		vietnamese_legal.CatalogNumberKey("10 /2016/TT-BTNMT"): true,
+		vietnamese_legal.CatalogNumberKey("34/2024/QH15"):      true,
+	}
+	arts := map[string]bool{"3": true}
+	entry := func(doc string, phrase bool, article string) []byte {
+		b, _ := json.Marshal([]vietnamese_legal.AmendRef{{Document: doc, Article: article, Phrase: phrase, From: "a", To: "b"}})
+		return b
+	}
+	require.True(t, l.namesPhraseTarget(entry("Thông tư số 24/2019/TT-NHNN quy định về hoạt động ngoại hối", true, "3"), arts, keys))
+	require.True(t, l.namesPhraseTarget(entry("Thông tư số 10/2016/TT-BTNMT", true, "3"), arts, keys), "A's number had a stray space")
+	require.True(t, l.namesPhraseTarget(entry("Luật Tổ chức Tòa án nhân dân số 34/2024/QH15", true, "3"), arts, keys))
+	require.False(t, l.namesPhraseTarget(entry("Thông tư số 24/2019/TT-NHNN", true, "4"), arts, keys), "another article")
+	require.False(t, l.namesPhraseTarget(entry("Thông tư số 24/2019/TT-NHNN", false, "3"), arts, keys), "phrase entries only")
+	require.False(t, l.namesPhraseTarget(entry("Thông tư số 25/2019/TT-NHNN", true, "3"), arts, keys))
+}
+
+// Review 2, catalogue design: B held in an allowed KB and read whole is
+// TextRead, with the articles of A its text cites; a withheld B is not.
+func TestLoadLegalAmendmentsAmenderReads(t *testing.T) {
+	db := legalAmendTestDB(t)
+	load, err := LoadLegalAmendments(context.Background(), db, []string{"kb-pub"}, []string{"a3", "a8"}, []string{"kb-pub"}, time.UTC)
+	require.NoError(t, err)
+	by := map[string]LegalCatalogAmendment{}
+	for _, f := range load.Catalogue["nd68"] {
+		by[f.Amender.CatalogID] = f
+	}
+	require.True(t, by["nd141"].TextRead)
+	require.Equal(t, map[string]bool{"3": true, "8": true}, by["nd141"].Cited)
+	require.False(t, by["nd200"].TextRead, "NĐ 200 is held only in a tenant KB")
+}
+
+// Review 2, B4: a pending change from a withheld copy names no new words.
+func TestLegalPendingWithheldNote(t *testing.T) {
+	db := legalAmendTestDB(t)
+	require.NoError(t, db.Exec(`UPDATE chunks SET knowledge_base_id='kb-ten' WHERE id='b1'`).Error)
+	require.NoError(t, db.Exec(`UPDATE knowledges SET knowledge_base_id='kb-ten' WHERE id='k141'`).Error)
+	now := time.Date(2025, 12, 1, 9, 0, 0, 0, time.UTC)
+	w, err := LegalCurrentWordingResolved(context.Background(), db, []string{"kb-pub"}, []string{"a3", "a8"}, now)
+	require.NoError(t, err)
+	require.Contains(t, w["a3"], "[Sắp có hiệu lực: cụm từ “500 triệu đồng” được sửa đổi tại Điều 3 theo Nghị định 141/2026/NĐ-CP, từ 01/01/2026]")
+	require.NotContains(t, w["a3"], "01 tỷ")
+	for id, text := range w {
+		require.NotContains(t, text, "“01 tỷ đồng”", id)
+		require.NotContains(t, text, "5. Sử dụng hóa đơn điện tử\n\na) Hộ kinh doanh", "B's quoted text "+id)
+	}
+}
+
+// Review 2 reach: the lead-in of "bưu điện" → "dịch vụ bưu chính" is the
+// sentence making that change, not an earlier one quoting “bưu điện”.
+func TestLegalPhraseLeadIn(t *testing.T) {
+	content := "a) Bổ sung cụm từ “hoặc qua cổng dịch vụ công trực tuyến” sau từ “bưu điện” tại điểm b khoản 1 Điều 10;\n\n" +
+		"b) Thay thế cụm từ “bưu điện” bằng cụm từ “dịch vụ bưu chính” tại khoản 1 Điều 25;\n\nc) Bãi bỏ cụm từ “hoặc đấu thầu” tại Điều 7."
+	s, e, ok := legalPhraseLeadIn(content, "bưu điện", "dịch vụ bưu chính")
+	require.True(t, ok)
+	require.True(t, strings.HasPrefix(content[s:e], "b) Thay thế cụm từ"))
+	s, e, ok = legalPhraseLeadIn(content, "hoặc đấu thầu", "")
+	require.True(t, ok)
+	require.True(t, strings.HasPrefix(content[s:e], "c) Bãi bỏ"))
+	_, _, ok = legalPhraseLeadIn(content, "bưu điện", "bưu chính công ích")
+	require.False(t, ok, "no line makes that change: no lead-in, no verb check")
+}
+
+// Review 2 reach: two copies of B parsed by different converter versions;
+// the copy naming the target wins over one that could not be placed.
+func TestLoadLegalAmendmentsPlacedCopyWins(t *testing.T) {
+	db := legalAmendTestDB(t)
+	meta, _ := json.Marshal(map[string]string{"doc_number": "141/2026/NĐ-CP", "external_id": "nd141", "doc_type": "Nghị định"})
+	require.NoError(t, db.Create(&types.Knowledge{ID: "k0141", KnowledgeBaseID: "kb-pub", Title: "141 (bản cũ)", ParseStatus: types.ParseStatusCompleted, Metadata: meta}).Error)
+	legal := vietnamese_legal.LegalMetadata{Source: "vbpl", ArticleNos: []string{"1"}, SourceDocID: "nd141",
+		Amends: []vietnamese_legal.AmendRef{{Article: "3", Phrase: true, From: "500 triệu đồng", To: "01 tỷ đồng"}}}
+	cm, _ := json.Marshal(types.DocumentChunkMetadata{Legal: &legal})
+	require.NoError(t, db.Create(&types.Chunk{ID: "b0", KnowledgeID: "k0141", KnowledgeBaseID: "kb-pub", ChunkIndex: 1,
+		ChunkType: types.ChunkTypeText, IsEnabled: true, Content: "1. Sửa đổi cụm từ “500 triệu đồng” thành “01 tỷ đồng” tại Điều 3.", Metadata: cm}).Error)
+	out, err := LegalCurrentWordingResolved(context.Background(), db, []string{"kb-pub"}, []string{"a3"}, time.Date(2026, 10, 20, 9, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	require.Contains(t, out["a3"], "trên 01 tỷ đồng [thay cho “500 triệu đồng”")
+	require.NotContains(t, out["a3"], "thao tác không ghi văn bản bị sửa đổi")
 }

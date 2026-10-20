@@ -141,11 +141,17 @@ func ValidateLegalAmendEdge(e *LegalAmendEdge, structure LegalDocStructure) {
 		fail("câu dẫn nói về phạm vi của chính văn bản sửa đổi (“… này không áp dụng”), không phải thao tác lên văn bản này", true)
 		return
 	}
+	if legalRankInverted(e.Amender.Type, e.Target.Type) {
+		fail(e.Amender.Type+" không thể sửa đổi "+e.Target.Type+" (văn bản có hiệu lực pháp lý thấp hơn): đích có thể bị đọc nhầm", true)
+		return
+	}
 	if ok, known := legalLeadInAllows(e.LeadInText, e.Op); known && !ok {
 		fail("động từ của câu dẫn không khớp thao tác "+string(e.Op), false)
 	}
 	p := e.Provision
-	if structure != nil && p.Article != "" && len(structure) > 0 {
+	// a phrase change is checked against the words themselves (resolver);
+	// chunk metadata may miss a khoản the text has
+	if structure != nil && p.Article != "" && len(structure) > 0 && !e.phrase() {
 		if e.Op == LegalOpBoSung && e.NewLabel != "" {
 			added := legalAddedProvision(p, e.NewLabel)
 			switch {
@@ -170,6 +176,29 @@ func ValidateLegalAmendEdge(e *LegalAmendEdge, structure LegalDocStructure) {
 			fail("lời văn trích mở đầu bằng “"+got+"”, không khớp "+want.String(), false)
 		}
 	}
+}
+
+// legalTypeRank orders document types by legal force (smaller = higher);
+// only the clear tiers: Nghị quyết (Quốc hội, Chính phủ or HĐND) and
+// types not listed are not ranked.
+var legalTypeRank = map[string]int{
+	"hiến pháp":          0,
+	"luật":               1,
+	"bộ luật":            1,
+	"pháp lệnh":          2,
+	"nghị định":          3,
+	"quyết định":         4,
+	"thông tư":           4,
+	"thông tư liên tịch": 4,
+}
+
+// legalRankInverted reports an amender of lower force than its target
+// ("Thông tư" amending a "Nghị định", "Nghị định" a "Luật"): such an
+// operation cannot exist, the parser read the target wrong.
+func legalRankInverted(amenderType, targetType string) bool {
+	b, okB := legalTypeRank[strings.ToLower(strings.TrimSpace(amenderType))]
+	a, okA := legalTypeRank[strings.ToLower(strings.TrimSpace(targetType))]
+	return okA && okB && b > a
 }
 
 // legalAddedProvision is the provision a bo_sung of label under p creates.

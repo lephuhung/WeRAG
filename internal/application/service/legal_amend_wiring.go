@@ -162,7 +162,14 @@ func LegalCurrentWordingResolved(ctx context.Context, db *gorm.DB, kbIDs, chunkI
 			key := legalDocKey(c.Doc) + "|" + strings.Join(r.Notes, "|")
 			if !noted[key] {
 				noted[key] = true
-				text = r.ModelContent
+				text += legalNotesBlock(r.Notes)
+			}
+		}
+		if len(r.Info) > 0 {
+			key := legalDocKey(c.Doc) + "|info|" + strings.Join(r.Info, "|")
+			if !noted[key] {
+				noted[key] = true
+				text += legalInfoBlock(r.Info)
 			}
 		}
 		if text != c.Content {
