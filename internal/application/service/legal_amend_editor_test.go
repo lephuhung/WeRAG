@@ -147,6 +147,26 @@ func TestLegalEditorEdges(t *testing.T) {
 	require.Contains(t, strings.Join(d2b.Reasons, "|"), "Nội dung văn bản sửa đổi: “5. Các trường hợp khác")
 	require.Contains(t, d2b.Text, "b) giấy phép.", "the stored text stays")
 
+	// a chunk holding another provision under the tagged number (vbpl ids
+	// differ: a Quy chế's khoản 5 Điều 8): the agreed edge is tier 2 there,
+	// an editor-only edge does not apply
+	other := load.Chunks[1]
+	require.Equal(t, "a8", other.ID)
+	other.Legal = &vietnamese_legal.LegalMetadata{}
+	*other.Legal = *load.Chunks[1].Legal
+	other.Legal.ProvisionIDs = map[string]string{"khoan:5": "another-id", "khoan:2/diem:b": "another-b"}
+	r := ResolveLegalProvisions(other, append([]LegalAmendEdge(nil), load.Edges["nd68"]...), amendAt("2026-10-20"), LegalResolveOptions{AllowedKBs: map[string]bool{"kb-pub": true}})
+	ok5 := unitByProv(t, r, LegalProvisionRef{Article: "8", Khoan: "5"})
+	require.Equal(t, LegalStateUnverified, ok5.State, "the parser edge alone: tier 2")
+	require.Equal(t, LegalStateOriginalInForce, unitByProv(t, r, LegalProvisionRef{Article: "8", Khoan: "2", Diem: "b"}).State)
+	require.Equal(t, LegalTierVerified, editorEdgeOf(t, load, LegalOpSuaDoi, LegalProvisionRef{Article: "8", Khoan: "5"}, "nd141").Tier, "the load is not changed")
+	same := other
+	same.Legal = &vietnamese_legal.LegalMetadata{}
+	*same.Legal = *other.Legal
+	same.Legal.ProvisionIDs = map[string]string{"khoan:5": "p68-dieu:8/khoan:5-p141-2"}
+	r = ResolveLegalProvisions(same, append([]LegalAmendEdge(nil), load.Edges["nd68"]...), amendAt("2026-10-20"), LegalResolveOptions{AllowedKBs: map[string]bool{"kb-pub": true}})
+	require.Equal(t, LegalStateCurrentVerified, unitByProv(t, r, LegalProvisionRef{Article: "8", Khoan: "5"}).State, "the tagged provision itself")
+
 	// B outside the KBs the question may read: its words never reach the model
 	require.NoError(t, db.Exec(`UPDATE chunks SET knowledge_base_id = 'kb-ten' WHERE id = 'b150'`).Error)
 	held, err := LoadLegalAmendmentsWith(ctx, db, []string{"kb-pub"}, []string{"a3"}, []string{"kb-pub"}, time.UTC, on)
@@ -293,4 +313,65 @@ func TestLegalPathRef(t *testing.T) {
 		_, ok := legalPathRef(bad)
 		require.False(t, ok, bad)
 	}
+}
+
+// The editors tag the Điều whose khoản B rewrites: a "new" label A already
+// has is a rewrite of it.
+func TestLegalEditorEdgeExistingLabelIsRewrite(t *testing.T) {
+	eff, _ := time.Parse("2006-01-02", "2024-01-01")
+	l := &legalAmendLoader{loc: time.UTC, catalog: map[string]*legalCatalogRow{
+		"b": {ID: "b", DocumentNumber: "2/2024/NĐ-CP", DocType: "Nghị định", EffectiveOn: &eff}}}
+	structure := legalStructureFrom([]*vietnamese_legal.LegalMetadata{
+		{ArticleNos: []string{"8"}, KhoanNos: []string{"1", "2"}, SubdivisionRefs: []string{"khoan:1", "khoan:2"}}})
+	src := legalEditorSource{chunkID: "cb", kbID: "kb", text: "6. Sửa đổi khoản 2 Điều 8 như sau:\n\n> “2. Hồ sơ mới.”."}
+	lk := types.LegalProvisionLink{TargetDocID: "a", TargetProvisionID: "p-a8", TargetPath: "dieu:8", RelationCode: 13, SourceDocID: "b", SourceProvisionID: "p-b6", SourcePath: "dieu:1/khoan:6"}
+	target := legalEditorTarget{doc: LegalAmendDoc{CatalogID: "a"}, structure: structure}
+	e := l.editorEdge(lk, LegalProvisionRef{Article: "8"}, target, src)
+	require.Equal(t, LegalOpSuaDoi, e.Op)
+	require.Equal(t, LegalProvisionRef{Article: "8", Khoan: "2"}, e.Provision)
+	require.Equal(t, "2. Hồ sơ mới.", e.QuoteText)
+	require.Empty(t, e.Unresolved)
+	// a label A lacks stays an addition
+	src.text = "6. Bổ sung khoản 3 vào Điều 8 như sau:\n\n> “3. Khoản mới.”."
+	e = l.editorEdge(lk, LegalProvisionRef{Article: "8"}, target, src)
+	require.Equal(t, LegalOpBoSung, e.Op)
+	require.Equal(t, "3", e.NewLabel)
+	require.Equal(t, LegalProvisionRef{Article: "8"}, e.Provision)
+	// B not readable: withheld, no words
+	e = l.editorEdge(lk, LegalProvisionRef{Article: "8", Khoan: "1"}, target, legalEditorSource{})
+	require.True(t, e.TextWithheld)
+	require.Empty(t, e.QuoteText)
+	// B not in the catalogue: unresolved
+	lk.SourceDocID = "nowhere"
+	e = l.editorEdge(lk, LegalProvisionRef{Article: "8", Khoan: "1"}, target, src)
+	require.Contains(t, e.Unresolved, "không xác định được văn bản sửa đổi")
+}
+
+// The editors' tags are not complete: B citing the Điều beyond them keeps
+// the other provisions UNVERIFIED, and an editor addition covers none.
+func TestLegalEditorEdgesKeepCatalogueCaution(t *testing.T) {
+	c := LegalProvisionChunk{ID: "a", Content: "#### Điều 4. Thuế\n\n1. Mức thuế 5%.\n\n2. Mức thuế 10%.\n\n3. Mức thuế 15%.",
+		Legal: &vietnamese_legal.LegalMetadata{ArticleNos: []string{"4"}}, Doc: LegalAmendDoc{CatalogID: "a", Number: "1/2020/NĐ-CP"}}
+	b := LegalAmendDoc{CatalogID: "b", Number: "2/2024/NĐ-CP", Type: "Nghị định", KnowledgeBaseID: "kb"}
+	cat := []LegalCatalogAmendment{{Amender: b, EffFrom: amendDay("2024-01-01"), TextRead: true, Cited: map[string]bool{"4": true}}}
+	edges := []LegalAmendEdge{
+		{Op: LegalOpSuaDoi, Amender: b, Target: c.Doc, Provision: LegalProvisionRef{Article: "4", Khoan: "2"}, QuoteText: "2. Mức thuế 12%.",
+			Sources: []string{LegalAmendSourceEditor}, Tier: LegalTierUnverified, EffFrom: amendDay("2024-01-01")},
+		{Op: LegalOpBoSung, Amender: b, Target: c.Doc, Provision: LegalProvisionRef{Article: "4"}, NewLabel: "4", QuoteText: "4. Mức mới.",
+			Sources: []string{LegalAmendSourceEditor}, Tier: LegalTierUnverified, EffFrom: amendDay("2024-01-01")},
+	}
+	res := ResolveLegalProvisions(c, edges, amendAt("2026-10-20"), LegalResolveOptions{Catalogue: cat})
+	for _, k := range []string{"1", "3"} {
+		u := unitByProv(t, res, LegalProvisionRef{Article: "4", Khoan: k})
+		require.Equal(t, LegalStateUnverified, u.State, k)
+		require.Contains(t, strings.Join(u.Reasons, "|"), "nhắc tới Điều 4")
+	}
+	k2 := unitByProv(t, res, LegalProvisionRef{Article: "4", Khoan: "2"})
+	require.Contains(t, strings.Join(k2.Reasons, "|"), "Lời văn mới theo nguồn này: “2. Mức thuế 12%.”")
+	// the same edges from the parser: its operations were read, the rest is original
+	for i := range edges {
+		edges[i].Sources = []string{LegalAmendSourceParser}
+	}
+	res = ResolveLegalProvisions(c, edges, amendAt("2026-10-20"), LegalResolveOptions{Catalogue: cat})
+	require.Equal(t, LegalStateOriginalInForce, unitByProv(t, res, LegalProvisionRef{Article: "4", Khoan: "1"}).State)
 }

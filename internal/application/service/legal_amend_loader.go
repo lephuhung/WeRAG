@@ -422,7 +422,7 @@ func LoadLegalAmendmentsWith(ctx context.Context, db *gorm.DB, scopeKBs, chunkID
 	if opt.EditorSource {
 		targets := make(map[string]legalEditorTarget, len(docs))
 		for key, d := range docs {
-			targets[key] = legalEditorTarget{doc: d.doc, articles: d.articles}
+			targets[key] = legalEditorTarget{doc: d.doc, articles: d.articles, structure: structures[key]}
 		}
 		st, err := l.editorEdges(load, targets, opt)
 		if err != nil {

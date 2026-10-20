@@ -226,6 +226,40 @@ type LegalAmendEdge struct {
 	// applied); EditorProvisionID is that provision's vbpl id.
 	SourceText        string
 	EditorProvisionID string
+	// EditorTargetID is the vbpl id of A's provision the editors tagged,
+	// EditorTargetKey its chunk key ("dieu", "khoan:2", "khoan:2/diem:a"):
+	// a chunk of A holding another provision under that key (a Quy chế's
+	// "Điều 4" next to the decree's own) is not the tagged one, so the
+	// editor edge does not apply there and an agreed parser edge keeps
+	// preEditorTier.
+	EditorTargetID, EditorTargetKey string
+	preEditorTier                   LegalAmendTier
+}
+
+// legalChunkKey is the provision_ids key of p within its Điều.
+func legalChunkKey(p LegalProvisionRef) string {
+	switch {
+	case p.Diem != "" && p.Khoan != "":
+		return "khoan:" + p.Khoan + "/diem:" + p.Diem
+	case p.Khoan != "":
+		return "khoan:" + p.Khoan
+	case p.Diem != "":
+		return "" // an điểm right under its Điều has no key
+	}
+	return "dieu"
+}
+
+// editorHolds reports whether chunk c may hold the provision the editors
+// tagged: true unless c records another provision id under its key.
+func (e *LegalAmendEdge) editorHolds(c LegalProvisionChunk) bool {
+	if e.EditorTargetID == "" || e.EditorTargetKey == "" || c.Legal == nil {
+		return true
+	}
+	if len(c.Legal.ArticleNos) != 1 || !strings.EqualFold(c.Legal.ArticleNos[0], e.Provision.Article) {
+		return true
+	}
+	have, ok := c.Legal.ProvisionIDs[e.EditorTargetKey]
+	return !ok || have == e.EditorTargetID
 }
 
 // informational reports an operation that changes no text (giải thích,

@@ -307,6 +307,14 @@ func (h *legalHistory) resolvedLines(c legalHistoryChunk, pc LegalProvisionChunk
 		if e.Rejected != "" || (e.Target.CatalogID != "" && pc.Doc.CatalogID != "" && e.Target.CatalogID != pc.Doc.CatalogID) {
 			continue
 		}
+		if !e.editorHolds(pc) {
+			if e.preEditorTier == "" {
+				continue // an editor edge on another provision of the same number
+			}
+			own := *e // the load is shared: downgrade a copy
+			own.Tier = e.preEditorTier
+			e = &own
+		}
 		prov := e.Provision
 		if e.Op == LegalOpBoSung && e.NewLabel != "" {
 			prov = legalAddedProvision(e.Provision, e.NewLabel)

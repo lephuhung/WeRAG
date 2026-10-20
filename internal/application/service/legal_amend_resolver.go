@@ -257,6 +257,13 @@ func ResolveLegalProvisions(c LegalProvisionChunk, edges []LegalAmendEdge, asOf 
 		if e.Target.CatalogID != "" && c.Doc.CatalogID != "" && e.Target.CatalogID != c.Doc.CatalogID {
 			continue
 		}
+		if !e.editorHolds(c) {
+			// another provision of A under the same number (vbpl ids differ)
+			if e.preEditorTier == "" {
+				continue // an editor-only edge: not this chunk's provision
+			}
+			e.Tier = e.preEditorTier // agreed elsewhere, not here
+		}
 		if opt.AllowedKBs != nil && e.carriesText() && !opt.AllowedKBs[e.Amender.KnowledgeBaseID] {
 			e.TextWithheld = true
 		}
@@ -969,6 +976,11 @@ func legalCatalogueNotes(c LegalProvisionChunk, runs []*unitRun, live []*LegalAm
 		}
 		opArticles := map[string]bool{}
 		for _, e := range mine {
+			if !containsString(e.Sources, LegalAmendSourceParser) && containsString(e.Sources, LegalAmendSourceEditor) {
+				// the editors' tags are not complete: B's text citing other
+				// provisions of the Điều still leaves them unverified
+				continue
+			}
 			opArticles[e.Provision.Article] = true
 		}
 		var state LegalProvisionState
@@ -988,6 +1000,9 @@ func legalCatalogueNotes(c LegalProvisionChunk, runs []*unitRun, live []*LegalAm
 			}
 			covered := false
 			for _, e := range mine {
+				if e.Op == LegalOpBoSung && e.NewLabel != "" && !containsString(e.Sources, LegalAmendSourceParser) {
+					continue // an editor addition acts on no existing unit
+				}
 				if (r.u.prov.Article != "" || e.Provision.Article == "") && e.Provision.covers(r.u.prov) {
 					covered = true
 					break

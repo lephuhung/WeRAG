@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"gorm.io/gorm"
@@ -92,6 +93,8 @@ func readLegalEditorLinks(ctx context.Context, db *gorm.DB, aIDs []string) ([]ty
 type legalEditorTarget struct {
 	doc      LegalAmendDoc
 	articles map[string]bool
+	// structure is A's provisions as its chunks record them (nil: unknown)
+	structure LegalDocStructure
 }
 
 // legalPathRef reads "dieu:5/khoan:2/diem:a"; ok is false for an empty
@@ -190,6 +193,9 @@ type LegalEditorMergeStats struct {
 // it promotes the parser edges they agree with and adds the rest.
 func (l *legalAmendLoader) editorEdges(load *LegalAmendLoad, targets map[string]legalEditorTarget, opt LegalAmendLoadOptions) (LegalEditorMergeStats, error) {
 	var st LegalEditorMergeStats
+	if load.Took == nil {
+		load.Took = map[string]time.Duration{}
+	}
 	byID := map[string]string{} // A catalogue id → doc key
 	var aIDs []string
 	for key, t := range targets {
@@ -205,7 +211,9 @@ func (l *legalAmendLoader) editorEdges(load *LegalAmendLoad, targets map[string]
 	if read == nil {
 		read = readLegalEditorLinks
 	}
+	t0 := time.Now()
 	links, err := read(l.ctx, l.db, aIDs)
+	load.Took["editor_links"] += time.Since(t0)
 	if err != nil {
 		return st, fmt.Errorf("editor links: %w", err)
 	}
@@ -255,8 +263,9 @@ func (l *legalAmendLoader) editorEdges(load *LegalAmendLoad, targets map[string]
 				if !containsString(e.Sources, LegalAmendSourceEditor) {
 					e.Sources = append(e.Sources, LegalAmendSourceEditor)
 				}
-				if e.Unresolved == "" && e.Rejected == "" {
-					e.Tier = LegalTierVerified
+				if e.Unresolved == "" && e.Rejected == "" && e.Tier != LegalTierVerified {
+					e.preEditorTier, e.Tier = e.Tier, LegalTierVerified
+					e.EditorTargetID, e.EditorTargetKey = p.link.TargetProvisionID, legalChunkKey(p.at)
 				}
 				agreed = true
 				continue
@@ -287,13 +296,17 @@ func (l *legalAmendLoader) editorEdges(load *LegalAmendLoad, targets map[string]
 	for _, p := range alone {
 		srcIDs = append(srcIDs, p.link.SourceProvisionID)
 	}
+	t0 = time.Now()
 	texts, err := l.editorSourceTexts(bIDs, srcIDs)
+	load.Took["editor_texts"] += time.Since(t0)
 	if err != nil {
 		return st, err
 	}
+	t0 = time.Now()
+	defer func() { load.Took["editor_build"] += time.Since(t0) }()
 	seen := map[string]int{}
 	for _, p := range alone {
-		e := l.editorEdge(p.link, p.at, targets[p.key].doc, texts[p.link.SourceDocID+"|"+p.link.SourceProvisionID])
+		e := l.editorEdge(p.link, p.at, targets[p.key], texts[p.link.SourceDocID+"|"+p.link.SourceProvisionID])
 		if e.QuoteText != "" || e.From != "" || e.SourceText != "" {
 			st.WithText++
 		}
@@ -346,9 +359,19 @@ func (l *legalAmendLoader) editorSourceTexts(bIDs, srcIDs []string) (map[string]
 	if l.db.Dialector.Name() != "postgres" {
 		has = `EXISTS (SELECT 1 FROM json_each(json_extract(CAST(c.metadata AS TEXT), '$.legal.provision_ids')) p WHERE p.value IN ?)`
 	}
+	// B's knowledges first (index on KB + external id), then their chunks
+	// (index on knowledge): one join lets the planner scan chunks
+	var kids []string
+	if err := l.db.Raw(`SELECT k.id FROM knowledges k WHERE k.deleted_at IS NULL AND `+ext+` IN ? AND k.knowledge_base_id IN ?`,
+		bIDs, allowed).Scan(&kids).Error; err != nil {
+		return nil, fmt.Errorf("editor source documents: %w", err)
+	}
+	if len(kids) == 0 {
+		return out, nil
+	}
 	var rows []legalAmendRow
-	if err := l.db.Raw(legalAmendSelect+` AND `+ext+` IN ? AND c.knowledge_base_id IN ? AND `+has+` ORDER BY c.id LIMIT ?`,
-		bIDs, allowed, srcIDs, legalEditorChunksMax).Scan(&rows).Error; err != nil {
+	if err := l.db.Raw(legalAmendSelect+` AND c.knowledge_id IN ? AND c.knowledge_base_id IN ? AND `+has+` ORDER BY c.id LIMIT ?`,
+		kids, allowed, srcIDs, legalEditorChunksMax).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("editor source texts: %w", err)
 	}
 	want := map[string]bool{}
@@ -420,10 +443,11 @@ func legalProvisionSpan(content string, legal *vietnamese_legal.LegalMetadata, k
 }
 
 // editorEdge builds the edge of one editor link alone.
-func (l *legalAmendLoader) editorEdge(lk types.LegalProvisionLink, at LegalProvisionRef, target LegalAmendDoc, src legalEditorSource) LegalAmendEdge {
+func (l *legalAmendLoader) editorEdge(lk types.LegalProvisionLink, at LegalProvisionRef, t legalEditorTarget, src legalEditorSource) LegalAmendEdge {
 	op, _ := legalEditorOp(lk.RelationCode)
-	e := LegalAmendEdge{Op: op, Target: target, Provision: at, Sources: []string{LegalAmendSourceEditor}, Tier: LegalTierUnverified,
-		EffFrom: l.editorDate(lk), EditorProvisionID: lk.SourceProvisionID}
+	e := LegalAmendEdge{Op: op, Target: t.doc, Provision: at, Sources: []string{LegalAmendSourceEditor}, Tier: LegalTierUnverified,
+		EffFrom: l.editorDate(lk), EditorProvisionID: lk.SourceProvisionID,
+		EditorTargetID: lk.TargetProvisionID, EditorTargetKey: legalChunkKey(at)}
 	if lk.EffTo != nil {
 		e.EffTo = l.dateOf(lk.EffTo)
 	}
@@ -452,6 +476,13 @@ func (l *legalAmendLoader) editorEdge(lk types.LegalProvisionLink, at LegalProvi
 	if src.chunkID != "" {
 		e.Amender.ChunkID, e.Amender.KnowledgeBaseID, e.Amender.KnowledgeID = src.chunkID, src.kbID, src.knowledgeID
 		l.editorText(&e, lk.RelationCode, src)
+		// a "new" label A already has is a rewrite of it (the editors tag
+		// the Điều whose khoản B rewrites)
+		if e.Op == LegalOpBoSung && e.NewLabel != "" && len(t.structure) > 0 {
+			if added := legalAddedProvision(e.Provision, e.NewLabel); t.structure.has(added) {
+				e.Op, e.Provision, e.NewLabel = LegalOpSuaDoi, added, ""
+			}
+		}
 	} else {
 		// B is not read in a KB the question may use: its words are not
 		// available (§10.2)
