@@ -128,7 +128,7 @@ Migration `000176` (000173 domain_pack_formula_overrides, 000174 drop_replaced_g
 | `UNVERIFIED` | có cạnh mức 2 | gốc + bọc chưa xác minh | có |
 | `UNRESOLVED` | ngày không rõ, cạnh trước chưa giải, ánh xạ danh tính (4.13) mơ hồ | như trên | có |
 | `CONFLICT` | hai cạnh cùng phạm vi cùng ngày khác nội dung | các bản + nguồn | có |
-| `AMENDED_TEXT_MISSING` | danh mục báo A bị sửa nhưng không có / không được dùng chunk B | gốc + "đã bị sửa đổi bởi <số hiệu B>" | có |
+| `AMENDED_TEXT_MISSING` | danh mục báo A bị sửa nhưng chunk B **không có / không được dùng / chưa được đọc đủ / không có danh sách sửa đổi**. Khi B có trong KB được phép và đã đọc đủ mà không nêu khoản này → `ORIGINAL_IN_FORCE` + tối đa một dòng thông tin mỗi văn bản (không qua cổng); B có nhắc "Điều N" của A ngoài các cạnh đã đọc → `UNVERIFIED` cho Điều đó (20/10, sau review: tránh chặn nhầm ~93 % chunk văn bản bị sửa) | gốc + "đã bị sửa đổi bởi <số hiệu B>" | có |
 | `NOT_APPLICABLE_IN_PERIOD` | `tam_ngung` phủ ngày tham chiếu | "[Tạm ngưng hiệu lực từ … đến … theo <B>]" + gốc | có |
 | `PARTIALLY_EXPIRED` | `het_hieu_luc` (một phần) từ ngày X, **không có ngày kết thúc** (khác tạm ngưng) | "[Hết hiệu lực từ … theo <B>]" | có |
 | `CONDITIONALLY_NOT_APPLICABLE` | `khong_ap_dung` có điều kiện đối tượng/phạm vi | gốc + "[Không áp dụng đối với <điều kiện> theo <B>]" + kết quả so điều kiện với câu hỏi `match`/`no_match`/`unknown` (so khớp tất định; mặc định `unknown`) | `match`/`unknown` → có |
