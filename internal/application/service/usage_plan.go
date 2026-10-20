@@ -388,12 +388,19 @@ func (s *usagePlanService) CreateSubscription(
 	}
 	if sub.Status == types.UsageSubscriptionActive {
 		// Changing plan: the previous active subscription of the scope is
-		// closed, its seats go with it.
+		// closed, its seats go with it. The guest plan is no package the
+		// person chose: its row is removed rather than left as "cancelled"
+		// in their history (the guard applies the guest plan without a row
+		// once a bought package runs out).
 		prev, err := s.repo.GetActiveSubscription(ctx, sub.ScopeType, sub.ScopeID)
 		if err != nil {
 			return nil, err
 		}
-		if prev != nil {
+		if prev != nil && rolePlan(prev.Plan) == types.UsageGuestPlanCode {
+			if err := s.repo.DeleteSubscription(ctx, prev.ID); err != nil {
+				return nil, err
+			}
+		} else if prev != nil {
 			prev.Status = types.UsageSubscriptionCancelled
 			if err := s.repo.UpdateSubscription(ctx, prev); err != nil {
 				return nil, err
