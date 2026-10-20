@@ -45,6 +45,11 @@ func legalNameTestDB(t *testing.T) *gorm.DB {
 		doc("166581", "22/2023/QH15", "Luật Đấu thầu số 22/2023/QH15", "2023-06-23", "2024-01-01", "", "Hết hiệu lực một phần"),
 		doc("173404", "57/2024/QH15", "Luật Sửa đổi Luật Quy hoạch, Luật Đầu tư, Luật Đầu tư theo phương thức đối tác công tư và Luật Đấu thầu 2024 số 57/2024/QH15", "2024-11-29", "2025-01-15", "", ""),
 		doc("gd", "43/2019/QH14", "Luật Giáo dục số 43/2019/QH14", "2019-06-14", "2020-07-01", "", "Còn hiệu lực"),
+		doc("gddh", "08/2012/QH13", "Luật Giáo dục đại học số 08/2012/QH13", "2012-06-18", "2013-01-01", "", "Còn hiệu lực"),
+		// re-review A: "Quy hoạch đô thị và nông thôn" is catalogued
+		doc("qhdtnt", "47/2024/QH15", "Luật Quy hoạch đô thị và nông thôn số 47/2024/QH15", "2024-11-26", "2025-07-01", "", "Còn hiệu lực"),
+		doc("dd13", "45/2013/QH13", "Luật Đất đai số 45/2013/QH13", "2013-11-29", "2014-07-01", "2024-08-01", "Hết hiệu lực toàn bộ"),
+		doc("dd24", "31/2024/QH15", "Luật Đất đai số 31/2024/QH15", "2024-01-18", "2024-08-01", "", "Còn hiệu lực"),
 		doc("amender", "99/2026/QH15", "Luật sửa đổi Luật Đấu thầu số 99/2026/QH15", "2026-03-01", "2026-05-01", "", "Còn hiệu lực"),
 		// review blocker 1: a longer name must not fall back to a shorter law
 		doc("dt14", "67/2014/QH13", "Luật Đầu tư số 67/2014/QH13", "2014-11-26", "2015-07-01", "2021-01-01", "Hết hiệu lực toàn bộ"),
@@ -100,14 +105,27 @@ func TestResolveLegalDocumentName(t *testing.T) {
 		{"Luật Đấu thầu", "2005-01-01", LegalNameNone, "", nil},
 		// a reader that ran past the name
 		{"Luật Đấu thầu, theo đó", "2024-05-01", LegalNameUnique, "22/2023/QH15", nil},
-		// a longer name never resolves to a shorter law: unsure, so ambiguous
-		{"Luật Giáo dục đại học", "2024-05-01", LegalNameAmbiguous, "", nil},
+		// a longer name never resolves to a shorter law
+		{"Luật Giáo dục đại học", "2024-05-01", LegalNameUnique, "08/2012/QH13", nil},
 		{"luật giáo dục", "2024-05-01", LegalNameUnique, "43/2019/QH14", nil},
 		{"Luật", "2024-05-01", LegalNameNone, "", nil},
 		// review blocker 1
 		{"Luật Đầu tư theo phương thức đối tác công tư", "2022-01-01", LegalNameUnique, "64/2020/QH14", nil},
 		{"Luật Đầu tư theo phương thức đối tác công tư", "2020-03-01", LegalNameNone, "", nil},
-		{"Luật Quy hoạch đô thị và nông thôn", "2025-03-01", LegalNameAmbiguous, "", nil},
+		{"Luật Quy hoạch đô thị và nông thôn", "2025-03-01", LegalNameAmbiguous, "", nil}, // pending until 01/07/2025
+		{"Luật Quy hoạch đô thị và nông thôn", "2025-08-01", LegalNameUnique, "47/2024/QH15", nil},
+		{"Luật Quy hoạch đô thị và kiến trúc", "2025-08-01", LegalNameAmbiguous, "", nil}, // "… đô thị và" continues in the catalogue
+		{"Luật Đầu tư theo hình thức khác", "2022-01-01", LegalNameAmbiguous, "", nil},    // "luật đầu tư theo" is the PPP law
+		// re-review A: ordinary text after the name (names as FindCitations reads them)
+		{"Luật Đất đai như sau", "2025-01-01", LegalNameUnique, "31/2024/QH15", nil},
+		{"Luật Đất đai và các văn bản", "2025-01-01", LegalNameUnique, "31/2024/QH15", nil},
+		{"Luật Đất đai cho phép", "2025-01-01", LegalNameUnique, "31/2024/QH15", nil},
+		{"Luật Đất đai khi thu hồi đất", "2025-01-01", LegalNameUnique, "31/2024/QH15", nil},
+		{"Luật Đầu tư tại Điều 5", "2022-01-01", LegalNameUnique, "61/2020/QH14", nil},
+		{"Luật Đầu tư về ưu đãi", "2022-01-01", LegalNameUnique, "61/2020/QH14", nil},
+		// re-review B: an explicit year picks that law even when expired
+		{"Luật Đất đai năm 2013", "2025-01-01", LegalNameUnique, "45/2013/QH13",
+			map[string]string{"45/2013/QH13": LegalNameExpired}},
 		{"Luật Đầu tư có hiệu lực từ", "2022-01-01", LegalNameUnique, "61/2020/QH14", nil},
 		// review blocker 2
 		{"Luật Bảo vệ thử nghiệm", "2026-01-01", LegalNameAmbiguous, "",
@@ -116,7 +134,10 @@ func TestResolveLegalDocumentName(t *testing.T) {
 			map[string]string{"21/2025/QH15": LegalNamePending, "11/2011/QH12": LegalNameInForce}},
 		// review should 4: a year in the name narrows by issue year
 		{"Luật Đấu thầu 2013", "2023-08-01", LegalNameUnique, "43/2013/QH13", nil},
-		{"Luật Đấu thầu năm 2023", "2023-08-01", LegalNameAmbiguous, "", nil},
+		{"Luật Đấu thầu năm 2023", "2023-08-01", LegalNameUnique, "22/2023/QH15",
+			map[string]string{"22/2023/QH15": LegalNamePending}},
+		{"Luật Đấu thầu 2013", "2024-05-01", LegalNameUnique, "43/2013/QH13",
+			map[string]string{"43/2013/QH13": LegalNameExpired}},
 	}
 	for _, c := range cases {
 		m, err := ResolveLegalDocumentName(ctx, db, LegalNameQuery{Name: c.name, At: on(c.at)})
@@ -188,5 +209,34 @@ func TestLegalTitleBaseWithType(t *testing.T) {
 		if got := LegalTitleBase(c[0], c[1]); got != c[2] {
 			t.Errorf("LegalTitleBase(%q, %q) = %q, want %q", c[0], c[1], got, c[2])
 		}
+	}
+}
+
+// Re-review A end to end: the names FindCitations reads in ordinary text
+// resolve to the law, not to an ambiguous run-on.
+func TestResolveNamesFromText(t *testing.T) {
+	db := legalNameTestDB(t)
+	at, _ := time.Parse("2006-01-02", "2025-01-01")
+	for text, want := range map[string]string{
+		"Sửa đổi, bổ sung một số điều của Luật Đất đai như sau": "31/2024/QH15",
+		"Luật Đất đai và các văn bản hướng dẫn":                 "31/2024/QH15",
+		"Luật Đất đai cho phép":                                 "31/2024/QH15",
+		"Luật Đất đai khi thu hồi đất":                          "31/2024/QH15",
+		"Luật Đầu tư tại Điều 5":                                "61/2020/QH14",
+		"Luật Đầu tư về ưu đãi":                                 "61/2020/QH14",
+		"Căn cứ Luật Đất đai Nghị định 43/2014/NĐ-CP":           "31/2024/QH15",
+	} {
+		var name string
+		for _, c := range vietnamese_legal.FindCitations(text) {
+			if c.Kind == vietnamese_legal.CitationName {
+				name = c.Name
+				break
+			}
+		}
+		require.NotEmpty(t, name, text)
+		m, err := ResolveLegalDocumentName(context.Background(), db, LegalNameQuery{Name: name, At: at})
+		require.NoError(t, err)
+		require.Equal(t, LegalNameUnique, m.Resolution, "%q → %q", text, name)
+		require.Equal(t, want, m.Chosen.DocumentNumber, text)
 	}
 }

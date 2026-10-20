@@ -84,12 +84,13 @@ type LegalNameQuery struct {
 }
 
 // ResolveLegalDocumentName finds the catalogue document a name cites as
-// of q.At. The full name is tried first, then shorter prefixes of it; a
-// prefix that drops a comma-separated read-on ("…, theo đó") or a clause
-// ("… có hiệu lực") may resolve uniquely, but one that drops words that
-// could belong to the name ("Luật Đầu tư | theo phương thức …", "Luật Quy
-// hoạch đô thị | và nông thôn") never names a shorter law uniquely: the
-// match is then ambiguous.
+// of q.At. The full name is tried first, then shorter prefixes of it. A
+// prefix resolves uniquely only when no catalogue title continues it with
+// the word it drops: "Luật Đất đai như sau", "Luật Đầu tư tại Điều 5" name
+// Luật Đất đai / Luật Đầu tư, but "Luật Đầu tư theo hình thức …" (a title
+// "Luật Đầu tư theo phương thức …" exists) or "Luật Quy hoạch đô thị và
+// …" stays ambiguous. A year (q.Year, or ending the name) picks the law of
+// that year even when it is no longer in force.
 func ResolveLegalDocumentName(ctx context.Context, db *gorm.DB, q LegalNameQuery) (LegalNameMatch, error) {
 	prefixes := legalNamePrefixes(q.Name)
 	none := LegalNameMatch{Resolution: LegalNameNone}
@@ -157,10 +158,14 @@ func ResolveLegalDocumentName(ctx context.Context, db *gorm.DB, q LegalNameQuery
 	if err := query.Order("issued_on DESC").Limit(legalNameCandidatesMax).Find(&docs).Error; err != nil {
 		return none, err
 	}
+	bases := make([]string, len(docs))
+	for i, d := range docs {
+		bases[i] = LegalTitleBase(d.Title, d.DocType)
+	}
 	for _, p := range prefixes {
 		var named, same []*types.LegalDocument
-		for _, d := range docs {
-			if LegalTitleBase(d.Title, d.DocType) == p.base {
+		for i, d := range docs {
+			if bases[i] == p.base {
 				named = append(named, d)
 			}
 		}
@@ -184,12 +189,38 @@ func ResolveLegalDocumentName(ctx context.Context, db *gorm.DB, q LegalNameQuery
 		}
 		m := resolveByDates(same, at)
 		m.Base = p.base
-		if !p.safe && m.Resolution == LegalNameUnique {
-			m.Resolution, m.Chosen = LegalNameAmbiguous, nil
+		// a year written with the name picks the law of that year, in
+		// force or not (its state stays on the candidate)
+		if year != "" && m.Resolution != LegalNameUnique && legalDistinctDocs(same) == 1 {
+			m.Resolution, m.Chosen = LegalNameUnique, same[0]
+		}
+		// a shorter name is safe when no catalogue title continues it with
+		// the dropped word: "luật đất đai như" none, "luật đầu tư theo" PPP
+		if p.cont != "" && m.Resolution == LegalNameUnique {
+			for _, b := range bases {
+				if b == p.cont || strings.HasPrefix(b, p.cont+" ") {
+					m.Resolution, m.Chosen = LegalNameAmbiguous, nil
+					break
+				}
+			}
 		}
 		return m, nil
 	}
 	return none, nil
+}
+
+// legalDistinctDocs counts documents by number key (by id when a row has
+// none).
+func legalDistinctDocs(docs []*types.LegalDocument) int {
+	keys := map[string]bool{}
+	for _, d := range docs {
+		k := d.NumberKey
+		if k == "" {
+			k = "id:" + d.ID
+		}
+		keys[k] = true
+	}
+	return len(keys)
 }
 
 // resolveByDates states each same-name document at the date at and picks
@@ -324,6 +355,10 @@ func legalNameYear(name string) string {
 type legalNamePrefix struct {
 	base string
 	safe bool
+	// cont is the prefix with the first dropped word ("luật đầu tư
+	// theo"): a catalogue title starting so means the word may belong to
+	// the name.
+	cont string
 }
 
 // legalReadOn are the words a clause after a name starts with: dropping
@@ -332,12 +367,15 @@ var legalReadOn = map[string]bool{
 	"có": true, "được": true, "đã": true, "đang": true, "sẽ": true, "thì": true, "là": true,
 	"này": true, "nêu": true, "quy": true, "hướng": true, "sửa": true, "bổ": true, "bãi": true,
 	"thay": true, "ngày": true, "số": true, "năm": true, "hiện": true, "hết": true,
+	"như": true, "sau": true, "các": true,
 }
 
 // legalNamePrefixes is the name's base, then its shorter word prefixes
-// down to the type and one word, longest first. A prefix is safe when the
-// words it drops start after a comma before a lower-case word ("Luật Đấu
-// thầu, theo đó") or with a clause word ("… có hiệu lực").
+// down to the type and one word, longest first. Statically, a prefix is
+// safe when the words it drops start after a comma ("Luật Đấu thầu, theo
+// đó") or with a clause word ("… có hiệu lực", "… như sau"); against the
+// catalogue, when no title starts with the prefix and the dropped word
+// (ResolveLegalDocumentName).
 func legalNamePrefixes(name string) []legalNamePrefix {
 	base := LegalTitleBase(name, "")
 	if base == "" {
@@ -358,7 +396,7 @@ func legalNamePrefixes(name string) []legalNamePrefix {
 			continue
 		}
 		safe := strings.HasSuffix(words[k-1], ",") || legalReadOn[strings.Trim(words[k], ",")]
-		out = append(out, legalNamePrefix{base: p, safe: safe})
+		out = append(out, legalNamePrefix{base: p, safe: safe, cont: strings.Join(words[:k+1], " ")})
 	}
 	return out
 }
