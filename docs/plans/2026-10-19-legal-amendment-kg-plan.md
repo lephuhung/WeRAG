@@ -41,7 +41,7 @@ Qwen3.6-AWQ trên vLLM 0.31 sập (CUDA illegal memory access, Xid 31) 4 lần (
 
 ## 3. Quyết định đã chốt
 
-1. KG trong Neo4j, không bảng quan hệ chuẩn hoá (chỉ một bảng nhỏ lưu quyết định duyệt).
+1. ~~KG trong Neo4j~~ → **(20/10, người dùng xác nhận D1) Postgres là nguồn chuẩn và đường trả lời đọc Postgres; Neo4j làm sau, chỉ là bản chiếu khi cần.**
 2. Regex chọn đoạn → trích thao tác (LLM / mô hình nhỏ) → code kiểm chứng → KG; văn bản đích chưa có → tạo yêu cầu bổ sung.
 3. **Hai mức tin cậy** (20/10):
    - **Mức 1 — thay lời văn:** ít nhất hai nguồn cùng ra một cạnh **giống hệt theo quy tắc 6.1**, và đường đồng thuận × loại op đó **đã đạt cổng 6.2** trên bộ khoá kín. Chưa đường nào đạt cho tới khi đo (con số 0,99 của Qwen + bộ đọc chưa gồm ngày và phạm vi).
@@ -187,3 +187,9 @@ Hai nguồn trùng khi khớp **tất cả**: id danh mục A và B (không ph�
 - **10.2 Lời văn B ngoài phạm vi tìm: ĐỒNG Ý đề xuất** — chỉ dùng lời văn B từ KB trong phạm vi câu hỏi hoặc KB công khai nền tảng; ngoài đó chỉ nêu số hiệu B, trạng thái `AMENDED_TEXT_MISSING`.
 - **10.3 Điều khoản chưa xác minh: ĐỒNG Ý đề xuất** — cổng 4.11 **chặn giá trị khẳng định** (con số/quy định hiện hành) từ điều khoản không ở `CURRENT_VERIFIED`/`ORIGINAL_IN_FORCE`; chỉ cho nêu lời văn gốc có ghi nguồn khi câu hỏi rõ ràng về lịch sử.
 - Triển khai: người dùng cho phép (20/10), code do subagent viết, Fable review từng bước.
+
+## 11. Nguồn thứ hai: thẻ quan hệ của biên tập viên vbpl (20/10, người dùng đồng ý gắn để thử)
+- HTML gốc của văn bản A: `<p class="prov-article|prov-clause|prov-item" type="<mã>:<id điều khoản nguồn trong B>">`; mã 10 sửa đổi bổ sung, 1 bãi bỏ, 13 bổ sung, 12 thay thế, 14 giải thích, 6 đính chính, 11 tạm ngưng, 5 đình chỉ. 20.660 cạnh đã trích (`/home/orca/data/legal-amend-gold/gold_edges.jsonl`, phiên khác), 96 % id nguồn khớp HTML B; ngày hiệu lực theo từng khoản nguồn qua server action "provision-target" (`prov_targets.sqlite`).
+- Lưu (theo D1) trong Postgres: bảng cạnh điều khoản nguồn `vbpl_editor` + giữ thuộc tính khi chuyển HTML → chunk cho lần nạp sau.
+- Bộ giải: cạnh biên tập viên **và** bộ đọc cùng chỉ một (A điều khoản, B, op) → mức 1 (lời văn/cụm từ lấy từ B); chỉ biên tập viên → mức 2 nhưng biết chắc khoản nào bị tác động (lời văn mới lấy từ điều khoản nguồn của B); công tắc riêng.
+- **Đánh giá:** bộ khoá kín 287 đoạn dựng TỪ thẻ biên tập viên → không dùng để chấm nguồn này (vòng tròn); chấm đường "biên tập viên + bộ đọc" bằng bộ nhãn tay 200 + 160.
