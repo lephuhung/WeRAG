@@ -381,3 +381,47 @@ func TestPhraseAmendsReviewSentences(t *testing.T) {
 		}
 	}
 }
+
+// Fable round 2: a correct lead-in is not overridden by the heading's
+// number cited in the heading and other lead-ins (2075900a); a heading over
+// "các luật có liên quan" does not fall back to the title (034055ec); an
+// amender's numbers after "đã được sửa đổi, bổ sung tại" leave the run its
+// one document (9b05703d).
+func TestPhraseAmendsInChunkReview2(t *testing.T) {
+	type c struct {
+		name, content, title, number string
+		path                         []string
+		want                         []Amend
+	}
+	cases := []c{
+		{"lead-in kept", "#### Điều 4. Sửa đổi, bãi bỏ một số điều, khoản của các thông tư sửa đổi, bổ sung một số điều của Thông tư số 02/2018/TT-BYT ngày 22 tháng 01 năm 2018 của Bộ trưởng Bộ Y tế\n\n" +
+			"1. Sửa đổi, bãi bỏ một số điều của Thông tư số 12/2020/TT-BYT ngày 22 tháng 6 năm 2020 của Bộ trưởng Bộ Y tế sửa đổi, bổ sung một số điều của Thông tư số 02/2018/TT-BYT ngày 22 tháng 01 năm 2018 như sau:\n\n" +
+			"b) Sửa đổi cụm từ “hồ sơ đề nghị đánh giá định kỳ” thành cụm từ “hồ sơ đánh giá định kỳ” tại khoản 8 và khoản 9 Điều 1;\n\n" +
+			"2. Sửa đổi, bãi bỏ một số điều của Thông tư số 09/2020/TT-BYT ngày 10 tháng 6 năm 2020 của Bộ trưởng Bộ Y tế sửa đổi, bổ sung một số điều của Thông tư số 03/2018/TT-BYT như sau:\n\n" +
+			"b) Sửa đổi cụm từ “hồ sơ đề nghị đánh giá định kỳ” thành cụm từ “hồ sơ đánh giá định kỳ” tại khoản 7 Điều 1;",
+			"Thông tư số 11-2025-TT-BYT sửa đổi, bổ sung một số điều của Thông tư số 02-2018-TT-BYT", "11/2025/TT-BYT",
+			[]string{"Điều 4. Sửa đổi, bãi bỏ một số điều, khoản của các thông tư sửa đổi, bổ sung một số điều của Thông tư số 02/2018/TT-BYT ngày 22 tháng 01 năm 2018 của Bộ trưởng…"},
+			[]Amend{
+				{Document: "Thông tư số 12/2020/TT-BYT", Article: "1", Khoan: "8", Phrase: true, From: "hồ sơ đề nghị đánh giá định kỳ", To: "hồ sơ đánh giá định kỳ"},
+				{Document: "Thông tư số 12/2020/TT-BYT", Article: "1", Khoan: "9", Phrase: true, From: "hồ sơ đề nghị đánh giá định kỳ", To: "hồ sơ đánh giá định kỳ"},
+				{Document: "Thông tư số 09/2020/TT-BYT", Article: "1", Khoan: "7", Phrase: true, From: "hồ sơ đề nghị đánh giá định kỳ", To: "hồ sơ đánh giá định kỳ"},
+			}},
+		{"collective heading", "g) Thay thế cụm từ “Công an cấp huyện” bằng cụm từ “Công an cấp tỉnh” tại khoản 2 Điều 20;",
+			"Luật Sửa đổi, bổ sung một số điều của Bộ Luật hình sự số 86-2025-QH15.html", "86/2025/QH15",
+			[]string{"Điều 2. Sửa đổi, bổ sung một số điều của các luật có liên quan"},
+			[]Amend{{Article: "20", Khoan: "2", Phrase: true, From: "Công an cấp huyện", To: "Công an cấp tỉnh"}}},
+		{"amended-by numbers", "- Thay thế cụm từ “thuộc tuyến” bằng cụm từ “nơi đăng ký” tại đoạn mở đầu Điều 8, khoản 1 Điều 15, khoản 1 Điều 16 Quy định về khám bệnh, chữa bệnh đối với sĩ quan phục viên có đủ 15 năm phục vụ trong Quân đội ban hành kèm theo Quyết định số 33/2003/QĐ-BQP đã được sửa đổi, bổ sung tại khoản 4 Điều 1 Thông tư số 139/2011/TT-BQP; Mẫu số 01/2011/KB-SQPV ban hành kèm theo Thông tư số 139/2011/TT-BQP, được thay thế bởi Mẫu số 01/2024/KB-SQPV Phụ lục I ban hành kèm theo Thông tư số 13/2024/TT-BQP.",
+			"Thông tư số 103-2025-TT-BQP Sửa đổi, bổ sung một số điều của các Thông tư liên tịch, Thông tư, Quyết định của Bộ trưởng", "103/2025/TT-BQP",
+			[]string{"Điều 8. Sửa đổi, bổ sung một số điều của Quy định về khám bệnh, chữa bệnh đối với sĩ quan phục viên có đủ 15 năm phục vụ trong Quân đội ban hành kèm theo Quyết…"},
+			[]Amend{
+				{Document: "Quyết định số 33/2003/QĐ-BQP", Article: "8", Phrase: true, From: "thuộc tuyến", To: "nơi đăng ký"},
+				{Document: "Quyết định số 33/2003/QĐ-BQP", Article: "15", Khoan: "1", Phrase: true, From: "thuộc tuyến", To: "nơi đăng ký"},
+				{Document: "Quyết định số 33/2003/QĐ-BQP", Article: "16", Khoan: "1", Phrase: true, From: "thuộc tuyến", To: "nơi đăng ký"},
+			}},
+	}
+	for _, x := range cases {
+		if got := PhraseAmendsInChunk(x.content, x.path, x.title, x.number); !reflect.DeepEqual(got, x.want) {
+			t.Errorf("%s:\n got %+v\nwant %+v", x.name, got, x.want)
+		}
+	}
+}

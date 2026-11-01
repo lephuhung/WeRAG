@@ -101,6 +101,11 @@ var (
 	// phraseHistoryLeadRe opens a document's amendment history right after
 	// its name: "đã được sửa đổi, bổ sung …".
 	phraseHistoryLeadRe = regexp.MustCompile(`(?i)^\s*,?\s*(?:đã được|được)\s+(?:sửa đổi|bổ sung)`)
+	// phraseAmendedByRe opens what amended a document already.
+	phraseAmendedByRe = regexp.MustCompile(`(?i)(?:đã được|được)\s+(?:sửa đổi|bổ sung|thay thế)`)
+	// phraseCollectiveRe is a heading amending several documents of a
+	// kind ("… một số điều của các luật có liên quan").
+	phraseCollectiveRe = regexp.MustCompile(`(?i)\bcác\s+(?:bộ luật|luật|pháp lệnh|nghị định|nghị quyết|thông tư|quyết định|văn bản)(?:[\s,.;]|$)`)
 	// phraseSemiRunRe is the next run after a ";".
 	phraseSemiRunRe = regexp.MustCompile(`(?i);\s*(?:và\s+)?(?:(?:các|tên)\s+)?(?:điểm|khoản|điều)\s+[0-9a-zđ]`)
 	// phraseHistoryRe in a document's subject means it tells the
@@ -178,6 +183,11 @@ func PhraseAmendsInChunk(content string, headingPath []string, title, number str
 		for i := len(headingPath) - 1; i >= 0; i-- {
 			if d := headingDocument(headingPath[i]); d != "" {
 				return d
+			}
+			// "Điều 2. Sửa đổi, bổ sung một số điều của các luật có liên
+			// quan": which law is in the lead-ins, not the title
+			if i == len(headingPath)-1 && amendVerbRe.MatchString(headingPath[i]) && phraseCollectiveRe.MatchString(headingPath[i]) {
+				return ""
 			}
 		}
 		return titleDoc()
@@ -263,8 +273,16 @@ func leadOrHeading(lead, heading, content, leadLine string) string {
 	if lk == "" || hk == "" || lk == hk {
 		return lead
 	}
-	rest := strings.Replace(content, leadLine, "", 1)
-	if strings.Contains(rest, hk) && !strings.Contains(rest, lk) {
+	// only the lines that change phrases count: the heading line and other
+	// lead-ins name the heading's document for their own reasons
+	// ("… sửa đổi, bổ sung một số điều của Thông tư số 02/2018/TT-BYT")
+	var rest strings.Builder
+	for _, l := range strings.Split(content, "\n") {
+		if l = strings.TrimSpace(l); l != leadLine && !strings.HasPrefix(l, "#") && !strings.HasPrefix(l, ">") && phraseLeadRe.MatchString(l) {
+			rest.WriteString(l + "\n")
+		}
+	}
+	if strings.Contains(rest.String(), hk) && !strings.Contains(rest.String(), lk) {
 		return heading
 	}
 	return lead
@@ -589,6 +607,14 @@ func sentenceDocument(text string) string {
 	plain := phraseQuotedRe.ReplaceAllString(text, " ")
 	if phraseThisDocRe.MatchString(plain) {
 		return ""
+	}
+	// the numbers after a document's amendment history ("… Quyết định số
+	// 33/2003/QĐ-BQP đã được sửa đổi, bổ sung tại … Thông tư số
+	// 139/2011/TT-BQP") are of its amenders, not other targets
+	if first := phraseNumberRe.FindStringIndex(plain); first != nil {
+		if h := phraseAmendedByRe.FindStringIndex(plain[first[1]:]); h != nil {
+			plain = plain[:first[1]+h[0]]
+		}
 	}
 	var number string
 	var at int
