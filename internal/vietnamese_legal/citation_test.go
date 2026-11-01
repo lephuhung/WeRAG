@@ -16,6 +16,16 @@ func TestCitation(t *testing.T) {
 		{LegalMetadata{ArticleNos: []string{"1"}, KhoanNos: []string{"6"},
 			Amends: []AmendRef{{Document: "Luật A", Article: "9"}, {Document: "Nghị định B", Article: "2", Khoan: "1"}}},
 			"khoản 6 Điều 1 (sửa đổi Điều 9 Luật A; khoản 1 Điều 2 Nghị định B)"},
+		// a phrase list names each Điều once and says it changes words
+		{LegalMetadata{ArticleNos: []string{"2"}, Amends: []AmendRef{
+			{Document: "Nghị định số 68/2026/NĐ-CP", Article: "3", Phrase: true, From: "A", To: "B"},
+			{Document: "Nghị định số 68/2026/NĐ-CP", Article: "3", Phrase: true, From: "C", To: "D"},
+			{Document: "Nghị định số 68/2026/NĐ-CP", Article: "4", Phrase: true, From: "A", To: "B"}}},
+			"Điều 2 (sửa đổi cụm từ tại Điều 3, Điều 4 Nghị định số 68/2026/NĐ-CP)"},
+		{LegalMetadata{ArticleNos: []string{"1"}, Amends: []AmendRef{
+			{Document: "Luật A", Article: "9"}, {Document: "Luật A", Article: "9"},
+			{Document: "Luật A", Article: "5", Phrase: true, From: "A", To: "B"}}},
+			"Điều 1 (sửa đổi Điều 9 Luật A; sửa đổi cụm từ tại Điều 5 Luật A)"},
 		{LegalMetadata{}, ""},
 	}
 	for _, c := range cases {
@@ -43,7 +53,8 @@ func TestSourceURL(t *testing.T) {
 
 func TestMatchesAmendment(t *testing.T) {
 	meta := &LegalMetadata{ArticleNos: []string{"1"}, KhoanNos: []string{"6", "7"},
-		Amends: []AmendRef{{Document: "Luật A", Article: "9"}, {Document: "Luật A", Article: "10", Khoan: "1"}}}
+		Amends: []AmendRef{{Document: "Luật A", Article: "9"}, {Document: "Luật A", Article: "10", Khoan: "1"},
+			{Document: "Luật A", Article: "12", Phrase: true, From: "A", To: "B"}}}
 	for ref, want := range map[string]bool{
 		"Điều 9":                 true,
 		"khoản 2 Điều 9":         true, // the whole Điều 9 is rewritten
@@ -53,6 +64,7 @@ func TestMatchesAmendment(t *testing.T) {
 		"điểm a khoản 1 Điều 10": true,
 		"Điều 11":                false,
 		"khoản 6":                false, // no Điều: not an amendment lookup
+		"Điều 12":                false, // a phrase change holds no text of Điều 12
 	} {
 		r, err := ParseSectionRef(ref)
 		if err != nil {
