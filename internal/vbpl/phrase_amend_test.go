@@ -80,7 +80,7 @@ func TestPhraseAmendsInChunk(t *testing.T) {
 		"1. Sửa đổi cụm từ “500 triệu đồng” thành “01 tỷ đồng” tại Điều 3, khoản 1 Điều 8.\n\n" +
 		"2. Sửa đổi, bổ sung khoản 5 Điều 8 như sau:\n\n> \"5. Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 9.\""
 	path := []string{"Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 68/2026/NĐ-CP ngày 05 tháng 3 năm 2026 của Chính phủ…"}
-	got := PhraseAmendsInChunk(content, path, "Nghị định số 141-2026-NĐ-CP sửa đổi Nghị định số 68-2026-NĐ-CP và Nghị định 320/2025/NĐ-CP")
+	got := PhraseAmendsInChunk(content, path, "Nghị định số 141-2026-NĐ-CP sửa đổi Nghị định số 68-2026-NĐ-CP và Nghị định 320/2025/NĐ-CP", "141/2026/NĐ-CP")
 	nd := "Nghị định số 68/2026/NĐ-CP"
 	want := []Amend{
 		{Document: nd, Article: "3", Phrase: true, From: "500 triệu đồng", To: "01 tỷ đồng"},
@@ -292,7 +292,7 @@ func TestPhraseAmendsInChunkLeadIn(t *testing.T) {
 		// 11/2025/TT-BYT 2f22ec33: "của Thông tư" names no document
 		"11. Thay thế một số cụm từ sử dụng tại các điều của Thông tư như sau:\n\n" +
 		"b) Thay thế cụm từ “C” thành cụm từ “D” tại khoản 6 Điều 9."
-	got := PhraseAmendsInChunk(content, []string{"Điều 57. Sửa đổi, bổ sung, bãi bỏ một số điều, khoản của các luật có liên quan"}, "Luật Quy hoạch đô thị và nông thôn số 47-2024-QH15")
+	got := PhraseAmendsInChunk(content, []string{"Điều 57. Sửa đổi, bổ sung, bãi bỏ một số điều, khoản của các luật có liên quan"}, "Luật Quy hoạch đô thị và nông thôn số 47-2024-QH15", "47/2024/QH15")
 	want := []Amend{
 		{Document: "Luật Nhà ở số 27/2023/QH15", Article: "3", Khoan: "3", Phrase: true, From: "quy hoạch xây dựng, quy hoạch đô thị", To: "quy hoạch đô thị và nông thôn"},
 		{Document: "Nghị định số 175/2024/NĐ-CP", Article: "1", Khoan: "3", Phrase: true, From: "quy hoạch xây dựng", To: "quy hoạch đô thị và nông thôn"},
@@ -301,5 +301,83 @@ func TestPhraseAmendsInChunkLeadIn(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got  %+v\nwant %+v", got, want)
+	}
+}
+
+// Fable review of the branch: real chunks (vbpl corpus, 2026-11-01).
+func TestPhraseAmendsInChunkReview(t *testing.T) {
+	type c struct {
+		name, content, title, number string
+		path                         []string
+		want                         []Amend
+	}
+	cases := []c{
+		// F3 3c6607b9: the lead-in's "48/2018" is a typo for the heading's
+		// 48/2013, which the chunk cites further on
+		{"lead-in typo", "45. Sửa đổi, bổ sung, thay thế, bãi bỏ một số cụm từ, Điều, Phụ lục của Thông tư 48/2018/TT-BNNPTNT như sau:\n\n" +
+			"c) Bãi bỏ cụm từ “kiểm tra” tại các điểm, khoản sau: tên Điều 7; khoản 2 Điều 13;\n\n" +
+			"d) Thay thế cụm từ “kiểm tra” bằng cụm từ “thẩm định” tại khoản 3 Điều 3; Phụ lục XV của Thông tư số 48/2013/TTBNNPTNT;",
+			"Thông tư số 17-2024-TT-BNNPTNT Sửa đổi, bổ sung một số Thông tư quy định thẩm định.html", "17/2024/TT-BNNPTNT",
+			[]string{"Điều 2. Sửa đổi, bổ sung một số điều của Thông tư số 48/2013/TT- BNNPTNT ngày 12/11/2013 của Bộ trưởng"},
+			[]Amend{
+				{Document: "Thông tư số 48/2013/TT-BNNPTNT", Article: "13", Khoan: "2", Phrase: true, From: "kiểm tra"},
+				{Document: "Thông tư số 48/2013/TT-BNNPTNT", Article: "3", Khoan: "3", Phrase: true, From: "kiểm tra", To: "thẩm định"},
+			}},
+		// F4 6c18b33d: the title's số hiệu is the amending law's own
+		{"own number in title", `1. Thay thế một số cụm từ tại các điểm, khoản, điều như sau: a) Thay thế cụm từ "tổ chức đảng, đoàn thể trong sạch, vững mạnh" bằng cụm từ "tổ chức đảng được đánh giá hoàn thành tốt nhiệm vụ trở lên" tại điểm b khoản 1 Điều 25`,
+			"Luật Sửa đổi, bổ sung một số điều của Luật Thi đua, khen thường số 06-2026-QH16.html", "06/2026/QH16",
+			[]string{"Điều 2. Thay thế, bỏ từ, cụm từ, bãi bỏ điểm, khoản tại một số điều"},
+			[]Amend{{Document: "Luật Thi đua, khen thường", Article: "25", Khoan: "1", Diem: "b", Phrase: true,
+				From: "tổ chức đảng, đoàn thể trong sạch, vững mạnh", To: "tổ chức đảng được đánh giá hoàn thành tốt nhiệm vụ trở lên"}}},
+		// F5 ad543a1a: "và" inside a title is not a second document
+		{"và in a title", "1. Thay thế cụm từ “Sở Giao dịch” bằng cụm từ “Cục Quản lý ngoại hối” tại khoản 2 Điều 12, tên Điều 17, Điều 18.",
+			"Thông tư số 48-2026-TT-NHNN Sửa đổi, bổ sung một số điều của Thông tư số 26-2021-TT-NHNN hướng dẫn giao dịch ngoại tệ giữa Ngân hàng Nhà nước Việt Nam và tổ chức tín dụng được phép.html", "48/2026/TT-NHNN",
+			[]string{"Điều 10. Bổ sung, thay thế, bãi bỏ một số cụm từ, khoản và phụ lục"},
+			[]Amend{
+				{Document: "Thông tư số 26/2021/TT-NHNN", Article: "12", Khoan: "2", Phrase: true, From: "Sở Giao dịch", To: "Cục Quản lý ngoại hối"},
+				{Document: "Thông tư số 26/2021/TT-NHNN", Article: "18", Phrase: true, From: "Sở Giao dịch", To: "Cục Quản lý ngoại hối"},
+			}},
+		// F8c 46ed4c2d: the heading names the document right after the verb
+		{"heading without của", `2. Thay cụm từ "Cục Quản lý thị trường" thành "Tổng cục Quản lý thị trường" tại khoản 2 Điều 9.`,
+			"Thông tư số 37/2018/TT-BCT Sửa đổi, bổ sung, bãi bỏ một số quy định.html", "37/2018/TT-BCT",
+			[]string{"Điều 1. Sửa đổi, bổ sung Thông tư số 41/2011/TT-BCT ngày 16 tháng 12 năm 2011 của Bộ trưởng"},
+			[]Amend{{Document: "Thông tư số 41/2011/TT-BCT", Article: "9", Khoan: "2", Phrase: true, From: "Cục Quản lý thị trường", To: "Tổng cục Quản lý thị trường"}}},
+	}
+	for _, x := range cases {
+		if got := PhraseAmendsInChunk(x.content, x.path, x.title, x.number); !reflect.DeepEqual(got, x.want) {
+			t.Errorf("%s:\n got %+v\nwant %+v", x.name, got, x.want)
+		}
+	}
+}
+
+func TestPhraseAmendsReviewSentences(t *testing.T) {
+	none := func() string { return "" }
+	cases := []struct {
+		name, text string
+		want       []Amend
+	}{
+		// F6 990edef8: "Phụ lục kèm theo" is a list item, not prose
+		{"kèm theo", `3. Nghị định này sửa đổi cụm từ "Cục Cạnh tranh và Bảo vệ người tiêu dùng" thành "Ủy ban Cạnh tranh Quốc gia" tại khoản 2 Điều 54 và Phụ lục kèm theo Nghị định 40/2018/NĐ-CP ngày 12 tháng 3 năm 2018 của Chính phủ về quản lý hoạt động kinh doanh theo phương thức đa cấp.`,
+			[]Amend{{Document: "Nghị định 40/2018/NĐ-CP", Article: "54", Khoan: "2", Phrase: true, From: "Cục Cạnh tranh và Bảo vệ người tiêu dùng", To: "Ủy ban Cạnh tranh Quốc gia"}}},
+		// F8a c995a7c5: after a document's amendment history, the next run follows the ";"
+		{"history then run", `3. Thay thế cụm từ "doanh nghiệp nhà nước" bằng cụm từ "doanh nghiệp do Nhà nước nắm giữ 100% vốn điều lệ" quy định tại điểm m khoản 1 Điều 35 của Luật Ngân sách nhà nước số 83/2015/QH13; điểm a khoản 3 Điều 23 của Luật Thủy lợi số 08/2017/QH14 đã được sửa đổi, bổ sung một số điều theo Luật số 35/2018/QH14; Điều 19 của Luật Tố cáo số 25/2018/QH14.`,
+			[]Amend{
+				{Document: "Luật Ngân sách nhà nước số 83/2015/QH13", Article: "35", Khoan: "1", Diem: "m", Phrase: true, From: "doanh nghiệp nhà nước", To: "doanh nghiệp do Nhà nước nắm giữ 100% vốn điều lệ"},
+				{Document: "Luật Thủy lợi số 08/2017/QH14", Article: "23", Khoan: "3", Diem: "a", Phrase: true, From: "doanh nghiệp nhà nước", To: "doanh nghiệp do Nhà nước nắm giữ 100% vốn điều lệ"},
+				{Document: "Luật Tố cáo số 25/2018/QH14", Article: "19", Phrase: true, From: "doanh nghiệp nhà nước", To: "doanh nghiệp do Nhà nước nắm giữ 100% vốn điều lệ"},
+			}},
+		// F8b: a bracketed history does not cut the clause list
+		{"bracket", `Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 1 Điều 4 (đã được sửa đổi, bổ sung bởi khoản 1 Điều 1 Nghị định số 136/2021/NĐ-CP; khoản 2 Điều 1 Nghị định số 50/2024/NĐ-CP) và khoản 2 Điều 9 Nghị định số 83/2017/NĐ-CP`,
+			[]Amend{
+				{Document: "Nghị định số 83/2017/NĐ-CP", Article: "4", Khoan: "1", Phrase: true, From: "A", To: "B"},
+				{Document: "Nghị định số 83/2017/NĐ-CP", Article: "9", Khoan: "2", Phrase: true, From: "A", To: "B"},
+			}},
+		// F9: a document named after prose is not taken
+		{"prose then document", `Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 1 Điều 3, trường hợp quy định tại Điều 5 Nghị định số 12/2020/NĐ-CP`, nil},
+	}
+	for _, c := range cases {
+		if got := parsePhraseAmends(c.text, none); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s:\n got %+v\nwant %+v", c.name, got, c.want)
+		}
 	}
 }

@@ -76,7 +76,15 @@ var (
 	// provision of a Điều ("tên Chương II", "câu dẫn Điều 10", "Mẫu số 3
 	// Phụ lục II ban hành kèm theo …") are not prose.
 	phraseProseRe    = regexp.MustCompile(`(?i)(?:^|[\s,;])(?:trong trường hợp|trường hợp|quy định|nếu|khi|được|đối với|để|thì|theo|văn bản|áp dụng|thực hiện)(?:[\s,;.]|$)`)
-	phraseAttachedRe = regexp.MustCompile(`(?i)ban hành kèm theo`)
+	phraseAttachedRe = regexp.MustCompile(`(?i)(?:ban hành\s+)?kèm theo`)
+	// phraseFileExtRe is the file extension a knowledge title kept.
+	phraseFileExtRe = regexp.MustCompile(`(?i)\.+(?:html?|pdf|docx?)$`)
+	// phraseAndDocRe is "và" before a second document.
+	phraseAndDocRe = regexp.MustCompile(`(?i)\svà\s+(?:các\s+)?(?:Bộ luật|Luật|Pháp lệnh|Nghị định|Nghị quyết|Thông tư liên tịch|Thông tư|Quyết định)(?:\s|$)`)
+	// phraseVerbDocRe is a document with its số hiệu right after the verb.
+	phraseVerbDocRe = regexp.MustCompile(`(?i)^(?:sửa đổi|bổ sung|thay thế|bãi bỏ)(?:\s*,\s*(?:sửa đổi|bổ sung|thay thế|bãi bỏ))*\s+((?:Bộ luật|Luật|Pháp lệnh|Nghị định|Nghị quyết|Thông tư liên tịch|Thông tư|Quyết định)\s[^:;(“",]{0,120}?\d+/\d{4}/[A-ZĐa-zđ0-9\-]+)`)
+	// phraseNumberKeyRe is the serial and year of a số hiệu.
+	phraseNumberKeyRe = regexp.MustCompile(`\d+/\d{4}`)
 	// phraseGroupSepRe joins the provisions of the next document to the
 	// one just named: ", khoản 2 Điều 5 Nghị định số …", "; Điều 5 …".
 	phraseGroupSepRe = regexp.MustCompile(`(?i)^\s*(?:[,;]\s*(?:và\s+)?|và\s+)(?:(?:các|tên)\s+)?(?:điểm|khoản|điều)\s+[0-9a-zđ]`)
@@ -90,6 +98,11 @@ var (
 	// phraseNextRunRe is the next run of provisions after a document's
 	// subject: a separator, then a label.
 	phraseNextRunRe = regexp.MustCompile(`(?i)(?:[,;]\s*(?:và\s+)?|\svà\s+)(?:(?:các|tên)\s+)?(?:điểm|khoản|điều)\s+[0-9a-zđ]`)
+	// phraseHistoryLeadRe opens a document's amendment history right after
+	// its name: "đã được sửa đổi, bổ sung …".
+	phraseHistoryLeadRe = regexp.MustCompile(`(?i)^\s*,?\s*(?:đã được|được)\s+(?:sửa đổi|bổ sung)`)
+	// phraseSemiRunRe is the next run after a ";".
+	phraseSemiRunRe = regexp.MustCompile(`(?i);\s*(?:và\s+)?(?:(?:các|tên)\s+)?(?:điểm|khoản|điều)\s+[0-9a-zđ]`)
 	// phraseHistoryRe in a document's subject means it tells the
 	// document's own amendments, not the next run of the list.
 	phraseHistoryRe = regexp.MustCompile(`(?i)sửa đổi|bổ sung|đã được|được hướng dẫn|thay thế|bãi bỏ`)
@@ -132,22 +145,42 @@ func parsePhraseAmends(text string, enclosing func() string) []Amend {
 // item lead-in above them in the chunk ("5. Sửa đổi, bổ sung một số điều
 // của Luật Nhà ở số 27/2023/QH15 như sau:"), the heading path (innermost
 // first) or else the document title. A lead-in in an earlier chunk is not
-// seen, so the converter can still name a document this misses.
-func PhraseAmendsInChunk(content string, headingPath []string, title string) []Amend {
-	// knowledge titles come from file names: "Nghị định số 140-2021-NĐ-CP"
-	title = fileNumberRe.ReplaceAllString(title, "$1/$2/$3")
+// seen, so the converter can still name a document this misses. number is
+// the chunk's own document's số hiệu: a title naming only that one names
+// the amended document by its name alone.
+func PhraseAmendsInChunk(content string, headingPath []string, title, number string) []Amend {
+	// knowledge titles come from file names: "Nghị định số 140-2021-NĐ-CP",
+	// "… số 06-2026-QH16.html"
+	title = fileNumberRe.ReplaceAllString(phraseFileExtRe.ReplaceAllString(strings.TrimSpace(title), ""), "$1/$2/$3")
+	titleDoc := func() string {
+		if !amendVerbRe.MatchString(title) {
+			return ""
+		}
+		d := amendedDocument(title)
+		if d == "" || namesSeveral(d) {
+			return ""
+		}
+		// "… của Luật Thi đua, khen thưởng số 06/2026/QH16": that số hiệu is
+		// the amending law's own, the amended one is named by title
+		if n := phraseNumberRe.FindStringIndex(d); n != nil {
+			if numberKey(d[n[0]:n[1]]) == numberKey(number) && number != "" {
+				d = strings.TrimRight(strings.TrimSuffix(strings.TrimSpace(d[:n[0]]), "số"), " ,")
+			} else {
+				d = d[:n[1]]
+			}
+		}
+		if strings.TrimSpace(phraseDocTypeRe.ReplaceAllString(d+" ", "")) == "" {
+			return ""
+		}
+		return d
+	}
 	enclosing := func() string {
 		for i := len(headingPath) - 1; i >= 0; i-- {
-			if d := amendedDocument(ownLabelRe.ReplaceAllString(headingPath[i], "")); d != "" {
+			if d := headingDocument(headingPath[i]); d != "" {
 				return d
 			}
 		}
-		if amendVerbRe.MatchString(title) {
-			if d := amendedDocument(title); d != "" && !strings.Contains(strings.ToLower(d), " và ") {
-				return d
-			}
-		}
-		return ""
+		return titleDoc()
 	}
 	var clauseDoc, itemDoc string
 	inChunk := func() string {
@@ -170,9 +203,9 @@ func PhraseAmendsInChunk(content string, headingPath []string, title string) []A
 		}
 		switch {
 		case phraseClauseLineRe.MatchString(line):
-			clauseDoc, itemDoc = leadInDocument(line), ""
+			clauseDoc, itemDoc = leadOrHeading(leadInDocument(line), enclosing(), content, line), ""
 		case phraseItemLineRe.MatchString(line):
-			itemDoc = leadInDocument(line)
+			itemDoc = leadOrHeading(leadInDocument(line), enclosing(), content, line)
 		}
 		for _, a := range parsePhraseAmends(line, inChunk) {
 			dup := false
@@ -200,10 +233,41 @@ func leadInDocument(line string) string {
 	d := amendedDocument(ownLabelRe.ReplaceAllString(line, ""))
 	// "… của Thông tư như sau:" names the document itself, no title
 	d = strings.TrimSpace(strings.TrimSuffix(d, " như sau"))
-	if strings.Contains(strings.ToLower(d), " và ") || strings.TrimSpace(phraseDocTypeRe.ReplaceAllString(d+" ", "")) == "" {
+	if namesSeveral(d) || strings.TrimSpace(phraseDocTypeRe.ReplaceAllString(d+" ", "")) == "" {
 		return ""
 	}
 	return d
+}
+
+// namesSeveral reports a name holding two documents: a second số hiệu, or
+// "và" before a document type ("Nghị định số 68/2026/NĐ-CP và Nghị định
+// 320/2025/NĐ-CP"), not the "và" of a title ("Luật Quy hoạch đô thị và
+// nông thôn", "… giữa NHNN và TCTD").
+func namesSeveral(d string) bool {
+	return len(phraseNumberRe.FindAllString(d, 2)) > 1 || phraseAndDocRe.MatchString(d)
+}
+
+// numberKey is the serial and year of a số hiệu ("48/2013"), so a typo in
+// its code ("48/2013/TTBNNPTNT") does not hide it.
+func numberKey(s string) string {
+	return phraseNumberKeyRe.FindString(s)
+}
+
+// leadOrHeading picks the document of a lead-in line: the lead-in's, unless
+// it and the enclosing heading name different số hiệu and only the
+// heading's appears elsewhere in the chunk — the lead-in has a typo then
+// ("Thông tư 48/2018/TT-BNNPTNT" under "Điều 2. Sửa đổi … Thông tư số
+// 48/2013/TT-BNNPTNT", the chunk citing 48/2013 further on).
+func leadOrHeading(lead, heading, content, leadLine string) string {
+	lk, hk := numberKey(lead), numberKey(heading)
+	if lk == "" || hk == "" || lk == hk {
+		return lead
+	}
+	rest := strings.Replace(content, leadLine, "", 1)
+	if strings.Contains(rest, hk) && !strings.Contains(rest, lk) {
+		return heading
+	}
+	return lead
 }
 
 // phraseItem is one phrase of a clause: rest[start:end] is the phrase
@@ -218,6 +282,10 @@ type phraseItem struct {
 // its own provisions — nothing is carried over a ";" or to the next verb,
 // a missed amendment being better than a wrong one.
 func phraseSentence(text string, enclosing func() string) []Amend {
+	// "(đã được sửa đổi, bổ sung bởi …; …)" says where a provision comes
+	// from: it must not cut the clause list. An exception in brackets stays
+	// for readPhraseTail to see.
+	text = stripRemarks(text)
 	type clause struct {
 		rest   string
 		remove bool
@@ -398,12 +466,18 @@ func readPhraseTail(tail string) (groups []phraseGroup, ok bool) {
 		if !phraseGroupSepRe.MatchString(rest) {
 			// "Nghị định số 24/2014/NĐ-CP ngày 04 tháng 4 năm 2014 của Chính
 			// phủ quy định …; Khoản 5 Điều 7 Nghị định số 37/2014/NĐ-CP": the
-			// next run comes after the document's date and subject
-			if !phraseDocDateRe.MatchString(rest) {
+			// next run comes after the document's date and subject; after
+			// its amendment history ("… số 08/2017/QH14 đã được sửa đổi, bổ
+			// sung một số điều theo Luật số 35/2018/QH14; điểm b …"), whose
+			// labels are not targets, only after the next ";"
+			if !phraseDocDateRe.MatchString(rest) && !phraseHistoryLeadRe.MatchString(rest) {
 				return groups, true
 			}
 			m := phraseNextRunRe.FindStringIndex(rest)
-			if m == nil || phraseHistoryRe.MatchString(rest[:m[0]]) {
+			if m != nil && phraseHistoryRe.MatchString(rest[:m[0]]) {
+				m = phraseSemiRunRe.FindStringIndex(rest)
+			}
+			if m == nil {
 				return groups, true
 			}
 			rest = rest[m[0]:]
@@ -462,6 +536,50 @@ func trimGroupSep(s string) string {
 		s = s[len("và "):]
 	}
 	return s
+}
+
+// stripRemarks blanks the bracketed remarks of text outside quoted
+// phrases, except those holding an exception ("(trừ điểm a)").
+func stripRemarks(text string) string {
+	var b strings.Builder
+	inQuote := false
+	for i := 0; i < len(text); {
+		r, n := utf8.DecodeRuneInString(text[i:])
+		switch r {
+		case '“':
+			inQuote = true
+		case '”':
+			inQuote = false
+		case '"':
+			inQuote = !inQuote
+		case '(':
+			if !inQuote {
+				if m := phraseBracketRe.FindStringIndex(text[i:]); m != nil && m[0] == 0 && !hasException(text[i:i+m[1]]) &&
+					!strings.ContainsAny(text[i:i+m[1]], "“”\"") {
+					b.WriteByte(' ')
+					i += m[1]
+					continue
+				}
+			}
+		}
+		b.WriteString(text[i : i+n])
+		i += n
+	}
+	return b.String()
+}
+
+// headingDocument is the document a heading amends: after của / tại /
+// vào (amendedDocument), else right after the verb when it has a số hiệu
+// ("Điều 1. Sửa đổi, bổ sung Thông tư số 41/2011/TT-BCT ngày …").
+func headingDocument(h string) string {
+	h = ownLabelRe.ReplaceAllString(h, "")
+	if d := amendedDocument(h); d != "" {
+		return d
+	}
+	if m := phraseVerbDocRe.FindStringSubmatch(h); m != nil {
+		return sentenceCase(m[1])
+	}
+	return ""
 }
 
 // sentenceDocument is the one document a sentence names by số hiệu,
@@ -544,8 +662,10 @@ func splitClauses(text string) []string {
 				start = i + 1
 			}
 		case ',', ' ':
+			// "đã được sửa đổi, bổ sung" is one verb, of a document's history
 			if !inQuote && i > start && phraseVerbRe.MatchString(strings.TrimLeft(text[i+1:], " ")) &&
-				(r == ',' || strings.HasPrefix(text[i+1:], "và ")) {
+				(r == ',' || strings.HasPrefix(text[i+1:], "và ")) &&
+				!strings.HasSuffix(strings.ToLower(strings.TrimRight(text[start:i], " ")), "sửa đổi") {
 				out = append(out, text[start:i])
 				start = i + 1
 			}

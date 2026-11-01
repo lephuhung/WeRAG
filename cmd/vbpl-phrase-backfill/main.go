@@ -30,13 +30,14 @@ import (
 
 // phraseLeadSQL preselects chunks that may hold a phrase amendment; the Go
 // parser decides.
-const phraseLeadSQL = `(sửa đổi|thay thế|thay đổi|thay|bãi bỏ)\s+(các\s+)?(cụm\s+từ|từ\s+ngữ|từ)\s*[“"]`
+const phraseLeadSQL = `(sửa đổi|thay thế|thay đổi|thay|bãi bỏ)\s+(các\s+)?(cụm\s+từ|từ\s+ngữ|từ)\s*:?\s*[“"]`
 
 type row struct {
 	ID       string
 	Content  string
 	Metadata []byte
 	Title    string
+	Number   string
 }
 
 func main() {
@@ -50,7 +51,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("database: %v", err)
 	}
-	q := db.Table("chunks c").Select("c.id, c.content, c.metadata, k.title").
+	q := db.Table("chunks c").Select("c.id, c.content, c.metadata, k.title, coalesce(k.metadata->>'doc_number', '') AS number").
 		Joins("JOIN knowledges k ON k.id = c.knowledge_id").
 		Where("c.deleted_at IS NULL AND k.deleted_at IS NULL").
 		Where("c.metadata->'legal'->>'source' = 'vbpl'").
@@ -95,7 +96,7 @@ func main() {
 		if hasPhrases && !*force {
 			continue
 		}
-		phrases := vbpl.PhraseAmendsInChunk(r.Content, path, r.Title)
+		phrases := vbpl.PhraseAmendsInChunk(r.Content, path, r.Title, r.Number)
 		next := append([]interface{}{}, kept...)
 		for _, a := range phrases {
 			ref := vietnamese_legal.AmendRef{Document: a.Document, Article: a.Article, Khoan: a.Khoan, Diem: a.Diem, Phrase: true, From: a.From, To: a.To}
