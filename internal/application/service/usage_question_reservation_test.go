@@ -136,7 +136,9 @@ type questionCountingMeter struct {
 	questions int
 }
 
-func (m *questionCountingMeter) RecordQuestion(context.Context, uint64, string, string) { m.questions++ }
+func (m *questionCountingMeter) RecordQuestion(context.Context, uint64, string, string) {
+	m.questions++
+}
 
 // Saving a turn's user message counts the question and then frees the place
 // the usage check reserved for it.
