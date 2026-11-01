@@ -166,3 +166,62 @@ func TestPhraseAmendsClauses(t *testing.T) {
 		}
 	}
 }
+
+// Fable review of the HKD tax work: exceptions in brackets, several
+// documents in one list, prose between labels, "khoản 1 các Điều 12, 13",
+// a year after a comma.
+func TestPhraseAmendsListReview(t *testing.T) {
+	none := func() string { return "" }
+	ab := func(doc, article, khoan string) Amend {
+		return Amend{Document: doc, Article: article, Khoan: khoan, Phrase: true, From: "A", To: "B"}
+	}
+	cases := []struct {
+		text string
+		want []Amend
+	}{
+		// C1: a bracketed exception drops the clause as the unbracketed one does
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 2 Điều 9 (trừ điểm a)`, nil},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 2 Điều 9, trừ điểm a`, nil},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 5 (trừ khoản 3) Nghị định số 12/2020/NĐ-CP`, nil},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 2 Điều 3 (trừ khoản 3 Điều 4)`, nil},
+		// "giảm trừ" is not an exception
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 4 Điều 7 về giảm trừ gia cảnh`, []Amend{ab("", "7", "4")}},
+		// C2: each run of provisions takes its own document
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 3 Luật Doanh nghiệp, khoản 1 Điều 4 Luật Đầu tư`,
+			[]Amend{ab("Luật Doanh nghiệp", "3", ""), ab("Luật Đầu tư", "4", "1")}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 2 Điều 3 Luật Thuế thu nhập cá nhân, Điều 4 Luật Quản lý thuế`,
+			[]Amend{ab("Luật Thuế thu nhập cá nhân", "3", "2"), ab("Luật Quản lý thuế", "4", "")}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 1 Điều 3 Nghị định số 68/2026/NĐ-CP, khoản 2 Điều 5 Nghị định số 320/2025/NĐ-CP`,
+			[]Amend{ab("Nghị định số 68/2026/NĐ-CP", "3", "1"), ab("Nghị định số 320/2025/NĐ-CP", "5", "2")}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 1 Điều 3 Nghị định số 68/2026/NĐ-CP và khoản 2 Điều 5 Nghị định số 320/2025/NĐ-CP`,
+			[]Amend{ab("Nghị định số 68/2026/NĐ-CP", "3", "1"), ab("Nghị định số 320/2025/NĐ-CP", "5", "2")}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 3 Thông tư số 12/2020/TT-BTC; Điều 5 Thông tư số 13/2020/TT-BTC`,
+			[]Amend{ab("Thông tư số 12/2020/TT-BTC", "3", ""), ab("Thông tư số 13/2020/TT-BTC", "5", "")}},
+		// a run after a named document naming none: whose it is is unknown
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 1 Điều 3 Nghị định số 68/2026/NĐ-CP, khoản 2 Điều 5`,
+			[]Amend{ab("Nghị định số 68/2026/NĐ-CP", "3", "1")}},
+		// the list runs on to a document past what can be read
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 3 Điều 15, mục 2 Chương II Nghị định số 12/2020/NĐ-CP`, nil},
+		// a later run in the amending document itself is left out
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 3 Luật Đầu tư, Điều 5 Luật này`, []Amend{ab("Luật Đầu tư", "3", "")}},
+		// C3: prose between labels ends the list
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 1 Điều 3 trong trường hợp quy định tại khoản 2 Điều 9`,
+			[]Amend{ab("", "3", "1")}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” quy định tại khoản 1 Điều 3 và các văn bản quy định chi tiết tại Điều 9`,
+			[]Amend{ab("", "3", "1")}},
+		// C4: the khoản before "các Điều" go on to each of them
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 1 các Điều 12, 13 và 14`,
+			[]Amend{ab("", "12", "1"), ab("", "13", "1"), ab("", "14", "1")}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 2 Điều 9, 10 và 11`,
+			[]Amend{ab("", "9", "2"), ab("", "10", ""), ab("", "11", "")}},
+		// C10: a year after a comma is not Điều 2026
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 3, 2026`, []Amend{ab("", "3", "")}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 1, khoản 2 Điều 3 và Điều 4, 5`,
+			[]Amend{ab("", "3", "1"), ab("", "3", "2"), ab("", "4", ""), ab("", "5", "")}},
+	}
+	for _, c := range cases {
+		if got := parsePhraseAmends(c.text, none); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s\n got %+v\nwant %+v", c.text, got, c.want)
+		}
+	}
+}

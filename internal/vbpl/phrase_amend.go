@@ -65,7 +65,26 @@ var (
 	// Phòng, chống ma túy số 73/2021/QH14").
 	phraseDocNumberRe = regexp.MustCompile(`(?i)^[\s,]*(?:của\s+|tại\s+)?((?:Bộ luật|Luật|Pháp lệnh|Nghị định|Nghị quyết|Thông tư liên tịch|Thông tư|Quyết định)\s[^;:(“"]{0,160}?\d+/\d{4}/[A-ZĐa-zđ0-9\-]+)`)
 	phraseDocEnd      = regexp.MustCompile(`(?i)\s+(?:ngày\s+\d|được sửa đổi|đã được|như sau|và\s)`)
+	// phraseDocStartRe is a document title in a provision list: the labels
+	// before it are that document's ("Điều 3 Luật Doanh nghiệp, khoản 1
+	// Điều 4 Luật Đầu tư"). Titles are capitalised, so it keeps case.
+	phraseDocStartRe = regexp.MustCompile(`(?:^|\s)(?:Bộ luật|Luật|Pháp lệnh|Nghị định|Nghị quyết|Thông tư liên tịch|Thông tư|Quyết định)(?:[\s,]|$)`)
+	// phraseListGapRe is what may stand between two labels of one list:
+	// separators and "các" / "của", not prose ("khoản 1 Điều 3 trong trường
+	// hợp quy định tại khoản 2 Điều 9" names only khoản 1 Điều 3).
+	phraseListGapRe = regexp.MustCompile(`(?i)^(?:\s|,|;|và|hoặc|các|của)*$`)
+	// phraseGroupSepRe joins the provisions of the next document to the
+	// one just named: ", khoản 2 Điều 5 Nghị định số …", "; Điều 5 …".
+	phraseGroupSepRe = regexp.MustCompile(`(?i)^\s*(?:[,;]\s*(?:và\s+)?|và\s+)(?:(?:các|tên)\s+)?(?:điểm|khoản|điều)\s+[0-9a-zđ]`)
+	// phraseListGoesOnRe: the list goes on after the labels read.
+	phraseListGoesOnRe = regexp.MustCompile(`(?i)^\s*(?:[,;]|và\s)`)
+	// phraseProvLabelRe is a provision label inside a would-be title.
+	phraseProvLabelRe = regexp.MustCompile(`(?i)(?:^|\s)(?:điểm|khoản|điều)\s+\d`)
 )
+
+// phraseBareMax bounds a bare continuation number ("Điều 3, 4"): no Điều
+// or khoản runs to 1000, so "Điều 3, 2026" is a year, not Điều 2026.
+const phraseBareMax = 1000
 
 // phraseAmends reads the phrase amendments of one paragraph, sentence by
 // sentence. Provisions in an appendix, mục or table (no Điều) are skipped;
@@ -188,28 +207,31 @@ func phraseClause(rest string, remove bool, enclosing func() string) []Amend {
 			tail = rest[it.end:items[i+1].start]
 		}
 		pending = append(pending, it)
-		provs, doc, ok := readPhraseTail(tail)
-		if len(provs) == 0 && ok && it.mid != "" {
-			provs, doc, ok = readPhraseTail(it.mid)
+		groups, ok := readPhraseTail(tail)
+		if len(groups) == 0 && ok && it.mid != "" {
+			groups, ok = readPhraseTail(it.mid)
 		}
 		if !ok {
 			// the provisions are in the amending document itself
 			return out
 		}
-		if len(provs) == 0 {
+		if len(groups) == 0 {
 			continue
 		}
-		if doc == "" {
-			doc = phraseSpacedNumberRe.ReplaceAllString(enclosing(), "$1-$2")
-		}
-		for _, p := range pending {
-			from := strings.TrimSpace(p.from)
-			if from == "" {
-				continue
+		for _, g := range groups {
+			doc := g.doc
+			if doc == "" {
+				doc = phraseSpacedNumberRe.ReplaceAllString(enclosing(), "$1-$2")
 			}
-			for _, pr := range provs {
-				out = append(out, Amend{Document: doc, Article: pr.article, Khoan: pr.khoan, Diem: pr.diem,
-					From: from, To: strings.TrimSpace(p.to), Phrase: true})
+			for _, p := range pending {
+				from := strings.TrimSpace(p.from)
+				if from == "" {
+					continue
+				}
+				for _, pr := range g.provs {
+					out = append(out, Amend{Document: doc, Article: pr.article, Khoan: pr.khoan, Diem: pr.diem,
+						From: from, To: strings.TrimSpace(p.to), Phrase: true})
+				}
 			}
 		}
 		pending = nil
@@ -218,39 +240,83 @@ func phraseClause(rest string, remove bool, enclosing func() string) []Amend {
 }
 
 // hasException reports a "trừ" / "ngoại trừ" / "không áp dụng" in tail,
-// not the "trừ" of "khấu trừ".
+// not the "trừ" of "khấu trừ", "giảm trừ" or "bù trừ".
 func hasException(tail string) bool {
 	for _, m := range phraseExceptRe.FindAllStringIndex(tail, -1) {
-		if !strings.HasSuffix(strings.ToLower(strings.TrimRight(tail[:m[0]+1], " ,(")), "khấu") {
+		before := strings.ToLower(strings.TrimRight(tail[:m[0]+1], " ,("))
+		if !strings.HasSuffix(before, "khấu") && !strings.HasSuffix(before, "giảm") && !strings.HasSuffix(before, "bù") {
 			return true
 		}
 	}
 	return false
 }
 
-// readPhraseTail reads the provisions of a tail and the document named
-// right after them; a tail with an exception gives none. ok is false when
-// that document is the amending one itself ("Nghị định này").
-func readPhraseTail(tail string) (provs []phraseProv, doc string, ok bool) {
+// phraseGroup is a run of provisions and the document named after them
+// ("" = none: the enclosing one).
+type phraseGroup struct {
+	provs []phraseProv
+	doc   string
+}
+
+// readPhraseTail reads the provisions of a tail, each run with the
+// document named right after it ("tại Điều 3 Luật Doanh nghiệp, khoản 1
+// Điều 4 Luật Đầu tư" is two runs); a tail with an exception gives none.
+// ok is false when the first run's document is the amending one itself
+// ("Nghị định này"). A run after a named document that names none of its
+// own is left out: it may be that document's or the enclosing one's.
+func readPhraseTail(tail string) (groups []phraseGroup, ok bool) {
+	// "tại khoản 2 Điều 9, trừ điểm a" or "(trừ điểm a)": what is excepted
+	// cannot be told apart reliably, so the amendment is left out — read
+	// before the brackets go, so both spellings agree
+	if hasException(tail) {
+		return nil, true
+	}
 	// "khoản 2 Điều 9 (được sửa đổi bởi khoản 1 Điều 1 Nghị định số …)":
 	// a bracket says where the provision comes from, it is not a target
-	tail = phraseBracketRe.ReplaceAllString(tail, " ")
-	if hasException(tail) {
-		// "tại khoản 2 Điều 9, trừ điểm a": what is excepted cannot be
-		// told apart reliably, so the amendment is left out
-		return nil, "", true
+	s := phraseBracketRe.ReplaceAllString(tail, " ")
+	for {
+		provs, end := readPhraseTargets(s)
+		if len(provs) == 0 {
+			return groups, true
+		}
+		name, nameEnd := phraseDocName(s[end:])
+		if strings.HasSuffix(strings.ToLower(name), " này") {
+			return groups, len(groups) > 0
+		}
+		if name == "" {
+			if len(groups) > 0 {
+				return groups, true
+			}
+			// "tại khoản 3 Điều 15, mục 2 Chương II Nghị định số 12/2020/NĐ-CP":
+			// the list goes on past what was read to a document — whose
+			// provisions those are cannot be told
+			rest := s[end:]
+			if phraseListGoesOnRe.MatchString(rest) && (phraseDocStartRe.MatchString(rest) || phraseNumberRe.MatchString(rest)) {
+				return nil, true
+			}
+			return []phraseGroup{{provs: provs}}, true
+		}
+		groups = append(groups, phraseGroup{provs: provs, doc: sentenceCase(name)})
+		rest := s[end+nameEnd:]
+		if !phraseGroupSepRe.MatchString(rest) {
+			return groups, true
+		}
+		s = trimGroupSep(rest)
 	}
-	provs, end := readPhraseTargets(tail)
-	if len(provs) == 0 {
-		return nil, "", true
-	}
-	var name string
-	if m := phraseDocNumberRe.FindStringSubmatch(tail[end:]); m != nil && !phraseOtherDocRe.MatchString(phraseDocTypeRe.ReplaceAllString(m[1], "")) {
-		name = m[1]
-	} else if m := phraseDocRe.FindStringSubmatch(tail[end:]); m != nil {
-		name = m[1]
+}
+
+// phraseDocName reads the document named at the start of s and the byte
+// offset just after it ("" when s names none).
+func phraseDocName(s string) (name string, end int) {
+	var start int
+	if m := phraseDocNumberRe.FindStringSubmatchIndex(s); m != nil &&
+		!phraseOtherDocRe.MatchString(phraseDocTypeRe.ReplaceAllString(s[m[2]:m[3]], "")) &&
+		!phraseProvLabelRe.MatchString(s[m[2]:m[3]]) {
+		start, name = m[2], s[m[2]:m[3]]
+	} else if m := phraseDocRe.FindStringSubmatchIndex(s); m != nil {
+		start, name = m[2], s[m[2]:m[3]]
 	} else {
-		return provs, "", true
+		return "", 0
 	}
 	if n := phraseNumberRe.FindStringIndex(name); n != nil {
 		name = name[:n[1]]
@@ -258,11 +324,18 @@ func readPhraseTail(tail string) (provs []phraseProv, doc string, ok bool) {
 		name = name[:e[0]]
 	}
 	name = strings.TrimRight(strings.TrimSpace(name), " ,.")
-	low := strings.ToLower(name)
-	if strings.HasSuffix(low, " này") {
-		return nil, "", false
+	return name, start + len(name)
+}
+
+// trimGroupSep drops the separator before the next run's first label.
+func trimGroupSep(s string) string {
+	s = strings.TrimLeft(s, " ")
+	s = strings.TrimLeft(s, ",;")
+	s = strings.TrimLeft(s, " ")
+	if low := strings.ToLower(s); strings.HasPrefix(low, "và ") {
+		s = s[len("và "):]
 	}
-	return provs, sentenceCase(name), true
+	return s
 }
 
 // nextSegment is text up to its next ";" outside quoted phrases.
@@ -357,19 +430,22 @@ type phraseProv struct{ article, khoan, diem string }
 // readPhraseTargets lists the provisions of "tại điểm a và c khoản 2, các
 // khoản 3, 4 Điều 25, khoản 2 Điều 16, Điều 19": điểm collected before a
 // khoản belong to it, khoản collected before a Điều belong to it, and a
-// bare label right after one continues that list. Reading stops at a
-// document number ("Điều 14 Thông tư số 09/2015/TT-BGTVT"). end is the byte
-// offset just after the last provision read.
+// bare label right after one continues that list; the khoản before "các
+// Điều 12, 13 và 14" belong to each of them. Reading stops at a document
+// (its title or number: "Điều 14 Thông tư số 09/2015/TT-BGTVT") and at
+// prose between two labels. end is the byte offset just after the last
+// provision read.
 func readPhraseTargets(s string) (out []phraseProv, end int) {
 	if i := phraseNumberRe.FindStringIndex(s); i != nil {
 		s = s[:i[0]]
 	}
-	type khoan struct {
-		n     string
-		diems []string
+	if i := phraseDocStartRe.FindStringIndex(s); i != nil {
+		s = s[:i[0]]
 	}
-	var khoans []khoan
+	var khoans []phraseKhoan
 	var diems []string
+	// carry: the khoản of "khoản 1 các Điều 12, 13", for the bare Điều after
+	var carry []phraseKhoan
 	seen := map[phraseProv]bool{}
 	add := func(p phraseProv) {
 		if !seen[p] {
@@ -377,11 +453,8 @@ func readPhraseTargets(s string) (out []phraseProv, end int) {
 			out = append(out, p)
 		}
 	}
-	article := func(n string) {
-		if len(khoans) == 0 {
-			khoans = []khoan{{diems: diems}}
-		}
-		for _, k := range khoans {
+	article := func(n string, ks []phraseKhoan) {
+		for _, k := range ks {
 			if len(k.diems) == 0 {
 				add(phraseProv{article: n, khoan: k.n})
 			}
@@ -389,36 +462,60 @@ func readPhraseTargets(s string) (out []phraseProv, end int) {
 				add(phraseProv{article: n, khoan: k.n, diem: d})
 			}
 		}
-		khoans, diems = nil, nil
 	}
-	for _, m := range provMatches(s) {
+	for i, m := range provMatches(s) {
+		if i > 0 && !phraseListGapRe.MatchString(s[end:m.start]) {
+			break
+		}
 		switch m.kw {
 		case "điểm":
 			diems = append(diems, strings.ToLower(m.label))
 		case "khoản":
-			khoans = append(khoans, khoan{n: m.label, diems: diems})
+			khoans = append(khoans, phraseKhoan{n: m.label, diems: diems})
 			diems = nil
 		case "điều":
-			article(m.label)
+			ks := khoans
+			if len(ks) == 0 {
+				ks = []phraseKhoan{{diems: diems}}
+			}
+			switch {
+			case m.bare && carry != nil && len(khoans) == 0 && len(diems) == 0:
+				ks = carry
+			case m.plural:
+				carry = ks
+			default:
+				carry = nil
+			}
+			article(m.label, ks)
+			khoans, diems = nil, nil
 		}
 		end = m.end
 	}
 	return out, end
 }
 
+type phraseKhoan struct {
+	n     string
+	diems []string
+}
+
 type provMatch struct {
-	kw, label string
-	end       int
+	kw, label  string
+	start, end int
+	// bare: a label without its keyword ("Điều 3, 4"); plural: the keyword
+	// after "các" ("các Điều 12, 13")
+	bare, plural bool
 }
 
 // provMatches returns the provision labels of s: "Điều 3," but not "điều
-// của"; a bare label only right after a label of its kind (a number after
-// a khoản or Điều, a letter after a điểm) and followed by the list going on
-// or ending, so "…, 15 ngày" is not one. A rejected match does not hide
-// the text after its first rune (", khoản 6" is not điểm k).
+// của"; a bare label only right after a label of its kind (a number below
+// phraseBareMax after a khoản or Điều, a letter after a điểm) and followed
+// by the list going on or ending, so "…, 15 ngày" or "…, 2026" is not one.
+// A rejected match does not hide the text after its first rune (",
+// khoản 6" is not điểm k).
 func provMatches(s string) []provMatch {
 	var out []provMatch
-	last, lastEnd := "", -1
+	last, lastEnd, lastPlural := "", -1, false
 	for pos := 0; pos < len(s); {
 		m := phraseProvRe.FindStringSubmatchIndex(s[pos:])
 		if m == nil {
@@ -439,13 +536,14 @@ func provMatches(s string) []provMatch {
 				last = ""
 			case m[2] >= 0:
 				last = strings.ToLower(s[m[2]:m[3]])
-				out = append(out, provMatch{kw: last, label: s[m[4]:m[5]], end: m[1]})
+				lastPlural = strings.HasSuffix(strings.ToLower(s[:m[0]]), "các ")
+				out = append(out, provMatch{kw: last, label: s[m[4]:m[5]], start: m[0], end: m[1], plural: lastPlural})
 				accepted = true
-			case bare && m[6] >= 0 && (last == "khoản" || last == "điều"):
-				out = append(out, provMatch{kw: last, label: s[m[6]:m[7]], end: m[1]})
+			case bare && m[6] >= 0 && (last == "khoản" || last == "điều") && bareNumberOK(s[m[6]:m[7]]):
+				out = append(out, provMatch{kw: last, label: s[m[6]:m[7]], start: m[0], end: m[1], bare: true, plural: lastPlural})
 				accepted = true
 			case bare && m[8] >= 0 && last == "điểm":
-				out = append(out, provMatch{kw: last, label: s[m[8]:m[9]], end: m[1]})
+				out = append(out, provMatch{kw: last, label: s[m[8]:m[9]], start: m[0], end: m[1], bare: true, plural: lastPlural})
 				accepted = true
 			}
 		}
@@ -458,6 +556,21 @@ func provMatches(s string) []provMatch {
 		pos = next
 	}
 	return out
+}
+
+// bareNumberOK: a bare continuation number below phraseBareMax.
+func bareNumberOK(label string) bool {
+	n := 0
+	for _, r := range label {
+		if r < '0' || r > '9' {
+			break
+		}
+		n = n*10 + int(r-'0')
+		if n >= phraseBareMax {
+			return false
+		}
+	}
+	return true
 }
 
 // enclosingAmendedDocument is the document the open Điều / khoản amends,
