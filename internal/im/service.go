@@ -462,6 +462,17 @@ func (s *Service) preflightUsage(ctx context.Context, sessionID string) imUsageP
 	return imUsagePreflight{grant: grant, err: err}
 }
 
+// releaseUsagePreflight frees the question the preflight reserved under the
+// plan's questions caps (UsageTurnGrant.ReleaseReservation). Saving the
+// user message releases it already; this covers a message that is never
+// run (queue full, /stop, unreadable attachment) or fails before its user
+// message is saved. Idempotent.
+func releaseUsagePreflight(ctx context.Context) {
+	if p, ok := ctx.Value(imUsagePreflightKey{}).(imUsagePreflight); ok {
+		p.grant.ReleaseReservation()
+	}
+}
+
 // withUsagePreflight hands the preflight result to the QA worker.
 func withUsagePreflight(ctx context.Context, p imUsagePreflight) context.Context {
 	return context.WithValue(ctx, imUsagePreflightKey{}, p)
@@ -2021,6 +2032,7 @@ func (s *Service) HandleMessage(ctx context.Context, msg *IncomingMessage, chann
 	pos, enqueueErr := s.qaQueue.Enqueue(req)
 	if enqueueErr != nil {
 		qaCancel()
+		preflight.grant.ReleaseReservation()
 		logger.Warnf(ctx, "[IM] Queue rejected: user=%s reason=%v", msg.UserID, enqueueErr)
 		_ = adapter.SendReply(ctx, msg, &ReplyMessage{
 			Content: "Hiện có nhiều người đang chờ, vui lòng thử lại sau.",
@@ -2096,6 +2108,7 @@ func (s *Service) executeQARequest(req *qaRequest) {
 	// Check if a pre-execution /stop was issued while this request was queued.
 	if s.checkAndClearStopMarker(ctx, req.userKey) {
 		logger.Infof(ctx, "[IM] Request cancelled by remote /stop before execution: %s", req.userKey)
+		releaseUsagePreflight(ctx)
 		return
 	}
 
@@ -2111,6 +2124,7 @@ func (s *Service) executeQARequest(req *qaRequest) {
 		if sendErr := req.adapter.SendReply(ctx, req.msg, &ReplyMessage{Content: "❌ Không đọc được tệp đính kèm này, vui lòng thử lại hoặc mô tả bằng văn bản.", IsFinal: true}); sendErr != nil {
 			logger.Warnf(ctx, "[IM] Failed to send attachment error reply: %v", sendErr)
 		}
+		releaseUsagePreflight(ctx)
 		return
 	}
 	if req.channel.KnowledgeBaseID != "" && downloaded != nil {
@@ -2134,6 +2148,8 @@ func (s *Service) executeQARequest(req *qaRequest) {
 			); err != nil {
 				logger.Errorf(ctx, "[IM] Full-output QA failed: %v", err)
 			}
+			// a turn that failed before saving its question frees its place
+			releaseUsagePreflight(ctx)
 			return
 		}
 	} else if streamer, ok := req.adapter.(StreamSender); ok {
@@ -2144,11 +2160,13 @@ func (s *Service) executeQARequest(req *qaRequest) {
 		); err != nil {
 			logger.Errorf(ctx, "[IM] Stream QA failed: %v", err)
 		}
+		releaseUsagePreflight(ctx)
 		return
 	}
 
 	// Non-streaming fallback: collect full answer then send.
 	answer, err := s.runQA(ctx, req.session, req.msg.Content, req.agent, kbIDs, attachments, imageURLs, req.userKey, req.msg.Quote)
+	releaseUsagePreflight(ctx)
 	if err != nil {
 		logger.Errorf(ctx, "[IM] QA failed: %v, sending fallback reply", err)
 		answer = imQAFailureReply(err)
@@ -2931,6 +2949,7 @@ func (s *Service) handleMessageStream(ctx context.Context, msg *IncomingMessage,
 	// Create user message
 	userMsg, err := s.messageService.CreateMessage(qaCtx, createIMUserMessagePayload(session.ID, msg.Content, requestID, attachments))
 	if err != nil {
+		releaseUsagePreflight(qaCtx)
 		return fmt.Errorf("create user message: %w", err)
 	}
 
@@ -3198,6 +3217,7 @@ func (s *Service) runQA(ctx context.Context, session *types.Session, query strin
 	// Create user message so it appears in conversation history
 	userMsg, err := s.messageService.CreateMessage(ctx, createIMUserMessagePayload(session.ID, query, requestID, attachments))
 	if err != nil {
+		releaseUsagePreflight(ctx)
 		return "", fmt.Errorf("create user message: %w", err)
 	}
 

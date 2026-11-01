@@ -1325,6 +1325,8 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 
 	if mode == qaModeAgent {
 		if err := h.rejectIfOtherAgentRunLive(ctx, reqCtx); err != nil {
+			// refused before its question was saved: free the reserved place
+			types.UsageTurnGrantFromContext(ctx).ReleaseReservation()
 			if reqCtx.c != nil && !reqCtx.skipSSE {
 				_ = reqCtx.c.Error(err)
 			} else {
@@ -1347,6 +1349,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 			},
 		}); err != nil {
 			logger.Errorf(ctx, "Failed to emit agent query event: %v", err)
+			types.UsageTurnGrantFromContext(ctx).ReleaseReservation()
 			return
 		}
 	}
