@@ -579,13 +579,65 @@ var (
 	// legalHistoryRefRe ends the text before "Điều N" naming where an
 	// earlier amendment was made ("đã được sửa đổi, bổ sung bởi khoản 5
 	// Điều 1 Thông tư số 41/2020/TT-BGTVT"): a reference, not an operation.
-	legalHistoryRefRe  = regexp.MustCompile(`(?i)được\s+(?:sửa\s+đổi|bổ\s+sung|thay\s+thế)(?:\s*,\s*bổ\s+sung)?\s+(?:bởi|tại|theo)(?:\s+quy\s+định\s+tại)?(?:\s*(?:,|và)?\s*(?:các\s+)?(?:điểm|khoản)\s+[0-9a-zđ]+)*\s*$`)
+	// "(đã) được / bị bãi bỏ bởi khoản 3 Điều 1 Thông tư …" is history too.
+	legalHistoryRefRe  = regexp.MustCompile(`(?i)(?:được|bị)\s+(?:sửa\s+đổi|bổ\s+sung|thay\s+thế|bãi\s+bỏ)(?:\s*,\s*bổ\s+sung)?\s+(?:bởi|tại|theo)(?:\s+quy\s+định\s+tại)?(?:\s*(?:,|và)?\s*(?:các\s+)?(?:điểm|khoản)\s+[0-9a-zđ]+)*\s*$`)
 	legalParenRe       = regexp.MustCompile(`\([^()]*\)`)
 	legalBeforeAfterRe = regexp.MustCompile(`(?i)(?:vào\s+)?(?:sau|trước)\s*$`)
 	// legalSelfRefRe starts the text after "Điều N" naming B itself
-	// ("Điều 5 Nghị định này").
-	legalSelfRefRe = regexp.MustCompile(`(?i)^[\s,]*(?:(?:khoản|điểm)\s+\S+\s+)?(?:của\s+)?(?:Bộ luật|Luật|Pháp lệnh|Nghị định|Nghị quyết|Thông tư liên tịch|Thông tư|Quyết định|văn bản)\s+này\b`)
+	// ("Điều 5 Nghị định này"), also at the end of a list of provisions
+	// ("Điều 5 và Điều 6 Nghị định này", "Điều 5, khoản 2 Điều 6 …").
+	legalSelfRefRe = regexp.MustCompile(`(?i)^(?:\s*(?:,|và|hoặc|đến|tới|-)\s*(?:(?:khoản|điểm)\s+[0-9a-zđ]+\s+(?:của\s+)?)?Điều\s+\d+[a-zđ]?)*` +
+		`[\s,]*(?:(?:khoản|điểm)\s+\S+\s+)?(?:của\s+)?(?:Bộ luật|Luật|Pháp lệnh|Nghị định|Nghị quyết|Thông tư liên tịch|Thông tư|Quyết định|văn bản)\s+này\b`)
+	// legalArticleHeadingRe is a line shaped as an Điều heading ("Điều 1.
+	// Sửa đổi … Nghị định số …") in a copy without Markdown headings (PDF,
+	// OCR): B's own Điều, never A's.
+	legalArticleHeadingRe = regexp.MustCompile(`^(?:\*\*)?Điều\s+\d+[a-zđ]?\s*[.:]`)
+	// legalCiteResidueRe is what a bracket holding only a citation keeps
+	// besides it: the type words ("(Nghị định số 88/2025/NĐ-CP)").
+	legalCiteResidueRe = regexp.MustCompile(`(?i)^[\s,.:;]*(?:(?:bộ luật|luật|pháp lệnh|nghị định|nghị quyết|thông tư liên tịch|thông tư|quyết định|chỉ thị)\s*(?:số\s*:?)?\s*)?$`)
+	// legalLawWordRe is where a law may be named on a line.
+	legalLawWordRe = regexp.MustCompile(`(?:^|[^\p{L}])(Bộ luật|Luật|Pháp lệnh)\s+\p{L}`)
 )
+
+// legalCitationOnly reports whether a bracket's inside is one citation and
+// nothing else ("Nghị định số 88/2025/NĐ-CP", "Luật Đất đai"): it names
+// the document of the Điều before it, it is no history remark.
+func legalCitationOnly(inner, aBase string) bool {
+	cs := vietnamese_legal.FindCitationsKnowing(inner, aBase)
+	if len(cs) != 1 || (cs[0].Key == "" && cs[0].Kind != vietnamese_legal.CitationName) {
+		return false
+	}
+	r := []rune(inner)
+	return legalCiteResidueRe.MatchString(string(r[:cs[0].Start]) + " " + string(r[cs[0].End:]))
+}
+
+// legalUnreadLawBetween reports whether line names a law between the rune
+// offsets from and to that FindCitations did not read (a title outside
+// its lists, in lower case): a Điều before it may be that law's.
+func legalUnreadLawBetween(line string, from, to int, aBase string) bool {
+	r := []rune(line)
+	if from >= to || to > len(r) {
+		return false
+	}
+	seg := string(r[from:to])
+	for _, m := range legalLawWordRe.FindAllStringSubmatchIndex(seg, -1) {
+		rest := line[len(string(r[:from]))+m[2]:]
+		cs := vietnamese_legal.FindCitationsKnowing(rest, aBase)
+		// read: a name starting there, or the name of a number after it
+		named := len(cs) > 0 && cs[0].Kind != vietnamese_legal.CitationName && cs[0].Name != "" &&
+			strings.HasPrefix(strings.ToLower(rest), strings.ToLower(cs[0].Name))
+		if len(cs) == 0 || (cs[0].Start != 0 && !named) {
+			return true
+		}
+	}
+	return false
+}
+
+// legalHistoryBetweenRe, between "Điều N" and the next citation, makes
+// that citation the author of an earlier amendment ("Điều 8 đã bị bãi bỏ
+// theo khoản 3 Điều 1 Thông tư số 41/2020/TT-BGTVT"), not Điều N's
+// document.
+var legalHistoryBetweenRe = regexp.MustCompile(`(?i)(?:được|bị)\s+(?:sửa\s+đổi|bổ\s+sung|thay\s+thế|bãi\s+bỏ)(?:\s*,\s*bổ\s+sung)?\s+(?:bởi|tại|theo)`)
 
 // legalCitedArticlesOf lists the Điều of document A (number key aKey,
 // title base aBase for a law) that an amender's chunk cites outside quotes
@@ -605,7 +657,7 @@ func legalCitedArticlesOf(content, heading, aKey, aBase string) map[string]bool 
 		return n == aBase || strings.HasPrefix(n, aBase+" ") || strings.HasPrefix(n, aBase+",")
 	}
 	headingOnlyA := false
-	if hc := vietnamese_legal.FindCitations(heading); len(hc) > 0 {
+	if hc := vietnamese_legal.FindCitationsKnowing(heading, aBase); len(hc) > 0 {
 		headingOnlyA = true
 		for _, c := range hc {
 			if (c.Key != "" || c.Kind == vietnamese_legal.CitationName) && !isA(c) {
@@ -616,16 +668,24 @@ func legalCitedArticlesOf(content, heading, aKey, aBase string) map[string]bool 
 	out := map[string]bool{}
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, ">") || strings.HasPrefix(line, "#") {
+		if line == "" || strings.HasPrefix(line, ">") || strings.HasPrefix(line, "#") || legalArticleHeadingRe.MatchString(line) {
 			continue
 		}
 		// a bracketed remark is history ("(đã được sửa đổi, bổ sung bởi
-		// khoản 7 Điều 1 Thông tư số 41/2021/TT-BGTVT)"), not an operation
-		for stripped := legalParenRe.ReplaceAllString(line, " "); stripped != line; stripped = legalParenRe.ReplaceAllString(line, " ") {
+		// khoản 7 Điều 1 Thông tư số 41/2021/TT-BGTVT)"), not an operation;
+		// a bracket holding only a citation names the Điều's document
+		// ("Điều 12 (Nghị định số 88/2025/NĐ-CP) được bãi bỏ"): kept
+		unbracket := func(br string) string {
+			if inner := br[1 : len(br)-1]; legalCitationOnly(inner, aBase) {
+				return " " + inner + " "
+			}
+			return " "
+		}
+		for stripped := legalParenRe.ReplaceAllStringFunc(line, unbracket); stripped != line; stripped = legalParenRe.ReplaceAllStringFunc(line, unbracket) {
 			line = stripped // nested brackets, innermost first
 		}
 		var cites []vietnamese_legal.Citation
-		for _, c := range vietnamese_legal.FindCitations(line) {
+		for _, c := range vietnamese_legal.FindCitationsKnowing(line, aBase) {
 			if c.Key != "" || c.Kind == vietnamese_legal.CitationName {
 				cites = append(cites, c)
 			}
@@ -647,8 +707,9 @@ func legalCitedArticlesOf(content, heading, aKey, aBase string) map[string]bool 
 				}
 			}
 			switch {
-			case next != nil && isA(*next):
-			case next == nil && len(cites) == 0 && headingOnlyA:
+			case next != nil && isA(*next) && !legalUnreadLawBetween(line, end, next.Start, aBase) &&
+				!legalHistoryBetweenRe.MatchString(string([]rune(line)[end:next.Start])):
+			case next == nil && len(cites) == 0 && headingOnlyA && !legalUnreadLawBetween(line, end, utf8.RuneCountInString(line), aBase):
 			default:
 				continue
 			}

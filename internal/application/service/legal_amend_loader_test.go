@@ -529,6 +529,27 @@ func TestLegalCitedArticlesOf(t *testing.T) {
 			"2. Bãi bỏ khoản 15 Điều 1 Thông tư số 39/2018/TT-BTC ngày 20/4/2018 của Bộ trưởng Bộ Tài chính.",
 			`[]`, "39/2018/TT-BTC", "", []string{"1"}},
 		{"quoted text is A's new wording, not a citation", "> “Điều 9. Mới”", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "", nil},
+		// Fable K5
+		{"a list of B's own Điều", "Hiệu lực theo Điều 5 và Điều 6 Nghị định này.", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "", nil},
+		{"a list of B's own provisions", "Thực hiện theo Điều 5, khoản 2 Điều 6 của Nghị định này.", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "", nil},
+		{"a list of A's Điều", "Bãi bỏ Điều 5 và Điều 6 Nghị định số 14/2016/NĐ-CP.", `[]`, "14/2016/NĐ-CP", "", []string{"5", "6"}},
+		{"a bracket holding only the citation", "2. Điều 12 (Nghị định số 88/2025/NĐ-CP) được bãi bỏ.", `[]`, "88/2025/NĐ-CP", "", []string{"12"}},
+		{"a bracket holding only the citation, the heading another document", "2. Điều 12 (Nghị định số 88/2025/NĐ-CP) được bãi bỏ.",
+			`["Điều 2. Sửa đổi Nghị định số 254/2025/NĐ-CP"]`, "254/2025/NĐ-CP", "", nil},
+		{"a repeal history", "1. Sửa đổi khoản 4 Điều 7 Thông tư số 13/2019/TT-BGTVT đã được bãi bỏ bởi khoản 3 Điều 1 Thông tư số 41/2020/TT-BGTVT như sau:",
+			`["Điều 1. Sửa đổi Thông tư số 13/2019/TT-BGTVT"]`, "41/2020/TT-BGTVT", "", nil},
+		{"a repeal history, bị", "Điểm b khoản 2 Điều 8 đã bị bãi bỏ theo khoản 3 Điều 1 Thông tư số 41/2020/TT-BGTVT.",
+			`[]`, "41/2020/TT-BGTVT", "", nil},
+		{"a plain-text Điều heading of B (PDF copy)", "Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP",
+			`[]`, "14/2016/NĐ-CP", "", nil},
+		{"a bold plain-text Điều heading of B", "**Điều 2.** Bãi bỏ Nghị định số 14/2016/NĐ-CP",
+			`[]`, "14/2016/NĐ-CP", "", nil},
+		// Fable K4 side effect: a lower-case name ends the Điều's reach
+		{"a lower-case law before A", "Căn cứ Điều 9 Luật đầu tư; sửa Điều 7 Luật Đất đai", `[]`, "31/2024/QH15", "luật đất đai", []string{"7"}},
+		{"the same law in lower case", "Căn cứ Điều 9 Luật đất đai; sửa Điều 7 Luật Đất đai", `[]`, "31/2024/QH15", "luật đất đai", []string{"9", "7"}},
+		{"an unlisted lower-case law before A", "Căn cứ Điều 9 Luật quy chế thử nghiệm; sửa Điều 7 Luật Đất đai", `[]`, "31/2024/QH15", "luật đất đai", []string{"7"}},
+		{"A in lower case, unlisted", "Bãi bỏ Điều 3 Luật quy chế thử nghiệm.", `[]`, "1/2019/QH14", "luật quy chế thử nghiệm", []string{"3"}},
+		{"a law named before its number", "Bãi bỏ Điều 7 của Luật Đất đai số 45/2013/QH13.", `[]`, "45/2013/QH13", "", []string{"7"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
