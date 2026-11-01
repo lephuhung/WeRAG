@@ -247,6 +247,9 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 			return nil, nil, err
 		}
 		customAgent = enforcePublicLookupConfig(customAgent)
+		if err := h.publicLookupWithoutKnowledge(ctx, customAgent); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	// Merge @mentioned items into knowledge_base_ids and knowledge_ids
