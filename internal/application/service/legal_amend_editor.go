@@ -161,6 +161,20 @@ func legalEditorAgrees(code int, op LegalAmendOp) bool {
 	return false
 }
 
+// legalEditorExact reports whether a parser operation agreeing with an
+// editor code is the same operation, not a narrower one: a bãi bỏ tag on
+// a phrase removal, a bổ sung tag on a rewrite. Only an exact agreement
+// makes the edge tier 1; a loose one leaves its tier.
+func legalEditorExact(code int, op LegalAmendOp) bool {
+	switch code {
+	case vbpl.EditorCodeBoSung:
+		return op == LegalOpBoSung
+	case vbpl.EditorCodeBaiBo:
+		return op == LegalOpBaiBo
+	}
+	return legalEditorAgrees(code, op)
+}
+
 // legalEditorSamePlace reports whether the editor's provision of A is the
 // parser edge's: the same provision; for an addition, the parent, the new
 // provision or a sibling of it (editors tag the neighbour).
@@ -263,7 +277,7 @@ func (l *legalAmendLoader) editorEdges(load *LegalAmendLoad, targets map[string]
 				if !containsString(e.Sources, LegalAmendSourceEditor) {
 					e.Sources = append(e.Sources, LegalAmendSourceEditor)
 				}
-				if e.Unresolved == "" && e.Rejected == "" && e.Tier != LegalTierVerified {
+				if e.Unresolved == "" && e.Rejected == "" && e.Tier != LegalTierVerified && legalEditorExact(p.link.RelationCode, e.Op) {
 					e.preEditorTier, e.Tier = e.Tier, LegalTierVerified
 					e.EditorTargetID, e.EditorTargetKey = p.link.TargetProvisionID, legalChunkKey(p.at)
 				}

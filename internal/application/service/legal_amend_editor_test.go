@@ -375,3 +375,26 @@ func TestLegalEditorEdgesKeepCatalogueCaution(t *testing.T) {
 	res = ResolveLegalProvisions(c, edges, amendAt("2026-10-20"), LegalResolveOptions{Catalogue: cat})
 	require.Equal(t, LegalStateOriginalInForce, unitByProv(t, res, LegalProvisionRef{Article: "4", Khoan: "1"}).State)
 }
+
+// Fable: an editor tag agreeing with a narrower parser operation (bãi bỏ
+// on a phrase removal, bổ sung on a rewrite) is no tier-1 agreement.
+func TestLegalEditorExactAgreement(t *testing.T) {
+	cases := []struct {
+		code         int
+		op           LegalAmendOp
+		agree, exact bool
+	}{
+		{1, LegalOpBaiBo, true, true},
+		{1, LegalOpBaiBoCumTu, true, false},
+		{13, LegalOpBoSung, true, true},
+		{13, LegalOpSuaDoi, true, false},
+		{10, LegalOpSuaDoi, true, true},
+		{10, LegalOpThayCumTu, true, true},
+		{12, LegalOpSuaDoi, true, true},
+		{12, LegalOpBaiBo, false, false},
+	}
+	for _, c := range cases {
+		require.Equal(t, c.agree, legalEditorAgrees(c.code, c.op), "%d %s", c.code, c.op)
+		require.Equal(t, c.exact, legalEditorExact(c.code, c.op), "%d %s", c.code, c.op)
+	}
+}
