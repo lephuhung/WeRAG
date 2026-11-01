@@ -240,14 +240,19 @@ func (h *legalHistory) backward(c legalHistoryChunk) []*legalHistoryLine {
 	article := c.Legal.ArticleNos[0]
 	filter, _ := json.Marshal([]map[string]string{{"article": article}})
 	var rows []legalHistoryRow
-	// Common article numbers are amended in many documents: first those
-	// naming this document's số hiệu, then those naming a document by title.
+	// Common article numbers are amended in many documents (Điều 3–10 in
+	// over a thousand chunks each): first those naming this document's số
+	// hiệu, then those naming a document by title — of these, the ones
+	// issued since this document first, as an older one cannot amend it —
+	// so a title-only amender is not cut off by the limit.
 	if err := h.db.Raw(legalHistorySelect+` AND c.knowledge_id <> ?
 		AND jsonb_exists(c.metadata->'legal', 'amends') AND c.metadata->'legal'->'amends' @> ?::jsonb
 		ORDER BY strpos(`+legalQuotedAmends+`, ?) > 0 DESC,
-			`+legalQuotedAmends+` !~ '[0-9]+/[0-9]{4}' DESC
+			`+legalQuotedAmends+` !~ '[0-9]+/[0-9]{4}' DESC,
+			coalesce(k.metadata->>'issue_date', '') >= ? DESC,
+			coalesce(k.metadata->>'issue_date', '') DESC
 		LIMIT ?`,
-		h.kbIDs, c.KnowledgeID, string(filter), c.Doc.Number, legalHistoryCandidates).Scan(&rows).Error; err != nil {
+		h.kbIDs, c.KnowledgeID, string(filter), c.Doc.Number, c.Doc.IssueDate, legalHistoryCandidates).Scan(&rows).Error; err != nil {
 		logger.Warnf(h.ctx, "[LegalHistory] amending chunks: %v", err)
 		return nil
 	}
