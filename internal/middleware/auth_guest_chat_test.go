@@ -108,7 +108,7 @@ var guestChatPaths = []struct{ method, path string }{
 // A Guest with no tenant at all chats in the public portal, role-less; the
 // rest of the tenant surface still answers TENANT_REQUIRED.
 func TestGuestChatTenantlessGuestServedInPortal(t *testing.T) {
-	user := &types.User{ID: "guest"}
+	user := &types.User{ID: "guest", IsActive: true}
 	for _, rt := range guestChatPaths {
 		got := guestChatHarness(t, user, newFakeMemberService(), rt.method, rt.path, "", false)
 		if got.code != http.StatusOK || got.tenantID != testPortalID || got.role != "" {
@@ -131,9 +131,18 @@ func TestGuestChatTenantlessGuestServedInPortal(t *testing.T) {
 	}
 }
 
+// A disabled account is no Guest (ListGuestUsers' rule): it is never placed
+// in the portal, even with no membership at all.
+func TestGuestChatInactiveAccountIsNoGuest(t *testing.T) {
+	got := guestChatHarness(t, &types.User{ID: "guest"}, newFakeMemberService(), http.MethodPost, "/api/v1/sessions", "", false)
+	if got.code == http.StatusOK || got.tenantID == testPortalID {
+		t.Fatalf("got %+v, want the inactive account kept out of the portal", got)
+	}
+}
+
 // Without a portal row (migration not applied) nothing changes.
 func TestGuestChatNoPortalKeepsTenantRequired(t *testing.T) {
-	got := guestChatHarness(t, &types.User{ID: "guest"}, newFakeMemberService(), http.MethodPost, "/api/v1/sessions", "", true)
+	got := guestChatHarness(t, &types.User{ID: "guest", IsActive: true}, newFakeMemberService(), http.MethodPost, "/api/v1/sessions", "", true)
 	if got.code != http.StatusConflict || got.errCode != "TENANT_REQUIRED" {
 		t.Fatalf("got %+v, want 409 TENANT_REQUIRED", got)
 	}
@@ -144,20 +153,20 @@ func TestGuestChatNoPortalKeepsTenantRequired(t *testing.T) {
 func TestGuestChatStaleTenantAndHeader(t *testing.T) {
 	members := newFakeMemberService()
 	members.seedActive("tenant-7-admin", 7, types.TenantRoleAdmin)
-	user := &types.User{ID: "guest", TenantID: 7}
+	user := &types.User{ID: "guest", IsActive: true, TenantID: 7}
 	got := guestChatHarness(t, user, members, http.MethodPost, "/api/v1/agent-chat/s1", "", false)
 	if got.code != http.StatusOK || got.tenantID != testPortalID {
 		t.Fatalf("stale claim: got %+v, want portal", got)
 	}
 	// stale header naming the old tenant (home, accessible) and another one (inaccessible)
 	for _, header := range []string{"7", "8"} {
-		got = guestChatHarness(t, &types.User{ID: "guest"}, members, http.MethodGet, "/api/v1/sessions", header, false)
+		got = guestChatHarness(t, &types.User{ID: "guest", IsActive: true}, members, http.MethodGet, "/api/v1/sessions", header, false)
 		if got.code != http.StatusOK || got.tenantID != testPortalID {
 			t.Errorf("stale X-Tenant-ID %s: got %+v, want portal", header, got)
 		}
 	}
 	// off the guest chat routes the header is still refused
-	got = guestChatHarness(t, &types.User{ID: "guest"}, members, http.MethodGet, "/api/v1/knowledge-bases", "8", false)
+	got = guestChatHarness(t, &types.User{ID: "guest", IsActive: true}, members, http.MethodGet, "/api/v1/knowledge-bases", "8", false)
 	if got.code != http.StatusForbidden {
 		t.Fatalf("header off guest chat routes: got %+v, want 403", got)
 	}
@@ -169,7 +178,7 @@ func TestGuestChatMemberElsewhereNotGuest(t *testing.T) {
 	members := newFakeMemberService()
 	members.seedActive("tenant-7-admin", 7, types.TenantRoleAdmin)
 	members.seedActive("user-1", 9, types.TenantRoleMember)
-	got := guestChatHarness(t, &types.User{ID: "user-1", TenantID: 7}, members, http.MethodPost, "/api/v1/sessions", "", false)
+	got := guestChatHarness(t, &types.User{ID: "user-1", IsActive: true, TenantID: 7}, members, http.MethodPost, "/api/v1/sessions", "", false)
 	if got.code != http.StatusForbidden || got.errCode != "TENANT_MEMBERSHIP_REQUIRED" {
 		t.Fatalf("got %+v, want 403 TENANT_MEMBERSHIP_REQUIRED", got)
 	}
@@ -179,11 +188,11 @@ func TestGuestChatMemberElsewhereNotGuest(t *testing.T) {
 func TestGuestChatPortalNeverNamedByHeader(t *testing.T) {
 	members := newFakeMemberService()
 	members.seedActive("user-1", 7, types.TenantRoleMember)
-	got := guestChatHarness(t, &types.User{ID: "user-1", TenantID: 7}, members, http.MethodGet, "/api/v1/sessions", "10050", false)
+	got := guestChatHarness(t, &types.User{ID: "user-1", IsActive: true, TenantID: 7}, members, http.MethodGet, "/api/v1/sessions", "10050", false)
 	if got.code != http.StatusForbidden {
 		t.Errorf("member naming the portal: got %+v, want 403", got)
 	}
-	admin := &types.User{ID: "admin-1", IsSystemAdmin: true}
+	admin := &types.User{ID: "admin-1", IsActive: true, IsSystemAdmin: true}
 	got = guestChatHarness(t, admin, newFakeMemberService(), http.MethodGet, "/api/v1/sessions", "10050", false)
 	if got.code != http.StatusForbidden {
 		t.Errorf("SuperAdmin naming the portal: got %+v, want 403", got)
@@ -199,7 +208,7 @@ func TestGuestChatPortalNeverNamedByHeader(t *testing.T) {
 func TestGuestChatMemberUnchanged(t *testing.T) {
 	members := newFakeMemberService()
 	members.seedActive("user-1", 7, types.TenantRoleMember)
-	got := guestChatHarness(t, &types.User{ID: "user-1", TenantID: 7}, members, http.MethodPost, "/api/v1/agent-chat/s1", "", false)
+	got := guestChatHarness(t, &types.User{ID: "user-1", IsActive: true, TenantID: 7}, members, http.MethodPost, "/api/v1/agent-chat/s1", "", false)
 	if got.code != http.StatusOK || got.tenantID != 7 || got.role != string(types.TenantRoleMember) {
 		t.Fatalf("got %+v, want tenant 7 as member", got)
 	}
@@ -210,7 +219,7 @@ func TestGuestChatMemberUnchanged(t *testing.T) {
 func TestGuestChatDeletedTenantMembershipStillGuest(t *testing.T) {
 	members := newFakeMemberService()
 	members.seedActive("user-1", 11, types.TenantRoleMember)
-	got := guestChatHarness(t, &types.User{ID: "user-1"}, members, http.MethodPost, "/api/v1/agent-chat/s1", "", false)
+	got := guestChatHarness(t, &types.User{ID: "user-1", IsActive: true}, members, http.MethodPost, "/api/v1/agent-chat/s1", "", false)
 	if got.code != http.StatusOK || got.tenantID != testPortalID {
 		t.Fatalf("got %+v, want portal", got)
 	}

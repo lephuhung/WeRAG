@@ -109,13 +109,15 @@ func matchGuestChatSegs(pattern, segs []string) bool {
 	return true
 }
 
-// isGuestUser reports whether user is a Guest: a real human account that is
-// not a SuperAdmin and holds no active membership in any tenant. Lookup
-// errors fail closed (not a guest).
+// isGuestUser reports whether user is a Guest: an active real human account
+// that is not a SuperAdmin and holds no active membership in any tenant (the
+// rule of UserRepository.ListGuestUsers). A disabled account is no Guest.
+// Lookup errors fail closed (not a guest).
 func isGuestUser(
 	ctx context.Context, user *types.User, memberService interfaces.TenantMemberService, tenantService interfaces.TenantService,
 ) bool {
-	if user == nil || user.IsSystemAdmin || types.IsSyntheticUserID(user.ID) || memberService == nil || tenantService == nil {
+	if user == nil || !user.IsActive || user.IsSystemAdmin || types.IsSyntheticUserID(user.ID) ||
+		memberService == nil || tenantService == nil {
 		return false
 	}
 	members, err := memberService.ListByUser(ctx, user.ID)
