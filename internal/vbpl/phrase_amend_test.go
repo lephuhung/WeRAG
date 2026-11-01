@@ -200,8 +200,24 @@ func TestPhraseAmendsListReview(t *testing.T) {
 		// a run after a named document naming none: whose it is is unknown
 		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 1 Điều 3 Nghị định số 68/2026/NĐ-CP, khoản 2 Điều 5`,
 			[]Amend{ab("Nghị định số 68/2026/NĐ-CP", "3", "1")}},
-		// the list runs on to a document past what can be read
-		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 3 Điều 15, mục 2 Chương II Nghị định số 12/2020/NĐ-CP`, nil},
+		// parts that are no Điều go on with the list up to the document
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 3 Điều 15, mục 2 Chương II Nghị định số 12/2020/NĐ-CP`,
+			[]Amend{ab("Nghị định số 12/2020/NĐ-CP", "15", "3")}},
+		// 115/2026/TT-BCA: "… Điều 95 và các Phụ lục I, Phụ lục II tại Thông tư số …"
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại các Điều 3, Điều 4, khoản 3 Điều 45 và các Phụ lục I, Phụ lục II, Phụ lục XII tại Thông tư số 14/2026/TT-BCA ngày 03 tháng 02 năm 2026 của Bộ trưởng Bộ Công an`,
+			[]Amend{ab("Thông tư số 14/2026/TT-BCA", "3", ""), ab("Thông tư số 14/2026/TT-BCA", "4", ""), ab("Thông tư số 14/2026/TT-BCA", "45", "3")}},
+		// the list runs on past what can be read to the document of the whole list
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 3 Điều 15, tiết 2 Nghị định số 12/2020/NĐ-CP`,
+			[]Amend{ab("Nghị định số 12/2020/NĐ-CP", "15", "3")}},
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại điểm a khoản 1 và điểm a khoản 2 Điều 7, khoản 2 Điều 10, Mẫu số 3 và Mẫu số 5 Phụ lục II ban hành kèm theo Nghị định số 102/2018/NĐ-CP`,
+			[]Amend{{Document: "Nghị định số 102/2018/NĐ-CP", Article: "7", Khoan: "1", Diem: "a", Phrase: true, From: "A", To: "B"},
+				{Document: "Nghị định số 102/2018/NĐ-CP", Article: "7", Khoan: "2", Diem: "a", Phrase: true, From: "A", To: "B"},
+				ab("Nghị định số 102/2018/NĐ-CP", "10", "2")}},
+		// … but not after prose
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 3 Điều 15, trường hợp quy định tại Nghị định số 12/2020/NĐ-CP`, nil},
+		// list items that are no provision do not end the list
+		{`Thay thế cụm từ “A” bằng cụm từ “B” tại tên Thông tư, đoạn cuối trong căn cứ pháp lý của Thông tư, Điều 1, khoản 1 Điều 3, tên Chương II, câu dẫn Điều 10 và khoản 1 Điều 18`,
+			[]Amend{ab("", "1", ""), ab("", "3", "1"), ab("", "10", ""), ab("", "18", "1")}},
 		// a later run in the amending document itself is left out
 		{`Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 3 Luật Đầu tư, Điều 5 Luật này`, []Amend{ab("Luật Đầu tư", "3", "")}},
 		// C3: prose between labels ends the list
@@ -223,5 +239,67 @@ func TestPhraseAmendsListReview(t *testing.T) {
 		if got := parsePhraseAmends(c.text, none); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("%s\n got %+v\nwant %+v", c.text, got, c.want)
 		}
+	}
+}
+
+// Shapes found in the stored vbpl corpus (DB check 2026-11-01).
+func TestPhraseAmendsCorpusShapes(t *testing.T) {
+	none := func() string { return "" }
+	pa := func(doc, article, khoan, diem, from, to string) Amend {
+		return Amend{Document: doc, Article: article, Khoan: khoan, Diem: diem, Phrase: true, From: from, To: to}
+	}
+	cases := []struct {
+		name, text string
+		want       []Amend
+	}{
+		// 09/2025/TT-BGDĐT ceeba75f: the run names its document once, at the end;
+		// the last clause carries an exception and is left out
+		{"run document", `2. Thay thế cụm từ "Phòng Giáo dục và Đào tạo" bằng cụm từ "Ủy ban nhân dân cấp xã" tại Điều 21, tên Điều 22; cụm từ "Phòng Giáo dục và Đào tạo" bằng cụm từ "Sở Giáo dục và Đào tạo" tại khoản 1 Điều 23; cụm từ "Ủy ban nhân dân cấp huyện" bằng cụm từ "Ủy ban nhân dân cấp tỉnh" tại khoản 7 Điều 22 và khoản 4 Điều 23 Thông tư số 49/2021/TT-BGDĐT, trừ quy định tại khoản 1 Điều này.`,
+			[]Amend{
+				pa("Thông tư số 49/2021/TT-BGDĐT", "21", "", "", "Phòng Giáo dục và Đào tạo", "Ủy ban nhân dân cấp xã"),
+				pa("Thông tư số 49/2021/TT-BGDĐT", "23", "1", "", "Phòng Giáo dục và Đào tạo", "Sở Giáo dục và Đào tạo"),
+			}},
+		// 48/2015/NĐ-CP 6171d352: the next document's run after the first one's date and subject
+		{"after subject", `Thay thế cụm từ “A” bằng cụm từ “B” tại Khoản 11 Điều 8 Nghị định số 24/2014/NĐ-CP ngày 04 tháng 4 năm 2014 của Chính phủ quy định tổ chức các cơ quan chuyên môn thuộc Ủy ban nhân dân tỉnh, thành phố trực thuộc Trung ương; Khoản 5 Điều 7 Nghị định số 37/2014/NĐ-CP ngày 05 tháng 5 năm 2014 của Chính phủ quy định tổ chức các cơ quan chuyên môn thuộc Ủy ban nhân dân huyện`,
+			[]Amend{pa("Nghị định số 24/2014/NĐ-CP", "8", "11", "", "A", "B"), pa("Nghị định số 37/2014/NĐ-CP", "7", "5", "", "A", "B")}},
+		// 18/2023/TT-BCT 9a232091
+		{"two numbered", `Bãi bỏ cụm từ “A” tại điểm a, điểm d khoản 2 Điều 4 Thông tư số 09/2017/TT-BCT và khoản 2 Điều 1 Thông tư số 12/2020/TT-BCT.`,
+			[]Amend{pa("Thông tư số 09/2017/TT-BCT", "4", "2", "a", "A", ""), pa("Thông tư số 09/2017/TT-BCT", "4", "2", "d", "A", ""), pa("Thông tư số 12/2020/TT-BCT", "1", "2", "", "A", "")}},
+		// a document's own amendment history is not a next run
+		{"history", `Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 3 Nghị định số 68/2026/NĐ-CP ngày 05 tháng 3 năm 2026 đã được sửa đổi, bổ sung tại khoản 2 Điều 1 Nghị định số 99/2027/NĐ-CP`,
+			[]Amend{pa("Nghị định số 68/2026/NĐ-CP", "3", "", "", "A", "B")}},
+		// 193/2026/NĐ-CP e990dcdb: prose between điểm a and điểm b — not read as b, c
+		{"prose", `2. Bãi bỏ cụm từ “quyết toán dự án hoàn thành” tại điểm a và các quy định tại điểm b, điểm c khoản 5 Điều 13 Nghị định số 88/2025/NĐ-CP ngày 13 tháng 4 năm 2025 của Chính phủ.`, nil},
+		// 27/2022/UBTVQH15 7f7dd30b: lower-case "các điều"
+		{"các điều", `Thay thế cụm từ “A” bằng cụm từ “B” tại khoản 5 các điều 4, 5 và 6, khoản 4 Điều 7`,
+			[]Amend{pa("", "4", "5", "", "A", "B"), pa("", "5", "5", "", "A", "B"), pa("", "6", "5", "", "A", "B"), pa("", "7", "4", "", "A", "B")}},
+	}
+	for _, c := range cases {
+		if got := parsePhraseAmends(c.text, none); !reflect.DeepEqual(got, c.want) {
+			t.Errorf("%s:\n got %+v\nwant %+v", c.name, got, c.want)
+		}
+	}
+}
+
+// 47/2024/QH15 d7041c68, 178/2025/NĐ-CP: the item lead-in above names the
+// amended law; a new khoản lead-in replaces it.
+func TestPhraseAmendsInChunkLeadIn(t *testing.T) {
+	content := "5. Sửa đổi, bổ sung một số điều của Luật Nhà ở số 27/2023/QH15 đã được sửa đổi, bổ sung một số điều theo Luật số 43/2024/QH15 như sau:\n\n" +
+		"a) Thay thế cụm từ \"quy hoạch xây dựng, quy hoạch đô thị\" bằng cụm từ \"quy hoạch đô thị và nông thôn\" tại khoản 3 Điều 3;\n\n" +
+		"6. Sửa đổi, bổ sung một số điều của Nghị định số 175/2024/NĐ-CP ngày 30 tháng 12 năm 2024 của Chính phủ như sau:\n\n" +
+		"a) Thay thế cụm từ “quy hoạch xây dựng” tại khoản 3 Điều 1 thành cụm từ “quy hoạch đô thị và nông thôn”;\n\n" +
+		"7. Thay thế cụm từ “A” bằng cụm từ “B” tại Điều 9.\n\n" +
+		// 11/2025/TT-BYT 2f22ec33: "của Thông tư" names no document
+		"11. Thay thế một số cụm từ sử dụng tại các điều của Thông tư như sau:\n\n" +
+		"b) Thay thế cụm từ “C” thành cụm từ “D” tại khoản 6 Điều 9."
+	got := PhraseAmendsInChunk(content, []string{"Điều 57. Sửa đổi, bổ sung, bãi bỏ một số điều, khoản của các luật có liên quan"}, "Luật Quy hoạch đô thị và nông thôn số 47-2024-QH15")
+	want := []Amend{
+		{Document: "Luật Nhà ở số 27/2023/QH15", Article: "3", Khoan: "3", Phrase: true, From: "quy hoạch xây dựng, quy hoạch đô thị", To: "quy hoạch đô thị và nông thôn"},
+		{Document: "Nghị định số 175/2024/NĐ-CP", Article: "1", Khoan: "3", Phrase: true, From: "quy hoạch xây dựng", To: "quy hoạch đô thị và nông thôn"},
+		{Article: "9", Phrase: true, From: "A", To: "B"},
+		{Article: "9", Khoan: "6", Phrase: true, From: "C", To: "D"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got  %+v\nwant %+v", got, want)
 	}
 }

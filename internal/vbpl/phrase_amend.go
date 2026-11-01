@@ -68,16 +68,38 @@ var (
 	// phraseDocStartRe is a document title in a provision list: the labels
 	// before it are that document's ("Điều 3 Luật Doanh nghiệp, khoản 1
 	// Điều 4 Luật Đầu tư"). Titles are capitalised, so it keeps case.
-	phraseDocStartRe = regexp.MustCompile(`(?:^|\s)(?:Bộ luật|Luật|Pháp lệnh|Nghị định|Nghị quyết|Thông tư liên tịch|Thông tư|Quyết định)(?:[\s,]|$)`)
-	// phraseListGapRe is what may stand between two labels of one list:
-	// separators and "các" / "của", not prose ("khoản 1 Điều 3 trong trường
-	// hợp quy định tại khoản 2 Điều 9" names only khoản 1 Điều 3).
-	phraseListGapRe = regexp.MustCompile(`(?i)^(?:\s|,|;|và|hoặc|các|của)*$`)
+	// A bare type ("của Thông tư, Điều 1") is the document itself, no start.
+	phraseDocStartRe = regexp.MustCompile(`(?:^|\s)(?:Bộ luật|Luật|Pháp lệnh|Nghị định|Nghị quyết|Thông tư liên tịch|Thông tư|Quyết định)\s`)
+	// phraseProseRe marks prose inside a provision list: the labels after
+	// it are not targets ("khoản 1 Điều 3 trong trường hợp quy định tại
+	// khoản 2 Điều 9" names only khoản 1 Điều 3). List items that are no
+	// provision of a Điều ("tên Chương II", "câu dẫn Điều 10", "Mẫu số 3
+	// Phụ lục II ban hành kèm theo …") are not prose.
+	phraseProseRe    = regexp.MustCompile(`(?i)(?:^|[\s,;])(?:trong trường hợp|trường hợp|quy định|nếu|khi|được|đối với|để|thì|theo|văn bản|áp dụng|thực hiện)(?:[\s,;.]|$)`)
+	phraseAttachedRe = regexp.MustCompile(`(?i)ban hành kèm theo`)
 	// phraseGroupSepRe joins the provisions of the next document to the
 	// one just named: ", khoản 2 Điều 5 Nghị định số …", "; Điều 5 …".
 	phraseGroupSepRe = regexp.MustCompile(`(?i)^\s*(?:[,;]\s*(?:và\s+)?|và\s+)(?:(?:các|tên)\s+)?(?:điểm|khoản|điều)\s+[0-9a-zđ]`)
 	// phraseListGoesOnRe: the list goes on after the labels read.
 	phraseListGoesOnRe = regexp.MustCompile(`(?i)^\s*(?:[,;]|và\s)`)
+	// phraseOtherItemsRe: list items that are not provisions of a Điều
+	// (phụ lục, mục, chương, phần), skipped up to the document after them.
+	phraseOtherItemsRe = regexp.MustCompile(`(?i)^(?:\s*(?:,|;|và)?\s*(?:các\s+)?(?:phụ lục|mục|chương|phần)\s+[0-9IVXLCDM]+[a-zđ]?\b)+\s*(?:,\s*)?(?:tại|của|thuộc)?`)
+	// phraseDocDateRe: a document's date and subject follow its name.
+	phraseDocDateRe = regexp.MustCompile(`(?i)^\s*,?\s*ngày\s+\d`)
+	// phraseNextRunRe is the next run of provisions after a document's
+	// subject: a separator, then a label.
+	phraseNextRunRe = regexp.MustCompile(`(?i)(?:[,;]\s*(?:và\s+)?|\svà\s+)(?:(?:các|tên)\s+)?(?:điểm|khoản|điều)\s+[0-9a-zđ]`)
+	// phraseHistoryRe in a document's subject means it tells the
+	// document's own amendments, not the next run of the list.
+	phraseHistoryRe = regexp.MustCompile(`(?i)sửa đổi|bổ sung|đã được|được hướng dẫn|thay thế|bãi bỏ`)
+	// phraseClauseLineRe / phraseItemLineRe start a khoản / điểm paragraph.
+	phraseClauseLineRe = regexp.MustCompile(`^\d+[a-zđ]?\.\s`)
+	phraseItemLineRe   = regexp.MustCompile(`^[a-zđ]\)\s`)
+	// phraseQuotedRe is a quoted phrase.
+	phraseQuotedRe = regexp.MustCompile(`“[^”]*”|"[^"]*"`)
+	// phraseThisDocRe names the amending document itself.
+	phraseThisDocRe = regexp.MustCompile(`(?i)(?:Bộ luật|Luật|Pháp lệnh|Nghị định|Nghị quyết|Thông tư liên tịch|Thông tư|Quyết định)\s+này`)
 	// phraseProvLabelRe is a provision label inside a would-be title.
 	phraseProvLabelRe = regexp.MustCompile(`(?i)(?:^|\s)(?:điểm|khoản|điều)\s+\d`)
 )
@@ -106,9 +128,11 @@ func parsePhraseAmends(text string, enclosing func() string) []Amend {
 
 // PhraseAmendsInChunk reads the phrase amendments of a stored chunk, for
 // chunks ingested before the converter read them: its unquoted paragraphs
-// are read as at ingest, the amended document coming from the heading path
-// (innermost first) or else the document title. The converter itself has
-// the clause and item lead-ins too, so it can name a document this misses.
+// are read as at ingest, the amended document coming from the clause or
+// item lead-in above them in the chunk ("5. Sửa đổi, bổ sung một số điều
+// của Luật Nhà ở số 27/2023/QH15 như sau:"), the heading path (innermost
+// first) or else the document title. A lead-in in an earlier chunk is not
+// seen, so the converter can still name a document this misses.
 func PhraseAmendsInChunk(content string, headingPath []string, title string) []Amend {
 	// knowledge titles come from file names: "Nghị định số 140-2021-NĐ-CP"
 	title = fileNumberRe.ReplaceAllString(title, "$1/$2/$3")
@@ -125,13 +149,32 @@ func PhraseAmendsInChunk(content string, headingPath []string, title string) []A
 		}
 		return ""
 	}
+	var clauseDoc, itemDoc string
+	inChunk := func() string {
+		if itemDoc != "" {
+			return itemDoc
+		}
+		if clauseDoc != "" {
+			return clauseDoc
+		}
+		return enclosing()
+	}
 	var out []Amend
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "#") {
+			clauseDoc, itemDoc = "", ""
+		}
 		if line == "" || strings.HasPrefix(line, ">") || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "|") {
 			continue
 		}
-		for _, a := range parsePhraseAmends(line, enclosing) {
+		switch {
+		case phraseClauseLineRe.MatchString(line):
+			clauseDoc, itemDoc = leadInDocument(line), ""
+		case phraseItemLineRe.MatchString(line):
+			itemDoc = leadInDocument(line)
+		}
+		for _, a := range parsePhraseAmends(line, inChunk) {
 			dup := false
 			for _, have := range out {
 				if have == a {
@@ -147,6 +190,22 @@ func PhraseAmendsInChunk(content string, headingPath []string, title string) []A
 	return out
 }
 
+// leadInDocument is the one document a clause or item lead-in amends
+// ("Sửa đổi, bổ sung một số điều của Nghị định số 175/2024/NĐ-CP … như
+// sau:"); "" for a line that itself changes phrases or names several.
+func leadInDocument(line string) string {
+	if phraseLeadRe.MatchString(line) || !amendVerbRe.MatchString(line) {
+		return ""
+	}
+	d := amendedDocument(ownLabelRe.ReplaceAllString(line, ""))
+	// "… của Thông tư như sau:" names the document itself, no title
+	d = strings.TrimSpace(strings.TrimSuffix(d, " như sau"))
+	if strings.Contains(strings.ToLower(d), " và ") || strings.TrimSpace(phraseDocTypeRe.ReplaceAllString(d+" ", "")) == "" {
+		return ""
+	}
+	return d
+}
+
 // phraseItem is one phrase of a clause: rest[start:end] is the phrase
 // (or pair), mid the text between a pair's two phrases.
 type phraseItem struct {
@@ -159,7 +218,13 @@ type phraseItem struct {
 // its own provisions — nothing is carried over a ";" or to the next verb,
 // a missed amendment being better than a wrong one.
 func phraseSentence(text string, enclosing func() string) []Amend {
-	var out []Amend
+	type clause struct {
+		rest   string
+		remove bool
+		run    int
+	}
+	var clauses []clause
+	var runs []string // the text of each run: a verb and the clauses going on with it
 	remove, known := false, false
 	for _, cl := range splitClauses(text) {
 		var rest string
@@ -167,6 +232,7 @@ func phraseSentence(text string, enclosing func() string) []Amend {
 		case lead != nil:
 			remove, known = phraseRemoveRe.MatchString(cl[lead[0]:]), true
 			rest = cl[lead[1]-len(quoteRuneAt(cl, lead[1])):]
+			runs = append(runs, "")
 		case known && phraseMoreRe.MatchString(strings.TrimSpace(cl)):
 			t := strings.TrimSpace(cl)
 			i := strings.IndexAny(t, "“\"")
@@ -175,7 +241,23 @@ func phraseSentence(text string, enclosing func() string) []Amend {
 			known = false
 			continue
 		}
-		out = append(out, phraseClause(rest, remove, enclosing)...)
+		runs[len(runs)-1] += cl + ";"
+		clauses = append(clauses, clause{rest: rest, remove: remove, run: len(runs) - 1})
+	}
+	var out []Amend
+	for _, c := range clauses {
+		run := runs[c.run]
+		// a clause naming no document takes the enclosing one, else the one
+		// document its run names ("Thay thế cụm từ … tại Điều 21; cụm từ …
+		// tại khoản 7 Điều 22 Thông tư số 49/2021/TT-BGDĐT"); nothing is
+		// carried to or from another verb
+		named := func() string {
+			if d := enclosing(); d != "" {
+				return d
+			}
+			return sentenceDocument(run)
+		}
+		out = append(out, phraseClause(c.rest, c.remove, named)...)
 	}
 	return out
 }
@@ -279,7 +361,14 @@ func readPhraseTail(tail string) (groups []phraseGroup, ok bool) {
 		if len(provs) == 0 {
 			return groups, true
 		}
-		name, nameEnd := phraseDocName(s[end:])
+		after := s[end:]
+		// "Điều 95 và các Phụ lục I, Phụ lục II tại Thông tư số 14/2026/TT-BCA":
+		// parts that are no Điều go on with the list up to the document
+		if m := phraseOtherItemsRe.FindStringIndex(after); m != nil {
+			after = after[m[1]:]
+			end += m[1]
+		}
+		name, nameEnd := phraseDocName(after)
 		if strings.HasSuffix(strings.ToLower(name), " này") {
 			return groups, len(groups) > 0
 		}
@@ -287,22 +376,59 @@ func readPhraseTail(tail string) (groups []phraseGroup, ok bool) {
 			if len(groups) > 0 {
 				return groups, true
 			}
-			// "tại khoản 3 Điều 15, mục 2 Chương II Nghị định số 12/2020/NĐ-CP":
-			// the list goes on past what was read to a document — whose
-			// provisions those are cannot be told
-			rest := s[end:]
-			if phraseListGoesOnRe.MatchString(rest) && (phraseDocStartRe.MatchString(rest) || phraseNumberRe.MatchString(rest)) {
-				return nil, true
+			// the list goes on past what was read ("…, Mẫu số 3 Phụ lục II ban
+			// hành kèm theo Nghị định số 102/2018/NĐ-CP") to the document of
+			// the whole list; after prose, whose provisions those are cannot
+			// be told
+			if phraseListGoesOnRe.MatchString(after) {
+				if i := docStart(after); i >= 0 {
+					if isProse(after[:i]) {
+						return nil, true
+					}
+					if name, _ := phraseDocName(after[i:]); name != "" && !strings.HasSuffix(strings.ToLower(name), " này") {
+						return []phraseGroup{{provs: provs, doc: sentenceCase(name)}}, true
+					}
+					return nil, true
+				}
 			}
 			return []phraseGroup{{provs: provs}}, true
 		}
 		groups = append(groups, phraseGroup{provs: provs, doc: sentenceCase(name)})
-		rest := s[end+nameEnd:]
+		rest := after[nameEnd:]
 		if !phraseGroupSepRe.MatchString(rest) {
-			return groups, true
+			// "Nghị định số 24/2014/NĐ-CP ngày 04 tháng 4 năm 2014 của Chính
+			// phủ quy định …; Khoản 5 Điều 7 Nghị định số 37/2014/NĐ-CP": the
+			// next run comes after the document's date and subject
+			if !phraseDocDateRe.MatchString(rest) {
+				return groups, true
+			}
+			m := phraseNextRunRe.FindStringIndex(rest)
+			if m == nil || phraseHistoryRe.MatchString(rest[:m[0]]) {
+				return groups, true
+			}
+			rest = rest[m[0]:]
 		}
 		s = trimGroupSep(rest)
 	}
+}
+
+// docStart is the byte offset of the first document named in s, -1 for
+// none. "tên Nghị định" is the title of the document and "của Thông tư và
+// …" the document itself, neither one named.
+func docStart(s string) int {
+	for _, i := range phraseDocStartRe.FindAllStringIndex(s, -1) {
+		next := strings.ToLower(strings.TrimSpace(s[i[1]:]))
+		if strings.HasSuffix(strings.ToLower(s[:i[0]+1]), "tên ") || strings.HasPrefix(next, "và ") || strings.HasPrefix(next, "hoặc ") {
+			continue
+		}
+		return i[0]
+	}
+	return -1
+}
+
+// isProse reports prose in the text between two list items.
+func isProse(gap string) bool {
+	return phraseProseRe.MatchString(phraseAttachedRe.ReplaceAllString(gap, " "))
 }
 
 // phraseDocName reads the document named at the start of s and the byte
@@ -336,6 +462,44 @@ func trimGroupSep(s string) string {
 		s = s[len("và "):]
 	}
 	return s
+}
+
+// sentenceDocument is the one document a sentence names by số hiệu,
+// outside its quoted phrases ("Thông tư số 49/2021/TT-BGDĐT"); "" when it
+// names none, several, or the amending document itself ("… này").
+func sentenceDocument(text string) string {
+	plain := phraseQuotedRe.ReplaceAllString(text, " ")
+	if phraseThisDocRe.MatchString(plain) {
+		return ""
+	}
+	var number string
+	var at int
+	for _, m := range phraseNumberRe.FindAllStringIndex(plain, -1) {
+		n := plain[m[0]:m[1]]
+		if number != "" && n != number {
+			return ""
+		}
+		if number == "" {
+			number, at = n, m[0]
+		}
+	}
+	if number == "" {
+		return ""
+	}
+	// the title right before the number: "Luật Nhà ở số 27/2023/QH15"
+	before := plain[:at]
+	if len(before) > 160 {
+		before = before[len(before)-160:]
+	}
+	starts := phraseDocStartRe.FindAllStringIndex(before, -1)
+	if len(starts) == 0 {
+		return ""
+	}
+	name := strings.Join(strings.Fields(before[starts[len(starts)-1][0]:]+number), " ")
+	if !strings.Contains(name, " ") || phraseProvLabelRe.MatchString(name) || strings.ContainsAny(name, ",;") {
+		return ""
+	}
+	return sentenceCase(name)
 }
 
 // nextSegment is text up to its next ";" outside quoted phrases.
@@ -439,8 +603,8 @@ func readPhraseTargets(s string) (out []phraseProv, end int) {
 	if i := phraseNumberRe.FindStringIndex(s); i != nil {
 		s = s[:i[0]]
 	}
-	if i := phraseDocStartRe.FindStringIndex(s); i != nil {
-		s = s[:i[0]]
+	if i := docStart(s); i >= 0 {
+		s = s[:i]
 	}
 	var khoans []phraseKhoan
 	var diems []string
@@ -464,7 +628,7 @@ func readPhraseTargets(s string) (out []phraseProv, end int) {
 		}
 	}
 	for i, m := range provMatches(s) {
-		if i > 0 && !phraseListGapRe.MatchString(s[end:m.start]) {
+		if i > 0 && isProse(s[end:m.start]) {
 			break
 		}
 		switch m.kw {
