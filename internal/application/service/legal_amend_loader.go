@@ -1027,10 +1027,7 @@ func (l *legalAmendLoader) edgesFrom(cands []legalAmendRow, targets map[string]L
 	facts := map[string][]LegalCatalogAmendment{}
 	seen := map[string]bool{}
 	index := map[string]int{}
-	byNumber := map[string]string{}
-	for key, d := range targets {
-		byNumber[vietnamese_legal.CatalogNumberKey(d.Number)] = key
-	}
+	byNumber := legalTargetsByNumber(targets)
 	type cand struct {
 		row   legalAmendRow
 		legal *vietnamese_legal.LegalMetadata
@@ -1076,6 +1073,9 @@ func (l *legalAmendLoader) edgesFrom(cands []legalAmendRow, targets map[string]L
 			}
 			if _, _, ok := l.recordedTarget(name, LegalAmendDoc{CatalogID: bIDIfKnown(l, bID)}, targets, amenders); ok {
 				continue
+			}
+			if issued.IsZero() {
+				continue // never resolved by name: amendTarget flags it
 			}
 			if l.nameMayBeTarget(name, targets) {
 				amenderID := ""
@@ -1161,11 +1161,26 @@ func (l *legalAmendLoader) edgesFrom(cands []legalAmendRow, targets map[string]L
 	return out, facts, nil
 }
 
+// legalTargetsByNumber lists the target keys by number key. A số hiệu
+// is not unique: every target of a key is kept, sorted so that a pick
+// does not depend on map order.
+func legalTargetsByNumber(targets map[string]LegalAmendDoc) map[string][]string {
+	byNumber := map[string][]string{}
+	for key, d := range targets {
+		k := vietnamese_legal.CatalogNumberKey(d.Number)
+		byNumber[k] = append(byNumber[k], key)
+	}
+	for _, keys := range byNumber {
+		sort.Strings(keys)
+	}
+	return byNumber
+}
+
 // amendTarget resolves the document an amends entry names to one of the
 // targets; ok is false when it is another document. problem is set when
 // the entry attaches to a target without a certain identity.
 func (l *legalAmendLoader) amendTarget(a vietnamese_legal.AmendRef, legal *vietnamese_legal.LegalMetadata, groups []legalQuoteGroup,
-	b LegalAmendDoc, issued time.Time, targets map[string]LegalAmendDoc, byNumber map[string]string, amenders map[string][]string,
+	b LegalAmendDoc, issued time.Time, targets map[string]LegalAmendDoc, byNumber map[string][]string, amenders map[string][]string,
 ) (key string, doc LegalAmendDoc, problem string, ok bool) {
 	name := l.amendName(a, legal, groups)
 	if name == "" {
@@ -1181,11 +1196,30 @@ func (l *legalAmendLoader) amendTarget(a vietnamese_legal.AmendRef, legal *vietn
 		if c.Key == "" || c.Role == vietnamese_legal.CitationRoleInAmendingTitle {
 			continue
 		}
-		k, held := byNumber[c.Key]
-		if !held {
+		held := byNumber[c.Key]
+		if len(held) == 0 {
 			return "", LegalAmendDoc{}, "", false
 		}
+		k, shared := held[0], ""
+		if len(held) > 1 {
+			// two targets share the số hiệu: only a catalogue relation
+			// B → A tells which one B amends
+			var recorded []string
+			for _, hk := range held {
+				if id := targets[hk].CatalogID; id != "" && b.CatalogID != "" && containsString(amenders[id], b.CatalogID) {
+					recorded = append(recorded, hk)
+				}
+			}
+			if len(recorded) == 1 {
+				k = recorded[0]
+			} else {
+				shared = "số hiệu " + c.Number + " ứng với nhiều văn bản"
+			}
+		}
 		d := targets[k]
+		if shared != "" {
+			return k, d, shared, true
+		}
 		rows := l.byKey[c.Key]
 		if _, loaded := l.byKey[c.Key]; !loaded {
 			_ = l.loadCatalog(nil, []string{c.Key})
@@ -1217,6 +1251,23 @@ func (l *legalAmendLoader) amendTarget(a vietnamese_legal.AmendRef, legal *vietn
 	}
 	if !l.nameMayBeTarget(name, targets) {
 		return "", LegalAmendDoc{}, "", false
+	}
+	if issued.IsZero() {
+		// which law of that name B means is read at B's issue date (§4.2):
+		// unknown, the name is never resolved — it attaches to the targets
+		// of that title, flagged
+		var named []string
+		for k, d := range targets {
+			if l.titleMayCite(name, d) {
+				named = append(named, k)
+			}
+		}
+		sort.Strings(named)
+		problem := "không rõ ngày ban hành văn bản sửa đổi, không xác định được “" + name + "” là văn bản nào"
+		if len(named) > 1 {
+			problem += " (tên ứng với nhiều văn bản)"
+		}
+		return named[0], targets[named[0]], problem, true
 	}
 	m, err := l.lookupName(name, issued, b.CatalogID)
 	if err != nil || m.Chosen == nil {
@@ -1285,24 +1336,29 @@ func (l *legalAmendLoader) nameMayBeTarget(name string, targets map[string]Legal
 	if name == "" || strings.IndexFunc(name, func(r rune) bool { return r >= '0' && r <= '9' }) >= 0 {
 		return false
 	}
-	folded := strings.ToLower(strings.Join(strings.Fields(name), " "))
 	for _, d := range targets {
-		base, ok := l.bases[d.CatalogID]
-		if !ok {
-			if row := l.catalog[d.CatalogID]; row != nil {
-				base = LegalTitleBase(row.Title, row.DocType)
-				// a title that is only its type ("pháp lệnh") names nothing
-				if typ := strings.ToLower(strings.Join(strings.Fields(row.DocType), " ")); base == typ {
-					base = ""
-				}
-			}
-			l.bases[d.CatalogID] = base
-		}
-		if base != "" && (folded == base || strings.HasPrefix(folded, base+" ") || strings.HasPrefix(folded, base+",")) {
+		if l.titleMayCite(name, d) {
 			return true
 		}
 	}
 	return false
+}
+
+// titleMayCite reports whether a name starts with the title of target d.
+func (l *legalAmendLoader) titleMayCite(name string, d LegalAmendDoc) bool {
+	base, ok := l.bases[d.CatalogID]
+	if !ok {
+		if row := l.catalog[d.CatalogID]; row != nil {
+			base = LegalTitleBase(row.Title, row.DocType)
+			// a title that is only its type ("pháp lệnh") names nothing
+			if typ := strings.ToLower(strings.Join(strings.Fields(row.DocType), " ")); base == typ {
+				base = ""
+			}
+		}
+		l.bases[d.CatalogID] = base
+	}
+	folded := strings.ToLower(strings.Join(strings.Fields(name), " "))
+	return base != "" && (folded == base || strings.HasPrefix(folded, base+" ") || strings.HasPrefix(folded, base+","))
 }
 
 // recordedTarget resolves a name without asking the catalogue when B is

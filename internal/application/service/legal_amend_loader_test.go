@@ -563,3 +563,71 @@ func TestLoadLegalAmendmentsCatalogueRank(t *testing.T) {
 	r := load.Resolve(amendAt("2026-10-20"), map[string]bool{"kb-pub": true})["a3"]
 	require.NotContains(t, r.ModelContent, "12/2025/TT-BTC")
 }
+
+// Fable K2/K3: how an amends entry finds its target when B's issue date
+// is unknown or a số hiệu is shared by two targets.
+func TestAmendTargetUnknownDateAndSharedNumber(t *testing.T) {
+	day := func(s string) *time.Time { d, _ := time.Parse("2006-01-02", s); return &d }
+	newLoader := func(rows ...*legalCatalogRow) *legalAmendLoader {
+		l := &legalAmendLoader{loc: time.UTC, catalog: map[string]*legalCatalogRow{}, byKey: map[string][]*legalCatalogRow{},
+			names: map[string]legalNameMemo{}, cites: map[string][]vietnamese_legal.Citation{}, bases: map[string]string{}}
+		for _, r := range rows {
+			l.catalog[r.ID] = r
+			l.byKey[r.NumberKey] = append(l.byKey[r.NumberKey], r)
+		}
+		return l
+	}
+	row := func(id, num, typ, title, issued string) *legalCatalogRow {
+		return &legalCatalogRow{ID: id, DocumentNumber: num, NumberKey: vietnamese_legal.CatalogNumberKey(num), DocType: typ, Title: title, IssuedOn: day(issued)}
+	}
+	legal := &vietnamese_legal.LegalMetadata{}
+
+	t.Run("unknown issue date: a name is never resolved", func(t *testing.T) {
+		l := newLoader(row("dt14", "67/2014/QH13", "Luật", "Luật Đầu tư số 67/2014/QH13", "2014-11-26"),
+			row("dt20", "61/2020/QH14", "Luật", "Luật Đầu tư số 61/2020/QH14", "2020-06-17"))
+		targets := map[string]LegalAmendDoc{"dt14": l.catalogDoc(l.catalog["dt14"]), "dt20": l.catalogDoc(l.catalog["dt20"])}
+		// what a resolver run "as of today" would answer: it must not be asked
+		l.names[legalNameMemoKey("Luật Đầu tư", time.Time{}, "")] = legalNameMemo{m: LegalNameMatch{
+			Resolution: LegalNameUnique, Chosen: &types.LegalDocument{ID: "dt20", NumberKey: l.catalog["dt20"].NumberKey}}}
+		a := vietnamese_legal.AmendRef{Document: "Luật Đầu tư", Article: "5"}
+		k, _, problem, ok := l.amendTarget(a, legal, nil, LegalAmendDoc{Number: "118/2016/NĐ-CP"}, time.Time{},
+			targets, legalTargetsByNumber(targets), nil)
+		require.True(t, ok)
+		require.Equal(t, "dt14", k)
+		require.Contains(t, problem, "không rõ ngày ban hành văn bản sửa đổi")
+		require.Contains(t, problem, "ứng với nhiều văn bản")
+
+		only := map[string]LegalAmendDoc{"dt20": targets["dt20"]}
+		k, _, problem, ok = l.amendTarget(a, legal, nil, LegalAmendDoc{}, time.Time{}, only, legalTargetsByNumber(only), nil)
+		require.True(t, ok)
+		require.Equal(t, "dt20", k)
+		require.Contains(t, problem, "không rõ ngày ban hành văn bản sửa đổi", "flagged even with one target of that name")
+	})
+
+	t.Run("a shared số hiệu", func(t *testing.T) {
+		l := newLoader(row("a1", "10/2016/TT-BTNMT", "Thông tư", "Thông tư 10/2016/TT-BTNMT về đo đạc", "2016-05-01"),
+			row("a2", "10/2016/TT-BTNMT", "Thông tư", "Thông tư 10/2016/TT-BTNMT về khí tượng", "2016-05-01"),
+			row("b", "20/2020/TT-BTNMT", "Thông tư", "Thông tư 20/2020/TT-BTNMT", "2020-01-01"))
+		targets := map[string]LegalAmendDoc{"a1": l.catalogDoc(l.catalog["a1"]), "a2": l.catalogDoc(l.catalog["a2"])}
+		byNumber := legalTargetsByNumber(targets)
+		require.Equal(t, []string{"a1", "a2"}, byNumber[vietnamese_legal.CatalogNumberKey("10/2016/TT-BTNMT")])
+		a := vietnamese_legal.AmendRef{Document: "Thông tư số 10/2016/TT-BTNMT", Article: "3"}
+		b := LegalAmendDoc{CatalogID: "b", Number: "20/2020/TT-BTNMT"}
+		issued := *day("2020-01-01")
+		// the catalogue records B amending a2: that one, without a doubt
+		for i := 0; i < 5; i++ {
+			k, _, problem, ok := l.amendTarget(a, legal, nil, b, issued, targets, byNumber, map[string][]string{"a2": {"b"}})
+			require.True(t, ok)
+			require.Equal(t, "a2", k)
+			require.Empty(t, problem)
+		}
+		// no relation: attached, flagged
+		k, _, problem, ok := l.amendTarget(a, legal, nil, b, issued, targets, byNumber, nil)
+		require.True(t, ok)
+		require.Equal(t, "a1", k)
+		require.Equal(t, "số hiệu 10/2016/TT-BTNMT ứng với nhiều văn bản", problem)
+		// relations to both: still flagged
+		_, _, problem, _ = l.amendTarget(a, legal, nil, b, issued, targets, byNumber, map[string][]string{"a1": {"b"}, "a2": {"b"}})
+		require.NotEmpty(t, problem)
+	})
+}
