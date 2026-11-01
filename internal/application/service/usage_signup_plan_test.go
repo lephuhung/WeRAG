@@ -46,6 +46,16 @@ func TestGrantSignupPlanSubscribesNewAccount(t *testing.T) {
 	_, err = s.GrantSignupPlan(context.Background(), "user-2")
 	require.NoError(t, err)
 	require.Nil(t, repo.active["user/user-2"].EndsAt)
+
+	// a negative value is the default, never "no end date"
+	s, repo = signupPlanService([]*types.UsagePlan{trial}, billingSettings{
+		strings: map[string]string{types.UsageSignupPlanSettingKey: "plan-trial"},
+		ints:    map[string]int64{types.UsageSignupPlanDaysSettingKey: -1},
+	})
+	_, err = s.GrantSignupPlan(context.Background(), "user-3")
+	require.NoError(t, err)
+	require.NotNil(t, repo.active["user/user-3"].EndsAt)
+	require.Equal(t, time.Date(2026, 11, 12, 17, 0, 0, 0, time.UTC), repo.active["user/user-3"].EndsAt.UTC())
 }
 
 // No setting, a missing/inactive/organization plan, or an account that

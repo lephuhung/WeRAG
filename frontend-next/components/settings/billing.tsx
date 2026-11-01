@@ -187,6 +187,9 @@ export function BillingPage() {
       setQuote(null);
       return;
     }
+    // a plan switch first moves months to one the plan is sold for (the
+    // effect above); pricing the stale count would only flash a 400
+    if (plan?.id === planId && !monthChoices.includes(months)) return;
     let alive = true;
     quoteUsageOrder({
       scope_type: scope,
@@ -211,7 +214,7 @@ export function BillingPage() {
     return () => {
       alive = false;
     };
-  }, [scope, planId, months, seats, seatMode, promo, addonIds, t]);
+  }, [scope, planId, plan, monthChoices, months, seats, seatMode, promo, addonIds, t]);
 
   // Price the add-ons bought on the current subscription.
   useEffect(() => {

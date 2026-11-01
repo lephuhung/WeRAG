@@ -173,6 +173,11 @@ func (s *usagePlanService) GrantSignupPlan(ctx context.Context, userID string) (
 		Note:      "Gói tặng khi đăng ký",
 	}
 	days := s.settings.GetInt(ctx, types.UsageSignupPlanDaysSettingKey, "", types.UsageSignupPlanDaysDefault)
+	if days < 0 {
+		// only 0 means "no end date": a negative value written through the
+		// API must not hand out a never-expiring package
+		days = types.UsageSignupPlanDaysDefault
+	}
 	if days > 0 {
 		ends := types.EndOfDayVN(now.AddDate(0, 0, int(min(days, 3650))))
 		sub.EndsAt = &ends
