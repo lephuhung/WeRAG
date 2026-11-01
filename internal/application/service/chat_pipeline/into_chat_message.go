@@ -121,6 +121,7 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 	}
 
 	var contextsBuilder strings.Builder
+	current := legalCurrentWording(ctx, chatManage)
 
 	// Collect unique document metadata (title + description), once per knowledge
 	allResults := chatManage.MergeResult
@@ -137,7 +138,7 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 	if chatManage.FAQPriorityEnabled && len(faqResults) > 0 {
 		contextsBuilder.WriteString("<source type=\"faq\" priority=\"high\">\n")
 		for i, result := range faqResults {
-			passage := getEnrichedPassageForChat(ctx, result)
+			passage := getEnrichedPassageForChat(ctx, withCurrentWording(result, current))
 			if hasHighConfidenceFAQ && i == 0 {
 				contextsBuilder.WriteString(fmt.Sprintf("<context id=\"FAQ-%d\" match=\"exact\">%s</context>\n", i+1, passage))
 			} else {
@@ -149,14 +150,14 @@ func (p *PluginIntoChatMessage) OnEvent(ctx context.Context,
 		if len(docResults) > 0 {
 			contextsBuilder.WriteString("<source type=\"document\" priority=\"supplementary\">\n")
 			for i, result := range docResults {
-				passage := getEnrichedPassageForChat(ctx, result)
+				passage := getEnrichedPassageForChat(ctx, withCurrentWording(result, current))
 				contextsBuilder.WriteString(fmt.Sprintf("<context id=\"DOC-%d\">%s</context>\n", i+1, passage))
 			}
 			contextsBuilder.WriteString("</source>")
 		}
 	} else {
 		for i, result := range chatManage.MergeResult {
-			passage := getEnrichedPassageForChat(ctx, result)
+			passage := getEnrichedPassageForChat(ctx, withCurrentWording(result, current))
 			if i > 0 {
 				contextsBuilder.WriteString("\n")
 			}
@@ -325,6 +326,40 @@ func getEnrichedPassageForChat(ctx context.Context, result *types.SearchResult) 
 
 	// Xử lý thông tin hình ảnh và gộp với nội dung
 	return enrichContentWithImageInfo(ctx, result.Content, result.ImageInfo)
+}
+
+// legalCurrentWording looks up, once for all merged results, the legal
+// chunks whose wording a newer document changed in place.
+func legalCurrentWording(ctx context.Context, chatManage *types.ChatManage) map[string]string {
+	if chatManage.LegalCurrentWording == nil || len(chatManage.MergeResult) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(chatManage.MergeResult))
+	for _, r := range chatManage.MergeResult {
+		if r != nil && r.ID != "" {
+			ids = append(ids, r.ID)
+		}
+	}
+	current := chatManage.LegalCurrentWording(ctx, ids)
+	if len(current) > 0 {
+		pipelineInfo(ctx, "IntoChatMessage", "legal_current_wording", map[string]interface{}{
+			"session_id": chatManage.SessionID,
+			"chunks":     len(current),
+		})
+	}
+	return current
+}
+
+// withCurrentWording is result with the current wording as its content,
+// a copy so the references keep the stored text.
+func withCurrentWording(result *types.SearchResult, current map[string]string) *types.SearchResult {
+	text, ok := current[result.ID]
+	if !ok {
+		return result
+	}
+	cp := *result
+	cp.Content = text
+	return &cp
 }
 
 // enrichContentWithImageInfo delegates to the shared searchutil implementation.

@@ -1241,7 +1241,8 @@ func (s *agentService) registerTools(
 			).WithAbbreviationService(s.abbreviationService).WithLegalCatalog(s.legalCatalog).
 				WithCurrentWording(s.legalWordingFunc(searchTargetKBIDs(config.SearchTargets)))
 		case tools.ToolReadDocument:
-			toolToRegister = tools.NewReadDocumentTool(s.knowledgeService, s.chunkService, config.SearchTargets)
+			toolToRegister = tools.NewReadDocumentTool(s.knowledgeService, s.chunkService, config.SearchTargets).
+				WithCurrentWording(s.legalWordingFunc(searchTargetKBIDs(config.SearchTargets)))
 		case tools.ToolListDocuments:
 			toolToRegister = tools.NewListDocumentsTool(s.knowledgeService, config.SearchTargets)
 		case tools.ToolQueryKnowledgeGraph:
@@ -1396,7 +1397,8 @@ func (s *agentService) registerTools(
 	// text search. Offering it alongside the reader needs no checkbox.
 	if _, err := registry.GetTool(tools.ToolReadDocument); err == nil {
 		registry.RegisterTool(tools.NewSearchDocumentSectionTool(
-			s.knowledgeService, s.chunkService, config.SearchTargets))
+			s.knowledgeService, s.chunkService, config.SearchTargets).
+			WithCurrentWording(s.legalWordingFunc(searchTargetKBIDs(config.SearchTargets))))
 	}
 	// resolve_abbreviation rides on every agent: the dictionary is global,
 	// expansion is read-only, and suggestions stay inactive until an admin

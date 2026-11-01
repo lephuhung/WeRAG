@@ -145,3 +145,34 @@ func containsString(s, sub string) bool {
 	}
 	return false
 }
+
+// The quick answer reads legal passages with their current wording; the
+// merged results (the references) keep the stored text.
+func TestIntoChatMessage_LegalCurrentWording(t *testing.T) {
+	stored := &types.SearchResult{ID: "c-1", Content: "trên 500 triệu đồng"}
+	cm := &types.ChatManage{
+		PipelineRequest: types.PipelineRequest{
+			Query:         "ngưỡng doanh thu",
+			SummaryConfig: types.SummaryConfig{ContextTemplate: "{{query}}\n{{contexts}}"},
+		},
+		PipelineState: types.PipelineState{
+			MergeResult: []*types.SearchResult{stored, {ID: "c-2", Content: "khác"}},
+			LegalCurrentWording: func(_ context.Context, ids []string) map[string]string {
+				if len(ids) != 2 {
+					t.Fatalf("ids = %v", ids)
+				}
+				return map[string]string{"c-1": "trên 01 tỷ đồng [thay cho “500 triệu đồng”]"}
+			},
+		},
+	}
+	plugin := &PluginIntoChatMessage{}
+	if err := plugin.OnEvent(context.Background(), types.INTO_CHAT_MESSAGE, cm, func() *PluginError { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if !contains(cm.UserContent, "trên 01 tỷ đồng [thay cho") || contains(cm.UserContent, ">trên 500 triệu đồng<") {
+		t.Fatalf("UserContent: %s", cm.UserContent)
+	}
+	if stored.Content != "trên 500 triệu đồng" {
+		t.Fatalf("stored result changed: %q", stored.Content)
+	}
+}

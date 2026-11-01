@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
@@ -87,6 +88,14 @@ type SearchDocumentSectionTool struct {
 	knowledgeService interfaces.KnowledgeService
 	chunkService     interfaces.ChunkService
 	searchTargets    types.SearchTargets
+	// currentWording returns legal chunks with in-place amendments applied.
+	currentWording CurrentWordingFunc
+}
+
+// WithCurrentWording sets the current-wording lookup, as for read_document.
+func (t *SearchDocumentSectionTool) WithCurrentWording(fn CurrentWordingFunc) *SearchDocumentSectionTool {
+	t.currentWording = fn
+	return t
 }
 
 // NewSearchDocumentSectionTool creates a new search_document_section tool.
@@ -168,7 +177,13 @@ func (t *SearchDocumentSectionTool) Execute(ctx context.Context, args json.RawMe
 		}
 		hits = append(hits, hit)
 	}
-	return t.render(ctx, ref, input, hits), nil
+	result := t.render(ctx, ref, input, hits)
+	// match_snippet holds the heading path here, not a text match: no query
+	rows, _ := result.Data["chunks"].([]map[string]interface{})
+	if n := applyCurrentWordingRows(ctx, t.currentWording, rows, ""); n > 0 {
+		logger.Infof(ctx, "[Tool][SearchDocumentSection] Current wording applied to %d chunk(s)", n)
+	}
+	return result, nil
 }
 
 // resolveDocuments returns the documents the section is read from. With a
