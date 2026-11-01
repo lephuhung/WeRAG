@@ -32,10 +32,13 @@ type DomainPackReconcileResult struct {
 	Errors []DomainPackReconcileError `json:"errors"`
 }
 
-// DomainPackReconcileError is one number whose check failed.
+// DomainPackReconcileError is one number whose check failed, or (on the
+// pack detail) a stored formula edit that cannot be shown: FormulaID names
+// it, and DELETE …/formulas/:id removes it.
 type DomainPackReconcileError struct {
-	Number string `json:"number"`
-	Error  string `json:"error"`
+	Number    string `json:"number"`
+	FormulaID string `json:"formula_id,omitempty"`
+	Error     string `json:"error"`
 }
 
 // DomainPackReconcileRequest is the legal document request the reconcile
@@ -180,6 +183,10 @@ type DomainPackFormulaView struct {
 	// EditNotApplied: an edit is stored but this build refuses it (the
 	// formula or the catalogue changed); formulas.yaml applies.
 	EditNotApplied bool `json:"edit_not_applied,omitempty"`
+	// ShippedChanged: formulas.yaml changed this formula after the edit was
+	// made; the edit still masks the new wording (Shipped) until it is
+	// saved again or reset.
+	ShippedChanged bool `json:"shipped_changed,omitempty"`
 }
 
 // DomainPackFormulaEdit is a SuperAdmin's wording of a shipped formula (the
@@ -192,6 +199,10 @@ type DomainPackFormulaEdit struct {
 	Variables  []DomainPackFormulaVar      `json:"variables"`
 	Basis      []DomainPackFormulaBasisRef `json:"basis"`
 	Examples   []DomainPackFormulaSample   `json:"examples"`
+	// ShippedHash identifies the formulas.yaml wording the edit was made
+	// over (domainpacks.Pack.ShippedFormulaHash); set by the server on
+	// save, ignored in a PUT body.
+	ShippedHash string `json:"shipped_hash,omitempty"`
 }
 
 // DomainPackFormulaBasisRef is one basis provision as written: số hiệu (in

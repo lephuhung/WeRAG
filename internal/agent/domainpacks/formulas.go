@@ -64,7 +64,69 @@ var (
 	snakeCasePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
 	// a percentage or rate written into an expression ("× 20 %")
 	constantRatePattern = regexp.MustCompile(`\d+(?:[.,]\d+)?\s*%`)
+	// a number as written ("100.000.000", "0,015", "12")
+	numberPattern = regexp.MustCompile(`\d+(?:[.,]\d+)*`)
+	// numbers that name a provision or a document, not a value: "Điều 7",
+	// "khoản 2", "68/2026/NĐ-CP", "năm 2026"
+	provisionRefPattern = regexp.MustCompile(`(?i)(?:điều|khoản|điểm|chương|mục|phụ lục|năm)\s+\d+[a-zđ]?\b`)
+	docNumberRefPattern = regexp.MustCompile(`\d{1,4}/(?:19|20)\d\d(?:/[0-9]*[A-Za-zĐđ][A-Za-zĐđ0-9]*(?:[-–—‐][A-Za-zĐđ0-9]+)*)?`)
+	// the Điều a basis article names ("Điều 10 khoản 2 điểm đ" → "10")
+	articleDieuPattern = regexp.MustCompile(`(?i)điều\s+(\d+[a-zđ]?)`)
 )
+
+// allowedFormulaNumbers are the numbers a formula's name or expression may
+// write: unit conversions ("÷ 100", "× 12 tháng") and bounds ("0", "1 −
+// tỷ lệ"). An amount, threshold or rate is a variable: the name and the
+// expression go to the model and the answer next to the Go results
+// (FormulaBlock), so a constant there would contradict them.
+var allowedFormulaNumbers = map[string]bool{"0": true, "1": true, "12": true, "100": true}
+
+// numericLiterals are the numbers text writes beyond allowedFormulaNumbers,
+// provision and document references aside.
+func numericLiterals(text string) []string {
+	text = docNumberRefPattern.ReplaceAllString(text, " ")
+	text = provisionRefPattern.ReplaceAllString(text, " ")
+	var out []string
+	for _, n := range numberPattern.FindAllString(text, -1) {
+		if !allowedFormulaNumbers[n] {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// catalogueArticles maps each catalogue number key to its articles: list.
+func catalogueArticles(c *Catalogue) map[string][]string {
+	out := map[string][]string{}
+	if c == nil {
+		return out
+	}
+	for _, d := range c.Documents {
+		key := vietnamese_legal.CatalogNumberKey(d.Number)
+		out[key] = append(out[key], d.Articles...)
+	}
+	return out
+}
+
+// articleListed reports whether article is one of listed (catalogue.yaml
+// articles: of its document): the same Điều ("Điều 10" and "Điều 10
+// khoản 2" are one), or the same text when it names no Điều.
+func articleListed(article string, listed []string) bool {
+	norm := func(s string) string { return strings.ToLower(strings.Join(strings.Fields(s), " ")) }
+	dieu := func(s string) string {
+		if m := articleDieuPattern.FindStringSubmatch(s); m != nil {
+			return strings.ToLower(m[1])
+		}
+		return ""
+	}
+	want, wantDieu := norm(article), dieu(article)
+	for _, a := range listed {
+		if wantDieu != "" && dieu(a) == wantDieu || norm(a) == want {
+			return true
+		}
+	}
+	return false
+}
 
 // parseFormulas decodes formulas.yaml strictly and checks it against the
 // manifest and the catalogue.
@@ -81,12 +143,7 @@ func parseFormulas(data []byte, m *Manifest, catalogue *Catalogue) (*Formulas, [
 	if len(f.Formulas) == 0 {
 		fail("formulas is empty")
 	}
-	catalogued := map[string]bool{}
-	if catalogue != nil {
-		for _, d := range catalogue.Documents {
-			catalogued[vietnamese_legal.CatalogNumberKey(d.Number)] = true
-		}
-	}
+	catalogued := catalogueArticles(catalogue)
 	required := map[string]bool{}
 	if m != nil {
 		for _, t := range m.Metadata.RequiredTools {
@@ -109,9 +166,11 @@ func parseFormulas(data []byte, m *Manifest, catalogue *Catalogue) (*Formulas, [
 
 // checkFormula is the check of one formula: snake_case id with a Go
 // implementation for its tool, name and expression, variables, basis in
-// the catalogue (catalogued: number keys), examples naming every variable.
-// It returns one line per problem.
-func checkFormula(fm Formula, catalogued, required map[string]bool) []string {
+// the catalogue (catalogued: number key → articles) with its article among
+// that document's articles, no number in the name or expression beyond
+// allowedFormulaNumbers, examples naming every variable. It returns one
+// line per problem.
+func checkFormula(fm Formula, catalogued map[string][]string, required map[string]bool) []string {
 	var problems []string
 	fail := func(format string, args ...any) {
 		problems = append(problems, fmt.Sprintf(format, args...))
@@ -121,6 +180,12 @@ func checkFormula(fm Formula, catalogued, required map[string]bool) []string {
 	}
 	if strings.TrimSpace(fm.Name) == "" || strings.TrimSpace(fm.Expression) == "" {
 		fail("name and expression are required")
+	}
+	for _, field := range []struct{ name, text string }{{"name", fm.Name}, {"expression", fm.Expression}} {
+		if nums := numericLiterals(field.text); len(nums) > 0 {
+			fail("the %s writes the number(s) %s: an amount, threshold or rate is a variable (source input or kb); only 0, 1, 12 and 100 may be written",
+				field.name, strings.Join(nums, ", "))
+		}
 	}
 	if !required[fm.Tool] {
 		fail("tool %q is not in required_tools", fm.Tool)
@@ -148,8 +213,12 @@ func checkFormula(fm Formula, catalogued, required map[string]bool) []string {
 		vars[v.Name] = true
 	}
 	for j, b := range fm.Basis {
-		if !catalogued[vietnamese_legal.CatalogNumberKey(b.Number)] {
+		articles, ok := catalogued[vietnamese_legal.CatalogNumberKey(b.Number)]
+		switch {
+		case !ok:
 			fail("basis[%d] number %q is not in %s", j, b.Number, catalogueFile)
+		case strings.TrimSpace(b.Article) != "" && !articleListed(b.Article, articles):
+			fail("basis[%d] %s is not among the articles of %s in %s", j, strings.TrimSpace(b.Article), b.Number, catalogueFile)
 		}
 	}
 	if len(fm.Examples) == 0 {
