@@ -15,7 +15,7 @@ const (
 // LegalProvisionLink is one provision-level relation a vbpl.vn editor
 // tagged on the amended document A: provision TargetProvisionID of A is
 // acted on (RelationCode / Op) by provision SourceProvisionID of document
-// B, from EffFrom (migration 000176; plan 2026-10-19 §11). Platform-wide.
+// B, from EffFrom (migration 000177; plan 2026-10-19 §11). Platform-wide.
 type LegalProvisionLink struct {
 	ID                int64      `json:"id"                  gorm:"primaryKey;autoIncrement"`
 	TargetDocID       string     `json:"target_doc_id"       gorm:"type:varchar(64);not null;index:idx_legal_provision_links_target,priority:1"`

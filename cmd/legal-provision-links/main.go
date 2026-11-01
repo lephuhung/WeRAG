@@ -1,7 +1,7 @@
 // legal-provision-links imports the provision-level relations vbpl.vn
 // editors tag on amended documents (type / new-types="<code>:<provision id
 // in B>" on A's prov-article / prov-clause / prov-item paragraphs) into
-// legal_provision_links (migration 000176), the second amendment source of
+// legal_provision_links (migration 000177), the second amendment source of
 // the current-wording resolver (plan 2026-10-19-legal-amendment-kg §11).
 //
 // It reads every crawled page (<html dir>/<vbpl id>.html, the id being the

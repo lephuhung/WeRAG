@@ -1,4 +1,4 @@
--- Migration: 000176_legal_provision_links
+-- Migration: 000177_legal_provision_links
 -- Provision-level amendment edges tagged by vbpl.vn editors (plan
 -- 2026-10-19-legal-amendment-kg §11): on the page of the amended document
 -- A, a provision carries type / new-types="<code>:<provision id in B>".
@@ -18,7 +18,7 @@
 --   eff_from / eff_to  when the change applies; eff_from_source
 --             'provision_target' (vbpl's per-provision date), 'catalogue'
 --             (B's effective_on) or '' (unknown)
-DO $$ BEGIN RAISE NOTICE '[Migration 000176] Creating legal_provision_links'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000177] Creating legal_provision_links'; END $$;
 
 CREATE TABLE IF NOT EXISTS legal_provision_links (
     id                  BIGSERIAL    PRIMARY KEY,
