@@ -1261,40 +1261,83 @@ func (l *legalAmendLoader) amendTarget(a vietnamese_legal.AmendRef, legal *vietn
 		if len(held) == 0 {
 			return "", LegalAmendDoc{}, "", false
 		}
-		k, shared := held[0], ""
-		if len(held) > 1 {
-			// two targets share the số hiệu: only a catalogue relation
-			// B → A tells which one B amends
-			var recorded []string
-			for _, hk := range held {
-				if id := targets[hk].CatalogID; id != "" && b.CatalogID != "" && containsString(amenders[id], b.CatalogID) {
-					recorded = append(recorded, hk)
-				}
-			}
-			if len(recorded) == 1 {
-				k = recorded[0]
-			} else {
-				shared = "số hiệu " + c.Number + " ứng với nhiều văn bản"
-			}
-		}
-		d := targets[k]
-		if shared != "" {
-			return k, d, shared, true
-		}
 		rows := l.byKey[c.Key]
 		if _, loaded := l.byKey[c.Key]; !loaded {
 			_ = l.loadCatalog(nil, []string{c.Key})
 			rows = l.byKey[c.Key]
 		}
+		recorded := func(hk string) bool {
+			id := targets[hk].CatalogID
+			return id != "" && b.CatalogID != "" && containsString(amenders[id], b.CatalogID)
+		}
+		// a số hiệu is not unique (100/2015/QH13 is Bộ luật Hình sự and a
+		// Nghị quyết): the type written with it narrows the targets and the
+		// catalogue rows first
+		if wt := legalWrittenType(name, c); wt != "" {
+			var typed []string
+			for _, hk := range held {
+				t := targets[hk].Type
+				if r := l.catalog[targets[hk].CatalogID]; r != nil && r.DocType != "" {
+					t = r.DocType
+				}
+				if legalTypeClass(t) == wt {
+					typed = append(typed, hk)
+				}
+			}
+			var typedRows []*legalCatalogRow
+			for _, r := range rows {
+				if legalTypeClass(r.DocType) == wt {
+					typedRows = append(typedRows, r)
+				}
+			}
+			switch {
+			case len(typed) > 0:
+				held = typed
+				if len(typedRows) > 0 {
+					rows = typedRows
+				}
+			case len(typedRows) > 0:
+				return "", LegalAmendDoc{}, "", false // another document of that number
+			}
+		}
+		k := held[0]
+		if len(held) > 1 {
+			// targets sharing the số hiệu: only a catalogue relation B → A
+			// tells which one B amends
+			var rec []string
+			for _, hk := range held {
+				if recorded(hk) {
+					rec = append(rec, hk)
+				}
+			}
+			if len(rec) != 1 {
+				return k, targets[k], "số hiệu " + c.Number + " ứng với nhiều văn bản", true
+			}
+			k = rec[0]
+		}
+		d := targets[k]
 		among := false
+		var self *legalCatalogRow
 		for _, r := range rows {
 			if d.CatalogID != "" && r.ID == d.CatalogID {
-				among = true
+				among, self = true, r
+			}
+		}
+		// the other rows are copies of this document (same type, same issue
+		// day: a twin row), not other documents
+		twins := self != nil
+		for _, r := range rows {
+			if twins && r != self && (legalTypeClass(r.DocType) != legalTypeClass(self.DocType) || !legalSameDay(r.IssuedOn, self.IssuedOn)) {
+				twins = false
 			}
 		}
 		switch {
 		case len(rows) > 1 && among:
-			// a shared số hiệu, one of whose rows is this document
+			// a shared số hiệu, one of whose rows is this document: sure
+			// for its twins, else only when the catalogue records B amending it
+			if !twins && !recorded(k) {
+				return k, d, "số hiệu " + c.Number + " ứng với nhiều văn bản trong danh mục", true
+			}
 		case len(rows) > 1:
 			return k, d, "số hiệu " + c.Number + " ứng với nhiều văn bản trong danh mục", true
 		case len(rows) == 0:
@@ -1348,6 +1391,50 @@ func (l *legalAmendLoader) amendTarget(a vietnamese_legal.AmendRef, legal *vietn
 		}
 	}
 	return "", LegalAmendDoc{}, "", false
+}
+
+// legalWrittenTypeRe is a type written right before a number ("Nghị
+// quyết số ", "NĐ ").
+var legalWrittenTypeRe = regexp.MustCompile(`(?i)(?:^|[^\p{L}])(bộ luật|luật|pháp lệnh|nghị định|nghị quyết liên tịch|nghị quyết|thông tư liên tịch|thông tư|quyết định|chỉ thị|nđ|nq|ttlt|tt|qđ)\s*(?:số\s*:?\s*)?$`)
+
+var legalTypeAbbrev = map[string]string{"nđ": "nghị định", "nq": "nghị quyết", "ttlt": "thông tư liên tịch", "tt": "thông tư", "qđ": "quyết định"}
+
+// legalWrittenType is the type class (legalTypeClass) written with a
+// numbered citation in text — by its name ("Bộ luật Hình sự số …") or
+// the words right before the number — or "" when none is written (a type
+// read from the number's code is a guess: QH is a law or a resolution).
+func legalWrittenType(text string, c vietnamese_legal.Citation) string {
+	if c.Name != "" {
+		return legalTypeClass(c.DocType)
+	}
+	r := []rune(text)
+	if c.Start > len(r) {
+		return ""
+	}
+	m := legalWrittenTypeRe.FindStringSubmatch(string(r[max(0, c.Start-40):c.Start]))
+	if m == nil {
+		return ""
+	}
+	t := strings.ToLower(m[1])
+	if full, ok := legalTypeAbbrev[t]; ok {
+		t = full
+	}
+	return legalTypeClass(t)
+}
+
+// legalSameDay reports whether two dates are the same, known day.
+func legalSameDay(a, b *time.Time) bool {
+	return a != nil && b != nil && a.Format("2006-01-02") == b.Format("2006-01-02")
+}
+
+// legalTypeClass folds a document type for comparison; a code (bộ luật)
+// is a law.
+func legalTypeClass(t string) string {
+	t = strings.ToLower(strings.Join(strings.Fields(t), " "))
+	if t == "bộ luật" {
+		return "luật"
+	}
+	return t
 }
 
 // amendName is the document an amends entry names: as written, else the

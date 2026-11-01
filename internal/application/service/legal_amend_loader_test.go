@@ -651,4 +651,44 @@ func TestAmendTargetUnknownDateAndSharedNumber(t *testing.T) {
 		_, _, problem, _ = l.amendTarget(a, legal, nil, b, issued, targets, byNumber, map[string][]string{"a1": {"b"}, "a2": {"b"}})
 		require.NotEmpty(t, problem)
 	})
+
+	// on dev: 100/2015/QH13 is Bộ luật Hình sự and a Nghị quyết (246
+	// entries), 66/2006/QH11 Luật Hàng không dân dụng and a Nghị quyết
+	t.Run("the type written picks among a shared số hiệu", func(t *testing.T) {
+		l := newLoader(row("blhs", "100/2015/QH13", "Bộ luật", "Bộ luật Hình sự số 100/2015/QH13", "2015-11-27"),
+			row("nq100", "100/2015/QH13", "Nghị quyết", "Nghị quyết 100/2015/QH13 phê chuẩn", "2015-11-12"),
+			row("hk", "66/2006/QH11", "Luật", "Luật Hàng không dân dụng Việt Nam số 66/2006/QH11", "2006-06-29"),
+			row("nq66", "66/2006/QH11", "Nghị quyết", "Nghị quyết 66/2006/QH11", "2006-06-29"))
+		b := LegalAmendDoc{CatalogID: "b"}
+		issued := *day("2017-06-20")
+		at := func(targets map[string]LegalAmendDoc, doc string) (string, string, bool) {
+			k, _, problem, ok := l.amendTarget(vietnamese_legal.AmendRef{Document: doc, Article: "5"}, legal, nil, b, issued,
+				targets, legalTargetsByNumber(targets), nil)
+			return k, problem, ok
+		}
+		blhs := map[string]LegalAmendDoc{"blhs": l.catalogDoc(l.catalog["blhs"])}
+		k, problem, ok := at(blhs, "Bộ luật Hình sự số 100/2015/QH13")
+		require.True(t, ok)
+		require.Equal(t, "blhs", k)
+		require.Empty(t, problem)
+		_, _, ok = at(blhs, "Nghị quyết số 100/2015/QH13")
+		require.False(t, ok, "the resolution is not the code")
+		k, problem, ok = at(blhs, "văn bản số 100/2015/QH13")
+		require.True(t, ok)
+		require.Equal(t, "blhs", k)
+		require.Equal(t, "số hiệu 100/2015/QH13 ứng với nhiều văn bản trong danh mục", problem, "no type written: flagged")
+
+		both := map[string]LegalAmendDoc{"hk": l.catalogDoc(l.catalog["hk"]), "nq66": l.catalogDoc(l.catalog["nq66"])}
+		k, problem, ok = at(both, "Luật Hàng không dân dụng Việt Nam số 66/2006/QH11")
+		require.True(t, ok)
+		require.Equal(t, "hk", k)
+		require.Empty(t, problem)
+		k, problem, ok = at(both, "Nghị quyết số 66/2006/QH11")
+		require.True(t, ok)
+		require.Equal(t, "nq66", k)
+		require.Empty(t, problem)
+		k, problem, _ = at(both, "66/2006/QH11")
+		require.Equal(t, "hk", k)
+		require.Equal(t, "số hiệu 66/2006/QH11 ứng với nhiều văn bản", problem)
+	})
 }
