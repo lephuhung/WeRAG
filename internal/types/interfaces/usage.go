@@ -14,6 +14,8 @@ type UsageCounterRepository interface {
 	Add(ctx context.Context, increments []types.UsageIncrement) error
 	// Get returns the rows of one scope for the given period keys.
 	Get(ctx context.Context, scopeType, scopeID string, periodKeys []string) ([]*types.UsageCounter, error)
+	// GetMany is Get for several scopes of one type in one read.
+	GetMany(ctx context.Context, scopeType string, scopeIDs, periodKeys []string) ([]*types.UsageCounter, error)
 	// SumByPeriod sums every scope of scopeType for one period, per metric.
 	SumByPeriod(ctx context.Context, scopeType, periodKey string) ([]*types.UsageCounter, error)
 	// DeleteScope removes every counter row of one scope. Only lifetime

@@ -261,9 +261,11 @@ func (s *usagePlanService) implicitGuestViews(
 	if err != nil || plan == nil {
 		return nil, err
 	}
-	// the listing may be filtered (guest plan only): ask for any active row
+	// the listing may be filtered (guest plan only): ask for any active row.
+	// A scope or status filter alone (the usage page asks for scope "user")
+	// still holds every active personal row.
 	active := subs
-	if filter.ScopeType != "" || filter.Status != "" || filter.PlanID != "" {
+	if filter.PlanID != "" {
 		if active, err = s.repo.ListSubscriptions(ctx, types.UsageSubscriptionFilter{
 			ScopeType: types.UsageScopeUser, Status: types.UsageSubscriptionActive,
 		}); err != nil {
@@ -279,6 +281,22 @@ func (s *usagePlanService) implicitGuestViews(
 			held[sub.ScopeID] = true
 		}
 	}
+	// one counters read for every Guest listed, not one per Guest
+	var ids []string
+	for _, u := range guests {
+		if !held[u.ID] {
+			ids = append(ids, u.ID)
+		}
+	}
+	keys := types.UsagePeriodKeysAt(now)
+	rows, err := s.counters.GetMany(ctx, types.UsageScopeGuest, ids, []string{keys.Day, keys.Month})
+	if err != nil {
+		return nil, err
+	}
+	rowsOf := make(map[string][]*types.UsageCounter, len(ids))
+	for _, row := range rows {
+		rowsOf[row.ScopeID] = append(rowsOf[row.ScopeID], row)
+	}
 	var out []*types.UsageSubscriptionView
 	for _, u := range guests {
 		if held[u.ID] {
@@ -288,10 +306,7 @@ func (s *usagePlanService) implicitGuestViews(
 			ScopeType: types.UsageScopeUser, ScopeID: u.ID, PlanID: plan.ID, Plan: plan,
 			Mode: types.UsageModePool, StartsAt: u.CreatedAt, Status: types.UsageSubscriptionActive,
 		}
-		statuses, err := s.guard.limitStatus(ctx, sub.EffectiveLimits(), types.UsageScopeGuest, u.ID, now)
-		if err != nil {
-			return nil, err
-		}
+		statuses := limitStatusFrom(sub.EffectiveLimits(), rowsOf[u.ID], now)
 		name := u.Username
 		if name == "" {
 			name = u.Email

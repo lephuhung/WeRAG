@@ -23,6 +23,10 @@ func (f *fakeUsageCounterRepo) Get(context.Context, string, string, []string) ([
 	return nil, nil
 }
 
+func (f *fakeUsageCounterRepo) GetMany(context.Context, string, []string, []string) ([]*types.UsageCounter, error) {
+	return nil, nil
+}
+
 func (f *fakeUsageCounterRepo) SumByPeriod(context.Context, string, string) ([]*types.UsageCounter, error) {
 	return nil, nil
 }

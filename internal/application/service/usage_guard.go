@@ -447,6 +447,14 @@ func (g *usageGuard) limitStatus(
 	if err != nil {
 		return nil, err
 	}
+	return limitStatusFrom(limits, rows, now), nil
+}
+
+// limitStatusFrom is limitStatus over counter rows already read (one scope's
+// rows; others are ignored by the caller).
+func limitStatusFrom(limits types.UsageLimits, rows []*types.UsageCounter, now time.Time) []types.UsageLimitStatus {
+	out := make([]types.UsageLimitStatus, 0, len(limits))
+	keys := types.UsagePeriodKeysAt(now)
 	used := make(map[[2]string]int64, len(rows))
 	for _, row := range rows {
 		used[[2]string{row.Metric, row.PeriodKey}] = row.Value
@@ -469,5 +477,5 @@ func (g *usageGuard) limitStatus(
 		}
 		out = append(out, st)
 	}
-	return out, nil
+	return out
 }

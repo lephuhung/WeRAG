@@ -30,11 +30,25 @@ func (f *fakeUsagePlanRepo) HasSeat(_ context.Context, subID, userID string) (bo
 // countingRepo returns fixed counter rows for one scope.
 type countingRepo struct {
 	fakeUsageCounterRepo
-	rows map[string][]*types.UsageCounter // key scopeType/scopeID
+	rows    map[string][]*types.UsageCounter // key scopeType/scopeID
+	getMany int                              // GetMany calls
 }
 
 func (c *countingRepo) Get(_ context.Context, scopeType, scopeID string, _ []string) ([]*types.UsageCounter, error) {
 	return c.rows[scopeType+"/"+scopeID], nil
+}
+
+func (c *countingRepo) GetMany(_ context.Context, scopeType string, scopeIDs, _ []string) ([]*types.UsageCounter, error) {
+	c.getMany++
+	var out []*types.UsageCounter
+	for _, id := range scopeIDs {
+		for _, row := range c.rows[scopeType+"/"+id] {
+			r := *row
+			r.ScopeType, r.ScopeID = scopeType, id
+			out = append(out, &r)
+		}
+	}
+	return out, nil
 }
 
 type enforcingSettings struct {

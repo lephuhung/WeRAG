@@ -85,6 +85,19 @@ func (r *usageCounterRepository) Get(
 	return rows, err
 }
 
+func (r *usageCounterRepository) GetMany(
+	ctx context.Context, scopeType string, scopeIDs, periodKeys []string,
+) ([]*types.UsageCounter, error) {
+	if len(scopeIDs) == 0 || len(periodKeys) == 0 {
+		return nil, nil
+	}
+	var rows []*types.UsageCounter
+	err := r.db.WithContext(ctx).
+		Where("scope_type = ? AND scope_id IN ? AND period_key IN ?", scopeType, scopeIDs, periodKeys).
+		Find(&rows).Error
+	return rows, err
+}
+
 func (r *usageCounterRepository) SumByPeriod(
 	ctx context.Context, scopeType, periodKey string,
 ) ([]*types.UsageCounter, error) {
