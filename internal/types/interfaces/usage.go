@@ -155,6 +155,9 @@ type UsagePlanService interface {
 	// DeletePlan removes a plan nobody subscribes to; otherwise it fails
 	// and the caller should deactivate the plan instead.
 	DeletePlan(ctx context.Context, id string) error
+	// GrantSignupPlan gives a new account the personal plan of the setting
+	// usage.signup_plan_id (nil, nil when none is set or applies).
+	GrantSignupPlan(ctx context.Context, userID string) (*types.UsageSubscriptionView, error)
 
 	ListSubscriptions(ctx context.Context, filter types.UsageSubscriptionFilter) ([]*types.UsageSubscriptionView, error)
 	GetSubscription(ctx context.Context, id string) (*types.UsageSubscriptionView, error)

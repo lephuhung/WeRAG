@@ -69,6 +69,9 @@ func normalizePlan(plan *types.UsagePlan) error {
 	if plan.ScopeKind == types.UsagePlanScopeUser {
 		plan.Mode = types.UsageModePool
 	}
+	if plan.PriceVND < 0 || plan.PriceQuarterVND < 0 || plan.PriceYearVND < 0 {
+		return apperrors.NewBadRequestError("prices must be >= 0")
+	}
 	if plan.Limits == nil {
 		plan.Limits = types.UsageLimits{}
 	}
@@ -129,6 +132,52 @@ func (s *usagePlanService) UpdatePlan(ctx context.Context, plan *types.UsagePlan
 		return nil, err
 	}
 	return plan, nil
+}
+
+// GrantSignupPlan gives a newly created account the personal plan named by
+// the setting usage.signup_plan_id, for usage.signup_plan_days days (0 = no
+// end date). Nothing happens when the setting is empty, the plan is gone,
+// inactive or not a personal plan, or the account already holds a package.
+func (s *usagePlanService) GrantSignupPlan(ctx context.Context, userID string) (*types.UsageSubscriptionView, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" || s.settings == nil {
+		return nil, nil
+	}
+	planID := strings.TrimSpace(s.settings.GetString(ctx, types.UsageSignupPlanSettingKey, "", ""))
+	if planID == "" {
+		return nil, nil
+	}
+	plan, err := s.repo.GetPlan(ctx, planID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if plan == nil || !plan.IsActive || plan.ScopeKind != types.UsagePlanScopeUser {
+		logger.Warnf(ctx, "signup plan %s is missing, inactive or not personal; no package granted", planID)
+		return nil, nil
+	}
+	cur, err := s.repo.GetActiveSubscription(ctx, types.UsageScopeUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	if cur != nil {
+		return nil, nil
+	}
+	now := s.now()
+	sub := &types.UsageSubscription{
+		ScopeType: types.UsageScopeUser,
+		ScopeID:   userID,
+		PlanID:    plan.ID,
+		Mode:      types.UsageModePool,
+		StartsAt:  now,
+		Status:    types.UsageSubscriptionActive,
+		Note:      "Gói tặng khi đăng ký",
+	}
+	days := s.settings.GetInt(ctx, types.UsageSignupPlanDaysSettingKey, "", types.UsageSignupPlanDaysDefault)
+	if days > 0 {
+		ends := types.EndOfDayVN(now.AddDate(0, 0, int(min(days, 3650))))
+		sub.EndsAt = &ends
+	}
+	return s.CreateSubscription(ctx, sub)
 }
 
 func (s *usagePlanService) DeletePlan(ctx context.Context, id string) error {

@@ -119,15 +119,18 @@ func (p *UsagePromoCode) Discount(subtotal int64) int64 {
 // UsageOrder is one row of usage_orders: a quote frozen when the buyer
 // committed, then paid/cancelled/expired.
 type UsageOrder struct {
-	ID             string     `json:"id"              gorm:"primaryKey;type:varchar(36)"`
-	OrderCode      string     `json:"order_code"      gorm:"type:varchar(24);uniqueIndex"`
-	ScopeType      string     `json:"scope_type"      gorm:"type:varchar(16)"`
-	ScopeID        string     `json:"scope_id"        gorm:"type:varchar(64)"`
-	PlanID         string     `json:"plan_id"         gorm:"type:varchar(36)"`
-	PlanName       string     `json:"plan_name"       gorm:"type:varchar(128)"`
-	Mode           string     `json:"mode"            gorm:"type:varchar(16);default:'pool'"`
-	Seats          int        `json:"seats"`
-	Months         int        `json:"months"`
+	ID        string `json:"id"              gorm:"primaryKey;type:varchar(36)"`
+	OrderCode string `json:"order_code"      gorm:"type:varchar(24);uniqueIndex"`
+	ScopeType string `json:"scope_type"      gorm:"type:varchar(16)"`
+	ScopeID   string `json:"scope_id"        gorm:"type:varchar(64)"`
+	PlanID    string `json:"plan_id"         gorm:"type:varchar(36)"`
+	PlanName  string `json:"plan_name"       gorm:"type:varchar(128)"`
+	Mode      string `json:"mode"            gorm:"type:varchar(16);default:'pool'"`
+	Seats     int    `json:"seats"`
+	Months    int    `json:"months"`
+	// BillingTerm is month|quarter|year: the term price the plan line was
+	// charged at (UsagePlan.PriceForMonths); empty on add-on orders.
+	BillingTerm    string     `json:"billing_term"    gorm:"type:varchar(16)"`
 	UnitPriceVND   int64      `json:"unit_price_vnd"`
 	SubtotalVND    int64      `json:"subtotal_vnd"`
 	PromoCodeID    *string    `json:"promo_code_id"   gorm:"type:varchar(36)"`
@@ -180,6 +183,11 @@ type UsageQuote struct {
 	Months       int        `json:"months"`
 	Seats        int        `json:"seats"`
 	UnitPriceVND int64      `json:"unit_price_vnd"`
+	// BillingTerm is the term the plan line is priced by (month|quarter|
+	// year); SavingsVND what that saves against paying month by month
+	// (0 when the plan has no monthly price or the term is month).
+	BillingTerm string `json:"billing_term,omitempty"`
+	SavingsVND  int64  `json:"savings_vnd,omitempty"`
 	// CurrentSeats is the seat count of the subscription this order renews
 	// (0 when it starts a new one). Added seats also pay ProrationVND: the
 	// added seats for the ProratedDays left on the current period.

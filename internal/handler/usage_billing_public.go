@@ -24,7 +24,7 @@ func (h *UsageBillingHandler) PublicPlans(c *gin.Context) {
 	}
 	data := make([]gin.H, 0, len(plans))
 	for _, p := range plans {
-		if p == nil || p.UsagePlan == nil || !p.IsActive || p.PriceVND <= 0 {
+		if p == nil || p.UsagePlan == nil || !p.IsActive || !p.SoldOnline() {
 			continue
 		}
 		included := p.IncludedAgents
@@ -44,7 +44,8 @@ func (h *UsageBillingHandler) PublicPlans(c *gin.Context) {
 		data = append(data, gin.H{
 			"id": p.ID, "name": p.Name, "description": p.Description,
 			"scope_kind": p.ScopeKind, "mode": p.Mode, "limits": p.Limits,
-			"price_vnd": p.PriceVND, "price_label": p.PriceLabel, "sort_order": p.SortOrder,
+			"price_vnd": p.PriceVND, "price_quarter_vnd": p.PriceQuarterVND, "price_year_vnd": p.PriceYearVND,
+			"price_label": p.PriceLabel, "sort_order": p.SortOrder,
 			"included_agents": included, "addons": addons, "caps": caps,
 		})
 	}

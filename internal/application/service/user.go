@@ -104,6 +104,8 @@ type userService struct {
 	memberService    interfaces.TenantMemberService
 	config           *config.Config
 	systemSettingSvc interfaces.SystemSettingService
+	// usagePlans grants new accounts the sign-up package (optional).
+	usagePlans interfaces.UsagePlanService
 }
 
 // NewUserService creates a new user service instance
@@ -114,8 +116,10 @@ func NewUserService(
 	tenantService interfaces.TenantService,
 	memberService interfaces.TenantMemberService,
 	systemSettingSvc interfaces.SystemSettingService,
+	usagePlans interfaces.UsagePlanService,
 ) interfaces.UserService {
 	return &userService{
+		usagePlans:       usagePlans,
 		userRepo:         userRepo,
 		tokenRepo:        tokenRepo,
 		tenantService:    tenantService,
@@ -177,6 +181,15 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 	if err != nil {
 		logger.Errorf(ctx, "Failed to create user: %v", err)
 		return nil, errors.New("failed to create user")
+	}
+
+	// Every new account (sign-up, invitation, OIDC, admin-created) gets the
+	// sign-up package SuperAdmin chose, if any. A failure is logged, never
+	// fails the registration: SuperAdmin can still assign a package by hand.
+	if s.usagePlans != nil {
+		if _, err := s.usagePlans.GrantSignupPlan(ctx, user.ID); err != nil {
+			logger.Warnf(ctx, "Failed to grant the sign-up package to user %s: %v", user.ID, err)
+		}
 	}
 
 	logger.Info(ctx, "User registered successfully")

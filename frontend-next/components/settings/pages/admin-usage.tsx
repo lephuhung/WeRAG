@@ -24,6 +24,9 @@ import { getCurrentUser } from "@/lib/api/auth";
 import { getSystemSetting, listSystemUsers, updateSystemSetting, type SystemAdminUser } from "@/lib/api/system";
 import {
   USAGE_ENFORCE_SETTING_KEY,
+  USAGE_SIGNUP_PLAN_DAYS_SETTING_KEY,
+  USAGE_SIGNUP_PLAN_SETTING_KEY,
+  planTermPrices,
   createUsagePlan,
   createUsageSubscription,
   deleteUsagePlan,
@@ -61,9 +64,28 @@ const emptyPlan: UsagePlanInput = {
   features: {},
   price_label: "",
   price_vnd: 0,
+  price_quarter_vnd: 0,
+  price_year_vnd: 0,
   sort_order: 0,
   is_active: true,
 };
+
+/* One VND amount input: digits only, "" for 0. */
+function PriceInput({ id, value, onChange }: { id: string; value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="relative">
+      <input
+        id={id}
+        className="input pr-14"
+        inputMode="numeric"
+        placeholder="0"
+        value={value ? String(value) : ""}
+        onChange={(e) => onChange(Number(e.target.value.replace(/[^\d]/g, "")) || 0)}
+      />
+      <span className="caption pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-soft">VNĐ</span>
+    </div>
+  );
+}
 
 /* Date input value (YYYY-MM-DD, local) → RFC3339 at end of that day in
  * Vietnam; empty → null (open-ended). */
@@ -250,6 +272,9 @@ export default function AdminUsage() {
 
   // usage.enforce is ON unless a SuperAdmin saved false (off = testing only)
   const [enforced, setEnforced] = useState(true);
+  // the personal package every new account receives ("" = none)
+  const [signup, setSignup] = useState({ planId: "", days: 30 });
+  const [signupBase, setSignupBase] = useState({ planId: "", days: 30 });
   const [plans, setPlans] = useState<UsagePlan[]>([]);
   const [tenants, setTenants] = useState<UsageTenantOverview[]>([]);
   const [personal, setPersonal] = useState<UsageSubscriptionView[]>([]);
@@ -277,13 +302,22 @@ export default function AdminUsage() {
 
   const load = useCallback(async () => {
     try {
-      const [setting, pl, tn, ps] = await Promise.all([
+      const [setting, pl, tn, ps, signupPlan, signupDays] = await Promise.all([
         getSystemSetting(USAGE_ENFORCE_SETTING_KEY),
         listUsagePlans(true),
         listUsageTenantOverview(),
         listUsageSubscriptions({ scope_type: "user" }),
+        getSystemSetting(USAGE_SIGNUP_PLAN_SETTING_KEY).catch(() => null),
+        getSystemSetting(USAGE_SIGNUP_PLAN_DAYS_SETTING_KEY).catch(() => null),
       ]);
       setEnforced(!(setting.value === false || setting.value === "false"));
+      const nextSignup = {
+        planId: typeof signupPlan?.value === "string" ? signupPlan.value.trim() : "",
+        days: Number(signupDays?.value ?? 30) || 0,
+      };
+      if (signupDays == null || signupDays.value == null) nextSignup.days = 30;
+      setSignup(nextSignup);
+      setSignupBase(nextSignup);
       setPlans(pl);
       setTenants(tn);
       setPersonal(ps);
@@ -338,6 +372,30 @@ export default function AdminUsage() {
     if (ok) toast.success(t("common.saved"));
   };
 
+  const signupDirty = signup.planId !== signupBase.planId || signup.days !== signupBase.days;
+  const saveSignup = async () => {
+    const ok = await run(async () => {
+      await updateSystemSetting(USAGE_SIGNUP_PLAN_SETTING_KEY, signup.planId);
+      await updateSystemSetting(USAGE_SIGNUP_PLAN_DAYS_SETTING_KEY, Math.max(0, Math.floor(signup.days)));
+      setSignupBase(signup);
+    });
+    if (ok) toast.success(t("common.saved"));
+  };
+  // personal plans a new account can receive; the saved one stays listed
+  // even when deactivated, so the select shows what is stored
+  const signupPlans = useMemo(
+    () => plans.filter((p) => p.scope_kind === "user" && (p.is_active || p.id === signupBase.planId)),
+    [plans, signupBase.planId],
+  );
+  const savedSignupPlan = plans.find((p) => p.id === signupBase.planId);
+  const signupWarn = signupBase.planId
+    ? !savedSignupPlan
+      ? t("usg.signupMissing")
+      : !savedSignupPlan.is_active
+        ? t("usg.signupInactive")
+        : ""
+    : "";
+
   // ---- plans
   const openNewPlan = () => {
     setPlanEditing(null);
@@ -357,6 +415,8 @@ export default function AdminUsage() {
       features: p.features ?? {},
       price_label: p.price_label,
       price_vnd: p.price_vnd ?? 0,
+      price_quarter_vnd: p.price_quarter_vnd ?? 0,
+      price_year_vnd: p.price_year_vnd ?? 0,
       sort_order: p.sort_order,
       is_active: p.is_active,
     };
@@ -365,6 +425,16 @@ export default function AdminUsage() {
     setPlanOpen(true);
   };
   const planDirty = JSON.stringify(planForm) !== JSON.stringify(planBase);
+  /* Hint under a quarter/year price: the saving against monthly, or how
+   * the term is charged when left empty. */
+  const termHint = (price: number, monthly: number, months: number) => {
+    if (price <= 0) return monthly > 0 ? t("usg.termAtMonthly", { price: formatPriceVND(monthly * months) }) : t("usg.termNotSold");
+    if (monthly > 0 && monthly * months > price) {
+      const pct = Math.round((1 - price / (monthly * months)) * 100);
+      return t("usg.termSaving", { price: formatPriceVND(monthly * months - price), pct });
+    }
+    return monthly > 0 && monthly * months < price ? t("usg.termDearer") : "";
+  };
   const submitPlan = async (e: React.FormEvent) => {
     e.preventDefault();
     const ok = await run(async () => {
@@ -514,6 +584,55 @@ export default function AdminUsage() {
         <Toggle checked={enforced} disabled={busy} onChange={(v) => void toggleEnforce(v)} label={t("usg.enforceTitle")} />
       </div>
 
+      {/* Sign-up gift: the personal package every new account receives */}
+      <div className="card space-y-3 p-4">
+        <div>
+          <div className="text-[14px] font-medium text-ink">{t("usg.signupTitle")}</div>
+          <p className="caption text-muted">{t("usg.signupDesc")}</p>
+          {signupWarn && <p className="caption mt-1 text-warning">{signupWarn}</p>}
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="block min-w-[240px] flex-1">
+            <FieldLabel htmlFor="usg-signup-plan">{t("usg.signupPlan")}</FieldLabel>
+            <select
+              id="usg-signup-plan"
+              className="input"
+              value={signup.planId}
+              disabled={busy}
+              onChange={(e) => setSignup({ ...signup, planId: e.target.value })}
+            >
+              <option value="">{t("usg.signupNone")}</option>
+              {signupPlans.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}{p.is_active ? "" : ` (${t("usg.inactive")})`}
+                </option>
+              ))}
+              {signup.planId && !signupPlans.some((p) => p.id === signup.planId) && (
+                <option value={signup.planId}>{t("usg.signupMissingOption")}</option>
+              )}
+            </select>
+          </div>
+          <div className="block w-40">
+            <FieldLabel htmlFor="usg-signup-days">{t("usg.signupDays")}</FieldLabel>
+            <input
+              id="usg-signup-days"
+              className="input"
+              inputMode="numeric"
+              disabled={busy || !signup.planId}
+              value={String(signup.days)}
+              onChange={(e) => setSignup({ ...signup, days: Number(e.target.value.replace(/[^\d]/g, "")) || 0 })}
+            />
+          </div>
+          <button type="button" className="btn btn-primary btn-sm" disabled={busy || !signupDirty} onClick={() => void saveSignup()}>
+            {t("common.save")}
+          </button>
+        </div>
+        <p className="caption text-muted-soft">
+          {signup.planId ? (signup.days > 0 ? t("usg.signupHintDays", { n: signup.days }) : t("usg.signupHintForever")) : t("usg.signupHintOff")}
+        </p>
+        {signupPlans.length === 0 && <p className="caption text-muted-soft">{t("usg.signupNoPlans")}</p>}
+      </div>
+
       {/* Plans */}
       <section className="card p-4">
         <div className="mb-3 flex items-center gap-3">
@@ -540,6 +659,15 @@ export default function AdminUsage() {
                     {p.scope_kind === "tenant" ? ` · ${p.mode === "seat" ? t("usg.modeSeat") : t("usg.modePool")}` : ""}
                   </div>
                   {planPrice(p) && <p className="text-xl font-semibold tracking-tight text-ink">{planPrice(p)}<span className="caption ml-1 font-normal tracking-normal text-muted">{p.mode === "seat" ? t("usg.perSeatMonth") : t("usg.perMonth")}</span></p>}
+                  {planTermPrices(p)
+                    .filter((x) => x.term !== "month")
+                    .map((x) => (
+                      <p key={x.term} className="caption text-body">
+                        {x.term === "quarter" ? t("usg.priceQuarterShort") : t("usg.priceYearShort")}: <span className="font-medium text-ink">{formatPriceVND(x.price)}</span>
+                        {p.mode === "seat" ? ` ${t("usg.perSeat")}` : ""}
+                        {x.saving > 0 && <span className="ml-1 text-success">({t("usg.saving", { price: formatPriceVND(x.saving) })})</span>}
+                      </p>
+                    ))}
                   {p.description && <p className="caption whitespace-pre-line leading-relaxed text-muted">{p.description}</p>}
                   {catalogue.included_agents.length > 0 && (
                     <div className="caption text-muted">
@@ -733,20 +861,20 @@ export default function AdminUsage() {
             )}
             <div className="block">
               <FieldLabel htmlFor="plan-price">{t("usg.planPrice")}</FieldLabel>
-              <div className="relative">
-                <input
-                  id="plan-price"
-                  className="input pr-14"
-                  inputMode="numeric"
-                  placeholder="0"
-                  value={planForm.price_vnd ? String(planForm.price_vnd) : ""}
-                  onChange={(e) => setPlanForm({ ...planForm, price_vnd: Number(e.target.value.replace(/[^\d]/g, "")) || 0 })}
-                />
-                <span className="caption pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-soft">VNĐ</span>
-              </div>
+              <PriceInput id="plan-price" value={planForm.price_vnd} onChange={(v) => setPlanForm({ ...planForm, price_vnd: v })} />
               <span className="caption mt-1 block text-muted-soft">
                 {planForm.price_vnd > 0 ? t("usg.planPriceHint", { price: formatPriceVND(planForm.price_vnd) }) : t("usg.planPriceFree")}
               </span>
+            </div>
+            <div className="block">
+              <FieldLabel htmlFor="plan-price-quarter">{t("usg.planPriceQuarter")}</FieldLabel>
+              <PriceInput id="plan-price-quarter" value={planForm.price_quarter_vnd} onChange={(v) => setPlanForm({ ...planForm, price_quarter_vnd: v })} />
+              <span className="caption mt-1 block text-muted-soft">{termHint(planForm.price_quarter_vnd, planForm.price_vnd, 3)}</span>
+            </div>
+            <div className="block">
+              <FieldLabel htmlFor="plan-price-year">{t("usg.planPriceYear")}</FieldLabel>
+              <PriceInput id="plan-price-year" value={planForm.price_year_vnd} onChange={(v) => setPlanForm({ ...planForm, price_year_vnd: v })} />
+              <span className="caption mt-1 block text-muted-soft">{termHint(planForm.price_year_vnd, planForm.price_vnd, 12)}</span>
             </div>
           </div>
           <p className="caption text-muted-soft">{planForm.mode === "seat" && planForm.scope_kind === "tenant" ? t("usg.modeSeatHint") : t("usg.modePoolHint")}</p>

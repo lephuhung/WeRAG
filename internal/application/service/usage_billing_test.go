@@ -338,6 +338,9 @@ func newBillingFixture(t *testing.T) *billingFixture {
 		"seat": {ID: "seat", Code: "seat", Name: "Seat", ScopeKind: "tenant", Mode: "seat", PriceVND: 49_000, IsActive: true},
 		"me":   {ID: "me", Code: "me", Name: "Personal", ScopeKind: "user", Mode: "pool", PriceVND: 20_000, IsActive: true},
 		"free": {ID: "free", Code: "free", Name: "Free", ScopeKind: "tenant", Mode: "pool", PriceVND: 0, IsActive: true},
+		"term": {ID: "term", Code: "term", Name: "Term", ScopeKind: "tenant", Mode: "seat", PriceVND: 50_000,
+			PriceQuarterVND: 135_000, PriceYearVND: 480_000, IsActive: true},
+		"yearly": {ID: "yearly", Code: "yearly", Name: "Yearly", ScopeKind: "user", Mode: "pool", PriceYearVND: 300_000, IsActive: true},
 	}, repo: planRepo, now: billingNow}
 	repo := newMemBillingRepo()
 	repo.plans = planRepo
@@ -369,6 +372,54 @@ func TestBillingQuoteSeatPlanMultipliesSeatsAndMonths(t *testing.T) {
 	require.Equal(t, int64(49_000*3*5), q.SubtotalVND)
 	require.Equal(t, q.SubtotalVND, q.TotalVND)
 	require.Equal(t, "seat", q.Mode)
+}
+
+// Quarters and years are priced at their own term price, per seat; other
+// month counts at the monthly price. The saving against paying month by
+// month is reported, and the order keeps the term.
+func TestBillingQuoteUsesQuarterAndYearPrices(t *testing.T) {
+	f := newBillingFixture(t)
+	ctx := context.Background()
+	cases := []struct {
+		months          int
+		term            string
+		subtotal, saved int64
+	}{
+		{1, types.UsageTermMonth, 50_000 * 2, 0},
+		{2, types.UsageTermMonth, 100_000 * 2, 0},
+		{3, types.UsageTermQuarter, 135_000 * 2, 15_000 * 2},
+		{6, types.UsageTermQuarter, 270_000 * 2, 30_000 * 2},
+		{12, types.UsageTermYear, 480_000 * 2, 120_000 * 2},
+		{24, types.UsageTermYear, 960_000 * 2, 240_000 * 2},
+	}
+	for _, c := range cases {
+		q, err := f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "term", Months: c.months, Seats: 2}, "10003")
+		require.NoError(t, err, c.months)
+		require.Equal(t, c.term, q.BillingTerm, c.months)
+		require.Equal(t, c.subtotal, q.SubtotalVND, c.months)
+		require.Equal(t, c.saved, q.SavingsVND, c.months)
+	}
+
+	// a plan sold only by the year: 12 months yes, 1 month no
+	q, err := f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "user", PlanID: "yearly", Months: 12}, "user-1")
+	require.NoError(t, err)
+	require.Equal(t, int64(300_000), q.TotalVND)
+	require.Equal(t, int64(25_000), q.UnitPriceVND, "average month of the year")
+	_, err = f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "user", PlanID: "yearly", Months: 1}, "user-1")
+	require.Error(t, err)
+
+	o, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "term", Months: 12, Seats: 1}, "10003", "admin-1")
+	require.NoError(t, err)
+	require.Equal(t, types.UsageTermYear, o.BillingTerm)
+	require.Equal(t, int64(480_000), o.TotalVND)
+
+	offers, err := f.svc.PurchasablePlans(ctx, "user")
+	require.NoError(t, err)
+	var codes []string
+	for _, p := range offers {
+		codes = append(codes, p.Code)
+	}
+	require.Contains(t, codes, "yearly", "a plan with only a yearly price is still sold")
 }
 
 func TestBillingQuoteRejectsFreeAndWrongScopePlans(t *testing.T) {

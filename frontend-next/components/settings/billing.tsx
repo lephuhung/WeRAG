@@ -15,6 +15,8 @@ import {
   cancelMyUsageOrder,
   createUsageOrder,
   formatPriceVND,
+  planPriceForMonths,
+  planTermPrices,
   getBillingInfo,
   getScopeAddons,
   getUsageOrder,
@@ -42,6 +44,12 @@ import { SectionHeader } from "@/components/settings/section-header";
 import { useToast } from "@/components/toast";
 
 const MONTH_CHOICES = [1, 3, 6, 12];
+
+/* The month counts a plan can be bought for: those a priced term fits. */
+function monthChoicesFor(plan: UsagePlan | null): number[] {
+  if (!plan) return MONTH_CHOICES;
+  return MONTH_CHOICES.filter((m) => planPriceForMonths(plan, m) != null);
+}
 
 function fmtDate(v: string | null | undefined): string {
   if (!v) return "";
@@ -146,6 +154,32 @@ export function BillingPage() {
   useEffect(() => {
     setAddonIds((cur) => keepOffered(cur, plan?.addons ?? []));
   }, [plan]);
+
+  // ...and a month count the new plan is sold for (a yearly-only plan → 12)
+  const monthChoices = useMemo(() => monthChoicesFor(plan), [plan]);
+  useEffect(() => {
+    if (monthChoices.length > 0 && !monthChoices.includes(months)) setMonths(monthChoices[0]);
+  }, [monthChoices, months]);
+
+  /* "12 tháng · gói năm", "3 tháng · gói quý (tiết kiệm 15.000 VNĐ)". */
+  const monthOptionLabel = (m: number) => {
+    const priced = plan ? planPriceForMonths(plan, m) : null;
+    const base = t("bill.monthsN", { n: m });
+    if (!plan || !priced || priced.term === "month") return base;
+    const full = plan.price_vnd > 0 ? plan.price_vnd * m : 0;
+    const termName = priced.term === "year" ? t("bill.termYear") : t("bill.termQuarter");
+    return full > priced.total
+      ? `${base} · ${termName} (${t("bill.saving", { price: formatPriceVND(full - priced.total) })})`
+      : `${base} · ${termName}`;
+  };
+  /* An order's length: "12 tháng · gói năm". */
+  const orderLength = (o: UsageOrder) => {
+    if (o.kind === "addon") return t("bill.addonOrder");
+    const base = t("bill.monthsN", { n: o.months });
+    if (o.billing_term === "year") return `${base} · ${t("bill.termYear")}`;
+    if (o.billing_term === "quarter") return `${base} · ${t("bill.termQuarter")}`;
+    return base;
+  };
 
   // Re-price whenever the choice changes.
   useEffect(() => {
@@ -315,7 +349,7 @@ export function BillingPage() {
               </div>
               <div className="caption text-muted">
                 {order.plan_name} ·{" "}
-                {order.kind === "addon" ? t("bill.addonOrder") : t("bill.monthsN", { n: order.months })}
+                {orderLength(order)}
                 {order.mode === "seat" ? ` · ${t("bill.seatsN", { n: order.seats })}` : ""} · {order.scope_name}
               </div>
             </div>
@@ -458,9 +492,19 @@ export function BillingPage() {
               className={`rounded-lg border p-4 text-left transition ${planId === p.id ? "border-ink ring-1 ring-ink" : "border-hairline hover:border-hairline-strong"}`}
             >
               <div className="text-[14px] font-medium text-ink">{p.name}</div>
-              <div className="mt-1 text-[18px] font-semibold tabular-nums text-ink">
-                {formatPriceVND(p.price_vnd)} <span className="caption font-normal text-muted">{p.mode === "seat" ? t("bill.perSeatMonth") : t("bill.perMonth")}</span>
-              </div>
+              {planTermPrices(p).map((x, i) => (
+                <div
+                  key={x.term}
+                  className={i === 0 ? "mt-1 text-[18px] font-semibold tabular-nums text-ink" : "caption tabular-nums text-body"}
+                >
+                  {formatPriceVND(x.price)}{" "}
+                  <span className={i === 0 ? "caption font-normal text-muted" : "text-muted"}>
+                    {p.mode === "seat" ? `${t("bill.perSeat")} ` : ""}
+                    {x.term === "year" ? t("bill.perYear") : x.term === "quarter" ? t("bill.perQuarter") : t("bill.perMonthShort")}
+                  </span>
+                  {x.saving > 0 && <span className="ml-1 text-success">({t("bill.saving", { price: formatPriceVND(x.saving) })})</span>}
+                </div>
+              ))}
               {p.description && <p className="caption mt-1 text-muted">{p.description}</p>}
               <ul className="caption mt-2 space-y-0.5 text-body">
                 {p.limits.length === 0 ? <li>{t("usg.unlimited")}</li> : p.limits.map((l, i) => <li key={i}>• {usageLimitLabel(l, limitNames)}</li>)}
@@ -489,8 +533,8 @@ export function BillingPage() {
                 value={months}
                 onChange={(e) => setMonths(Number(e.target.value))}
               >
-                {MONTH_CHOICES.map((m) => (
-                  <option key={m} value={m}>{t("bill.monthsN", { n: m })}</option>
+                {monthChoices.map((m) => (
+                  <option key={m} value={m}>{monthOptionLabel(m)}</option>
                 ))}
               </select>
             </div>
@@ -559,6 +603,12 @@ export function BillingPage() {
                 </div>
               )}
               <div className="flex justify-between"><span className="text-muted">{t("bill.subtotal")}</span><span className="tabular-nums">{formatPriceVND(quote.subtotal_vnd)}</span></div>
+              {!!quote.savings_vnd && (
+                <div className="caption flex justify-between text-success">
+                  <span>{quote.billing_term === "year" ? t("bill.savedYear") : t("bill.savedQuarter")}</span>
+                  <span className="tabular-nums">{formatPriceVND(quote.savings_vnd)}</span>
+                </div>
+              )}
               {quote.discount_vnd > 0 && <div className="flex justify-between"><span className="text-muted">{t("bill.discount")}</span><span className="tabular-nums">−{formatPriceVND(quote.discount_vnd)}</span></div>}
               <div className="flex justify-between text-[15px] font-medium text-ink"><span>{t("bill.total")}</span><span className="tabular-nums">{formatPriceVND(quote.total_vnd)}</span></div>
             </div>
@@ -647,7 +697,7 @@ export function BillingPage() {
               <button key={o.id} type="button" className="flex w-full flex-wrap items-center gap-3 px-3 py-2 text-left text-[13.5px] hover:bg-surface-strong" onClick={() => setOrder(o)}>
                 <span className="font-mono text-ink">{o.order_code}</span>
                 <span className="min-w-0 flex-1 truncate text-muted">
-                  {o.plan_name} · {o.kind === "addon" ? t("bill.addonOrder") : t("bill.monthsN", { n: o.months })}
+                  {o.plan_name} · {orderLength(o)}
                   {(o.addons ?? []).length > 0 ? ` · ${t("bill.addonsN", { n: (o.addons ?? []).length })}` : ""} · {o.scope_name}
                 </span>
                 <span className="tabular-nums text-ink">{formatPriceVND(o.total_vnd)}</span>

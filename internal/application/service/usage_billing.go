@@ -81,7 +81,7 @@ func (s *usageBillingService) PurchasablePlans(ctx context.Context, scopeKind st
 		if scopeKind != "" && p.ScopeKind != scopeKind {
 			continue
 		}
-		if p.PriceVND <= 0 {
+		if !p.SoldOnline() {
 			continue
 		}
 		offer := &types.UsagePlanOffer{
@@ -134,7 +134,7 @@ func (s *usageBillingService) quote(
 	if err != nil {
 		return nil, nil, err
 	}
-	if !plan.IsActive || plan.PriceVND <= 0 {
+	if !plan.IsActive || !plan.SoldOnline() {
 		return nil, nil, apperrors.NewBadRequestError("this plan is not sold online")
 	}
 	if plan.ScopeKind != req.ScopeType {
@@ -146,7 +146,22 @@ func (s *usageBillingService) quote(
 	if req.Months > usageOrderMaxMonths {
 		return nil, nil, apperrors.NewBadRequestError(fmt.Sprintf("months must be at most %d", usageOrderMaxMonths))
 	}
-	q := &types.UsageQuote{Plan: plan, Mode: plan.Mode, Months: req.Months, UnitPriceVND: plan.PriceVND}
+	termTotal, term, ok := plan.PriceForMonths(req.Months)
+	if !ok {
+		return nil, nil, apperrors.NewBadRequestError(fmt.Sprintf(
+			"plan %s is not sold for %d months", plan.Code, req.Months,
+		)).WithDetails(map[string]string{"reason": "term_not_sold"})
+	}
+	// UnitPriceVND stays a per-month (per-seat) price: the average month
+	// of the chosen term, rounded up; seat proration charges by it.
+	unit := (termTotal + int64(req.Months) - 1) / int64(req.Months)
+	q := &types.UsageQuote{Plan: plan, Mode: plan.Mode, Months: req.Months, UnitPriceVND: unit, BillingTerm: term}
+	if plan.PriceVND > 0 && term != types.UsageTermMonth {
+		q.SavingsVND = plan.PriceVND*int64(req.Months) - termTotal
+		if q.SavingsVND < 0 {
+			q.SavingsVND = 0
+		}
+	}
 	if plan.ScopeKind == types.UsageScopeTenant && plan.Mode == types.UsageModeSeat {
 		if req.Seats <= 0 {
 			return nil, nil, apperrors.NewBadRequestError("seat plans need seats > 0")
@@ -155,13 +170,14 @@ func (s *usageBillingService) quote(
 			return nil, nil, apperrors.NewBadRequestError(fmt.Sprintf("seats must be at most %d", usageOrderMaxSeats))
 		}
 		q.Seats = req.Seats
-		q.SubtotalVND = plan.PriceVND * int64(req.Months) * int64(req.Seats)
+		q.SubtotalVND = termTotal * int64(req.Seats)
+		q.SavingsVND *= int64(req.Seats)
 		if err := s.priceSeatRenewal(ctx, q, scopeID); err != nil {
 			return nil, nil, err
 		}
 	} else {
 		q.Mode = types.UsageModePool
-		q.SubtotalVND = plan.PriceVND * int64(req.Months)
+		q.SubtotalVND = termTotal
 	}
 	q.Kind = types.UsageOrderKindPlan
 	if err := s.priceAddonsWithPlan(ctx, q, req.AddonAgentIDs, scopeID); err != nil {
@@ -291,6 +307,7 @@ func (s *usageBillingService) CreateOrder(
 		Mode:          q.Mode,
 		Seats:         q.Seats,
 		Months:        q.Months,
+		BillingTerm:   q.BillingTerm,
 		UnitPriceVND:  q.UnitPriceVND,
 		SubtotalVND:   q.SubtotalVND,
 		PromoCode:     q.PromoCode,

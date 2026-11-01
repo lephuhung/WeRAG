@@ -7,6 +7,7 @@ import {
   formatPriceVND,
   listPublicPlans,
   planPrice,
+  planTermPrices,
   type PublicUsagePlan,
   type UsagePlanCaps,
 } from "@/lib/api/usage";
@@ -137,7 +138,13 @@ export function LandingPricing() {
         ) : (
           <div className={styles.planGrid}>
             {plans.map((plan) => {
-              const price = planPrice(plan);
+              const terms = planTermPrices(plan);
+              // a plan sold only by the quarter/year leads with that price
+              const lead = terms[0];
+              const price = lead ? formatPriceVND(lead.price) : planPrice(plan);
+              const leadUnit = !lead || lead.term === "month"
+                ? t("pricing.perMonth")
+                : lead.term === "quarter" ? t("pricing.perQuarter") : t("pricing.perYear");
               const caps = capLines(plan.caps, plan.mode, scope, t);
               return (
                 <article
@@ -159,10 +166,22 @@ export function LandingPricing() {
                       <small>
                         {" "}
                         {plan.mode === "seat" ? `${t("pricing.perSeat")} ` : ""}
-                        {t("pricing.perMonth")}
+                        {leadUnit}
                       </small>
                     </div>
-                  ) : (
+                  ) : null}
+                  {price && terms.length > 1 ? (
+                    <p className={styles.pricingNote}>
+                      {terms
+                        .slice(1)
+                        .map((x) =>
+                          `${x.term === "year" ? t("pricing.yearly") : t("pricing.quarterly")}: ${formatPriceVND(x.price)}` +
+                          (x.saving > 0 ? ` (${t("pricing.saving", { price: formatPriceVND(x.saving) })})` : ""),
+                        )
+                        .join(" · ")}
+                    </p>
+                  ) : null}
+                  {price ? null : (
                     /* No online price for this plan: no empty amount with a
                        dangling "/ tháng" — the buyer is told to ask. */
                     <p className={styles.pricingNote}>{t("pricing.contactAdmin")}</p>

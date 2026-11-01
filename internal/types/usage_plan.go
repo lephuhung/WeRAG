@@ -136,15 +136,62 @@ type UsagePlan struct {
 	PriceLabel  string      `json:"price_label" gorm:"type:varchar(128)"`
 	// PriceVND is the list price per month in Vietnamese đồng; in seat
 	// mode it is per seat per month. 0 = free / not sold online.
-	PriceVND  int64     `json:"price_vnd"`
-	SortOrder int       `json:"sort_order"`
-	IsActive  bool      `json:"is_active"   gorm:"default:true"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	PriceVND int64 `json:"price_vnd"`
+	// PriceQuarterVND and PriceYearVND are the prices of a quarter (3
+	// months) and a year (12 months), per seat in seat mode; usually below
+	// 3 or 12 monthly prices. 0 = that term is sold at the monthly price
+	// (or not at all when PriceVND is 0 too). See PriceForMonths.
+	PriceQuarterVND int64     `json:"price_quarter_vnd"`
+	PriceYearVND    int64     `json:"price_year_vnd"`
+	SortOrder       int       `json:"sort_order"`
+	IsActive        bool      `json:"is_active"   gorm:"default:true"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // TableName returns the table name.
 func (UsagePlan) TableName() string { return "usage_plans" }
+
+// Billing terms of an order: what PriceForMonths priced it by.
+const (
+	UsageTermMonth   = "month"
+	UsageTermQuarter = "quarter"
+	UsageTermYear    = "year"
+)
+
+// SoldOnline reports whether the plan has a price for at least one term.
+func (p *UsagePlan) SoldOnline() bool {
+	return p != nil && (p.PriceVND > 0 || p.PriceQuarterVND > 0 || p.PriceYearVND > 0)
+}
+
+// PriceForMonths prices months of the plan (per seat in seat mode) by the
+// longest term that divides them: whole years at the year price, whole
+// quarters at the quarter price, otherwise months at the monthly price.
+// ok is false when no priced term fits (e.g. 2 months of a plan sold only
+// by the year).
+func (p *UsagePlan) PriceForMonths(months int) (total int64, term string, ok bool) {
+	if p == nil || months <= 0 {
+		return 0, "", false
+	}
+	switch {
+	case p.PriceYearVND > 0 && months%12 == 0:
+		return p.PriceYearVND * int64(months/12), UsageTermYear, true
+	case p.PriceQuarterVND > 0 && months%3 == 0:
+		return p.PriceQuarterVND * int64(months/3), UsageTermQuarter, true
+	case p.PriceVND > 0:
+		return p.PriceVND * int64(months), UsageTermMonth, true
+	}
+	return 0, "", false
+}
+
+// UsageSignupPlanSettingKey names the personal plan every newly created
+// account receives (empty = none); UsageSignupPlanDaysSettingKey how many
+// days that gift lasts (0 = no end date). SuperAdmin sets both at runtime.
+const (
+	UsageSignupPlanSettingKey     = "usage.signup_plan_id"
+	UsageSignupPlanDaysSettingKey = "usage.signup_plan_days"
+	UsageSignupPlanDaysDefault    = 30
+)
 
 // UsageSubscription is one row of usage_subscriptions.
 type UsageSubscription struct {

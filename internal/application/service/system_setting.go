@@ -419,6 +419,17 @@ var registry = map[string]settingSpec{
 			"không có seat hoặc hết hạn mức → từ chối (429). Quản trị hệ thống không bị chặn. Có hiệu lực ngay. " +
 			"Mặc định bật; chỉ tắt khi kiểm thử.",
 	},
+	// usage.signup_plan_id / usage.signup_plan_days: the personal package
+	// every new account receives (GrantSignupPlan, at registration).
+	types.UsageSignupPlanSettingKey: {
+		Type: "string", EnvName: "", Default: "", Category: "chat",
+		Description: "Gói cá nhân tặng cho mọi tài khoản mới tạo (tự đăng ký, được mời, đăng nhập SSO lần đầu, " +
+			"quản trị tạo). Để trống = không tặng. Chỉ áp dụng cho tài khoản tạo sau khi lưu.",
+	},
+	types.UsageSignupPlanDaysSettingKey: {
+		Type: "int", EnvName: "", Default: int64(types.UsageSignupPlanDaysDefault), Category: "chat",
+		Description: "Số ngày dùng gói tặng khi đăng ký; 0 = không thời hạn.",
+	},
 	types.SettingChatAttachmentSectionPicker: {
 		Type: "bool", Default: true, Category: "chat",
 		Description: "Tệp đính kèm quá dài cho một lượt hỏi: model trả lời đọc mục lục của tệp (Chương, Mục, Điều, đề mục) " +

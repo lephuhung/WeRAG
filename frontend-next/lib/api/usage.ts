@@ -105,6 +105,45 @@ export function planPrice(plan: Pick<UsagePlan, "price_vnd" | "price_label">): s
   return formatPriceVND(plan.price_label);
 }
 
+export type UsageBillingTerm = "month" | "quarter" | "year";
+
+type TermPriced = Pick<UsagePlan, "price_vnd"> & Partial<Pick<UsagePlan, "price_quarter_vnd" | "price_year_vnd">>;
+
+/** True when the plan has a price for at least one term (types.UsagePlan.SoldOnline). */
+export function planSoldOnline(plan: TermPriced): boolean {
+  return plan.price_vnd > 0 || (plan.price_quarter_vnd ?? 0) > 0 || (plan.price_year_vnd ?? 0) > 0;
+}
+
+/** Mirrors types.UsagePlan.PriceForMonths: whole years at the year price,
+ * whole quarters at the quarter price, otherwise months at the monthly
+ * price; null when no priced term fits. Per seat in seat mode. */
+export function planPriceForMonths(plan: TermPriced, months: number): { total: number; term: UsageBillingTerm } | null {
+  if (months <= 0) return null;
+  const year = plan.price_year_vnd ?? 0;
+  const quarter = plan.price_quarter_vnd ?? 0;
+  if (year > 0 && months % 12 === 0) return { total: year * (months / 12), term: "year" };
+  if (quarter > 0 && months % 3 === 0) return { total: quarter * (months / 3), term: "quarter" };
+  if (plan.price_vnd > 0) return { total: plan.price_vnd * months, term: "month" };
+  return null;
+}
+
+/** The term prices a plan lists (month, quarter, year), each with what it
+ * saves against paying month by month. */
+export function planTermPrices(plan: TermPriced): { term: UsageBillingTerm; months: number; price: number; saving: number }[] {
+  const out: { term: UsageBillingTerm; months: number; price: number; saving: number }[] = [];
+  const rows: [UsageBillingTerm, number, number][] = [
+    ["month", 1, plan.price_vnd],
+    ["quarter", 3, plan.price_quarter_vnd ?? 0],
+    ["year", 12, plan.price_year_vnd ?? 0],
+  ];
+  for (const [term, months, price] of rows) {
+    if (price <= 0) continue;
+    const full = plan.price_vnd > 0 ? plan.price_vnd * months : 0;
+    out.push({ term, months, price, saving: full > price ? full - price : 0 });
+  }
+  return out;
+}
+
 // ---- SuperAdmin: plans, subscriptions, seats -----------------------------------
 
 export interface UsagePlan {
@@ -119,6 +158,10 @@ export interface UsagePlan {
   price_label: string;
   /** List price per month in VND; per seat per month in seat mode. 0 = not sold online. */
   price_vnd: number;
+  /** Price of 3 months / 12 months (per seat in seat mode). 0 = that term
+   * is charged at the monthly price. */
+  price_quarter_vnd: number;
+  price_year_vnd: number;
   sort_order: number;
   is_active: boolean;
   created_at: string;
@@ -321,6 +364,10 @@ export function revokeUsageSeat(subscriptionId: string, userId: string): Promise
 
 /** system_settings key of the enforcement switch. */
 export const USAGE_ENFORCE_SETTING_KEY = "usage.enforce";
+/** system_settings keys of the package every new account receives:
+ * a personal plan id ("" = none) and how many days it lasts (0 = no end). */
+export const USAGE_SIGNUP_PLAN_SETTING_KEY = "usage.signup_plan_id";
+export const USAGE_SIGNUP_PLAN_DAYS_SETTING_KEY = "usage.signup_plan_days";
 
 // ---- workspace-facing (every member reads; Tenant Admin manages seats) ------
 
@@ -412,6 +459,8 @@ export interface UsageOrder {
   mode: UsageMode;
   seats: number;
   months: number;
+  /** Term the plan line was priced by; "" on add-on orders and old orders. */
+  billing_term?: UsageBillingTerm | "";
   unit_price_vnd: number;
   subtotal_vnd: number;
   promo_code: string;
@@ -486,6 +535,9 @@ export interface UsageQuote {
   months: number;
   seats: number;
   unit_price_vnd: number;
+  /** Term the plan line is priced by, and what it saves against monthly. */
+  billing_term?: UsageBillingTerm;
+  savings_vnd?: number;
   /** Seats of the subscription this order renews; added seats also pay
    * proration_vnd for the prorated_days left on its period. */
   current_seats?: number;
@@ -542,7 +594,7 @@ export interface UsagePlanCaps {
   "session.max_tokens"?: number;
 }
 
-export type PublicUsagePlan = Pick<UsagePlan, "id" | "name" | "description" | "scope_kind" | "mode" | "limits" | "price_vnd" | "price_label" | "sort_order" | "included_agents" | "addons"> & { caps?: UsagePlanCaps };
+export type PublicUsagePlan = Pick<UsagePlan, "id" | "name" | "description" | "scope_kind" | "mode" | "limits" | "price_vnd" | "price_quarter_vnd" | "price_year_vnd" | "price_label" | "sort_order" | "included_agents" | "addons"> & { caps?: UsagePlanCaps };
 
 // Anonymous landing-page catalogue: plain fetch, no tokens and no refresh-on-401.
 export async function listPublicPlans(scope: UsageScopeKind, signal?: AbortSignal): Promise<PublicUsagePlan[]> {
