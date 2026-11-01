@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/application/access"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -29,19 +30,23 @@ type embedChannelService struct {
 	repo         interfaces.EmbedChannelRepository
 	agentService interfaces.CustomAgentService
 	chunkService interfaces.ChunkService
-	redis        *redis.Client
+	// kbRepo checks a chunk's base in the agent's "public" scope.
+	kbRepo interfaces.KnowledgeBaseRepository
+	redis  *redis.Client
 }
 
 func NewEmbedChannelService(
 	repo interfaces.EmbedChannelRepository,
 	agentService interfaces.CustomAgentService,
 	chunkService interfaces.ChunkService,
+	kbRepo interfaces.KnowledgeBaseRepository,
 	redisClient *redis.Client,
 ) interfaces.EmbedChannelService {
 	return &embedChannelService{
 		repo:         repo,
 		agentService: agentService,
 		chunkService: chunkService,
+		kbRepo:       kbRepo,
 		redis:        redisClient,
 	}
 }
@@ -311,9 +316,21 @@ func (s *embedChannelService) chunkAllowedForEmbed(
 		return false
 	case "selected":
 		return false
+	case types.KBSelectionModePublic:
+		// the agent reads platform public bases only, never the
+		// channel tenant's own (lookup errors fail closed)
+		return s.isPlatformPublicKB(ctx, chunk.KnowledgeBaseID)
 	default:
 		return true
 	}
+}
+
+func (s *embedChannelService) isPlatformPublicKB(ctx context.Context, kbID string) bool {
+	if s.kbRepo == nil {
+		return false
+	}
+	kb, err := s.kbRepo.GetKnowledgeBaseByID(ctx, kbID)
+	return err == nil && access.IsPlatformPublicKB(kb)
 }
 
 func (s *embedChannelService) SuggestedQuestions(

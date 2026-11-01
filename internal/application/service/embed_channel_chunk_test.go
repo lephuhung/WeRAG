@@ -121,3 +121,43 @@ func TestChunkAllowedForEmbedAllModePermitsInTenant(t *testing.T) {
 		t.Fatal("all-mode agent should permit in-tenant chunks")
 	}
 }
+
+type stubKBRepoForEmbed struct {
+	interfaces.KnowledgeBaseRepository
+	kbs map[string]*types.KnowledgeBase
+}
+
+func (s *stubKBRepoForEmbed) GetKnowledgeBaseByID(_ context.Context, id string) (*types.KnowledgeBase, error) {
+	kb, ok := s.kbs[id]
+	if !ok {
+		return nil, errors.New("not found")
+	}
+	return kb, nil
+}
+
+// An agent on the "public" scope reads platform public bases only: a chunk
+// of the channel tenant's own base is refused, not let through as "all".
+func TestChunkAllowedForEmbedPublicScope(t *testing.T) {
+	svc := newEmbedChunkService(
+		&types.CustomAgent{Config: types.CustomAgentConfig{KBSelectionMode: types.KBSelectionModePublic}}, nil)
+	svc.kbRepo = &stubKBRepoForEmbed{kbs: map[string]*types.KnowledgeBase{
+		"kb-public": {ID: "kb-public", TenantID: 5, Visibility: types.KBVisibilityPublic},
+		"kb-own":    {ID: "kb-own", TenantID: 5, OwnerTenantID: 5, Visibility: types.KBVisibilityTenant},
+	}}
+	ch := &types.EmbedChannel{ID: "ch-1", TenantID: 5, AgentID: "agent-1"}
+	ctx := context.Background()
+
+	if !svc.chunkAllowedForEmbed(ctx, ch, &types.Chunk{TenantID: 5, KnowledgeBaseID: "kb-public"}) {
+		t.Fatal("chunk of a platform public base should be permitted")
+	}
+	if svc.chunkAllowedForEmbed(ctx, ch, &types.Chunk{TenantID: 5, KnowledgeBaseID: "kb-own"}) {
+		t.Fatal("chunk of the tenant's own base must be denied in the public scope")
+	}
+	if svc.chunkAllowedForEmbed(ctx, ch, &types.Chunk{TenantID: 5, KnowledgeBaseID: "kb-missing"}) {
+		t.Fatal("unknown base must be denied")
+	}
+	svc.kbRepo = nil
+	if svc.chunkAllowedForEmbed(ctx, ch, &types.Chunk{TenantID: 5, KnowledgeBaseID: "kb-public"}) {
+		t.Fatal("no base lookup must fail closed")
+	}
+}
