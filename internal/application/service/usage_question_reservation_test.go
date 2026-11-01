@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -153,4 +154,22 @@ func TestMeterMessageReleasesTheReservedQuestion(t *testing.T) {
 	// an assistant row or a turn without a grant releases nothing
 	s.meterMessage(context.Background(), 10003, &types.Message{Role: "user", SessionID: "s1"}, true)
 	require.Equal(t, 1, released)
+}
+
+// A refusal counting reserved questions reports the cap as used, never more
+// than it (13/10 would read as an overshoot that did not happen).
+func TestUsageGuardReservationDenialCapsUsedAtLimit(t *testing.T) {
+	counters := &liveCounters{questions: 5}
+	g := reservingGuard(counters, 10, func() time.Time { return guardNow })
+	ctx := context.Background()
+	for i := 0; i < 5; i++ { // five turns let through, none saved yet
+		_, err := g.CheckTurn(ctx, 10003, "user-1", "", types.SessionCapHard)
+		require.NoError(t, err)
+	}
+	counters.questions = 9 // counted elsewhere meanwhile (another replica): 9 + 5 pending
+	_, err := g.CheckTurn(ctx, 10003, "user-1", "", types.SessionCapHard)
+	require.Equal(t, types.UsageDenialLimit, denialReason(t, err))
+	d := err.(*apperrors.AppError).Details.(types.UsageDenial)
+	require.EqualValues(t, 10, d.Used)
+	require.EqualValues(t, 10, d.Limit)
 }

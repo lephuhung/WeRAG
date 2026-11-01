@@ -122,6 +122,11 @@ func (g *usageGuard) reserveQuestion(ctx context.Context, ent *types.UsageEntitl
 	}
 	key := ent.CounterScopeType + "/" + ent.CounterScopeID
 	s := g.reservations.stripe(key)
+	// The questions counters are read again here although Entitlement has
+	// just read them: only a read under this lock, ordered against the
+	// releases (taken after the question is in the counters), sees every
+	// question either counted or reserved. The lock is held across that one
+	// primary-key read; scopes that share a stripe wait for it.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := g.now()
@@ -133,11 +138,13 @@ func (g *usageGuard) reserveQuestion(ctx context.Context, ent *types.UsageEntitl
 	pending := s.pending(key, now)
 	for _, st := range statuses {
 		if used := st.Used + pending; used >= st.Limit {
+			// reserved questions not yet counted are no use the person
+			// sees: the refusal reads "limit of limit", never above it
 			return nil, apperrors.NewTooManyRequestsError(
 				fmt.Sprintf("usage limit reached: %d %s per %s", st.Limit, st.Metric, st.Period)).
 				WithDetails(types.UsageDenial{
 					Reason: types.UsageDenialLimit, Metric: st.Metric, Period: st.Period,
-					Limit: st.Limit, Used: used,
+					Limit: st.Limit, Used: min(used, st.Limit),
 				})
 		}
 	}
