@@ -107,6 +107,9 @@ export interface DomainPackFormulaView {
   shipped?: DomainPackFormulaEdit;
   // an edit is stored but this build refuses it; formulas.yaml applies
   edit_not_applied?: boolean;
+  // formulas.yaml changed this formula after the edit was made: the edit
+  // still masks the new wording (shipped) until saved again or reset
+  shipped_changed?: boolean;
 }
 
 /* The editable wording of a formula. Variable names are fixed (the Go
@@ -139,6 +142,9 @@ export interface DomainPackAgent {
 
 export interface DomainPackError {
   number: string;
+  // on the pack detail: a stored formula edit whose formula this build no
+  // longer ships; DELETE …/formulas/:id removes it
+  formula_id?: string;
   error: string;
 }
 

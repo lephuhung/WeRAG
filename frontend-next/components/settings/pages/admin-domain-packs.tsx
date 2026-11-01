@@ -27,6 +27,7 @@ import { ApiError } from "@/lib/api-client";
 import { getCurrentUser } from "@/lib/api/auth";
 import { formatDate, formatDateTime } from "@/lib/datetime";
 import { FormulaEditor } from "@/components/settings/domain-pack-formula-editor";
+import { useConfirm } from "@/components/confirm-dialog";
 import { normalizeDistribution } from "@/lib/agent-tenant-scope";
 import { formatPriceVND } from "@/lib/api/usage";
 import { adminSectionHref } from "@/components/admin/admin-routes";
@@ -34,10 +35,12 @@ import {
   getDomainPack,
   listDomainPacks,
   reconcileDomainPack,
+  resetDomainPackFormula,
   type DomainPackAgent,
   type DomainPackCatalogueDocument,
   type DomainPackDetail,
   type DomainPackDocumentView,
+  type DomainPackError,
   type DomainPackFormulaView,
   type DomainPackReconcileResult,
   type DomainPackSummary,
@@ -247,7 +250,9 @@ function PackDetail({ name }: { name: string }) {
   };
 
   const warnDocs = detail?.documents.filter((d) => d.warning).length ?? 0;
-  const warnFormulas = detail?.formulas.filter((f) => f.warning).length ?? 0;
+  const warnFormulas =
+    (detail?.formulas.filter((f) => f.warning || f.shipped_changed).length ?? 0) +
+    (detail?.errors.filter((e) => e.formula_id).length ?? 0);
 
   return (
     <div>
@@ -300,6 +305,7 @@ function PackDetail({ name }: { name: string }) {
               <FormulasTab
                 pack={detail.name}
                 formulas={detail.formulas}
+                orphans={detail.errors.filter((e) => e.formula_id)}
                 catalogueNumbers={detail.documents.map((d) => d.number)}
                 onSaved={setDetail}
               />
@@ -377,9 +383,12 @@ function PackHeader({
           </ul>
         </div>
       )}
-      {detail.errors.length > 0 && (
+      {detail.errors.some((e) => !e.formula_id) && (
         <div className="caption p-5 text-error sm:p-6">
-          {detail.errors.map((e) => `${e.number}: ${e.error}`).join(" · ")}
+          {detail.errors
+            .filter((e) => !e.formula_id)
+            .map((e) => (e.number ? `${e.number}: ${e.error}` : e.error))
+            .join(" · ")}
         </div>
       )}
     </div>
@@ -550,24 +559,90 @@ function CatalogueStatus({ doc }: { doc: DomainPackDocumentView }) {
   );
 }
 
+/* Stored edits of formulas this build no longer ships: hidden from the
+ * cards, so listed here with the action that deletes them. */
+function OrphanFormulaEdits({
+  pack,
+  orphans,
+  onSaved,
+}: {
+  pack: string;
+  orphans: DomainPackError[];
+  onSaved: (detail: DomainPackDetail) => void;
+}) {
+  const { t } = useT();
+  const confirmAction = useConfirm();
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  if (orphans.length === 0) return null;
+  const remove = async (id: string) => {
+    const ok = await confirmAction({
+      title: t("common.confirm"),
+      message: t("dpk.edit.orphanConfirm", { id }),
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy(id);
+    setError("");
+    try {
+      const res = await resetDomainPackFormula(pack, id);
+      onSaved(res.data);
+    } catch (e) {
+      setError(errorText(e, t("dpk.edit.saveFailed")));
+    } finally {
+      setBusy("");
+    }
+  };
+  return (
+    <Notice tone="warning" title={t("dpk.edit.orphanTitle")}>
+      <ul className="mt-1 space-y-2">
+        {orphans.map((o) => (
+          <li key={o.formula_id} className="flex flex-wrap items-center justify-between gap-2">
+            <span className="min-w-0 break-words">
+              <code>{o.formula_id}</code> — {t("dpk.edit.orphanNote")}
+            </span>
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              disabled={busy !== ""}
+              onClick={() => void remove(o.formula_id!)}
+            >
+              {busy === o.formula_id ? t("dpk.edit.saving") : t("dpk.edit.orphanDelete")}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {error && <div className="mt-2 text-error">{error}</div>}
+    </Notice>
+  );
+}
+
 function FormulasTab({
   pack,
   formulas,
+  orphans,
   catalogueNumbers,
   onSaved,
 }: {
   pack: string;
   formulas: DomainPackFormulaView[];
+  orphans: DomainPackError[];
   catalogueNumbers: string[];
   onSaved: (detail: DomainPackDetail) => void;
 }) {
   const { t, locale } = useT();
   const [editing, setEditing] = useState<DomainPackFormulaView | null>(null);
   if (formulas.length === 0) {
-    return <div className="card px-5 py-10 text-center text-[14px] text-muted shadow-sm">{t("dpk.formula.empty")}</div>;
+    return (
+      <div className="space-y-5">
+        <OrphanFormulaEdits pack={pack} orphans={orphans} onSaved={onSaved} />
+        <div className="card px-5 py-10 text-center text-[14px] text-muted shadow-sm">{t("dpk.formula.empty")}</div>
+      </div>
+    );
   }
   return (
     <div className="space-y-5">
+      <OrphanFormulaEdits pack={pack} orphans={orphans} onSaved={onSaved} />
       {editing && (
         <FormulaEditor
           pack={pack}
@@ -594,6 +669,11 @@ function FormulasTab({
                 </span>
               )}
               {f.edit_not_applied && <span className={`badge-pill text-[10.5px] ${BADGE_BAD}`}>{t("dpk.edit.notApplied")}</span>}
+              {f.shipped_changed && (
+                <span className={`badge-pill text-[10.5px] ${BADGE_WARN}`} title={t("dpk.edit.shippedChangedHint")}>
+                  {t("dpk.edit.shippedChanged")}
+                </span>
+              )}
             </div>
             <button type="button" className="btn btn-outline btn-sm" onClick={() => setEditing(f)}>
               {t("dpk.edit.open")}

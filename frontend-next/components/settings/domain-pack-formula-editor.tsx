@@ -10,6 +10,7 @@
 import { useMemo, useState, type FormEvent } from "react";
 import { Modal } from "@/components/modal";
 import { useT } from "@/lib/i18n";
+import { parseFormulaNumber } from "@/lib/formula-number";
 import {
   formulaEditProblems,
   resetDomainPackFormula,
@@ -49,35 +50,26 @@ function draftFrom(f: DomainPackFormulaView | DomainPackFormulaEdit): Draft {
   };
 }
 
-/* Vietnamese "500.000" / "1.234.567,5" and English "1,234.5" thousands
- * groups both read as numbers (a group never starts "0.", so "0.075" is a
- * decimal); otherwise a lone comma is the decimal mark ("1,5"). "" or
- * junk → null. */
-function parseNumber(text: string): number | null {
-  let s = text.trim().replace(/\s/g, "");
-  if (!s) return null;
-  if (/^-?[1-9]\d{0,2}(\.\d{3})+(,\d+)?$/.test(s)) s = s.replace(/\./g, "").replace(",", ".");
-  else if (/^-?[1-9]\d{0,2}(,\d{3})+(\.\d+)?$/.test(s)) s = s.replace(/,/g, "");
-  else if (/^-?\d+,\d+$/.test(s)) s = s.replace(",", ".");
-  const n = Number(s);
-  return Number.isFinite(n) ? n : null;
-}
+/* A field whose number cannot be read: junk, or a writing read two ways
+ * ("1,500": 1,5 or 1500, see parseFormulaNumber). */
+type BadNumber = { field: string; text: string; ambiguous: boolean };
 
-function editFrom(d: Draft): { edit?: DomainPackFormulaEdit; bad?: string } {
+function editFrom(d: Draft): { edit?: DomainPackFormulaEdit; bad?: BadNumber } {
   const examples: DomainPackFormulaEdit["examples"] = [];
   for (const [i, ex] of d.examples.entries()) {
     const inputs: Record<string, number> = {};
     for (const [name, text] of Object.entries(ex.inputs)) {
-      const n = parseNumber(text);
-      if (n === null) return { bad: `#${i + 1} ${name}` };
+      const n = parseFormulaNumber(text);
+      if (typeof n !== "number") return { bad: { field: `#${i + 1} ${name}`, text, ambiguous: n === "ambiguous" } };
       inputs[name] = n;
     }
     const expected: Record<string, number> = {};
     for (const p of ex.expected) {
       const key = p.key.trim();
       if (!key && !p.value.trim()) continue;
-      const n = parseNumber(p.value);
-      if (!key || n === null) return { bad: `#${i + 1} ${key || "→"}` };
+      const n = parseFormulaNumber(p.value);
+      if (!key || typeof n !== "number")
+        return { bad: { field: `#${i + 1} ${key || "→"}`, text: p.value, ambiguous: n === "ambiguous" } };
       expected[key] = n;
     }
     examples.push({ inputs, expected });
@@ -136,7 +128,11 @@ export function FormulaEditor({
     const { edit, bad } = editFrom(draft);
     if (!edit) {
       setProblems([]);
-      setError(t("dpk.edit.badNumber", { field: bad ?? "" }));
+      setError(
+        bad?.ambiguous
+          ? t("dpk.edit.ambiguousNumber", { field: bad.field, value: bad.text.trim() })
+          : t("dpk.edit.badNumber", { field: bad?.field ?? "" }),
+      );
       return;
     }
     setBusy(true);
@@ -179,6 +175,7 @@ export function FormulaEditor({
       <ConsolePage size="form">
       <form className="space-y-5" onSubmit={save}>
         <p className="caption text-muted">{t("dpk.edit.hint", { tool: formula.tool })}</p>
+        {formula.shipped_changed && <Notice tone="warning">{t("dpk.edit.shippedChangedHint")}</Notice>}
 
         <div className="block">
           <FieldLabel htmlFor="dpk-name" required>{t("dpk.edit.name")}</FieldLabel>
