@@ -1,5 +1,7 @@
 // Example numbers of the domain pack formula editor.
-// Runs with: node --experimental-strip-types --test lib/formula-number.test.ts
+// Runs with: npm run test:formula-number (tsc transpile + node --test, works
+// on the server's Node 18; on Node ≥ 22.6 also
+// node --experimental-strip-types --test lib/formula-number.test.ts)
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 

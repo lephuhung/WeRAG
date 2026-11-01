@@ -125,12 +125,15 @@ func TestLoadRejectsBrokenFormulas(t *testing.T) {
 		{"rate written in the name", func(f fstest.MapFS) {
 			setFile(f, "formulas.yaml", strings.Replace(sampleFormulas, "name: Thuế kê khai", "name: Thuế kê khai 0,015", 1))
 		}, "the name writes the number(s) 0,015"},
+		{"rate written as a percent", func(f fstest.MapFS) {
+			setFile(f, "formulas.yaml", strings.Replace(sampleFormulas, "× Thuế suất", "× 100 %", 1))
+		}, "the expression writes the number(s) 100 %"},
 		{"article not in the catalogue", func(f fstest.MapFS) {
 			setFile(f, "formulas.yaml", strings.Replace(sampleFormulas, "article: Điều 21", "article: Điều 22", 1))
-		}, "basis[0] Điều 22 is not among the articles of 01/2021/NĐ-CP"},
+		}, "basis[0] Điều 22 is not among the articles of 01/2021/NĐ-CP in catalogue.yaml (listed: Điều 21)"},
 		{"article of a document listing none", func(f fstest.MapFS) {
 			setFile(f, "catalogue.yaml", "documents:\n  - number: 01/2021/NĐ-CP\n    used_for: x\n")
-		}, "basis[0] Điều 21 is not among the articles"},
+		}, "(listed: none)"},
 		{"empty article", func(f fstest.MapFS) {
 			setFile(f, "catalogue.yaml", "documents:\n  - number: 01/2021/NĐ-CP\n    used_for: x\n    articles: [\"\"]\n")
 		}, "articles[0] is empty"},
@@ -149,7 +152,6 @@ func TestLoadRejectsBrokenFormulas(t *testing.T) {
 func TestCitationsAndFormulaLint(t *testing.T) {
 	fsys := formulaFS(t)
 	setFile(fsys, "assets/checklist.md", "Bình luận tham khảo — không phải căn cứ.\n\nXem Luật 59/2020/QH14 và Nghị định 01/2021/nđ-cp.\n")
-	setFile(fsys, "formulas.yaml", strings.Replace(sampleFormulas, "× Thuế suất", "× 100 %", 1))
 	reg, err := Load(fsys)
 	require.NoError(t, err)
 	pack, _ := reg.Get(samplePack)
@@ -157,7 +159,6 @@ func TestCitationsAndFormulaLint(t *testing.T) {
 		"numbers are matched by catalogue key")
 	findings := strings.Join(pack.Lint(), "\n")
 	assert.Contains(t, findings, "assets/checklist.md: 59/2020/QH14 is cited but not in catalogue.yaml")
-	assert.Contains(t, findings, "thue_theo_loi_nhuan writes a rate as a constant")
 
 	setFile(fsys, "references/a.md", "Bình luận tham khảo — không phải căn cứ.\n")
 	setFile(fsys, "assets/checklist.md", "Bình luận tham khảo — không phải căn cứ.\n")
@@ -170,13 +171,31 @@ func TestCitationsAndFormulaLint(t *testing.T) {
 
 func TestNumericLiterals(t *testing.T) {
 	cases := map[string][]string{
-		"Thuế TNCN = (Doanh thu − 100.000.000) × 0,015":                {"100.000.000", "0,015"},
-		"Thuế sau giảm = Thuế × (1 − Tỷ lệ giảm ÷ 100)":                nil,
-		"Thuế tháng = Thuế năm ÷ 12 (0 nếu không vượt ngưỡng)":         nil,
-		"Theo Điều 7 khoản 2 của 68/2026/NĐ-CP, kỳ tính thuế năm 2026": nil,
-		"Ngưỡng 500 triệu": {"500"},
+		"Thuế TNCN = (Doanh thu − 100.000.000) × 0,015":                      {"100.000.000", "0,015"},
+		"Thuế sau giảm = Thuế × (1 − Tỷ lệ giảm ÷ 100)":                      nil,
+		"Thuế tháng = Thuế năm ÷ 12 (0 nếu không vượt ngưỡng)":               nil,
+		"Theo Điều 7 khoản 2 của 68/2026/NĐ-CP, kỳ tính thuế năm 2026":       nil,
+		"Biên = (Tỷ lệ % doanh thu ÷ 100) ÷ Thuế suất; nhân 100 để đọc ra %": nil,
+		"Ngưỡng 500 triệu": {"500 triệu"},
 		"Tỷ lệ 1.5":        {"1.5"},
 		"Biên = Tỷ lệ ÷ 100 ÷ Thuế suất × 0.2": {"0.2"},
+		// allowed numbers and provision/year words do not shield a value
+		"Thuế = 0 nếu doanh thu năm 500 triệu trở xuống": {"500 triệu"},
+		"Doanh thu năm 2 tỷ":       {"2 tỷ"},
+		"Theo khoản 500 triệu":     {"500 triệu"},
+		"Ngưỡng 1 tỷ đồng":         {"1 tỷ"},
+		"Ngưỡng 100 triệu đồng":    {"100 triệu"},
+		"Giảm 12 nghìn":            {"12 nghìn"},
+		"Thuế = Doanh thu × 100 %": {"100 %"},
+		"Mức 0 đồng":               {"0 đồng"},
+		"năm 500":                  {"500"},
+		"khoản 1000":               {"1000"},
+		// non-ASCII digits and fractions, a bare ratio
+		"Thuế = Doanh thu × １５ %": {"１", "５"},
+		"Tỷ lệ ٥":                 {"٥"},
+		"Thuế × ½":                {"½"},
+		"Tỷ lệ 1000/2000":         {"1000", "2000"},
+		"1 đơn vị":                nil,
 	}
 	for text, want := range cases {
 		assert.Equal(t, want, numericLiterals(text), text)
@@ -197,11 +216,14 @@ func TestExampleValueMatches(t *testing.T) {
 	assert.True(t, ExampleValueMatches(120000000, 120000000.4), "money ±1 đ")
 	assert.True(t, ExampleValueMatches(46666666.67, 46666666.666666664), "money written to the đồng")
 	assert.False(t, ExampleValueMatches(120000000, 120000002))
+	assert.True(t, ExampleValueMatches(833333, 833333.33), "a whole amount written rounded")
+	assert.False(t, ExampleValueMatches(833333, 833334))
+	assert.False(t, ExampleValueMatches(833333.5, 833333.33), "a written fraction is not rounding")
 	assert.True(t, ExampleValueMatches(0.075, 0.075000000000001))
 	assert.False(t, ExampleValueMatches(0.075, 0.08))
 	assert.False(t, ExampleValueMatches(5, 5.4), "a rate is not money: no ±1")
 	assert.False(t, ExampleValueMatches(1.5, 2))
-	assert.False(t, ExampleValueMatches(500, 500.5))
+	assert.False(t, ExampleValueMatches(500, 500.4), "below 1000 a whole number is not an amount")
 	assert.False(t, ExampleValueMatches(math.NaN(), 0))
 	assert.False(t, ExampleValueMatches(1, math.Inf(1)))
 }

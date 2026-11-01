@@ -106,7 +106,11 @@ func TestDomainPackFormulaEditRefused(t *testing.T) {
 		"amount in the expression": func(e *types.DomainPackFormulaEdit) {
 			e.Expression = "Biên hòa vốn = (Tỷ lệ % doanh thu ÷ 100) ÷ 0,2"
 		},
-		"rate in the name": func(e *types.DomainPackFormulaEdit) { e.Name = "Biên hòa vốn với thuế suất 0.2" },
+		"rate in the name":    func(e *types.DomainPackFormulaEdit) { e.Name = "Biên hòa vốn với thuế suất 0.2" },
+		"percent in the name": func(e *types.DomainPackFormulaEdit) { e.Name = "Biên hòa vốn theo 100 %" },
+		"amount behind an allowed number": func(e *types.DomainPackFormulaEdit) {
+			e.Expression = "Biên hòa vốn = Tỷ lệ % doanh thu ÷ 100 ÷ Thuế suất (0 nếu doanh thu năm 500 triệu trở xuống)"
+		},
 		"article not in the catalogue": func(e *types.DomainPackFormulaEdit) {
 			e.Basis = []types.DomainPackFormulaBasisRef{{Number: "67/2025/QH15", Article: "Điều 10"}}
 		},

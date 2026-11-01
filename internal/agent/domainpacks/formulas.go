@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/Tencent/WeKnora/internal/agent/domaintools"
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
@@ -66,27 +67,51 @@ var (
 	constantRatePattern = regexp.MustCompile(`\d+(?:[.,]\d+)?\s*%`)
 	// a number as written ("100.000.000", "0,015", "12")
 	numberPattern = regexp.MustCompile(`\d+(?:[.,]\d+)*`)
+	// a number with a magnitude or a unit after it ("500 triệu", "1 tỷ",
+	// "100 %", "12 nghìn", "0 đồng"): always a value, never allowed
+	magnitudePattern = regexp.MustCompile(`(?i)(\d+(?:[.,]\d+)*)\s*(?:triệu|tỷ|tỉ|nghìn|ngàn|trăm|đồng|vnđ|vnd|đ|%)(?:$|[^\p{L}\p{N}])`)
 	// numbers that name a provision or a document, not a value: "Điều 7",
-	// "khoản 2", "68/2026/NĐ-CP", "năm 2026"
-	provisionRefPattern = regexp.MustCompile(`(?i)(?:điều|khoản|điểm|chương|mục|phụ lục|năm)\s+\d+[a-zđ]?\b`)
-	docNumberRefPattern = regexp.MustCompile(`\d{1,4}/(?:19|20)\d\d(?:/[0-9]*[A-Za-zĐđ][A-Za-zĐđ0-9]*(?:[-–—‐][A-Za-zĐđ0-9]+)*)?`)
+	// "khoản 2", "năm 2026", "68/2026/NĐ-CP" (with its type: a bare
+	// "1000/2000" is a ratio)
+	provisionRefPattern = regexp.MustCompile(`(?i)(?:điều|khoản|điểm|chương|mục|phụ lục)\s+\d{1,3}[a-zđ]?(?:$|[^\p{L}\p{N}.,])`)
+	yearRefPattern      = regexp.MustCompile(`(?i)năm\s+(?:19|20)\d\d(?:$|[^\p{L}\p{N}.,])`)
+	docNumberRefPattern = regexp.MustCompile(`\d{1,4}/(?:19|20)\d\d/[0-9]*[A-Za-zĐđ][A-Za-zĐđ0-9]*(?:[-–—‐][A-Za-zĐđ0-9]+)*`)
 	// the Điều a basis article names ("Điều 10 khoản 2 điểm đ" → "10")
 	articleDieuPattern = regexp.MustCompile(`(?i)điều\s+(\d+[a-zđ]?)`)
 )
 
 // allowedFormulaNumbers are the numbers a formula's name or expression may
 // write: unit conversions ("÷ 100", "× 12 tháng") and bounds ("0", "1 −
-// tỷ lệ"). An amount, threshold or rate is a variable: the name and the
-// expression go to the model and the answer next to the Go results
-// (FormulaBlock), so a constant there would contradict them.
+// tỷ lệ"), never with a magnitude or unit after them ("100 triệu"). An
+// amount, threshold or rate is a variable: the name and the expression go
+// to the model and the answer next to the Go results (FormulaBlock), so a
+// constant there would contradict them.
+//
+// Residual risk, accepted: a value spelled in words ("năm trăm triệu
+// đồng", "hai phần trăm") is not caught; the SuperAdmin page shows the
+// wording and the examples still bind the Go result.
 var allowedFormulaNumbers = map[string]bool{"0": true, "1": true, "12": true, "100": true}
 
 // numericLiterals are the numbers text writes beyond allowedFormulaNumbers,
-// provision and document references aside.
+// provision, year and document references aside: any number followed by a
+// magnitude or unit, and any non-ASCII digit or numeric character ("１５",
+// "٥", "½", "²").
 func numericLiterals(text string) []string {
-	text = docNumberRefPattern.ReplaceAllString(text, " ")
-	text = provisionRefPattern.ReplaceAllString(text, " ")
 	var out []string
+	for _, r := range text {
+		if r > unicode.MaxASCII && (unicode.IsDigit(r) || unicode.In(r, unicode.No, unicode.Nl)) {
+			out = append(out, string(r))
+		}
+	}
+	text = docNumberRefPattern.ReplaceAllString(text, " ")
+	for _, m := range magnitudePattern.FindAllStringSubmatch(text, -1) {
+		out = append(out, strings.TrimSpace(strings.TrimRightFunc(m[0], func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '%'
+		})))
+	}
+	text = magnitudePattern.ReplaceAllString(text, " ")
+	text = yearRefPattern.ReplaceAllString(text, " ")
+	text = provisionRefPattern.ReplaceAllString(text, " ")
 	for _, n := range numberPattern.FindAllString(text, -1) {
 		if !allowedFormulaNumbers[n] {
 			out = append(out, n)
@@ -183,7 +208,7 @@ func checkFormula(fm Formula, catalogued map[string][]string, required map[strin
 	}
 	for _, field := range []struct{ name, text string }{{"name", fm.Name}, {"expression", fm.Expression}} {
 		if nums := numericLiterals(field.text); len(nums) > 0 {
-			fail("the %s writes the number(s) %s: an amount, threshold or rate is a variable (source input or kb); only 0, 1, 12 and 100 may be written",
+			fail("the %s writes the number(s) %s: an amount, threshold or rate is a variable (source input or kb); only 0, 1, 12 and 100 may be written, never with a magnitude or unit after them",
 				field.name, strings.Join(nums, ", "))
 		}
 	}
@@ -218,7 +243,12 @@ func checkFormula(fm Formula, catalogued map[string][]string, required map[strin
 		case !ok:
 			fail("basis[%d] number %q is not in %s", j, b.Number, catalogueFile)
 		case strings.TrimSpace(b.Article) != "" && !articleListed(b.Article, articles):
-			fail("basis[%d] %s is not among the articles of %s in %s", j, strings.TrimSpace(b.Article), b.Number, catalogueFile)
+			listed := "none"
+			if len(articles) > 0 {
+				listed = strings.Join(articles, ", ")
+			}
+			fail("basis[%d] %s is not among the articles of %s in %s (listed: %s)",
+				j, strings.TrimSpace(b.Article), b.Number, catalogueFile, listed)
 		}
 	}
 	if len(fm.Examples) == 0 {
@@ -396,7 +426,7 @@ func (p *Pack) citationFindings() []string {
 func (p *Pack) formulaFindings() []string {
 	var findings []string
 	for _, fm := range p.Formulas() {
-		if constantRatePattern.MatchString(fm.Expression) {
+		if constantRatePattern.MatchString(fm.Expression) || constantRatePattern.MatchString(fm.Name) {
 			findings = append(findings, fmt.Sprintf("%s: %s writes a rate as a constant; make it a variable with source kb",
 				formulasFile, fm.ID))
 		}

@@ -123,8 +123,10 @@ func (p *Pack) CheckFormulaEdit(edit Formula) (Formula, []string) {
 	if len(edit.Examples) > maxFormulaExamples {
 		problems = append(problems, fmt.Sprintf("at most %d examples", maxFormulaExamples))
 	}
-	if constantRatePattern.MatchString(edit.Expression) {
-		problems = append(problems, "the expression writes a rate as a constant; make it a variable with source kb")
+	for field, text := range map[string]string{"name": edit.Name, "expression": edit.Expression} {
+		if constantRatePattern.MatchString(text) {
+			problems = append(problems, fmt.Sprintf("the %s writes a rate as a constant; make it a variable with source kb", field))
+		}
 	}
 	if len(problems) > 0 {
 		return Formula{}, problems
@@ -165,17 +167,21 @@ func checkExamples(fm Formula) []string {
 const moneyScale = 1e6
 
 // ExampleValueMatches reports whether got, computed by the Go
-// implementation, reproduces want written in an example: within 1e-9
-// relative (1e-9 absolute below 1), and within ±1 đ for an amount of a
-// million or more, written rounded to the đồng. A rate of 5 against 5.4
-// or a ratio of 0.075 against 0.08 does not match.
+// implementation, reproduces want written in an example: ±1 đ for an
+// amount of a million or more; ±0.5 for a whole number of a thousand or
+// more (an amount written rounded, 833333 for 833333.33); otherwise within
+// 1e-9 relative (1e-9 absolute below 1). A rate of 5 against 5.4 or a
+// ratio of 0.075 against 0.08 does not match.
 func ExampleValueMatches(want, got float64) bool {
 	if math.IsNaN(want) || math.IsInf(want, 0) || math.IsNaN(got) || math.IsInf(got, 0) {
 		return false
 	}
 	tol := 1e-9 * math.Max(1, math.Abs(want))
-	if math.Abs(want) >= moneyScale {
+	switch {
+	case math.Abs(want) >= moneyScale:
 		tol = math.Max(tol, 1)
+	case math.Abs(want) >= 1000 && want == math.Trunc(want):
+		tol = math.Max(tol, 0.5)
 	}
 	return math.Abs(got-want) <= tol
 }

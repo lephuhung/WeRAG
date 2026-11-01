@@ -6,8 +6,12 @@
  * One comma before exactly three digits ("1,500") is 1,5 in Vietnamese but
  * 1500 in English: it is "ambiguous" and the editor asks for 1.500 or 1,5,
  * as a value off by a factor of 1000 would be refused or, worse, match.
- * "0,015" is 0.015 (an English group never starts with 0). "" or junk →
- * null. */
+ * "0,015" is 0.015 (an English group never starts with 0). The mirror case
+ * "1.500" is read the Vietnamese way, 1500, without asking: a deliberate
+ * Vietnamese-first choice (the editor's users write thousands with dots;
+ * an English 1.5 is written "1.5" or "1,5", which stay decimals because
+ * only a dot followed by exactly three digits groups thousands). "" or
+ * junk → null. */
 export type ParsedFormulaNumber = number | "ambiguous" | null;
 
 export function parseFormulaNumber(text: string): ParsedFormulaNumber {
