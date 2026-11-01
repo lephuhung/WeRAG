@@ -290,47 +290,48 @@ func (s *embedChannelService) EmbedChunk(
 func (s *embedChannelService) chunkAllowedForEmbed(
 	ctx context.Context, ch *types.EmbedChannel, chunk *types.Chunk,
 ) bool {
-	if chunk == nil || chunk.KnowledgeBaseID == "" {
-		return false
-	}
-	// Kiểm tra lại đơn vị một cách tường minh: GetChunkByIDOnly không lọc theo đơn vị, và nhánh KBSelectionMode=="all"/mặc định
-	// sẽ cho qua vô điều kiện, nên phải chặn tại đây việc dò chunk id xuyên đơn vị để đọc nội dung kho tri thức của người khác.
-	if ch == nil || chunk.TenantID != ch.TenantID {
-		return false
-	}
-	allowedKBs := s.resolveKnowledgeBaseIDs(ctx, ch)
-	if len(allowedKBs) > 0 {
-		for _, kbID := range allowedKBs {
-			if kbID == chunk.KnowledgeBaseID {
-				return true
-			}
-		}
+	if chunk == nil || chunk.KnowledgeBaseID == "" || ch == nil {
 		return false
 	}
 	agent, err := s.agentService.GetAgentByID(ctx, ch.AgentID)
 	if err != nil || agent == nil {
 		return false
 	}
+	// An agent on the "public" scope reads the platform public bases only.
+	// They live in the platform tenant, not the channel's, so the tenant
+	// check below would refuse every one of them: the chunk must instead
+	// belong to a platform public base and to that base's own tenant.
+	if agent.Config.KBSelectionMode == types.KBSelectionModePublic {
+		return s.chunkOfPlatformPublicKB(ctx, chunk)
+	}
+	// Kiểm tra lại đơn vị một cách tường minh: GetChunkByIDOnly không lọc theo đơn vị, và nhánh KBSelectionMode=="all"/mặc định
+	// sẽ cho qua vô điều kiện, nên phải chặn tại đây việc dò chunk id xuyên đơn vị để đọc nội dung kho tri thức của người khác.
+	if chunk.TenantID != ch.TenantID {
+		return false
+	}
 	switch agent.Config.KBSelectionMode {
 	case "none":
 		return false
 	case "selected":
+		for _, kbID := range agent.Config.KnowledgeBases {
+			if kbID == chunk.KnowledgeBaseID {
+				return true
+			}
+		}
 		return false
-	case types.KBSelectionModePublic:
-		// the agent reads platform public bases only, never the
-		// channel tenant's own (lookup errors fail closed)
-		return s.isPlatformPublicKB(ctx, chunk.KnowledgeBaseID)
 	default:
 		return true
 	}
 }
 
-func (s *embedChannelService) isPlatformPublicKB(ctx context.Context, kbID string) bool {
+// chunkOfPlatformPublicKB reports whether chunk belongs to a platform public
+// base, in that base's tenant. Lookup errors fail closed.
+func (s *embedChannelService) chunkOfPlatformPublicKB(ctx context.Context, chunk *types.Chunk) bool {
 	if s.kbRepo == nil {
 		return false
 	}
-	kb, err := s.kbRepo.GetKnowledgeBaseByID(ctx, kbID)
-	return err == nil && access.IsPlatformPublicKB(kb)
+	kb, err := s.kbRepo.GetKnowledgeBaseByID(ctx, chunk.KnowledgeBaseID)
+	return err == nil && access.IsPlatformPublicKB(kb) && chunk.TenantID == kb.TenantID
 }
 
 func (s *embedChannelService) SuggestedQuestions(
