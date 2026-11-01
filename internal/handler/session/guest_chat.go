@@ -111,7 +111,7 @@ func enforcePublicLookupConfig(agent *types.CustomAgent) *types.CustomAgent {
 // resolve elsewhere falls back to plain chat, which a Guest must not get.
 func publicLookupUnavailable(agent *types.CustomAgent) error {
 	if agent == nil || agent.ID != types.BuiltinPublicLookupID || !agent.EffectiveEnabled() {
-		return errors.NewAgentUnavailableError(publicLookupDisabledMessage)
+		return errors.NewPublicLookupUnavailableError(errors.PublicLookupReasonOff, publicLookupDisabledMessage)
 	}
 	return nil
 }
@@ -124,16 +124,16 @@ func publicLookupUnavailable(agent *types.CustomAgent) error {
 // metered.
 func (h *Handler) publicLookupWithoutKnowledge(ctx context.Context, agent *types.CustomAgent) error {
 	if h.knowledgebaseService == nil || agent == nil {
-		return errors.NewAgentUnavailableError(types.PublicLookupNoKnowledgeMessage)
+		return errors.NewPublicLookupUnavailableError(errors.PublicLookupReasonNoKnowledge, types.PublicLookupNoKnowledgeMessage)
 	}
 	kbs, err := h.knowledgebaseService.ListKnowledgeBases(ctx)
 	if err != nil {
 		logger.Warnf(ctx, "Public portal: public knowledge bases unavailable: %v", err)
-		return errors.NewAgentUnavailableError(types.PublicLookupNoKnowledgeMessage)
+		return errors.NewPublicLookupUnavailableError(errors.PublicLookupReasonNoKnowledge, types.PublicLookupNoKnowledgeMessage)
 	}
 	if len(tools.PlatformPublicKBIDs(kbs, agent.Config.AgentMode, agent.Config.AllowedTools)) == 0 {
 		logger.Warnf(ctx, "Public portal: no platform public knowledge base fits %s, turn refused", agent.ID)
-		return errors.NewAgentUnavailableError(types.PublicLookupNoKnowledgeMessage)
+		return errors.NewPublicLookupUnavailableError(errors.PublicLookupReasonNoKnowledge, types.PublicLookupNoKnowledgeMessage)
 	}
 	return nil
 }

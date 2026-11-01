@@ -11,6 +11,10 @@ export const ERR_TURN_RUNNING = 1005;
  * apply to your Tổ chức" (HTTP 404, "Tổ chức áp dụng"). */
 export const ERR_AGENT_UNAVAILABLE = 2104;
 
+/** Backend error code for "a Guest's public lookup cannot run now" (HTTP
+ * 503): switched off, or no public knowledge base to read (details.reason). */
+export const ERR_PUBLIC_LOOKUP_UNAVAILABLE = 2105;
+
 export type ChatErrorKey =
   | "chat.err.turnRunning"
   | "chat.err.tenantRequired"
@@ -23,6 +27,8 @@ export type ChatErrorKey =
   | "chat.err.forbidden"
   | "chat.err.notFound"
   | "chat.err.agentUnavailable"
+  | "chat.err.publicLookup.off"
+  | "chat.err.publicLookup.noKnowledge"
   | "chat.err.tooMany"
   | "chat.err.tooLarge"
   | "chat.err.server"
@@ -102,6 +108,10 @@ function byStatus(status: number, code?: number, reason?: string, errorCode?: st
   if (status === 404) return "chat.err.notFound";
   if (status === 413) return "chat.err.tooLarge";
   if (status === 429) return "chat.err.tooMany";
+  // a Guest's lookup: nothing to pick instead, only to wait
+  if (status === 503 && code === ERR_PUBLIC_LOOKUP_UNAVAILABLE) {
+    return reason === "public_lookup_no_knowledge" ? "chat.err.publicLookup.noKnowledge" : "chat.err.publicLookup.off";
+  }
   if (status === 502 || status === 503 || status === 504) return "chat.err.unavailable";
   if (status >= 500) return "chat.err.server";
   return "chat.err.generic";

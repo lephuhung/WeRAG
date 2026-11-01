@@ -61,7 +61,7 @@ Một số endpoint cũ trả `{"success":false,"message":"…"}` không có `er
 | 2005 | 403 | `NewTenantCreationDisabledError()` | đã tắt tự tạo tổ chức; hãy tham gia tổ chức qua lời mời |
 | 2006 | 400 | `ValidateTenantName` | organization name must be at most 255 characters |
 
-### 2.3 Cấu hình trợ lý (2100–2104)
+### 2.3 Cấu hình trợ lý (2100–2105)
 
 | Code | HTTP | Hàm tạo | Thông báo |
 |---|---|---|---|
@@ -70,6 +70,7 @@ Một số endpoint cũ trả `{"success":false,"message":"…"}` không có `er
 | 2102 | 400 | `NewAgentInvalidMaxIterationsError()` | số vòng lặp tối đa phải là số nguyên dương, hoặc -1 nếu không giới hạn |
 | 2103 | 400 | `NewAgentInvalidTemperatureError()` | tham số temperature phải nằm trong khoảng 0-2 |
 | 2104 | 404 | `NewAgentUnavailableError()` | trợ lý không tồn tại hoặc không áp dụng cho Tổ chức của người gọi (lượt chat; đã xoá, id sai, ngoài "Tổ chức áp dụng", hoặc agent Chuyên ngành chưa mua / quyền dùng đã hết hạn đều cùng mã) |
+| 2105 | 503 | `NewPublicLookupUnavailableError()` | chat khách: tra cứu công khai đang tắt (`details.reason` = `public_lookup_off`) hoặc không có kho tri thức công khai nào để đọc (`public_lookup_no_knowledge`); lượt bị từ chối không bị tính vào hạn mức |
 
 ### 2.4 Kho vector và mô hình (2200–2300)
 

@@ -59,7 +59,8 @@ func (s *sessionService) resolveKnowledgeBases(
 			kbIDs = intersectStrings(kbIDs, requestedKBIDs)
 		}
 		if len(kbIDs) == 0 && types.InPublicPortal(ctx) {
-			return nil, nil, apperrors.NewAgentUnavailableError(types.PublicLookupNoKnowledgeMessage)
+			return nil, nil, apperrors.NewPublicLookupUnavailableError(
+				apperrors.PublicLookupReasonNoKnowledge, types.PublicLookupNoKnowledgeMessage)
 		}
 		knowledgeIDs = nil
 		req.TagScopes = nil

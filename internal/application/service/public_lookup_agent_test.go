@@ -203,7 +203,7 @@ func TestResolveKnowledgeBasesPublicPortalFailsClosed(t *testing.T) {
 	_, _, err = svc.resolveKnowledgeBases(portal, &types.QARequest{Session: session, CustomAgent: agent})
 	var appErr *apperrors.AppError
 	require.ErrorAs(t, err, &appErr)
-	require.Equal(t, apperrors.ErrAgentUnavailable, appErr.Code)
+	require.Equal(t, apperrors.ErrPublicLookupUnavailable, appErr.Code)
 
 	// a request id outside the public scope narrows it to nothing: refused too
 	svc = &sessionService{knowledgeBaseService: publicScopeKBList{}}

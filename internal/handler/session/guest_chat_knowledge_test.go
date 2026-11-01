@@ -41,7 +41,9 @@ func TestPublicLookupWithoutKnowledge(t *testing.T) {
 		err := h.publicLookupWithoutKnowledge(context.Background(), agent)
 		var appErr *errors.AppError
 		require.True(t, stderrors.As(err, &appErr))
-		require.Equal(t, errors.ErrAgentUnavailable, appErr.Code)
+		require.Equal(t, errors.ErrPublicLookupUnavailable, appErr.Code)
+		require.Equal(t, http.StatusServiceUnavailable, appErr.HTTPCode)
+		require.Equal(t, map[string]string{"reason": errors.PublicLookupReasonNoKnowledge}, appErr.Details)
 		require.Equal(t, types.PublicLookupNoKnowledgeMessage, appErr.Message)
 	}
 	refused(&publicKBListStub{})

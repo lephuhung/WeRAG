@@ -45,7 +45,7 @@ const KBSelectionModePublic = "public"
 // public knowledge base can be read (none published, none fit the
 // public-lookup agent's tools, or the listing failed): the public lookup
 // never answers without one.
-const PublicLookupNoKnowledgeMessage = "Hiện không có kho tra cứu công khai nào để trả lời. " +
+const PublicLookupNoKnowledgeMessage = "Hiện không có kho tri thức công khai nào để trả lời. " +
 	"Hãy thử lại sau, hoặc tham gia một Tổ chức để dùng trợ lý đầy đủ."
 
 // AgentMode constants for agent running mode
