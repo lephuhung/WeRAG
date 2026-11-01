@@ -182,3 +182,16 @@ func TestPhraseLines(t *testing.T) {
 		}
 	}
 }
+
+// Fable review: an amender without an effective date is still told, with
+// its issue date, not left silent.
+func TestPhraseLinesWithoutEffectiveDate(t *testing.T) {
+	h := &legalHistory{phrases: map[string]*phraseChange{}, now: time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)}
+	old := legalHistoryDoc{Number: "68/2026/NĐ-CP", Type: "Nghị định"}
+	amender := legalHistoryDoc{Number: "9/2026/NĐ-CP", Type: "Nghị định", IssueDate: "2026-03-01"}
+	h.addPhrase(old, amender, vietnamese_legal.AmendRef{Article: "3", Phrase: true, From: "500 triệu đồng", To: "01 tỷ đồng"})
+	lines := h.phraseLines()
+	if len(lines) != 1 || lines[0].text != "Điều 3 Nghị định 68/2026/NĐ-CP: cụm từ “500 triệu đồng” được thay bằng “01 tỷ đồng” bởi Nghị định 9/2026/NĐ-CP, ban hành ngày 01/03/2026." {
+		t.Fatalf("lines = %+v", lines)
+	}
+}

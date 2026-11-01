@@ -346,6 +346,13 @@ func (h *legalHistory) phraseLines() []legalHistoryLine {
 				p.old = d
 			}
 		}
+		// an amender known without dates gets its issue date from its own
+		// document, for "ban hành ngày …"
+		if p.amender.EffFrom == "" && p.amender.IssueDate == "" && h.db != nil {
+			if d, ok := h.documentByNumber(p.amender.Number); ok {
+				p.amender.IssueDate = d.IssueDate
+			}
+		}
 		provs := p.provs
 		more := ""
 		if len(provs) > legalPhraseProvs {
@@ -420,8 +427,10 @@ func (h *legalHistory) backwardPhrases(chunks []legalHistoryChunk) {
 			}
 		}
 		for _, ch := range changes {
+			// a change without an effective date is still told, with its
+			// issue date (dateText); only a future one is left to the wording
 			at, known := phraseEffect(ch.Amender, h.now.Location())
-			if !known || at.After(h.now) || len(findPhrase(c.Content, ch.From)) == 0 || !answerUsesChange(h.answer, ch.From, ch.To) {
+			if (known && at.After(h.now)) || len(findPhrase(c.Content, ch.From)) == 0 || !answerUsesChange(h.answer, ch.From, ch.To) {
 				continue
 			}
 			h.addPhrase(c.Doc, ch.Amender, vietnamese_legal.AmendRef{
