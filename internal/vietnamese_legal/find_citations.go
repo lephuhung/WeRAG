@@ -600,13 +600,21 @@ func lowerNameKnown(name, year string, titles []string) bool {
 	if strings.HasPrefix(n, "bộ luật ") || strings.HasPrefix(n, "pháp lệnh ") {
 		_, rest, _ = strings.Cut(rest, " ")
 	}
-	first, _, _ := strings.Cut(rest, " ")
-	return !lawCommonNouns[first]
+	words := strings.Fields(strings.TrimRight(rest, " ,"))
+	// one word is no title ("Luật mới 2024", "Luật rừng 2020")
+	return len(words) >= 2 && !lawCommonNouns[words[0]]
 }
 
-// lawCommonNouns follow "Luật" as a common noun, never a title: "Luật sư",
-// "luật lệ", "luật pháp", "luật gia", "luật định".
-var lawCommonNouns = map[string]bool{"sư": true, "lệ": true, "pháp": true, "gia": true, "định": true, "học": true, "chơi": true}
+// lawCommonNouns start a lower-case run after "Luật" that is no title: a
+// common noun ("Luật sư", "luật lệ", "luật pháp", "luật gia", "luật
+// định") or a function word or adjective ("Luật của Quốc hội", "Luật về
+// đất đai", "Luật hiện hành", "Luật quốc tế").
+var lawCommonNouns = map[string]bool{
+	"sư": true, "lệ": true, "pháp": true, "gia": true, "định": true, "học": true, "chơi": true,
+	"của": true, "về": true, "cho": true, "với": true, "trong": true, "theo": true, "tại": true, "và": true,
+	"các": true, "những": true, "mới": true, "cũ": true, "hiện": true, "quốc": true, "chung": true, "riêng": true,
+	"sửa": true, "đó": true, "trên": true, "nói": true, "nước": true,
+}
 
 // knownLawTitles are the titles (lower case, with the type) of the laws,
 // codes and ordinances cited most, read even when the text writes them in

@@ -74,6 +74,15 @@ func TestFindCitations(t *testing.T) {
 		{"Luật sư năm 2020", nil},
 		{"Luật lệ giao thông", nil},
 		{"Luật quy chế thử nghiệm", nil}, // unlisted, no year
+		// Fable re-review 5: the year rule needs a title-like run
+		{"Luật của Quốc hội năm 2013", nil},
+		{"Luật mới 2024", nil},
+		{"Luật hiện hành 2024", nil},
+		{"Luật về đất đai 2013", nil},
+		{"Luật quốc tế 2020", nil},
+		{"Luật rừng 2020", nil},
+		{"Luật Đất đai 2013", []string{"name Luật Đất đai"}},
+		{"Luật Rừng 2020", []string{"name Luật Rừng"}},
 		{"Luật Bình đẳng giới số 73/2006/QH11", []string{"full 73/2006/QH11 73/2006/QH11 Luật | Luật Bình đẳng giới"}},
 		{"Luật Bảo vệ sức khỏe nhân dân số 21-LCT/HĐNN8", []string{"party 21-LCT/HĐNN8 21-LCT/HDNN8 Luật | Luật Bảo vệ sức khỏe nhân dân"}},
 		{"Nghị định 53/2022/NĐ-CP và 1153/2022/NĐ-CP", []string{"full 53/2022/NĐ-CP 53/2022/ND-CP Nghị định", "full 1153/2022/NĐ-CP 1153/2022/ND-CP Nghị định"}},
