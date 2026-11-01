@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/vbpl"
 )
 
 // A (id 100) tagged by its editors; B (id 200) holds the source provisions.
@@ -119,7 +121,7 @@ func TestUpsertRemovesStaleEditorRows(t *testing.T) {
 		link("100", "a2", "b-k2", types.LegalProvisionLinkSourceEditor),
 		link("300", "c1", "b-k3", types.LegalProvisionLinkSourceEditor),
 	}
-	removed, err := upsert(db, first, []string{"100", "300"})
+	removed, err := upsert(db, first, []string{"100", "300"}, 1)
 	require.NoError(t, err)
 	require.Zero(t, removed)
 	require.NoError(t, db.Create(&types.LegalProvisionLink{TargetDocID: "100", TargetProvisionID: "a9", RelationCode: 1, Op: "bai_bo",
@@ -127,7 +129,7 @@ func TestUpsertRemovesStaleEditorRows(t *testing.T) {
 	time.Sleep(2 * time.Millisecond)
 
 	// page 100 re-read: its editors dropped the a2 tag; page 300 not read
-	removed, err = upsert(db, []types.LegalProvisionLink{link("100", "a1", "b-k1", types.LegalProvisionLinkSourceEditor)}, []string{"100"})
+	removed, err = upsert(db, []types.LegalProvisionLink{link("100", "a1", "b-k1", types.LegalProvisionLinkSourceEditor)}, []string{"100"}, 1)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, removed)
 	var left []types.LegalProvisionLink
@@ -139,7 +141,39 @@ func TestUpsertRemovesStaleEditorRows(t *testing.T) {
 	require.Equal(t, []string{"100 a1", "100 a9", "300 c1"}, got)
 
 	// a page read with no tags left: all its editor rows go
-	removed, err = upsert(db, nil, []string{"100"})
+	removed, err = upsert(db, nil, []string{"100"}, 1)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, removed)
+}
+
+// Fable re-review 2: a page that parsed to no provisions prunes nothing,
+// and a run removing too large a share of the rows writes nothing.
+func TestUpsertPruneGuards(t *testing.T) {
+	pages := []*page{
+		{id: "100", editor: &vbpl.EditorPage{Levels: map[string]string{"a1": "article"}}},
+		{id: "200", editor: &vbpl.EditorPage{Levels: map[string]string{}}}, // captcha / error page
+		{id: "300", err: os.ErrNotExist},
+	}
+	require.Equal(t, []string{"100"}, prunableDocs(pages))
+
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&types.LegalProvisionLink{}))
+	var many []types.LegalProvisionLink
+	for i := 0; i < 100; i++ {
+		many = append(many, types.LegalProvisionLink{TargetDocID: "100", TargetProvisionID: fmt.Sprintf("a%d", i), RelationCode: 10,
+			Op: "sua_doi_bo_sung", SourceProvisionID: "b", Source: types.LegalProvisionLinkSourceEditor})
+	}
+	_, err = upsert(db, many, []string{"100"}, 0.2)
+	require.NoError(t, err)
+	time.Sleep(2 * time.Millisecond)
+	// the page now tags 10 of its 100 edges: 90 % would go
+	_, err = upsert(db, many[:10], []string{"100"}, 0.2)
+	require.Error(t, err)
+	var n int64
+	require.NoError(t, db.Model(&types.LegalProvisionLink{}).Count(&n).Error)
+	require.EqualValues(t, 100, n, "rolled back")
+	removed, err := upsert(db, many[:10], []string{"100"}, 1)
+	require.NoError(t, err)
+	require.EqualValues(t, 90, removed)
 }

@@ -14,8 +14,9 @@
 //
 // Dry run by default (counts only, nothing written); -out writes the rows
 // as JSON lines; -apply upserts them and, in the same transaction, removes
-// the editor rows of every page read that its tags no longer hold (the
-// migration must be applied). The
+// the editor rows of every page read with provisions that its tags no
+// longer hold, aborting when that is more than -max-prune of their rows
+// (the migration must be applied). The
 // catalogue is read from the database of the DB_* environment (as the
 // server); -no-db skips it (no catalogue dates or B checks).
 package main
@@ -52,6 +53,7 @@ func main() {
 	noDB := flag.Bool("no-db", false, "do not read the catalogue")
 	workers := flag.Int("workers", runtime.NumCPU(), "pages parsed in parallel")
 	verbose := flag.Bool("v", false, "print unresolved and ambiguous edges")
+	maxPrune := flag.Float64("max-prune", 0.2, "with -apply: abort (nothing written) when the stale editor rows removed exceed this fraction of the rows the pages read had")
 	flag.Parse()
 
 	var db *gorm.DB
@@ -95,15 +97,7 @@ func main() {
 		log.Printf("%d rows written to %s", len(rows), *out)
 	}
 	if *apply {
-		// every page read is the whole truth about its own tags: an edge
-		// its editors removed goes (a page that failed to parse keeps its)
-		var docs []string
-		for _, p := range pages {
-			if p.err == nil {
-				docs = append(docs, p.id)
-			}
-		}
-		removed, err := upsert(db, rows, docs)
+		removed, err := upsert(db, rows, prunableDocs(pages), *maxPrune)
 		if err != nil {
 			log.Fatalf("apply: %v", err)
 		}
@@ -598,19 +592,43 @@ func writeRows(path string, rows []types.LegalProvisionLink) error {
 	return f.Close()
 }
 
+// prunableDocs are the pages that are the whole truth about their own
+// tags: read without error and holding provisions. A page that parsed to
+// none (an error or captcha page, a truncated download, a layout vbpl
+// changed) says nothing, and keeps its rows.
+func prunableDocs(pages []*page) []string {
+	var docs []string
+	for _, p := range pages {
+		if p.err == nil && p.editor != nil && len(p.editor.Levels) > 0 {
+			docs = append(docs, p.id)
+		}
+	}
+	return docs
+}
+
 // upsert writes the rows, keyed by (A provision, code, B provision), and,
 // in the same transaction, removes the editor rows of the documents docs
-// (A pages read in full) that the rows no longer hold. It returns how
-// many it removed.
-func upsert(db *gorm.DB, rows []types.LegalProvisionLink, docs []string) (int64, error) {
+// (prunableDocs) that the rows no longer hold. It returns how many it
+// removed. When that is more than maxPrune of the editor rows docs had
+// (and more than a handful), it writes nothing and fails: a mass removal
+// is a bad crawl more likely than editors' work.
+func upsert(db *gorm.DB, rows []types.LegalProvisionLink, docs []string, maxPrune float64) (int64, error) {
 	// the stamp every written row carries: older rows of docs are stale
 	// (microseconds, the database's precision, so the comparison is exact)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	for i := range rows {
 		rows[i].CreatedAt, rows[i].UpdatedAt = now, now
 	}
-	var removed int64
+	var removed, had int64
 	err := db.Transaction(func(tx *gorm.DB) error {
+		for start := 0; start < len(docs); start += 1000 {
+			var n int64
+			if err := tx.Model(&types.LegalProvisionLink{}).Where("target_doc_id IN ? AND source = ?",
+				docs[start:min(len(docs), start+1000)], types.LegalProvisionLinkSourceEditor).Count(&n).Error; err != nil {
+				return err
+			}
+			had += n
+		}
 		if len(rows) > 0 {
 			if err := tx.Clauses(clause.OnConflict{
 				Columns: []clause.Column{{Name: "target_provision_id"}, {Name: "relation_code"}, {Name: "source_provision_id"}},
@@ -629,7 +647,17 @@ func upsert(db *gorm.DB, rows []types.LegalProvisionLink, docs []string) (int64,
 			}
 			removed += res.RowsAffected
 		}
+		if removed > legalPruneFloor && float64(removed) > maxPrune*float64(had) {
+			return fmt.Errorf("would remove %d of %d editor rows (more than %.0f%%): nothing written; check the crawl or raise -max-prune",
+				removed, had, maxPrune*100)
+		}
 		return nil
 	})
-	return removed, err
+	if err != nil {
+		return 0, err
+	}
+	return removed, nil
 }
+
+// legalPruneFloor is how many rows a run may always remove.
+const legalPruneFloor = 50
