@@ -97,7 +97,6 @@ var guestChatPaths = []struct{ method, path string }{
 	{http.MethodGet, "/api/v1/sessions"},
 	{http.MethodGet, "/api/v1/sessions/s1"},
 	{http.MethodPost, "/api/v1/agent-chat/s1"},
-	{http.MethodPost, "/api/v1/knowledge-chat/s1"},
 	{http.MethodGet, "/api/v1/messages/s1/load"},
 	{http.MethodGet, "/api/v1/agents"},
 	{http.MethodGet, "/api/v1/me/usage"},
@@ -123,6 +122,7 @@ func TestGuestChatTenantlessGuestServedInPortal(t *testing.T) {
 		{http.MethodGet, "/api/v1/knowledge-bases"},
 		{http.MethodDelete, "/api/v1/sessions/batch"},
 		{http.MethodGet, "/api/v1/agents/builtin-public-lookup"},
+		{http.MethodPost, "/api/v1/knowledge-chat/s1"},
 	} {
 		got := guestChatHarness(t, user, newFakeMemberService(), rt.method, rt.path, "", false)
 		if got.code != http.StatusConflict || got.errCode != "TENANT_REQUIRED" {

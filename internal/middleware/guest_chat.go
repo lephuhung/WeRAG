@@ -23,6 +23,9 @@ import (
 // Left out on purpose: attachments, fork, steer, pin, sub-chats, documents,
 // sandbox, artifacts, suggestions and the knowledge search — a Guest reads
 // public knowledge bases through their own tenant-optional read routes.
+// /knowledge-chat is left out too: it runs the quick-answer pipeline, not
+// the agent, so the forced public-lookup agent would not govern the turn;
+// the web and the Word add-in send a Guest's turns to /agent-chat.
 
 // guestChatRoute is one guest chat shape. Segments after /api/v1 are matched
 // one by one; "*" matches any single non-empty segment.
@@ -43,7 +46,6 @@ var guestChatRoutes = []guestChatRoute{
 	{http.MethodPost, []string{"sessions", "*", "continue"}},
 	{http.MethodGet, []string{"sessions", "continue-stream", "*"}},
 	{http.MethodPost, []string{"agent-chat", "*"}},
-	{http.MethodPost, []string{"knowledge-chat", "*"}},
 	{http.MethodGet, []string{"messages", "*", "load"}},
 	{http.MethodDelete, []string{"messages", "*", "*"}},
 	{http.MethodPut, []string{"messages", "*", "*", "feedback"}},

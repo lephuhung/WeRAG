@@ -1074,6 +1074,13 @@ func (h *Handler) SearchKnowledge(c *gin.Context) {
 // @Security     ApiKeyAuth
 // @Router       /knowledge-chat/{session_id} [post]
 func (h *Handler) KnowledgeQA(c *gin.Context) {
+	// The quick-answer pipeline does not run the public-lookup agent a
+	// Guest is held to; auth never serves this route in the portal, and
+	// this keeps it so should the allow-list ever drift.
+	if types.InPublicPortal(c.Request.Context()) {
+		_ = c.Error(errors.NewBadRequestError("guest chat runs on /agent-chat"))
+		return
+	}
 	// Parse and validate request
 	reqCtx, request, err := h.parseQARequest(c, "KnowledgeQA")
 	if err != nil {

@@ -207,14 +207,13 @@ func RegisterOnlyOfficeCallbackRoutes(r *gin.Engine, handler *session.DocumentWo
 func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler, g *rbacGuards) {
 	// These POST routes append messages and run generation, so a scoped key
 	// needs the explicit chat capability unless it has full tenant access.
-	// Both are guest chat routes: a Guest in the public portal runs the
-	// public-lookup agent there (the handler forces it).
-	knowledgeChat := g.apiKeyGroup(r.Group("/knowledge-chat", g.GuestChat()), apiKeyChat(apiKeyFullAccess()))
+	knowledgeChat := g.apiKeyGroup(r.Group("/knowledge-chat", g.Member()), apiKeyChat(apiKeyFullAccess()))
 	{
 		knowledgeChat.POST("/:session_id", handler.KnowledgeQA)
 	}
 
-	// Agent-based chat
+	// Agent-based chat. A guest chat route: a Guest in the public portal
+	// runs the public-lookup agent there (the handler forces it).
 	agentChat := g.apiKeyGroup(r.Group("/agent-chat", g.GuestChat()), apiKeyChat(apiKeyFullAccess()))
 	{
 		agentChat.POST("/:session_id", handler.AgentQA)
