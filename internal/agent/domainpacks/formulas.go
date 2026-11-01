@@ -61,6 +61,11 @@ type FormulaExample struct {
 	Expected map[string]float64 `yaml:"expected"`
 }
 
+// refEnd ends a provision or year reference: the end, a separator, or a
+// "." / "," closing the clause ("Điều 7, khoản 2", "năm 2026.") but not one
+// grouping digits ("khoản 500.000" is an amount).
+const refEnd = `(?:$|[^\p{L}\p{N}.,]|[.,](?:$|[^\p{L}\p{N}]))`
+
 var (
 	snakeCasePattern = regexp.MustCompile(`^[a-z][a-z0-9]*(_[a-z0-9]+)*$`)
 	// a percentage or rate written into an expression ("× 20 %")
@@ -73,8 +78,8 @@ var (
 	// numbers that name a provision or a document, not a value: "Điều 7",
 	// "khoản 2", "năm 2026", "68/2026/NĐ-CP" (with its type: a bare
 	// "1000/2000" is a ratio)
-	provisionRefPattern = regexp.MustCompile(`(?i)(?:điều|khoản|điểm|chương|mục|phụ lục)\s+\d{1,3}[a-zđ]?(?:$|[^\p{L}\p{N}.,])`)
-	yearRefPattern      = regexp.MustCompile(`(?i)năm\s+(?:19|20)\d\d(?:$|[^\p{L}\p{N}.,])`)
+	provisionRefPattern = regexp.MustCompile(`(?i)(?:điều|khoản|điểm|chương|mục|phụ lục)\s+\d{1,3}[a-zđ]?` + refEnd)
+	yearRefPattern      = regexp.MustCompile(`(?i)năm\s+(?:19|20)\d\d` + refEnd)
 	docNumberRefPattern = regexp.MustCompile(`\d{1,4}/(?:19|20)\d\d/[0-9]*[A-Za-zĐđ][A-Za-zĐđ0-9]*(?:[-–—‐][A-Za-zĐđ0-9]+)*`)
 	// the Điều a basis article names ("Điều 10 khoản 2 điểm đ" → "10")
 	articleDieuPattern = regexp.MustCompile(`(?i)điều\s+(\d+[a-zđ]?)`)
