@@ -143,3 +143,17 @@ func TestHouseholdTaxReductionCap(t *testing.T) {
 		t.Fatalf("formula above the cap: %v %v", got, err)
 	}
 }
+
+// The cap stays mandatory; an uncapped relief is an explicit choice that
+// excludes the cap.
+func TestHouseholdTaxUncappedReduction(t *testing.T) {
+	in := HouseholdInput{Revenue: 12_000_000_000, Threshold: 1_000_000_000, VATRatio: 1, PITRatio: 0.5, RevenueMethodCap: 20_000_000_000, Reduction: f(30), ReductionUncapped: true}
+	c, err := CalculateHouseholdTax(in)
+	if err != nil || !c.Reduced {
+		t.Fatalf("%v %+v", err, c)
+	}
+	in.ReductionCap = f(10_000_000_000)
+	if _, err := CalculateHouseholdTax(in); err == nil {
+		t.Fatal("cap and uncapped together were accepted")
+	}
+}

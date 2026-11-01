@@ -57,6 +57,10 @@ type HouseholdInput struct {
 	// in đồng (tran_doanh_thu_giam_tncn): the reduction documents limit it,
 	// so it is never assumed; above it the tax is not reduced.
 	ReductionCap *float64
+	// ReductionUncapped says, instead of ReductionCap, that the reduction
+	// document sets no revenue limit (giam_khong_gioi_han_doanh_thu): an
+	// explicit choice, never the default.
+	ReductionUncapped bool
 	// PeriodRevenue is the revenue of one quarter or month (doanh_thu_ky).
 	PeriodRevenue *float64
 }
@@ -111,8 +115,11 @@ func CalculateHouseholdTax(in HouseholdInput) (*HouseholdTax, error) {
 		}
 		reduction = *in.Reduction / 100
 	}
-	if reduction > 0 && in.ReductionCap == nil {
-		return nil, errors.New("Có tỷ lệ giảm thuế TNCN thì cần cả mức doanh thu năm tối đa được giảm (tran_doanh_thu_giam_tncn) tra trong văn bản giảm thuế")
+	if in.ReductionCap != nil && in.ReductionUncapped {
+		return nil, errors.New("Chỉ dùng một trong hai: mức doanh thu tối đa được giảm (tran_doanh_thu_giam_tncn) hoặc giam_khong_gioi_han_doanh_thu")
+	}
+	if reduction > 0 && in.ReductionCap == nil && !in.ReductionUncapped {
+		return nil, errors.New("Có tỷ lệ giảm thuế TNCN thì cần cả mức doanh thu năm tối đa được giảm (tran_doanh_thu_giam_tncn) tra trong văn bản giảm thuế; chỉ khi văn bản không giới hạn doanh thu mới đặt giam_khong_gioi_han_doanh_thu = true")
 	}
 	if in.ReductionCap != nil {
 		if c := *in.ReductionCap; !finite(c) || c < 0 || c > maxAmount {
@@ -163,7 +170,7 @@ func CalculateHouseholdTax(in HouseholdInput) (*HouseholdTax, error) {
 		}
 	}
 	// the reduction applies only up to its revenue cap
-	if reduction > 0 && in.Revenue > *in.ReductionCap {
+	if reduction > 0 && in.ReductionCap != nil && in.Revenue > *in.ReductionCap {
 		reduction = 0
 	}
 	out.Reduced = reduction > 0
@@ -198,6 +205,8 @@ func householdAssumptions(c *HouseholdTax, vat, pit, reduction float64) []string
 			FormatPercent(*in.ProfitRate, -1)+" theo mức doanh thu năm.")
 	}
 	switch {
+	case reduction > 0 && in.ReductionUncapped:
+		a = append(a, "Giảm "+FormatPercent(reduction, -1)+" số thuế TNCN phải nộp, theo văn bản giảm thuế không giới hạn doanh thu (đã xác nhận khi gọi công cụ); chỉ dùng số sau giảm khi đủ các điều kiện khác của văn bản (kỳ tính thuế, đối tượng).")
 	case reduction > 0:
 		a = append(a, "Giảm "+FormatPercent(reduction, -1)+" số thuế TNCN phải nộp áp dụng vì doanh thu năm không quá "+FormatVND(*in.ReductionCap)+
 			" (mức tra trong văn bản giảm thuế); chỉ dùng số sau giảm khi đủ các điều kiện khác của văn bản (kỳ tính thuế, đối tượng).")

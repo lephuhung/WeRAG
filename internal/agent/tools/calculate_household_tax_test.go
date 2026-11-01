@@ -46,3 +46,15 @@ func TestCalculateHouseholdTaxToolRefusesMissing(t *testing.T) {
 		t.Fatalf("%v %+v", err, res)
 	}
 }
+
+func TestCalculateHouseholdTaxToolUncapped(t *testing.T) {
+	tool := NewCalculateHouseholdTaxTool()
+	args := `{"doanh_thu": 2400000000, "nguong_doanh_thu": 1000000000, "ty_le_gtgt": 1, "ty_le_tncn": 0.5, "tran_doanh_thu_theo_doanh_thu": 3000000000, "ty_le_giam_tncn": 30, "giam_khong_gioi_han_doanh_thu": true}`
+	if res, err := tool.Execute(context.Background(), json.RawMessage(args)); err != nil || res.Data["thue_tncn_doanh_thu_net"] != 4_900_000.0 {
+		t.Fatalf("%v %+v", err, res)
+	}
+	res, err := tool.Execute(context.Background(), json.RawMessage(`{"doanh_thu": 2400000000, "nguong_doanh_thu": 1000000000, "ty_le_gtgt": 1, "ty_le_tncn": 0.5, "tran_doanh_thu_theo_doanh_thu": 3000000000, "ty_le_giam_tncn": 30}`))
+	if err == nil || !strings.Contains(res.Error, "tran_doanh_thu_giam_tncn") {
+		t.Fatalf("missing cap: %v %+v", err, res)
+	}
+}
