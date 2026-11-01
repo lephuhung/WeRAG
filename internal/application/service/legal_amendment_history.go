@@ -208,8 +208,8 @@ func (h *legalHistory) forward(c legalHistoryChunk, a vietnamese_legal.AmendRef)
 		return nil
 	}
 	if a.Phrase {
-		// the answer repeats the replaced wording
-		if answerUsesPhrase(h.answer, a.From) {
+		// the answer repeats the replaced wording or the new one
+		if answerUsesChange(h.answer, a.From, a.To) {
 			h.addPhrase(legalHistoryDoc{Number: old}, c.Doc, a)
 		}
 		return nil
@@ -374,11 +374,20 @@ func (h *legalHistory) documentByNumber(number string) (legalHistoryDoc, bool) {
 // answerUsesPhrase reports whether the answer repeats phrase ("01 tỷ đồng"
 // also as "1 tỷ đồng"), ignoring case and spacing, not inside a longer word
 // or number (findPhrase).
+// A phrase too common to stand for one wording ("các", "và": realPhrase)
+// is never found.
 func answerUsesPhrase(answer, phrase string) bool {
-	if utf8.RuneCountInString(foldSpaces(phrase)) < 3 {
+	if !realPhrase(phrase) {
 		return false
 	}
 	return len(findPhrase(answer, phrase)) > 0 || len(findPhrase(answer, strings.TrimLeft(strings.TrimSpace(phrase), "0"))) > 0
+}
+
+// answerUsesChange reports whether the answer repeats either side of a
+// phrase change: the old words (it answered from the stored text) or the
+// new ones (it answered from the current wording, which the line explains).
+func answerUsesChange(answer, from, to string) bool {
+	return answerUsesPhrase(answer, from) || (to != "" && answerUsesPhrase(answer, to))
 }
 
 // foldSpaces lower-cases s and collapses its whitespace.
@@ -407,7 +416,7 @@ func (h *legalHistory) backwardPhrases(chunks []legalHistoryChunk) {
 		}
 		for _, ch := range changes {
 			at, known := phraseEffect(ch.Amender, h.now.Location())
-			if !known || at.After(h.now) || len(findPhrase(c.Content, ch.From)) == 0 || !answerUsesPhrase(h.answer, ch.From) {
+			if !known || at.After(h.now) || len(findPhrase(c.Content, ch.From)) == 0 || !answerUsesChange(h.answer, ch.From, ch.To) {
 				continue
 			}
 			h.addPhrase(c.Doc, ch.Amender, vietnamese_legal.AmendRef{

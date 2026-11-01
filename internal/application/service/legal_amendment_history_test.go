@@ -142,11 +142,21 @@ func TestAnswerUsesPhrase(t *testing.T) {
 		{"cấp huyện,", "cấp huyện,", true},
 		{"", "500 triệu đồng", false},
 		{"ab", "ab", false},
+		// a common word is not a phrase the answer "uses"
+		{"các hộ kinh doanh", "các", false},
+		{"hộ và cá nhân", "và", false},
 	}
 	for _, c := range cases {
 		if got := answerUsesPhrase(c.answer, c.phrase); got != c.want {
 			t.Errorf("answerUsesPhrase(%q, %q) = %v", c.answer, c.phrase, got)
 		}
+	}
+	// the new words count too: the answer read the current wording
+	if !answerUsesChange("ngưỡng 01 tỷ đồng", "500 triệu đồng", "01 tỷ đồng") {
+		t.Error("answer with the new wording")
+	}
+	if answerUsesChange("ngưỡng 2 tỷ đồng", "500 triệu đồng", "") {
+		t.Error("removal: only the old words")
 	}
 }
 
