@@ -283,11 +283,11 @@ func resolveByDates(docs []*types.LegalDocument, at time.Time) LegalNameMatch {
 	states := make([]string, len(docs))
 	for i, d := range docs {
 		switch {
-		case d.ExpiredOn != nil && !d.ExpiredOn.After(at):
+		case d.ExpiredOn != nil && !legalAfterDay(*d.ExpiredOn, at):
 			states[i] = LegalNameExpired
 		case d.IssuedOn == nil:
 			states[i] = LegalNameUndated
-		case d.EffectiveOn != nil && d.EffectiveOn.After(at):
+		case d.EffectiveOn != nil && legalAfterDay(*d.EffectiveOn, at):
 			states[i] = LegalNamePending
 		case !legalAfterDay(at, *d.IssuedOn):
 			// issued the same day as the citing document: which one it

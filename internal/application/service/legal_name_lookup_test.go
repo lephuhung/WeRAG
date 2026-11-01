@@ -156,6 +156,13 @@ func TestResolveLegalDocumentName(t *testing.T) {
 		At: time.Date(2025, 6, 1, 0, 0, 0, 0, time.FixedZone("ICT", 7*3600))})
 	require.NoError(t, err)
 	require.Equal(t, LegalNameAmbiguous, local.Resolution)
+	// Fable re-review 6: effective and expiry dates are read by day too —
+	// 22/2023 takes effect 01/01/2024, also for a local-midnight date
+	eff, err := ResolveLegalDocumentName(ctx, db, LegalNameQuery{Name: "Luật Đấu thầu",
+		At: time.Date(2024, 1, 1, 0, 0, 0, 0, time.FixedZone("ICT", 7*3600))})
+	require.NoError(t, err)
+	require.Equal(t, LegalNameUnique, eff.Resolution)
+	require.Equal(t, "22/2023/QH15", eff.Chosen.DocumentNumber)
 	for _, c := range cases {
 		m, err := ResolveLegalDocumentName(ctx, db, LegalNameQuery{Name: c.name, At: on(c.at)})
 		require.NoError(t, err)
