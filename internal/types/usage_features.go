@@ -129,6 +129,18 @@ type UsageTurnGrant struct {
 	// Session is where the session stands against the plan's per-session
 	// caps before this turn; nil when the plan sets none.
 	Session *UsageSessionStatus `json:"session,omitempty"`
+	// Release frees the question the usage check reserved for this turn
+	// under the plan's questions caps; nil when nothing was reserved. Call
+	// ReleaseReservation once the question is in the counters.
+	Release func() `json:"-"`
+}
+
+// ReleaseReservation releases the turn's reserved question. Nil-safe and
+// idempotent.
+func (g *UsageTurnGrant) ReleaseReservation() {
+	if g != nil && g.Release != nil {
+		g.Release()
+	}
 }
 
 // SessionCapMode says what reaching a per-session cap does to a turn.

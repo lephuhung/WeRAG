@@ -22,6 +22,9 @@ type usageGuard struct {
 	counters interfaces.UsageCounterRepository
 	settings interfaces.SystemSettingService
 	now      func() time.Time
+	// reservations hold the questions let through and not yet counted
+	// (reserveQuestion); nil skips them (unit-test guards).
+	reservations *questionReservations
 }
 
 // NewUsageGuard creates the guard.
@@ -30,7 +33,10 @@ func NewUsageGuard(
 	counters interfaces.UsageCounterRepository,
 	settings interfaces.SystemSettingService,
 ) interfaces.UsageGuard {
-	return &usageGuard{plans: plans, counters: counters, settings: settings, now: time.Now}
+	return &usageGuard{
+		plans: plans, counters: counters, settings: settings, now: time.Now,
+		reservations: sharedQuestionReservations,
+	}
 }
 
 // Enforced reports usage.enforce, ON unless a SuperAdmin saved false (the
@@ -61,7 +67,11 @@ func (g *usageGuard) CheckTurn(
 	if err := usageDenial(ent, userID); err != nil {
 		return nil, err
 	}
-	grant := &types.UsageTurnGrant{Features: ent.Features}
+	release, err := g.reserveQuestion(ctx, ent)
+	if err != nil {
+		return nil, err
+	}
+	grant := &types.UsageTurnGrant{Features: ent.Features, Release: release}
 	if sessionID == "" {
 		return grant, nil
 	}
@@ -74,6 +84,7 @@ func (g *usageGuard) CheckTurn(
 		if capMode == types.SessionCapSoft {
 			session.Soft = true
 		} else {
+			grant.ReleaseReservation()
 			metric, limit, used := session.ExhaustedMetric()
 			return nil, apperrors.NewTooManyRequestsError(
 				fmt.Sprintf("session limit reached: %d %s per session", limit, metric)).
@@ -431,6 +442,7 @@ func (g *usageGuard) fillLimitStatus(
 		return err
 	}
 	ent.Limits = statuses
+	ent.CounterScopeType, ent.CounterScopeID = scopeType, scopeID
 	return nil
 }
 

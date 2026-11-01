@@ -232,10 +232,14 @@ type UsageEntitlement struct {
 	// CountedScope is the scope whose counters the limits are checked
 	// against ("tenant" in pool mode, "user" in seat mode or for a
 	// personal subscription).
-	CountedScope string             `json:"counted_scope"`
-	EndsAt       *time.Time         `json:"ends_at,omitempty"`
-	Expired      bool               `json:"expired"`
-	Limits       []UsageLimitStatus `json:"limits"`
+	CountedScope string `json:"counted_scope"`
+	// CounterScopeType / CounterScopeID name the counter rows the limits
+	// were read from (the guest scope for a Guest's turns).
+	CounterScopeType string             `json:"-"`
+	CounterScopeID   string             `json:"-"`
+	EndsAt           *time.Time         `json:"ends_at,omitempty"`
+	Expired          bool               `json:"expired"`
+	Limits           []UsageLimitStatus `json:"limits"`
 	// Features are the plan's per-turn and per-session caps (zero =
 	// unlimited); see UsagePlanFeatures.
 	Features UsagePlanFeatures `json:"features"`

@@ -1356,7 +1356,12 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 
 	// Create user message. Include pre-uploaded document metadata so history
 	// reload shows the attachments even though their content is selected later.
-	if err := h.persistTurnMessages(ctx, reqCtx); err != nil {
+	persistErr := h.persistTurnMessages(ctx, reqCtx)
+	// A question saved above is in the counters (the meter released its
+	// reservation); a turn that reused its user message or failed to save
+	// it frees the place now rather than at the reservation's expiry.
+	types.UsageTurnGrantFromContext(ctx).ReleaseReservation()
+	if err := persistErr; err != nil {
 		if reqCtx.c != nil && !reqCtx.skipSSE {
 			_ = reqCtx.c.Error(errors.NewInternalServerError(err.Error()))
 		} else {
