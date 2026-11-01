@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -100,4 +102,44 @@ func TestBuildRows(t *testing.T) {
 	require.Equal(t, 1, st.bFrom["unresolved"])
 	require.Equal(t, 1, st.bFrom[types.LegalLinkFromProvisionTarget])
 	require.Len(t, st.unresolved, 1)
+}
+
+// Fable K6: -apply removes the editor rows of a re-read page that its
+// tags no longer hold, and leaves other pages' and other sources' rows.
+func TestUpsertRemovesStaleEditorRows(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&types.LegalProvisionLink{}))
+	link := func(doc, aProv, bProv, source string) types.LegalProvisionLink {
+		return types.LegalProvisionLink{TargetDocID: doc, TargetProvisionID: aProv, RelationCode: 10, Op: "sua_doi_bo_sung",
+			SourceProvisionID: bProv, Source: source}
+	}
+	first := []types.LegalProvisionLink{
+		link("100", "a1", "b-k1", types.LegalProvisionLinkSourceEditor),
+		link("100", "a2", "b-k2", types.LegalProvisionLinkSourceEditor),
+		link("300", "c1", "b-k3", types.LegalProvisionLinkSourceEditor),
+	}
+	removed, err := upsert(db, first, []string{"100", "300"})
+	require.NoError(t, err)
+	require.Zero(t, removed)
+	require.NoError(t, db.Create(&types.LegalProvisionLink{TargetDocID: "100", TargetProvisionID: "a9", RelationCode: 1, Op: "bai_bo",
+		SourceProvisionID: "x", Source: "other", UpdatedAt: time.Now().Add(-time.Hour)}).Error)
+	time.Sleep(2 * time.Millisecond)
+
+	// page 100 re-read: its editors dropped the a2 tag; page 300 not read
+	removed, err = upsert(db, []types.LegalProvisionLink{link("100", "a1", "b-k1", types.LegalProvisionLinkSourceEditor)}, []string{"100"})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, removed)
+	var left []types.LegalProvisionLink
+	require.NoError(t, db.Order("target_provision_id").Find(&left).Error)
+	var got []string
+	for _, l := range left {
+		got = append(got, l.TargetDocID+" "+l.TargetProvisionID)
+	}
+	require.Equal(t, []string{"100 a1", "100 a9", "300 c1"}, got)
+
+	// a page read with no tags left: all its editor rows go
+	removed, err = upsert(db, nil, []string{"100"})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, removed)
 }

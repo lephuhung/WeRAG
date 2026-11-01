@@ -13,7 +13,9 @@
 // catalogue effective_on.
 //
 // Dry run by default (counts only, nothing written); -out writes the rows
-// as JSON lines; -apply upserts them (the migration must be applied). The
+// as JSON lines; -apply upserts them and, in the same transaction, removes
+// the editor rows of every page read that its tags no longer hold (the
+// migration must be applied). The
 // catalogue is read from the database of the DB_* environment (as the
 // server); -no-db skips it (no catalogue dates or B checks).
 package main
@@ -93,10 +95,19 @@ func main() {
 		log.Printf("%d rows written to %s", len(rows), *out)
 	}
 	if *apply {
-		if err := upsert(db, rows); err != nil {
+		// every page read is the whole truth about its own tags: an edge
+		// its editors removed goes (a page that failed to parse keeps its)
+		var docs []string
+		for _, p := range pages {
+			if p.err == nil {
+				docs = append(docs, p.id)
+			}
+		}
+		removed, err := upsert(db, rows, docs)
+		if err != nil {
 			log.Fatalf("apply: %v", err)
 		}
-		log.Printf("%d rows upserted", len(rows))
+		log.Printf("%d rows upserted, %d stale editor rows removed", len(rows), removed)
 	} else {
 		log.Printf("dry run: nothing written to the database (-apply writes)")
 	}
@@ -587,17 +598,38 @@ func writeRows(path string, rows []types.LegalProvisionLink) error {
 	return f.Close()
 }
 
-// upsert writes the rows, keyed by (A provision, code, B provision).
-func upsert(db *gorm.DB, rows []types.LegalProvisionLink) error {
-	now := time.Now()
+// upsert writes the rows, keyed by (A provision, code, B provision), and,
+// in the same transaction, removes the editor rows of the documents docs
+// (A pages read in full) that the rows no longer hold. It returns how
+// many it removed.
+func upsert(db *gorm.DB, rows []types.LegalProvisionLink, docs []string) (int64, error) {
+	// the stamp every written row carries: older rows of docs are stale
+	// (microseconds, the database's precision, so the comparison is exact)
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	for i := range rows {
 		rows[i].CreatedAt, rows[i].UpdatedAt = now, now
 	}
-	return db.Transaction(func(tx *gorm.DB) error {
-		return tx.Clauses(clause.OnConflict{
-			Columns: []clause.Column{{Name: "target_provision_id"}, {Name: "relation_code"}, {Name: "source_provision_id"}},
-			DoUpdates: clause.AssignmentColumns([]string{"target_doc_id", "target_level", "target_path", "op", "tag_attr",
-				"source_doc_id", "source_doc_from", "source_path", "eff_from", "eff_to", "eff_from_source", "source", "updated_at"}),
-		}).CreateInBatches(rows, 500).Error
+	var removed int64
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if len(rows) > 0 {
+			if err := tx.Clauses(clause.OnConflict{
+				Columns: []clause.Column{{Name: "target_provision_id"}, {Name: "relation_code"}, {Name: "source_provision_id"}},
+				DoUpdates: clause.AssignmentColumns([]string{"target_doc_id", "target_level", "target_path", "op", "tag_attr",
+					"source_doc_id", "source_doc_from", "source_path", "eff_from", "eff_to", "eff_from_source", "source", "updated_at"}),
+			}).CreateInBatches(rows, 500).Error; err != nil {
+				return err
+			}
+		}
+		for start := 0; start < len(docs); start += 1000 {
+			batch := docs[start:min(len(docs), start+1000)]
+			res := tx.Where("target_doc_id IN ? AND source = ? AND updated_at < ?", batch, types.LegalProvisionLinkSourceEditor, now).
+				Delete(&types.LegalProvisionLink{})
+			if res.Error != nil {
+				return res.Error
+			}
+			removed += res.RowsAffected
+		}
+		return nil
 	})
+	return removed, err
 }
