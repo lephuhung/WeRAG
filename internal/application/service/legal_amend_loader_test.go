@@ -544,6 +544,11 @@ func TestLegalCitedArticlesOf(t *testing.T) {
 			`[]`, "14/2016/NĐ-CP", "", nil},
 		{"a bold plain-text Điều heading of B", "**Điều 2.** Bãi bỏ Nghị định số 14/2016/NĐ-CP",
 			`[]`, "14/2016/NĐ-CP", "", nil},
+		// Fable re-review 4: the rest of a heading line is read
+		{"an operation on the heading line", "Điều 2. Bãi bỏ Điều 5, Điều 6 Nghị định số 14/2016/NĐ-CP.",
+			`[]`, "14/2016/NĐ-CP", "", []string{"5", "6"}},
+		{"an operation on a bold heading line", "**Điều 2.** Bãi bỏ Điều 5 Nghị định số 14/2016/NĐ-CP.",
+			`[]`, "14/2016/NĐ-CP", "", []string{"5"}},
 		// Fable K4 side effect: a lower-case name ends the Điều's reach
 		{"a lower-case law before A", "Căn cứ Điều 9 Luật đầu tư; sửa Điều 7 Luật Đất đai", `[]`, "31/2024/QH15", "luật đất đai", []string{"7"}},
 		{"the same law in lower case", "Căn cứ Điều 9 Luật đất đai; sửa Điều 7 Luật Đất đai", `[]`, "31/2024/QH15", "luật đất đai", []string{"9", "7"}},
@@ -627,7 +632,7 @@ func TestAmendTargetUnknownDateAndSharedNumber(t *testing.T) {
 
 	t.Run("a shared số hiệu", func(t *testing.T) {
 		l := newLoader(row("a1", "10/2016/TT-BTNMT", "Thông tư", "Thông tư 10/2016/TT-BTNMT về đo đạc", "2016-05-01"),
-			row("a2", "10/2016/TT-BTNMT", "Thông tư", "Thông tư 10/2016/TT-BTNMT về khí tượng", "2016-05-01"),
+			row("a2", "10/2016/TT-BTNMT", "Thông tư", "Thông tư 10/2016/TT-BTNMT về khí tượng", "2016-05-24"),
 			row("b", "20/2020/TT-BTNMT", "Thông tư", "Thông tư 20/2020/TT-BTNMT", "2020-01-01"))
 		targets := map[string]LegalAmendDoc{"a1": l.catalogDoc(l.catalog["a1"]), "a2": l.catalogDoc(l.catalog["a2"])}
 		byNumber := legalTargetsByNumber(targets)
@@ -650,6 +655,41 @@ func TestAmendTargetUnknownDateAndSharedNumber(t *testing.T) {
 		// relations to both: still flagged
 		_, _, problem, _ = l.amendTarget(a, legal, nil, b, issued, targets, byNumber, map[string][]string{"a1": {"b"}, "a2": {"b"}})
 		require.NotEmpty(t, problem)
+	})
+
+	// Fable re-review 1: twin rows (same type and day, both ingested; 11
+	// keys on dev such as 70/2015/NĐ-CP) are one document: no problem,
+	// the one in force picked
+	t.Run("twin targets", func(t *testing.T) {
+		l := newLoader(row("t1", "70/2015/NĐ-CP", "Nghị định", "Nghị định 70/2015/NĐ-CP", "2015-09-01"),
+			row("t2", "70/2015/NĐ-CP", "Nghị định", "Nghị định 70/2015/NĐ-CP (bản khác)", "2015-09-01"))
+		l.catalog["t2"].Status = "Còn hiệu lực"
+		l.catalog["t1"].Status = "Không xác định"
+		targets := map[string]LegalAmendDoc{"t1": l.catalogDoc(l.catalog["t1"]), "t2": l.catalogDoc(l.catalog["t2"])}
+		for i := 0; i < 5; i++ {
+			k, _, problem, ok := l.amendTarget(vietnamese_legal.AmendRef{Document: "Nghị định số 70/2015/NĐ-CP", Article: "2"}, legal, nil,
+				LegalAmendDoc{CatalogID: "b"}, *day("2020-01-01"), targets, legalTargetsByNumber(targets), nil)
+			require.True(t, ok)
+			require.Equal(t, "t2", k)
+			require.Empty(t, problem)
+		}
+	})
+
+	// Fable re-review 3: a target whose type is unknown (an upload without
+	// doc_type) or spelled another way is not dropped for a typed row
+	t.Run("an untyped or differently spelled target", func(t *testing.T) {
+		l := newLoader(row("ttlt", "05/2016/TTLT-BTC-BTP", "Thông tư liên tịch", "Thông tư liên tịch 05/2016/TTLT-BTC-BTP", "2016-01-10"))
+		up := map[string]LegalAmendDoc{"k-upload": {KnowledgeID: "k-upload", Number: "05/2016/TTLT-BTC-BTP"}}
+		k, _, _, ok := l.amendTarget(vietnamese_legal.AmendRef{Document: "Thông tư liên tịch số 05/2016/TTLT-BTC-BTP", Article: "2"}, legal, nil,
+			LegalAmendDoc{}, *day("2020-01-01"), up, legalTargetsByNumber(up), nil)
+		require.True(t, ok, "an upload without doc_type stays a candidate")
+		require.Equal(t, "k-upload", k)
+		cat := map[string]LegalAmendDoc{"ttlt": l.catalogDoc(l.catalog["ttlt"])}
+		k, _, problem, ok := l.amendTarget(vietnamese_legal.AmendRef{Document: "Thông tư số 05/2016/TTLT-BTC-BTP", Article: "2"}, legal, nil,
+			LegalAmendDoc{}, *day("2020-01-01"), cat, legalTargetsByNumber(cat), nil)
+		require.True(t, ok, "Thông tư / Thông tư liên tịch are one class")
+		require.Equal(t, "ttlt", k)
+		require.Empty(t, problem)
 	})
 
 	// on dev: 100/2015/QH13 is Bộ luật Hình sự and a Nghị quyết (246

@@ -79,6 +79,7 @@ type legalCatalogRow struct {
 	IssuedOn       *time.Time
 	EffectiveOn    *time.Time
 	ExpiredOn      *time.Time
+	Status         string
 }
 
 // legalAmendIDSelect is legalAmendSelect reading ids (and KB) only.
@@ -591,7 +592,7 @@ var (
 	// legalArticleHeadingRe is a line shaped as an Điều heading ("Điều 1.
 	// Sửa đổi … Nghị định số …") in a copy without Markdown headings (PDF,
 	// OCR): B's own Điều, never A's.
-	legalArticleHeadingRe = regexp.MustCompile(`^(?:\*\*)?Điều\s+\d+[a-zđ]?\s*[.:]`)
+	legalArticleHeadingRe = regexp.MustCompile(`^(?:\*\*)?Điều\s+\d+[a-zđ]?\s*[.:](?:\*\*)?`)
 	// legalCiteResidueRe is what a bracket holding only a citation keeps
 	// besides it: the type words ("(Nghị định số 88/2025/NĐ-CP)").
 	legalCiteResidueRe = regexp.MustCompile(`(?i)^[\s,.:;]*(?:(?:bộ luật|luật|pháp lệnh|nghị định|nghị quyết|thông tư liên tịch|thông tư|quyết định|chỉ thị)\s*(?:số\s*:?)?\s*)?$`)
@@ -668,8 +669,13 @@ func legalCitedArticlesOf(content, heading, aKey, aBase string) map[string]bool 
 	out := map[string]bool{}
 	for _, line := range strings.Split(content, "\n") {
 		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, ">") || strings.HasPrefix(line, "#") || legalArticleHeadingRe.MatchString(line) {
+		if line == "" || strings.HasPrefix(line, ">") || strings.HasPrefix(line, "#") {
 			continue
+		}
+		// "Điều 2. Bãi bỏ Điều 5 …" in a plain-text copy: the heading's
+		// own Điều is B's; the rest of the line is read
+		if loc := legalArticleHeadingRe.FindStringIndex(line); loc != nil {
+			line = strings.TrimSpace(line[loc[1]:])
 		}
 		// a bracketed remark is history ("(đã được sửa đổi, bổ sung bởi
 		// khoản 7 Điều 1 Thông tư số 41/2021/TT-BGTVT)"), not an operation;
@@ -1029,7 +1035,7 @@ func (l *legalAmendLoader) loadCatalog(ids, keys []string) error {
 		}
 	}
 	var rows []legalCatalogRow
-	const sel = `SELECT id, document_number, number_key, doc_type, title, issued_on, effective_on, expired_on FROM legal_documents WHERE `
+	const sel = `SELECT id, document_number, number_key, doc_type, title, issued_on, effective_on, expired_on, status FROM legal_documents WHERE `
 	if len(needIDs) > 0 {
 		if err := l.db.Raw(sel+`id IN ?`, needIDs).Scan(&rows).Error; err != nil {
 			return fmt.Errorf("catalogue by id: %w", err)
@@ -1274,14 +1280,17 @@ func (l *legalAmendLoader) amendTarget(a vietnamese_legal.AmendRef, legal *vietn
 		// Nghị quyết): the type written with it narrows the targets and the
 		// catalogue rows first
 		if wt := legalWrittenType(name, c); wt != "" {
-			var typed []string
+			var typed, untyped []string
 			for _, hk := range held {
 				t := targets[hk].Type
 				if r := l.catalog[targets[hk].CatalogID]; r != nil && r.DocType != "" {
 					t = r.DocType
 				}
-				if legalTypeClass(t) == wt {
+				switch legalTypeClass(t) {
+				case wt:
 					typed = append(typed, hk)
+				case "":
+					untyped = append(untyped, hk) // no type known (an upload without doc_type): not ruled out
 				}
 			}
 			var typedRows []*legalCatalogRow
@@ -1296,6 +1305,8 @@ func (l *legalAmendLoader) amendTarget(a vietnamese_legal.AmendRef, legal *vietn
 				if len(typedRows) > 0 {
 					rows = typedRows
 				}
+			case len(untyped) > 0:
+				held = untyped
 			case len(typedRows) > 0:
 				return "", LegalAmendDoc{}, "", false // another document of that number
 			}
@@ -1310,10 +1321,16 @@ func (l *legalAmendLoader) amendTarget(a vietnamese_legal.AmendRef, legal *vietn
 					rec = append(rec, hk)
 				}
 			}
-			if len(rec) != 1 {
+			switch {
+			case len(rec) == 1:
+				k = rec[0]
+			case l.twinTargets(held, targets):
+				// copies of one document (same type and issue day, both
+				// ingested): one of them, the one in force first
+				k = l.preferredTwin(held, targets)
+			default:
 				return k, targets[k], "số hiệu " + c.Number + " ứng với nhiều văn bản", true
 			}
-			k = rec[0]
 		}
 		d := targets[k]
 		among := false
@@ -1422,17 +1439,54 @@ func legalWrittenType(text string, c vietnamese_legal.Citation) string {
 	return legalTypeClass(t)
 }
 
+// twinTargets reports whether the targets keys are catalogue twins: rows
+// of one type class issued the same day.
+func (l *legalAmendLoader) twinTargets(keys []string, targets map[string]LegalAmendDoc) bool {
+	var first *legalCatalogRow
+	for _, k := range keys {
+		r := l.catalog[targets[k].CatalogID]
+		if r == nil {
+			return false
+		}
+		if first == nil {
+			first = r
+			continue
+		}
+		if legalTypeClass(r.DocType) != legalTypeClass(first.DocType) || !legalSameDay(r.IssuedOn, first.IssuedOn) {
+			return false
+		}
+	}
+	return first != nil
+}
+
+// preferredTwin picks one of twin targets (keys sorted): the first whose
+// catalogue status says in force, else the first.
+func (l *legalAmendLoader) preferredTwin(keys []string, targets map[string]LegalAmendDoc) string {
+	for _, k := range keys {
+		if r := l.catalog[targets[k].CatalogID]; r != nil && strings.HasPrefix(strings.ToLower(strings.TrimSpace(r.Status)), "còn hiệu lực") {
+			return k
+		}
+	}
+	return keys[0]
+}
+
 // legalSameDay reports whether two dates are the same, known day.
 func legalSameDay(a, b *time.Time) bool {
 	return a != nil && b != nil && a.Format("2006-01-02") == b.Format("2006-01-02")
 }
 
-// legalTypeClass folds a document type for comparison; a code (bộ luật)
-// is a law.
+// legalTypeClass folds a document type for comparison: a code (bộ luật)
+// is a law, a joint circular / resolution (liên tịch) a circular /
+// resolution, as catalogues and uploads spell them either way.
 func legalTypeClass(t string) string {
 	t = strings.ToLower(strings.Join(strings.Fields(t), " "))
-	if t == "bộ luật" {
+	switch t {
+	case "bộ luật":
 		return "luật"
+	case "thông tư liên tịch":
+		return "thông tư"
+	case "nghị quyết liên tịch":
+		return "nghị quyết"
 	}
 	return t
 }
