@@ -63,6 +63,17 @@ func TestFindCitations(t *testing.T) {
 		{"Bộ luật Tố tụng hình sự quy định", []string{"name Bộ luật Tố tụng hình sự"}},
 		{"sửa đổi Luật Khám bệnh, chữa bệnh; bổ sung", []string{"name Luật Khám bệnh, chữa bệnh"}},
 		{"Luật Đầu tư công, Luật Đấu thầu và Luật Nhà ở", []string{"name Luật Đầu tư công", "name Luật Đấu thầu", "name Luật Nhà ở"}},
+		// Fable K4: a title written in lower case
+		{"Luật đất đai 2013", []string{"name Luật đất đai"}},
+		{"theo Luật đất đai năm 2024 thì", []string{"name Luật đất đai"}},
+		{"Bộ luật dân sự quy định", []string{"name Bộ luật dân sự"}},
+		{"Luật khám bệnh, chữa bệnh và Luật Dược", []string{"name Luật khám bệnh, chữa bệnh", "name Luật Dược"}},
+		{"Luật hôn nhân và gia đình số 52/2014/QH13", []string{"full 52/2014/QH13 52/2014/QH13 Luật | Luật hôn nhân và gia đình"}},
+		{"Luật quy chế thử nghiệm 2019", []string{"name Luật quy chế thử nghiệm"}}, // unlisted, with a year
+		{"Luật sư Nguyễn Văn A", nil},
+		{"Luật sư năm 2020", nil},
+		{"Luật lệ giao thông", nil},
+		{"Luật quy chế thử nghiệm", nil}, // unlisted, no year
 		{"Luật Bình đẳng giới số 73/2006/QH11", []string{"full 73/2006/QH11 73/2006/QH11 Luật | Luật Bình đẳng giới"}},
 		{"Luật Bảo vệ sức khỏe nhân dân số 21-LCT/HĐNN8", []string{"party 21-LCT/HĐNN8 21-LCT/HDNN8 Luật | Luật Bảo vệ sức khỏe nhân dân"}},
 		{"Nghị định 53/2022/NĐ-CP và 1153/2022/NĐ-CP", []string{"full 53/2022/NĐ-CP 53/2022/ND-CP Nghị định", "full 1153/2022/NĐ-CP 1153/2022/ND-CP Nghị định"}},
@@ -266,6 +277,15 @@ func TestFindCitationsGold(t *testing.T) {
 	if p := os.Getenv("GOLD_FILES"); p != "" {
 		pattern = p // e.g. a held-out set kept outside the repo
 	}
+	// Fable K4: name-only labels written as editors and OCR write them,
+	// checked whether or not the gold files are there
+	for _, doc := range []string{"Luật đất đai 2013", "Luật Đất đai năm 2024", "Luật đầu tư", "Bộ luật lao động",
+		"Luật xử lý vi phạm hành chính", "Luật phòng, chống tham nhũng", "Luật thuế thu nhập cá nhân năm 2007"} {
+		cits := FindCitations(doc)
+		if len(cits) != 1 || cits[0].Kind != CitationName || cits[0].Start != 0 {
+			t.Errorf("name label %q: got %+v", doc, cits)
+		}
+	}
 	files, _ := filepath.Glob(pattern)
 	if len(files) == 0 {
 		t.Skip("no gold files")
@@ -333,5 +353,28 @@ func TestFindCitationsGold(t *testing.T) {
 	t.Logf("gold: %d/%d numbered labels recognised with their key; %d/%d name-only labels read as a name", hit, numbered, nameHit, names)
 	if out := os.Getenv("GOLD_KEYS_OUT"); out != "" {
 		_ = os.WriteFile(out, []byte(strings.Join(dump, "\n")+"\n"), 0o644)
+	}
+}
+
+// Fable K4: a lower-case name ends the reach of the Điều before it — in
+// "Căn cứ Điều 9 Luật đất đai; sửa Điều 7 Luật Đất đai" the first
+// citation after Điều 9 is the lower-case one, not the later one.
+func TestFindCitationsLowerCaseNameOrder(t *testing.T) {
+	text := "Căn cứ Điều 9 Luật đất đai; sửa Điều 7 Luật Đất đai"
+	cits := FindCitations(text)
+	if len(cits) != 2 {
+		t.Fatalf("want 2 citations, got %+v", cits)
+	}
+	semi := len([]rune(text[:strings.Index(text, ";")]))
+	if cits[0].Kind != CitationName || cits[0].End > semi || cits[0].Name != "Luật đất đai" {
+		t.Fatalf("first citation should be the lower-case name before ';': %+v", cits[0])
+	}
+	// an unlisted title is read when the caller knows it
+	if got := FindCitations("Bãi bỏ Điều 3 Luật quy chế thử nghiệm."); len(got) != 0 {
+		t.Fatalf("unlisted lower-case title read without a hint: %+v", got)
+	}
+	got := FindCitationsKnowing("Bãi bỏ Điều 3 Luật quy chế thử nghiệm.", "luật quy chế thử nghiệm")
+	if len(got) != 1 || got[0].Name != "Luật quy chế thử nghiệm" {
+		t.Fatalf("known title: %+v", got)
 	}
 }
