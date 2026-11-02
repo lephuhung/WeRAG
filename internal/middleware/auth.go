@@ -455,8 +455,9 @@ func Auth(
 
 		// Không kênh nào xác thực thành công
 		if bearerUserDisabled {
-			// Same wording as the login answer so clients can tell a locked
-			// account from an expired session.
+			// Reached only when no X-API-Key rescued the request. The message
+			// matches the login form's text; the frontend still treats any 401
+			// as "refresh, then sign in again" and does not read this field.
 			c.JSON(http.StatusUnauthorized, gin.H{"error": service.ErrUserDisabled.Error(), "code": "ACCOUNT_DISABLED"})
 		} else if bearerPresented {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: invalid or expired token"})

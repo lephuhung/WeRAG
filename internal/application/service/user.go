@@ -39,7 +39,9 @@ var (
 	ErrUserEmailExists = errors.New("user with this email already exists")
 	// ErrUserDisabled rejects a deactivated account. The text is the same
 	// message Login and the OIDC callback answer with, so every sign-in
-	// path reports a locked account the same way.
+	// path reports a locked account the same way. It is capitalised (against
+	// the Go error-string convention) on purpose: clients match this exact
+	// string, including the frontend-next login page.
 	ErrUserDisabled = errors.New("Account is disabled")
 
 	// ErrUserUsernameExists is returned by Register when the target entity's
@@ -1417,10 +1419,11 @@ func tenantIDFromClaims(claims jwt.MapClaims, fallback uint64) uint64 {
 	return fallback
 }
 
-// rejectInactiveUser returns ErrUserDisabled for a missing or deactivated
-// user and revokes every token the account still holds, so the next request
-// fails on the revocation check without loading the user again. Revocation
-// is best effort: the account stays rejected either way.
+// rejectInactiveUser returns ErrUserDisabled for a deactivated user and
+// revokes every token the account still holds, so the next request fails on
+// the revocation check without loading the user again. Revocation is best
+// effort: the account stays rejected either way. An unknown user never gets
+// here (GetUserByID returns an error); the nil check is only defensive.
 func (s *userService) rejectInactiveUser(ctx context.Context, user *types.User, userID string) error {
 	if user != nil && user.IsActive {
 		return nil
