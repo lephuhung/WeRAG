@@ -42,6 +42,7 @@ func TestCleanVBPLNumber(t *testing.T) {
 		" Không số ":             "Không số",
 		"66.12/2026/NQ-CP":       "66.12/2026/NQ-CP",
 		"02/2000/QÐ-BTC":         "02/2000/QĐ-BTC",
+		"51/2025/TT-BTС":         "51/2025/TT-BTC",
 		"66.24":                  "66.24",
 	} {
 		if got := CleanVBPLNumber(in); got != want {

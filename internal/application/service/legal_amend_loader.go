@@ -1475,21 +1475,9 @@ func legalSameDay(a, b *time.Time) bool {
 	return a != nil && b != nil && a.Format("2006-01-02") == b.Format("2006-01-02")
 }
 
-// legalTypeClass folds a document type for comparison: a code (bộ luật)
-// is a law, a joint circular / resolution (liên tịch) a circular /
-// resolution, as catalogues and uploads spell them either way.
-func legalTypeClass(t string) string {
-	t = strings.ToLower(strings.Join(strings.Fields(t), " "))
-	switch t {
-	case "bộ luật":
-		return "luật"
-	case "thông tư liên tịch":
-		return "thông tư"
-	case "nghị quyết liên tịch":
-		return "nghị quyết"
-	}
-	return t
-}
+// legalTypeClass folds a document type for comparison
+// (vietnamese_legal.DocTypeClass: bộ luật = luật, liên tịch = its type).
+func legalTypeClass(t string) string { return vietnamese_legal.DocTypeClass(t) }
 
 // amendName is the document an amends entry names: as written, else the
 // one document its lead-in or a heading cites.

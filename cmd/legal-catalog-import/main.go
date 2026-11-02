@@ -4,8 +4,10 @@
 //
 // Input is the JSONL pair written by scripts/legal_catalog/prepare_vbpl.py:
 // one document per line (vbpl metadata field names) and one raw portal
-// relation per line. Documents are upserted by vbpl id; the relation table
-// is replaced as a whole with the edges whose both ends were imported.
+// relation per line. Documents are upserted by vbpl id, except a second
+// copy of a catalogued document (legalcatalog.ResolveTwins), whose edges
+// go to the catalogued row; the relation table is replaced as a whole
+// with the edges whose both ends were imported.
 // With -merge (a partial import, e.g. the local documents of a few
 // provinces) only the edges touching the imported documents are replaced,
 // and an edge may end at any document already in the catalogue.
@@ -139,10 +141,33 @@ func main() {
 		docs = kept
 	}
 
+	// One document under two vbpl ids (an Eth "Ð" copy of a "Đ" row) stays
+	// one row: a new twin is not imported, a catalogued Ð twin keeps its
+	// key, and their edges move to the surviving row.
+	var catalogued []*types.LegalDocument
+	if err := db.WithContext(ctx).Model(&types.LegalDocument{}).
+		Select("id", "number_key", "doc_type", "title", "issued_on").Order("id").
+		Find(&catalogued).Error; err != nil {
+		log.Fatalf("load catalogue keys: %v", err)
+	}
+	docs, alias := legalcatalog.ResolveTwins(catalogued, docs)
+	log.Printf("%d twin documents attached to their catalogue row", len(alias))
+	survivor := func(id string) string {
+		if s, ok := alias[id]; ok {
+			return s
+		}
+		return id
+	}
+
 	// A merge may link the imported documents to any catalogued one.
 	known := ids
 	if *merge {
 		others := map[string]bool{}
+		for _, s := range alias {
+			if !ids[s] {
+				others[s] = true
+			}
+		}
 		if err := readJSONL(*relsPath, func(raw []byte) error {
 			var r vbplRelation
 			if err := json.Unmarshal(raw, &r); err != nil {
@@ -181,7 +206,12 @@ func main() {
 			skipped["label:"+r.Relationship]++
 			return nil
 		}
-		if !known[from] || !known[to] || from == to || !ids[from] && !ids[to] {
+		if !ids[from] && !ids[to] {
+			skipped["outside catalogue"]++
+			return nil
+		}
+		from, to = survivor(from), survivor(to)
+		if !known[from] || !known[to] || from == to {
 			skipped["outside catalogue"]++
 			return nil
 		}
