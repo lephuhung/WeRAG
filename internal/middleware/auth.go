@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -425,6 +426,7 @@ func Auth(
 
 		// Thử xác thực bằng JWT Token
 		bearerPresented := false
+		bearerUserDisabled := false
 		if token, ok := bearerToken(c); ok {
 			bearerPresented = true
 			user, jwtTenantID, err := userService.ValidateToken(c.Request.Context(), token)
@@ -434,6 +436,7 @@ func Auth(
 				}
 				return
 			}
+			bearerUserDisabled = errors.Is(err, service.ErrUserDisabled)
 			logger.Warnf(c.Request.Context(), "[auth] bearer token rejected: %v", err)
 		}
 
@@ -451,7 +454,11 @@ func Auth(
 		}
 
 		// Không kênh nào xác thực thành công
-		if bearerPresented {
+		if bearerUserDisabled {
+			// Same wording as the login answer so clients can tell a locked
+			// account from an expired session.
+			c.JSON(http.StatusUnauthorized, gin.H{"error": service.ErrUserDisabled.Error(), "code": "ACCOUNT_DISABLED"})
+		} else if bearerPresented {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: invalid or expired token"})
 		} else {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized: missing authentication"})

@@ -381,3 +381,64 @@ func TestGetAccessTokenLookupsRedactJWT(t *testing.T) {
 		t.Fatalf("GetAccessTokenByID = %+v, want id tok-1 with redacted token", byID)
 	}
 }
+
+func newDisabledUserService(tokenRepo *stubAuthTokenRepo) *userService {
+	return &userService{
+		userRepo: &stubUserRepoForAuth{
+			users: map[string]*types.User{
+				"user-1": {ID: "user-1", TenantID: 1, IsActive: false},
+				"user-2": {ID: "user-2", TenantID: 1, IsActive: true},
+			},
+		},
+		tokenRepo: tokenRepo,
+	}
+}
+
+func TestValidateTokenRejectsDisabledUser(t *testing.T) {
+	ctx := context.Background()
+	tokenRepo := &stubAuthTokenRepo{tokens: map[string]*types.AuthToken{}}
+	svc := newDisabledUserService(tokenRepo)
+
+	for _, id := range []string{"user-1", "user-2"} {
+		access := signTestJWT(jwt.MapClaims{
+			"user_id": id,
+			"exp":     time.Now().Add(time.Hour).Unix(),
+		})
+		tokenRepo.tokens[access] = &types.AuthToken{UserID: id, Token: access, TokenType: "access_token"}
+
+		user, _, err := svc.ValidateToken(ctx, access)
+		if id == "user-2" {
+			if err != nil || user == nil || user.ID != id {
+				t.Fatalf("ValidateToken(active user) = %v, %v; want the user", user, err)
+			}
+			continue
+		}
+		if !errors.Is(err, ErrUserDisabled) || user != nil {
+			t.Fatalf("ValidateToken(disabled user) = %v, %v; want ErrUserDisabled", user, err)
+		}
+	}
+	if len(tokenRepo.revokedUserIDs) != 1 || tokenRepo.revokedUserIDs[0] != "user-1" {
+		t.Fatalf("revoked users = %v, want only the disabled user", tokenRepo.revokedUserIDs)
+	}
+}
+
+func TestRefreshTokenRejectsDisabledUser(t *testing.T) {
+	ctx := context.Background()
+	tokenRepo := &stubAuthTokenRepo{tokens: map[string]*types.AuthToken{}}
+	svc := newDisabledUserService(tokenRepo)
+
+	refreshJWT := signTestJWT(jwt.MapClaims{
+		"user_id": "user-1",
+		"type":    "refresh",
+		"exp":     time.Now().Add(time.Hour).Unix(),
+	})
+	tokenRepo.tokens[refreshJWT] = &types.AuthToken{UserID: "user-1", Token: refreshJWT, TokenType: "refresh_token"}
+
+	access, refresh, err := svc.RefreshToken(ctx, refreshJWT)
+	if !errors.Is(err, ErrUserDisabled) || access != "" || refresh != "" {
+		t.Fatalf("RefreshToken(disabled user) = %q, %q, %v; want ErrUserDisabled and no tokens", access, refresh, err)
+	}
+	if len(tokenRepo.revokedUserIDs) != 1 || tokenRepo.revokedUserIDs[0] != "user-1" {
+		t.Fatalf("revoked users = %v, want the disabled user's tokens revoked", tokenRepo.revokedUserIDs)
+	}
+}

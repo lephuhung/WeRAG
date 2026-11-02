@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/gin-gonic/gin"
@@ -15,7 +16,8 @@ import (
 
 type deviceTestUsers struct {
 	interfaces.UserService
-	minted int
+	minted   int
+	disabled bool // the approver's account is locked by the time the add-in polls
 }
 
 func (s *deviceTestUsers) GetCurrentUser(ctx context.Context) (*types.User, error) {
@@ -23,7 +25,7 @@ func (s *deviceTestUsers) GetCurrentUser(ctx context.Context) (*types.User, erro
 }
 
 func (s *deviceTestUsers) GetUserByID(_ context.Context, id string) (*types.User, error) {
-	return &types.User{ID: id, IsActive: true}, nil
+	return &types.User{ID: id, IsActive: !s.disabled}, nil
 }
 
 func (s *deviceTestUsers) GenerateTokens(context.Context, *types.User) (string, string, error) {
@@ -112,4 +114,23 @@ func TestNormalizeUserCode(t *testing.T) {
 	require.Equal(t, "BCDFGHJK", normalizeUserCode(" bcdf-ghjk "))
 	require.Equal(t, "", normalizeUserCode("BCDF-GHJ"))
 	require.Equal(t, "", normalizeUserCode("BCDF-GHJA"))
+}
+
+// An approval for an account locked before the add-in polls must not mint
+// tokens, and the add-in gets the same answer as the login form.
+func TestDeviceLoginPollRejectsDisabledAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	users := &deviceTestUsers{}
+	h := &AuthHandler{userService: users}
+
+	start := callDevice(t, h.DeviceLoginStart, "POST", "/", nil)
+	device := start["device_code"].(string)
+	ok := callDevice(t, h.DeviceLoginApprove, "POST", "/", map[string]any{"user_code": start["user_code"], "approve": true})
+	require.Equal(t, "approved", ok["status"])
+
+	users.disabled = true
+	poll := callDevice(t, h.DeviceLoginPoll, "POST", "/", map[string]string{"device_code": device})
+	require.Contains(t, poll["error"], service.ErrUserDisabled.Error())
+	require.Nil(t, poll["token"])
+	require.Zero(t, users.minted)
 }

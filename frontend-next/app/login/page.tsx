@@ -88,7 +88,9 @@ function LoginForm() {
       setError(
         result.error === "Invalid email or password"
           ? t("auth.loginInvalid")
-          : result.error,
+          : result.error === "Account is disabled"
+            ? t("auth.accountDisabled")
+            : result.error,
       );
     } catch {
       setError(t("auth.loginNetwork"));

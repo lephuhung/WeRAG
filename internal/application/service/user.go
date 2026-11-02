@@ -37,6 +37,10 @@ var (
 	// ErrUserEmailExists is returned by Register when the target entity's
 	// email already exists.
 	ErrUserEmailExists = errors.New("user with this email already exists")
+	// ErrUserDisabled rejects a deactivated account. The text is the same
+	// message Login and the OIDC callback answer with, so every sign-in
+	// path reports a locked account the same way.
+	ErrUserDisabled = errors.New("Account is disabled")
 
 	// ErrUserUsernameExists is returned by Register when the target entity's
 	// username already exists.
@@ -221,7 +225,7 @@ func (s *userService) Login(ctx context.Context, req *types.LoginRequest) (*type
 		logger.Warn(ctx, "User account is disabled")
 		return &types.LoginResponse{
 			Success: false,
-			Message: "Account is disabled",
+			Message: ErrUserDisabled.Error(),
 		}, nil
 	}
 
@@ -510,7 +514,7 @@ func (s *userService) LoginWithOIDC(
 	}
 
 	if !user.IsActive {
-		return &types.OIDCCallbackResponse{Success: false, Message: "Account is disabled"}, nil
+		return &types.OIDCCallbackResponse{Success: false, Message: ErrUserDisabled.Error()}, nil
 	}
 
 	// Resolve target tenant once so the JWT claim and the tenant we
@@ -1296,8 +1300,13 @@ func (s *userService) ValidateToken(ctx context.Context, tokenString string) (*t
 		return nil, 0, errors.New("refresh token cannot be used as access token")
 	}
 
+	// The user row is loaded on every request anyway, so the active check
+	// costs nothing extra.
 	user, err := s.userRepo.GetUserByID(ctx, userID)
 	if err != nil {
+		return nil, 0, err
+	}
+	if err := s.rejectInactiveUser(ctx, user, userID); err != nil {
 		return nil, 0, err
 	}
 
@@ -1408,6 +1417,22 @@ func tenantIDFromClaims(claims jwt.MapClaims, fallback uint64) uint64 {
 	return fallback
 }
 
+// rejectInactiveUser returns ErrUserDisabled for a missing or deactivated
+// user and revokes every token the account still holds, so the next request
+// fails on the revocation check without loading the user again. Revocation
+// is best effort: the account stays rejected either way.
+func (s *userService) rejectInactiveUser(ctx context.Context, user *types.User, userID string) error {
+	if user != nil && user.IsActive {
+		return nil
+	}
+	if s.tokenRepo != nil && userID != "" {
+		if err := s.tokenRepo.RevokeTokensByUserID(ctx, userID); err != nil {
+			logger.Warnf(ctx, "[auth] revoke tokens of disabled user %s: %v", userID, err)
+		}
+	}
+	return ErrUserDisabled
+}
+
 // RefreshToken refreshes access token using refresh token
 func (s *userService) RefreshToken(
 	ctx context.Context,
@@ -1451,6 +1476,9 @@ func (s *userService) RefreshToken(
 	// Get user
 	user, err := s.userRepo.GetUserByID(ctx, userID)
 	if err != nil {
+		return "", "", err
+	}
+	if err := s.rejectInactiveUser(ctx, user, userID); err != nil {
 		return "", "", err
 	}
 

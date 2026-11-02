@@ -38,7 +38,7 @@ Một số endpoint cũ trả `{"success":false,"message":"…"}` không có `er
 | Code | HTTP | Hàm tạo (Go) | Thông báo mặc định | Khi nào |
 |---|---|---|---|---|
 | 1000 | 400 | `NewBadRequestError(msg)` | theo ngữ cảnh | Tham số sai, body không hợp lệ, trạng thái không cho phép thao tác |
-| 1001 | 401 | `NewUnauthorizedError(msg)` | theo ngữ cảnh | Chưa đăng nhập, token hết hạn hoặc bị thu hồi |
+| 1001 | 401 | `NewUnauthorizedError(msg)` | theo ngữ cảnh | Chưa đăng nhập, token hết hạn hoặc bị thu hồi. Tài khoản bị khóa (`is_active=false`): message `Account is disabled` (`service.ErrUserDisabled`) ở đăng nhập, `/auth/refresh`, `/auth/validate`, `/auth/device/poll`; middleware trả `{"error":"Account is disabled","code":"ACCOUNT_DISABLED"}` và thu hồi mọi token của tài khoản |
 | 1002 | 403 | `NewForbiddenError(msg)` | theo ngữ cảnh | Đã đăng nhập nhưng không có quyền (RBAC, khác tổ chức, không phải chủ sở hữu) |
 | 1003 | 404 | `NewNotFoundError(msg)` | theo ngữ cảnh | Tài nguyên không tồn tại hoặc không thuộc phạm vi người gọi |
 | 1004 | 405 | — | | Dự phòng |
