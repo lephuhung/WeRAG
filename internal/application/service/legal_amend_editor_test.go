@@ -398,3 +398,67 @@ func TestLegalEditorExactAgreement(t *testing.T) {
 		require.Equal(t, c.exact, legalEditorExact(c.code, c.op), "%d %s", c.code, c.op)
 	}
 }
+
+// A's page numbers a Quy chế on its own: a chunk that cannot show which
+// "Điều 4" it holds is not matched by number.
+func TestLegalEditorScopeRepeatedDieu(t *testing.T) {
+	rep := legalRepeatedArticles([]*vietnamese_legal.LegalMetadata{
+		{ArticleNos: []string{"4"}, ProvisionIDs: map[string]string{"dieu": "d4", "khoan:1": "d4k1"}},
+		{ArticleNos: []string{"4"}, ProvisionIDs: map[string]string{"dieu": "d4", "khoan:2": "d4k2"}}, // the same Điều, next chunk
+		{ArticleNos: []string{"4"}, ProvisionIDs: map[string]string{"dieu": "qc4", "khoan:2": "qc4k2"}},
+		{ArticleNos: []string{"5"}, ProvisionIDs: map[string]string{"dieu": "d5", "khoan:1": "d5k1"}},
+		{ArticleNos: []string{"5"}},
+		{ArticleNos: []string{"6", "7"}, ProvisionIDs: map[string]string{"dieu": "x"}},
+	})
+	require.Equal(t, map[string]bool{"4": true}, rep.articles)
+	require.Equal(t, map[string]string{"d4k1": "d4", "d4k2": "d4", "qc4k2": "qc4"}, rep.dieuOf, "only repeated numbers")
+	target := legalEditorTarget{repeated: rep}
+	k2 := target.editorTarget(types.LegalProvisionLink{TargetProvisionID: "d4k2"}, LegalProvisionRef{Article: "4", Khoan: "2"})
+	require.Equal(t, LegalEditorTargetRef{ID: "d4k2", Key: "khoan:2", Article: "4", Repeated: true, DieuID: "d4"}, k2)
+	// a chunk of the decree's Điều 4 holding khoản 1 only: its Điều id decides
+	tagged := LegalAmendEdge{Tier: LegalTierUnverified, EditorTargets: []LegalEditorTargetRef{k2}}
+	holds, ambiguous := tagged.editorHolds(LegalProvisionChunk{Legal: &vietnamese_legal.LegalMetadata{ArticleNos: []string{"4"}, ProvisionIDs: map[string]string{"dieu": "d4", "khoan:1": "d4k1"}}})
+	require.True(t, holds)
+	require.False(t, ambiguous)
+	holds, ambiguous = tagged.editorHolds(LegalProvisionChunk{Legal: &vietnamese_legal.LegalMetadata{ArticleNos: []string{"4"}, ProvisionIDs: map[string]string{"dieu": "qc4"}}})
+	require.False(t, holds)
+	require.False(t, ambiguous, "the Quy chế's Điều 4: not the tagged one")
+
+	chunk := func(ids map[string]string) LegalProvisionChunk {
+		return LegalProvisionChunk{Legal: &vietnamese_legal.LegalMetadata{ArticleNos: []string{"4"}, ProvisionIDs: ids}}
+	}
+	edge := func(pre LegalAmendTier, repeated bool, ids ...string) LegalAmendEdge {
+		e := LegalAmendEdge{Tier: LegalTierVerified, preEditorTier: pre}
+		if pre == "" {
+			e.Tier = LegalTierUnverified
+		}
+		for _, id := range ids {
+			e.EditorTargets = append(e.EditorTargets, LegalEditorTargetRef{ID: id, Key: "dieu", Article: "4", Repeated: repeated})
+		}
+		return e
+	}
+	for _, tc := range []struct {
+		name       string
+		e          LegalAmendEdge
+		c          LegalProvisionChunk
+		keep       bool
+		tier       LegalAmendTier
+		unresolved bool
+	}{
+		{"the tagged id", edge("", true, "d4"), chunk(map[string]string{"dieu": "d4"}), true, LegalTierUnverified, false},
+		{"another id: editor-only edge dropped", edge("", false, "d4"), chunk(map[string]string{"dieu": "qc4"}), false, "", false},
+		{"another id: agreed edge back to the parser tier", edge(LegalTierUnverified, false, "d4"), chunk(map[string]string{"dieu": "qc4"}), true, LegalTierUnverified, false},
+		{"either of two tagged ids", edge(LegalTierUnverified, false, "d4", "qc4"), chunk(map[string]string{"dieu": "qc4"}), true, LegalTierVerified, false},
+		{"no ids, number unique: held", edge("", false, "d4"), chunk(nil), true, LegalTierUnverified, false},
+		{"no ids, number repeated: unresolved", edge("", true, "d4"), chunk(nil), true, LegalTierUnverified, true},
+		{"no ids, number repeated, agreed: parser tier", edge(LegalTierUnverified, true, "d4"), chunk(nil), true, LegalTierUnverified, false},
+		{"no tags", LegalAmendEdge{Tier: LegalTierUnverified}, chunk(map[string]string{"dieu": "qc4"}), true, LegalTierUnverified, false},
+	} {
+		e := tc.e
+		require.Equal(t, tc.keep, e.editorScope(tc.c), tc.name)
+		if tc.keep {
+			require.Equal(t, tc.tier, e.Tier, tc.name)
+			require.Equal(t, tc.unresolved, e.Unresolved == legalWrongDieu, tc.name)
+		}
+	}
+}
