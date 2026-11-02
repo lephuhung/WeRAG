@@ -149,6 +149,12 @@ func (s *Service) reviewStore(
 		return result
 	}
 
+	items, result.Regated = s.regateStored(ctx, scope, items)
+	if result.Regated > 0 {
+		logger.Infof(ctx, "memory: archived %d memories the write gate now rejects for %s", result.Regated, scope.SubjectID)
+		s.rebuildBlock(ctx, scope)
+	}
+
 	result.Reviewed = len(items)
 	result.Demoted = s.demoteStaleTasks(ctx, scope, items)
 	if force || len(items) >= consolidateMinItems {
@@ -221,6 +227,58 @@ func (s *Service) demoteStaleTasks(
 		demoted++
 	}
 	return demoted
+}
+
+// regateStored runs the current write gate over memories distilled earlier.
+//
+// The gate only guards new writes. Rows stored before a rule existed — a
+// one-off command saved as a task, a colleague's words saved as the user's
+// fact — would otherwise stay live and keep being recalled. Each distilled
+// item points at the user message it came from, so the same check can be
+// applied to it after the fact. Only distilled items are checked: something
+// the user asked to keep, or wrote in the manager, is theirs to remove.
+// Returns the items still live and how many were archived.
+func (s *Service) regateStored(
+	ctx context.Context, scope interfaces.MemoryScope, items []*types.MemoryItem,
+) ([]*types.MemoryItem, int) {
+	if s.messageRepo == nil {
+		return items, 0
+	}
+	kept := items[:0:0]
+	archived := 0
+	for _, item := range items {
+		if item == nil || item.Origin != types.MemoryOriginExtracted || item.Kind == types.MemoryKindInterest ||
+			item.SourceSessionID == "" || item.SourceMessageID == "" {
+			kept = append(kept, item)
+			continue
+		}
+		message, err := s.messageRepo.GetMessage(ctx, item.SourceSessionID, item.SourceMessageID)
+		if err != nil || message == nil || message.Role != "user" {
+			kept = append(kept, item)
+			continue
+		}
+		decision := extractionDecision{Kind: item.Kind, Content: item.Content, ExpiresAt: ""}
+		if item.ExpiresAt != nil {
+			decision.ExpiresAt = item.ExpiresAt.Format("2006-01-02")
+		}
+		gated, verdict := gateDecision(decision, message.Content)
+		// A row the gate would now store as current work with a week's life
+		// (a question saved as a fact, a task with no end) is held to that
+		// week, counted from when it was written.
+		overdue := item.ExpiresAt == nil && strings.EqualFold(gated.Kind, types.MemoryKindTask) &&
+			time.Since(item.ValidFrom) > gateTaskTTL
+		if !verdict.dropped() && !overdue {
+			kept = append(kept, item)
+			continue
+		}
+		if err := s.repo.ArchiveItem(ctx, scope, item.ID); err != nil {
+			logger.Warnf(ctx, "memory: archive regated item failed: %v", err)
+			kept = append(kept, item)
+			continue
+		}
+		archived++
+	}
+	return kept, archived
 }
 
 // mergeRedundant folds groups of near-duplicate memories into one statement.

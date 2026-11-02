@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -410,6 +411,14 @@ func (s *Service) writeReplacing(ctx context.Context, scope interfaces.MemorySco
 		}
 	} else {
 		existing, err = s.repo.FindActiveByKey(ctx, scope, normalizedKey)
+		if err == nil && existing != nil && !replacesOnKeyCollision(existing, item, content) {
+			// Same topic label, different statement: keep both. The key is
+			// the model's free-text topic, and "phần mềm" can name eOffice
+			// and iGate alike; superseding on the label alone lost the older
+			// fact without any sign the user had contradicted it.
+			normalizedKey = siblingMemoryKey(normalizedKey, content)
+			existing, err = s.repo.FindActiveByKey(ctx, scope, normalizedKey)
+		}
 	}
 	if err != nil {
 		return nil, fmt.Errorf("find conflicting memory: %w", err)
@@ -469,6 +478,71 @@ func (s *Service) writeReplacing(ctx context.Context, scope interfaces.MemorySco
 	// and the backfill pass picks up whatever this missed.
 	s.storeItemEmbedding(ctx, scope, cfg, stored)
 	return stored, nil
+}
+
+// sameStatementOverlap is the word overlap above which two statements under
+// one topic are the same statement reworded or refined, so the newer one
+// replaces the older.
+const sameStatementOverlap = 0.5
+
+// replacesOnKeyCollision decides whether a new statement that lands on an
+// occupied topic key replaces the note already there, when no explicit
+// update named that note.
+//
+// Profile, preference and interest notes are single-valued per topic: a
+// person has one unit, one preferred answer length, and a newer statement of
+// either is the current one. Facts and tasks are not — several can share a
+// topic — so one replaces another only when it says the old one changed
+// ("đã chuyển sang PostgreSQL") or says largely the same thing again. A
+// guess waiting for confirmation keeps its link to the note it would replace:
+// it retires nothing until the user confirms it. A different kind never
+// replaces: a fact cannot retire a profile entry.
+func replacesOnKeyCollision(existing *types.MemoryItem, item types.MemoryItem, content string) bool {
+	if existing == nil || existing.Kind != item.Kind {
+		return false
+	}
+	switch item.Kind {
+	case types.MemoryKindProfile, types.MemoryKindPreference, types.MemoryKindInterest:
+		return true
+	}
+	if statusForWrite(item) == types.MemoryStatusPending || existing.Status == types.MemoryStatusPending {
+		return true
+	}
+	if saysSomethingChanged(content) {
+		return true
+	}
+	old := types.NormalizeMemoryForMatch(existing.Content)
+	updated := types.NormalizeMemoryForMatch(content)
+	if old == "" || updated == "" {
+		return false
+	}
+	if strings.Contains(old, updated) || strings.Contains(updated, old) {
+		return true
+	}
+	return jaccard(strings.Fields(old), strings.Fields(updated)) >= sameStatementOverlap
+}
+
+// siblingMemoryKey is the key for a statement that shares a topic with an
+// unrelated note: the topic key plus a short fingerprint of the statement, so
+// both stay live and a restatement of either still finds its own row.
+func siblingMemoryKey(key, content string) string {
+	fingerprint := types.MemoryFingerprint(content)
+	if len(fingerprint) > 12 {
+		fingerprint = fingerprint[:12]
+	}
+	if fingerprint == "" {
+		return key
+	}
+	const maxKeyBytes = 255
+	suffix := "#" + fingerprint
+	if len(key)+len(suffix) > maxKeyBytes {
+		cut := maxKeyBytes - len(suffix)
+		for cut > 0 && !utf8.RuneStart(key[cut]) {
+			cut--
+		}
+		key = key[:cut]
+	}
+	return key + suffix
 }
 
 // findContainedDuplicate looks for a live memory of the same kind whose

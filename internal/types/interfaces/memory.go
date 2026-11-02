@@ -123,6 +123,9 @@ type MemoryRepository interface {
 	// ExpireOverdue archives items whose expires_at has passed and returns how
 	// many were archived.
 	ExpireOverdue(ctx context.Context, scope MemoryScope) (int64, error)
+	// ArchiveItem retires one live item that should never have been stored,
+	// keeping the row for the memory manager's history.
+	ArchiveItem(ctx context.Context, scope MemoryScope, id string) error
 	// MarkConsolidated records that this subject's whole store was just
 	// reviewed, so the next review waits out the interval.
 	MarkConsolidated(ctx context.Context, scope MemoryScope) error

@@ -1063,6 +1063,9 @@ type MemoryConsolidationResult struct {
 	Merged  int `json:"merged"`
 	Demoted int `json:"demoted"`
 	Expired int `json:"expired"`
+	// Regated is how many stored memories the current write gate would not
+	// have let in, and which were archived for it.
+	Regated int `json:"regated"`
 	// Reviewed is how many active memories the pass looked at.
 	Reviewed int `json:"reviewed"`
 	// Candidates is how many groups were put in front of the model.

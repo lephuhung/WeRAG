@@ -27,6 +27,9 @@ const (
 	gateDropDocument    gateVerdict = "one-off request about the open document"
 	gateDropPreference  gateVerdict = "preference without a standing cue"
 	gateDropProfile     gateVerdict = "profile read off a command"
+	gateDropReported    gateVerdict = "someone else's words, not a statement about the user"
+	gateDropPasted      gateVerdict = "pasted text, not a statement about the user"
+	gateDropLookup      gateVerdict = "lookup phrase, not a statement"
 	gateMarkedInferred  gateVerdict = "profile from a question is a guess"
 	gateDemotedToTask   gateVerdict = "fact from a question/command is current work, kept as task"
 	gateTaskGivenExpiry gateVerdict = "task without an end date expires in a week"
@@ -34,7 +37,8 @@ const (
 
 func (v gateVerdict) dropped() bool {
 	switch v {
-	case gateDropDocument, gateDropPreference, gateDropProfile:
+	case gateDropDocument, gateDropPreference, gateDropProfile,
+		gateDropReported, gateDropPasted, gateDropLookup:
 		return true
 	}
 	return false
@@ -219,8 +223,16 @@ func gateDecision(decision extractionDecision, source string) (extractionDecisio
 	durable := hasAny(text, durableCues)
 
 	verdict := gateKept
+	// Pasted material is checked before the durable cues: an official letter
+	// pasted in for rewriting says "chúng tôi" throughout, and a chat log
+	// pasted in for advice says "em đang" — neither is the user speaking.
+	if isPastedMaterial(source) && !hasAny(text, explicitMemoryCues) {
+		return decision, gateDropPasted
+	}
 	if !durable {
 		switch {
+		case reportsSomeoneElse(text):
+			return decision, gateDropReported
 		case mentionsOpenDocument(text):
 			return decision, gateDropDocument
 		case startsWithCommand(text) && hasAny(text, documentNouns):
@@ -248,6 +260,10 @@ func gateDecision(decision extractionDecision, source string) (extractionDecisio
 				decision.Kind = types.MemoryKindTask
 				verdict = gateDemotedToTask
 			}
+		// After the question rule: a short question is still a question and
+		// keeps its week as current work.
+		case isLookupPhrase(text):
+			return decision, gateDropLookup
 		}
 	}
 
@@ -259,3 +275,120 @@ func gateDecision(decision extractionDecision, source string) (extractionDecisio
 	}
 	return decision, verdict
 }
+
+// reportedSpeechCues mark a sentence that passes on what somebody else said
+// or did: "chỗ HN nói là chỉ mua USDT", "anh Hùng bảo là hồ sơ bị trả lại".
+// The user is asking about a situation; nothing in it describes them, and
+// stored as a fact it is recalled into their later, unrelated questions.
+var reportedSpeechCues = []string{
+	" nói là", " nói rằng", " bảo là", " bảo rằng", " kể là", " kể rằng", " nhắn là", " nhắn rằng",
+	" báo là", " báo rằng", " cho biết là", " cho biết rằng", "theo lời", "nghe nói", "người ta nói",
+	"họ nói", "họ bảo", " said that", " says that", " told me", "according to",
+}
+
+func reportsSomeoneElse(text string) bool {
+	return hasAny(text, reportedSpeechCues)
+}
+
+// explicitMemoryCues are the few phrasings that ask for something to be kept
+// even inside pasted material ("Hãy nhớ: ..." followed by a profile).
+var explicitMemoryCues = []string{
+	"hãy nhớ", "ghi nhớ", "nhớ là", "nhớ rằng", "nhớ giúp", "từ giờ", "từ nay", " remember ",
+}
+
+// pastedMaterialRunes is the length past which a message is material the user
+// brought along (a letter, a report, a chat log) rather than something they
+// typed about themselves. Real self-descriptions in the eval set and on the
+// dev store are all under 300 characters.
+const pastedMaterialRunes = 1200
+
+// isPastedMaterial reports whether a message is a long paste or a chat log:
+// two or more lines that open with a speaker label ("Chị Lan: ...").
+func isPastedMaterial(source string) bool {
+	if len([]rune(source)) > pastedMaterialRunes {
+		return true
+	}
+	speakerLines := 0
+	for _, line := range strings.Split(source, "\n") {
+		if hasSpeakerLabel(strings.TrimSpace(line)) {
+			speakerLines++
+		}
+	}
+	return speakerLines >= 2
+}
+
+// hasSpeakerLabel matches "Name: text" where Name is one to four words with no
+// digits — the shape of a copied chat or meeting transcript. "Bộ phận: Đội 4"
+// on a single line is a form field and is never counted alone.
+func hasSpeakerLabel(line string) bool {
+	colon := strings.Index(line, ":")
+	if colon <= 0 || colon == len(line)-1 {
+		return false
+	}
+	label := strings.TrimSpace(line[:colon])
+	words := strings.Fields(label)
+	if len(words) == 0 || len(words) > 4 {
+		return false
+	}
+	for _, r := range label {
+		if !unicode.IsLetter(r) && r != ' ' && r != '.' {
+			return false
+		}
+	}
+	return true
+}
+
+// statementMarkers make a short sentence say something happened or has to
+// happen: "Mai phải nộp báo cáo quý". A short line with none of them and no
+// first person is a search phrase: "xử lý vphc trong lĩnh vực giao thông",
+// "giá hornor magic 9 pro". Its subject is counted by the topic tracker; the
+// phrase itself describes nobody.
+var statementMarkers = []string{
+	"phải", "cần", "sẽ", "đang", "đã", "vừa", "sắp", "định", "muốn", "được giao", "giao cho",
+	"hôm nay", "ngày mai", "mai ", "tuần", "tháng", "năm nay", "sáng nay", "chiều nay", "tối nay",
+	"xong", "rồi", "chưa", "hết",
+	" will ", " must ", " need ", " have to ", " is ", " are ", " was ", " has ", " had ",
+}
+
+// lookupPhraseMaxWords bounds the lookup rule to phrases short enough to be a
+// query. Longer statements without a marker are left to the model.
+const lookupPhraseMaxWords = 10
+
+func isLookupPhrase(text string) bool {
+	if text == "" || strings.Contains(text, ":") || strings.ContainsAny(text, ".!") {
+		return false
+	}
+	if len(strings.Fields(text)) > lookupPhraseMaxWords {
+		return false
+	}
+	padded := " " + text + " "
+	for _, marker := range statementMarkers {
+		if strings.Contains(padded, " "+strings.TrimSpace(marker)+" ") {
+			return false
+		}
+	}
+	return true
+}
+
+// changeCues mark a sentence that says something stopped being true or was
+// replaced. The model may only retire a note when the user's own words say
+// so; a delete without one is a model guess, and an unguarded delete is the
+// most damaging mistake the extractor can make — mem0 dropped its
+// model-chosen DELETE for the same reason. The same cues let a new fact
+// replace an older one under the same topic.
+var changeCues = []string{
+	"không còn", "không phải", "không làm", "không phụ trách", "không dùng", "không cần",
+	"thôi ", "bỏ ", "đã chuyển", "chuyển sang", "chuyển công tác", "chuyển về", "đổi sang", "nghỉ",
+	"xong", "hoàn thành", "đã nộp", "nộp rồi", "hết hạn", "hủy", "huỷ", "nhầm", "sai rồi", "quên",
+	"không đúng", "giờ là", "nay là", "hiện là", "bây giờ",
+	"no longer", "not anymore", "stopped", "moved to", "finished", "done", "cancel", "forget", "wrong",
+}
+
+// saysSomethingChanged reports whether a sentence says something stopped
+// being true or was replaced.
+func saysSomethingChanged(text string) bool {
+	return hasAny(normalizeForGate(text), changeCues)
+}
+
+// deleteHasCue reports whether the user's own sentence allows a delete.
+func deleteHasCue(source string) bool { return saysSomethingChanged(source) }

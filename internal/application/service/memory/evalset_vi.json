@@ -436,6 +436,156 @@
         "thông tư 01",
         "hiệu lực"
       ]
+    },
+    {
+      "name": "reported_partner_usdt",
+      "group": "third_party",
+      "lines": [
+        "chỗ HN nói là tất cả chỉ là mua usdt chứ HN k tra thuê bao internet cho anh, chỉ 1 lần thôi"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "reported_colleague_said",
+      "group": "third_party",
+      "lines": [
+        "Anh Hùng bảo là hồ sơ của bà Mai bị trả lại vì thiếu giấy xác nhận cư trú"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "pasted_chat_log",
+      "group": "third_party",
+      "lines": [
+        "Chị Lan: mai họp giao ban lúc 8h nhé\nAnh Tú: ok, nhớ mang hồ sơ đền bù dự án đường ven biển\nChị Lan: hồ sơ còn thiếu biên bản kiểm đếm"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "narrated_family",
+      "group": "third_party",
+      "lines": [
+        "bà Lương thì bố đi ngay ngày bựa sau nớ luôn rồi, bắt quẻ mô cũng tốt, bà nói k can chi cả"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "lookup_vphc_traffic",
+      "group": "lookup",
+      "lines": [
+        "xử lý vphc trong lĩnh vực giao thông"
+      ],
+      "mem_max": 0,
+      "topics_no_action": true
+    },
+    {
+      "name": "lookup_reissue_id",
+      "group": "lookup",
+      "lines": [
+        "thủ tục cấp lại thẻ căn cước bị mất"
+      ],
+      "mem_max": 0,
+      "topics_no_action": true
+    },
+    {
+      "name": "lookup_short_task_kept",
+      "group": "lookup",
+      "lines": [
+        "Mai phải nộp báo cáo quý cho Sở Nội vụ"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "task"
+      ]
+    },
+    {
+      "name": "update_task_done",
+      "group": "update_delete",
+      "lines": [
+        "Báo cáo tổng kết cải cách hành chính xong rồi, nộp hôm qua"
+      ],
+      "existing": [
+        {
+          "kind": "task",
+          "topic": "báo cáo cải cách hành chính",
+          "content": "Đang soạn báo cáo tổng kết công tác cải cách hành chính"
+        }
+      ],
+      "mem_min": 1,
+      "targets": [
+        0
+      ]
+    },
+    {
+      "name": "update_no_longer_role",
+      "group": "update_delete",
+      "lines": [
+        "Tôi không còn phụ trách văn thư nữa, giờ làm thi đua khen thưởng"
+      ],
+      "existing": [
+        {
+          "kind": "profile",
+          "topic": "nhiệm vụ",
+          "content": "Phụ trách công tác văn thư của phòng"
+        }
+      ],
+      "mem_min": 1,
+      "targets": [
+        0
+      ],
+      "expect_substrings": [
+        "thi đua"
+      ]
+    },
+    {
+      "name": "no_delete_on_unrelated_question",
+      "group": "update_delete",
+      "lines": [
+        "Cho tôi hỏi thủ tục đăng ký khai sinh cho trẻ cần giấy tờ gì?"
+      ],
+      "existing": [
+        {
+          "kind": "profile",
+          "topic": "đơn vị công tác",
+          "content": "Công tác tại Phòng Hành chính tư pháp, Sở Tư pháp"
+        },
+        {
+          "kind": "task",
+          "topic": "hộ tịch",
+          "content": "Đang rà soát hồ sơ hộ tịch tồn đọng"
+        }
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "second_fact_same_topic",
+      "group": "update_delete",
+      "lines": [
+        "Bên tôi cũng dùng thêm phần mềm iGate cho dịch vụ công"
+      ],
+      "existing": [
+        {
+          "kind": "fact",
+          "topic": "phần mềm",
+          "content": "Bên tôi dùng eOffice để quản lý văn bản"
+        }
+      ],
+      "mem_min": 1,
+      "expect_substrings": [
+        "iGate"
+      ],
+      "keep_substrings": [
+        "eOffice",
+        "iGate"
+      ]
+    },
+    {
+      "name": "pasted_letter_we",
+      "group": "third_party",
+      "lines": [
+        "Viết lại cho gọn giúp tôi đoạn sau:\nKính gửi: Sở Nội vụ tỉnh Thừa Thiên Huế.\nThực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Chúng tôi đề nghị Sở Nội vụ xem xét, hướng dẫn việc bố trí công chức văn hóa - xã hội sau sắp xếp. Chúng tôi đang chờ ý kiến của Sở."
+      ],
+      "mem_max": 0
     }
   ]
 }

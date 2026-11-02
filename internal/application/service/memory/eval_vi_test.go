@@ -59,9 +59,13 @@ type viEvalCase struct {
 	Kinds            []string `json:"kinds"`
 	NotInferredKinds []string `json:"not_inferred_kinds"`
 	// InferredOnly: any profile/preference produced must be marked inferred.
-	InferredOnly     bool     `json:"inferred_only"`
-	Actions          []string `json:"actions"`
-	Targets          []int    `json:"targets"`
+	InferredOnly bool     `json:"inferred_only"`
+	Actions      []string `json:"actions"`
+	Targets      []int    `json:"targets"`
+	// KeepSubstrings must still be in the store after the decisions are
+	// applied (surviving existing notes plus what was written): a statement
+	// that only shares a topic with a note must not wipe what the note said.
+	KeepSubstrings   []string `json:"keep_substrings"`
 	ExpectSubstrings []string `json:"expect_substrings"`
 	ExpectExpiry     bool     `json:"expect_expiry"`
 
@@ -106,23 +110,37 @@ type viGrade struct {
 	gateDropped  int
 }
 
-func gradeViCase(c viEvalCase, resp extractionResponse) viGrade {
+// gradeViCase scores one model response. With gated false it scores the
+// model's raw decisions; with gated true, what the write gate lets through.
+func gradeViCase(c viEvalCase, resp extractionResponse, gated bool) viGrade {
 	g := viGrade{name: c.Name, group: c.Group}
 	fail := func(format string, args ...any) { g.failures = append(g.failures, fmt.Sprintf(format, args...)) }
 
 	var kept []extractionDecision
+	segment := segmentForViCase(c)
 	for _, d := range resp.Memories {
 		action := strings.ToLower(strings.TrimSpace(d.Action))
 		if action == "" || action == "none" || action == "noop" {
 			continue
 		}
-		kept = append(kept, d)
-		if action == "add" || action == "update" {
-			segment := segmentForViCase(c)
-			if _, verdict := gateDecision(d, d.resolveSource(segment).content); verdict.dropped() {
-				g.gateDropped++
+		if gated {
+			// Grade what would be stored: the same code gate applyDecisions runs.
+			source := d.resolveSource(segment).content
+			if action == "delete" {
+				if !deleteHasCue(source) {
+					g.gateDropped++
+					continue
+				}
+			} else {
+				adjusted, verdict := gateDecision(d, source)
+				if verdict.dropped() {
+					g.gateDropped++
+					continue
+				}
+				d = adjusted
 			}
 		}
+		kept = append(kept, d)
 	}
 	g.memories = len(kept)
 	if c.MemMin != nil && len(kept) < *c.MemMin {
@@ -165,6 +183,25 @@ func gradeViCase(c viEvalCase, resp extractionResponse) viGrade {
 			fail("no decision targeting note %d", target)
 		}
 	}
+	if len(c.KeepSubstrings) > 0 {
+		replaced := replacedNotes(c, kept, gated)
+		var store strings.Builder
+		for i, note := range existingForViCase(c) {
+			if !replaced[i] {
+				store.WriteString(strings.ToLower(note.Content) + "\n")
+			}
+		}
+		for _, d := range kept {
+			if a := strings.ToLower(d.Action); a == "add" || a == "update" {
+				store.WriteString(strings.ToLower(d.Content) + "\n")
+			}
+		}
+		for _, want := range c.KeepSubstrings {
+			if !strings.Contains(store.String(), strings.ToLower(want)) {
+				fail("store lost %q", want)
+			}
+		}
+	}
 	if c.ExpectExpiry && !hasField(kept, func(d extractionDecision) bool { return parseExpiry(d.ExpiresAt) != nil }) {
 		fail("no usable expires_at")
 	}
@@ -201,6 +238,36 @@ func gradeViCase(c viEvalCase, resp extractionResponse) viGrade {
 		}
 	}
 	return g
+}
+
+// replacedNotes is which existing notes the decisions would retire. Raw mode
+// counts only the model's explicit update/delete targets; gated mode also
+// applies the store's own rule for an add landing on an occupied topic key.
+func replacedNotes(c viEvalCase, decisions []extractionDecision, gated bool) map[int]bool {
+	replaced := map[int]bool{}
+	existing := existingForViCase(c)
+	for _, d := range decisions {
+		action := strings.ToLower(strings.TrimSpace(d.Action))
+		if (action == "update" || action == "delete") && d.Target != nil {
+			replaced[*d.Target] = true
+			continue
+		}
+		if action != "add" {
+			continue
+		}
+		key := types.MemoryItemKey(types.SanitizeMemoryTopic(d.Topic), d.Content)
+		for i, note := range existing {
+			noteKey := types.MemoryItemKey(types.SanitizeMemoryTopic(note.Topic), note.Content)
+			if key != noteKey {
+				continue
+			}
+			kind := strings.ToLower(d.Kind)
+			if !gated || replacesOnKeyCollision(note, types.MemoryItem{Kind: kind, Inferred: d.Inferred}, d.Content) {
+				replaced[i] = true
+			}
+		}
+	}
+	return replaced
 }
 
 func segmentForViCase(c viEvalCase) transcriptSegment {
@@ -287,18 +354,19 @@ func TestVietnamesePromptEval(t *testing.T) {
 	}
 
 	set := loadViEvalSet(t)
-	type tally struct{ runs, passed, memories, gateDropped, topics, actionTopics int }
+	type tally struct{ runs, passed, rawPassed, memories, gateDropped, topics, actionTopics int }
 	byGroup := map[string]*tally{}
 	total := &tally{}
 	for _, c := range set.Cases {
 		userPrompt := buildExtractionPrompt(segmentForViCase(c), existingForViCase(c), nil, nil, "")
 		for r := 0; r < repeat; r++ {
-			resp, raw, err := runViExtraction(context.Background(), chatModel, systemPrompt, userPrompt, temperature)
+			resp, rawText, err := runViExtraction(context.Background(), chatModel, systemPrompt, userPrompt, temperature)
 			if err != nil {
 				t.Errorf("case %q: %v", c.Name, err)
 				continue
 			}
-			g := gradeViCase(c, resp)
+			g := gradeViCase(c, resp, true)
+			raw := gradeViCase(c, resp, false)
 			for _, tl := range []*tally{total, groupTally(byGroup, c.Group)} {
 				tl.runs++
 				tl.memories += g.memories
@@ -308,16 +376,19 @@ func TestVietnamesePromptEval(t *testing.T) {
 				if len(g.failures) == 0 {
 					tl.passed++
 				}
+				if len(raw.failures) == 0 {
+					tl.rawPassed++
+				}
 			}
 			if len(g.failures) == 0 {
-				t.Logf("PASS  %-28s topics=%v", c.Name, resp.Topics)
+				t.Logf("PASS  %-30s topics=%v", c.Name, resp.Topics)
 			} else {
-				t.Logf("FAIL  %-28s %s", c.Name, strings.Join(g.failures, " | "))
+				t.Logf("FAIL  %-30s %s", c.Name, strings.Join(g.failures, " | "))
 			}
 			if out != nil {
 				line, _ := json.Marshal(map[string]any{
 					"prompt": promptLabel, "temperature": temperature, "case": c.Name, "group": c.Group,
-					"failures": g.failures, "memories": resp.Memories, "topics": resp.Topics, "raw": raw,
+					"failures": g.failures, "raw_failures": raw.failures, "memories": resp.Memories, "topics": resp.Topics, "raw": rawText,
 				})
 				fmt.Fprintln(out, string(line))
 			}
@@ -331,11 +402,11 @@ func TestVietnamesePromptEval(t *testing.T) {
 	t.Logf("=== prompt=%s model=%s temperature=%.1f repeat=%d", promptLabel, modelID, temperature, repeat)
 	for _, g := range groups {
 		tl := byGroup[g]
-		t.Logf("%-22s pass %2d/%2d  memories=%2d (gate would drop %2d)  topics=%2d action-shaped=%2d",
-			g, tl.passed, tl.runs, tl.memories, tl.gateDropped, tl.topics, tl.actionTopics)
+		t.Logf("%-22s stored pass %2d/%2d  model pass %2d/%2d  stored=%2d (gate dropped %2d)  topics=%2d action-shaped=%2d",
+			g, tl.passed, tl.runs, tl.rawPassed, tl.runs, tl.memories, tl.gateDropped, tl.topics, tl.actionTopics)
 	}
-	t.Logf("%-22s pass %2d/%2d  memories=%2d (gate would drop %2d)  topics=%2d action-shaped=%2d",
-		"TOTAL", total.passed, total.runs, total.memories, total.gateDropped, total.topics, total.actionTopics)
+	t.Logf("%-22s stored pass %2d/%2d  model pass %2d/%2d  stored=%2d (gate dropped %2d)  topics=%2d action-shaped=%2d",
+		"TOTAL", total.passed, total.runs, total.rawPassed, total.runs, total.memories, total.gateDropped, total.topics, total.actionTopics)
 }
 
 func groupTally[T any](m map[string]*T, key string) *T {
