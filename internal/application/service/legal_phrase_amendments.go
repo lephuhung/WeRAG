@@ -550,7 +550,8 @@ func (s provisionScope) at(pos int) (khoan, diem string) {
 		}
 	}
 	for _, d := range s.diems {
-		if d.at <= pos && d.at > khoanAt {
+		// >=: a điểm right after an inferred khoản 1 shares its offset
+		if d.at <= pos && d.at >= khoanAt {
 			diem = d.label
 		}
 	}

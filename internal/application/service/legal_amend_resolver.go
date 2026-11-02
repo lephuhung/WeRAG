@@ -127,6 +127,9 @@ type legalUnit struct {
 	start, end int
 	// labelled: the unit starts at its own label (not a continuation)
 	labelled bool
+	// implicit: that label is a khoản 1 whose "1." the source lost
+	// (legalImplicitKhoanOne), inferred rather than read
+	implicit bool
 }
 
 var legalDieuHeadRe = regexp.MustCompile(`(?m)^[ \t]*(?:#{1,6}[ \t]*)?(?:[*_]{1,3}[ \t]*)?Điều[ \t]+(\d+[a-zA-Zđ]?)[ \t]*[*_]{0,3}[ \t]*[.:]`)
@@ -139,25 +142,26 @@ func legalUnits(content string, meta *vietnamese_legal.LegalMetadata) []legalUni
 	type mark struct {
 		at, kind int
 		label    string
+		implicit bool
 	}
 	quoted := func(labelAt int) bool { return legalQuotedLine(content, labelAt) }
 	var marks []mark
 	for _, m := range legalDieuHeadRe.FindAllStringSubmatchIndex(content, -1) {
-		marks = append(marks, mark{m[0], 0, strings.ToLower(content[m[2]:m[3]])})
+		marks = append(marks, mark{at: m[0], kind: 0, label: strings.ToLower(content[m[2]:m[3]])})
 	}
 	for _, m := range khoanStartRe.FindAllStringSubmatchIndex(content, -1) {
 		if !quoted(m[2]) {
-			marks = append(marks, mark{m[0], 1, strings.ToLower(content[m[2]:m[3]])})
+			marks = append(marks, mark{at: m[0], kind: 1, label: strings.ToLower(content[m[2]:m[3]])})
 		}
 	}
 	for _, m := range diemStartRe.FindAllStringSubmatchIndex(content, -1) {
 		if !quoted(m[2]) {
-			marks = append(marks, mark{m[0], 2, strings.ToLower(content[m[2]:m[3]])})
+			marks = append(marks, mark{at: m[0], kind: 2, label: strings.ToLower(content[m[2]:m[3]])})
 		}
 	}
 	// a khoản 1 whose "1." the source lost starts after its Điều heading
 	for _, at := range legalImplicitKhoanOne(content) {
-		marks = append(marks, mark{at, 1, "1"})
+		marks = append(marks, mark{at: at, kind: 1, label: "1", implicit: true})
 	}
 	sort.SliceStable(marks, func(i, j int) bool {
 		if marks[i].at != marks[j].at {
@@ -182,12 +186,12 @@ func legalUnits(content string, meta *vietnamese_legal.LegalMetadata) []legalUni
 		}
 	}
 	var units []legalUnit
-	start, labelled := 0, false
+	start, labelled, implicit := 0, false, false
 	for _, m := range marks {
 		if m.at > start {
-			units = append(units, legalUnit{cur, start, m.at, labelled})
+			units = append(units, legalUnit{cur, start, m.at, labelled, implicit})
 		}
-		labelled = true
+		labelled, implicit = true, m.implicit
 		switch m.kind {
 		case 0:
 			cur = LegalProvisionRef{Article: m.label}
@@ -198,7 +202,7 @@ func legalUnits(content string, meta *vietnamese_legal.LegalMetadata) []legalUni
 		}
 		start = m.at
 	}
-	units = append(units, legalUnit{cur, start, len(content), labelled})
+	units = append(units, legalUnit{cur, start, len(content), labelled, implicit})
 	return units
 }
 
@@ -401,7 +405,9 @@ func legalMissingPhrases(content string, units []legalUnit, live []*LegalAmendEd
 				first = i
 			}
 			last = i
-			if u.labelled && u.prov == e.Provision {
+			// an inferred khoản 1 may be a repealed one's leftover line:
+			// not enough to call its phrase missing
+			if u.labelled && !u.implicit && u.prov == e.Provision {
 				startsHere = true
 			}
 			if len(findPhrase(content[u.start:u.end], e.From)) > 0 {

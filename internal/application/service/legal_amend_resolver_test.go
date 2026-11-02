@@ -497,3 +497,35 @@ func TestLegalImplicitKhoanOne(t *testing.T) {
 	two := head + "Mất số.\n\n2. Hai.\n\n#### Điều 5. Khác\n\n1. Một.\n\n2. Hai."
 	require.Len(t, legalImplicitKhoanOne(two), 1)
 }
+
+// Fable LOWs: khoản 1 lost its lead line too and starts at "a)"; an
+// inferred khoản 1 does not make a phrase "missing"; the editor finds it.
+func TestResolveImplicitKhoanOneEdges(t *testing.T) {
+	content := "#### Điều 4. Nguyên tắc\n\na) cấp huyện xét;\n\nb) cấp huyện duyệt.\n\n2. Khoản hai do cấp huyện làm."
+	nd := legalHistoryDoc{Number: nd141.Number, Type: nd141.Type, EffFrom: "2026-01-01"}
+	old := applyPhraseChanges(content, []legalPhraseChange{{From: "cấp huyện", To: "cấp xã", Khoan: "1", Diem: "a", Amender: nd}}, amendAt("2026-10-20"))
+	require.Contains(t, old, "a) cấp xã [thay cho “cấp huyện”", "điểm a of the inferred khoản 1 (old path)")
+	require.Contains(t, old, "b) cấp huyện duyệt.")
+	require.Contains(t, old, "2. Khoản hai do cấp huyện làm.")
+
+	e := phraseEdge("4", "1", "cấp huyện", "cấp xã", nd141, "2026-01-01", LegalTierLegacyParserPhrase)
+	e.Provision.Diem = "a"
+	r := ResolveLegalProvisions(nd68Chunk(content, "4", "2"), []LegalAmendEdge{e}, amendAt("2026-10-20"), LegalResolveOptions{})
+	require.Contains(t, r.ModelContent, "a) cấp xã [thay cho “cấp huyện”", "điểm a of the inferred khoản 1 (resolver)")
+	require.Contains(t, r.ModelContent, "b) cấp huyện duyệt.")
+
+	// a repealed khoản 1 left as a line: its stale phrase edge is not
+	// reported missing (no new gate), the text stays as stored
+	repealed := "#### Điều 6. X\n\nKhoản 1 được bãi bỏ\n\n2. Khoản hai."
+	stale := phraseEdge("6", "1", "500 triệu đồng", "01 tỷ đồng", nd141, "2026-01-01", LegalTierLegacyParserPhrase)
+	r = ResolveLegalProvisions(nd68Chunk(repealed, "6", "2"), []LegalAmendEdge{stale}, amendAt("2026-10-20"), LegalResolveOptions{})
+	require.NotContains(t, r.ModelContent, "không thấy")
+	require.NotEqual(t, LegalStateUnresolved, r.State)
+
+	// the editor's span of khoản 1 in the NĐ 68 Điều 8 chunk starts there
+	text, _, labelled, ok := legalProvisionSpan(nd68Dieu8, &vietnamese_legal.LegalMetadata{ArticleNos: []string{"8"}, KhoanNos: []string{"2"}}, "khoan:1")
+	require.True(t, ok)
+	require.True(t, labelled)
+	require.True(t, strings.HasPrefix(text, ".. Khai thuế"), text)
+	require.NotContains(t, text, "2. Hộ kinh doanh")
+}
