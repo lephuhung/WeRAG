@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/service"
+	"github.com/Tencent/WeKnora/internal/assets"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/handler/dto"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -207,6 +208,10 @@ func (h *ModelHandler) ListModels(c *gin.Context) {
 }
 
 const modelDebugMaxInputBytes = 64 * 1024
+
+// modelDebugTestImageName is the file name reported for the built-in sample
+// image used when a VLM test is requested without an upload.
+const modelDebugTestImageName = "vlm_test.png"
 
 // ModelDebugOptions contains the cross-provider parameters exposed by the
 // model debugger. Pointer fields preserve explicit zero/false values.
@@ -425,7 +430,25 @@ func (h *ModelHandler) DebugModel(c *gin.Context) {
 		fileSize = int64(len(fileBytes))
 	}
 
+	// A VLM test needs an image, but the model catalog's "Test" button sends
+	// no file, so every VLLM test used to fail with "image file is required"
+	// before the endpoint was ever reached. Substitute the embedded sample
+	// image (same idea as the ASR check, which sends a silent WAV) so the
+	// test exercises the real upstream endpoint.
+	usedTestImage := false
+	if len(fileBytes) == 0 && model.Type == types.ModelTypeVLLM {
+		fileBytes = assets.VLMTestPNG
+		fileName = modelDebugTestImageName
+		fileSize = int64(len(fileBytes))
+		usedTestImage = true
+	}
+
 	requestPreview := modelDebugRequestPreview(model, input, documents, opts, fileName, fileSize)
+	if usedTestImage {
+		if filePreview, ok := requestPreview["file"].(gin.H); ok {
+			filePreview["generated"] = true
+		}
+	}
 	observations := gin.H{}
 
 	switch model.Type {
@@ -502,7 +525,9 @@ func (h *ModelHandler) DebugModel(c *gin.Context) {
 		writeModelDebugResult(c, started, requestPreview, results, callErr, observations)
 	case types.ModelTypeVLLM:
 		if len(fileBytes) == 0 {
-			c.Error(errors.NewBadRequestError("image file is required"))
+			// Unreachable: the built-in sample image is substituted above when
+			// the caller uploads no file.
+			c.Error(errors.NewInternalServerError("VLM test image is unavailable"))
 			return
 		}
 		instance, callErr := h.service.GetVLMModel(ctx, id)

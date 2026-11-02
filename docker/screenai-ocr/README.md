@@ -31,6 +31,21 @@ Một số chỗ dùng được:
 
 Cập nhật component: xoá volume `screenai_component` rồi khởi động lại; hoặc chạy `docker exec WeKnora-screenai-ocr python /app/fetch_component.py --no-stub --force` rồi restart.
 
+## Đăng ký làm model VLLM trong WeKnora
+
+Trong Cài đặt → Mô hình, thêm model loại `VLLM`, nguồn `remote`:
+
+| Trường | Giá trị |
+|---|---|
+| Tên | bất kỳ (ví dụ `Chrome`) — id model trả về vẫn là `screenai-ocr` |
+| Base URL | `http://screenai-ocr:8004/v1` |
+| API key | để trống, trừ khi đặt `SCREENAI_API_KEY` |
+
+Lưu ý:
+- **Không dùng `http://127.0.0.1:8004/v1`**: app Go chạy trong container nên loopback trỏ về chính container đó, không tới `screenai-ocr`. Chỉ dùng `127.0.0.1` khi gọi trực tiếp từ host.
+- Host `screenai-ocr` nằm trong mạng nội bộ nên app Go chặn theo SSRF: thêm `screenai-ocr` vào `SSRF_WHITELIST` (biến môi trường) hoặc vào Setting hệ thống `ssrf.whitelist` (hiệu lực ngay, không cần khởi động lại).
+- Nút "Kiểm tra" của model VLLM gửi ảnh mẫu có sẵn (`vlm_test.png`, chữ "WEKNORA VLM TEST 2026") nên không cần tải ảnh lên; kết quả trả về là chữ OCR đọc được từ ảnh mẫu.
+
 ## API
 
 - `GET /health`, `GET /v1/models`.
