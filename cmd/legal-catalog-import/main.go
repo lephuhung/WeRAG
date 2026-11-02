@@ -64,6 +64,7 @@ func main() {
 	relsPath := flag.String("relations", "", "JSONL file of raw vbpl relations (required)")
 	snapshot := flag.String("snapshot", "", "Snapshot date of the source, YYYY-MM-DD (required)")
 	prune := flag.Bool("prune", false, "Delete vbpl documents absent from this import")
+	report := flag.String("report", "", "Write the Ð twins left unreachable by number (TSV) to this file")
 	merge := flag.Bool("merge", false,
 		"Partial import: replace only the relations touching these documents, keep the rest of the catalogue")
 	flag.Parse()
@@ -141,17 +142,23 @@ func main() {
 		docs = kept
 	}
 
-	// One document under two vbpl ids (an Eth "Ð" copy of a "Đ" row) stays
-	// one row: a new twin is not imported, a catalogued Ð twin keeps its
-	// key, and their edges move to the surviving row.
+	// One document under two vbpl ids (an Eth "Ð" or Cyrillic copy of a
+	// Latin row) stays one row: a new twin is not imported, a catalogued
+	// twin keeps its look-alike key, and their edges move to the surviving
+	// row. Ð rows that are no twin of a holder stay as migration 000175 left
+	// them (-report lists them).
 	var catalogued []*types.LegalDocument
 	if err := db.WithContext(ctx).Model(&types.LegalDocument{}).
-		Select("id", "number_key", "doc_type", "title", "issued_on").Order("id").
+		Select("id", "document_number", "number_key", "doc_type", "title", "issued_on", "reviewed_at").Order("id").
 		Find(&catalogued).Error; err != nil {
 		log.Fatalf("load catalogue keys: %v", err)
 	}
-	docs, alias := legalcatalog.ResolveTwins(catalogued, docs)
+	twins := legalcatalog.ResolveTwins(catalogued, docs)
+	docs, alias := twins.Keep, twins.Alias
 	log.Printf("%d twin documents attached to their catalogue row", len(alias))
+	if err := reportUnreachable(*report, twins.Unreachable); err != nil {
+		log.Fatalf("write twin report: %v", err)
+	}
 
 	// A merge may link the imported documents to any catalogued one.
 	known := ids
@@ -240,13 +247,7 @@ func main() {
 			Where("source = ?", "vbpl").Pluck("id", &existing).Error; err != nil {
 			log.Fatalf("list documents: %v", err)
 		}
-		var gone []string
-		for _, id := range existing {
-			// A reviewed row stays: a SuperAdmin vouched for it.
-			if !ids[id] && reviewedByID[id] == nil {
-				gone = append(gone, id)
-			}
-		}
+		gone := pruneCandidates(existing, ids, alias, reviewedByID)
 		for start := 0; start < len(gone); start += 1000 {
 			end := min(start+1000, len(gone))
 			if err := db.WithContext(ctx).Where("id IN ?", gone[start:end]).
@@ -275,6 +276,49 @@ func main() {
 	for reason, n := range skipped {
 		log.Printf("skipped %d relation rows: %s", n, reason)
 	}
+}
+
+// pruneCandidates are the catalogued vbpl rows a -prune import deletes:
+// absent from the import, not reviewed (a SuperAdmin vouched for it) and
+// not the surviving row of an imported twin (its document is in the
+// import under the twin's id).
+func pruneCandidates(existing []string, ids map[string]bool, alias map[string]string,
+	reviewed map[string]*types.LegalDocument) []string {
+	survivors := map[string]bool{}
+	for twin, s := range alias {
+		if ids[twin] {
+			survivors[s] = true
+		}
+	}
+	var gone []string
+	for _, id := range existing {
+		if !ids[id] && !survivors[id] && reviewed[id] == nil {
+			gone = append(gone, id)
+		}
+	}
+	return gone
+}
+
+// reportUnreachable logs the Ð twins kept out of the number lookup and,
+// with a path, writes them as TSV (id, number, type, issued, title,
+// holders of the folded key) for the SuperAdmin decision.
+func reportUnreachable(path string, rows []legalcatalog.Twin) error {
+	log.Printf("%d Ð twins left unreachable by number (not the same document as a row of their folded key)", len(rows))
+	if path == "" {
+		return nil
+	}
+	var b strings.Builder
+	b.WriteString("id\tdocument_number\tdoc_type\tissued_on\ttitle\tholders\n")
+	for _, t := range rows {
+		issued := ""
+		if t.Row.IssuedOn != nil {
+			issued = t.Row.IssuedOn.Format("2006-01-02")
+		}
+		clean := func(s string) string { return strings.Join(strings.Fields(s), " ") }
+		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\t%s\n", t.Row.ID, clean(t.Row.DocumentNumber), clean(t.Row.DocType),
+			issued, clean(t.Row.Title), strings.Join(t.Holders, ","))
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
 
 // edgeBuilder turns raw vbpl relation rows into catalogue edges: labels

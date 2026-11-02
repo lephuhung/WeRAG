@@ -109,15 +109,15 @@ func TestCatalogImportTwinStaysOneRow(t *testing.T) {
 	cyr := row("179043", "51/2025/TT-BTС", "Thông tư số 51/2025/TT-BTС", "2025-06-24")
 	cyr.DocType = "Thông tư"
 	var existing []*types.LegalDocument
-	require.NoError(t, db.Select("id", "number_key", "doc_type", "title", "issued_on").Order("id").Find(&existing).Error)
-	docs, alias := legalcatalog.ResolveTwins(existing, []*types.LegalDocument{
+	require.NoError(t, db.Select("id", "document_number", "number_key", "doc_type", "title", "issued_on", "reviewed_at").Order("id").Find(&existing).Error)
+	res := legalcatalog.ResolveTwins(existing, []*types.LegalDocument{
 		row("5583", "02/2000/QĐ-BTC", "Quyết định số 02/2000/QĐ-BTC", "2000-01-06"),
 		row("107780", "02/2000/QÐ-BTC", "Quyết định số 02/2000/QÐ-BTC", "2000-01-05"),
 		row("300001", "02/2000/QÐ-BTC", "Quyết định số 02/2000/QÐ-BTC", "2000-01-06"),
 		cyr,
 	})
-	require.Equal(t, map[string]string{"300001": "5583"}, alias)
-	require.NoError(t, catalog.UpsertDocuments(ctx, docs))
+	require.Equal(t, map[string]string{"300001": "5583"}, res.Alias)
+	require.NoError(t, catalog.UpsertDocuments(ctx, res.Keep))
 
 	var n int64
 	require.NoError(t, db.Model(&types.LegalDocument{}).Where("id = ?", "300001").Count(&n).Error)
