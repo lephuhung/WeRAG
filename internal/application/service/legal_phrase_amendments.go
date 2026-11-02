@@ -114,6 +114,10 @@ func (h *legalHistory) phraseChanges(chunks []legalHistoryChunk) map[string][]le
 	for _, c := range targets {
 		article := c.Legal.ArticleNos[0]
 		khoans := setOf(c.Legal.KhoanNos)
+		if len(khoans) > 0 && len(legalImplicitKhoanOne(c.Content)) > 0 {
+			// the stored labels miss a khoản 1 whose "1." was lost
+			khoans["1"] = true
+		}
 		seen := map[string]bool{}
 		for _, ac := range amenders {
 			if ac.KnowledgeID == c.KnowledgeID {
@@ -483,10 +487,59 @@ func newProvisionScope(content string) provisionScope {
 	for _, m := range khoanStartRe.FindAllStringSubmatchIndex(content, -1) {
 		s.khoans = append(s.khoans, scopeMark{m[0], content[m[2]:m[3]]})
 	}
+	if ones := legalImplicitKhoanOne(content); len(ones) > 0 {
+		for _, at := range ones {
+			s.khoans = append(s.khoans, scopeMark{at, "1"})
+		}
+		sort.SliceStable(s.khoans, func(i, j int) bool { return s.khoans[i].at < s.khoans[j].at })
+	}
 	for _, m := range diemStartRe.FindAllStringSubmatchIndex(content, -1) {
 		s.diems = append(s.diems, scopeMark{m[0], content[m[2]:m[3]]})
 	}
 	return s
+}
+
+// legalImplicitKhoanOne returns where an unlabelled khoản 1 starts: the
+// line after each Điều heading whose first khoản label (before the next
+// heading, quoted lines aside) is "2". Khoản are numbered from 1, so the
+// text between is khoản 1 whose "1." the source lost or mangled ("1.Các",
+// "1, Đảm bảo", ".. Khai thuế", a cut line). Without "2." nothing is
+// assumed: the text may be the Điều's own (an Điều without khoản).
+func legalImplicitKhoanOne(content string) []int {
+	heads := legalDieuHeadRe.FindAllStringIndex(content, -1)
+	if len(heads) == 0 {
+		return nil
+	}
+	khoans := khoanStartRe.FindAllStringSubmatchIndex(content, -1)
+	var out []int
+	for hi, h := range heads {
+		end := len(content)
+		if hi+1 < len(heads) {
+			end = heads[hi+1][0]
+		}
+		nl := strings.IndexByte(content[h[1]:end], '\n')
+		if nl < 0 {
+			continue
+		}
+		start := h[1] + nl + 1
+		for _, m := range khoans {
+			if m[2] < start || m[2] >= end || legalQuotedLine(content, m[2]) {
+				continue
+			}
+			if content[m[2]:m[3]] == "2" && strings.TrimSpace(content[start:m[2]]) != "" {
+				out = append(out, start)
+			}
+			break
+		}
+	}
+	return out
+}
+
+// legalQuotedLine: the line holding byte at is a quote ("> …"), another
+// document's text rather than this one's structure.
+func legalQuotedLine(content string, at int) bool {
+	line := content[strings.LastIndexByte(content[:at], '\n')+1 : at]
+	return strings.HasPrefix(strings.TrimSpace(line), ">")
 }
 
 func (s provisionScope) at(pos int) (khoan, diem string) {
@@ -497,7 +550,8 @@ func (s provisionScope) at(pos int) (khoan, diem string) {
 		}
 	}
 	for _, d := range s.diems {
-		if d.at <= pos && d.at > khoanAt {
+		// >=: a điểm right after an inferred khoản 1 shares its offset
+		if d.at <= pos && d.at >= khoanAt {
 			diem = d.label
 		}
 	}

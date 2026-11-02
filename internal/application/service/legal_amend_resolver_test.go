@@ -446,3 +446,86 @@ func TestResolvePhraseAfterUnresolvedKeepsWording(t *testing.T) {
 	require.Contains(t, u.Text, "[LỜI VĂN HIỆN HÀNH CHƯA XÁC MINH:")
 	require.Contains(t, u.Text, "trong 20 ngày [thay cho “15 ngày” theo Nghị định 2/2026/NĐ-CP, từ 01/02/2026]")
 }
+
+// NĐ 68/2026 Điều 8 as stored on dev (chunk 0292471f): vbpl lost the "1."
+// of khoản 1 (".. Khai thuế …", cut), so the chunk is labelled khoản 2.
+// NĐ 141/2026 replaces "500 triệu đồng" in khoản 1 Điều 8 only.
+const nd68Dieu8 = "## Chương III KHAI THUẾ\n\n#### Điều 8. Nguyên tắc khai thuế, tính thuế và sử dụng hóa đơn\n\n" +
+	".. Khai thuế, tính thuế giá trị gia tăng, thuế thu nhập cá nh\n\n" +
+	"a) Trường hợp hộ kinh doanh tự xác định có mức doanh thu năm từ 500 triệu đồng trở xuống thì thông báo doanh thu.\n\n" +
+	"b) Trường hợp doanh thu năm trên 500 triệu đồng thì tính thuế.\n\n" +
+	"2. Hộ kinh doanh nộp hồ sơ khai thuế; ngưỡng 500 triệu đồng của khoản này không đổi."
+
+func TestResolveImplicitKhoanOne(t *testing.T) {
+	edges := []LegalAmendEdge{phraseEdge("8", "1", "500 triệu đồng", "01 tỷ đồng", nd141, "2026-01-01", LegalTierLegacyParserPhrase)}
+	c := nd68Chunk(nd68Dieu8, "8", "2")
+	r := ResolveLegalProvisions(c, edges, amendAt("2026-10-20"), LegalResolveOptions{})
+	require.Contains(t, r.ModelContent, "a) Trường hợp hộ kinh doanh tự xác định có mức doanh thu năm từ 01 tỷ đồng [thay cho “500 triệu đồng”")
+	require.Contains(t, r.ModelContent, "b) Trường hợp doanh thu năm trên 01 tỷ đồng [thay cho “500 triệu đồng”")
+	require.Contains(t, r.ModelContent, "ngưỡng 500 triệu đồng của khoản này không đổi", "khoản 2 is not khoản 1")
+	unitByProv(t, r, LegalProvisionRef{Article: "8", Khoan: "1", Diem: "a"})
+
+	// the old lookup reads the same structure
+	old := applyPhraseChanges(nd68Dieu8, []legalPhraseChange{{From: "500 triệu đồng", To: "01 tỷ đồng", Khoan: "1",
+		Amender: legalHistoryDoc{Number: nd141.Number, Type: nd141.Type, EffFrom: "2026-01-01"}}}, amendAt("2026-10-20"))
+	require.Equal(t, 2, strings.Count(old, "01 tỷ đồng [thay cho"), old)
+	require.Contains(t, old, "ngưỡng 500 triệu đồng của khoản này không đổi")
+}
+
+func TestLegalImplicitKhoanOne(t *testing.T) {
+	head := "#### Điều 4. Nguyên tắc\n\n"
+	cases := []struct {
+		name, content string
+		want          bool
+	}{
+		{"lost number", head + ".. Khai thuế\n\n2. Khoản hai.", true},
+		{"no space after dot", head + "1.Các cấp ngân sách công khai.\n\n2. Khoản hai.", true},
+		{"comma", head + "1, Đảm bảo bình đẳng.\n\n2. Người làm thủ tục.", true},
+		{"cut line then points", head + "Người nộp phí nộp vào ngân sách nhà n\n\na) Nộp đúng hạn;\n\n2. Khoản hai.", true},
+		{"proper khoản 1", head + "1. Khoản một.\n\n2. Khoản hai.", false},
+		{"Điều without khoản", head + "Nội dung của điều.\n\na) điểm a;\n\nb) điểm b.", false},
+		{"first label 3", head + "Lời dẫn.\n\n3. Khoản ba.", false},
+		{"nothing between", head + "2. Khoản hai.", false},
+		{"quoted 2. is another document", head + "Sửa đổi như sau:\n\n> 2. Khoản hai mới.", false},
+		{"continuation chunk, no heading", "a) điểm a;\n\n2. Khoản hai.", false},
+	}
+	for _, tc := range cases {
+		got := len(legalImplicitKhoanOne(tc.content)) > 0
+		require.Equal(t, tc.want, got, tc.name)
+	}
+	// each Điều on its own: the second has its "1."
+	two := head + "Mất số.\n\n2. Hai.\n\n#### Điều 5. Khác\n\n1. Một.\n\n2. Hai."
+	require.Len(t, legalImplicitKhoanOne(two), 1)
+}
+
+// Fable LOWs: khoản 1 lost its lead line too and starts at "a)"; an
+// inferred khoản 1 does not make a phrase "missing"; the editor finds it.
+func TestResolveImplicitKhoanOneEdges(t *testing.T) {
+	content := "#### Điều 4. Nguyên tắc\n\na) cấp huyện xét;\n\nb) cấp huyện duyệt.\n\n2. Khoản hai do cấp huyện làm."
+	nd := legalHistoryDoc{Number: nd141.Number, Type: nd141.Type, EffFrom: "2026-01-01"}
+	old := applyPhraseChanges(content, []legalPhraseChange{{From: "cấp huyện", To: "cấp xã", Khoan: "1", Diem: "a", Amender: nd}}, amendAt("2026-10-20"))
+	require.Contains(t, old, "a) cấp xã [thay cho “cấp huyện”", "điểm a of the inferred khoản 1 (old path)")
+	require.Contains(t, old, "b) cấp huyện duyệt.")
+	require.Contains(t, old, "2. Khoản hai do cấp huyện làm.")
+
+	e := phraseEdge("4", "1", "cấp huyện", "cấp xã", nd141, "2026-01-01", LegalTierLegacyParserPhrase)
+	e.Provision.Diem = "a"
+	r := ResolveLegalProvisions(nd68Chunk(content, "4", "2"), []LegalAmendEdge{e}, amendAt("2026-10-20"), LegalResolveOptions{})
+	require.Contains(t, r.ModelContent, "a) cấp xã [thay cho “cấp huyện”", "điểm a of the inferred khoản 1 (resolver)")
+	require.Contains(t, r.ModelContent, "b) cấp huyện duyệt.")
+
+	// a repealed khoản 1 left as a line: its stale phrase edge is not
+	// reported missing (no new gate), the text stays as stored
+	repealed := "#### Điều 6. X\n\nKhoản 1 được bãi bỏ\n\n2. Khoản hai."
+	stale := phraseEdge("6", "1", "500 triệu đồng", "01 tỷ đồng", nd141, "2026-01-01", LegalTierLegacyParserPhrase)
+	r = ResolveLegalProvisions(nd68Chunk(repealed, "6", "2"), []LegalAmendEdge{stale}, amendAt("2026-10-20"), LegalResolveOptions{})
+	require.NotContains(t, r.ModelContent, "không thấy")
+	require.NotEqual(t, LegalStateUnresolved, r.State)
+
+	// the editor's span of khoản 1 in the NĐ 68 Điều 8 chunk starts there
+	text, _, labelled, ok := legalProvisionSpan(nd68Dieu8, &vietnamese_legal.LegalMetadata{ArticleNos: []string{"8"}, KhoanNos: []string{"2"}}, "khoan:1")
+	require.True(t, ok)
+	require.True(t, labelled)
+	require.True(t, strings.HasPrefix(text, ".. Khai thuế"), text)
+	require.NotContains(t, text, "2. Hộ kinh doanh")
+}
