@@ -124,10 +124,11 @@ export function ContextRing({
   const cnt = (n: number) => formatCount(n, locale);
   // with a refusing package "no cap" would be wrong: say why instead
   const denialK = usage.denied ? denialKey(usage.reason) : null;
+  const startDate = denialK === "notStarted" ? formatDate(usage.starts_at) : "";
   const denial = !denialK
     ? ""
-    : denialK === "notStarted" && usage.starts_at
-      ? t("ctx.denied.notStartedOn", { date: formatDate(usage.starts_at) })
+    : startDate
+      ? t("ctx.denied.notStartedOn", { date: startDate })
       : t(DENIAL_TEXT[denialK]);
   const noCap = denial || t("ctx.unlimited");
   const budget = usage.history_budget || usage.model_window;
