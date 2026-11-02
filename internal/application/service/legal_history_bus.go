@@ -13,6 +13,7 @@ import (
 // database the amendment history reads.
 type legalHistorySource interface {
 	legalHistoryFunc(kbIDs []string) func(ctx context.Context, chunkIDs []string, answer string) string
+	legalWordingFunc(kbIDs []string) func(ctx context.Context, chunkIDs []string) map[string]string
 }
 
 // legalHistoryFunc returns the amendment-history lookup over the given KBs

@@ -301,7 +301,9 @@ func (h *legalHistory) resolvedLines(c legalHistoryChunk, pc LegalProvisionChunk
 			continue
 		}
 		if e.phrase() {
-			if !e.EffFrom.Known || e.EffFrom.At.After(h.now) || len(findPhrase(c.Content, e.From)) == 0 || !answerUsesPhrase(h.answer, e.From) {
+			// without an effective date the line is still told ("ban hành
+			// ngày …", phraseLines); only a future change is left out
+			if (e.EffFrom.Known && e.EffFrom.At.After(h.now)) || len(findPhrase(c.Content, e.From)) == 0 || !answerUsesChange(h.answer, e.From, e.To) {
 				continue
 			}
 			if e.TextWithheld {

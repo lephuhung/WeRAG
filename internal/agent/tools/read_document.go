@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -93,6 +94,16 @@ type ReadDocumentTool struct {
 	knowledgeService interfaces.KnowledgeService
 	chunkService     interfaces.ChunkService
 	searchTargets    types.SearchTargets
+	// currentWording returns legal chunks with in-place amendments applied.
+	currentWording CurrentWordingFunc
+}
+
+// WithCurrentWording sets the current-wording lookup: the model reads a
+// legal chunk with its in-place phrase amendments applied, as from
+// search_knowledge; the references keep the stored text.
+func (t *ReadDocumentTool) WithCurrentWording(fn CurrentWordingFunc) *ReadDocumentTool {
+	t.currentWording = fn
+	return t
 }
 
 // NewReadDocumentTool creates a new read_document tool.
@@ -179,14 +190,22 @@ func (t *ReadDocumentTool) Execute(ctx context.Context, args json.RawMessage) (*
 
 	// A query always searches the owning document, even when id named a
 	// chunk: silently returning the single chunk would read as "no match".
+	var result *types.ToolResult
 	switch {
 	case len(matchers) > 0:
-		return t.readByQuery(ctx, knowledge, query, matchers, !input.Regex && len(matchers) >= 2)
+		result, err = t.readByQuery(ctx, knowledge, query, matchers, !input.Regex && len(matchers) >= 2)
 	case chunk != nil:
-		return t.readAroundChunk(ctx, knowledge, chunk, contextChunks)
+		result, err = t.readAroundChunk(ctx, knowledge, chunk, contextChunks)
 	default:
-		return t.readPage(ctx, knowledge, offset, limit)
+		result, err = t.readPage(ctx, knowledge, offset, limit)
 	}
+	if err == nil && result != nil && result.Success {
+		rows, _ := result.Data["chunks"].([]map[string]interface{})
+		if n := applyCurrentWordingRows(ctx, t.currentWording, rows, query); n > 0 {
+			logger.Infof(ctx, "[Tool][ReadDocument] Current wording applied to %d chunk(s)", n)
+		}
+	}
+	return result, err
 }
 
 // resolveTarget accepts either a document id or a chunk id. Documents are

@@ -52,7 +52,15 @@ var calculateHouseholdTaxTool = BaseTool{
     },
     "ty_le_giam_tncn": {
       "type": "number",
-      "description": "Tùy chọn: mức giảm số thuế TNCN phải nộp đang áp dụng, ghi theo PHẦN TRĂM (30 cho 30%)"
+      "description": "Tùy chọn: mức giảm số thuế TNCN phải nộp đang áp dụng, ghi theo PHẦN TRĂM (30 cho 30%); cần kèm tran_doanh_thu_giam_tncn"
+    },
+    "tran_doanh_thu_giam_tncn": {
+      "type": "number",
+      "description": "Bắt buộc khi có ty_le_giam_tncn: doanh thu năm tối đa được giảm thuế TNCN theo văn bản giảm thuế, đơn vị đồng; doanh thu năm vượt mức này thì không giảm"
+    },
+    "giam_khong_gioi_han_doanh_thu": {
+      "type": "boolean",
+      "description": "Chỉ đặt true khi văn bản giảm thuế đã tra KHÔNG giới hạn doanh thu; thay cho tran_doanh_thu_giam_tncn, không dùng cùng lúc"
     },
     "doanh_thu_ky": {
       "type": "number",
@@ -86,7 +94,7 @@ const householdTaxAnswerNote = "Hệ thống tự chèn bảng kết quả này,
 
 var (
 	householdTaxRequired = []string{"doanh_thu", "nguong_doanh_thu", "ty_le_gtgt", "ty_le_tncn", "tran_doanh_thu_theo_doanh_thu"}
-	householdTaxOptional = []string{"chi_phi", "thue_suat_tncn", "ty_le_giam_tncn", "doanh_thu_ky"}
+	householdTaxOptional = []string{"chi_phi", "thue_suat_tncn", "ty_le_giam_tncn", "tran_doanh_thu_giam_tncn", "doanh_thu_ky"}
 )
 
 func (t *CalculateHouseholdTaxTool) fail(msg string) (*types.ToolResult, error) {
@@ -122,6 +130,12 @@ func (t *CalculateHouseholdTaxTool) Execute(_ context.Context, args json.RawMess
 	if len(invalid) > 0 {
 		return t.fail("Tham số phải là số (đơn vị đồng cho số tiền): " + strings.Join(invalid, ", "))
 	}
+	uncapped := false
+	if b, ok := raw["giam_khong_gioi_han_doanh_thu"]; ok {
+		if err := json.Unmarshal(b, &uncapped); err != nil {
+			return t.fail("giam_khong_gioi_han_doanh_thu phải là true hoặc false")
+		}
+	}
 	opt := func(name string) *float64 {
 		if v, ok := values[name]; ok {
 			return &v
@@ -129,15 +143,17 @@ func (t *CalculateHouseholdTaxTool) Execute(_ context.Context, args json.RawMess
 		return nil
 	}
 	result, err := opcvn.CalculateHouseholdTax(opcvn.HouseholdInput{
-		Revenue:          values["doanh_thu"],
-		Threshold:        values["nguong_doanh_thu"],
-		VATRatio:         values["ty_le_gtgt"],
-		PITRatio:         values["ty_le_tncn"],
-		RevenueMethodCap: values["tran_doanh_thu_theo_doanh_thu"],
-		Cost:             opt("chi_phi"),
-		ProfitRate:       opt("thue_suat_tncn"),
-		Reduction:        opt("ty_le_giam_tncn"),
-		PeriodRevenue:    opt("doanh_thu_ky"),
+		Revenue:           values["doanh_thu"],
+		Threshold:         values["nguong_doanh_thu"],
+		VATRatio:          values["ty_le_gtgt"],
+		PITRatio:          values["ty_le_tncn"],
+		RevenueMethodCap:  values["tran_doanh_thu_theo_doanh_thu"],
+		Cost:              opt("chi_phi"),
+		ProfitRate:        opt("thue_suat_tncn"),
+		Reduction:         opt("ty_le_giam_tncn"),
+		ReductionCap:      opt("tran_doanh_thu_giam_tncn"),
+		ReductionUncapped: uncapped,
+		PeriodRevenue:     opt("doanh_thu_ky"),
 	})
 	if err != nil {
 		return t.fail("Lỗi: " + err.Error())
@@ -146,16 +162,24 @@ func (t *CalculateHouseholdTaxTool) Execute(_ context.Context, args json.RawMess
 	if t.formulaBlock != "" {
 		block += "\n\n" + t.formulaBlock
 	}
+	// every amount is of the whole year ("ky"), except the *_ky ones
 	data := map[string]interface{}{
+		"ky":                      "năm",
 		"doanh_thu":               result.In.Revenue,
 		"nguong_doanh_thu":        result.In.Threshold,
 		"phai_nop":                result.Liable,
 		"thue_gtgt":               result.VAT,
 		"thue_tncn_doanh_thu":     result.PITRevenue,
 		"thue_tncn_doanh_thu_net": result.PITRevenueNet,
+		"giam_thue_tncn_ap_dung":  result.Reduced,
 		"theo_doanh_thu":          result.RevenueMethod,
 		"gia_dinh":                result.Assumptions,
 		types.ToolDataAnswerBlock: block,
+	}
+	if result.In.PeriodRevenue != nil {
+		data["doanh_thu_ky"] = *result.In.PeriodRevenue
+		data["thue_gtgt_ky"] = result.PeriodVAT
+		data["thue_tncn_ky"] = opcvn.HouseholdPeriodPIT
 	}
 	if result.HasProfit {
 		data["thue_tncn_loi_nhuan"] = result.PITProfit

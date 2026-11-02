@@ -145,12 +145,14 @@ func (r SectionRef) Matches(meta *LegalMetadata) bool {
 // that rewrites the referenced Điều of another document ("Điều 9" asked of
 // an amending law, whose khoản 6 Điều 1 rewrites Điều 9 of the amended
 // law). An amendment of a whole Điều or khoản holds every part below it.
+// A phrase amendment ("thay cụm từ … tại Điều 9") holds no text of that
+// Điều, only the words changed, so it does not count.
 func (r SectionRef) MatchesAmendment(meta *LegalMetadata) bool {
 	if meta == nil || r.Article == "" {
 		return false
 	}
 	for _, a := range meta.Amends {
-		if !strings.EqualFold(a.Article, r.Article) {
+		if a.Phrase || !strings.EqualFold(a.Article, r.Article) {
 			continue
 		}
 		if r.Khoan != "" && a.Khoan != "" && !strings.EqualFold(a.Khoan, r.Khoan) {

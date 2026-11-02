@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -84,5 +85,51 @@ func TestApplyPhraseChangesNoSameDocumentChain(t *testing.T) {
 	got = applyPhraseChanges("1. Khoản:\n- b) cấp huyện", []legalPhraseChange{{From: "cấp huyện", To: "cấp xã", Khoan: "1", Diem: "b", Amender: nd}}, now)
 	if got != "1. Khoản:\n- b) cấp xã [thay cho “cấp huyện” theo Nghị định 177/2025/NĐ-CP, từ 01/07/2025]" {
 		t.Fatalf("dash điểm: %q", got)
+	}
+}
+
+// Fable review: a common or repeated single word is noted, not rewritten
+// at every occurrence; an issue date alone is not an effective date.
+func TestApplyPhraseChangesUnplaced(t *testing.T) {
+	now := time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)
+	nd := legalHistoryDoc{Number: "1/2026/NĐ-CP", Type: "Nghị định", EffFrom: "2026-01-01"}
+	content := "1. Hộ và cá nhân kinh doanh và tổ chức.\n\n2. Các hộ và cá nhân."
+	got := applyPhraseChanges(content, []legalPhraseChange{{From: "và", Khoan: "1", Amender: nd}}, now)
+	want := content + "\n\n[Lưu ý: tại khoản 1, cụm từ “và” bị bãi bỏ theo Nghị định 1/2026/NĐ-CP, từ 01/01/2026; " +
+		"chưa thể hiện trong lời văn trên vì không xác định được vị trí — đối chiếu văn bản sửa đổi]"
+	if got != want {
+		t.Fatalf("common word:\n got %q\nwant %q", got, want)
+	}
+	// a single word twice in its khoản is noted; once, it is applied
+	twice := "1. Hộ gia đình đăng ký tại huyện nơi cư trú, huyện cấp phép.\n\n2. Tại huyện khác."
+	got = applyPhraseChanges(twice, []legalPhraseChange{{From: "huyện", To: "xã", Khoan: "1", Amender: nd}}, now)
+	if !strings.HasPrefix(got, twice+"\n\n[Lưu ý: tại khoản 1, cụm từ “huyện” được thay bằng “xã”") {
+		t.Fatalf("repeated word: %q", got)
+	}
+	got = applyPhraseChanges(twice, []legalPhraseChange{{From: "huyện", To: "xã", Khoan: "2", Amender: nd}}, now)
+	if want := "1. Hộ gia đình đăng ký tại huyện nơi cư trú, huyện cấp phép.\n\n2. Tại xã [thay cho “huyện” theo Nghị định 1/2026/NĐ-CP, từ 01/01/2026] khác."; got != want {
+		t.Fatalf("single occurrence:\n got %q\nwant %q", got, want)
+	}
+	// a phrase of several words is still applied at every occurrence
+	got = applyPhraseChanges("cấp huyện xét, cấp huyện duyệt", []legalPhraseChange{{From: "cấp huyện", To: "cấp xã", Amender: nd}}, now)
+	if strings.Count(got, "cấp xã [thay cho") != 2 {
+		t.Fatalf("multi-word phrase: %q", got)
+	}
+	// issue date only: noted as of unknown effect, not applied
+	issued := legalHistoryDoc{Number: "9/2026/NĐ-CP", Type: "Nghị định", IssueDate: "2026-10-01"}
+	got = applyPhraseChanges("trên 500 triệu đồng", []legalPhraseChange{{From: "500 triệu đồng", To: "01 tỷ đồng", Amender: issued}}, now)
+	if want := "trên 500 triệu đồng [được thay bằng “01 tỷ đồng” theo Nghị định 9/2026/NĐ-CP, chưa rõ ngày hiệu lực]"; got != want {
+		t.Fatalf("issue date only:\n got %q\nwant %q", got, want)
+	}
+}
+
+func TestRealPhrase(t *testing.T) {
+	for p, want := range map[string]bool{
+		"và": false, "các": false, "xã": false, "của các": false, "cấp huyện,": true,
+		"huyện": true, "500": true, "01 tỷ đồng": true, "Bộ Tài chính": true,
+	} {
+		if got := realPhrase(p); got != want {
+			t.Errorf("realPhrase(%q) = %v, want %v", p, got, want)
+		}
 	}
 }

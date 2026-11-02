@@ -162,15 +162,51 @@ func setOf(list []string) map[string]bool {
 	return m
 }
 
-// phraseEffect is when a change applies: its effective date, else its
-// issue date; known is false when the amender gives neither.
+// phraseEffect is when a change applies: its effective date; known is
+// false without one. An issue date is not used in its place: a document
+// often takes effect months after it is issued, so a change known only by
+// its issue date is noted "chưa rõ ngày hiệu lực", not applied.
 func phraseEffect(d legalHistoryDoc, loc *time.Location) (t time.Time, known bool) {
-	for _, s := range []string{d.EffFrom, d.IssueDate} {
-		if t, err := time.ParseInLocation("2006-01-02", s, loc); err == nil {
-			return t, true
-		}
+	if t, err := time.ParseInLocation("2006-01-02", d.EffFrom, loc); err == nil {
+		return t, true
 	}
 	return time.Time{}, false
+}
+
+// phraseStopWords are words too common to stand for an amended phrase on
+// their own ("Bãi bỏ từ “và” tại khoản 1 Điều 3").
+var phraseStopWords = map[string]bool{
+	"và": true, "hoặc": true, "các": true, "của": true, "có": true, "không": true,
+	"được": true, "bị": true, "này": true, "đó": true, "theo": true, "tại": true,
+	"trong": true, "cho": true, "với": true, "là": true, "những": true, "một": true,
+	"từ": true, "đến": true, "về": true, "khi": true, "thì": true, "mà": true,
+	"đã": true, "sẽ": true, "như": true, "do": true, "bởi": true, "để": true,
+	"trên": true, "dưới": true, "sau": true, "trước": true, "hay": true, "nếu": true,
+}
+
+// phraseWords splits a phrase into its words, punctuation dropped.
+func phraseWords(p string) []string {
+	return strings.FieldsFunc(strings.ToLower(p), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+}
+
+// realPhrase reports whether p is specific enough to be found in a text
+// and stand for one wording: two words besides the common ones, or one
+// holding a digit or of four letters or more ("cấp huyện", "500", "huyện";
+// not "và", "các", "xã").
+func realPhrase(p string) bool {
+	var content []string
+	for _, w := range phraseWords(p) {
+		if !phraseStopWords[w] {
+			content = append(content, w)
+		}
+	}
+	switch len(content) {
+	case 0:
+		return false
+	case 1:
+		return utf8.RuneCountInString(content[0]) >= 4 || strings.IndexFunc(content[0], unicode.IsDigit) >= 0
+	}
+	return true
 }
 
 // phraseSpan is one occurrence of an amended phrase in the chunk.
@@ -203,6 +239,27 @@ func applyPhraseChanges(content string, changes []legalPhraseChange, now time.Ti
 		return order[i] < order[j]
 	})
 	scope := newProvisionScope(content)
+	// a change of words that cannot be placed safely — too common ("và"),
+	// or one word found more than once where it applies — is not applied:
+	// rewriting every occurrence could change the wrong one. It is noted
+	// after the text instead.
+	var noted []string
+	notedOnly := map[int]bool{}
+	for i, ch := range changes {
+		var here int
+		for _, loc := range findPhrase(content, ch.From) {
+			if khoan, diem := scope.at(loc[0]); (ch.Khoan == "" || ch.Khoan == khoan) && (ch.Diem == "" || ch.Diem == diem) {
+				here++
+			}
+		}
+		if here == 0 || (realPhrase(ch.From) && (here == 1 || len(phraseWords(ch.From)) > 1)) {
+			continue
+		}
+		notedOnly[i] = true
+		if note := phraseUnplacedNote(ch, now); note != "" && !containsString(noted, note) {
+			noted = append(noted, note)
+		}
+	}
 	var spans []phraseSpan
 	taken := func(s, e int) bool {
 		for _, sp := range spans {
@@ -219,8 +276,8 @@ func applyPhraseChanges(content string, changes []legalPhraseChange, now time.Ti
 			}
 			khoan, diem := scope.at(loc[0])
 			var here []legalPhraseChange
-			for _, ch := range changes {
-				if (ch.Khoan == "" || ch.Khoan == khoan) && (ch.Diem == "" || ch.Diem == diem) {
+			for i, ch := range changes {
+				if !notedOnly[i] && (ch.Khoan == "" || ch.Khoan == khoan) && (ch.Diem == "" || ch.Diem == diem) {
 					here = append(here, ch)
 				}
 			}
@@ -229,7 +286,7 @@ func applyPhraseChanges(content string, changes []legalPhraseChange, now time.Ti
 			}
 		}
 	}
-	if len(spans) == 0 {
+	if len(spans) == 0 && len(noted) == 0 {
 		return content
 	}
 	sort.Slice(spans, func(i, j int) bool { return spans[i].start < spans[j].start })
@@ -241,7 +298,31 @@ func applyPhraseChanges(content string, changes []legalPhraseChange, now time.Ti
 		last = sp.end
 	}
 	b.WriteString(content[last:])
+	for _, n := range noted {
+		b.WriteString("\n\n" + n)
+	}
 	return b.String()
+}
+
+// phraseUnplacedNote is the line for a change not applied in the text:
+// what it changes, where, by which document and from when.
+func phraseUnplacedNote(ch legalPhraseChange, now time.Time) string {
+	if ch.To != "" && samePhrase(ch.From, ch.To) {
+		return ""
+	}
+	where := vietnamese_legal.AmendRef{Khoan: ch.Khoan, Diem: ch.Diem}.String()
+	if where == "" {
+		where = "điều này"
+	}
+	when := "chưa rõ ngày hiệu lực"
+	if at, known := phraseEffect(ch.Amender, now.Location()); known {
+		when = "từ " + at.Format("02/01/2006")
+		if at.After(now) {
+			when = "sẽ áp dụng " + when
+		}
+	}
+	return "[Lưu ý: tại " + where + ", cụm từ “" + ch.From + "” " + phraseChangeText(ch) + " theo " + ch.Amender.label() + ", " + when +
+		"; chưa thể hiện trong lời văn trên vì không xác định được vị trí — đối chiếu văn bản sửa đổi]"
 }
 
 // phraseReplacement follows the changes of the stored words; ok is false

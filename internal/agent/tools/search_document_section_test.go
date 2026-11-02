@@ -313,3 +313,58 @@ func TestSearchDocumentSectionPointsAppendicesToReadDocument(t *testing.T) {
 		t.Errorf("the description must carry the appendix guidance")
 	}
 }
+
+// Fable review: read_document and search_document_section show the model
+// the current wording too, looked up once for the legal rows only.
+func TestSectionAndReadDocumentApplyCurrentWording(t *testing.T) {
+	section, _ := newSectionFixture(t)
+	var asked [][]string
+	wording := func(_ context.Context, ids []string) map[string]string {
+		asked = append(asked, ids)
+		return map[string]string{"c53-2": "Điều 17. Trách nhiệm\n1. cấp xã [thay cho “cấp huyện” theo …]"}
+	}
+	section.WithCurrentWording(wording)
+	res, err := section.Execute(context.Background(), json.RawMessage(`{"section":"Điều 17","knowledge_id":"doc-53"}`))
+	if err != nil || !res.Success {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	rows, _ := res.Data["chunks"].([]map[string]interface{})
+	if len(rows) != 2 || rows[0]["chunk_id"] != "c53-2" {
+		t.Fatalf("rows = %+v", rows)
+	}
+	if !strings.HasPrefix(rows[0]["content"].(string), "Điều 17. Trách nhiệm\n1. ...") ||
+		!strings.Contains(fmt.Sprint(rows[0]["model_content"]), "cấp xã [thay cho") {
+		t.Fatalf("section row: %+v", rows[0])
+	}
+	if _, ok := rows[1]["model_content"]; ok {
+		t.Fatalf("unchanged row got model_content: %+v", rows[1])
+	}
+	if _, ok := rows[0]["model_match"]; ok {
+		t.Fatal("the heading path is not a text match to recompute")
+	}
+
+	reader := NewReadDocumentTool(section.knowledgeService, section.chunkService, section.searchTargets).WithCurrentWording(wording)
+	res, err = reader.Execute(context.Background(), json.RawMessage(`{"id":"doc-53"}`))
+	if err != nil || !res.Success {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	ids := asked[len(asked)-1]
+	for _, id := range ids {
+		if id == "c53-0" {
+			t.Fatalf("a chunk without legal structure was looked up: %v", ids)
+		}
+	}
+	rows, _ = res.Data["chunks"].([]map[string]interface{})
+	found := false
+	for _, r := range rows {
+		if r["chunk_id"] == "c53-2" {
+			found = strings.Contains(fmt.Sprint(r["model_content"]), "cấp xã") && !strings.Contains(fmt.Sprint(r["content"]), "cấp xã")
+		}
+	}
+	if !found {
+		t.Fatalf("read_document rows: %+v", rows)
+	}
+	if strings.Contains(res.Output, "cấp xã") {
+		t.Fatal("the UI output keeps the stored text")
+	}
+}

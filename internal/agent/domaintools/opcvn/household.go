@@ -20,8 +20,14 @@ const (
 )
 
 // HouseholdNotIncluded is what the calculation leaves out; it is part of
-// every assumptions block.
-const HouseholdNotIncluded = "Chưa tính lệ phí môn bài, thuế tài nguyên, thuế tiêu thụ đặc biệt, bảo vệ môi trường, thuế cho thuê bất động sản."
+// every assumptions block. It names no particular tax or fee: which ones
+// exist changes with the law (lệ phí môn bài is abolished from 2026), and
+// no legal fact is written in code.
+const HouseholdNotIncluded = "Chỉ tính thuế GTGT và thuế TNCN nêu trên; chưa tính các loại thuế, phí, lệ phí khác có thể phát sinh theo ngành nghề, hoạt động (tra văn bản hiện hành)."
+
+// HouseholdPeriodPIT is the period row for PIT: the annual figure is not
+// split by period, so the model does not divide it by 4 or 12 itself.
+const HouseholdPeriodPIT = "không tính theo kỳ bằng cách chia số cả năm (mức trừ ngưỡng tính cho cả năm); số tạm nộp theo hướng dẫn kê khai của văn bản hiện hành"
 
 // HouseholdInput are the figures of a household business (hộ kinh doanh,
 // cá nhân kinh doanh). Revenue comes from the user; the threshold, ratios
@@ -44,8 +50,17 @@ type HouseholdInput struct {
 	// set to compare with PIT on profit; ProfitRate alone gives the
 	// break-even profit.
 	Cost, ProfitRate *float64
-	// Reduction is a PIT reduction in PERCENT of the tax (ty_le_giam_tncn).
+	// Reduction is a PIT reduction in PERCENT of the tax (ty_le_giam_tncn);
+	// it needs ReductionCap.
 	Reduction *float64
+	// ReductionCap is the annual revenue up to which the reduction applies,
+	// in đồng (tran_doanh_thu_giam_tncn): the reduction documents limit it,
+	// so it is never assumed; above it the tax is not reduced.
+	ReductionCap *float64
+	// ReductionUncapped says, instead of ReductionCap, that the reduction
+	// document sets no revenue limit (giam_khong_gioi_han_doanh_thu): an
+	// explicit choice, never the default.
+	ReductionUncapped bool
 	// PeriodRevenue is the revenue of one quarter or month (doanh_thu_ky).
 	PeriodRevenue *float64
 }
@@ -61,6 +76,7 @@ type HouseholdTax struct {
 	HasProfit       bool
 	PITRevenueNet   float64 // after Reduction
 	PITProfitNet    float64
+	Reduced         bool    // Reduction set and revenue ≤ ReductionCap
 	BreakEvenProfit float64 // loi_nhuan_hoa_von, when HasBreakEven
 	HasBreakEven    bool
 	PeriodVAT       float64 // GTGT of PeriodRevenue, when set
@@ -98,6 +114,17 @@ func CalculateHouseholdTax(in HouseholdInput) (*HouseholdTax, error) {
 			return nil, errors.New("Tỷ lệ giảm thuế TNCN ghi theo PHẦN TRĂM, từ 1 đến dưới 100 (ví dụ 30 cho 30%)")
 		}
 		reduction = *in.Reduction / 100
+	}
+	if in.ReductionCap != nil && in.ReductionUncapped {
+		return nil, errors.New("Chỉ dùng một trong hai: mức doanh thu tối đa được giảm (tran_doanh_thu_giam_tncn) hoặc giam_khong_gioi_han_doanh_thu")
+	}
+	if reduction > 0 && in.ReductionCap == nil && !in.ReductionUncapped {
+		return nil, errors.New("Có tỷ lệ giảm thuế TNCN thì cần cả mức doanh thu năm tối đa được giảm (tran_doanh_thu_giam_tncn) tra trong văn bản giảm thuế; chỉ khi văn bản không giới hạn doanh thu mới đặt giam_khong_gioi_han_doanh_thu = true")
+	}
+	if in.ReductionCap != nil {
+		if c := *in.ReductionCap; !finite(c) || c < 0 || c > maxAmount {
+			return nil, errors.New("Mức doanh thu năm tối đa được giảm thuế TNCN phải là số đồng không âm")
+		}
 	}
 	if in.ProfitRate != nil {
 		if err := checkTaxRate(*in.ProfitRate); err != nil {
@@ -142,6 +169,11 @@ func CalculateHouseholdTax(in HouseholdInput) (*HouseholdTax, error) {
 			out.BreakEvenProfit = out.PITRevenue / *in.ProfitRate
 		}
 	}
+	// the reduction applies only up to its revenue cap
+	if reduction > 0 && in.ReductionCap != nil && in.Revenue > *in.ReductionCap {
+		reduction = 0
+	}
+	out.Reduced = reduction > 0
 	out.PITRevenueNet = out.PITRevenue * (1 - reduction)
 	out.PITProfitNet = out.PITProfit * (1 - reduction)
 	out.Assumptions = householdAssumptions(out, vat, pit, reduction)
@@ -172,13 +204,19 @@ func householdAssumptions(c *HouseholdTax, vat, pit, reduction float64) []string
 		a = append(a, "Chi phí "+FormatVND(*in.Cost)+" coi là toàn bộ chi phí được trừ, có hóa đơn, chứng từ; thuế suất TNCN trên lợi nhuận "+
 			FormatPercent(*in.ProfitRate, -1)+" theo mức doanh thu năm.")
 	}
-	if reduction > 0 {
-		a = append(a, "Giảm "+FormatPercent(reduction, -1)+" số thuế TNCN phải nộp chỉ áp dụng khi đủ điều kiện của văn bản giảm thuế (kỳ tính thuế, mức doanh thu năm tối đa); kiểm tra điều kiện trước khi dùng số sau giảm.")
+	switch {
+	case reduction > 0 && in.ReductionUncapped:
+		a = append(a, "Giảm "+FormatPercent(reduction, -1)+" số thuế TNCN phải nộp, theo văn bản giảm thuế không giới hạn doanh thu (đã xác nhận khi gọi công cụ); chỉ dùng số sau giảm khi đủ các điều kiện khác của văn bản (kỳ tính thuế, đối tượng).")
+	case reduction > 0:
+		a = append(a, "Giảm "+FormatPercent(reduction, -1)+" số thuế TNCN phải nộp áp dụng vì doanh thu năm không quá "+FormatVND(*in.ReductionCap)+
+			" (mức tra trong văn bản giảm thuế); chỉ dùng số sau giảm khi đủ các điều kiện khác của văn bản (kỳ tính thuế, đối tượng).")
+	case in.Reduction != nil && *in.Reduction > 0:
+		a = append(a, "Không giảm thuế TNCN: doanh thu năm trên "+FormatVND(*in.ReductionCap)+", mức tối đa được giảm theo văn bản giảm thuế.")
 	}
 	a = append(a,
 		"Phương pháp tính TNCN theo % doanh thu chỉ được chọn khi doanh thu năm không quá "+FormatVND(in.RevenueMethodCap)+" (mức tra trong văn bản); vượt thì chỉ tính trên lợi nhuận.",
 		"Một ngành nghề, một tỷ lệ: hộ có nhiều ngành nghề tính riêng từng ngành, mức trừ ngưỡng chỉ trừ một lần trong năm.",
-		"Tạm nộp theo quý/tháng: GTGT tính trên doanh thu của kỳ; mức trừ "+FormatVND(in.Threshold)+" tính cho cả năm, nên TNCN của từng kỳ không lấy số năm chia đều.",
+		"Các số thuế trên là của CẢ NĂM. Tạm nộp theo quý/tháng: GTGT tính trên doanh thu của kỳ; mức trừ "+FormatVND(in.Threshold)+" tính cho cả năm, nên TNCN của từng kỳ không lấy số năm chia đều.",
 		HouseholdNotIncluded,
 	)
 	return a
@@ -196,20 +234,23 @@ func (c *HouseholdTax) Render() string {
 		b.WriteString("\nĐọc kết quả: doanh thu năm không vượt ngưỡng → không phải nộp thuế GTGT và thuế TNCN; " +
 			"hộ kinh doanh thông báo doanh thu theo quy định thay vì khai thuế.\n")
 	} else {
-		row("Thuế GTGT ("+FormatPercent(in.VATRatio/100, -1)+" × doanh thu)", FormatVND(c.VAT))
+		row("Thuế GTGT cả năm ("+FormatPercent(in.VATRatio/100, -1)+" × doanh thu năm)", FormatVND(c.VAT))
 		if c.RevenueMethod {
-			row("Thuế TNCN theo % doanh thu ("+FormatPercent(in.PITRatio/100, -1)+" × (doanh thu − ngưỡng))", FormatVND(c.PITRevenue))
-			if in.Reduction != nil && *in.Reduction > 0 {
-				row("Thuế TNCN theo % doanh thu sau giảm "+FormatPercent(*in.Reduction/100, -1), FormatVND(c.PITRevenueNet))
+			row("Thuế TNCN cả năm theo % doanh thu ("+FormatPercent(in.PITRatio/100, -1)+" × (doanh thu năm − ngưỡng))", FormatVND(c.PITRevenue))
+			if c.Reduced {
+				row("Thuế TNCN cả năm theo % doanh thu sau giảm "+FormatPercent(*in.Reduction/100, -1), FormatVND(c.PITRevenueNet))
 			}
 		} else {
 			row("Thuế TNCN theo % doanh thu", "không áp dụng (doanh thu năm trên "+FormatVND(in.RevenueMethodCap)+")")
 		}
 		if c.HasProfit {
-			row("Thuế TNCN trên lợi nhuận ("+FormatPercent(*in.ProfitRate, -1)+" × (doanh thu − chi phí))", FormatVND(c.PITProfit))
-			if in.Reduction != nil && *in.Reduction > 0 {
-				row("Thuế TNCN trên lợi nhuận sau giảm", FormatVND(c.PITProfitNet))
+			row("Thuế TNCN cả năm trên lợi nhuận ("+FormatPercent(*in.ProfitRate, -1)+" × (doanh thu năm − chi phí))", FormatVND(c.PITProfit))
+			if c.Reduced {
+				row("Thuế TNCN cả năm trên lợi nhuận sau giảm", FormatVND(c.PITProfitNet))
 			}
+		}
+		if in.Reduction != nil && *in.Reduction > 0 && !c.Reduced {
+			row("Giảm thuế TNCN", "không áp dụng (doanh thu năm trên "+FormatVND(*in.ReductionCap)+")")
 		}
 		if c.HasBreakEven {
 			row("Lợi nhuận hòa vốn giữa hai phương pháp TNCN", FormatVND(c.BreakEvenProfit))
@@ -222,6 +263,7 @@ func (c *HouseholdTax) Render() string {
 		}
 		if in.PeriodRevenue != nil {
 			row("Thuế GTGT của kỳ (doanh thu kỳ "+FormatVND(*in.PeriodRevenue)+")", FormatVND(c.PeriodVAT))
+			row("Thuế TNCN của kỳ", HouseholdPeriodPIT)
 		}
 		fmt.Fprintf(&b, "\nĐọc kết quả: %s\n", c.Reading())
 	}
@@ -238,7 +280,7 @@ func (c *HouseholdTax) Reading() string {
 	case !c.RevenueMethod:
 		return "doanh thu năm vượt mức được tính TNCN theo % doanh thu, nên TNCN tính trên lợi nhuận; thuế GTGT vẫn tính theo % trên toàn bộ doanh thu."
 	case c.HasProfit && c.PITProfit < c.PITRevenue:
-		return "thuế TNCN trên lợi nhuận thấp hơn thuế TNCN theo % doanh thu; phương pháp lợi nhuận cần sổ sách, chứng từ chi phí và giữ ổn định 02 năm."
+		return "thuế TNCN trên lợi nhuận thấp hơn thuế TNCN theo % doanh thu; phương pháp lợi nhuận cần sổ sách, chứng từ chi phí và thời gian phải giữ phương pháp đã chọn theo văn bản (xem Công thức áp dụng)."
 	case c.HasProfit && c.PITProfit > c.PITRevenue:
 		return "thuế TNCN theo % doanh thu thấp hơn thuế TNCN trên lợi nhuận."
 	case c.HasProfit:
@@ -312,7 +354,7 @@ func HouseholdFormulas() map[string]func(map[string]float64) (map[string]float64
 			return map[string]float64{"thue_tncn_loi_nhuan": c.PITProfit}, nil
 		},
 		FormulaPITReduction: func(in map[string]float64) (map[string]float64, error) {
-			v, err := need(in, "thue_tncn", "ty_le_giam_tncn")
+			v, err := need(in, "thue_tncn", "ty_le_giam_tncn", "doanh_thu", "tran_doanh_thu_giam_tncn")
 			if err != nil {
 				return nil, err
 			}
@@ -321,6 +363,13 @@ func HouseholdFormulas() map[string]func(map[string]float64) (map[string]float64
 			}
 			if !finite(v[1]) || v[1] < 0 || v[1] >= 100 {
 				return nil, errors.New("Tỷ lệ giảm ghi theo phần trăm, từ 0 đến dưới 100")
+			}
+			if !finite(v[2]) || v[2] <= 0 || !finite(v[3]) || v[3] < 0 {
+				return nil, errors.New("Doanh thu năm phải lớn hơn 0 và mức doanh thu tối đa được giảm không âm")
+			}
+			// above the cap the tax is not reduced
+			if v[2] > v[3] {
+				return map[string]float64{"thue_tncn_sau_giam": v[0]}, nil
 			}
 			return map[string]float64{"thue_tncn_sau_giam": v[0] * (1 - v[1]/100)}, nil
 		},

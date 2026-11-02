@@ -142,11 +142,21 @@ func TestAnswerUsesPhrase(t *testing.T) {
 		{"cấp huyện,", "cấp huyện,", true},
 		{"", "500 triệu đồng", false},
 		{"ab", "ab", false},
+		// a common word is not a phrase the answer "uses"
+		{"các hộ kinh doanh", "các", false},
+		{"hộ và cá nhân", "và", false},
 	}
 	for _, c := range cases {
 		if got := answerUsesPhrase(c.answer, c.phrase); got != c.want {
 			t.Errorf("answerUsesPhrase(%q, %q) = %v", c.answer, c.phrase, got)
 		}
+	}
+	// the new words count too: the answer read the current wording
+	if !answerUsesChange("ngưỡng 01 tỷ đồng", "500 triệu đồng", "01 tỷ đồng") {
+		t.Error("answer with the new wording")
+	}
+	if answerUsesChange("ngưỡng 2 tỷ đồng", "500 triệu đồng", "") {
+		t.Error("removal: only the old words")
 	}
 }
 
@@ -170,5 +180,18 @@ func TestPhraseLines(t *testing.T) {
 		if lines[i].text != want[i] {
 			t.Errorf("line %d = %q\nwant %q", i, lines[i].text, want[i])
 		}
+	}
+}
+
+// Fable review: an amender without an effective date is still told, with
+// its issue date, not left silent.
+func TestPhraseLinesWithoutEffectiveDate(t *testing.T) {
+	h := &legalHistory{phrases: map[string]*phraseChange{}, now: time.Date(2026, 10, 19, 0, 0, 0, 0, time.UTC)}
+	old := legalHistoryDoc{Number: "68/2026/NĐ-CP", Type: "Nghị định"}
+	amender := legalHistoryDoc{Number: "9/2026/NĐ-CP", Type: "Nghị định", IssueDate: "2026-03-01"}
+	h.addPhrase(old, amender, vietnamese_legal.AmendRef{Article: "3", Phrase: true, From: "500 triệu đồng", To: "01 tỷ đồng"})
+	lines := h.phraseLines()
+	if len(lines) != 1 || lines[0].text != "Điều 3 Nghị định 68/2026/NĐ-CP: cụm từ “500 triệu đồng” được thay bằng “01 tỷ đồng” bởi Nghị định 9/2026/NĐ-CP, ban hành ngày 01/03/2026." {
+		t.Fatalf("lines = %+v", lines)
 	}
 }

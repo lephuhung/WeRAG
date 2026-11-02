@@ -46,10 +46,44 @@ func (m *LegalMetadata) Citation() string {
 			cite += " – " + m.Appendix
 		}
 	}
-	if amended := amendsText(m.Amends); amended != "" && cite != "" {
-		cite += " (sửa đổi " + amended + ")"
+	if cite == "" {
+		return cite
+	}
+	// a phrase amendment changes words, not the provision: named apart
+	var quoted, phrases []AmendRef
+	for _, a := range m.Amends {
+		if a.Phrase {
+			phrases = append(phrases, a)
+		} else {
+			quoted = append(quoted, a)
+		}
+	}
+	var amended []string
+	if t := amendsText(uniqueAmendTargets(quoted)); t != "" {
+		amended = append(amended, "sửa đổi "+t)
+	}
+	if t := amendsText(uniqueAmendTargets(phrases)); t != "" {
+		amended = append(amended, "sửa đổi cụm từ tại "+t)
+	}
+	if len(amended) > 0 {
+		cite += " (" + strings.Join(amended, "; ") + ")"
 	}
 	return cite
+}
+
+// uniqueAmendTargets keeps the first amendment of each provision: a
+// phrase list names one Điều once per phrase.
+func uniqueAmendTargets(amends []AmendRef) []AmendRef {
+	var out []AmendRef
+	seen := map[AmendRef]bool{}
+	for _, a := range amends {
+		key := AmendRef{Document: a.Document, Article: a.Article, Khoan: a.Khoan, Diem: a.Diem}
+		if !seen[key] {
+			seen[key] = true
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // amendsText lists amended provisions, naming each document once after its

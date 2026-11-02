@@ -30,28 +30,49 @@ func (t *SearchKnowledgeTool) WithLegalCatalog(svc interfaces.LegalCatalogServic
 // WithCurrentWording sets the lookup that returns, by chunk id, the text of
 // legal chunks with in-place phrase amendments applied; the model reads that
 // text, the references keep the stored one.
-func (t *SearchKnowledgeTool) WithCurrentWording(fn func(ctx context.Context, chunkIDs []string) map[string]string) *SearchKnowledgeTool {
+func (t *SearchKnowledgeTool) WithCurrentWording(fn CurrentWordingFunc) *SearchKnowledgeTool {
 	t.currentWording = fn
 	return t
 }
+
+// CurrentWordingFunc returns, by chunk id, the text of legal chunks with
+// in-place phrase amendments applied (chunks without any left out).
+type CurrentWordingFunc func(ctx context.Context, chunkIDs []string) map[string]string
 
 // applyCurrentWording gives each result row whose provision was amended in
 // place a "model_content" with the current wording (and a matching head
 // for snippet rows, and the match snippet taken from it).
 func (t *SearchKnowledgeTool) applyCurrentWording(ctx context.Context, data map[string]interface{}) {
 	rows, _ := data["results"].([]map[string]interface{})
-	if t.currentWording == nil || len(rows) == 0 {
-		return
+	q, _ := data["query"].(string)
+	if n := applyCurrentWordingRows(ctx, t.currentWording, rows, q); n > 0 {
+		logger.Infof(ctx, "[Tool][SearchKnowledge] Current wording applied to %d chunk(s)", n)
+	}
+}
+
+// applyCurrentWordingRows sets "model_content" on the legal rows (those
+// with a legal_cite: a provision) whose wording fn changes; the model reads
+// it, "content" stays as stored for the UI. With query set, a row with a
+// match snippet gets "model_match" from the new text. One lookup for all
+// rows; it returns how many changed.
+func applyCurrentWordingRows(ctx context.Context, fn CurrentWordingFunc, rows []map[string]interface{}, query string) int {
+	if fn == nil || len(rows) == 0 {
+		return 0
 	}
 	ids := make([]string, 0, len(rows))
 	for _, row := range rows {
 		if id, _ := row["chunk_id"].(string); id != "" {
-			ids = append(ids, id)
+			if _, legal := row["legal_cite"]; legal {
+				ids = append(ids, id)
+			}
 		}
 	}
-	current := t.currentWording(ctx, ids)
+	if len(ids) == 0 {
+		return 0
+	}
+	current := fn(ctx, ids)
 	if len(current) == 0 {
-		return
+		return 0
 	}
 	for _, row := range rows {
 		id, _ := row["chunk_id"].(string)
@@ -60,14 +81,14 @@ func (t *SearchKnowledgeTool) applyCurrentWording(ctx context.Context, data map[
 			continue
 		}
 		row["model_content"] = text
-		if q, _ := data["query"].(string); q != "" {
-			row["model_match"] = extractSnippetForQueries(text, []string{q})
+		if _, snippet := row["match_snippet"]; snippet && query != "" {
+			row["model_match"] = extractSnippetForQueries(text, []string{query})
 		}
 		if _, short := row["content_head"]; short {
 			row["content_head"] = searchContentHead(text, searchHeadMaxRunes)
 		}
 	}
-	logger.Infof(ctx, "[Tool][SearchKnowledge] Current wording applied to %d chunk(s)", len(current))
+	return len(current)
 }
 
 // expandLegalRelations follows the legal catalogue from the hits on

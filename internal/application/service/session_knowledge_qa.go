@@ -202,6 +202,8 @@ func (s *sessionService) KnowledgeQA(
 		if fn := src.legalHistoryFunc(searchTargetKBIDs(searchTargets)); fn != nil {
 			chatManage.EventBus = newLegalHistoryBus(chatManage.EventBus, fn, mergedChunkIDs(chatManage))
 		}
+		// the passages read with the current wording, as the agents' tools do
+		chatManage.LegalCurrentWording = src.legalWordingFunc(searchTargetKBIDs(searchTargets))
 	}
 	chatManage.UserContextPrompt = types.UserContextPrompt(ctx)
 	chatManage.LegalCatalogPrompt = s.legalCatalogPrompt(ctx, effectiveQuery)

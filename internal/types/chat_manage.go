@@ -1,6 +1,9 @@
 package types
 
-import "maps"
+import (
+	"context"
+	"maps"
+)
 
 // PipelineRequest holds immutable configuration set once at the request entry point.
 type PipelineRequest struct {
@@ -155,6 +158,10 @@ type PipelineState struct {
 	// documents the question names by số hiệu, appended next to
 	// UserContextPrompt; empty when it names none.
 	LegalCatalogPrompt string `json:"-"`
+	// LegalCurrentWording returns, by chunk id, the retrieved legal chunks
+	// with in-place phrase amendments applied, for the passages the model
+	// reads (the references keep the stored text); nil when unavailable.
+	LegalCurrentWording func(ctx context.Context, chunkIDs []string) map[string]string `json:"-"`
 	// UsedMemories mirrors MemoryPrompt in structured form so the answer can
 	// tell the user which memories it saw.
 	UsedMemories UsedMemories `json:"-"`
@@ -289,6 +296,7 @@ func (c *ChatManage) Clone() *ChatManage {
 			MemoryPrompt:         c.MemoryPrompt,
 			UserContextPrompt:    c.UserContextPrompt,
 			LegalCatalogPrompt:   c.LegalCatalogPrompt,
+			LegalCurrentWording:  c.LegalCurrentWording,
 			UsedMemories:         append(UsedMemories(nil), c.UsedMemories...),
 			RenderedContexts:     c.RenderedContexts,
 			Entity:               entity,
