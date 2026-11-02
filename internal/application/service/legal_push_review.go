@@ -231,8 +231,8 @@ func (s *LegalPushService) DecideCandidate(ctx context.Context, id int64, d Lega
 	return s.one(ctx, &c)
 }
 
-// correct applies the SuperAdmin's corrections and looks the provisions up
-// again; the match status is recomputed for the record.
+// correct applies the SuperAdmin's corrections, looks the provisions up
+// again and recomputes the level and the match status for the record.
 func (s *LegalPushService) correct(ctx context.Context, c *types.LegalProvisionLinkCandidate, d LegalLinkDecision) error {
 	changed := false
 	if v := strings.TrimSpace(d.AmenderDocID); v != "" && v != c.AmenderDocID {
@@ -251,31 +251,34 @@ func (s *LegalPushService) correct(ctx context.Context, c *types.LegalProvisionL
 	if v := strings.ToLower(strings.TrimSpace(d.SourcePath)); v != "" && v != c.SourcePath {
 		c.SourcePath, changed = legalCap(v, 160), true
 	}
+	targetChanged := false
 	if v := strings.ToLower(strings.TrimSpace(d.TargetPath)); v != "" && v != c.TargetPath {
-		c.TargetPath, changed = legalCap(v, 160), true
-		c.TargetProvisionID = ""
+		c.TargetPath, c.TargetLevel, changed, targetChanged = legalCap(v, 160), legalPathLevel(v), true, true
 	}
-	if !changed && c.TargetProvisionID != "" && c.SourceProvisionID != "" {
+	if !changed {
 		return nil
 	}
-	// A's provision: the held copy's id at the path, else a stable synthetic id
-	if c.TargetProvisionID == "" || changed {
-		if held, err := s.heldDoc(ctx, c.TargetDocID); err != nil {
+	// A's provision: the held copy's id at the path, else a stable synthetic
+	// id; an id of the pushed file (mode full) stays unless the path moved
+	targetFound := true
+	if held, err := s.heldDoc(ctx, c.TargetDocID); err != nil {
+		return err
+	} else if held != nil {
+		provs, err := s.heldProvisions(ctx, held.KnowledgeID)
+		if err != nil {
 			return err
-		} else if held != nil {
-			provs, err := s.heldProvisions(ctx, held.KnowledgeID)
-			if err != nil {
-				return err
-			}
-			if id := provs.ids[c.TargetPath]; id != "" {
-				c.TargetProvisionID = id
-			}
 		}
-		if c.TargetProvisionID == "" {
+		targetFound = provs.has(c.TargetPath)
+		if id := provs.ids[c.TargetPath]; id != "" {
+			c.TargetProvisionID = id
+		} else if targetChanged || c.TargetProvisionID == "" {
 			c.TargetProvisionID = legalSyntheticProvisionID(c.TargetDocID, c.TargetPath)
 		}
+	} else if targetChanged || c.TargetProvisionID == "" {
+		c.TargetProvisionID = legalSyntheticProvisionID(c.TargetDocID, c.TargetPath)
 	}
 	// B's provision
+	sourceFound := false
 	if c.AmenderDocID != "" {
 		c.SourceProvisionID = legalSyntheticProvisionID(c.AmenderDocID, c.SourcePath)
 		if held, err := s.heldDoc(ctx, c.AmenderDocID); err != nil {
@@ -285,14 +288,23 @@ func (s *LegalPushService) correct(ctx context.Context, c *types.LegalProvisionL
 			if err != nil {
 				return err
 			}
+			sourceFound = provs.has(c.SourcePath)
 			if id := provs.ids[c.SourcePath]; id != "" {
 				c.SourceProvisionID = id
 			}
 		}
 	}
-	if changed {
-		c.MatchReason = strings.TrimPrefix(c.MatchReason+"; đã sửa khi duyệt", "; ")
+	switch {
+	case c.AmenderDocID == "":
+		c.MatchStatus = types.LegalLinkUnresolved
+	case !targetFound:
+		c.MatchStatus = types.LegalLinkTargetMissing
+	case !sourceFound:
+		c.MatchStatus = types.LegalLinkDocOnly
+	default:
+		c.MatchStatus = types.LegalLinkMatched
 	}
+	c.MatchReason = strings.TrimPrefix(c.MatchReason+"; đã sửa khi duyệt", "; ")
 	return nil
 }
 

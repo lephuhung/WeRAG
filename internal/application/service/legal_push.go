@@ -49,6 +49,10 @@ const (
 	LegalPushFull  = "full"
 )
 
+// legalProvisionIDMax is the length of legal_provision_links.target_provision_id;
+// a pushed element id is stored there as is (mode full).
+const legalProvisionIDMax = 64
+
 // LegalPushMaxBytes bounds a pushed file.
 const LegalPushMaxBytes = 20 << 20
 
@@ -262,7 +266,32 @@ func (h *legalHeldProvisions) has(path string) bool {
 		return true
 	}
 	p, ok := legalPathRef(path)
-	return ok && h.structure.has(p)
+	if !ok {
+		return false
+	}
+	if h.structure.has(p) {
+		return true
+	}
+	// a điểm directly under a Điều ("dieu:5/diem:a"): the chunks record no
+	// such ref; the Điều being there is as far as they can tell
+	if p.Khoan == "" && p.Diem != "" {
+		return h.structure.has(LegalProvisionRef{Article: p.Article})
+	}
+	return false
+}
+
+// legalPathLevel is the level of a provision path: article, clause or item.
+func legalPathLevel(path string) string {
+	last := path[strings.LastIndex(path, "/")+1:]
+	switch {
+	case strings.HasPrefix(last, "diem:"):
+		return "item"
+	case strings.HasPrefix(last, "khoan:"):
+		return "clause"
+	case strings.HasPrefix(last, "dieu:"):
+		return "article"
+	}
+	return ""
 }
 
 // heldProvisions reads the provisions of a held document from its chunks.
@@ -391,17 +420,23 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 			return nil, err
 		}
 		res.KnowledgeID, res.KnowledgeBaseID, res.Ingest = kres.KnowledgeID, kres.KnowledgeBaseID, kres.Result
-	} else {
+	} else if held != nil {
 		res.KnowledgeID, res.KnowledgeBaseID = held.KnowledgeID, held.KnowledgeBaseID
 		if target, err = s.heldProvisions(ctx, held.KnowledgeID); err != nil {
 			return nil, fmt.Errorf("held provisions: %w", err)
 		}
 	}
+	// links on an A no KB holds: positions are the pushed file's (target nil)
 
 	// 4. one candidate per mark
 	r := &legalPushResolver{s: s, ctx: ctx, docs: map[string]*legalResolvedDoc{}, provs: map[string]*legalHeldProvisions{}}
 	var out []*types.LegalProvisionLinkCandidate
 	for _, mp := range markup.Provisions {
+		if len(mp.ElementID) > legalProvisionIDMax {
+			res.Problems = append(res.Problems, LegalPushProblem{ElementID: legalCap(mp.ElementID, 160),
+				Reason: fmt.Sprintf("id phần tử dài quá %d ký tự", legalProvisionIDMax)})
+			continue
+		}
 		place, ok := places[mp.ElementID]
 		if !ok {
 			res.Problems = append(res.Problems, LegalPushProblem{ElementID: mp.ElementID,
@@ -575,10 +610,10 @@ func (r *legalPushResolver) candidate(a *types.LegalDocument, meta *legalPushMet
 	case place.Path == "":
 		status(types.LegalLinkTargetMissing, "phần tử thiếu số Điều/khoản/điểm, không xác định được vị trí trong văn bản")
 	case mode == LegalPushFull:
-		c.TargetProvisionID = elementID
-		if len(elementID) > 64 {
-			c.TargetProvisionID = legalSyntheticProvisionID(a.ID, place.Path)
-		}
+		c.TargetProvisionID = elementID // the chunks of the ingested copy carry it
+	case target == nil:
+		c.TargetProvisionID = legalSyntheticProvisionID(a.ID, place.Path)
+		reasons = append(reasons, "chưa có toàn văn trong kho: vị trí theo tệp đẩy lên")
 	case target != nil && target.ids[place.Path] != "":
 		c.TargetProvisionID = target.ids[place.Path]
 	case target.has(place.Path):

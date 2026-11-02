@@ -4,6 +4,7 @@ import (
 	"context"
 	stderrors "errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -115,6 +116,7 @@ func TestLegalPushLinks(t *testing.T) {
 	got, err = svc.DecideCandidate(ctx, unres[0].ID, LegalLinkDecision{Action: "approve", AmenderDocID: "nd150", SourcePath: "dieu:1/khoan:3"},
 		types.Caller{UserID: "sa"})
 	require.NoError(t, err)
+	require.Equal(t, types.LegalLinkMatched, got.MatchStatus, "the status is recomputed after the correction")
 	var link2 types.LegalProvisionLink
 	require.NoError(t, svc.db.First(&link2, *got.LinkID).Error)
 	require.Equal(t, "p150-3", link2.SourceProvisionID)
@@ -176,4 +178,46 @@ func TestLegalLinkSourceFilter(t *testing.T) {
 	require.False(t, legalLinkWanted(ed, LegalAmendLoadOptions{FeedSource: true}))
 	require.True(t, legalHasTagSource([]string{LegalAmendSourceParser, "tvpl"}))
 	require.False(t, legalHasTagSource([]string{LegalAmendSourceParser, LegalAmendSourceCatalogue}))
+}
+
+// links on an A no public KB holds (NĐ 200 sits in a tenant KB): the
+// positions are the pushed file's; nothing panics, nothing is ingested.
+func TestLegalPushLinksUnheld(t *testing.T) {
+	svc, count := legalPushTestService(t)
+	ctx := context.Background()
+	long := strings.Repeat("x", 70)
+	content := `<html><body>
+<p class="prov-article" id="tv-200-dieu:1">Điều 1. Phạm vi</p>
+<p class="prov-clause" id="tv-200-dieu:1/khoan:1"
+   data-amend='[{"op":"sua_doi","doc_number":"150/2026/NĐ-CP","path":"dieu:1/khoan:2"}]'>1. Phạm vi.</p>
+<p class="prov-clause" id="` + long + `" data-amend='[{"op":"bai_bo","doc_number":"150/2026/NĐ-CP"}]'>2. Khác.</p>
+</body></html>`
+	meta := legalPushMetaFor("200/2026/NĐ-CP")
+	meta["source_doc_id"] = "200"
+	res, err := svc.Push(ctx, LegalPushInput{Content: []byte(content), Metadata: meta, Mode: LegalPushLinks},
+		types.Caller{TenantID: types.PlatformTenantID}, LegalFeedActor{})
+	require.NoError(t, err)
+	require.Equal(t, LegalPushLinks, res.Mode)
+	require.Empty(t, res.KnowledgeID)
+	require.Equal(t, map[string]int{"matched": 1}, res.Links)
+	require.EqualValues(t, 1, count())
+	var tooLong bool
+	for _, p := range res.Problems {
+		tooLong = tooLong || strings.Contains(p.Reason, "dài quá")
+	}
+	require.True(t, tooLong, "an element id longer than 64 characters is reported, not stored")
+	items, _, _, err := svc.ListCandidates(ctx, LegalLinkCandidateFilter{}, 0, 10)
+	require.NoError(t, err)
+	require.Equal(t, "p150-2", items[0].SourceProvisionID)
+	require.True(t, strings.HasPrefix(items[0].TargetProvisionID, "fp-"))
+}
+
+func TestLegalHeldProvisionsDiemUnderDieu(t *testing.T) {
+	h := &legalHeldProvisions{ids: map[string]string{}, structure: LegalDocStructure{LegalProvisionRef{Article: "5"}.key(): true}}
+	require.True(t, h.has("dieu:5/diem:a"))
+	require.False(t, h.has("dieu:6/diem:a"))
+	require.False(t, h.has("dieu:5/khoan:9"))
+	require.Equal(t, "item", legalPathLevel("dieu:5/khoan:2/diem:a"))
+	require.Equal(t, "clause", legalPathLevel("dieu:5/khoan:2"))
+	require.Equal(t, "article", legalPathLevel("dieu:5"))
 }

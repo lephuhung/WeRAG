@@ -683,7 +683,8 @@ nhận ngay (`LooksLikeVBPL` dò các lớp này) và cắt mỗi Điều một 
 | `prov-content` | đoạn nội dung thường | |
 
 Mỗi phần tử `prov-article/clause/item` **phải có `id` duy nhất trong văn
-bản và ổn định giữa các lần đẩy**. Quy ước cho nguồn ngoài:
+bản, ổn định giữa các lần đẩy và dài tối đa 64 ký tự** (id dài hơn: dấu
+trên phần tử đó bị bỏ và báo trong `problems`). Quy ước cho nguồn ngoài:
 `<nguồn>-<id văn bản tại nguồn>-<vị trí>`, ví dụ
 `tvpl-470561-dieu:5/khoan:2/diem:a`. Phụ lục: bọc trong
 `<div class="doc-region-appendix">`, vị trí bắt đầu bằng `phuluc/`.
@@ -747,7 +748,9 @@ TVPL) **không** đưa vào toàn văn A; lời văn mới luôn đọc từ B.
 `POST /api/v1/system/legal-documents/push` — multipart (`file`, `metadata`,
 `mode`), tệp ≤ 20 MB. Xác thực: API key `X-API-Key` của **tổ chức nền tảng
 10000** có capability `ingest` (hoặc full access) như mục 3.4 — key tổ chức
-khác bị 403; hoặc JWT của SuperAdmin (người thật). Ở chế độ `full`, danh sách
+khác bị 403. Phải là key **tạo trong tổ chức 10000**
+(`POST /tenants/10000/api-keys`); key phạm vi nền tảng (platform key) không
+gắn tổ chức nên bị từ chối. Hoặc JWT của SuperAdmin (người thật). Ở chế độ `full`, danh sách
 KB của key phải chứa KB đích.
 
 `mode`:
@@ -755,7 +758,7 @@ KB của key phải chứa KB đích.
 | Giá trị | Hành vi |
 |---|---|
 | `auto` (mặc định) | A đã có toàn văn trong KB công khai → `links`; chưa có → `full` |
-| `links` | chỉ tạo liên kết chờ duyệt; không đụng KB |
+| `links` | chỉ tạo liên kết chờ duyệt; không đụng KB. A chưa có toàn văn ở KB công khai nào → vị trí điều khoản lấy theo tệp đẩy lên (id tổng hợp, ghi rõ trong `match_reason`) |
 | `full` | nạp toàn văn A vào KB theo `doc_type` của dòng danh mục (tên KB "VBPL – <loại>") **và** tạo liên kết; A đã có toàn văn ở một KB công khai → `409`; A "Hết hiệu lực toàn bộ" → `400` (mục 2.3). Tài liệu nạp có `external_id` = id danh mục A, `source` = tên nguồn; liên kết định danh được ghi sẵn với `reviewed_by = "feed:<nguồn>"` |
 
 Xử lý phía server:
@@ -791,6 +794,8 @@ Xử lý phía server:
    `pending`/`auto` của văn bản đó; dấu đã được SuperAdmin duyệt hoặc từ chối
    (nhận theo khoá của dấu **như lúc đẩy**, kể cả khi SuperAdmin đã sửa B hay
    vị trí khi duyệt) không được hỏi lại và được đếm vào `kept_decisions`.
+   Khoá gồm cả id danh mục của B: một dấu bị từ chối khi B chưa có trong
+   danh mục sẽ được hỏi lại khi danh mục đã có B.
 6. Ghi `legal_feed_log` (action `push_links` / `push_full`).
 
 Kết quả (`{success, data}`):
