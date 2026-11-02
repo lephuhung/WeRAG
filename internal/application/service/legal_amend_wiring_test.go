@@ -164,3 +164,16 @@ func TestLegalGoRecovers(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "panic")
 }
+
+// The editor and feed sources are system settings an admin can switch
+// (they were read with GetBool but missing from the registry, so the
+// settings API refused them and they could never be turned on).
+func TestLegalSourceSwitchesRegistered(t *testing.T) {
+	for _, key := range []string{LegalEditorSourceSetting, LegalFeedSourceSetting} {
+		spec, ok := registry[key]
+		require.True(t, ok, key)
+		require.Equal(t, "bool", spec.Type, key)
+		require.Equal(t, false, spec.Default, key)
+		require.NotEmpty(t, spec.Description, key)
+	}
+}
