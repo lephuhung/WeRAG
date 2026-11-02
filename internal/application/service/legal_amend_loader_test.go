@@ -615,6 +615,16 @@ func TestLegalCitedArticlesOf(t *testing.T) {
 		// a lower-case letter is no division number ("mục c"), "bỏ phiếu" no operation
 		{"mục c is no division", "Bãi bỏ Điều 5 mục c theo quy định tại Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"5"}},
 		{"bỏ phiếu is no operation bullet", "Sửa đổi khoản 2 Điều 5 như sau: Hội đồng họp định kỳ; - Bỏ phiếu kín đối với trường hợp tại Điều 7.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"5"}},
+		// Fable R1: a bare verb on any object is an operation, its idioms are not
+		{"Bỏ quy định is the next operation", "2. Sửa đổi khoản 1 Điều 4 như sau: 1. Nội dung mới. 3. Bỏ quy định về lệ phí tại khoản 2 Điều 9.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"4", "9"}},
+		{"Bỏ số is the next operation", "2. Sửa đổi khoản 1 Điều 4 như sau: 1. Nội dung mới. 3. Bỏ số “19” tại khoản 1 Điều 6.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"4", "6"}},
+		{"Bỏ khổ đầu before a history remark", "Bỏ khổ đầu điểm c khoản 2 Điều 1 đã được sửa đổi, bổ sung bởi Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"1"}},
+		{"bỏ thầu is no operation", "Sửa đổi khoản 2 Điều 5 như sau: Nhà thầu được mời; - Bỏ thầu theo quy định tại Điều 7.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"5"}},
+		{"thay mặt is no operation", "Sửa đổi khoản 2 Điều 5 như sau: Chủ tịch ký; - Thay mặt Hội đồng theo Điều 7.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"5"}},
+		// Fable R1: a capital letter numbers a division; insertion chains settle like others
+		{"Phần A is a division", "Bãi bỏ Điều 5 Phần A Phụ lục I Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
+		{"insertion point joined to another document", "Bổ sung Điều 6a vào sau Điều 6, sửa đổi Điều 7 Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
+		{"insertion point in B itself", "Bổ sung Điều 6a vào sau Điều 6 Nghị định này.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
 		{"bỏ cụm từ stays an operation bullet", "Sửa đổi một số điều như sau: - Bỏ cụm từ “X” tại Điều 7.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"7"}},
 		{"B2 joined operations, then a reference", "Bãi bỏ Điều 3, sửa đổi Điều 4 theo Nghị định số 14/2016/NĐ-CP.", `["Điều 10. Hiệu lực thi hành"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
 		{"B2 a comma before another document", "Sửa đổi Điều 5, Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
@@ -938,10 +948,10 @@ func TestLoadLegalAmendmentsDocumentLevelRank(t *testing.T) {
 }
 
 func TestLegalDivisionNumbers(t *testing.T) {
-	for _, ok := range []string{" Chương II", " chương ii", " Mục 2", " Phần thứ nhất", " Phần IV", " của Chương XIV", " Chương V", " mục 3a"} {
+	for _, ok := range []string{" Chương II", " chương ii", " Mục 2", " Phần thứ nhất", " Phần IV", " của Chương XIV", " Chương V", " mục 3a", " Phần A", " Mục Đ"} {
 		require.True(t, legalDivisionRe.MatchString(ok), ok)
 	}
-	for _, bad := range []string{" mục c", " phần li", " Phần c", " mục lục", " phần lớn"} {
+	for _, bad := range []string{" mục c", " phần li", " Phần c", " mục lục", " phần lớn", " Chương Cục bộ", " Phần Ab"} {
 		require.False(t, legalDivisionRe.MatchString(bad), bad)
 	}
 }
