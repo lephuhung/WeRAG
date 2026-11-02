@@ -149,14 +149,14 @@ func main() {
 	// them (-report lists them).
 	var catalogued []*types.LegalDocument
 	if err := db.WithContext(ctx).Model(&types.LegalDocument{}).
-		Select("id", "document_number", "number_key", "doc_type", "title", "issued_on", "reviewed_at").Order("id").
+		Select("id", "document_number", "number_key", "doc_type", "title", "issuer", "issued_on", "status", "reviewed_at").Order("id").
 		Find(&catalogued).Error; err != nil {
 		log.Fatalf("load catalogue keys: %v", err)
 	}
 	twins := legalcatalog.ResolveTwins(catalogued, docs)
 	docs, alias := twins.Keep, twins.Alias
 	log.Printf("%d twin documents attached to their catalogue row", len(alias))
-	if err := reportUnreachable(*report, twins.Unreachable); err != nil {
+	if err := reportTwins(*report, twins); err != nil {
 		log.Fatalf("write twin report: %v", err)
 	}
 
@@ -286,8 +286,9 @@ func pruneCandidates(existing []string, ids map[string]bool, alias map[string]st
 	reviewed map[string]*types.LegalDocument) []string {
 	survivors := map[string]bool{}
 	for twin, s := range alias {
-		if ids[twin] {
+		for hop := 0; ids[twin] && hop < 4 && s != ""; hop++ {
 			survivors[s] = true
+			s = alias[s]
 		}
 	}
 	var gone []string
@@ -299,24 +300,32 @@ func pruneCandidates(existing []string, ids map[string]bool, alias map[string]st
 	return gone
 }
 
-// reportUnreachable logs the Ð twins kept out of the number lookup and,
-// with a path, writes them as TSV (id, number, type, issued, title,
-// holders of the folded key) for the SuperAdmin decision.
-func reportUnreachable(path string, rows []legalcatalog.Twin) error {
-	log.Printf("%d Ð twins left unreachable by number (not the same document as a row of their folded key)", len(rows))
+// reportTwins logs the Ð twins kept out of the number lookup and the
+// attached twins whose status is not their survivor's and, with a path,
+// writes both as TSV sections for the SuperAdmin decision.
+func reportTwins(path string, t legalcatalog.TwinResolution) error {
+	log.Printf("%d Ð twins left unreachable by number (not the same document as a row of their folded key)", len(t.Unreachable))
+	log.Printf("%d attached twins differ in status from their surviving row", len(t.StatusDiffers))
 	if path == "" {
 		return nil
 	}
-	var b strings.Builder
-	b.WriteString("id\tdocument_number\tdoc_type\tissued_on\ttitle\tholders\n")
-	for _, t := range rows {
-		issued := ""
-		if t.Row.IssuedOn != nil {
-			issued = t.Row.IssuedOn.Format("2006-01-02")
+	clean := func(s string) string { return strings.Join(strings.Fields(s), " ") }
+	day := func(d *time.Time) string {
+		if d == nil {
+			return ""
 		}
-		clean := func(s string) string { return strings.Join(strings.Fields(s), " ") }
-		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\t%s\n", t.Row.ID, clean(t.Row.DocumentNumber), clean(t.Row.DocType),
-			issued, clean(t.Row.Title), strings.Join(t.Holders, ","))
+		return d.Format("2006-01-02")
+	}
+	var b strings.Builder
+	b.WriteString("# unreachable Ð twins\nid\tdocument_number\tdoc_type\tissued_on\ttitle\tholders\n")
+	for _, u := range t.Unreachable {
+		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\t%s\n", u.Row.ID, clean(u.Row.DocumentNumber), clean(u.Row.DocType),
+			day(u.Row.IssuedOn), clean(u.Row.Title), strings.Join(u.Holders, ","))
+	}
+	b.WriteString("\n# attached twins with another status\ntwin_id\ttwin_status\tsurvivor_id\tsurvivor_status\tdocument_number\ttitle\n")
+	for _, a := range t.StatusDiffers {
+		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\t%s\n", a.Twin.ID, clean(a.Twin.Status), a.Survivor.ID, clean(a.Survivor.Status),
+			clean(a.Survivor.DocumentNumber), clean(a.Twin.Title))
 	}
 	return os.WriteFile(path, []byte(b.String()), 0o644)
 }
@@ -340,9 +349,15 @@ func newEdgeBuilder(ids, known map[string]bool, alias map[string]string) *edgeBu
 	return &edgeBuilder{ids: ids, known: known, alias: alias, seen: map[edgeKey]bool{}, skipped: map[string]int{}}
 }
 
+// survivor follows the alias chain (a twin of a placeholder replaced by
+// its full copy) to the row that keeps the edges.
 func (b *edgeBuilder) survivor(id string) string {
-	if s, ok := b.alias[id]; ok {
-		return s
+	for hop := 0; hop < 4; hop++ {
+		s, ok := b.alias[id]
+		if !ok || s == id {
+			break
+		}
+		id = s
 	}
 	return id
 }

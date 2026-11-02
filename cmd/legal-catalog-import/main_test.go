@@ -59,3 +59,15 @@ func TestPruneCandidatesKeepsSurvivors(t *testing.T) {
 		t.Errorf("pruneCandidates = %v, want %v", got, want)
 	}
 }
+
+// An edge at a twin of a placeholder goes to the full copy that replaced
+// the placeholder.
+func TestEdgeBuilderAliasChain(t *testing.T) {
+	ids := map[string]bool{"twin": true, "full": true, "500": true}
+	known := map[string]bool{"twin": true, "full": true, "500": true, "placeholder": true}
+	b := newEdgeBuilder(ids, known, map[string]string{"twin": "placeholder", "placeholder": "full"})
+	b.add(vbplRelation{DocID: "500", OtherDocID: "twin", Relationship: "Thay thế"})
+	if len(b.rels) != 1 || b.rels[0].ToID != "full" {
+		t.Fatalf("rels = %+v", b.rels)
+	}
+}

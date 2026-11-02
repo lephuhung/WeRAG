@@ -126,3 +126,64 @@ func TestTitleMatch(t *testing.T) {
 		}
 	}
 }
+
+// Fable re-review: one number, one day, one type of two issuers or places
+// is two documents; issuers spelled or listed differently are one.
+func TestSameDocumentIssuerAndPlace(t *testing.T) {
+	row := func(id, num, issuer, title string) *types.LegalDocument {
+		return &types.LegalDocument{ID: id, DocumentNumber: num, NumberKey: vietnamese_legal.CatalogNumberKey(num), DocType: "Quyết định",
+			Issuer: issuer, Title: title, IssuedOn: twinDay("2020-03-01")}
+	}
+	for _, c := range []struct {
+		name string
+		a, b *types.LegalDocument
+		want bool
+	}{
+		{"two provinces by issuer",
+			row("1", "05/2020/QĐ-UBND", "Ủy ban nhân dân tỉnh Hà Giang", "Quyết định số 05/2020/QĐ-UBND ban hành Quy định giá đất trên địa bàn tỉnh Hà Giang"),
+			row("2", "05/2020/QÐ-UBND", "Ủy ban nhân dân tỉnh Hà Nam", "Quyết định số 05/2020/QÐ-UBND ban hành Quy định giá đất trên địa bàn tỉnh Hà Nam"), false},
+		{"two provinces by title only",
+			row("1", "05/2020/QĐ-UBND", "", "Quyết định số 05/2020/QĐ-UBND ban hành Quy định giá đất tỉnh Hà Giang"),
+			row("2", "05/2020/QÐ-UBND", "", "Quyết định số 05/2020/QÐ-UBND ban hành Quy định giá đất tỉnh Hà Nam"), false},
+		{"two districts",
+			row("1", "12/2020/QĐ-UBND", "UBND huyện Mường Khương", "Quyết định số 12/2020/QĐ-UBND về phí chợ huyện Mường Khương"),
+			row("2", "12/2020/QÐ-UBND", "Ủy ban nhân dân huyện Mường Tè", "Quyết định số 12/2020/QÐ-UBND về phí chợ huyện Mường Tè"), false},
+		{"one province, UBND / Uỷ ban spelling",
+			row("1", "05/2020/QĐ-UBND", "UBND tỉnh Hà Giang", "Quyết định số 05/2020/QĐ-UBND ban hành Quy định giá đất tỉnh Hà Giang Về việc"),
+			row("2", "05/2020/QÐ-UBND", "Uỷ ban nhân dân tỉnh Hà Giang", "Quyết định 05/2020/QÐ-UBND Ban hành quy định giá đất tỉnh Hà Giang"), true},
+		{"a joint circular listing one issuer or all, in any order",
+			row("1", "02/1998/TTLT-BTC-TCBĐ", "Bộ Tài chính", "Quyết định số 02/1998/TTLT-BTC-TCBĐ hướng dẫn cước phí"),
+			row("2", "02/1998/TTLT-BTC-TCBÐ", "Tổng cục Bưu điện, Bộ Tài chính", "Quyết định số 02/1998/TTLT-BTC-TCBÐ Hướng dẫn cước phí"), true},
+	} {
+		if got := SameDocument(c.a, c.b); got != c.want {
+			t.Errorf("%s: SameDocument = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// A placeholder ("(tạm nhập - chờ toàn văn)") never keeps out the full
+// copy: a new full copy is imported and the placeholder's edges go to it;
+// a new placeholder of a catalogued full copy is attached to it. Attached
+// twins whose status differs are reported.
+func TestResolveTwinsPlaceholder(t *testing.T) {
+	existing := []*types.LegalDocument{
+		{ID: "46690", DocumentNumber: "05/2007/TT-BCT", NumberKey: "05/2007/TT-BCT", DocType: "Thông tư", Issuer: "Bộ Công Thương",
+			Title: "Thông tư số 05/2007/TT-BCT (tạm nhập - chờ toàn văn) Hướng dẫn xuất khẩu than", IssuedOn: twinDay("2007-10-22"), Status: "Hết hiệu lực toàn bộ"},
+		{ID: "105834", DocumentNumber: "26/2009/TT-BCT", NumberKey: "26/2009/TT-BCT", DocType: "Thông tư", Issuer: "Bộ Công Thương",
+			Title: "Thông tư số 26/2009/TT-BCT Quy định quy trình nghiệp vụ kiểm tra", IssuedOn: twinDay("2009-08-26"), Status: "Còn hiệu lực"},
+	}
+	full := imported("82314", "05/2007/TT-BCT", "Thông tư", "Thông tư số 05/2007/TT-BCT Hướng dẫn xuất khẩu than", "2007-10-22")
+	full.Status = "Hết hiệu lực toàn bộ"
+	ph := imported("31740", "26/2009/TT-BCT", "Thông tư", "Thông tư số 26/2009/TT-BCT (tạm nhập - chờ toàn văn) Quy định quy trình nghiệp vụ kiểm tra", "2009-08-26")
+	ph.Status = "Hết hiệu lực toàn bộ"
+	res := ResolveTwins(existing, []*types.LegalDocument{full, ph})
+	if len(res.Keep) != 1 || res.Keep[0].ID != "82314" {
+		t.Fatalf("keep = %v, want the full copy only", res.Keep)
+	}
+	if res.Alias["46690"] != "82314" || res.Alias["31740"] != "105834" {
+		t.Errorf("alias = %v", res.Alias)
+	}
+	if len(res.StatusDiffers) != 1 || res.StatusDiffers[0].Twin.ID != "31740" {
+		t.Errorf("status differs = %+v", res.StatusDiffers)
+	}
+}
