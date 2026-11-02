@@ -284,6 +284,11 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	if isUngrounded(ctx) {
 		return e.ungroundedRound(ctx, messages, opts, iteration, sessionID)
 	}
+	// a question with an amount goes through the calculation tool before
+	// the model concludes (see calc_gate.go)
+	if len(calcRequiredTools(ctx)) > 0 {
+		return e.calcGateRound(ctx, messages, opts, iteration, sessionID)
+	}
 
 	pendingToolCalls := make(map[string]bool)
 	thinkingToolIDs := make(map[string]string) // tool_call_id -> event ID for thinking tool streams
@@ -583,6 +588,7 @@ func (e *AgentEngine) callLLMWithRetry(
 	// Sanitize messages before sending to LLM (fix consecutive roles, orphaned tool results)
 	messages = agenttools.SanitizeMessages(messages)
 	ctx = markUngrounded(ctx, state.RoundSteps)
+	ctx = markCalcRequired(ctx, tools, state.RoundSteps)
 
 	response, err := e.streamThinkingToEventBus(ctx, messages, tools, iteration, sessionID)
 
