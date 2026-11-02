@@ -4,8 +4,10 @@
 //
 // Input is the JSONL pair written by scripts/legal_catalog/prepare_vbpl.py:
 // one document per line (vbpl metadata field names) and one raw portal
-// relation per line. Documents are upserted by vbpl id; the relation table
-// is replaced as a whole with the edges whose both ends were imported.
+// relation per line. Documents are upserted by vbpl id, except a second
+// copy of a catalogued document (legalcatalog.ResolveTwins), whose edges
+// go to the catalogued row; the relation table is replaced as a whole
+// with the edges whose both ends were imported.
 // With -merge (a partial import, e.g. the local documents of a few
 // provinces) only the edges touching the imported documents are replaced,
 // and an edge may end at any document already in the catalogue.
@@ -62,6 +64,7 @@ func main() {
 	relsPath := flag.String("relations", "", "JSONL file of raw vbpl relations (required)")
 	snapshot := flag.String("snapshot", "", "Snapshot date of the source, YYYY-MM-DD (required)")
 	prune := flag.Bool("prune", false, "Delete vbpl documents absent from this import")
+	report := flag.String("report", "", "Write the Ð twins left unreachable by number (TSV) to this file")
 	merge := flag.Bool("merge", false,
 		"Partial import: replace only the relations touching these documents, keep the rest of the catalogue")
 	flag.Parse()
@@ -139,10 +142,33 @@ func main() {
 		docs = kept
 	}
 
+	// One document under two vbpl ids (an Eth "Ð" or Cyrillic copy of a
+	// Latin row) stays one row: a new twin is not imported, a catalogued
+	// twin keeps its look-alike key, and their edges move to the surviving
+	// row. Ð rows that are no twin of a holder stay as migration 000175 left
+	// them (-report lists them).
+	var catalogued []*types.LegalDocument
+	if err := db.WithContext(ctx).Model(&types.LegalDocument{}).
+		Select("id", "document_number", "number_key", "doc_type", "title", "issuer", "issued_on", "status", "reviewed_at").Order("id").
+		Find(&catalogued).Error; err != nil {
+		log.Fatalf("load catalogue keys: %v", err)
+	}
+	twins := legalcatalog.ResolveTwins(catalogued, docs)
+	docs, alias := twins.Keep, twins.Alias
+	log.Printf("%d twin documents attached to their catalogue row", len(alias))
+	if err := reportTwins(*report, twins); err != nil {
+		log.Fatalf("write twin report: %v", err)
+	}
+
 	// A merge may link the imported documents to any catalogued one.
 	known := ids
 	if *merge {
 		others := map[string]bool{}
+		for _, s := range alias {
+			if !ids[s] {
+				others[s] = true
+			}
+		}
 		if err := readJSONL(*relsPath, func(raw []byte) error {
 			var r vbplRelation
 			if err := json.Unmarshal(raw, &r); err != nil {
@@ -167,36 +193,18 @@ func main() {
 		known = found
 	}
 
-	type edgeKey struct{ from, to, rel string }
-	seen := map[edgeKey]bool{}
-	var rels []*types.LegalDocumentRelation
-	skipped := map[string]int{}
+	edges := newEdgeBuilder(ids, known, alias)
 	if err := readJSONL(*relsPath, func(raw []byte) error {
 		var r vbplRelation
 		if err := json.Unmarshal(raw, &r); err != nil {
 			return err
 		}
-		from, to, rel, ok := legalcatalog.VBPLRelationEdge(r.DocID, r.OtherDocID, r.Relationship)
-		if !ok {
-			skipped["label:"+r.Relationship]++
-			return nil
-		}
-		if !known[from] || !known[to] || from == to || !ids[from] && !ids[to] {
-			skipped["outside catalogue"]++
-			return nil
-		}
-		k := edgeKey{from, to, string(rel)}
-		if seen[k] {
-			return nil
-		}
-		seen[k] = true
-		rels = append(rels, &types.LegalDocumentRelation{
-			FromID: from, ToID: to, Relation: rel, SourceLabel: r.Relationship,
-		})
+		edges.add(r)
 		return nil
 	}); err != nil {
 		log.Fatalf("read relations: %v", err)
 	}
+	rels, skipped := edges.rels, edges.skipped
 
 	// Reviewed rows are the curated truth: the portal never overwrites them.
 	// Differing portal values are parked in source_pending for the reviewer.
@@ -239,13 +247,7 @@ func main() {
 			Where("source = ?", "vbpl").Pluck("id", &existing).Error; err != nil {
 			log.Fatalf("list documents: %v", err)
 		}
-		var gone []string
-		for _, id := range existing {
-			// A reviewed row stays: a SuperAdmin vouched for it.
-			if !ids[id] && reviewedByID[id] == nil {
-				gone = append(gone, id)
-			}
-		}
+		gone := pruneCandidates(existing, ids, alias, reviewedByID)
 		for start := 0; start < len(gone); start += 1000 {
 			end := min(start+1000, len(gone))
 			if err := db.WithContext(ctx).Where("id IN ?", gone[start:end]).
@@ -274,6 +276,115 @@ func main() {
 	for reason, n := range skipped {
 		log.Printf("skipped %d relation rows: %s", n, reason)
 	}
+}
+
+// pruneCandidates are the catalogued vbpl rows a -prune import deletes:
+// absent from the import, not reviewed (a SuperAdmin vouched for it) and
+// not the surviving row of an imported twin (its document is in the
+// import under the twin's id).
+func pruneCandidates(existing []string, ids map[string]bool, alias map[string]string,
+	reviewed map[string]*types.LegalDocument) []string {
+	survivors := map[string]bool{}
+	for twin, s := range alias {
+		for hop := 0; ids[twin] && hop < 4 && s != ""; hop++ {
+			survivors[s] = true
+			s = alias[s]
+		}
+	}
+	var gone []string
+	for _, id := range existing {
+		if !ids[id] && !survivors[id] && reviewed[id] == nil {
+			gone = append(gone, id)
+		}
+	}
+	return gone
+}
+
+// reportTwins logs the Ð twins kept out of the number lookup and the
+// attached twins whose status is not their survivor's and, with a path,
+// writes both as TSV sections for the SuperAdmin decision.
+func reportTwins(path string, t legalcatalog.TwinResolution) error {
+	log.Printf("%d Ð twins left unreachable by number (not the same document as a row of their folded key)", len(t.Unreachable))
+	log.Printf("%d attached twins differ in status from their surviving row", len(t.StatusDiffers))
+	if path == "" {
+		return nil
+	}
+	clean := func(s string) string { return strings.Join(strings.Fields(s), " ") }
+	day := func(d *time.Time) string {
+		if d == nil {
+			return ""
+		}
+		return d.Format("2006-01-02")
+	}
+	var b strings.Builder
+	b.WriteString("# unreachable Ð twins\nid\tdocument_number\tdoc_type\tissued_on\ttitle\tholders\n")
+	for _, u := range t.Unreachable {
+		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\t%s\n", u.Row.ID, clean(u.Row.DocumentNumber), clean(u.Row.DocType),
+			day(u.Row.IssuedOn), clean(u.Row.Title), strings.Join(u.Holders, ","))
+	}
+	b.WriteString("\n# attached twins with another status\ntwin_id\ttwin_status\tsurvivor_id\tsurvivor_status\tdocument_number\ttitle\n")
+	for _, a := range t.StatusDiffers {
+		fmt.Fprintf(&b, "%s\t%s\t%s\t%s\t%s\t%s\n", a.Twin.ID, clean(a.Twin.Status), a.Survivor.ID, clean(a.Survivor.Status),
+			clean(a.Survivor.DocumentNumber), clean(a.Twin.Title))
+	}
+	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
+// edgeBuilder turns raw vbpl relation rows into catalogue edges: labels
+// without legal effect dropped, an edge kept only when it touches an
+// imported document (ids) and both ends, after a twin is replaced by its
+// surviving row (alias, from legalcatalog.ResolveTwins), are known; a self
+// edge or a repeat (two twins listing the same edge) is dropped.
+type edgeBuilder struct {
+	ids, known map[string]bool
+	alias      map[string]string
+	seen       map[edgeKey]bool
+	rels       []*types.LegalDocumentRelation
+	skipped    map[string]int
+}
+
+type edgeKey struct{ from, to, rel string }
+
+func newEdgeBuilder(ids, known map[string]bool, alias map[string]string) *edgeBuilder {
+	return &edgeBuilder{ids: ids, known: known, alias: alias, seen: map[edgeKey]bool{}, skipped: map[string]int{}}
+}
+
+// survivor follows the alias chain (a twin of a placeholder replaced by
+// its full copy) to the row that keeps the edges.
+func (b *edgeBuilder) survivor(id string) string {
+	for hop := 0; hop < 4; hop++ {
+		s, ok := b.alias[id]
+		if !ok || s == id {
+			break
+		}
+		id = s
+	}
+	return id
+}
+
+func (b *edgeBuilder) add(r vbplRelation) {
+	from, to, rel, ok := legalcatalog.VBPLRelationEdge(r.DocID, r.OtherDocID, r.Relationship)
+	if !ok {
+		b.skipped["label:"+r.Relationship]++
+		return
+	}
+	if !b.ids[from] && !b.ids[to] {
+		b.skipped["outside catalogue"]++
+		return
+	}
+	from, to = b.survivor(from), b.survivor(to)
+	if !b.known[from] || !b.known[to] || from == to {
+		b.skipped["outside catalogue"]++
+		return
+	}
+	k := edgeKey{from, to, string(rel)}
+	if b.seen[k] {
+		return
+	}
+	b.seen[k] = true
+	b.rels = append(b.rels, &types.LegalDocumentRelation{
+		FromID: from, ToID: to, Relation: rel, SourceLabel: r.Relationship,
+	})
 }
 
 // openDB connects to the Postgres database the server uses (DB_* env).

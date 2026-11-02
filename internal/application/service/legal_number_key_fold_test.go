@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/legalcatalog"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 	"github.com/google/uuid"
@@ -76,4 +77,59 @@ func TestCatalogNumberKeyFoldCallers(t *testing.T) {
 	_, total, err = svc.Candidates(ctx, "02", "", 10)
 	require.NoError(t, err)
 	require.Equal(t, 3, total)
+}
+
+// TestCatalogImportTwinStaysOneRow: a re-import of the catalogue (the
+// importer's ResolveTwins, then UpsertDocuments) neither revives the Ð twin
+// migration 000175 left nor adds a new vbpl id of a catalogued document
+// written with Ð, so a number typed with Đ, Ð or D still finds one row;
+// a Cyrillic-keyed row is rekeyed and found by its Latin number.
+func TestCatalogImportTwinStaysOneRow(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&types.LegalDocument{}, &types.LegalDocumentRelation{}, &types.LegalDocumentLink{}))
+	ctx := context.Background()
+	catalog := repository.NewLegalCatalogRepository(db)
+	svc := NewLegalCatalogService(catalog, repository.NewLegalReviewRepository(db))
+	day := func(s string) *time.Time { d, _ := time.Parse("2006-01-02", s); return &d }
+	require.NoError(t, catalog.UpsertDocuments(ctx, []*types.LegalDocument{
+		{ID: "5583", Source: types.LegalDocumentSourceVBPL, DocumentNumber: "02/2000/QĐ-BTC", NumberKey: "02/2000/QD-BTC",
+			DocType: "Quyết định", Title: "Quyết định số 02/2000/QĐ-BTC", IssuedOn: day("2000-01-06")},
+		{ID: "107780", Source: types.LegalDocumentSourceVBPL, DocumentNumber: "02/2000/QÐ-BTC", NumberKey: "02/2000/QÐ-BTC",
+			DocType: "Quyết định", Title: "Quyết định số 02/2000/QÐ-BTC", IssuedOn: day("2000-01-05")},
+		{ID: "179043", Source: types.LegalDocumentSourceVBPL, DocumentNumber: "51/2025/TT-BTС", NumberKey: "51/2025/TT-BTС",
+			DocType: "Thông tư", Title: "Thông tư số 51/2025/TT-BTС", IssuedOn: day("2025-06-24")},
+	}))
+
+	row := func(id, so, title, issued string) *types.LegalDocument {
+		num := legalcatalog.CleanVBPLNumber(so)
+		return &types.LegalDocument{ID: id, Source: types.LegalDocumentSourceVBPL, DocumentNumber: num,
+			NumberKey: vietnamese_legal.CatalogNumberKey(num), DocType: "Quyết định", Title: title, IssuedOn: day(issued)}
+	}
+	cyr := row("179043", "51/2025/TT-BTС", "Thông tư số 51/2025/TT-BTС", "2025-06-24")
+	cyr.DocType = "Thông tư"
+	var existing []*types.LegalDocument
+	require.NoError(t, db.Select("id", "document_number", "number_key", "doc_type", "title", "issued_on", "reviewed_at").Order("id").Find(&existing).Error)
+	res := legalcatalog.ResolveTwins(existing, []*types.LegalDocument{
+		row("5583", "02/2000/QĐ-BTC", "Quyết định số 02/2000/QĐ-BTC", "2000-01-06"),
+		row("107780", "02/2000/QÐ-BTC", "Quyết định số 02/2000/QÐ-BTC", "2000-01-05"),
+		row("300001", "02/2000/QÐ-BTC", "Quyết định số 02/2000/QÐ-BTC", "2000-01-06"),
+		cyr,
+	})
+	require.Equal(t, map[string]string{"300001": "5583"}, res.Alias)
+	require.NoError(t, catalog.UpsertDocuments(ctx, res.Keep))
+
+	var n int64
+	require.NoError(t, db.Model(&types.LegalDocument{}).Where("id = ?", "300001").Count(&n).Error)
+	require.Zero(t, n, "a new Ð twin must not become a row")
+	for _, in := range []string{"02/2000/QĐ-BTC", "02/2000/QÐ-BTC", "02/2000/QD-BTC"} {
+		reports, err := svc.Lookup(ctx, in, "", 10)
+		require.NoError(t, err)
+		require.Len(t, reports, 1, in)
+		require.Equal(t, "5583", reports[0].Document.ID, in)
+	}
+	reports, err := svc.Lookup(ctx, "51/2025/TT-BTC", "", 10)
+	require.NoError(t, err)
+	require.Len(t, reports, 1)
+	require.Equal(t, "51/2025/TT-BTC", reports[0].Document.DocumentNumber)
 }

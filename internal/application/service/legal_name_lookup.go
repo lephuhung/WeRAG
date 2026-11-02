@@ -73,6 +73,17 @@ var legalLikeEscaper = strings.NewReplacer(`\`, `\\`, "%", `\%`, "_", `\_`)
 // legalNameCandidatesMax bounds the catalogue rows read for one name.
 const legalNameCandidatesMax = 500
 
+// LegalNameAtUnknown marks the candidates of a name cited by a document
+// whose issue date is unknown: none can be placed in force.
+const LegalNameAtUnknown = "citing_date_unknown"
+
+// legalAfterDay reports whether t falls on a later calendar day than at,
+// each read in its own location (catalogue dates are UTC midnights, a
+// chunk's issue date a midnight in the loader's zone).
+func legalAfterDay(t, at time.Time) bool {
+	return t.Format("2006-01-02") > at.Format("2006-01-02")
+}
+
 // LegalNameUndated marks a same-name document without an issue date: it
 // cannot be placed in time, so the name stays ambiguous.
 const LegalNameUndated = "undated"
@@ -85,7 +96,10 @@ type LegalNameQuery struct {
 	// Year narrows the candidates to those issued that year ("2013");
 	// empty: the year written at the end of Name, if any.
 	Year string
-	// At is the citing document's issue date; zero: today.
+	// At is the citing document's issue date. Zero means unknown, never
+	// today: only a recorded relation or a written year can then pick a
+	// document; otherwise the name stays ambiguous (an undated 2016 decree
+	// "sửa đổi … Luật Đầu tư" is not Luật Đầu tư 2020).
 	At time.Time
 	// AmenderID is the citing document's catalogue id, if known: a
 	// document it is recorded to amend, replace or repeal under exactly
@@ -108,9 +122,6 @@ func ResolveLegalDocumentName(ctx context.Context, db *gorm.DB, q LegalNameQuery
 		return none, nil
 	}
 	at := q.At
-	if at.IsZero() {
-		at = time.Now()
-	}
 	year := q.Year
 	if year == "" {
 		year = legalNameYear(q.Name)
@@ -191,14 +202,25 @@ func ResolveLegalDocumentName(ctx context.Context, db *gorm.DB, q LegalNameQuery
 			if year != "" && d.IssuedOn.Format("2006") != year {
 				continue
 			}
-			if d.IssuedOn.Before(at) {
+			// issued the same day as the citing document: a candidate
+			// (resolveByDates keeps it pending), not ruled out
+			if at.IsZero() || !legalAfterDay(*d.IssuedOn, at) {
 				same = append(same, d)
 			}
 		}
 		if len(same) == 0 {
 			return LegalNameMatch{Base: p.base, Resolution: LegalNameNone}, nil
 		}
-		m := resolveByDates(same, at)
+		var m LegalNameMatch
+		if at.IsZero() {
+			// the citing document's date is unknown: no state can be read
+			m = LegalNameMatch{Resolution: LegalNameAmbiguous}
+			for _, d := range same {
+				m.Candidates = append(m.Candidates, LegalNameCandidate{Document: d, State: LegalNameAtUnknown})
+			}
+		} else {
+			m = resolveByDates(same, at)
+		}
 		m.Base = p.base
 		// a year written with the name picks the law of that year, in
 		// force or not (its state stays on the candidate)
@@ -261,11 +283,15 @@ func resolveByDates(docs []*types.LegalDocument, at time.Time) LegalNameMatch {
 	states := make([]string, len(docs))
 	for i, d := range docs {
 		switch {
-		case d.ExpiredOn != nil && !d.ExpiredOn.After(at):
+		case d.ExpiredOn != nil && !legalAfterDay(*d.ExpiredOn, at):
 			states[i] = LegalNameExpired
 		case d.IssuedOn == nil:
 			states[i] = LegalNameUndated
-		case d.EffectiveOn != nil && d.EffectiveOn.After(at):
+		case d.EffectiveOn != nil && legalAfterDay(*d.EffectiveOn, at):
+			states[i] = LegalNamePending
+		case !legalAfterDay(at, *d.IssuedOn):
+			// issued the same day as the citing document: which one it
+			// means cannot be read from the dates
 			states[i] = LegalNamePending
 		default:
 			states[i] = LegalNameInForce

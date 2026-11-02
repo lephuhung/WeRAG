@@ -138,7 +138,31 @@ func TestResolveLegalDocumentName(t *testing.T) {
 			map[string]string{"22/2023/QH15": LegalNamePending}},
 		{"Luật Đấu thầu 2013", "2024-05-01", LegalNameUnique, "43/2013/QH13",
 			map[string]string{"43/2013/QH13": LegalNameExpired}},
+		// Fable K2: the citing document's date unknown — never "today"
+		// (a 2016 decree "sửa đổi … Luật Đầu tư" is not 61/2020/QH14)
+		{"Luật Đầu tư", "", LegalNameAmbiguous, "",
+			map[string]string{"61/2020/QH14": LegalNameAtUnknown, "67/2014/QH13": LegalNameAtUnknown}},
+		{"Luật Giáo dục đại học", "", LegalNameAmbiguous, "", nil},
+		{"Luật Đất đai năm 2013", "", LegalNameUnique, "45/2013/QH13", nil}, // a written year still picks
+		// Fable: a same-name law issued the same day as the citing
+		// document is a candidate, so the name is ambiguous
+		{"Luật Kiểm thử", "2025-06-01", LegalNameAmbiguous, "",
+			map[string]string{"21/2025/QH15": LegalNamePending, "11/2011/QH12": LegalNameInForce}},
+		{"Luật Kiểm thử", "2025-05-31", LegalNameUnique, "11/2011/QH12", nil},
 	}
+	// the chunk's issue date is a midnight in the loader's zone, the
+	// catalogue's a UTC midnight: the same day all the same
+	local, err := ResolveLegalDocumentName(ctx, db, LegalNameQuery{Name: "Luật Kiểm thử",
+		At: time.Date(2025, 6, 1, 0, 0, 0, 0, time.FixedZone("ICT", 7*3600))})
+	require.NoError(t, err)
+	require.Equal(t, LegalNameAmbiguous, local.Resolution)
+	// Fable re-review 6: effective and expiry dates are read by day too —
+	// 22/2023 takes effect 01/01/2024, also for a local-midnight date
+	eff, err := ResolveLegalDocumentName(ctx, db, LegalNameQuery{Name: "Luật Đấu thầu",
+		At: time.Date(2024, 1, 1, 0, 0, 0, 0, time.FixedZone("ICT", 7*3600))})
+	require.NoError(t, err)
+	require.Equal(t, LegalNameUnique, eff.Resolution)
+	require.Equal(t, "22/2023/QH15", eff.Chosen.DocumentNumber)
 	for _, c := range cases {
 		m, err := ResolveLegalDocumentName(ctx, db, LegalNameQuery{Name: c.name, At: on(c.at)})
 		require.NoError(t, err)

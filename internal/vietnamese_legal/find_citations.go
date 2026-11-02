@@ -127,8 +127,9 @@ var (
 	// "Nghị quyết 12 năm 2026"
 	citePartialRe = regexp.MustCompile(citeTypeWords + citeSp + `((?i:số)` + citeSp + `:?` + citeSp + `)?(\d{1,4}(?:\.\d{1,3})?)(?:` +
 		citeSp + `/` + citeSp + `((?:19|20)\d\d)|[ \t]+(?i:năm)[ \t]+((?:19|20)\d\d))?`)
-	// a law named by title: "Luật Đấu thầu", "Bộ luật Tố tụng hình sự"
-	citeNameRe = regexp.MustCompile(`(Bộ luật|BỘ LUẬT|Luật|LUẬT|Pháp lệnh|PHÁP LỆNH)[ \t]+\p{Lu}`)
+	// a law named by title: "Luật Đấu thầu", "Bộ luật Tố tụng hình sự",
+	// also in lower case ("Luật đất đai 2013") — see lowerNameKnown
+	citeNameRe = regexp.MustCompile(`(Bộ luật|BỘ LUẬT|Luật|LUẬT|Pháp lệnh|PHÁP LỆNH)[ \t]+\p{L}`)
 	// the type written before a number: "Nghị định số ", "NĐ "
 	citeTypeBeforeRe = regexp.MustCompile(citeTypeWords + citeSp + `(?:(?i:số)` + citeSp + `:?` + citeSp + `)?$`)
 	citeSoAfterRe    = regexp.MustCompile(`^[ \t]+(?i:số)` + citeSp + `:?` + citeSp)
@@ -165,6 +166,18 @@ type citeSpan struct {
 // words, and a law named right before its number ("Luật Đất đai số
 // 31/2024/QH15") is one citation carrying both.
 func FindCitations(text string) []Citation {
+	return findCitations(text, nil)
+}
+
+// FindCitationsKnowing is FindCitations that also reads a law named in
+// lower case ("Luật đất đai") when the name starts with one of titles
+// (lower-case title bases, "luật đất đai": the catalogue titles the
+// caller is looking for).
+func FindCitationsKnowing(text string, titles ...string) []Citation {
+	return findCitations(text, titles)
+}
+
+func findCitations(text string, titles []string) []Citation {
 	folded, origRune := foldCitationText(text)
 	orig := []rune(text)
 	var spans []citeSpan
@@ -285,6 +298,10 @@ func FindCitations(text string) []Citation {
 		}
 		docType := citeTypeNames[strings.ToLower(word)]
 		name := docType + folded[m[3]:end]
+		if r, _ := utf8.DecodeRuneInString(strings.TrimLeft(folded[m[3]:end], " \t")); !unicode.IsUpper(r) &&
+			!lowerNameKnown(name, year, titles) {
+			continue // "Luật sư Nguyễn Văn A", "Luật lệ giao thông"
+		}
 		// "Luật X số 73/2006/QH11": the name belongs to the number after it
 		if loc := citeSoAfterRe.FindStringIndex(folded[end:]); loc != nil {
 			if i, ok := byStart[end+loc[1]]; ok && spans[i].Kind != CitationPartial {
@@ -551,13 +568,91 @@ func scanLawName(s string, i int) (end int, year string) {
 		if next, _ := nextWord(s, k); words > 0 && unicode.IsUpper(first) && citeTypeNames[lw+" "+strings.ToLower(next)] != "" {
 			break
 		}
-		if words == 0 && !unicode.IsUpper(first) {
-			break
-		}
 		words++
 		end, pos = k, k
 	}
 	return end, year
+}
+
+// lowerNameKnown reports whether a law name written with a lower-case
+// first word ("Luật đất đai") is a title: it starts with one of titles or
+// of knownLawTitles, or a year follows it ("Luật đất đai 2013", "… năm
+// 2013") and its first word is not a common noun after "luật".
+func lowerNameKnown(name, year string, titles []string) bool {
+	n := strings.ToLower(strings.Join(strings.Fields(name), " "))
+	starts := func(t string) bool {
+		return t != "" && (n == t || strings.HasPrefix(n, t+" ") || strings.HasPrefix(n, t+","))
+	}
+	for _, t := range titles {
+		if starts(t) {
+			return true
+		}
+	}
+	for _, t := range knownLawTitles {
+		if starts(t) {
+			return true
+		}
+	}
+	if year == "" {
+		return false
+	}
+	_, rest, _ := strings.Cut(n, " ")
+	if strings.HasPrefix(n, "bộ luật ") || strings.HasPrefix(n, "pháp lệnh ") {
+		_, rest, _ = strings.Cut(rest, " ")
+	}
+	words := strings.Fields(strings.TrimRight(rest, " ,"))
+	// one word is no title ("Luật mới 2024", "Luật rừng 2020")
+	return len(words) >= 2 && !lawCommonNouns[words[0]]
+}
+
+// lawCommonNouns start a lower-case run after "Luật" that is no title: a
+// common noun ("Luật sư", "luật lệ", "luật pháp", "luật gia", "luật
+// định") or a function word or adjective ("Luật của Quốc hội", "Luật về
+// đất đai", "Luật hiện hành", "Luật quốc tế").
+var lawCommonNouns = map[string]bool{
+	"sư": true, "lệ": true, "pháp": true, "gia": true, "định": true, "học": true, "chơi": true,
+	"của": true, "về": true, "cho": true, "với": true, "trong": true, "theo": true, "tại": true, "và": true,
+	"các": true, "những": true, "mới": true, "cũ": true, "hiện": true, "quốc": true, "chung": true, "riêng": true,
+	"sửa": true, "đó": true, "trên": true, "nói": true, "nước": true,
+}
+
+// knownLawTitles are the titles (lower case, with the type) of the laws,
+// codes and ordinances cited most, read even when the text writes them in
+// lower case ("Luật đất đai", "Bộ luật dân sự"). A prefix is enough: the
+// catalogue lookup reads the rest.
+var knownLawTitles = []string{
+	"bộ luật dân sự", "bộ luật hình sự", "bộ luật lao động", "bộ luật tố tụng dân sự", "bộ luật tố tụng hình sự", "bộ luật hàng hải",
+	"luật đất đai", "luật đầu tư", "luật doanh nghiệp", "luật xây dựng", "luật nhà ở", "luật kinh doanh bất động sản",
+	"luật đấu thầu", "luật đấu giá tài sản", "luật quy hoạch", "luật bảo vệ môi trường", "luật tài nguyên nước", "luật khoáng sản",
+	"luật lâm nghiệp", "luật thủy sản", "luật trồng trọt", "luật chăn nuôi", "luật thủy lợi", "luật đê điều",
+	"luật phòng, chống thiên tai", "luật đa dạng sinh học", "luật đo đạc và bản đồ", "luật biển việt nam",
+	"luật thuế giá trị gia tăng", "luật thuế thu nhập doanh nghiệp", "luật thuế thu nhập cá nhân", "luật thuế tiêu thụ đặc biệt",
+	"luật thuế xuất khẩu, thuế nhập khẩu", "luật thuế sử dụng đất", "luật thuế tài nguyên", "luật thuế bảo vệ môi trường",
+	"luật quản lý thuế", "luật phí và lệ phí", "luật ngân sách nhà nước", "luật kế toán", "luật kiểm toán", "luật hải quan",
+	"luật quản lý, sử dụng tài sản công", "luật quản lý nợ công", "luật các tổ chức tín dụng",
+	"luật ngân hàng nhà nước", "luật chứng khoán", "luật kinh doanh bảo hiểm", "luật bảo hiểm xã hội", "luật bảo hiểm y tế",
+	"luật bảo hiểm tiền gửi", "luật việc làm", "luật công đoàn", "luật an toàn, vệ sinh lao động", "luật cán bộ, công chức",
+	"luật viên chức", "luật tổ chức chính quyền địa phương", "luật tổ chức chính phủ", "luật tổ chức quốc hội",
+	"luật ban hành văn bản quy phạm pháp luật", "luật xử lý vi phạm hành chính", "luật khiếu nại", "luật tố cáo",
+	"luật tiếp công dân", "luật phòng, chống tham nhũng", "luật thanh tra", "luật tố tụng hành chính",
+	"luật thi hành án dân sự", "luật thi hành án hình sự", "luật công chứng", "luật luật sư", "luật trợ giúp pháp lý",
+	"luật hộ tịch", "luật cư trú", "luật căn cước", "luật quốc tịch việt nam", "luật xuất cảnh", "luật nhập cảnh",
+	"luật giáo dục", "luật khám bệnh, chữa bệnh", "luật dược", "luật an toàn thực phẩm", "luật phòng, chống bệnh truyền nhiễm",
+	"luật giao thông đường bộ", "luật trật tự, an toàn giao thông đường bộ", "luật đường bộ", "luật đường sắt",
+	"luật hàng không dân dụng việt nam", "luật giao thông đường thủy nội địa", "luật thương mại", "luật cạnh tranh",
+	"luật bảo vệ quyền lợi người tiêu dùng", "luật sở hữu trí tuệ", "luật chuyển giao công nghệ", "luật khoa học và công nghệ",
+	"luật khoa học, công nghệ và đổi mới sáng tạo", "luật công nghệ thông tin", "luật giao dịch điện tử", "luật an ninh mạng",
+	"luật an toàn thông tin mạng", "luật viễn thông", "luật dữ liệu", "luật báo chí", "luật xuất bản", "luật quảng cáo",
+	"luật điện lực", "luật đo lường", "luật chất lượng sản phẩm, hàng hóa", "luật tiêu chuẩn và quy chuẩn kỹ thuật",
+	"luật phá sản", "luật hợp tác xã", "luật trọng tài thương mại", "luật phòng cháy", "luật công an nhân dân",
+	"luật quốc phòng", "luật nghĩa vụ quân sự", "luật dân quân tự vệ", "luật du lịch", "luật di sản văn hóa",
+	"luật thể dục, thể thao", "luật điện ảnh", "luật người cao tuổi", "luật người khuyết tật", "luật trẻ em",
+	"luật thanh niên", "luật bình đẳng giới", "luật hôn nhân và gia đình", "luật phòng, chống bạo lực gia đình",
+	"luật phòng, chống ma túy", "luật tín ngưỡng, tôn giáo", "luật hòa giải ở cơ sở", "luật phổ biến, giáo dục pháp luật",
+	"luật tiếp cận thông tin", "luật thực hiện dân chủ ở cơ sở", "luật thủ đô", "luật năng lượng nguyên tử", "luật hóa chất",
+	"luật tài nguyên, môi trường biển và hải đảo", "luật bầu cử", "luật mặt trận tổ quốc việt nam", "luật thống kê",
+	"luật lưu trữ", "luật thi đua, khen thưởng", "luật đầu tư công", "luật đầu tư theo phương thức đối tác công tư",
+	"pháp lệnh ưu đãi người có công", "pháp lệnh chi phí tố tụng", "pháp lệnh thư viện",
 }
 
 func startsTypeWord(s string) bool {
