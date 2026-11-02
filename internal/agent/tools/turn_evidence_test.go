@@ -19,6 +19,9 @@ func hkdTurn() (context.Context, LegalDocIdentityFunc) {
 			{"knowledge_id": "k40", "content": "2. Hộ kinh doanh, cá nhân kinh doanh có doanh thu năm dương lịch từ 100 triệu đồng trở xuống thì thuộc trường hợp không phải nộp thuế GTGT và không phải nộp thuế TNCN."},
 			{"knowledge_id": "k68", "content": "1. … từ 500 triệu đồng trở xuống thuộc đối tượng không chịu thuế giá trị gia tăng.",
 				"model_content": "1. Hộ kinh doanh có mức doanh thu năm từ 01 tỷ đồng [thay cho “500 triệu đồng” theo Nghị định 141/2026/NĐ-CP, từ 01/01/2026] trở xuống thuộc đối tượng không chịu thuế giá trị gia tăng."},
+			// a provision of the same decree whose amendment is not verified
+			// keeps its old words: the decree's text holds 500 triệu too
+			{"knowledge_id": "k68", "content": "[LỜI VĂN HIỆN HÀNH CHƯA XÁC MINH: …]\n\nb) Hộ kinh doanh có doanh thu năm từ 500 triệu đồng trở xuống không phải nộp thuế thu nhập cá nhân."},
 			{"knowledge_id": "k109", "model_content": "[Lời văn hiện hành theo Luật 09/2026/QH16, từ 24/04/2026]\n\n1. Cá nhân cư trú có doanh thu năm từ mức quy định của Chính phủ trở xuống không phải nộp thuế thu nhập cá nhân.\n\n[trước 24/04/2026: 1. Cá nhân cư trú có mức doanh thu năm từ 500 triệu đồng trở xuống không phải nộp thuế thu nhập cá nhân.]"},
 		},
 	}}
@@ -55,6 +58,8 @@ func TestRevenueThresholds(t *testing.T) {
 	require.Equal(t, 6, legalRank("02/VBHN-VPQH"))
 	require.Equal(t, 4, legalRank("12/VBHN-VPCP"))
 	require.Equal(t, 2, legalRank("24/2026/VBHN-BTC"))
+	require.Empty(t, revenueThresholds("hộ có doanh thu từ 500 triệu đồng trở xuống không phải nộp lệ phí môn bài"), "a fee, not a tax")
+	require.Empty(t, revenueThresholds("doanh thu từ 500 triệu đồng trở xuống thì không phải nộp hồ sơ"), "no tax in the sentence")
 }
 
 func TestCheckThresholdBasis(t *testing.T) {
@@ -67,20 +72,28 @@ func TestCheckThresholdBasis(t *testing.T) {
 	}
 	require.Empty(t, check("68/2026/NĐ-CP", 1e9), "the current decree")
 	require.Empty(t, check("68/2026/ND-CP", 1e9), "number written without Đ")
+	require.Empty(t, check("Nghị định 68/2026/NĐ-CP", 1e9), "with its type words")
+	require.Empty(t, check("Nghị định 68/2026/NĐ-CP (sửa đổi bởi Nghị định 141/2026/NĐ-CP)", 1e9), "two numbers")
+	require.Empty(t, check("141/2026/NĐ-CP", 1e9), "the amending decree: NĐ 68 states 1 tỷ")
+	require.Empty(t, check("109/2025/QH15", 1e9), "the law delegates the figure; NĐ 68 states it")
+	require.Empty(t, check("09/2026/QH16", 1e9), "only named in a current-wording note")
 	// the hkd-1 failure: the old circular's 100 triệu
 	msg := check("40/2021/TT-BTC", 1e8)
 	require.Contains(t, msg, "68/2026/NĐ-CP")
-	require.Contains(t, msg, "1.000.000.000 đ")
 	require.Contains(t, msg, "mới hơn")
-	// the decree cited with the old circular's figure
-	require.Contains(t, check("68/2026/NĐ-CP", 1e8), "ghi ngưỡng doanh thu là 1.000.000.000 đ")
-	// the old 500 triệu of Luật 109 is only in a note: no figure, no block
-	require.Empty(t, check("141/2026/NĐ-CP", 1e9), "an amending decree that states no threshold sentence: NĐ 68 states 1 tỷ")
-	require.Empty(t, check("109/2025/QH15", 1e9), "the law delegates the figure; NĐ 68 states it")
-	// a document that states no figure cannot carry a stale one
-	require.Contains(t, check("141/2026/NĐ-CP", 1e8), "68/2026/NĐ-CP", "100 triệu is only TT 40/2021's; NĐ 68 is newer")
+	require.NotContains(t, msg, "500.000.000", "never names a figure: the decree's text holds an old one")
+	require.NotContains(t, msg, "1.000.000.000")
+	require.NotContains(t, msg, "100.000.000", "nor the figure passed")
+	require.Empty(t, check("NĐ 68/2026", 1e9), "a basis without its suffix")
+	// a document that states no figure, or the decree, cannot carry the
+	// circular's figure
+	require.Contains(t, check("68/2026/NĐ-CP", 1e8), "68/2026/NĐ-CP")
+	require.Contains(t, check("141/2026/NĐ-CP", 1e8), "68/2026/NĐ-CP")
 	require.Contains(t, check("109/2025/QH15", 1e8), "68/2026/NĐ-CP")
-	require.Contains(t, check("109/2025/QH15", 7e8), "không văn bản nào")
+	// a figure no evidence document dates passes (nothing to compare with)
+	require.Empty(t, check("109/2025/QH15", 7e8))
+	// known limitation: an old figure still in the decree's own text
+	require.Empty(t, check("68/2026/NĐ-CP", 5e8))
 	require.Contains(t, check("12/2099/NĐ-CP", 1e9), "không có trong kết quả tra cứu đã trả về")
 	// outside a turn (no steps) or without a lookup the check is skipped
 	require.NoError(t, checkThresholdBasis(context.Background(), identity, "can_cu_nguong", "ngưỡng", "40/2021/TT-BTC", 1e8))
