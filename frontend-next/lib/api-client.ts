@@ -4,6 +4,8 @@
  * - Backend envelope: { success, data?, error? } → error.message extraction
  */
 
+import { isAccountDisabledReply, noteSignedOutDisabled } from "./account-disabled.ts";
+
 const TOKEN_KEY = "weknora_token";
 const REFRESH_KEY = "weknora_refresh_token";
 const TENANT_KEY = "weknora_selected_tenant_id";
@@ -348,6 +350,7 @@ export async function refreshAccessToken(): Promise<string> {
       if (!isInvalidRefreshCredential(res.status, data)) {
         throw new ApiError(res.status || 0, envelopeMessage(data), data ?? undefined);
       }
+      if (isAccountDisabledReply(res.status, data)) noteSignedOutDisabled();
       clearTokens();
       window.location.href = signInPath();
       throw new ApiError(res.status || 401, data?.message ?? "Session expired");

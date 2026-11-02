@@ -8,6 +8,7 @@ import { AuthCard } from "@/components/auth/auth-card";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { resolveSafeNextPath } from "@/lib/safe-next";
+import { takeSignedOutDisabled } from "@/lib/account-disabled";
 import { IconEye } from "@/components/icons";
 
 function LoginForm() {
@@ -69,6 +70,14 @@ function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /* A refresh refused for a locked account signs out to this page; say why
+   * once. In an effect, not the state initializer, so SSR and the Strict
+   * Mode double render cannot drop the one-shot note. */
+  useEffect(() => {
+    if (takeSignedOutDisabled()) setError(t("auth.accountDisabled"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true);
@@ -88,7 +97,9 @@ function LoginForm() {
       setError(
         result.error === "Invalid email or password"
           ? t("auth.loginInvalid")
-          : result.error,
+          : result.error === "Account is disabled"
+            ? t("auth.accountDisabled")
+            : result.error,
       );
     } catch {
       setError(t("auth.loginNetwork"));

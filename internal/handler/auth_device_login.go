@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 )
@@ -387,8 +388,12 @@ func (h *AuthHandler) DeviceLoginPoll(c *gin.Context) {
 		return
 	}
 	user, err := h.userService.GetUserByID(ctx, e.UserID)
-	if err != nil || user == nil || !user.IsActive {
+	if err != nil || user == nil {
 		c.Error(errors.NewUnauthorizedError("account is not available"))
+		return
+	}
+	if !user.IsActive {
+		c.Error(errors.NewUnauthorizedError(service.ErrUserDisabled.Error()))
 		return
 	}
 	token, refresh, err := h.userService.GenerateTokens(ctx, user)
