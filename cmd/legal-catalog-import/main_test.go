@@ -1,10 +1,15 @@
 package main
 
 import (
+	"context"
+	"sort"
 	"strings"
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/google/uuid"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 // TestEdgeBuilderTwins: an edge at a twin goes to its surviving row, the
@@ -69,5 +74,55 @@ func TestEdgeBuilderAliasChain(t *testing.T) {
 	b.add(vbplRelation{DocID: "500", OtherDocID: "twin", Relationship: "Thay thế"})
 	if len(b.rels) != 1 || b.rels[0].ToID != "full" {
 		t.Fatalf("rels = %+v", b.rels)
+	}
+}
+
+// Fable LOW: a -merge import whose full copy replaces a catalogued
+// placeholder moves the placeholder's stored edges to the full copy, so
+// no edge is left under two ids.
+func TestMergeRelationsMovesTwinEdges(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&types.LegalDocumentRelation{}); err != nil {
+		t.Fatal(err)
+	}
+	rel := func(from, to string, r types.LegalRelation) *types.LegalDocumentRelation {
+		return &types.LegalDocumentRelation{FromID: from, ToID: to, Relation: r}
+	}
+	// stored: the placeholder's edges and one unrelated edge
+	require := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	require(db.Create([]*types.LegalDocumentRelation{
+		rel("500", "placeholder", types.LegalRelationReplaces), // also in the import, at the full copy
+		rel("placeholder", "600", types.LegalRelationBasedOn),  // only stored
+		rel("placeholder", "full", types.LegalRelationBasedOn), // becomes a self edge
+		rel("700", "800", types.LegalRelationBasedOn),          // untouched
+	}).Error)
+	ids := map[string]bool{"full": true, "500": true}
+	alias := map[string]string{"placeholder": "full"}
+	b := newEdgeBuilder(ids, map[string]bool{"full": true, "500": true, "placeholder": true, "600": true}, alias)
+	b.add(vbplRelation{DocID: "500", OtherDocID: "full", Relationship: "Thay thế"})
+	require(mergeRelations(context.Background(), db, ids, alias, b.survivor, b.rels))
+
+	var got []*types.LegalDocumentRelation
+	require(db.Find(&got).Error)
+	var edges []string
+	for _, r := range got {
+		edges = append(edges, r.FromID+" "+string(r.Relation)+" "+r.ToID)
+	}
+	sort.Strings(edges)
+	want := []string{
+		"500 " + string(types.LegalRelationReplaces) + " full",
+		"700 " + string(types.LegalRelationBasedOn) + " 800",
+		"full " + string(types.LegalRelationBasedOn) + " 600",
+	}
+	if strings.Join(edges, "|") != strings.Join(want, "|") {
+		t.Errorf("edges = %v, want %v", edges, want)
 	}
 }

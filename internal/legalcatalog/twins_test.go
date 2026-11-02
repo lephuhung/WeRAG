@@ -187,3 +187,117 @@ func TestResolveTwinsPlaceholder(t *testing.T) {
 		t.Errorf("status differs = %+v", res.StatusDiffers)
 	}
 }
+
+// Fable LOW: a placeholder never wins over a full copy already under the
+// key, and the outcome does not depend on the file's order.
+func TestResolveTwinsPlaceholderOrder(t *testing.T) {
+	const title = "Quyết định số 05/2007/QĐ-BCT Hướng dẫn xuất khẩu than"
+	placeholder := func() *types.LegalDocument {
+		return catalogued("46690", "05/2007/QĐ-BCT", "05/2007/QD-BCT", "Quyết định",
+			"Quyết định số 05/2007/QĐ-BCT (tạm nhập - chờ toàn văn) Hướng dẫn xuất khẩu than", "2007-10-22")
+	}
+	keep := func(res TwinResolution) map[string]string {
+		out := map[string]string{}
+		for _, d := range res.Keep {
+			out[d.ID] = d.NumberKey
+		}
+		return out
+	}
+	reverse := func(in []*types.LegalDocument) []*types.LegalDocument {
+		out := make([]*types.LegalDocument, len(in))
+		for i, d := range in {
+			out[len(in)-1-i] = d
+		}
+		return out
+	}
+
+	t.Run("placeholder and two new full copies", func(t *testing.T) {
+		for _, rev := range []bool{false, true} {
+			docs := []*types.LegalDocument{
+				imported("82314", "05/2007/QĐ-BCT", "Quyết định", title, "2007-10-22"),
+				imported("82400", "05/2007/QÐ-BCT", "Quyết định", "Quyết định số 05/2007/QÐ-BCT Hướng dẫn xuất khẩu than", "2007-10-22"),
+			}
+			if rev {
+				docs = reverse(docs)
+			}
+			res := ResolveTwins([]*types.LegalDocument{placeholder()}, docs)
+			if k := keep(res); len(k) != 1 || k["82314"] == "" {
+				t.Errorf("reverse=%v: keep = %v, want 82314 only", rev, k)
+			}
+			if res.Alias["46690"] != "82314" || res.Alias["82400"] != "82314" {
+				t.Errorf("reverse=%v: alias = %v", rev, res.Alias)
+			}
+		}
+	})
+
+	t.Run("placeholder, catalogued Ð twin and a new full copy", func(t *testing.T) {
+		for _, rev := range []bool{false, true} {
+			twin := catalogued("109900", "05/2007/QÐ-BCT", "05/2007/QÐ-BCT", "Quyết định",
+				"Quyết định số 05/2007/QÐ-BCT Hướng dẫn xuất khẩu than", "2007-10-22")
+			existing := []*types.LegalDocument{placeholder(), twin}
+			docs := []*types.LegalDocument{
+				imported("109900", "05/2007/QÐ-BCT", "Quyết định", "Quyết định số 05/2007/QÐ-BCT Hướng dẫn xuất khẩu than", "2007-10-22"),
+				imported("82314", "05/2007/QĐ-BCT", "Quyết định", title, "2007-10-22"),
+			}
+			if rev {
+				docs = reverse(docs)
+			}
+			res := ResolveTwins(existing, docs)
+			// the catalogued twin is rekeyed and survives; the new copy
+			// is attached to it, the placeholder too
+			if k := keep(res); len(k) != 1 || k["109900"] != "05/2007/QD-BCT" {
+				t.Errorf("reverse=%v: keep = %v, want 109900 rekeyed only", rev, k)
+			}
+			if res.Alias["46690"] != "109900" || res.Alias["82314"] != "109900" {
+				t.Errorf("reverse=%v: alias = %v", rev, res.Alias)
+			}
+		}
+	})
+
+	t.Run("an unreachable Ð twin attaches to its new Latin copy", func(t *testing.T) {
+		for _, rev := range []bool{false, true} {
+			existing := []*types.LegalDocument{
+				catalogued("61017", "17-TC/TCĐN", "17-TC/TCDN", "Thông tư", "Thông tư số 17-TC/TCĐN Hướng dẫn việc thu nộp lệ phí", "1989-05-23"),
+				catalogued("109500", "17-TC/TCÐN", "17-TC/TCÐN", "Thông tư", "Thông tư số 17-TC/TCÐN hướng dẫn cơ chế quản lý tài chính", "1997-04-02"),
+			}
+			docs := []*types.LegalDocument{
+				imported("109500", "17-TC/TCÐN", "Thông tư", "Thông tư số 17-TC/TCÐN hướng dẫn cơ chế quản lý tài chính", "1997-04-02"),
+				imported("200010", "17-TC/TCĐN", "Thông tư", "Thông tư số 17-TC/TCĐN Hướng dẫn cơ chế quản lý tài chính", "1997-04-02"),
+			}
+			if rev {
+				docs = reverse(docs)
+			}
+			res := ResolveTwins(existing, docs)
+			if len(res.Unreachable) != 0 || res.Alias["109500"] != "200010" {
+				t.Errorf("reverse=%v: unreachable = %+v, alias = %v", rev, res.Unreachable, res.Alias)
+			}
+			if k := keep(res); k["109500"] != "17-TC/TCÐN" || k["200010"] != "17-TC/TCDN" {
+				t.Errorf("reverse=%v: keep = %v", rev, k)
+			}
+		}
+	})
+}
+
+// Fable LOW: a title-cased common noun after a unit word ("Xã Hội", "Xã
+// Nông thôn mới") is not a place when the other title writes the same
+// words as common words; real places still disagree.
+func TestPlacesAgreeTitleCase(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		want bool
+	}{
+		{"Quyết định về chính sách Xã Hội", "Quyết định về chính sách xã hội tỉnh Hà Giang", true},
+		{"Đề án Xã Nông thôn mới giai đoạn 2021-2025", "Đề án xã nông thôn mới huyện Mường Tè giai đoạn 2021-2025", true},
+		{"chính sách Xã Hội tỉnh Hà Giang", "chính sách xã hội tỉnh Hà Nam", false},
+		{"Quyết định giá đất tỉnh Hà Giang", "Quyết định giá đất tỉnh Hà Nam", false},
+		{"Kế hoạch thành phố Huế nhiệm kỳ 2020", "Kế hoạch thành phố Vinh nhiệm kỳ 2020", false},
+		{"Quy định phí chợ huyện Mường Khương", "Quy định phí chợ Huyện Mường Khương", true},
+	} {
+		if got := PlacesAgree(c.a, c.b); got != c.want {
+			t.Errorf("PlacesAgree(%q, %q) = %v, want %v", c.a, c.b, got, c.want)
+		}
+		if got := PlacesAgree(c.b, c.a); got != c.want {
+			t.Errorf("PlacesAgree(%q, %q) = %v, want %v", c.b, c.a, got, c.want)
+		}
+	}
+}
