@@ -536,6 +536,29 @@ var registry = map[string]settingSpec{
 		Description: "Đọc lời văn hiện hành của điều khoản pháp luật qua bộ giải sửa đổi (trạng thái từng khoản, điểm; lời văn sửa đổi chưa xác minh được đánh dấu). " +
 			"Khi tắt, dùng lại cách cũ (chỉ thay cụm từ). Có hiệu lực ngay sau khi thay đổi.",
 	},
+	// legal.current_wording.editor_source adds the vbpl editors' provision
+	// tags (legal_provision_links, cmd/legal-provision-links) to the
+	// resolver as the second source: a parser edge they agree with becomes
+	// verified. Only read while the resolver is on. Read live per call.
+	LegalEditorSourceSetting: {
+		Type:     "bool",
+		EnvName:  "",
+		Default:  legalEditorSourceDefault,
+		Category: "chat",
+		Description: "Dùng thẻ sửa đổi do biên tập viên vbpl.vn gắn trên điều khoản làm nguồn thứ hai của bộ giải sửa đổi: sửa đổi mà bộ đọc vbpl và thẻ biên tập cùng ghi nhận được coi là đã xác minh và thay vào lời văn. " +
+			"Chỉ có tác dụng khi bật bộ giải sửa đổi. Có hiệu lực ngay sau khi thay đổi.",
+	},
+	// legal.current_wording.feed_source adds the provision links pushed by
+	// other feeds and approved by a SuperAdmin (legal_provision_links with
+	// a feed source). Only read while the resolver is on. Read live.
+	LegalFeedSourceSetting: {
+		Type:     "bool",
+		EnvName:  "",
+		Default:  legalFeedSourceDefault,
+		Category: "chat",
+		Description: "Dùng liên kết điều khoản từ nguồn ngoài vbpl (đẩy lên qua API và đã được SuperAdmin duyệt) làm nguồn của bộ giải sửa đổi, như thẻ biên tập vbpl. " +
+			"Chỉ có tác dụng khi bật bộ giải sửa đổi. Có hiệu lực ngay sau khi thay đổi.",
+	},
 	// knowledge.parse_defaults is the platform-wide default parse
 	// configuration published by a SystemAdmin. While enabled it replaces
 	// per-upload/per-document process overrides — ResolveProcessConfig merges
