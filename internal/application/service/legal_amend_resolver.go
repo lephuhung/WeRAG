@@ -140,10 +140,7 @@ func legalUnits(content string, meta *vietnamese_legal.LegalMetadata) []legalUni
 		at, kind int
 		label    string
 	}
-	quoted := func(labelAt int) bool {
-		line := content[strings.LastIndexByte(content[:labelAt], '\n')+1 : labelAt]
-		return strings.HasPrefix(strings.TrimSpace(line), ">")
-	}
+	quoted := func(labelAt int) bool { return legalQuotedLine(content, labelAt) }
 	var marks []mark
 	for _, m := range legalDieuHeadRe.FindAllStringSubmatchIndex(content, -1) {
 		marks = append(marks, mark{m[0], 0, strings.ToLower(content[m[2]:m[3]])})
@@ -157,6 +154,10 @@ func legalUnits(content string, meta *vietnamese_legal.LegalMetadata) []legalUni
 		if !quoted(m[2]) {
 			marks = append(marks, mark{m[0], 2, strings.ToLower(content[m[2]:m[3]])})
 		}
+	}
+	// a khoản 1 whose "1." the source lost starts after its Điều heading
+	for _, at := range legalImplicitKhoanOne(content) {
+		marks = append(marks, mark{at, 1, "1"})
 	}
 	sort.SliceStable(marks, func(i, j int) bool {
 		if marks[i].at != marks[j].at {
