@@ -226,14 +226,22 @@ type LegalAmendEdge struct {
 	// applied); EditorProvisionID is that provision's vbpl id.
 	SourceText        string
 	EditorProvisionID string
-	// EditorTargetID is the vbpl id of A's provision the editors tagged,
-	// EditorTargetKey its chunk key ("dieu", "khoan:2", "khoan:2/diem:a"):
-	// a chunk of A holding another provision under that key (a Quy chế's
-	// "Điều 4" next to the decree's own) is not the tagged one, so the
-	// editor edge does not apply there and an agreed parser edge keeps
-	// preEditorTier.
-	EditorTargetID, EditorTargetKey string
-	preEditorTier                   LegalAmendTier
+	// EditorTargets are A's provisions the editors tagged for this edge
+	// (vbpl id, provision_ids key): a chunk of A holding another provision
+	// under that key (a Quy chế's "Điều 4" next to the decree's own) is not
+	// the tagged one, so the editor edge does not apply there and an agreed
+	// parser edge keeps preEditorTier.
+	EditorTargets []LegalEditorTargetRef
+	preEditorTier LegalAmendTier
+}
+
+// LegalEditorTargetRef is one provision of A an editor tag names.
+type LegalEditorTargetRef struct {
+	ID, Key, Article string
+	// Repeated: A's chunks record more than one Điều id under this number
+	// (a Quy chế or phụ lục numbered on its own), so a chunk that cannot
+	// show the provision id cannot be matched by number.
+	Repeated bool
 }
 
 // legalChunkKey is the provision_ids key of p within its Điều.
@@ -249,17 +257,54 @@ func legalChunkKey(p LegalProvisionRef) string {
 	return "dieu"
 }
 
-// editorHolds reports whether chunk c may hold the provision the editors
-// tagged: true unless c records another provision id under its key.
-func (e *LegalAmendEdge) editorHolds(c LegalProvisionChunk) bool {
-	if e.EditorTargetID == "" || e.EditorTargetKey == "" || c.Legal == nil {
+// legalWrongDieu is the reason an editor edge is demoted in a chunk that
+// cannot show which of A's same-numbered Điều it holds.
+const legalWrongDieu = "không xác định được đúng Điều được gắn thẻ (văn bản có nhiều Điều cùng số)"
+
+// editorHolds tells whether chunk c holds a provision the editors tagged:
+// confirmed by its provision_ids, or by number when A has one Điều with
+// that number. holds is false when c records other ids under every key;
+// ambiguous when c cannot tell and the number repeats in A.
+func (e *LegalAmendEdge) editorHolds(c LegalProvisionChunk) (holds, ambiguous bool) {
+	if len(e.EditorTargets) == 0 {
+		return true, false
+	}
+	single := c.Legal != nil && len(c.Legal.ArticleNos) == 1
+	for _, t := range e.EditorTargets {
+		if single && t.Key != "" && strings.EqualFold(c.Legal.ArticleNos[0], t.Article) {
+			if have, ok := c.Legal.ProvisionIDs[t.Key]; ok {
+				if have == t.ID {
+					return true, false
+				}
+				continue // another provision under this number
+			}
+		}
+		if t.Repeated {
+			ambiguous = true
+			continue
+		}
+		holds = true
+	}
+	return holds, !holds && ambiguous
+}
+
+// editorScope applies editorHolds to a per-chunk copy of e: false drops
+// the edge for this chunk.
+func (e *LegalAmendEdge) editorScope(c LegalProvisionChunk) bool {
+	holds, ambiguous := e.editorHolds(c)
+	switch {
+	case holds:
+		return true
+	case e.preEditorTier != "":
+		e.Tier = e.preEditorTier // agreed elsewhere, not here
+		return true
+	case ambiguous:
+		if e.Unresolved == "" {
+			e.Unresolved = legalWrongDieu
+		}
 		return true
 	}
-	if len(c.Legal.ArticleNos) != 1 || !strings.EqualFold(c.Legal.ArticleNos[0], e.Provision.Article) {
-		return true
-	}
-	have, ok := c.Legal.ProvisionIDs[e.EditorTargetKey]
-	return !ok || have == e.EditorTargetID
+	return false
 }
 
 // informational reports an operation that changes no text (giải thích,

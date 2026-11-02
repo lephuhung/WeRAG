@@ -47,6 +47,27 @@ func legalStructureFrom(metas []*vietnamese_legal.LegalMetadata) LegalDocStructu
 	return s
 }
 
+// legalRepeatedArticles lists the Điều numbers A's chunks record under
+// more than one vbpl id ("dieu" of provision_ids): a Quy chế or phụ lục
+// numbered on its own beside A's Điều. A copy without provision ids (PDF,
+// OCR) shows none.
+func legalRepeatedArticles(metas []*vietnamese_legal.LegalMetadata) map[string]bool {
+	first := map[string]string{}
+	out := map[string]bool{}
+	for _, m := range metas {
+		if m == nil || len(m.ArticleNos) != 1 || m.ProvisionIDs["dieu"] == "" {
+			continue
+		}
+		a, id := strings.ToLower(m.ArticleNos[0]), m.ProvisionIDs["dieu"]
+		if have, ok := first[a]; !ok {
+			first[a] = id
+		} else if have != id {
+			out[a] = true
+		}
+	}
+	return out
+}
+
 // parseSubdivisionRef reads "khoan:2" / "khoan:2/diem:a" of Điều article.
 func parseSubdivisionRef(article, ref string) (LegalProvisionRef, bool) {
 	p := LegalProvisionRef{Article: article}

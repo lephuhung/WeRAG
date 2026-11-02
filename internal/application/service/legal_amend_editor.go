@@ -95,6 +95,14 @@ type legalEditorTarget struct {
 	articles map[string]bool
 	// structure is A's provisions as its chunks record them (nil: unknown)
 	structure LegalDocStructure
+	// repeated are the Điều numbers A's chunks record under more than one
+	// vbpl id (a Quy chế's "Điều 4" next to the decree's own)
+	repeated map[string]bool
+}
+
+// editorTarget is the provision of A an editor link tags.
+func (t legalEditorTarget) editorTarget(lk types.LegalProvisionLink, at LegalProvisionRef) LegalEditorTargetRef {
+	return LegalEditorTargetRef{ID: lk.TargetProvisionID, Key: legalChunkKey(at), Article: at.Article, Repeated: t.repeated[at.Article]}
 }
 
 // legalPathRef reads "dieu:5/khoan:2/diem:a"; ok is false for an empty
@@ -277,9 +285,16 @@ func (l *legalAmendLoader) editorEdges(load *LegalAmendLoad, targets map[string]
 				if !containsString(e.Sources, LegalAmendSourceEditor) {
 					e.Sources = append(e.Sources, LegalAmendSourceEditor)
 				}
-				if e.Unresolved == "" && e.Rejected == "" && e.Tier != LegalTierVerified && legalEditorExact(p.link.RelationCode, e.Op) {
-					e.preEditorTier, e.Tier = e.Tier, LegalTierVerified
-					e.EditorTargetID, e.EditorTargetKey = p.link.TargetProvisionID, legalChunkKey(p.at)
+				if e.Unresolved == "" && e.Rejected == "" && legalEditorExact(p.link.RelationCode, e.Op) {
+					switch {
+					case e.Tier != LegalTierVerified:
+						e.preEditorTier, e.Tier = e.Tier, LegalTierVerified
+						e.EditorTargets = append(e.EditorTargets, targets[p.key].editorTarget(p.link, p.at))
+					case e.preEditorTier != "":
+						// verified by an earlier link: this one tags another
+						// provision under the same number, which holds it too
+						e.EditorTargets = append(e.EditorTargets, targets[p.key].editorTarget(p.link, p.at))
+					}
 				}
 				agreed = true
 				continue
@@ -461,7 +476,7 @@ func (l *legalAmendLoader) editorEdge(lk types.LegalProvisionLink, at LegalProvi
 	op, _ := legalEditorOp(lk.RelationCode)
 	e := LegalAmendEdge{Op: op, Target: t.doc, Provision: at, Sources: []string{LegalAmendSourceEditor}, Tier: LegalTierUnverified,
 		EffFrom: l.editorDate(lk), EditorProvisionID: lk.SourceProvisionID,
-		EditorTargetID: lk.TargetProvisionID, EditorTargetKey: legalChunkKey(at)}
+		EditorTargets: []LegalEditorTargetRef{t.editorTarget(lk, at)}}
 	if lk.EffTo != nil {
 		e.EffTo = l.dateOf(lk.EffTo)
 	}

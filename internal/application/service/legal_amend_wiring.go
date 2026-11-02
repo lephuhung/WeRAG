@@ -307,12 +307,11 @@ func (h *legalHistory) resolvedLines(c legalHistoryChunk, pc LegalProvisionChunk
 		if e.Rejected != "" || (e.Target.CatalogID != "" && pc.Doc.CatalogID != "" && e.Target.CatalogID != pc.Doc.CatalogID) {
 			continue
 		}
-		if !e.editorHolds(pc) {
-			if e.preEditorTier == "" {
+		if len(e.EditorTargets) > 0 {
+			own := *e // the load is shared: scope a copy
+			if !own.editorScope(pc) {
 				continue // an editor edge on another provision of the same number
 			}
-			own := *e // the load is shared: downgrade a copy
-			own.Tier = e.preEditorTier
 			e = &own
 		}
 		prov := e.Provision

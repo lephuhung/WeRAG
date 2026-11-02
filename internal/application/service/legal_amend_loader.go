@@ -331,9 +331,10 @@ func LoadLegalAmendmentsWith(ctx context.Context, db *gorm.DB, scopeKBs, chunkID
 	lap("relations")
 	// the structure of A (for the target checks) is read meanwhile
 	var byKnowledge map[string]LegalDocStructure
+	var repeatedBy map[string]map[string]bool
 	sg, _ := errgroup.WithContext(l.ctx)
 	legalGo(sg, func() (err error) {
-		byKnowledge, err = l.structures(aKnowledge)
+		byKnowledge, repeatedBy, err = l.structures(aKnowledge)
 		return err
 	})
 	cands, truncated, err := l.amendingChunks(bIDs, articles, probes, aKeys, aKnowledge)
@@ -423,7 +424,7 @@ func LoadLegalAmendmentsWith(ctx context.Context, db *gorm.DB, scopeKBs, chunkID
 	if opt.EditorSource {
 		targets := make(map[string]legalEditorTarget, len(docs))
 		for key, d := range docs {
-			targets[key] = legalEditorTarget{doc: d.doc, articles: d.articles, structure: structures[key]}
+			targets[key] = legalEditorTarget{doc: d.doc, articles: d.articles, structure: structures[key], repeated: repeatedBy[d.knowledge]}
 		}
 		st, err := l.editorEdges(load, targets, opt)
 		if err != nil {
@@ -715,6 +716,12 @@ func legalCitedArticlesOf(content, heading, aNumber, aType, aBase string) map[st
 			if loc := legalChainLinkRe.FindStringIndex(line[pos:]); loc != nil {
 				pos += loc[1]
 			}
+			// "Điều 3 và Phụ lục số 01 của …", "Điều 4, Chương III, Phụ
+			// lục 2 của …": a part or division listed beside the Điều
+			if loc := legalListedPartRe.FindStringIndex(line[pos:]); loc != nil &&
+				(legalDocPartRe.MatchString(line[pos+loc[1]:]) || legalDivisionRe.MatchString(line[pos+loc[1]:])) {
+				pos += loc[1]
+			}
 			// a full number starts after its type words ("Nghị định số
 			// 14/2016/…"), a partial or name citation with them
 			at := utf8.RuneCountInString(line[:pos])
@@ -736,6 +743,17 @@ func legalCitedArticlesOf(content, heading, aNumber, aType, aBase string) map[st
 			part := legalDocPartRe.MatchString(line[pos:]) && !legalHeadingNames(heading, line[pos:])
 			if (part || legalDivisionRe.MatchString(line[pos:])) && attached == nil {
 				attached = legalClauseCitation(line, pos, cites)
+			}
+			// operations joined in one clause share its document: "Bãi bỏ
+			// điểm a khoản 2 Điều 3, bỏ cụm từ … tại khoản 3 Điều 4 của
+			// Thông tư số …"; not across a reference ("theo", "căn cứ")
+			if attached == nil && legalJoinedOperationRe.MatchString(line[pos:]) {
+				if c := legalClauseCitation(line, pos, cites); c != nil {
+					gap := string([]rune(line)[utf8.RuneCountInString(line[:pos]):c.Start])
+					if !legalReferenceRe.MatchString(gap) {
+						attached = c
+					}
+				}
 			}
 			switch {
 			case attached != nil && isA(*attached):
@@ -789,8 +807,18 @@ var (
 	// lower case is a verb ("Điều 12 quy định về nguồn vốn").
 	legalDocPartRe = regexp.MustCompile(`^\s*(?:Quy\s+chế|Quy\s+định|Quy\s+trình|Điều\s+lệ|(?i:phụ\s+lục|mẫu)|Danh\s+mục|Biểu|Chương\s+trình|Chế\s+độ|Tiêu\s+chuẩn)(?:[^\p{L}]|$)`)
 	// legalChainLinkRe is what may stand between a chain and the document
-	// it belongs to.
-	legalChainLinkRe = regexp.MustCompile(`(?i)^\s*(?:của\s+|tại\s+)?`)
+	// it belongs to ("Điều 16 của / tại / trong Nghị định …", "Điều 16,
+	// Nghị định …").
+	legalChainLinkRe = regexp.MustCompile(`(?i)^\s*(?:của\s+|tại\s+|trong\s+|,\s*)?`)
+	// legalListedPartRe joins a part or division listed after a chain
+	// ("và Phụ lục …", ", Chương III"); the caller checks what follows.
+	legalListedPartRe = regexp.MustCompile(`(?i)^\s*(?:và|hoặc)\s+`)
+	// legalJoinedOperationRe: the clause goes on with another operation
+	// (", bỏ cụm từ …", ", sửa đổi khoản 3 …"), after the link's comma.
+	legalJoinedOperationRe = regexp.MustCompile(`(?i)^\s*(?:sửa\s+đổi|bổ\s+sung|bãi\s+bỏ|thay\s+thế|thay|bỏ|đính\s+chính)(?:[^\p{L}]|$)`)
+	// legalReferenceRe in the words between a chain and a citation makes
+	// the citation a reference, not the chain's document.
+	legalReferenceRe = regexp.MustCompile(`(?i)(?:^|[^\p{L}])(?:theo|căn\s+cứ|quy\s+định\s+tại|ban\s+hành\s+kèm)(?:[^\p{L}]|$)`)
 	// legalHeadingStopRe marks where a heading stops naming its subject:
 	// the parent law ("quy định chi tiết … của Luật …"), earlier amenders
 	// ("đã được sửa đổi … theo Luật số …").
@@ -1317,10 +1345,13 @@ func legalNamedByTitle(docType string) bool {
 
 // structures reads the provisions of the knowledges kids from their
 // chunks, in one query.
-func (l *legalAmendLoader) structures(kids []string) (map[string]LegalDocStructure, error) {
+// The second map holds each knowledge's repeated Điều numbers
+// (legalRepeatedArticles).
+func (l *legalAmendLoader) structures(kids []string) (map[string]LegalDocStructure, map[string]map[string]bool, error) {
 	out := map[string]LegalDocStructure{}
+	repeated := map[string]map[string]bool{}
 	if len(kids) == 0 {
-		return out, nil
+		return out, repeated, nil
 	}
 	var metas []struct {
 		KnowledgeID string
@@ -1331,10 +1362,11 @@ func (l *legalAmendLoader) structures(kids []string) (map[string]LegalDocStructu
 	if l.db.Dialector.Name() == "postgres" {
 		sel = `SELECT c.knowledge_id, jsonb_build_object('legal', jsonb_build_object(
 			'article_nos', c.metadata->'legal'->'article_nos', 'khoan_nos', c.metadata->'legal'->'khoan_nos',
-			'subdivision_refs', c.metadata->'legal'->'subdivision_refs')) AS metadata FROM chunks c`
+			'subdivision_refs', c.metadata->'legal'->'subdivision_refs',
+			'provision_ids', jsonb_build_object('dieu', c.metadata->'legal'->'provision_ids'->'dieu'))) AS metadata FROM chunks c`
 	}
 	if err := l.db.Raw(sel+` WHERE c.deleted_at IS NULL AND c.knowledge_id IN ?`, kids).Scan(&metas).Error; err != nil {
-		return nil, fmt.Errorf("structure: %w", err)
+		return nil, nil, fmt.Errorf("structure: %w", err)
 	}
 	lists := map[string][]*vietnamese_legal.LegalMetadata{}
 	for _, m := range metas {
@@ -1345,8 +1377,9 @@ func (l *legalAmendLoader) structures(kids []string) (map[string]LegalDocStructu
 	}
 	for _, k := range kids {
 		out[k] = legalStructureFrom(lists[k])
+		repeated[k] = legalRepeatedArticles(lists[k])
 	}
-	return out, nil
+	return out, repeated, nil
 }
 
 // loadCatalog reads catalogue rows by id and by number key into l.

@@ -257,12 +257,8 @@ func ResolveLegalProvisions(c LegalProvisionChunk, edges []LegalAmendEdge, asOf 
 		if e.Target.CatalogID != "" && c.Doc.CatalogID != "" && e.Target.CatalogID != c.Doc.CatalogID {
 			continue
 		}
-		if !e.editorHolds(c) {
-			// another provision of A under the same number (vbpl ids differ)
-			if e.preEditorTier == "" {
-				continue // an editor-only edge: not this chunk's provision
-			}
-			e.Tier = e.preEditorTier // agreed elsewhere, not here
+		if !e.editorScope(c) {
+			continue // an editor edge on another provision of A under this number
 		}
 		if opt.AllowedKBs != nil && e.carriesText() && !opt.AllowedKBs[e.Amender.KnowledgeBaseID] {
 			e.TextWithheld = true
