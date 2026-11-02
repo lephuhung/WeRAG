@@ -79,14 +79,28 @@ type Twin struct {
 // readable by id; only the number lookup and the edges go to the survivor.
 func ResolveTwins(existing, docs []*types.LegalDocument) TwinResolution {
 	byID := make(map[string]*types.LegalDocument, len(existing))
+	incoming := make(map[string]*types.LegalDocument, len(docs))
+	for _, d := range docs {
+		incoming[d.ID] = d
+	}
 	byKey := map[string][]*types.LegalDocument{}
 	for _, e := range existing {
 		byID[e.ID] = e
 		// a row still keyed with a look-alike is not a holder of the
 		// folded key
-		if e.NumberKey != "" && vietnamese_legal.CatalogNumberKey(e.NumberKey) == e.NumberKey {
-			byKey[e.NumberKey] = append(byKey[e.NumberKey], e)
+		if e.NumberKey == "" || vietnamese_legal.CatalogNumberKey(e.NumberKey) != e.NumberKey {
+			continue
 		}
+		// a row the import carries holds its key as imported (a
+		// placeholder filled on the portal is a full copy now); under
+		// another key it joins that one in the loop
+		if d := incoming[e.ID]; d != nil {
+			if d.NumberKey == e.NumberKey {
+				byKey[e.NumberKey] = append(byKey[e.NumberKey], d)
+			}
+			continue
+		}
+		byKey[e.NumberKey] = append(byKey[e.NumberKey], e)
 	}
 	res := TwinResolution{Alias: map[string]string{}, Keep: docs[:0:0]}
 	attach := func(twin, survivor *types.LegalDocument) {
@@ -97,9 +111,16 @@ func ResolveTwins(existing, docs []*types.LegalDocument) TwinResolution {
 	}
 	// replace aliases a placeholder to its full copy once: a later full
 	// copy that matches the placeholder but not that copy is another row.
+	// Every other placeholder of the key that is the same document goes
+	// to that copy too: one document entered twice before its text came.
 	replace := func(placeholder, full *types.LegalDocument) {
 		if _, done := res.Alias[placeholder.ID]; !done {
 			attach(placeholder, full)
+		}
+		for _, p := range byKey[placeholder.NumberKey] {
+			if _, done := res.Alias[p.ID]; !done && p.ID != full.ID && IsPlaceholder(p.Title) && SameDocument(p, full) {
+				attach(p, full)
+			}
 		}
 	}
 	dropped := map[*types.LegalDocument]bool{}

@@ -301,3 +301,53 @@ func TestPlacesAgreeTitleCase(t *testing.T) {
 		}
 	}
 }
+
+// Fable LOW (K7): a catalogued placeholder the import carries filled is
+// weighed as imported: a new copy of it is attached to it, not the other
+// way round; and every catalogued placeholder of one document goes to the
+// full copy that replaces them, not only the first.
+func TestResolveTwinsPlaceholderState(t *testing.T) {
+	const (
+		number = "05/2007/QĐ-BCT"
+		key    = "05/2007/QD-BCT"
+		title  = "Quyết định số 05/2007/QĐ-BCT Hướng dẫn xuất khẩu than"
+		draft  = "Quyết định số 05/2007/QĐ-BCT (tạm nhập - chờ toàn văn) Hướng dẫn xuất khẩu than"
+	)
+	t.Run("placeholder filled on the portal", func(t *testing.T) {
+		existing := []*types.LegalDocument{catalogued("46690", number, key, "Quyết định", draft, "2007-10-22")}
+		docs := []*types.LegalDocument{
+			imported("46690", number, "Quyết định", title, "2007-10-22"),
+			imported("82314", number, "Quyết định", title, "2007-10-22"),
+		}
+		res := ResolveTwins(existing, docs)
+		if len(res.Keep) != 1 || res.Keep[0].ID != "46690" {
+			t.Fatalf("keep = %v, want the filled catalogued row only", res.Keep)
+		}
+		if len(res.Alias) != 1 || res.Alias["82314"] != "46690" {
+			t.Errorf("alias = %v, want 82314 → 46690", res.Alias)
+		}
+	})
+	t.Run("placeholder renumbered on the portal", func(t *testing.T) {
+		existing := []*types.LegalDocument{catalogued("46690", number, key, "Quyết định", draft, "2007-10-22")}
+		docs := []*types.LegalDocument{
+			imported("46690", "06/2007/QĐ-BCT", "Quyết định", "Quyết định số 06/2007/QĐ-BCT Hướng dẫn xuất khẩu than", "2007-10-22"),
+			imported("82314", number, "Quyết định", title, "2007-10-22"),
+		}
+		res := ResolveTwins(existing, docs)
+		if len(res.Keep) != 2 || len(res.Alias) != 0 {
+			t.Errorf("keep = %v, alias = %v, want both kept, none aliased", res.Keep, res.Alias)
+		}
+	})
+	t.Run("several placeholders, one full copy", func(t *testing.T) {
+		existing := []*types.LegalDocument{
+			catalogued("46690", number, key, "Quyết định", draft, "2007-10-22"),
+			catalogued("46700", number, key, "Quyết định", draft, "2007-10-22"),
+			// another document's placeholder under the key (other day)
+			catalogued("46710", number, key, "Quyết định", draft, "2008-01-02"),
+		}
+		res := ResolveTwins(existing, []*types.LegalDocument{imported("82314", number, "Quyết định", title, "2007-10-22")})
+		if res.Alias["46690"] != "82314" || res.Alias["46700"] != "82314" || len(res.Alias) != 2 {
+			t.Errorf("alias = %v, want 46690 and 46700 → 82314", res.Alias)
+		}
+	})
+}
