@@ -14,37 +14,106 @@ const settledPlanMessage = "Chốt như sau: 3 lớp, mỗi lớp 40 học viên
 
 func TestSpokenValue(t *testing.T) {
 	user := settledPlanMessage
+	signer := signerScope(user, "Nguyễn Văn An")
 	cases := []struct {
 		v        string
-		head     bool
+		scope    []string
 		want     string
 		wantPart bool
 	}{
 		// the model lengthened the title with words of the conversation
-		{"Phó Giám đốc Công an tỉnh", true, "Phó Giám đốc", false},
-		{"Giám đốc Công an tỉnh", true, "Giám đốc", false},
+		{"Phó Giám đốc Công an tỉnh", signer, "Phó Giám đốc", false},
+		{"Giám đốc Công an tỉnh", signer, "Giám đốc", false},
 		// the rest is the model's own: nothing is kept
-		{"Phó Giám đốc Sở Tài chính", true, "", false},
+		{"Phó Giám đốc Sở Tài chính", signer, "", false},
 		// placeholders are no part of the value
-		{"CÔNG AN TỈNH ……………", true, "CÔNG AN TỈNH", true},
-		{"Phòng Tham mưu [...]", true, "Phòng Tham mưu", true},
-		{"Phòng Tham mưu ...", true, "Phòng Tham mưu", true},
-		{"[tên cơ quan]", true, "", true},
+		{"CÔNG AN TỈNH ……………", nil, "CÔNG AN TỈNH", true},
+		{"Phòng Tham mưu [...]", nil, "Phòng Tham mưu", true},
+		{"Phòng Tham mưu ...", nil, "Phòng Tham mưu", true},
+		{"[tên cơ quan]", nil, "", true},
 		// a name is never cut ("Nguyễn Văn" of "Nguyễn Văn Anh")
-		{"Nguyễn Văn Anh", false, "", false},
-		{"Đại tá Nguyễn Văn An", false, "Đại tá Nguyễn Văn An", false},
+		{"Nguyễn Văn Anh", nil, "", false},
+		{"Đại tá Nguyễn Văn An", nil, "Đại tá Nguyễn Văn An", false},
 		// a one-word head is no title
-		{"Phó Chủ tịch", true, "", false},
+		{"Phó Chủ tịch", signer, "", false},
+		// a head ending in a bare structural word is no name
+		{"Công an tỉnh Thừa Thiên Huế", []string{"Cơ quan ban hành: Công an tỉnh, Phòng Tham mưu."}, "", false},
 	}
 	for _, c := range cases {
-		got, part := spokenValue(user, user, c.v, c.head)
+		got, part := spokenValue(user, user+" Thừa Thiên Huế", c.v, c.scope)
 		if got != c.want || part != c.wantPart {
 			t.Errorf("spokenValue(%q) = %q, %v; want %q, %v", c.v, got, part, c.want, c.wantPart)
 		}
 	}
 	// the rest must be whole words of the conversation: "an" is not in "thanh"
-	if got, _ := spokenValue("Phó Giám đốc, thanh tra", "thanh tra", "Phó Giám đốc An", true); got != "" {
+	if got, _ := spokenValue("Phó Giám đốc, thanh tra", "thanh tra", "Phó Giám đốc An", []string{"Phó Giám đốc, thanh tra"}); got != "" {
 		t.Errorf("rest found inside a word: %q", got)
+	}
+	// the head must end a clause where the user wrote it: "Phó Giám đốc
+	// phụ trách đào tạo" is another title
+	u := "Người ký: Trần Bình, Phó Giám đốc phụ trách đào tạo, ký trực tiếp."
+	if got, _ := spokenValue(u, u+" Công an tỉnh", "Phó Giám đốc Công an tỉnh", signerScope(u, "Trần Bình")); got != "" {
+		t.Errorf("head inside a longer title taken: %q", got)
+	}
+	// the head must be written about the signer
+	u = "Phó Giám đốc, anh Bình, phát biểu khai mạc tại Công an tỉnh. Người ký: Nguyễn Văn An, ký trực tiếp."
+	if got, _ := spokenValue(u, u, "Phó Giám đốc Công an tỉnh", signerScope(u, "Nguyễn Văn An")); got != "" {
+		t.Errorf("another person's title taken for the signer: %q", got)
+	}
+}
+
+// A title is not said by a deputy's: "Giám đốc" is not in "Phó Giám đốc".
+func TestSaidNotByADeputy(t *testing.T) {
+	cases := []struct {
+		text, s string
+		want    bool
+	}{
+		{"Người ký: Phó Giám đốc", "Giám đốc", false},
+		{"Phó Trưởng phòng ký", "Trưởng phòng", false},
+		{"Quyền Giám đốc ký", "Giám đốc", false},
+		{"Phó Giám đốc, ký thay Giám đốc", "Giám đốc", true},
+		{"Người ký: Phó Giám đốc", "Phó Giám đốc", true},
+		{"Giám đốc ký trực tiếp", "Giám đốc", true},
+	}
+	for _, c := range cases {
+		if got := said(c.text, c.s); got != c.want {
+			t.Errorf("said(%q, %q) = %v", c.text, c.s, got)
+		}
+	}
+}
+
+// A shorter agency only from what the user wrote of the issuing agency:
+// a place named for the event is not the agency.
+func TestDocumentTemplateAgencyNotFromAVenue(t *testing.T) {
+	d := planDraft()
+	d["agency_name"] = "Phòng Tham mưu Công an tỉnh"
+	for _, c := range []struct {
+		said string
+		want bool
+	}{
+		{"Tập huấn 3 lớp tại hội trường Phòng Tham mưu, Công an tỉnh. Người ký: Nguyễn Văn A, Giám đốc, ký trực tiếp", false},
+		{"Cơ quan ban hành: Phòng Tham mưu. Tập huấn 3 lớp tại Công an tỉnh. Người ký: Nguyễn Văn A, Giám đốc, ký trực tiếp", true},
+	} {
+		model := &scriptedChat{replies: []string{draftJSON(t, d)}}
+		in := templateInput(model, "ke-hoach", c.said)
+		in.Profile = nil
+		out, _ := PrepareDocumentTemplate(context.Background(), in)
+		missing, _ := out.Data["missing_fields"].([]string)
+		asked := strings.Contains(strings.Join(missing, "\n"), "Tên cơ quan ban hành")
+		if asked == c.want {
+			t.Errorf("%q: agency asked = %v", c.said, asked)
+		}
+	}
+}
+
+// A legal ground with a placeholder is no ground the user wrote.
+func TestGroundWithPlaceholderNotSaid(t *testing.T) {
+	user := "Căn cứ Luật Tổ chức chính quyền địa phương"
+	if groundSaid(user, "Căn cứ Luật Tổ chức chính quyền địa phương ……;") {
+		t.Errorf("a ground with a placeholder taken")
+	}
+	if !groundSaid(user, "Căn cứ Luật Tổ chức chính quyền địa phương;") {
+		t.Errorf("the user's ground refused")
 	}
 }
 
@@ -124,6 +193,36 @@ func TestSettledFacts(t *testing.T) {
 	// codes and references are no counts
 	if fs := settledFacts(nil, []string{"Đơn vị PV01 soạn theo Điều 5 Thông tư 01, 1 văn bản, giao 2 văn bản."}); len(fs) != 0 {
 		t.Errorf("references taken as facts: %q", factTexts(fs))
+	}
+	// times, phone numbers, fractions are no counts or dates
+	if fs := settledFacts(nil, []string{"Họp lúc 8 giờ 30, liên hệ 0912 345 678; 3/4 số cán bộ dự, 14h30 kết thúc."}); len(fs) != 0 {
+		t.Errorf("times, phones or fractions taken as facts: %q", factTexts(fs))
+	}
+}
+
+// A retracted or possibly revised figure is never asked for again.
+func TestSettledFactsRevisions(t *testing.T) {
+	cases := []struct {
+		msgs []string
+		want string
+	}{
+		// "không phải X mà là Y": X is dropped, Y kept
+		{[]string{"Kinh phí không phải 50 triệu đồng mà là 60 triệu đồng."}, "60 triệu đồng"},
+		{[]string{"Kinh phí 60 triệu đồng chứ không phải 50 triệu đồng."}, "60 triệu đồng"},
+		// a later amount may revise the earlier one
+		{[]string{"Kinh phí dự kiến 50 triệu.", "Chốt kinh phí 60 triệu."}, "60 triệu"},
+		// a later date may revise the earlier ones
+		{[]string{"Tổ chức từ 25/10/2026 đến 27/10/2026.", "Bắt đầu 26/10/2026 nhé."}, "26/10/2026"},
+		// a count of another noun does not revise
+		{[]string{"3 lớp.", "Mỗi lớp 40 học viên."}, "3 lớp|40 học viên"},
+		// two amounts of one sentence, a choice: ambiguous
+		{[]string{"Kinh phí 50 triệu đồng, trong đó 30 triệu từ ngân sách."}, ""},
+		{[]string{"Mời 40 hoặc 50 học viên."}, ""},
+	}
+	for _, c := range cases {
+		if got := strings.Join(factTexts(settledFacts(nil, c.msgs)), "|"); got != c.want {
+			t.Errorf("%q: facts = %q, want %q", c.msgs, got, c.want)
+		}
 	}
 }
 

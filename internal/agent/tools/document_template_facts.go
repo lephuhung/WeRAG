@@ -78,14 +78,17 @@ func wordEdge(t string, i int, before bool) bool {
 }
 
 // spokenValue is the part of the draft's value v the user wrote, "" when
-// none: v without its placeholders when userText holds it (said); for a
-// title or an agency (head), else its longest leading part of at least two
-// words the user wrote, when the words after it are found in wider (the
-// user's and the conversation's words: "Phó Giám đốc Công an tỉnh" →
-// "Phó Giám đốc" when "Công an tỉnh" was written somewhere). A person's
-// name is never cut (head false): "Nguyễn Văn" of "Nguyễn Văn Anh" is not
-// the user's "Nguyễn Văn An". partial: v held placeholders.
-func spokenValue(userText, wider, v string, head bool) (string, bool) {
+// none: v without its placeholders when userText holds it (said). For a
+// title or an agency, scope holds the sentences that speak of its role
+// (the signer, the issuing agency, the user themself): there a shorter
+// value is accepted, the longest leading part of v the user wrote
+// (headSaid), when the words after it are found in wider (the user's and
+// the conversation's words): "Phó Giám đốc Công an tỉnh" → "Phó Giám đốc"
+// when "Phó Giám đốc," was written about the signer and "Công an tỉnh"
+// somewhere. scope nil: no shorter value (a person's name is never cut:
+// "Nguyễn Văn" of "Nguyễn Văn Anh" is not the user's "Nguyễn Văn An").
+// partial: v held placeholders.
+func spokenValue(userText, wider, v string, scope []string) (string, bool) {
 	s, partial := stripPlaceholders(v)
 	if s == "" {
 		return "", partial
@@ -93,13 +96,13 @@ func spokenValue(userText, wider, v string, head bool) (string, bool) {
 	if said(userText, s) {
 		return s, partial
 	}
-	if !head {
+	if len(scope) == 0 {
 		return "", partial
 	}
 	words := strings.Fields(s)
 	for n := len(words) - 1; n >= 2; n-- {
 		h := strings.TrimRight(strings.Join(words[:n], " "), " ,;:-–")
-		if !saidWords(userText, h) {
+		if !headSaid(scope, h) {
 			continue
 		}
 		// the longest head the user wrote: its rest must be words of the
@@ -111,6 +114,75 @@ func spokenValue(userText, wider, v string, head bool) (string, bool) {
 	}
 	return "", partial
 }
+
+// structuralWords end the part of a name that is no name yet ("Sở", "Phòng
+// …", "Công an", "UBND tỉnh"): a value cut there is not one the user wrote.
+var structuralWords = map[string]bool{
+	"sở": true, "phòng": true, "ban": true, "cục": true, "tỉnh": true, "huyện": true, "xã": true,
+	"phường": true, "quận": true, "thị": true, "trấn": true, "thành": true, "phố": true, "an": true, "ubnd": true,
+	"hđnd": true, "ủy": true, "uỷ": true, "đội": true, "viện": true, "trường": true, "bộ": true, "tâm": true,
+	"chi": true, "tổng": true, "văn": true, "đoàn": true, "hội": true, "khoa": true, "đảng": true, "trung": true,
+	"công": true, "nhân": true, "dân": true, "của": true, "và": true,
+}
+
+// clauseEndRe: what may follow a value the user ended there (a comma, the
+// end of a sentence or of the message).
+var clauseEndRe = regexp.MustCompile(`^\s*([,.;:!?)\n]|$)`)
+
+// headSaid: one of the scope's texts holds h as whole words, not right
+// after "Phó" / "Quyền" (heldBy), ending a clause there; h does not end in
+// a structural word.
+func headSaid(scope []string, h string) bool {
+	f := strings.Fields(fold(h))
+	if len(f) == 0 || structuralWords[strings.Trim(f[len(f)-1], ".,;:")] {
+		return false
+	}
+	h = strings.Trim(fold(h), " .;:,")
+	for _, text := range scope {
+		t := fold(text)
+		for i := 0; i < len(t); {
+			j := strings.Index(t[i:], h)
+			if j < 0 {
+				break
+			}
+			start, end := i+j, i+j+len(h)
+			if wordEdge(t, start, true) && wordEdge(t, end, false) && !heldBy(t[:start], h) && clauseEndRe.MatchString(t[end:]) {
+				return true
+			}
+			i = start + 1
+			for i < len(t) && !isRuneStart(t[i]) {
+				i++
+			}
+		}
+	}
+	return false
+}
+
+// deputyRe: a title right before a match makes it another one ("Phó Giám
+// đốc" is no "Giám đốc", "Quyền Trưởng phòng" no "Trưởng phòng").
+var deputyRe = regexp.MustCompile(`(^|[^\p{L}])(phó|quyền|q\.)\s*$`)
+
+// heldBy: the folded text before a match of s ends in a deputy's title.
+func heldBy(before, s string) bool {
+	return deputyRe.MatchString(before)
+}
+
+// scopeSentences are the sentences of text keep accepts (the ones
+// speaking of a role).
+func scopeSentences(text string, keep func(sentence string) bool) []string {
+	var out []string
+	for _, s := range sentences(text) {
+		if keep(s) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// agencyTalkRe marks a sentence about the issuing agency or the user's own
+// unit ("cơ quan ban hành: …", "đơn vị tôi …"), not one naming a place
+// ("tại hội trường Công an tỉnh").
+var agencyTalkRe = regexp.MustCompile(`cơ quan|ban hành|chủ quản|đơn vị (của )?(tôi|mình)|địa danh|gửi từ|văn bản của`)
 
 // A settled fact is a figure the user wrote in a statement: an amount
 // ("50 triệu đồng"), a date ("25/10/2026", "ngày 5 tháng 3"), a
@@ -138,18 +210,21 @@ var (
 	// "NĐ 30", "Điều 5", "số 12/2020/NĐ-CP", "Mẫu 1.1"
 	factRefBeforeRe = regexp.MustCompile(`(?i)(nghị định|nđ|thông tư|tt|quyết định|qđ|luật|điều|khoản|điểm|mục|chương|phụ lục|mẫu|số|công văn|cv|kế hoạch|kh|chỉ thị|ct|nghị quyết|nq|tờ trình|ttr|báo cáo|bc)\s*$`)
 	factDocNumberRe = regexp.MustCompile(`\d+/\d{4}/[\p{L}Đđ-]+|\d+/[\p{Lu}Đ][\p{L}Đđ-]*`)
-	// a statement revising earlier figures, and the figures it drops
-	// (whole phrases: "chuyển đổi số", "ký thay" revise nothing)
-	factRevisionRe = regexp.MustCompile(`(?i)thay đổi|thay bằng|thay vì|thay cho|đổi thành|đổi lại|đổi sang|sửa lại|sửa thành|điều chỉnh|dời|lùi|chuyển sang|không phải|nhầm|chốt lại|cập nhật`)
-	factDroppedRe  = regexp.MustCompile(`(?i)(thay vì|chứ không phải|không phải là|không phải|thay cho|bỏ)\s+[^.;!?\n]*`)
 	// a sentence ends at ".", "!", "?", ";" before a space (not inside
 	// "50.000.000"), or at a line break
 	factSentenceEndRe = regexp.MustCompile(`[.!?;]+(\s|$)|\n`)
 	factYearRe        = regexp.MustCompile(`^(19|20)\d\d$`)
+	// a number right after an hour is its minutes ("8 giờ 30")
+	factAfterTimeRe = regexp.MustCompile(`(?i)(\d\s*(giờ|h)|giờ)\s*$`)
+	// a day/month without a year only after a word of time ("từ 25/10",
+	// "hạn 20/10"): "3/4 số cán bộ" is a fraction
+	factDateLeadRe = regexp.MustCompile(`(?i)(ngày|từ|đến|tới|trước|sau|hạn|hết|đầu|cuối)\s*$`)
 )
 
 // factNotCounts are the words after a number that make no count: the
 // request itself ("2 văn bản", "1 bản") and links of a range ("25 đến").
+var factTimeWords = map[string]bool{"giờ": true, "h": true, "phút": true, "giây": true}
+
 var factNotCounts = map[string]bool{
 	"văn bản": true, "bản": true, "mẫu": true, "file": true, "tệp": true, "trang": true, "kế hoạch": true, "công văn": true,
 	"tờ trình": true, "đến": true, "tới": true, "và": true, "hoặc": true, "hay": true, "đến ngày": true,
@@ -232,6 +307,9 @@ func sentenceFacts(s string) []settledFact {
 		if len(g) > 2 {
 			y = g[2]
 		}
+		if y == "" && m[2] >= 0 && !factDateLeadRe.MatchString(s[:m[0]]) {
+			continue
+		}
 		di, _ := strconv.Atoi(d)
 		mi, _ := strconv.Atoi(mo)
 		if di < 1 || di > 31 || mi < 1 || mi > 12 || factRefBeforeRe.MatchString(s[:m[0]]) || !take(m[0], m[1]) {
@@ -267,32 +345,43 @@ func sentenceFacts(s string) []settledFact {
 		n := s[m[2]:m[3]]
 		noun := strings.ToLower(s[m[4]:m[5]])
 		before := s[:m[2]]
-		// "NĐ30", "PV01": a code, not a count
-		if br := []rune(before); len(br) > 0 && (unicode.IsLetter(br[len(br)-1]) || unicode.IsDigit(br[len(br)-1])) {
+		// "NĐ30", "PV01": a code; "3/4 số", "1.5 lần": part of a figure
+		if last, _ := utf8.DecodeLastRuneInString(before); before != "" &&
+			(unicode.IsLetter(last) || unicode.IsDigit(last) || strings.ContainsRune("/.,:", last)) {
 			continue
 		}
-		key := noun
-		if m[6] >= 0 {
-			key += " " + strings.ToLower(s[m[6]:m[7]])
+		// a time ("8 giờ 30", "14h30"), a phone or another long number
+		if factTimeWords[noun] || factAfterTimeRe.MatchString(before) || len(n) >= 4 {
+			continue
 		}
-		if factNotCounts[noun] || factNotCounts[key] || factRefBeforeRe.MatchString(before) || factYearRe.MatchString(n) ||
+		two := noun
+		if m[6] >= 0 {
+			two += " " + strings.ToLower(s[m[6]:m[7]])
+		}
+		if factNotCounts[noun] || factNotCounts[two] || factRefBeforeRe.MatchString(before) || factYearRe.MatchString(n) ||
 			trimZeros(n) == "0" || trimZeros(n) == "1" || !take(m[2], m[3]) {
 			continue
 		}
-		out = append(out, settledFact{Text: strings.TrimSpace(s[m[0]:m[1]]), kind: "count", key: key, nums: []string{n}})
+		// the noun keys the siblings ("40 học viên" … "35 học viên")
+		out = append(out, settledFact{Text: strings.TrimSpace(s[m[0]:m[1]]), kind: "count", key: noun, nums: []string{n}})
 	}
 	return out
 }
 
 // settledFacts are the figures the user settled in their messages, oldest
 // first: the earlier conversation's user turns, then this request's
-// messages. Only the user's words count: what the other agent proposed is
-// no fact until the user writes it. A question ("… 40 hay 50 học viên?")
-// settles nothing, and a later statement revises an earlier one: a fact of
-// the same kind and key (the count's noun, the words before an amount)
-// with another value replaces it; a statement that revises ("đổi", "sửa",
-// "dời", "không phải", …) drops the earlier dates when it gives dates, and
-// the figures it names after "thay vì", "không phải", "bỏ" are not facts.
+// messages. They are only asked for again (draftOmissions), so the rule
+// errs on not asking: only the user's words count (what the other agent
+// proposed is no fact until the user writes it); a question ("… 40 hay 50
+// học viên?") and a sentence offering a choice ("hoặc", "hay") settle
+// nothing; a figure after "không phải", "thay vì", "chứ không phải" is
+// retracted ("không phải 50 triệu mà là 60 triệu": 60 stays); and a later
+// sentence giving a sibling (an amount after an amount, a percentage
+// after a percentage, a date after dates, a count of the same noun)
+// leaves the earlier ones unsettled, since it may revise them ("dự kiến 50
+// triệu" … "chốt 60 triệu"; "từ 25/10 đến 27/10" … "bắt đầu 26/10"). Two
+// amounts, percentages or counts of one noun in one sentence are
+// ambiguous and not asked for; dates of one sentence (a range) are.
 func settledFacts(conversation []TemplateTurn, inputs []string) []settledFact {
 	var msgs []string
 	for _, t := range conversation {
@@ -308,43 +397,71 @@ func settledFacts(conversation []TemplateTurn, inputs []string) []settledFact {
 			if strings.HasSuffix(strings.TrimSpace(sent), "?") {
 				continue
 			}
-			revises := factRevisionRe.MatchString(sent)
-			if revises {
-				sent = factDroppedRe.ReplaceAllString(sent, " ")
-			}
-			found := sentenceFacts(sent)
+			found := sentenceFacts(dropRetracted(sent))
 			if len(found) == 0 {
 				continue
 			}
-			newDates := false
-			for _, f := range found {
-				newDates = newDates || f.kind == "date"
-			}
+			// the earlier siblings are no longer settled
 			kept := facts[:0]
 			for _, old := range facts {
-				replaced := revises && newDates && old.kind == "date"
+				revised := false
 				for _, f := range found {
-					if old.kind == f.kind && old.key != "" && old.key == f.key && old.Text != f.Text {
-						replaced = true
-					}
+					revised = revised || siblingFacts(old, f)
 				}
-				if !replaced {
+				if !revised {
 					kept = append(kept, old)
 				}
 			}
 			facts = kept
-			for _, f := range found {
+			if factChoiceRe.MatchString(fold(sent)) {
+				continue
+			}
+			for i, f := range found {
+				ambiguous := false
+				for j, g := range found {
+					ambiguous = ambiguous || (i != j && f.kind != "date" && siblingFacts(f, g))
+				}
 				dup := false
 				for _, old := range facts {
 					dup = dup || fold(old.Text) == fold(f.Text)
 				}
-				if !dup {
+				if !ambiguous && !dup {
 					facts = append(facts, f)
 				}
 			}
 		}
 	}
 	return facts
+}
+
+// siblingFacts: b may revise a (the same kind; a count of the same noun).
+func siblingFacts(a, b settledFact) bool {
+	if a.kind != b.kind {
+		return false
+	}
+	if a.kind == "count" {
+		return a.key == b.key
+	}
+	return true
+}
+
+// factChoiceRe marks a sentence offering a choice of figures.
+var factChoiceRe = regexp.MustCompile(`(^|[^\p{L}])(hoặc|hay)([^\p{L}]|$)`)
+
+// factRetractRe: a figure the user takes back, up to what replaces it
+// ("không phải 50 triệu mà là 60 triệu", "60 triệu chứ không phải 50",
+// "35 thay vì 40 học viên").
+var factRetractRe = regexp.MustCompile(`(?i)(?:không phải là|không phải|thay vì|thay cho|không còn)\s+(.+?)(?:\s+(?:mà là|mà|chứ|nay là|thành)\s+|[,;]|$)`)
+
+// dropRetracted blanks the retracted figures of a sentence.
+func dropRetracted(s string) string {
+	b := []byte(s)
+	for _, m := range factRetractRe.FindAllStringSubmatchIndex(s, -1) {
+		for i := m[2]; i < m[3]; i++ {
+			b[i] = ' '
+		}
+	}
+	return string(b)
 }
 
 // vietnameseCounts are the words a draft may write a small count with.

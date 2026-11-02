@@ -141,9 +141,8 @@ func formValues(templateID string, d *templateDraft, userText, wider string) (va
 	for _, f := range templateForms[templateID] {
 		v := strings.TrimSpace(strings.TrimRight(strings.TrimSpace(string(d.Form[f.key])), ".;,"))
 		if f.stated && v != "" {
-			// a name as the user wrote it; the sender (an agency or a
-			// title) also as the part of it they wrote
-			v, _ = spokenValue(userText, wider, v, f.key == "sender")
+			// as the user wrote it, without placeholders
+			v, _ = spokenValue(userText, wider, v, nil)
 		}
 		if v == "" {
 			if !f.optional {

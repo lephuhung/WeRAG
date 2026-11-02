@@ -147,7 +147,9 @@ func (s *sessionService) documentTemplateTurn(ctx context.Context, req *types.QA
 	out, err := tools.PrepareDocumentTemplate(ctx, in)
 	if err != nil {
 		logger.Warnf(ctx, "document template: %v", err)
-		// the message stays part of the request: the next try reads it
+		// the message stays part of the request: the next try reads it,
+		// and drafts anew (no draft of a turn that failed is reused)
+		state.LastDraft = nil
 		tools.SaveDocumentTemplateState(ctx, sessionID, tr.RequestID, state)
 		return true, answer("Chưa soạn được văn bản lúc này (mô hình không trả lời đúng định dạng); bạn gửi lại giúp.")
 	}

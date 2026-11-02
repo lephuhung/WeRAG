@@ -11,6 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -393,16 +394,23 @@ func PrepareDocumentTemplate(ctx context.Context, in DocumentTemplateInput) (*Do
 // failure class: the facts it invents (draftViolations), then the facts
 // the user settled that it leaves out (draftOmissions). A correction is
 // kept only when it fixes what it was asked to and adds no invented fact.
+// At most 3 model calls a turn (draft, one correction of each class); a
+// turn that only skips makes none (LastDraft).
 func checkedDraft(ctx context.Context, in DocumentTemplateInput, factText string) (*templateDraft, error) {
 	draft, err := draftTemplate(ctx, in, "")
 	if err != nil {
 		return nil, err
 	}
+	calls := 1
+	defer func() {
+		logger.Infof(ctx, "document template %s: %d model call(s)", in.Request.RequestID, calls)
+	}()
 	bad := draftViolations(draft, factText, in.Today)
 	if len(bad) > 0 {
 		// once more, told what was invented
 		retry, err := draftTemplate(ctx, in, "Your previous answer used facts the user never wrote: "+strings.Join(bad, "; ")+
 			". Remove them (or list what is needed in missing_content) and answer again.")
+		calls++
 		if err == nil {
 			draft = retry
 			bad = draftViolations(draft, factText, in.Today)
@@ -413,6 +421,7 @@ func checkedDraft(ctx context.Context, in DocumentTemplateInput, factText string
 		// once more, told what was left out
 		retry, err := draftTemplate(ctx, in, "Bạn đã bỏ sót: "+strings.Join(left, "; ")+
 			". Đó là các thông tin người dùng đã chốt: đưa đủ chúng vào nội dung, đúng như người dùng viết, giữ các nội dung khác, không thêm số liệu nào khác, và trả lời lại bằng một đối tượng JSON như trên.")
+		calls++
 		if err == nil && len(draftOmissions(retry, facts)) < len(left) && len(draftViolations(retry, factText, in.Today)) <= len(bad) {
 			draft = retry
 		}
@@ -536,10 +545,29 @@ func fold(s string) string {
 	return strings.Join(strings.Fields(strings.ToLower(s)), " ")
 }
 
-// said reports whether the user wrote s (folded, ignoring end punctuation).
+// said reports whether the user wrote s (folded, ignoring end
+// punctuation), not only as part of a deputy's title: "Giám đốc" is not
+// said by "Phó Giám đốc" (heldBy).
 func said(userText, s string) bool {
 	s = strings.Trim(fold(s), " .;:,")
-	return s != "" && strings.Contains(fold(userText), s)
+	if s == "" {
+		return false
+	}
+	t := fold(userText)
+	for i := 0; i < len(t); {
+		j := strings.Index(t[i:], s)
+		if j < 0 {
+			return false
+		}
+		if !heldBy(t[:i+j], s) {
+			return true
+		}
+		i += j + 1
+		for i < len(t) && !isRuneStart(t[i]) {
+			i++
+		}
+	}
+	return false
 }
 
 // subjectPrefixRe is a "V/v" / "về việc" the trích yếu must not start
@@ -554,7 +582,11 @@ var selfRe = regexp.MustCompile(`(^|[^\p{L}])(tôi|mình)\s+(là|làm|đang là|
 // user is (selfInputs) holds (spokenValue), "" when none does.
 func spokenOfSelf(inputs []string, wider, v string, head bool) string {
 	for _, m := range inputs {
-		if s, partial := spokenValue(m, wider, v, head); s != "" && !partial {
+		var scope []string
+		if head {
+			scope = []string{m}
+		}
+		if s, partial := spokenValue(m, wider, v, scope); s != "" && !partial {
 			return s
 		}
 	}
@@ -594,8 +626,14 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 	// partials are the agency values the model wrote with a placeholder
 	// ("CÔNG AN TỈNH ……"): not used as stated, kept for the blanks
 	partials := map[string]string{}
+	// a shorter agency only from what the user wrote of the issuing agency
+	// or their own unit: "tại hội trường Công an tỉnh" names a place
+	agencyScope := scopeSentences(userText, func(s string) bool {
+		f := fold(s)
+		return agencyTalkRe.MatchString(f) || selfRe.MatchString(f)
+	})
 	pick := func(field, label, saved, raw string) string {
-		stated, partial := spokenValue(userText, wider, raw, true)
+		stated, partial := spokenValue(userText, wider, raw, agencyScope)
 		if stated == "" {
 			return saved
 		}
@@ -770,14 +808,14 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 			// a resolution's proposal line ("Xét Tờ trình số …") is
 			// optional, kept only as the user wrote it
 			if core := strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(basis, "Xét"), "Theo đề nghị của")), "."); core != "" {
-				if c, _ := spokenValue(userText, wider, core, false); c != "" {
+				if c, _ := spokenValue(userText, wider, core, nil); c != "" {
 					requestBasis = endWith(strings.Replace(basis, core, c, 1), ".")
 				}
 			}
 			// the collective that resolves: set with the signer (TM. …)
 			decisionAuthority = strings.ToUpper(agency)
 		} else {
-			unit, _ := spokenValue(userText, wider, strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(basis, "Theo đề nghị của")), "."), true)
+			unit, _ := spokenValue(userText, wider, strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(basis, "Theo đề nghị của")), "."), nil)
 			if unit == "" {
 				need("Đơn vị đề nghị (Theo đề nghị của …)")
 			} else {
@@ -803,8 +841,8 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 	}
 	if !minutes {
 		// a name as the user wrote it, a title or the part of it they wrote
-		signerName, _ = spokenValue(userText, wider, signerName, false)
-		signerPos, _ = spokenValue(userText, wider, signerPos, true)
+		signerName, _ = spokenValue(userText, wider, signerName, nil)
+		signerPos, _ = spokenValue(userText, wider, signerPos, signerScope(userText, signerName))
 		if signerName == "" || signerPos == "" {
 			need("Người ký: họ tên và chức vụ")
 			signerName, signerPos = "", ""
@@ -817,7 +855,7 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 		need("Hình thức ký: ký trực tiếp, hay TM./KT./TL./TUQ./Q. (ghi rõ)")
 		signing = ""
 	}
-	onBehalf, _ = spokenValue(userText, wider, onBehalf, true)
+	onBehalf, _ = spokenValue(userText, wider, onBehalf, signerScope(userText, signerName))
 	if onBehalf == "" {
 		switch signing {
 		case "TM":
@@ -1010,8 +1048,19 @@ func groundSaid(userText, g string) bool {
 		}
 		return true
 	}
-	c, _ := spokenValue(userText, userText, core, false)
-	return c != ""
+	// a ground with a placeholder is no ground the user wrote
+	c, partial := spokenValue(userText, userText, core, nil)
+	return c != "" && !partial
+}
+
+// signerScope are the sentences of the user's text about the signer: the
+// ones that speak of signing or name them. A title the model lengthened
+// is cut back only to what is written there (spokenValue), as the user's
+// own position only from what they say of themself (selfInputs).
+func signerScope(userText, name string) []string {
+	return scopeSentences(userText, func(s string) bool {
+		return signerTalkRe.MatchString(fold(s)) || (name != "" && said(s, name))
+	})
 }
 
 func endWith(s, end string) string {
