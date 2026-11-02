@@ -69,6 +69,9 @@ type AgentEngine struct {
 	// history size was never the problem, and looping on it burns the round
 	// budget without changing anything.
 	overflowRecovered bool
+	// calcNudges counts the answers the calc gate held back this turn
+	// (calc_gate.go); it stops after calcNudgeLimit.
+	calcNudges int
 	// compactionExhaustedAt is the message count at which compaction last
 	// reported it could free nothing. Below that count the answer has not
 	// changed, so there is no reason to spend another summarization call.

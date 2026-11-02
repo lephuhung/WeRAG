@@ -29,7 +29,9 @@ type calcGateKey struct{}
 
 var (
 	// an amount of money: "2,4 tỷ", "900 triệu đồng", "1.000.000.000 đ"
-	calcAmountRe = regexp.MustCompile(`(?i)\d[\d.,]*\s*(?:tỷ|triệu|nghìn|ngàn|đồng|vnđ|vnd|đ)(?:[^\p{L}]|$)`)
+	calcAmountRe = regexp.MustCompile(`(?i)\d[\d.,]*\s*(?:tỷ|tỉ|triệu|tr|nghìn|ngàn|đồng|vnđ|vnd|đ)(?:[^\p{L}]|$)`)
+	// what the calculation tools compute: taxes on revenue or profit
+	calcSubjectRe = regexp.MustCompile(`(?i)thuế|gtgt|tncn|doanh\s+thu|lợi\s+nhuận`)
 	// a conclusion on an obligation or an amount owed
 	calcConclusionRe = regexp.MustCompile(`(?i)(?:phải|cần|không phải|không cần)\s+nộp|được\s+miễn|miễn\s+thuế|không\s+chịu\s+thuế|thuộc\s+(?:diện|đối tượng)\s+(?:không\s+)?(?:phải\s+)?nộp`)
 )
@@ -47,13 +49,15 @@ func calculationToolsOffered(tools []chat.Tool) []string {
 }
 
 // calculationToolCalled reports whether a step of the turn called one of
-// names (a failed call counts: the model tried, its error says what is
-// missing).
+// names successfully. A refused call does not count: the tool refused the
+// figures (a stale threshold, a missing basis), and an answer concluding
+// with them must still be held back. A question back to the user concludes
+// nothing and passes anyway.
 func calculationToolCalled(steps []types.AgentStep, names []string) bool {
 	for _, s := range steps {
 		for _, tc := range s.ToolCalls {
 			for _, n := range names {
-				if tc.ExecutionName() == n {
+				if tc.ExecutionName() == n && tc.Result != nil && tc.Result.Success {
 					return true
 				}
 			}
@@ -70,7 +74,8 @@ func markCalcRequired(ctx context.Context, tools []chat.Tool, steps []types.Agen
 	if len(names) == 0 || calculationToolCalled(steps, names) {
 		return ctx
 	}
-	if !calcAmountRe.MatchString(types.UserQueryFromContext(ctx)) {
+	q := types.UserQueryFromContext(ctx)
+	if !calcAmountRe.MatchString(q) || !calcSubjectRe.MatchString(q) {
 		return ctx
 	}
 	return context.WithValue(ctx, calcGateKey{}, names)
@@ -101,6 +106,10 @@ func calcToolNudge(names []string) string {
 // concludes is held back once: the same messages plus calcToolNudge are
 // sent again, and whatever comes back is used. analyzeResponse emits a
 // plain answer, since it was not streamed.
+// calcNudgeLimit caps the answers held back per turn, so a model that keeps
+// concluding without the tool is not looped.
+const calcNudgeLimit = 2
+
 func (e *AgentEngine) calcGateRound(
 	ctx context.Context, messages []chat.Message, opts *chat.ChatOptions, iteration int, sessionID string,
 ) (*types.ChatResponse, error) {
@@ -112,7 +121,8 @@ func (e *AgentEngine) calcGateRound(
 	if err != nil {
 		return nil, err
 	}
-	if len(resp.ToolCalls) == 0 && concludesWithoutTool(resp.Content) {
+	if len(resp.ToolCalls) == 0 && concludesWithoutTool(resp.Content) && e.calcNudges < calcNudgeLimit {
+		e.calcNudges++
 		logger.Warnf(ctx, "[Agent][CalcGate] Round %d concluded without %v (%d chars); asking for the tool",
 			iteration+1, names, len(resp.Content))
 		retry := append(append([]chat.Message{}, messages...), chat.Message{Role: "user", Content: calcToolNudge(names)})
@@ -122,6 +132,8 @@ func (e *AgentEngine) calcGateRound(
 		if err != nil {
 			return nil, err
 		}
+		// the held-back answer's tokens were spent: billed and counted
+		again.Usage.Accumulate(resp.Usage)
 		if len(again.ToolCalls) == 0 {
 			logger.Warnf(ctx, "[Agent][CalcGate] Round %d answered again without %v; shown as it is", iteration+1, names)
 		}

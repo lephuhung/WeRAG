@@ -50,6 +50,11 @@ func TestRevenueThresholds(t *testing.T) {
 	require.Empty(t, revenueThresholds("[trước 24/04/2026: doanh thu năm từ 500 triệu đồng trở xuống không phải nộp thuế]"), "history note")
 	require.Empty(t, revenueThresholds("doanh thu năm từ 500 triệu đồng trở xuống thì thông báo doanh thu"), "not an exemption")
 	require.Equal(t, []float64{1e9}, revenueThresholds("doanh thu từ 1.000.000.000 đồng trở xuống không phải nộp thuế"))
+	require.Equal(t, []float64{1e8}, revenueThresholds("có doanh thu từ 100 triệu đồng/năm trở xuống thì không phải nộp thuế"))
+	require.Equal(t, []float64{1e9}, revenueThresholds("hộ có doanh thu năm không quá 01 tỷ đồng thì không phải nộp thuế GTGT"))
+	require.Equal(t, 6, legalRank("02/VBHN-VPQH"))
+	require.Equal(t, 4, legalRank("12/VBHN-VPCP"))
+	require.Equal(t, 2, legalRank("24/2026/VBHN-BTC"))
 }
 
 func TestCheckThresholdBasis(t *testing.T) {
@@ -70,8 +75,13 @@ func TestCheckThresholdBasis(t *testing.T) {
 	// the decree cited with the old circular's figure
 	require.Contains(t, check("68/2026/NĐ-CP", 1e8), "ghi ngưỡng doanh thu là 1.000.000.000 đ")
 	// the old 500 triệu of Luật 109 is only in a note: no figure, no block
-	require.Empty(t, check("141/2026/NĐ-CP", 1e9), "an amending decree that states no threshold sentence")
-	require.Contains(t, check("12/2099/NĐ-CP", 1e9), "không có trong kết quả tra cứu của lượt này")
+	require.Empty(t, check("141/2026/NĐ-CP", 1e9), "an amending decree that states no threshold sentence: NĐ 68 states 1 tỷ")
+	require.Empty(t, check("109/2025/QH15", 1e9), "the law delegates the figure; NĐ 68 states it")
+	// a document that states no figure cannot carry a stale one
+	require.Contains(t, check("141/2026/NĐ-CP", 1e8), "68/2026/NĐ-CP", "100 triệu is only TT 40/2021's; NĐ 68 is newer")
+	require.Contains(t, check("109/2025/QH15", 1e8), "68/2026/NĐ-CP")
+	require.Contains(t, check("109/2025/QH15", 7e8), "không văn bản nào")
+	require.Contains(t, check("12/2099/NĐ-CP", 1e9), "không có trong kết quả tra cứu đã trả về")
 	// outside a turn (no steps) or without a lookup the check is skipped
 	require.NoError(t, checkThresholdBasis(context.Background(), identity, "can_cu_nguong", "ngưỡng", "40/2021/TT-BTC", 1e8))
 	require.NoError(t, checkThresholdBasis(ctx, nil, "can_cu_nguong", "ngưỡng", "40/2021/TT-BTC", 1e8))

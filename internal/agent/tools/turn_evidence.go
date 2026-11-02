@@ -93,6 +93,18 @@ func evidenceTextsByKnowledge(steps []types.AgentStep) map[string][]string {
 // law > UBTVQH resolution > decree > PM decision > circular > other.
 func legalRank(number string) int {
 	n := strings.ToUpper(number)
+	// a consolidated text ranks as what it consolidates, told by who
+	// consolidates: the National Assembly office a law, the Government
+	// office a decree, a ministry a circular
+	if strings.Contains(n, "/VBHN-") {
+		switch {
+		case strings.Contains(n, "VBHN-VPQH"):
+			return 6
+		case strings.Contains(n, "VBHN-VPCP"):
+			return 4
+		}
+		return 2
+	}
 	switch {
 	case strings.Contains(n, "/UBTVQH"):
 		return 5
@@ -129,7 +141,7 @@ var (
 	evidenceNoteRe = regexp.MustCompile(`\[[^\[\]]*\]`)
 	// a revenue threshold as the law words it: "… doanh thu năm từ 01 tỷ
 	// đồng trở xuống … không phải nộp / không chịu thuế …"
-	thresholdAmountRe  = regexp.MustCompile(`(?i)từ\s+(\d[\d.,]*)\s*(tỷ|triệu|nghìn|ngàn)?\s*đồng\s+trở\s+xuống`)
+	thresholdAmountRe  = regexp.MustCompile(`(?i)(?:từ\s+(\d[\d.,]*)\s*(tỷ|triệu|nghìn|ngàn)?\s*đồng(?:\s*/\s*năm)?\s+trở\s+xuống|không\s+quá\s+(\d[\d.,]*)\s*(tỷ|triệu|nghìn|ngàn)?\s*đồng)`)
 	thresholdSubjectRe = regexp.MustCompile(`(?i)doanh\s+thu`)
 	thresholdExemptRe  = regexp.MustCompile(`(?i)không\s+phải\s+nộp|không\s+chịu\s+thuế|không\s+thuộc\s+diện\s+chịu`)
 	sentenceSplitRe    = regexp.MustCompile(`[.;\n]\s`)
@@ -145,7 +157,11 @@ func revenueThresholds(text string) []float64 {
 			continue
 		}
 		for _, m := range thresholdAmountRe.FindAllStringSubmatch(sentence, -1) {
-			if v, ok := vndAmount(m[1], m[2]); ok && !containsAmount(out, v) {
+			digits, unit := m[1], m[2]
+			if digits == "" {
+				digits, unit = m[3], m[4]
+			}
+			if v, ok := vndAmount(digits, unit); ok && !containsAmount(out, v) {
 				out = append(out, v)
 			}
 		}
@@ -247,8 +263,9 @@ func checkThresholdBasis(ctx context.Context, identity LegalDocIdentityFunc, bas
 	}
 	cited := byKey[vietnamese_legal.CatalogNumberKey(basis)]
 	if cited == nil {
-		return fmt.Errorf("Văn bản %s ghi ở %s không có trong kết quả tra cứu của lượt này. "+
-			"Tra văn bản quy định %s (search_knowledge hoặc read_document) rồi ghi đúng số hiệu văn bản đã đọc", basis, basisParam, label)
+		return fmt.Errorf("Văn bản %s ghi ở %s không có trong kết quả tra cứu đã trả về ở các bước trước của lượt này "+
+			"(lệnh tra cứu gọi cùng lúc với công cụ tính chưa được tính). "+
+			"Tra văn bản quy định %s (search_knowledge hoặc read_document) trước, rồi gọi lại với đúng số hiệu văn bản đã đọc", basis, basisParam, label)
 	}
 	if cited.id.Status == "Hết hiệu lực toàn bộ" {
 		return fmt.Errorf("Văn bản %s đã hết hiệu lực toàn bộ; tra văn bản đang có hiệu lực quy định %s", cited.id.Number, label)
@@ -257,11 +274,31 @@ func checkThresholdBasis(ctx context.Context, identity LegalDocIdentityFunc, bas
 		return fmt.Errorf("Văn bản %s ghi %s là %s, khác %s đã truyền; dùng đúng số trong văn bản",
 			cited.id.Number, label, amountsText(cited.values), formatVNDPlain(value))
 	}
+	// the cited document states no figure ("mức quy định của Chính phủ", an
+	// amending decree): the value must come from an evidence document that
+	// states it, and the newer-document rule runs from that one
+	anchor := cited
+	if len(cited.values) == 0 {
+		anchor = nil
+		for _, e := range byKey {
+			if !containsAmount(e.values, value) || e.id.Status == "Hết hiệu lực toàn bộ" {
+				continue
+			}
+			if anchor == nil || legalRank(e.id.Number) > legalRank(anchor.id.Number) ||
+				(legalRank(e.id.Number) == legalRank(anchor.id.Number) && issuedOn(e.id) > issuedOn(anchor.id)) {
+				anchor = e
+			}
+		}
+		if anchor == nil {
+			return fmt.Errorf("Văn bản %s không ghi con số %s, và không văn bản nào trong kết quả tra cứu của lượt này ghi %s. "+
+				"Ghi ở %s số hiệu văn bản nêu con số đó", cited.id.Number, label, formatVNDPlain(value), basisParam)
+		}
+	}
 	// a newer document of the same or a higher rank that says another figure
 	var newer *evDoc
-	citedRank, citedDate := legalRank(cited.id.Number), issuedOn(cited.id)
+	citedRank, citedDate := legalRank(anchor.id.Number), issuedOn(anchor.id)
 	for _, e := range byKey {
-		if e == cited || len(e.values) == 0 || containsAmount(e.values, value) || e.id.Status == "Hết hiệu lực toàn bộ" {
+		if e == anchor || len(e.values) == 0 || containsAmount(e.values, value) || e.id.Status == "Hết hiệu lực toàn bộ" {
 			continue
 		}
 		date := issuedOn(e.id)
@@ -275,7 +312,7 @@ func checkThresholdBasis(ctx context.Context, identity LegalDocIdentityFunc, bas
 	if newer != nil {
 		return fmt.Errorf("Văn bản %s (ban hành %s) mới hơn và có hiệu lực pháp lý không thấp hơn %s, ghi %s là %s. "+
 			"Dùng %s theo văn bản hiện hành và ghi số hiệu đó ở %s",
-			newer.id.Number, issuedOn(newer.id), cited.id.Number, label, amountsText(newer.values), label, basisParam)
+			newer.id.Number, issuedOn(newer.id), anchor.id.Number, label, amountsText(newer.values), label, basisParam)
 	}
 	return nil
 }

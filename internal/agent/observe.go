@@ -429,6 +429,11 @@ func (e *AgentEngine) analyzeResponse(
 		// Strip <think>…</think> blocks that some models embed in content
 		// (DeepSeek, Qwen, etc.) before processing or displaying.
 		response.Content = cleanAnswerInContext(ctx, agenttools.StripThinkBlocks(response.Content))
+		// a non-streamed answer (calc gate) never passed the streaming number
+		// filter: invented số hiệu are removed here, as the stream would
+		if !response.AnswerStreamed {
+			response.Content = cleanAnswerNumbers(ctx, response.Content)
+		}
 		logger.Infof(ctx, "[Agent][Round-%d] Agent finished naturally: answer=%d chars, duration=%dms",
 			iteration+1, len(response.Content), time.Since(roundStart).Milliseconds())
 		common.PipelineInfo(ctx, "Agent", "round_final_answer", map[string]interface{}{

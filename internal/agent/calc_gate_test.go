@@ -26,8 +26,14 @@ func TestMarkCalcRequired(t *testing.T) {
 	require.Nil(t, calcRequiredTools(markCalcRequired(q, calcTools(agenttools.ToolSearchKnowledge), nil)), "no calculation tool")
 	noAmount := types.WithUserQuery(context.Background(), "Thủ tục đăng ký hộ kinh doanh?")
 	require.Nil(t, calcRequiredTools(markCalcRequired(noAmount, tax, nil)), "no amount in the question")
-	called := stepWith(agenttools.ToolCalculateHouseholdTax, &types.ToolResult{Success: false, Error: "Thiếu tham số"})
-	require.Nil(t, calcRequiredTools(markCalcRequired(q, tax, called)), "already tried this turn")
+	refused := stepWith(agenttools.ToolCalculateHouseholdTax, &types.ToolResult{Success: false, Error: "Văn bản 68/2026/NĐ-CP mới hơn…"})
+	require.NotNil(t, calcRequiredTools(markCalcRequired(q, tax, refused)), "a refused call still gates: its figures were wrong")
+	called := stepWith(agenttools.ToolCalculateHouseholdTax, &types.ToolResult{Success: true})
+	require.Nil(t, calcRequiredTools(markCalcRequired(q, tax, called)), "computed this turn")
+	noTax := types.WithUserQuery(context.Background(), "Vốn điều lệ 2 tỷ đồng thì lệ phí môn bài bao nhiêu?")
+	require.Nil(t, calcRequiredTools(markCalcRequired(noTax, tax, nil)), "an amount without a tax subject")
+	require.True(t, calcAmountRe.MatchString("doanh thu 2 tỉ"))
+	require.True(t, calcAmountRe.MatchString("doanh thu 900tr"))
 	require.True(t, calcAmountRe.MatchString("900 triệu một năm"))
 	require.True(t, calcAmountRe.MatchString("1.000.000.000 đ"))
 	require.False(t, calcAmountRe.MatchString("Điều 4 khoản 1"))
@@ -55,6 +61,7 @@ func TestCalcGateRoundAsksForTheTool(t *testing.T) {
 	require.Equal(t, []types.LLMToolCall{call}, resp.ToolCalls)
 	require.Empty(t, resp.Content)
 	require.Len(t, model.msgs, 2)
+	require.Equal(t, 1, engine.calcNudges)
 	last := model.msgs[1][len(model.msgs[1])-1]
 	require.Equal(t, "user", last.Role)
 	require.True(t, strings.HasPrefix(last.Content, "[Hệ thống]"), last.Content)
@@ -81,4 +88,27 @@ func TestCalcGateRoundShowsWhatComesBack(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Bạn kinh doanh ngành gì?", resp.Content)
 	require.Len(t, ask.msgs, 1, "no nudge for a question back")
+}
+
+// The held-back call's tokens are spent: the round reports both calls.
+// Past calcNudgeLimit the gate no longer holds answers back.
+func TestCalcGateRoundUsageAndLimit(t *testing.T) {
+	model := &scriptedChat{id: "calc-gate-usage", replies: []*types.ChatResponse{
+		{Content: "Bạn phải nộp 31.000.000 đồng.", FinishReason: "stop", Usage: types.TokenUsage{PromptTokens: 100, CompletionTokens: 10, TotalTokens: 110}},
+		{Content: "Bạn cho biết ngành nghề?", FinishReason: "stop", Usage: types.TokenUsage{PromptTokens: 120, CompletionTokens: 5, TotalTokens: 125}},
+	}}
+	engine := newTestEngine(t, model)
+	ctx := context.WithValue(context.Background(), calcGateKey{}, []string{agenttools.ToolCalculateHouseholdTax})
+	resp, err := engine.calcGateRound(ctx, []chat.Message{{Role: "user", Content: "thuế 2,4 tỷ"}}, &chat.ChatOptions{}, 1, "s1")
+	require.NoError(t, err)
+	require.Equal(t, 220, resp.Usage.PromptTokens)
+	require.Equal(t, 235, resp.Usage.TotalTokens)
+
+	spent := &scriptedChat{id: "calc-gate-limit", replies: []*types.ChatResponse{{Content: "Bạn phải nộp thuế.", FinishReason: "stop"}}}
+	engine = newTestEngine(t, spent)
+	engine.calcNudges = calcNudgeLimit
+	resp, err = engine.calcGateRound(ctx, []chat.Message{{Role: "user", Content: "thuế 2,4 tỷ"}}, &chat.ChatOptions{}, 1, "s1")
+	require.NoError(t, err)
+	require.Equal(t, "Bạn phải nộp thuế.", resp.Content)
+	require.Len(t, spent.msgs, 1, "no further nudge")
 }
