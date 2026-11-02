@@ -71,9 +71,9 @@ Measured on Qwen3.6-35B-A3B (.240), 3 repeats:
 | | cases | stored pass | third party | update/delete |
 |---|---|---|---|---|
 | before (old gate) | 153 | 146 | 8/12 | 11/12 (store would lose the eOffice note) |
-| after | 156 | 152 | 15/15 | 12/12 |
+| after | 156 | 153 | 15/15 | 12/12 |
 
-The remaining 4 failures are the model's (topic names, one empty reply).
+The remaining 3 failures are topic names chosen by the model.
 
 ### Phase 2 — recall precision
 

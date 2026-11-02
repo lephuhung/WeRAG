@@ -351,10 +351,15 @@ func (s *Service) write(
 	cfg *types.MemoryConfig,
 	item types.MemoryItem,
 ) (*types.MemoryItem, error) {
-	return s.writeReplacing(ctx, scope, cfg, item, "")
+	return s.writeReplacing(ctx, scope, cfg, item, "", item.Content)
 }
 
-func (s *Service) writeReplacing(ctx context.Context, scope interfaces.MemoryScope, cfg *types.MemoryConfig, item types.MemoryItem, targetID string) (*types.MemoryItem, error) {
+// writeReplacing stores item, replacing targetID when given. source is the
+// user's own sentence the statement came from (the statement itself for an
+// explicit "remember"): whether it says something changed decides if a fact
+// may replace another under the same topic, and it is read from the user,
+// never from the model's paraphrase.
+func (s *Service) writeReplacing(ctx context.Context, scope interfaces.MemoryScope, cfg *types.MemoryConfig, item types.MemoryItem, targetID, source string) (*types.MemoryItem, error) {
 	content := types.SanitizeMemoryContent(item.Content)
 	if content == "" {
 		return nil, errors.New("memory: empty content")
@@ -411,13 +416,19 @@ func (s *Service) writeReplacing(ctx context.Context, scope interfaces.MemorySco
 		}
 	} else {
 		existing, err = s.repo.FindActiveByKey(ctx, scope, normalizedKey)
-		if err == nil && existing != nil && !replacesOnKeyCollision(existing, item, content) {
+		if err == nil && existing != nil && !replacesOnKeyCollision(existing, item, content, source) {
 			// Same topic label, different statement: keep both. The key is
 			// the model's free-text topic, and "phần mềm" can name eOffice
 			// and iGate alike; superseding on the label alone lost the older
-			// fact without any sign the user had contradicted it.
-			normalizedKey = siblingMemoryKey(normalizedKey, content)
-			existing, err = s.repo.FindActiveByKey(ctx, scope, normalizedKey)
+			// fact without any sign the user had contradicted it. A sibling
+			// already under this topic that the statement restates is the
+			// row it replaces.
+			existing, err = s.findSibling(ctx, scope, normalizedKey, item, content, source)
+			if existing != nil {
+				normalizedKey = existing.NormalizedKey
+			} else {
+				normalizedKey = siblingMemoryKey(normalizedKey, content)
+			}
 		}
 	}
 	if err != nil {
@@ -497,7 +508,7 @@ const sameStatementOverlap = 0.5
 // guess waiting for confirmation keeps its link to the note it would replace:
 // it retires nothing until the user confirms it. A different kind never
 // replaces: a fact cannot retire a profile entry.
-func replacesOnKeyCollision(existing *types.MemoryItem, item types.MemoryItem, content string) bool {
+func replacesOnKeyCollision(existing *types.MemoryItem, item types.MemoryItem, content, source string) bool {
 	if existing == nil || existing.Kind != item.Kind {
 		return false
 	}
@@ -505,10 +516,10 @@ func replacesOnKeyCollision(existing *types.MemoryItem, item types.MemoryItem, c
 	case types.MemoryKindProfile, types.MemoryKindPreference, types.MemoryKindInterest:
 		return true
 	}
-	if statusForWrite(item) == types.MemoryStatusPending || existing.Status == types.MemoryStatusPending {
+	if statusForWrite(item) == types.MemoryStatusPending {
 		return true
 	}
-	if saysSomethingChanged(content) {
+	if saysSomethingChanged(source) {
 		return true
 	}
 	old := types.NormalizeMemoryForMatch(existing.Content)
@@ -520,6 +531,47 @@ func replacesOnKeyCollision(existing *types.MemoryItem, item types.MemoryItem, c
 		return true
 	}
 	return jaccard(strings.Fields(old), strings.Fields(updated)) >= sameStatementOverlap
+}
+
+// findSibling looks among the live notes kept under topicKey#… for the one a
+// statement restates or replaces, so a reworded restatement of a sibling does
+// not become a third row.
+func (s *Service) findSibling(
+	ctx context.Context, scope interfaces.MemoryScope, topicKey string, item types.MemoryItem, content, source string,
+) (*types.MemoryItem, error) {
+	candidates, err := s.repo.ListLive(ctx, scope, item.Kind, 200)
+	if err != nil {
+		return nil, fmt.Errorf("scan memory siblings: %w", err)
+	}
+	prefix := topicKey + "#"
+	for _, candidate := range candidates {
+		if candidate == nil || !strings.HasPrefix(candidate.NormalizedKey, prefix) {
+			continue
+		}
+		if replacesOnKeyCollision(candidate, item, content, source) {
+			return candidate, nil
+		}
+	}
+	return nil, nil
+}
+
+// hasSiblings reports whether other live notes of item's kind share its
+// topic under sibling keys.
+func (s *Service) hasSiblings(ctx context.Context, scope interfaces.MemoryScope, item *types.MemoryItem) (bool, error) {
+	topicKey, _, _ := strings.Cut(item.NormalizedKey, "#")
+	candidates, err := s.repo.ListLive(ctx, scope, item.Kind, 200)
+	if err != nil {
+		return false, fmt.Errorf("scan memory siblings: %w", err)
+	}
+	for _, candidate := range candidates {
+		if candidate == nil || candidate.ID == item.ID {
+			continue
+		}
+		if candidate.NormalizedKey == topicKey || strings.HasPrefix(candidate.NormalizedKey, topicKey+"#") {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // siblingMemoryKey is the key for a statement that shares a topic with an

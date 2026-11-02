@@ -22,11 +22,12 @@ func TestGateDropsStatementsThatAreNotAboutTheUser(t *testing.T) {
 		{"chỗ HN nói là tất cả chỉ là mua usdt chứ HN k tra thuê bao internet cho anh, chỉ 1 lần thôi", gateDropReported},
 		{"Anh Hùng bảo là hồ sơ của bà Mai bị trả lại vì thiếu giấy xác nhận cư trú", gateDropReported},
 		{"Chị Lan: mai họp giao ban lúc 8h nhé\nAnh Tú: ok, nhớ mang hồ sơ đền bù\nChị Lan: còn thiếu biên bản", gateDropPasted},
-		{"Em: em đang làm hồ sơ\nSếp: ừ làm nhanh nhé", gateDropPasted},
+		{"Em: em đang làm hồ sơ\nSếp: ừ làm nhanh nhé\nEm: dạ", gateDropPasted},
 		{letter, gateDropPasted},
 		{"giá hornor magic 9 pro", gateDropLookup},
 		{"xử lý vphc trong lĩnh vực giao thông", gateDropLookup},
 		{"thủ tục cấp lại thẻ căn cước bị mất", gateDropLookup},
+		{"thủ tục khai sinh cho trẻ em", gateDropLookup},
 	}
 	for _, c := range cases {
 		for _, kind := range []string{types.MemoryKindFact, types.MemoryKindTask, types.MemoryKindProfile} {
@@ -43,8 +44,16 @@ func TestGateKeepsShortStatementsAndFormAnswers(t *testing.T) {
 		{types.MemoryKindTask, "Tuần này phải xong báo cáo tổng kết"},
 		{types.MemoryKindFact, "Bộ phận: Đội 4, Ký trực tiếp"},
 		{types.MemoryKindProfile, "Tôi là chuyên viên, sếp tôi bảo là phải soát kỹ thể thức"},
+		// Short statements about oneself are not search phrases.
+		{types.MemoryKindProfile, "Tôi tên Nguyễn Văn A"},
+		{types.MemoryKindProfile, "Tôi sinh năm 1990"},
+		{types.MemoryKindProfile, "Mình 35 tuổi"},
+		{types.MemoryKindProfile, "Em quê Quảng Trị"},
+		{types.MemoryKindProfile, "Cơ quan thông báo là tôi được điều động về Phòng CSGT"},
+		// A form answer has labels, but no speaker talks twice.
+		{types.MemoryKindProfile, "Họ tên: Nguyễn Văn A\nĐơn vị: Công an phường Thuận Hòa\nChức vụ: Đội trưởng"},
 		// A note asked to be kept survives inside a pasted log.
-		{types.MemoryKindProfile, "Hãy nhớ: tôi làm văn thư\nChị Lan: ok\nAnh Tú: ok"},
+		{types.MemoryKindProfile, "Hãy nhớ: tôi làm văn thư\nChị Lan: ok\nAnh Tú: ok\nChị Lan: ừ"},
 	} {
 		_, verdict := gateDecision(extractionDecision{Kind: c.kind, Content: "x", ExpiresAt: "2099-01-01"}, c.source)
 		require.False(t, verdict.dropped(), "%s -> %s", c.source, verdict)
@@ -61,6 +70,10 @@ func TestDeleteNeedsTheUserToSaySomethingChanged(t *testing.T) {
 		require.True(t, deleteHasCue(source), source)
 	}
 	for _, source := range []string{
+		"Đừng quên tôi phụ trách văn thư",
+		"Tuần sau tôi nghỉ phép 3 ngày",
+		"Hôm nay là hạn nộp báo cáo",
+		"Bỏ phiếu tín nhiệm vào thứ 6",
 		"Cho tôi hỏi thủ tục đăng ký khai sinh cho trẻ cần giấy tờ gì?",
 		"Tóm tắt Nghị định 30/2020 giúp tôi",
 		"Bên tôi cũng dùng thêm phần mềm iGate",
@@ -198,4 +211,54 @@ func TestRegateArchivesWhatTheGateNowRejects(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, types.MemoryStatusArchived, reloaded.Status)
 	require.NotNil(t, reloaded.InvalidAt)
+}
+
+// A same-topic fact replaces another only when the user's own sentence says
+// something changed — never on the model's paraphrase, never on a cue that is
+// part of another word.
+func TestSameTopicFactNeedsTheUserToSayItChanged(t *testing.T) {
+	s, _, tr := newMemoryHarness(t)
+	ctx := enabledCtx(t, tr, 1, "alice")
+	scope, cfg, ok := s.enabledScope(ctx)
+	require.True(t, ok)
+	first, err := s.Remember(ctx, types.MemoryItem{Kind: types.MemoryKindFact, Topic: "phần mềm", Content: "Bên tôi dùng eOffice"})
+	require.NoError(t, err)
+	_, err = s.writeReplacing(ctx, scope, cfg, types.MemoryItem{Kind: types.MemoryKindFact, Topic: "phần mềm",
+		Content: "Đã chuyển sang dùng iGate", Origin: types.MemoryOriginExtracted}, "", "Quên mật khẩu iGate rồi, cấp lại giúp")
+	require.NoError(t, err)
+	reloaded, err := s.repo.GetItem(ctx, scope, first.ID)
+	require.NoError(t, err)
+	require.Equal(t, types.MemoryStatusActive, reloaded.Status, "the paraphrase's cue must not count")
+
+	// A reworded restatement of a sibling replaces that sibling, not a third row.
+	_, err = s.Remember(ctx, types.MemoryItem{Kind: types.MemoryKindFact, Topic: "phần mềm", Content: "Đơn vị dùng iGate cho dịch vụ công trực tuyến"})
+	require.NoError(t, err)
+	_, total, err := s.ListItems(ctx, types.MemoryStatusActive, 10, 0)
+	require.NoError(t, err)
+	before := total
+	_, err = s.Remember(ctx, types.MemoryItem{Kind: types.MemoryKindFact, Topic: "phần mềm", Content: "Đơn vị dùng iGate cho dịch vụ công trực tuyến cấp tỉnh"})
+	require.NoError(t, err)
+	_, total, err = s.ListItems(ctx, types.MemoryStatusActive, 10, 0)
+	require.NoError(t, err)
+	require.Equal(t, before, total)
+}
+
+// With siblings under a topic, an update that names only the topic could mean
+// any of them; it is skipped rather than applied to the plain-key row.
+func TestTopicOnlyUpdateSkipsWhenSiblingsShareTheTopic(t *testing.T) {
+	s, _, tr := newMemoryHarness(t)
+	ctx := enabledCtx(t, tr, 1, "alice")
+	scope, cfg, ok := s.enabledScope(ctx)
+	require.True(t, ok)
+	_, err := s.Remember(ctx, types.MemoryItem{Kind: types.MemoryKindFact, Topic: "phần mềm", Content: "Bên tôi dùng eOffice"})
+	require.NoError(t, err)
+	_, err = s.Remember(ctx, types.MemoryItem{Kind: types.MemoryKindFact, Topic: "phần mềm", Content: "Đơn vị dùng thêm iGate cho dịch vụ công"})
+	require.NoError(t, err)
+	segment := transcriptSegment{sessionID: "s", lines: []transcriptLine{{sessionID: "s", messageID: "m1", content: "Đơn vị đã chuyển sang không dùng iGate nữa"}}}
+	require.NoError(t, s.applyDecisions(ctx, scope, cfg, segment, nil, []extractionDecision{
+		{Action: "update", Kind: types.MemoryKindFact, Topic: "phần mềm", Content: "Đã bỏ iGate"},
+	}))
+	items, total, err := s.ListItems(ctx, types.MemoryStatusActive, 10, 0)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, total, "%v", items)
 }

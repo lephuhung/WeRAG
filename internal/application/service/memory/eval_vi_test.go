@@ -262,7 +262,8 @@ func replacedNotes(c viEvalCase, decisions []extractionDecision, gated bool) map
 				continue
 			}
 			kind := strings.ToLower(d.Kind)
-			if !gated || replacesOnKeyCollision(note, types.MemoryItem{Kind: kind, Inferred: d.Inferred}, d.Content) {
+			source := d.resolveSource(segmentForViCase(c)).content
+			if !gated || replacesOnKeyCollision(note, types.MemoryItem{Kind: kind, Inferred: d.Inferred}, d.Content, source) {
 				replaced[i] = true
 			}
 		}

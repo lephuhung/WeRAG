@@ -1211,6 +1211,17 @@ func (s *Service) applyDecisions(
 				if target == nil {
 					continue
 				}
+				// Without an index the topic is all there is, and a topic can
+				// hold several facts or tasks (siblings). Which one is meant
+				// is then a guess, so nothing is changed.
+				ambiguous, err := s.hasSiblings(ctx, scope, target)
+				if err != nil {
+					return err
+				}
+				if ambiguous {
+					logger.Infof(ctx, "memory: %s by topic %q skipped (several notes share it)", action, target.Topic)
+					continue
+				}
 			}
 			topic = target.Topic
 		}
@@ -1263,7 +1274,7 @@ func (s *Service) applyDecisions(
 			if action == "update" && target != nil {
 				targetID = target.ID
 			}
-			if _, err := s.writeReplacing(ctx, scope, cfg, item, targetID); err != nil {
+			if _, err := s.writeReplacing(ctx, scope, cfg, item, targetID, source.content); err != nil {
 				if errors.Is(err, ErrPreviouslyForgotten) || errors.Is(err, ErrSensitiveContent) ||
 					errors.Is(err, types.ErrMemoryConflict) {
 					continue

@@ -65,6 +65,8 @@ var durableCues = []string{
 	"đơn vị tôi", "đơn vị mình", "cơ quan tôi", "cơ quan mình", "phòng tôi", "chúng tôi", "chúng mình",
 	"em là", "em làm", "em công tác", "em phụ trách", "em thích", "em muốn", "em cần", "em thường",
 	"anh là", "chị là", "anh làm", "chị làm",
+	"tôi tên", "em tên", "mình tên", "anh tên", "chị tên", "sinh năm", "quê tôi", "tôi quê", "em quê", "mình quê",
+	"tôi được", "tôi sẽ", "em được", "mình được",
 	// english (padded: matched against the sentence with a space either side)
 	"from now on", " always ", " never ", " remember ", " i am ", " i'm ", " i work ", " i prefer ",
 	" i like ", " i usually ", " my name ", " my team ", " my job ", " we use ", " our ",
@@ -282,7 +284,7 @@ func gateDecision(decision extractionDecision, source string) (extractionDecisio
 // stored as a fact it is recalled into their later, unrelated questions.
 var reportedSpeechCues = []string{
 	" nói là", " nói rằng", " bảo là", " bảo rằng", " kể là", " kể rằng", " nhắn là", " nhắn rằng",
-	" báo là", " báo rằng", " cho biết là", " cho biết rằng", "theo lời", "nghe nói", "người ta nói",
+	"theo lời", "nghe nói", "người ta nói",
 	"họ nói", "họ bảo", " said that", " says that", " told me", "according to",
 }
 
@@ -303,39 +305,43 @@ var explicitMemoryCues = []string{
 const pastedMaterialRunes = 1200
 
 // isPastedMaterial reports whether a message is a long paste or a chat log:
-// two or more lines that open with a speaker label ("Chị Lan: ...").
+// labelled lines ("Chị Lan: ...") where at least one speaker talks twice. A
+// form answer ("Họ tên: …\nĐơn vị: …\nChức vụ: …") has labels too, but each
+// field appears once.
 func isPastedMaterial(source string) bool {
 	if len([]rune(source)) > pastedMaterialRunes {
 		return true
 	}
-	speakerLines := 0
+	speakers := map[string]int{}
 	for _, line := range strings.Split(source, "\n") {
-		if hasSpeakerLabel(strings.TrimSpace(line)) {
-			speakerLines++
+		if label, ok := speakerLabel(strings.TrimSpace(line)); ok {
+			speakers[label]++
+			if speakers[label] >= 2 {
+				return true
+			}
 		}
 	}
-	return speakerLines >= 2
+	return false
 }
 
-// hasSpeakerLabel matches "Name: text" where Name is one to four words with no
-// digits — the shape of a copied chat or meeting transcript. "Bộ phận: Đội 4"
-// on a single line is a form field and is never counted alone.
-func hasSpeakerLabel(line string) bool {
+// speakerLabel returns the label of a "Name: text" line, where Name is one to
+// four words with no digits — the shape of a copied chat or meeting record.
+func speakerLabel(line string) (string, bool) {
 	colon := strings.Index(line, ":")
 	if colon <= 0 || colon == len(line)-1 {
-		return false
+		return "", false
 	}
 	label := strings.TrimSpace(line[:colon])
 	words := strings.Fields(label)
 	if len(words) == 0 || len(words) > 4 {
-		return false
+		return "", false
 	}
 	for _, r := range label {
 		if !unicode.IsLetter(r) && r != ' ' && r != '.' {
-			return false
+			return "", false
 		}
 	}
-	return true
+	return strings.ToLower(label), true
 }
 
 // statementMarkers make a short sentence say something happened or has to
@@ -354,6 +360,15 @@ var statementMarkers = []string{
 // query. Longer statements without a marker are left to the model.
 const lookupPhraseMaxWords = 10
 
+// firstPersonWords make a short line about the speaker: "Tôi tên Lan",
+// "Mình 35 tuổi". A search phrase does not name its asker.
+var firstPersonWords = []string{
+	// "em", "anh", "chị" are left out: "trẻ em", "tiếng anh" are everyday
+	// lookup words, and "em là/em tên…" are durable cues already.
+	"tôi", "mình", "tớ", "tui", "chúng tôi", "chúng mình", "bọn mình",
+	"i", "my", "me", "we", "our",
+}
+
 func isLookupPhrase(text string) bool {
 	if text == "" || strings.Contains(text, ":") || strings.ContainsAny(text, ".!") {
 		return false
@@ -361,13 +376,22 @@ func isLookupPhrase(text string) bool {
 	if len(strings.Fields(text)) > lookupPhraseMaxWords {
 		return false
 	}
-	padded := " " + text + " "
-	for _, marker := range statementMarkers {
-		if strings.Contains(padded, " "+strings.TrimSpace(marker)+" ") {
-			return false
+	return !hasPhrase(text, statementMarkers) && !hasPhrase(text, firstPersonWords)
+}
+
+// hasPhrase is hasAny at word boundaries: "nghỉ việc" matches "tôi nghỉ việc
+// rồi" but "xong" does not match inside another syllable, and punctuation
+// counts as a boundary.
+func hasPhrase(text string, phrases []string) bool {
+	padded := " " + strings.Join(strings.FieldsFunc(normalizeForGate(text), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && !unicode.Is(unicode.Mn, r)
+	}), " ") + " "
+	for _, phrase := range phrases {
+		if p := strings.TrimSpace(phrase); p != "" && strings.Contains(padded, " "+p+" ") {
+			return true
 		}
 	}
-	return true
+	return false
 }
 
 // changeCues mark a sentence that says something stopped being true or was
@@ -377,17 +401,19 @@ func isLookupPhrase(text string) bool {
 // model-chosen DELETE for the same reason. The same cues let a new fact
 // replace an older one under the same topic.
 var changeCues = []string{
-	"không còn", "không phải", "không làm", "không phụ trách", "không dùng", "không cần",
-	"thôi ", "bỏ ", "đã chuyển", "chuyển sang", "chuyển công tác", "chuyển về", "đổi sang", "nghỉ",
-	"xong", "hoàn thành", "đã nộp", "nộp rồi", "hết hạn", "hủy", "huỷ", "nhầm", "sai rồi", "quên",
-	"không đúng", "giờ là", "nay là", "hiện là", "bây giờ",
-	"no longer", "not anymore", "stopped", "moved to", "finished", "done", "cancel", "forget", "wrong",
+	"không còn", "không làm nữa", "không phụ trách", "không phụ trách nữa", "không dùng nữa", "không cần nữa",
+	"đã chuyển", "chuyển sang", "chuyển công tác", "chuyển về", "đổi sang", "nghỉ việc", "nghỉ hưu",
+	"thôi không", "thôi làm", "bỏ ghi chú", "xóa ghi chú", "xoá ghi chú", "quên ghi chú", "quên đi",
+	"xong rồi", "đã xong", "làm xong", "hoàn thành rồi", "đã hoàn thành", "đã nộp", "nộp rồi", "hết hạn",
+	"đã hủy", "đã huỷ", "bị hủy", "bị huỷ", "nhầm rồi", "ghi nhầm", "sai rồi", "không đúng nữa",
+	"giờ tôi", "nay tôi", "hiện tôi", "bây giờ tôi",
+	"no longer", "not anymore", "stopped", "moved to", "finished", "cancelled", "canceled",
 }
 
 // saysSomethingChanged reports whether a sentence says something stopped
 // being true or was replaced.
 func saysSomethingChanged(text string) bool {
-	return hasAny(normalizeForGate(text), changeCues)
+	return hasPhrase(text, changeCues)
 }
 
 // deleteHasCue reports whether the user's own sentence allows a delete.
