@@ -111,6 +111,15 @@ export interface TenantAPIKey {
   created_at: string;
 }
 
+/** The user every organization API key acts as (the organization's first
+ * user). When that account is locked, all keys are refused. */
+export interface TenantAPIKeyActingUser {
+  id: string;
+  username: string;
+  email: string;
+  is_active: boolean;
+}
+
 export interface CreatedTenantAPIKey extends TenantAPIKey {
   token?: string;
 }
@@ -195,7 +204,12 @@ export async function createAPIPrincipalTestToken(
 
 export async function listTenantAPIKeys(
   tenantId: number,
-): Promise<{ success: boolean; data?: TenantAPIKey[]; message?: string }> {
+): Promise<{
+  success: boolean;
+  data?: TenantAPIKey[];
+  acting_user?: TenantAPIKeyActingUser | null;
+  message?: string;
+}> {
   try {
     return await apiGet(`/api/v1/tenants/${tenantId}/api-keys`);
   } catch (error) {

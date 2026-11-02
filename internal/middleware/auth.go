@@ -797,6 +797,9 @@ func authenticateAPIKeyRequest(
 	if c.IsAborted() {
 		return false
 	}
+	// Only an accepted key counts as used (not one refused above, e.g. for
+	// a locked acting user).
+	apiKeyService.TouchAPIKeyLastUsed(key.ID)
 	// Per-route API-key authorization (full access + capabilities + KB scope)
 	// is enforced by middleware.APIKeyRouteAuthorizer on the /api/v1 group.
 	// Key-management and any other undeclared route is denied there.
@@ -882,6 +885,9 @@ func attachAPIKeyAuthContext(
 		principal, user = platformAPIKeyIdentity(key)
 		user.TenantID = tenantID
 	} else {
+		// The acting user: earliest active admin member, else the earliest
+		// home user (see UserRepository.GetUserByTenantID). A locked choice
+		// is refused below, never swapped for another admin.
 		user, err = userService.GetUserByTenantID(c.Request.Context(), tenantID)
 		if err != nil || user == nil {
 			user = &types.User{
@@ -893,6 +899,18 @@ func attachAPIKeyAuthContext(
 			}
 			logger.Infof(c.Request.Context(),
 				"No user found for tenant %d via API key, using synthetic system user %s", tenantID, user.ID)
+		} else if !user.IsActive {
+			// An organization key acts as this real user row, so a locked
+			// account locks its keys too (same rule as ValidateToken). The
+			// row is already loaded here: no extra query.
+			logger.Warnf(c.Request.Context(),
+				"[auth] API key refused: acting user %s of tenant %d is disabled", user.ID, tenantID)
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": service.ErrAPIKeyOwnerDisabled.Error(),
+				"code":  "ACCOUNT_DISABLED",
+			})
+			c.Abort()
+			return
 		}
 
 		var principalErr error

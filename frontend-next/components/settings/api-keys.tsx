@@ -13,6 +13,7 @@ import {
   createTenantAPIKey,
   deleteTenantAPIKey,
   type TenantAPIKey,
+  type TenantAPIKeyActingUser,
   type TenantAPIKeyCapability,
   type CreatedTenantAPIKey,
 } from "@/lib/api/tenants";
@@ -49,6 +50,7 @@ export function ApiKeysSection() {
   const { t } = useT();
   const auth = useAuth();
   const [keys, setKeys] = useState<TenantAPIKey[]>([]);
+  const [actingUser, setActingUser] = useState<TenantAPIKeyActingUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
@@ -58,7 +60,10 @@ export function ApiKeysSection() {
     setLoading(true);
     const tenantId = Number(localStorage.getItem("weknora_selected_tenant_id") ?? auth.tenant?.id ?? 0);
     listTenantAPIKeys(tenantId)
-      .then((res) => setKeys(res.data ?? []))
+      .then((res) => {
+        setKeys(res.data ?? []);
+        setActingUser(res.acting_user ?? null);
+      })
       .catch((e) => setError(e instanceof Error ? e.message : t("apikey.loadFailed")))
       .finally(() => setLoading(false));
   }, []);
@@ -87,6 +92,14 @@ export function ApiKeysSection() {
       </div>
 
       {error && <Notice tone="error" className="mb-3">{error}</Notice>}
+      {actingUser && !actingUser.is_active && (
+        <Notice tone="warning" title={t("apiKeys.ownerDisabledTitle")}>
+          {t("apiKeys.ownerDisabledBody").replace(
+            "{user}",
+            actingUser.username || actingUser.email || actingUser.id,
+          )}
+        </Notice>
+      )}
       {loading && <Loading className="py-4" />}
 
       <div className="flex flex-col divide-y divide-hairline">

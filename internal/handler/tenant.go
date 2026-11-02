@@ -681,7 +681,42 @@ func (h *TenantHandler) ListAPIKeys(c *gin.Context) {
 	for _, key := range keys {
 		resp = append(resp, tenantAPIKeyForResponse(key))
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": resp})
+	c.JSON(http.StatusOK, gin.H{
+		"success":     true,
+		"data":        resp,
+		"acting_user": h.apiKeyActingUser(ctx, id),
+	})
+}
+
+// apiKeyActingUserResponse names the user every organization API key acts
+// as, so the settings page can warn when that account is locked (its keys
+// are then refused with ACCOUNT_DISABLED by middleware.Auth).
+type apiKeyActingUserResponse struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	IsActive bool   `json:"is_active"`
+}
+
+// apiKeyActingUser mirrors the X-API-Key auth path (GetUserByTenantID: the
+// earliest active admin member, else the earliest home user). Nil when there
+// is none (keys then act as a synthetic system user and never lock) or the
+// lookup failed (logged).
+func (h *TenantHandler) apiKeyActingUser(ctx context.Context, tenantID uint64) *apiKeyActingUserResponse {
+	if h.userService == nil {
+		return nil
+	}
+	u, err := h.userService.GetUserByTenantID(ctx, tenantID)
+	if err != nil {
+		if !stderrors.Is(err, repository.ErrUserNotFound) {
+			logger.Warnf(ctx, "[api-keys] acting user lookup failed: tenant=%d err=%v", tenantID, err)
+		}
+		return nil
+	}
+	if u == nil {
+		return nil
+	}
+	return &apiKeyActingUserResponse{ID: u.ID, Username: u.Username, Email: u.Email, IsActive: u.IsActive}
 }
 
 func (h *TenantHandler) CreateAPIKey(c *gin.Context) {

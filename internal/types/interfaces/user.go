@@ -28,7 +28,9 @@ type UserService interface {
 	GetUserByEmail(ctx context.Context, email string) (*types.User, error)
 	// GetUserByUsername gets a user by username
 	GetUserByUsername(ctx context.Context, username string) (*types.User, error)
-	// GetUserByTenantID gets the first user (owner) of a tenant
+	// GetUserByTenantID returns the user an organization API key acts as:
+	// the earliest active admin member, else the earliest home user
+	// (users.tenant_id); deterministic, inactive rows included.
 	GetUserByTenantID(ctx context.Context, tenantID uint64) (*types.User, error)
 	// UpdateUser updates user information
 	UpdateUser(ctx context.Context, user *types.User) error
@@ -130,7 +132,9 @@ type UserRepository interface {
 	GetUserByEmail(ctx context.Context, email string) (*types.User, error)
 	// GetUserByUsername gets a user by username
 	GetUserByUsername(ctx context.Context, username string) (*types.User, error)
-	// GetUserByTenantID gets the first user (owner) of a tenant
+	// GetUserByTenantID returns the user an organization API key acts as:
+	// the earliest active admin member, else the earliest home user
+	// (users.tenant_id); deterministic, inactive rows included.
 	GetUserByTenantID(ctx context.Context, tenantID uint64) (*types.User, error)
 	// UpdateUser updates a user
 	UpdateUser(ctx context.Context, user *types.User) error

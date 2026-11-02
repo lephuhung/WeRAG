@@ -133,7 +133,12 @@ type TenantAPIKeyRepository interface {
 
 type TenantAPIKeyService interface {
 	CreateAPIKey(ctx context.Context, req TenantAPIKeyCreateRequest) (*TenantAPIKeyCreateResult, error)
+	// AuthenticateAPIKey resolves a live (not revoked, not expired) key. It
+	// does not record use; callers call TouchAPIKeyLastUsed once accepted.
 	AuthenticateAPIKey(ctx context.Context, token string) (*types.TenantAPIKey, error)
+	// TouchAPIKeyLastUsed records last_used_at (throttled, async) for a key
+	// whose request passed authentication.
+	TouchAPIKeyLastUsed(keyID uint64)
 	ListAPIKeys(ctx context.Context, tenantID uint64) ([]*types.TenantAPIKey, error)
 	ListPlatformAPIKeys(ctx context.Context) ([]*types.TenantAPIKey, error)
 	UpdateAPIKey(ctx context.Context, req TenantAPIKeyUpdateRequest) (*types.TenantAPIKey, error)

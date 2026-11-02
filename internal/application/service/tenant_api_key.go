@@ -98,8 +98,19 @@ func (s *tenantAPIKeyService) AuthenticateAPIKey(ctx context.Context, token stri
 	if key.ExpiresAt != nil && time.Now().UTC().After(key.ExpiresAt.UTC()) {
 		return nil, apprepo.ErrTenantAPIKeyNotFound
 	}
-	s.touchAPIKeyLastUsedAsync(key.ID)
+	// last_used_at is recorded by TouchAPIKeyLastUsed once the request is
+	// accepted, so a key refused later in auth (locked acting user, public
+	// portal, bad principal header) does not look used.
 	return key, nil
+}
+
+// TouchAPIKeyLastUsed records that an authenticated, accepted request used
+// the key (throttled, asynchronous).
+func (s *tenantAPIKeyService) TouchAPIKeyLastUsed(keyID uint64) {
+	if keyID == 0 {
+		return
+	}
+	s.touchAPIKeyLastUsedAsync(keyID)
 }
 
 // touchAPIKeyLastUsedAsync persists last_used_at at most once per key per
