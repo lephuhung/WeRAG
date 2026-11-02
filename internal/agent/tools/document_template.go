@@ -547,8 +547,14 @@ func fold(s string) string {
 
 // said reports whether the user wrote s (folded, ignoring end
 // punctuation), not only as part of a deputy's title: "Giám đốc" is not
-// said by "Phó Giám đốc" (heldBy).
+// said by "Phó Giám đốc" or "Quyền Giám đốc" (deputyRe).
 func said(userText, s string) bool {
+	return saidHeld(userText, s, deputyRe)
+}
+
+// saidHeld is said where held marks the titles before a match that make
+// it another one.
+func saidHeld(userText, s string, held *regexp.Regexp) bool {
 	s = strings.Trim(fold(s), " .;:,")
 	if s == "" {
 		return false
@@ -559,7 +565,7 @@ func said(userText, s string) bool {
 		if j < 0 {
 			return false
 		}
-		if !heldBy(t[:i+j], s) {
+		if !held.MatchString(t[:i+j]) {
 			return true
 		}
 		i += j + 1
@@ -626,14 +632,16 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 	// partials are the agency values the model wrote with a placeholder
 	// ("CÔNG AN TỈNH ……"): not used as stated, kept for the blanks
 	partials := map[string]string{}
-	// a shorter agency only from what the user wrote of the issuing agency
-	// or their own unit: "tại hội trường Công an tỉnh" names a place
+	// the agency, whole or shorter, only from what the user wrote of the
+	// issuing agency or their own unit: "tại hội trường Công an tỉnh"
+	// names a place, not the agency issuing the document
 	agencyScope := scopeSentences(userText, func(s string) bool {
 		f := fold(s)
 		return agencyTalkRe.MatchString(f) || selfRe.MatchString(f)
 	})
+	agencyText := strings.Join(agencyScope, "\n")
 	pick := func(field, label, saved, raw string) string {
-		stated, partial := spokenValue(userText, wider, raw, agencyScope)
+		stated, partial := spokenValue(agencyText, wider, raw, agencyScope)
 		if stated == "" {
 			return saved
 		}
@@ -842,7 +850,15 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 	if !minutes {
 		// a name as the user wrote it, a title or the part of it they wrote
 		signerName, _ = spokenValue(userText, wider, signerName, nil)
-		signerPos, _ = spokenValue(userText, wider, signerPos, signerScope(userText, signerName))
+		pos := signerPos
+		signerPos, _ = spokenValue(userText, wider, pos, signerScope(userText, signerName))
+		// the acting head ("Q. Giám đốc", "Quyền Giám đốc") holds the
+		// head's title itself
+		if signerPos == "" && signing == "Q" {
+			if p, _ := spokenValueHeld(userText, wider, pos, nil, phoRe); p != "" && actingTitle(userText, p) {
+				signerPos = p
+			}
+		}
 		if signerName == "" || signerPos == "" {
 			need("Người ký: họ tên và chức vụ")
 			signerName, signerPos = "", ""
@@ -855,7 +871,9 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 		need("Hình thức ký: ký trực tiếp, hay TM./KT./TL./TUQ./Q. (ghi rõ)")
 		signing = ""
 	}
-	onBehalf, _ = spokenValue(userText, wider, onBehalf, signerScope(userText, signerName))
+	// the head's title signed for: "ký thay Giám đốc", "Q. Giám đốc" (only
+	// "Phó Giám đốc" is another title)
+	onBehalf, _ = spokenValueHeld(userText, wider, onBehalf, signerScope(userText, signerName), phoRe)
 	if onBehalf == "" {
 		switch signing {
 		case "TM":
@@ -1057,10 +1075,20 @@ func groundSaid(userText, g string) bool {
 // ones that speak of signing or name them. A title the model lengthened
 // is cut back only to what is written there (spokenValue), as the user's
 // own position only from what they say of themself (selfInputs).
+// A "Chức vụ: …" line counts here (not in selfInputs, where it answers
+// the question about the user's own position).
 func signerScope(userText, name string) []string {
 	return scopeSentences(userText, func(s string) bool {
-		return signerTalkRe.MatchString(fold(s)) || (name != "" && said(s, name))
+		f := fold(s)
+		return signerTalkRe.MatchString(f) || strings.Contains(f, "chức vụ") || (name != "" && said(s, name))
 	})
+}
+
+// actingTitle: the user wrote title as an acting head's ("Q. Giám đốc",
+// "Quyền Giám đốc").
+func actingTitle(userText, title string) bool {
+	re := regexp.MustCompile(`(^|[^\p{L}])(q\.|quyền)\s*` + regexp.QuoteMeta(strings.Trim(fold(title), " .;:,")) + `([^\p{L}]|$)`)
+	return re.MatchString(fold(userText))
 }
 
 func endWith(s, end string) string {

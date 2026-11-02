@@ -89,11 +89,18 @@ func wordEdge(t string, i int, before bool) bool {
 // "Nguyễn Văn" of "Nguyễn Văn Anh" is not the user's "Nguyễn Văn An").
 // partial: v held placeholders.
 func spokenValue(userText, wider, v string, scope []string) (string, bool) {
+	return spokenValueHeld(userText, wider, v, scope, deputyRe)
+}
+
+// spokenValueHeld is spokenValue where held marks the titles before a
+// match that make it another one (deputyRe; phoRe for the head's title a
+// signer signs for, written "Q. Giám đốc" by the acting one).
+func spokenValueHeld(userText, wider, v string, scope []string, held *regexp.Regexp) (string, bool) {
 	s, partial := stripPlaceholders(v)
 	if s == "" {
 		return "", partial
 	}
-	if said(userText, s) {
+	if saidHeld(userText, s, held) {
 		return s, partial
 	}
 	if len(scope) == 0 {
@@ -102,7 +109,7 @@ func spokenValue(userText, wider, v string, scope []string) (string, bool) {
 	words := strings.Fields(s)
 	for n := len(words) - 1; n >= 2; n-- {
 		h := strings.TrimRight(strings.Join(words[:n], " "), " ,;:-–")
-		if !headSaid(scope, h) {
+		if !headSaid(scope, h, held) {
 			continue
 		}
 		// the longest head the user wrote: its rest must be words of the
@@ -125,16 +132,22 @@ var structuralWords = map[string]bool{
 	"công": true, "nhân": true, "dân": true, "của": true, "và": true,
 }
 
-// clauseEndRe: what may follow a value the user ended there (a comma, the
-// end of a sentence or of the message).
-var clauseEndRe = regexp.MustCompile(`^\s*([,.;:!?)\n]|$)`)
+// completeForms are titles and agencies that end in a structural word
+// and are whole: "Trưởng phòng", "Công an tỉnh", "UBND huyện".
+var completeFormRe = regexp.MustCompile(`(^|\s)((phó )?(trưởng|chánh) (phòng|ban|văn phòng|đoàn|khoa)|(phó )?chủ tịch (ubnd|ủy ban nhân dân|uỷ ban nhân dân|hđnd|hội đồng nhân dân)|(công an|ubnd|ủy ban nhân dân|uỷ ban nhân dân|hđnd|hội đồng nhân dân) (tỉnh|huyện|xã|phường|thị trấn|quận|thành phố)|bộ công an|văn phòng|ủy ban nhân dân|uỷ ban nhân dân|hội đồng nhân dân)$`)
+
+// clauseEndRe: what may follow a value the user ended there: a mark
+// ending a clause (a comma, a dash, a slash, a bracket, the end of a
+// sentence; sentences end at line breaks) or the signing ("Phó Giám đốc
+// ký thay Giám đốc").
+var clauseEndRe = regexp.MustCompile(`^(\s*([,.;:!?()/–-]|$)|\s+ký([^\p{L}]|$))`)
 
 // headSaid: one of the scope's texts holds h as whole words, not right
-// after "Phó" / "Quyền" (heldBy), ending a clause there; h does not end in
-// a structural word.
-func headSaid(scope []string, h string) bool {
+// after a title held marks ("Phó", "Quyền"), ending a clause there; h does
+// not end in a structural word unless it is a complete form.
+func headSaid(scope []string, h string, held *regexp.Regexp) bool {
 	f := strings.Fields(fold(h))
-	if len(f) == 0 || structuralWords[strings.Trim(f[len(f)-1], ".,;:")] {
+	if len(f) == 0 || (structuralWords[strings.Trim(f[len(f)-1], ".,;:")] && !completeFormRe.MatchString(fold(h))) {
 		return false
 	}
 	h = strings.Trim(fold(h), " .;:,")
@@ -146,7 +159,7 @@ func headSaid(scope []string, h string) bool {
 				break
 			}
 			start, end := i+j, i+j+len(h)
-			if wordEdge(t, start, true) && wordEdge(t, end, false) && !heldBy(t[:start], h) && clauseEndRe.MatchString(t[end:]) {
+			if wordEdge(t, start, true) && wordEdge(t, end, false) && !held.MatchString(t[:start]) && clauseEndRe.MatchString(t[end:]) {
 				return true
 			}
 			i = start + 1
@@ -160,12 +173,10 @@ func headSaid(scope []string, h string) bool {
 
 // deputyRe: a title right before a match makes it another one ("Phó Giám
 // đốc" is no "Giám đốc", "Quyền Trưởng phòng" no "Trưởng phòng").
-var deputyRe = regexp.MustCompile(`(^|[^\p{L}])(phó|quyền|q\.)\s*$`)
-
-// heldBy: the folded text before a match of s ends in a deputy's title.
-func heldBy(before, s string) bool {
-	return deputyRe.MatchString(before)
-}
+var (
+	deputyRe = regexp.MustCompile(`(^|[^\p{L}])(phó|quyền|q\.)\s*$`)
+	phoRe    = regexp.MustCompile(`(^|[^\p{L}])phó\s*$`)
+)
 
 // scopeSentences are the sentences of text keep accepts (the ones
 // speaking of a role).
@@ -397,15 +408,18 @@ func settledFacts(conversation []TemplateTurn, inputs []string) []settledFact {
 			if strings.HasSuffix(strings.TrimSpace(sent), "?") {
 				continue
 			}
+			// every figure of the sentence, the retracted ones too, may
+			// revise an earlier one; only the others are settled by it
+			named := sentenceFacts(sent)
 			found := sentenceFacts(dropRetracted(sent))
-			if len(found) == 0 {
+			if len(named) == 0 {
 				continue
 			}
 			// the earlier siblings are no longer settled
 			kept := facts[:0]
 			for _, old := range facts {
 				revised := false
-				for _, f := range found {
+				for _, f := range named {
 					revised = revised || siblingFacts(old, f)
 				}
 				if !revised {
@@ -451,13 +465,14 @@ var factChoiceRe = regexp.MustCompile(`(^|[^\p{L}])(hoặc|hay)([^\p{L}]|$)`)
 // factRetractRe: a figure the user takes back, up to what replaces it
 // ("không phải 50 triệu mà là 60 triệu", "60 triệu chứ không phải 50",
 // "35 thay vì 40 học viên").
-var factRetractRe = regexp.MustCompile(`(?i)(?:không phải là|không phải|thay vì|thay cho|không còn)\s+(.+?)(?:\s+(?:mà là|mà|chứ|nay là|thành)\s+|[,;]|$)`)
+var factRetractRe = regexp.MustCompile(`(?i)(?:không phải là|không phải|thay vì|thay cho|không còn)\s+(.+?)(?:\s+(?:mà là|mà|chứ|thì|nay là|thành)\s+|[,;]|$)`)
 
-// dropRetracted blanks the retracted figures of a sentence.
+// dropRetracted blanks the retracted figures of a sentence with the words
+// retracting them ("35 thay vì 40 học viên" → "35"; no "35 thay" count).
 func dropRetracted(s string) string {
 	b := []byte(s)
 	for _, m := range factRetractRe.FindAllStringSubmatchIndex(s, -1) {
-		for i := m[2]; i < m[3]; i++ {
+		for i := m[0]; i < m[3]; i++ {
 			b[i] = ' '
 		}
 	}

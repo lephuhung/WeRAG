@@ -36,8 +36,11 @@ func TestSpokenValue(t *testing.T) {
 		{"Đại tá Nguyễn Văn An", nil, "Đại tá Nguyễn Văn An", false},
 		// a one-word head is no title
 		{"Phó Chủ tịch", signer, "", false},
-		// a head ending in a bare structural word is no name
-		{"Công an tỉnh Thừa Thiên Huế", []string{"Cơ quan ban hành: Công an tỉnh, Phòng Tham mưu."}, "", false},
+		// a complete form ending in a structural word is a head
+		{"Công an tỉnh Thừa Thiên Huế", []string{"Cơ quan ban hành: Công an tỉnh, Phòng Tham mưu."}, "Công an tỉnh", false},
+		// a head ending in a bare structural word is no name, nor a part
+		// of a longer title ("Phó Giám đốc Sở" goes on)
+		{"Phó Giám đốc Sở Tài chính", []string{"Người ký: Nguyễn Văn An, Phó Giám đốc Sở, ký trực tiếp."}, "", false},
 	}
 	for _, c := range cases {
 		got, part := spokenValue(user, user+" Thừa Thiên Huế", c.v, c.scope)
@@ -59,6 +62,47 @@ func TestSpokenValue(t *testing.T) {
 	u = "Phó Giám đốc, anh Bình, phát biểu khai mạc tại Công an tỉnh. Người ký: Nguyễn Văn An, ký trực tiếp."
 	if got, _ := spokenValue(u, u, "Phó Giám đốc Công an tỉnh", signerScope(u, "Nguyễn Văn An")); got != "" {
 		t.Errorf("another person's title taken for the signer: %q", got)
+	}
+}
+
+// The clause ends a signer's title may have, the "Chức vụ:" line, and the
+// complete forms ending in a structural word.
+func TestSpokenValueSignerForms(t *testing.T) {
+	cases := []struct{ text, v, want string }{
+		{"Người ký: Nguyễn Văn An - Phó Giám đốc - ký thay Giám đốc", "Phó Giám đốc Công an tỉnh", "Phó Giám đốc"},
+		{"Người ký Nguyễn Văn An, Phó Giám đốc ký thay Giám đốc", "Phó Giám đốc Công an tỉnh", "Phó Giám đốc"},
+		{"Người ký: Nguyễn Văn An\nChức vụ: Phó Giám đốc\nHình thức: ký thay Giám đốc", "Phó Giám đốc Công an tỉnh", "Phó Giám đốc"},
+		{"Người ký: Lê Văn Cường, Trưởng phòng, ký trực tiếp.", "Trưởng phòng Tham mưu", "Trưởng phòng"},
+		{"Người ký: Lê Văn Cường (Chánh Văn phòng) ký trực tiếp.", "Chánh Văn phòng Công an tỉnh", "Chánh Văn phòng"},
+	}
+	for _, c := range cases {
+		wider := c.text + "\nPhòng Tham mưu chủ trì tại hội trường Công an tỉnh."
+		name := "Nguyễn Văn An"
+		if !strings.Contains(c.text, name) {
+			name = "Lê Văn Cường"
+		}
+		if got, _ := spokenValue(c.text, wider, c.v, signerScope(c.text, name)); got != c.want {
+			t.Errorf("%q: %q → %q, want %q", c.text, c.v, got, c.want)
+		}
+	}
+}
+
+// The acting head's form keeps the head's title (as before the deputy
+// check: "Q. GIÁM ĐỐC").
+func TestDocumentTemplateActingHeadSigns(t *testing.T) {
+	for _, written := range []string{"Người ký: Nguyễn Văn An, Q. Giám đốc.", "Người ký: Nguyễn Văn An, Quyền Giám đốc, ký Q."} {
+		d := planDraft()
+		d["signer"] = map[string]string{"name": "Nguyễn Văn An", "position": "Giám đốc", "authority": "Q", "on_behalf_of": "Giám đốc"}
+		model := &scriptedChat{replies: []string{draftJSON(t, d)}}
+		out, _ := PrepareDocumentTemplate(context.Background(), templateInput(model, "ke-hoach",
+			"Tạo kế hoạch đào tạo AI cho cán bộ, 3 lớp tập huấn. "+written))
+		if !out.Ready {
+			t.Errorf("%q: not ready: %s", written, out.Answer)
+			continue
+		}
+		if sig := strings.Join(out.Data["fields"].(map[string]interface{})["signature_lines"].([]string), "|"); sig != "Q. GIÁM ĐỐC" {
+			t.Errorf("%q: signature = %q", written, sig)
+		}
 	}
 }
 
@@ -125,41 +169,48 @@ func TestDocumentTemplateSignerTitleLengthenedByTheModel(t *testing.T) {
 	d["agency_name"] = "CÔNG AN TỈNH ……………"
 	d["paragraphs"] = []map[string]string{{"kind": "body", "text": "Tổ chức 3 lớp, mỗi lớp 40 học viên từ 25/10/2026 đến 27/10/2026, kinh phí 50 triệu đồng."}}
 	d["signer"] = map[string]string{"name": "Nguyễn Văn An", "position": "Phó Giám đốc Công an tỉnh", "authority": "KT", "on_behalf_of": "Giám đốc Công an tỉnh"}
-	model := &scriptedChat{replies: []string{draftJSON(t, d)}}
-	in := templateInput(model, "ke-hoach", "Soạn kế hoạch từ nội dung đã trao đổi")
-	in.Profile = nil
-	in.Conversation = []TemplateTurn{{Role: "user", Text: settledPlanMessage}}
-	out, err := PrepareDocumentTemplate(context.Background(), in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	missing := strings.Join(out.Data["missing_fields"].([]string), "\n")
-	if strings.Contains(missing, "Người ký") || strings.Contains(missing, "Hình thức ký") {
-		t.Fatalf("signer asked again: %s", missing)
-	}
-	if !strings.Contains(missing, "Tên cơ quan ban hành") {
-		t.Fatalf("a placeholder agency taken as known: %s", missing)
-	}
+	// the user names Công an tỉnh only as the venue ("tại hội trường Công
+	// an tỉnh"): no issuing agency, its header is left blank; said as the
+	// issuing agency, what was written stays and the rest is blank
+	for _, c := range []struct{ extra, agency string }{
+		{"", templateBlank},
+		{" Cơ quan ban hành: Công an tỉnh.", "CÔNG AN TỈNH " + templateBlank},
+	} {
+		model := &scriptedChat{replies: []string{draftJSON(t, d)}}
+		in := templateInput(model, "ke-hoach", "Soạn kế hoạch từ nội dung đã trao đổi")
+		in.Profile = nil
+		in.Conversation = []TemplateTurn{{Role: "user", Text: settledPlanMessage + c.extra}}
+		out, err := PrepareDocumentTemplate(context.Background(), in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		missing := strings.Join(out.Data["missing_fields"].([]string), "\n")
+		if strings.Contains(missing, "Người ký") || strings.Contains(missing, "Hình thức ký") {
+			t.Fatalf("signer asked again: %s", missing)
+		}
+		if !strings.Contains(missing, "Tên cơ quan ban hành") {
+			t.Fatalf("a placeholder agency taken as known: %s", missing)
+		}
 
-	in.Inputs = append(in.Inputs, "bỏ qua")
-	in.LastDraft = out.Draft
-	out, _ = PrepareDocumentTemplate(context.Background(), in)
-	if !out.Ready {
-		t.Fatalf("skip not ready: %s", out.Answer)
-	}
-	f := out.Data["fields"].(map[string]interface{})
-	if f["agency"] != "CÔNG AN TỈNH "+templateBlank {
-		t.Errorf("agency = %q", f["agency"])
-	}
-	if sig := strings.Join(f["signature_lines"].([]string), "|"); sig != "KT. GIÁM ĐỐC|PHÓ GIÁM ĐỐC" {
-		t.Errorf("signature = %q", sig)
-	}
-	if f["signer_name"] != "Nguyễn Văn An" {
-		t.Errorf("signer = %q", f["signer_name"])
+		in.Inputs = append(in.Inputs, "bỏ qua")
+		in.LastDraft = out.Draft
+		out, _ = PrepareDocumentTemplate(context.Background(), in)
+		if !out.Ready {
+			t.Fatalf("skip not ready: %s", out.Answer)
+		}
+		f := out.Data["fields"].(map[string]interface{})
+		if f["agency"] != c.agency {
+			t.Errorf("%q: agency = %q, want %q", c.extra, f["agency"], c.agency)
+		}
+		if sig := strings.Join(f["signature_lines"].([]string), "|"); sig != "KT. GIÁM ĐỐC|PHÓ GIÁM ĐỐC" {
+			t.Errorf("signature = %q", sig)
+		}
+		if f["signer_name"] != "Nguyễn Văn An" {
+			t.Errorf("signer = %q", f["signer_name"])
+		}
 	}
 }
 
-// factTexts are the facts' texts, sorted.
 func factTexts(fs []settledFact) []string {
 	var out []string
 	for _, f := range fs {
@@ -215,6 +266,11 @@ func TestSettledFactsRevisions(t *testing.T) {
 		{[]string{"Tổ chức từ 25/10/2026 đến 27/10/2026.", "Bắt đầu 26/10/2026 nhé."}, "26/10/2026"},
 		// a count of another noun does not revise
 		{[]string{"3 lớp.", "Mỗi lớp 40 học viên."}, "3 lớp|40 học viên"},
+		// the retracted figure revises the earlier one, the words that
+		// retract it make no count ("35 thay")
+		{[]string{"Mỗi lớp 40 học viên.", "Mỗi lớp 35 thay vì 40 học viên."}, ""},
+		{[]string{"Mỗi lớp 40 học viên.", "Mỗi lớp 35 học viên thay vì 40."}, "35 học viên"},
+		{[]string{"Mỗi lớp 40 học viên.", "Thay vì 40 học viên thì 35."}, ""},
 		// two amounts of one sentence, a choice: ambiguous
 		{[]string{"Kinh phí 50 triệu đồng, trong đó 30 triệu từ ngân sách."}, ""},
 		{[]string{"Mời 40 hoặc 50 học viên."}, ""},
