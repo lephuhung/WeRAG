@@ -402,14 +402,27 @@ func TestLegalEditorExactAgreement(t *testing.T) {
 // A's page numbers a Quy chế on its own: a chunk that cannot show which
 // "Điều 4" it holds is not matched by number.
 func TestLegalEditorScopeRepeatedDieu(t *testing.T) {
-	require.Equal(t, map[string]bool{"4": true}, legalRepeatedArticles([]*vietnamese_legal.LegalMetadata{
-		{ArticleNos: []string{"4"}, ProvisionIDs: map[string]string{"dieu": "d4"}},
-		{ArticleNos: []string{"4"}, ProvisionIDs: map[string]string{"dieu": "d4"}}, // the same Điều, next chunk
-		{ArticleNos: []string{"4"}, ProvisionIDs: map[string]string{"dieu": "qc4"}},
-		{ArticleNos: []string{"5"}, ProvisionIDs: map[string]string{"dieu": "d5"}},
+	rep := legalRepeatedArticles([]*vietnamese_legal.LegalMetadata{
+		{ArticleNos: []string{"4"}, ProvisionIDs: map[string]string{"dieu": "d4", "khoan:1": "d4k1"}},
+		{ArticleNos: []string{"4"}, ProvisionIDs: map[string]string{"dieu": "d4", "khoan:2": "d4k2"}}, // the same Điều, next chunk
+		{ArticleNos: []string{"4"}, ProvisionIDs: map[string]string{"dieu": "qc4", "khoan:2": "qc4k2"}},
+		{ArticleNos: []string{"5"}, ProvisionIDs: map[string]string{"dieu": "d5", "khoan:1": "d5k1"}},
 		{ArticleNos: []string{"5"}},
 		{ArticleNos: []string{"6", "7"}, ProvisionIDs: map[string]string{"dieu": "x"}},
-	}))
+	})
+	require.Equal(t, map[string]bool{"4": true}, rep.articles)
+	require.Equal(t, map[string]string{"d4k1": "d4", "d4k2": "d4", "qc4k2": "qc4"}, rep.dieuOf, "only repeated numbers")
+	target := legalEditorTarget{repeated: rep}
+	k2 := target.editorTarget(types.LegalProvisionLink{TargetProvisionID: "d4k2"}, LegalProvisionRef{Article: "4", Khoan: "2"})
+	require.Equal(t, LegalEditorTargetRef{ID: "d4k2", Key: "khoan:2", Article: "4", Repeated: true, DieuID: "d4"}, k2)
+	// a chunk of the decree's Điều 4 holding khoản 1 only: its Điều id decides
+	tagged := LegalAmendEdge{Tier: LegalTierUnverified, EditorTargets: []LegalEditorTargetRef{k2}}
+	holds, ambiguous := tagged.editorHolds(LegalProvisionChunk{Legal: &vietnamese_legal.LegalMetadata{ArticleNos: []string{"4"}, ProvisionIDs: map[string]string{"dieu": "d4", "khoan:1": "d4k1"}}})
+	require.True(t, holds)
+	require.False(t, ambiguous)
+	holds, ambiguous = tagged.editorHolds(LegalProvisionChunk{Legal: &vietnamese_legal.LegalMetadata{ArticleNos: []string{"4"}, ProvisionIDs: map[string]string{"dieu": "qc4"}}})
+	require.False(t, holds)
+	require.False(t, ambiguous, "the Quy chế's Điều 4: not the tagged one")
 
 	chunk := func(ids map[string]string) LegalProvisionChunk {
 		return LegalProvisionChunk{Legal: &vietnamese_legal.LegalMetadata{ArticleNos: []string{"4"}, ProvisionIDs: ids}}

@@ -47,13 +47,21 @@ func legalStructureFrom(metas []*vietnamese_legal.LegalMetadata) LegalDocStructu
 	return s
 }
 
-// legalRepeatedArticles lists the Điều numbers A's chunks record under
-// more than one vbpl id ("dieu" of provision_ids): a Quy chế or phụ lục
-// numbered on its own beside A's Điều. A copy without provision ids (PDF,
-// OCR) shows none.
-func legalRepeatedArticles(metas []*vietnamese_legal.LegalMetadata) map[string]bool {
+// legalRepeated is what A's chunks tell of Điều numbers used twice.
+type legalRepeated struct {
+	// articles are the Điều numbers recorded under more than one vbpl id
+	// ("dieu" of provision_ids): a Quy chế or phụ lục numbered on its own
+	// beside A's Điều. A copy without provision ids (PDF, OCR) shows none.
+	articles map[string]bool
+	// dieuOf maps the id of a khoản or điểm of such a Điều to the Điều's
+	// id: a chunk recording only the Điều id still tells which it holds.
+	dieuOf map[string]string
+}
+
+// legalRepeatedArticles reads legalRepeated from A's chunks.
+func legalRepeatedArticles(metas []*vietnamese_legal.LegalMetadata) legalRepeated {
 	first := map[string]string{}
-	out := map[string]bool{}
+	r := legalRepeated{articles: map[string]bool{}, dieuOf: map[string]string{}}
 	for _, m := range metas {
 		if m == nil || len(m.ArticleNos) != 1 || m.ProvisionIDs["dieu"] == "" {
 			continue
@@ -62,10 +70,20 @@ func legalRepeatedArticles(metas []*vietnamese_legal.LegalMetadata) map[string]b
 		if have, ok := first[a]; !ok {
 			first[a] = id
 		} else if have != id {
-			out[a] = true
+			r.articles[a] = true
 		}
 	}
-	return out
+	for _, m := range metas {
+		if m == nil || len(m.ArticleNos) != 1 || !r.articles[strings.ToLower(m.ArticleNos[0])] {
+			continue
+		}
+		for key, id := range m.ProvisionIDs {
+			if key != "dieu" && id != "" {
+				r.dieuOf[id] = m.ProvisionIDs["dieu"]
+			}
+		}
+	}
+	return r
 }
 
 // parseSubdivisionRef reads "khoan:2" / "khoan:2/diem:a" of Điều article.

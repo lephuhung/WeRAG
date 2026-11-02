@@ -331,7 +331,7 @@ func LoadLegalAmendmentsWith(ctx context.Context, db *gorm.DB, scopeKBs, chunkID
 	lap("relations")
 	// the structure of A (for the target checks) is read meanwhile
 	var byKnowledge map[string]LegalDocStructure
-	var repeatedBy map[string]map[string]bool
+	var repeatedBy map[string]legalRepeated
 	sg, _ := errgroup.WithContext(l.ctx)
 	legalGo(sg, func() (err error) {
 		byKnowledge, repeatedBy, err = l.structures(aKnowledge)
@@ -682,12 +682,24 @@ func legalCitedArticlesOf(content, heading, aNumber, aType, aBase string) map[st
 				cites = append(cites, c)
 			}
 		}
+		// the chains of the line in order; a joined chain takes the
+		// document of the next one in its clause, so they are read first
+		// and settled from the last
+		type chain struct {
+			start, pos, kw int
+			arts           []string
+			attached       *vietnamese_legal.Citation
+			part, joined   bool
+			blocked        bool // not A's whatever comes after (B's own, an insertion point)
+		}
+		var chains []chain
 		for _, m := range legalCitedArticleRe.FindAllStringSubmatchIndex(line, -1) {
 			kw := m[0] + strings.Index(line[m[0]:m[2]], "Điều")
 			if kw < m[0] {
 				kw = m[0]
 			}
 			if legalBeforeAfterRe.MatchString(line[:kw]) || legalHistoryRefRe.MatchString(line[:kw]) || legalSelfRefRe.MatchString(line[m[3]:]) {
+				chains = append(chains, chain{start: m[0], blocked: true})
 				continue
 			}
 			// the rest of the chain of labels, then the document it names;
@@ -711,9 +723,14 @@ func legalCitedArticlesOf(content, heading, aNumber, aType, aBase string) map[st
 				pos += loc[3]
 			}
 			if legalSelfRefRe.MatchString(line[pos:]) {
+				chains = append(chains, chain{start: m[0], blocked: true})
 				continue
 			}
+			// listed: what follows is the next item of a list (after ", "
+			// or "và"), a sibling of the Điều, not the part holding it
+			listed := false
 			if loc := legalChainLinkRe.FindStringIndex(line[pos:]); loc != nil {
+				listed = strings.Contains(line[pos:pos+loc[1]], ",")
 				pos += loc[1]
 			}
 			// "Điều 3 và Phụ lục số 01 của …", "Điều 4, Chương III, Phụ
@@ -721,6 +738,7 @@ func legalCitedArticlesOf(content, heading, aNumber, aType, aBase string) map[st
 			if loc := legalListedPartRe.FindStringIndex(line[pos:]); loc != nil &&
 				(legalDocPartRe.MatchString(line[pos+loc[1]:]) || legalDivisionRe.MatchString(line[pos+loc[1]:])) {
 				pos += loc[1]
+				listed = true
 			}
 			// a full number starts after its type words ("Nghị định số
 			// 14/2016/…"), a partial or name citation with them
@@ -739,30 +757,43 @@ func legalCitedArticlesOf(content, heading, aNumber, aType, aBase string) map[st
 			}
 			// a part of another document ("Quy chế ban hành kèm theo
 			// Quyết định số …", "Phụ lục II Nghị định số …") is that
-			// document's; with none cited in its clause, nobody's known
-			part := legalDocPartRe.MatchString(line[pos:]) && !legalHeadingNames(heading, line[pos:])
-			if (part || legalDivisionRe.MatchString(line[pos:])) && attached == nil {
+			// document's; with none cited in its clause, nobody's known. A
+			// part or division listed beside the Điều names the list's
+			// document when its clause cites one, else leaves it open.
+			isPart := legalDocPartRe.MatchString(line[pos:]) && !legalHeadingNames(heading, line[pos:])
+			part := isPart && !listed
+			if (isPart || legalDivisionRe.MatchString(line[pos:])) && attached == nil {
 				attached = legalClauseCitation(line, pos, cites)
 			}
-			// operations joined in one clause share its document: "Bãi bỏ
-			// điểm a khoản 2 Điều 3, bỏ cụm từ … tại khoản 3 Điều 4 của
-			// Thông tư số …"; not across a reference ("theo", "căn cứ")
-			if attached == nil && legalJoinedOperationRe.MatchString(line[pos:]) {
-				if c := legalClauseCitation(line, pos, cites); c != nil {
-					gap := string([]rune(line)[utf8.RuneCountInString(line[:pos]):c.Start])
-					if !legalReferenceRe.MatchString(gap) {
-						attached = c
-					}
+			// operations joined in one clause ("Bãi bỏ điểm a khoản 2 Điều
+			// 3, bỏ cụm từ … tại khoản 3 Điều 4 của Thông tư số …") share
+			// the document of the next chain
+			joined := false
+			if loc := legalJoinedOperationRe.FindStringSubmatchIndex(line[pos:]); loc != nil && attached == nil {
+				joined = listed || loc[2] >= 0
+			}
+			chains = append(chains, chain{start: m[0], pos: pos, kw: kw, arts: arts, attached: attached, part: part, joined: joined})
+		}
+		for i := len(chains) - 1; i >= 0; i-- {
+			ch := &chains[i]
+			if ch.blocked {
+				continue
+			}
+			if ch.joined && i+1 < len(chains) && chains[i+1].start < legalClauseEnd(line, ch.pos) {
+				next := chains[i+1]
+				if next.blocked {
+					continue
 				}
+				ch.attached, ch.part = next.attached, next.part
 			}
 			switch {
-			case attached != nil && isA(*attached):
-			case attached == nil && subjectA && !part && !legalUnreadLawAt(line, pos, aBase) &&
-				!legalHistoryOnly(line, kw, pos, cites):
+			case ch.attached != nil && isA(*ch.attached):
+			case ch.attached == nil && subjectA && !ch.part && !legalUnreadLawAt(line, ch.pos, aBase) &&
+				!legalHistoryOnly(line, ch.kw, ch.pos, cites):
 			default:
 				continue
 			}
-			for _, a := range arts {
+			for _, a := range ch.arts {
 				out[a] = true
 			}
 		}
@@ -814,11 +845,10 @@ var (
 	// ("và Phụ lục …", ", Chương III"); the caller checks what follows.
 	legalListedPartRe = regexp.MustCompile(`(?i)^\s*(?:và|hoặc)\s+`)
 	// legalJoinedOperationRe: the clause goes on with another operation
-	// (", bỏ cụm từ …", ", sửa đổi khoản 3 …"), after the link's comma.
-	legalJoinedOperationRe = regexp.MustCompile(`(?i)^\s*(?:sửa\s+đổi|bổ\s+sung|bãi\s+bỏ|thay\s+thế|thay|bỏ|đính\s+chính)(?:[^\p{L}]|$)`)
-	// legalReferenceRe in the words between a chain and a citation makes
-	// the citation a reference, not the chain's document.
-	legalReferenceRe = regexp.MustCompile(`(?i)(?:^|[^\p{L}])(?:theo|căn\s+cứ|quy\s+định\s+tại|ban\s+hành\s+kèm)(?:[^\p{L}]|$)`)
+	// (", bỏ cụm từ …" after the link's comma, "và sửa đổi khoản 3 …";
+	// group 1 the "và").
+	legalJoinedOperationRe = regexp.MustCompile(`(?i)^\s*((?:và|hoặc)\s+)?(?:sửa\s+đổi|bổ\s+sung|bãi\s+bỏ|thay\s+thế|thay|bỏ|đính\s+chính)(?:[^\p{L}]|$)`)
+
 	// legalHeadingStopRe marks where a heading stops naming its subject:
 	// the parent law ("quy định chi tiết … của Luật …"), earlier amenders
 	// ("đã được sửa đổi … theo Luật số …").
@@ -873,9 +903,9 @@ func legalHistoryOnly(line string, kw, pos int, cites []vietnamese_legal.Citatio
 	return legalClauseCitation(line, pos+loc[1], cites) != nil
 }
 
-// legalClauseCitation is the first of cites after byte offset pos of line
-// in the same clause (before a ";" or a sentence end).
-func legalClauseCitation(line string, pos int, cites []vietnamese_legal.Citation) *vietnamese_legal.Citation {
+// legalClauseEnd is the byte offset where the clause holding byte pos of
+// line ends: a ";" or a sentence end.
+func legalClauseEnd(line string, pos int) int {
 	end := len(line)
 	if k := strings.IndexAny(line[pos:], ";"); k >= 0 {
 		end = pos + k
@@ -883,7 +913,13 @@ func legalClauseCitation(line string, pos int, cites []vietnamese_legal.Citation
 	if k := strings.Index(line[pos:], ". "); k >= 0 && pos+k < end {
 		end = pos + k
 	}
-	from, to := utf8.RuneCountInString(line[:pos]), utf8.RuneCountInString(line[:end])
+	return end
+}
+
+// legalClauseCitation is the first of cites after byte offset pos of line
+// in the same clause (before a ";" or a sentence end).
+func legalClauseCitation(line string, pos int, cites []vietnamese_legal.Citation) *vietnamese_legal.Citation {
+	from, to := utf8.RuneCountInString(line[:pos]), utf8.RuneCountInString(line[:legalClauseEnd(line, pos)])
 	for i := range cites {
 		if cites[i].Start >= from && cites[i].Start < to {
 			return &cites[i]
@@ -1347,9 +1383,9 @@ func legalNamedByTitle(docType string) bool {
 // chunks, in one query.
 // The second map holds each knowledge's repeated Điều numbers
 // (legalRepeatedArticles).
-func (l *legalAmendLoader) structures(kids []string) (map[string]LegalDocStructure, map[string]map[string]bool, error) {
+func (l *legalAmendLoader) structures(kids []string) (map[string]LegalDocStructure, map[string]legalRepeated, error) {
 	out := map[string]LegalDocStructure{}
-	repeated := map[string]map[string]bool{}
+	repeated := map[string]legalRepeated{}
 	if len(kids) == 0 {
 		return out, repeated, nil
 	}
@@ -1363,7 +1399,7 @@ func (l *legalAmendLoader) structures(kids []string) (map[string]LegalDocStructu
 		sel = `SELECT c.knowledge_id, jsonb_build_object('legal', jsonb_build_object(
 			'article_nos', c.metadata->'legal'->'article_nos', 'khoan_nos', c.metadata->'legal'->'khoan_nos',
 			'subdivision_refs', c.metadata->'legal'->'subdivision_refs',
-			'provision_ids', jsonb_build_object('dieu', c.metadata->'legal'->'provision_ids'->'dieu'))) AS metadata FROM chunks c`
+			'provision_ids', c.metadata->'legal'->'provision_ids')) AS metadata FROM chunks c`
 	}
 	if err := l.db.Raw(sel+` WHERE c.deleted_at IS NULL AND c.knowledge_id IN ?`, kids).Scan(&metas).Error; err != nil {
 		return nil, nil, fmt.Errorf("structure: %w", err)

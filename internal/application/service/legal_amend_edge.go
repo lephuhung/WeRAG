@@ -240,8 +240,11 @@ type LegalEditorTargetRef struct {
 	ID, Key, Article string
 	// Repeated: A's chunks record more than one Điều id under this number
 	// (a Quy chế or phụ lục numbered on its own), so a chunk that cannot
-	// show the provision id cannot be matched by number.
+	// show the provision id cannot be matched by number. DieuID is then the
+	// id of the tagged provision's Điều, matched when a chunk does not
+	// record the provision's own key.
 	Repeated bool
+	DieuID   string
 }
 
 // legalChunkKey is the provision_ids key of p within its Điều.
@@ -277,6 +280,12 @@ func (e *LegalAmendEdge) editorHolds(c LegalProvisionChunk) (holds, ambiguous bo
 					return true, false
 				}
 				continue // another provision under this number
+			}
+			if have := c.Legal.ProvisionIDs["dieu"]; have != "" && t.DieuID != "" {
+				if have == t.DieuID {
+					return true, false
+				}
+				continue // another Điều under this number
 			}
 		}
 		if t.Repeated {

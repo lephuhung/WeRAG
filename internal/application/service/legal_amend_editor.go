@@ -95,14 +95,21 @@ type legalEditorTarget struct {
 	articles map[string]bool
 	// structure is A's provisions as its chunks record them (nil: unknown)
 	structure LegalDocStructure
-	// repeated are the Điều numbers A's chunks record under more than one
+	// repeated: the Điều numbers A's chunks record under more than one
 	// vbpl id (a Quy chế's "Điều 4" next to the decree's own)
-	repeated map[string]bool
+	repeated legalRepeated
 }
 
 // editorTarget is the provision of A an editor link tags.
 func (t legalEditorTarget) editorTarget(lk types.LegalProvisionLink, at LegalProvisionRef) LegalEditorTargetRef {
-	return LegalEditorTargetRef{ID: lk.TargetProvisionID, Key: legalChunkKey(at), Article: at.Article, Repeated: t.repeated[at.Article]}
+	ref := LegalEditorTargetRef{ID: lk.TargetProvisionID, Key: legalChunkKey(at), Article: at.Article, Repeated: t.repeated.articles[at.Article]}
+	if ref.Repeated {
+		ref.DieuID = t.repeated.dieuOf[lk.TargetProvisionID]
+		if ref.Key == "dieu" {
+			ref.DieuID = ref.ID
+		}
+	}
+	return ref
 }
 
 // legalPathRef reads "dieu:5/khoan:2/diem:a"; ok is false for an empty
