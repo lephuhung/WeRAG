@@ -268,7 +268,7 @@ func (s *LegalPushService) correct(ctx context.Context, c *types.LegalProvisionL
 		if err != nil {
 			return err
 		}
-		targetFound = provs.has(c.TargetPath)
+		targetFound = provs.has(c.TargetPath) || strings.HasPrefix(c.TargetPath, "phuluc/") // appendix: not checked
 		if id := provs.ids[c.TargetPath]; id != "" {
 			c.TargetProvisionID = id
 		} else if targetChanged || c.TargetProvisionID == "" {
