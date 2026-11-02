@@ -131,7 +131,7 @@ func (s *sessionService) documentTemplateTurn(ctx context.Context, req *types.QA
 	in := tools.DocumentTemplateInput{
 		Request: tr, Profile: profile, User: s.templateUser(ctx), Inputs: state.Inputs,
 		Today: types.PromptNow(), Model: model, Asked: state.Asked, KeepBlanks: state.Redo,
-		Conversation: state.Conversation,
+		Conversation: state.Conversation, LastDraft: state.LastDraft,
 	}
 	// the user's work context (profile preferences)
 	if user, _ := ctx.Value(types.UserContextKey).(*types.User); user != nil {
@@ -147,11 +147,16 @@ func (s *sessionService) documentTemplateTurn(ctx context.Context, req *types.QA
 	out, err := tools.PrepareDocumentTemplate(ctx, in)
 	if err != nil {
 		logger.Warnf(ctx, "document template: %v", err)
-		// the message stays part of the request: the next try reads it
+		// the message stays part of the request: the next try reads it,
+		// and drafts anew (no draft of a turn that failed is reused)
+		state.LastDraft = nil
 		tools.SaveDocumentTemplateState(ctx, sessionID, tr.RequestID, state)
 		return true, answer("Chưa soạn được văn bản lúc này (mô hình không trả lời đúng định dạng); bạn gửi lại giúp.")
 	}
 	state.Asked = out.Asked
+	if out.Draft != nil {
+		state.LastDraft = out.Draft
+	}
 	tools.SaveDocumentTemplateState(ctx, sessionID, tr.RequestID, state)
 	if out.Learned != nil {
 		s.rememberTemplateUser(ctx, req, *out.Learned)
@@ -160,7 +165,8 @@ func (s *sessionService) documentTemplateTurn(ctx context.Context, req *types.QA
 	if out.Ready && out.Data != nil {
 		out.Data["font_sizes"] = s.templateFontSizes(ctx, tenantID)
 		last := *state
-		last.DocumentID = ""
+		// a redo drafts anew
+		last.DocumentID, last.LastDraft = "", nil
 		for _, scope := range lastTemplateScopes(req.Session) {
 			cp := last
 			tools.SaveDocumentTemplateState(ctx, scope, tools.LastDocumentTemplateRequestID(tr.TemplateID), &cp)

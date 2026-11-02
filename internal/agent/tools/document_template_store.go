@@ -34,7 +34,10 @@ type DocumentTemplateState struct {
 	// Conversation: the earlier conversation the request is drafted from
 	// (DocumentTemplateRequest.FromConversation), loaded once.
 	Conversation []TemplateTurn `json:"conversation,omitempty"`
-	UpdatedAt    time.Time      `json:"updated_at"`
+	// LastDraft: the request's last checked draft
+	// (DocumentTemplateOutcome.Draft), reused by a turn that only skips.
+	LastDraft json.RawMessage `json:"last_draft,omitempty"`
+	UpdatedAt time.Time       `json:"updated_at"`
 }
 
 type documentTemplateStore struct {

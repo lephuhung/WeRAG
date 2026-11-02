@@ -136,12 +136,13 @@ func formOutline(templateID string) string {
 // formValues are the draft's form facts that may be used: trimmed, a name
 // only when the user wrote it. missing are the labels of the required ones
 // absent.
-func formValues(templateID string, d *templateDraft, userText string) (values map[string]string, missing []string) {
+func formValues(templateID string, d *templateDraft, userText, wider string) (values map[string]string, missing []string) {
 	values = map[string]string{}
 	for _, f := range templateForms[templateID] {
 		v := strings.TrimSpace(strings.TrimRight(strings.TrimSpace(string(d.Form[f.key])), ".;,"))
-		if f.stated && v != "" && !said(userText, v) {
-			v = ""
+		if f.stated && v != "" {
+			// as the user wrote it, without placeholders
+			v, _ = spokenValue(userText, wider, v, nil)
 		}
 		if v == "" {
 			if !f.optional {
