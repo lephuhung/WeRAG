@@ -494,71 +494,116 @@ func TestLoadLegalAmendmentsPlacedCopyWins(t *testing.T) {
 	require.NotContains(t, out["a3"], "thao tác không ghi văn bản bị sửa đổi")
 }
 
-// Final review S1: a "Điều N" an amender's chunk cites counts for A only
-// when the next document cited after it is A, or the line cites none and
-// the heading names A alone; never an insertion point or B's own Điều.
+// Final review S1 (and its re-reviews, Fable K4/K5): a "Điều N" an
+// amender's chunk cites counts for A only when the document cited right
+// after its chain of labels is A, or no document follows and the
+// heading's subject is A.
 func TestLegalCitedArticlesOf(t *testing.T) {
-	key := func(n string) string { return vietnamese_legal.CatalogNumberKey(n) }
 	cases := []struct {
-		name, content, heading, a, base string
-		want                            []string
+		name, content, heading, a, typ, base string
+		want                                 []string
 	}{
 		{"NĐ 220/2025 → 14/2016: bare repeal under a heading naming A only", "8. Bãi bỏ Điều 16.",
-			`["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "", []string{"16"}},
+			`["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"16"}},
 		{"NĐ 168/2024 → 100/2019: khoản list of one Điều", "Bãi bỏ khoản 1, khoản 2, khoản 9 Điều 24.",
-			`["Điều 1. Sửa đổi Nghị định số 100/2019/NĐ-CP"]`, "100/2019/NĐ-CP", "", []string{"24"}},
+			`["Điều 1. Sửa đổi Nghị định số 100/2019/NĐ-CP"]`, "100/2019/NĐ-CP", "Nghị định", "", []string{"24"}},
 		{"NĐ 193/2026: the Điều belongs to another decree", "3. Bãi bỏ Điều 9; khoản 2 Điều 10 Nghị định số 254/2025/NĐ-CP.",
-			`["Điều 2. Sửa đổi Nghị định số 88/2025/NĐ-CP và Nghị định số 254/2025/NĐ-CP"]`, "88/2025/NĐ-CP", "", nil},
+			`["Điều 2. Sửa đổi Nghị định số 88/2025/NĐ-CP và Nghị định số 254/2025/NĐ-CP"]`, "88/2025/NĐ-CP", "Nghị định", "", nil},
 		{"TT 01/2025: khoản 2 Điều 5 of another circular", "Sửa đổi khoản 2 Điều 5 Thông tư số 36/2021/TT-BYT như sau:",
-			`["Điều 1. Sửa đổi Thông tư số 30/2020/TT-BYT"]`, "30/2020/TT-BYT", "", nil},
-		{"next citation is A", "Bãi bỏ Điều 7 Nghị định số 14/2016/NĐ-CP.", `[]`, "14/2016/NĐ-CP", "", []string{"7"}},
+			`["Điều 1. Sửa đổi Thông tư số 30/2020/TT-BYT"]`, "30/2020/TT-BYT", "Thông tư", "", nil},
+		{"next citation is A", "Bãi bỏ Điều 7 Nghị định số 14/2016/NĐ-CP.", `[]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"7"}},
 		{"NĐ 129/2021: insertion point (2a is new, A has no Điều 2a)", "Bổ sung Điều 2a vào sau Điều 2 như sau:",
-			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "", []string{"2a"}},
+			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"2a"}},
 		{"insertion point before", "Bổ sung Điều 7a vào trước Điều 8.",
-			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "", []string{"7a"}},
-		{"B's own Điều", "Hiệu lực theo Điều 5 Nghị định này.", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "", nil},
-		{"a heading naming two documents", "Bãi bỏ Điều 16.", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP và Nghị định số 15/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "", nil},
-		{"a law cited by name", "Bãi bỏ Điều 74 Luật Đầu tư công.", `[]`, "39/2019/QH14", "luật đầu tư công", []string{"74"}},
+			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"7a"}},
+		{"N2: 'sau' inside a word is no insertion point", "Bãi bỏ phần lời mở đầu và phần sau Điều 8.",
+			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
+		{"B's own Điều", "Hiệu lực theo Điều 5 Nghị định này.", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
+		{"a heading naming two documents joined", "Bãi bỏ Điều 16.", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP và Nghị định số 15/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
+		{"a law cited by name", "Bãi bỏ Điều 74 Luật Đầu tư công.", `[]`, "39/2019/QH14", "Luật", "luật đầu tư công", []string{"74"}},
 		{"TT 06/2023 → 41/2021: a bracketed amendment history is no operation on A",
 			"b) Điểm a khoản 2 Điều 8 (đã được sửa đổi, bổ sung tại điểm b khoản 7 Điều 1 của Thông tư số 41/2021/TT-BGTVT ngày 31 tháng 12 năm 2021);",
-			`["Điều 1. Sửa đổi Thông tư số 12/2020/TT-BGTVT và Thông tư số 41/2021/TT-BGTVT"]`, "41/2021/TT-BGTVT", "", nil},
+			`["Điều 1. Sửa đổi Thông tư số 12/2020/TT-BGTVT và Thông tư số 41/2021/TT-BGTVT"]`, "41/2021/TT-BGTVT", "Thông tư", "", nil},
 		{"TT 42/2023 → 41/2020: an unbracketed amendment history",
 			"1. Sửa đổi, bổ sung Điều 5 Thông tư số 13/2019/TT-BGTVT đã được sửa đổi, bổ sung bởi khoản 5, khoản 6 Điều 1 Thông tư số 41/2020/TT-BGTVT như sau:",
-			`["Điều 1. Sửa đổi Thông tư số 13/2019/TT-BGTVT"]`, "41/2020/TT-BGTVT", "", nil},
+			`["Điều 1. Sửa đổi Thông tư số 13/2019/TT-BGTVT"]`, "41/2020/TT-BGTVT", "Thông tư", "", nil},
 		{"TT 60/2019 → 39/2018: repeal of a khoản of an amending circular",
 			"2. Bãi bỏ khoản 15 Điều 1 Thông tư số 39/2018/TT-BTC ngày 20/4/2018 của Bộ trưởng Bộ Tài chính.",
-			`[]`, "39/2018/TT-BTC", "", []string{"1"}},
-		{"quoted text is A's new wording, not a citation", "> “Điều 9. Mới”", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "", nil},
+			`[]`, "39/2018/TT-BTC", "Thông tư", "", []string{"1"}},
+		{"quoted text is A's new wording, not a citation", "> “Điều 9. Mới”", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
+		// B1: real heading shapes naming a second document after A
+		{"B1 parent law in A's title (NĐ 08/2022, Luật Bảo vệ môi trường)", "Bãi bỏ Điều 16.",
+			`["Chương I", "Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 08/2022/NĐ-CP ngày 10 tháng 01 năm 2022 của Chính phủ quy định chi tiết một số điều của Luật Bảo vệ môi trường"]`,
+			"08/2022/NĐ-CP", "Nghị định", "", []string{"16"}},
+		{"B1 'thi hành Luật Cư trú (sau đây viết gọn là …)'", "Bãi bỏ Điều 16.",
+			`["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 154/2024/NĐ-CP ngày 26 tháng 11 năm 2024 của Chính phủ quy định chi tiết một số điều và biện pháp thi hành Luật Cư trú (sau đây viết gọn là Nghị định số 154/2024/NĐ-CP)"]`,
+			"154/2024/NĐ-CP", "Nghị định", "", []string{"16"}},
+		{"B1 'hướng dẫn chi tiết Luật Chăn nuôi'", "Bãi bỏ Điều 16.",
+			`["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 13/2020/NĐ-CP ngày 21 tháng 01 năm 2020 của Chính phủ hướng dẫn chi tiết Luật Chăn nuôi"]`,
+			"13/2020/NĐ-CP", "Nghị định", "", []string{"16"}},
+		{"B1 A's earlier amenders (NQ 136/2024 … theo Luật số 71/2025/QH15 và Luật số 72/2025/QH15)", "Bãi bỏ Điều 16.",
+			`["Điều 1. Sửa đổi, bổ sung một số điều của Nghị quyết số 136/2024/QH15 đã được sửa đổi, bổ sung một số điều theo Luật số 71/2025/QH15 và Luật số 72/2025/QH15"]`,
+			"136/2024/QH15", "Nghị quyết", "", []string{"16"}},
+		{"B1 Luật Đầu tư 61/2020 … theo Luật số 72/2020/QH14", "Bãi bỏ Điều 16.",
+			`["Điều 2. Sửa đổi, bổ sung một số điều của Luật Đầu tư số 61/2020/QH14 đã được sửa đổi, bổ sung một số điều theo Luật số 72/2020/QH14"]`,
+			"61/2020/QH14", "Luật", "", []string{"16"}},
+		{"B1 the heading's subject is another document", "Bãi bỏ Điều 16.",
+			`["Điều 2. Sửa đổi, bổ sung một số điều của Nghị định số 15/2020/NĐ-CP quy định chi tiết Nghị định số 14/2016/NĐ-CP"]`,
+			"14/2016/NĐ-CP", "Nghị định", "", nil},
+		{"B1 'A ngày … của Chính phủ và B': ambiguous", "Bãi bỏ Điều 9.",
+			`["Điều 2. Sửa đổi Nghị định số 88/2025/NĐ-CP ngày 01 tháng 4 năm 2025 của Chính phủ và Nghị định số 254/2025/NĐ-CP"]`,
+			"88/2025/NĐ-CP", "Nghị định", "", nil},
+		// S1: inline new wording does not steal the citation
+		{"S1 quote citing another decree", "a) Sửa đổi điểm b khoản 1 Điều 5 như sau: “b) Cơ quan thuế theo quy định tại Nghị định số 15/2020/NĐ-CP;”",
+			`["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"5"}},
+		{"S1 quote citing a law", `Bổ sung khoản 3a vào sau khoản 3 Điều 66 như sau: "3a. Nhà giáo theo Điều 26 của Luật Nhà giáo được hưởng …"`,
+			`["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"66"}},
+		// S2: a list ending with another document
+		{"S2 'tại Điều 5, Điều 6 và Luật Ngân sách nhà nước'", "Thay thế cụm từ “Bộ Tài chính” bằng cụm từ “Bộ Kế hoạch” tại Điều 5, Điều 6 và Luật Ngân sách nhà nước.",
+			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"5", "6"}},
+		// N1: a partial citation matching A counts
+		{"N1 'Điều 16 Nghị định 14 và Điều 3 Nghị định số 15/2020'", "Bãi bỏ Điều 16 Nghị định 14 và Điều 3 Nghị định số 15/2020/NĐ-CP.",
+			`[]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"16"}},
 		// Fable K5
-		{"a list of B's own Điều", "Hiệu lực theo Điều 5 và Điều 6 Nghị định này.", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "", nil},
-		{"a list of B's own provisions", "Thực hiện theo Điều 5, khoản 2 Điều 6 của Nghị định này.", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "", nil},
-		{"a list of A's Điều", "Bãi bỏ Điều 5 và Điều 6 Nghị định số 14/2016/NĐ-CP.", `[]`, "14/2016/NĐ-CP", "", []string{"5", "6"}},
-		{"a bracket holding only the citation", "2. Điều 12 (Nghị định số 88/2025/NĐ-CP) được bãi bỏ.", `[]`, "88/2025/NĐ-CP", "", []string{"12"}},
+		{"a list of B's own Điều", "Hiệu lực theo Điều 5 và Điều 6 Nghị định này.", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
+		{"a list of B's own provisions", "Thực hiện theo Điều 5, khoản 2 Điều 6 của Nghị định này.", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
+		{"a list of A's Điều", "Bãi bỏ Điều 5 và Điều 6 Nghị định số 14/2016/NĐ-CP.", `[]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"5", "6"}},
+		{"a bracket holding only the citation", "2. Điều 12 (Nghị định số 88/2025/NĐ-CP) được bãi bỏ.", `[]`, "88/2025/NĐ-CP", "Nghị định", "", []string{"12"}},
 		{"a bracket holding only the citation, the heading another document", "2. Điều 12 (Nghị định số 88/2025/NĐ-CP) được bãi bỏ.",
-			`["Điều 2. Sửa đổi Nghị định số 254/2025/NĐ-CP"]`, "254/2025/NĐ-CP", "", nil},
+			`["Điều 2. Sửa đổi Nghị định số 254/2025/NĐ-CP"]`, "254/2025/NĐ-CP", "Nghị định", "", nil},
 		{"a repeal history", "1. Sửa đổi khoản 4 Điều 7 Thông tư số 13/2019/TT-BGTVT đã được bãi bỏ bởi khoản 3 Điều 1 Thông tư số 41/2020/TT-BGTVT như sau:",
-			`["Điều 1. Sửa đổi Thông tư số 13/2019/TT-BGTVT"]`, "41/2020/TT-BGTVT", "", nil},
+			`["Điều 1. Sửa đổi Thông tư số 13/2019/TT-BGTVT"]`, "41/2020/TT-BGTVT", "Thông tư", "", nil},
 		{"a repeal history, bị", "Điểm b khoản 2 Điều 8 đã bị bãi bỏ theo khoản 3 Điều 1 Thông tư số 41/2020/TT-BGTVT.",
-			`[]`, "41/2020/TT-BGTVT", "", nil},
+			`[]`, "41/2020/TT-BGTVT", "Thông tư", "", nil},
 		{"a plain-text Điều heading of B (PDF copy)", "Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP",
-			`[]`, "14/2016/NĐ-CP", "", nil},
+			`[]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
 		{"a bold plain-text Điều heading of B", "**Điều 2.** Bãi bỏ Nghị định số 14/2016/NĐ-CP",
-			`[]`, "14/2016/NĐ-CP", "", nil},
+			`[]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
 		// Fable re-review 4: the rest of a heading line is read
 		{"an operation on the heading line", "Điều 2. Bãi bỏ Điều 5, Điều 6 Nghị định số 14/2016/NĐ-CP.",
-			`[]`, "14/2016/NĐ-CP", "", []string{"5", "6"}},
+			`[]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"5", "6"}},
 		{"an operation on a bold heading line", "**Điều 2.** Bãi bỏ Điều 5 Nghị định số 14/2016/NĐ-CP.",
-			`[]`, "14/2016/NĐ-CP", "", []string{"5"}},
+			`[]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"5"}},
 		// Fable K4 side effect: a lower-case name ends the Điều's reach
-		{"a lower-case law before A", "Căn cứ Điều 9 Luật đầu tư; sửa Điều 7 Luật Đất đai", `[]`, "31/2024/QH15", "luật đất đai", []string{"7"}},
-		{"the same law in lower case", "Căn cứ Điều 9 Luật đất đai; sửa Điều 7 Luật Đất đai", `[]`, "31/2024/QH15", "luật đất đai", []string{"9", "7"}},
-		{"an unlisted lower-case law before A", "Căn cứ Điều 9 Luật quy chế thử nghiệm; sửa Điều 7 Luật Đất đai", `[]`, "31/2024/QH15", "luật đất đai", []string{"7"}},
-		{"A in lower case, unlisted", "Bãi bỏ Điều 3 Luật quy chế thử nghiệm.", `[]`, "1/2019/QH14", "luật quy chế thử nghiệm", []string{"3"}},
-		{"a law named before its number", "Bãi bỏ Điều 7 của Luật Đất đai số 45/2013/QH13.", `[]`, "45/2013/QH13", "", []string{"7"}},
+		{"a lower-case law before A", "Căn cứ Điều 9 Luật đầu tư; sửa Điều 7 Luật Đất đai", `[]`, "31/2024/QH15", "Luật", "luật đất đai", []string{"7"}},
+		{"the same law in lower case", "Căn cứ Điều 9 Luật đất đai; sửa Điều 7 Luật Đất đai", `[]`, "31/2024/QH15", "Luật", "luật đất đai", []string{"9", "7"}},
+		{"an unlisted lower-case law before A", "Căn cứ Điều 9 Luật quy chế thử nghiệm; sửa Điều 7 Luật Đất đai", `[]`, "31/2024/QH15", "Luật", "luật đất đai", []string{"7"}},
+		{"A in lower case, unlisted", "Bãi bỏ Điều 3 Luật quy chế thử nghiệm.", `[]`, "1/2019/QH14", "Luật", "luật quy chế thử nghiệm", []string{"3"}},
+		{"an unlisted lower-case law after the chain, the heading's subject A", "Bãi bỏ Điều 9 Luật quy chế thử nghiệm và Điều 16.",
+			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"16"}},
+		{"a phrase quoting other Điều", "a) Thay thế cụm từ “khoản 6 Điều 81” bằng cụm từ “Điều 17” tại khoản 1 Điều 7;",
+			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"7"}},
+		{"a one-line chunk keeps the operation after a quote", `đ) Tài liệu khác (nếu có)." 8. Sửa đổi khoản 1 Điều 15 như sau: "1. Theo Nghị định số 15/2020/NĐ-CP." 9. Bãi bỏ Điều 16.`,
+			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"15", "16"}},
+		{"a type misspelt in a copy", "5. Khoản 1 và 2 Điều 28 Nghị đỉnh số 77/2016/NĐ-CP được sửa đổi như sau:",
+			`[]`, "77/2016/NĐ-CP", "Nghị định", "", []string{"28"}},
+		{"a phrase opened “ and closed \"", "1. Thay thế cụm từ “Vụ Tổ chức\" bằng cụm từ “Vụ Dự báo\" tại khoản 7 Điều 3; khoản 1 Điều 9.",
+			`["Điều 1. Sửa đổi Thông tư số 13/2025/TT-NHNN"]`, "13/2025/TT-NHNN", "Thông tư", "", []string{"3", "9"}},
+		{"a law named before its number", "Bãi bỏ Điều 7 của Luật Đất đai số 45/2013/QH13.", `[]`, "45/2013/QH13", "Luật", "", []string{"7"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := legalCitedArticlesOf(tc.content, tc.heading, key(tc.a), tc.base)
+			got := legalCitedArticlesOf(tc.content, tc.heading, tc.a, tc.typ, tc.base)
 			var arts []string
 			for a := range got {
 				arts = append(arts, a)
@@ -731,4 +776,36 @@ func TestAmendTargetUnknownDateAndSharedNumber(t *testing.T) {
 		require.Equal(t, "hk", k)
 		require.Equal(t, "số hiệu 66/2006/QH11 ứng với nhiều văn bản", problem)
 	})
+}
+
+// Re-review S3: a document-level entry of a lower-ranked amender (a
+// Thông tư naming NĐ 68 as a whole) is no catalogue fact either.
+func TestLoadLegalAmendmentsDocumentLevelRank(t *testing.T) {
+	db := legalAmendTestDB(t)
+	ctx := context.Background()
+	catalog := repository.NewLegalCatalogRepository(db)
+	day := func(s string) *time.Time { d, _ := time.Parse("2006-01-02", s); return &d }
+	require.NoError(t, catalog.UpsertDocuments(ctx, []*types.LegalDocument{
+		{ID: "tt9", Source: "vbpl", DocumentNumber: "9/2026/TT-BTC", NumberKey: vietnamese_legal.CatalogNumberKey("9/2026/TT-BTC"), DocType: "Thông tư",
+			Title: "Thông tư 9/2026/TT-BTC", IssuedOn: day("2026-05-01"), EffectiveOn: day("2026-06-01")},
+	}))
+	meta, _ := json.Marshal(map[string]string{"doc_number": "9/2026/TT-BTC", "external_id": "tt9", "doc_type": "Thông tư"})
+	require.NoError(t, db.Create(&types.Knowledge{ID: "ktt9", KnowledgeBaseID: "kb-pub", Title: "9", ParseStatus: types.ParseStatusCompleted, Metadata: meta}).Error)
+	legal := vietnamese_legal.LegalMetadata{Source: "vbpl", ArticleNos: []string{"1"}, SourceDocID: "tt9",
+		Amends: []vietnamese_legal.AmendRef{{Document: "Nghị định số 68/2026/NĐ-CP"}, {Document: "Nghị định số 68/2026/NĐ-CP", Article: "3", Phrase: true, From: "trở xuống", To: "trở xuống nữa"}}}
+	cm, _ := json.Marshal(types.DocumentChunkMetadata{Legal: &legal})
+	require.NoError(t, db.Create(&types.Chunk{ID: "btt9", KnowledgeID: "ktt9", KnowledgeBaseID: "kb-pub", ChunkIndex: 1,
+		ChunkType: types.ChunkTypeText, IsEnabled: true, Content: "1. Thay thế cụm từ “trở xuống” bằng cụm từ “trở xuống nữa” tại Điều 3 Nghị định số 68/2026/NĐ-CP.", Metadata: cm}).Error)
+	load, err := LoadLegalAmendments(ctx, db, []string{"kb-pub"}, []string{"a3"}, []string{"kb-pub"}, time.UTC)
+	require.NoError(t, err)
+	for _, f := range load.Catalogue["nd68"] {
+		require.NotEqual(t, "tt9", f.Amender.CatalogID, "a Thông tư's document-level entry on a Nghị định is skipped")
+	}
+	for _, e := range load.Edges["nd68"] {
+		if e.Amender.CatalogID == "tt9" {
+			require.NotEmpty(t, e.Rejected, "its phrase entry is rejected by rank")
+		}
+	}
+	r := load.Resolve(amendAt("2026-10-20"), map[string]bool{"kb-pub": true})["a3"]
+	require.NotContains(t, r.ModelContent, "9/2026/TT-BTC")
 }
