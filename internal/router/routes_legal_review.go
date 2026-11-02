@@ -1,6 +1,8 @@
 package router
 
 import (
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/Tencent/WeKnora/internal/handler"
@@ -70,5 +72,22 @@ func RegisterDomainPackReconcileRoutes(r *gin.RouterGroup, h *handler.DomainPack
 		packs.POST("/:name/reconcile", h.ReconcileDomainPack)
 		packs.PUT("/:name/formulas/:id", h.UpdateDomainPackFormula)
 		packs.DELETE("/:name/formulas/:id", h.ResetDomainPackFormula)
+	}
+}
+
+// RegisterLegalPushRoutes wires the push of legal documents from sources
+// other than vbpl.vn (docs/legal-document-feed-spec.md §9) and the
+// SuperAdmin review of the provision links they carry. The push takes an
+// API key of the platform organization with ingest (re-checked in the
+// handler) or a human SuperAdmin; the review is human SuperAdmin only.
+func RegisterLegalPushRoutes(r *gin.RouterGroup, h *handler.LegalPushHandler, g *rbacGuards) {
+	if h == nil {
+		return
+	}
+	g.apiKeyRoute(r, http.MethodPost, "/system/legal-documents/push", apiKeyIngest(apiKeyFullAccess()), h.PushLegalDocument)
+	cands := r.Group("/system/legal-link-candidates", g.PlatformSuperAdmin())
+	{
+		cands.GET("", h.ListLegalLinkCandidates)
+		cands.PUT("/:id", h.DecideLegalLinkCandidate)
 	}
 }

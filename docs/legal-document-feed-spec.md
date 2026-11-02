@@ -628,4 +628,252 @@ MCP mục 6.
 | MCP server | `internal/mcpserver/`, `internal/types/mcp_endpoint_tools.go`, `docs/api-next/mcp.md` |
 | Schema danh mục | `migrations/versioned/000129_legal_catalog.up.sql`, `000130_legal_document_review.up.sql` |
 | Wiki catalogue | `internal/application/service/wiki_catalogue_overview.go` |
+| Đẩy văn bản từ nguồn khác (mục 9) | `internal/vbpl/amend_markup.go`, `internal/application/service/legal_push.go`, `legal_push_review.go`, `internal/handler/legal_push.go` |
+| Duyệt liên kết điều khoản | `frontend-next/components/settings/pages/admin-legal-links.tsx`, migration `000178_legal_provision_link_candidates` |
 | Dữ liệu crawl | `/home/orca/data/vbpl/` (host), MinIO `werag-vbpl/vbpl/` |
+
+---
+
+## 9. Nạp văn bản từ nguồn ngoài vbpl kèm liên kết Điều/khoản (2026-11-02)
+
+Mục 1–8 chỉ áp dụng cho HTML của vbpl.vn. Mục này đặt chuẩn để một nguồn
+khác (trước hết là thuvienphapluat.vn — TVPL) đẩy văn bản và các đánh dấu
+"được sửa đổi/bổ sung/thay thế/bãi bỏ bởi …" vào WeRAG, và để hệ thống
+**tự tạo liên kết Điều/khoản** khi nhận. Đã có mã (nhánh
+`feat/legal-push-api`): `internal/vbpl/amend_markup.go`,
+`internal/application/service/legal_push*.go`, `internal/handler/legal_push.go`,
+migration `000178_legal_provision_link_candidates`, tab "Liên kết điều khoản"
+trên trang văn bản pháp luật của SuperAdmin
+(`frontend-next/components/settings/pages/admin-legal-links.tsx`). Bộ chuyển
+trang TVPL (9.5) chưa làm.
+
+Bối cảnh: server WeRAG (IP ra Internet `118.70.126.190`) bị Cloudflare của
+TVPL chặn (thử 05h22, 08h22, 10h07 ngày 02/11/2026, cả curl lẫn Chromium).
+Vì vậy bộ chuyển đổi trang TVPL chạy **ở máy người dùng** (trình duyệt,
+tài khoản và mạng của họ) và chỉ gọi API dưới đây; server không gọi TVPL.
+
+### 9.1 Ba nguyên tắc
+
+1. **Liên kết từ nguồn ngoài không được dùng ngay.** Bảng
+   `legal_provision_links` (migration 000177) được bộ giải lời văn hiện hành
+   đọc trực tiếp, nên liên kết TVPL vào **bảng chờ** trước; SuperAdmin
+   duyệt mới chép sang `legal_provision_links` (`source = 'tvpl'`). Đúng quy
+   tắc "SuperAdmin duyệt KB công khai, không tự áp dụng".
+2. **Một văn bản chỉ có một bản toàn văn.** Văn bản A đã có trong KB công
+   khai (thường từ vbpl) thì **chỉ nạp liên kết**, gắn vào điều khoản của
+   bản đang có theo vị trí (`dieu:5/khoan:2`); không nạp thêm bản TVPL.
+   Chỉ khi A chưa có toàn văn mới nạp toàn văn từ nguồn ngoài.
+3. **Khoá văn bản là id danh mục, không phải số hiệu** (mục 2.5). Mọi văn
+   bản nhắc tới (A và các văn bản B tác động) phải phân giải được về một dòng
+   `legal_documents`; không phân giải được thì báo lại, không đoán.
+
+### 9.2 Chuẩn "HTML văn bản pháp luật WeRAG v1"
+
+Tệp HTML UTF-8, có thể chứa nguyên trang; hệ thống chỉ đọc các phần tử sau.
+
+**Cấu trúc** — dùng lại lớp CSS của vbpl, nên bộ chuyển `internal/vbpl`
+nhận ngay (`LooksLikeVBPL` dò các lớp này) và cắt mỗi Điều một chunk:
+
+| Lớp | Phần tử | Ghi chú |
+|---|---|---|
+| `prov-part` / `prov-chapter` / `prov-section` / `prov-subsection` | Phần / Chương / Mục / Tiểu mục | tuỳ chọn |
+| `prov-article` | dòng tiêu đề "Điều 5. …" | bắt buộc với văn bản có Điều |
+| `prov-clause` | "1. …" | |
+| `prov-item` | "a) …" | |
+| `prov-content` | đoạn nội dung thường | |
+
+Mỗi phần tử `prov-article/clause/item` **phải có `id` duy nhất trong văn
+bản và ổn định giữa các lần đẩy**. Quy ước cho nguồn ngoài:
+`<nguồn>-<id văn bản tại nguồn>-<vị trí>`, ví dụ
+`tvpl-470561-dieu:5/khoan:2/diem:a`. Phụ lục: bọc trong
+`<div class="doc-region-appendix">`, vị trí bắt đầu bằng `phuluc/`.
+
+**Đánh dấu thay đổi** — thuộc tính `data-amend` trên chính phần tử
+`prov-article/clause/item` bị tác động, giá trị là **mảng JSON** (một điều
+khoản có thể bị nhiều văn bản tác động, như `new-types` của vbpl):
+
+```html
+<p class="prov-clause" id="tvpl-470561-dieu:5/khoan:2"
+   data-amend='[{"op":"sua_doi_bo_sung",
+                 "doc_number":"80/2021/NĐ-CP","issue_date":"2021-09-08",
+                 "path":"dieu:1/khoan:3","eff_from":"2021-10-25",
+                 "note":"Khoản này được sửa đổi bởi Khoản 3 Điều 1 Nghị định 80/2021/NĐ-CP"}]'>
+  2. …
+</p>
+```
+
+| Trường | Bắt buộc | Ý nghĩa |
+|---|---|---|
+| `op` | có | một trong bảng mã dưới |
+| `doc_number` | có (hoặc `legal_document_id`) | số hiệu văn bản B gây thay đổi |
+| `issue_date` | nên có | `YYYY-MM-DD`; cần để phân giải số hiệu trùng |
+| `issuer` | khi số hiệu trùng | cơ quan ban hành B |
+| `legal_document_id` | tuỳ chọn | id danh mục của B nếu bên đẩy đã biết; thắng số hiệu |
+| `path` | nên có | vị trí điều khoản **trong B** (`dieu:1/khoan:3`); thiếu → liên kết cấp văn bản, chỉ dùng làm ghi chú |
+| `eff_from`, `eff_to` | tuỳ chọn | `YYYY-MM-DD`; thiếu → lấy `effective_on` của B trong danh mục |
+| `note` | nên có | nguyên văn chú thích của nguồn, để SuperAdmin đối chiếu; không hiển thị cho người dùng cuối |
+
+Mã thao tác (trùng mã quan hệ của vbpl, cột `relation_code`):
+
+| `op` | mã | Tác dụng khi đã duyệt |
+|---|---|---|
+| `sua_doi_bo_sung` | 10 | thay lời văn theo B |
+| `sua_doi` | 16 | như trên |
+| `bo_sung` | 13 | thêm nội dung của B |
+| `thay_the` | 12 | thay lời văn theo B |
+| `bai_bo` | 1 | điều khoản hết hiệu lực từ `eff_from` |
+| `tam_ngung` | 11 | không áp dụng trong `[eff_from, eff_to]` |
+| `dinh_chi` | 5 | như trên |
+| `dinh_chinh` | 6 | ghi chú, không đổi trạng thái |
+| `giai_thich` | 14 | ghi chú |
+| `huong_dan` | 9 | lưu và hiện trên trang duyệt; bộ giải chưa dùng |
+
+Nội dung bổ sung mà nguồn chèn vào giữa văn bản A (ví dụ thẻ `huongdan` của
+TVPL) **không** đưa vào toàn văn A; lời văn mới luôn đọc từ B.
+
+**Metadata** (form field `metadata`, chuỗi → chuỗi như mục 2.4):
+
+| Khoá | Bắt buộc | Giá trị |
+|---|---|---|
+| `source` | có | `tvpl` (hoặc tên nguồn khác) |
+| `source_url` | có | địa chỉ trang tại nguồn |
+| `source_doc_id` | có | id văn bản tại nguồn (`470561`) |
+| `legal_document_id` | nên có | id danh mục của A nếu đã biết |
+| `doc_number`, `doc_type`, `issuer`, `issue_date` | có | để phân giải A khi thiếu `legal_document_id` |
+| `format` | có | `werag-legal-html/1` |
+
+### 9.3 API đẩy lên
+
+`POST /api/v1/system/legal-documents/push` — multipart (`file`, `metadata`,
+`mode`), tệp ≤ 20 MB. Xác thực: API key `X-API-Key` của **tổ chức nền tảng
+10000** có capability `ingest` (hoặc full access) như mục 3.4 — key tổ chức
+khác bị 403; hoặc JWT của SuperAdmin (người thật). Ở chế độ `full`, danh sách
+KB của key phải chứa KB đích.
+
+`mode`:
+
+| Giá trị | Hành vi |
+|---|---|
+| `auto` (mặc định) | A đã có toàn văn trong KB công khai → `links`; chưa có → `full` |
+| `links` | chỉ tạo liên kết chờ duyệt; không đụng KB |
+| `full` | nạp toàn văn A vào KB theo `doc_type` của dòng danh mục (tên KB "VBPL – <loại>") **và** tạo liên kết; A đã có toàn văn ở một KB công khai → `409`; A "Hết hiệu lực toàn bộ" → `400` (mục 2.3). Tài liệu nạp có `external_id` = id danh mục A, `source` = tên nguồn; liên kết định danh được ghi sẵn với `reviewed_by = "feed:<nguồn>"` |
+
+Xử lý phía server:
+
+1. Phân giải A về `legal_documents.id` (id → số hiệu + ngày ban hành + cơ
+   quan, dùng `CatalogNumberKey` / `ResolveLegalDocumentName` sẵn có).
+   Không tìm thấy hoặc nhiều ứng viên → `422` kèm `candidates`, không ghi gì.
+2. Đọc cấu trúc bằng `internal/vbpl` (cùng bộ chuyển với vbpl). Không có
+   cấu trúc dùng được → `422 no_structure`.
+3. Với mỗi `data-amend`: phân giải B như bước 1; tìm điều khoản đích trên
+   **bản A đang có trong KB** theo vị trí (chế độ `links`) hoặc theo `id`
+   của tệp (chế độ `full`); tìm điều khoản nguồn trong B theo `path` (id
+   điều khoản vbpl nếu B có trong KB, không có thì khoá tổng hợp
+   `path:<id danh mục B>#<path>`).
+4. Ghi mỗi liên kết vào bảng chờ `legal_provision_link_candidates`
+   (migration mới, số kế tiếp sau migration đã commit cao nhất) với trạng
+   thái:
+   - `matched` — A, B và cả hai vị trí đều tìm thấy;
+   - `doc_only` — B tìm thấy nhưng không có/không khớp `path` trong B;
+   - `target_missing` — vị trí trong A không có trên bản đang có (khác cách
+     chia Điều giữa hai nguồn);
+   - `unresolved` — không phân giải được B; nếu B là văn bản trung ương
+     chưa có trong danh mục, tạo đề nghị bổ sung văn bản (cờ người đề nghị =
+     `feed:tvpl`);
+   - `duplicate` — trùng một liên kết đã có trong `legal_provision_links`
+     (cùng id điều khoản A, mã, id điều khoản B; hoặc cùng A + vị trí + mã +
+     B + vị trí trong B, nguồn nào cũng được): lưu với `review_status =
+     auto`, không cần duyệt, không chép thêm.
+   Mỗi dấu có thể khớp nhiều trạng thái; trạng thái ghi lại là trạng thái xấu
+   nhất (`unresolved` > `target_missing` > `doc_only` > `matched`), lý do
+   từng bước nằm ở `match_reason`.
+5. Đẩy lại cùng (`source`, `source_doc_id`): xoá và tạo lại các ứng viên
+   `pending`/`auto` của văn bản đó; dấu đã được SuperAdmin duyệt hoặc từ chối
+   (nhận theo khoá của dấu **như lúc đẩy**, kể cả khi SuperAdmin đã sửa B hay
+   vị trí khi duyệt) không được hỏi lại và được đếm vào `kept_decisions`.
+6. Ghi `legal_feed_log` (action `push_links` / `push_full`).
+
+Kết quả (`{success, data}`):
+
+```json
+{"legal_document_id":"148555","document_number":"47/2021/NĐ-CP","mode":"links",
+ "knowledge_id":"…","knowledge_base_id":"…","ingest":"",
+ "links":{"matched":41,"doc_only":3,"target_missing":2,"unresolved":1,"duplicate":17},
+ "pending":47,"kept_decisions":0,
+ "problems":[{"element_id":"tvpl-470561-dieu:12/khoan:4","status":"unresolved",
+              "doc_number":"12/2022/NĐ-CP","reason":"2 văn bản cùng số hiệu 12/2022/NĐ-CP: cần issue_date hoặc issuer"}]}
+```
+
+Lỗi: `400` metadata sai (`format` khác `werag-legal-html/1`, `source` rỗng
+hoặc là `vbpl`, thiếu `source_doc_id`/`source_url`/số hiệu); `422` không xác
+định được A (kèm `details.candidates`) hoặc tệp không có cấu trúc `prov-*`;
+`409` chế độ `full` khi A đã có toàn văn. `problems` còn liệt kê các dấu
+không đọc được (JSON hỏng, `op` lạ, thiếu số hiệu) và dấu đặt trên phần tử
+không phải Điều/khoản/điểm.
+
+### 9.4 Duyệt (SuperAdmin)
+
+Trang mới trong `/platform/admin/` liệt kê ứng viên theo văn bản A: điều
+khoản A (lời văn hiện có), thao tác, điều khoản B (lời văn trong KB nếu có),
+`note` nguyên văn của nguồn, kết quả kiểm tra, và các liên kết đã có trên
+cùng điều khoản (của biên tập viên vbpl hay nguồn khác) để thấy trùng hay
+khác. Hành động: **duyệt** (chép sang `legal_provision_links`,
+`source` = tên nguồn, `source_doc_from = 'feed'`), **sửa** (chọn lại B bằng
+id danh mục, vị trí trong B hoặc trong A rồi duyệt; id điều khoản được tra
+lại), **từ chối**. Chỉ duyệt được khi đã biết B và vị trí trong A.
+API (JWT SuperAdmin):
+
+- `GET /system/legal-link-candidates?review_status=pending|approved|rejected|auto|all&match_status=&legal_document_id=&feed=&page=&page_size=`
+  → `{items, total, counts}`; mỗi item có `target`, `amender` (dòng danh mục)
+  và `other_links`.
+- `PUT /system/legal-link-candidates/{id}` body
+  `{"action":"approve"|"reject","amender_doc_id?","source_path?","target_path?","note?"}`;
+  ứng viên không còn `pending` → `409`.
+
+Sau khi duyệt, liên kết của nguồn đi vào bộ giải như liên kết biên tập vbpl
+(cùng quy tắc tầng: lời văn mới lấy từ B, ghi rõ nguồn "thuvienphapluat (đã
+duyệt)"; trùng với bộ đọc parser cùng thao tác → tầng 1), sau công tắc riêng
+`legal.current_wording.feed_source` (mặc định tắt; tắt thì kết quả như cũ).
+Mã 16 `sua_doi` được đọc như sửa đổi; mã 9 `huong_dan` bị bỏ qua.
+
+### 9.5 Bộ chuyển trang TVPL (chạy ở máy người dùng)
+
+Script Python + Playwright dùng trình duyệt và tài khoản Pro của người dùng
+(phiên lưu bằng `storage_state`, không gửi mật khẩu cho WeRAG). Đọc theo
+cách đánh dấu của TVPL đã biết từ các crawler công khai:
+
+- nội dung trong `div.content1`;
+- đoạn có thay đổi: thuộc tính `atmm=".<lớp>"` hoặc
+  `onmouseover="lqhlTootip('.<lớp>')"` → chú thích ở `div.<lớp>`
+  ("… được sửa đổi bởi Khoản 3 Điều 1 Nghị định 80/2021/NĐ-CP");
+- nội dung chèn thêm: `<huongdan id="span-note_…">` → `div#note_…`
+  (dạng "nội dung |~| nguồn").
+
+Script nhận diện Điều/khoản/điểm theo chữ ("Điều 5.", "2.", "a)") để gắn
+lớp `prov-*` và `id`, tách chú thích thành `op` / `doc_number` / `path` /
+`eff_from` (regex, lưu nguyên văn vào `note`), rồi gọi API 9.3. Tốc độ:
+một văn bản mỗi lần, cách nhau ≥ 5 giây; dừng khi gặp trang đăng nhập hoặc
+kiểm tra của Cloudflare. Cấu trúc trang TVPL phải được xác nhận lại trên
+3–5 trang mẫu thật trước khi viết regex.
+
+### 9.6 Hiện trạng
+
+1. Xong: migration 000178, endpoint push (9.3), API duyệt + tab giao diện
+   (9.4, chuỗi `en` + `vi`), công tắc `legal.current_wording.feed_source`;
+   test `internal/vbpl/amend_markup_test.go`,
+   `internal/application/service/legal_push_test.go`.
+2. Chưa: bộ chuyển TVPL (9.5) — cần 3–5 trang mẫu lưu từ trình duyệt đã
+   đăng nhập; mã 9 `huong_dan` trong câu trả lời.
+3. Sau khi có dữ liệu: đo trên các văn bản có cả thẻ biên tập vbpl và chú
+   thích TVPL — tỷ lệ trùng, mâu thuẫn, chỉ TVPL có — trước khi bật
+   `feed_source`.
+
+Ví dụ gọi:
+
+```bash
+curl -s -X POST "$WERAG/api/v1/system/legal-documents/push" \
+  -H "X-API-Key: $KEY" \
+  -F "file=@nd47-2021.html" \
+  -F 'metadata={"source":"tvpl","source_doc_id":"470561","source_url":"https://thuvienphapluat.vn/van-ban/…-470561.aspx","format":"werag-legal-html/1","doc_number":"47/2021/NĐ-CP","issue_date":"2021-04-01","doc_type":"Nghị định"}' \
+  -F mode=auto
+```

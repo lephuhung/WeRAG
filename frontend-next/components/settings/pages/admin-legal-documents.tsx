@@ -37,6 +37,7 @@ import { LegalContentTab, LegalDisplayTab } from "@/components/settings/pages/le
 import { useSearchParams } from "next/navigation";
 import LegalRequestsSection from "@/components/settings/pages/admin-legal-requests";
 import LegalDraftsSection from "@/components/settings/pages/admin-legal-drafts";
+import LegalLinksSection from "@/components/settings/pages/admin-legal-links";
 import { listLegalRequests, type LegalRequestCounts } from "@/lib/api/legal-requests";
 
 const PAGE_SIZE = 50;
@@ -45,16 +46,17 @@ const PAGE_SIZE = 50;
  * documents no knowledge base holds, and the OCR drafts of documents
  * vbpl.vn has only as a scanned PDF. ?view= opens one directly (the draft
  * review page links back with view=requests / view=drafts). */
-type PageView = "review" | "requests" | "drafts";
+type PageView = "review" | "requests" | "drafts" | "links";
 
 const VIEWS: { key: PageView; labelKey: LocaleKey }[] = [
   { key: "review", labelKey: "lreq.view.review" },
   { key: "requests", labelKey: "lreq.view.requests" },
   { key: "drafts", labelKey: "lreq.view.drafts" },
+  { key: "links", labelKey: "lreq.view.links" },
 ];
 
 function pageViewOf(v: string | null): PageView {
-  return v === "requests" || v === "drafts" ? v : "review";
+  return v === "requests" || v === "drafts" || v === "links" ? v : "review";
 }
 
 type DialogTab = "identity" | "content" | "display";
@@ -301,6 +303,8 @@ export default function AdminLegalDocuments() {
           <LegalRequestsSection onCounts={setRequestCounts} onDenied={denyRequests} />
         ) : view === "drafts" ? (
           <LegalDraftsSection onDenied={denyRequests} />
+        ) : view === "links" ? (
+          <LegalLinksSection onDenied={denyRequests} />
         ) : (
           <>
             <div className="mb-5 flex flex-wrap items-center gap-3">

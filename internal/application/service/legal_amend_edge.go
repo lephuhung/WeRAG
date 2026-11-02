@@ -305,6 +305,8 @@ func (e *LegalAmendEdge) sourceText() string {
 			names = append(names, "suy ra qua văn bản sửa đổi")
 		case LegalAmendSourceEditor:
 			names = append(names, "biên tập viên vbpl")
+		case "tvpl":
+			names = append(names, "thuvienphapluat (đã duyệt)")
 		default:
 			names = append(names, s)
 		}

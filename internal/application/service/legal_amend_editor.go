@@ -45,6 +45,52 @@ const legalEditorSourceDefault = false
 // LegalAmendSourceEditor names edges from the vbpl editors' tags.
 const LegalAmendSourceEditor = types.LegalProvisionLinkSourceEditor
 
+// LegalFeedSourceSetting is the system setting adding the provision links
+// pushed by other feeds (POST /system/legal-documents/push) and approved
+// by a SuperAdmin; they are read as the editors' tags are, named by their
+// feed (legal_provision_links.source, e.g. "tvpl").
+const LegalFeedSourceSetting = "legal.current_wording.feed_source"
+
+// legalFeedSourceDefault is the setting's value when unset.
+const legalFeedSourceDefault = false
+
+// legalLinkSource is the edge source of a link: its feed, the editors'
+// tags when unnamed.
+func legalLinkSource(lk types.LegalProvisionLink) string {
+	if lk.Source == "" {
+		return LegalAmendSourceEditor
+	}
+	return lk.Source
+}
+
+// legalIsTagSource reports whether an edge source is a human tag (the vbpl
+// editors or an approved feed), not one of the system's own readings.
+func legalIsTagSource(s string) bool {
+	switch s {
+	case "", LegalAmendSourceParser, LegalAmendSourceCatalogue, LegalAmendSourceChain:
+		return false
+	}
+	return true
+}
+
+// legalHasTagSource reports whether sources hold a human tag.
+func legalHasTagSource(sources []string) bool {
+	for _, s := range sources {
+		if legalIsTagSource(s) {
+			return true
+		}
+	}
+	return false
+}
+
+// legalLinkWanted reports whether the load reads a link of this source.
+func legalLinkWanted(lk types.LegalProvisionLink, opt LegalAmendLoadOptions) bool {
+	if legalLinkSource(lk) == LegalAmendSourceEditor {
+		return opt.EditorSource
+	}
+	return opt.FeedSource
+}
+
 const (
 	// legalEditorLinksMax bounds the editor edges read per load.
 	legalEditorLinksMax = 3000
@@ -58,6 +104,8 @@ const (
 type LegalAmendLoadOptions struct {
 	// EditorSource adds the vbpl editor edges (LegalEditorSourceSetting).
 	EditorSource bool
+	// FeedSource adds the approved feed links (LegalFeedSourceSetting).
+	FeedSource bool
 	// EditorLinks reads the editor edges of A's documents; nil reads
 	// legal_provision_links (tests and offline probes pass their own).
 	EditorLinks func(ctx context.Context, db *gorm.DB, aIDs []string) ([]types.LegalProvisionLink, error)
@@ -73,7 +121,11 @@ func legalEditorSourceOn(ctx context.Context, settings interfaces.SystemSettingS
 
 // legalLoadOptions are the load's optional sources as the settings say.
 func legalLoadOptions(ctx context.Context, settings interfaces.SystemSettingService) LegalAmendLoadOptions {
-	return LegalAmendLoadOptions{EditorSource: legalEditorSourceOn(ctx, settings)}
+	opt := LegalAmendLoadOptions{EditorSource: legalEditorSourceOn(ctx, settings)}
+	if settings != nil {
+		opt.FeedSource = settings.GetBool(ctx, LegalFeedSourceSetting, "", legalFeedSourceDefault)
+	}
+	return opt
 }
 
 // readLegalEditorLinks is the indexed read of A's editor edges.
@@ -128,7 +180,7 @@ func legalPathRef(path string) (LegalProvisionRef, bool) {
 // is one).
 func legalEditorOp(code int) (LegalAmendOp, bool) {
 	switch code {
-	case vbpl.EditorCodeSuaDoiBS, vbpl.EditorCodeThayThe:
+	case vbpl.EditorCodeSuaDoiBS, vbpl.EditorCodeThayThe, vbpl.AmendCodeSuaDoi:
 		return LegalOpSuaDoi, true
 	case vbpl.EditorCodeBoSung:
 		return LegalOpBoSung, true
@@ -151,6 +203,8 @@ func legalEditorAgrees(code int, op LegalAmendOp) bool {
 	switch code {
 	case vbpl.EditorCodeSuaDoiBS:
 		return op == LegalOpSuaDoi || op == LegalOpBoSung || op == LegalOpThayCumTu || op == LegalOpBaiBoCumTu
+	case vbpl.AmendCodeSuaDoi:
+		return op == LegalOpSuaDoi || op == LegalOpThayCumTu || op == LegalOpBaiBoCumTu
 	case vbpl.EditorCodeThayThe:
 		return op == LegalOpSuaDoi || op == LegalOpThayCumTu
 	case vbpl.EditorCodeBoSung:
@@ -240,8 +294,11 @@ func (l *legalAmendLoader) editorEdges(load *LegalAmendLoad, targets map[string]
 	var list []placed
 	for _, lk := range links {
 		key, ok := byID[lk.TargetDocID]
-		if !ok || lk.SourceDocID == "" {
+		if !ok || lk.SourceDocID == "" || !legalLinkWanted(lk, opt) {
 			continue
+		}
+		if _, known := legalEditorOp(lk.RelationCode); !known {
+			continue // e.g. 9 hướng dẫn: kept for review pages, no operation here
 		}
 		at, ok := legalPathRef(lk.TargetPath)
 		if !ok || !targets[key].articles[at.Article] {
@@ -274,8 +331,8 @@ func (l *legalAmendLoader) editorEdges(load *LegalAmendLoad, targets map[string]
 					mismatch = true
 					continue
 				}
-				if !containsString(e.Sources, LegalAmendSourceEditor) {
-					e.Sources = append(e.Sources, LegalAmendSourceEditor)
+				if src := legalLinkSource(p.link); !containsString(e.Sources, src) {
+					e.Sources = append(e.Sources, src)
 				}
 				if e.Unresolved == "" && e.Rejected == "" && e.Tier != LegalTierVerified && legalEditorExact(p.link.RelationCode, e.Op) {
 					e.preEditorTier, e.Tier = e.Tier, LegalTierVerified
@@ -459,7 +516,7 @@ func legalProvisionSpan(content string, legal *vietnamese_legal.LegalMetadata, k
 // editorEdge builds the edge of one editor link alone.
 func (l *legalAmendLoader) editorEdge(lk types.LegalProvisionLink, at LegalProvisionRef, t legalEditorTarget, src legalEditorSource) LegalAmendEdge {
 	op, _ := legalEditorOp(lk.RelationCode)
-	e := LegalAmendEdge{Op: op, Target: t.doc, Provision: at, Sources: []string{LegalAmendSourceEditor}, Tier: LegalTierUnverified,
+	e := LegalAmendEdge{Op: op, Target: t.doc, Provision: at, Sources: []string{legalLinkSource(lk)}, Tier: LegalTierUnverified,
 		EffFrom: l.editorDate(lk), EditorProvisionID: lk.SourceProvisionID,
 		EditorTargetID: lk.TargetProvisionID, EditorTargetKey: legalChunkKey(at)}
 	if lk.EffTo != nil {

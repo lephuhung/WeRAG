@@ -976,7 +976,7 @@ func legalCatalogueNotes(c LegalProvisionChunk, runs []*unitRun, live []*LegalAm
 		}
 		opArticles := map[string]bool{}
 		for _, e := range mine {
-			if !containsString(e.Sources, LegalAmendSourceParser) && containsString(e.Sources, LegalAmendSourceEditor) {
+			if !containsString(e.Sources, LegalAmendSourceParser) && legalHasTagSource(e.Sources) {
 				// the editors' tags are not complete: B's text citing other
 				// provisions of the Điều still leaves them unverified
 				continue

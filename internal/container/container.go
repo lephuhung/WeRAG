@@ -226,6 +226,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// vbpl.vn ingest shared by the MCP feed and the SuperAdmin request queue
 	must(container.Provide(service.NewLegalFeedService))
 	must(container.Provide(service.NewLegalRequestService))
+	must(container.Provide(service.NewLegalPushService))
 	// a scanned PDF is OCRed into a draft the SuperAdmin reviews before ingest
 	must(container.Provide(service.NewLegalDraftService))
 	must(container.Provide(service.NewLegalDraftServiceInterface))
@@ -633,6 +634,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewTemplateStyleHandler))
 	must(container.Provide(handler.NewLegalReviewHandler))
 	must(container.Provide(handler.NewLegalRequestHandler))
+	must(container.Provide(handler.NewLegalPushHandler))
 	must(container.Provide(handler.NewLegalDraftHandler))
 	must(container.Provide(handler.NewKnowledgeGraphViewHandler))
 	must(container.Provide(handler.NewStatsHandler))
