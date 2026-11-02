@@ -95,23 +95,34 @@ const USAGE_REASON_KEYS: Record<string, ChatErrorKey> = {
   session_limit: "chat.err.usage.sessionLimit",
 };
 
+/** The key for a backend error code that names its failure, whatever HTTP
+ * status carries it, or null for a generic code. Checked before the status
+ * so a specific refusal sent with 5xx (or 4xx) is not read as "server
+ * unavailable" or "not found". */
+function byCode(code?: number, reason?: string): ChatErrorKey | null {
+  if (code === ERR_TURN_RUNNING) return "chat.err.turnRunning";
+  // the conversation is fine; its assistant is gone for this Tổ chức
+  if (code === ERR_AGENT_UNAVAILABLE) return "chat.err.agentUnavailable";
+  // a Guest's lookup: nothing to pick instead, only to wait
+  if (code === ERR_PUBLIC_LOOKUP_UNAVAILABLE) {
+    return reason === "public_lookup_no_knowledge" ? "chat.err.publicLookup.noKnowledge" : "chat.err.publicLookup.off";
+  }
+  return null;
+}
+
 function byStatus(status: number, code?: number, reason?: string, errorCode?: string): ChatErrorKey {
   // a Guest (or a stale organization) on an organization-only route; checked
   // before the 409 default below, as the flat body carries no number code
   if (errorCode === TENANT_REQUIRED || errorCode === TENANT_MEMBERSHIP_REQUIRED) return "chat.err.tenantRequired";
-  if (status === 409 && (code === undefined || code === ERR_TURN_RUNNING)) return "chat.err.turnRunning";
+  const known = byCode(code, reason);
+  if (known) return known;
+  if (status === 409 && code === undefined) return "chat.err.turnRunning";
   if (status === 429 && reason && USAGE_REASON_KEYS[reason]) return USAGE_REASON_KEYS[reason];
   if (status === 401) return "chat.err.unauthorized";
   if (status === 403) return "chat.err.forbidden";
-  // the conversation is fine; its assistant is gone for this Tổ chức
-  if (status === 404 && code === ERR_AGENT_UNAVAILABLE) return "chat.err.agentUnavailable";
   if (status === 404) return "chat.err.notFound";
   if (status === 413) return "chat.err.tooLarge";
   if (status === 429) return "chat.err.tooMany";
-  // a Guest's lookup: nothing to pick instead, only to wait
-  if (status === 503 && code === ERR_PUBLIC_LOOKUP_UNAVAILABLE) {
-    return reason === "public_lookup_no_knowledge" ? "chat.err.publicLookup.noKnowledge" : "chat.err.publicLookup.off";
-  }
   if (status === 502 || status === 503 || status === 504) return "chat.err.unavailable";
   if (status >= 500) return "chat.err.server";
   return "chat.err.generic";

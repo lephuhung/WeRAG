@@ -113,3 +113,22 @@ describe("chatErrorTextKey", () => {
     }
   });
 });
+
+describe("backend code before HTTP status", () => {
+  it("names a specific refusal whatever status carries it", () => {
+    // a gateway or a handler change may send these with another status
+    assert.equal(
+      chatErrorKey(new ChatStreamError(500, ERR_PUBLIC_LOOKUP_UNAVAILABLE, "x", "public_lookup_off")),
+      "chat.err.publicLookup.off",
+    );
+    assert.equal(chatErrorKey(new ChatStreamError(502, ERR_PUBLIC_LOOKUP_UNAVAILABLE)), "chat.err.publicLookup.off");
+    assert.equal(chatErrorKey(new ChatStreamError(503, ERR_AGENT_UNAVAILABLE, "x")), "chat.err.agentUnavailable");
+    assert.equal(chatErrorKey(new ChatStreamError(503, ERR_TURN_RUNNING, "x")), "chat.err.turnRunning");
+  });
+  it("falls back to the status for generic codes", () => {
+    assert.equal(chatErrorKey(new ChatStreamError(503, 1008, "busy")), "chat.err.unavailable");
+    assert.equal(chatErrorKey(new ChatStreamError(503, 2201, "vector store")), "chat.err.unavailable");
+    assert.equal(chatErrorKey(new ChatStreamError(500, 1007, "internal")), "chat.err.server");
+    assert.equal(chatErrorKey(new ChatStreamError(409, 2001, "exists")), null);
+  });
+});
