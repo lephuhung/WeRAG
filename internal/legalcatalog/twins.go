@@ -173,7 +173,11 @@ func ResolveTwins(existing, docs []*types.LegalDocument) TwinResolution {
 				// one, it is rekeyed
 			}
 		}
-		if d.NumberKey != "" && (cur == nil || cur.NumberKey != d.NumberKey && cur.ReviewedAt == nil) {
+		// a reviewed row renumbered on the portal keeps its number (the
+		// import does not overwrite it), so it does not join the new key;
+		// a reviewed look-alike row does, it is that number
+		if d.NumberKey != "" && (cur == nil || cur.NumberKey != d.NumberKey &&
+			(cur.ReviewedAt == nil || vietnamese_legal.CatalogNumberKey(cur.NumberKey) == d.NumberKey)) {
 			byKey[d.NumberKey] = append(byKey[d.NumberKey], d)
 		}
 	}

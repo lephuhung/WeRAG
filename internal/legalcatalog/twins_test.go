@@ -354,6 +354,21 @@ func TestResolveTwinsPlaceholderState(t *testing.T) {
 			t.Errorf("alias = %v, want 82314 → 46690 only", res.Alias)
 		}
 	})
+	t.Run("reviewed look-alike row without a holder", func(t *testing.T) {
+		// it is that number: a new Latin copy is attached to it, not a
+		// second row of the document
+		now := time.Now()
+		row := catalogued("109088", "05/2007/QÐ-BCT", "05/2007/QÐ-BCT", "Quyết định", "Quyết định số 05/2007/QÐ-BCT Hướng dẫn xuất khẩu than", "2007-10-22")
+		row.ReviewedAt = &now
+		docs := []*types.LegalDocument{
+			imported("109088", "05/2007/QÐ-BCT", "Quyết định", "Quyết định số 05/2007/QÐ-BCT Hướng dẫn xuất khẩu than", "2007-10-22"),
+			imported("82314", number, "Quyết định", title, "2007-10-22"),
+		}
+		res := ResolveTwins([]*types.LegalDocument{row}, docs)
+		if len(res.Keep) != 1 || res.Keep[0].ID != "109088" || len(res.Alias) != 1 || res.Alias["82314"] != "109088" {
+			t.Errorf("keep = %v, alias = %v, want 109088 only and 82314 → 109088", res.Keep, res.Alias)
+		}
+	})
 	t.Run("several placeholders, one full copy", func(t *testing.T) {
 		existing := []*types.LegalDocument{
 			catalogued("46690", number, key, "Quyết định", draft, "2007-10-22"),
