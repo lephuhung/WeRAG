@@ -625,6 +625,7 @@ func TestLegalCitedArticlesOf(t *testing.T) {
 		{"Phần A is a division", "Bãi bỏ Điều 5 Phần A Phụ lục I Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
 		{"insertion point joined to another document", "Bổ sung Điều 6a vào sau Điều 6, sửa đổi Điều 7 Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
 		{"insertion point in B itself", "Bổ sung Điều 6a vào sau Điều 6 Nghị định này.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
+		{"joined, the next chain only a history", "Bãi bỏ Điều 3, bỏ nội dung đã được sửa đổi bởi khoản 1 Điều 2 Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"3"}},
 		{"bỏ cụm từ stays an operation bullet", "Sửa đổi một số điều như sau: - Bỏ cụm từ “X” tại Điều 7.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"7"}},
 		{"B2 joined operations, then a reference", "Bãi bỏ Điều 3, sửa đổi Điều 4 theo Nghị định số 14/2016/NĐ-CP.", `["Điều 10. Hiệu lực thi hành"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
 		{"B2 a comma before another document", "Sửa đổi Điều 5, Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},

@@ -691,6 +691,7 @@ func legalCitedArticlesOf(content, heading, aNumber, aType, aBase string) map[st
 			attached       *vietnamese_legal.Citation
 			part, joined   bool
 			blocked        bool // not A's whatever comes after (B's own, a history)
+			history        bool // blocked as a history reference: says nothing of the chains before
 			// insertion: an insertion point ("vào sau Điều 6 của …"), never
 			// counted, its document the inserted Điều's (inserted); a
 			// blocked one blocks the inserted Điều
@@ -702,8 +703,8 @@ func legalCitedArticlesOf(content, heading, aNumber, aType, aBase string) map[st
 			if kw < m[0] {
 				kw = m[0]
 			}
-			if legalHistoryRefRe.MatchString(line[:kw]) || legalSelfRefRe.MatchString(line[m[3]:]) {
-				chains = append(chains, chain{start: m[0], blocked: true})
+			if history := legalHistoryRefRe.MatchString(line[:kw]); history || legalSelfRefRe.MatchString(line[m[3]:]) {
+				chains = append(chains, chain{start: m[0], blocked: true, history: history})
 				continue
 			}
 			insertion := legalBeforeAfterRe.MatchString(line[:kw])
@@ -788,7 +789,7 @@ func legalCitedArticlesOf(content, heading, aNumber, aType, aBase string) map[st
 				continue
 			}
 			end := legalClauseEnd(line, ch.pos)
-			hasNext := i+1 < len(chains) && chains[i+1].start < end
+			hasNext := i+1 < len(chains) && chains[i+1].start < end && !chains[i+1].history
 			switch {
 			case ch.inserted && hasNext:
 				// the next chain is the insertion point; B's own blocks it
