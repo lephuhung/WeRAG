@@ -338,6 +338,22 @@ func TestResolveTwinsPlaceholderState(t *testing.T) {
 			t.Errorf("keep = %v, alias = %v, want both kept, none aliased", res.Keep, res.Alias)
 		}
 	})
+	t.Run("reviewed row renumbered on the portal", func(t *testing.T) {
+		// the import does not overwrite a reviewed row: it still holds
+		// its key, and a new copy under that key is attached to it
+		now := time.Now()
+		row := catalogued("46690", number, key, "Quyết định", title, "2007-10-22")
+		row.ReviewedAt = &now
+		docs := []*types.LegalDocument{
+			imported("46690", "06/2007/QĐ-BCT", "Quyết định", "Quyết định số 06/2007/QĐ-BCT Hướng dẫn xuất khẩu than", "2007-10-22"),
+			imported("82314", number, "Quyết định", title, "2007-10-22"),
+			imported("82400", "06/2007/QĐ-BCT", "Quyết định", "Quyết định số 06/2007/QĐ-BCT Hướng dẫn xuất khẩu than", "2007-10-22"),
+		}
+		res := ResolveTwins([]*types.LegalDocument{row}, docs)
+		if len(res.Alias) != 1 || res.Alias["82314"] != "46690" {
+			t.Errorf("alias = %v, want 82314 → 46690 only", res.Alias)
+		}
+	})
 	t.Run("several placeholders, one full copy", func(t *testing.T) {
 		existing := []*types.LegalDocument{
 			catalogued("46690", number, key, "Quyết định", draft, "2007-10-22"),

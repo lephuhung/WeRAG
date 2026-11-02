@@ -93,8 +93,10 @@ func ResolveTwins(existing, docs []*types.LegalDocument) TwinResolution {
 		}
 		// a row the import carries holds its key as imported (a
 		// placeholder filled on the portal is a full copy now); under
-		// another key it joins that one in the loop
-		if d := incoming[e.ID]; d != nil {
+		// another key it joins that one in the loop. A reviewed row is
+		// not overwritten by the import (its portal values are parked
+		// for the reviewer): it is weighed as catalogued.
+		if d := incoming[e.ID]; d != nil && e.ReviewedAt == nil {
 			if d.NumberKey == e.NumberKey {
 				byKey[e.NumberKey] = append(byKey[e.NumberKey], d)
 			}
@@ -171,7 +173,7 @@ func ResolveTwins(existing, docs []*types.LegalDocument) TwinResolution {
 				// one, it is rekeyed
 			}
 		}
-		if d.NumberKey != "" && (cur == nil || cur.NumberKey != d.NumberKey) {
+		if d.NumberKey != "" && (cur == nil || cur.NumberKey != d.NumberKey && cur.ReviewedAt == nil) {
 			byKey[d.NumberKey] = append(byKey[d.NumberKey], d)
 		}
 	}
