@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 
+	"github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -110,7 +111,29 @@ func enforcePublicLookupConfig(agent *types.CustomAgent) *types.CustomAgent {
 // resolve elsewhere falls back to plain chat, which a Guest must not get.
 func publicLookupUnavailable(agent *types.CustomAgent) error {
 	if agent == nil || agent.ID != types.BuiltinPublicLookupID || !agent.EffectiveEnabled() {
-		return errors.NewAgentUnavailableError(publicLookupDisabledMessage)
+		return errors.NewPublicLookupUnavailableError(errors.PublicLookupReasonOff, publicLookupDisabledMessage)
+	}
+	return nil
+}
+
+// publicLookupWithoutKnowledge refuses a Guest's turn when the public-lookup
+// agent has no platform public knowledge base to read: none published, none
+// that fits its tools, or the listing failed. Without one the chat service
+// would answer as plain chat, ungrounded. It runs in the request parser,
+// before the usage check and the user message, so the refused turn is not
+// metered.
+func (h *Handler) publicLookupWithoutKnowledge(ctx context.Context, agent *types.CustomAgent) error {
+	if h.knowledgebaseService == nil || agent == nil {
+		return errors.NewPublicLookupUnavailableError(errors.PublicLookupReasonNoKnowledge, types.PublicLookupNoKnowledgeMessage)
+	}
+	kbs, err := h.knowledgebaseService.ListKnowledgeBases(ctx)
+	if err != nil {
+		logger.Warnf(ctx, "Public portal: public knowledge bases unavailable: %v", err)
+		return errors.NewPublicLookupUnavailableError(errors.PublicLookupReasonNoKnowledge, types.PublicLookupNoKnowledgeMessage)
+	}
+	if len(tools.PlatformPublicKBIDs(kbs, agent.Config.AgentMode, agent.Config.AllowedTools)) == 0 {
+		logger.Warnf(ctx, "Public portal: no platform public knowledge base fits %s, turn refused", agent.ID)
+		return errors.NewPublicLookupUnavailableError(errors.PublicLookupReasonNoKnowledge, types.PublicLookupNoKnowledgeMessage)
 	}
 	return nil
 }

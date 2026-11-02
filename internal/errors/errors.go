@@ -41,6 +41,11 @@ const (
 	// cannot use (deleted, never existed, or outside its "Tổ chức áp dụng"
 	// list). HTTP 404; one code for all three so it never tells them apart.
 	ErrAgentUnavailable ErrorCode = 2104
+	// ErrPublicLookupUnavailable: a Guest's turn cannot run because the
+	// public lookup is switched off or has no public knowledge base to
+	// read. HTTP 503 (try again later, nothing to pick instead), with
+	// details.reason PublicLookupReasonOff or PublicLookupReasonNoKnowledge.
+	ErrPublicLookupUnavailable ErrorCode = 2105
 
 	// VectorStore binding related error codes (2200-2299).
 	// Both map to HTTP 400 with a generic message; the typed code lets
@@ -168,6 +173,22 @@ func NewServiceUnavailableError(message string) *AppError {
 		Message:  message,
 		HTTPCode: http.StatusServiceUnavailable,
 	}
+}
+
+// Reasons of ErrPublicLookupUnavailable (details.reason).
+const (
+	PublicLookupReasonOff         = "public_lookup_off"
+	PublicLookupReasonNoKnowledge = "public_lookup_no_knowledge"
+)
+
+// NewPublicLookupUnavailableError refuses a Guest's turn for reason (see
+// ErrPublicLookupUnavailable).
+func NewPublicLookupUnavailableError(reason, message string) *AppError {
+	return (&AppError{
+		Code:     ErrPublicLookupUnavailable,
+		Message:  message,
+		HTTPCode: http.StatusServiceUnavailable,
+	}).WithDetails(map[string]string{"reason": reason})
 }
 
 // NewValidationError creates a validation error

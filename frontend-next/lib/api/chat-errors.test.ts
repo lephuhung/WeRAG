@@ -3,7 +3,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { ChatStreamError, ERR_AGENT_UNAVAILABLE, ERR_TURN_RUNNING, chatErrorKey, chatErrorTextKey, isSessionLimitError, parseErrorEnvelope } from "./chat-errors.ts";
+import { ChatStreamError, ERR_AGENT_UNAVAILABLE, ERR_PUBLIC_LOOKUP_UNAVAILABLE, ERR_TURN_RUNNING, chatErrorKey, chatErrorTextKey, isSessionLimitError, parseErrorEnvelope } from "./chat-errors.ts";
 import { ApiError } from "../api-client.ts";
 
 describe("parseErrorEnvelope", () => {
@@ -39,6 +39,21 @@ describe("chatErrorKey", () => {
     const body = { success: false, error: { code: 2104, message: msg } };
     assert.equal(chatErrorKey(new ApiError(404, msg, body)), "chat.err.agentUnavailable");
     assert.equal(chatErrorKey(new ChatStreamError(404, 1003, "Session not found")), "chat.err.notFound");
+  });
+  it("tells a Guest the public lookup cannot run, not to pick another assistant", () => {
+    const msg = "Hiện không có kho tri thức công khai nào để trả lời.";
+    assert.equal(
+      chatErrorKey(new ChatStreamError(503, ERR_PUBLIC_LOOKUP_UNAVAILABLE, msg, "public_lookup_no_knowledge")),
+      "chat.err.publicLookup.noKnowledge",
+    );
+    assert.equal(
+      chatErrorKey(new ChatStreamError(503, ERR_PUBLIC_LOOKUP_UNAVAILABLE, "tạm tắt", "public_lookup_off")),
+      "chat.err.publicLookup.off",
+    );
+    const body = { success: false, error: { code: 2105, message: msg, details: { reason: "public_lookup_no_knowledge" } } };
+    assert.equal(chatErrorKey(new ApiError(503, msg, body)), "chat.err.publicLookup.noKnowledge");
+    assert.equal(chatErrorTextKey("chat.err.publicLookup.off", true), "chat.err.publicLookup.off");
+    assert.equal(chatErrorKey(new ChatStreamError(503, 1008, "busy")), "chat.err.unavailable");
   });
   it("names the usage-package refusal", () => {
     assert.equal(chatErrorKey(new ChatStreamError(429, 1006, "no package", "no_subscription")), "chat.err.usage.noSubscription");
@@ -96,5 +111,24 @@ describe("chatErrorTextKey", () => {
     for (const k of ["chat.err.usage.limit", "chat.err.usage.noSubscription", "chat.err.usage.expired"] as const) {
       assert.equal(chatErrorTextKey(k, false), k);
     }
+  });
+});
+
+describe("backend code before HTTP status", () => {
+  it("names a specific refusal whatever status carries it", () => {
+    // a gateway or a handler change may send these with another status
+    assert.equal(
+      chatErrorKey(new ChatStreamError(500, ERR_PUBLIC_LOOKUP_UNAVAILABLE, "x", "public_lookup_off")),
+      "chat.err.publicLookup.off",
+    );
+    assert.equal(chatErrorKey(new ChatStreamError(502, ERR_PUBLIC_LOOKUP_UNAVAILABLE)), "chat.err.publicLookup.off");
+    assert.equal(chatErrorKey(new ChatStreamError(503, ERR_AGENT_UNAVAILABLE, "x")), "chat.err.agentUnavailable");
+    assert.equal(chatErrorKey(new ChatStreamError(503, ERR_TURN_RUNNING, "x")), "chat.err.turnRunning");
+  });
+  it("falls back to the status for generic codes", () => {
+    assert.equal(chatErrorKey(new ChatStreamError(503, 1008, "busy")), "chat.err.unavailable");
+    assert.equal(chatErrorKey(new ChatStreamError(503, 2201, "vector store")), "chat.err.unavailable");
+    assert.equal(chatErrorKey(new ChatStreamError(500, 1007, "internal")), "chat.err.server");
+    assert.equal(chatErrorKey(new ChatStreamError(409, 2001, "exists")), null);
   });
 });

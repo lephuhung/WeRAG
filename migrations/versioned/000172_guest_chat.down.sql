@@ -1,6 +1,6 @@
 -- Rollback for 000172_guest_chat: the seeded guest plan (by its fixed id,
 -- never another plan coded 'guest') with its subscriptions, and the public
--- portal with the Guests' chats held in it.
+-- portal with the Guests' chats and usage counters held in it.
 --
 -- An order references the plan (usage_orders.plan_id, no cascade) only if
 -- someone sold it after the seed: then the plan and its subscriptions stay,
@@ -14,6 +14,21 @@ BEGIN
         DELETE FROM usage_plans WHERE id = '00000000-0000-4000-8000-000000000172';
     END IF;
 END $$;
+
+-- The usage counters guest chat wrote: the Guests' own (scope 'guest',
+-- which only portal turns write), the portal sessions' lifetime counters
+-- and the portal tenant's totals.
+DELETE FROM usage_counters WHERE scope_type = 'guest';
+DELETE FROM usage_counters
+WHERE scope_type = 'session'
+  AND scope_id IN (
+    SELECT s.id FROM sessions s
+    JOIN tenants t ON t.id = s.tenant_id
+    WHERE t.kind = 'public_portal'
+);
+DELETE FROM usage_counters
+WHERE scope_type = 'tenant'
+  AND scope_id IN (SELECT id::text FROM tenants WHERE kind = 'public_portal');
 
 DELETE FROM messages
 WHERE session_id IN (

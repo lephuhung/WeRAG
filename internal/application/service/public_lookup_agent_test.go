@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -170,4 +172,52 @@ func TestResolveKnowledgeBasesPublicMode(t *testing.T) {
 		Session: session, CustomAgent: agent, KnowledgeBaseIDs: []string{"pub-2", "own"}})
 	require.NoError(t, err)
 	require.Equal(t, []string{"pub-2"}, kbIDs)
+}
+
+type failingKBList struct {
+	interfaces.KnowledgeBaseService
+	err error
+}
+
+func (f failingKBList) ListKnowledgeBases(context.Context) ([]*types.KnowledgeBase, error) {
+	return nil, f.err
+}
+
+// In the public portal an empty public scope or a listing error fails the
+// turn: it never becomes an ungrounded pure-chat answer. Outside the portal
+// the old behaviour (an empty scope) stays.
+func TestResolveKnowledgeBasesPublicPortalFailsClosed(t *testing.T) {
+	agent := &types.CustomAgent{Config: types.CustomAgentConfig{
+		AgentMode: types.AgentModeSmartReasoning, KBSelectionMode: types.KBSelectionModePublic,
+		AllowedTools: []string{"search_knowledge"},
+	}}
+	portal := context.WithValue(context.Background(), types.TenantInfoContextKey,
+		&types.Tenant{ID: 10012, Kind: types.TenantKindPublicPortal})
+	session := &types.Session{TenantID: 10012}
+
+	svc := &sessionService{knowledgeBaseService: failingKBList{err: errors.New("db down")}}
+	_, _, err := svc.resolveKnowledgeBases(portal, &types.QARequest{Session: session, CustomAgent: agent})
+	require.ErrorContains(t, err, "db down")
+
+	svc = &sessionService{knowledgeBaseService: failingKBList{}}
+	_, _, err = svc.resolveKnowledgeBases(portal, &types.QARequest{Session: session, CustomAgent: agent})
+	var appErr *apperrors.AppError
+	require.ErrorAs(t, err, &appErr)
+	require.Equal(t, apperrors.ErrPublicLookupUnavailable, appErr.Code)
+
+	// a request id outside the public scope narrows it to nothing: refused too
+	svc = &sessionService{knowledgeBaseService: publicScopeKBList{}}
+	_, _, err = svc.resolveKnowledgeBases(portal, &types.QARequest{
+		Session: session, CustomAgent: agent, KnowledgeBaseIDs: []string{"own"}})
+	require.ErrorAs(t, err, &appErr)
+
+	kbIDs, _, err := svc.resolveKnowledgeBases(portal, &types.QARequest{Session: session, CustomAgent: agent})
+	require.NoError(t, err)
+	require.Equal(t, []string{"pub-1", "pub-2"}, kbIDs)
+
+	svc = &sessionService{knowledgeBaseService: failingKBList{}}
+	kbIDs, _, err = svc.resolveKnowledgeBases(context.Background(), &types.QARequest{
+		Session: &types.Session{TenantID: 7}, CustomAgent: agent})
+	require.NoError(t, err)
+	require.Empty(t, kbIDs)
 }

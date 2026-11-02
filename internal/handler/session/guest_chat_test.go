@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -57,6 +58,10 @@ func TestPublicLookupUnavailable(t *testing.T) {
 	require.Error(t, publicLookupUnavailable(&types.CustomAgent{ID: types.BuiltinSmartReasoningID, Switch: &on}))
 	require.Error(t, publicLookupUnavailable(&types.CustomAgent{ID: types.BuiltinPublicLookupID, Switch: &off}))
 	require.NoError(t, publicLookupUnavailable(&types.CustomAgent{ID: types.BuiltinPublicLookupID, Switch: &on}))
+	// its own 503 code, so the Guest is not told to pick another assistant
+	appErr := publicLookupUnavailable(nil).(*errors.AppError)
+	require.Equal(t, errors.ErrPublicLookupUnavailable, appErr.Code)
+	require.Equal(t, map[string]string{"reason": errors.PublicLookupReasonOff}, appErr.Details)
 }
 
 // A SuperAdmin save from the agent editor cannot widen a Guest's turn: the

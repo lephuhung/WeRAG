@@ -95,6 +95,7 @@ type tenantMemberService struct {
 	audit     interfaces.AuditLogService     // optional; nil ⇒ no audit, business ops still succeed
 	userRepo  interfaces.UserRepository      // optional; used to clear stale home-tenant pointers
 	tokenRepo interfaces.AuthTokenRepository // optional; used to revoke sessions after removal
+	plans     interfaces.UsagePlanRepository // optional; drops a joining Guest's guest plan
 }
 
 // NewTenantMemberService constructs the service. Wired up via the DI
@@ -104,6 +105,9 @@ type tenantMemberService struct {
 // constructs tenant_member before audit_log won't crash and tests
 // don't need to stub the dependency unless they care about audit
 // behaviour.
+//
+// plans is optional too: a new membership drops the person's guest plan
+// (dropGuestPackage).
 //
 // userRepo / tokenRepo are also optional and only used by RemoveMember
 // cleanup: after a membership is soft-deleted we best-effort clear a
@@ -116,13 +120,41 @@ func NewTenantMemberService(
 	audit interfaces.AuditLogService,
 	userRepo interfaces.UserRepository,
 	tokenRepo interfaces.AuthTokenRepository,
+	plans interfaces.UsagePlanRepository,
 ) interfaces.TenantMemberService {
 	return &tenantMemberService{
 		repo:      repo,
 		audit:     audit,
 		userRepo:  userRepo,
 		tokenRepo: tokenRepo,
+		plans:     plans,
 	}
+}
+
+// dropGuestPackage removes the guest-plan subscription of a person who has
+// just become a member: outside the public portal it counts for nothing
+// (the usage guard ignores it), yet the usage page kept showing it, frozen,
+// with "change" and "cancel". As when a plan change replaces it
+// (CreateSubscription), the row is deleted rather than cancelled: the guard
+// creates a fresh one should the person become a Guest again. A bought
+// package is left alone. Best-effort: the membership stands either way.
+func (s *tenantMemberService) dropGuestPackage(ctx context.Context, userID string) {
+	if s.plans == nil || userID == "" {
+		return
+	}
+	sub, err := s.plans.GetActiveSubscription(ctx, types.UsageScopeUser, userID)
+	if err != nil {
+		logger.Warnf(ctx, "guest package of %s not checked after joining: %v", userID, err)
+		return
+	}
+	if sub == nil || rolePlan(sub.Plan) != types.UsageGuestPlanCode {
+		return
+	}
+	if err := s.plans.DeleteSubscription(ctx, sub.ID); err != nil {
+		logger.Warnf(ctx, "guest package %s of %s not removed after joining: %v", sub.ID, userID, err)
+		return
+	}
+	logger.Infof(ctx, "guest package %s of %s removed: the account joined an organization", sub.ID, userID)
 }
 
 // emitAudit is the per-mutation audit hook. Best-effort: a nil audit
@@ -220,6 +252,7 @@ func (s *tenantMemberService) AddMember(
 		}
 		return nil, err
 	}
+	s.dropGuestPackage(ctx, userID)
 	s.emitAudit(ctx, &types.AuditLog{
 		TenantID:     tenantID,
 		ActorUserID:  auditActor(ctx),
@@ -274,6 +307,7 @@ func (s *tenantMemberService) EnsureAdmin(
 		return nil, err
 	}
 	logger.Infof(ctx, "Bootstrapped admin membership for user=%s tenant=%d", userID, tenantID)
+	s.dropGuestPackage(ctx, userID)
 	return member, nil
 }
 

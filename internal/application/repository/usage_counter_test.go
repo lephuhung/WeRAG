@@ -100,3 +100,27 @@ func TestUsageCounterFailedAddLeavesMessageUncounted(t *testing.T) {
 	require.Len(t, rows, 1)
 	require.Equal(t, int64(50), rows[0].Value)
 }
+
+// GetMany reads several scopes of one type in one query, with their ids.
+func TestUsageCounterGetMany(t *testing.T) {
+	repo, _ := newUsageCounterTestRepo(t)
+	ctx := context.Background()
+	inc := func(scope, id, period string, d int64) types.UsageIncrement {
+		return types.UsageIncrement{ScopeType: scope, ScopeID: id, Metric: "questions", PeriodKey: period, Delta: d}
+	}
+	require.NoError(t, repo.Add(ctx, []types.UsageIncrement{
+		inc("guest", "g1", "2026-10-13", 2), inc("guest", "g2", "2026-10-13", 5),
+		inc("guest", "g3", "2026-10-13", 7), inc("user", "g1", "2026-10-13", 9),
+		inc("guest", "g1", "2026-09-01", 1),
+	}))
+	rows, err := repo.GetMany(ctx, "guest", []string{"g1", "g2"}, []string{"2026-10-13"})
+	require.NoError(t, err)
+	got := map[string]int64{}
+	for _, r := range rows {
+		got[r.ScopeID] = r.Value
+	}
+	require.Equal(t, map[string]int64{"g1": 2, "g2": 5}, got)
+	rows, err = repo.GetMany(ctx, "guest", nil, []string{"2026-10-13"})
+	require.NoError(t, err)
+	require.Empty(t, rows)
+}

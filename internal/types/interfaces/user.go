@@ -152,7 +152,8 @@ type UserRepository interface {
 	SearchUsers(ctx context.Context, query string, limit int) ([]*types.User, error)
 	// ListGuestUsers lists the active accounts that are Guests: not a
 	// SuperAdmin and without an active membership of a live tenant (the
-	// rule of types.CountsAsMembership).
+	// rule of types.CountsAsMembership), with id, username, email and
+	// created_at only.
 	ListGuestUsers(ctx context.Context) ([]*types.User, error)
 }
 

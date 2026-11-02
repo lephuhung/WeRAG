@@ -138,6 +138,9 @@ func (s *messageService) meterMessage(ctx context.Context, tenantID uint64, mess
 				sessionID = ""
 			}
 			s.usageMeter.RecordQuestion(ctx, tenantID, userID, sessionID)
+			// the question is in the counters now: the place the usage
+			// check reserved for it is no longer needed
+			types.UsageTurnGrantFromContext(ctx).ReleaseReservation()
 		}
 	case "assistant":
 		s.usageMeter.RecordMessageUsage(ctx, message)

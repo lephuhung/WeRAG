@@ -215,6 +215,9 @@ func (s *Server) runQA(
 			return "", nil, err
 		}
 		ctx = types.WithUsageTurnGrant(ctx, grant)
+		// saving the user message releases the reserved question; a turn
+		// that fails before it frees the place on return
+		defer grant.ReleaseReservation()
 	}
 
 	requestID := uuid.New().String()

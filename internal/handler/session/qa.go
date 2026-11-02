@@ -247,6 +247,9 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 			return nil, nil, err
 		}
 		customAgent = enforcePublicLookupConfig(customAgent)
+		if err := h.publicLookupWithoutKnowledge(ctx, customAgent); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	// Merge @mentioned items into knowledge_base_ids and knowledge_ids
@@ -1071,6 +1074,13 @@ func (h *Handler) SearchKnowledge(c *gin.Context) {
 // @Security     ApiKeyAuth
 // @Router       /knowledge-chat/{session_id} [post]
 func (h *Handler) KnowledgeQA(c *gin.Context) {
+	// The quick-answer pipeline does not run the public-lookup agent a
+	// Guest is held to; auth never serves this route in the portal, and
+	// this keeps it so should the allow-list ever drift.
+	if types.InPublicPortal(c.Request.Context()) {
+		_ = c.Error(errors.NewBadRequestError("guest chat runs on /agent-chat"))
+		return
+	}
 	// Parse and validate request
 	reqCtx, request, err := h.parseQARequest(c, "KnowledgeQA")
 	if err != nil {
@@ -1315,6 +1325,8 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 
 	if mode == qaModeAgent {
 		if err := h.rejectIfOtherAgentRunLive(ctx, reqCtx); err != nil {
+			// refused before its question was saved: free the reserved place
+			types.UsageTurnGrantFromContext(ctx).ReleaseReservation()
 			if reqCtx.c != nil && !reqCtx.skipSSE {
 				_ = reqCtx.c.Error(err)
 			} else {
@@ -1337,6 +1349,7 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 			},
 		}); err != nil {
 			logger.Errorf(ctx, "Failed to emit agent query event: %v", err)
+			types.UsageTurnGrantFromContext(ctx).ReleaseReservation()
 			return
 		}
 	}
@@ -1346,7 +1359,12 @@ func (h *Handler) executeQA(reqCtx *qaRequestContext, mode qaMode, generateTitle
 
 	// Create user message. Include pre-uploaded document metadata so history
 	// reload shows the attachments even though their content is selected later.
-	if err := h.persistTurnMessages(ctx, reqCtx); err != nil {
+	persistErr := h.persistTurnMessages(ctx, reqCtx)
+	// A question saved above is in the counters (the meter released its
+	// reservation); a turn that reused its user message or failed to save
+	// it frees the place now rather than at the reservation's expiry.
+	types.UsageTurnGrantFromContext(ctx).ReleaseReservation()
+	if err := persistErr; err != nil {
 		if reqCtx.c != nil && !reqCtx.skipSSE {
 			_ = reqCtx.c.Error(errors.NewInternalServerError(err.Error()))
 		} else {

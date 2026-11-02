@@ -69,7 +69,6 @@ var guestChatCases = []struct{ method, path string }{
 	{http.MethodPost, "/api/v1/sessions/s1/continue"},
 	{http.MethodGet, "/api/v1/sessions/continue-stream/s1"},
 	{http.MethodPost, "/api/v1/agent-chat/s1"},
-	{http.MethodPost, "/api/v1/knowledge-chat/s1"},
 	{http.MethodGet, "/api/v1/messages/s1/load"},
 	{http.MethodDelete, "/api/v1/messages/s1/m1"},
 	{http.MethodPut, "/api/v1/messages/s1/m1/feedback"},
@@ -94,6 +93,8 @@ var memberOnlyChatCases = []struct{ method, path string }{
 	{http.MethodPost, "/api/v1/sessions/s1/documents/d1/content"},
 	{http.MethodPost, "/api/v1/sessions/s1/documents/d1/word-file"},
 	{http.MethodPost, "/api/v1/knowledge-search"},
+	// the quick-answer pipeline ignores the forced public-lookup agent
+	{http.MethodPost, "/api/v1/knowledge-chat/s1"},
 	{http.MethodPost, "/api/v1/messages/search"},
 	{http.MethodGet, "/api/v1/agents/a1"},
 	{http.MethodGet, "/api/v1/agents/type-presets"},

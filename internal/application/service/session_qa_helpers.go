@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
@@ -41,11 +42,25 @@ func (s *sessionService) resolveKnowledgeBases(
 		if hasExplicitMention {
 			logger.Infof(ctx, "KBSelectionMode=public: request targets kbs=%v docs=%v only narrow the public scope", kbIDs, knowledgeIDs)
 		}
-		kbIDs = s.resolveKnowledgeBasesFromAgent(ctx, customAgent, req.Session.TenantID)
+		if types.InPublicPortal(ctx) {
+			// A Guest's turn never runs without public knowledge: a listing
+			// error or an empty scope would otherwise downgrade it to an
+			// ungrounded pure-chat answer. The chat handler refuses such a
+			// turn before it is metered; this is the last line.
+			if kbIDs, err = s.platformPublicKBIDs(ctx, customAgent); err != nil {
+				return nil, nil, fmt.Errorf("list public knowledge bases: %w", err)
+			}
+		} else {
+			kbIDs = s.resolveKnowledgeBasesFromAgent(ctx, customAgent, req.Session.TenantID)
+		}
 		if len(requestedKBIDs) > 0 {
 			// Request ids may only narrow the public scope: an MCP endpoint
 			// or API caller restricted to some bases keeps that restriction.
 			kbIDs = intersectStrings(kbIDs, requestedKBIDs)
+		}
+		if len(kbIDs) == 0 && types.InPublicPortal(ctx) {
+			return nil, nil, apperrors.NewPublicLookupUnavailableError(
+				apperrors.PublicLookupReasonNoKnowledge, types.PublicLookupNoKnowledgeMessage)
 		}
 		knowledgeIDs = nil
 		req.TagScopes = nil
