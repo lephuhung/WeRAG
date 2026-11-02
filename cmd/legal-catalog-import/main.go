@@ -152,12 +152,6 @@ func main() {
 	}
 	docs, alias := legalcatalog.ResolveTwins(catalogued, docs)
 	log.Printf("%d twin documents attached to their catalogue row", len(alias))
-	survivor := func(id string) string {
-		if s, ok := alias[id]; ok {
-			return s
-		}
-		return id
-	}
 
 	// A merge may link the imported documents to any catalogued one.
 	known := ids
@@ -192,41 +186,18 @@ func main() {
 		known = found
 	}
 
-	type edgeKey struct{ from, to, rel string }
-	seen := map[edgeKey]bool{}
-	var rels []*types.LegalDocumentRelation
-	skipped := map[string]int{}
+	edges := newEdgeBuilder(ids, known, alias)
 	if err := readJSONL(*relsPath, func(raw []byte) error {
 		var r vbplRelation
 		if err := json.Unmarshal(raw, &r); err != nil {
 			return err
 		}
-		from, to, rel, ok := legalcatalog.VBPLRelationEdge(r.DocID, r.OtherDocID, r.Relationship)
-		if !ok {
-			skipped["label:"+r.Relationship]++
-			return nil
-		}
-		if !ids[from] && !ids[to] {
-			skipped["outside catalogue"]++
-			return nil
-		}
-		from, to = survivor(from), survivor(to)
-		if !known[from] || !known[to] || from == to {
-			skipped["outside catalogue"]++
-			return nil
-		}
-		k := edgeKey{from, to, string(rel)}
-		if seen[k] {
-			return nil
-		}
-		seen[k] = true
-		rels = append(rels, &types.LegalDocumentRelation{
-			FromID: from, ToID: to, Relation: rel, SourceLabel: r.Relationship,
-		})
+		edges.add(r)
 		return nil
 	}); err != nil {
 		log.Fatalf("read relations: %v", err)
 	}
+	rels, skipped := edges.rels, edges.skipped
 
 	// Reviewed rows are the curated truth: the portal never overwrites them.
 	// Differing portal values are parked in source_pending for the reviewer.
@@ -304,6 +275,57 @@ func main() {
 	for reason, n := range skipped {
 		log.Printf("skipped %d relation rows: %s", n, reason)
 	}
+}
+
+// edgeBuilder turns raw vbpl relation rows into catalogue edges: labels
+// without legal effect dropped, an edge kept only when it touches an
+// imported document (ids) and both ends, after a twin is replaced by its
+// surviving row (alias, from legalcatalog.ResolveTwins), are known; a self
+// edge or a repeat (two twins listing the same edge) is dropped.
+type edgeBuilder struct {
+	ids, known map[string]bool
+	alias      map[string]string
+	seen       map[edgeKey]bool
+	rels       []*types.LegalDocumentRelation
+	skipped    map[string]int
+}
+
+type edgeKey struct{ from, to, rel string }
+
+func newEdgeBuilder(ids, known map[string]bool, alias map[string]string) *edgeBuilder {
+	return &edgeBuilder{ids: ids, known: known, alias: alias, seen: map[edgeKey]bool{}, skipped: map[string]int{}}
+}
+
+func (b *edgeBuilder) survivor(id string) string {
+	if s, ok := b.alias[id]; ok {
+		return s
+	}
+	return id
+}
+
+func (b *edgeBuilder) add(r vbplRelation) {
+	from, to, rel, ok := legalcatalog.VBPLRelationEdge(r.DocID, r.OtherDocID, r.Relationship)
+	if !ok {
+		b.skipped["label:"+r.Relationship]++
+		return
+	}
+	if !b.ids[from] && !b.ids[to] {
+		b.skipped["outside catalogue"]++
+		return
+	}
+	from, to = b.survivor(from), b.survivor(to)
+	if !b.known[from] || !b.known[to] || from == to {
+		b.skipped["outside catalogue"]++
+		return
+	}
+	k := edgeKey{from, to, string(rel)}
+	if b.seen[k] {
+		return
+	}
+	b.seen[k] = true
+	b.rels = append(b.rels, &types.LegalDocumentRelation{
+		FromID: from, ToID: to, Relation: rel, SourceLabel: r.Relationship,
+	})
 }
 
 // openDB connects to the Postgres database the server uses (DB_* env).
