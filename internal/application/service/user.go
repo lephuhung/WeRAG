@@ -43,6 +43,12 @@ var (
 	// the Go error-string convention) on purpose: clients match this exact
 	// string, including the frontend-next login page.
 	ErrUserDisabled = errors.New("Account is disabled")
+	// ErrAPIKeyOwnerDisabled rejects an organization API key whose acting
+	// user (the organization's first user, see UserService.GetUserByTenantID)
+	// is deactivated. Same 401 + code ACCOUNT_DISABLED as ErrUserDisabled;
+	// the text names the key owner so an integration knows its own key is
+	// not at fault and an Organization admin must act.
+	ErrAPIKeyOwnerDisabled = errors.New("API key owner account is disabled")
 
 	// ErrUserUsernameExists is returned by Register when the target entity's
 	// username already exists.

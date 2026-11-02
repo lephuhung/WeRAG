@@ -893,6 +893,18 @@ func attachAPIKeyAuthContext(
 			}
 			logger.Infof(c.Request.Context(),
 				"No user found for tenant %d via API key, using synthetic system user %s", tenantID, user.ID)
+		} else if !user.IsActive {
+			// An organization key acts as this real user row, so a locked
+			// account locks its keys too (same rule as ValidateToken). The
+			// row is already loaded here: no extra query.
+			logger.Warnf(c.Request.Context(),
+				"[auth] API key refused: acting user %s of tenant %d is disabled", user.ID, tenantID)
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": service.ErrAPIKeyOwnerDisabled.Error(),
+				"code":  "ACCOUNT_DISABLED",
+			})
+			c.Abort()
+			return
 		}
 
 		var principalErr error
