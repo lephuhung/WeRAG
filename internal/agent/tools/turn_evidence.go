@@ -201,14 +201,6 @@ func containsAmount(list []float64, v float64) bool {
 	return false
 }
 
-func amountsText(list []float64) string {
-	parts := make([]string, len(list))
-	for i, v := range list {
-		parts[i] = formatVNDPlain(v)
-	}
-	return strings.Join(parts, " / ")
-}
-
 // formatVNDPlain writes 1000000000 as "1.000.000.000 đ".
 func formatVNDPlain(v float64) string {
 	s := strconv.FormatFloat(v, 'f', 0, 64)
@@ -261,48 +253,78 @@ func checkThresholdBasis(ctx context.Context, identity LegalDocIdentityFunc, bas
 			}
 		}
 	}
-	cited := byKey[vietnamese_legal.CatalogNumberKey(basis)]
-	if cited == nil {
+	// the số hiệu written in the basis ("Nghị định 68/2026/NĐ-CP (sửa đổi
+	// bởi Nghị định 141/2026/NĐ-CP)" names two); a number only named in the
+	// evidence (an amender in a current-wording note) counts as looked up
+	mentioned := map[string]bool{}
+	for _, list := range texts {
+		for _, t := range list {
+			for _, sp := range vietnamese_legal.CitedNumberSpans(t) {
+				mentioned[vietnamese_legal.CatalogNumberKey(t[sp[0]:sp[1]])] = true
+			}
+		}
+	}
+	var keys []string
+	for _, sp := range vietnamese_legal.CitedNumberSpans(basis) {
+		keys = append(keys, vietnamese_legal.CatalogNumberKey(basis[sp[0]:sp[1]]))
+	}
+	if len(keys) == 0 {
+		keys = []string{vietnamese_legal.CatalogNumberKey(basis)}
+	}
+	var cited *evDoc
+	known := false
+	for _, k := range keys {
+		if e := byKey[k]; e != nil {
+			known = true
+			if cited == nil || (!containsAmount(cited.values, value) && containsAmount(e.values, value)) {
+				cited = e
+			}
+		} else if mentioned[k] {
+			known = true
+		}
+	}
+	if !known {
 		return fmt.Errorf("Văn bản %s ghi ở %s không có trong kết quả tra cứu đã trả về ở các bước trước của lượt này "+
 			"(lệnh tra cứu gọi cùng lúc với công cụ tính chưa được tính). "+
 			"Tra văn bản quy định %s (search_knowledge hoặc read_document) trước, rồi gọi lại với đúng số hiệu văn bản đã đọc", basis, basisParam, label)
 	}
-	if cited.id.Status == "Hết hiệu lực toàn bộ" {
+	if cited != nil && cited.id.Status == "Hết hiệu lực toàn bộ" {
 		return fmt.Errorf("Văn bản %s đã hết hiệu lực toàn bộ; tra văn bản đang có hiệu lực quy định %s", cited.id.Number, label)
 	}
-	if len(cited.values) > 0 && !containsAmount(cited.values, value) {
-		return fmt.Errorf("Văn bản %s ghi %s là %s, khác %s đã truyền; dùng đúng số trong văn bản",
-			cited.id.Number, label, amountsText(cited.values), formatVNDPlain(value))
-	}
-	// the cited document states no figure ("mức quy định của Chính phủ", an
-	// amending decree): the value must come from an evidence document that
-	// states it, and the newer-document rule runs from that one
+	// the document the figure comes from: the cited one when its text states
+	// it, else the evidence document of the highest rank, then newest, that
+	// states it. A document's text may hold old figures too (a provision
+	// whose amendment is not verified keeps its old words), so no refusal
+	// says which figure to use: only which document to read again.
 	anchor := cited
-	if len(cited.values) == 0 {
-		anchor = nil
+	if anchor == nil || !containsAmount(anchor.values, value) {
+		var best *evDoc
 		for _, e := range byKey {
 			if !containsAmount(e.values, value) || e.id.Status == "Hết hiệu lực toàn bộ" {
 				continue
 			}
-			if anchor == nil || legalRank(e.id.Number) > legalRank(anchor.id.Number) ||
-				(legalRank(e.id.Number) == legalRank(anchor.id.Number) && issuedOn(e.id) > issuedOn(anchor.id)) {
-				anchor = e
+			if best == nil || legalRank(e.id.Number) > legalRank(best.id.Number) ||
+				(legalRank(e.id.Number) == legalRank(best.id.Number) && issuedOn(e.id) > issuedOn(best.id)) {
+				best = e
 			}
 		}
-		if anchor == nil {
-			return fmt.Errorf("Văn bản %s không ghi con số %s, và không văn bản nào trong kết quả tra cứu của lượt này ghi %s. "+
-				"Ghi ở %s số hiệu văn bản nêu con số đó", cited.id.Number, label, formatVNDPlain(value), basisParam)
+		if best != nil {
+			anchor = best
 		}
 	}
-	// a newer document of the same or a higher rank that says another figure
+	if anchor == nil {
+		return nil // nothing in the evidence dates the figure
+	}
+	// a newer document of the same or a higher rank that also sets this
+	// figure, never with the value passed
 	var newer *evDoc
-	citedRank, citedDate := legalRank(anchor.id.Number), issuedOn(anchor.id)
+	anchorRank, anchorDate := legalRank(anchor.id.Number), issuedOn(anchor.id)
 	for _, e := range byKey {
 		if e == anchor || len(e.values) == 0 || containsAmount(e.values, value) || e.id.Status == "Hết hiệu lực toàn bộ" {
 			continue
 		}
 		date := issuedOn(e.id)
-		if legalRank(e.id.Number) < citedRank || date == "" || citedDate == "" || date <= citedDate {
+		if legalRank(e.id.Number) < anchorRank || date == "" || anchorDate == "" || date <= anchorDate {
 			continue
 		}
 		if newer == nil || date > issuedOn(newer.id) {
@@ -310,9 +332,9 @@ func checkThresholdBasis(ctx context.Context, identity LegalDocIdentityFunc, bas
 		}
 	}
 	if newer != nil {
-		return fmt.Errorf("Văn bản %s (ban hành %s) mới hơn và có hiệu lực pháp lý không thấp hơn %s, ghi %s là %s. "+
-			"Dùng %s theo văn bản hiện hành và ghi số hiệu đó ở %s",
-			newer.id.Number, issuedOn(newer.id), anchor.id.Number, label, amountsText(newer.values), label, basisParam)
+		return fmt.Errorf("Văn bản %s (ban hành %s) mới hơn và có hiệu lực pháp lý không thấp hơn %s cũng quy định %s, không phải con số %s. "+
+			"Đọc lại %s trong lời văn hiện hành của %s (search_knowledge hoặc read_document), rồi gọi lại và ghi số hiệu văn bản đã dùng ở %s",
+			newer.id.Number, issuedOn(newer.id), anchor.id.Number, label, formatVNDPlain(value), label, newer.id.Number, basisParam)
 	}
 	return nil
 }
