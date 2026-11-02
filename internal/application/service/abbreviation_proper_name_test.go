@@ -92,6 +92,23 @@ func TestGateUnderstandsTypedKeepReplies(t *testing.T) {
 	}
 }
 
+// A Guest's "keep as typed" answers their turn but writes no platform-wide
+// proper name.
+func TestGateGuestKeepWritesNoProperName(t *testing.T) {
+	_, store, base, owner := newTurnCoordinatorFixture(t)
+	dict := &properNameDictionary{turnDictionary: base}
+	c := NewAbbreviationTurnCoordinator(store, dict, nil)
+	ctx := context.WithValue(context.Background(), types.TenantInfoContextKey,
+		&types.Tenant{ID: 7, Kind: types.TenantKindPublicPortal})
+	r, err := c.Prepare(ctx, turnInput(owner, "u1", "a1", "Gửi Phòng PA05 về việc báo cáo"))
+	require.NoError(t, err)
+	require.Equal(t, []string{"PA05"}, r.UnknownTerms)
+	r, err = c.Prepare(ctx, turnInput(owner, "u2", "a2", "giữ nguyên"))
+	require.NoError(t, err)
+	require.Equal(t, types.AbbreviationStatusReady, r.Status)
+	require.Empty(t, dict.kept)
+}
+
 // An ordinary word kept as typed is not put in the dictionary.
 func TestGateDoesNotKeepOrdinaryWordsAsProperNames(t *testing.T) {
 	require.True(t, looksLikeProperName("Gửi Phòng PV01", "pv01"))

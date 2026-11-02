@@ -271,6 +271,21 @@ func (r *userRepository) RevokeSystemAdmin(ctx context.Context, userID, actorID 
 	return revoked, nil
 }
 
+// ListGuestUsers lists the active accounts that are Guests: not a SuperAdmin
+// and without an active membership of a live, named tenant (the rule of
+// types.CountsAsMembership). Synthetic principals have no users row.
+func (r *userRepository) ListGuestUsers(ctx context.Context) ([]*types.User, error) {
+	var users []*types.User
+	err := r.db.WithContext(ctx).
+		Where("is_active = ? AND is_system_admin = ?", true, false).
+		Where(`NOT EXISTS (SELECT 1 FROM tenant_members m JOIN tenants t ON t.id = m.tenant_id
+			WHERE m.user_id = users.id AND m.deleted_at IS NULL AND m.status = ?
+			AND t.deleted_at IS NULL AND TRIM(t.name) <> '')`, types.TenantMemberStatusActive).
+		Order("created_at ASC").
+		Find(&users).Error
+	return users, err
+}
+
 // SearchUsers searches users by username or email
 func (r *userRepository) SearchUsers(ctx context.Context, query string, limit int) ([]*types.User, error) {
 	var users []*types.User

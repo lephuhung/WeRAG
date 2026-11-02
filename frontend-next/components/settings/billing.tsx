@@ -15,7 +15,10 @@ import {
   cancelMyUsageOrder,
   createUsageOrder,
   formatPriceVND,
+  planPriceForMonths,
+  planTermPrices,
   getBillingInfo,
+  getScopeAddons,
   getUsageOrder,
   listMyUsageOrders,
   listPurchasablePlans,
@@ -25,12 +28,28 @@ import {
   type UsageBillingInfo,
   type UsageOrder,
   type UsagePlan,
+  type UsageOrderAddonLine,
   type UsageQuote,
+  type UsageScopeAddons,
   type UsageScopeKind,
 } from "@/lib/api/usage";
+import { addonLineDetail, keepOffered, toggleAddonId } from "@/lib/agent-addon-catalogue";
 import { formatDateTime } from "@/lib/datetime";
+import { useConfirm } from "@/components/confirm-dialog";
+import { ConsolePage } from "@/components/settings/console-page";
+import { FieldLabel } from "@/components/settings/field";
+import { Loading } from "@/components/settings/loading";
+import { Notice } from "@/components/settings/notice";
+import { SectionHeader } from "@/components/settings/section-header";
+import { useToast } from "@/components/toast";
 
 const MONTH_CHOICES = [1, 3, 6, 12];
+
+/* The month counts a plan can be bought for: those a priced term fits. */
+function monthChoicesFor(plan: UsagePlan | null): number[] {
+  if (!plan) return MONTH_CHOICES;
+  return MONTH_CHOICES.filter((m) => planPriceForMonths(plan, m) != null);
+}
 
 function fmtDate(v: string | null | undefined): string {
   if (!v) return "";
@@ -72,6 +91,8 @@ function seatsBelowCurrent(e: unknown): number | null {
 export function BillingPage() {
   const { t } = useT();
   const auth = useAuth();
+  const confirmAction = useConfirm();
+  const toast = useToast();
   const tenantId = Number(auth.selectedTenantId ?? auth.tenant?.id ?? 0);
   const role = auth.memberships.find((m) => String(m.tenant_id) === String(tenantId))?.role ?? "";
   const isAdmin = role === "admin" || role === "owner" || auth.user?.is_system_admin === true;
@@ -89,22 +110,39 @@ export function BillingPage() {
   const [orders, setOrders] = useState<UsageOrder[]>([]);
   const [order, setOrder] = useState<UsageOrder | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // specialist agents bought with the plan
+  const [addonIds, setAddonIds] = useState<string[]>([]);
+  // the scope's current subscription, its add-ons, and a mid-term purchase
+  const [scopeAddons, setScopeAddons] = useState<UsageScopeAddons | null>(null);
+  const [extraIds, setExtraIds] = useState<string[]>([]);
+  const [extraQuote, setExtraQuote] = useState<UsageQuote | null>(null);
+  const [extraError, setExtraError] = useState("");
 
   const plan = useMemo(() => plans.find((p) => p.id === planId) ?? null, [plans, planId]);
   const limitNames = { questions: t("usg.metricQuestions"), tokens: t("usg.metricTokens"), day: t("usg.periodDay"), month: t("usg.periodMonth") };
   const seatMode = scope === "tenant" && plan?.mode === "seat";
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const [i, pl, os] = await Promise.all([getBillingInfo(), listPurchasablePlans(scope), listMyUsageOrders()]);
       setInfo(i);
       setPlans(pl);
       setOrders(os);
+      getScopeAddons(scope)
+        .then((sa) => {
+          setScopeAddons(sa);
+          setExtraIds((cur) => keepOffered(cur, sa.purchasable));
+        })
+        .catch(() => setScopeAddons(null));
       setPlanId((cur) => (pl.some((p) => p.id === cur) ? cur : (pl[0]?.id ?? "")));
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : t("bill.loadFailed"));
+    } finally {
+      setLoading(false);
     }
   }, [scope, t]);
 
@@ -112,14 +150,56 @@ export function BillingPage() {
     void load();
   }, [load]);
 
+  // a plan switch keeps only the add-ons the new plan sells
+  useEffect(() => {
+    setAddonIds((cur) => keepOffered(cur, plan?.addons ?? []));
+  }, [plan]);
+
+  // ...and a month count the new plan is sold for (a yearly-only plan → 12)
+  const monthChoices = useMemo(() => monthChoicesFor(plan), [plan]);
+  useEffect(() => {
+    if (monthChoices.length > 0 && !monthChoices.includes(months)) setMonths(monthChoices[0]);
+  }, [monthChoices, months]);
+
+  /* "12 tháng · gói năm", "3 tháng · gói quý (tiết kiệm 15.000 VNĐ)". */
+  const monthOptionLabel = (m: number) => {
+    const priced = plan ? planPriceForMonths(plan, m) : null;
+    const base = t("bill.monthsN", { n: m });
+    if (!plan || !priced || priced.term === "month") return base;
+    const full = plan.price_vnd > 0 ? plan.price_vnd * m : 0;
+    const termName = priced.term === "year" ? t("bill.termYear") : t("bill.termQuarter");
+    return full > priced.total
+      ? `${base} · ${termName} (${t("bill.saving", { price: formatPriceVND(full - priced.total) })})`
+      : `${base} · ${termName}`;
+  };
+  /* An order's length: "12 tháng · gói năm". */
+  const orderLength = (o: UsageOrder) => {
+    if (o.kind === "addon") return t("bill.addonOrder");
+    const base = t("bill.monthsN", { n: o.months });
+    if (o.billing_term === "year") return `${base} · ${t("bill.termYear")}`;
+    if (o.billing_term === "quarter") return `${base} · ${t("bill.termQuarter")}`;
+    return base;
+  };
+
   // Re-price whenever the choice changes.
   useEffect(() => {
     if (!planId) {
       setQuote(null);
       return;
     }
+    // a plan switch first moves months to one the plan is sold for (the
+    // effect above); pricing the stale count would only flash a 400
+    if (plan?.id === planId && !monthChoices.includes(months)) return;
     let alive = true;
-    quoteUsageOrder({ scope_type: scope, plan_id: planId, months, seats: seatMode ? seats : 0, promo_code: promo })
+    quoteUsageOrder({
+      scope_type: scope,
+      plan_id: planId,
+      months,
+      seats: seatMode ? seats : 0,
+      promo_code: promo,
+      kind: "plan",
+      addon_agent_ids: addonIds,
+    })
       .then((q) => {
         if (!alive) return;
         setQuote(q);
@@ -134,7 +214,31 @@ export function BillingPage() {
     return () => {
       alive = false;
     };
-  }, [scope, planId, months, seats, seatMode, promo, t]);
+  }, [scope, planId, plan, monthChoices, months, seats, seatMode, promo, addonIds, t]);
+
+  // Price the add-ons bought on the current subscription.
+  useEffect(() => {
+    if (extraIds.length === 0) {
+      setExtraQuote(null);
+      setExtraError("");
+      return;
+    }
+    let alive = true;
+    quoteUsageOrder({ scope_type: scope, plan_id: "", months: 0, kind: "addon", addon_agent_ids: extraIds, promo_code: promo })
+      .then((q) => {
+        if (!alive) return;
+        setExtraQuote(q);
+        setExtraError("");
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setExtraQuote(null);
+        setExtraError(e instanceof Error ? e.message : t("bill.loadFailed"));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [scope, extraIds, promo, t]);
 
   // Poll a pending order until SuperAdmin confirms it.
   const pollRef = useRef<number | null>(null);
@@ -169,14 +273,61 @@ export function BillingPage() {
 
   const placeOrder = () =>
     run(async () => {
-      const o = await createUsageOrder({ scope_type: scope, plan_id: planId, months, seats: seatMode ? seats : 0, promo_code: promo });
+      const o = await createUsageOrder({
+        scope_type: scope,
+        plan_id: planId,
+        months,
+        seats: seatMode ? seats : 0,
+        promo_code: promo,
+        kind: "plan",
+        addon_agent_ids: addonIds,
+      });
       setOrder(o);
       await load();
+      toast.success(t("bill.waiting"));
     });
 
-  const cancelOrder = (o: UsageOrder) => {
-    if (!window.confirm(t("bill.cancelConfirm", { code: o.order_code }))) return;
-    void run(async () => {
+  const placeAddonOrder = () =>
+    run(async () => {
+      const o = await createUsageOrder({ scope_type: scope, plan_id: "", months: 0, kind: "addon", addon_agent_ids: extraIds, promo_code: promo });
+      setOrder(o);
+      setExtraIds([]);
+      await load();
+      toast.success(t("bill.waiting"));
+    });
+
+  const lineLabels = {
+    months: (n: number) => t("bill.monthsN", { n }),
+    half: (days: number) => t("bill.addonHalf", { days }),
+    full: (days: number) => t("bill.addonFull", { days }),
+    gap: (span: string) => t("bill.addonGap", { span }),
+    extraSeats: (n: number, amount: string) => t("bill.addonExtraSeats", { n, amount }),
+  };
+  // add-ons the scope holds now, by agent (shown next to the plan's list)
+  const heldUntil = useMemo(() => {
+    const m: Record<string, string | null> = {};
+    for (const h of scopeAddons?.held ?? []) m[h.agent_id] = h.ends_at ?? scopeAddons?.subscription?.ends_at ?? null;
+    return m;
+  }, [scopeAddons]);
+  const renderLines = (lines: UsageOrderAddonLine[] | undefined) =>
+    (lines ?? []).map((l) => (
+      <div key={l.agent_id} className="flex justify-between gap-3">
+        <span className="min-w-0 text-muted">
+          {t("bill.addonLine", { name: l.name || l.agent_id })}{" "}
+          <span className="caption text-muted-soft">{addonLineDetail(l, formatPriceVND, lineLabels)}</span>
+        </span>
+        <span className="tabular-nums">{formatPriceVND(l.amount_vnd)}</span>
+      </div>
+    ));
+
+  const cancelOrder = async (o: UsageOrder) => {
+    const ok = await confirmAction({
+      title: t("common.confirm"),
+      message: t("bill.cancelConfirm", { code: o.order_code }),
+      danger: true,
+    });
+    if (!ok) return;
+    await run(async () => {
       const u = await cancelMyUsageOrder(o.order_code);
       setOrder(u);
       await load();
@@ -189,7 +340,7 @@ export function BillingPage() {
   if (order) {
     const pending = order.status === "pending";
     return (
-      <div className="mx-auto w-full max-w-[760px] px-5 py-6">
+      <ConsolePage size="form" className="px-5 py-6">
         <button type="button" className="btn btn-outline btn-sm mb-4" onClick={() => setOrder(null)}>
           ← {t("bill.back")}
         </button>
@@ -200,20 +351,35 @@ export function BillingPage() {
                 {t("bill.order")} <span className="font-mono">{order.order_code}</span>
               </div>
               <div className="caption text-muted">
-                {order.plan_name} · {t("bill.monthsN", { n: order.months })}
+                {order.plan_name} ·{" "}
+                {orderLength(order)}
                 {order.mode === "seat" ? ` · ${t("bill.seatsN", { n: order.seats })}` : ""} · {order.scope_name}
               </div>
             </div>
-            <span className={`badge-pill text-[11px] ${order.status === "paid" ? "text-emerald-700" : pending ? "text-amber-700" : "text-muted"}`}>{t(statusKey(order.status))}</span>
+            <span className={`badge-pill text-[11px] ${order.status === "paid" ? "badge-success" : pending ? "badge-warning" : "badge-neutral"}`}>{t(statusKey(order.status))}</span>
           </div>
           <div className="space-y-1 px-4 py-3 text-[14px]">
+            {renderLines(order.addons)}
             <div className="flex justify-between"><span className="text-muted">{t("bill.subtotal")}</span><span className="tabular-nums">{formatPriceVND(order.subtotal_vnd)}</span></div>
             {order.discount_vnd > 0 && (
               <div className="flex justify-between"><span className="text-muted">{t("bill.discount")} ({order.promo_code})</span><span className="tabular-nums">−{formatPriceVND(order.discount_vnd)}</span></div>
             )}
             <div className="flex justify-between font-medium text-ink"><span>{t("bill.total")}</span><span className="tabular-nums">{formatPriceVND(order.total_vnd)}</span></div>
           </div>
-          {pending && (
+          {pending && order.total_vnd <= 0 && (
+            <div className="border-t border-hairline px-4 py-3 text-[14px] text-muted">
+              <p>{t("bill.freeOrderWaits")}</p>
+              <p className="caption mt-1 flex items-center gap-1 text-muted">
+                <IconRefresh className="h-3.5 w-3.5 animate-spin" /> {t("bill.waiting")}
+              </p>
+              <div className="mt-3 flex justify-end">
+                <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void cancelOrder(order)}>
+                  {t("bill.cancel")}
+                </button>
+              </div>
+            </div>
+          )}
+          {pending && order.total_vnd > 0 && (
             <div className="border-t border-hairline px-4 py-3">
               <div className="text-[14px] font-medium text-ink">{t("bill.payTitle")}</div>
               <div className="mt-3 flex flex-wrap gap-5">
@@ -245,7 +411,7 @@ export function BillingPage() {
                     <CopyButton value={order.transfer_content} label={t("bill.copy")} copied={t("bill.copied")} />
                   </div>
                   <p className="caption text-muted-soft">{t("bill.contentHint")}</p>
-                  {order.expires_at && <p className="caption text-amber-700">{t("bill.expiresAt", { date: fmtDate(order.expires_at) })}</p>}
+                  {order.expires_at && <p className="caption text-warning">{t("bill.expiresAt", { date: fmtDate(order.expires_at) })}</p>}
                   {info?.contact && <p className="caption text-muted">{info.contact}</p>}
                   <p className="caption flex items-center gap-1 text-muted">
                     <IconRefresh className="h-3.5 w-3.5 animate-spin" /> {t("bill.waiting")}
@@ -253,14 +419,14 @@ export function BillingPage() {
                 </div>
               </div>
               <div className="mt-3 flex justify-end">
-                <button type="button" className="btn btn-outline btn-sm text-rose-600" disabled={busy} onClick={() => cancelOrder(order)}>
+                <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void cancelOrder(order)}>
                   {t("bill.cancel")}
                 </button>
               </div>
             </div>
           )}
           {order.status === "paid" && (
-            <div className="border-t border-hairline px-4 py-3 text-[14px] text-emerald-700">
+            <div className="border-t border-hairline px-4 py-3 text-[14px] text-success">
               {t("bill.paid")} {order.paid_at ? fmtDate(order.paid_at) : ""}
             </div>
           )}
@@ -268,23 +434,43 @@ export function BillingPage() {
             <div className="border-t border-hairline px-4 py-3 text-[14px] text-muted">{t(order.status === "expired" ? "bill.expired" : "bill.cancelled")}</div>
           )}
         </div>
-        {error && <p className="caption mt-3 text-error">{error}</p>}
-      </div>
+        {error && (
+          <Notice
+            tone="error"
+            action={
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+                {t("common.retry")}
+              </button>
+            }
+          >
+            {error}
+          </Notice>
+        )}
+      </ConsolePage>
     );
   }
 
   // ---- shop view ---------------------------------------------------------------
   return (
-    <div className="mx-auto w-full max-w-[860px] space-y-6 px-5 py-6">
-      <div>
-        <h2 className="text-[16px] font-medium text-ink">{t("bill.title")}</h2>
-        <p className="caption text-muted">{t("bill.intro")}</p>
-      </div>
-      {error && <p className="caption text-error">{error}</p>}
+    <ConsolePage size="form" className="space-y-6 px-5 py-6">
+      <SectionHeader title={t("bill.title")} subtitle={t("bill.intro")} />
+      {loading && !info && <Loading />}
+      {error && (
+        <Notice
+          tone="error"
+          action={
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {error}
+        </Notice>
+      )}
       {info && !info.enabled && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[13px] text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+        <Notice tone="warning">
           {t("bill.disabled")} {info.contact}
-        </div>
+        </Notice>
       )}
 
       {isAdmin && (
@@ -309,13 +495,31 @@ export function BillingPage() {
               className={`rounded-lg border p-4 text-left transition ${planId === p.id ? "border-ink ring-1 ring-ink" : "border-hairline hover:border-hairline-strong"}`}
             >
               <div className="text-[14px] font-medium text-ink">{p.name}</div>
-              <div className="mt-1 text-[18px] font-semibold tabular-nums text-ink">
-                {formatPriceVND(p.price_vnd)} <span className="caption font-normal text-muted">{p.mode === "seat" ? t("bill.perSeatMonth") : t("bill.perMonth")}</span>
-              </div>
+              {planTermPrices(p).map((x, i) => (
+                <div
+                  key={x.term}
+                  className={i === 0 ? "mt-1 text-[18px] font-semibold tabular-nums text-ink" : "caption tabular-nums text-body"}
+                >
+                  {formatPriceVND(x.price)}{" "}
+                  <span className={i === 0 ? "caption font-normal text-muted" : "text-muted"}>
+                    {p.mode === "seat" ? `${t("bill.perSeat")} ` : ""}
+                    {x.term === "year" ? t("bill.perYear") : x.term === "quarter" ? t("bill.perQuarter") : t("bill.perMonthShort")}
+                  </span>
+                  {x.saving > 0 && <span className="ml-1 text-success">({t("bill.saving", { price: formatPriceVND(x.saving) })})</span>}
+                </div>
+              ))}
               {p.description && <p className="caption mt-1 text-muted">{p.description}</p>}
               <ul className="caption mt-2 space-y-0.5 text-body">
                 {p.limits.length === 0 ? <li>{t("usg.unlimited")}</li> : p.limits.map((l, i) => <li key={i}>• {usageLimitLabel(l, limitNames)}</li>)}
               </ul>
+              {(p.included_agents ?? []).length > 0 && (
+                <p className="caption mt-2 text-muted">
+                  {t("bill.includedAgents", { names: (p.included_agents ?? []).map((a) => a.name).join(", ") })}
+                </p>
+              )}
+              {(p.addons ?? []).length > 0 && (
+                <p className="caption mt-0.5 text-muted-soft">{t("bill.addonsAvailable", { n: (p.addons ?? []).length })}</p>
+              )}
             </button>
           ))}
         </div>
@@ -324,35 +528,77 @@ export function BillingPage() {
       {plan && (
         <div className="rounded-lg border border-hairline p-4">
           <div className="grid gap-3 sm:grid-cols-3">
-            <label className="block">
-              <span className="caption mb-1 block text-muted">{t("bill.months")}</span>
-              <select className="input" value={months} onChange={(e) => setMonths(Number(e.target.value))}>
-                {MONTH_CHOICES.map((m) => (
-                  <option key={m} value={m}>{t("bill.monthsN", { n: m })}</option>
+            <div className="block">
+              <FieldLabel htmlFor="bill-months">{t("bill.months")}</FieldLabel>
+              <select
+                id="bill-months"
+                className="input"
+                value={months}
+                onChange={(e) => setMonths(Number(e.target.value))}
+              >
+                {monthChoices.map((m) => (
+                  <option key={m} value={m}>{monthOptionLabel(m)}</option>
                 ))}
               </select>
-            </label>
+            </div>
             {seatMode && (
-              <label className="block">
-                <span className="caption mb-1 block text-muted">{t("bill.seats")}</span>
-                <input type="number" min={1} className="input" value={seats} onChange={(e) => setSeats(Math.max(1, Number(e.target.value) || 1))} />
-              </label>
+              <div className="block">
+                <FieldLabel htmlFor="bill-seats">{t("bill.seats")}</FieldLabel>
+                <input
+                  id="bill-seats"
+                  type="number"
+                  min={1}
+                  className="input"
+                  value={seats}
+                  onChange={(e) => setSeats(Math.max(1, Number(e.target.value) || 1))}
+                />
+              </div>
             )}
             <div className="block">
-              <span className="caption mb-1 block text-muted">{t("bill.promo")}</span>
+              <FieldLabel htmlFor="bill-promo">{t("bill.promo")}</FieldLabel>
               <div className="flex gap-2">
-                <input className="input uppercase" value={promoText} placeholder="VD: TET2027" onChange={(e) => setPromoText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setPromo(promoText.trim()); } }} />
+                <input
+                  id="bill-promo"
+                  aria-label={t("bill.promo")}
+                  className="input uppercase"
+                  value={promoText} placeholder="VD: TET2027" onChange={(e) => setPromoText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setPromo(promoText.trim()); } }} />
                 <button type="button" className="btn btn-outline" onClick={() => setPromo(promoText.trim())}>{t("bill.promoApply")}</button>
               </div>
               {quote?.promo_code && quote.promo_error && <span className="caption mt-1 block text-error">{t(promoErrorKey(quote.promo_error) as LocaleKey)}</span>}
               {quote?.promo_code && !quote.promo_error && (
-                <span className="caption mt-1 block text-emerald-700">{t("bill.promoApplied", { name: quote.promo_name || quote.promo_code, amount: formatPriceVND(quote.discount_vnd) })}</span>
+                <span className="caption mt-1 block text-success">{t("bill.promoApplied", { name: quote.promo_name || quote.promo_code, amount: formatPriceVND(quote.discount_vnd) })}</span>
               )}
             </div>
           </div>
+          {(plan.addons ?? []).length > 0 && (
+            <div className="mt-4">
+              <span className="caption mb-1 block text-muted">{t("bill.addonsTitle")}</span>
+              <div className="space-y-1.5">
+                {(plan.addons ?? []).map((a) => (
+                  <label key={a.agent_id} className="flex cursor-pointer items-start gap-2.5 rounded-md border border-hairline px-3 py-2 select-none">
+                    <input type="checkbox" className="mt-0.5" checked={addonIds.includes(a.agent_id)} onChange={() => setAddonIds((cur) => toggleAddonId(cur, a.agent_id))} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13.5px] text-ink">{a.name}</span>
+                      {a.description && <span className="caption block text-muted">{a.description}</span>}
+                      {a.agent_id in heldUntil && (
+                        <span className="caption block text-warning">
+                          {heldUntil[a.agent_id] ? t("bill.addonHeldUntil", { date: fmtDate(heldUntil[a.agent_id]) }) : t("bill.addonHeld")}
+                        </span>
+                      )}
+                    </span>
+                    <span className="caption shrink-0 tabular-nums text-ink">
+                      {formatPriceVND(a.price_vnd)}
+                      {a.per_seat ? t("bill.perSeatMonth") : t("bill.perMonth")}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
           {quoteError && <p className="caption mt-2 text-error">{quoteError}</p>}
           {quote && (
             <div className="mt-4 space-y-1 border-t border-hairline pt-3 text-[14px]">
+              {renderLines(quote.addons)}
               {!!quote.proration_vnd && (
                 <div className="flex justify-between">
                   <span className="text-muted">{t("bill.proration", { seats: quote.seats - (quote.current_seats ?? 0), days: quote.prorated_days ?? 0 })}</span>
@@ -360,6 +606,12 @@ export function BillingPage() {
                 </div>
               )}
               <div className="flex justify-between"><span className="text-muted">{t("bill.subtotal")}</span><span className="tabular-nums">{formatPriceVND(quote.subtotal_vnd)}</span></div>
+              {!!quote.savings_vnd && (
+                <div className="caption flex justify-between text-success">
+                  <span>{quote.billing_term === "year" ? t("bill.savedYear") : t("bill.savedQuarter")}</span>
+                  <span className="tabular-nums">{formatPriceVND(quote.savings_vnd)}</span>
+                </div>
+              )}
               {quote.discount_vnd > 0 && <div className="flex justify-between"><span className="text-muted">{t("bill.discount")}</span><span className="tabular-nums">−{formatPriceVND(quote.discount_vnd)}</span></div>}
               <div className="flex justify-between text-[15px] font-medium text-ink"><span>{t("bill.total")}</span><span className="tabular-nums">{formatPriceVND(quote.total_vnd)}</span></div>
             </div>
@@ -373,10 +625,70 @@ export function BillingPage() {
         </div>
       )}
 
+      {scopeAddons?.subscription && (scopeAddons.held.length > 0 || scopeAddons.purchasable.length > 0) && (
+        <section className="rounded-lg border border-hairline p-4">
+          <h3 className="text-[14px] font-medium text-ink">{t("bill.currentAddonsTitle")}</h3>
+          <p className="caption text-muted">
+            {scopeAddons.subscription.ends_at
+              ? t("bill.currentAddonsIntro", { date: fmtDate(scopeAddons.subscription.ends_at) })
+              : t("bill.currentAddonsOpen")}
+          </p>
+          {scopeAddons.held.length > 0 && (
+            <ul className="caption mt-2 space-y-0.5 text-body">
+              {scopeAddons.held.map((h) => (
+                <li key={h.agent_id}>
+                  • {h.agent_name || h.agent_id}
+                  {h.ends_at ? ` — ${t("bill.addonUntil", { date: fmtDate(h.ends_at) })}` : ` — ${t("bill.addonWithSub")}`}
+                </li>
+              ))}
+            </ul>
+          )}
+          {scopeAddons.purchasable.length > 0 && scopeAddons.subscription.ends_at && (
+            <>
+              <div className="mt-3 space-y-1.5">
+                {scopeAddons.purchasable.map((a) => (
+                  <label key={a.agent_id} className="flex cursor-pointer items-start gap-2.5 rounded-md border border-hairline px-3 py-2 select-none">
+                    <input type="checkbox" className="mt-0.5" checked={extraIds.includes(a.agent_id)} onChange={() => setExtraIds((cur) => toggleAddonId(cur, a.agent_id))} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-[13.5px] text-ink">{a.name}</span>
+                      {a.description && <span className="caption block text-muted">{a.description}</span>}
+                    </span>
+                    <span className="caption shrink-0 tabular-nums text-ink">
+                      {formatPriceVND(a.price_vnd)}
+                      {a.per_seat ? t("bill.perSeatMonth") : t("bill.perMonth")}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="caption mt-2 text-muted-soft">{t("bill.midTermRule")}</p>
+              {extraError && <p className="caption mt-2 text-error">{extraError}</p>}
+              {extraQuote && (
+                <div className="mt-3 space-y-1 border-t border-hairline pt-3 text-[14px]">
+                  {renderLines(extraQuote.addons)}
+                  {extraQuote.discount_vnd > 0 && <div className="flex justify-between"><span className="text-muted">{t("bill.discount")}</span><span className="tabular-nums">−{formatPriceVND(extraQuote.discount_vnd)}</span></div>}
+                  <div className="flex justify-between text-[15px] font-medium text-ink"><span>{t("bill.total")}</span><span className="tabular-nums">{formatPriceVND(extraQuote.total_vnd)}</span></div>
+                </div>
+              )}
+              <div className="mt-3 flex justify-end">
+                <button type="button" className="btn btn-primary" disabled={!info?.enabled || !extraQuote || busy} onClick={() => void placeAddonOrder()}>
+                  {t("bill.buyAddons")}
+                </button>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
       <section>
         <div className="mb-2 flex items-center justify-between">
           <h3 className="text-[14px] font-medium text-ink">{t("bill.orders")}</h3>
-          <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()} title={t("bill.refresh")}>
+          <button
+            type="button"
+            className="btn btn-outline btn-sm"
+            onClick={() => void load()}
+            title={t("bill.refresh")}
+            aria-label={t("bill.refresh")}
+          >
             <IconRefresh className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -387,15 +699,18 @@ export function BillingPage() {
             {orders.map((o) => (
               <button key={o.id} type="button" className="flex w-full flex-wrap items-center gap-3 px-3 py-2 text-left text-[13.5px] hover:bg-surface-strong" onClick={() => setOrder(o)}>
                 <span className="font-mono text-ink">{o.order_code}</span>
-                <span className="min-w-0 flex-1 truncate text-muted">{o.plan_name} · {t("bill.monthsN", { n: o.months })} · {o.scope_name}</span>
+                <span className="min-w-0 flex-1 truncate text-muted">
+                  {o.plan_name} · {orderLength(o)}
+                  {(o.addons ?? []).length > 0 ? ` · ${t("bill.addonsN", { n: (o.addons ?? []).length })}` : ""} · {o.scope_name}
+                </span>
                 <span className="tabular-nums text-ink">{formatPriceVND(o.total_vnd)}</span>
-                <span className={`badge-pill text-[11px] ${o.status === "paid" ? "text-emerald-700" : o.status === "pending" ? "text-amber-700" : "text-muted"}`}>{t(statusKey(o.status))}</span>
+                <span className={`badge-pill text-[11px] ${o.status === "paid" ? "badge-success" : o.status === "pending" ? "badge-warning" : "badge-neutral"}`}>{t(statusKey(o.status))}</span>
                 <span className="caption text-muted-soft">{fmtDate(o.created_at)}</span>
               </button>
             ))}
           </div>
         )}
       </section>
-    </div>
+    </ConsolePage>
   );
 }

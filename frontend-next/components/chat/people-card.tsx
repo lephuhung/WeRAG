@@ -259,7 +259,7 @@ export function PeopleCard({
         return (
           <div
             key={person.groupKey}
-            className="card relative w-fit min-w-[260px] max-w-full p-4 transition-shadow hover:shadow-md"
+            className="card relative w-fit min-w-[260px] max-w-full rounded-lg2 p-4 transition-shadow hover:shadow-md"
           >
             <button
               type="button"
@@ -288,7 +288,7 @@ export function PeopleCard({
                 {person.sources.length > 0 && (
                   <div className="mt-1 flex flex-wrap items-center gap-1.5">
                     {isMulti && (
-                      <span className="badge-pill bg-emerald-500/10 text-[9px] font-bold text-emerald-600">
+                      <span className="badge-pill badge-success text-[9px] font-bold">
                         {person.sources.length} nguồn
                       </span>
                     )}

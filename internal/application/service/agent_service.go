@@ -12,6 +12,7 @@ import (
 	legalskillassets "github.com/Tencent/WeKnora/examples/skills"
 	"github.com/Tencent/WeKnora/internal/agent"
 	"github.com/Tencent/WeKnora/internal/agent/approval"
+	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/agent/skills"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/application/repository"
@@ -130,6 +131,15 @@ type agentService struct {
 	documentWorkspaces interfaces.DocumentWorkspaceService
 	// spelling: the verifier model and the users' verdicts of check_spelling
 	spelling spellingSupport
+	// domainPacks are the packs shipped in this build (SetDomainPacks);
+	// nil offers none.
+	domainPacks *domainpacks.Registry
+	// legalNumbers is where the answer number check looks numbers up
+	// (SetLegalNumberLookup); nil leaves the check off.
+	legalNumbers interfaces.LegalCatalogRepository
+	// legalSettings holds the switch of the legal amendment resolver
+	// (SetLegalWordingSettings); nil leaves it at its default (off).
+	legalSettings interfaces.SystemSettingService
 }
 
 // NewAgentService creates a new agent service
@@ -287,6 +297,8 @@ func (s *agentService) CreateAgentEngine(
 	if fn := s.legalHistoryFunc(kbIDs); fn != nil {
 		engine.SetLegalHistory(fn)
 	}
+	s.setDomainFooter(ctx, engine, config, toolRegistry)
+	s.setNumberCheck(engine, config)
 	if s.documentWorkspaces != nil && s.documentWorkspaces.DocumentsEnabled() {
 		docs := s.documentWorkspaces
 		engine.SetSourceEditNote(func(ctx context.Context, query string) string {
@@ -723,6 +735,7 @@ func (s *agentService) initializeSkillsManager(
 		skillsConfig.AllowedSkills = config.AllowedSkills
 	}
 	skillsManager := skills.NewManager(skillsConfig, sandboxMgr).WithBuiltinSource(builtins)
+	s.attachDomainPacks(ctx, skillsManager, config, toolRegistry)
 	if config.SkillsEnabled && !sandboxUnavailable {
 		if source := s.tenantSkillSource(ctx, config); source != nil {
 			skillsManager.WithTenantSource(source)
@@ -1052,30 +1065,10 @@ func (s *agentService) registerTools(
 	hasKnowledge := agentHasKnowledgeScope(config)
 	if !hasKnowledge {
 		filteredTools := make([]string, 0)
-		kbTools := map[string]bool{
-			tools.ToolSearchKnowledge:       true,
-			tools.ToolReadDocument:          true,
-			tools.ToolListDocuments:         true,
-			tools.ToolSearchDocumentSection: true,
-			tools.ToolQueryKnowledgeGraph:   true,
-			tools.ToolDatabaseQuery:         true,
-			tools.ToolDataAnalysis:          true,
-			tools.ToolDataSchema:            true,
-			// Wiki tools also require at least one KB in scope.
-			tools.ToolWikiReadPage:    true,
-			tools.ToolWikiSearch:      true,
-			tools.ToolWikiFlagIssue:   true,
-			tools.ToolWikiWritePage:   true,
-			tools.ToolWikiReplaceText: true,
-			tools.ToolWikiRenamePage:  true,
-			tools.ToolWikiDeletePage:  true,
-			tools.ToolWikiReadIssue:   true,
-			tools.ToolWikiUpdateIssue: true,
-		}
-
-		// If no knowledge and no web search, also disable todo_write (not useful for simple chat)
-		if !config.WebSearchEnabled {
-			kbTools[tools.ToolTodoWrite] = true
+		// shared with the domain-pack save check (tools.KnowledgeScopedTools)
+		kbTools := map[string]bool{}
+		for _, name := range tools.KnowledgeScopedTools(config.WebSearchEnabled) {
+			kbTools[name] = true
 		}
 
 		for _, toolName := range allowedTools {
@@ -1256,7 +1249,8 @@ func (s *agentService) registerTools(
 				config.SearchTargets,
 				rerankModel,
 				s.cfg,
-			).WithAbbreviationService(s.abbreviationService).WithLegalCatalog(s.legalCatalog)
+			).WithAbbreviationService(s.abbreviationService).WithLegalCatalog(s.legalCatalog).
+				WithCurrentWording(s.legalWordingFunc(searchTargetKBIDs(config.SearchTargets)))
 		case tools.ToolReadDocument:
 			toolToRegister = tools.NewReadDocumentTool(s.knowledgeService, s.chunkService, config.SearchTargets)
 		case tools.ToolListDocuments:
@@ -1378,6 +1372,13 @@ func (s *agentService) registerTools(
 				continue
 			}
 			toolToRegister = tools.NewGenerateIllustrationTool(images, serviceName, illustrationDocs, sessionID)
+		// Fixed-formula tool of a domain pack: pure computation, no service.
+		case tools.ToolCompareTaxMethods:
+			toolToRegister = tools.NewCompareTaxMethodsTool().
+				WithFormulaBlock(s.domainPacks.FormulaBlock(tools.ToolCompareTaxMethods))
+		case tools.ToolCalculateHouseholdTax:
+			toolToRegister = tools.NewCalculateHouseholdTaxTool().
+				WithFormulaBlock(s.domainPacks.FormulaBlock(tools.ToolCalculateHouseholdTax))
 
 		case tools.ToolShellExec, tools.ToolReadFile, tools.LegacyToolReadSkill, tools.LegacyToolExecuteSkillScript,
 			tools.ToolListSandboxFiles, tools.LegacyToolReadSandboxFile, tools.ToolWriteSandboxFile,

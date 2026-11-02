@@ -50,8 +50,8 @@ export function useKbLegalReviews(kbId: string, enabled: boolean) {
 }
 
 const STATE_TONE: Record<string, string> = {
-  pending: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
-  approved: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+  pending: "bg-warning-surface text-warning",
+  approved: "bg-success-surface text-success",
   rejected: "bg-surface-strong text-muted",
 };
 

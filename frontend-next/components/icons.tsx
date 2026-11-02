@@ -63,6 +63,12 @@ export const IconPlus = ({ className }: P) => (
   </svg>
 );
 
+export const IconMinus = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <path d="M5 12h14" />
+  </svg>
+);
+
 export const IconPaperclip = ({ className }: P) => (
   <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
     <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
@@ -263,6 +269,14 @@ export const IconChevronRight = ({ className }: P) => (
 export const IconChevronLeft = ({ className }: P) => (
   <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
     <path d="m15 18-6-6 6-6" />
+  </svg>
+);
+
+/** A window with its left panel: hide or show the app's left rail. */
+export const IconSidebarToggle = ({ className }: P) => (
+  <svg viewBox="0 0 24 24" className={base(className)} {...stroke}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M9 4v16" />
   </svg>
 );
 

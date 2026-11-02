@@ -5,6 +5,9 @@
                 the question asked as-is. Pass = answers from the article when it answers
                 the question (label Có); never attributes to the article what it does not
                 say (label Không).
+  --set pack  : a domain pack's evals/cases.jsonl, run on an agent with the pack and a baseline
+                agent without it; binary checks + the §7 thresholds of docs/domain-pack-standard.md.
+                See pack_eval.py (--dry-run and --self-check run offline).
   --set trap  : builtin-smart-reasoning over the VBPL KBs, a question whose reference answer
                 cites a fully expired document. Pass = does not present the expired document
                 as the rule in force.
@@ -205,11 +208,11 @@ def summarize(rows: list, set_name: str) -> str:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--set", choices=["nli", "trap"], required=True)
+    ap.add_argument("--set", choices=["nli", "trap", "pack"], required=True)
     ap.add_argument("--base-url", default=os.environ.get("WERAG_BASE_URL", "http://127.0.0.1:18080"))
-    ap.add_argument("--email", required=True)
+    ap.add_argument("--email", default="", help="required for nli/trap; pack also takes --token")
     ap.add_argument("--tenant", type=int, default=10000)
-    ap.add_argument("--kb", action="append", required=True, help="knowledge base id (repeat)")
+    ap.add_argument("--kb", action="append", default=[], help="knowledge base id (repeat); required for nli/trap")
     ap.add_argument("--catalog", help="catalogue TSV (trap set)")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--only-strata", default="")
@@ -218,7 +221,14 @@ def main():
     ap.add_argument("--resume", default="")
     ap.add_argument("--summary", default="", help="only summarize this results file")
     ap.add_argument("--rejudge", default="", help="nli: re-grade the answers saved in this results file")
+    import pack_eval  # noqa: PLC0415
+    pack_eval.build_parser(ap)
     args = ap.parse_args()
+
+    if args.set == "pack":
+        sys.exit(pack_eval.main(args))
+    if not args.email or not args.kb:
+        ap.error("--email and --kb are required for --set nli/trap")
 
     if args.summary:
         print(summarize([json.loads(l) for l in open(args.summary, encoding="utf8")], args.set))

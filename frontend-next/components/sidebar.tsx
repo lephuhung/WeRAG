@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { deleteSession, listSessions, type SessionRow } from "@/lib/api/chat";
 import {
   clearSessionActivity,
@@ -10,10 +10,11 @@ import {
   updateSessionActivity,
   useSessionActivityEntries,
 } from "@/lib/session-activity";
-import { useT } from "@/lib/i18n";
+import { useT, type LocaleKey } from "@/lib/i18n";
+import { useTenantRole } from "@/lib/auth";
 import { useCommandPalette } from "@/components/command-palette/command-palette-context";
 import { AccountMenu } from "@/components/account-menu";
-import { BrandLogo } from "@/components/brand-logo";
+import { BrandLockup } from "@/components/brand-logo";
 import { Modal } from "@/components/modal";
 import { SessionCompleteToasts } from "@/components/session-complete-toasts";
 import {
@@ -21,16 +22,25 @@ import {
   IconArtifact,
   IconBook,
   IconChat,
+  IconChevronRight,
   IconPlus,
   IconSearch,
   IconTrash,
 } from "@/components/icons";
-import { vnDaysAgo } from "@/lib/datetime";
+import { setSidebarHidden, useSidebarHidden } from "@/lib/sidebar-state";
+import { dayBucket, type DayBucket } from "@/lib/message-time";
+import { useDialogFocus } from "@/components/use-dialog-focus";
+import {
+  SHELL_DESKTOP_QUERY,
+  SHELL_HEADER_HEIGHT_PX,
+  SIDEBAR_WIDTH_PX,
+  useIsDesktopShell,
+} from "@/components/shell-breakpoints";
 
 const NAV = [
   { href: "/platform/creatChat", labelKey: "nav.newChat", icon: IconChat, match: ["/platform/creatChat", "/platform/chat"] },
   { href: "/platform/knowledge-bases", labelKey: "nav.knowledgeBases", icon: IconBook, match: ["/platform/knowledge-bases"] },
-  { href: "/platform/artifacts", labelKey: "nav.artifacts", icon: IconArtifact, match: ["/platform/artifacts"] },
+  { href: "/platform/artifacts", labelKey: "nav.artifacts", icon: IconArtifact, match: ["/platform/artifacts"], orgOnly: true },
 ] as const;
 
 function isActive(pathname: string | null, match: readonly string[]) {
@@ -38,23 +48,25 @@ function isActive(pathname: string | null, match: readonly string[]) {
   return match.some((m) => pathname === m || pathname.startsWith(m + "/"));
 }
 
-function bucketOf(row: SessionRow): string {
-  const ts = row.updated_at ?? row.created_at ?? "";
-  const d = ts ? new Date(ts) : null;
-  if (!d || Number.isNaN(d.getTime())) return "Older";
-  // Calendar days in Vietnam time, whatever the viewer's zone.
-  const diff = vnDaysAgo(d);
-  if (diff <= 0) return "Today";
-  if (diff <= 1) return "Yesterday";
-  if (diff <= 7) return "Last 7 days";
-  return "Older";
-}
+/* The day buckets of the session list. The day maths is shared with the
+ * chat (lib/message-time.ts); only the labels are translated here. */
+const BUCKET_LABELS: Record<DayBucket, LocaleKey> = {
+  today: "sidebar.today",
+  yesterday: "sidebar.yesterday",
+  week: "sidebar.last7Days",
+  older: "sidebar.older",
+};
+
+const BUCKET_ORDER: DayBucket[] = ["today", "yesterday", "week", "older"];
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useT();
   const palette = useCommandPalette();
+  // a guest (no organization) has chat + public KBs; the artifacts library
+  // needs an organization
+  const { isGuest } = useTenantRole();
   const [live, setLive] = useState<SessionRow[] | null>(null);
   // Sessions with an in-flight assistant turn (this tab marked them, or they
   // were left mid-generation). Rows show a spinner; detached entries are
@@ -64,6 +76,22 @@ export function Sidebar() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
+  // hidden on desktop by a full-width page (the legal draft review); the
+  // tab at the left edge brings it back from any page
+  const savedSidebarHidden = useSidebarHidden();
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const inAdmin = pathname === "/platform/admin" || pathname.startsWith("/platform/admin/");
+  const desktopHidden = inAdmin ? !adminMenuOpen : savedSidebarHidden;
+  const isDesktop = useIsDesktopShell();
+  const railRef = useRef<HTMLElement | null>(null);
+  /* The rail is off-screen below the shell breakpoint while the drawer is
+   * closed, and on desktop while a full-width page hides it. In both cases
+   * it must not be reachable by keyboard or by a screen reader. */
+  const railHidden = (!isDesktop && !mobileOpen) || (isDesktop && desktopHidden);
+
+  useEffect(() => {
+    setAdminMenuOpen(false);
+  }, [inAdmin]);
 
   const confirmDelete = async () => {
     if (!removing || deleting) return;
@@ -78,19 +106,48 @@ export function Sidebar() {
       }
       setRemoving(null);
     } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : "Delete failed");
+      setDeleteError(e instanceof Error ? e.message : t("sidebar.deleteFailed"));
     } finally {
       setDeleting(false);
     }
   };
 
-  // Below lg the sidebar is an off-canvas drawer: the header's menu button
-  // dispatches this event; navigation and the backdrop close it.
+  // Below the shell breakpoint the sidebar is an off-canvas drawer: the
+  // header's menu button dispatches this event; navigation and the
+  // backdrop close it.
   useEffect(() => {
-    const toggle = () => setMobileOpen((v) => !v);
+    const toggle = () => {
+      if (inAdmin && window.matchMedia(SHELL_DESKTOP_QUERY).matches) {
+        setAdminMenuOpen((open) => !open);
+      } else {
+        setMobileOpen((v) => !v);
+      }
+    };
     window.addEventListener("weknora:toggle-sidebar", toggle);
     return () => window.removeEventListener("weknora:toggle-sidebar", toggle);
+  }, [inAdmin]);
+
+  // Rotating the phone or resizing the window must not leave the drawer
+  // open (and off-screen) — close it as soon as the shell turns desktop.
+  useEffect(() => {
+    const close = () => {
+      if (window.matchMedia(SHELL_DESKTOP_QUERY).matches) setMobileOpen(false);
+    };
+    window.addEventListener("resize", close);
+    window.addEventListener("orientationchange", close);
+    return () => {
+      window.removeEventListener("resize", close);
+      window.removeEventListener("orientationchange", close);
+    };
   }, []);
+
+  /* The open drawer is a modal surface: Escape closes it and the focus
+   * stays inside it while it is open. */
+  useDialogFocus({
+    open: mobileOpen,
+    containerRef: railRef,
+    onClose: () => setMobileOpen(false),
+  });
 
   useEffect(() => setMobileOpen(false), [pathname]);
 
@@ -107,6 +164,8 @@ export function Sidebar() {
     };
   }, []);
 
+  // reloaded when the account kind changes: a guest's sessions live in the
+  // public portal, a member's in the organization
   useEffect(() => {
     let alive = true;
     listSessions(1, 30)
@@ -119,7 +178,7 @@ export function Sidebar() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [isGuest]);
 
   useEffect(() => {
     const handleTitleUpdated = (e: Event) => {
@@ -157,7 +216,7 @@ export function Sidebar() {
         return [
           {
             id: targetId,
-            title: customEvent.detail?.title || "New chat",
+            title: customEvent.detail.title || t("nav.newChat"),
             created_at: now,
             updated_at: now,
           },
@@ -183,19 +242,24 @@ export function Sidebar() {
     };
   }, []);
 
-  const groups: Array<{ bucket: string; items: Array<{ id: string; title: string }> }> =
+  const groups: Array<{ bucket: DayBucket; items: Array<{ id: string; title: string }> }> =
     (() => {
-      const buckets: Record<string, Array<{ id: string; title: string }>> = {};
-      const order: string[] = [];
+      const buckets: Record<DayBucket, Array<{ id: string; title: string }>> = {
+        today: [],
+        yesterday: [],
+        week: [],
+        older: [],
+      };
       for (const r of live ?? []) {
-        const b = bucketOf(r);
-        if (!buckets[b]) {
-          buckets[b] = [];
-          order.push(b);
-        }
-        buckets[b].push({ id: r.id, title: r.title || "New chat" });
+        buckets[dayBucket(r.updated_at ?? r.created_at ?? "")].push({
+          id: r.id,
+          title: r.title || t("nav.newChat"),
+        });
       }
-      return order.map((bucket) => ({ bucket, items: buckets[bucket] }));
+      return BUCKET_ORDER.filter((bucket) => buckets[bucket].length > 0).map((bucket) => ({
+        bucket,
+        items: buckets[bucket],
+      }));
     })();
 
   return (
@@ -204,7 +268,7 @@ export function Sidebar() {
         <div
           /* Click-to-close layer that also dims + blurs the page behind the
            * mobile drawer, keeping focus on the sidebar. */
-          className="fixed inset-0 z-40 bg-ink/40 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-40 bg-scrim/40 backdrop-blur-sm lg:hidden"
           onClick={() => setMobileOpen(false)}
           aria-hidden
         />
@@ -212,18 +276,34 @@ export function Sidebar() {
       {/* Desktop: the translate makes the rail its own stacking layer, so it
        * needs a z-index above the page (the ONLYOFFICE pane is z-10) or the
        * account menu, wider than the rail, opens under the editor. */}
+      {desktopHidden && !inAdmin && (
+        <button
+          type="button"
+          onClick={() => setSidebarHidden(false)}
+          title={t("sidebar.show")}
+          aria-label={t("sidebar.show")}
+          className="fixed left-0 top-1/2 z-40 hidden h-12 w-5 -translate-y-1/2 items-center justify-center rounded-r-md border border-l-0 border-hairline bg-canvas text-muted-soft shadow-sm transition-colors hover:text-ink lg:flex"
+        >
+          <IconChevronRight className="h-3.5 w-3.5" />
+        </button>
+      )}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex h-dvh w-[264px] shrink-0 flex-col border-r border-hairline bg-canvas transition-transform duration-200 ease-out lg:relative lg:z-30 lg:translate-x-0 lg:transition-none ${
+        ref={railRef}
+        /* Off-screen means unreachable: no keyboard focus, no screen
+         * reader, no pointer events. */
+        inert={railHidden}
+        aria-hidden={railHidden || undefined}
+        style={{ "--sidebar-width": `${SIDEBAR_WIDTH_PX}px` } as CSSProperties}
+        className={`fixed inset-y-0 left-0 z-50 flex h-dvh w-[var(--sidebar-width)] shrink-0 flex-col border-r border-hairline bg-canvas transition-[margin,transform,opacity,visibility] duration-250 ease-in-out motion-reduce:transition-none lg:relative lg:z-30 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        } ${desktopHidden ? "lg:invisible lg:-ml-[var(--sidebar-width)] lg:-translate-x-full lg:opacity-0 lg:pointer-events-none" : "lg:visible lg:ml-0 lg:translate-x-0 lg:opacity-100"}`}
       >
-      <div className="flex h-16 items-center px-5">
+      <div className="flex shrink-0 items-center px-5" style={{ height: SHELL_HEADER_HEIGHT_PX }}>
         <Link
           href="/platform/knowledge-bases"
-          className="flex items-center gap-2.5 transition-opacity hover:opacity-85"
+          className="flex items-center transition-opacity hover:opacity-85"
         >
-          <BrandLogo size={32} priority />
-          <span className="display-sm tracking-tight text-ink">WeRAG</span>
+          <BrandLockup size="sm" priority />
         </Link>
       </div>
 
@@ -241,7 +321,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex flex-col gap-0.5 px-3">
-        {NAV.map((item) => (
+        {NAV.filter((item) => !(isGuest && "orgOnly" in item && item.orgOnly)).map((item) => (
           <Link
             key={item.href}
             href={item.href}
@@ -257,7 +337,9 @@ export function Sidebar() {
       <div className="mt-5 flex-1 overflow-y-auto px-3">
         {groups.map((g) => (
           <div key={g.bucket} className="mb-4">
-            <div className="caption-uppercase px-3 pb-1.5 text-muted-soft">{g.bucket}</div>
+            <div className="caption-uppercase px-3 pb-1.5 text-muted-soft">
+              {t(BUCKET_LABELS[g.bucket])}
+            </div>
             {g.items.map((s) => (
               <Link
                 key={s.id}
@@ -277,8 +359,8 @@ export function Sidebar() {
                 )}
                 <button
                   type="button"
-                  title="Delete chat"
-                  aria-label="Delete chat"
+                  title={t("sidebar.deleteChat")}
+                  aria-label={t("sidebar.deleteChat")}
                   className={`${activity.has(s.id) ? "" : "ml-auto "}hidden h-5 w-5 shrink-0 items-center justify-center rounded text-muted-soft transition-colors hover:text-error group-hover:flex`}
                   onClick={(e) => {
                     e.preventDefault();
@@ -309,24 +391,24 @@ export function Sidebar() {
           fixed positioning resolve against the sidebar instead of the viewport. */}
       <Modal
         open={removing !== null}
-        title="Delete chat"
+        title={t("sidebar.deleteChat")}
         onClose={() => setRemoving(null)}
         width="w-[420px]"
       >
         <p className="body-sm text-body">
-          Delete &quot;{removing?.title}&quot;? This conversation will be permanently removed.
+          {t("sidebar.deleteChatConfirm", { title: removing?.title ?? "" })}
         </p>
         {deleteError && <p className="caption mt-3 text-error">{deleteError}</p>}
         <div className="mt-4 flex justify-end gap-2">
           <button className="btn btn-outline btn-sm" onClick={() => setRemoving(null)}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
-            className="btn btn-sm bg-[var(--color-error)] text-white"
+            className="btn btn-danger btn-sm"
             disabled={deleting}
             onClick={() => void confirmDelete()}
           >
-            {deleting ? "Deleting…" : "Delete"}
+            {deleting ? t("sidebar.deleting") : t("common.delete")}
           </button>
         </div>
       </Modal>

@@ -5,6 +5,7 @@ import { apiGet, clearTokens, getTokens, setTokens } from "@/lib/api-client";
 import { isStaleTenantGuest, loadWithStaleTenantRecovery } from "@/lib/auth-recovery";
 import { useT } from "@/lib/i18n";
 import { resolveMembershipState, type MembershipState } from "@/lib/tenant-roles";
+import { isGuestAccount } from "@/lib/guest-chat";
 
 /* Mirrors frontend/src/api/auth/index.ts LoginResponse + UserInfo shapes (subset). */
 
@@ -32,13 +33,27 @@ type AuthState = {
   /* Account kind from /auth/me membership_state ("guest" until loaded). A
    * SuperAdmin without a selected unit is a normal state, not an error. */
   membershipState: MembershipState;
+  /* /auth/me capabilities.can_create_tenant: this deployment lets the user
+   * create an organization (POST /tenants). A guest is pointed there. */
+  canCreateTenant: boolean;
   isLoggedIn: boolean;
   ready: boolean;
 };
 
-const AuthContext = createContext<
+/* Result of a sign-in attempt: `null` means the sign-in worked, otherwise
+ * the object carries the message to show and whether the server asked for a
+ * two-factor code. The `null` case keeps the old contract (a string error
+ * or nothing) for the other consumers of this module. */
+export type LoginResult = {
+  error: string | null;
+  twoFactorRequired: boolean;
+};
+
+/* Exported for the Word add-in's browser preview (src/dev/preview-app.tsx
+ * there), which provides a fake session. */
+export const AuthContext = createContext<
   AuthState & {
-    login: (email: string, password: string) => Promise<string | null>;
+    login: (email: string, password: string, twoFactorCode?: string) => Promise<LoginResult | null>;
     logout: () => Promise<void>;
     refreshMe: () => Promise<boolean>;
     selectedTenantId: string | null;
@@ -49,6 +64,7 @@ const AuthContext = createContext<
   tenant: null,
   memberships: [],
   membershipState: "guest",
+  canCreateTenant: false,
   isLoggedIn: false,
   ready: false,
   login: async () => null,
@@ -65,6 +81,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
   const [memberships, setMemberships] = useState<AuthState["memberships"]>([]);
   const [membershipState, setMembershipState] = useState<MembershipState>("guest");
+  const [canCreateTenant, setCanCreateTenant] = useState(false);
   const [ready, setReady] = useState(false);
   const [selectedTenantId, setSelectedTenantId] = useState<string | null>(null);
   const { setLocale } = useT();
@@ -103,6 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             memberships?: AuthState["memberships"];
             membership_state?: string;
             tenant_required?: boolean;
+            capabilities?: { can_create_tenant?: boolean };
           };
         }>("/api/v1/auth/me", skipTenant ? { skipTenant: true } : undefined),
       tenantStored,
@@ -119,6 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(res.data.user);
         setTenant(res.data.tenant ?? null);
         setMemberships(res.data.memberships ?? []);
+        setCanCreateTenant(res.data.capabilities?.can_create_tenant === true);
         setMembershipState(
           resolveMembershipState({
             membershipState: res.data.membership_state,
@@ -177,7 +196,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [setLocale]);
 
   const login = useCallback(
-    async (email: string, password: string, twoFactorCode?: string) => {
+    async (email: string, password: string, twoFactorCode?: string): Promise<LoginResult | null> => {
       const res = await fetch("/api/v1/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Accept-Language": "vi-VN" },
@@ -188,12 +207,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         message?: string;
         token?: string;
         refresh_token?: string;
+        two_factor_required?: boolean;
         active_tenant?: { id?: number | string };
         tenant?: { id?: number | string };
         user?: { tenant_id?: number | string };
       };
+      /* The credentials are right but the account needs the 6-digit code
+       * from the authenticator app — no tokens are issued yet. */
+      if (data.two_factor_required) {
+        return { error: null, twoFactorRequired: true };
+      }
       if (!res.ok || !data.success || !data.token) {
-        return data.message ?? "Sign in failed";
+        return { error: data.message ?? "Sign in failed", twoFactorRequired: false };
       }
       setTokens(data.token, data.refresh_token ?? "");
       const tenantId =
@@ -201,6 +226,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (tenantId && Number(tenantId) > 0) {
         localStorage.setItem(TENANT_KEY, String(tenantId));
         setSelectedTenantId(String(tenantId));
+      } else {
+        /* No tenant in the response (a guest account): a previously stored
+         * workspace would be stale, so drop it. */
+        try {
+          localStorage.removeItem(TENANT_KEY);
+        } catch {
+          /* private mode */
+        }
+        setSelectedTenantId(null);
       }
       await refreshMe();
       return null;
@@ -230,6 +264,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setTenant(null);
     setMemberships([]);
     setMembershipState("guest");
+    setCanCreateTenant(false);
     setSelectedTenantId(null);
     try {
       localStorage.removeItem(TENANT_KEY);
@@ -254,6 +289,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       tenant,
       memberships,
       membershipState,
+      canCreateTenant,
       isLoggedIn: Boolean(user),
       ready,
       login,
@@ -262,7 +298,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       selectedTenantId,
       setSelectedTenant,
     }),
-    [user, tenant, memberships, membershipState, ready, login, logout, refreshMe, selectedTenantId, setSelectedTenant],
+    [user, tenant, memberships, membershipState, canCreateTenant, ready, login, logout, refreshMe, selectedTenantId, setSelectedTenant],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -296,6 +332,6 @@ export function useTenantRole() {
     membershipState,
     /* Only once /auth/me answered: the "guest" default must not flash a
      * guest notice while the session is still loading. */
-    isGuest: auth.isLoggedIn && membershipState === "guest" && !isSystemAdmin,
+    isGuest: isGuestAccount({ loggedIn: auth.isLoggedIn, membershipState, isSystemAdmin }),
   };
 }

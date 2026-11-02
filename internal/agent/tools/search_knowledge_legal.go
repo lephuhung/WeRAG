@@ -27,6 +27,49 @@ func (t *SearchKnowledgeTool) WithLegalCatalog(svc interfaces.LegalCatalogServic
 	return t
 }
 
+// WithCurrentWording sets the lookup that returns, by chunk id, the text of
+// legal chunks with in-place phrase amendments applied; the model reads that
+// text, the references keep the stored one.
+func (t *SearchKnowledgeTool) WithCurrentWording(fn func(ctx context.Context, chunkIDs []string) map[string]string) *SearchKnowledgeTool {
+	t.currentWording = fn
+	return t
+}
+
+// applyCurrentWording gives each result row whose provision was amended in
+// place a "model_content" with the current wording (and a matching head
+// for snippet rows, and the match snippet taken from it).
+func (t *SearchKnowledgeTool) applyCurrentWording(ctx context.Context, data map[string]interface{}) {
+	rows, _ := data["results"].([]map[string]interface{})
+	if t.currentWording == nil || len(rows) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if id, _ := row["chunk_id"].(string); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	current := t.currentWording(ctx, ids)
+	if len(current) == 0 {
+		return
+	}
+	for _, row := range rows {
+		id, _ := row["chunk_id"].(string)
+		text, ok := current[id]
+		if !ok {
+			continue
+		}
+		row["model_content"] = text
+		if q, _ := data["query"].(string); q != "" {
+			row["model_match"] = extractSnippetForQueries(text, []string{q})
+		}
+		if _, short := row["content_head"]; short {
+			row["content_head"] = searchContentHead(text, searchHeadMaxRunes)
+		}
+	}
+	logger.Infof(ctx, "[Tool][SearchKnowledge] Current wording applied to %d chunk(s)", len(current))
+}
+
 // expandLegalRelations follows the legal catalogue from the hits on
 // catalogued documents to the documents replacing, guiding (two hops) or
 // amending them. A related document in force, held by a KB the search covers

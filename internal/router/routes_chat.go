@@ -27,9 +27,10 @@ func RegisterMessageRoutes(r *gin.RouterGroup, handler *handler.MessageHandler, 
 	{
 		historyMessages.POST("/search", g.Member(), handler.SearchMessages)
 		historyMessages.GET("/chat-history-stats", g.Member(), handler.GetChatHistoryKBStats)
-		chatMessages.GET("/:session_id/load", g.Member(), handler.LoadMessages)
-		chatMessages.DELETE("/:session_id/:id", g.Member(), handler.DeleteMessage)
-		chatMessages.PUT("/:session_id/:id/feedback", g.Member(), handler.SetMessageFeedback)
+		// guest chat routes: a Guest in the public portal too
+		chatMessages.GET("/:session_id/load", g.GuestChat(), handler.LoadMessages)
+		chatMessages.DELETE("/:session_id/:id", g.GuestChat(), handler.DeleteMessage)
+		chatMessages.PUT("/:session_id/:id/feedback", g.GuestChat(), handler.SetMessageFeedback)
 	}
 }
 
@@ -49,25 +50,33 @@ func RegisterSessionRoutes(
 	// Sessions are per-user chat state, not knowledge-base content. The
 	// chat capability lets a scoped key run the full conversation flow
 	// (create/manage its own sessions) without full tenant access.
+	//
+	// The guest chat routes (GuestChat guard) also serve a Guest that auth
+	// placed in the public portal; every other route stays Member+.
+	guestSessions := g.apiKeyGroup(r.Group("/sessions", g.GuestChat()), apiKeyChat(apiKeyFullAccess()))
+	{
+		guestSessions.POST("", handler.CreateSession)
+		guestSessions.GET("/:id", handler.GetSession)
+		guestSessions.GET("", handler.GetSessionsByTenant)
+		guestSessions.PUT("/:id", handler.UpdateSession)
+		guestSessions.DELETE("/:id", handler.DeleteSession)
+		guestSessions.GET("/:id/context-usage", handler.GetContextUsage)
+		guestSessions.POST("/:session_id/generate_title", handler.GenerateTitle)
+		guestSessions.POST("/:session_id/stop", handler.StopSession)
+		guestSessions.POST("/:session_id/continue", handler.ContinueSession)
+		// Tiếp tục nhận luồng đang hoạt động
+		guestSessions.GET("/continue-stream/:session_id", handler.ContinueStream)
+	}
 	sessions := g.apiKeyGroup(r.Group("/sessions", g.Member()), apiKeyChat(apiKeyFullAccess()))
 	{
-		sessions.POST("", handler.CreateSession)
 		sessions.DELETE("/batch", handler.BatchDeleteSessions)
-		sessions.GET("/:id", handler.GetSession)
-		sessions.GET("", handler.GetSessionsByTenant)
-		sessions.PUT("/:id", handler.UpdateSession)
-		sessions.DELETE("/:id", handler.DeleteSession)
 		sessions.DELETE("/:id/messages", handler.ClearSessionMessages)
-		sessions.GET("/:id/context-usage", handler.GetContextUsage)
-		sessions.POST("/:session_id/generate_title", handler.GenerateTitle)
 		sessions.POST("/:session_id/attachments", handler.UploadTemporaryDocument)
 		sessions.GET("/:id/attachments", handler.ListTemporaryDocuments)
 		sessions.GET("/:id/attachments/:attachment_id", handler.GetTemporaryDocument)
 		sessions.GET("/:id/attachments/:attachment_id/preview", handler.PreviewTemporaryDocument)
 		sessions.DELETE("/:id/attachments/:attachment_id", handler.DeleteTemporaryDocument)
-		sessions.POST("/:session_id/stop", handler.StopSession)
 		sessions.POST("/:session_id/fork", handler.ForkSession)
-		sessions.POST("/:session_id/continue", handler.ContinueSession)
 		sessions.GET("/:id/sub-chats", handler.ListSubChats)
 		sessions.POST("/:session_id/sub-chats", handler.OpenSubChat)
 		sessions.POST("/:session_id/sandbox/terminal-ticket", handler.IssueSandboxTerminalTicket)
@@ -93,8 +102,6 @@ func RegisterSessionRoutes(
 		// tree to avoid "wildcard conflicts" panic at route registration.
 		sessions.POST("/:session_id/pin", handler.PinSession)
 		sessions.DELETE("/:id/pin", handler.UnpinSession)
-		// Tiếp tục nhận luồng đang hoạt động
-		sessions.GET("/continue-stream/:session_id", handler.ContinueStream)
 		if suggestionHandler != nil {
 			// Gin requires wildcard names to be identical within the same HTTP-method
 			// radix tree. Existing GET session routes use :id, so keep that name here.
@@ -200,13 +207,15 @@ func RegisterOnlyOfficeCallbackRoutes(r *gin.Engine, handler *session.DocumentWo
 func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler, g *rbacGuards) {
 	// These POST routes append messages and run generation, so a scoped key
 	// needs the explicit chat capability unless it has full tenant access.
-	knowledgeChat := g.apiKeyGroup(r.Group("/knowledge-chat", g.Member()), apiKeyChat(apiKeyFullAccess()))
+	// Both are guest chat routes: a Guest in the public portal runs the
+	// public-lookup agent there (the handler forces it).
+	knowledgeChat := g.apiKeyGroup(r.Group("/knowledge-chat", g.GuestChat()), apiKeyChat(apiKeyFullAccess()))
 	{
 		knowledgeChat.POST("/:session_id", handler.KnowledgeQA)
 	}
 
 	// Agent-based chat
-	agentChat := g.apiKeyGroup(r.Group("/agent-chat", g.Member()), apiKeyChat(apiKeyFullAccess()))
+	agentChat := g.apiKeyGroup(r.Group("/agent-chat", g.GuestChat()), apiKeyChat(apiKeyFullAccess()))
 	{
 		agentChat.POST("/:session_id", handler.AgentQA)
 	}

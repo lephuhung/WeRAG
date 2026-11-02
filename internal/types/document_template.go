@@ -37,6 +37,14 @@ var DocumentTemplateNames = map[string]string{
 	"to-trinh":   "Tờ trình",
 	"thong-bao":  "Thông báo",
 	"quyet-dinh": "Quyết định",
+	"nghi-quyet": "Nghị quyết",
+	"chi-thi":    "Chỉ thị",
+	"cong-dien":  "Công điện",
+	"giay-moi":   "Giấy mời",
+	"bien-ban":   "Biên bản",
+	// the NĐ30 forms without a trích yếu line
+	"giay-gioi-thieu": "Giấy giới thiệu",
+	"giay-nghi-phep":  "Giấy nghỉ phép",
 }
 
 // Normalized returns the request when it is well formed (schema 1, a known

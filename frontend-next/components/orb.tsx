@@ -1,11 +1,14 @@
 type OrbColor = "mint" | "peach" | "lavender" | "sky" | "rose";
 
-const ORB_HEX: Record<OrbColor, string> = {
-  mint: "#a7e5d3",
-  peach: "#f4c5a8",
-  lavender: "#c8b8e0",
-  sky: "#a8c8e8",
-  rose: "#e8b8c4",
+/* The orb hues live in the theme (--color-orb-*) so a preset can restyle
+ * them; the hex used to be duplicated here, which made the Anthropic
+ * preset keep the default theme's pastels. */
+const ORB_VAR: Record<OrbColor, string> = {
+  mint: "var(--color-orb-mint)",
+  peach: "var(--color-orb-peach)",
+  lavender: "var(--color-orb-lavender)",
+  sky: "var(--color-orb-sky)",
+  rose: "var(--color-orb-rose)",
 };
 
 /**
@@ -30,7 +33,7 @@ export function Orb({
       style={{
         width: size,
         height: size,
-        background: `radial-gradient(circle, ${ORB_HEX[color]} 0%, transparent 70%)`,
+        background: `radial-gradient(circle, ${ORB_VAR[color]} 0%, transparent 70%)`,
         opacity: 0.7,
         ...style,
       }}

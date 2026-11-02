@@ -23,7 +23,8 @@ export NEXT_PORT=${NEXT_PORT:-3000}
 export ASR_URL=${ASR_URL:-http://sherpa-asr:8110}
 # Docker's embedded DNS; the /asr/ location resolves its upstream per request.
 export DNS_RESOLVER=${DNS_RESOLVER:-127.0.0.11}
-envsubst '${MAX_FILE_SIZE} ${MAX_SKILL_BUNDLE_SIZE} ${APP_HOST} ${APP_PORT} ${APP_SCHEME} ${NEXT_PORT} ${ASR_URL} ${DNS_RESOLVER}' \
+export ONLYOFFICE_URL=${ONLYOFFICE_URL:-http://documentserver}
+envsubst '${MAX_FILE_SIZE} ${MAX_SKILL_BUNDLE_SIZE} ${APP_HOST} ${APP_PORT} ${APP_SCHEME} ${NEXT_PORT} ${ASR_URL} ${DNS_RESOLVER} ${ONLYOFFICE_URL}' \
   < /etc/nginx/templates/default.conf.template > /etc/nginx/http.d/default.conf
 
 # REAL_IP_FROM: comma-separated IPs/CIDRs of a load balancer in front of
@@ -40,7 +41,38 @@ if [ -n "${REAL_IP_FROM:-}" ]; then
   echo "real_ip_recursive on;" >> "$REAL_IP_CONF"
 fi
 
-HOSTNAME=127.0.0.1 PORT="$NEXT_PORT" node /app/server.js &
+# X-Forwarded-Proto sent upstream: behind a trusted load balancer (which
+# terminates TLS) its header wins, otherwise this nginx's own scheme.
+PROTO_CONF=/etc/nginx/http.d/02-werag-forwarded-proto.conf
+if [ -n "${REAL_IP_FROM:-}" ]; then
+  cat > "$PROTO_CONF" <<'EOF'
+map $http_x_forwarded_proto $werag_forwarded_proto {
+    default $http_x_forwarded_proto;
+    ''      $scheme;
+}
+EOF
+else
+  cat > "$PROTO_CONF" <<'EOF'
+map $scheme $werag_forwarded_proto {
+    default $scheme;
+}
+EOF
+fi
+
+if [ "${NEXT_DEV:-}" = "1" ]; then
+  # Hot reload (docker-compose.hotreload.yml): `next dev` on the mounted
+  # source instead of the standalone build. Dev asset URLs are not
+  # content-hashed, so nginx must not cache them as immutable.
+  sed -i 's/max-age=31536000, immutable/no-store/' /etc/nginx/http.d/default.conf
+  cd "${NEXT_DEV_DIR:-/src}"
+  if ! cmp -s package-lock.json node_modules/.werag-lock 2>/dev/null; then
+    npm ci --no-audit --no-fund
+    cp package-lock.json node_modules/.werag-lock
+  fi
+  NODE_ENV=development npx next dev --turbopack -H 127.0.0.1 -p "$NEXT_PORT" &
+else
+  HOSTNAME=127.0.0.1 PORT="$NEXT_PORT" node /app/server.js &
+fi
 next_pid=$!
 nginx -g 'daemon off;' &
 nginx_pid=$!

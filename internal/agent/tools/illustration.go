@@ -42,11 +42,11 @@ const (
 )
 
 // illustrationAnchorSchema is the "where to insert" part both tools take.
-const illustrationAnchorSchema = `"after_match": {"type": "string", "description": "Preferred: the opening words of the paragraph the picture goes after, copied from the document (e.g. \"Bước 5: Ủy ban nhân dân\")"},
-    "after": {"type": "integer", "minimum": 0, "description": "Index (from read_document_outline) of the paragraph the picture goes after; easy to miscount, use after_match when you can. Ignored when after_match is given"},
-    "caption": {"type": "string", "description": "Optional caption printed under the picture, e.g. \"Hình 1. Quy trình tiếp nhận hồ sơ\""}`
+const illustrationAnchorSchema = `"after_match": {"type": "string", "description": "Preferred: opening words of the paragraph it goes after (e.g. \"Bước 5: Ủy ban nhân dân\")"},
+    "after": {"type": "integer", "minimum": 0, "description": "Index of the paragraph it goes after; ignored with after_match"},
+    "caption": {"type": "string", "description": "Optional caption under the picture, e.g. \"Hình 1. Quy trình tiếp nhận hồ sơ\""}`
 
-const illustrationAnchorDoc = `Where it goes: after_match (or after) names the paragraph the picture is inserted after; without them it goes after the last paragraph of the highlighted passage. Prefer after_match with the paragraph's own opening words — a paragraph index is easily off by one. The result names the paragraph it chose: if that is not the one the user meant, call again with after_match. With neither (no selection, no document) the user can still download the picture.`
+const illustrationAnchorDoc = `Placement: after_match (the opening words of the paragraph it goes after — preferred, an index is easily off by one) or after; with neither it goes after the highlighted passage. The result names the paragraph chosen: if it is not the one meant, call again with after_match.`
 
 // illustrationProposalNote ends the Output of both tools.
 const illustrationProposalNote = "Văn bản CHƯA thay đổi: hình hiện dưới câu trả lời với nút “Chèn vào văn bản”. " +
@@ -190,34 +190,18 @@ func cleanCaption(s string) string {
 
 var drawDiagramTool = BaseTool{
 	name: ToolDrawDiagram,
-	description: `Draw a diagram (sơ đồ) for the document: a process / workflow (quy trình), an organisation chart (sơ đồ tổ chức), a hierarchy, a timeline, a mind map, the steps of a procedure, the relations between agencies. You write the diagram in Mermaid; the user's browser draws it, so every Vietnamese label appears exactly as you wrote it. Nothing is inserted: the diagram is shown under your answer with a "Chèn vào văn bản" button.
+	description: `Draw a diagram (sơ đồ: a process, an organisation chart, a timeline, a mind map, the relations between agencies) in Mermaid; the browser renders it, so Vietnamese labels appear exactly as written. Nothing is inserted: the card under your answer has a "Chèn vào văn bản" button. For a picture use generate_illustration.
 
-## When to Use
+Draw ONLY what the passage or document states — never invent steps, units or relations. When it has nothing to draw (a single statement, a citation, general opinion, too little detail), do not call it: tell the user why and ask what to show. Fewer than two elements is refused.
 
-The user asks to draw, sketch or visualise something as a diagram ("vẽ sơ đồ", "sơ đồ hóa", "lưu đồ", "sơ đồ tổ chức", "quy trình dạng sơ đồ", "minh họa bằng sơ đồ"), usually for a highlighted passage. Base the diagram ONLY on the passage / document content: do not invent steps, units or relations that the text does not state. For a photo-like or artistic picture use generate_illustration instead.
+Mermaid: start with flowchart TD | flowchart LR | sequenceDiagram | stateDiagram-v2 | timeline | mindmap | gantt | pie (org charts, procedures: flowchart TD; long linear process: flowchart LR). EVERY label in double quotes: A["Tiếp nhận hồ sơ"] --> B{"Hồ sơ hợp lệ?"}; B -->|"Có"| C["Thẩm định"]. No " inside a label (use '), no HTML, Markdown or emoji; labels ≤ ~8 words, ASCII node ids, ≤ ~25 nodes; no %%{init}%%, click, href, call or styles hiding text. Declare each node on its own line, then the edges one per line (a 5-step process is at least 5 node lines plus 4 edge lines).
 
-## When it cannot be drawn — tell the user, do not force it
-
-Before calling, check that the content really has something to draw: steps in an order, units and who they report to, dates, parts of a whole, actors and what they pass to each other. When it does not (a single statement, a legal citation, a greeting, a paragraph of general opinion, too little detail), do NOT call the tool and do NOT make a diagram up: tell the user why this passage cannot be drawn as a diagram and ask what they want shown (which steps, which units), or suggest highlighting another passage. A diagram with fewer than two elements is refused for the same reason.
-
-## Mermaid rules
-
-- Start with one of: flowchart TD | flowchart LR | sequenceDiagram | stateDiagram-v2 | timeline | mindmap | gantt | pie.
-- Organisation charts and procedures: flowchart TD; a long linear process: flowchart LR.
-- Put EVERY label in double quotes: A["Tiếp nhận hồ sơ"] --> B{"Hồ sơ hợp lệ?"}; B -->|"Có"| C["Thẩm định"]. Never use " inside a label (use ' instead), no HTML, no Markdown, no emoji.
-- Short labels (at most ~8 words), node ids in ASCII (A, B, n1 …), at most ~25 nodes. No %%{init}%% directives, no click / href / call statements, no styles that hide text.
-
-## Input
-
-- mermaid: the diagram source.
-- title: a short Vietnamese title for the card.
-- ` + illustrationAnchorDoc + `
-- caption: optional caption under the picture.`,
+` + illustrationAnchorDoc,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
     ` + documentParamSchema + `,
-    "mermaid": {"type": "string", "description": "Mermaid source of the diagram (labels in Vietnamese, in double quotes)"},
+    "mermaid": {"type": "string", "description": "Mermaid source (Vietnamese labels in double quotes)"},
     "title": {"type": "string", "description": "Short Vietnamese title"},
     ` + illustrationAnchorSchema + `
   },
@@ -445,40 +429,18 @@ func imageFailure(service, reason string, cancelled bool) string {
 
 var generateIllustrationTool = BaseTool{
 	name: ToolGenerateIllustration,
-	description: `Paint an illustration (hình minh họa) with the image model: a cover picture, a scene, an icon-like drawing, a concept picture for a report or a propaganda / awareness document. Nothing is inserted: the picture is shown under your answer with a "Chèn vào văn bản" button. It takes up to a few minutes.
+	description: `Paint an illustration (hình minh họa: a cover, a scene, a concept picture) with the image model; slow (minutes), call it once per request. Nothing is inserted: the card under your answer has a "Chèn vào văn bản" button. Boxes, arrows and labels are draw_diagram.
 
-## When to Use
+The image model cannot write Vietnamese: write prompt in ENGLISH, 1–4 sentences (subject, setting, composition, style such as "clean flat vector illustration, white background", mood) asking for NO text, letters, numbers or logos; a prompt with Vietnamese is refused. When the user wants words in the picture, say so and offer the picture without text plus a caption, or a draw_diagram with exact labels; call only once they accept. Keep it fit for an official document: neutral, no real faces, no national emblem, flag or party symbols unless asked, nothing violent or political. If it cannot be pictured, say why and ask how to adjust it.
 
-The user asks for a picture, image or illustration ("tạo hình minh họa", "vẽ hình", "ảnh minh họa", "hình ảnh cho trang bìa"). For a diagram with boxes, arrows and labels (process, organisation chart, steps) use draw_diagram.
-
-## The image model cannot write Vietnamese
-
-The picture can carry NO Vietnamese text: the model draws Vietnamese letters and diacritics wrongly (garbled or missing dấu). So:
-- The prompt is in English and asks for no text at all; a prompt containing Vietnamese is refused.
-- When the user wants words in the picture (a title, a slogan, labels, a banner text), say plainly that the image model cannot write Vietnamese, then offer: the picture without text plus the words as a caption under it (caption), or a diagram with exact Vietnamese labels (draw_diagram). Do not call the tool until the user accepts one.
-
-## When it fails — tell the user
-
-If the result says the image service is unreachable (mất kết nối, không phản hồi), do not retry in this turn: tell the user the image service is not available right now, and ask whether to try again later or to draw a diagram instead. If the request itself cannot be pictured (too abstract, or it needs real faces, emblems or text), say so and ask the user how to adjust it.
-
-## Prompt
-
-Write prompt in ENGLISH, 1–4 sentences: subject, setting, composition, style (e.g. "clean flat vector illustration, soft colours, white background"), mood. Ask for NO text, letters, numbers or logos in the picture. Keep it suitable for an official Vietnamese government document: neutral, respectful, no real persons' faces, no national emblem, flag or party symbols unless the user explicitly asks, nothing violent or political.
-
-## Input
-
-- prompt: the English image prompt (no Vietnamese, no text in the picture).
-- title: a short Vietnamese title for the card.
-- aspect: landscape (default) | square | portrait | wide.
-- ` + illustrationAnchorDoc + `
-- caption: optional caption under the picture.`,
+` + illustrationAnchorDoc,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
     ` + documentParamSchema + `,
-    "prompt": {"type": "string", "description": "English prompt for the image model, asking for no text in the picture"},
+    "prompt": {"type": "string", "description": "English prompt, asking for no text in the picture"},
     "title": {"type": "string", "description": "Short Vietnamese title"},
-    "aspect": {"type": "string", "enum": ["landscape", "square", "portrait", "wide"]},
+    "aspect": {"type": "string", "enum": ["landscape", "square", "portrait", "wide"], "description": "Default landscape"},
     ` + illustrationAnchorSchema + `
   },
   "required": ["prompt", "title"]

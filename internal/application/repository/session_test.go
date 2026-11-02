@@ -369,6 +369,10 @@ func TestSessionRepositoryQueryPagedHidesMaintenanceSessions(t *testing.T) {
 	maintenance := createSessionForTest(t, db, 1, "alice")
 	require.NoError(t, db.Model(&types.Session{}).Where("id = ?", maintenance.ID).
 		Update("description", types.SkillMaintenanceSessionMarker+"install").Error)
+	// the session a SuperAdmin edits a legal OCR draft in is hidden the same way
+	draft := createSessionForTest(t, db, 1, "alice")
+	require.NoError(t, db.Model(&types.Session{}).Where("id = ?", draft.ID).
+		Update("description", types.LegalDraftSessionMarker+"d1").Error)
 
 	for _, source := range []string{"", "web"} {
 		items, total, err := repo.QueryPaged(ctx, &types.SessionListQuery{

@@ -1,0 +1,701 @@
+/* Auth shell — the frame shared by the sign-in, sign-up and Word add-in
+ * approval screens.
+ *
+ * Every colour, radius and font comes from the app tokens (app/globals.css
+ * and the Anthropic preset), so the shell follows the light/dark mode and
+ * the selected theme like the rest of the product. */
+
+.shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(420px, 1fr);
+  min-height: 100svh;
+  background: var(--color-canvas);
+  color: var(--color-body);
+  font-family: var(--font-sans);
+  letter-spacing: 0;
+}
+
+/* Single-column variant (the Word add-in approval): no showcase column,
+ * the form side centres itself in the page. */
+.shellSolo {
+  grid-template-columns: minmax(0, 1fr);
+}
+.shellSolo .formSide {
+  align-items: center;
+}
+.shellSolo .formContent {
+  max-width: 460px;
+}
+.shellSolo .brand {
+  align-self: flex-start;
+}
+
+/* ---------- showcase column ---------- */
+.showcase {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 36px 7%;
+  background: var(--color-canvas-soft);
+  border-right: 1px solid var(--color-hairline);
+  color: var(--color-ink);
+}
+.showcase::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(var(--color-hairline-strong) 1px, transparent 1px);
+  background-size: 26px 26px;
+  opacity: 0.55;
+  pointer-events: none;
+}
+.brand,
+.story,
+.showcaseFooter {
+  position: relative;
+  z-index: 1;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+.story {
+  width: 100%;
+  max-width: 680px;
+  margin: auto;
+  padding: 50px 0 32px;
+}
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--color-accent);
+  margin-bottom: 23px;
+}
+.eyebrow > span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+.story h1 {
+  font-family: var(--font-display);
+  font-size: clamp(36px, 3.7vw, 58px);
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: -1.7px;
+  margin: 0;
+  color: var(--color-ink);
+}
+.story h1 em {
+  font-style: normal;
+  color: var(--color-accent);
+}
+.description {
+  max-width: 490px;
+  font-size: 14px;
+  line-height: 1.85;
+  color: var(--color-body);
+  margin: 22px 0 0;
+}
+
+/* ---------- illustration ---------- */
+.illustration {
+  position: relative;
+  height: 310px;
+  margin: 24px 0 20px;
+  max-width: 590px;
+}
+.orbit {
+  position: absolute;
+  width: 325px;
+  height: 280px;
+  border: 1px solid var(--color-hairline);
+  border-radius: 50%;
+  left: 18%;
+  top: 5px;
+  transform: rotate(-24deg);
+}
+.orbit::after {
+  content: "";
+  position: absolute;
+  inset: 22px;
+  border: 1px solid var(--color-hairline-soft);
+  border-radius: 50%;
+}
+.document {
+  position: absolute;
+  left: 7%;
+  top: 18px;
+  width: 245px;
+  height: 260px;
+  padding: 22px 23px;
+  background: var(--color-surface-card);
+  color: var(--color-ink);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-md2);
+  transform: rotate(-7deg);
+  box-shadow: var(--shadow-soft-drop);
+}
+.docTop {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 1px;
+}
+.docTop > span:first-child {
+  font-family: var(--font-display);
+  font-size: 32px;
+  color: var(--color-accent);
+}
+.docTop small {
+  font-size: 6px;
+  color: var(--color-muted-soft);
+  letter-spacing: 1.5px;
+}
+.docRule {
+  height: 1px;
+  background: var(--color-hairline);
+  margin: 12px 0 15px;
+}
+.document h2 {
+  font-family: var(--font-display);
+  font-size: 17px;
+  margin: 0;
+}
+.document > p {
+  font-size: 8px;
+  color: var(--color-muted);
+  margin: 4px 0 15px;
+}
+.lines {
+  display: grid;
+  gap: 7px;
+}
+.lines i {
+  display: block;
+  height: 3px;
+  background: var(--color-hairline-strong);
+  border-radius: 4px;
+}
+.lines i:nth-child(2) {
+  width: 92%;
+}
+.lines i:last-child {
+  width: 70%;
+}
+.docHighlight {
+  margin: 14px 0;
+  padding: 8px;
+  background: var(--color-surface-strong);
+  border-left: 2px solid var(--color-accent);
+  color: var(--color-body);
+  font-size: 8px;
+}
+.question {
+  position: absolute;
+  right: 0;
+  top: 35px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg2);
+  padding: 13px 19px;
+  font-size: 11px;
+  background: var(--color-surface-card);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-soft-drop);
+}
+.question > span {
+  font-size: 23px;
+  color: var(--color-accent);
+  line-height: 1;
+}
+.answer {
+  position: absolute;
+  right: 0;
+  top: 117px;
+  width: 74%;
+  max-width: 360px;
+  padding: 20px;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg2);
+  background: var(--color-surface-card);
+  box-shadow: var(--shadow-soft-drop);
+  color: var(--color-ink);
+}
+.answerTop {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  font-size: 11px;
+}
+.sparkle {
+  font-size: 20px;
+  color: var(--color-accent);
+}
+.ai {
+  margin-left: auto;
+  font-size: 9px;
+  background: var(--color-surface-strong);
+  color: var(--color-muted);
+  border-radius: 4px;
+  padding: 3px 6px;
+}
+.answer p {
+  font-size: 11px;
+  line-height: 1.8;
+  color: var(--color-body);
+  margin: 11px 0 15px;
+}
+.citations {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.citations span {
+  background: var(--color-surface-strong);
+  color: var(--color-muted);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 9px;
+}
+.demoLabel {
+  position: absolute;
+  right: 0;
+  bottom: -6px;
+  font-size: 8px;
+  letter-spacing: 1.4px;
+  color: var(--color-muted-soft);
+}
+
+/* ---------- features ---------- */
+.features {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+  border-top: 1px solid var(--color-hairline);
+  padding-top: 21px;
+}
+.features > div > span {
+  display: block;
+  color: var(--color-accent);
+  font-size: 9px;
+  margin-bottom: 8px;
+}
+.features strong {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-ink);
+}
+.features p {
+  font-size: 10px;
+  color: var(--color-muted);
+  margin: 5px 0 0;
+  line-height: 1.6;
+}
+.showcaseFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--color-muted-soft);
+  font-size: 8px;
+  letter-spacing: 1px;
+  padding-top: 20px;
+}
+
+/* ---------- Word add-in block ---------- */
+.wordAddin {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 15px;
+  padding: 17px 19px;
+  margin: 0 0 24px;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-lg2);
+  background: var(--color-surface-card);
+}
+.wordAddin > div {
+  flex: 1;
+  min-width: 0;
+}
+.wordIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 42px;
+  height: 44px;
+  background: linear-gradient(135deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 62%, #000000));
+  border-radius: var(--radius-md2);
+  font-size: 23px;
+  font-weight: 600;
+  color: #ffffff;
+}
+.wordLabel {
+  display: block;
+  font-size: 8px;
+  letter-spacing: 1.4px;
+  color: var(--color-muted);
+  margin-bottom: 4px;
+}
+.wordAddin strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-ink);
+}
+.wordAddin p {
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--color-muted);
+  margin: 4px 0 0;
+}
+.wordInstall {
+  flex-basis: 100%;
+  min-width: 0;
+}
+.wordInstall summary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  list-style: none;
+  width: fit-content;
+  margin-left: 57px;
+  padding: 9px 14px;
+  border: 1px solid var(--color-hairline-strong);
+  border-radius: var(--radius-sm2);
+  color: var(--color-ink);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--color-surface-card);
+  transition: background 0.15s;
+}
+.wordInstall summary::-webkit-details-marker {
+  display: none;
+}
+.wordInstall summary:hover {
+  background: var(--color-surface-strong);
+}
+.wordInstall[open] summary {
+  background: var(--color-surface-strong);
+}
+.wordInstall[open] summary span {
+  transform: rotate(90deg);
+}
+.installGuide {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-hairline);
+}
+.installGuide > strong {
+  font-size: 12px;
+  color: var(--color-ink);
+}
+.installGuide ol {
+  list-style: decimal;
+  margin: 12px 0 0;
+  padding-left: 20px;
+  color: var(--color-body);
+  font-size: 11px;
+  line-height: 1.85;
+}
+.installGuide li + li {
+  margin-top: 9px;
+}
+.installGuide b {
+  font-weight: 600;
+  color: var(--color-ink);
+}
+.installGuide > p {
+  margin-top: 14px;
+  font-size: 10px;
+  color: var(--color-muted);
+  line-height: 1.8;
+}
+.manifestDownload {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 14px 0;
+  padding: 10px 14px;
+  border: 1px solid var(--color-hairline-strong);
+  border-radius: var(--radius-sm2);
+  background: var(--color-surface-strong);
+  color: var(--color-ink);
+  font-size: 11px;
+  font-weight: 500;
+}
+.manifestDownload:hover {
+  background: var(--color-hairline-soft);
+}
+.manifestDownload > span {
+  font-size: 9px;
+  font-weight: 400;
+  color: var(--color-muted);
+  border-left: 1px solid var(--color-hairline);
+  padding-left: 10px;
+}
+
+/* ---------- form side ---------- */
+.formSide {
+  display: flex;
+  flex-direction: column;
+  padding: 36px clamp(28px, 4vw, 72px);
+  min-width: 0;
+  background: var(--color-canvas);
+}
+.topLink {
+  align-self: flex-end;
+  font-size: 11px;
+  color: var(--color-muted);
+}
+.topLink a {
+  color: var(--color-ink);
+  font-weight: 600;
+  margin-left: 8px;
+  text-decoration: none;
+}
+.topLink a:hover {
+  text-decoration: underline;
+}
+.formContent {
+  width: 100%;
+  max-width: 380px;
+  margin: auto;
+  padding: 65px 0;
+}
+.formFooter {
+  text-align: center;
+  color: var(--color-muted-soft);
+  font-size: 10px;
+  padding-top: 15px;
+}
+.kicker {
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--color-accent);
+  margin: 0 0 16px;
+}
+/* The framed surface every auth form lives in. */
+.authCard {
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-xl2);
+  padding: 30px clamp(22px, 3vw, 32px);
+  box-shadow: var(--shadow-soft-drop);
+}
+.title {
+  font-family: var(--font-display);
+  font-size: 38px;
+  font-weight: 400;
+  color: var(--color-ink);
+  line-height: 1.2;
+  letter-spacing: -1px;
+  margin: 0 0 14px;
+}
+.subtitle {
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--color-muted);
+  margin: 0 0 32px;
+}
+.note {
+  font-size: 10px;
+  color: var(--color-muted);
+  line-height: 1.8;
+  text-align: center;
+  margin: 25px 0 0;
+}
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--color-muted);
+  font-size: 10px;
+  margin: 25px 0 17px;
+}
+.divider::before,
+.divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: var(--color-hairline);
+}
+.error {
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--color-error) 35%, transparent);
+  border-radius: var(--radius-sm2);
+  background: var(--color-error-surface);
+  color: var(--color-error);
+  margin-bottom: 16px;
+}
+.links {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 24px;
+  font-size: 11px;
+  color: var(--color-muted);
+}
+.links a {
+  color: var(--color-ink);
+}
+.links a:hover {
+  text-decoration: underline;
+}
+.totp {
+  margin-bottom: 22px;
+}
+.totp > span {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.totpRow {
+  display: flex;
+  gap: 8px;
+}
+.totpRow input {
+  padding: 0;
+  text-align: center;
+  min-width: 0;
+  font-size: 20px;
+}
+
+/* One focus treatment for the whole shell — the app's ink ring. */
+.shell a:focus-visible,
+.shell button:focus-visible,
+.shell summary:focus-visible,
+.shell input:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 3px;
+}
+
+@media (min-width: 1600px) {
+  .showcase {
+    padding-left: 10%;
+    padding-right: 10%;
+  }
+  .story {
+    padding-top: 65px;
+    padding-bottom: 50px;
+  }
+  .illustration {
+    margin-top: 35px;
+    margin-bottom: 35px;
+  }
+}
+@media (max-width: 1100px) {
+  .shell {
+    grid-template-columns: minmax(0, 1.1fr) minmax(380px, 1fr);
+  }
+  .showcase {
+    padding: 30px 30px;
+  }
+  .features {
+    gap: 12px;
+  }
+  .question {
+    font-size: 10px;
+    padding: 12px;
+  }
+  .answer {
+    width: 80%;
+  }
+  .description {
+    font-size: 13px;
+  }
+  .story h1 {
+    font-size: 39px;
+  }
+}
+@media (max-width: 800px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+  .showcase {
+    padding: 24px;
+  }
+  .story {
+    padding: 32px 0 0;
+    max-width: 500px;
+    margin: 0;
+  }
+  .story h1 {
+    font-size: 34px;
+  }
+  .eyebrow {
+    font-size: 8px;
+    margin-bottom: 16px;
+  }
+  .description {
+    font-size: 12px;
+    margin-top: 14px;
+    max-width: 460px;
+  }
+  .illustration,
+  .features,
+  .showcaseFooter {
+    display: none;
+  }
+  .formSide {
+    padding: 24px;
+  }
+  .formContent {
+    padding: 36px 0 30px;
+  }
+  .title {
+    font-size: 34px;
+  }
+  .subtitle {
+    margin-bottom: 26px;
+  }
+  .formFooter {
+    margin-bottom: 6px;
+  }
+  .wordAddin {
+    gap: 12px;
+    margin: 20px 0 0;
+    padding: 13px 14px;
+  }
+  .wordIcon {
+    width: 34px;
+    height: 36px;
+    font-size: 20px;
+  }
+  .wordLabel {
+    font-size: 7px;
+    letter-spacing: 1px;
+  }
+  .wordAddin strong {
+    font-size: 12px;
+  }
+  .wordAddin p {
+    font-size: 10px;
+  }
+  .wordInstall summary {
+    margin-left: 46px;
+    font-size: 11px;
+    padding: 9px 12px;
+  }
+  .installGuide ol {
+    font-size: 11px;
+  }
+}

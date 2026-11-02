@@ -170,6 +170,13 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		logger.Error(ctx, "Failed to parse request data", err)
 		return nil, nil, errors.NewBadRequestError(err.Error())
 	}
+	// A Guest in the public portal runs the public lookup and nothing else.
+	portal := types.InPublicPortal(ctx)
+	if portal {
+		restrictPublicPortalRequest(ctx, &request)
+		// a Guest cannot see or delete memory: none is recalled or saved
+		ctx = types.WithMemoryDisabled(ctx)
+	}
 
 	// Validate query content
 	if request.Query == "" {
@@ -222,11 +229,25 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 	// A session that holds an editable document belongs to the document
 	// assistant: another agent has no tools for the document, so a request
 	// from a stale tab or the API naming one is run by the assistant.
-	pinnedAgentID, documents := h.pinDocumentAssistantForTurn(ctx, session, request.AgentID)
-	request.AgentID = pinnedAgentID
+	// The portal has no document routes, so it never pins.
+	documents := sessionDocuments{known: true}
+	if !portal {
+		var pinnedAgentID string
+		pinnedAgentID, documents = h.pinDocumentAssistantForTurn(ctx, session, request.AgentID)
+		request.AgentID = pinnedAgentID
+	}
 
 	// Get custom agent if agent_id is provided.
 	customAgent, effectiveTenantID := h.resolveAgent(ctx, c, request.AgentID)
+	if err := unavailableAgentError(request.AgentID, customAgent); err != nil {
+		return nil, nil, err
+	}
+	if portal {
+		if err := publicLookupUnavailable(customAgent); err != nil {
+			return nil, nil, err
+		}
+		customAgent = enforcePublicLookupConfig(customAgent)
+	}
 
 	// Merge @mentioned items into knowledge_base_ids and knowledge_ids
 	kbIDs, knowledgeIDs := mergeKnowledgeTargets(request.KnowledgeBaseIDs, request.KnowledgeIds, request.MentionedItems)
@@ -687,6 +708,26 @@ func (h *Handler) resolveAgent(
 	logger.Warnf(ctx, "Failed to get agent, agent ID: %s, "+
 		"using default config", secutils.SanitizeForLog(agentID))
 	return nil, 0
+}
+
+// agentUnavailableMessage answers a turn naming a custom agent the caller
+// cannot use: deleted, never existed, or outside its "Tổ chức áp dụng" list.
+// One message for all three so the answer never tells whether the agent
+// exists; it also covers a conversation whose Tổ chức lost the agent after
+// it started.
+const agentUnavailableMessage = "Trợ lý này không tồn tại hoặc không áp dụng cho Tổ chức của bạn. " +
+	"Hãy chọn trợ lý khác để tiếp tục cuộc trò chuyện."
+
+// unavailableAgentError refuses a turn whose named custom agent did not
+// resolve. Running it with the default configuration instead (the old
+// behaviour) answered with a different assistant than the one the user
+// picked. Built-in ids keep that fallback: they are never scoped and a
+// switched-off built-in still answers as plain chat.
+func unavailableAgentError(agentID string, agent *types.CustomAgent) error {
+	if agentID == "" || agent != nil || types.IsReservedBuiltinAgentID(agentID) {
+		return nil
+	}
+	return errors.NewAgentUnavailableError(agentUnavailableMessage)
 }
 
 // pinDocumentAssistant returns the document assistant's ID when the session
@@ -1582,7 +1623,7 @@ func (h *Handler) runVLMAnalysisIfNeeded(streamCtx *sseStreamContext, reqCtx *qa
 		agentWillResolveKBs := false
 		if !hasRequestKBs && reqCtx.customAgent != nil && !reqCtx.customAgent.Config.RetrieveKBOnlyWhenMentioned {
 			switch reqCtx.customAgent.Config.KBSelectionMode {
-			case "all":
+			case "all", types.KBSelectionModePublic:
 				agentWillResolveKBs = true
 			case "selected", "":
 				agentWillResolveKBs = len(reqCtx.customAgent.Config.KnowledgeBases) > 0

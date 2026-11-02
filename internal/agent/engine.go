@@ -33,28 +33,37 @@ const langfuseQueryPreview = 2000
 // engine therefore does not maintain its own cache, system-prompt store, or
 // cross-turn buffer.
 type AgentEngine struct {
-	config               *types.AgentConfig
-	toolRegistry         *agenttools.ToolRegistry
-	chatModel            chat.Chat
-	eventBus             *event.EventBus
-	knowledgeBasesInfo   []*KnowledgeBaseInfo    // Detailed knowledge base information for prompt
-	selectedDocs         []*SelectedDocumentInfo // User-selected documents (via @ mention)
-	pinnedMCPServices    []*PinnedMCPServiceInfo // User @mentioned MCP services for this turn
-	pinnedSkills         []*PinnedSkillInfo      // User @mentioned skills for this turn
-	questionOrigin       *QuestionOriginInfo     // Source of a picked suggested question, if any
-	sessionID            string                  // Session ID for logging and event emission
-	systemPromptTemplate string                  // System prompt template (optional, uses default if empty)
-	memoryPrompt         string                  // Long-term memory envelope appended to the system prompt
-	skillsManager        *skills.Manager         // Skills manager for Progressive Disclosure (optional)
-	appConfig            *appconfig.Config       // Application config for prompt template resolution (optional)
-	imageDescriber       ImageDescriberFunc      // VLM function for describing images in tool results (optional)
-	legalHistory         LegalHistoryFunc        // appends the amendment history of cited legal provisions (optional)
-	sourceEditNote       SourceEditNoteFunc      // appends the read-only note of an edit asked of a source document (optional)
-	tokenEstimator       *agenttoken.Estimator   // Token estimator for context window management, calibrated
-	rawEstimator         *agenttoken.Estimator   // Same tokenizer at scale 1, for measuring the calibration
-	compactor            *compaction.Compactor   // Summarizes older history to fit the context window (nil = disabled)
-	lastUsage            types.TokenUsage        // Token usage from the most recent LLM call
-	lastSentMsgCount     int                     // Number of messages sent in the most recent LLM call
+	config             *types.AgentConfig
+	toolRegistry       *agenttools.ToolRegistry
+	chatModel          chat.Chat
+	eventBus           *event.EventBus
+	knowledgeBasesInfo []*KnowledgeBaseInfo    // Detailed knowledge base information for prompt
+	selectedDocs       []*SelectedDocumentInfo // User-selected documents (via @ mention)
+	pinnedMCPServices  []*PinnedMCPServiceInfo // User @mentioned MCP services for this turn
+	pinnedSkills       []*PinnedSkillInfo      // User @mentioned skills for this turn
+	questionOrigin     *QuestionOriginInfo     // Source of a picked suggested question, if any
+	// compactKnowledgeDirectory lists the bound knowledge bases briefly in
+	// the runtime context (set per turn in Execute, see compactKnowledgeDirectory).
+	compactKnowledgeDirectory bool
+	sessionID                 string                // Session ID for logging and event emission
+	systemPromptTemplate      string                // System prompt template (optional, uses default if empty)
+	memoryPrompt              string                // Long-term memory envelope appended to the system prompt
+	skillsManager             *skills.Manager       // Skills manager for Progressive Disclosure (optional)
+	draftNotice               DraftNoticeFunc       // domain-pack draft labels (optional)
+	numberCatalog             NumberCatalogFunc     // answer number check (optional, answer_numbers.go)
+	numbers                   *numberCheck          // this turn's number decisions
+	scopeNotice               ScopeNoticeFunc       // domain-pack exclusions / refusals (optional)
+	domainPackPrompts         []DomainPackPrompt    // domain pack bodies rendered in the system prompt
+	appConfig                 *appconfig.Config     // Application config for prompt template resolution (optional)
+	imageDescriber            ImageDescriberFunc    // VLM function for describing images in tool results (optional)
+	legalHistory              LegalHistoryFunc      // appends the amendment history of cited legal provisions (optional)
+	sourceEditNote            SourceEditNoteFunc    // appends the read-only note of an edit asked of a source document (optional)
+	domainFooter              DomainFooterFunc      // appends the domain packs' footer, last block of the answer (optional)
+	tokenEstimator            *agenttoken.Estimator // Token estimator for context window management, calibrated
+	rawEstimator              *agenttoken.Estimator // Same tokenizer at scale 1, for measuring the calibration
+	compactor                 *compaction.Compactor // Summarizes older history to fit the context window (nil = disabled)
+	lastUsage                 types.TokenUsage      // Token usage from the most recent LLM call
+	lastSentMsgCount          int                   // Number of messages sent in the most recent LLM call
 	// overflowRecovered records that this turn already spent its one
 	// compact-and-retry on a context overflow. A second attempt would mean
 	// history size was never the problem, and looping on it burns the round
@@ -170,6 +179,7 @@ func (e *AgentEngine) systemPromptOptions(ctx context.Context) *BuildSystemPromp
 		MemoryPrompt:     e.memoryPrompt,
 		ProtocolPrompt:   e.modelContext.ProtocolPrompt(),
 		UserContext:      types.UserContextPrompt(ctx),
+		DomainPacks:      e.domainPackPrompts,
 	}
 	if e.skillsManager != nil && e.skillsManager.IsEnabled() {
 		opts.SkillsMetadata = e.skillsManager.GetAllMetadata()
@@ -396,6 +406,7 @@ func (e *AgentEngine) Execute(
 	if len(imageURLs) > 0 {
 		imgs = imageURLs[0]
 	}
+	e.compactKnowledgeDirectory = compactKnowledgeDirectory(ctx)
 	messages := e.buildMessagesWithLLMContext(systemPrompt,
 		e.abbreviationModelQuery(ctx, query), sessionID, llmContext, imgs)
 	if e.toolRegistry != nil {
@@ -706,6 +717,8 @@ func (e *AgentEngine) runReActIteration(
 	// the cards this turn produced so far: the answer guard drops sentences
 	// inviting the user to press a button that does not exist (answer_guard.go)
 	ctx = withTurnButtons(ctx, state.RoundSteps)
+	// invented document numbers never reach the user (answer_numbers.go)
+	ctx = e.withNumberCheck(ctx, state, query, *messagesPtr)
 
 	var (
 		response      *types.ChatResponse
@@ -830,6 +843,11 @@ func (e *AgentEngine) runReActIteration(
 		if *consecutiveSameContent >= maxRepeatedResponseRounds {
 			logger.Warnf(ctx, "[Agent][Round-%d] Detected stuck loop: same content repeated %d times (finish=%s), stopping",
 				round, *consecutiveSameContent+1, response.FinishReason)
+			// No domain-pack footer here: this path ends on a repeated
+			// response that analyzeResponse never accepted as the answer and
+			// that is never closed with a Done, so there is no answer stream
+			// to append it to. A model stuck repeating itself is not pack
+			// advice either.
 			state.FinalAnswer = response.Content
 			state.IsComplete = true
 			return iterOutcomeBreak, nil
@@ -948,9 +966,14 @@ func (e *AgentEngine) runReActIteration(
 		state.FinalAnswer = verdict.finalAnswer
 		state.IsComplete = true
 		state.RoundSteps = append(state.RoundSteps, verdict.step)
+		modelText := state.FinalAnswer
 		e.appendLegalHistory(ctx, state, sessionID, verdict.answerID)
 		e.appendWikiCaveat(ctx, state, sessionID, verdict.answerID)
 		e.appendSourceEditNote(ctx, state, sessionID, verdict.answerID, query)
+		e.appendDraftNotice(ctx, state, sessionID, verdict.answerID, modelText)
+		e.appendScopeNotice(ctx, state, sessionID, verdict.answerID, query)
+		e.appendToolAnswerBlocks(ctx, state, sessionID, verdict.answerID)
+		e.appendDomainFooter(ctx, state, sessionID, verdict.answerID)
 		e.closeAnswerStream(ctx, sessionID, verdict.answerID)
 		return iterOutcomeBreak, nil
 	}

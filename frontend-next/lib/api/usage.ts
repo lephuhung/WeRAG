@@ -105,6 +105,45 @@ export function planPrice(plan: Pick<UsagePlan, "price_vnd" | "price_label">): s
   return formatPriceVND(plan.price_label);
 }
 
+export type UsageBillingTerm = "month" | "quarter" | "year";
+
+type TermPriced = Pick<UsagePlan, "price_vnd"> & Partial<Pick<UsagePlan, "price_quarter_vnd" | "price_year_vnd">>;
+
+/** True when the plan has a price for at least one term (types.UsagePlan.SoldOnline). */
+export function planSoldOnline(plan: TermPriced): boolean {
+  return plan.price_vnd > 0 || (plan.price_quarter_vnd ?? 0) > 0 || (plan.price_year_vnd ?? 0) > 0;
+}
+
+/** Mirrors types.UsagePlan.PriceForMonths: whole years at the year price,
+ * whole quarters at the quarter price, otherwise months at the monthly
+ * price; null when no priced term fits. Per seat in seat mode. */
+export function planPriceForMonths(plan: TermPriced, months: number): { total: number; term: UsageBillingTerm } | null {
+  if (months <= 0) return null;
+  const year = plan.price_year_vnd ?? 0;
+  const quarter = plan.price_quarter_vnd ?? 0;
+  if (year > 0 && months % 12 === 0) return { total: year * (months / 12), term: "year" };
+  if (quarter > 0 && months % 3 === 0) return { total: quarter * (months / 3), term: "quarter" };
+  if (plan.price_vnd > 0) return { total: plan.price_vnd * months, term: "month" };
+  return null;
+}
+
+/** The term prices a plan lists (month, quarter, year), each with what it
+ * saves against paying month by month. */
+export function planTermPrices(plan: TermPriced): { term: UsageBillingTerm; months: number; price: number; saving: number }[] {
+  const out: { term: UsageBillingTerm; months: number; price: number; saving: number }[] = [];
+  const rows: [UsageBillingTerm, number, number][] = [
+    ["month", 1, plan.price_vnd],
+    ["quarter", 3, plan.price_quarter_vnd ?? 0],
+    ["year", 12, plan.price_year_vnd ?? 0],
+  ];
+  for (const [term, months, price] of rows) {
+    if (price <= 0) continue;
+    const full = plan.price_vnd > 0 ? plan.price_vnd * months : 0;
+    out.push({ term, months, price, saving: full > price ? full - price : 0 });
+  }
+  return out;
+}
+
 // ---- SuperAdmin: plans, subscriptions, seats -----------------------------------
 
 export interface UsagePlan {
@@ -119,13 +158,64 @@ export interface UsagePlan {
   price_label: string;
   /** List price per month in VND; per seat per month in seat mode. 0 = not sold online. */
   price_vnd: number;
+  /** Price of 3 months / 12 months (per seat in seat mode). 0 = that term
+   * is charged at the monthly price. */
+  price_quarter_vnd: number;
+  price_year_vnd: number;
   sort_order: number;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  /** GET /billing/plans only: the basic agents the plan includes. */
+  included_agents?: UsagePlanAgent[];
+  /** GET /billing/plans only: specialist agents sold with the plan. */
+  addons?: UsagePlanAddonOffer[];
 }
 
-export type UsagePlanInput = Omit<UsagePlan, "id" | "created_at" | "updated_at">;
+export type UsagePlanInput = Omit<UsagePlan, "id" | "created_at" | "updated_at" | "included_agents" | "addons">;
+
+export interface UsagePlanAgent {
+  id: string;
+  name: string;
+}
+
+export interface UsagePlanAddonOffer {
+  agent_id: string;
+  name: string;
+  description: string;
+  /** Per month; × seats when per_seat. */
+  price_vnd: number;
+  per_seat: boolean;
+}
+
+/** A row of the add-on catalogue (usage_agent_addons). */
+export interface UsageAgentAddon {
+  agent_id: string;
+  /** Per month; per seat per month on a seat plan. */
+  price_vnd: number;
+  /** [] = sold with every plan. */
+  plan_ids: string[];
+  description: string;
+  is_active: boolean;
+  sort_order: number;
+  created_at?: string;
+  updated_at?: string;
+  agent_name?: string;
+  /** False once the agent is deleted or no longer a specialist agent. */
+  agent_available?: boolean;
+  /** Current subscriptions holding the add-on. */
+  holders?: number;
+}
+
+export type UsageAgentAddonInput = Pick<
+  UsageAgentAddon,
+  "agent_id" | "price_vnd" | "plan_ids" | "description" | "is_active" | "sort_order"
+>;
+
+export interface UsageAgentAddonCatalogue {
+  addons: UsageAgentAddon[];
+  included_agents: UsagePlanAgent[];
+}
 
 export interface UsageSubscription {
   id: string;
@@ -163,6 +253,9 @@ export interface UsageSubscriptionView extends UsageSubscription {
   current: boolean;
   limit_status: UsageLimitStatus[];
   seats_used: number;
+  /* A Guest's guest plan before their first question: no row yet (id is
+   * empty), created by the usage guard on that turn. */
+  implicit?: boolean;
 }
 
 export interface UsageTenantOverview {
@@ -181,6 +274,27 @@ export interface UsageSeat {
 }
 
 const ADMIN = "/api/v1/system/admin/usage";
+
+export function listAgentAddons(includeInactive = true): Promise<UsageAgentAddonCatalogue> {
+  return apiGet<{ data?: UsageAgentAddonCatalogue }>(
+    `${ADMIN}/agent-addons${includeInactive ? "" : "?include_inactive=false"}`,
+  ).then((r) => ({ addons: r.data?.addons ?? [], included_agents: r.data?.included_agents ?? [] }));
+}
+
+export function createAgentAddon(input: UsageAgentAddonInput): Promise<UsageAgentAddon> {
+  return apiPost<{ data: UsageAgentAddon }>(`${ADMIN}/agent-addons`, input).then((r) => r.data);
+}
+
+export function updateAgentAddon(input: UsageAgentAddonInput): Promise<UsageAgentAddon> {
+  return apiPut<{ data: UsageAgentAddon }>(
+    `${ADMIN}/agent-addons/${encodeURIComponent(input.agent_id)}`,
+    input,
+  ).then((r) => r.data);
+}
+
+export function deleteAgentAddon(agentId: string): Promise<void> {
+  return apiDel(`${ADMIN}/agent-addons/${encodeURIComponent(agentId)}`).then(() => undefined);
+}
 
 export function listUsagePlans(includeInactive = true): Promise<UsagePlan[]> {
   return apiGet<{ data?: UsagePlan[] }>(`${ADMIN}/plans${includeInactive ? "?include_inactive=true" : ""}`).then(
@@ -250,6 +364,10 @@ export function revokeUsageSeat(subscriptionId: string, userId: string): Promise
 
 /** system_settings key of the enforcement switch. */
 export const USAGE_ENFORCE_SETTING_KEY = "usage.enforce";
+/** system_settings keys of the package every new account receives:
+ * a personal plan id ("" = none) and how many days it lasts (0 = no end). */
+export const USAGE_SIGNUP_PLAN_SETTING_KEY = "usage.signup_plan_id";
+export const USAGE_SIGNUP_PLAN_DAYS_SETTING_KEY = "usage.signup_plan_days";
 
 // ---- workspace-facing (every member reads; Tenant Admin manages seats) ------
 
@@ -258,6 +376,27 @@ export interface UsageTenantUsage {
   enforced: boolean;
   subscription?: UsageSubscriptionView | null;
   seats: UsageSeat[];
+  /** Specialist agents the subscription holds, with their end. */
+  addons?: UsageSubscriptionAddon[];
+}
+
+/** A right of a subscription to a specialist agent. */
+export interface UsageSubscriptionAddon {
+  subscription_id: string;
+  agent_id: string;
+  agent_name?: string;
+  starts_at: string;
+  ends_at: string | null;
+  price_vnd: number;
+  order_id: string | null;
+}
+
+/** GET /billing/subscription: the scope's current subscription, the
+ * add-ons it holds and those it may still buy on it. */
+export interface UsageScopeAddons {
+  subscription?: UsageSubscription | null;
+  held: UsageSubscriptionAddon[];
+  purchasable: UsagePlanAddonOffer[];
 }
 
 export function getTenantUsage(tenantId: number | string): Promise<UsageTenantUsage> {
@@ -320,6 +459,8 @@ export interface UsageOrder {
   mode: UsageMode;
   seats: number;
   months: number;
+  /** Term the plan line was priced by; "" on add-on orders and old orders. */
+  billing_term?: UsageBillingTerm | "";
   unit_price_vnd: number;
   subtotal_vnd: number;
   promo_code: string;
@@ -333,12 +474,47 @@ export interface UsageOrder {
   expires_at: string | null;
   subscription_id: string | null;
   note: string;
+  /** "plan" (a plan, optional add-ons) or "addon" (add-ons on the current subscription). */
+  kind?: UsageOrderKind;
+  target_subscription_id?: string | null;
+  addons?: UsageOrderAddonLine[];
   created_at: string;
   updated_at: string;
   /** What to write in the bank transfer so the payment matches the order. */
   transfer_content: string;
   /** VietQR image for a pending order; "" when billing is not configured. */
   qr_url: string;
+}
+
+export type UsageOrderKind = "plan" | "addon";
+
+/** One add-on of a quote/order, priced when ordered. */
+export interface UsageOrderAddonLine {
+  agent_id: string;
+  name: string;
+  unit_price_vnd: number;
+  /** Seats on a seat plan, else 1. */
+  units: number;
+  months: number;
+  /** Mid-term purchase: days after the whole months, at half price when ≤ 15. */
+  leftover_days?: number;
+  leftover_factor?: "half" | "full" | "";
+  amount_vnd: number;
+  paid_until?: string | null;
+  /** Already held to this date (renewal, plan change): only later time is charged. */
+  covered_until?: string | null;
+  /** Renewal: the part of the current period not covered yet. */
+  gap_months?: number;
+  gap_leftover_days?: number;
+  gap_leftover_factor?: "half" | "full" | "";
+  gap_vnd?: number;
+  /** Seats added on a held right, for the time it still runs. */
+  extra_units?: number;
+  extra_units_vnd?: number;
+  /** A held add-on not bought again: only the added seats are charged. */
+  seats_only?: boolean;
+  /** Renewal: the subscription end the line was priced against. */
+  subscription_end?: string | null;
 }
 
 export interface UsageQuoteRequest {
@@ -348,6 +524,8 @@ export interface UsageQuoteRequest {
   seats?: number;
   promo_code?: string;
   note?: string;
+  kind?: UsageOrderKind;
+  addon_agent_ids?: string[];
 }
 
 /** Mirrors types.UsageQuote. promo_error is a reason label (see promoErrorKey). */
@@ -357,6 +535,9 @@ export interface UsageQuote {
   months: number;
   seats: number;
   unit_price_vnd: number;
+  /** Term the plan line is priced by, and what it saves against monthly. */
+  billing_term?: UsageBillingTerm;
+  savings_vnd?: number;
   /** Seats of the subscription this order renews; added seats also pay
    * proration_vnd for the prorated_days left on its period. */
   current_seats?: number;
@@ -368,6 +549,10 @@ export interface UsageQuote {
   promo_error: string;
   discount_vnd: number;
   total_vnd: number;
+  kind?: UsageOrderKind;
+  target_subscription_id?: string;
+  addons?: UsageOrderAddonLine[];
+  addons_vnd?: number;
 }
 
 /** Mirrors types.UsageBillingInfo. */
@@ -387,8 +572,37 @@ export function getBillingInfo(): Promise<UsageBillingInfo> {
   return apiGet<{ data: UsageBillingInfo }>(`${BILLING}/info`).then((r) => r.data);
 }
 
+export function getScopeAddons(scope: UsageScopeKind): Promise<UsageScopeAddons> {
+  return apiGet<{ data?: UsageScopeAddons }>(`${BILLING}/subscription?scope=${scope}`).then((r) => ({
+    subscription: r.data?.subscription ?? null,
+    held: r.data?.held ?? [],
+    purchasable: r.data?.purchasable ?? [],
+  }));
+}
+
 export function listPurchasablePlans(scope: UsageScopeKind): Promise<UsagePlan[]> {
   return apiGet<{ data?: UsagePlan[] }>(`${BILLING}/plans?scope=${scope}`).then((r) => r.data ?? []);
+}
+
+/** A plan's per-turn and per-session caps (usage_plans.features, known keys
+ * only); an absent key is no cap. */
+export interface UsagePlanCaps {
+  "agent.turn_token_cap"?: number;
+  "agent.max_iterations"?: number;
+  "context.history_tokens"?: number;
+  "session.max_turns"?: number;
+  "session.max_tokens"?: number;
+}
+
+export type PublicUsagePlan = Pick<UsagePlan, "id" | "name" | "description" | "scope_kind" | "mode" | "limits" | "price_vnd" | "price_quarter_vnd" | "price_year_vnd" | "price_label" | "sort_order" | "included_agents" | "addons"> & { caps?: UsagePlanCaps };
+
+// Anonymous landing-page catalogue: plain fetch, no tokens and no refresh-on-401.
+export async function listPublicPlans(scope: UsageScopeKind, signal?: AbortSignal): Promise<PublicUsagePlan[]> {
+  const response = await fetch(`/api/v1/public/billing/plans?scope=${scope}`, { signal, credentials: "omit", cache: "no-store" });
+  if (!response.ok) throw new Error(`Unable to load plans (${response.status})`);
+  const result = await response.json();
+  if (result.success !== true || !Array.isArray(result.data)) throw new Error("Invalid catalogue");
+  return (result.data as PublicUsagePlan[]).sort((a, b) => a.sort_order - b.sort_order);
 }
 
 export function quoteUsageOrder(req: UsageQuoteRequest): Promise<UsageQuote> {

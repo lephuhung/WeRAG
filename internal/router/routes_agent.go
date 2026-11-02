@@ -34,12 +34,15 @@ func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomA
 	{
 		// Get placeholder definitions (must be before /:id to avoid conflict) — Viewer+
 		agentsRead.GET("/placeholders", g.Member(), agentHandler.GetPlaceholders)
+		// List the domain packs shipped in this build (must be before /:id) — Viewer+
+		agentsRead.GET("/domain-packs", g.Member(), agentHandler.ListDomainPacks)
 		// List smart-reasoning agent type presets (rag-qa / wiki-qa / hybrid / custom) — Viewer+
 		agentsRead.GET("/type-presets", g.Member(), agentHandler.GetAgentTypePresets)
 		// Create custom agent — SystemAdmin
 		agentsWrite.POST("", g.SystemAdmin(), g.ConfigProfile(), agentHandler.CreateAgent)
-		// List all agents (including built-in) — Viewer+
-		agentsRead.GET("", g.Member(), agentHandler.ListAgents)
+		// List all agents (including built-in) — Viewer+; a Guest in the
+		// public portal gets the public-lookup agent only
+		agentsRead.GET("", g.GuestChat(), agentHandler.ListAgents)
 		// Get agent by ID — Viewer+
 		agentsRead.GET("/:id", g.Member(), agentHandler.GetAgent)
 		// Update agent — SystemAdmin
@@ -48,6 +51,8 @@ func RegisterCustomAgentRoutes(r *gin.RouterGroup, agentHandler *handler.CustomA
 		agentsWrite.DELETE("/:id", g.SystemAdmin(), g.ConfigProfile(), agentHandler.DeleteAgent)
 		// Copy agent — SystemAdmin (a copy is still an authored agent)
 		agentsWrite.POST("/:id/copy", g.SystemAdmin(), g.ConfigProfile(), agentHandler.CopyAgent)
+		// SuperAdmin runtime on/off switch (built-in and custom agents)
+		agentsWrite.PUT("/:id/enabled", g.SystemAdmin(), g.ConfigProfile(), agentHandler.SetAgentEnabled)
 	}
 	// Registered outside the group to avoid Gin route conflict with /agents/:id/shares in organization routes
 	g.apiKeyRoute(r, http.MethodGet, "/agents/:id/suggested-questions",

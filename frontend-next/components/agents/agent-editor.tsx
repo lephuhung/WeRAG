@@ -5,6 +5,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/modal";
+import { useConfirm } from "@/components/confirm-dialog";
 import { Select } from "@/components/select";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import {
@@ -14,7 +15,12 @@ import {
   isDocumentAssistantAgent,
   clampOpenDocumentMaxRunes,
   OPEN_DOCUMENT_MAX_RUNES_LIMIT,
+  listDomainPacks,
+  missingDomainPackTools,
+  shippedDomainPacks,
+  setAgentEnabled,
   type CustomAgent,
+  type DomainPackInfo,
 } from "@/lib/api/agents";
 import { listKnowledgeBases, type KnowledgeBaseRow } from "@/lib/api/knowledge";
 import { listMCPServices, type MCPService } from "@/lib/api/mcp";
@@ -30,6 +36,36 @@ import {
 import { listModels, type ModelConfig } from "@/lib/api/models";
 import { buildAgentConfigForSave } from "@/lib/api/agent-config";
 import { getStorageEngineStatus } from "@/lib/api/system";
+import { formatDate } from "@/lib/datetime";
+import { listAllTenants } from "@/lib/api/tenants";
+import {
+  createAgentAddon,
+  formatPriceVND,
+  listAgentAddons,
+  listUsagePlans,
+  updateAgentAddon,
+  type UsageAgentAddon,
+  type UsagePlan,
+} from "@/lib/api/usage";
+import {
+  addonSaleDraft,
+  addonSaleInput,
+  shouldSaveAddonSale,
+  togglePlanId,
+  type AddonSaleDraft,
+} from "@/lib/agent-addon-catalogue";
+import {
+  AGENT_DISTRIBUTIONS,
+  agentEnabled,
+  switchOffNeedsConfirm,
+  defaultDistribution,
+  normalizeDistribution,
+  scopeForSave,
+  scopeTenantOptions,
+  toggleScopeTenant,
+  type AgentDistribution,
+  type ScopeTenantOption,
+} from "@/lib/agent-tenant-scope";
 
 type TabKey = "basic" | "knowledge" | "tools" | "multimodal";
 
@@ -46,7 +82,7 @@ type Draft = {
   thinking: boolean;
   citation_enabled: boolean;
   // KB binding & retrieval
-  kb_selection_mode: "all" | "selected" | "none";
+  kb_selection_mode: "all" | "selected" | "none" | "public";
   knowledge_bases: string[];
   retrieve_kb_only_when_mentioned: boolean;
   embedding_top_k: number;
@@ -59,6 +95,8 @@ type Draft = {
   mcp_selection_mode: "all" | "selected" | "none";
   mcp_services: string[];
   allowed_tools: string[];
+  // Domain packs (smart-reasoning only)
+  domain_packs: string[];
   // Multimodal / attachments
   image_upload_enabled: boolean;
   vlm_model_id: string;
@@ -106,6 +144,7 @@ function draftFrom(a: CustomAgent | null): Draft {
     allowed_tools: a?.config?.allowed_tools?.length
       ? normalizeAllowedTools(a.config.allowed_tools)
       : [...DEFAULT_ALLOWED_TOOLS],
+    domain_packs: a?.config?.domain_packs ?? [],
     image_upload_enabled: a?.config?.image_upload_enabled ?? false,
     vlm_model_id: a?.config?.vlm_model_id ?? "",
     attachment_image_understanding: a?.config?.attachment_image_understanding ?? false,
@@ -141,6 +180,7 @@ export function AgentEditorModal({
   onSaved: (a: CustomAgent) => void;
 }) {
   const { t } = useT();
+  const confirm = useConfirm();
   const isBuiltin = agent ? isBuiltinAgent(agent.id) : false;
   // "Document assistant" settings: the built-in one or any agent allowed to
   // run check_document_format. Its fields are saved only when shown.
@@ -153,12 +193,77 @@ export function AgentEditorModal({
   const [modelList, setModelList] = useState<ModelConfig[]>(models ?? []);
   const [kbs, setKbs] = useState<KnowledgeBaseRow[]>([]);
   const [mcpList, setMcpList] = useState<MCPService[]>([]);
+  const [packList, setPackList] = useState<DomainPackInfo[]>([]);
+  // only a loaded list may decide that a stored pack no longer ships
+  const [packsLoaded, setPacksLoaded] = useState(false);
+  // "Tổ chức áp dụng" ([] = every Tổ chức); built-in agents are never scoped
+  const [scopeIds, setScopeIds] = useState<number[]>(() => agent?.applies_to_tenant_ids ?? []);
+  const [scopeTenants, setScopeTenants] = useState<ScopeTenantOption[]>([]);
+  const [scopeLoadFailed, setScopeLoadFailed] = useState(false);
+  // "Cách phân phối". A new agent follows the server default (skill set →
+  // addon) until the SuperAdmin picks one.
+  const [distribution, setDistribution] = useState<AgentDistribution>(() =>
+    normalizeDistribution(agent?.distribution),
+  );
+  const [distributionTouched, setDistributionTouched] = useState(false);
+  // the SuperAdmin's on/off switch, saved through its own endpoint
+  const [enabled, setEnabled] = useState<boolean>(() => (agent ? agentEnabled(agent) : true));
+  // "Bán kèm gói dịch vụ": the agent's row in the add-on catalogue, saved
+  // through the catalogue API after the agent itself
+  const [addonRow, setAddonRow] = useState<UsageAgentAddon | null>(null);
+  const [addonDraft, setAddonDraft] = useState<AddonSaleDraft>(() => addonSaleDraft(null));
+  const [addonTouched, setAddonTouched] = useState(false);
+  const [addonLoadFailed, setAddonLoadFailed] = useState(false);
+  const [salePlans, setSalePlans] = useState<UsagePlan[]>([]);
 
   useEffect(() => {
     setDraft(draftFrom(agent));
+    setScopeIds(agent?.applies_to_tenant_ids ?? []);
+    setDistribution(normalizeDistribution(agent?.distribution));
+    setDistributionTouched(false);
+    setEnabled(agent ? agentEnabled(agent) : true);
+    setAddonRow(null);
+    setAddonDraft(addonSaleDraft(null));
+    setAddonTouched(false);
     setTab("basic");
     setError("");
   }, [agent, open]);
+
+  useEffect(() => {
+    if (!open || isBuiltin || readOnly) return;
+    let alive = true;
+    setAddonLoadFailed(false);
+    listUsagePlans(true)
+      .then((plans) => alive && setSalePlans(plans.filter((p) => p.is_active)))
+      .catch(() => alive && setSalePlans([]));
+    if (agent) {
+      listAgentAddons(true)
+        .then((catalogue) => {
+          if (!alive) return;
+          const row = catalogue.addons.find((r) => r.agent_id === agent.id) ?? null;
+          setAddonRow(row);
+          setAddonDraft(addonSaleDraft(row));
+        })
+        .catch(() => alive && setAddonLoadFailed(true));
+    }
+    return () => {
+      alive = false;
+    };
+  }, [agent, open, isBuiltin, readOnly]);
+
+  useEffect(() => {
+    if (!open || isBuiltin) return;
+    setScopeLoadFailed(false);
+    listAllTenants()
+      .then((res) => {
+        if (!res.success) {
+          setScopeLoadFailed(true);
+          return;
+        }
+        setScopeTenants(scopeTenantOptions(res.data?.items ?? []));
+      })
+      .catch(() => setScopeLoadFailed(true));
+  }, [open, isBuiltin]);
 
   useEffect(() => {
     if (models && models.length > 0) {
@@ -249,6 +354,13 @@ export function AgentEditorModal({
     listMCPServices()
       .then((res: MCPService[]) => setMcpList(res ?? []))
       .catch(() => setMcpList([]));
+    setPacksLoaded(false);
+    listDomainPacks()
+      .then((res) => {
+        setPackList(res.data ?? []);
+        setPacksLoaded(true);
+      })
+      .catch(() => setPackList([]));
     getStorageEngineStatus()
       .then((res) => {
         const map: Record<string, boolean> = {};
@@ -260,6 +372,40 @@ export function AgentEditorModal({
 
   const patch = <K extends keyof Draft>(k: K, v: Draft[K]) =>
     setDraft((d) => ({ ...d, [k]: v }));
+
+  // Required tools of the chosen packs the agent would lack; the server
+  // refuses the save in that case, so it is shown and checked here first.
+  const missingPackTools = useMemo(
+    () =>
+      missingDomainPackTools(packList, draft.domain_packs, {
+        allowedTools: draft.allowed_tools,
+        kbSelectionMode: draft.kb_selection_mode,
+        knowledgeBases: draft.knowledge_bases,
+        webSearchEnabled: draft.web_search_enabled,
+      }),
+    [packList, draft.domain_packs, draft.allowed_tools, draft.kb_selection_mode, draft.knowledge_bases, draft.web_search_enabled],
+  );
+  // stored names this build no longer ships: removed on save
+  const savedPacks = packsLoaded ? shippedDomainPacks(draft.domain_packs, packList) : draft.domain_packs;
+  const droppedPacks = draft.domain_packs.filter((name) => !savedPacks.includes(name));
+
+  const toggleDomainPack = (name: string) => {
+    const next = draft.domain_packs.includes(name)
+      ? draft.domain_packs.filter((n) => n !== name)
+      : [...draft.domain_packs, name];
+    setDraft((prev) => ({ ...prev, domain_packs: next }));
+    if (!agent && !distributionTouched) setDistribution(defaultDistribution(next, scopeIds));
+  };
+
+  const pickDistribution = (value: AgentDistribution) => {
+    setDistribution(value);
+    setDistributionTouched(true);
+  };
+
+  const patchAddon = <K extends keyof AddonSaleDraft>(k: K, v: AddonSaleDraft[K]) => {
+    setAddonDraft((d) => ({ ...d, [k]: v }));
+    setAddonTouched(true);
+  };
 
   const toggleKb = (kbId: string) => {
     setDraft((prev) => {
@@ -305,6 +451,21 @@ export function AgentEditorModal({
       return;
     }
 
+    if (draft.agent_mode === "smart-reasoning" && missingPackTools.length > 0) {
+      setError(t("agent.domainPacks.missingTools", { tools: missingPackTools.join(", ") }));
+      return;
+    }
+
+    const wasEnabled = agent ? agentEnabled(agent) : true;
+    if (enabled !== wasEnabled && switchOffNeedsConfirm(agent?.id ?? "", enabled)) {
+      const ok = await confirm({
+        title: t("agentp.switchOffBasicTitle"),
+        message: t("agentp.switchOffBasicBody", { name: agent?.name ?? "" }),
+        danger: true,
+      });
+      if (!ok) return;
+    }
+
     setSaving(true);
     setError("");
     try {
@@ -329,6 +490,8 @@ export function AgentEditorModal({
         web_search_enabled: draft.web_search_enabled,
         mcp_selection_mode: draft.mcp_selection_mode,
         allowed_tools: draft.allowed_tools,
+        // packs only work on smart-reasoning agents; undefined clears them
+        domain_packs: draft.agent_mode === "smart-reasoning" && savedPacks.length > 0 ? savedPacks : undefined,
         mcp_services: draft.mcp_selection_mode === "selected" ? draft.mcp_services : undefined,
         image_upload_enabled: draft.image_upload_enabled,
         vlm_model_id: draft.vlm_model_id || undefined,
@@ -363,18 +526,44 @@ export function AgentEditorModal({
       // current defaults go out untouched.
       const config = buildAgentConfigForSave(agent?.config, configPayload, agent ? "edit" : "create");
 
+      // built-in agents never carry a list or a distribution (always basic);
+      // only an internal agent keeps its "Tổ chức áp dụng" list
+      const appliesTo = isBuiltin ? undefined : scopeForSave(distribution, scopeIds);
+      const dist = isBuiltin ? undefined : distribution;
       const res = agent
         ? await updateAgent(agent.id, {
             name: trimmedName,
             description: draft.description,
             config,
+            applies_to_tenant_ids: appliesTo,
+            distribution: dist,
           })
         : await createAgent({
             name: trimmedName,
             description: draft.description,
             config,
+            applies_to_tenant_ids: appliesTo,
+            distribution: dist,
           });
+      if (enabled !== wasEnabled) {
+        const switched = await setAgentEnabled(res.data.id, enabled);
+        res.data.enabled = switched.data?.enabled ?? enabled;
+      }
       onSaved(res.data);
+      // the catalogue row needs the agent saved as a specialist first
+      if (!isBuiltin && !addonLoadFailed && shouldSaveAddonSale(addonRow != null, addonTouched, distribution)) {
+        const input = addonSaleInput(res.data.id, addonDraft);
+        try {
+          const saved = addonRow ? await updateAgentAddon(input) : await createAgentAddon(input);
+          setAddonRow(saved);
+          setAddonTouched(false);
+        } catch (e) {
+          setError(
+            t("agent.addonSale.saveFailed", { reason: e instanceof Error ? e.message : String(e) }),
+          );
+          return;
+        }
+      }
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Save failed");
@@ -426,7 +615,7 @@ export function AgentEditorModal({
               tab === "knowledge" ? "bg-surface-card text-ink shadow-sm" : "text-muted hover:text-ink"
             }`}
           >
-            Knowledge Bases ({draft.kb_selection_mode === "all" ? "All" : draft.knowledge_bases.length})
+            Knowledge Bases ({draft.kb_selection_mode === "all" ? "All" : draft.kb_selection_mode === "public" ? t("agent.kbMode.publicShort") : draft.knowledge_bases.length})
           </button>
           <button
             type="button"
@@ -451,6 +640,90 @@ export function AgentEditorModal({
         {/* Tab: Basic */}
         {tab === "basic" && (
           <div className="space-y-3.5">
+            {!readOnly && (
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-[12px] border border-hairline p-3 select-none">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={enabled}
+                  onChange={(e) => setEnabled(e.target.checked)}
+                />
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-medium text-ink">{t("agent.enabled.title")}</span>
+                  <span className="caption block text-muted">
+                    {enabled ? t("agent.enabled.onDesc") : isBuiltin ? t("agent.enabled.offBuiltin") : t("agent.enabled.offCustom")}
+                  </span>
+                </span>
+              </label>
+            )}
+            {/* "Bộ kỹ năng chuyên môn" first: it decides what the agent is for
+                (and, for a new agent, its default distribution) */}
+            {(draft.agent_mode === "smart-reasoning" || !isBuiltin) && (
+              <div className="rounded-[12px] border border-hairline p-3">
+                <span className="mb-1 block text-[13px] font-medium text-ink">{t("agent.domainPacks.title")}</span>
+                <p className="caption mb-2 text-muted-soft">{t("agent.domainPacks.desc")}</p>
+                {draft.agent_mode !== "smart-reasoning" ? (
+                  <p className="caption text-muted">{t("agent.domainPacks.needsSmart")}</p>
+                ) : packList.length === 0 ? (
+                  <p className="caption text-muted">{t("agent.domainPacks.none")}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {packList.map((pack) => {
+                      const checked = draft.domain_packs.includes(pack.name);
+                      return (
+                        <label
+                          key={pack.name}
+                          className={`flex items-start gap-2.5 rounded-md border px-2.5 py-2 select-none ${
+                            checked ? "border-ink" : "border-hairline"
+                          } ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}
+                        >
+                          <input
+                            type="checkbox"
+                            className="mt-0.5"
+                            checked={checked}
+                            disabled={readOnly}
+                            onChange={() => toggleDomainPack(pack.name)}
+                          />
+                          <span className="min-w-0">
+                            <span className="flex flex-wrap items-center gap-1.5">
+                              <span className="font-mono text-[13px] text-ink">{pack.name}</span>
+                              <span className="caption text-muted-soft">
+                                {t("agent.domainPacks.version", { version: pack.version })}
+                              </span>
+                              <span className="caption text-muted-soft">
+                                {t("agent.domainPacks.asOf", { date: formatDate(pack.as_of) })}
+                              </span>
+                              {pack.overdue && (
+                                <span className="caption rounded bg-error/10 px-1 text-error">
+                                  {t("agent.domainPacks.overdue")}
+                                </span>
+                              )}
+                            </span>
+                            <span className="caption block text-muted">{pack.description}</span>
+                            {pack.required_tools?.length > 0 && (
+                              <span className="caption block text-muted-soft">
+                                {t("agent.domainPacks.requires", { tools: pack.required_tools.join(", ") })}
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                {/* a stored pack this build does not ship */}
+                {droppedPacks.length > 0 && (
+                  <p className="caption mt-2 text-error">
+                    {t("agent.domainPacks.unknown", { names: droppedPacks.join(", ") })}
+                  </p>
+                )}
+                {missingPackTools.length > 0 && (
+                  <p className="caption mt-2 text-error">
+                    {t("agent.domainPacks.missingTools", { tools: missingPackTools.join(", ") })}
+                  </p>
+                )}
+              </div>
+            )}
             <label className="block">
               <span className="caption mb-1.5 block text-muted">{t("agent.name")} *</span>
               <input
@@ -737,6 +1010,193 @@ export function AgentEditorModal({
                 </div>
               </div>
             )}
+            {!isBuiltin && (
+              <div className="rounded-[12px] border border-hairline p-3">
+                <span className="mb-1 block text-[13px] font-medium text-ink">{t("agent.distribution.title")}</span>
+                <p className="caption mb-2 text-muted-soft">{t("agent.distribution.desc")}</p>
+                <div className="space-y-1.5" role="radiogroup" aria-label={t("agent.distribution.title")}>
+                  {AGENT_DISTRIBUTIONS.map((value) => (
+                    <label
+                      key={value}
+                      className={`flex items-start gap-2.5 rounded-md border px-2.5 py-2 select-none ${
+                        distribution === value ? "border-ink" : "border-hairline"
+                      } ${readOnly ? "cursor-default opacity-75" : "cursor-pointer"}`}
+                    >
+                      <input
+                        type="radio"
+                        name="agent-distribution"
+                        className="mt-0.5"
+                        checked={distribution === value}
+                        disabled={readOnly}
+                        onChange={() => pickDistribution(value)}
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-[13px] text-ink">{t(`agent.distribution.${value}` as LocaleKey)}</span>
+                        <span className="caption block text-muted">{t(`agent.distribution.${value}Desc` as LocaleKey)}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {distribution === "addon" && (
+                  <p className="caption mt-2 text-muted-soft">{t("agent.distribution.addonNote")}</p>
+                )}
+                {distribution === "addon" && !readOnly && (
+                  <div className="mt-3 rounded-md border border-hairline p-3">
+                    <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[13px] font-medium text-ink">{t("agent.addonSale.title")}</span>
+                      {addonRow && (
+                        <span className="caption text-muted">
+                          {t("agent.addonSale.holders", { n: addonRow.holders ?? 0 })}
+                        </span>
+                      )}
+                    </div>
+                    <p className="caption mb-2 text-muted-soft">
+                      {addonRow ? t("agent.addonSale.descListed") : t("agent.addonSale.descNew")}
+                    </p>
+                    {addonLoadFailed ? (
+                      <p className="caption text-error">{t("agent.addonSale.loadFailed")}</p>
+                    ) : (
+                      <div className="space-y-3">
+                        <label className="block">
+                          <span className="caption mb-1 block text-muted">{t("agent.addonSale.price")}</span>
+                          <div className="relative">
+                            <input
+                              type="number"
+                              min={0}
+                              step={1000}
+                              className="input w-full pr-14"
+                              value={addonDraft.price_vnd}
+                              onChange={(e) => patchAddon("price_vnd", Math.max(0, Number(e.target.value) || 0))}
+                            />
+                            <span className="caption pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted-soft">
+                              VNĐ
+                            </span>
+                          </div>
+                          <span className="caption mt-1 block text-muted-soft">
+                            {addonDraft.price_vnd > 0
+                              ? t("agent.addonSale.priceHint", { price: formatPriceVND(addonDraft.price_vnd) })
+                              : t("agent.addonSale.priceFree")}
+                          </span>
+                        </label>
+                        <div>
+                          <span className="caption mb-1 block text-muted">{t("agent.addonSale.plans")}</span>
+                          {salePlans.length === 0 ? (
+                            <p className="caption text-muted">{t("agent.addonSale.noPlans")}</p>
+                          ) : (
+                            <div className="space-y-1">
+                              {salePlans.map((plan) => (
+                                <label key={plan.id} className="flex cursor-pointer items-center gap-2 px-1 py-0.5 select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={addonDraft.plan_ids.includes(plan.id)}
+                                    onChange={() => patchAddon("plan_ids", togglePlanId(addonDraft.plan_ids, plan.id))}
+                                  />
+                                  <span className="text-[13px] text-ink">{plan.name}</span>
+                                  {plan.mode === "seat" && (
+                                    <span className="caption text-muted-soft">{t("agent.addonSale.perSeat")}</span>
+                                  )}
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                          <span className="caption mt-1 block text-muted-soft">
+                            {addonDraft.plan_ids.length === 0
+                              ? t("agent.addonSale.allPlans")
+                              : t("agent.addonSale.somePlans", { n: addonDraft.plan_ids.length })}
+                          </span>
+                        </div>
+                        <label className="block">
+                          <span className="caption mb-1 block text-muted">{t("agent.addonSale.buyerDesc")}</span>
+                          <textarea
+                            className="input w-full h-auto min-h-[56px] resize-y"
+                            value={addonDraft.description}
+                            placeholder={t("agent.addonSale.buyerDescPlaceholder")}
+                            onChange={(e) => patchAddon("description", e.target.value)}
+                          />
+                        </label>
+                        <label className="flex cursor-pointer items-center gap-2 select-none">
+                          <input
+                            type="checkbox"
+                            checked={addonDraft.is_active}
+                            onChange={(e) => patchAddon("is_active", e.target.checked)}
+                          />
+                          <span className="text-[13px] text-ink">{t("agent.addonSale.active")}</span>
+                        </label>
+                        {addonRow && addonRow.agent_available === false && (
+                          <p className="caption text-amber-600">{t("agent.addonSale.wasOff")}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {distribution === "internal" && (
+                  <details className="mt-3" open={(agent?.applies_to_tenant_ids?.length ?? 0) > 0}>
+                    <summary className="cursor-pointer select-none text-[13px] text-ink">
+                      {t("agent.distribution.advanced")}
+                    </summary>
+                    <div className="mt-2">
+                      <div className="rounded-[12px] border border-hairline p-3">
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <span className="text-[13px] font-medium text-ink">{t("agent.scope.title")}</span>
+                          <span className="caption text-muted">
+                            {scopeIds.length === 0 ? t("agent.scope.all") : t("agent.scope.count", { count: scopeIds.length })}
+                          </span>
+                        </div>
+                        <p className="caption mb-2 text-muted-soft">{t("agent.scope.desc")}</p>
+                        {scopeLoadFailed ? (
+                          <p className="caption text-error">{t("agent.scope.loadFailed")}</p>
+                        ) : scopeTenants.length === 0 ? (
+                          <p className="caption text-muted">{t("agent.scope.none")}</p>
+                        ) : (
+                          <div className="max-h-[180px] space-y-1 overflow-y-auto">
+                            {scopeTenants.map((tenant) => (
+                              <label
+                                key={tenant.id}
+                                className={`flex items-center gap-2 rounded-md px-1.5 py-1 select-none ${
+                                  readOnly ? "cursor-default opacity-75" : "cursor-pointer hover:bg-surface-strong/60"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={scopeIds.includes(tenant.id)}
+                                  disabled={readOnly}
+                                  onChange={() => setScopeIds((prev) => toggleScopeTenant(prev, tenant.id))}
+                                />
+                                <span className="min-w-0 truncate text-[13px] text-ink">{tenant.name}</span>
+                                <span className="caption tabular-nums text-muted-soft">#{tenant.id}</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                        {/* stored ids no longer offered (deleted or moved Tổ chức) stay until unticked */}
+                        {scopeIds
+                          .filter((id) => scopeTenants.length > 0 && !scopeTenants.some((tenant) => tenant.id === id))
+                          .map((id) => (
+                            <label key={id} className="mt-1 flex items-center gap-2 px-1.5 py-1 select-none">
+                              <input
+                                type="checkbox"
+                                checked
+                                disabled={readOnly}
+                                onChange={() => setScopeIds((prev) => toggleScopeTenant(prev, id))}
+                              />
+                              <span className="caption text-error">{t("agent.scope.missing", { id })}</span>
+                            </label>
+                          ))}
+                        {scopeIds.length > 0 && !readOnly && (
+                          <button
+                            type="button"
+                            className="caption mt-2 text-primary hover:underline"
+                            onClick={() => setScopeIds([])}
+                          >
+                            {t("agent.scope.clear")}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -745,6 +1205,14 @@ export function AgentEditorModal({
           <div className="space-y-4">
             <div>
               <span className="caption mb-1.5 block text-muted">Knowledge Retrieval Scope</span>
+              {draft.kb_selection_mode === "public" ? (
+                /* the guest assistant's fixed scope: kept as is on save, and
+                   the server reapplies it on every guest turn anyway */
+                <div className="rounded-[10px] border border-primary bg-primary/10 px-3.5 py-2">
+                  <div className="font-medium text-primary">{t("agent.kbMode.public")}</div>
+                  <p className="caption mt-0.5 text-muted">{t("agent.kbMode.publicHint")}</p>
+                </div>
+              ) : (
               <div className="flex gap-2">
                 {(["all", "selected", "none"] as const).map((mode) => (
                   <button
@@ -762,6 +1230,7 @@ export function AgentEditorModal({
                   </button>
                 ))}
               </div>
+              )}
             </div>
 
             {draft.kb_selection_mode === "selected" && (
@@ -1132,6 +1601,7 @@ export function AgentEditorModal({
               )}
               <p className="caption mt-2 text-muted-soft">{t("agent.tools.autoNote")}</p>
             </div>
+
 
             <div className="rounded-[12px] border border-hairline p-3">
               <label className={`flex items-center gap-2.5 select-none ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}>

@@ -5,6 +5,7 @@ import { getParserEngines, type ParserEngineInfo } from "@/lib/api/system";
 import type { ParserEngineRule } from "@/lib/api/knowledge";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { Select } from "@/components/select";
+import { KIND_COLOR, type FileKind } from "@/components/files/file-icon";
 import { IMAGE_EXTENSIONS } from "@/lib/parse-settings";
 
 /* Embedded port of frontend/src/views/knowledge/settings/KBParserSettings.vue:
@@ -43,19 +44,20 @@ const CATEGORY_LABEL_KEY: Record<GroupCategory, LocaleKey> = {
   media: "ps.groupMedia",
 };
 
-/* Soft-tinted abbreviation glyph per family — mirrors the mention picker's
- * file-type badge colors (red/blue/orange/emerald…). */
-const GROUP_GLYPH: Record<string, { glyph: string; cls: string }> = {
-  pdf: { glyph: "PDF", cls: "bg-red-500/10 text-red-600 dark:text-red-400" },
-  office: { glyph: "DOC", cls: "bg-blue-500/10 text-blue-600 dark:text-blue-400" },
-  ppt: { glyph: "PPT", cls: "bg-orange-500/10 text-orange-600 dark:text-orange-400" },
-  excel: { glyph: "XLS", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-  text: { glyph: "TXT", cls: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
-  markdown: { glyph: "MD", cls: "bg-violet-500/10 text-violet-600 dark:text-violet-400" },
-  csv: { glyph: "CSV", cls: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
-  json: { glyph: "JSON", cls: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
-  webarchive: { glyph: "MHT", cls: "bg-amber-500/10 text-amber-600 dark:text-amber-400" },
-  audiovisual: { glyph: "AUD", cls: "bg-teal-500/10 text-teal-600 dark:text-teal-400" },
+/* Soft-tinted abbreviation glyph per family — the same colour language as
+ * the file icons (components/files/file-icon.ts): one KIND_COLOR map for
+ * every file-type badge. */
+const GROUP_GLYPH: Record<string, { glyph: string; kind: FileKind }> = {
+  pdf: { glyph: "PDF", kind: "file-pdf" },
+  office: { glyph: "DOC", kind: "file-word" },
+  ppt: { glyph: "PPT", kind: "file-powerpoint" },
+  excel: { glyph: "XLS", kind: "file-excel" },
+  text: { glyph: "TXT", kind: "text" },
+  markdown: { glyph: "MD", kind: "text" },
+  csv: { glyph: "CSV", kind: "file-excel" },
+  json: { glyph: "JSON", kind: "code" },
+  webarchive: { glyph: "MHT", kind: "file" },
+  audiovisual: { glyph: "AUD", kind: "sound" },
 };
 
 interface Group {
@@ -181,7 +183,7 @@ export function ParserRulesEditor({
       if (r) r.xlsx_first_row_as_header = checked;
     });
 
-  const rowGrid = `grid grid-cols-1 gap-x-6 sm:grid-cols-2 ${columns === 3 ? "lg:grid-cols-3" : ""}`;
+  const rowGrid = `grid grid-cols-1 gap-2.5 sm:grid-cols-2 ${columns === 3 ? "lg:grid-cols-3" : ""}`;
 
   if (engines === null) {
     return <p className="caption text-muted">{t("ps.parserLoading")}</p>;
@@ -197,7 +199,7 @@ export function ParserRulesEditor({
         if (catGroups.length === 0) return null;
         return (
           <div key={category}>
-            <div className="caption-uppercase mb-1 flex items-center gap-2 text-muted-soft">
+            <div className="caption-uppercase mb-2 flex items-center gap-2 text-muted-soft">
               {t(CATEGORY_LABEL_KEY[category])}
               <span className="h-px flex-1 bg-hairline" aria-hidden />
             </div>
@@ -209,50 +211,55 @@ export function ParserRulesEditor({
                 const isDefault = selected === defaultName;
                 const glyph = GROUP_GLYPH[g.key] ?? {
                   glyph: g.key.replace(/^dyn-/, "").slice(0, 4).toUpperCase(),
-                  cls: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+                  kind: "file" as FileKind,
                 };
+                const glyphColor = KIND_COLOR[glyph.kind];
                 const noEngine = available.length === 0;
                 return (
                   <div
                     key={g.key}
-                    className={`flex items-center gap-2.5 py-1 ${noEngine ? "opacity-55" : ""}`}
+                    className={`flex min-w-0 flex-col gap-3 rounded-lg2 border border-hairline bg-surface-card/60 p-3 ${noEngine ? "opacity-55" : ""}`}
                   >
-                    <span
-                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] text-[8px] font-bold tracking-tight ${glyph.cls}`}
-                      aria-hidden
-                    >
-                      {glyph.glyph}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-[12.5px] font-medium text-ink">{g.label}</div>
-                      <div className="mt-0.5 flex flex-wrap gap-1">
-                        {g.extensions.map((x) => (
-                          <span
-                            key={x}
-                            className="rounded bg-surface-strong px-1 py-px text-[10px] leading-4 text-muted"
-                          >
-                            .{x}
-                          </span>
-                        ))}
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md2 text-[9px] font-bold tracking-tight"
+                        style={{
+                          color: glyphColor,
+                          background: `color-mix(in srgb, ${glyphColor} 12%, transparent)`,
+                        }}
+                        aria-hidden
+                      >
+                        {glyph.glyph}
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[13px] font-semibold text-ink">{g.label}</div>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {g.extensions.map((x) => (
+                            <span
+                              key={x}
+                              className="rounded bg-surface-strong px-1.5 py-px text-[10px] leading-4 text-muted"
+                            >
+                              .{x}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     </div>
                     {noEngine ? (
-                      <span className="shrink-0 text-[11px] text-muted-soft">
+                      <span className="flex h-8 items-center rounded-[8px] bg-surface-strong px-3 text-[11px] text-muted-soft">
                         — {t("ps.parserNoEngine")}
                       </span>
                     ) : (
-                      <div className="flex shrink-0 items-center gap-1.5">
+                      <div className="flex w-full items-center gap-2">
                         {g.extensions.includes("xlsx") && selected === "builtin" && (
-                          /* Pill toggle for the two-state header flag — kept
-                           * inline so rows stay a uniform height. */
                           <button
                             type="button"
                             role="switch"
                             aria-checked={rule?.xlsx_first_row_as_header === true}
                             onClick={() => setXlsxHeader(g.extensions, !(rule?.xlsx_first_row_as_header === true))}
-                            className={`rounded-full border px-2 py-0.5 text-[10.5px] font-medium transition-colors ${
+                            className={`h-8 shrink-0 rounded-[8px] border px-2.5 text-[10.5px] font-medium transition-colors ${
                               rule?.xlsx_first_row_as_header === true
-                                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
+                                ? "border-success/30 bg-success-surface text-success"
                                 : "border-hairline text-muted hover:text-ink"
                             }`}
                           >
@@ -260,10 +267,10 @@ export function ParserRulesEditor({
                           </button>
                         )}
                         <Select
-                          className={`h-7 w-[150px] py-0.5 px-2.5 text-[12px] ${
+                          className={`h-8 min-w-0 flex-1 px-2.5 py-0.5 text-[12px] ${
                             isDefault
                               ? "text-muted"
-                              : "border-sky-500/40 font-medium text-ink"
+                              : "border-accent/40 font-medium text-ink"
                           }`}
                           value={selected}
                           onChange={(v) => setEngine(g.extensions, v)}

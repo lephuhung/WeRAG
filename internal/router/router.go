@@ -107,6 +107,8 @@ type RouterParams struct {
 	TemplateStyleHandler        *handler.TemplateStyleHandler
 	LegalReviewHandler          *handler.LegalReviewHandler
 	LegalRequestHandler         *handler.LegalRequestHandler
+	LegalDraftHandler           *handler.LegalDraftHandler
+	DomainPackReconcileHandler  *handler.DomainPackReconcileHandler
 	KnowledgeGraphViewHandler   *handler.KnowledgeGraphViewHandler
 }
 
@@ -217,6 +219,9 @@ func NewRouter(params RouterParams) *gin.Engine {
 	r.GET("/api/v1/local-browser/extension", params.SessionHandler.BrowserSkillExtension)
 	r.POST("/api/v1/local-browser/extension/authorize", params.SessionHandler.BrowserSkillAuthorize)
 	r.POST("/api/v1/local-browser/internal", params.SessionHandler.BrowserSkillInternal)
+
+	// Read-only catalogue for anonymous visitors to the landing page.
+	RegisterPublicBillingRoutes(r, params.UsageBillingHandler)
 
 	// Middleware xác thực
 	r.Use(middleware.Auth(params.TenantService, params.UserService, params.TenantMemberService, params.TenantAPIKeyService, params.Config))
@@ -354,6 +359,8 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterTemplateStyleRoutes(v1, params.TemplateStyleHandler, rbacGuards)
 		RegisterLegalReviewRoutes(v1, params.LegalReviewHandler, rbacGuards)
 		RegisterLegalRequestRoutes(v1, params.LegalRequestHandler, rbacGuards)
+		RegisterLegalDraftRoutes(v1, params.LegalDraftHandler, rbacGuards)
+		RegisterDomainPackReconcileRoutes(v1, params.DomainPackReconcileHandler, rbacGuards)
 		RegisterChunkerDebugRoutes(v1, rbacGuards)
 
 		// Fail fast if any declared API-key policy points at a route

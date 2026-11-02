@@ -53,8 +53,8 @@ const stepPending = (s: AgentStepItem): boolean =>
   s.type === "tool" ? s.status === "pending" : s.type === "thinking" ? !s.done : false;
 
 /* Unified reasoning block: the RAG/tool pipeline and the thought process are
- * ONE collapsible section — the header carries the live status + duration +
- * document count, the expanded body shows the agent step timeline (thinking
+ * ONE collapsible section — the header carries the live status + duration,
+ * the expanded body shows the agent step timeline (thinking
  * rounds, tool calls, compaction markers — ported from the Vue smart-agent
  * tree) or, when no structured steps exist, the raw thinking stream. */
 export const ThinkingDisplay = memo(function ThinkingDisplay({
@@ -63,7 +63,6 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
   steps = [],
   durationMs,
   references = [],
-  onViewReferences,
   compact = false,
 }: {
   content: string;
@@ -71,7 +70,6 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
   steps?: AgentStepItem[];
   durationMs?: number;
   references?: KnowledgeReferenceItem[];
-  onViewReferences?: () => void;
   /** Document-assistant split view: tighter header spacing. */
   compact?: boolean;
 }) {
@@ -253,16 +251,6 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
             />
           </svg>
         </button>
-        {docCount > 0 && onViewReferences && (
-          <button
-            type="button"
-            onClick={onViewReferences}
-            className="shrink-0 cursor-pointer rounded-full border border-sky-200 bg-sky-50/80 px-2 py-0.5 text-[11px] font-medium text-sky-700 transition-colors hover:border-sky-300 hover:bg-sky-100 hover:text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300 dark:hover:border-sky-500/50 dark:hover:bg-sky-500/20"
-            title={t("think.openDocs")}
-          >
-            {t("think.docs", { count: docCount })}
-          </button>
-        )}
       </div>
 
       {expanded &&

@@ -2,16 +2,19 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { Orb } from "@/components/orb";
-import { BrandLogo } from "@/components/brand-logo";
+import { AuthShell } from "@/components/auth/auth-shell";
+import { AuthCard } from "@/components/auth/auth-card";
 import { AuthProvider, useAuth } from "@/lib/auth";
-import { I18nProvider, useT } from "@/lib/i18n";
+import { useT } from "@/lib/i18n";
 import { ApiError, apiGet, apiPost } from "@/lib/api-client";
 
 /* Approval page of the Word add-in's browser sign-in. The add-in opens
  * /word-login?code=XXXX-XXXX in the user's browser; the signed-in user
  * confirms here and the add-in, polling with its secret device code, gets
- * its own token pair. The password never reaches the add-in. */
+ * its own token pair. The password never reaches the add-in.
+ *
+ * The screen shares the auth shell with the sign-in and sign-up pages —
+ * same frame, same inputs, same palette. */
 
 type Lookup = { status: string; user_code?: string; client?: string };
 type Phase = "loading" | "enter" | "ask" | "approved" | "denied" | "expired";
@@ -82,96 +85,101 @@ function WordLoginApproval() {
   const name = auth.user?.username || auth.user?.email || "";
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-canvas px-4">
-      <Orb color="lavender" size={560} className="-left-40 top-[-180px]" />
-      <Orb color="mint" size={480} className="bottom-[-160px] right-[-120px]" />
+    <AuthShell mode="word" showcase={false}>
+      <AuthCard kicker={t("wordLogin.eyebrow")} title={t("wordLogin.title")}>
+        {phase === "loading" && (
+          <p className="body-sm animate-pulse text-muted">{t("workspace.loading")}</p>
+        )}
 
-      <div className="relative w-full max-w-[420px]">
-        <div className="mb-6 flex justify-center">
-          <BrandLogo size={60} priority />
-        </div>
-        <div className="card p-6 sm:p-8">
-          <h1 className="title-sm mb-4">{t("wordLogin.title")}</h1>
-
-          {phase === "loading" && <p className="body-sm animate-pulse text-muted">{t("workspace.loading")}</p>}
-
-          {phase === "enter" && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                setCode(typed.trim().toUpperCase());
-              }}
-              className="flex flex-col gap-3"
+        {phase === "enter" && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              setCode(typed.trim().toUpperCase());
+            }}
+            className="flex flex-col gap-3"
+          >
+            <label className="caption text-muted" htmlFor="word-login-code">
+              {t("wordLogin.enterCode")}
+            </label>
+            <input
+              id="word-login-code"
+              className="input text-center font-mono text-lg tracking-[0.3em]"
+              value={typed}
+              onChange={(e) => setTyped(e.target.value.toUpperCase().slice(0, 9))}
+              placeholder="XXXX-XXXX"
+              autoFocus
+            />
+            <button
+              className="btn btn-primary h-11 w-full"
+              type="submit"
+              disabled={typed.replace(/[^A-Z]/g, "").length !== 8}
             >
-              <label className="caption text-muted" htmlFor="word-login-code">
-                {t("wordLogin.enterCode")}
-              </label>
-              <input
-                id="word-login-code"
-                className="input text-center font-mono text-lg tracking-[0.3em]"
-                value={typed}
-                onChange={(e) => setTyped(e.target.value.toUpperCase().slice(0, 9))}
-                placeholder="XXXX-XXXX"
-                autoFocus
-              />
-              <button className="btn btn-primary" type="submit" disabled={typed.replace(/[^A-Z]/g, "").length !== 8}>
-                {t("wordLogin.continue")}
-              </button>
-            </form>
-          )}
+              {t("wordLogin.continue")}
+            </button>
+          </form>
+        )}
 
-          {phase === "ask" && (
-            <div className="flex flex-col gap-4">
-              <p className="body-sm">{t("wordLogin.prompt", { name })}</p>
-              <div className="rounded-lg border border-hairline bg-surface-strong py-3 text-center font-mono text-2xl tracking-[0.3em]">
-                {code}
-              </div>
-              <p className="caption text-muted">{t("wordLogin.codeHint")}</p>
-              {error && <p className="caption text-error">{error}</p>}
-              <div className="flex gap-2">
-                <button className="btn btn-primary flex-1" disabled={busy} onClick={() => void answer(true)}>
-                  {t("wordLogin.approve")}
-                </button>
-                <button className="btn btn-outline" disabled={busy} onClick={() => void answer(false)}>
-                  {t("wordLogin.deny")}
-                </button>
-              </div>
-              <button className="caption self-start text-muted underline" onClick={() => void switchAccount()}>
-                {t("wordLogin.switchAccount")}
-              </button>
+        {phase === "ask" && (
+          <div className="flex flex-col gap-4">
+            <p className="body-sm">{t("wordLogin.prompt", { name })}</p>
+            <div className="rounded-lg border border-hairline bg-surface-strong py-3 text-center font-mono text-2xl tracking-[0.3em]">
+              {code}
             </div>
-          )}
-
-          {phase === "approved" && <p className="body-sm text-success">{t("wordLogin.approved")}</p>}
-          {phase === "denied" && <p className="body-sm">{t("wordLogin.denied")}</p>}
-          {phase === "expired" && (
-            <div className="flex flex-col gap-3">
-              <p className="body-sm text-error">{t("wordLogin.expired")}</p>
+            <p className="caption text-muted">{t("wordLogin.codeHint")}</p>
+            {error && <p className="caption text-error">{error}</p>}
+            <div className="flex gap-2">
               <button
-                className="btn btn-outline self-start"
-                onClick={() => {
-                  setTyped("");
-                  setCode("");
-                }}
+                className="btn btn-primary flex-1"
+                disabled={busy}
+                onClick={() => void answer(true)}
               >
-                {t("wordLogin.enterCode")}
+                {t("wordLogin.approve")}
+              </button>
+              <button
+                className="btn btn-outline"
+                disabled={busy}
+                onClick={() => void answer(false)}
+              >
+                {t("wordLogin.deny")}
               </button>
             </div>
-          )}
-        </div>
-      </div>
-    </div>
+            <button
+              className="caption self-center text-muted underline"
+              onClick={() => void switchAccount()}
+            >
+              {t("wordLogin.switchAccount")}
+            </button>
+          </div>
+        )}
+
+        {phase === "approved" && <p className="body-sm text-success">{t("wordLogin.approved")}</p>}
+        {phase === "denied" && <p className="body-sm">{t("wordLogin.denied")}</p>}
+        {phase === "expired" && (
+          <div className="flex flex-col gap-3">
+            <p className="body-sm text-error">{t("wordLogin.expired")}</p>
+            <button
+              className="btn btn-outline self-center"
+              onClick={() => {
+                setTyped("");
+                setCode("");
+              }}
+            >
+              {t("wordLogin.enterCode")}
+            </button>
+          </div>
+        )}
+      </AuthCard>
+    </AuthShell>
   );
 }
 
 export default function WordLoginPage() {
   return (
-    <I18nProvider>
-      <AuthProvider>
-        <Suspense>
-          <WordLoginApproval />
-        </Suspense>
-      </AuthProvider>
-    </I18nProvider>
+    <AuthProvider>
+      <Suspense>
+        <WordLoginApproval />
+      </Suspense>
+    </AuthProvider>
   );
 }

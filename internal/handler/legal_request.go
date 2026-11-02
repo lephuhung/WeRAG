@@ -25,11 +25,12 @@ func NewLegalRequestHandler(svc interfaces.LegalRequestService) *LegalRequestHan
 // ListLegalRequests godoc
 // @Summary      List legal document requests
 // @Description  Pages the requests to add legal documents, most recently
-// @Description  requested first. status is requested (default), added,
-// @Description  rejected or all; counts holds the total per status.
+// @Description  requested first. status is requested (default), fetched,
+// @Description  reviewing, added, rejected or all; counts holds the total per
+// @Description  status; an item's draft is the OCR draft of a scanned PDF.
 // @Tags         Rà soát pháp lý
 // @Produce      json
-// @Param        status    query  string  false  "requested, added, rejected or all"
+// @Param        status    query  string  false  "requested, fetched, reviewing, added, rejected or all"
 // @Param        page      query  int     false  "Page"
 // @Param        page_size query  int     false  "Page size"
 // @Success      200       {object} map[string]interface{} "Items, total and counts"
@@ -60,9 +61,12 @@ func (h *LegalRequestHandler) ListLegalRequests(c *gin.Context) {
 
 // DecideLegalRequest godoc
 // @Summary      Ingest, reject or close a legal document request
-// @Description  action "ingest" fetches the document from vbpl.vn into the
-// @Description  public knowledge base knowledge_base_id (same code as the MCP
-// @Description  tool legal_ingest_document); "reject" keeps note as the
+// @Description  action "ingest" fetches the document's HTML full text from
+// @Description  vbpl.vn into the public knowledge base knowledge_base_id (same
+// @Description  code as the MCP tool legal_ingest_document); a document vbpl.vn
+// @Description  has only as a scanned PDF answers 400 (it goes through a
+// @Description  reviewed OCR draft: POST /system/legal-requests/{id}/fetch) and
+// @Description  its portal availability is stored as detail.portal; "reject" keeps note as the
 // @Description  reason users see; "added" records a document added by hand.
 // @Tags         Rà soát pháp lý
 // @Accept       json
@@ -79,6 +83,28 @@ func (h *LegalRequestHandler) DecideLegalRequest(c *gin.Context) {
 		return
 	}
 	item, err := h.svc.Decide(ctx, c.Param("id"), &req)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": item})
+}
+
+// CheckLegalRequestPortal godoc
+// @Summary      Check what vbpl.vn offers for a requested document
+// @Description  Reads the document's portal page (no download) and stores
+// @Description  detail.portal = {checked_at, status, html, pdf_file, exists}
+// @Description  on the request: HTML full text, only an original PDF scan,
+// @Description  or nothing.
+// @Tags         Rà soát pháp lý
+// @Produce      json
+// @Param        id path string true "Request ID"
+// @Success      200 {object} map[string]interface{} "Updated item"
+// @Router       /system/legal-requests/{id}/portal-check [post]
+func (h *LegalRequestHandler) CheckLegalRequestPortal(c *gin.Context) {
+	ctx := c.Request.Context()
+	item, err := h.svc.CheckPortal(ctx, c.Param("id"))
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)

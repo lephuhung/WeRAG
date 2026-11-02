@@ -168,6 +168,16 @@ func AvailableToolDefinitions() []AvailableTool {
 			Label:       "Tạo hình minh họa",
 			Description: "Tạo hình minh họa bằng mô hình sinh ảnh (dịch vụ MCP generate_image, ví dụ Qwen-Image); người dùng bấm để chèn vào tài liệu",
 		},
+		{
+			Name:        ToolCompareTaxMethods,
+			Label:       "So sánh phương pháp thuế TNDN",
+			Description: "Tính thuế TNDN theo % doanh thu và theo lợi nhuận kê khai, kèm điểm hòa vốn và giả định (bộ kỹ năng opc-vn-business-law)",
+		},
+		{
+			Name:        ToolCalculateHouseholdTax,
+			Label:       "Tính thuế hộ kinh doanh",
+			Description: "Tính thuế GTGT và TNCN của hộ kinh doanh theo % doanh thu và trên lợi nhuận, kèm mức giảm thuế, hòa vốn và giả định (bộ kỹ năng opc-vn-business-law)",
+		},
 	}
 }
 
@@ -190,6 +200,37 @@ func DefaultAllowedTools() []string {
 		// Graph, SQL, data analysis and explicit planning are opt-in. Existing
 		// agents keep their explicit allowlists; domain presets select extras.
 	}
+}
+
+// KnowledgeScopedTools are the tools a turn without any knowledge scope does
+// not get: registerTools strips them, and the domain-pack save check counts
+// them as missing for an agent with no knowledge base. todo_write goes too
+// when web search is also off (not useful for simple chat).
+func KnowledgeScopedTools(webSearchEnabled bool) []string {
+	scoped := []string{
+		ToolSearchKnowledge,
+		ToolReadDocument,
+		ToolListDocuments,
+		ToolSearchDocumentSection,
+		ToolQueryKnowledgeGraph,
+		ToolDatabaseQuery,
+		ToolDataAnalysis,
+		ToolDataSchema,
+		// Wiki tools also require at least one KB in scope.
+		ToolWikiReadPage,
+		ToolWikiSearch,
+		ToolWikiFlagIssue,
+		ToolWikiWritePage,
+		ToolWikiReplaceText,
+		ToolWikiRenamePage,
+		ToolWikiDeletePage,
+		ToolWikiReadIssue,
+		ToolWikiUpdateIssue,
+	}
+	if !webSearchEnabled {
+		scoped = append(scoped, ToolTodoWrite)
+	}
+	return scoped
 }
 
 // Retired tool identifiers are retained only for decoding existing histories

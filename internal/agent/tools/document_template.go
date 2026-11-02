@@ -167,6 +167,11 @@ type templateDraft struct {
 		OnBehalfOf string `json:"on_behalf_of"`
 	} `json:"signer"`
 	MissingContent []string `json:"missing_content"`
+	// Form holds the facts of a form type (templateForms), by key.
+	Form map[string]formValue `json:"form"`
+	// AgencyInSentence is the agency's name as a sentence writes it ("Sở
+	// Nội vụ"), for the forms that name it in their body.
+	AgencyInSentence string `json:"agency_in_sentence"`
 }
 
 // templateParagraph is one paragraph of the body in the add-in's payload.
@@ -281,16 +286,37 @@ func blankInvented(s string, invented []string) string {
 // III); công văn has none (<cơ quan>-<đơn vị soạn thảo>).
 var templateTypeCodes = map[string]string{
 	"ke-hoach": "KH", "bao-cao": "BC", "to-trinh": "TTr", "thong-bao": "TB", "quyet-dinh": "QĐ",
+	"chi-thi": "CT", "nghi-quyet": "NQ", "cong-dien": "CĐ", "giay-moi": "GM", "giay-gioi-thieu": "GGT",
+	"bien-ban": "BB", "giay-nghi-phep": "GNP",
+}
+
+// decisionTemplate: the types issued "Căn cứ …" by an authority line, the
+// body after "QUYẾT ĐỊNH:" / "QUYẾT NGHỊ:".
+func decisionTemplate(templateID string) bool {
+	return templateID == "quyet-dinh" || templateID == "nghi-quyet"
+}
+
+// untitledSubject: the forms printed without a trích yếu line (Mẫu 1.8,
+// 1.10); their subject only names the document in the chat.
+func untitledSubject(templateID string) bool {
+	return templateID == "giay-gioi-thieu" || templateID == "giay-nghi-phep"
 }
 
 // templateOutlines tell the model the usual parts of each type.
 var templateOutlines = map[string]string{
-	"cong-van":   `Công văn: no title line. paragraphs = the body as "body" paragraphs (context, request, deadline as the user gave it), the last one ending with "./.". addressee = who it is sent to (without "Kính gửi:").`,
-	"ke-hoach":   `Kế hoạch: "heading" paragraphs "I. MỤC ĐÍCH, YÊU CẦU", "II. NỘI DUNG", "III. TỔ CHỨC THỰC HIỆN" (sub-headings "1. …" also "heading"), each followed by "body" paragraphs.`,
-	"bao-cao":    `Báo cáo: "heading" paragraphs "I. TÌNH HÌNH, KẾT QUẢ", "II. ĐÁNH GIÁ", "III. KIẾN NGHỊ, ĐỀ XUẤT", each followed by "body" paragraphs.`,
-	"to-trinh":   `Tờ trình: "heading" paragraphs "I. SỰ CẦN THIẾT", "II. NỘI DUNG ĐỀ NGHỊ", "III. KIẾN NGHỊ", each followed by "body" paragraphs; addressee = the authority asked to approve (without "Kính gửi:").`,
-	"thong-bao":  `Thông báo: "body" paragraphs stating what is announced, to whom and from when, as the user gave it; the last one ending with "./.".`,
-	"quyet-dinh": `Quyết định cá biệt: paragraphs are the articles: an "article" paragraph "Điều 1. <short title>" followed by "body" paragraphs, then "Điều 2." …; the last article is about hiệu lực and trách nhiệm thi hành. grounds = the "Căn cứ …;" lines the user gave (each starting "Căn cứ", ending ";"); request_basis = "Theo đề nghị của <the proposing unit the user named>.".`,
+	"cong-van":        `Công văn: no title line. paragraphs = the body as "body" paragraphs (context, request, deadline as the user gave it), the last one ending with "./.". addressee = who it is sent to (without "Kính gửi:").`,
+	"ke-hoach":        `Kế hoạch: "heading" paragraphs "I. MỤC ĐÍCH, YÊU CẦU", "II. NỘI DUNG", "III. TỔ CHỨC THỰC HIỆN" (sub-headings "1. …" also "heading"), each followed by "body" paragraphs.`,
+	"bao-cao":         `Báo cáo: "heading" paragraphs "I. TÌNH HÌNH, KẾT QUẢ", "II. ĐÁNH GIÁ", "III. KIẾN NGHỊ, ĐỀ XUẤT", each followed by "body" paragraphs.`,
+	"to-trinh":        `Tờ trình: "heading" paragraphs "I. SỰ CẦN THIẾT", "II. NỘI DUNG ĐỀ NGHỊ", "III. KIẾN NGHỊ", each followed by "body" paragraphs; addressee = the authority asked to approve (without "Kính gửi:").`,
+	"thong-bao":       `Thông báo: "body" paragraphs stating what is announced, to whom and from when, as the user gave it; the last one ending with "./.".`,
+	"quyet-dinh":      `Quyết định cá biệt: paragraphs are the articles: an "article" paragraph "Điều 1. <short title>" followed by "body" paragraphs, then "Điều 2." …; the last article is about hiệu lực and trách nhiệm thi hành. grounds = the "Căn cứ …;" lines the user gave (each starting "Căn cứ", ending ";"); request_basis = "Theo đề nghị của <the proposing unit the user named>.".`,
+	"nghi-quyet":      `Nghị quyết cá biệt (the system writes "QUYẾT NGHỊ:"): paragraphs are the articles: an "article" paragraph "Điều 1. <short title>" followed by "body" paragraphs, then "Điều 2." …; the last article is about tổ chức thực hiện and hiệu lực. grounds = the "Căn cứ …;" lines the user gave (each starting "Căn cứ", ending ";"); request_basis = the "Xét …" / "Theo đề nghị của …" line only when the user named that proposal, else "".`,
+	"chi-thi":         `Chỉ thị: no "Kính gửi", no "Căn cứ". "body" paragraphs stating the situation and why the directive is issued, then the tasks as "heading" paragraphs "1. …", "2. …" each followed by "body" paragraphs assigning them to the units the user named; the last paragraph asks for strict implementation and ends with "./.".`,
+	"cong-dien":       `Công điện: subject = the trích yếu. paragraphs = the message as "body" paragraphs (the situation, then what each receiver must do), the last one ending with "./.". Put the receivers in form.receivers, not in paragraphs.`,
+	"giay-moi":        `Giấy mời: subject = the trích yếu nội dung cuộc họp. paragraphs = only the "các vấn đề cần lưu ý" the user gave (documents to bring, confirmation), else []. The invitation lines are written from form.`,
+	"giay-gioi-thieu": `Giấy giới thiệu: subject = "". paragraphs = []. Everything is in form.`,
+	"giay-nghi-phep":  `Giấy nghỉ phép: subject = "". paragraphs = []. Everything is in form.`,
+	"bien-ban":        `Biên bản: subject = the name of the meeting (hội nghị, hội thảo). paragraphs = the proceedings (diễn biến, ý kiến, kết luận) as "body" paragraphs, written only from what the user gave. signer = the chair (chủ tọa); the secretary goes in form.`,
 }
 
 const templateSystemPrompt = `You draft a Vietnamese administrative document (văn bản hành chính, Nghị định 30/2020/NĐ-CP) from what the user wrote. Answer with ONE JSON object only, no prose, no code fence:
@@ -353,7 +379,7 @@ func PrepareDocumentTemplate(ctx context.Context, in DocumentTemplateInput) (*Do
 func draftTemplate(ctx context.Context, in DocumentTemplateInput, correction string) (*templateDraft, error) {
 	var b strings.Builder
 	name := types.DocumentTemplateNames[in.Request.TemplateID]
-	fmt.Fprintf(&b, "Document type: %s.\n%s\n\n", name, templateOutlines[in.Request.TemplateID])
+	fmt.Fprintf(&b, "Document type: %s.\n%s%s\n\n", name, templateOutlines[in.Request.TemplateID], formOutline(in.Request.TemplateID))
 	b.WriteString("Unit profile (known, do not repeat in the body):\n")
 	if p := in.Profile; p != nil {
 		fmt.Fprintf(&b, "- cơ quan ban hành: %s\n- cơ quan chủ quản: %s\n- địa danh: %s\n", p.AgencyName, p.ParentAgency, p.Locality)
@@ -379,7 +405,7 @@ func draftTemplate(ctx context.Context, in DocumentTemplateInput, correction str
 	for i, m := range in.Inputs {
 		fmt.Fprintf(&b, "[%d] %s\n", i+1, m)
 	}
-	msgs := []chat.Message{{Role: "system", Content: templateSystemPrompt}, {Role: "user", Content: b.String()}}
+	msgs := []chat.Message{{Role: "system", Content: templateSystemPrompt + formSystemRule(in.Request.TemplateID)}, {Role: "user", Content: b.String()}}
 	if correction != "" {
 		msgs = append(msgs, chat.Message{Role: "user", Content: correction})
 	}
@@ -453,6 +479,9 @@ func draftViolations(d *templateDraft, userText string, today time.Time) []strin
 	}
 	for _, r := range d.Recipients {
 		check(r)
+	}
+	for _, v := range d.Form {
+		check(string(v))
 	}
 	return bad
 }
@@ -598,7 +627,8 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 	if learned != (TemplateUserContext{}) {
 		out.Learned = &learned
 	}
-	if user.UnitAbbr == "" {
+	// a biên bản's số ký hiệu and "Lưu" line do not name the unit
+	if user.UnitAbbr == "" && req.TemplateID != "bien-ban" {
 		label := "Phòng/bộ phận soạn thảo của bạn và tên viết tắt (ví dụ Văn phòng, VP)"
 		if user.Position == "" {
 			label += ", kèm chức vụ của bạn"
@@ -608,10 +638,21 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 
 	// the content
 	subject := strings.TrimSuffix(strings.TrimSpace(subjectPrefixRe.ReplaceAllString(strings.TrimSpace(d.Subject), "")), ".")
-	if subject == "" {
+	form, formMissing := formValues(req.TemplateID, d, userText)
+	switch {
+	case untitledSubject(req.TemplateID):
+		// no trích yếu line: the chat names it by the person
+		subject = ""
+		if form["person"] != "" {
+			subject = "ông (bà) " + form["person"]
+		}
+	case subject == "":
 		need("Trích yếu nội dung văn bản")
-	} else {
+	default:
 		subject = subjectCase(req.TemplateID, subject)
+	}
+	for _, m := range formMissing {
+		need(m)
 	}
 	paragraphs := templateBody(d, req.TemplateID, agency, parent)
 	asked := 0
@@ -621,8 +662,14 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 			need(fitRunes(m, 200))
 		}
 	}
-	if len(paragraphs) == 0 && asked == 0 {
-		need("Nội dung chính của văn bản")
+	// a giấy mời's notes are optional, the giấy giới thiệu and nghỉ phép
+	// have only their form
+	if len(paragraphs) == 0 && asked == 0 && req.TemplateID != "giay-moi" && !untitledSubject(req.TemplateID) {
+		if req.TemplateID == "bien-ban" {
+			need("Nội dung (diễn biến, kết luận) của cuộc họp")
+		} else {
+			need("Nội dung chính của văn bản")
+		}
 	}
 	if len(invented) > 0 {
 		var nums []string
@@ -632,12 +679,16 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 		need("Xác nhận các số liệu, thời hạn trong nội dung (bạn chưa nêu): " + strings.Join(nums, ", "))
 	}
 	addressee := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(d.Addressee), "Kính gửi:"))
+	// the forms, a chỉ thị and a decision have no "Kính gửi"
+	if templateForms[req.TemplateID] != nil || req.TemplateID == "chi-thi" || decisionTemplate(req.TemplateID) {
+		addressee = ""
+	}
 	if (req.TemplateID == "cong-van" || req.TemplateID == "to-trinh") && addressee == "" {
 		need("Nơi gửi (Kính gửi)")
 	}
 	var grounds []string
 	requestBasis, decisionAuthority := "", ""
-	if req.TemplateID == "quyet-dinh" {
+	if decisionTemplate(req.TemplateID) {
 		for _, g := range d.Grounds {
 			if g = strings.TrimSpace(g); g != "" && groundSaid(userText, g) {
 				grounds = append(grounds, endWith(g, ";"))
@@ -653,51 +704,75 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 			grounds[len(grounds)-1] = endWith(strings.TrimSuffix(grounds[len(grounds)-1], ";"), ";")
 		}
 		basis := strings.TrimSpace(d.RequestBasis)
-		unit := strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(basis, "Theo đề nghị của")), ".")
-		if unit == "" || !said(userText, unit) {
-			need("Đơn vị đề nghị (Theo đề nghị của …)")
+		if req.TemplateID == "nghi-quyet" {
+			// a resolution's proposal line ("Xét Tờ trình số …") is
+			// optional, kept only as the user wrote it
+			if core := strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(basis, "Xét"), "Theo đề nghị của")), "."); core != "" && said(userText, core) {
+				requestBasis = endWith(basis, ".")
+			}
+			// the collective that resolves: set with the signer (TM. …)
+			decisionAuthority = strings.ToUpper(agency)
 		} else {
-			requestBasis = "Theo đề nghị của " + unit + "."
-		}
-		if profile.HeadTitle != "" && agency != "" {
-			decisionAuthority = strings.ToUpper(profile.HeadTitle + " " + agency)
-		} else {
-			need("Chức vụ người đứng đầu cơ quan (thẩm quyền ban hành quyết định)")
+			unit := strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(basis, "Theo đề nghị của")), ".")
+			if unit == "" || !said(userText, unit) {
+				need("Đơn vị đề nghị (Theo đề nghị của …)")
+			} else {
+				requestBasis = "Theo đề nghị của " + unit + "."
+			}
+			if profile.HeadTitle != "" && agency != "" {
+				decisionAuthority = strings.ToUpper(profile.HeadTitle + " " + agency)
+			} else {
+				need("Chức vụ người đứng đầu cơ quan (thẩm quyền ban hành quyết định)")
+			}
 		}
 	}
 
-	// the signer, as the user stated them
+	// the signer, as the user stated them; a biên bản is signed by its
+	// chair and secretary (the form's), with no form of signing
 	s := d.Signer
 	signerName, signerPos := strings.TrimSpace(s.Name), strings.TrimSpace(s.Position)
-	if signerName == "" || signerPos == "" || !said(userText, signerName) || !said(userText, signerPos) {
+	signing := strings.ToUpper(strings.TrimSuffix(strings.TrimSpace(s.Authority), "."))
+	onBehalf := strings.TrimSpace(s.OnBehalfOf)
+	minutes := req.TemplateID == "bien-ban"
+	if minutes {
+		signerName, signerPos, signing, onBehalf = form["chair_name"], "CHỦ TỌA", "truc_tiep", ""
+	}
+	if !minutes && (signerName == "" || signerPos == "" || !said(userText, signerName) || !said(userText, signerPos)) {
 		need("Người ký: họ tên và chức vụ")
 		signerName, signerPos = "", ""
 	}
-	form := strings.ToUpper(strings.TrimSuffix(strings.TrimSpace(s.Authority), "."))
-	if form == "TRUC_TIEP" {
-		form = "truc_tiep"
+	if signing == "TRUC_TIEP" {
+		signing = "truc_tiep"
 	}
-	if re, ok := authorityWords[form]; !ok || !re.MatchString(fold(userText)) {
+	if re, ok := authorityWords[signing]; !minutes && (!ok || !re.MatchString(fold(userText))) {
 		need("Hình thức ký: ký trực tiếp, hay TM./KT./TL./TUQ./Q. (ghi rõ)")
-		form = ""
+		signing = ""
 	}
-	onBehalf := strings.TrimSpace(s.OnBehalfOf)
 	if onBehalf != "" && !said(userText, onBehalf) {
 		onBehalf = ""
 	}
 	if onBehalf == "" {
-		switch form {
+		switch signing {
 		case "TM":
 			onBehalf = profile.CollectiveName
 		case "KT", "TL", "TUQ", "Q":
 			onBehalf = profile.HeadTitle
 		}
 	}
-	if form != "" && form != "truc_tiep" && onBehalf == "" {
-		if form == "TM" {
+	if signing != "" && signing != "truc_tiep" && onBehalf == "" {
+		if signing == "TM" {
 			need("Tên tập thể lãnh đạo ghi sau TM.")
 		} else {
-			need("Chức vụ người đứng đầu ghi sau " + form + ".")
+			need("Chức vụ người đứng đầu ghi sau " + signing + ".")
+		}
+	}
+
+	// a resolution's collective is the one signing for it ("TM. Ban Giám
+	// đốc" → "BAN GIÁM ĐỐC SỞ NỘI VỤ"), with the agency unless named in it
+	if req.TemplateID == "nghi-quyet" && signing == "TM" && onBehalf != "" && agency != "" {
+		decisionAuthority = strings.ToUpper(onBehalf)
+		if !strings.Contains(expandAgencyAbbr(onBehalf), expandAgencyAbbr(agency)) {
+			decisionAuthority += " " + strings.ToUpper(agency)
 		}
 	}
 
@@ -741,37 +816,48 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 				paragraphs[i].Text = blankInvented(paragraphs[i].Text, invented)
 			}
 		}
-		if len(paragraphs) == 0 {
+		if len(paragraphs) == 0 && req.TemplateID != "giay-moi" {
 			paragraphs = []templateParagraph{{Kind: "body", Text: templateBlank}}
 		}
 		if req.TemplateID == "cong-van" || req.TemplateID == "to-trinh" {
 			blank(&addressee)
 		}
-		if req.TemplateID == "quyet-dinh" {
+		if decisionTemplate(req.TemplateID) {
 			if len(grounds) == 0 {
 				grounds = []string{"Căn cứ " + templateBlank + ";"}
 			}
-			if requestBasis == "" {
+			if requestBasis == "" && req.TemplateID == "quyet-dinh" {
 				requestBasis = "Theo đề nghị của " + templateBlank + "."
 			}
 			blank(&decisionAuthority)
 		}
+		blankForm(req.TemplateID, form)
+		for k, v := range form {
+			form[k] = blankInvented(v, invented)
+		}
 		blank(&signerName)
 		blank(&signerPos)
-		if form == "" {
-			form = "truc_tiep"
+		if signing == "" {
+			signing = "truc_tiep"
 		}
 		blank(&onBehalf)
 	}
+	if templateForms[req.TemplateID] != nil {
+		var extra []templateParagraph
+		if req.TemplateID != "giay-gioi-thieu" && req.TemplateID != "giay-nghi-phep" {
+			extra = paragraphs
+		}
+		paragraphs = formBody(req.TemplateID, form, agencyInSentence(agency, d.AgencyInSentence), subject, extra)
+	}
 
 	var signature []string
-	switch form {
+	switch signing {
 	case "truc_tiep":
 		signature = []string{signerPos}
 	case "Q":
 		signature = []string{"Q. " + onBehalf}
 	default:
-		signature = []string{form + ". " + onBehalf, signerPos}
+		signature = []string{signing + ". " + onBehalf, signerPos}
 	}
 	for i := range signature {
 		signature[i] = fitRunes(strings.ToUpper(signature[i]), templateTextMax)
@@ -783,7 +869,7 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 		"number_symbol":   numberSymbol(req.TemplateID, abbr, user.UnitAbbr),
 		"subject":         fitRunes(subject, templateTextMax),
 		"paragraphs":      paragraphs,
-		"recipients":      templateRecipients(req.TemplateID, d.Recipients, profile.DefaultRecipients, user.UnitAbbr, paragraphs),
+		"recipients":      templateRecipients(req.TemplateID, recipientLines(req.TemplateID, d.Recipients, form), profile.DefaultRecipients, user.UnitAbbr, paragraphs),
 		"signature_lines": signature,
 		"signer_name":     fitRunes(signerName, templateTextMax),
 	}
@@ -793,10 +879,27 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 	if addressee != "" {
 		fields["addressee"] = fitRunes(addressee, templateTextMax)
 	}
-	if req.TemplateID == "quyet-dinh" {
+	if decisionTemplate(req.TemplateID) {
 		fields["grounds"] = grounds
-		fields["request_basis"] = fitRunes(requestBasis, templateTextMax)
+		if requestBasis != "" {
+			fields["request_basis"] = fitRunes(requestBasis, templateTextMax)
+		}
 		fields["decision_authority"] = fitRunes(decisionAuthority, templateTextMax)
+	}
+	switch req.TemplateID {
+	case "bien-ban":
+		fields["secretary_name"] = fitRunes(form["secretary_name"], templateTextMax)
+	case "cong-dien":
+		sender := form["sender"]
+		if sender == "" {
+			sender = agency
+		}
+		fields["issuer_line"] = fitRunes(strings.ToUpper(sender), templateTextMax-6) + " điện:"
+		lines := telegramReceivers(form["receivers"])
+		if len(lines) == 0 {
+			lines = []string{"- " + templateBlank + ";"}
+		}
+		fields["receiver_lines"] = lines
 	}
 	base["status"] = "ready"
 	base["fields"] = fields
@@ -880,8 +983,8 @@ func templateRecipients(templateID string, lines, defaults []string, unitAbbr st
 			l = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(l), "-–•+ "))
 			if strings.HasPrefix(fold(l), "như trên") {
 				switch {
-				case templateID == "cong-van" || templateID == "to-trinh":
-				case templateID == "quyet-dinh" && lastArticle != "":
+				case templateID == "cong-van" || templateID == "to-trinh" || templateID == "cong-dien" || templateID == "giay-gioi-thieu" || templateID == "giay-moi":
+				case decisionTemplate(templateID) && lastArticle != "":
 					l = "Như Điều " + lastArticle
 				default:
 					continue
@@ -892,7 +995,8 @@ func templateRecipients(templateID string, lines, defaults []string, unitAbbr st
 		return kept
 	}
 	lines = clean(lines)
-	if len(lines) == 0 {
+	// minutes are kept on file (Mẫu 1.9), not sent to the usual recipients
+	if len(lines) == 0 && templateID != "bien-ban" {
 		lines = clean(defaults)
 	}
 	var out []string
@@ -908,10 +1012,56 @@ func templateRecipients(templateID string, lines, defaults []string, unitAbbr st
 		}
 	}
 	luu := "- Lưu: VT"
-	if unitAbbr != "" {
+	switch {
+	case templateID == "bien-ban":
+		// Mẫu 1.9: the minutes go to the meeting's file
+		luu += ", Hồ sơ"
+	case templateID == "giay-gioi-thieu":
+		// Mẫu 1.8 keeps it at the văn thư
+	case unitAbbr != "":
 		luu += ", " + unitAbbr
 	}
 	return append(out, luu+".")
+}
+
+// recipientLines are the Nơi nhận lines the user named, else the ones the
+// form itself gives: "Như trên" for whom a giấy giới thiệu or công điện is
+// addressed to, the person on leave for a giấy nghỉ phép.
+func recipientLines(templateID string, lines []string, form map[string]string) []string {
+	if templateID == "cong-dien" {
+		// the receivers are "Như trên"; the others the user named follow
+		receivers := map[string]bool{}
+		for _, r := range telegramReceivers(form["receivers"]) {
+			receivers[recipientKey(r)] = true
+		}
+		out := []string{"Như trên"}
+		for _, l := range lines {
+			if !receivers[recipientKey(l)] {
+				out = append(out, l)
+			}
+		}
+		return out
+	}
+	for _, l := range lines {
+		if l = strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(l), "-–•+ ")); l != "" && !strings.HasPrefix(fold(l), "lưu") {
+			return lines
+		}
+	}
+	switch templateID {
+	case "giay-gioi-thieu", "giay-moi":
+		return []string{"Như trên"}
+	case "giay-nghi-phep":
+		if p := form["person"]; p != "" {
+			return []string{"Ông (bà) " + p}
+		}
+	}
+	return lines
+}
+
+// recipientKey compares Nơi nhận lines: folded, without the dash and the
+// end mark.
+func recipientKey(l string) string {
+	return strings.Trim(fold(strings.TrimLeft(strings.TrimSpace(l), "-–•+ ")), " .;,")
 }
 
 // fitRunes cuts s to at most n runes (the add-in rejects longer fields).
@@ -946,7 +1096,7 @@ var (
 	articleNumberRe = regexp.MustCompile(`^Điều\s+(\d+)`)
 	// frameLineRe matches lines of the document's frame the add-in writes
 	// itself (quốc hiệu, tiêu ngữ, a rule, the decision's "QUYẾT ĐỊNH:").
-	frameLineRe = regexp.MustCompile(`(?i)^(cộng hòa xã hội chủ nghĩa việt nam|cộng hoà xã hội chủ nghĩa việt nam|độc lập\s*-\s*tự do\s*-\s*hạnh phúc|[-_=–—.\s]+|quyết định\s*:?|kính gửi\s*:.*|nơi nhận\s*:.*)$`)
+	frameLineRe = regexp.MustCompile(`(?i)^(cộng hòa xã hội chủ nghĩa việt nam|cộng hoà xã hội chủ nghĩa việt nam|độc lập\s*-\s*tự do\s*-\s*hạnh phúc|[-_=–—.\s]+|quyết định\s*:?|quyết nghị\s*:?|kính gửi\s*:.*|nơi nhận\s*:.*)$`)
 )
 
 // templateBody is the model's body cleaned for the add-in: one paragraph
@@ -956,7 +1106,7 @@ var (
 // grounds and proposal lines go (they have their own fields).
 func templateBody(d *templateDraft, templateID, agency, parent string) []templateParagraph {
 	frame := map[string]bool{}
-	for _, v := range []string{agency, parent, d.Subject, d.RequestBasis, "quyết định"} {
+	for _, v := range []string{agency, parent, d.Subject, d.RequestBasis, "quyết định", "quyết nghị"} {
 		if f := strings.Trim(fold(v), " .;:"); f != "" {
 			frame[f] = true
 		}
@@ -971,7 +1121,7 @@ func templateBody(d *templateDraft, templateID, agency, parent string) []templat
 			f := strings.Trim(fold(text), " .;:")
 			if text == "" || frameLineRe.MatchString(text) || frame[f] || frame[strings.Trim(subjectPrefixRe.ReplaceAllString(f, ""), " .;:")] ||
 				// a decision's grounds and proposal have their own fields
-				(templateID == "quyet-dinh" && (strings.HasPrefix(f, "căn cứ ") || strings.HasPrefix(f, "theo đề nghị"))) ||
+				(decisionTemplate(templateID) && (strings.HasPrefix(f, "căn cứ ") || strings.HasPrefix(f, "theo đề nghị") || strings.HasPrefix(f, "xét "))) ||
 				(agency != "" && strings.HasSuffix(f, fold(agency)) && strings.ToUpper(text) == text) {
 				continue
 			}
@@ -982,7 +1132,8 @@ func templateBody(d *templateDraft, templateID, agency, parent string) []templat
 			case subHeadingRe.MatchString(text) && utf8.RuneCountInString(text) <= 100:
 				// "1. Đối tượng tham gia": a heading of a plan or report
 				kind = "heading"
-			case kind != "heading" && kind != "article":
+			case kind != "heading":
+				// an "article" the model marked that is no "Điều N." line
 				kind = "body"
 			}
 			if n := len(out); n > 0 && fold(out[n-1].Text) == fold(text) {

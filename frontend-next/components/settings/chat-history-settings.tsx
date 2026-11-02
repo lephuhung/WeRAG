@@ -6,6 +6,11 @@ import { IconRefresh } from "@/components/icons";
 import { apiGet, apiPut } from "@/lib/api-client";
 import { listModels, type ModelConfig } from "@/lib/api/models";
 import { Select } from "@/components/select";
+import { Notice } from "@/components/settings/notice";
+import { SectionHeader } from "@/components/settings/section-header";
+import { Loading } from "@/components/settings/loading";
+import { FieldLabel } from "@/components/settings/field";
+import { useToast } from "@/components/toast";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 
@@ -39,7 +44,7 @@ export function ChatHistorySettings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const toast = useToast();
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -73,7 +78,6 @@ export function ChatHistorySettings() {
     const payload = { ...config, ...updated };
     setSaving(true);
     setError("");
-    setSuccess("");
     try {
       const res = await apiPut<{ data: ChatHistoryConfig }>(
         "/api/v1/tenants/kv/chat-history-config",
@@ -81,7 +85,7 @@ export function ChatHistorySettings() {
       );
       if (res?.data) {
         setConfig(res.data);
-        setSuccess(t("chath.saved"));
+        toast.success(t("chath.saved"));
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : t("chath.saveFailed"));
@@ -96,33 +100,39 @@ export function ChatHistorySettings() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-hairline pb-5">
-        <div>
-          <h2 className="title-md font-semibold text-ink">{t("chath.title")}</h2>
-          <p className="caption text-muted mt-1">
-            {t("chath.subtitle")}
-          </p>
-        </div>
+      <SectionHeader
+        title={t("chath.title")}
+        subtitle={t("chath.subtitle")}
+        actions={
+          <button
+            type="button"
+            onClick={() => void loadData()}
+            className="btn btn-outline btn-sm p-1.5"
+            title={t("common.refresh")}
+            aria-label={t("common.refresh")}
+          >
+            <IconRefresh className="h-3.5 w-3.5" />
+          </button>
+        }
+      />
 
-        <button
-          type="button"
-          onClick={() => void loadData()}
-          className="btn btn-outline btn-sm p-1.5"
-          title={t("common.refresh")}
-        >
-          <IconRefresh className="h-3.5 w-3.5" />
-        </button>
-      </div>
+      {loading && <Loading />}
 
       {error && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-400">
+        <Notice
+          tone="error"
+          action={
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={() => void loadData()}
+            >
+              {t("common.retry")}
+            </button>
+          }
+        >
           {error}
-        </div>
-      )}
-      {success && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-400">
-          {success}
-        </div>
+        </Notice>
       )}
 
       {/* Switch */}
@@ -134,6 +144,7 @@ export function ChatHistorySettings() {
           </span>
         </div>
         <Toggle
+          label={t("chath.enable")}
           checked={config.enabled}
           disabled={!canEdit || saving}
           onChange={(checked) => {
@@ -146,13 +157,16 @@ export function ChatHistorySettings() {
       {/* Embedding Model */}
       {config.enabled && (
         <div className="rounded-xl border border-hairline p-5 space-y-3">
-          <label className="block">
-            <span className="text-sm font-medium text-ink block">{t("chath.embeddingModel")}</span>
+          <div>
+            <FieldLabel htmlFor="chath-embedding-model" className="text-sm font-medium text-ink">
+              {t("chath.embeddingModel")}
+            </FieldLabel>
             <span className="caption text-muted block text-xs mt-0.5 mb-2">
               {t("chath.embeddingModelDesc")}
               {modelLocked && ` ${t("chath.lockedNote")}`}
             </span>
             <Select
+              id="chath-embedding-model"
               disabled={!canEdit || modelLocked}
               className="text-sm"
               value={config.embedding_model_id || ""}
@@ -166,7 +180,7 @@ export function ChatHistorySettings() {
                 label: m.display_name || m.name,
               }))}
             />
-          </label>
+          </div>
         </div>
       )}
 

@@ -247,6 +247,9 @@ func (c *Chunk) addStructure(blocks []Block, s, e int) {
 		if b.Start < c.Start {
 			continue
 		}
+		for _, a := range b.Phrases {
+			c.addAmend(a)
+		}
 		switch b.Kind {
 		case KindClause:
 			c.addClause(b)
@@ -475,6 +478,7 @@ func (c Chunk) Legal() *vietnamese_legal.LegalMetadata {
 	for _, a := range c.Amends {
 		m.Amends = append(m.Amends, vietnamese_legal.AmendRef{
 			Document: a.Document, Article: a.Article, Khoan: a.Khoan, Diem: a.Diem,
+			Phrase: a.Phrase, From: a.From, To: a.To,
 		})
 	}
 	if c.ArticleNo != "" {

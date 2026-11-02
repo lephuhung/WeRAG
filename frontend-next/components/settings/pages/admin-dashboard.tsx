@@ -10,6 +10,11 @@ import Link from "next/link";
 import { ApiError } from "@/lib/api-client";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { RequireSystemAccess } from "@/components/require-system-access";
+import { ConsolePage } from "@/components/settings/console-page";
+import { DataTable } from "@/components/settings/data-table";
+import { DeniedView } from "@/components/settings/system-section";
+import { Loading } from "@/components/settings/loading";
+import { Notice } from "@/components/settings/notice";
 import {
   getProcessingDocuments,
   getRuntimeQueues,
@@ -29,10 +34,11 @@ const STATS_REFRESH_MS = 60_000;
 const PIPELINE_REFRESH_MS = 10_000;
 
 /* Same status colors as the documents-by-status bars; every use is paired
- * with a text label or count so color never carries meaning alone. */
-const COLOR_DONE = "rgb(22, 163, 74)";
-const COLOR_ACTIVE = "rgb(59, 130, 246)";
-const COLOR_FAILED = "rgb(220, 38, 38)";
+ * with a text label or count so color never carries meaning alone. They are
+ * the semantic theme tokens, so the bars follow the light/dark theme. */
+const COLOR_DONE = "var(--color-success)";
+const COLOR_ACTIVE = "var(--color-info)";
+const COLOR_FAILED = "var(--color-error)";
 
 const DOC_STATUS_COLORS: Record<string, string> = {
   completed: COLOR_DONE,
@@ -140,7 +146,7 @@ function AdminDashboardBody() {
   };
 
   if (denied) {
-    return <p className="caption text-muted-soft">{t("stats.adminOnly")}</p>;
+    return <DeniedView message={t("stats.adminOnly")} />;
   }
 
   const fb = stats?.feedback;
@@ -203,7 +209,7 @@ function AdminDashboardBody() {
   ];
 
   return (
-    <div className="mx-auto w-full max-w-[1400px] space-y-6">
+    <ConsolePage className="space-y-6">
       <div className="flex flex-wrap items-center gap-3">
         <span className="caption text-muted">
           {t("dash.autoRefresh", { s: STATS_REFRESH_MS / 1000 })}
@@ -219,11 +225,22 @@ function AdminDashboardBody() {
         </button>
       </div>
 
-      {error && <p className="caption text-error">{error}</p>}
+      {error && (
+        <Notice
+          tone="error"
+          action={
+            <button className="btn btn-outline btn-sm" onClick={refreshAll}>
+              {t("common.retry")}
+            </button>
+          }
+        >
+          {error}
+        </Notice>
+      )}
       {info?.db_migration_error && (
-        <p className="caption text-error">
+        <Notice tone="error">
           {t("adm.migrationError", { err: info.db_migration_error })}
-        </p>
+        </Notice>
       )}
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
@@ -314,7 +331,7 @@ function AdminDashboardBody() {
       )}
 
       <SystemInfoCard info={info} />
-    </div>
+    </ConsolePage>
   );
 }
 
@@ -323,8 +340,8 @@ function PublicKBTable({ rows }: { rows: PublicKBDocumentCount[] | null }) {
   const total = (rows ?? []).reduce((n, r) => n + r.total, 0);
   const max = Math.max(1, ...(rows ?? []).map((r) => r.total));
   return (
-    <div className="card h-full overflow-hidden">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 px-6 pb-4 pt-6">
+    <div>
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="title-md">{t("dash.publicKbs")}</h2>
         {rows && rows.length > 0 && (
           <span className="caption text-muted">
@@ -332,77 +349,73 @@ function PublicKBTable({ rows }: { rows: PublicKBDocumentCount[] | null }) {
           </span>
         )}
       </div>
-      {rows === null ? (
-        <p className="caption px-6 pb-6 text-muted">{t("adm.loading")}</p>
-      ) : rows.length === 0 ? (
-        <p className="caption px-6 pb-6 text-muted">{t("dash.noPublicKbs")}</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] border-collapse text-left">
-            <thead>
-              <tr className="caption-uppercase border-y border-hairline bg-surface-strong/30 text-muted">
-                <th className="px-6 py-2.5 font-medium">{t("dash.colKb")}</th>
-                <th className="w-20 px-3 py-2.5 text-right font-medium">{t("dash.colTotal")}</th>
-                <th className="w-24 px-3 py-2.5 text-right font-medium">{t("dash.colCompleted")}</th>
-                <th className="w-24 px-3 py-2.5 text-right font-medium">{t("dash.colProcessing")}</th>
-                <th className="w-20 px-6 py-2.5 text-right font-medium">{t("dash.colFailed")}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-hairline">
-              {rows.map((r) => (
-                <tr key={r.id} className="transition-colors hover:bg-surface-strong/20">
-                  <td className="px-6 py-3 align-middle">
-                    <Link
-                      href={`/platform/knowledge-bases/${r.id}`}
-                      className="block truncate text-[13px] font-medium text-ink hover:underline"
-                    >
-                      {r.name}
-                    </Link>
-                    {/* Bar length = share of the largest KB; segments split it
-                     * by status (counts are in the columns beside it). */}
-                    <div
-                      className="mt-1.5 flex h-1.5 gap-[2px] overflow-hidden rounded-full bg-surface-strong"
-                      style={{ width: `${Math.max(2, (r.total / max) * 100)}%` }}
-                      title={`${t("dash.colCompleted")}: ${r.completed} · ${t("dash.colProcessing")}: ${r.processing} · ${t("dash.colFailed")}: ${r.failed}`}
-                    >
-                      {[
-                        { n: r.completed, c: COLOR_DONE },
-                        { n: r.processing, c: COLOR_ACTIVE },
-                        { n: r.failed, c: COLOR_FAILED },
-                      ]
-                        .filter((s) => s.n > 0)
-                        .map((s, i) => (
-                          <div key={i} style={{ flexGrow: s.n, backgroundColor: s.c }} />
-                        ))}
-                    </div>
-                  </td>
-                  <td className="px-3 py-3 text-right text-[13px] font-semibold tabular-nums text-ink">
-                    {r.total.toLocaleString()}
-                  </td>
-                  <td className="px-3 py-3 text-right text-[13px] tabular-nums text-muted">
-                    {r.completed.toLocaleString()}
-                  </td>
-                  <td className="px-3 py-3 text-right text-[13px] tabular-nums text-muted">
-                    {r.processing.toLocaleString()}
-                  </td>
-                  <td
-                    className={`px-6 py-3 text-right text-[13px] tabular-nums ${r.failed > 0 ? "font-medium text-error" : "text-muted"}`}
-                  >
-                    {r.failed.toLocaleString()}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable
+        columns={[
+          { key: "kb", header: t("dash.colKb") },
+          { key: "total", header: t("dash.colTotal"), className: "w-20", align: "right" },
+          { key: "completed", header: t("dash.colCompleted"), className: "w-24", align: "right" },
+          { key: "processing", header: t("dash.colProcessing"), className: "w-24", align: "right" },
+          { key: "failed", header: t("dash.colFailed"), className: "w-20", align: "right" },
+        ]}
+        rows={rows ?? []}
+        rowKey={(r) => String(r.id)}
+        minWidth="min-w-[560px]"
+        loading={rows === null}
+        loadingLabel={t("common.loading")}
+        emptyLabel={t("dash.noPublicKbs")}
+        renderRow={(r) => (
+          <>
+            <td className="px-5 py-3.5 align-middle">
+              <Link
+                href={`/platform/knowledge-bases/${r.id}`}
+                className="block truncate text-[13px] font-medium text-ink hover:underline"
+              >
+                {r.name}
+              </Link>
+              {/* Bar length = share of the largest KB; segments split it
+               * by status (counts are in the columns beside it). */}
+              <div
+                className="mt-1.5 flex h-1.5 gap-[2px] overflow-hidden rounded-full bg-surface-strong"
+                style={{ width: `${Math.max(2, (r.total / max) * 100)}%` }}
+                title={`${t("dash.colCompleted")}: ${r.completed} · ${t("dash.colProcessing")}: ${r.processing} · ${t("dash.colFailed")}: ${r.failed}`}
+              >
+                {[
+                  { n: r.completed, c: COLOR_DONE },
+                  { n: r.processing, c: COLOR_ACTIVE },
+                  { n: r.failed, c: COLOR_FAILED },
+                ]
+                  .filter((s) => s.n > 0)
+                  .map((s, i) => (
+                    <div key={i} style={{ flexGrow: s.n, backgroundColor: s.c }} />
+                  ))}
+              </div>
+            </td>
+            <td className="px-5 py-3.5 align-middle text-right text-[13px] font-semibold tabular-nums text-ink">
+              {r.total.toLocaleString()}
+            </td>
+            <td className="px-5 py-3.5 align-middle text-right text-[13px] tabular-nums text-muted">
+              {r.completed.toLocaleString()}
+            </td>
+            <td className="px-5 py-3.5 align-middle text-right text-[13px] tabular-nums text-muted">
+              {r.processing.toLocaleString()}
+            </td>
+            <td
+              className={`px-5 py-3.5 align-middle text-right text-[13px] tabular-nums ${
+                r.failed > 0 ? "font-medium text-error" : "text-muted"
+              }`}
+            >
+              {r.failed.toLocaleString()}
+            </td>
+          </>
+        )}
+      />
     </div>
   );
 }
 
 function DocStatusBars({ stats }: { stats: SystemStats | null }) {
   const { t } = useT();
-  if (!stats) return <p className="caption text-muted">{t("adm.loading")}</p>;
+  if (!stats) return <Loading />;
   if (stats.documents.by_status.length === 0)
     return <p className="caption text-muted">{t("stats.noDocuments")}</p>;
   const max = Math.max(1, ...stats.documents.by_status.map((s) => s.count));
@@ -434,8 +447,8 @@ function DocStatusBars({ stats }: { stats: SystemStats | null }) {
 function PipelineTable({ data, now }: { data: ProcessingDocuments | null; now: number }) {
   const { t } = useT();
   return (
-    <div className="card overflow-hidden">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 px-6 pb-4 pt-6">
+    <div>
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="title-md">{t("dash.pipeline")}</h2>
         <span className="caption text-muted">
           {data && data.total > data.items.length
@@ -443,74 +456,68 @@ function PipelineTable({ data, now }: { data: ProcessingDocuments | null; now: n
             : t("dash.autoRefresh", { s: PIPELINE_REFRESH_MS / 1000 })}
         </span>
       </div>
-      {data === null ? (
-        <p className="caption px-6 pb-6 text-muted">{t("adm.loading")}</p>
-      ) : data.items.length === 0 ? (
-        <p className="caption px-6 pb-6 text-muted">{t("dash.pipelineEmpty")}</p>
-      ) : (
-        <div className="max-h-[480px] overflow-auto">
-          <table className="w-full min-w-[820px] border-collapse text-left">
-            <thead className="sticky top-0 z-10 bg-canvas">
-              <tr className="caption-uppercase border-y border-hairline bg-surface-strong/30 text-muted">
-                <th className="px-6 py-2.5 font-medium">{t("dash.colDocument")}</th>
-                <th className="w-[220px] px-3 py-2.5 font-medium">{t("dash.colKb")}</th>
-                <th className="w-[160px] px-3 py-2.5 font-medium">{t("dash.colUnit")}</th>
-                <th className="w-[170px] px-3 py-2.5 font-medium">{t("dash.colStatus")}</th>
-                <th className="w-[110px] px-6 py-2.5 text-right font-medium">{t("dash.colAge")}</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-hairline">
-              {data.items.map((d) => {
-                const statusKey = PIPELINE_STATUS_KEYS[d.parse_status];
-                return (
-                  <tr key={d.id} className="transition-colors hover:bg-surface-strong/20">
-                    <td className="max-w-0 px-6 py-3 align-middle">
-                      <div className="truncate text-[13px] font-medium text-ink" title={d.title || d.file_name}>
-                        {d.title || d.file_name || d.id}
-                      </div>
-                      {d.file_type && (
-                        <div className="caption uppercase text-muted-soft">{d.file_type}</div>
-                      )}
-                    </td>
-                    <td className="max-w-0 px-3 py-3 align-middle">
-                      <Link
-                        href={`/platform/knowledge-bases/${d.knowledge_base_id}`}
-                        className="block truncate text-[13px] text-ink hover:underline"
-                      >
-                        {d.knowledge_base_name || d.knowledge_base_id}
-                      </Link>
-                    </td>
-                    <td className="max-w-0 px-3 py-3 align-middle">
-                      <span className="block truncate text-[13px] text-muted">
-                        {d.tenant_id === 0 ? t("dash.platformUnit") : d.tenant_name || `#${d.tenant_id}`}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 align-middle">
-                      <div className="flex items-center gap-2 text-[13px] text-ink">
-                        <span
-                          className={`h-2 w-2 shrink-0 rounded-full ${d.parse_status === "pending" ? "" : "animate-pulse"}`}
-                          style={{
-                            backgroundColor: DOC_STATUS_COLORS[d.parse_status] ?? "var(--color-muted-soft)",
-                          }}
-                        />
-                        {statusKey ? t(statusKey) : d.parse_status}
-                      </div>
-                      {d.pending_subtasks_count > 0 && (
-                        <div className="caption text-muted">
-                          {t("dash.subtasks", { n: d.pending_subtasks_count })}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-3 text-right align-middle text-[13px] tabular-nums text-muted">
-                      {formatDuration(secondsSince(d.created_at, now))}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <DataTable
+        columns={[
+          { key: "document", header: t("dash.colDocument") },
+          { key: "kb", header: t("dash.colKb"), className: "w-[220px]" },
+          { key: "unit", header: t("dash.colUnit"), className: "w-[160px]" },
+          { key: "status", header: t("dash.colStatus"), className: "w-[170px]" },
+          { key: "age", header: t("dash.colAge"), className: "w-[110px]", align: "right" },
+        ]}
+        rows={data?.items ?? []}
+        rowKey={(d) => d.id}
+        minWidth="min-w-[820px]"
+        loading={data === null}
+        loadingLabel={t("common.loading")}
+        emptyLabel={t("dash.pipelineEmpty")}
+        renderRow={(d) => {
+          const statusKey = PIPELINE_STATUS_KEYS[d.parse_status];
+          return (
+            <>
+              <td className="px-5 py-3.5 align-middle">
+                <div className="truncate text-[13px] font-medium text-ink" title={d.title || d.file_name}>
+                  {d.title || d.file_name || d.id}
+                </div>
+                {d.file_type && (
+                  <div className="caption uppercase text-muted-soft">{d.file_type}</div>
+                )}
+              </td>
+              <td className="px-5 py-3.5 align-middle">
+                <Link
+                  href={`/platform/knowledge-bases/${d.knowledge_base_id}`}
+                  className="block truncate text-[13px] text-ink hover:underline"
+                >
+                  {d.knowledge_base_name || d.knowledge_base_id}
+                </Link>
+              </td>
+              <td className="px-5 py-3.5 align-middle">
+                <span className="block truncate text-[13px] text-muted">
+                  {d.tenant_id === 0 ? t("dash.platformUnit") : d.tenant_name || `#${d.tenant_id}`}
+                </span>
+              </td>
+              <td className="px-5 py-3.5 align-middle">
+                <div className="flex items-center gap-2 text-[13px] text-ink">
+                  <span
+                    className={`h-2 w-2 shrink-0 rounded-full ${d.parse_status === "pending" ? "" : "animate-pulse"}`}
+                    style={{
+                      backgroundColor: DOC_STATUS_COLORS[d.parse_status] ?? "var(--color-muted-soft)",
+                    }}
+                  />
+                  {statusKey ? t(statusKey) : d.parse_status}
+                </div>
+                {d.pending_subtasks_count > 0 && (
+                  <div className="caption text-muted">
+                    {t("dash.subtasks", { n: d.pending_subtasks_count })}
+                  </div>
+                )}
+              </td>
+              <td className="px-5 py-3.5 align-middle text-right text-[13px] tabular-nums text-muted">
+                {formatDuration(secondsSince(d.created_at, now))}
+              </td>
+            </>
+          );
+        }}
+      />
     </div>
   );
 }
@@ -535,7 +542,7 @@ function SystemInfoCard({ info }: { info: SystemInfo | null }) {
   return (
     <div className="card p-6">
       <h2 className="title-md mb-5">{t("adm.sysInfo")}</h2>
-      {info === null && <p className="caption text-muted">{t("adm.loading")}</p>}
+      {info === null && <Loading />}
       <dl className="grid grid-cols-1 gap-x-10 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
         {rows.map((r) => (
           <div key={r.label} className="flex items-baseline justify-between gap-4 border-b border-hairline pb-3">

@@ -862,8 +862,8 @@ func (s *knowledgeBaseService) TransferKnowledgeBaseOwner(
 	if target == nil {
 		return nil, apperrors.NewNotFoundError("target organization not found")
 	}
-	if target.IsConfigProfile() {
-		return nil, apperrors.NewBadRequestError("the target is a configuration profile, not an organization")
+	if target.IsHiddenTenant() {
+		return nil, apperrors.NewBadRequestError("the target is not an organization")
 	}
 	if !isActiveTenantStatus(target.Status) {
 		return nil, apperrors.NewBadRequestError("target organization is not active")

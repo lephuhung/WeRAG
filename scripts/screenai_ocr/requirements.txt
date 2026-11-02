@@ -1,0 +1,6 @@
+# make_dataset.py (renders pages exactly like docreader: pypdfium2)
+pypdfium2>=4.30
+pillow>=10.0
+numpy>=1.26
+requests>=2.31
+rapidfuzz>=3.6

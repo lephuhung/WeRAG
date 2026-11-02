@@ -18,6 +18,9 @@ type LegalCatalogRepository interface {
 	// when none does — starts with key + "/" (a number typed without its
 	// suffix, e.g. "30/2020"). Newest first.
 	FindByNumberKey(ctx context.Context, key string, limit int) ([]*types.LegalDocument, error)
+	// HasNumberKey reports whether a document's number key equals key
+	// exactly (no prefix fallback); the answer number check uses it.
+	HasNumberKey(ctx context.Context, key string) (bool, error)
 	// FindByNumberPrefix returns documents whose number key starts with
 	// key + "/" (every year and suffix of a bare number). Newest first.
 	FindByNumberPrefix(ctx context.Context, key string, limit int) ([]*types.LegalDocument, error)
@@ -156,13 +159,26 @@ type LegalRequestRepository interface {
 	Record(ctx context.Context, req *types.LegalDocumentRequest) (*types.LegalDocumentRequest, error)
 	// Get returns one request, or nil when absent.
 	Get(ctx context.Context, id string) (*types.LegalDocumentRequest, error)
+	// ListByNumberKey returns every request (any status, any catalogue
+	// id) recorded for a number key, oldest first.
+	ListByNumberKey(ctx context.Context, numberKey string) ([]*types.LegalDocumentRequest, error)
 	// List pages requests of a status ("" = all), newest last request first.
 	List(ctx context.Context, status string, offset, limit int) ([]*types.LegalDocumentRequest, int64, error)
 	// Decide sets the status of one request with the decision fields.
 	Decide(ctx context.Context, id, status, decidedBy, note, knowledgeID, kbID string) (*types.LegalDocumentRequest, error)
+	// UpdateDetail merges the top-level keys of detail into the request's
+	// Detail JSON (other keys are kept) and returns the stored row, nil
+	// when the request is absent.
+	UpdateDetail(ctx context.Context, id string, detail map[string]any) (*types.LegalDocumentRequest, error)
+	// KnowledgeParseStatuses returns knowledges.parse_status by knowledge id.
+	KnowledgeParseStatuses(ctx context.Context, knowledgeIDs []string) (map[string]string, error)
 	// MarkAddedByDocument marks the open requests of a catalogue document
-	// added (after any ingest of that vbpl.vn id); returns how many.
+	// (types.LegalRequestOpenStatuses) added after any ingest of that
+	// vbpl.vn id; returns how many.
 	MarkAddedByDocument(ctx context.Context, legalDocumentID, knowledgeID, kbID, actor string) (int64, error)
+	// SetStatusByDocument moves the requests of a catalogue document whose
+	// status is one of from to status to (the draft states); returns how many.
+	SetStatusByDocument(ctx context.Context, legalDocumentID string, from []string, to string) (int64, error)
 	// CountByStatus counts requests per status.
 	CountByStatus(ctx context.Context) (map[string]int64, error)
 	// KnowledgeNamed reports whether a live knowledge of the given KBs has a
@@ -187,4 +203,76 @@ type LegalRequestService interface {
 	Decide(ctx context.Context, id string, d *types.LegalRequestDecision) (*types.LegalRequestItem, error)
 	// PublicKnowledgeBases lists the KBs a request can be ingested into.
 	PublicKnowledgeBases(ctx context.Context) ([]types.LegalPublicKB, error)
+	// CheckPortal reads what vbpl.vn offers for the request's document
+	// (HTML, original PDF, nothing) and stores it as detail.portal.
+	CheckPortal(ctx context.Context, id string) (*types.LegalRequestItem, error)
+	// Get returns one request as a queue item, nil when absent.
+	Get(ctx context.Context, id string) (*types.LegalRequestItem, error)
+}
+
+// LegalDraftRepository stores the OCR drafts of scanned legal documents.
+type LegalDraftRepository interface {
+	Create(ctx context.Context, d *types.LegalDocumentDraft) error
+	// Get returns one draft, nil when absent.
+	Get(ctx context.Context, id string) (*types.LegalDocumentDraft, error)
+	// GetByDocumentID returns the draft of a catalogue document, nil when none.
+	GetByDocumentID(ctx context.Context, legalDocumentID string) (*types.LegalDocumentDraft, error)
+	// ListByDocumentIDs returns the drafts of the given catalogue documents
+	// without their OCR text.
+	ListByDocumentIDs(ctx context.Context, legalDocumentIDs []string) ([]*types.LegalDocumentDraft, error)
+	// List pages drafts of a status ("" = all), newest first, without their
+	// OCR text.
+	List(ctx context.Context, status string, offset, limit int) ([]*types.LegalDocumentDraft, int64, error)
+	// Update sets columns of one draft (updated_at is set too).
+	Update(ctx context.Context, id string, fields map[string]any) error
+	Delete(ctx context.Context, id string) error
+}
+
+// LegalDraftService is the SuperAdmin review of OCR drafts: a document
+// vbpl.vn has only as a scanned PDF is fetched and OCRed into a draft,
+// edited in the embedded editor, checked for its legal structure and, once
+// approved, converted to vbpl-style HTML and ingested. Errors are AppErrors
+// (4xx for the caller's input, 503 when vbpl.vn or the OCR is unavailable).
+type LegalDraftService interface {
+	// FetchForRequest fetches the PDF of a request's document into a draft
+	// and starts its OCR; an existing draft is returned as it is (a failed
+	// one is fetched again).
+	FetchForRequest(ctx context.Context, requestID string) (*types.LegalDocumentDraft, error)
+	// FetchDocument is FetchForRequest by vbpl.vn id (the MCP feed); by
+	// names who asked ("mcp:<endpoint id>").
+	FetchDocument(ctx context.Context, vbplID, by string) (*types.LegalDocumentDraft, error)
+	Get(ctx context.Context, id string) (*types.LegalDraftItem, error)
+	List(ctx context.Context, status string, offset, limit int) ([]*types.LegalDraftItem, int64, error)
+	// Open creates (first time) the draft's .docx, hidden session and
+	// workspace and returns the editor config and a link to the PDF.
+	Open(ctx context.Context, id string, viewer types.LegalDraftViewer) (*types.LegalDraftOpenResult, error)
+	// Structure checks the legal structure of the draft's current text.
+	Structure(ctx context.Context, id string) (*types.LegalDraftStructure, error)
+	// Approve converts the reviewed draft to vbpl-style HTML and ingests it
+	// into the public knowledge base kbID.
+	Approve(ctx context.Context, id, kbID string) (*types.LegalDraftApproveResult, error)
+	// Discard deletes the draft (the PDF stays stored); its requests go
+	// back to "requested".
+	Discard(ctx context.Context, id string) error
+	// Summaries returns the draft summary of each given vbpl.vn id that has one.
+	Summaries(ctx context.Context, vbplIDs []string) (map[string]*types.LegalDraftSummary, error)
+}
+
+// DomainPackAgentRepository finds the custom agents that use a domain pack.
+type DomainPackAgentRepository interface {
+	// ListAgentsUsingPack returns the live custom agents of every
+	// organization whose config.domain_packs contains name, with their
+	// organization's name; ordered by organization then agent name.
+	ListAgentsUsingPack(ctx context.Context, name string) ([]types.DomainPackAgent, error)
+}
+
+// DomainPackFormulaOverrideRepository keeps the SuperAdmin's edits of
+// domain pack formulas.
+type DomainPackFormulaOverrideRepository interface {
+	// List returns every stored edit.
+	List(ctx context.Context) ([]*types.DomainPackFormulaOverride, error)
+	// Upsert creates or replaces the edit of (pack, formula).
+	Upsert(ctx context.Context, o *types.DomainPackFormulaOverride) error
+	// Delete removes the edit of (pack, formula); none is not an error.
+	Delete(ctx context.Context, packName, formulaID string) error
 }

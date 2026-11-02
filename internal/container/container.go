@@ -24,7 +24,9 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	domainpackassets "github.com/Tencent/WeKnora/domain-packs"
 	"github.com/Tencent/WeKnora/internal/agent/approval"
+	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	neo4jRepo "github.com/Tencent/WeKnora/internal/application/repository/retriever/neo4j"
@@ -163,6 +165,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewLegalReviewRepository))
 	// Requests to add legal documents users asked about that no KB holds.
 	must(container.Provide(repository.NewLegalRequestRepository))
+	// OCR drafts of documents vbpl.vn has only as a scanned PDF
+	must(container.Provide(repository.NewLegalDraftRepository))
 	must(container.Provide(repository.NewAbbreviationTurnRepository))
 
 	// MCP manager for managing MCP client connections
@@ -222,6 +226,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// vbpl.vn ingest shared by the MCP feed and the SuperAdmin request queue
 	must(container.Provide(service.NewLegalFeedService))
 	must(container.Provide(service.NewLegalRequestService))
+	// a scanned PDF is OCRed into a draft the SuperAdmin reviews before ingest
+	must(container.Provide(service.NewLegalDraftService))
+	must(container.Provide(service.NewLegalDraftServiceInterface))
 	// Usage metering: questions and tokens per workspace and person.
 	must(container.Provide(service.NewUsageMeter))
 	// Usage packages: plans, subscriptions, and the pre-flight guard.
@@ -585,6 +592,35 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewWebSearchProviderHandler))
 	must(container.Provide(handler.NewVectorStoreHandler))
 	must(container.Provide(handler.NewStorageBackendHandler))
+	// domain packs ship in the binary; an invalid one stops startup, like a
+	// broken built-in skill
+	must(container.Provide(func() (*domainpacks.Registry, error) {
+		registry, err := domainpacks.Load(domainpackassets.FS)
+		if err != nil {
+			return nil, err
+		}
+		for _, name := range registry.Names() {
+			pack, _ := registry.Get(name)
+			for _, finding := range pack.Lint() {
+				logger.Warnf(ctx, "[Container] Domain pack %s lint: %s", name, finding)
+			}
+		}
+		return registry, nil
+	}))
+	// SuperAdmin check of a pack's catalogue against legal_documents
+	must(container.Provide(repository.NewDomainPackAgentRepository))
+	must(container.Provide(repository.NewDomainPackFormulaOverrideRepository))
+	must(container.Provide(service.NewDomainPackReconciler))
+	// the SuperAdmin's formula edits apply from startup; a failed read
+	// leaves the shipped formulas (the pack page reloads them)
+	must(container.Invoke(func(r *service.DomainPackReconciler) {
+		if err := r.LoadFormulaOverrides(ctx); err != nil {
+			logger.Warnf(ctx, "[Container] %v", err)
+		}
+		// edits saved on another backend reach this one within a minute
+		r.StartFormulaOverrideRefresh(ctx, time.Minute)
+	}))
+	must(container.Provide(handler.NewDomainPackReconcileHandler))
 	must(container.Provide(handler.NewCustomAgentHandler))
 	must(container.Provide(handler.NewUserResourceFavoriteHandler))
 	must(container.Provide(func(s *service.TenantSkillService) *handler.SkillHandler {
@@ -597,6 +633,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewTemplateStyleHandler))
 	must(container.Provide(handler.NewLegalReviewHandler))
 	must(container.Provide(handler.NewLegalRequestHandler))
+	must(container.Provide(handler.NewLegalDraftHandler))
 	must(container.Provide(handler.NewKnowledgeGraphViewHandler))
 	must(container.Provide(handler.NewStatsHandler))
 
@@ -664,6 +701,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// request; the MCP feed lists the queue and closes it when it ingests
 	must(container.Invoke(func(sessions interfaces.SessionService, requests interfaces.LegalRequestRepository,
 		reviews interfaces.LegalReviewRepository, feed *service.LegalFeedService, mcpServer *mcpserver.Server,
+		drafts interfaces.LegalDraftService,
 	) {
 		type legalRequestUser interface {
 			SetLegalRequests(interfaces.LegalRequestRepository, interfaces.LegalReviewRepository)
@@ -671,7 +709,10 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		if u, ok := sessions.(legalRequestUser); ok {
 			u.SetLegalRequests(requests, reviews)
 		}
+		// an ingest links the document to its catalogue row at once
+		feed.Reviews = reviews
 		mcpServer.SetLegalFeed(feed, requests)
+		mcpServer.SetLegalDrafts(drafts)
 	}))
 	// users' verdicts on the format check reports
 	must(container.Invoke(func(precheck *service.DocumentFormatPrecheck, feedback interfaces.DocumentFormatFeedbackRepository) {
@@ -689,6 +730,57 @@ func BuildContainer(container *dig.Container) *dig.Container {
 				u.SetSpellingSupport(settings, feedback)
 			}
 		}
+	}))
+	// the legal amendment resolver's switch is a system setting
+	must(container.Invoke(func(settings interfaces.SystemSettingService, agents interfaces.AgentService) error {
+		u, ok := agents.(interface {
+			SetLegalWordingSettings(interfaces.SystemSettingService)
+		})
+		if !ok {
+			return fmt.Errorf("%T cannot take the legal wording settings", agents)
+		}
+		u.SetLegalWordingSettings(settings)
+		return nil
+	}))
+	// the answer number check looks số hiệu up in the legal catalogue
+	must(container.Invoke(func(agents interfaces.AgentService, catalog interfaces.LegalCatalogRepository) error {
+		u, ok := agents.(interface {
+			SetLegalNumberLookup(interfaces.LegalCatalogRepository)
+		})
+		if !ok {
+			return fmt.Errorf("%T cannot take the legal catalogue", agents)
+		}
+		u.SetLegalNumberLookup(catalog)
+		return nil
+	}))
+	// the agent, session and custom-agent services read the shipped domain packs
+	must(container.Invoke(func(registry *domainpacks.Registry, agents interfaces.AgentService,
+		sessions interfaces.SessionService, customAgents interfaces.CustomAgentService) error {
+		type domainPackUser interface {
+			SetDomainPacks(*domainpacks.Registry)
+		}
+		for _, svc := range []any{agents, sessions, customAgents} {
+			u, ok := svc.(domainPackUser)
+			if !ok {
+				// a silent skip would leave every agent without its packs
+				return fmt.Errorf("%T cannot take the domain packs", svc)
+			}
+			u.SetDomainPacks(registry)
+		}
+		logger.Infof(ctx, "[Container] Domain packs shipped: %v", registry.Names())
+		return nil
+	}))
+	// the add-on catalogue follows agents deleted or converted away from
+	// "addon" (docs/agent-addon-plans.md §8)
+	must(container.Invoke(func(customAgents interfaces.CustomAgentService, plans interfaces.UsagePlanRepository) error {
+		u, ok := customAgents.(interface {
+			SetAgentAddonCatalogue(interfaces.AgentAddonCatalogueSync)
+		})
+		if !ok {
+			return fmt.Errorf("%T cannot take the add-on catalogue", customAgents)
+		}
+		u.SetAgentAddonCatalogue(plans)
+		return nil
 	}))
 	// answers to the chat gate's "unclear word" question are kept as
 	// training data for the spell-check model

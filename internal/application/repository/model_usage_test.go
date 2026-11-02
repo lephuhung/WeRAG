@@ -22,10 +22,55 @@ CREATE TABLE IF NOT EXISTS custom_agents (
     tenant_id INTEGER NOT NULL,
     created_by VARCHAR(36),
     config TEXT NOT NULL DEFAULT '{}',
+    applies_to_tenant_ids TEXT NOT NULL DEFAULT '[]',
+    distribution VARCHAR(16) NOT NULL DEFAULT 'basic',
+    enabled BOOLEAN,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     deleted_at DATETIME,
     PRIMARY KEY (id, tenant_id)
+);
+`
+
+// agentAddonTestDDL is the slice of the usage tables the "addon" agent
+// visibility condition reads (migration 000137 + 000166).
+const agentAddonTestDDL = `
+CREATE TABLE IF NOT EXISTS usage_subscriptions (
+    id VARCHAR(36) PRIMARY KEY,
+    scope_type VARCHAR(16) NOT NULL,
+    scope_id VARCHAR(64) NOT NULL,
+    plan_id VARCHAR(36) NOT NULL DEFAULT 'plan',
+    mode VARCHAR(16) NOT NULL DEFAULT 'pool',
+    seats INTEGER NOT NULL DEFAULT 0,
+    limits_override TEXT,
+    starts_at DATETIME NOT NULL,
+    ends_at DATETIME,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    note TEXT NOT NULL DEFAULT '',
+    created_at DATETIME,
+    updated_at DATETIME
+);
+CREATE TABLE IF NOT EXISTS usage_subscription_addons (
+    subscription_id VARCHAR(36) NOT NULL,
+    agent_id VARCHAR(36) NOT NULL,
+    starts_at DATETIME NOT NULL,
+    ends_at DATETIME,
+    price_vnd INTEGER NOT NULL DEFAULT 0,
+    order_id VARCHAR(36),
+    granted_by VARCHAR(36) NOT NULL DEFAULT '',
+    created_at DATETIME,
+    updated_at DATETIME,
+    PRIMARY KEY (subscription_id, agent_id)
+);
+CREATE TABLE IF NOT EXISTS usage_agent_addons (
+    agent_id VARCHAR(36) PRIMARY KEY,
+    price_vnd INTEGER NOT NULL DEFAULT 0,
+    plan_ids TEXT NOT NULL DEFAULT '[]',
+    description TEXT NOT NULL DEFAULT '',
+    is_active BOOLEAN NOT NULL DEFAULT 1,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME,
+    updated_at DATETIME
 );
 `
 
@@ -35,6 +80,7 @@ const tenantsScopeTestDDL = `
 CREATE TABLE IF NOT EXISTS tenants (
     id INTEGER PRIMARY KEY,
     kind VARCHAR(16) NOT NULL DEFAULT 'workspace',
+    name VARCHAR(255),
     config_profile_id INTEGER,
     deleted_at DATETIME
 );
@@ -45,6 +91,7 @@ func setupModelUsageTestDB(t *testing.T) *gorm.DB {
 	db := setupKBTestDB(t)
 	require.NoError(t, db.Exec(customAgentsTestDDL).Error)
 	require.NoError(t, db.Exec(tenantsScopeTestDDL).Error)
+	require.NoError(t, db.Exec(agentAddonTestDDL).Error)
 	return db
 }
 

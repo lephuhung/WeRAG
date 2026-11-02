@@ -248,6 +248,7 @@ func TestBuildRuntimeContextBlock_PinnedDocuments(t *testing.T) {
 			FileType:    "pdf",
 		}},
 		nil,
+		false,
 	)
 
 	assert.Contains(t, block, "<pinned_documents")
@@ -265,16 +266,16 @@ func TestBuildRuntimeContextBlock_QuestionOrigin(t *testing.T) {
 		KnowledgeBaseName: "TEST",
 		Document:          &SelectedDocumentInfo{KnowledgeID: "kid-1", Title: "Corners <SSAO>"},
 	}
-	block := buildRuntimeContextBlock("sess-1", nil, nil, origin)
+	block := buildRuntimeContextBlock("sess-1", nil, nil, origin, false)
 	assert.Contains(t, block, `<question_origin knowledge_base_id="kb-1" name="TEST">`)
 	assert.Contains(t, block, `<document knowledge_id="kid-1" title="Corners &lt;SSAO&gt;" />`)
 	assert.Contains(t, block, "Search it before answering")
 
-	baseOnly := buildRuntimeContextBlock("sess-1", nil, nil, &QuestionOriginInfo{KnowledgeBaseID: "kb-1"})
+	baseOnly := buildRuntimeContextBlock("sess-1", nil, nil, &QuestionOriginInfo{KnowledgeBaseID: "kb-1"}, false)
 	assert.Contains(t, baseOnly, `<question_origin knowledge_base_id="kb-1">`, "an unknown name is omitted, not empty")
 	assert.NotContains(t, baseOnly, "<document")
 
-	assert.NotContains(t, buildRuntimeContextBlock("sess-1", nil, nil, nil), "question_origin")
+	assert.NotContains(t, buildRuntimeContextBlock("sess-1", nil, nil, nil, false), "question_origin")
 }
 
 // The origin's raw IDs must reach the model as handles it can pass to

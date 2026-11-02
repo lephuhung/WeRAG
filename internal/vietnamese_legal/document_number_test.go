@@ -44,3 +44,20 @@ func TestIsNormativeDocumentNumber(t *testing.T) {
 		}
 	}
 }
+
+func TestCitedNumberSpans(t *testing.T) {
+	text := "Theo Nghị định 132/2023/NĐ-CP, Quyết định 123/QĐ-UBND và công văn 01/GT, 41/VPQH; ngày 15/11/2018; 1153/2022/NĐ–CP."
+	var got []string
+	for _, s := range CitedNumberSpans(text) {
+		got = append(got, text[s[0]:s[1]])
+	}
+	want := []string{"132/2023/NĐ-CP", "123/QĐ-UBND", "1153/2022/NĐ–CP"}
+	if len(got) != len(want) {
+		t.Fatalf("got %q", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	}
+}

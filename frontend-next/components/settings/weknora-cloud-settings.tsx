@@ -4,6 +4,10 @@ import { useState } from "react";
 import { apiPost } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { Notice } from "@/components/settings/notice";
+import { SectionHeader } from "@/components/settings/section-header";
+import { FieldLabel } from "@/components/settings/field";
+import { useToast } from "@/components/toast";
 
 export function WeKnoraCloudSettings() {
   const { t } = useT();
@@ -14,14 +18,13 @@ export function WeKnoraCloudSettings() {
   const [appSecret, setAppSecret] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  const toast = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!appId.trim() || !appSecret.trim()) return;
     setSaving(true);
     setError("");
-    setSuccess("");
     try {
       const res = await apiPost<{ success: boolean; message?: string }>(
         "/api/v1/weknoracloud/credentials",
@@ -31,7 +34,7 @@ export function WeKnoraCloudSettings() {
         },
       );
       if (res.success) {
-        setSuccess(t("wkn.saved"));
+        toast.success(t("wkn.saved"));
         setAppSecret("");
       } else {
         setError(res.message || t("wkn.saveFailed"));
@@ -46,51 +49,47 @@ export function WeKnoraCloudSettings() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div className="border-b border-hairline pb-5">
-        <h2 className="title-md font-semibold text-ink">{t("wkn.title")}</h2>
-        <p className="caption text-muted mt-1">
-          {t("wkn.subtitle")}
-        </p>
-      </div>
+      <SectionHeader title={t("wkn.title")} subtitle={t("wkn.subtitle")} />
 
       {error && (
-        <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-400">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-400">
-          {success}
-        </div>
+        <Notice tone="error">{error}</Notice>
       )}
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
-        <label className="block">
-          <span className="text-sm font-medium text-ink block mb-1">{t("wkn.appId")}</span>
+        <div>
+          <FieldLabel htmlFor="wkn-app-id" required className="text-sm font-medium text-ink">
+            {t("wkn.appId")}
+          </FieldLabel>
           <input
+            id="wkn-app-id"
             type="text"
             required
+            aria-required="true"
             disabled={!isSystemAdmin || saving}
             placeholder={t("wkn.appIdPh")}
             className="input font-mono text-sm"
             value={appId}
             onChange={(e) => setAppId(e.target.value)}
           />
-        </label>
+        </div>
 
-        <label className="block">
-          <span className="text-sm font-medium text-ink block mb-1">{t("wkn.appSecret")}</span>
+        <div>
+          <FieldLabel htmlFor="wkn-app-secret" required className="text-sm font-medium text-ink">
+            {t("wkn.appSecret")}
+          </FieldLabel>
           <input
+            id="wkn-app-secret"
             type="password"
             required
+            aria-required="true"
             disabled={!isSystemAdmin || saving}
             placeholder="••••••••••••••••"
             className="input font-mono text-sm"
             value={appSecret}
             onChange={(e) => setAppSecret(e.target.value)}
           />
-        </label>
+        </div>
 
         {isSystemAdmin && (
           <button

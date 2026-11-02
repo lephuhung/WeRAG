@@ -153,6 +153,8 @@ func (s *Server) resolveAskKnowledgeBases(
 		}
 		return knowledgeBaseIDs(kbs), nil
 	}
+	// (an agent in "public" mode intersects its public bases with the ids
+	// returned above, so an endpoint restriction still holds there)
 	mode := strings.ToLower(strings.TrimSpace(agent.Config.KBSelectionMode))
 	agentHasNoKBs := mode == "none" || ((mode == "selected" || mode == "") && len(agent.Config.KnowledgeBases) == 0)
 	if agentHasNoKBs {

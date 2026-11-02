@@ -3,12 +3,14 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"mime/multipart"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/application/service"
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/mark3labs/mcp-go/mcp"
 )
@@ -31,14 +33,29 @@ const (
 
 func legalIngestTool() mcp.Tool {
 	return mcp.NewTool(types.MCPEndpointToolLegalIngest,
-		mcp.WithDescription("Fetch one document from vbpl.vn by id and add it to a public legal knowledge base "+
-			"with the standard metadata (external_id, source=vbpl, số hiệu, dates, status, appendix files). "+
+		mcp.WithDescription("Fetch one document from vbpl.vn by id and add its HTML full text to a public legal "+
+			"knowledge base with the standard metadata (external_id, source=vbpl, số hiệu, dates, status, appendix files). "+
 			"Idempotent: an unchanged copy is reported as unchanged, a changed page replaces the old copy. "+
-			"Refuses documents the portal marks fully expired (\"Hết hiệu lực toàn bộ\") and empty pages. "+
+			"Refuses documents the portal marks fully expired (\"Hết hiệu lực toàn bộ\") and documents with no full text. "+
+			"A document vbpl.vn has only as a scanned PDF is refused too: a scan is never ingested as raw OCR. Call "+
+			"legal_fetch_draft for it instead; a SuperAdmin reviews the OCR draft before it is ingested. "+
 			"Pick the knowledge base by document type (Luật → the Luật base, Nghị định → Nghị định…)."),
 		mcp.WithString("vbpl_id", mcp.Required(), mcp.Description("vbpl.vn document id (legal_catalog_search returns it)")),
 		mcp.WithString("knowledge_base_id", mcp.Required(), mcp.Description("Target knowledge base id or exact name")),
 		mcp.WithString("reason", mcp.Description("Why this document is fed (logged)")),
+	)
+}
+
+func legalFetchDraftTool() mcp.Tool {
+	return mcp.NewTool(types.MCPEndpointToolLegalFetchDraft,
+		mcp.WithDescription("For a document vbpl.vn publishes only as a scanned PDF (legal_ingest_document refuses it, "+
+			"legal_list_requests shows portal.pdf_file without html): download the PDF and OCR it into a draft that a "+
+			"SuperAdmin edits and approves before anything is ingested. Nothing reaches a knowledge base from this "+
+			"call. Idempotent: an existing draft is returned as it is (a failed one is fetched again). A scan of more "+
+			"than 20 pages is OCRed in the background: the draft starts as \"ocr\" and becomes \"ready\" (or "+
+			"\"failed\" with an error); legal_list_requests shows each request's draft. Pre-fetch every PDF-only "+
+			"request so the SuperAdmin finds the drafts ready."),
+		mcp.WithString("vbpl_id", mcp.Required(), mcp.Description("vbpl.vn document id of the requested document")),
 	)
 }
 
@@ -122,14 +139,54 @@ func (s *Server) handleLegalIngest(ctx context.Context, req mcp.CallToolRequest)
 	if res.Result == "unchanged" {
 		return mcp.NewToolResultStructured(map[string]any{
 			"result": "unchanged", "vbpl_id": vbplID, "knowledge_id": res.KnowledgeID, "knowledge_base_id": kb.ID,
+			"source_format": res.SourceFormat,
 		}, fmt.Sprintf("Document %s (%s) is already in %s and unchanged.", vbplID, res.DocumentNumber, kb.Name)), nil
 	}
 	return mcp.NewToolResultStructured(map[string]any{
 		"result": res.Result, "vbpl_id": vbplID, "knowledge_id": res.KnowledgeID, "knowledge_base_id": kb.ID,
 		"replaced_knowledge_id": res.ReplacedKnowledgeID, "document": summarizeKnowledge(res.Knowledge),
 		"document_number": res.DocumentNumber, "doc_type": res.DocType, "status": res.Status, "vbpl_markup": res.VBPLMarkup,
-	}, fmt.Sprintf("Document %s (%s, %s) %s in %s as %s; indexing runs asynchronously (parse_status).",
-		vbplID, res.DocumentNumber, res.DocType, res.Result, kb.Name, res.KnowledgeID)), nil
+		"source_format": res.SourceFormat,
+	}, fmt.Sprintf("Document %s (%s, %s) %s in %s as %s from %s; indexing runs asynchronously (parse_status).",
+		vbplID, res.DocumentNumber, res.DocType, res.Result, kb.Name, res.KnowledgeID, res.SourceFormat)), nil
+}
+
+func (s *Server) handleLegalFetchDraft(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ep, err := endpointFromContext(ctx)
+	if err != nil {
+		return mcp.NewToolResultError("unauthorized"), nil
+	}
+	if s.legalDrafts == nil {
+		return mcp.NewToolResultError("legal drafts are not available"), nil
+	}
+	vbplID := strings.TrimSpace(req.GetString("vbpl_id", ""))
+	if vbplID == "" {
+		return mcp.NewToolResultError("vbpl_id is required"), nil
+	}
+	draft, err := s.legalDrafts.FetchDocument(ctx, vbplID, "mcp:"+ep.ID)
+	if err != nil {
+		var appErr *apperrors.AppError
+		if stderrors.As(err, &appErr) {
+			return mcp.NewToolResultError(appErr.Message), nil
+		}
+		return mcp.NewToolResultErrorFromErr("fetch failed", err), nil
+	}
+	s.legalFeedLog(ctx, ep, legalFeedEntry{Action: "fetch_draft", VBPLID: vbplID, DocumentNumber: draft.DocumentNumber,
+		Detail: map[string]any{"draft_id": draft.ID, "status": draft.Status, "pdf_file": draft.PDFFileName}})
+	out := map[string]any{
+		"draft_id": draft.ID, "vbpl_id": vbplID, "status": draft.Status, "document_number": draft.DocumentNumber,
+		"pdf_file": draft.PDFFileName, "ocr_pages": draft.OCRPages, "error": draft.Error, "request_id": draft.RequestID,
+	}
+	text := fmt.Sprintf("Draft %s of %s (%s) is %s", draft.ID, vbplID, draft.DocumentNumber, draft.Status)
+	switch draft.Status {
+	case types.LegalDraftOCR, types.LegalDraftFetching:
+		text += "; the OCR runs in the background, check legal_list_requests later."
+	case types.LegalDraftFailed:
+		text += ": " + draft.Error
+	default:
+		text += "; a SuperAdmin reviews and approves it before it is ingested."
+	}
+	return mcp.NewToolResultStructured(out, text), nil
 }
 
 // legalFeedService is the shared vbpl.vn ingest (service.LegalFeedService),

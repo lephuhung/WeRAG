@@ -1,5 +1,1 @@
-import { redirect } from "next/navigation";
-
-export default function Home() {
-  redirect("/platform/creatChat");
-}
+export { default, metadata } from "./gioi-thieu/page";

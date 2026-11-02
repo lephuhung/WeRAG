@@ -56,14 +56,24 @@ func TypeSkillName(docType string) string {
 	return "the-thuc-" + strings.ReplaceAll(docType, "_", "-")
 }
 
+// GeneralSkillFor is the general skill of a document type: the-thuc-dang
+// for a văn bản của Đảng, the-thuc-chung otherwise.
+func GeneralSkillFor(docType string) string {
+	if IsPartyType(docType) {
+		return PartySkill
+	}
+	return GeneralSkill
+}
+
 // SkillsFor returns the skills to evaluate a document of docType: the
-// general skill, then the type's own skill when one exists.
+// general skill (GeneralSkillFor), then the type's own skill when one
+// exists.
 func SkillsFor(docType string) []Skill {
 	var out []Skill
-	if s, ok := loadSkill(GeneralSkill); ok {
+	if s, ok := loadSkill(GeneralSkillFor(docType)); ok {
 		out = append(out, s)
 	}
-	if docType != "" && docType != "unknown" {
+	if docType != "" && docType != "unknown" && TypeSkillName(docType) != GeneralSkillFor(docType) {
 		if s, ok := loadSkill(TypeSkillName(docType)); ok {
 			out = append(out, s)
 		}
@@ -100,7 +110,7 @@ var skillsDigest = sync.OnceValue(func() string {
 	}
 	add(skillsFS, "skills/*/SKILL.md")
 	add(rulesFS, "rules/*.json")
-	h.Write([]byte(evaluatorPrompt + "\x00" + judgmentRenderVersion + "\x00" + judgmentCodeVersion))
+	h.Write([]byte(evaluatorPrompt + "\x00" + partyEvaluatorPrompt + "\x00" + judgmentRenderVersion + "\x00" + judgmentCodeVersion))
 	return hex.EncodeToString(h.Sum(nil))[:16]
 })
 

@@ -14,8 +14,8 @@ import (
 func formatGroundingGuidance(names []string) string {
 	var b strings.Builder
 	b.WriteString("\n\nContent grounding (answers and deliverables):\n")
-	b.WriteString("- Decide what evidence the task needs. User-provided content and sufficient tool " +
-		"results already obtained for the current task can be used directly; do not search merely to " +
+	b.WriteString("- Decide what evidence the task needs. Use user-provided content and sufficient tool " +
+		"results already obtained for the current task directly; do not search merely to " +
 		"satisfy a workflow. For current facts, source-specific claims, or factual deliverables such as " +
 		"presentations, reports, tutorials, and technical instructions, consult relevant available " +
 		"sources before drafting unsupported content.\n")
@@ -51,8 +51,7 @@ func formatGroundingGuidance(names []string) string {
 			"general knowledge: the user may mean what their documents say, and directory profiles " +
 			"and recent titles show only a sample, so they cannot prove a base lacks the answer. " +
 			"With an explicit source selection, KB retrieval is complementary, not a prerequisite. " +
-			"Directory entries are routing hints, not retrieved evidence; do not exhaust unrelated " +
-			"bases. Choose an available search or reader appropriate to the scope.\n")
+			"Do not exhaust unrelated bases; choose an available search or reader appropriate to the scope.\n")
 	}
 	if slices.Contains(names, tools.ToolWebSearch) {
 		b.WriteString("- web_search is available: use it when relevant local evidence is missing, " +

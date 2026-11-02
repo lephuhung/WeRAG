@@ -47,6 +47,11 @@ import (
 //     impossible date fails).
 //   - type_requirements (item 6): a list of requirement checks over the
 //     anchors and components (see Requirement).
+//   - dang_tham_quyen, dang_chuc_vu, dang_noi_nhan, dang_so_ky_hieu_date
+//     (items 2–5 of a văn bản của Đảng, Hướng dẫn 36-HD/VPTW):
+//     judgment_party.go.
+//
+// A rule's "title" names its Bảng kiểm item (the party items differ).
 //
 // Every rule ends pass / warn / fail, "unknown" (the data cannot answer and
 // the skill prescribes "không xác định được từ dữ liệu" — a model given
@@ -75,12 +80,18 @@ const (
 	KindSoKyHieuDate       = "so_ky_hieu_date"
 	KindTypeRequirements   = "type_requirements"
 	KindAttachedHeading    = "attached_heading"
+	KindDangThamQuyen      = "dang_tham_quyen"
+	KindDangChucVu         = "dang_chuc_vu"
+	KindDangNoiNhan        = "dang_noi_nhan"
+	KindDangSoKyHieuDate   = "dang_so_ky_hieu_date"
 )
 
 // JudgmentRule is one judgment rule as written in the rule JSON.
 type JudgmentRule struct {
-	Item     int    `json:"item"`
-	ID       string `json:"id"`
+	Item int    `json:"item"`
+	ID   string `json:"id"`
+	// Title names the rule's Bảng kiểm item; "" keeps checklistTitles.
+	Title    string `json:"title,omitempty"`
 	Desc     string `json:"desc,omitempty"`
 	Kind     string `json:"kind"`
 	Severity string `json:"severity,omitempty"`
@@ -90,9 +101,11 @@ type JudgmentRule struct {
 
 	// ky_thay
 	CollectiveRegex string `json:"collective_regex,omitempty"`
-	TMExemptRegex   string `json:"tm_exempt_regex,omitempty"`
-	TMSeverity      string `json:"tm_severity,omitempty"`
-	BadAbbrevRegex  string `json:"bad_abbrev_regex,omitempty"`
+	// dang_tham_quyen: a collective body whose deputy signs without "T/M"
+	DeputyExemptRegex string `json:"deputy_exempt_regex,omitempty"`
+	TMExemptRegex     string `json:"tm_exempt_regex,omitempty"`
+	TMSeverity        string `json:"tm_severity,omitempty"`
+	BadAbbrevRegex    string `json:"bad_abbrev_regex,omitempty"`
 	// head_in_noi_nhan
 	HeadAliases map[string][]string `json:"head_aliases,omitempty"`
 	ReportRegex string              `json:"report_regex,omitempty"`
@@ -102,6 +115,14 @@ type JudgmentRule struct {
 	EndRegex   string `json:"end_regex,omitempty"`
 	LuuRegex   string `json:"luu_regex,omitempty"`
 	LuuVTRegex string `json:"luu_vt_regex,omitempty"`
+	// dang_noi_nhan: the last entry's ending; a colon after "Lưu"
+	LastEndRegex  string `json:"last_end_regex,omitempty"`
+	LuuColonRegex string `json:"luu_colon_regex,omitempty"`
+	// dang_chuc_vu: a cấp uỷ name in a chức vụ line, an "ỦY VIÊN" line, a
+	// học hàm / học vị / quân hàm before the họ tên
+	AgencyRegex    string `json:"agency_regex,omitempty"`
+	MemberRegex    string `json:"member_regex,omitempty"`
+	HonorificRegex string `json:"honorific_regex,omitempty"`
 	// so_ky_hieu_date
 	SymbolMode     string   `json:"symbol_mode,omitempty"`
 	ForbiddenCodes []string `json:"forbidden_codes,omitempty"`
@@ -124,6 +145,8 @@ type JudgmentRule struct {
 //     Anchors[0] → WhenAbsent (default unknown); a cut line that could
 //     hide the match → undetermined.
 //   - component_present / component_absent: the Component is found / not.
+//   - line_ends: every line of Component but the last matches Regex, the
+//     last matches LastRegex (căn cứ "…;" then "…,").
 //   - component_regex: the lines of Component (after Skip lines) against
 //     Regex in Mode first (the first line must match; WarnRegex matching
 //     it instead → warn), any (one line must match) or none (no line may
@@ -143,6 +166,7 @@ type Requirement struct {
 	Component  string   `json:"component,omitempty"`
 	Regex      string   `json:"regex,omitempty"`
 	WarnRegex  string   `json:"warn_regex,omitempty"`
+	LastRegex  string   `json:"last_regex,omitempty"`
 	Mode       string   `json:"mode,omitempty"`
 	Skip       int      `json:"skip,omitempty"`
 	When       string   `json:"when,omitempty"`
@@ -268,9 +292,13 @@ func Judge(r *Report) []JudgmentItem {
 	}
 	jd := newJudgeData(r)
 	outs := map[int][]ruleOut{}
+	titles := map[int]string{}
 	for _, jr := range rs.Judgment {
 		if jr.Item < 1 || jr.Item > 6 {
 			continue
+		}
+		if jr.Title != "" && titles[jr.Item] == "" {
+			titles[jr.Item] = jr.Title
 		}
 		var o ruleOut
 		switch jr.Kind {
@@ -288,6 +316,14 @@ func Judge(r *Report) []JudgmentItem {
 			o = jd.typeRequirements(jr)
 		case KindAttachedHeading:
 			o = jd.attachedHeading(jr)
+		case KindDangThamQuyen:
+			o = jd.dangThamQuyen(jr)
+		case KindDangChucVu:
+			o = jd.dangChucVu(jr)
+		case KindDangNoiNhan:
+			o = jd.dangNoiNhan(jr)
+		case KindDangSoKyHieuDate:
+			o = jd.dangSoKyHieuDate(jr)
 		default:
 			o.undetermined = fmt.Sprintf("loại quy tắc %q chưa được hỗ trợ", jr.Kind)
 		}
@@ -296,6 +332,9 @@ func Judge(r *Report) []JudgmentItem {
 	items := make([]JudgmentItem, 0, 6)
 	for n := 1; n <= 6; n++ {
 		it := JudgmentItem{Item: n, Title: checklistTitles[n], By: "rules"}
+		if t := titles[n]; t != "" {
+			it.Title = t
+		}
 		rules := outs[n]
 		if len(rules) == 0 {
 			// no rule for this item: the model judges it
@@ -435,8 +474,12 @@ func judgeRequired(r *Report) ruleOut {
 		}
 		key := strings.TrimSuffix(strings.TrimPrefix(c.ID, "component."), ".present")
 		name := ComponentName(key)
-		o.add("error", key, "Văn bản loại này phải có thành phần "+name+" (NĐ30 Phụ lục I)", "",
-			"Bổ sung "+name+" đúng vị trí theo NĐ30.", "thiếu "+name)
+		src := "NĐ30 Phụ lục I"
+		if r.Party() {
+			src = PartyGuide + ", Phụ lục 1"
+		}
+		o.add("error", key, "Văn bản loại này phải có thành phần "+name+" ("+src+")", "",
+			"Bổ sung "+name+" đúng vị trí theo "+ruleSource(r)+".", "thiếu "+name)
 	}
 	return o
 }
@@ -1016,6 +1059,26 @@ func (jd *judgeData) typeRequirements(jr JudgmentRule) ruleOut {
 				last := main[len(main)-1]
 				t, _ := anchorText(last)
 				sub.add(sev, "noi_dung", req.Desc, t, req.Fix, "không thấy: "+lowerFirst(req.Desc))
+			}
+		case "line_ends":
+			lines := jd.lines(req.Component)
+			if len(lines) == 0 {
+				absentStatus(req, "pass", &sub, req.Component, "không có "+ComponentName(req.Component))
+				break
+			}
+			last := jre(req.LastRegex)
+			var bad []string
+			for i, l := range lines {
+				want := re
+				if i == len(lines)-1 {
+					want = last
+				}
+				if want != nil && !want.MatchString(l.f) {
+					bad = append(bad, l.raw)
+				}
+			}
+			if len(bad) > 0 {
+				sub.add(sev, req.Component, req.Desc, strings.Join(bad, " | "), req.Fix, quote(bad[0])+": "+lowerFirst(req.Desc))
 			}
 		case "component_present":
 			if !jd.found(req.Component) {

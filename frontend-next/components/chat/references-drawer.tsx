@@ -150,7 +150,7 @@ export const ReferencesDrawer = memo(function ReferencesDrawer({
                   {title}
                 </span>
                 {currentRef.score !== undefined && (
-                  <span className="shrink-0 rounded-md bg-emerald-500/10 px-2 py-0.5 text-[11.5px] font-semibold text-emerald-600 dark:text-emerald-400">
+                  <span className="shrink-0 rounded-md2 bg-success-surface px-2 py-0.5 text-[11.5px] font-semibold text-success">
                     {(currentRef.score * 100).toFixed(0)}%
                   </span>
                 )}
@@ -166,8 +166,8 @@ export const ReferencesDrawer = memo(function ReferencesDrawer({
                   >
                     {copied ? (
                       <>
-                        <span className="text-emerald-600 dark:text-emerald-400">✓</span>
-                        <span className="text-emerald-600 dark:text-emerald-400 font-medium">Đã chép</span>
+                        <span className="text-success">✓</span>
+                        <span className="text-success font-medium">Đã chép</span>
                       </>
                     ) : (
                       <>

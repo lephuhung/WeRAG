@@ -422,6 +422,13 @@ func RegisterSystemAdminRoutes(
 			adminRoutes.GET("/usage/subscriptions/:id/seats", usageAdmin.ListSeats)
 			adminRoutes.POST("/usage/subscriptions/:id/seats", usageAdmin.AssignSeat)
 			adminRoutes.DELETE("/usage/subscriptions/:id/seats/:user_id", usageAdmin.RevokeSeat)
+			adminRoutes.GET("/usage/subscriptions/:id/addons", usageAdmin.ListSubscriptionAddons)
+			adminRoutes.POST("/usage/subscriptions/:id/addons", usageAdmin.GrantSubscriptionAddon)
+			adminRoutes.DELETE("/usage/subscriptions/:id/addons/:agent_id", usageAdmin.RevokeSubscriptionAddon)
+			adminRoutes.GET("/usage/agent-addons", usageAdmin.ListAgentAddons)
+			adminRoutes.POST("/usage/agent-addons", usageAdmin.CreateAgentAddon)
+			adminRoutes.PUT("/usage/agent-addons/:agent_id", usageAdmin.UpdateAgentAddon)
+			adminRoutes.DELETE("/usage/agent-addons/:agent_id", usageAdmin.DeleteAgentAddon)
 			adminRoutes.GET("/usage/tenants", usageAdmin.TenantOverview)
 		}
 	}

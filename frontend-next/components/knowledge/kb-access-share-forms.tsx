@@ -68,7 +68,7 @@ export function KbInviteForm({ overview, onDone }: { overview: KBAccessOverview;
         </button>
       </form>
       {error && <p className="body-sm text-error">{error}</p>}
-      {notice && <p className="body-sm text-emerald-600">{notice}</p>}
+      {notice && <p className="body-sm text-success">{notice}</p>}
       {token && (
         <div className="space-y-1.5 rounded-xl border border-hairline bg-surface-strong/50 p-3">
           <span className="caption font-medium text-ink">{t("kbAccess.inviteToken")}</span>

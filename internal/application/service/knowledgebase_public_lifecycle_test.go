@@ -78,6 +78,10 @@ func (r *lifecycleTenantRepo) GetDefaultConfigProfile(context.Context) (*types.T
 	return nil, nil
 }
 
+func (r *lifecycleTenantRepo) GetPublicPortal(context.Context) (*types.Tenant, error) {
+	return nil, nil
+}
+
 func (r *lifecycleTenantRepo) SyncProfileSettings(context.Context, uint64, uint64) (int64, error) {
 	return 0, nil
 }

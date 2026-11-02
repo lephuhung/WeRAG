@@ -24,7 +24,9 @@ test("every template carries the server's fields on an A4 page with NĐ30 margin
     assert.match(xml, /<w:pgSz w:w="11906" w:h="16838"/, t.id);
     assert.match(xml, /w:left="1701"/, t.id); // 30 mm
     assert.ok(xml.includes("Huế, ngày 16 tháng 10 năm 2026"), t.id);
-    assert.ok(xml.includes("Đào tạo kỹ năng &lt;AI&gt; &amp; dữ liệu"), `${t.id}: text is escaped`);
+    // Mẫu 1.8 and 1.10 have no trích yếu line
+    if (t.id !== "giay-gioi-thieu" && t.id !== "giay-nghi-phep") assert.ok(xml.includes("Đào tạo kỹ năng &lt;AI&gt; &amp; dữ liệu"), `${t.id}: text is escaped`);
+    else assert.ok(!xml.includes("Đào tạo kỹ năng"), `${t.id}: no trích yếu`);
     assert.ok(!xml.includes("[CƠ QUAN"), `${t.id}: no placeholder left`);
   }
 });
@@ -61,4 +63,36 @@ test("page margins follow the server's values and the header table fits the text
   assert.match(xml, /<w:tblW w:type="dxa" w:w="9071"\/>/); // 210 - 35 - 15 = 160 mm
   xml = await documentXml(await buildDocumentTemplate("cong-van", fields, { le_trai: 35 }));
   assert.match(xml, /<w:tblW w:type="dxa" w:w="8787"\/>/); // 210 - 35 - 20 = 155 mm
+});
+
+test("every template has an NĐ30 skeleton without a draft", async () => {
+  for (const t of DOCUMENT_TEMPLATES) {
+    const xml = await documentXml(await buildDocumentTemplate(t.id));
+    assert.ok(xml.includes("CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM"), t.id);
+  }
+  const xml = await documentXml(await buildDocumentTemplate("giay-gioi-thieu"));
+  assert.ok(xml.includes("/GGT-[CQ]") && xml.includes("trân trọng giới thiệu:") && xml.includes("Giấy này có giá trị đến hết ngày"));
+  assert.ok((await documentXml(await buildDocumentTemplate("cong-van"))).includes("Số: [SỐ]/[CQ]-[ĐV]"));
+});
+
+test("a resolution resolves, its proposal line only when sent", async () => {
+  const { request_basis: _none, ...rest } = fields;
+  const xml = await documentXml(await buildDocumentTemplate("nghi-quyet", { ...rest, decision_authority: "ỦY BAN NHÂN DÂN TỈNH" }));
+  assert.ok(xml.includes(">NGHỊ QUYẾT<") && xml.includes(">QUYẾT NGHỊ:<") && !xml.includes("QUYẾT ĐỊNH:"));
+  assert.ok(!xml.includes("Theo đề nghị"));
+});
+
+test("a telegram writes its issuer line and receivers", async () => {
+  const xml = await documentXml(await buildDocumentTemplate("cong-dien", { ...fields, issuer_line: "CHỦ TỊCH ỦY BAN NHÂN DÂN TỈNH điện:", receiver_lines: ["- Các sở, ban, ngành;"] }));
+  assert.ok(xml.includes(">CÔNG ĐIỆN<"));
+  const issuer = xml.indexOf("CHỦ TỊCH ỦY BAN NHÂN DÂN TỈNH điện:");
+  assert.ok(issuer > 0 && issuer < xml.indexOf("- Các sở, ban, ngành;") && xml.indexOf("- Các sở, ban, ngành;") < xml.indexOf("Tổ chức đào tạo."));
+});
+
+test("minutes are signed by the secretary and the chair, Nơi nhận below", async () => {
+  const xml = await documentXml(await buildDocumentTemplate("bien-ban", { ...fields, signature_lines: ["CHỦ TỌA"], secretary_name: "Phạm Thị D" }));
+  const secretary = xml.indexOf(">THƯ KÝ<");
+  assert.ok(secretary > 0 && secretary < xml.indexOf(">CHỦ TỌA<"));
+  assert.ok(xml.indexOf(">Phạm Thị D<") < xml.indexOf(">Nguyễn Văn A<"));
+  assert.ok(xml.indexOf(">Nguyễn Văn A<") < xml.indexOf(">Nơi nhận:<"));
 });

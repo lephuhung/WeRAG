@@ -12,6 +12,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/agent"
 	"github.com/Tencent/WeKnora/internal/agent/compaction"
+	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	agenttoken "github.com/Tencent/WeKnora/internal/agent/token"
 	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -830,6 +831,9 @@ func finalAnswerHistoryMessage(m *types.Message) *chat.Message {
 		return &chat.Message{Role: "assistant", Content: note}
 	}
 	finalContent := agentHistoryThinkTagRegex.ReplaceAllString(m.Content, "")
+	// the domain-pack footer is code-appended to every answer; replayed, the
+	// model copies it and the next answer carries it twice
+	finalContent = domainpacks.StripFooter(finalContent)
 	// Version clarification was written for that message's turn, not this one.
 	finalContent = strings.NewReplacer(
 		"\n\nTệp tạo trong lượt này: ![", "\n\nTệp tạo trong lượt trước đó: ![",

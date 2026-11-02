@@ -1,0 +1,444 @@
+{
+  "light": [
+    {
+      "label": "Chung",
+      "cw": 302,
+      "headings": [
+        "Chung"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Hồ sơ",
+      "cw": 302,
+      "headings": [
+        "Hồ sơ",
+        "Thông tin công tác"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Bảo mật",
+      "cw": 302,
+      "headings": [
+        "Bảo mật",
+        "Đổi mật khẩu",
+        "Xác thực hai lớp"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Gói sử dụng",
+      "cw": 302,
+      "headings": [
+        "Gói sử dụng",
+        "Gói sử dụng của đơn vị"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Mua gói",
+      "cw": 302,
+      "headings": [
+        "Mua gói",
+        "Mua hoặc gia hạn gói",
+        "Lịch sử đơn hàng"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Thông tin không gian",
+      "cw": 302,
+      "headings": [
+        "Thông tin không gian"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Thành viên",
+      "cw": 302,
+      "headings": [
+        "Thành viên",
+        "Thành viên không gian"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Hồ sơ đơn vị",
+      "cw": 302,
+      "headings": [
+        "Hồ sơ đơn vị",
+        "Hồ sơ đơn vị",
+        "Cỡ chữ và lề văn bản mẫu"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "API keys",
+      "cw": 302,
+      "headings": [
+        "API keys"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Bộ nhớ",
+      "cw": 302,
+      "headings": [
+        "Bộ nhớ",
+        "Bộ nhớ của tôi"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Kết nối trình duyệt",
+      "cw": 302,
+      "headings": [
+        "Kết nối trình duyệt",
+        "Kết nối tiện ích trình duyệt"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Biến môi trường",
+      "cw": 302,
+      "headings": [
+        "Biến môi trường",
+        "Biến môi trường",
+        "demo"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Từ viết tắt",
+      "cw": 302,
+      "headings": [
+        "Từ viết tắt",
+        "Từ điển từ viết tắt"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Kỹ năng",
+      "cw": 302,
+      "headings": [
+        "Kỹ năng",
+        "Danh mục skill"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Máy chủ MCP",
+      "cw": 302,
+      "headings": [
+        "Máy chủ MCP",
+        "Máy chủ MCP"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Agents",
+      "cw": 302,
+      "headings": [
+        "Agents",
+        "Suy luận",
+        "Soạn thảo văn bản"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Kênh tin nhắn",
+      "cw": 302,
+      "headings": [
+        "Kênh tin nhắn"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Danh mục mô hình",
+      "cw": 302,
+      "headings": [
+        "Danh mục mô hình",
+        "Mô hình & nhà cung cấp",
+        "Qwen/Qwen3.6-35B",
+        "senocr-vi",
+        "BAAI/bge-reranker-v2-m3",
+        "mainguyen9/vietlegal-harrier-0.6b",
+        "Qwen/Qwen3.6-35B",
+        "spellcheck-gemma4-e4b-v4",
+        "Cloudflare Clef Flash",
+        "gemma-4-e4b-it"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Lưu trữ dữ liệu",
+      "cw": 302,
+      "headings": [
+        "Lưu trữ dữ liệu",
+        "Cơ sở dữ liệu vector"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Engine phân tích",
+      "cw": 302,
+      "headings": [
+        "Engine phân tích",
+        "Engine phân tích",
+        "DocReader",
+        "Engine hiện có",
+        "PaddleOCR-VL / mô hình OCR"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Tìm kiếm web",
+      "cw": 302,
+      "headings": [
+        "Tìm kiếm web",
+        "Nhà cung cấp tìm kiếm web"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Sandbox",
+      "cw": 302,
+      "headings": [
+        "Sandbox",
+        "Môi trường sandbox"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Hàng đợi runtime",
+      "cw": 302,
+      "headings": [
+        "Hàng đợi runtime",
+        "Hàng đợi runtime"
+      ],
+      "sw": 302
+    }
+  ],
+  "dark": [
+    {
+      "label": "Chung",
+      "cw": 302,
+      "headings": [
+        "Chung"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Hồ sơ",
+      "cw": 302,
+      "headings": [
+        "Hồ sơ",
+        "Thông tin công tác"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Bảo mật",
+      "cw": 302,
+      "headings": [
+        "Bảo mật",
+        "Đổi mật khẩu",
+        "Xác thực hai lớp"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Gói sử dụng",
+      "cw": 302,
+      "headings": [
+        "Gói sử dụng",
+        "Gói sử dụng của đơn vị"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Mua gói",
+      "cw": 302,
+      "headings": [
+        "Mua gói",
+        "Mua hoặc gia hạn gói",
+        "Lịch sử đơn hàng"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Thông tin không gian",
+      "cw": 302,
+      "headings": [
+        "Thông tin không gian"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Thành viên",
+      "cw": 302,
+      "headings": [
+        "Thành viên",
+        "Thành viên không gian"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Hồ sơ đơn vị",
+      "cw": 302,
+      "headings": [
+        "Hồ sơ đơn vị",
+        "Hồ sơ đơn vị",
+        "Cỡ chữ và lề văn bản mẫu"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "API keys",
+      "cw": 302,
+      "headings": [
+        "API keys"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Bộ nhớ",
+      "cw": 302,
+      "headings": [
+        "Bộ nhớ",
+        "Bộ nhớ của tôi"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Kết nối trình duyệt",
+      "cw": 302,
+      "headings": [
+        "Kết nối trình duyệt",
+        "Kết nối tiện ích trình duyệt"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Biến môi trường",
+      "cw": 302,
+      "headings": [
+        "Biến môi trường",
+        "Biến môi trường",
+        "demo"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Từ viết tắt",
+      "cw": 302,
+      "headings": [
+        "Từ viết tắt",
+        "Từ điển từ viết tắt"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Kỹ năng",
+      "cw": 302,
+      "headings": [
+        "Kỹ năng",
+        "Danh mục skill"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Máy chủ MCP",
+      "cw": 302,
+      "headings": [
+        "Máy chủ MCP",
+        "Máy chủ MCP"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Agents",
+      "cw": 302,
+      "headings": [
+        "Agents",
+        "Suy luận",
+        "Soạn thảo văn bản"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Kênh tin nhắn",
+      "cw": 302,
+      "headings": [
+        "Kênh tin nhắn"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Danh mục mô hình",
+      "cw": 302,
+      "headings": [
+        "Danh mục mô hình",
+        "Mô hình & nhà cung cấp",
+        "Qwen/Qwen3.6-35B",
+        "senocr-vi",
+        "BAAI/bge-reranker-v2-m3",
+        "mainguyen9/vietlegal-harrier-0.6b",
+        "Qwen/Qwen3.6-35B",
+        "spellcheck-gemma4-e4b-v4",
+        "Cloudflare Clef Flash",
+        "gemma-4-e4b-it"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Lưu trữ dữ liệu",
+      "cw": 302,
+      "headings": [
+        "Lưu trữ dữ liệu",
+        "Cơ sở dữ liệu vector"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Engine phân tích",
+      "cw": 302,
+      "headings": [
+        "Engine phân tích",
+        "Engine phân tích",
+        "DocReader",
+        "Engine hiện có",
+        "PaddleOCR-VL / mô hình OCR"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Tìm kiếm web",
+      "cw": 302,
+      "headings": [
+        "Tìm kiếm web",
+        "Nhà cung cấp tìm kiếm web"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Sandbox",
+      "cw": 302,
+      "headings": [
+        "Sandbox",
+        "Môi trường sandbox"
+      ],
+      "sw": 302
+    },
+    {
+      "label": "Hàng đợi runtime",
+      "cw": 302,
+      "headings": [
+        "Hàng đợi runtime",
+        "Hàng đợi runtime"
+      ],
+      "sw": 302
+    }
+  ]
+}

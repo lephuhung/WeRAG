@@ -6,6 +6,8 @@ import type { DocumentTemplateId } from './document-templates.ts';
 export const TEMPLATE_CHOICES = [
   ['cong-van', 'Công văn'], ['ke-hoach', 'Kế hoạch'], ['bao-cao', 'Báo cáo'],
   ['to-trinh', 'Tờ trình'], ['thong-bao', 'Thông báo'], ['quyet-dinh', 'Quyết định cá biệt'],
+  ['nghi-quyet', 'Nghị quyết cá biệt'], ['chi-thi', 'Chỉ thị'], ['cong-dien', 'Công điện'], ['giay-moi', 'Giấy mời'],
+  ['giay-gioi-thieu', 'Giấy giới thiệu'], ['bien-ban', 'Biên bản'], ['giay-nghi-phep', 'Giấy nghỉ phép'],
 ] as const;
 export function templatePrompt(id: DocumentTemplateId): string {
   const name = TEMPLATE_CHOICES.find(([key]) => key === id)?.[1];
@@ -20,6 +22,10 @@ export type TemplateRequest = { schema_version: 1; request_id: string; template_
 export type TemplateFields = {
   parent_agency?: string; agency: string; locality: string; date: string; number_symbol: string; subject: string;
   addressee?: string; grounds?: string[]; request_basis?: string; decision_authority?: string;
+  /** biên bản: the secretary, who signs on the left */
+  secretary_name?: string;
+  /** công điện: "<CƠ QUAN / CHỨC DANH> điện:" and the receivers under it */
+  issuer_line?: string; receiver_lines?: string[];
   paragraphs: { kind: 'body' | 'heading' | 'article'; text: string }[];
   recipients: string[]; signature_lines: string[]; signer_name: string;
 };
@@ -44,10 +50,14 @@ export function parseTemplateResponse(value: unknown): TemplateResponse | null {
   if (!['agency','locality','date','number_symbol','subject','signer_name'].every(key => text(f[key]))) return null;
   if (!strings(f.recipients,100) || !strings(f.signature_lines,5)) return null;
   if (!Array.isArray(f.paragraphs) || !f.paragraphs.length || f.paragraphs.length > 300 || !f.paragraphs.every(p => record(p) && ['body','heading','article'].includes(String(p.kind)) && text(p.text,20000))) return null;
-  for (const key of ['parent_agency','addressee','request_basis','decision_authority']) if (f[key] !== undefined && !text(f[key])) return null;
+  for (const key of ['parent_agency','addressee','request_basis','decision_authority','secretary_name','issuer_line']) if (f[key] !== undefined && !text(f[key])) return null;
   if (f.grounds !== undefined && !strings(f.grounds,50)) return null;
+  if (f.receiver_lines !== undefined && !strings(f.receiver_lines,100)) return null;
   if ((value.template_id === 'cong-van' || value.template_id === 'to-trinh') && !text(f.addressee)) return null;
   if (value.template_id === 'quyet-dinh' && (!strings(f.grounds,50) || !text(f.request_basis) || !text(f.decision_authority))) return null;
+  if (value.template_id === 'nghi-quyet' && (!strings(f.grounds,50) || !text(f.decision_authority))) return null;
+  if (value.template_id === 'bien-ban' && !text(f.secretary_name)) return null;
+  if (value.template_id === 'cong-dien' && (!text(f.issuer_line) || !strings(f.receiver_lines,100))) return null;
   // sizes are optional: an unreadable set falls back to the built-in sizes
   if (value.font_sizes !== undefined && !(record(value.font_sizes) && Object.values(value.font_sizes).every(v => Number.isInteger(v) && (v as number) >= 8 && (v as number) <= 40))) {
     const { font_sizes: _ignored, ...rest } = value;

@@ -12,6 +12,13 @@ export const DOCUMENT_TEMPLATES = [
   { id: 'to-trinh', name: 'Tờ trình' },
   { id: 'thong-bao', name: 'Thông báo' },
   { id: 'quyet-dinh', name: 'Quyết định cá biệt' },
+  { id: 'nghi-quyet', name: 'Nghị quyết cá biệt' },
+  { id: 'chi-thi', name: 'Chỉ thị' },
+  { id: 'cong-dien', name: 'Công điện' },
+  { id: 'giay-moi', name: 'Giấy mời' },
+  { id: 'giay-gioi-thieu', name: 'Giấy giới thiệu' },
+  { id: 'bien-ban', name: 'Biên bản' },
+  { id: 'giay-nghi-phep', name: 'Giấy nghỉ phép' },
 ] as const;
 export type DocumentTemplateId = typeof DOCUMENT_TEMPLATES[number]['id'];
 
@@ -52,6 +59,20 @@ function table(rows: TableRow[], right: number) {
   return new Table({ width: { size: 3500 + right, type: WidthType.DXA }, columnWidths: [3500, right], layout: TableLayoutType.FIXED, borders, rows });
 }
 
+// số ký hiệu codes (NĐ30 Phụ lục III); công văn has none
+const TYPE_CODES: Record<DocumentTemplateId, string> = {
+  'cong-van': '', 'ke-hoach': 'KH', 'bao-cao': 'BC', 'to-trinh': 'TTr', 'thong-bao': 'TB', 'quyet-dinh': 'QĐ',
+  'nghi-quyet': 'NQ', 'chi-thi': 'CT', 'cong-dien': 'CĐ', 'giay-moi': 'GM', 'giay-gioi-thieu': 'GGT', 'bien-ban': 'BB', 'giay-nghi-phep': 'GNP',
+};
+// the body lines of the forms (Phụ lục III, Mẫu 1.6–1.10) when no draft is given
+const FORM_SKELETONS: Partial<Record<DocumentTemplateId, string[]>> = {
+  'cong-dien': ['- [Cơ quan, tổ chức nhận điện];', '[Nội dung điện]./.'],
+  'giay-moi': ['[Tên cơ quan] trân trọng kính mời: [Người hoặc cơ quan được mời].', 'Tới dự [Tên cuộc họp, hội nghị].', 'Chủ trì: [Người chủ trì].', 'Thời gian: [Giờ, ngày].', 'Địa điểm: [Địa điểm].', '[Các vấn đề cần lưu ý]./.'],
+  'giay-gioi-thieu': ['[Tên cơ quan] trân trọng giới thiệu:', 'Ông (bà): [Họ và tên]', 'Chức vụ: [Chức vụ, đơn vị công tác]', 'Được cử đến: [Cơ quan, tổ chức]', 'Về việc: [Nội dung công việc]', 'Đề nghị Quý cơ quan tạo điều kiện để ông (bà) có tên ở trên hoàn thành nhiệm vụ.', 'Giấy này có giá trị đến hết ngày [ngày]./.'],
+  'bien-ban': ['Thời gian bắt đầu: [Giờ, ngày].', 'Địa điểm: [Địa điểm].', 'Thành phần tham dự: [Thành phần].', 'Chủ trì (chủ tọa): [Họ và tên, chức vụ].', 'Thư ký (người ghi biên bản): [Họ và tên, chức vụ].', 'Nội dung (theo diễn biến cuộc họp/hội nghị/hội thảo):', '[Diễn biến, ý kiến, kết luận]', 'Cuộc họp (hội nghị, hội thảo) kết thúc vào [giờ], ngày [ngày]./.'],
+  'giay-nghi-phep': ['Xét Đơn đề nghị nghỉ phép ngày [ngày] của ông (bà) [Họ và tên],', '[Tên cơ quan] cấp cho:', 'Ông (bà): [Họ và tên]', 'Chức vụ: [Chức vụ, đơn vị công tác]', 'Được nghỉ phép trong thời gian [số ngày], kể từ ngày [ngày] đến hết ngày [ngày] tại [nơi nghỉ phép].', 'Số ngày nghỉ phép nêu trên được tính vào thời gian [nghỉ phép năm …]./.'],
+};
+
 export async function buildDocumentTemplate(id: DocumentTemplateId, data?: TemplateFields, sizes?: TemplateFontSizes): Promise<Uint8Array> {
   const z: typeof DEFAULT_SIZES = { ...DEFAULT_SIZES };
   for (const key of Object.keys(z) as (keyof typeof z)[]) if (Number.isInteger(sizes?.[key])) z[key] = sizes![key]!;
@@ -61,8 +82,12 @@ export async function buildDocumentTemplate(id: DocumentTemplateId, data?: Templ
   const spec = DOCUMENT_TEMPLATES.find(t => t.id === id);
   if (!spec) throw new Error('Loại văn bản không được hỗ trợ.');
   const letter = id === 'cong-van';
-  const decision = id === 'quyet-dinh';
-  const code = ({ 'cong-van': '[CQ]-[ĐV]', 'ke-hoach': 'KH-[CQ]', 'bao-cao': 'BC-[CQ]', 'to-trinh': 'TTr-[CQ]', 'thong-bao': 'TB-[CQ]', 'quyet-dinh': 'QĐ-[CQ]' })[id];
+  // the types issued under an authority line and "Căn cứ …"
+  const decision = id === 'quyet-dinh' || id === 'nghi-quyet';
+  // Mẫu 1.8 and 1.10 print no trích yếu
+  const untitled = id === 'giay-gioi-thieu' || id === 'giay-nghi-phep';
+  const minutes = id === 'bien-ban';
+  const code = `${TYPE_CODES[id]}-[CQ]`.replace(/^-\[CQ\]$/, '[CQ]-[ĐV]');
   const heading = table([
     new TableRow({ cantSplit: true, children: [
       cell([...(data && !data.parent_agency ? [] : [p(data?.parent_agency ?? '[CƠ QUAN CHỦ QUẢN]', { center: true, size: z.co_quan_chu_quan, tight: true })]), p(data?.agency ?? '[CƠ QUAN BAN HÀNH]', { center: true, bold: true, size: z.co_quan_ban_hanh, tight: true }), rule(1167)], 3500),
@@ -75,24 +100,34 @@ export async function buildDocumentTemplate(id: DocumentTemplateId, data?: Templ
   ], right);
   const body: Paragraph[] = [];
   if (!letter) {
-    body.push(p(decision ? 'QUYẾT ĐỊNH' : spec.name.toLocaleUpperCase('vi-VN'), { center: true, bold: true, size: z.ten_loai }));
-    body.push(p(data?.subject ?? '[Trích yếu nội dung văn bản]', { center: true, bold: true, size: z.trich_yeu }));
-    body.push(rule(3500));
+    body.push(p(id === 'quyet-dinh' ? 'QUYẾT ĐỊNH' : id === 'nghi-quyet' ? 'NGHỊ QUYẾT' : spec.name.toLocaleUpperCase('vi-VN'), { center: true, bold: true, size: z.ten_loai }));
+    if (!untitled) body.push(p(data?.subject ?? (minutes ? '[Tên cuộc họp, hội nghị, hội thảo]' : '[Trích yếu nội dung văn bản]'), { center: true, bold: true, size: z.trich_yeu }));
+    if (id !== 'giay-gioi-thieu') body.push(rule(3500));
   }
+  const resolves = id === 'nghi-quyet' ? 'QUYẾT NGHỊ:' : 'QUYẾT ĐỊNH:';
   if (data) {
     if (decision) {
       body.push(p(data.decision_authority!, { center: true, bold: true, size: z.tham_quyen_ban_hanh }));
       for (const line of data.grounds ?? []) body.push(p(line, { ...b, body: true, italic: true }));
-      body.push(p(data.request_basis!, { ...b, body: true, italic: true }), p('QUYẾT ĐỊNH:', { ...b, center: true, bold: true }));
+      if (data.request_basis) body.push(p(data.request_basis, { ...b, body: true, italic: true }));
+      body.push(p(resolves, { ...b, center: true, bold: true }));
     } else if (data.addressee) body.push(p(`Kính gửi: ${data.addressee}`, { ...b, center: true }));
+    if (data.issuer_line) {
+      body.push(p(data.issuer_line, { ...b, center: true, bold: true }));
+      for (const line of data.receiver_lines ?? []) body.push(p(line, { ...b, body: true }));
+    }
     for (const block of data.paragraphs) body.push(p(block.text, { ...b, body: true, bold: block.kind !== 'body' }));
   } else if (decision) {
-    body.push(p('[CHỨC VỤ NGƯỜI CÓ THẨM QUYỀN BAN HÀNH]', { bold: true, center: true, size: z.tham_quyen_ban_hanh }));
+    body.push(p(id === 'nghi-quyet' ? '[TÊN TẬP THỂ CÓ THẨM QUYỀN BAN HÀNH]' : '[CHỨC VỤ NGƯỜI CÓ THẨM QUYỀN BAN HÀNH]', { bold: true, center: true, size: z.tham_quyen_ban_hanh }));
     body.push(p('Căn cứ [Văn bản quy định chức năng, nhiệm vụ và thẩm quyền];', { ...b, body: true, italic: true }));
     body.push(p('Căn cứ [Căn cứ pháp lý liên quan];', { ...b, body: true, italic: true }));
-    body.push(p('Theo đề nghị của [Đơn vị đề nghị].', { ...b, body: true, italic: true }));
-    body.push(p('QUYẾT ĐỊNH:', { ...b, center: true, bold: true }));
-    for (const text of ['Điều 1. [Nội dung quyết định]', 'Điều 2. [Tổ chức thực hiện]', 'Điều 3. [Hiệu lực và trách nhiệm thi hành]']) body.push(p(text, { ...b, body: true, bold: true }));
+    body.push(p(id === 'nghi-quyet' ? 'Xét [Tờ trình, đề nghị (nếu có)].' : 'Theo đề nghị của [Đơn vị đề nghị].', { ...b, body: true, italic: true }));
+    body.push(p(resolves, { ...b, center: true, bold: true }));
+    for (const text of ['Điều 1. [Nội dung]', 'Điều 2. [Tổ chức thực hiện]', 'Điều 3. [Hiệu lực và trách nhiệm thi hành]']) body.push(p(text, { ...b, body: true, bold: true }));
+  } else if (FORM_SKELETONS[id]) {
+    const lines = FORM_SKELETONS[id]!;
+    if (id === 'cong-dien') body.push(p('[TÊN CƠ QUAN HOẶC CHỨC DANH NGƯỜI ĐỨNG ĐẦU] điện:', { ...b, center: true, bold: true }));
+    for (const line of lines) body.push(p(line, { ...b, body: true, bold: line.endsWith('):') }));
   } else {
     if (letter || id === 'to-trinh') body.push(p('Kính gửi: [Cơ quan, tổ chức hoặc người nhận]', { ...b, center: true }));
     const sections = id === 'ke-hoach' ? ['I. MỤC ĐÍCH, YÊU CẦU', 'II. NỘI DUNG, NHIỆM VỤ', 'III. TỔ CHỨC THỰC HIỆN']
@@ -101,10 +136,19 @@ export async function buildDocumentTemplate(id: DocumentTemplateId, data?: Templ
     if (sections.length) for (const title of sections) body.push(p(title, { ...b, body: true, bold: true }), p('[Điền nội dung]', { ...b, body: true }));
     else body.push(p('[Điền nội dung văn bản]', { ...b, body: true }), p('[Tổ chức thực hiện hoặc đề nghị phối hợp]./.', { ...b, body: true }));
   }
-  const signature = table([new TableRow({ cantSplit: true, children: [
-    cell([p('Nơi nhận:', { bold: true, italic: true, size: 12 }), ...(data ? data.recipients.map(line => p(line, { size: 11 })) : [p('- [Cơ quan, tổ chức nhận];', { size: 11 }), p('- Lưu: VT, [Đơn vị soạn thảo].', { size: 11 })])], 3500),
-    cell([...(data ? data.signature_lines : ['[CHỨC VỤ NGƯỜI KÝ]']).map(line => p(line, { center: true, bold: true, size: z.chuc_vu_nguoi_ky })), p('(Ký, ghi rõ họ tên, đóng dấu)', { center: true, italic: true, size: z.chuc_vu_nguoi_ky }), p('', b), p('', b), p(data?.signer_name ?? '[Họ và tên]', { center: true, bold: true, size: z.ho_ten_nguoi_ky })], right),
-  ] })], right);
+  const recipients = [p('Nơi nhận:', { bold: true, italic: true, size: 12 }), ...(data ? data.recipients.map(line => p(line, { size: 11 })) : [p('- [Cơ quan, tổ chức nhận];', { size: 11 }), p(minutes ? '- Lưu: VT, Hồ sơ.' : '- Lưu: VT, [Đơn vị soạn thảo].', { size: 11 })])];
+  const signer = (lines: readonly string[], note: string, name: string, width: number) => cell([
+    ...lines.map(line => p(line, { center: true, bold: true, size: z.chuc_vu_nguoi_ky })), p(note, { center: true, italic: true, size: z.chuc_vu_nguoi_ky }),
+    p('', b), p('', b), p(name, { center: true, bold: true, size: z.ho_ten_nguoi_ky }),
+  ], width);
+  const head = signer(data ? data.signature_lines : [minutes ? 'CHỦ TỌA' : '[CHỨC VỤ NGƯỜI KÝ]'], '(Ký, ghi rõ họ tên, đóng dấu)', data?.signer_name ?? '[Họ và tên]', right);
+  // a biên bản (Mẫu 1.9): the secretary signs on the left, Nơi nhận goes below
+  const signature = minutes
+    ? table([
+      new TableRow({ cantSplit: true, children: [signer(['THƯ KÝ'], '(Ký, ghi rõ họ tên)', data?.secretary_name ?? '[Họ và tên]', 3500), head] }),
+      new TableRow({ cantSplit: true, children: [cell(recipients, 3500), cell([p('', b)], right)] }),
+    ], right)
+    : table([new TableRow({ cantSplit: true, children: [cell(recipients, 3500), head] })], right);
   const doc = new Document({
     compatibility: { version: 15, doNotExpandShiftReturn: true },
     creator: 'WeRAG', title: spec.name, description: 'Khung mẫu theo Nghị định 30/2020/NĐ-CP; điền các trường trong ngoặc vuông.',

@@ -88,7 +88,7 @@ function ArtifactThumb({ item }: { item: ArtifactLibraryItem }) {
   return (
     <div ref={holderRef} className="flex h-full w-full items-center justify-center">
       <span
-        className="h-12 w-11 opacity-70"
+        className="inline-block h-12 w-11 opacity-70"
         dangerouslySetInnerHTML={{ __html: renderFileIconSvg(item.file_name) }}
       />
     </div>
@@ -271,7 +271,7 @@ function ArtifactsInner() {
               </button>
             ))}
           </div>
-          <div className="relative ml-auto w-[280px]">
+          <div className="relative ml-auto w-full sm:w-[280px]">
             <IconSearch className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft" />
             <input
               className="input h-10 pl-10 text-[14px]"
@@ -284,7 +284,7 @@ function ArtifactsInner() {
         </div>
 
         {loading && items.length === 0 ? (
-          <p className="caption text-muted">Loading…</p>
+          <p className="caption text-muted">{t("common.loading")}</p>
         ) : loadError && items.length === 0 ? (
           <div className="card flex flex-col items-center px-4 py-16 text-center">
             <h2 className="title-md">{t("artifactLibrary.loadFailed")}</h2>
@@ -314,14 +314,14 @@ function ArtifactsInner() {
             {sections.map((section) => (
               <section key={section.group} className="mb-6">
                 <h3 className="caption-uppercase mb-2 text-muted">{t(`artifactLibrary.group.${section.group}`)}</h3>
-                <div className="grid grid-cols-2 gap-5 md:grid-cols-3 xl:grid-cols-4">
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {section.items.map((a) => {
                     const image = isImageArtifact(a);
                     return (
                       <div key={itemKey(a)} className="card card-hover group relative min-w-0 overflow-hidden">
                         <div
                           onClick={() => setPreviewItem(a)}
-                          className="relative cursor-pointer aspect-square"
+                          className="relative cursor-pointer aspect-[16/9] sm:aspect-square"
                           title={a.file_name}
                         >
                           {image ? (
@@ -332,7 +332,7 @@ function ArtifactsInner() {
                             </div>
                           )}
                           {a.version_count > 1 && (
-                            <span className="caption absolute left-3 top-3 rounded-full bg-ink/60 px-2 py-0.5 text-[11px] font-semibold text-white">
+                            <span className="caption absolute left-3 top-3 rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-on-primary">
                               ×{a.version_count}
                             </span>
                           )}
@@ -354,14 +354,14 @@ function ArtifactsInner() {
                           </Link>
                           <div className="mt-3 flex items-center gap-2 overflow-hidden">
                             <button
-                              className="btn btn-outline btn-sm min-w-0 flex-1 truncate px-2.5"
+                              className="btn btn-outline btn-sm min-w-0 flex-1 px-2.5"
                               title={t("artifactLibrary.preview")}
                               onClick={(e) => { e.stopPropagation(); setPreviewItem(a); }}
                             >
                               <IconExternal className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{t("artifactLibrary.preview")}</span>
                             </button>
                             <button
-                              className="btn btn-outline btn-sm min-w-0 flex-1 truncate px-2.5"
+                              className="btn btn-outline btn-sm min-w-0 flex-1 px-2.5"
                               title={t("artifactLibrary.download")}
                               disabled={!!downloading[itemKey(a)]}
                               onClick={(e) => { e.stopPropagation(); void handleDownload(a); }}
@@ -378,7 +378,7 @@ function ArtifactsInner() {
             ))}
             <div ref={sentinelRef} className="flex items-center justify-center py-4">
               {loading ? (
-                <span className="caption text-muted">Loading…</span>
+                <span className="caption text-muted">{t("common.loading")}</span>
               ) : (
                 hasMore && (
                   <button className="btn btn-outline btn-sm" onClick={() => fetchPage(page + 1, keyword, category)}>

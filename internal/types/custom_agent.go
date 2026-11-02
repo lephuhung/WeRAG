@@ -30,7 +30,16 @@ const (
 	BuiltinWikiFixerID = "builtin-wiki-fixer"
 	// BuiltinSkillInstallerID is the ID for the built-in skill installer agent
 	BuiltinSkillInstallerID = "builtin-skill-installer"
+	// BuiltinPublicLookupID is the public-lookup agent of guest chat: the
+	// only agent a Guest runs, in the public portal, and it reads platform
+	// public knowledge bases only (KBSelectionModePublic).
+	BuiltinPublicLookupID = "builtin-public-lookup"
 )
+
+// KBSelectionModePublic limits an agent to the platform public knowledge
+// bases (owner_tenant_id 0, visibility public): never the caller's own,
+// published, invited or granted ones, and never an @-mentioned one.
+const KBSelectionModePublic = "public"
 
 // AgentMode constants for agent running mode
 const (
@@ -82,6 +91,24 @@ type CustomAgent struct {
 
 	// Agent configuration
 	Config CustomAgentConfig `yaml:"config" json:"config" gorm:"type:json"`
+
+	// AppliesToTenantIDs is "Tổ chức áp dụng": the workspaces allowed to use
+	// this agent when they inherit it from a configuration profile. Empty =
+	// every workspace on the profile. Built-in agents are never scoped.
+	AppliesToTenantIDs AgentTenantScope `yaml:"applies_to_tenant_ids" json:"applies_to_tenant_ids" gorm:"column:applies_to_tenant_ids;type:json"`
+
+	// Distribution is "Cách phân phối": basic (every Tổ chức), addon (sold
+	// with a service plan; only buyers see it) or internal (the "Tổ chức áp
+	// dụng" list). See custom_agent_distribution.go. Built-ins are basic.
+	Distribution string `yaml:"distribution" json:"distribution" gorm:"type:varchar(16);not null;default:basic"`
+
+	// Switch is the SuperAdmin's runtime on/off switch (column enabled):
+	// nil = the default (builtin_agents.yaml `enabled` for a built-in, on
+	// for a custom agent). See EffectiveEnabled.
+	Switch *bool `yaml:"-" json:"-" gorm:"column:enabled"`
+	// Enabled is EffectiveEnabled for API readers (filled by
+	// EnsureDefaults); not stored.
+	Enabled bool `yaml:"-" json:"enabled" gorm:"-"`
 
 	// Timestamps
 	CreatedAt time.Time      `yaml:"created_at" json:"created_at"`
@@ -179,6 +206,16 @@ type CustomAgentConfig struct {
 	SkillsSelectionMode string `yaml:"skills_selection_mode" json:"skills_selection_mode"`
 	// Selected skill names (only used when SkillsSelectionMode is "selected")
 	SelectedSkills []string `yaml:"selected_skills" json:"selected_skills"`
+	// DomainPacks names the embedded domain packs (domain-packs/<name>) this
+	// agent reads: read-only skills with reference files and a code-appended
+	// answer footer. Independent of SkillsSelectionMode and of the sandbox
+	// (docs/domain-pack-standard.md §6).
+	DomainPacks []string `yaml:"domain_packs,omitempty" json:"domain_packs,omitempty"`
+	// VerifyDocumentNumbers removes every số hiệu of the answer that is in
+	// neither the legal catalogue nor this turn's evidence, before the user
+	// sees it (agent/answer_numbers.go). nil: on for an agent with domain
+	// packs, off for others; set it to turn the check on or off explicitly.
+	VerifyDocumentNumbers *bool `yaml:"verify_document_numbers,omitempty" json:"verify_document_numbers,omitempty"`
 
 	// ===== Sandbox Settings =====
 	// SandboxConfigID selects which organization sandbox config this agent's
@@ -190,7 +227,8 @@ type CustomAgentConfig struct {
 	SandboxConfigID string `yaml:"sandbox_config_id" json:"sandbox_config_id,omitempty"`
 
 	// ===== Knowledge Base Settings =====
-	// Knowledge base selection mode: "all" = all KBs, "selected" = specific KBs, "none" = no KB
+	// Knowledge base selection mode: "all" = all KBs, "selected" = specific KBs, "none" = no KB,
+	// "public" = platform public KBs only (KBSelectionModePublic)
 	KBSelectionMode string `yaml:"kb_selection_mode" json:"kb_selection_mode"`
 	// Associated knowledge base IDs (only used when KBSelectionMode is "selected")
 	KnowledgeBases []string `yaml:"knowledge_bases" json:"knowledge_bases"`
@@ -584,6 +622,12 @@ func (a *CustomAgent) EnsureDefaults() {
 	if a == nil {
 		return
 	}
+	a.Enabled = a.EffectiveEnabled()
+	// Built-ins are always basic; a custom agent's empty value stays empty
+	// here so CreateAgent can tell "not sent" from a choice.
+	if a.IsBuiltin || IsBuiltinAgentID(a.ID) {
+		a.Distribution = AgentDistributionBasic
+	}
 	if a.Config.QuestionSuggestions == nil {
 		a.Config.QuestionSuggestions = &QuestionSuggestionConfig{
 			Starters: StarterSuggestionConfig{
@@ -706,8 +750,9 @@ var builtinAgentIDsOrdered = []string{
 
 // GetBuiltinAgentIDs returns the user-facing built-in agent IDs in fixed
 // order, leaving out those switched off in builtin_agents.yaml
-// (`enabled: false`). Every list a user or an endpoint picks an agent from
-// goes through here, so a switched-off agent is offered nowhere.
+// (`enabled: false`). YAML only: the SuperAdmin's runtime switch lives on
+// the agent row (CustomAgent.EffectiveEnabled), which ListAgents and the MCP
+// endpoint selection read instead.
 func GetBuiltinAgentIDs() []string {
 	out := make([]string, 0, len(builtinAgentIDsOrdered))
 	for _, id := range builtinAgentIDsOrdered {
@@ -744,4 +789,13 @@ func GetBuiltinAgent(id string, tenantID uint64) *CustomAgent {
 // answer without tools, reasoning reading but never changing it).
 func IsWordGeneralAgent(agentID string) bool {
 	return agentID == BuiltinQuickAnswerID || agentID == BuiltinSmartReasoningID
+}
+
+// DocumentNumberCheck reports whether the answer number check runs for this
+// agent: VerifyDocumentNumbers when set, else whether it has domain packs.
+func (c CustomAgentConfig) DocumentNumberCheck(hasPacks bool) bool {
+	if c.VerifyDocumentNumbers != nil {
+		return *c.VerifyDocumentNumbers
+	}
+	return hasPacks
 }

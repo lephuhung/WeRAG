@@ -99,6 +99,9 @@ type Block struct {
 	// Amend is, on quote blocks, what the quoted span amends; nil when the
 	// lead-in does not read as an amendment. Blocks of one span share it.
 	Amend *Amend `json:"amend,omitempty"`
+	// Phrases are the phrase amendments a clause, item or content
+	// paragraph states ("Sửa đổi cụm từ “X” thành “Y” tại Điều 3").
+	Phrases []Amend `json:"phrases,omitempty"`
 }
 
 // Document is the conversion result.
@@ -111,6 +114,9 @@ type Document struct {
 	Structured bool     `json:"structured"`
 	Warnings   []string `json:"warnings,omitempty"`
 	Stats      Stats    `json:"stats"`
+	// Links are the page's links to cited vbpl.vn documents, in page
+	// order; CitationLinks places them in chunks.
+	Links []Link `json:"links,omitempty"`
 }
 
 // Stats is diagnostic counters for pilots and logs.
@@ -553,7 +559,9 @@ func Convert(r io.Reader) (*Document, error) {
 	b := newBuilder()
 	b.doc.Stats.Images = col.images
 	b.run(col.units)
-	return b.finish(), nil
+	d := b.finish()
+	d.Links = collectLinks(root)
+	return d, nil
 }
 
 // ConvertBytes is Convert for an in-memory document.
@@ -612,6 +620,10 @@ func (b *builder) emit(blk Block, md string) int {
 		b.runes += 2
 	}
 	blk.Start = b.runes
+	switch blk.Kind {
+	case KindClause, KindItem, KindContent:
+		blk.Phrases = b.phraseAmends(blk.Text)
+	}
 	b.md.WriteString(md)
 	b.runes += utf8.RuneCountInString(md)
 	blk.End = b.runes

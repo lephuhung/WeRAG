@@ -104,6 +104,8 @@ type userService struct {
 	memberService    interfaces.TenantMemberService
 	config           *config.Config
 	systemSettingSvc interfaces.SystemSettingService
+	// usagePlans grants new accounts the sign-up package (optional).
+	usagePlans interfaces.UsagePlanService
 }
 
 // NewUserService creates a new user service instance
@@ -114,8 +116,10 @@ func NewUserService(
 	tenantService interfaces.TenantService,
 	memberService interfaces.TenantMemberService,
 	systemSettingSvc interfaces.SystemSettingService,
+	usagePlans interfaces.UsagePlanService,
 ) interfaces.UserService {
 	return &userService{
+		usagePlans:       usagePlans,
 		userRepo:         userRepo,
 		tokenRepo:        tokenRepo,
 		tenantService:    tenantService,
@@ -177,6 +181,15 @@ func (s *userService) Register(ctx context.Context, req *types.RegisterRequest) 
 	if err != nil {
 		logger.Errorf(ctx, "Failed to create user: %v", err)
 		return nil, errors.New("failed to create user")
+	}
+
+	// Every new account (sign-up, invitation, OIDC, admin-created) gets the
+	// sign-up package SuperAdmin chose, if any. A failure is logged, never
+	// fails the registration: SuperAdmin can still assign a package by hand.
+	if s.usagePlans != nil {
+		if _, err := s.usagePlans.GrantSignupPlan(ctx, user.ID); err != nil {
+			logger.Warnf(ctx, "Failed to grant the sign-up package to user %s: %v", user.ID, err)
+		}
 	}
 
 	logger.Info(ctx, "User registered successfully")
@@ -348,20 +361,21 @@ func (s *userService) buildMembershipsForUser(
 		if m == nil || m.Status != types.TenantMemberStatusActive {
 			continue
 		}
-		name := ""
+		var tenant *types.Tenant
 		if activeTenant != nil && m.TenantID == activeTenant.ID {
-			name = activeTenant.Name
-		} else if t, ok := tenantByID[m.TenantID]; ok && t != nil {
-			name = t.Name
+			tenant = activeTenant
+		} else if t, ok := tenantByID[m.TenantID]; ok {
+			tenant = t
 		}
 		// Drop memberships whose tenant row is gone (deleted tenant or
-		// stale tenant_members left over from before cascade delete).
-		if strings.TrimSpace(name) == "" {
+		// stale tenant_members left over from before cascade delete); the
+		// guest-chat check in auth applies the same rule.
+		if !types.CountsAsMembership(m, tenant) {
 			continue
 		}
 		out = append(out, types.Membership{
 			TenantID:   m.TenantID,
-			TenantName: name,
+			TenantName: tenant.Name,
 			Role:       m.Role,
 		})
 	}
@@ -1177,8 +1191,9 @@ func (s *userService) SwitchTenant(
 	if err != nil {
 		return nil, fmt.Errorf("load target organization: %w", err)
 	}
-	// A configuration profile is not a workspace anyone works in.
-	if tenant.IsConfigProfile() {
+	// A configuration profile or the public portal is not an organization
+	// anyone works in.
+	if tenant.IsHiddenTenant() {
 		return nil, ErrMembershipNotFound
 	}
 

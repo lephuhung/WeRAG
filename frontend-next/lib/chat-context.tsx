@@ -5,6 +5,12 @@ import { apiGet } from "@/lib/api-client";
 import { listKnowledgeBases } from "@/lib/api/knowledge";
 import type { SessionLastRequestState } from "@/lib/api/chat";
 import { defaultWebSearchFor } from "@/lib/api/agent-doc-defaults";
+import { useMobileChat } from "@/components/use-mobile-chat";
+import { resolveChatMode } from "@/lib/mobile-chat-policy";
+import { filterRemoved, scopeOf, withAdded, withRemoved, type Scope } from "@/lib/chat-scope";
+import { availableAgentId } from "@/lib/agent-tenant-scope";
+import { useTenantRole } from "@/lib/auth";
+import { BUILTIN_PUBLIC_LOOKUP_ID, guestChatSettings } from "@/lib/guest-chat";
 
 /* Ports the chat-input slice of frontend/src/stores/settings.ts +
  * chatResources.ts + organization.ts into one React context:
@@ -17,6 +23,7 @@ export const BUILTIN_QUICK_ANSWER_ID = "builtin-quick-answer";
 export const BUILTIN_SMART_REASONING_ID = "builtin-smart-reasoning";
 /** Document assistant: chat + embedded ONLYOFFICE editor (two-pane workspace). */
 export const BUILTIN_DOCUMENT_ASSISTANT_ID = "builtin-document-assistant";
+export { BUILTIN_PUBLIC_LOOKUP_ID };
 
 // "document": an editable document of the session (document assistant);
 // managed per turn by the chat, not stored in the settings below.
@@ -87,6 +94,10 @@ export type ChatSettings = {
   selectedTags: SelectedTag[];
   selectedMCPServices: string[];
   selectedSkills: string[];
+  /** Scope items the user deleted. A tombstone: the session scope of an
+   * older conversation is filtered through it, so a deleted knowledge base
+   * is never restored behind the user's back. See lib/chat-scope.ts. */
+  removedScopeItems: string[];
   isAgentEnabled: boolean;
   selectedAgentId: string;
   webSearchEnabled: boolean;
@@ -104,6 +115,7 @@ const DEFAULTS: ChatSettings = {
   selectedTags: [],
   selectedMCPServices: [],
   selectedSkills: [],
+  removedScopeItems: [],
   // Smart reasoning is the one Q&A agent since 2026-10-18 (quick answer is
   // switched off in builtin_agents.yaml and no longer listed).
   isAgentEnabled: true,
@@ -127,6 +139,7 @@ function loadSettings(): ChatSettings {
       selectedTags: parsed.selectedTags ?? [],
       selectedMCPServices: parsed.selectedMCPServices ?? [],
       selectedSkills: parsed.selectedSkills ?? [],
+      removedScopeItems: parsed.removedScopeItems ?? [],
       selectedAgentId: parsed.selectedAgentId || BUILTIN_SMART_REASONING_ID,
     };
     // Field removed with the shared-agent feature; scrub stale persisted copies.
@@ -137,9 +150,12 @@ function loadSettings(): ChatSettings {
   }
 }
 
-function persist(s: ChatSettings) {
+function persist(s: ChatSettings, sticky: Scope) {
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s));
+    /* The persisted scope is the STICKY one, never the session scope: an
+     * older conversation's sources must not overwrite what the user picked
+     * for the next chat. */
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...s, ...sticky }));
   } catch {
     /* ignore */
   }
@@ -147,6 +163,16 @@ function persist(s: ChatSettings) {
 
 type Ctx = {
   settings: ChatSettings;
+  /** Signed in without an organization: chats with the public-lookup
+   * assistant only (lib/guest-chat.ts); every picker is hidden. */
+  isGuest: boolean;
+  isMobile: boolean;
+  documentReadOnly: boolean;
+  /** On a phone the requested agent is swapped for the reasoning assistant
+   * (see lib/mobile-chat-policy.ts). This flag tells the UI that the
+   * effective agent differs from the one the user picked, so it can say so
+   * instead of silently changing the conversation. */
+  mobileAgentFallback: boolean;
   // True once settings have been hydrated from localStorage. Anything that
   // fires on mount (the ?q= auto-send) must wait for it — child effects run
   // before this provider's hydration effect, so they otherwise send the
@@ -185,9 +211,30 @@ type Ctx = {
 
 const ChatContext = createContext<Ctx | null>(null);
 
-export function ChatProvider({ children }: { children: React.ReactNode }) {
-  const [settings, setSettings] = useState<ChatSettings>(DEFAULTS);
+export function ChatProvider({ children, newChat = false, sessionId = "" }: { children: React.ReactNode; newChat?: boolean; sessionId?: string }) {
+  const [storedSettings, setSettings] = useState<ChatSettings>(DEFAULTS);
+  /* The scope a new chat starts with. It survives a reload and is only
+   * changed by an explicit pick or removal in the composer — never by
+   * opening an older conversation. */
+  const [stickyScope, setStickyScope] = useState<Scope>(() => scopeOf(DEFAULTS));
+  const isMobile = useMobileChat();
+  // Known before the first render: the platform shell renders only once
+  // /auth/me answered (RequireAuth), so no tenant call starts for a guest.
+  const { isGuest, membershipState } = useTenantRole();
   const [agents, setAgents] = useState<AgentSummary[]>([]);
+  const [sessionMode, setSessionMode] = useState<{ sessionId: string; agentId: string } | null>(null);
+  const sessionAgentId = sessionMode?.sessionId === sessionId ? sessionMode.agentId : null;
+  const mode = resolveChatMode(storedSettings.selectedAgentId, isMobile, newChat, sessionAgentId);
+  const documentReadOnly = !isGuest && mode.readOnly;
+  const mobileAgentFallback =
+    !isGuest && isMobile && mode.agentId !== storedSettings.selectedAgentId;
+  const settings = useMemo<ChatSettings>(() => {
+    // A guest's turn carries the public-lookup agent and nothing else,
+    // whatever a member left in this browser's stored settings.
+    if (isGuest) return guestChatSettings(storedSettings);
+    if (mode.agentId === storedSettings.selectedAgentId) return storedSettings;
+    return { ...storedSettings, selectedAgentId: mode.agentId, isAgentEnabled: true };
+  }, [storedSettings, mode.agentId, isGuest]);
   const [knowledgeBases, setKnowledgeBases] = useState<KbSummary[]>([]);
   const [models, setModels] = useState<ModelSummary[]>([]);
   const [mcpServices, setMcpServices] = useState<Ctx["mcpServices"]>([]);
@@ -195,22 +242,67 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [webSearchReady, setWebSearchReady] = useState(false);
   const [fileNames, setFileNames] = useState<Record<string, string>>({});
   const [hydrated, setHydrated] = useState(false);
-  const loaded = useRef(false);
+  // the account kind the resources were loaded for (see the effect below)
+  const loadedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    setSettings(loadSettings());
+    const loaded = loadSettings();
+    setSettings(loaded);
+    setStickyScope(scopeOf(loaded));
     setHydrated(true);
   }, []);
 
   const update = useCallback((patch: Partial<ChatSettings>) => {
     setSettings((prev) => {
       const next = { ...prev, ...patch };
-      persist(next);
+      persist(next, stickyScope);
       return next;
     });
-  }, []);
+  }, [stickyScope]);
+
+  /* A scope edit (pick / remove) applies to the chat on screen AND to the
+   * sticky scope, so the next chat starts from the same selection — and a
+   * removal is recorded, so no older conversation can restore it. */
+  const editScope = useCallback(
+    (
+      kind: "kb" | "file" | "tag" | "mcp" | "skill",
+      id: string,
+      action: "add" | "remove",
+      extra?: { kbId?: string; kbName?: string; name?: string },
+    ) => {
+      const nextSticky =
+        action === "add"
+          ? withAdded(stickyScope, storedSettings.removedScopeItems, kind, id, extra)
+          : withRemoved(stickyScope, storedSettings.removedScopeItems, kind, id, extra?.kbId);
+      setStickyScope(nextSticky.scope);
+      setSettings((prev) => {
+        const next =
+          action === "add"
+            ? withAdded(scopeOf(prev), prev.removedScopeItems, kind, id, extra)
+            : withRemoved(scopeOf(prev), prev.removedScopeItems, kind, id, extra?.kbId);
+        const merged = { ...prev, ...next.scope, removedScopeItems: next.removedScopeItems };
+        persist(merged, nextSticky.scope);
+        return merged;
+      });
+    },
+    [stickyScope, storedSettings.removedScopeItems],
+  );
 
   const refresh = useCallback(async () => {
+    if (isGuest) {
+      // Only GET /agents is open to a guest (it lists the public-lookup
+      // assistant alone); KBs, models, MCP, skills and web-search providers
+      // answer TENANT_REQUIRED, and a guest gets no picker for them anyway.
+      const agentsRes = await apiGet<{ success: boolean; data?: AgentSummary[] }>(`/api/v1/agents`).catch(() => null);
+      if (agentsRes?.data) setAgents(agentsRes.data);
+      // a member who just became a guest: drop the organization's lists
+      setKnowledgeBases([]);
+      setModels([]);
+      setMcpServices([]);
+      setSkills([]);
+      setWebSearchReady(false);
+      return;
+    }
     try {
       /* Chat KB selection uses the same invitation-aware source as the KB
        * list and agent selectors: listKnowledgeBases() already includes
@@ -230,15 +322,15 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         ]);
       if (agentsRes?.data) {
         setAgents(agentsRes.data);
-        // A persisted choice the server no longer lists (a built-in switched
-        // off, such as quick answer) falls back to the Q&A agent, so a new
-        // chat never silently runs on a hidden agent.
+        // A persisted choice the server no longer lists — a built-in switched
+        // off (quick answer), a deleted custom agent, or one whose "Tổ chức
+        // áp dụng" no longer includes this Tổ chức — falls back to the Q&A
+        // agent: the server refuses a turn naming it.
         setSettings((prev) => {
-          const listed = agentsRes.data!.some((a) => a.id === prev.selectedAgentId);
-          if (listed || !prev.selectedAgentId.startsWith("builtin-")) return prev;
-          const fallback = agentsRes.data!.find((a) => a.id === BUILTIN_SMART_REASONING_ID) ?? agentsRes.data![0];
-          if (!fallback) return prev;
-          const next = { ...prev, selectedAgentId: fallback.id, isAgentEnabled: true };
+          const listedIds = agentsRes.data!.map((a) => a.id);
+          const id = availableAgentId(listedIds, prev.selectedAgentId, BUILTIN_SMART_REASONING_ID);
+          if (!id || id === prev.selectedAgentId) return prev;
+          const next = { ...prev, selectedAgentId: id, isAgentEnabled: true };
           try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
           return next;
         });
@@ -267,13 +359,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           }
           if (pick && mList.some((m) => m.id === pick)) {
             const next = { ...prev, selectedChatModelId: pick };
-            persist(next);
+            persist(next, stickyScope);
             return next;
           }
           const defaultModel = mList.find((m) => m.type === "KnowledgeQA" || m.type === "knowledgeqa") || mList[0];
           if (defaultModel?.id) {
             const next = { ...prev, selectedChatModelId: defaultModel.id };
-            persist(next);
+            persist(next, stickyScope);
             return next;
           }
           return prev;
@@ -285,13 +377,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* toolbar degrades to unscoped mode */
     }
-  }, []);
+  }, [isGuest, stickyScope]);
 
+  // Loaded once per account kind: a guest who joins or creates an
+  // organization (or a member who loses the last membership) gets the
+  // resources of the new kind without reopening the chat.
   useEffect(() => {
-    if (loaded.current) return;
-    loaded.current = true;
+    const kind = isGuest ? "guest" : membershipState;
+    if (loadedFor.current === kind) return;
+    loadedFor.current = kind;
     void refresh();
-  }, [refresh]);
+  }, [refresh, isGuest, membershipState]);
 
   // Resolve display names for @-picked files (settings store only keeps ids).
   useEffect(() => {
@@ -315,69 +411,62 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const addKnowledgeBase = useCallback(
     (id: string) => {
       if (settings.selectedKnowledgeBases.includes(id)) return;
-      update({ selectedKnowledgeBases: [...settings.selectedKnowledgeBases, id] });
+      editScope("kb", id, "add");
     },
-    [settings.selectedKnowledgeBases, update],
+    [settings.selectedKnowledgeBases, editScope],
   );
   const removeKnowledgeBase = useCallback(
-    (id: string) => update({ selectedKnowledgeBases: settings.selectedKnowledgeBases.filter((x) => x !== id) }),
-    [settings.selectedKnowledgeBases, update],
+    (id: string) => editScope("kb", id, "remove"),
+    [editScope],
   );
   const addFile = useCallback(
     (id: string, kbId?: string, name?: string) => {
       if (settings.selectedFiles.includes(id)) return;
       if (name) setFileNames((prev) => ({ ...prev, [id]: name }));
-      update({
-        selectedFiles: [...settings.selectedFiles, id],
-        selectedFileKbMap: kbId ? { ...settings.selectedFileKbMap, [id]: kbId } : settings.selectedFileKbMap,
-      });
+      editScope("file", id, "add", { kbId });
     },
-    [settings.selectedFiles, settings.selectedFileKbMap, update],
+    [settings.selectedFiles, editScope],
   );
   const removeFile = useCallback(
-    (id: string) => {
-      const map = { ...settings.selectedFileKbMap };
-      delete map[id];
-      update({ selectedFiles: settings.selectedFiles.filter((x) => x !== id), selectedFileKbMap: map });
-    },
-    [settings.selectedFiles, settings.selectedFileKbMap, update],
+    (id: string) => editScope("file", id, "remove"),
+    [editScope],
   );
   const addTag = useCallback(
     (t: SelectedTag) => {
       if (settings.selectedTags.some((x) => x.id === t.id && x.kbId === t.kbId)) return;
-      update({ selectedTags: [...settings.selectedTags, t] });
+      editScope("tag", t.id, "add", { kbId: t.kbId, kbName: t.kbName, name: t.name });
     },
-    [settings.selectedTags, update],
+    [settings.selectedTags, editScope],
   );
   const removeTag = useCallback(
-    (id: string, kbId?: string) =>
-      update({ selectedTags: settings.selectedTags.filter((x) => !(x.id === id && (!kbId || x.kbId === kbId))) }),
-    [settings.selectedTags, update],
+    (id: string, kbId?: string) => editScope("tag", id, "remove", { kbId }),
+    [editScope],
   );
   const addMCPService = useCallback(
     (id: string) => {
       if (settings.selectedMCPServices.includes(id)) return;
-      update({ selectedMCPServices: [...settings.selectedMCPServices, id] });
+      editScope("mcp", id, "add");
     },
-    [settings.selectedMCPServices, update],
+    [settings.selectedMCPServices, editScope],
   );
   const removeMCPService = useCallback(
-    (id: string) => update({ selectedMCPServices: settings.selectedMCPServices.filter((x) => x !== id) }),
-    [settings.selectedMCPServices, update],
+    (id: string) => editScope("mcp", id, "remove"),
+    [editScope],
   );
   const addSkill = useCallback(
     (name: string) => {
       if (settings.selectedSkills.includes(name)) return;
-      update({ selectedSkills: [...settings.selectedSkills, name] });
+      editScope("skill", name, "add");
     },
-    [settings.selectedSkills, update],
+    [settings.selectedSkills, editScope],
   );
   const removeSkill = useCallback(
-    (name: string) => update({ selectedSkills: settings.selectedSkills.filter((x) => x !== name) }),
-    [settings.selectedSkills, update],
+    (name: string) => editScope("skill", name, "remove"),
+    [editScope],
   );
   const selectAgent = useCallback(
     (id: string) => {
+      if (isGuest || (isMobile && id !== BUILTIN_SMART_REASONING_ID)) return;
       // Mirrors settings.selectAgent: switching agent resets the per-turn
       // websearch flag — to the agent's default (web_search_default_on &&
       // web_search_enabled) instead of always off.
@@ -391,7 +480,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         ...(agentModelId ? { selectedChatModelId: agentModelId } : {}),
       });
     },
-    [agents, update],
+    [agents, update, isMobile, isGuest],
   );
   const toggleWebSearch = useCallback((on: boolean) => update({ webSearchEnabled: on }), [update]);
   const toggleLocalBrowser = useCallback((on: boolean) => update({ localBrowserEnabled: on }), [update]);
@@ -410,16 +499,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const hydrateSessionState = useCallback(
     (state?: SessionLastRequestState | null) => {
-      if (!state) return;
-      const hydrateAgent = agents.find((a) => a.id === (state.agent_id || settings.selectedAgentId));
+      // a guest's session always runs the public-lookup agent unscoped:
+      // nothing to restore, and a member's stored choices stay as they were
+      if (!state || isGuest) return;
+      // A session's last agent may no longer be listed (deleted, or outside
+      // this Tổ chức's "Tổ chức áp dụng"): continue with the Q&A agent.
+      // Before the list loads the id is kept; the load corrects it.
+      const lastAgentId = state.agent_id
+        ? (availableAgentId(agents.map((a) => a.id), state.agent_id, BUILTIN_SMART_REASONING_ID) ?? state.agent_id)
+        : "";
+      const replaced = !!state.agent_id && lastAgentId !== state.agent_id;
+      if (lastAgentId) setSessionMode({ sessionId, agentId: lastAgentId });
+      const hydrateAgent = agents.find((a) => a.id === (lastAgentId || settings.selectedAgentId));
+      /* Preferences are the user's own and stay persisted. */
       update({
-        ...(typeof state.agent_enabled === "boolean" ? { isAgentEnabled: state.agent_enabled } : {}),
-        ...(state.agent_id ? { selectedAgentId: state.agent_id } : {}),
+        ...(replaced
+          ? { isAgentEnabled: true }
+          : typeof state.agent_enabled === "boolean"
+            ? { isAgentEnabled: state.agent_enabled }
+            : {}),
+        ...(lastAgentId ? { selectedAgentId: lastAgentId } : {}),
         ...(state.model_id ? { selectedChatModelId: state.model_id } : {}),
-        ...(Array.isArray(state.knowledge_base_ids) ? { selectedKnowledgeBases: [...state.knowledge_base_ids] } : {}),
-        ...(Array.isArray(state.knowledge_ids) ? { selectedFiles: [...state.knowledge_ids] } : {}),
-        ...(Array.isArray(state.mcp_service_ids) ? { selectedMCPServices: [...state.mcp_service_ids] } : {}),
-        ...(Array.isArray(state.skill_names) ? { selectedSkills: [...state.skill_names] } : {}),
         // Stored per-session value wins; without one, the session's agent
         // default (left untouched while the agent list is not loaded yet).
         ...(typeof state.web_search_enabled === "boolean"
@@ -429,8 +529,24 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
             : {}),
         ...(typeof state.local_browser_enabled === "boolean" ? { localBrowserEnabled: state.local_browser_enabled } : {}),
       });
+      /* The session's scope belongs to THIS conversation only: it is shown
+       * here but never written to the sticky scope, so opening an old chat
+       * does not change what the next chat quotes. Items the user deleted
+       * are filtered out — a removal must stick. */
+      const sessionScope: Scope = {
+        selectedKnowledgeBases: Array.isArray(state.knowledge_base_ids) ? [...state.knowledge_base_ids] : [],
+        selectedFiles: Array.isArray(state.knowledge_ids) ? [...state.knowledge_ids] : [],
+        selectedFileKbMap: {},
+        selectedTags: [],
+        selectedMCPServices: Array.isArray(state.mcp_service_ids) ? [...state.mcp_service_ids] : [],
+        selectedSkills: Array.isArray(state.skill_names) ? [...state.skill_names] : [],
+      };
+      if (Array.isArray(state.knowledge_base_ids) || Array.isArray(state.knowledge_ids) ||
+          Array.isArray(state.mcp_service_ids) || Array.isArray(state.skill_names)) {
+        setSettings((prev) => ({ ...prev, ...filterRemoved(sessionScope, prev.removedScopeItems) }));
+      }
     },
-    [agents, settings.selectedAgentId, update],
+    [agents, settings.selectedAgentId, update, sessionId, isGuest],
   );
 
   const selectedAgent = useMemo<AgentSummary | null>(
@@ -498,6 +614,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<Ctx>(
     () => ({
       settings,
+      isGuest,
+      isMobile,
+      documentReadOnly,
+      mobileAgentFallback,
       hydrated,
       update,
       addKnowledgeBase,
@@ -530,6 +650,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       settings,
+      isGuest,
+      isMobile,
+      documentReadOnly,
+      mobileAgentFallback,
       hydrated,
       update,
       addKnowledgeBase,

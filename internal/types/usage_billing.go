@@ -119,15 +119,18 @@ func (p *UsagePromoCode) Discount(subtotal int64) int64 {
 // UsageOrder is one row of usage_orders: a quote frozen when the buyer
 // committed, then paid/cancelled/expired.
 type UsageOrder struct {
-	ID             string     `json:"id"              gorm:"primaryKey;type:varchar(36)"`
-	OrderCode      string     `json:"order_code"      gorm:"type:varchar(24);uniqueIndex"`
-	ScopeType      string     `json:"scope_type"      gorm:"type:varchar(16)"`
-	ScopeID        string     `json:"scope_id"        gorm:"type:varchar(64)"`
-	PlanID         string     `json:"plan_id"         gorm:"type:varchar(36)"`
-	PlanName       string     `json:"plan_name"       gorm:"type:varchar(128)"`
-	Mode           string     `json:"mode"            gorm:"type:varchar(16);default:'pool'"`
-	Seats          int        `json:"seats"`
-	Months         int        `json:"months"`
+	ID        string `json:"id"              gorm:"primaryKey;type:varchar(36)"`
+	OrderCode string `json:"order_code"      gorm:"type:varchar(24);uniqueIndex"`
+	ScopeType string `json:"scope_type"      gorm:"type:varchar(16)"`
+	ScopeID   string `json:"scope_id"        gorm:"type:varchar(64)"`
+	PlanID    string `json:"plan_id"         gorm:"type:varchar(36)"`
+	PlanName  string `json:"plan_name"       gorm:"type:varchar(128)"`
+	Mode      string `json:"mode"            gorm:"type:varchar(16);default:'pool'"`
+	Seats     int    `json:"seats"`
+	Months    int    `json:"months"`
+	// BillingTerm is month|quarter|year: the term price the plan line was
+	// charged at (UsagePlan.PriceForMonths); empty on add-on orders.
+	BillingTerm    string     `json:"billing_term"    gorm:"type:varchar(16)"`
 	UnitPriceVND   int64      `json:"unit_price_vnd"`
 	SubtotalVND    int64      `json:"subtotal_vnd"`
 	PromoCodeID    *string    `json:"promo_code_id"   gorm:"type:varchar(36)"`
@@ -142,8 +145,14 @@ type UsageOrder struct {
 	ExpiresAt      *time.Time `json:"expires_at"`
 	SubscriptionID *string    `json:"subscription_id" gorm:"type:varchar(36)"`
 	Note           string     `json:"note"            gorm:"type:text"`
-	CreatedAt      time.Time  `json:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at"`
+	// Kind is "plan" (a plan, with optional add-ons) or "addon" (add-ons
+	// bought on the current subscription TargetSubscriptionID).
+	Kind                 string  `json:"kind"                   gorm:"type:varchar(16);default:'plan'"`
+	TargetSubscriptionID *string `json:"target_subscription_id" gorm:"type:varchar(36)"`
+	// Addons are the add-on lines, prices frozen when the order was made.
+	Addons    UsageOrderAddonLines `json:"addons"   gorm:"type:jsonb"`
+	CreatedAt time.Time            `json:"created_at"`
+	UpdatedAt time.Time            `json:"updated_at"`
 }
 
 // TableName returns the table name.
@@ -157,6 +166,12 @@ type UsageQuoteRequest struct {
 	Seats     int    `json:"seats"`
 	PromoCode string `json:"promo_code"`
 	Note      string `json:"note"`
+	// Kind "plan" (default) or "addon": add-ons on the scope's current
+	// subscription, priced for the rest of its period (PlanID, Months and
+	// Seats are then taken from the subscription).
+	Kind string `json:"kind"`
+	// AddonAgentIDs are the specialist agents bought with it.
+	AddonAgentIDs []string `json:"addon_agent_ids"`
 }
 
 // UsageQuote prices a request. PromoError is set (and no discount applied)
@@ -168,6 +183,11 @@ type UsageQuote struct {
 	Months       int        `json:"months"`
 	Seats        int        `json:"seats"`
 	UnitPriceVND int64      `json:"unit_price_vnd"`
+	// BillingTerm is the term the plan line is priced by (month|quarter|
+	// year); SavingsVND what that saves against paying month by month
+	// (0 when the plan has no monthly price or the term is month).
+	BillingTerm string `json:"billing_term,omitempty"`
+	SavingsVND  int64  `json:"savings_vnd,omitempty"`
 	// CurrentSeats is the seat count of the subscription this order renews
 	// (0 when it starts a new one). Added seats also pay ProrationVND: the
 	// added seats for the ProratedDays left on the current period.
@@ -180,6 +200,12 @@ type UsageQuote struct {
 	PromoError   string `json:"promo_error"`
 	DiscountVND  int64  `json:"discount_vnd"`
 	TotalVND     int64  `json:"total_vnd"`
+	// Kind, TargetSubscriptionID: see UsageQuoteRequest/UsageOrder.
+	Kind                 string `json:"kind"`
+	TargetSubscriptionID string `json:"target_subscription_id,omitempty"`
+	// Addons are the add-on lines; AddonsVND their sum (in SubtotalVND).
+	Addons    UsageOrderAddonLines `json:"addons"`
+	AddonsVND int64                `json:"addons_vnd"`
 }
 
 // UsageBillingInfo is what the payment page needs besides the order.

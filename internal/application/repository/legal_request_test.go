@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/google/uuid"
@@ -120,5 +121,64 @@ func TestLegalRequestKnowledgeNamed(t *testing.T) {
 	kbs, err := repo.PublicKnowledgeBases(ctx)
 	if err != nil || len(kbs) != 1 || kbs[0].ID != "kb1" {
 		t.Fatalf("public KBs = %v %v", kbs, err)
+	}
+}
+
+func TestLegalRequestUpdateDetailMergesAndParseStatus(t *testing.T) {
+	repo, db := newLegalRequestRepo(t)
+	ctx := context.Background()
+	row, err := repo.Record(ctx, &types.LegalDocumentRequest{NumberKey: "74/2022/TT-BTC", LegalDocumentID: "179132",
+		Detail: types.JSON(`{"catalogue":{"status":"Còn hiệu lực"}}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.UpdateDetail(ctx, row.ID, map[string]any{"portal": map[string]any{"html": false, "pdf_file": "VanBanGoc_74.TT.pdf"}})
+	if err != nil || got == nil {
+		t.Fatalf("update: %+v %v", got, err)
+	}
+	var detail map[string]map[string]any
+	if err := json.Unmarshal(got.Detail, &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail["catalogue"]["status"] != "Còn hiệu lực" || detail["portal"]["pdf_file"] != "VanBanGoc_74.TT.pdf" {
+		t.Fatalf("detail = %s", got.Detail)
+	}
+	if missing, err := repo.UpdateDetail(ctx, "nope", map[string]any{"portal": nil}); err != nil || missing != nil {
+		t.Fatalf("missing: %+v %v", missing, err)
+	}
+
+	if err := db.Exec(`ALTER TABLE knowledges ADD COLUMN parse_status TEXT`).Error; err != nil {
+		t.Fatal(err)
+	}
+	db.Exec(`INSERT INTO knowledges (id, parse_status) VALUES ('k1', 'processing'), ('k2', 'completed')`)
+	db.Exec(`INSERT INTO knowledges (id, parse_status, deleted_at) VALUES ('k3', 'failed', CURRENT_TIMESTAMP)`)
+	st, err := repo.KnowledgeParseStatuses(ctx, []string{"k1", "k2", "k3"})
+	if err != nil || len(st) != 2 || st["k1"] != "processing" || st["k2"] != "completed" {
+		t.Fatalf("statuses = %v %v", st, err)
+	}
+}
+
+func TestLegalRequestListByNumberKey(t *testing.T) {
+	repo, _ := newLegalRequestRepo(t)
+	ctx := context.Background()
+	for _, docID := range []string{"", "155366"} {
+		if _, err := repo.Record(ctx, &types.LegalDocumentRequest{
+			NumberKey: "53/2022/ND-CP", DocumentNumber: "53/2022/NĐ-CP", LegalDocumentID: docID,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := repo.Record(ctx, &types.LegalDocumentRequest{NumberKey: "1/2020/QH14"}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := repo.ListByNumberKey(ctx, "53/2022/ND-CP")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
+	}
+	if rows, _ := repo.ListByNumberKey(ctx, " "); len(rows) != 0 {
+		t.Fatalf("blank key must match nothing, got %d", len(rows))
 	}
 }

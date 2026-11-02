@@ -2,14 +2,18 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { apiGet, apiPost, getTokens } from "@/lib/api-client";
+import { apiGet, apiPost, getTokens, setTokens } from "@/lib/api-client";
 import { getAuthConfig, getInvitationByToken } from "@/lib/api/auth";
 import { acceptInvitationByToken } from "@/lib/api/tenants";
-import { Orb } from "@/components/orb";
+import Link from "next/link";
+import { AuthShell, authStyles as styles } from "@/components/auth/auth-shell";
+import { AuthCard } from "@/components/auth/auth-card";
+import { useT } from "@/lib/i18n";
 
 function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useT();
   const token = searchParams.get("token") ?? "";
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -56,24 +60,38 @@ function RegisterForm() {
         token?: string;
         refresh_token?: string;
       }>(path, token ? { token, username, email, password } : { username, email, password });
-      if (!res.success || !res.token) throw new Error(res.message ?? "Register failed");
-      localStorage.setItem("weknora_token", res.token);
-      if (res.refresh_token) localStorage.setItem("weknora_refresh_token", res.refresh_token);
+      if (!res.success) throw new Error(res.message ?? t("auth.registerFailed"));
+      // Self-serve registration answers with the account only (the invite
+      // path also signs in): sign in with what was just typed.
+      const session = res.token
+        ? res
+        : await apiPost<{ success: boolean; message?: string; token?: string; refresh_token?: string }>(
+            "/api/v1/auth/login",
+            { email, password },
+          );
+      if (!session.success || !session.token) {
+        router.push("/login");
+        return;
+      }
+      setTokens(session.token, session.refresh_token ?? "");
       // Mirror persistLoginResponse: probe /auth/me, then onboard only when
-      // this deployment lets users create workspaces. Otherwise a new
-      // account waits (tenantless) until a SuperAdmin or Tenant Admin adds
-      // it to a unit; the KB list explains that.
+      // this deployment lets users create organizations (onboarding offers
+      // to skip to the chat). Otherwise a new account stays a Guest until a
+      // SuperAdmin or Tenant Admin adds it to an organization, and meanwhile
+      // chats with the public-lookup assistant.
       const me = await apiGet<{
         success: boolean;
         data?: { tenant?: unknown; capabilities?: { can_create_tenant?: boolean } };
       }>(`/api/v1/auth/me`).catch(() => null);
       router.push(
-        me?.data?.tenant || !me?.data?.capabilities?.can_create_tenant
+        me?.data?.tenant
           ? "/platform/knowledge-bases"
-          : "/onboarding/workspace",
+          : me?.data?.capabilities?.can_create_tenant
+            ? "/onboarding/workspace"
+            : "/platform/creatChat",
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Register failed");
+      setError(err instanceof Error ? err.message : t("auth.registerFailed"));
     } finally {
       setBusy(false);
     }
@@ -84,83 +102,114 @@ function RegisterForm() {
     setError(null);
     try {
       const res = await acceptInvitationByToken(token);
-      if (!res.success) throw new Error(res.message ?? "Join failed");
+      if (!res.success) throw new Error(res.message ?? t("auth.joinFailed"));
       router.push("/platform/knowledge-bases");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Join failed");
+      setError(err instanceof Error ? err.message : t("auth.joinFailed"));
     } finally {
       setBusy(false);
     }
   };
 
+  const tenant = tenantName ?? t("auth.orgFallback");
+
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-canvas px-6">
-      <Orb color="peach" size={520} className="-top-40 right-[-100px]" />
-      <div className="relative w-full max-w-[400px]">
-        <div className="display-lg mb-2 text-center">
-          {token ? `Join ${tenantName ?? "organization"}` : "Create account"}
-        </div>
-        <p className="body-sm mb-10 text-center text-muted">
-          {token
+    <AuthShell mode="register">
+      <AuthCard
+        kicker={t("auth.registerKicker")}
+        title={token ? t("auth.joinOrgTitle") : t("auth.createAccountTitle")}
+        subtitle={
+          token
             ? showJoinCard
-              ? "You were invited — join with your current account or create a new one."
-              : "You were invited — pick a username to join."
-            : "Self-serve registration."}
-          {inviteOnly && !token ? " This deployment is invite-only." : ""}
-        </p>
-        {showJoinCard ? (
-          <div className="card p-6 sm:p-8">
-            {error && <p className="body-sm mb-4 text-error">{error}</p>}
+              ? t("auth.joinOrgSubtitleSession", { tenant })
+              : t("auth.joinOrgSubtitle", { tenant })
+            : t("auth.createAccountSubtitle")
+        }
+        note={t("auth.registerNote")}
+      >
+        {inviteOnly && !token ? (
+          <div role="status" className={styles.error}>
+            {t("auth.inviteOnly")}
+            <div className={styles.links}>
+              <Link href="/login">{t("auth.backToLogin")}</Link>
+            </div>
+          </div>
+        ) : showJoinCard ? (
+          <>
+            {error && (
+              <p role="alert" className={styles.error}>
+                {error}
+              </p>
+            )}
             <button
               type="button"
-              className="btn btn-primary w-full"
+              className="btn btn-primary h-11 w-full"
               disabled={busy}
               onClick={() => void joinWithSession()}
             >
-              {busy ? "Joining…" : "Join organization"}
+              {busy ? t("auth.joiningBusy") : t("auth.joinOrgSubmit")}
             </button>
             <button
               type="button"
-              className="btn btn-outline mt-3 w-full"
+              className="btn btn-outline h-11 w-full"
               onClick={() => setUseNewAccount(true)}
             >
-              Create a new account instead
+              {t("auth.createNewAccount")}
             </button>
-          </div>
+          </>
         ) : (
-        <form className="card p-6 sm:p-8" onSubmit={submit}>
-          <label className="mb-4 block">
-            <span className="caption mb-1.5 block text-muted">Username</span>
-            <input className="input" required value={username} onChange={(e) => setUsername(e.target.value)} />
-          </label>
-          <label className="mb-4 block">
-            <span className="caption mb-1.5 block text-muted">Email</span>
-            <input
-              className="input"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-          </label>
-          <label className="mb-6 block">
-            <span className="caption mb-1.5 block text-muted">Password</span>
-            <input
-              className="input"
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </label>
-          {error && <p className="body-sm mb-4 text-error">{error}</p>}
-          <button type="submit" className="btn btn-primary w-full" disabled={busy}>
-            {busy ? "Creating…" : token ? "Join organization" : "Register"}
-          </button>
-        </form>
+          <form onSubmit={submit}>
+            <label className="mb-4 block">
+              <span className="caption mb-1.5 block text-muted">{t("auth.username")}</span>
+              <input
+                className="input"
+                autoComplete="username"
+                placeholder={t("auth.usernamePlaceholder")}
+                required
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </label>
+            <label className="mb-4 block">
+              <span className="caption mb-1.5 block text-muted">{t("auth.email")}</span>
+              <input
+                className="input"
+                type="email"
+                autoComplete="email"
+                placeholder={t("auth.emailPlaceholder")}
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </label>
+            <label className="mb-6 block">
+              <span className="caption mb-1.5 block text-muted">{t("auth.password")}</span>
+              <input
+                className="input"
+                type="password"
+                autoComplete="new-password"
+                placeholder={t("auth.passwordPlaceholderNew")}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </label>
+            {error && (
+              <p role="alert" className={styles.error}>
+                {error}
+              </p>
+            )}
+            <button type="submit" className="btn btn-primary h-11 w-full" disabled={busy}>
+              {busy
+                ? t("auth.registerBusy")
+                : token
+                  ? t("auth.registerJoinSubmit")
+                  : t("auth.registerSubmit")}
+            </button>
+          </form>
         )}
-      </div>
-    </div>
+      </AuthCard>
+    </AuthShell>
   );
 }
 

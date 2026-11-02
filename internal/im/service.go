@@ -1915,10 +1915,23 @@ func (s *Service) HandleMessage(ctx context.Context, msg *IncomingMessage, chann
 	var customAgent *types.CustomAgent
 	if agentID != "" {
 		agent, err := s.agentService.GetAgentByID(sessionCtx, agentID)
-		if err != nil {
-			logger.Warnf(ctx, "[IM] Failed to get agent %s: %v, using default", agentID, err)
-		} else {
+		switch {
+		case err == nil:
 			customAgent = agent
+		case !types.IsReservedBuiltinAgentID(agentID):
+			// A custom agent that is gone or no longer applies to this
+			// Tổ chức ("Tổ chức áp dụng"): answering with the default
+			// configuration would be a different assistant, so say so.
+			logger.Warnf(ctx, "[IM] Agent %s unavailable for tenant %d: %v", agentID, tenantID, err)
+			if sendErr := adapter.SendReply(ctx, msg, &ReplyMessage{
+				Content: imAgentUnavailableReply,
+				IsFinal: true,
+			}); sendErr != nil {
+				logger.Warnf(ctx, "[IM] Failed to send agent-unavailable reply: %v", sendErr)
+			}
+			return nil
+		default:
+			logger.Warnf(ctx, "[IM] Failed to get agent %s: %v, using default", agentID, err)
 		}
 	}
 
@@ -3404,6 +3417,11 @@ func (s *Service) CreateChannel(channel *IMChannel) error {
 	return nil
 }
 
+// imAgentUnavailableReply answers an IM message whose channel is bound to a
+// custom agent the channel's Tổ chức cannot use (any more).
+const imAgentUnavailableReply = "Trợ lý của kênh này không tồn tại hoặc không áp dụng cho Tổ chức của kênh. " +
+	"Vui lòng báo quản trị viên chọn lại trợ lý cho kênh."
+
 // SetChannelAgentID validates and assigns a new agent for an existing channel.
 func (s *Service) SetChannelAgentID(ctx context.Context, channel *IMChannel, agentID string) error {
 	agentID = strings.TrimSpace(agentID)
@@ -3414,7 +3432,9 @@ func (s *Service) SetChannelAgentID(ctx context.Context, channel *IMChannel, age
 	if err != nil {
 		return err
 	}
-	if agent == nil || agent.TenantID != channel.TenantID {
+	// A SuperAdmin reads every agent, so the channel's workspace must also be
+	// in the agent's "Tổ chức áp dụng" list, or the bot would fail at runtime.
+	if agent == nil || agent.TenantID != channel.TenantID || !agent.AppliesToTenant(channel.TenantID) {
 		return fmt.Errorf("agent not found")
 	}
 	channel.AgentID = agentID

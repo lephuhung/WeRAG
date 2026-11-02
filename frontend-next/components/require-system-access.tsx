@@ -1,15 +1,19 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { roleAtLeast, type SettingsRoleKey } from "@/components/settings/nav-config";
+import { DeniedView } from "@/components/settings/system-section";
 
-/* Client-side gate for /platform/system tabs, mirroring the inline guards on
- * the agents/users pages. minRole "system" (default) requires the platform
- * system-admin flag; a tenant role also lets tenant owners/admins through.
+/* Client-side gate for the platform-wide surfaces, mirroring the inline
+ * guards on the agents/users pages. minRole "system" (default) requires the
+ * platform system-admin flag; a tenant role also lets tenant owners/admins
+ * through.
  * Server-side authorization remains authoritative — this only keeps the UI
- * consistent with the hidden tabs. */
+ * consistent with the hidden tabs.
+ *
+ * A user without the role gets the same "access denied" block as the admin
+ * pages (see components/settings/system-section.tsx) instead of a silent
+ * redirect that told them nothing. */
 export function RequireSystemAccess({
   children,
   minRole = "system",
@@ -17,7 +21,6 @@ export function RequireSystemAccess({
   children: React.ReactNode;
   minRole?: SettingsRoleKey;
 }) {
-  const router = useRouter();
   const auth = useAuth();
   const isSystemAdmin = auth.user?.is_system_admin === true;
   const currentRole =
@@ -28,12 +31,8 @@ export function RequireSystemAccess({
     isSystemAdmin ||
     (minRole !== "system" && roleAtLeast(currentRole, minRole));
 
-  useEffect(() => {
-    if (auth.ready && auth.user && !allowed) {
-      router.replace("/platform/system/workspace");
-    }
-  }, [auth.ready, auth.user, allowed, router]);
-
-  if (auth.ready && !allowed) return null;
+  if (auth.ready && auth.user && !allowed) {
+    return <DeniedView />;
+  }
   return <>{children}</>;
 }

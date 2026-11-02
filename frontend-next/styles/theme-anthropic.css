@@ -40,6 +40,18 @@ html[data-theme="anthropic"] {
   --radius-xl2: 16px;
   --radius-xxl: 24px;
 
+  /* The brand mark keeps its hue in every theme; only its lightness
+     follows the surface. */
+  --color-brand: #009b9d;
+
+  /* Atmospheric orbs, muted to the Anthropic warm-neutral palette. The
+     default theme's pastel set reads as a different product otherwise. */
+  --color-orb-mint: #cfe3d8;
+  --color-orb-peach: #e8d5c6;
+  --color-orb-lavender: #d5d0e2;
+  --color-orb-sky: #cfdae6;
+  --color-orb-rose: #e5d2d8;
+
   --shadow-soft-drop: rgba(0, 0, 0, 0.01) 0 2px 2px 0,
     rgba(0, 0, 0, 0.02) 0 4px 4px 0, rgba(0, 0, 0, 0.04) 0 16px 24px 0;
 
@@ -73,6 +85,7 @@ html[data-theme="anthropic"].dark {
   --color-hairline: #2e2d29;
   --color-hairline-soft: #232220;
   --color-hairline-strong: #3d3b36;
+  --color-brand: #2fd4c7;
 
   color-scheme: dark;
 }

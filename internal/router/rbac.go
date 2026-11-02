@@ -204,6 +204,13 @@ func (g *rbacGuards) Member() gin.HandlerFunc {
 	return middleware.RequireRole(types.TenantRoleMember, g.cfg)
 }
 
+// GuestChat is Member() that also admits a Guest placed in the public
+// portal by auth. Only for the guest chat routes (middleware.IsGuestChatAPI
+// lists the same set; auth never puts a Guest in the portal elsewhere).
+func (g *rbacGuards) GuestChat() gin.HandlerFunc {
+	return middleware.RequireMemberOrPortalGuest(g.cfg)
+}
+
 func (g *rbacGuards) Admin() gin.HandlerFunc {
 	return middleware.RequireRole(types.TenantRoleAdmin, g.cfg)
 }

@@ -49,6 +49,7 @@ const (
 	MCPEndpointToolLegalListMissing   = "legal_list_missing"
 	MCPEndpointToolLegalListRequests  = "legal_list_requests"
 	MCPEndpointToolLegalIngest        = "legal_ingest_document"
+	MCPEndpointToolLegalFetchDraft    = "legal_fetch_draft"
 	MCPEndpointToolLegalRemove        = "legal_remove_document"
 	MCPEndpointToolLegalApplyExpiry   = "legal_apply_expiry_audit"
 	MCPEndpointToolLegalReviewScan    = "legal_review_scan"
@@ -89,6 +90,7 @@ var mcpEndpointToolCatalog = []MCPEndpointToolDefinition{
 	{Name: MCPEndpointToolLegalListMissing, Group: MCPEndpointToolGroupLegal},
 	{Name: MCPEndpointToolLegalListRequests, Group: MCPEndpointToolGroupLegal},
 	{Name: MCPEndpointToolLegalIngest, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},
+	{Name: MCPEndpointToolLegalFetchDraft, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},
 	{Name: MCPEndpointToolLegalRemove, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},
 	{Name: MCPEndpointToolLegalApplyExpiry, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},
 	{Name: MCPEndpointToolLegalReviewScan, Group: MCPEndpointToolGroupLegalWrite, Destructive: true},
@@ -219,17 +221,17 @@ func MCPEndpointAgentAllowed(agent *CustomAgent, tenantID uint64) bool {
 		}
 		return false
 	}
-	return agent.TenantID == tenantID
+	// A SuperAdmin reads every agent, so the endpoint's workspace must also
+	// be in the agent's "Tổ chức áp dụng" list.
+	return agent.TenantID == tenantID && agent.AppliesToTenant(tenantID)
 }
 
 // MCPEndpointAgentSelectable is MCPEndpointAgentAllowed for configuring an
-// endpoint: a builtin must also be switched on in builtin_agents.yaml.
+// endpoint: the agent must also be switched on (the SuperAdmin's runtime
+// switch, else builtin_agents.yaml for a built-in).
 func MCPEndpointAgentSelectable(agent *CustomAgent, tenantID uint64) bool {
 	if !MCPEndpointAgentAllowed(agent, tenantID) {
 		return false
 	}
-	if agent.IsBuiltin || IsBuiltinAgentID(agent.ID) {
-		return IsBuiltinAgentEnabled(agent.ID)
-	}
-	return true
+	return agent.EffectiveEnabled()
 }

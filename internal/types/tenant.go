@@ -1,6 +1,7 @@
 package types
 
 import (
+	"context"
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
@@ -121,11 +122,37 @@ const (
 	// that only owns shared configuration. It has no members or data and is
 	// never listed, joined or switched to.
 	TenantKindConfigProfile = "config_profile"
+	// TenantKindPublicPortal is the public portal: a hidden tenant row with
+	// no members that guest chat runs in (migration 000172). A Guest (a
+	// signed-in account with no active membership) is placed in it, with no
+	// tenant role, on the guest chat routes only. It inherits its profile's
+	// configuration like an organization but is never listed, joined or
+	// switched to, and holds no usage subscription of its own.
+	TenantKindPublicPortal = "public_portal"
 )
 
 // IsConfigProfile reports whether the tenant row is a configuration profile.
 func (t *Tenant) IsConfigProfile() bool {
 	return t != nil && t.Kind == TenantKindConfigProfile
+}
+
+// IsPublicPortal reports whether the tenant row is the public portal.
+func (t *Tenant) IsPublicPortal() bool {
+	return t != nil && t.Kind == TenantKindPublicPortal
+}
+
+// IsHiddenTenant reports a tenant row that is not an organization: a
+// configuration profile or the public portal. Nobody signs in to, switches
+// to, lists or deletes one through the organization APIs.
+func (t *Tenant) IsHiddenTenant() bool {
+	return t.IsConfigProfile() || t.IsPublicPortal()
+}
+
+// InPublicPortal reports whether ctx runs in the public portal (a guest chat
+// request). The portal has no members, so every caller in it is a Guest.
+func InPublicPortal(ctx context.Context) bool {
+	t, ok := TenantInfoFromContext(ctx)
+	return ok && t.IsPublicPortal()
 }
 
 // RetrieverEngines represents the retriever engines for a tenant
@@ -320,7 +347,9 @@ type ParserEngineConfig struct {
 	// skip_special_tokens=false; default off for SenOCR-Vi / PaddleOCR-VL.
 	PaddleOCRVLVllmXargs string `json:"paddleocr_vl_vllm_xargs,omitempty"`
 	// openai mode: repetition_penalty for /chat/completions (vLLM extension);
-	// default 1.05 breaks degenerate loops, "1"/"0" disables.
+	// "1.1" is the value to configure for SenOCR-Vi (measured 2026-10-18:
+	// 1.05 still loops on big table pages, 1.15 alters plain text), "1"/"0"
+	// disables. Only an explicit value is sent.
 	PaddleOCRVLRepetitionPenalty   string `json:"paddleocr_vl_repetition_penalty,omitempty"`
 	PaddleOCRVLUseSealRecognition  *bool  `json:"paddleocr_vl_use_seal_recognition,omitempty"`
 	PaddleOCRVLUseChartRecognition *bool  `json:"paddleocr_vl_use_chart_recognition,omitempty"`

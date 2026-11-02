@@ -3,8 +3,9 @@
  * content pane. Every section renders inline — heavyweight management pages
  * are lazy-imported from their route modules. Cards inside embedded pages
  * resolve through InModalNavContext into a modal-local sub-page stack with a
- * back button, so the modal never navigates away. A small external-link
- * button still offers the full-page route for deep-linking.
+ * back button, so the modal never navigates away. Every section lives
+ * inside the modal — the /platform/system/* paths are deep links that
+ * re-open the modal at the matching section, not standalone pages.
  * Role gating mirrors nav-config: "system" = platform admin, admin/owner gate
  * on the tenant membership role. Server-side guards stay authoritative.
  * Dialogs opened by a section (Modal, confirm) never stack on top of this
@@ -25,8 +26,9 @@ import {
   type ComponentType,
   type ReactNode,
 } from "react";
+import { useDialogFocus } from "./use-dialog-focus";
 import { createPortal } from "react-dom";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { canSeeSection, type SettingsRoleKey } from "@/components/settings/nav-config";
@@ -35,6 +37,7 @@ import { InModalNavContext } from "@/components/system/in-modal-nav";
 import { SubPageHostProvider, useSubPageHost } from "@/components/settings/sub-page-host";
 import { ConfirmProvider } from "@/components/confirm-dialog";
 import { GeneralSettings } from "@/components/settings/general-settings";
+import { Loading } from "@/components/settings/loading";
 import { ProfileSettings } from "@/components/settings/profile-settings";
 import { SecuritySettings } from "@/components/settings/security-settings";
 import { MemoryHub } from "@/components/settings/memory-hub";
@@ -48,8 +51,7 @@ import { BrowserConnectionSettings } from "@/components/settings/browser-connect
 import { EnvVarsSettings } from "@/components/settings/env-vars-settings";
 import { AbbreviationsSettings } from "@/components/settings/abbreviations-settings";
 import { SkillsSettings } from "@/components/settings/skills-settings";
-import { VectorStoreSettings } from "@/components/settings/vector-store-settings";
-import { StorageSettings } from "@/components/settings/storage-settings";
+import { DataStorageHub } from "@/components/settings/data-storage-hub";
 import { ParserEngineSettings } from "@/components/settings/parser-engine-settings";
 import { WebSearchSettings } from "@/components/settings/web-search-settings";
 import { SandboxSettings } from "@/components/settings/sandbox-settings";
@@ -59,10 +61,8 @@ import {
   IconBulb,
   IconChevronLeft,
   IconChat,
-  IconClock,
   IconClose,
   IconCode,
-  IconExternal,
   IconGlobe,
   IconGraph,
   IconInfoCircle,
@@ -90,7 +90,6 @@ const IMChannelsPage = lazy(() => import("@/components/settings/pages/im-channel
 const ModelCatalogPage = lazy(() => import("@/components/settings/pages/model-catalog"));
 const ModelOllamaPage = lazy(() => import("@/components/settings/pages/model-ollama"));
 const ModelWeknoraCloudPage = lazy(() => import("@/components/settings/pages/model-weknoracloud"));
-const RuntimeQueuesPage = lazy(() => import("@/components/settings/pages/runtime-queues"));
 
 type IconCmp = ComponentType<{ className?: string }>;
 
@@ -101,8 +100,9 @@ interface SettingsItem {
   icon: IconCmp;
   minRole?: SettingsRoleKey;
   render: () => ReactNode;
-  /* Canonical route — used to map in-modal card links to sub-pages and for
-   * the "open full page" affordance. */
+  /* Deep-link path of this section. It is NOT a standalone page: the
+   * /platform/system/* catch-all maps it back to this modal
+   * (SECTION_ROUTES), and in-modal card links use it to open a sub-page. */
   route?: string;
   /* Sub-page only: hidden from the nav (a hub page's cards already reach it)
    * but reachable via in-modal card links and search. `parent` is the hub
@@ -126,17 +126,17 @@ const GROUPS: SettingsGroup[] = [
     key: "account",
     labelKey: "settingsNav.groups.account",
     items: [
-      { key: "general", labelKey: "settingsNav.general", fallback: "General", icon: IconSettings, render: () => <GeneralSettings />, route: W },
-      { key: "profile", labelKey: "userSettings.profile", fallback: "Profile", icon: IconUser, render: () => <ProfileSettings /> },
-      { key: "security", labelKey: "userSettings.security", fallback: "Security", icon: IconLock, render: () => <SecuritySettings /> },
+      { key: "general", labelKey: "settingsNav.general", fallback: "General", icon: IconSettings, minRole: "guest", render: () => <GeneralSettings />, route: W },
+      { key: "profile", labelKey: "userSettings.profile", fallback: "Profile", icon: IconUser, minRole: "guest", render: () => <ProfileSettings /> },
+      { key: "security", labelKey: "userSettings.security", fallback: "Security", icon: IconLock, minRole: "guest", render: () => <SecuritySettings /> },
     ],
   },
   {
     key: "plan",
     labelKey: "settingsNav.groups.plan",
     items: [
-      { key: "usage", labelKey: "settingsNav.usage", fallback: "Usage package", icon: IconIdCard, render: () => <TenantUsage />, route: `${W}/usage` },
-      { key: "billing", labelKey: "settingsNav.billing", fallback: "Buy a package", icon: IconCreditCard, render: () => <BillingPage />, route: `${W}/billing` },
+      { key: "usage", labelKey: "settingsNav.usage", fallback: "Usage package", icon: IconIdCard, minRole: "guest", render: () => <TenantUsage />, route: `${W}/usage` },
+      { key: "billing", labelKey: "settingsNav.billing", fallback: "Buy a package", icon: IconCreditCard, minRole: "guest", render: () => <BillingPage />, route: `${W}/billing` },
     ],
   },
   {
@@ -170,13 +170,12 @@ const GROUPS: SettingsGroup[] = [
       { key: "catalog", labelKey: "systemNav.catalog", fallback: "Model catalog", icon: IconGraph, minRole: "owner", render: () => <ModelCatalogPage />, route: `${SYS}/models` },
       { key: "ollama", fallback: "Ollama (local)", icon: IconGraph, minRole: "owner", render: () => <ModelOllamaPage />, route: `${SYS}/models/ollama`, subOnly: true, parent: "catalog" },
       { key: "weknoracloud", fallback: "WeRAG Cloud", icon: IconGraph, minRole: "owner", render: () => <ModelWeknoraCloudPage />, route: `${SYS}/models/weknoracloud`, subOnly: true, parent: "catalog" },
-      { key: "vector", labelKey: "settingsNav.vectorstore", fallback: "Vector store engine", icon: IconGraph, minRole: "system", render: () => <VectorStoreSettings />, route: `${SYS}/engines/vector` },
+      { key: "vector", labelKey: "settingsNav.dataStorage", fallback: "Data storage", icon: IconStorageEngine, minRole: "system", render: () => <DataStorageHub />, route: `${SYS}/engines/vector` },
       { key: "parser", labelKey: "settingsNav.parser", fallback: "Parser engines", icon: IconParserEngine, minRole: "system", render: () => <ParserEngineSettings />, route: `${SYS}/engines/parser` },
-      { key: "storage", labelKey: "settingsNav.storage", fallback: "Storage engine", icon: IconStorageEngine, minRole: "system", render: () => <StorageSettings />, route: `${SYS}/engines/storage` },
+      { key: "storage", labelKey: "settingsNav.dataStorage", fallback: "Data storage", icon: IconStorageEngine, minRole: "system", render: () => <DataStorageHub initialTab="storage" />, route: `${SYS}/engines/storage`, subOnly: true, parent: "vector" },
       { key: "search", labelKey: "settingsNav.websearch", fallback: "Web search", icon: IconSearch, minRole: "system", render: () => <WebSearchSettings />, route: `${SYS}/engines/search` },
       { key: "sandbox", labelKey: "settingsNav.sandbox", fallback: "Sandbox", icon: IconPower, minRole: "system", render: () => <SandboxSettings />, route: `${SYS}/engines/sandbox` },
 
-      { key: "queues", labelKey: "systemNav.queues", fallback: "Runtime queues", icon: IconClock, minRole: "system", render: () => <RuntimeQueuesPage />, route: `${SYS}/engines/queues` },
     ],
   },
 ];
@@ -210,7 +209,6 @@ export function SettingsModal({
   pendingAbbrev?: number;
 }) {
   const { t } = useT();
-  const router = useRouter();
   const pathname = usePathname();
   const auth = useAuth();
   const [mounted, setMounted] = useState(false);
@@ -249,17 +247,11 @@ export function SettingsModal({
     prevDepth.current = sub.depth;
   }, [sub.depth]);
 
-  /* Escape steps back out of an open sub-page before closing the modal. */
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      if (subTopRef.current) subTopRef.current.back();
-      else onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus({ open: open && mounted, containerRef: dialogRef, onClose: () => {
+    if (subTopRef.current) subTopRef.current.back();
+    else onClose();
+  } });
 
   /* Embedded pages may hold plain <Link> navigation (e.g. sharing →
    * knowledge bases). When the underlying route changes, close the modal so
@@ -326,9 +318,11 @@ export function SettingsModal({
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-6">
-      <div className="absolute inset-0 bg-ink/20" onClick={onClose} />
+      <div className="absolute inset-0 bg-scrim/20" onClick={onClose} />
       <div
+        ref={dialogRef}
         role="dialog"
+        aria-modal="true"
         aria-label={t("user.settings")}
         className="card relative flex max-h-[calc(100dvh-1rem)] w-full max-w-[1120px] flex-col overflow-hidden sm:h-[min(760px,calc(100dvh-3rem))] sm:flex-row"
       >
@@ -345,6 +339,9 @@ export function SettingsModal({
             <div className="relative min-w-0 flex-1">
               <IconSearch className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft" />
               <input
+                type="search"
+                name="settings-query"
+                autoComplete="off"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={t("settingsModal.search")}
@@ -373,7 +370,7 @@ export function SettingsModal({
                     <it.icon className="h-[18px] w-[18px] shrink-0" />
                     <span className="min-w-0 flex-1 truncate text-left">{label(it)}</span>
                     {it.key === "abbreviations" && pendingAbbrev > 0 && (
-                      <span className="badge-pill border border-amber-500/20 bg-amber-500/10 text-amber-600">
+                      <span className="badge-pill badge-warning">
                         {pendingAbbrev}
                       </span>
                     )}
@@ -386,6 +383,7 @@ export function SettingsModal({
           <div className="px-3 py-3 sm:hidden">
             <Select
               value={activeKey}
+              ariaLabel={t("user.settings")}
               onChange={(key) => {
                 const it = visibleGroups.flatMap((grp) => grp.items).find((x) => x.key === key);
                 if (it) openSection(it);
@@ -412,19 +410,9 @@ export function SettingsModal({
             <h2 className="title-md min-w-0 flex-1 truncate">
               {sub.top ? sub.top.title : active ? label(active) : ""}
             </h2>
-            {active?.route && !sub.top && (
-              <button
-                onClick={() => {
-                  router.push(active.route!);
-                  onClose();
-                }}
-                title={t("settingsModal.openFull")}
-                aria-label={t("settingsModal.openFull")}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-soft transition-colors hover:bg-surface-strong hover:text-ink"
-              >
-                <IconExternal className="h-3.5 w-3.5" />
-              </button>
-            )}
+            {/* No "open full page" affordance: every section of this modal
+             * lives inside the modal — the /platform/system/* deep links
+             * only re-open it at the same section. */}
           </div>
           <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-7">
             <SubPageHostProvider api={sub.api} state={sub.state}>
@@ -433,13 +421,7 @@ export function SettingsModal({
                   {/* The section stays mounted under an open sub-page so
                    * its state (filters, half-filled forms) survives. */}
                   <div hidden={!!sub.top}>
-                    <Suspense
-                      fallback={
-                        <div className="flex items-center justify-center py-16">
-                          <span className="caption text-muted">Loading…</span>
-                        </div>
-                      }
-                    >
+                    <Suspense fallback={<Loading className="py-16" />}>
                       {active?.render()}
                     </Suspense>
                   </div>

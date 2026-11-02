@@ -373,7 +373,9 @@ func (s *embedChannelService) ensureAgentOwned(ctx context.Context, tenantID uin
 	if err != nil {
 		return nil, err
 	}
-	if agent == nil || agent.TenantID != tenantID {
+	// A SuperAdmin reads every agent, so the channel's workspace must also be
+	// in the agent's "Tổ chức áp dụng" list, or the widget would fail later.
+	if agent == nil || agent.TenantID != tenantID || !agent.AppliesToTenant(tenantID) {
 		return nil, apperrors.NewNotFoundError("agent not found")
 	}
 	return agent, nil

@@ -34,5 +34,41 @@ func RegisterLegalRequestRoutes(r *gin.RouterGroup, h *handler.LegalRequestHandl
 		requests.GET("", h.ListLegalRequests)
 		requests.GET("/public-knowledge-bases", h.ListLegalRequestKnowledgeBases)
 		requests.PUT("/:id", h.DecideLegalRequest)
+		requests.POST("/:id/portal-check", h.CheckLegalRequestPortal)
+	}
+}
+
+// RegisterLegalDraftRoutes wires the SuperAdmin review of OCR drafts of
+// documents vbpl.vn publishes only as a scanned PDF.
+func RegisterLegalDraftRoutes(r *gin.RouterGroup, h *handler.LegalDraftHandler, g *rbacGuards) {
+	if h == nil {
+		return
+	}
+	r.POST("/system/legal-requests/:id/fetch", g.PlatformSuperAdmin(), h.FetchLegalDraft)
+	drafts := r.Group("/system/legal-drafts", g.PlatformSuperAdmin())
+	{
+		drafts.GET("", h.ListLegalDrafts)
+		drafts.GET("/:id", h.GetLegalDraft)
+		drafts.POST("/:id/open", h.OpenLegalDraft)
+		drafts.GET("/:id/structure", h.LegalDraftStructure)
+		drafts.POST("/:id/approve", h.ApproveLegalDraft)
+		drafts.DELETE("/:id", h.DiscardLegalDraft)
+	}
+}
+
+// RegisterDomainPackReconcileRoutes wires the SuperAdmin check of a domain
+// pack's catalogue.yaml against the legal catalogue
+// (docs/domain-pack-standard.md §4 layer b).
+func RegisterDomainPackReconcileRoutes(r *gin.RouterGroup, h *handler.DomainPackReconcileHandler, g *rbacGuards) {
+	if h == nil {
+		return
+	}
+	packs := r.Group("/system/domain-packs", g.PlatformSuperAdmin())
+	{
+		packs.GET("", h.ListSystemDomainPacks)
+		packs.GET("/:name", h.GetSystemDomainPack)
+		packs.POST("/:name/reconcile", h.ReconcileDomainPack)
+		packs.PUT("/:name/formulas/:id", h.UpdateDomainPackFormula)
+		packs.DELETE("/:name/formulas/:id", h.ResetDomainPackFormula)
 	}
 }

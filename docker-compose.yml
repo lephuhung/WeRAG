@@ -25,6 +25,14 @@ services:
       - REAL_IP_FROM=${REAL_IP_FROM:-}
       # Speech service behind /asr/ (profile "asr").
       - ASR_URL=${ASR_URL:-http://sherpa-asr:8110}
+      # Public HTTPS origin written into the Word add-in manifest download.
+      - WERAG_WORD_ADDIN_ORIGIN=${WERAG_WORD_ADDIN_ORIGIN:-}
+      # ONLYOFFICE Document Server behind /onlyoffice/ (profile "onlyoffice");
+      # set ONLYOFFICE_PUBLIC_URL to <site origin>/onlyoffice to use it.
+      - ONLYOFFICE_URL=${ONLYOFFICE_PROXY_URL:-http://documentserver}
+    volumes:
+      # Word add-in build served at /word/ (werag-word-addin: npm run build).
+      - ${WORD_ADDIN_DIST_DIR:-./docker/word-addin/dist}:/srv/werag-word-addin:ro
     # NOTE: If using a remote App backend, comment out or remove the depends_on
     # block below and set APP_HOST/APP_BACKEND_PORT/APP_SCHEME in your .env file.
     depends_on:
@@ -478,6 +486,34 @@ services:
       - WeKnora-network
     cpus: ${ASR_CPUS:-8}
     mem_limit: 2g
+    restart: unless-stopped
+
+  # Chrome Screen AI OCR on CPU behind an OpenAI-compatible
+  # /v1/chat/completions — same contract as SenOCR-Vi (vllm-ocr below), so it
+  # can stand in wherever an OCR endpoint is configured. Experimental: built to
+  # label SenOCR fine-tuning data (scripts/screenai_ocr). Google's component
+  # (proprietary) is downloaded into the screenai_component volume on first
+  # start, never baked into the image — see docker/screenai-ocr/README.md.
+  # Network: http://screenai-ocr:8004/v1, model "screenai-ocr".
+  screenai-ocr:
+    build:
+      context: ./docker/screenai-ocr
+    image: werag-screenai-ocr:latest
+    container_name: WeKnora-screenai-ocr
+    profiles:
+      - screenai
+    ports:
+      - "${INTERNAL_BIND_ADDR:-127.0.0.1}:${SCREENAI_PORT:-8004}:8004"
+    environment:
+      - SCREENAI_WORKERS=${SCREENAI_WORKERS:-2}
+      - SCREENAI_API_KEY=${SCREENAI_API_KEY:-}
+      - SCREENAI_MODEL_ID=${SCREENAI_MODEL_ID:-screenai-ocr}
+    volumes:
+      - screenai_component:/component
+    networks:
+      - WeKnora-network
+    cpus: ${SCREENAI_CPUS:-4}
+    mem_limit: ${SCREENAI_MEM_LIMIT:-3g}
     restart: unless-stopped
 
   # vLLM server hosting the SenOCR-Vi PaddleOCR-VL model used by the
@@ -1115,3 +1151,4 @@ volumes:
   onlyoffice_lib:
   onlyoffice_db:
   onlyoffice_logs:
+  screenai_component:

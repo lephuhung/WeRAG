@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	chatpipeline "github.com/Tencent/WeKnora/internal/application/service/chat_pipeline"
@@ -171,6 +172,9 @@ type sessionService struct {
 	// (SetLegalRequests); nil turns it off.
 	legalRequests interfaces.LegalRequestRepository
 	legalReviews  interfaces.LegalReviewRepository
+	// domainPacks are the packs shipped in this build (SetDomainPacks); an
+	// agent's pack names are resolved against them once per turn.
+	domainPacks *domainpacks.Registry
 }
 
 // NewSessionService creates a new session service instance with all required dependencies
@@ -242,6 +246,12 @@ func (s *sessionService) CreateSession(ctx context.Context, session *types.Sessi
 	if session.TenantID == 0 {
 		logger.Error(ctx, "Failed to create session: tenant ID cannot be empty")
 		return nil, stderrors.New("organization ID is required")
+	}
+	// A session without an owner is visible to its whole tenant; in the
+	// public portal that would be every Guest.
+	if types.InPublicPortal(ctx) && session.UserID == "" {
+		logger.Error(ctx, "Failed to create session: a public portal session needs an owner")
+		return nil, stderrors.New("a public portal session needs an owner")
 	}
 
 	logger.Infof(ctx, "Creating session, tenant ID: %d", session.TenantID)

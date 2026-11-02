@@ -226,7 +226,7 @@ export function AgentEmbedChannels({ agentId, open, onClose, agentName }: {
             {t("common.cancel")}
           </button>
           <button
-            className="btn btn-sm bg-[var(--color-error)] text-white"
+            className="btn btn-danger btn-sm"
             onClick={() => {
               void deleteEmbedChannel(removing!.id).then(() => {
                 setRemoving(null);

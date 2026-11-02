@@ -395,8 +395,8 @@ var registry = map[string]settingSpec{
 	},
 	// usage.enforce turns the usage-package pre-flight check on: a turn
 	// is refused (HTTP 429) when the workspace or person has no current
-	// subscription, holds no seat, or has used up a limit. Off by default
-	// so subscriptions can be assigned first. SystemAdmins are exempt.
+	// subscription, holds no seat, or has used up a limit. ON by default;
+	// switching it off is for testing only. SystemAdmins are exempt.
 	// Read live per QA turn.
 	// document_template.font_sizes: the platform-wide font sizes of the
 	// NĐ30 templates drafted from chat, within the NĐ30 ranges
@@ -413,10 +413,22 @@ var registry = map[string]settingSpec{
 	types.UsageEnforceSettingKey: {
 		Type:     "bool",
 		EnvName:  "",
-		Default:  false,
+		Default:  types.UsageEnforceDefault,
 		Category: "chat",
 		Description: "Bật kiểm tra gói sử dụng trước mỗi lượt hỏi: không có thuê bao, hết hạn, " +
-			"không có seat hoặc hết hạn mức → từ chối (429). Quản trị hệ thống không bị chặn. Có hiệu lực ngay.",
+			"không có seat hoặc hết hạn mức → từ chối (429). Quản trị hệ thống không bị chặn. Có hiệu lực ngay. " +
+			"Mặc định bật; chỉ tắt khi kiểm thử.",
+	},
+	// usage.signup_plan_id / usage.signup_plan_days: the personal package
+	// every new account receives (GrantSignupPlan, at registration).
+	types.UsageSignupPlanSettingKey: {
+		Type: "string", EnvName: "", Default: "", Category: "chat",
+		Description: "Gói cá nhân tặng cho mọi tài khoản mới tạo (tự đăng ký, được mời, đăng nhập SSO lần đầu, " +
+			"quản trị tạo). Để trống = không tặng. Chỉ áp dụng cho tài khoản tạo sau khi lưu.",
+	},
+	types.UsageSignupPlanDaysSettingKey: {
+		Type: "int", EnvName: "", Default: int64(types.UsageSignupPlanDaysDefault), Category: "chat",
+		Description: "Số ngày dùng gói tặng khi đăng ký; 0 = không thời hạn.",
 	},
 	types.SettingChatAttachmentSectionPicker: {
 		Type: "bool", Default: true, Category: "chat",
@@ -511,6 +523,18 @@ var registry = map[string]settingSpec{
 		Category: "chat",
 		Description: "Công tắc công cụ MCP cấp nền tảng. Khi tắt, mọi lượt chạy trợ lý không nạp dịch vụ MCP nào, " +
 			"lựa chọn MCP trong cấu hình trợ lý được giữ nhưng không có tác dụng. Có hiệu lực ngay sau khi thay đổi.",
+	},
+	// legal.current_wording.resolver switches the wording of retrieved legal
+	// provisions and the "Lịch sử sửa đổi" block to the amendment resolver
+	// (legal_amend_wiring.go). Off (the default until reviewed) = the
+	// previous phrase-only wording and history. Read live on every call.
+	LegalWordingResolverSetting: {
+		Type:     "bool",
+		EnvName:  "",
+		Default:  legalResolverDefault,
+		Category: "chat",
+		Description: "Đọc lời văn hiện hành của điều khoản pháp luật qua bộ giải sửa đổi (trạng thái từng khoản, điểm; lời văn sửa đổi chưa xác minh được đánh dấu). " +
+			"Khi tắt, dùng lại cách cũ (chỉ thay cụm từ). Có hiệu lực ngay sau khi thay đổi.",
 	},
 	// knowledge.parse_defaults is the platform-wide default parse
 	// configuration published by a SystemAdmin. While enabled it replaces

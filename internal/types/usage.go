@@ -23,6 +23,12 @@ const (
 	// every aggregate over usage_counters filters by scope_type, so these
 	// rows never add into organization or person totals.
 	UsageScopeSession = "session"
+	// UsageScopeGuest counts a person's guest-chat turns in the public portal
+	// (scope_id = user id) apart from their "user" counters, so the guest
+	// plan and a seat or personal package never draw on each other's
+	// questions: a member removed from a Tổ chức starts the guest day at 0,
+	// and guest turns do not eat a later seat cap.
+	UsageScopeGuest = "guest"
 	// UsagePeriodAll is the period key of lifetime counters (session scope).
 	UsagePeriodAll = "all"
 

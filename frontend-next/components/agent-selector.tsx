@@ -11,6 +11,7 @@ import {
 import { useT } from "@/lib/i18n";
 import { IconChevronDown, IconLock } from "@/components/icons";
 import Link from "next/link";
+import { useDialogFocus } from "@/components/use-dialog-focus";
 
 /* Ports AgentSelector.vue: builtin quick-answer / smart-reasoning + custom
  * agents. Selecting writes selectedAgentId into the chat context, mirroring
@@ -26,9 +27,10 @@ export function AgentModeButton({ onOpen, locked = false }: { onOpen: () => void
     <button
       onClick={onOpen}
       aria-haspopup="dialog"
+      aria-pressed={isAgentStreamMode}
       className={`flex h-7 max-w-[120px] items-center gap-1.5 rounded-full px-2.5 text-[12.5px] font-medium transition-colors sm:max-w-[240px] ${
         isAgentStreamMode
-          ? "bg-[#edf5ff] text-[#0f2d59] dark:bg-[#15273f] dark:text-[#dce9fe]"
+          ? "bg-accent-surface text-accent"
           : "text-body hover:bg-surface-strong hover:text-ink"
       }`}
       title={locked ? t("docws.modeLockedShort") : (selectedAgent?.description ?? label)}
@@ -81,12 +83,14 @@ export function AgentLockNotice({
 }
 
 export function AgentSelector({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { agents, settings, selectAgent } = useChatContext();
+  const { agents, settings, selectAgent, isMobile } = useChatContext();
   const { t } = useT();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDialogFocus({ open, containerRef: panelRef, onClose });
 
   if (!open) return null;
-  const builtins = agents.filter((a) => a.is_builtin);
-  const customs = agents.filter((a) => !a.is_builtin);
+  const builtins = agents.filter((a) => a.is_builtin && (!isMobile || a.id === BUILTIN_SMART_REASONING_ID));
+  const customs = agents.filter((a) => !a.is_builtin && !isMobile);
   const quick = builtins.find((a) => a.id === BUILTIN_QUICK_ANSWER_ID);
   const smart = builtins.find((a) => a.id === BUILTIN_SMART_REASONING_ID);
   // Backend order is kept (wiki/data builtins first); the document
@@ -111,13 +115,13 @@ export function AgentSelector({ open, onClose }: { open: boolean; onClose: () =>
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} />
-      <div className="card absolute bottom-full left-0 z-50 mb-2 flex max-h-[320px] w-[300px] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
+      <div ref={panelRef} role="dialog" aria-label={t("chat.agentPicker")} className="card absolute bottom-full left-0 z-50 mb-2 flex max-h-[320px] w-[300px] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
           {quick && (
             <AgentRow name="Normal mode" desc={quick.description ?? "Fast RAG answers"} active={current(quick.id)} onClick={() => pick(quick.id)} />
           )}
           {smart && (
-            <AgentRow name="Agent mode" desc={smart.description ?? "Reasoning with tools"} active={current(smart.id)} onClick={() => pick(smart.id)} />
+            <AgentRow name={t("chat.reasoningMode")} desc={smart.description ?? "Reasoning with tools"} active={current(smart.id)} onClick={() => pick(smart.id)} />
           )}
           {otherBuiltins.map((a) => (
             <AgentRow key={a.id} name={builtinName(a)} desc={builtinDesc(a)} active={current(a.id)} onClick={() => pick(a.id)} />
@@ -175,7 +179,8 @@ function AgentRow({
   return (
     <button
       onClick={onClick}
-      className={`flex w-full items-center gap-3 rounded-[8px] px-3 py-2 text-left transition-colors ${
+      aria-pressed={active}
+      className={`flex w-full items-center gap-3 rounded-md2 px-3 py-2 text-left transition-colors ${
         active ? "bg-surface-strong" : "hover:bg-surface-strong"
       }`}
     >

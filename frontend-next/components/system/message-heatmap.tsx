@@ -81,10 +81,10 @@ export function MessageHeatmap({ days, data }: { days: number; data: MessageDayA
 
   const LEVEL_COLORS = [
     "var(--color-surface-strong)",
-    "rgba(22, 163, 74, 0.30)",
-    "rgba(22, 163, 74, 0.55)",
-    "rgba(22, 163, 74, 0.80)",
-    "rgb(22, 163, 74)",
+    "color-mix(in srgb, var(--color-success) 30%, transparent)",
+    "color-mix(in srgb, var(--color-success) 55%, transparent)",
+    "color-mix(in srgb, var(--color-success) 80%, transparent)",
+    "var(--color-success)",
   ];
 
   const monthLabel = (i: number) => months.find((m) => m.index === i)?.label ?? "";

@@ -30,14 +30,14 @@ export function Toggle({
       aria-label={label}
       title={title || label}
       onClick={() => !disabled && onChange?.(!checked)}
-      className={`relative inline-flex shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-900 ${
+      className={`relative inline-flex shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 dark:focus-visible:ring-offset-canvas ${
         isSm ? "h-5 w-9" : "h-6 w-11"
       } ${
         disabled ? "opacity-50 cursor-not-allowed " : ""
       } ${
         checked
-          ? "bg-emerald-600 hover:bg-emerald-700 dark:bg-emerald-500 dark:hover:bg-emerald-600"
-          : "bg-stone-300 hover:bg-stone-400 dark:bg-stone-700 dark:hover:bg-stone-600"
+          ? "bg-primary hover:bg-primary-active"
+          : "bg-hairline-strong hover:bg-muted-soft"
       } ${className}`}
     >
       <span

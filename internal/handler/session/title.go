@@ -6,6 +6,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 )
 
@@ -58,9 +59,17 @@ func (h *Handler) GenerateTitle(c *gin.Context) {
 		return
 	}
 
+	// A Guest's title comes from their stored first question, never from
+	// client-supplied text: the title call is not metered, so it must not
+	// work as a free model call.
+	messages := request.Messages
+	if types.InPublicPortal(ctx) {
+		messages = nil
+	}
+
 	// Call service to generate title
-	logger.Infof(ctx, "Generating session title, session ID: %s, message count: %d", sessionID, len(request.Messages))
-	title, err := h.sessionService.GenerateTitle(ctx, session, request.Messages, "")
+	logger.Infof(ctx, "Generating session title, session ID: %s, message count: %d", sessionID, len(messages))
+	title, err := h.sessionService.GenerateTitle(ctx, session, messages, "")
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError(err.Error()))

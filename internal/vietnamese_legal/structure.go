@@ -406,6 +406,19 @@ type LegalMetadata struct {
 	// publishes only as separate files, not in the page text: the answer
 	// links them instead of quoting them.
 	AppendixFiles []AppendixFile `json:"appendix_files,omitempty"`
+	// Citations are the vbpl.vn links of the chunk's text: each cited
+	// document by its vbpl id (= catalogue id), at rune offsets in the
+	// chunk content as stored.
+	Citations []CitationLink `json:"citations,omitempty"`
+}
+
+// CitationLink is one linked citation in a chunk: Content runes
+// [Start, End) read Text and cite vbpl.vn document VBPLID.
+type CitationLink struct {
+	Start  int    `json:"start"`
+	End    int    `json:"end"`
+	VBPLID string `json:"vbpl_id"`
+	Text   string `json:"text"`
 }
 
 // AppendixFile is a phụ lục published as a file attached to the document.
@@ -423,6 +436,11 @@ type AmendRef struct {
 	Article  string `json:"article,omitempty"`
 	Khoan    string `json:"khoan,omitempty"`
 	Diem     string `json:"diem,omitempty"`
+	// Phrase marks a phrase amendment: the words From become To in the
+	// provision (To empty: removed) instead of a quoted new text.
+	Phrase bool   `json:"phrase,omitempty"`
+	From   string `json:"from,omitempty"`
+	To     string `json:"to,omitempty"`
 }
 
 // String renders the reference as Vietnamese legal text: "khoản 2 Điều 9
@@ -457,6 +475,10 @@ type SubdivisionParseStats struct {
 type SubdivisionParseResult struct {
 	Subdivisions []Subdivision
 	Stats        SubdivisionParseStats
+	// Rejected are the candidates counted in Stats.AmbiguousRejected, in
+	// text order (ArticleNo is "" outside a Điều): where a reviewer looks
+	// for a khoản/điểm the parser could not place.
+	Rejected []Subdivision
 }
 
 // subdivisionEvent is a structural event at a byte position: kind 0 =
@@ -534,7 +556,7 @@ func ParseSubdivisions(text string) SubdivisionParseResult {
 	hasK := false
 	lastDIdx := -1
 	hasD := false
-	var subs []Subdivision
+	var subs, rejected []Subdivision
 	var st SubdivisionParseStats
 
 	for _, ev := range subdivisionEvents(text) {
@@ -569,6 +591,7 @@ func ParseSubdivisions(text string) SubdivisionParseResult {
 				})
 			} else {
 				st.AmbiguousRejected++
+				rejected = append(rejected, rejectedSubdivision("khoan", ev, text, article))
 			}
 		default:
 			st.DiemCandidates++
@@ -586,10 +609,19 @@ func ParseSubdivisions(text string) SubdivisionParseResult {
 				})
 			} else {
 				st.AmbiguousRejected++
+				rejected = append(rejected, rejectedSubdivision("diem", ev, text, article))
 			}
 		}
 	}
-	return SubdivisionParseResult{Subdivisions: subs, Stats: st}
+	return SubdivisionParseResult{Subdivisions: subs, Stats: st, Rejected: rejected}
+}
+
+func rejectedSubdivision(kind string, ev subdivisionEvent, text string, article *string) Subdivision {
+	sub := Subdivision{Kind: kind, Label: ev.label, Start: utf8.RuneCountInString(text[:ev.start])}
+	if article != nil {
+		sub.ArticleNo = *article
+	}
+	return sub
 }
 
 // FindSubdivisions is the convenience form returning only accepted markers.

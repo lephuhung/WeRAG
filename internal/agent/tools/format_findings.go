@@ -215,7 +215,7 @@ func checkFindings(report *docformat.Report, layout *docformat.Layout, vdoc *vir
 			}
 		}
 		f.Current = evidenceValue(c.Evidence, s.Para, rule)
-		f.Reason = manualReason(c, rule)
+		f.Reason = manualReason(report, c, rule)
 		out = append(out, f)
 	}
 	if len(out) > 0 {
@@ -225,7 +225,7 @@ func checkFindings(report *docformat.Report, layout *docformat.Layout, vdoc *vir
 	if c.Actual != nil {
 		f.Current = valueText(propOf(rule), c.Actual)
 	}
-	f.Reason = manualReason(c, rule)
+	f.Reason = manualReason(report, c, rule)
 	if c.Note != "" {
 		f.Reason = strings.TrimSpace(c.Note + " " + f.Reason)
 	}
@@ -340,8 +340,11 @@ func componentOf(c docformat.CheckResult, rule *docformat.RuleCheck) string {
 	return ""
 }
 
-func manualReason(c docformat.CheckResult, rule *docformat.RuleCheck) string {
+func manualReason(report *docformat.Report, c docformat.CheckResult, rule *docformat.RuleCheck) string {
 	if strings.HasPrefix(c.ID, "component.") && strings.HasSuffix(c.ID, ".present") {
+		if report.Party() {
+			return "Bổ sung thành phần này đúng vị trí theo " + report.StandardName() + "."
+		}
 		return "Bổ sung thành phần này đúng vị trí theo NĐ30."
 	}
 	if rule != nil && rule.Kind == "page_setup" {

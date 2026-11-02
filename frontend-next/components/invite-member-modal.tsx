@@ -100,7 +100,7 @@ export function InviteMemberModal({
               onClick={() => setTab(k)}
               className={`text-sm font-medium pb-2 transition-colors border-b-2 -mb-2.5 ${
                 tab === k
-                  ? "border-brand text-brand font-semibold"
+                  ? "border-primary text-primary font-semibold"
                   : "border-transparent text-muted hover:text-ink"
               }`}
             >

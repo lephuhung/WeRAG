@@ -91,7 +91,7 @@ export function MyKBInvites({ onAccepted }: { onAccepted?: () => void }) {
       </div>
 
       {error && <p className="body-sm text-error">{error}</p>}
-      {notice && <p className="body-sm text-emerald-600">{notice}</p>}
+      {notice && <p className="body-sm text-success">{notice}</p>}
 
       <form onSubmit={redeemToken} className="flex flex-wrap items-end gap-2">
         <label className="block min-w-52 flex-1">

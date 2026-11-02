@@ -3,17 +3,26 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { Orb } from "@/components/orb";
-import { BrandLogo } from "@/components/brand-logo";
+import { AuthShell, authStyles as styles } from "@/components/auth/auth-shell";
+import { AuthCard } from "@/components/auth/auth-card";
+import { AuthProvider, useAuth } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 import { resolveSafeNextPath } from "@/lib/safe-next";
+import { IconEye } from "@/components/icons";
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { t } = useT();
+  /* The sign-in API lives in lib/auth.tsx — the page must not re-implement
+   * the token handling (it used to store the tokens itself). */
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [totpRequired, setTotpRequired] = useState(false);
   const [totpDigits, setTotpDigits] = useState<string[]>(Array(6).fill(""));
+  const [resetHelp, setResetHelp] = useState(false);
   const totpRefs = useRef<(HTMLInputElement | null)[]>([]);
   const totpCode = totpDigits.join("");
 
@@ -65,115 +74,115 @@ function LoginForm() {
     setBusy(true);
     setError(null);
     try {
-      const res = await fetch("/api/v1/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "Accept-Language": "vi-VN" },
-        body: JSON.stringify({ email, password, two_factor_code: totpCode }),
-      });
-      const data = await res.json().catch(() => null);
-      const token =
-        data && typeof data === "object" && "token" in data
-          ? (data as { token?: string }).token
-          : undefined;
-      const refreshToken =
-        data && typeof data === "object" && "refresh_token" in data
-          ? (data as { refresh_token?: string }).refresh_token
-          : undefined;
-      if (
-        data &&
-        typeof data === "object" &&
-        (data as { two_factor_required?: boolean }).two_factor_required
-      ) {
+      const result = await login(email, password, totpCode);
+      if (!result) {
+        router.push(resolveSafeNextPath(searchParams.get("next")));
+        return;
+      }
+      if (result.twoFactorRequired) {
         // Correct password but a 6-digit authenticator code is required.
         setTotpRequired(true);
-        setError("Enter the 6-digit code from your authenticator app");
+        setError(t("auth.totpRequired"));
         return;
       }
-      if (!res.ok || !token) {
-        const msg =
-          data && typeof data === "object" && "message" in data
-            ? String((data as { message?: unknown }).message ?? "Sign in failed")
-            : "Sign in failed";
-        setError(msg);
-        return;
-      }
-      localStorage.setItem("weknora_token", token);
-      if (refreshToken) localStorage.setItem("weknora_refresh_token", refreshToken);
-      const rawPayload = data as {
-        active_tenant?: { id?: number | string };
-        tenant?: { id?: number | string };
-        user?: { tenant_id?: number | string };
-      };
-      const tenantId =
-        rawPayload?.active_tenant?.id ??
-        rawPayload?.tenant?.id ??
-        rawPayload?.user?.tenant_id;
-      if (tenantId && Number(tenantId) > 0) {
-        localStorage.setItem("weknora_selected_tenant_id", String(tenantId));
-      } else {
-        localStorage.removeItem("weknora_selected_tenant_id");
-      }
-      router.push(resolveSafeNextPath(searchParams.get("next")));
+      setError(
+        result.error === "Invalid email or password"
+          ? t("auth.loginInvalid")
+          : result.error,
+      );
     } catch {
-      setError("Network error — is the backend reachable?");
+      setError(t("auth.loginNetwork"));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-canvas px-6">
-      <Orb color="lavender" size={560} className="-left-40 top-[-180px]" />
-      <Orb color="mint" size={480} className="bottom-[-160px] right-[-120px]" />
-      <Orb color="peach" size={320} className="right-[20%] top-[-120px]" />
-
-      <div className="relative w-full max-w-[400px]">
-        <div className="mb-6 flex justify-center">
-          <BrandLogo size={68} priority />
-        </div>
-        <p className="body-sm mb-8 text-center text-muted">Sign in to your organization's knowledge base</p>
-
-        <form className="card p-6 sm:p-8" onSubmit={submit}>
+    <AuthShell mode="login">
+      <AuthCard
+        kicker={t("auth.loginKicker")}
+        title={t("auth.loginTitle")}
+        subtitle={t("auth.loginSubtitle")}
+        note={t("auth.loginNote")}
+      >
+        <form onSubmit={submit}>
           <label className="mb-4 block">
-            <span className="caption mb-1.5 block text-muted">Email</span>
+            <span className="caption mb-1.5 block text-muted">{t("auth.email")}</span>
             <input
               className="input"
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@company.com"
+              placeholder={t("auth.emailPlaceholder")}
+              autoComplete="email"
             />
           </label>
-          <label className="mb-6 block">
-            <span className="caption mb-1.5 block text-muted">Password</span>
-            <input
-              className="input"
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-            />
-          </label>
+          <div className="mb-2">
+            <label htmlFor="login-password" className="block">
+              <span className="caption mb-1.5 block text-muted">{t("auth.password")}</span>
+            </label>
+            <div className="relative">
+              <input
+                id="login-password"
+                className="input pr-12"
+                type={showPassword ? "text" : "password"}
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={t("auth.passwordPlaceholder")}
+                autoComplete="current-password"
+              />
+              <button
+                type="button"
+                className="absolute inset-y-0 right-1 flex w-10 items-center justify-center rounded text-muted transition-colors hover:text-ink"
+                aria-label={showPassword ? t("auth.hidePassword") : t("auth.showPassword")}
+                aria-pressed={showPassword}
+                aria-controls="login-password"
+                onClick={() => setShowPassword((visible) => !visible)}
+              >
+                <span className="relative" aria-hidden="true">
+                  <IconEye className="h-5 w-5" />
+                  {showPassword && (
+                    <span className="absolute left-0 top-1/2 h-px w-5 -rotate-45 bg-current" />
+                  )}
+                </span>
+              </button>
+            </div>
+          </div>
+          <div className="mb-6 text-right">
+            <button
+              type="button"
+              className="caption text-muted underline underline-offset-2 transition-colors hover:text-ink"
+              aria-expanded={resetHelp}
+              onClick={() => setResetHelp((shown) => !shown)}
+            >
+              {t("auth.forgotPassword")}
+            </button>
+            {resetHelp && (
+              <p role="status" className="caption mt-2 text-muted">
+                {t("auth.forgotPasswordSoon")}
+              </p>
+            )}
+          </div>
           {totpRequired && (
-            <div className="mb-6">
-              <span className="caption mb-1.5 block text-muted">Authenticator code</span>
-              <div className="flex justify-between gap-2" onPaste={onTotpPaste}>
+            <div className={styles.totp}>
+              <span className="caption mb-1.5 block text-muted">{t("auth.totpLabel")}</span>
+              <div className={styles.totpRow} onPaste={onTotpPaste}>
                 {totpDigits.map((digit, i) => (
                   <input
                     key={i}
                     ref={(el) => {
                       totpRefs.current[i] = el;
                     }}
-                    className="h-12 w-full max-w-[48px] rounded-[10px] border border-hairline bg-surface-card text-center text-[20px] font-semibold tracking-normal text-ink outline-none transition-colors focus:border-ink"
+                    className="input h-12 max-w-[48px] px-0 text-center text-[20px] font-semibold"
                     type="text"
                     inputMode="numeric"
                     autoComplete={i === 0 ? "one-time-code" : "off"}
                     maxLength={1}
                     autoFocus={i === 0}
                     required
-                    aria-label={`Digit ${i + 1}`}
+                    aria-label={t("auth.totpDigit", { n: i + 1 })}
                     value={digit}
                     onChange={(e) => setDigit(i, e.target.value)}
                     onKeyDown={(e) => onTotpKeyDown(i, e)}
@@ -182,32 +191,30 @@ function LoginForm() {
               </div>
             </div>
           )}
-          {error && <p className="body-sm mb-4 text-error">{error}</p>}
-          <button type="submit" className="btn btn-primary w-full" disabled={busy}>
-            {busy ? "Signing in…" : "Sign in"}
+          {error && (
+            <p role="alert" className={styles.error}>
+              {error}
+            </p>
+          )}
+          <button type="submit" className="btn btn-primary h-11 w-full" disabled={busy}>
+            {busy ? t("auth.loginBusy") : t("auth.loginSubmit")}
           </button>
-          <div className="caption mt-5 flex items-center justify-between text-muted">
-            <Link href="/register" className="hover:text-ink">
-              Register by invite
-            </Link>
-            <Link href="/onboarding/workspace" className="hover:text-ink">
-              SSO / OIDC
-            </Link>
-          </div>
         </form>
-
-        <p className="caption mt-8 text-center text-muted-soft">
-          Tra cứu tài liệu — retrieval-augmented knowledge platform
-        </p>
-      </div>
-    </div>
+        <div className={styles.divider}>{t("auth.or")}</div>
+        <Link href="/onboarding/workspace" className="btn btn-outline h-11 w-full">
+          {t("auth.loginViaOrg")}
+        </Link>
+      </AuthCard>
+    </AuthShell>
   );
 }
 
 export default function Login() {
   return (
-    <Suspense>
-      <LoginForm />
-    </Suspense>
+    <AuthProvider>
+      <Suspense>
+        <LoginForm />
+      </Suspense>
+    </AuthProvider>
   );
 }

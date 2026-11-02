@@ -1,17 +1,16 @@
 "use client";
 
-import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { listMessages, stopSession, forkSession, createSession, deleteSession, getSession, setMessageFeedback, type SessionRow, type ChatMessage, type ArtifactMeta, type MessageFeedback, type TypoCorrection, autoCorrectionsOf } from "@/lib/api/chat";
+import { listMessages, stopSession, forkSession, createSession, deleteSession, getSession, type SessionRow, type ChatMessage, type ArtifactMeta, autoCorrectionsOf } from "@/lib/api/chat";
 import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
 import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { withArtifactIndexes } from "@/lib/artifact-images";
-import { DOC_MENTION_COLOR, DocMention, DocMentionIcon } from "@/components/doc-mention";
-import { splitDocumentMentions } from "@/lib/document-mentions";
 import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext, type MentionRequestItem } from "@/lib/chat-context";
 import { useT } from "@/lib/i18n";
-import { dayLabel, dayStarts, messageDateTime, messageTime } from "@/lib/message-time";
-import { chatErrorKey, isSessionLimitError } from "@/lib/api/chat-errors";
+import { dayStarts } from "@/lib/message-time";
+import { chatErrorKey, chatErrorTextKey, isSessionLimitError } from "@/lib/api/chat-errors";
+import { shouldRefreshAccount } from "@/lib/guest-chat";
 import { sessionUsageFromComplete, type SessionUsage } from "@/lib/session-limits";
 import { ContextCompactedDivider, SessionLimitCard, SessionUsageBanner } from "@/components/chat/session-limit";
 import { ContextRing, useContextUsage } from "@/components/chat/context-ring";
@@ -26,7 +25,6 @@ import {
   formatCheckInProgress,
   formatCheckResultKey,
   profileReadingPhase,
-  selectionNeedsCollapse,
   setDocumentWorkspaceRole,
   sourceQuestionChips,
   type DocumentFormatCheck,
@@ -49,11 +47,9 @@ import {
   type ScopeClarification,
 } from "@/lib/document-scope";
 import { DocumentScopeCard } from "@/components/chat/document-scope-card";
-import { ChoiceListView } from "@/components/chat/choice-list";
 import { parseChoiceList, takeChoiceList, type ChoiceList, type ChoiceOption } from "@/lib/choice-list";
-import { LegalRequestCardView } from "@/components/chat/legal-request-card";
 import { parseLegalRequestCard, takeLegalRequestCard, type LegalRequestCard } from "@/lib/legal-request-card";
-import { SavedMemoryNotice, parseSavedMemories, type SavedMemory } from "@/components/chat/saved-memory-notice";
+import { parseSavedMemories, type SavedMemory } from "@/components/chat/saved-memory-notice";
 import {
   illustrationFromToolData,
   illustrationOpsBatch,
@@ -70,8 +66,7 @@ import {
   type RewriteProposal,
   type RewriteVariant,
 } from "@/lib/api/document-ops";
-import { RewriteProposalCard, type ProposalOutcome } from "@/components/chat/rewrite-proposal-card";
-import { IllustrationCard } from "@/components/chat/illustration-card";
+import { type ProposalOutcome } from "@/components/chat/rewrite-proposal-card";
 import type { RasterImage } from "@/lib/illustration-render";
 import { selectionSuggestions, type SelectionSuggestionKey } from "@/lib/selection-suggestions";
 import { SplitPane } from "@/components/doc-workspace/split-pane";
@@ -104,80 +99,21 @@ import { createStreamGeneration, type StreamGeneration } from "@/lib/stream-gene
 import { shouldCommitDeferredSendTurn } from "@/lib/deferred-send-guard";
 import { detachSessionActivity, updateSessionActivity } from "@/lib/session-activity";
 import { uploadImagesWithFallback } from "@/lib/image-upload-fallback";
-import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
-import { Markdown } from "@/components/markdown";
-import { IconGlobe, IconCopy, IconCheck, IconFork, IconRefresh, IconEdit, IconClose, IconThumbUp, IconThumbDown } from "@/components/icons";
-import { renderFileIconSvg } from "@/components/files/file-icon";
-import { ThinkingDisplay } from "@/components/chat/thinking-display";
-import { PeopleCard, type PeopleRecord } from "@/components/chat/people-card";
+import { GuestChatNote } from "@/components/chat/guest-chat-note";
+import { ReferencesDrawer, type KnowledgeReferenceItem } from "@/components/chat/references-drawer";
+import { AssistantMessage, DayDivider, UserMessageBubble } from "@/components/chat/chat-messages";
+import type { UiAttachment, UiIllustration, UiMessage, UiRewriteProposal } from "@/components/chat/chat-types";
+import { ErrorNote } from "@/components/chat/error-note";
+import { IconClose } from "@/components/icons";
+import { type PeopleRecord } from "@/components/chat/people-card";
 import {
   applyChunkToSteps,
   finalizeSteps,
   stepsFromHistory,
   type AgentStepItem,
 } from "@/components/chat/agent-steps";
-import { AbbreviationSuggestionCard } from "@/components/chat/abbreviation-suggestion-card";
-import { ReferencesDrawer, type KnowledgeReferenceItem } from "@/components/chat/references-drawer";
-import { copyToClipboard } from "@/lib/clipboard";
-
-type UiAttachment = { name: string; size?: number; title?: string; isImage?: boolean };
 
 const NO_SESSION_DOCS: SessionDocument[] = [];
-
-type UiMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  /** When the row was saved (history) or sent (this client) — ISO time. */
-  createdAt?: string;
-  thinking?: string;
-  /** Ordered agent timeline (thinking rounds + tool calls), rendered by
-   * ThinkingDisplay — mirrors the Vue smart-agent event stream. */
-  steps?: AgentStepItem[];
-  agentDurationMs?: number;
-  streaming?: boolean;
-  isError?: boolean;
-  assistantMessageId?: string;
-  references?: KnowledgeReferenceItem[];
-  abbreviationCandidates?: string[];
-  /** Memories the assistant stored on its own since the last turn ("I just saved …"). */
-  savedMemories?: SavedMemory[];
-  /** Document assistant: the scope clarification card this turn answered with. */
-  scopeCard?: ScopeClarification;
-  /** Document assistant: the options (which document, which meaning) this turn answered with. */
-  choiceList?: ChoiceList;
-  /** A legal document the knowledge base has no full text of (requested / rejected / expired). */
-  legalRequestCard?: LegalRequestCard;
-  /** Document assistant: rewrite proposals of this turn (applied with a button). */
-  rewriteProposals?: UiRewriteProposal[];
-  /** Document assistant: diagrams / pictures proposed this turn. */
-  illustrations?: UiIllustration[];
-  peopleData?: PeopleRecord[];
-  attachments?: UiAttachment[];
-  /** User turn: editor passage sent with it (document assistant). */
-  document_selection?: DocumentSelection;
-  /** User turn: words the gate read without asking (cascc → các). */
-  autoCorrections?: TypoCorrection[];
-  /** User turn: file names of the documents named with @ (document assistant). */
-  document_mentions?: string[];
-  /** Tool/skill-generated files of this turn — images render inline. */
-  artifacts?: ArtifactMeta[];
-  /** Owner's rating of this answer as loaded from history. */
-  feedback?: MessageFeedback;
-  feedbackComment?: string;
-  /** History `is_completed`, or set when a live turn ends via a complete
-   * event — gates the suggestions fetch (Vue: message.is_completed). */
-  isCompleted?: boolean;
-  /** The turn finished streaming in this client → suggestions POST ensure
-   * instead of read-only GET (Vue: onTurnComplete → ensure=true). */
-  suggestionEnsure?: boolean;
-  /** Earlier conversation was summarized up to this turn (stored context
-   * checkpoint) — a marker that survives a reload. */
-  contextCompacted?: { summary: string; degraded?: boolean };
-};
-
-type UiRewriteProposal = RewriteProposal & { appliedVariantId?: string };
-type UiIllustration = Illustration & { applied?: boolean };
 
 /** Adds an illustration to a message once; whether it was inserted comes
  * from the proposal ledger (variant v1). */
@@ -255,18 +191,6 @@ function mergePeopleRecords(
     out.push(p);
   }
   return out;
-}
-
-// When a people card renders, the raw profile dump must not also print as
-// answer text: strip <people_lookup> blocks, and cut the old-style persisted
-// dump ("👤 HỒ SƠ #n" blocks with ═ separators). The "Tìm thấy N người"
-// headline stays — it's a useful one-line summary above the cards.
-function stripPeopleDump(content: string, hasCard: boolean): string {
-  if (!hasCard) return content;
-  let text = content.replace(/<people_lookup>[\s\S]*?<\/people_lookup>/g, "");
-  const dumpStart = text.search(/👤|HỒ SƠ #|═{5,}/);
-  if (dumpStart >= 0) text = text.slice(0, dumpStart);
-  return text.trim();
 }
 
 function peopleDataFromHistory(m: ChatMessage): PeopleRecord[] {
@@ -370,12 +294,6 @@ function documentMentionsFromHistory(m: ChatMessage): string[] | undefined {
   return names.length > 0 ? names : undefined;
 }
 
-/* "vb2 · Tờ trình.docx" (stored selection label) → "Tờ trình.docx". */
-function documentNameOfLabel(label: string | undefined): string | undefined {
-  if (!label) return undefined;
-  return label.replace(/^vb\d+\s*·\s*/, "") || undefined;
-}
-
 function fileToDataUri(file: File): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -384,682 +302,6 @@ function fileToDataUri(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
-
-/* Answer text streamed between tool rounds is a preamble that the next
- * tool_call retracts (folded into the thinking card title). Longer output is
- * the real final answer — that is what collapses the thinking panel. */
-const PREAMBLE_MAX_CHARS = 240;
-
-/* Quoted editor passage above a user message (document assistant). */
-function SelectionQuote({ selection }: { selection: DocumentSelection }) {
-  const { t } = useT();
-  const [expanded, setExpanded] = useState(false);
-  const collapsible = selectionNeedsCollapse(selection.text);
-  const docName = documentNameOfLabel(selection.document);
-  return (
-    <figure className="mb-1.5 max-w-[80%] self-end rounded-lg bg-surface-strong/60 px-3 py-2">
-      <figcaption className="caption-uppercase mb-1 truncate text-muted-soft" title={docName}>
-        {t("docws.selectionLabel").replace(/:\s*$/, "")}
-        {docName ? ` · ${docName}` : ""}
-      </figcaption>
-      <blockquote
-        className={`border-l-2 border-hairline-strong pl-2.5 text-[12.5px] leading-relaxed text-muted break-words whitespace-pre-wrap ${
-          collapsible && !expanded ? "line-clamp-4" : ""
-        }`}
-        title={selection.paragraph_hint}
-      >
-        {selection.text}
-      </blockquote>
-      {collapsible && (
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          className="mt-1 text-[12px] font-medium text-muted hover:text-ink cursor-pointer"
-        >
-          {expanded ? t("docws.showLess") : t("docws.showMore")}
-        </button>
-      )}
-    </figure>
-  );
-}
-
-/** Send time under a message; the full date shows on hover. */
-function MessageTime({ iso }: { iso?: string }) {
-  const { locale } = useT();
-  const time = messageTime(iso, locale);
-  if (!time) return null;
-  return (
-    <time dateTime={iso} title={messageDateTime(iso, locale)} className="px-1 text-[11px] tabular-nums text-muted-soft">
-      {time}
-    </time>
-  );
-}
-
-/** Rule with the day's name where the conversation moves to another day. */
-function DayDivider({ iso }: { iso?: string }) {
-  const { t } = useT();
-  const label = dayLabel(iso);
-  if (!label) return null;
-  const text =
-    label.kind === "date" ? label.text : label.kind === "today" ? t("chat.dayToday") : t("chat.dayYesterday");
-  return (
-    <div className="my-4 flex items-center gap-3 text-[12px] text-muted" role="separator">
-      <span className="h-px flex-1 bg-hairline" />
-      <span>{text}</span>
-      <span className="h-px flex-1 bg-hairline" />
-    </div>
-  );
-}
-
-const UserMessageBubble = memo(function UserMessageBubble({
-  message,
-  onFork,
-  onEdit,
-  onRejectReading,
-  compact = false,
-}: {
-  message: UiMessage;
-  /** "Không phải?" under an automatic word reading: ask the question again,
-   * with the gate asking about those words. */
-  onRejectReading?: (m: UiMessage) => void;
-  /** Document-assistant split view: mobile-sized, full-width column. */
-  compact?: boolean;
-  onFork?: (m: UiMessage) => void;
-  onEdit?: (content: string) => void;
-}) {
-  const { t } = useT();
-  const [copied, setCopied] = useState(false);
-  const mentionNames = message.document_mentions ?? [];
-  const segments = splitDocumentMentions(message.content, mentionNames);
-  // Turns sent before mentions went inline carry the names only as items.
-  const detachedMentions = mentionNames.filter((n) => !segments.some((seg) => seg.mention && seg.text === `@${n}`));
-
-  const handleCopy = async () => {
-    const ok = await copyToClipboard(message.content);
-    if (ok) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  return (
-    <div className={`group flex flex-col items-end ${compact ? "mb-3" : "mb-4"}`}>
-      {(message.attachments?.length ?? 0) > 0 && (
-        <div className="mb-1.5 flex max-w-[80%] flex-wrap justify-end gap-1.5">
-          {message.attachments!.map((a, i) => (
-            <span
-              key={`${a.name}-${i}`}
-              title={a.title ?? (a.size ? `${a.name} · ${formatFileSize(a.size)}` : a.name)}
-              className="flex items-center gap-2 rounded-lg border border-[#cfe1fd] bg-[#edf5ff] px-2.5 py-1.5 text-[12px] font-medium text-[#0f2d59] dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe]"
-            >
-              <span
-                className="w-[22px] shrink-0"
-                dangerouslySetInnerHTML={{
-                  __html: renderFileIconSvg(a.isImage && !a.name.includes(".") ? "image.png" : a.name),
-                }}
-              />
-              <span className="max-w-[180px] truncate">{a.name}</span>
-            </span>
-          ))}
-        </div>
-      )}
-      {detachedMentions.length > 0 && (
-        <div className="mb-1.5 flex max-w-[80%] flex-wrap justify-end gap-1.5">
-          {detachedMentions.map((name, i) => (
-            <span
-              key={`${name}-${i}`}
-              title={name}
-              className={`flex items-center gap-1.5 rounded-full border border-hairline-strong bg-surface-strong px-2.5 py-1 text-[12px] font-semibold ${DOC_MENTION_COLOR}`}
-            >
-              <DocMentionIcon name={name} />
-              <span className="max-w-[200px] truncate">{name}</span>
-            </span>
-          ))}
-        </div>
-      )}
-      {message.document_selection && <SelectionQuote selection={message.document_selection} />}
-      <div className={`max-w-[80%] rounded-[16px] border border-[#cfe1fd] bg-[#edf5ff] ${compact ? "px-3 py-2 text-[13px]" : "px-4 py-2.5 text-[14px]"} leading-normal text-[#0f2d59] shadow-2xs dark:border-[#223d63] dark:bg-[#15273f] dark:text-[#dce9fe] break-words whitespace-pre-wrap`}>
-        {segments.map((seg, i) =>
-          seg.mention ? (
-            <DocMention key={i} token={seg.text} />
-          ) : (
-            seg.text
-          ),
-        )}
-      </div>
-      {(message.autoCorrections?.length ?? 0) > 0 && (
-        <div className="mt-1 max-w-[80%] pr-1 text-right text-[12px] text-muted-soft">
-          {message.autoCorrections!
-            .map((tc) => t("chat.typoUnderstoodAs", { wrong: tc.wrong, correct: tc.correct }))
-            .join(" · ")}
-          {onRejectReading && (
-            <>
-              {" · "}
-              <button type="button" className="underline hover:text-ink" onClick={() => onRejectReading(message)}>
-                {t("chat.typoReject")}
-              </button>
-            </>
-          )}
-        </div>
-      )}
-      {/* Touch has no hover — actions stay visible on phones; on desktop they
-          appear only while hovering the user message. */}
-      <div className="mt-1 flex items-center gap-1 pr-1">
-      <div className="flex items-center gap-1 text-muted-soft opacity-100 transition-opacity group-hover:opacity-100 focus-within:opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
-        {onEdit && (
-          <button
-            type="button"
-            onClick={() => onEdit(message.content)}
-            className="flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
-            title="Chỉnh sửa câu hỏi"
-            aria-label="Chỉnh sửa câu hỏi"
-          >
-            <IconEdit className="h-3.5 w-3.5" />
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
-          title={copied ? "Đã sao chép" : "Sao chép câu hỏi"}
-          aria-label="Sao chép câu hỏi"
-        >
-          {copied ? (
-            <IconCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-          ) : (
-            <IconCopy className="h-3.5 w-3.5" />
-          )}
-        </button>
-        {onFork && (
-          <button
-            type="button"
-            onClick={() => onFork(message)}
-            className="flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
-            title="Tạo nhánh từ câu hỏi này"
-            aria-label="Tạo nhánh từ câu hỏi này"
-          >
-            <IconFork className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
-      <MessageTime iso={message.createdAt} />
-      </div>
-    </div>
-  );
-});
-
-const ACTION_BUTTON =
-  "flex h-7 w-7 items-center justify-center rounded-md border border-hairline/60 bg-surface-card/60 text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer";
-
-/** Thumbs up / down on a finished answer. A down vote opens an optional note;
- * clicking the active thumb again removes the rating. The vote also lands in
- * Langfuse as the "user-feedback" score of the turn's trace. */
-function AnswerFeedback({
-  sessionId,
-  messageId,
-  initial,
-  initialComment,
-}: {
-  sessionId: string;
-  messageId: string;
-  initial?: MessageFeedback;
-  initialComment?: string;
-}) {
-  const { t } = useT();
-  const toast = useToast();
-  const [vote, setVote] = useState<MessageFeedback>(initial ?? 0);
-  const [comment, setComment] = useState(initialComment ?? "");
-  const [askNote, setAskNote] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const save = async (next: MessageFeedback, note: string) => {
-    const previous = vote;
-    setVote(next);
-    setSaving(true);
-    try {
-      await setMessageFeedback(sessionId, messageId, next, note);
-      return true;
-    } catch {
-      setVote(previous);
-      toast.error(t("chat.feedback.failed"));
-      return false;
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const onThumb = async (value: 1 | -1) => {
-    if (saving) return;
-    if (vote === value) {
-      setAskNote(false);
-      setComment("");
-      await save(0, "");
-      return;
-    }
-    const ok = await save(value, "");
-    if (!ok) return;
-    setComment("");
-    if (value === -1) {
-      setAskNote(true);
-    } else {
-      setAskNote(false);
-      toast.success(t("chat.feedback.thanks"));
-    }
-  };
-
-  const sendNote = async () => {
-    const note = comment.trim();
-    if (note && (await save(-1, note))) {
-      toast.success(t("chat.feedback.thanks"));
-    }
-    setAskNote(false);
-  };
-
-  const thumbClass = (active: boolean) =>
-    `${ACTION_BUTTON} disabled:cursor-default disabled:opacity-60 ${
-      active ? "border-hairline bg-surface-strong text-ink" : ""
-    }`;
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => onThumb(1)}
-        disabled={saving}
-        aria-pressed={vote === 1}
-        className={thumbClass(vote === 1)}
-        title={vote === 1 ? t("chat.feedback.clear") : t("chat.feedback.up")}
-        aria-label={t("chat.feedback.up")}
-      >
-        <IconThumbUp className={`h-3.5 w-3.5 ${vote === 1 ? "fill-current" : ""}`} />
-      </button>
-      <button
-        type="button"
-        onClick={() => onThumb(-1)}
-        disabled={saving}
-        aria-pressed={vote === -1}
-        className={thumbClass(vote === -1)}
-        title={vote === -1 ? t("chat.feedback.clear") : t("chat.feedback.down")}
-        aria-label={t("chat.feedback.down")}
-      >
-        <IconThumbDown className={`h-3.5 w-3.5 ${vote === -1 ? "fill-current" : ""}`} />
-      </button>
-      {askNote && (
-        <form
-          className="basis-full mt-1.5 flex max-w-[520px] flex-col gap-1.5 rounded-lg border border-hairline bg-surface-card p-2.5"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void sendNote();
-          }}
-        >
-          <label htmlFor={`feedback-${messageId}`} className="text-[12.5px] font-medium text-ink">
-            {t("chat.feedback.commentLabel")}
-          </label>
-          <textarea
-            id={`feedback-${messageId}`}
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            maxLength={2000}
-            rows={2}
-            autoFocus
-            placeholder={t("chat.feedback.commentPlaceholder")}
-            className="input h-auto min-h-[56px] w-full resize-y text-[13px]"
-          />
-          <div className="flex justify-end gap-1.5">
-            <button
-              type="button"
-              onClick={() => setAskNote(false)}
-              className="rounded-md px-2.5 py-1 text-[12.5px] text-muted hover:bg-surface-strong hover:text-ink cursor-pointer"
-            >
-              {t("chat.feedback.skip")}
-            </button>
-            <button
-              type="submit"
-              disabled={saving || !comment.trim()}
-              className="rounded-md border border-hairline bg-surface-strong px-2.5 py-1 text-[12.5px] font-medium text-ink hover:border-hairline-strong disabled:cursor-default disabled:opacity-50 cursor-pointer"
-            >
-              {t("chat.feedback.send")}
-            </button>
-          </div>
-        </form>
-      )}
-    </>
-  );
-}
-
-function BotMessageActions({
-  content,
-  canFork,
-  onFork,
-  onRegenerate,
-  feedback,
-  createdAt,
-}: {
-  content: string;
-  createdAt?: string;
-  canFork?: boolean;
-  onFork?: () => void;
-  onRegenerate?: () => void;
-  /** Present when the answer is finished and saved, so it can be rated. */
-  feedback?: { sessionId: string; messageId: string; initial?: MessageFeedback; initialComment?: string };
-}) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    const ok = await copyToClipboard(content);
-    if (ok) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  return (
-    <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-muted-soft">
-      <button
-        type="button"
-        onClick={handleCopy}
-        className="flex h-7 w-7 items-center justify-center rounded-md border border-hairline/60 bg-surface-card/60 text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
-        title={copied ? "Đã sao chép" : "Sao chép câu trả lời"}
-        aria-label="Sao chép câu trả lời"
-      >
-        {copied ? (
-          <IconCheck className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
-        ) : (
-          <IconCopy className="h-3.5 w-3.5" />
-        )}
-      </button>
-
-      {canFork && onFork && (
-        <button
-          type="button"
-          onClick={onFork}
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-hairline/60 bg-surface-card/60 text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
-          title="Tạo nhánh hội thoại mới"
-          aria-label="Tạo nhánh hội thoại mới"
-        >
-          <IconFork className="h-3.5 w-3.5" />
-        </button>
-      )}
-
-      {onRegenerate && (
-        <button
-          type="button"
-          onClick={onRegenerate}
-          className="flex h-7 w-7 items-center justify-center rounded-md border border-hairline/60 bg-surface-card/60 text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
-          title="Tạo lại câu trả lời"
-          aria-label="Tạo lại câu trả lời"
-        >
-          <IconRefresh className="h-3.5 w-3.5" />
-        </button>
-      )}
-
-      {feedback && (
-        <AnswerFeedback
-          key={feedback.messageId}
-          sessionId={feedback.sessionId}
-          messageId={feedback.messageId}
-          initial={feedback.initial}
-          initialComment={feedback.initialComment}
-        />
-      )}
-      <MessageTime iso={createdAt} />
-    </div>
-  );
-}
-
-function CompactReferencesList({
-  references,
-  onSelectRef,
-}: {
-  references: KnowledgeReferenceItem[];
-  onSelectRef?: (ref: KnowledgeReferenceItem, index: number) => void;
-}) {
-  const [showAll, setShowAll] = useState(false);
-  const maxInitial = 5;
-  const hasMore = references.length > maxInitial;
-  const displayed = showAll ? references : references.slice(0, maxInitial);
-  const remaining = references.length - maxInitial;
-
-  return (
-    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-      {displayed.map((r, i) => {
-        const name = r.knowledge_title ?? r.knowledge_filename ?? r.knowledge_id ?? "Nguồn";
-        const isWeb =
-          r.chunk_type === "web_search" || Boolean(r.metadata?.url) || r.id?.startsWith("http");
-        return (
-          <button
-            key={r.chunk_id ?? r.id ?? `${r.knowledge_id || "ref"}-${i}`}
-            type="button"
-            onClick={() => onSelectRef?.(r, i)}
-            title={name}
-            className="group flex max-w-[180px] items-center gap-1 rounded-full border border-sky-200 bg-sky-50/80 px-2 py-0.5 text-[11.5px] font-medium text-sky-900 shadow-[0_1px_2px_rgba(0,0,0,0.06)] transition-all hover:border-sky-300 hover:bg-sky-100 hover:text-sky-950 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:border-sky-500/50 dark:hover:bg-sky-500/20 cursor-pointer select-none text-left"
-          >
-            <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-sky-600 text-[9px] font-semibold text-white transition-colors group-hover:bg-sky-700 dark:bg-sky-500 dark:text-sky-950 dark:group-hover:bg-sky-400">
-              {i + 1}
-            </span>
-            {isWeb ? (
-              <IconGlobe className="h-3 w-3 shrink-0 text-sky-600 transition-colors dark:text-sky-400" />
-            ) : (
-              <span
-                className="w-[12px] shrink-0 self-center"
-                dangerouslySetInnerHTML={{
-                  __html: renderFileIconSvg(r.knowledge_filename ?? r.knowledge_title ?? name),
-                }}
-              />
-            )}
-            <span className="truncate">{name}</span>
-          </button>
-        );
-      })}
-
-      {hasMore && (
-        <button
-          type="button"
-          onClick={() => setShowAll((v) => !v)}
-          className="flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50/80 px-2.5 py-1 text-[12.5px] font-medium text-sky-900 shadow-[0_1px_2px_rgba(0,0,0,0.06)] transition-all hover:border-sky-300 hover:bg-sky-100 hover:text-sky-950 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200 dark:hover:border-sky-500/50 dark:hover:bg-sky-500/20 select-none cursor-pointer"
-          title={showAll ? "Thu gọn bớt nguồn" : `Xem thêm ${remaining} nguồn khác`}
-        >
-          <span>{showAll ? "Thu gọn" : `+${remaining}`}</span>
-        </button>
-      )}
-    </div>
-  );
-}
-
-// One assistant turn. memo() keeps history rows from reconciling on every
-// streamed chunk — only the row whose message object actually changed renders.
-const AssistantMessage = memo(function AssistantMessage({
-  m,
-  index,
-  sessionId,
-  chatId,
-  busy,
-  abbreviationRefreshKey,
-  onOpenDrawer,
-  onFork,
-  onRegenerate,
-  onAsk,
-  onChoicePick,
-  scopeCardActive = false,
-  activeProposalIds = "",
-  proposalsDisabled = false,
-  proposalOutcomeFor,
-  onProposalApply,
-  onProposalApplied,
-  insertableDocIds = "",
-  onIllustrationInsert,
-  onIllustrationInserted,
-  compact = false,
-}: {
-  m: UiMessage;
-  index: number;
-  /** Sends the message of a picked option (choice list under the answer). */
-  onChoicePick?: (option: ChoiceOption) => Promise<void>;
-  /** The cards are live only on the last turn; older ones show their text. */
-  scopeCardActive?: boolean;
-  /** Comma-joined batch ids of this turn's proposals that are the newest of
-   * their document (only those can apply). */
-  activeProposalIds?: string;
-  proposalsDisabled?: boolean;
-  proposalOutcomeFor?: (batchId: string) => ProposalOutcome | undefined;
-  onProposalApply?: (proposal: RewriteProposal, variant: RewriteVariant) => Promise<void>;
-  onProposalApplied?: (proposal: RewriteProposal, variantId: string) => void;
-  /** Comma-joined ids of the documents open in an editor tab (an
-   * illustration can be inserted into those only). */
-  insertableDocIds?: string;
-  onIllustrationInsert?: (ill: Illustration, picture: RasterImage) => Promise<void>;
-  onIllustrationInserted?: (ill: Illustration) => void;
-  /** Document-assistant split view: no avatar, smaller type, tighter spacing. */
-  compact?: boolean;
-  sessionId: string;
-  /** Chat route id — artifact downloads are scoped to the session. */
-  chatId: string;
-  busy: boolean;
-  abbreviationRefreshKey: number;
-  onOpenDrawer: (refs: KnowledgeReferenceItem[], activeItem?: KnowledgeReferenceItem, index?: number) => void;
-  onFork: (m: UiMessage) => void;
-  onRegenerate: (index: number) => void;
-  onAsk: (text: string, attribution: { setId: string; questionId: string }, kbIds: string[]) => void;
-}) {
-  const { t } = useT();
-  const hasPeopleCard = (m.peopleData?.length ?? 0) > 0;
-  const shownContent = stripPeopleDump(m.content, hasPeopleCard);
-  return (
-    <div data-message-id={m.id} className={compact ? "mb-3 flex" : "mb-4 flex gap-3 sm:gap-4"}>
-      {/* Avatar hidden on phones (and in the compact split view) — every
-          pixel of width goes to the text. */}
-      {!compact && (
-        <div className="display-sm mt-0.5 hidden h-8 w-8 shrink-0 items-center justify-center rounded-full bg-surface-strong text-[14px] sm:flex">
-          W
-        </div>
-      )}
-      <div className={`w-full min-w-0 flex-1 ${compact ? "" : "pt-1.5"}`}>
-        {(m.thinking ||
-          (m.steps?.length ?? 0) > 0 ||
-          (m.references?.length ?? 0) > 0 ||
-          (m.streaming && !m.content)) && (
-          <ThinkingDisplay
-            content={m.thinking ?? ""}
-            /* Open while the agent reasons/calls tools; fold once the final
-               answer streams. Answer text between rounds is a preamble that
-               the next tool call retracts into a thinking title — only a
-               sustained answer past this threshold counts as "the answer",
-               otherwise the panel would flicker once per agent round. */
-            streaming={
-              m.streaming &&
-              !(m.content.length > ((m.steps?.length ?? 0) > 0 ? PREAMBLE_MAX_CHARS : 0))
-            }
-            steps={m.steps}
-            durationMs={m.agentDurationMs}
-            references={m.references}
-            onViewReferences={() => onOpenDrawer(m.references || [])}
-            compact={compact}
-          />
-        )}
-        {/* Faint rule separating the reasoning timeline from the answer. */}
-        {(m.thinking || (m.steps?.length ?? 0) > 0) && shownContent && (
-          <div className={`${compact ? "my-2" : "my-3"} h-px w-full bg-hairline`} aria-hidden="true" />
-        )}
-        {m.legalRequestCard && <LegalRequestCardView card={m.legalRequestCard} />}
-        {shownContent ? (
-          <div className={m.isError ? "rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-red-500 dark:text-red-400" : "[&_.chat-markdown]:text-ink"}>
-            <Markdown text={shownContent} streaming={m.streaming} artifacts={m.artifacts} imageContext={m.assistantMessageId && chatId !== "new" ? { sessionId: chatId, messageId: m.assistantMessageId } : null} />
-          </div>
-        ) : (
-          <p className={`${compact ? "text-[13px]" : "text-[14px]"} leading-relaxed text-body`}>{m.streaming && !m.thinking && (!m.steps || m.steps.length === 0) ? "…" : ""}</p>
-        )}
-        {hasPeopleCard && (
-          <PeopleCard people={m.peopleData!} isLoadingMore={m.streaming} />
-        )}
-        {(m.savedMemories?.length ?? 0) > 0 && <SavedMemoryNotice memories={m.savedMemories!} compact={compact} />}
-        {/* the card itself sits above the composer (see pendingScopeCard) */}
-        {!m.streaming && m.scopeCard && scopeCardActive && (
-          <p className="caption mt-2 text-muted-soft">{t("docws.scopeCard.pickBelow")}</p>
-        )}
-        {!m.streaming && m.choiceList && scopeCardActive && onChoicePick && (
-          <ChoiceListView card={m.choiceList} disabled={busy} onPick={onChoicePick} />
-        )}
-        {!m.streaming &&
-          proposalOutcomeFor &&
-          onProposalApply &&
-          onProposalApplied &&
-          m.rewriteProposals?.map((p) => (
-            <RewriteProposalCard
-              key={p.batchId}
-              proposal={p}
-              appliedVariantId={p.appliedVariantId}
-              active={activeProposalIds.split(",").includes(p.batchId)}
-              disabled={proposalsDisabled}
-              outcomeFor={proposalOutcomeFor}
-              onApply={onProposalApply}
-              onApplied={onProposalApplied}
-            />
-          ))}
-        {!m.streaming &&
-          proposalOutcomeFor &&
-          onIllustrationInsert &&
-          onIllustrationInserted &&
-          m.illustrations?.map((ill) => (
-            <IllustrationCard
-              key={ill.batchId}
-              illustration={ill}
-              applied={ill.applied}
-              canInsert={!!ill.documentId && insertableDocIds.split(",").includes(ill.documentId)}
-              disabled={proposalsDisabled}
-              artifacts={m.artifacts}
-              imageContext={
-                m.assistantMessageId && chatId !== "new" ? { sessionId: chatId, messageId: m.assistantMessageId } : null
-              }
-              outcomeFor={proposalOutcomeFor}
-              onInsert={onIllustrationInsert}
-              onInserted={onIllustrationInserted}
-            />
-          ))}
-        {!m.streaming && (m.abbreviationCandidates?.length ?? 0) > 0 && (
-          <AbbreviationSuggestionCard
-            candidates={m.abbreviationCandidates!}
-            refreshKey={abbreviationRefreshKey}
-          />
-        )}
-        {m.references && m.references.length > 0 && (
-          <CompactReferencesList
-            references={m.references}
-            onSelectRef={(r, i) => onOpenDrawer(m.references || [], r, i)}
-          />
-        )}
-        {!m.streaming && (m.assistantMessageId || m.content) && (
-          <BotMessageActions
-            content={m.content}
-            createdAt={m.createdAt}
-            canFork={sessionId !== "new" && Boolean(m.assistantMessageId)}
-            onFork={m.assistantMessageId ? () => onFork(m) : undefined}
-            onRegenerate={!busy ? () => onRegenerate(index) : undefined}
-            feedback={
-              sessionId !== "new" && m.assistantMessageId && m.isCompleted === true && !m.isError
-                ? {
-                    sessionId,
-                    messageId: m.assistantMessageId,
-                    initial: m.feedback,
-                    initialComment: m.feedbackComment,
-                  }
-                : undefined
-            }
-          />
-        )}
-        {sessionId !== "new" && !compact && (
-          <FollowUpSuggestions
-            sessionId={sessionId}
-            messageId={m.assistantMessageId ?? null}
-            enabled={!m.streaming && m.isCompleted === true}
-            ensure={m.suggestionEnsure === true}
-            onAsk={onAsk}
-          />
-        )}
-      </div>
-    </div>
-  );
-});
 
 function ChatBody({ id }: { id: string }) {
   const searchParams = useSearchParams();
@@ -1100,8 +342,11 @@ function ChatBody({ id }: { id: string }) {
     handoffCacheRef.current.resolved,
   );
   const ctx = useChatContext();
+  // Guest chat (no organization): public-lookup assistant only — no
+  // documents, forks, follow-ups or other organization-only calls.
+  const guest = ctx.isGuest;
   const { t: tr } = useT();
-  const { user } = useAuth();
+  const { user, refreshMe } = useAuth();
   // Non-admin callers never send a model override; the server resolves the
   // model assigned to the selected response mode.
   const canPickModel = user?.is_system_admin === true;
@@ -1109,6 +354,11 @@ function ChatBody({ id }: { id: string }) {
   const [session, setSession] = useState<SessionRow | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string | null>(null);
   const [messages, setMessages] = useState<UiMessage[]>([]);
+  // The latest message list, for the callbacks that run outside a state
+  // updater (the stream handlers need to know whether the turn has a
+  // bubble to carry its error).
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
   // compactions streamed so far: the context ring reloads on each
   const compactionCount = useMemo(
     () => messages.reduce((n, m) => n + (m.steps?.filter((s) => s.type === "compacted").length ?? 0), 0),
@@ -1257,7 +507,8 @@ function ChatBody({ id }: { id: string }) {
     [id],
   );
   useEffect(() => {
-    if (id === "new") return;
+    // a guest's session holds no document (and the route needs an organization)
+    if (id === "new" || guest) return;
     let alive = true;
     getDocumentWorkspace(id)
       .then((v) => {
@@ -1269,13 +520,14 @@ function ChatBody({ id }: { id: string }) {
     return () => {
       alive = false;
     };
-  }, [id, noteSessionDocument]);
+  }, [id, noteSessionDocument, guest]);
   useEffect(() => {
     if (docFileName && ctx.hydrated && ctx.settings.selectedAgentId !== BUILTIN_DOCUMENT_ASSISTANT_ID) {
-      ctx.selectAgent(BUILTIN_DOCUMENT_ASSISTANT_ID);
+      if (ctx.isMobile) ctx.hydrateSessionState({ agent_id: BUILTIN_DOCUMENT_ASSISTANT_ID, agent_enabled: true });
+      else ctx.selectAgent(BUILTIN_DOCUMENT_ASSISTANT_ID);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [docFileName, ctx.hydrated, ctx.settings.selectedAgentId]);
+  }, [docFileName, ctx.hydrated, ctx.settings.selectedAgentId, ctx.isMobile]);
 
   // Background format check of the open document → progress ring in the
   // composer toolbar; a finished result shows a dot until it is opened once.
@@ -1611,6 +863,20 @@ function ChatBody({ id }: { id: string }) {
   }, []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
+  // The account kind changed while the chat was open (a guest joined an
+  // organization, a member lost the last membership): the session belongs
+  // to the old kind. Read /auth/me again (the provider then reloads for the
+  // new kind) and leave for a new chat, dropping the stale session.
+  const onAccountError = (e: unknown, sessionCall = true): boolean => {
+    if (!shouldRefreshAccount(e, { isGuest: guest, sessionCall })) return false;
+    void refreshMe();
+    // also on the "new" route, whose URL already names the session a send made
+    if (typeof window !== "undefined" && window.location.pathname !== "/platform/creatChat") router.replace("/platform/creatChat");
+    return true;
+  };
+  const onAccountErrorRef = useRef(onAccountError);
+  onAccountErrorRef.current = onAccountError;
+
   // History and session details:
   // Mirrors Vue loadSessionAndHydrate: fetch session details to populate title
   // and hydrate input state (agent, model, KBs) from last_request_state.
@@ -1659,6 +925,7 @@ function ChatBody({ id }: { id: string }) {
       })
       .catch((err) => {
         console.error("Failed to load session details:", err);
+        if (alive) onAccountErrorRef.current(err);
       });
 
     // If there is an initial query waiting to be auto-sent on mount,
@@ -1917,7 +1184,7 @@ function ChatBody({ id }: { id: string }) {
                   msg.assistantMessageId === inflightId
                     ? {
                         ...msg,
-                        content: msg.content || `⚠️ ${errorText}`,
+                        errorText,
                         isError: true,
                         streaming: false,
                       }
@@ -1982,8 +1249,9 @@ function ChatBody({ id }: { id: string }) {
           updateSessionActivity(id, false);
         }
       })
-      .catch(() => {
+      .catch((err) => {
         /* keep empty — no seed fallback so failures stay visible */
+        if (alive) onAccountErrorRef.current(err);
       });
     return () => {
       alive = false;
@@ -2024,6 +1292,7 @@ function ChatBody({ id }: { id: string }) {
   };
 
   const send = async (s: ComposerSend) => {
+    if (ctx.documentReadOnly || (ctx.isMobile && id !== "new" && session?.id !== id)) return;
     const t = s.query.trim();
     if (!t || busy || docPaneBusyRef.current) return;
     // "bỏ qua" under the template offer, no type picked: the document stays
@@ -2095,8 +1364,9 @@ function ChatBody({ id }: { id: string }) {
         // Stale upload/session errors never surface into the new session.
         if (!isLive()) return;
         const key = chatErrorKey(e);
-        setError(key ? tr(key) : e instanceof Error ? e.message : tr("chat.err.generic"));
+        setError(key ? tr(chatErrorTextKey(key, guest)) : e instanceof Error ? e.message : tr("chat.err.generic"));
         setBusy(false);
+        onAccountError(e, false);
         return;
       }
     }
@@ -2163,8 +1433,9 @@ function ChatBody({ id }: { id: string }) {
         // Stale upload errors never surface into the new session.
         if (!isLive()) return;
         const key = chatErrorKey(e);
-        setError(key ? tr(key) : e instanceof Error ? e.message : tr("chat.err.generic"));
+        setError(key ? tr(chatErrorTextKey(key, guest)) : e instanceof Error ? e.message : tr("chat.err.generic"));
         setBusy(false);
+        onAccountError(e, false);
         return;
       }
     }
@@ -2316,13 +1587,12 @@ function ChatBody({ id }: { id: string }) {
       if (kind === "error" && !toolScopedError) {
         const errorText = c.content || (c.data?.error as string) || tr("chat.err.generic");
         console.error("[applyChunk] Error event received:", errorText, c);
-        setError(errorText);
         setMessages((m) =>
           m.map((msg) =>
             matchAssistant(msg)
               ? {
                   ...msg,
-                  content: msg.content || `⚠️ ${errorText}`,
+                  errorText,
                   isError: true,
                   streaming: false,
                   assistantMessageId: incomingAsstId ?? msg.assistantMessageId,
@@ -2330,6 +1600,10 @@ function ChatBody({ id }: { id: string }) {
               : msg,
           ),
         );
+        // The error lives in the answer bubble (one surface). Without a
+        // bubble to carry it (the turn never got one), it goes to the
+        // page-level note instead.
+        if (!messagesRef.current.some(matchAssistant)) setError(errorText);
         // A backend error event is terminal for the turn, but older backends
         // keep the SSE socket open after it — without aborting, streamChat
         // never settles and `busy` stays locked, silently swallowing every
@@ -2678,24 +1952,29 @@ function ChatBody({ id }: { id: string }) {
         if (!isLive()) return;
         if (e instanceof DOMException && e.name === "AbortError") return;
         const errorKey = chatErrorKey(e);
-        const errorText = errorKey ? tr(errorKey) : e instanceof Error ? e.message : tr("chat.err.generic");
+        const errorText = errorKey ? tr(chatErrorTextKey(errorKey, guest)) : e instanceof Error ? e.message : tr("chat.err.generic");
         console.error("[streamChat] Error:", e);
+        onAccountError(e);
         // a used-up session gets the "open a new session" card instead of
         // a bare error line
         if (isSessionLimitError(e)) setSessionLimitFor(activeSessionId);
-        else setError(errorText);
         setMessages((m) =>
           m.map((msg) =>
             msg.id === asstId
               ? {
                   ...msg,
-                  content: msg.content || `⚠️ ${errorText}`,
+                  errorText,
                   isError: true,
                   streaming: false,
                 }
               : msg,
           ),
         );
+        // The bubble carries the error (one surface). Without a bubble to
+        // take it, it goes to the page-level note.
+        if (!isSessionLimitError(e) && !messagesRef.current.some((msg) => msg.id === asstId)) {
+          setError(errorText);
+        }
       })
       .finally(() => {
         // The core of the A→B race fix: a stale finalizer (old session A
@@ -2730,8 +2009,6 @@ function ChatBody({ id }: { id: string }) {
   // referential identity across renders.
   const sendRef = useRef(send);
   sendRef.current = send;
-  const messagesRef = useRef(messages);
-  messagesRef.current = messages;
 
   const handleEditQuestion = useCallback((content: string) => setInput(content), []);
 
@@ -2807,6 +2084,7 @@ function ChatBody({ id }: { id: string }) {
   const startTemplateHandoff = docTemplate.handoff;
   const runHandoff = useCallback(
     async (option: ChoiceOption) => {
+      if (ctx.isMobile) throw new Error(tr("docws.mobileWordUnavailable"));
       const h = option.handoff;
       if (!h) return;
       // no session yet (the page has not moved to the new one): say so
@@ -2831,11 +2109,19 @@ function ChatBody({ id }: { id: string }) {
   );
   const runChoicePick = useCallback(
     async (option: ChoiceOption) => {
-      if (option.handoff) return runHandoff(option);
+      if (option.handoff) {
+        // a hand-off opens a Word file with the document assistant, which
+        // needs an organization
+        if (guest) {
+          toast.info(tr("chat.err.tenantRequired"));
+          return;
+        }
+        return runHandoff(option);
+      }
       const blank = { attachments: [], imageFiles: [], mentionedItems: [], modelId: "" };
       void sendRef.current({ query: option.resend, ...blank });
     },
-    [runHandoff],
+    [runHandoff, guest, toast, tr],
   );
   // "Không phải?": the question goes again and the gate asks about the
   // words it had read on its own
@@ -2913,6 +2199,7 @@ function ChatBody({ id }: { id: string }) {
   // hydration, and firing early would send DEFAULTS — web_search_enabled=false,
   // no KB scope — for the user's very first question.
   useEffect(() => {
+    if (ctx.isMobile && id !== "new" && session?.id !== id) return;
     if (initialQ && !sentInitial.current && ctx.hydrated) {
       sentInitial.current = true;
       // Flagged file handoff but the one-shot record is gone (reload, other
@@ -2928,10 +2215,14 @@ function ChatBody({ id }: { id: string }) {
         setError(resolved.handoffError);
         return;
       }
+      if (ctx.documentReadOnly) {
+        setInput(initialQ);
+        return;
+      }
       void send({ query: initialQ, modelId: ctx.settings.selectedChatModelId, mentionedItems: [], imageFiles: [], attachments: [] });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialQ, id, ctx.hydrated]);
+  }, [initialQ, id, ctx.hydrated, ctx.isMobile, ctx.documentReadOnly, session?.id]);
 
   // Follow the stream only while the user is parked near the bottom — scrolling
   // up releases the lock. Setting scrollTop directly (not smooth scrollIntoView):
@@ -2979,8 +2270,8 @@ function ChatBody({ id }: { id: string }) {
 
   const title =
     id === "new"
-      ? (initialQ ?? "New chat")
-      : (sessionTitle || session?.title?.trim() || "New chat");
+      ? (initialQ ?? tr("nav.newChat"))
+      : (sessionTitle || session?.title?.trim() || tr("nav.newChat"));
 
   // On "new" the pane runs in pre-session mode: picking a file creates the
   // session and navigates to it.
@@ -2994,9 +2285,11 @@ function ChatBody({ id }: { id: string }) {
     void sendRef.current({ query: p.query, attachments: [], imageFiles: [], mentionedItems: [], modelId: "" });
   }, [id, busy, isDocumentAssistant, templateRequestId]);
 
-  // Split view (editor on the left): the chat column renders like the phone
-  // layout — base (unprefixed) classes only, full column width, smaller type.
-  const compact = isDocumentAssistant;
+  /* The phone-sized rendering follows the screen, not the agent: a narrow
+   * viewport always gets the compact column (base classes, smaller type).
+   * The document assistant keeps it in the desktop split view too — the
+   * editor sits next to the chat there, so the column stays narrow. */
+  const compact = ctx.isMobile || isDocumentAssistant;
 
   const templatePicker = (
     <DocumentTemplatePicker
@@ -3016,28 +2309,30 @@ function ChatBody({ id }: { id: string }) {
   );
   const chatColumn = (
     <div className={`flex flex-1 flex-col overflow-hidden ${compact ? "chat-compact" : ""}`}>
-      <div className={`hairline-b flex h-14 shrink-0 items-center ${compact ? "px-[17px]" : "px-4 sm:px-8"}`}>
-        <h1 className="min-w-0 truncate text-[15px] font-medium text-ink">{title}</h1>
-        {isDocumentAssistant && id !== "new" && <SubChatSwitcher sessionId={id} chats={subChats} disabled={busy} />}
-        {isDocumentAssistant && id !== "new" && (
-          <FormatCheckReportModal
-            open={formatReportOpen}
-            sessionId={id}
-            document={formatCheckDoc}
-            fixDisabled={busy}
-            onClose={() => setFormatReportOpen(false)}
-            onFix={() => askAboutFormatCheck(tr("docws.fcAskFix"))}
-            onAskInChat={() => askAboutFormatCheck(tr("docws.fcAskView"))}
-            onMark={markFormatFindings}
-            onLocateFinding={locateFinding}
-            onApplyFinding={applyFinding}
-            onVerifyFinding={checkFinding}
-          />
-        )}
-      </div>
-
       <div ref={scrollRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto">
         <div className={compact ? "w-full px-[17px] py-4" : "mx-auto w-full max-w-[768px] px-4 py-5 sm:px-6 sm:py-8"}>
+          {/* The conversation's own title. It used to be a second 56px bar
+              under the platform header (112px of chrome); it now rides with
+              the messages — the platform header is the only header bar. */}
+          <div className="sticky top-0 z-10 mb-3 flex items-center gap-2 bg-canvas py-1">
+            <h1 className="min-w-0 truncate text-[15px] font-medium text-ink">{title}</h1>
+            {isDocumentAssistant && id !== "new" && <SubChatSwitcher sessionId={id} chats={subChats} disabled={busy} />}
+            {isDocumentAssistant && id !== "new" && (
+              <FormatCheckReportModal
+                open={formatReportOpen}
+                sessionId={id}
+                document={formatCheckDoc}
+                fixDisabled={busy}
+                onClose={() => setFormatReportOpen(false)}
+                onFix={() => askAboutFormatCheck(tr("docws.fcAskFix"))}
+                onAskInChat={() => askAboutFormatCheck(tr("docws.fcAskView"))}
+                onMark={markFormatFindings}
+                onLocateFinding={locateFinding}
+                onApplyFinding={applyFinding}
+                onVerifyFinding={checkFinding}
+              />
+            )}
+          </div>
           {isDocumentAssistant && docTemplate.showPicker && messages.length === 0 && templatePicker}
           {messages.map((m, index) => (
             <Fragment key={m.id}>
@@ -3046,7 +2341,7 @@ function ChatBody({ id }: { id: string }) {
               <UserMessageBubble
                 message={m}
                 onEdit={handleEditQuestion}
-                onFork={id !== "new" ? handleFork : undefined}
+                onFork={id !== "new" && !guest ? handleFork : undefined}
                 onRejectReading={index === lastUserIndex ? rejectReading : undefined}
                 compact={compact}
               />
@@ -3077,6 +2372,7 @@ function ChatBody({ id }: { id: string }) {
                   onIllustrationInsert={insertIllustration}
                   onIllustrationInserted={markIllustrationInserted}
                   compact={compact}
+                  guest={guest}
                 />
                 {m.contextCompacted && (
                   <ContextCompactedDivider summary={m.contextCompacted.summary} degraded={m.contextCompacted.degraded} />
@@ -3085,7 +2381,7 @@ function ChatBody({ id }: { id: string }) {
             )}
             </Fragment>
           ))}
-          {error && <p className="body-sm mb-4 text-error">{error}</p>}
+          {error && <ErrorNote className="mb-4">{error}</ErrorNote>}
           {sessionLimitFor && sessionLimitFor === id && <SessionLimitCard sessionId={id} compact={compact} />}
         </div>
       </div>
@@ -3209,7 +2505,7 @@ function ChatBody({ id }: { id: string }) {
             />
           )}
           <div ref={composerBoxRef}>
-          <Composer
+          {!ctx.documentReadOnly && <Composer
             sessionId={id === "new" ? undefined : id}
             value={input}
             onChange={setInput}
@@ -3233,19 +2529,8 @@ function ChatBody({ id }: { id: string }) {
             documents={isDocumentAssistant ? documentMentionOptions : undefined}
             uploadsBecomeSources={isDocumentAssistant}
             onOpenAttachmentForEditing={isDocumentAssistant ? (a) => void openAttachmentForEditing(a) : undefined}
-            toolbarEnd={
-              <div className="flex shrink-0 items-center gap-1">
-                <ContextRing sessionId={id === "new" ? null : id} busy={busy} refreshKey={compactionCount} placement="above" usage={contextUsage} />
-                {isDocumentAssistant && spellingStatus && (
-                  <SpellingRing
-                    placement="above"
-                    status={spellingStatus}
-                    formatCheckLabel={formatCheck && !formatCheckInProgress(formatCheck) ? tr("docws.fcRecheck") : undefined}
-                    onGoTo={(m) => spellingActionsRef.current?.goTo(m) ?? Promise.resolve<GoToResult>("noAnswer")}
-                    onDismiss={(m) => spellingActionsRef.current?.dismiss(m) ?? Promise.resolve(false)}
-                    onFormatCheck={() => void startFormatCheck()}
-                  />
-                )}
+            toolbarStart={
+              <>
                 {isDocumentAssistant && !formatCheck && id !== "new" &&
                   (spellingStatus?.phase === "done" || spellingStatus?.phase === "failed") && (
                     <FormatCheckButton iconOnly busy={false} onClick={() => void startFormatCheck()} />
@@ -3264,11 +2549,28 @@ function ChatBody({ id }: { id: string }) {
                     onFix
                   />
                 )}
+              </>
+            }
+            toolbarEnd={
+              <div className="flex shrink-0 items-center gap-1">
+                <ContextRing sessionId={id === "new" ? null : id} busy={busy} refreshKey={compactionCount} placement="above" usage={contextUsage} />
+                {isDocumentAssistant && spellingStatus && (
+                  <SpellingRing
+                    placement="above"
+                    status={spellingStatus}
+                    formatCheckLabel={formatCheck && !formatCheckInProgress(formatCheck) ? tr("docws.fcRecheck") : undefined}
+                    onGoTo={(m) => spellingActionsRef.current?.goTo(m) ?? Promise.resolve<GoToResult>("noAnswer")}
+                    onDismiss={(m) => spellingActionsRef.current?.dismiss(m) ?? Promise.resolve(false)}
+                    onFormatCheck={() => void startFormatCheck()}
+                  />
+                )}
               </div>
             }
-          />
+          />}
           </div>
-          {!compact && (
+          {guest ? (
+            <GuestChatNote className="mt-3" />
+          ) : !compact && (
             <p className="caption mt-3 text-center text-muted-soft">
               Answers are grounded in your knowledge bases — verify important details.
             </p>
@@ -3295,8 +2597,9 @@ function ChatBody({ id }: { id: string }) {
   // identity when the agent (hydrated after getSession) flips the editor on.
   return (
     <SplitPane
+      documentMode={isDocumentAssistant || ctx.documentReadOnly}
       left={
-        isDocumentAssistant ? (
+        isDocumentAssistant && !ctx.documentReadOnly ? (
           <DocWorkspace
             key={id}
             sessionId={id === "new" ? undefined : id}
@@ -3316,7 +2619,27 @@ function ChatBody({ id }: { id: string }) {
           />
         ) : null
       }
-      right={chatColumn}
+      right={ctx.documentReadOnly ? (
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <p role="status" className="border-b border-hairline bg-surface-card px-4 py-3 text-[13px] leading-relaxed text-body">
+            {tr("docws.mobileReadOnly")}
+            <a href="/platform/creatChat" className="ml-1 underline underline-offset-2">{tr("docws.mobileNewReasoning")}</a>
+          </p>
+          <fieldset disabled className="m-0 flex min-h-0 min-w-0 flex-1 border-0 p-0">{chatColumn}</fieldset>
+        </div>
+      ) : (
+        <>
+          {/* The phone layout swaps the agent for the reasoning assistant
+              (lib/mobile-chat-policy.ts) — say so instead of changing the
+              conversation silently. */}
+          {ctx.mobileAgentFallback ? (
+            <p role="status" className="border-b border-hairline bg-surface-card px-4 py-2.5 text-[13px] leading-relaxed text-body">
+              {tr("chat.mobileAgentFallback")}
+            </p>
+          ) : null}
+          {chatColumn}
+        </>
+      )}
     />
   );
 }
@@ -3411,7 +2734,7 @@ function ScopeChip({
   const text = [documents, sections, task].filter(Boolean).join(" · ");
   return (
     <div
-      className={`mb-2 flex w-full min-w-0 items-center gap-2.5 rounded-r-[8px] border-l-2 px-3 py-2 ${
+      className={`mb-2 flex w-full min-w-0 items-center gap-2.5 rounded-r-md2 border-l-2 px-3 py-2 ${
         byUser ? "border-ink bg-surface-strong/60" : "border-dashed border-hairline-strong bg-surface-strong/30"
       }`}
     >
@@ -3518,11 +2841,11 @@ function SelectionChip({
 }) {
   return (
     <div
-      className={`relative flex w-full min-w-0 items-start gap-2 rounded-lg border border-[#c5ddfa] bg-[#e3efff] px-2.5 pt-2 dark:border-[#2a4a72] dark:bg-[#15273f] ${actions ? "mb-6 pb-6" : "mb-2 pb-2"}`}
+      className={`relative flex w-full min-w-0 items-start gap-2 rounded-lg2 border border-accent/25 bg-accent-surface px-3 pt-2 ${actions ? "mb-6 pb-6" : "mb-2 pb-2"}`}
     >
-      <div className="min-w-0 flex-1 border-l-2 border-[#8bb8ee] pl-2 dark:border-[#4b7bb5]" title={selection.text}>
-        {label && <div className="caption truncate text-[#0f2d59]/70 dark:text-[#dce9fe]/70">{label.replace(/:\s*$/, "")}</div>}
-        <div className="line-clamp-2 whitespace-pre-line text-[12.5px] leading-[18px] text-black dark:text-[#dce9fe]">{selection.text.trim()}</div>
+      <div className="min-w-0 flex-1 border-l-2 border-accent/40 pl-2" title={selection.text}>
+        {label && <div className="caption truncate text-accent/80">{label.replace(/:\s*$/, "")}</div>}
+        <div className="line-clamp-2 whitespace-pre-line text-[12.5px] leading-[18px] text-ink">{selection.text.trim()}</div>
       </div>
       <button
         type="button"
@@ -3540,7 +2863,7 @@ function SelectionChip({
 
 export function ChatClient({ id }: { id: string }) {
   return (
-    <ChatProvider>
+    <ChatProvider sessionId={id} newChat={id === "new"}>
       <ChatBody id={id} />
     </ChatProvider>
   );

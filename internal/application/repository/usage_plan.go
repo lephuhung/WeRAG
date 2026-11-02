@@ -155,3 +155,91 @@ func (r *usagePlanRepository) RemoveSeat(ctx context.Context, subscriptionID, us
 	return r.conn(ctx).
 		Where("subscription_id = ? AND user_id = ?", subscriptionID, userID).Delete(&types.UsageSeat{}).Error
 }
+
+func (r *usagePlanRepository) ListSubscriptionAddons(
+	ctx context.Context, subscriptionID string,
+) ([]*types.UsageSubscriptionAddon, error) {
+	var addons []*types.UsageSubscriptionAddon
+	if err := r.conn(ctx).Where("subscription_id = ?", subscriptionID).
+		Order("created_at ASC").Find(&addons).Error; err != nil {
+		return nil, err
+	}
+	if len(addons) == 0 {
+		return addons, nil
+	}
+	ids := make([]string, 0, len(addons))
+	for _, a := range addons {
+		ids = append(ids, a.AgentID)
+	}
+	var rows []struct {
+		ID   string
+		Name string
+	}
+	if err := r.conn(ctx).Table("custom_agents").Select("id, name").
+		Where("id IN ? AND deleted_at IS NULL", ids).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	names := make(map[string]string, len(rows))
+	for _, row := range rows {
+		names[row.ID] = row.Name
+	}
+	for _, a := range addons {
+		a.AgentName = names[a.AgentID]
+	}
+	return addons, nil
+}
+
+// UpsertSubscriptionAddon writes a right, never shortening an existing one
+// (types.MergeSubscriptionAddon). Callers that must not race run inside a
+// transaction holding the scope lock (order confirmation).
+func (r *usagePlanRepository) UpsertSubscriptionAddon(ctx context.Context, addon *types.UsageSubscriptionAddon) error {
+	now := time.Now()
+	var existing []*types.UsageSubscriptionAddon
+	if err := r.conn(ctx).Where("subscription_id = ? AND agent_id = ?", addon.SubscriptionID, addon.AgentID).
+		Limit(1).Find(&existing).Error; err != nil {
+		return err
+	}
+	if len(existing) == 0 {
+		if addon.CreatedAt.IsZero() {
+			addon.CreatedAt = now
+		}
+		addon.UpdatedAt = now
+		return r.conn(ctx).Create(addon).Error
+	}
+	merged := types.MergeSubscriptionAddon(existing[0], addon)
+	merged.UpdatedAt = now
+	*addon = *merged
+	return r.conn(ctx).Model(&types.UsageSubscriptionAddon{}).
+		Where("subscription_id = ? AND agent_id = ?", addon.SubscriptionID, addon.AgentID).
+		Updates(map[string]interface{}{
+			"starts_at": merged.StartsAt, "ends_at": merged.EndsAt, "price_vnd": merged.PriceVND,
+			"order_id": merged.OrderID, "granted_by": merged.GrantedBy, "updated_at": merged.UpdatedAt,
+		}).Error
+}
+
+// PinSubscriptionAddonEnd gives a right without an end the end `end`
+// (a renewal that does not pay for it); a right with an end is untouched.
+func (r *usagePlanRepository) PinSubscriptionAddonEnd(ctx context.Context, subscriptionID, agentID string, end time.Time) error {
+	return r.conn(ctx).Model(&types.UsageSubscriptionAddon{}).
+		Where("subscription_id = ? AND agent_id = ? AND ends_at IS NULL", subscriptionID, agentID).
+		Updates(map[string]interface{}{"ends_at": end, "updated_at": time.Now()}).Error
+}
+
+func (r *usagePlanRepository) DeleteSubscriptionAddon(ctx context.Context, subscriptionID, agentID string) (bool, error) {
+	res := r.conn(ctx).Where("subscription_id = ? AND agent_id = ?", subscriptionID, agentID).
+		Delete(&types.UsageSubscriptionAddon{})
+	return res.RowsAffected > 0, res.Error
+}
+
+func (r *usagePlanRepository) CustomAgentDistribution(ctx context.Context, agentID string) (string, bool, error) {
+	var rows []struct{ Distribution string }
+	if err := r.conn(ctx).Table("custom_agents").Select("distribution").
+		Where("id = ? AND is_builtin = ? AND deleted_at IS NULL", agentID, false).
+		Limit(1).Scan(&rows).Error; err != nil {
+		return "", false, err
+	}
+	if len(rows) == 0 {
+		return "", false, nil
+	}
+	return rows[0].Distribution, true, nil
+}

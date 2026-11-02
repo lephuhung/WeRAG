@@ -39,6 +39,14 @@ type CustomAgentService interface {
 	//   - Possible errors such as insufficient permissions, etc.
 	ListAgents(ctx context.Context) ([]*types.CustomAgent, error)
 
+	// ListAllAgents is ListAgents with switched-off agents included, for a
+	// SuperAdmin (anyone else gets ListAgents).
+	ListAllAgents(ctx context.Context) ([]*types.CustomAgent, error)
+
+	// SetAgentEnabled is the SuperAdmin's runtime on/off switch of an agent
+	// (built-in or custom), stored on its row in the caller's tenant.
+	SetAgentEnabled(ctx context.Context, id string, enabled bool) (*types.CustomAgent, error)
+
 	// UpdateAgent updates agent information
 	// Parameters:
 	//   - ctx: Context information
@@ -118,6 +126,25 @@ type CustomAgentRepository interface {
 	//   - List of agent objects
 	//   - Possible errors such as database errors, etc.
 	ListAgentsByTenantID(ctx context.Context, tenantID uint64) ([]*types.CustomAgent, error)
+
+	// GetVisibleAgentByID and ListVisibleAgents apply the visibility rule
+	// ("Cách phân phối": basic / addon bought / internal "Tổ chức áp dụng")
+	// for a viewer: the tenant plus, for a human, their personal
+	// subscription's add-ons. GetAgentByID and ListAgentsByTenantID apply
+	// it for the tenant alone.
+	GetVisibleAgentByID(ctx context.Context, id string, viewer types.AgentViewer) (*types.CustomAgent, error)
+	ListVisibleAgents(ctx context.Context, viewer types.AgentViewer) ([]*types.CustomAgent, error)
+
+	// GetAgentByIDIgnoringTenantScope and ListAgentsByTenantIDIgnoringTenantScope
+	// skip the visibility filter that the reads above apply. Only a
+	// SuperAdmin, who manages every agent, reads through them.
+	GetAgentByIDIgnoringTenantScope(ctx context.Context, id string, tenantID uint64) (*types.CustomAgent, error)
+	ListAgentsByTenantIDIgnoringTenantScope(ctx context.Context, tenantID uint64) ([]*types.CustomAgent, error)
+
+	// InvalidScopeTenantIDs returns the ids that cannot be in the "Tổ chức
+	// áp dụng" list of an agent owned by ownerTenantID (not a live workspace
+	// inheriting from that configuration profile).
+	InvalidScopeTenantIDs(ctx context.Context, ownerTenantID uint64, tenantIDs []uint64) ([]uint64, error)
 
 	// UpdateAgent updates an agent record
 	// Parameters:

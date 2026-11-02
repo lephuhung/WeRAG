@@ -15,41 +15,8 @@ import (
 const ToolFindRelatedLegalDocuments = "find_related_legal_documents"
 
 var findRelatedLegalDocumentsTool = BaseTool{
-	name: ToolFindRelatedLegalDocuments,
-	description: `Find Vietnamese legal documents related to one document by walking the
-relation graph of the platform's legal catalogue (vbpl.vn, central-government
-documents), several hops deep, and tell which of them the knowledge bases hold.
-
-## When to Use
-
-- The user asks which documents detail or guide a law (Nghị định, Thông tư
-  quy định chi tiết, hướng dẫn thi hành), what amended a document, which
-  versions came before or after it, or what a document implements.
-- An answer needs the implementing rules of a law: find them here, then read
-  the ones held in a knowledge base.
-
-Use check_legal_status for the validity of one document.
-
-## Input
-
-- document_number: số ký hiệu (e.g. "109/2025/QH15"); or title: words of the
-  title (e.g. "Luật Thuế thu nhập cá nhân").
-- mode:
-  - "guidance" (default): documents detailing or guiding it, transitively
-    (Luật → Nghị định → Thông tư);
-  - "amendments": documents amending, correcting or consolidating it;
-  - "history": earlier and later versions (replaced, repealed, ended);
-  - "basis": the documents it is based on or implements, up to the law.
-- depth: hops to follow (1-3; default: the mode's maximum).
-- include_expired: also list documents no longer in force (history always
-  does).
-
-## Output
-
-Per hop, each related document with its relation, dates and status. Documents
-held in a knowledge base carry a document handle: pass it to read_document or
-search_document_section to read them. Documents without one are only known
-from the catalogue: name them, but do not quote their content.`,
+	name:        ToolFindRelatedLegalDocuments,
+	description: `Find Vietnamese legal documents related to one document by walking the relation graph of the platform's legal catalogue (vbpl.vn, central-government documents), several hops deep, and tell which of them the knowledge bases hold. Use it when the user asks which documents detail or guide a law, what amended a document, its earlier or later versions, or what it implements, and when an answer needs a law's implementing rules; check_legal_status is for one document's validity. Related documents held in a knowledge base carry a handle for read_document or search_document_section; the others are known only from the catalogue: name them, do not quote their content.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -64,7 +31,7 @@ from the catalogue: name them, but do not quote their content.`,
     "mode": {
       "type": "string",
       "enum": ["guidance", "amendments", "history", "basis"],
-      "description": "Which relations to follow (default guidance)"
+      "description": "guidance (default): documents detailing or guiding it, transitively; amendments: amending, correcting or consolidating it; history: earlier and later versions; basis: what it is based on or implements"
     },
     "depth": {
       "type": "integer",
@@ -74,7 +41,7 @@ from the catalogue: name them, but do not quote their content.`,
     },
     "include_expired": {
       "type": "boolean",
-      "description": "Also list documents no longer in force (default false)"
+      "description": "Also list documents no longer in force (history always does)"
     }
   }
 }`),

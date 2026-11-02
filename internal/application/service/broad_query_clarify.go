@@ -53,6 +53,7 @@ func (s *sessionService) broadQueryClarification(ctx context.Context, req *types
 // people-lookup quick answer ends such a turn.
 func emitPipelineCardNormal(ctx context.Context, bus *event.EventBus, req *types.QARequest, toolName, idPrefix, answer string, data map[string]interface{}) error {
 	sessionID := req.Session.ID
+	data = withFinalMessage(data, answer)
 	// the quick-answer timeline recorder adds the pipeline prefix itself
 	callID := idPrefix + req.AssistantMessageID
 	if err := bus.Emit(ctx, event.Event{Type: event.EventAgentToolCall, SessionID: sessionID,

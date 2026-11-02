@@ -48,7 +48,7 @@ export function SessionLimitCard({ sessionId, compact = false }: { sessionId: st
   const { t } = useT();
   return (
     <div
-      className={`${compact ? "text-[12.5px]" : "text-[13px]"} mb-4 rounded-xl border border-hairline bg-surface-card px-3 py-2.5 text-body`}
+      className={`${compact ? "text-[12.5px]" : "text-[13px]"} mb-4 rounded-lg2 border border-hairline bg-surface-card p-3 text-body`}
       role="status"
     >
       <p className="mb-1 font-medium text-ink">{t("session.limit.title")}</p>
@@ -71,7 +71,7 @@ export function SessionUsageBanner({ usage, sessionId, compact = false }: {
   const hint = usage.reached && usage.soft ? t("session.warn.soft") : t("session.warn.near");
   return (
     <div
-      className={`${compact ? "text-[12px]" : "text-[12.5px]"} mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-hairline bg-surface-card px-3 py-2 text-body`}
+      className={`${compact ? "text-[12px]" : "text-[12.5px]"} mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg2 border border-hairline bg-surface-card p-3 text-body`}
       role="status"
     >
       <span>

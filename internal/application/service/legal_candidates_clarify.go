@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/agent/tools"
@@ -41,6 +42,7 @@ func (s *sessionService) legalCandidatesClarification(ctx context.Context, req *
 // history. Same shape as EmitDocumentScopeClarification.
 func emitPipelineCard(ctx context.Context, bus *event.EventBus, req *types.QARequest, toolName, idPrefix, answer string, data map[string]interface{}) error {
 	sessionID := req.Session.ID
+	data = withFinalMessage(data, answer)
 	callID := types.PipelineToolCallIDPrefix + idPrefix + req.AssistantMessageID
 	if err := bus.Emit(ctx, event.Event{Type: event.EventAgentToolResult, SessionID: sessionID,
 		Data: event.AgentToolResultData{ToolCallID: callID, ToolName: toolName,
@@ -58,4 +60,20 @@ func emitPipelineCard(ctx context.Context, bus *event.EventBus, req *types.QAReq
 	return bus.Emit(ctx, event.Event{Type: event.EventAgentComplete, SessionID: sessionID,
 		Data: event.AgentCompleteData{SessionID: sessionID, MessageID: req.AssistantMessageID,
 			FinalAnswer: answer, AgentSteps: []types.AgentStep{step}, TotalSteps: 1}})
+}
+
+// withFinalMessage returns a copy of a pipeline card's data carrying the
+// fixed answer under "final_message" (agent.ToolResultFinalMessageKey), the
+// key in-loop tools use for a code-written answer: a client or an eval can
+// tell such an answer from a model-written one without a list of card
+// names. data itself is not changed.
+func withFinalMessage(data map[string]interface{}, answer string) map[string]interface{} {
+	out := make(map[string]interface{}, len(data)+1)
+	for k, v := range data {
+		out[k] = v
+	}
+	if strings.TrimSpace(answer) != "" {
+		out["final_message"] = answer
+	}
+	return out
 }

@@ -1,0 +1,73 @@
+{
+  "type": "dang_bien_ban",
+  "label": "Biên bản của Đảng (Hướng dẫn 36-HD/VPTW)",
+  "required_components": [
+    "tieu_de_dang",
+    "co_quan_ban_hanh",
+    "so_ky_hieu",
+    "trich_yeu",
+    "noi_dung",
+    "signature"
+  ],
+  "optional_components": [
+    "co_quan_chu_quan",
+    "dia_danh_ngay_thang",
+    "noi_nhan",
+    "phu_luc"
+  ],
+  "checks": [
+    {
+      "id": "trich_yeu.type_line",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "text",
+      "op": "regex",
+      "value": "BIÊN BẢN|BIEN BAN",
+      "mode": "any",
+      "desc": "Tên loại văn bản 'BIÊN BẢN' một dòng riêng, trên trích yếu",
+      "severity": "warn"
+    },
+    {
+      "id": "signature.zone",
+      "kind": "prop",
+      "component": "signature",
+      "prop": "zone",
+      "op": "in",
+      "value": [
+        "left",
+        "right"
+      ],
+      "desc": "Biên bản có hai khối ký: người ghi biên bản bên trái, chủ trì bên phải (HD36 mục 1.7.2)",
+      "severity": "error"
+    }
+  ],
+  "judgment": [
+    {
+      "id": "tham_quyen_ky",
+      "collective_regex": ""
+    },
+    {
+      "id": "yeu_cau_rieng",
+      "requirements": [
+        {
+          "check": "component_regex",
+          "component": "chuc_danh",
+          "mode": "any",
+          "regex": "^CHU TRI\\b",
+          "desc": "Biên bản có khối ký \"CHỦ TRÌ HỘI NGHỊ\" (bên phải)",
+          "severity": "error",
+          "fix": "Thêm khối ký \"CHỦ TRÌ HỘI NGHỊ\" bên phải."
+        },
+        {
+          "check": "component_regex",
+          "component": "chuc_danh",
+          "mode": "any",
+          "regex": "^NGUOI GHI BIEN BAN\\b|^THU KY\\b",
+          "desc": "Biên bản có khối ký \"NGƯỜI GHI BIÊN BẢN\" (bên trái)",
+          "severity": "error",
+          "fix": "Thêm khối ký \"NGƯỜI GHI BIÊN BẢN\" bên trái."
+        }
+      ]
+    }
+  ]
+}

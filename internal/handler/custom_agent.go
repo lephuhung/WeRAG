@@ -3,10 +3,12 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/im"
@@ -37,6 +39,9 @@ type CustomAgentHandler struct {
 	// models validates the document-assistant model selections. Optional —
 	// nil in partially-wired unit tests, where they are left unchecked.
 	models interfaces.ModelService
+	// domainPacks are the packs shipped in this build: listed for the editor
+	// and checked on save. Nil ships none, so any selection is refused.
+	domainPacks *domainpacks.Registry
 }
 
 // NewCustomAgentHandler creates a new custom agent handler instance
@@ -46,6 +51,7 @@ func NewCustomAgentHandler(
 	userService interfaces.UserService,
 	sandboxConfigs *service.TenantSandboxConfigService,
 	models interfaces.ModelService,
+	domainPacks *domainpacks.Registry,
 ) *CustomAgentHandler {
 	return &CustomAgentHandler{
 		service:        service,
@@ -53,6 +59,7 @@ func NewCustomAgentHandler(
 		userService:    userService,
 		sandboxConfigs: sandboxConfigs,
 		models:         models,
+		domainPacks:    domainPacks,
 	}
 }
 
@@ -62,6 +69,14 @@ type CreateAgentRequest struct {
 	Description string                  `json:"description"`
 	Avatar      string                  `json:"avatar"`
 	Config      types.CustomAgentConfig `json:"config"`
+	// AppliesToTenantIDs is "Tổ chức áp dụng": the workspaces allowed to use
+	// an internal agent. Empty or absent = every Tổ chức. Only allowed with
+	// distribution "internal".
+	AppliesToTenantIDs types.AgentTenantScope `json:"applies_to_tenant_ids"`
+	// Distribution is "Cách phân phối": basic | addon | internal. Absent:
+	// internal with a non-empty applies_to_tenant_ids, addon with domain
+	// packs, else basic.
+	Distribution string `json:"distribution" enums:"basic,addon,internal"`
 }
 
 // UpdateAgentRequest defines the request body for updating an agent
@@ -74,6 +89,13 @@ type UpdateAgentRequest struct {
 	// that PUT only a config silently zeroed the avatar and still got a 200.
 	Avatar *string                 `json:"avatar"`
 	Config types.CustomAgentConfig `json:"config"`
+	// AppliesToTenantIDs is "Tổ chức áp dụng". A pointer for the same reason
+	// as Avatar: absent keeps the stored list, [] clears it (every Tổ chức).
+	AppliesToTenantIDs *types.AgentTenantScope `json:"applies_to_tenant_ids"`
+	// Distribution is "Cách phân phối" (basic | addon | internal); absent
+	// keeps the stored one. Leaving internal without sending a list clears
+	// the stored "Tổ chức áp dụng".
+	Distribution string `json:"distribution" enums:"basic,addon,internal"`
 }
 
 // CreateAgent godoc
@@ -108,6 +130,10 @@ func (h *CustomAgentHandler) CreateAgent(c *gin.Context) {
 		c.Error(err)
 		return
 	}
+	if err := h.validateDomainPacks(req.Config); err != nil {
+		c.Error(err)
+		return
+	}
 	if err := h.validateDocumentAssistantConfig(ctx, req.Config); err != nil {
 		c.Error(err)
 		return
@@ -115,10 +141,12 @@ func (h *CustomAgentHandler) CreateAgent(c *gin.Context) {
 
 	// Build agent object
 	agent := &types.CustomAgent{
-		Name:        req.Name,
-		Description: req.Description,
-		Avatar:      req.Avatar,
-		Config:      req.Config,
+		Name:               req.Name,
+		Description:        req.Description,
+		Avatar:             req.Avatar,
+		Config:             req.Config,
+		AppliesToTenantIDs: req.AppliesToTenantIDs,
+		Distribution:       req.Distribution,
 	}
 	agent.EnsureDefaults()
 	// The DB column (varchar(64)) has no application-level guard, so an
@@ -140,7 +168,7 @@ func (h *CustomAgentHandler) CreateAgent(c *gin.Context) {
 	createdAgent, err := h.service.CreateAgent(ctx, agent)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
-		if err == service.ErrAgentNameRequired {
+		if err == service.ErrAgentNameRequired || isAgentTenantScopeError(err) {
 			c.Error(errors.NewBadRequestError(err.Error()))
 			return
 		}
@@ -213,10 +241,11 @@ func (h *CustomAgentHandler) GetAgent(c *gin.Context) {
 
 // ListAgents godoc
 // @Summary      Lấy danh sách trợ lý
-// @Description  Lấy mọi trợ lý của tổ chức hiện tại (gồm cả trợ lý tích hợp sẵn)
+// @Description  Lấy mọi trợ lý của tổ chức hiện tại (gồm cả trợ lý tích hợp sẵn). Trợ lý đang tắt chỉ có khi quản trị hệ thống gửi include_disabled=true.
 // @Tags         Trợ lý
 // @Accept       json
 // @Produce      json
+// @Param        include_disabled  query  bool  false  "SuperAdmin: gồm cả trợ lý đang tắt"
 // @Success      200  {object}  map[string]interface{}  "danh sách trợ lý"
 // @Failure      500  {object}  errors.AppError         "lỗi hệ thống"
 // @Security     Bearer
@@ -225,8 +254,13 @@ func (h *CustomAgentHandler) GetAgent(c *gin.Context) {
 func (h *CustomAgentHandler) ListAgents(c *gin.Context) {
 	ctx := c.Request.Context()
 
-	// Get all agents for this tenant
-	agents, err := h.service.ListAgents(ctx)
+	// Get all agents for this tenant; the SuperAdmin agent page also asks
+	// for the switched-off ones (ignored for anyone else)
+	list := h.service.ListAgents
+	if v := c.Query("include_disabled"); v == "true" || v == "1" {
+		list = h.service.ListAllAgents
+	}
+	agents, err := list(ctx)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		// Reached only after the typed sentinels and *errors.AppError above, so
@@ -362,6 +396,10 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 		c.Error(err)
 		return
 	}
+	if err := h.validateDomainPacks(req.Config); err != nil {
+		c.Error(err)
+		return
+	}
 	if err := h.validateDocumentAssistantConfig(ctx, req.Config); err != nil {
 		c.Error(err)
 		return
@@ -382,10 +420,16 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 	// Build agent object. Avatar is deliberately absent here — it reaches the
 	// service as a separate pointer, so that "not sent" survives the trip.
 	agent := &types.CustomAgent{
-		ID:          id,
-		Name:        req.Name,
-		Description: req.Description,
-		Config:      req.Config,
+		ID:           id,
+		Name:         req.Name,
+		Description:  req.Description,
+		Config:       req.Config,
+		Distribution: req.Distribution,
+	}
+	// nil tells the service the list was not sent; Normalized never returns
+	// nil, so a sent [] still clears the stored list.
+	if req.AppliesToTenantIDs != nil {
+		agent.AppliesToTenantIDs = req.AppliesToTenantIDs.Normalized()
 	}
 	agent.EnsureDefaults()
 	if err := agent.Config.QuestionSuggestions.Validate(); err != nil {
@@ -412,6 +456,10 @@ func (h *CustomAgentHandler) UpdateAgent(c *gin.Context) {
 		case service.ErrAgentNameRequired:
 			c.Error(errors.NewBadRequestError(err.Error()))
 		default:
+			if service.IsAgentTenantScopeError(err) {
+				c.Error(errors.NewBadRequestError(err.Error()))
+				break
+			}
 			// Reached only after the typed sentinels and *errors.AppError above, so
 			// whatever lands here is a raw repository/driver error. Its text
 			// (SQLSTATE, column names) must not reach the client; the full detail
@@ -783,7 +831,7 @@ func authorizeAgentKnowledgeScope(ctx context.Context, cfg types.CustomAgentConf
 	switch strings.ToLower(strings.TrimSpace(cfg.KBSelectionMode)) {
 	case "none":
 		return nil
-	case "all":
+	case "all", types.KBSelectionModePublic:
 		return errors.NewForbiddenError("API key scope does not allow agents that use all knowledge bases")
 	case "selected":
 		return types.AuthorizeTenantAPIKeyKnowledgeBases(ctx, cfg.KnowledgeBases...)
@@ -793,4 +841,48 @@ func authorizeAgentKnowledgeScope(ctx context.Context, cfg types.CustomAgentConf
 		}
 		return types.AuthorizeTenantAPIKeyKnowledgeBases(ctx, cfg.KnowledgeBases...)
 	}
+}
+
+// isAgentTenantScopeError reports a refused "Tổ chức áp dụng" list.
+func isAgentTenantScopeError(err error) bool {
+	return service.IsAgentTenantScopeError(err)
+}
+
+// SetAgentEnabledRequest is the body of PUT /agents/{id}/enabled.
+type SetAgentEnabledRequest struct {
+	Enabled *bool `json:"enabled" binding:"required"`
+}
+
+// SetAgentEnabled godoc
+// @Summary      Bật/tắt trợ lý (quản trị hệ thống)
+// @Description  Công tắc lúc chạy cho trợ lý tích hợp sẵn và trợ lý tuỳ chỉnh. Trợ lý tích hợp sẵn đang tắt không hiện trong danh sách chọn nhưng vẫn mở được theo id; trợ lý tuỳ chỉnh đang tắt bị ẩn với mọi người trừ quản trị hệ thống (lượt chat tiếp theo nhận 2104). Chưa đặt = giá trị trong builtin_agents.yaml (tích hợp sẵn) hoặc bật (tuỳ chỉnh).
+// @Tags         Trợ lý
+// @Accept       json
+// @Produce      json
+// @Param        id    path  string                  true  "agent id"
+// @Param        body  body  SetAgentEnabledRequest  true  "enabled"
+// @Success      200  {object}  map[string]interface{}
+// @Security     Bearer
+// @Router       /agents/{id}/enabled [put]
+func (h *CustomAgentHandler) SetAgentEnabled(c *gin.Context) {
+	ctx := c.Request.Context()
+	var req SetAgentEnabledRequest
+	if err := c.ShouldBindJSON(&req); err != nil || req.Enabled == nil {
+		c.Error(errors.NewBadRequestError("enabled (true/false) is required"))
+		return
+	}
+	agent, err := h.service.SetAgentEnabled(ctx, c.Param("id"), *req.Enabled)
+	if err != nil {
+		switch {
+		case stderrors.Is(err, service.ErrAgentNotFound):
+			c.Error(errors.NewNotFoundError("Agent not found"))
+		case stderrors.Is(err, service.ErrAgentSwitchForbidden):
+			c.Error(errors.NewForbiddenError(err.Error()))
+		default:
+			logger.ErrorWithFields(ctx, err, nil)
+			c.Error(errors.NewInternalServerError("Failed to switch the agent"))
+		}
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": agent})
 }

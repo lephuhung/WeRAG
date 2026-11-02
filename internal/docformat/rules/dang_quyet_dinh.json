@@ -1,0 +1,71 @@
+{
+  "type": "dang_quyet_dinh",
+  "label": "Quyết định của Đảng (Hướng dẫn 36-HD/VPTW)",
+  "required_components": [
+    "tieu_de_dang",
+    "co_quan_ban_hanh",
+    "so_ky_hieu",
+    "dia_danh_ngay_thang",
+    "trich_yeu",
+    "noi_dung",
+    "signature",
+    "noi_nhan"
+  ],
+  "optional_components": [
+    "co_quan_chu_quan",
+    "can_cu",
+    "do_mat",
+    "do_khan",
+    "phu_luc"
+  ],
+  "checks": [
+    {
+      "id": "trich_yeu.type_line",
+      "kind": "prop",
+      "component": "trich_yeu",
+      "prop": "text",
+      "op": "regex",
+      "value": "QUYẾT ĐỊNH|QUYET DINH",
+      "mode": "any",
+      "desc": "Tên loại văn bản 'QUYẾT ĐỊNH' một dòng riêng, trên trích yếu",
+      "severity": "warn"
+    }
+  ],
+  "anchors": [
+    {
+      "id": "dieu",
+      "regex": "^DIEU\\s+\\d+\\.?",
+      "max": 20,
+      "desc": "Điều"
+    }
+  ],
+  "judgment": [
+    {
+      "id": "yeu_cau_rieng",
+      "requirements": [
+        {
+          "check": "line_ends",
+          "component": "can_cu",
+          "regex": ";$",
+          "last_regex": ",$",
+          "desc": "Mỗi căn cứ một dòng, kết thúc bằng \";\", căn cứ cuối cùng kết thúc bằng \",\"",
+          "severity": "error",
+          "fix": "Kết thúc mỗi căn cứ bằng \";\", căn cứ cuối bằng \",\"."
+        },
+        {
+          "check": "anchor_regex",
+          "anchor": "dieu",
+          "last": 2,
+          "also": [
+            "tail"
+          ],
+          "regex": "HIEU LUC|THI HANH|THUC HIEN",
+          "desc": "Điều cuối nêu hiệu lực, tổ chức thực hiện",
+          "severity": "warn",
+          "when_absent": "pass",
+          "fix": "Bổ sung Điều cuối nêu hiệu lực và trách nhiệm thi hành."
+        }
+      ]
+    }
+  ]
+}

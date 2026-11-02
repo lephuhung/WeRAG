@@ -1,0 +1,118 @@
+/* The knowledge-graph palette. Every colour the graphs use is a custom
+ * property so the dark mode and the Anthropic preset can override the
+ * whole set in one place (the canvas, the legend swatches and the node
+ * types all read the same variables).
+ *
+ * Each family has a fill (the node body) and a stroke (its outline).
+ * The light values are the historical hexes; the dark values are their
+ * lightened counterparts, so a node stays legible on the dark card. */
+
+:root {
+  --graph-edge: #94a3b8;
+
+  --graph-fill-slate: #64748b;
+  --graph-stroke-slate: #475569;
+  --graph-fill-slate-deep: #334155;
+  --graph-stroke-slate-deep: #1e293b;
+  --graph-fill-purple: #a855f7;
+  --graph-stroke-purple: #7e22ce;
+  --graph-fill-sky: #38bdf8;
+  --graph-stroke-sky: #0284c7;
+  --graph-fill-sky-deep: #0284c7;
+  --graph-stroke-sky-deep: #0369a1;
+  --graph-fill-amber: #f59e0b;
+  --graph-stroke-amber: #b45309;
+  --graph-fill-rose: #f43f5e;
+  --graph-stroke-rose: #be123c;
+  --graph-fill-teal: #0f766e;
+  --graph-stroke-teal: #134e4a;
+  --graph-fill-emerald: #10b981;
+  --graph-stroke-emerald: #047857;
+  --graph-fill-indigo: #6366f1;
+  --graph-stroke-indigo: #4338ca;
+  --graph-fill-red: #b91c1c;
+  --graph-stroke-red: #7f1d1d;
+}
+
+:global(html.dark) {
+  --graph-edge: #64748b;
+
+  --graph-fill-slate: #94a3b8;
+  --graph-stroke-slate: #64748b;
+  --graph-fill-slate-deep: #64748b;
+  --graph-stroke-slate-deep: #475569;
+  --graph-fill-purple: #c084fc;
+  --graph-stroke-purple: #a855f7;
+  --graph-fill-sky: #7dd3fc;
+  --graph-stroke-sky: #38bdf8;
+  --graph-fill-sky-deep: #38bdf8;
+  --graph-stroke-sky-deep: #0284c7;
+  --graph-fill-amber: #fbbf24;
+  --graph-stroke-amber: #f59e0b;
+  --graph-fill-rose: #fb7185;
+  --graph-stroke-rose: #f43f5e;
+  --graph-fill-teal: #2dd4bf;
+  --graph-stroke-teal: #14b8a6;
+  --graph-fill-emerald: #34d399;
+  --graph-stroke-emerald: #10b981;
+  --graph-fill-indigo: #818cf8;
+  --graph-stroke-indigo: #6366f1;
+  --graph-fill-red: #f87171;
+  --graph-stroke-red: #ef4444;
+}
+
+/* The Anthropic preset: warmer neutrals, the same hues for the data
+ * families so the graphs keep their semantic colours. */
+:global(html[data-theme="anthropic"]) {
+  --graph-edge: #8a857c;
+
+  --graph-fill-slate: #6b675f;
+  --graph-stroke-slate: #4a4843;
+  --graph-fill-slate-deep: #4a4843;
+  --graph-stroke-slate-deep: #2c2b28;
+  --graph-fill-purple: #a855f7;
+  --graph-stroke-purple: #7e22ce;
+  --graph-fill-sky: #38bdf8;
+  --graph-stroke-sky: #0284c7;
+  --graph-fill-sky-deep: #0284c7;
+  --graph-stroke-sky-deep: #0369a1;
+  --graph-fill-amber: #f59e0b;
+  --graph-stroke-amber: #b45309;
+  --graph-fill-rose: #f43f5e;
+  --graph-stroke-rose: #be123c;
+  --graph-fill-teal: #0f766e;
+  --graph-stroke-teal: #134e4a;
+  --graph-fill-emerald: #10b981;
+  --graph-stroke-emerald: #047857;
+  --graph-fill-indigo: #6366f1;
+  --graph-stroke-indigo: #4338ca;
+  --graph-fill-red: #b91c1c;
+  --graph-stroke-red: #7f1d1d;
+}
+
+:global(html[data-theme="anthropic"].dark) {
+  --graph-edge: #6f6b64;
+
+  --graph-fill-slate: #a5a099;
+  --graph-stroke-slate: #6f6b64;
+  --graph-fill-slate-deep: #6f6b64;
+  --graph-stroke-slate-deep: #4a4843;
+  --graph-fill-purple: #c084fc;
+  --graph-stroke-purple: #a855f7;
+  --graph-fill-sky: #7dd3fc;
+  --graph-stroke-sky: #38bdf8;
+  --graph-fill-sky-deep: #38bdf8;
+  --graph-stroke-sky-deep: #0284c7;
+  --graph-fill-amber: #fbbf24;
+  --graph-stroke-amber: #f59e0b;
+  --graph-fill-rose: #fb7185;
+  --graph-stroke-rose: #f43f5e;
+  --graph-fill-teal: #2dd4bf;
+  --graph-stroke-teal: #14b8a6;
+  --graph-fill-emerald: #34d399;
+  --graph-stroke-emerald: #10b981;
+  --graph-fill-indigo: #818cf8;
+  --graph-stroke-indigo: #6366f1;
+  --graph-fill-red: #f87171;
+  --graph-stroke-red: #ef4444;
+}

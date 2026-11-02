@@ -1,11 +1,13 @@
 package vbpl
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -18,25 +20,34 @@ import (
 // called too fast, so callers fetch one document per tool call.
 const (
 	DetailURL = "https://vbpl-bientap-gateway.moj.gov.vn/api/qtdc/public/doc/%s"
-	DocURL    = "https://vbpl.vn/van-ban/chi-tiet/%s"
-	userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
-	Timeout   = 60 * time.Second
+	// AttachmentURL downloads a file of a document (the original scan
+	// "VanBanGoc_….pdf", appendices) from the same gateway: document id,
+	// then the path-escaped file name.
+	AttachmentURL = "https://vbpl-bientap-gateway.moj.gov.vn/api/qtdc/public/doc/minio/buckets/vbpl/%s/%s/download"
+	// MaxAttachmentBytes caps a downloaded attachment.
+	MaxAttachmentBytes = 50 << 20
+	DocURL             = "https://vbpl.vn/van-ban/chi-tiet/%s"
+	userAgent          = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+	Timeout            = 60 * time.Second
 	// MinHTMLBytes: smaller pages are the portal's empty placeholders.
 	MinHTMLBytes = 200
 )
 
 // Detail is the subset of the gateway's detail payload the feed needs.
 type Detail struct {
-	ID         string         `json:"id"`
-	DocNum     string         `json:"docNum"`
-	Title      string         `json:"title"`
-	DocType    Named          `json:"docType"`
-	EffStatus  Named          `json:"effStatus"`
-	IssueDate  string         `json:"issueDate"`
-	EffFrom    string         `json:"effFrom"`
-	Content    string         `json:"-"`
-	Related    []Related      `json:"documentRelatedList"`
-	RawContent map[string]any `json:"documentContent"`
+	ID        string `json:"id"`
+	DocNum    string `json:"docNum"`
+	Title     string `json:"title"`
+	DocType   Named  `json:"docType"`
+	EffStatus Named  `json:"effStatus"`
+	IssueDate string `json:"issueDate"`
+	EffFrom   string `json:"effFrom"`
+	Content   string `json:"-"`
+	// ContentFileName is the original file of the document on the portal
+	// ("VanBanGoc_74.TT.pdf", usually a scan), "" when there is none.
+	ContentFileName string         `json:"documentContentFileName"`
+	Related         []Related      `json:"documentRelatedList"`
+	RawContent      map[string]any `json:"documentContent"`
 }
 
 type Named struct {
@@ -47,6 +58,16 @@ type Related struct {
 	RelatedType string `json:"relatedType"`
 	FileName    string `json:"fileName"`
 	FileTitle   string `json:"fileTitle"`
+}
+
+// HasPDF reports whether the portal names an original PDF for d.
+func (d *Detail) HasPDF() bool {
+	return d != nil && strings.HasSuffix(strings.ToLower(strings.TrimSpace(d.ContentFileName)), ".pdf")
+}
+
+// HasHTML reports whether the portal publishes d's full text as HTML.
+func (d *Detail) HasHTML() bool {
+	return d != nil && len(d.Content) >= MinHTMLBytes
 }
 
 // FetchDetail downloads and decodes one document.
@@ -110,11 +131,71 @@ func FetchDetail(ctx context.Context, client *http.Client, id string) (*Detail, 
 	return &d, nil
 }
 
+// FetchAttachment downloads one file of document id from the gateway: the
+// original scan named by Detail.ContentFileName. The portal serves it as
+// application/octet-stream, so the bytes must start with "%PDF". A file
+// over MaxAttachmentBytes is refused; 400/404 answers are NoDocumentError
+// like FetchDetail (FileName then names the missing file).
+func FetchAttachment(ctx context.Context, client *http.Client, id, fileName string) ([]byte, error) {
+	id, fileName = strings.TrimSpace(id), strings.TrimSpace(fileName)
+	if id == "" || !idPattern.MatchString(id) {
+		return nil, fmt.Errorf("vbpl_id %q is not a vbpl.vn document id", id)
+	}
+	if fileName == "" || strings.ContainsAny(fileName, "/\\") {
+		return nil, fmt.Errorf("attachment name %q is not a vbpl.vn file name", fileName)
+	}
+	if client == nil {
+		client = &http.Client{Timeout: Timeout}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		fmt.Sprintf(AttachmentURL, id, url.PathEscape(fileName)), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Referer", "https://vbpl.vn/")
+	req.Header.Set("Accept", "application/pdf,application/octet-stream,*/*")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("vbpl.vn gateway: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusNotFound {
+			return nil, &NoDocumentError{ID: id, FileName: fileName}
+		}
+		return nil, fmt.Errorf("vbpl.vn gateway answered HTTP %d for file %s of document %s", resp.StatusCode, fileName, id)
+	}
+	if resp.ContentLength > MaxAttachmentBytes {
+		return nil, fmt.Errorf("the attachment %s of document %s is %d bytes, over the %d MB limit",
+			fileName, id, resp.ContentLength, MaxAttachmentBytes>>20)
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxAttachmentBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("vbpl.vn gateway: reading %s: %w", fileName, err)
+	}
+	if len(body) > MaxAttachmentBytes {
+		return nil, fmt.Errorf("the attachment %s of document %s is over the %d MB limit", fileName, id, MaxAttachmentBytes>>20)
+	}
+	if !bytes.HasPrefix(body, []byte("%PDF")) {
+		return nil, fmt.Errorf("the attachment is not a PDF (%s of document %s)", fileName, id)
+	}
+	return body, nil
+}
+
 // NoDocumentError reports that vbpl.vn holds no document with the id (the
 // catalogue row is stale): the caller's input, not a gateway failure.
-type NoDocumentError struct{ ID string }
+type NoDocumentError struct {
+	ID string
+	// FileName is set when an attachment of the document is missing.
+	FileName string
+}
 
 func (e *NoDocumentError) Error() string {
+	if e.FileName != "" {
+		return fmt.Sprintf("vbpl.vn gateway has no file %s for document %s: vbpl.vn không có tệp %s của văn bản %s",
+			e.FileName, e.ID, e.FileName, e.ID)
+	}
 	return fmt.Sprintf("vbpl.vn gateway has no document %s: vbpl.vn không có văn bản với id %s (danh mục có thể đã cũ)", e.ID, e.ID)
 }
 
@@ -163,6 +244,12 @@ func FileName(d *Detail) string {
 		name = string(r[:180])
 	}
 	return name + ".html"
+}
+
+// PDFFileName is FileName with the .pdf extension: the title of a
+// document ingested from the portal's original scan.
+func PDFFileName(d *Detail) string {
+	return strings.TrimSuffix(FileName(d), ".html") + ".pdf"
 }
 
 var badFileChars = regexp.MustCompile(`[\\:*?"<>|]+`)

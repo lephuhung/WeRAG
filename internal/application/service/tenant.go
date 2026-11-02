@@ -30,6 +30,13 @@ func NewTenantService(repo interfaces.TenantRepository, storageRepo interfaces.S
 	return &tenantService{repo: repo, storageRepo: storageRepo}
 }
 
+// GetPublicPortal returns the public portal tenant guest chat runs in, or
+// (nil, nil) when the database has none (implements
+// interfaces.PublicPortalResolver).
+func (s *tenantService) GetPublicPortal(ctx context.Context) (*types.Tenant, error) {
+	return s.repo.GetPublicPortal(ctx)
+}
+
 // CreateTenant creates a new tenant
 func (s *tenantService) CreateTenant(ctx context.Context, tenant *types.Tenant) (*types.Tenant, error) {
 	logger.Info(ctx, "Start creating tenant")
@@ -247,8 +254,8 @@ func (s *tenantService) DeleteTenant(ctx context.Context, id uint64) error {
 		logger.Infof(ctx, "Deleting tenant, ID: %d, name: %s", id, tenant.Name)
 		// Every workspace inherits its configuration from a profile, so a
 		// profile is never removed through the workspace API.
-		if tenant.IsConfigProfile() {
-			return werrors.NewForbiddenError("a configuration profile cannot be deleted")
+		if tenant.IsHiddenTenant() {
+			return werrors.NewForbiddenError("a configuration profile or the public portal cannot be deleted")
 		}
 	}
 

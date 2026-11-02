@@ -186,24 +186,12 @@ func inSections(units []searchUnit, sections []types.DocumentProfileSection) []s
 
 var findInDocumentsTool = BaseTool{
 	name: ToolFindInDocuments,
-	description: `Search the text of this conversation's documents (the ones in <session_documents>: working documents and sources, vb1, vb2, …) for passages matching a query. Matching is by words, with and without diacritics, and favours exact codes and numbers: số ký hiệu (45/KH-UBND), Điều/khoản/điểm, unit codes (PA05), figures (1.250 tỷ, 15%).
-
-## When to Use
-
-- Any question about what a document says when the passage is not in the prompt (a long document, a source, a document not named in this message).
-- Cross-checking figures, names or dates between documents: for each paragraph you check, search the other documents with the codes, figures and names taken from THAT paragraph, not only with the user's words.
-- To find where a topic is before reading it in full with read_document_outline.
-
-## Input
-
-- query: the words, codes or figures to look for.
-- document: a handle (vb2); empty searches every document of the conversation.
-- section: limit the search to sections of the document's card, by title or reference ("Điều 5", "Chương II", "Phụ lục").
-- limit: how many passages to return (default 8, max 20).
-
-## Output
-
-Per document: the matching passages as ` + "`[index] text`" + ` with the passage before and after, the NĐ30 component and section when known, and the number of matches. The index is a paragraph index for a working document (as rewrite_paragraphs takes) and a chunk or line number for a source; read around a result with read_document_outline document=vbN from=<index>. When an answer uses a source, cite it by file name or số ký hiệu.`,
+	description: "Search the text of this conversation's documents (<session_documents>: working documents and sources) for passages " +
+		"matching words, codes and figures, with or without diacritics; exact số ký hiệu, Điều/khoản, unit codes (PA05) and " +
+		"figures rank first. Use it for document content the message does not show, and to cross-check: search the other " +
+		"documents with the codes, figures and names of the paragraph being checked, not only the user's words. Results are " +
+		"`[index] text` with neighbours; the index is a paragraph index for a working document and a chunk or line number for " +
+		"a source (read on with read_document_outline document=vbN from=<index>).",
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -217,13 +205,13 @@ Per document: the matching passages as ` + "`[index] text`" + ` with the passage
     },
     "section": {
       "type": "string",
-      "description": "Only search these sections of the document: a section title or a reference such as \"Điều 5\""
+      "description": "Only these sections of the document's card: a title or a reference such as \"Điều 5\""
     },
     "limit": {
       "type": "integer",
       "minimum": 1,
       "maximum": 20,
-      "description": "Maximum number of passages (default 8, max 20)"
+      "description": "Maximum passages (default 8)"
     }
   },
   "required": ["query"]

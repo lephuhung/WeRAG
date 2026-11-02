@@ -156,7 +156,7 @@ func TestUsageGuardSeatModeNeedsSeatAndCountsUser(t *testing.T) {
 func TestUsageGuardPersonalSubscriptionWhenWorkspaceHasNone(t *testing.T) {
 	plans := &fakeUsagePlanRepo{active: map[string]*types.UsageSubscription{
 		"user/user-1": {ID: "sub-u", Mode: "pool", Status: "active",
-			Plan: &types.UsagePlan{Code: "guest", ScopeKind: "user", Limits: types.UsageLimits{{Metric: "questions", Period: "day", Limit: 5}}}},
+			Plan: &types.UsagePlan{Code: "personal", ScopeKind: "user", Limits: types.UsageLimits{{Metric: "questions", Period: "day", Limit: 5}}}},
 	}}
 	counters := &countingRepo{rows: map[string][]*types.UsageCounter{
 		"user/user-1": {{Metric: "questions", PeriodKey: "2026-10-13", Value: 5}},
@@ -167,7 +167,7 @@ func TestUsageGuardPersonalSubscriptionWhenWorkspaceHasNone(t *testing.T) {
 	ent, err := g.Entitlement(context.Background(), 10003, "user-1")
 	require.NoError(t, err)
 	require.Equal(t, "user", ent.Source)
-	require.Equal(t, "guest", ent.PlanCode)
+	require.Equal(t, "personal", ent.PlanCode)
 }
 
 func TestUsageLimitsValidate(t *testing.T) {
@@ -386,4 +386,22 @@ func TestUsageGuardPreviewSessionSystemAdminUncapped(t *testing.T) {
 	require.False(t, p.Enforced)
 	require.True(t, p.Features.IsZero())
 	require.Equal(t, int64(3), p.Session.Turns)
+}
+
+// unsetSettings answers every bool with the caller's fallback, as the real
+// service does for a key no SuperAdmin saved.
+type unsetSettings struct {
+	interfaces.SystemSettingService
+}
+
+func (unsetSettings) GetBool(_ context.Context, _ string, _ string, def bool) bool { return def }
+
+// usage.enforce is ON when unset (the switch is for testing only), in both
+// the guard's fallback and the registry default the admin page displays.
+func TestUsageEnforceDefaultsOn(t *testing.T) {
+	g := &usageGuard{plans: &fakeUsagePlanRepo{}, counters: &countingRepo{}, settings: unsetSettings{}, now: time.Now}
+	require.True(t, g.Enforced(context.Background()))
+	require.Equal(t, true, registry[types.UsageEnforceSettingKey].Default)
+	// a guard built without a settings service exists only in unit tests
+	require.False(t, (&usageGuard{}).Enforced(context.Background()))
 }

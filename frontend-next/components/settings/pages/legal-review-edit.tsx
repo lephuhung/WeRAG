@@ -7,6 +7,13 @@
  * applies a fix to the draft and still presses Save. */
 
 import { useCallback, useEffect, useState } from "react";
+import { useToast } from "@/components/toast";
+import { ConsolePage } from "@/components/settings/console-page";
+import { ROW_HOVER } from "@/components/settings/data-table";
+import { Pager } from "@/components/settings/pager";
+import { Notice } from "@/components/settings/notice";
+import { Loading } from "@/components/settings/loading";
+import { FieldLabel } from "@/components/settings/field";
 import { useT } from "@/lib/i18n";
 import { formatDateTime } from "@/lib/datetime";
 import { ApiError } from "@/lib/api-client";
@@ -121,77 +128,69 @@ export function LegalContentTab({ knowledgeId }: { knowledgeId: string }) {
   const findingCount = Object.values(findings).reduce((n, l) => n + l.length, 0);
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="caption text-muted">{t("lrev.c.note")}</span>
-        <button
-          type="button"
-          className="btn btn-outline btn-sm ml-auto"
-          onClick={() => void spellcheck()}
-          disabled={checking || loading || chunks.length === 0}
-        >
-          {checking ? t("lrev.c.spellRunning") : t("lrev.c.spellPage")}
-        </button>
-      </div>
-      {checked && !checking && (
-        <p className={`caption ${findingCount ? "text-amber-700 dark:text-amber-400" : "text-emerald-700 dark:text-emerald-400"}`}>
-          {findingCount ? t("lrev.c.spellFound", { count: findingCount }) : t("lrev.c.spellNone")}
-        </p>
-      )}
-      {error && <p className="caption text-error">{error}</p>}
-
-      <div className="flex flex-col gap-2">
-        {chunks.map((c) => (
-          <ChunkCard
-            key={c.id}
-            knowledgeId={knowledgeId}
-            chunk={c}
-            draft={drafts[c.id]}
-            findings={findings[c.id] ?? []}
-            onDraft={(v) =>
-              setDrafts((d) => {
-                const next = { ...d };
-                if (v === undefined) delete next[c.id];
-                else next[c.id] = v;
-                return next;
-              })
-            }
-            onFindings={(l) => setFindings((f) => ({ ...f, [c.id]: l }))}
-            onSaved={replaceChunk}
-            onReload={load}
-          />
-        ))}
-        {chunks.length === 0 && (
-          <p className="py-8 text-center text-[13px] text-muted">
-            {loading ? t("usrp.loading") : t("lrev.c.empty")}
-          </p>
-        )}
-      </div>
-
-      {pages > 1 && (
-        <div className="flex items-center justify-center gap-3">
+    <ConsolePage size="form">
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="caption text-muted">{t("lrev.c.note")}</span>
           <button
             type="button"
-            className="btn btn-outline btn-sm"
-            disabled={page <= 1 || loading}
-            onClick={() => setPage(page - 1)}
+            className="btn btn-outline btn-sm ml-auto"
+            onClick={() => void spellcheck()}
+            disabled={checking || loading || chunks.length === 0}
           >
-            ‹
-          </button>
-          <span className="caption tabular-nums text-muted">
-            {page} / {pages}
-          </span>
-          <button
-            type="button"
-            className="btn btn-outline btn-sm"
-            disabled={page >= pages || loading}
-            onClick={() => setPage(page + 1)}
-          >
-            ›
+            {checking ? t("lrev.c.spellRunning") : t("lrev.c.spellPage")}
           </button>
         </div>
-      )}
-    </div>
+        {checked && !checking && (
+          <p className={`caption ${findingCount ? "text-warning" : "text-success"}`}>
+            {findingCount ? t("lrev.c.spellFound", { count: findingCount }) : t("lrev.c.spellNone")}
+          </p>
+        )}
+        {error && (
+          <Notice
+            tone="error"
+            action={
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+                {t("common.retry")}
+              </button>
+            }
+          >
+            {error}
+          </Notice>
+        )}
+
+        <div className="flex flex-col gap-2">
+          {chunks.map((c) => (
+            <ChunkCard
+              key={c.id}
+              knowledgeId={knowledgeId}
+              chunk={c}
+              draft={drafts[c.id]}
+              findings={findings[c.id] ?? []}
+              onDraft={(v) =>
+                setDrafts((d) => {
+                  const next = { ...d };
+                  if (v === undefined) delete next[c.id];
+                  else next[c.id] = v;
+                  return next;
+                })
+              }
+              onFindings={(l) => setFindings((f) => ({ ...f, [c.id]: l }))}
+              onSaved={replaceChunk}
+              onReload={load}
+            />
+          ))}
+          {chunks.length === 0 &&
+            (loading ? (
+              <Loading className="py-8" />
+            ) : (
+              <p className="py-8 text-center text-[13px] text-muted">{t("lrev.c.empty")}</p>
+            ))}
+        </div>
+
+        <Pager page={page} pageCount={pages} onPage={setPage} loading={loading} />
+      </div>
+    </ConsolePage>
   );
 }
 
@@ -308,7 +307,7 @@ function ChunkCard({
 
   return (
     <div
-      className={`rounded-[12px] border p-3 ${
+      className={`rounded-[12px] border p-3 ${ROW_HOVER} ${
         chunk.is_enabled ? "border-hairline" : "border-dashed border-hairline bg-surface-strong/30"
       }`}
     >
@@ -317,7 +316,7 @@ function ChunkCard({
         {chunk.content_revision > 0 && (
           <span className="caption text-muted">{t("lrev.c.revision", { n: chunk.content_revision })}</span>
         )}
-        {!chunk.is_enabled && <span className="caption text-amber-700 dark:text-amber-400">{t("lrev.c.disabled")}</span>}
+        {!chunk.is_enabled && <span className="caption text-warning">{t("lrev.c.disabled")}</span>}
         {chunk.index_status === "processing" && (
           <span className="caption text-muted">{t("lrev.c.reindexing")}</span>
         )}
@@ -347,6 +346,7 @@ function ChunkCard({
         <div className="flex flex-col gap-2">
           <textarea
             className="input min-h-[160px] w-full resize-y py-2 text-[13px] leading-relaxed"
+            aria-label={t("lrev.c.edit")}
             value={draft}
             onChange={(e) => onDraft(e.target.value)}
           />
@@ -360,7 +360,7 @@ function ChunkCard({
               onClick={() => void save({ content: draft })}
               disabled={busy || draft === chunk.content || !draft?.trim()}
             >
-              {busy ? "…" : t("lrev.c.save")}
+              {busy ? t("common.loading") : t("lrev.c.save")}
             </button>
           </div>
         </div>
@@ -371,9 +371,9 @@ function ChunkCard({
       )}
 
       {findings.length > 0 && (
-        <div className="mt-2 rounded-[10px] bg-amber-500/5 p-2">
+        <div className="mt-2 rounded-[10px] bg-warning-surface p-2">
           <div className="mb-1 flex items-center gap-2">
-            <span className="caption text-amber-700 dark:text-amber-400">{t("lrev.c.findings", { count: findings.length })}</span>
+            <span className="caption text-warning">{t("lrev.c.findings", { count: findings.length })}</span>
             <button type="button" className="btn btn-outline btn-sm ml-auto py-0.5 text-[12px]" onClick={applyAll}>
               {t("lrev.c.applyAll")}
             </button>
@@ -383,9 +383,9 @@ function ChunkCard({
               const stale = !text.includes(f.wrong);
               return (
                 <li key={f.key} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
-                  <span className={stale ? "text-muted line-through" : "text-red-700 dark:text-red-400"}>“{f.wrong}”</span>
+                  <span className={stale ? "text-muted line-through" : "text-error"}>“{f.wrong}”</span>
                   <span className="text-muted">→</span>
-                  <span className="font-medium text-emerald-700 dark:text-emerald-400">“{f.correct}”</span>
+                  <span className="font-medium text-success">“{f.correct}”</span>
                   {f.reason && <span className="text-muted">· {f.reason}</span>}
                   {stale && <span className="caption text-muted">({t("lrev.c.stale")})</span>}
                   <span className="ml-auto flex gap-1">
@@ -447,19 +447,23 @@ function ChunkCard({
         </div>
       )}
 
-      {error && <p className="caption mt-1.5 text-error">{error}</p>}
+      {error && (
+        <Notice tone="error" className="mt-1.5">
+          {error}
+        </Notice>
+      )}
     </div>
   );
 }
 
 export function LegalDisplayTab({ knowledgeId, initialTitle }: { knowledgeId: string; initialTitle: string }) {
   const { t } = useT();
+  const toast = useToast();
   const [title, setTitle] = useState(initialTitle);
   const [description, setDescription] = useState("");
   const [orig, setOrig] = useState({ title: initialTitle, description: "" });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -486,14 +490,13 @@ export function LegalDisplayTab({ knowledgeId, initialTitle }: { knowledgeId: st
   const save = async () => {
     setSaving(true);
     setError("");
-    setNotice("");
     try {
       const patch: { title?: string; description?: string } = {};
       if (title.trim() !== orig.title) patch.title = title.trim();
       if (description !== orig.description) patch.description = description;
       await updateKnowledgeDisplay(knowledgeId, patch);
       setOrig({ title: title.trim(), description });
-      setNotice(t("lrev.d.saved"));
+      toast.success(t("lrev.d.saved"));
     } catch (e) {
       setError(errText(e, t("lrev.c.saveFailed")));
     } finally {
@@ -504,33 +507,45 @@ export function LegalDisplayTab({ knowledgeId, initialTitle }: { knowledgeId: st
   const dirty = title.trim() !== orig.title || description !== orig.description;
 
   return (
-    <div className="flex flex-col gap-3">
-      <span className="caption text-muted">{t("lrev.d.note")}</span>
-      <label className="flex flex-col gap-1">
-        <span className="caption text-muted">{t("lrev.d.title")}</span>
-        <input className="input h-9 text-[13px]" value={title} onChange={(e) => setTitle(e.target.value)} disabled={loading} />
-      </label>
-      <label className="flex flex-col gap-1">
-        <span className="caption text-muted">{t("lrev.d.description")}</span>
-        <textarea
-          className="input min-h-[180px] w-full resize-y py-2 text-[13px] leading-relaxed"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          disabled={loading}
-        />
-      </label>
-      {notice && <p className="caption text-emerald-700 dark:text-emerald-400">{notice}</p>}
-      {error && <p className="caption text-error">{error}</p>}
-      <div className="flex justify-end">
-        <button
-          type="button"
-          className="btn btn-primary btn-sm"
-          onClick={() => void save()}
-          disabled={saving || loading || !dirty || !title.trim()}
-        >
-          {saving ? "…" : t("lrev.d.save")}
-        </button>
+    <ConsolePage size="form">
+      <div className="flex flex-col gap-3">
+        <span className="caption text-muted">{t("lrev.d.note")}</span>
+        {loading ? (
+          <Loading />
+        ) : (
+          <>
+            <div className="flex flex-col gap-1">
+              <FieldLabel htmlFor="lrev-display-title">{t("lrev.d.title")}</FieldLabel>
+              <input
+                id="lrev-display-title"
+                className="input h-9 text-[13px]"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <FieldLabel htmlFor="lrev-display-description">{t("lrev.d.description")}</FieldLabel>
+              <textarea
+                id="lrev-display-description"
+                className="input min-h-[180px] w-full resize-y py-2 text-[13px] leading-relaxed"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+          </>
+        )}
+        {error && <Notice tone="error">{error}</Notice>}
+        <div className="flex justify-end">
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => void save()}
+            disabled={saving || loading || !dirty || !title.trim()}
+          >
+            {saving ? t("common.loading") : t("lrev.d.save")}
+          </button>
+        </div>
       </div>
-    </div>
+    </ConsolePage>
   );
 }

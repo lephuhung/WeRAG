@@ -46,9 +46,13 @@ func (m *memBillingRepo) InTransaction(ctx context.Context, fn func(ctx context.
 		payments[k] = *v
 	}
 	subs := map[string]types.UsageSubscription{}
+	addons := map[string]types.UsageSubscriptionAddon{}
 	if m.plans != nil {
 		for k, v := range m.plans.active {
 			subs[k] = *v
+		}
+		for k, v := range m.plans.addons {
+			addons[k] = *v
 		}
 	}
 	err := fn(ctx)
@@ -74,6 +78,11 @@ func (m *memBillingRepo) InTransaction(ctx context.Context, fn func(ctx context.
 		for k, v := range subs {
 			v := v
 			m.plans.active[k] = &v
+		}
+		m.plans.addons = map[string]*types.UsageSubscriptionAddon{}
+		for k, v := range addons {
+			v := v
+			m.plans.addons[k] = &v
 		}
 	}
 	return err
@@ -176,6 +185,73 @@ func (m *memBillingRepo) ExpirePendingOrders(_ context.Context, now time.Time) (
 type memPlanRepo struct {
 	interfaces.UsagePlanRepository
 	active map[string]*types.UsageSubscription
+	// catalogue is the add-on catalogue; addons the rights, keyed by
+	// subscription id + "/" + agent id
+	catalogue []*types.UsageAgentAddon
+	addons    map[string]*types.UsageSubscriptionAddon
+	// billing gives PendingOrderAddons the orders
+	billing *memBillingRepo
+}
+
+func (m *memPlanRepo) PinSubscriptionAddonEnd(_ context.Context, subID, agentID string, end time.Time) error {
+	if a := m.addons[subID+"/"+agentID]; a != nil && a.EndsAt == nil {
+		e := end
+		a.EndsAt = &e
+	}
+	return nil
+}
+
+func (m *memPlanRepo) ProfileBuiltinAgents(context.Context, []string) ([]*types.CustomAgent, error) {
+	return nil, nil
+}
+
+func (m *memPlanRepo) PendingOrderAddons(_ context.Context, scopeType, scopeID string) (map[string][]string, error) {
+	out := map[string][]string{}
+	if m.billing == nil {
+		return out, nil
+	}
+	for _, o := range m.billing.orders {
+		if o.ScopeType != scopeType || o.ScopeID != scopeID || o.Status != types.UsageOrderPending {
+			continue
+		}
+		for _, l := range o.Addons {
+			out[o.ID] = append(out[o.ID], l.AgentID)
+		}
+	}
+	return out, nil
+}
+
+func (m *memPlanRepo) ListAgentAddons(_ context.Context, includeInactive bool) ([]*types.UsageAgentAddon, error) {
+	var out []*types.UsageAgentAddon
+	for _, a := range m.catalogue {
+		if includeInactive || a.IsActive {
+			c := *a
+			out = append(out, &c)
+		}
+	}
+	return out, nil
+}
+
+func (m *memPlanRepo) ListSubscriptionAddons(_ context.Context, subID string) ([]*types.UsageSubscriptionAddon, error) {
+	var out []*types.UsageSubscriptionAddon
+	for _, a := range m.addons {
+		if a.SubscriptionID == subID {
+			c := *a
+			out = append(out, &c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].AgentID < out[j].AgentID })
+	return out, nil
+}
+
+func (m *memPlanRepo) UpsertSubscriptionAddon(_ context.Context, a *types.UsageSubscriptionAddon) error {
+	if m.addons == nil {
+		m.addons = map[string]*types.UsageSubscriptionAddon{}
+	}
+	merged := types.MergeSubscriptionAddon(m.addons[a.SubscriptionID+"/"+a.AgentID], a)
+	c := *merged
+	m.addons[a.SubscriptionID+"/"+a.AgentID] = &c
+	return nil
 }
 
 func (m *memPlanRepo) GetActiveSubscription(_ context.Context, scopeType, scopeID string) (*types.UsageSubscription, error) {
@@ -262,9 +338,13 @@ func newBillingFixture(t *testing.T) *billingFixture {
 		"seat": {ID: "seat", Code: "seat", Name: "Seat", ScopeKind: "tenant", Mode: "seat", PriceVND: 49_000, IsActive: true},
 		"me":   {ID: "me", Code: "me", Name: "Personal", ScopeKind: "user", Mode: "pool", PriceVND: 20_000, IsActive: true},
 		"free": {ID: "free", Code: "free", Name: "Free", ScopeKind: "tenant", Mode: "pool", PriceVND: 0, IsActive: true},
+		"term": {ID: "term", Code: "term", Name: "Term", ScopeKind: "tenant", Mode: "seat", PriceVND: 50_000,
+			PriceQuarterVND: 135_000, PriceYearVND: 480_000, IsActive: true},
+		"yearly": {ID: "yearly", Code: "yearly", Name: "Yearly", ScopeKind: "user", Mode: "pool", PriceYearVND: 300_000, IsActive: true},
 	}, repo: planRepo, now: billingNow}
 	repo := newMemBillingRepo()
 	repo.plans = planRepo
+	planRepo.billing = repo
 	settings := billingSettings{
 		strings: map[string]string{
 			types.BillingBankBINSettingKey:         "970436",
@@ -292,6 +372,54 @@ func TestBillingQuoteSeatPlanMultipliesSeatsAndMonths(t *testing.T) {
 	require.Equal(t, int64(49_000*3*5), q.SubtotalVND)
 	require.Equal(t, q.SubtotalVND, q.TotalVND)
 	require.Equal(t, "seat", q.Mode)
+}
+
+// Quarters and years are priced at their own term price, per seat; other
+// month counts at the monthly price. The saving against paying month by
+// month is reported, and the order keeps the term.
+func TestBillingQuoteUsesQuarterAndYearPrices(t *testing.T) {
+	f := newBillingFixture(t)
+	ctx := context.Background()
+	cases := []struct {
+		months          int
+		term            string
+		subtotal, saved int64
+	}{
+		{1, types.UsageTermMonth, 50_000 * 2, 0},
+		{2, types.UsageTermMonth, 100_000 * 2, 0},
+		{3, types.UsageTermQuarter, 135_000 * 2, 15_000 * 2},
+		{6, types.UsageTermQuarter, 270_000 * 2, 30_000 * 2},
+		{12, types.UsageTermYear, 480_000 * 2, 120_000 * 2},
+		{24, types.UsageTermYear, 960_000 * 2, 240_000 * 2},
+	}
+	for _, c := range cases {
+		q, err := f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "term", Months: c.months, Seats: 2}, "10003")
+		require.NoError(t, err, c.months)
+		require.Equal(t, c.term, q.BillingTerm, c.months)
+		require.Equal(t, c.subtotal, q.SubtotalVND, c.months)
+		require.Equal(t, c.saved, q.SavingsVND, c.months)
+	}
+
+	// a plan sold only by the year: 12 months yes, 1 month no
+	q, err := f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "user", PlanID: "yearly", Months: 12}, "user-1")
+	require.NoError(t, err)
+	require.Equal(t, int64(300_000), q.TotalVND)
+	require.Equal(t, int64(25_000), q.UnitPriceVND, "average month of the year")
+	_, err = f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "user", PlanID: "yearly", Months: 1}, "user-1")
+	require.Error(t, err)
+
+	o, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "term", Months: 12, Seats: 1}, "10003", "admin-1")
+	require.NoError(t, err)
+	require.Equal(t, types.UsageTermYear, o.BillingTerm)
+	require.Equal(t, int64(480_000), o.TotalVND)
+
+	offers, err := f.svc.PurchasablePlans(ctx, "user")
+	require.NoError(t, err)
+	var codes []string
+	for _, p := range offers {
+		codes = append(codes, p.Code)
+	}
+	require.Contains(t, codes, "yearly", "a plan with only a yearly price is still sold")
 }
 
 func TestBillingQuoteRejectsFreeAndWrongScopePlans(t *testing.T) {
@@ -389,7 +517,7 @@ func TestBillingConfirmCreatesThenExtendsSubscription(t *testing.T) {
 	require.NotNil(t, sub)
 	require.Equal(t, "seat", sub.PlanID)
 	require.Equal(t, 3, sub.Seats)
-	require.Equal(t, billingNow.AddDate(0, 2, 0), *sub.EndsAt)
+	require.Equal(t, vnEnd(2), *sub.EndsAt)
 	require.Equal(t, sub.ID, *paid.SubscriptionID)
 
 	// Same plan again: extended from the current end.
@@ -399,7 +527,7 @@ func TestBillingConfirmCreatesThenExtendsSubscription(t *testing.T) {
 	_, err = f.svc.ConfirmOrder(context.Background(), o2.ID, "sa")
 	require.NoError(t, err)
 	sub = f.plans.active["tenant/10003"]
-	require.Equal(t, billingNow.AddDate(0, 3, 0), *sub.EndsAt)
+	require.Equal(t, vnEnd(3), *sub.EndsAt)
 	require.Equal(t, 3, sub.Seats)
 
 	// A different plan replaces it, starting now.
@@ -410,20 +538,34 @@ func TestBillingConfirmCreatesThenExtendsSubscription(t *testing.T) {
 	sub = f.plans.active["tenant/10003"]
 	require.Equal(t, "pool", sub.PlanID)
 	require.Equal(t, billingNow, sub.StartsAt)
-	require.Equal(t, billingNow.AddDate(0, 1, 0), *sub.EndsAt)
+	require.Equal(t, vnEnd(1), *sub.EndsAt)
 	// Paid orders cannot be confirmed twice.
 	_, err = f.svc.ConfirmOrder(context.Background(), o3.ID, "sa")
 	require.Error(t, err)
 }
 
-func TestBillingFreeOrderConfirmsItself(t *testing.T) {
+// User decision 19/10/2026: a 0-đồng order (100 % code) is never confirmed
+// automatically; it waits for a SuperAdmin like any other order.
+func TestBillingFreeOrderWaitsForSuperAdmin(t *testing.T) {
 	f := newBillingFixture(t)
 	f.promo(t, types.UsagePromoCode{Code: "FULL", DiscountType: "percent", DiscountValue: 100, IsActive: true})
 	o, err := f.svc.CreateOrder(context.Background(), types.UsageQuoteRequest{ScopeType: "user", PlanID: "me", Months: 1, PromoCode: "FULL"}, "user-7", "user-7")
 	require.NoError(t, err)
-	require.Equal(t, types.UsageOrderPaid, o.Status)
+	require.Equal(t, types.UsageOrderPending, o.Status)
 	require.Equal(t, int64(0), o.TotalVND)
-	require.Equal(t, "", o.QRURL)
+	require.Equal(t, "", o.QRURL, "nothing to transfer")
+	require.Nil(t, f.plans.active["user/user-7"])
+
+	// a 0-đồng "transfer" carrying the code does not confirm it either
+	res := f.pay(t, types.UsagePaymentWebhookRequest{TransactionID: "FT0", AmountVND: 0, Content: o.OrderCode})
+	require.NotEqual(t, types.UsagePaymentMatched, res.Transaction.Status)
+	got, err := f.svc.GetOrder(context.Background(), o.ID)
+	require.NoError(t, err)
+	require.Equal(t, types.UsageOrderPending, got.Status)
+
+	paid, err := f.svc.ConfirmOrder(context.Background(), o.ID, "sa")
+	require.NoError(t, err)
+	require.Equal(t, types.UsageOrderPaid, paid.Status)
 	require.NotNil(t, f.plans.active["user/user-7"])
 }
 
@@ -453,10 +595,10 @@ func TestBillingConfirmRetryAfterFailedSaveAppliesOnce(t *testing.T) {
 
 	_, err = f.svc.ConfirmOrder(context.Background(), o.ID, "sa")
 	require.NoError(t, err)
-	require.Equal(t, billingNow.AddDate(0, 1, 0), *f.plans.active["tenant/10003"].EndsAt, "one month for a one-month order")
+	require.Equal(t, vnEnd(1), *f.plans.active["tenant/10003"].EndsAt, "one month for a one-month order")
 	_, err = f.svc.ConfirmOrder(context.Background(), o.ID, "sa")
 	require.Error(t, err)
-	require.Equal(t, billingNow.AddDate(0, 1, 0), *f.plans.active["tenant/10003"].EndsAt)
+	require.Equal(t, vnEnd(1), *f.plans.active["tenant/10003"].EndsAt)
 }
 
 func TestBillingSeatRenewalMustCoverCurrentSeats(t *testing.T) {
@@ -471,7 +613,7 @@ func TestBillingSeatRenewalMustCoverCurrentSeats(t *testing.T) {
 	require.Error(t, err)
 	_, err = f.svc.CreateOrder(context.Background(), types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 1}, "10003", "u1")
 	require.Error(t, err)
-	require.Equal(t, billingNow.AddDate(0, 1, 0), *f.plans.active["tenant/10003"].EndsAt)
+	require.Equal(t, vnEnd(1), *f.plans.active["tenant/10003"].EndsAt)
 	// another workspace has no subscription to cover
 	_, err = f.svc.Quote(context.Background(), types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 1}, "10004")
 	require.NoError(t, err)
@@ -484,12 +626,13 @@ func TestBillingSeatRenewalWithMoreSeatsPaysTheRestOfThePeriod(t *testing.T) {
 	_, err = f.svc.ConfirmOrder(context.Background(), o.ID, "sa")
 	require.NoError(t, err)
 
-	// 31 days left (13 Oct → 13 Nov): 5 added seats pay 31/30 of a month
+	// 32 Vietnamese dates left (13/10 17:00 → 24:00 of 13/11, both ends
+	// counting): 5 added seats pay 32/30 of a month
 	q, err := f.svc.Quote(context.Background(), types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 15}, "10003")
 	require.NoError(t, err)
 	require.Equal(t, 10, q.CurrentSeats)
-	require.Equal(t, 31, q.ProratedDays)
-	require.Equal(t, int64((49_000*5*31+29)/30), q.ProrationVND)
+	require.Equal(t, 32, q.ProratedDays)
+	require.Equal(t, int64((49_000*5*32+29)/30), q.ProrationVND)
 	require.Equal(t, int64(49_000*15)+q.ProrationVND, q.SubtotalVND)
 
 	o2, err := f.svc.CreateOrder(context.Background(), types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 15}, "10003", "u1")
@@ -499,7 +642,7 @@ func TestBillingSeatRenewalWithMoreSeatsPaysTheRestOfThePeriod(t *testing.T) {
 	require.NoError(t, err)
 	sub := f.plans.active["tenant/10003"]
 	require.Equal(t, 15, sub.Seats)
-	require.Equal(t, billingNow.AddDate(0, 2, 0), *sub.EndsAt)
+	require.Equal(t, vnEnd(2), *sub.EndsAt)
 }
 
 func TestBillingConfirmRefusesOrderOutgrownBySubscription(t *testing.T) {
@@ -517,7 +660,7 @@ func TestBillingConfirmRefusesOrderOutgrownBySubscription(t *testing.T) {
 	require.NoError(t, err)
 	_, err = f.svc.ConfirmOrder(context.Background(), small.ID, "sa")
 	require.Error(t, err, "5 paid seats cannot extend 50")
-	require.Equal(t, billingNow.AddDate(0, 2, 0), *f.plans.active["tenant/10003"].EndsAt)
+	require.Equal(t, vnEnd(2), *f.plans.active["tenant/10003"].EndsAt)
 	require.Equal(t, types.UsageOrderPending, f.repo.orders[small.ID].Status)
 }
 
@@ -536,3 +679,7 @@ func TestBillingSingleUsePromoCannotBeTakenTwice(t *testing.T) {
 	}
 	require.Len(t, f.repo.orders, 1, "the refused order was not created")
 }
+
+// vnEnd is the end of an n-month period bought at billingNow: 24:00 Vietnam
+// time of the date n months later (types.SubscriptionEndVN).
+func vnEnd(months int) time.Time { return types.SubscriptionEndVN(billingNow, months) }

@@ -1,0 +1,190 @@
+[
+ {
+  "name": "plain",
+  "input": "Một.\nHai dòng.\n\nBa.",
+  "paragraphs": [
+   {
+    "text": "Một.\nHai dòng.",
+    "heading_only": false
+   },
+   {
+    "text": "Ba.",
+    "heading_only": false
+   }
+  ]
+ },
+ {
+  "name": "heading joins next",
+  "input": "### 2. Điều 20 khoản 8 là gì?\n\nTheo dự thảo Lần 2, …",
+  "paragraphs": [
+   {
+    "text": "### 2. Điều 20 khoản 8 là gì?\nTheo dự thảo Lần 2, …",
+    "heading_only": false
+   }
+  ]
+ },
+ {
+  "name": "two headings then text",
+  "input": "# A\n## B\n\nNội dung.",
+  "paragraphs": [
+   {
+    "text": "# A\n## B\nNội dung.",
+    "heading_only": false
+   }
+  ]
+ },
+ {
+  "name": "trailing heading",
+  "input": "Nội dung.\n\n## Cuối",
+  "paragraphs": [
+   {
+    "text": "Nội dung.",
+    "heading_only": false
+   },
+   {
+    "text": "## Cuối",
+    "heading_only": true
+   }
+  ]
+ },
+ {
+  "name": "list with labelled lead-in",
+  "input": "Theo dự thảo:\n\n- bỏ Chủ tịch\n- bỏ kế toán trưởng\n\nHết.",
+  "paragraphs": [
+   {
+    "text": "Theo dự thảo:",
+    "heading_only": false
+   },
+   {
+    "text": "Theo dự thảo:\n- bỏ Chủ tịch",
+    "heading_only": false
+   },
+   {
+    "text": "Theo dự thảo:\n- bỏ kế toán trưởng",
+    "heading_only": false
+   },
+   {
+    "text": "Hết.",
+    "heading_only": false
+   }
+  ]
+ },
+ {
+  "name": "list with unlabelled lead-in",
+  "input": "Tóm tắt:\n- Ý một\n1. Ý hai\n2) Ý ba",
+  "paragraphs": [
+   {
+    "text": "Tóm tắt:",
+    "heading_only": false
+   },
+   {
+    "text": "Tóm tắt:\n- Ý một",
+    "heading_only": false
+   },
+   {
+    "text": "Tóm tắt:\n1. Ý hai",
+    "heading_only": false
+   },
+   {
+    "text": "Tóm tắt:\n2) Ý ba",
+    "heading_only": false
+   }
+  ]
+ },
+ {
+  "name": "lead-in without colon",
+  "input": "Tóm tắt\n- Ý một",
+  "paragraphs": [
+   {
+    "text": "Tóm tắt",
+    "heading_only": false
+   },
+   {
+    "text": "- Ý một",
+    "heading_only": false
+   }
+  ]
+ },
+ {
+  "name": "heading opens a list",
+  "input": "## Điểm mới\n\n- x\n- y\n\nĐoạn sau.",
+  "paragraphs": [
+   {
+    "text": "## Điểm mới\n- x",
+    "heading_only": false
+   },
+   {
+    "text": "## Điểm mới\n- y",
+    "heading_only": false
+   },
+   {
+    "text": "Đoạn sau.",
+    "heading_only": false
+   }
+  ]
+ },
+ {
+  "name": "list item continuation",
+  "input": "- mục một\n  tiếp tục\n- mục hai",
+  "paragraphs": [
+   {
+    "text": "- mục một\n  tiếp tục",
+    "heading_only": false
+   },
+   {
+    "text": "- mục hai",
+    "heading_only": false
+   }
+  ]
+ },
+ {
+  "name": "table",
+  "input": "Bảng:\n| a | b |\n|---|---|\n| c | d |",
+  "paragraphs": [
+   {
+    "text": "Bảng:",
+    "heading_only": false
+   },
+   {
+    "text": "| a | b |",
+    "heading_only": false
+   },
+   {
+    "text": "|---|---|",
+    "heading_only": false
+   },
+   {
+    "text": "| c | d |",
+    "heading_only": false
+   }
+  ]
+ },
+ {
+  "name": "NFD text",
+  "input": "Theo dự thảo:\n- Luật Phát triển DNNVV",
+  "paragraphs": [
+   {
+    "text": "Theo dự thảo:",
+    "heading_only": false
+   },
+   {
+    "text": "Theo dự thảo:\n- Luật Phát triển DNNVV",
+    "heading_only": false
+   }
+  ]
+ },
+ {
+  "name": "blank lines and spaces",
+  "input": "\n\n  \nA\n\n\nB\n",
+  "paragraphs": [
+   {
+    "text": "A",
+    "heading_only": false
+   },
+   {
+    "text": "B",
+    "heading_only": false
+   }
+  ]
+ }
+]

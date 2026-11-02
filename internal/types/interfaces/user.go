@@ -150,6 +150,10 @@ type UserRepository interface {
 	RevokeSystemAdmin(ctx context.Context, userID, actorID string) (*types.User, error)
 	// SearchUsers searches users by username or email
 	SearchUsers(ctx context.Context, query string, limit int) ([]*types.User, error)
+	// ListGuestUsers lists the active accounts that are Guests: not a
+	// SuperAdmin and without an active membership of a live tenant (the
+	// rule of types.CountsAsMembership).
+	ListGuestUsers(ctx context.Context) ([]*types.User, error)
 }
 
 // AuthTokenRepository defines the auth token repository interface

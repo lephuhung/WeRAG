@@ -76,7 +76,7 @@ func LegalAmendmentHistory(
 	}
 	ctx, cancel := context.WithTimeout(ctx, legalHistoryTimeout)
 	defer cancel()
-	h := &legalHistory{amended: map[string]string{}, ctx: ctx, db: db.WithContext(ctx), kbIDs: kbIDs, answer: answer, now: now}
+	h := &legalHistory{amended: map[string]string{}, phrases: map[string]*phraseChange{}, ctx: ctx, db: db.WithContext(ctx), kbIDs: kbIDs, answer: answer, now: now}
 	chunks, err := h.loadChunks(chunkIDs)
 	if err != nil {
 		logger.Warnf(ctx, "[LegalHistory] load chunks: %v", err)
@@ -90,7 +90,11 @@ func LegalAmendmentHistory(
 			lines = append(lines, *l)
 		}
 	}
+	var named []legalHistoryChunk
 	for _, c := range chunks {
+		if len(c.Legal.Amends) == 0 && h.names(c.Doc.Number, c.ID) {
+			named = append(named, c)
+		}
 		if len(c.Legal.Amends) > 0 {
 			for _, a := range c.Legal.Amends {
 				add(h.forward(c, a))
@@ -100,6 +104,12 @@ func LegalAmendmentHistory(
 		for _, l := range h.backward(c) {
 			add(l)
 		}
+	}
+	// phrase changes of the named provisions, after the quoted rewrites
+	// (which carry the new text): one line each over its provisions
+	h.backwardPhrases(named)
+	for _, l := range h.phraseLines() {
+		add(&l)
 	}
 	// the amendments of a document no longer in force are not its current
 	// rule; LegalValidityNote reports the document instead
@@ -132,11 +142,15 @@ func LegalAmendmentHistory(
 type legalHistory struct {
 	// amended caches amendedNumber by amending document and name.
 	amended map[string]string
-	ctx     context.Context
-	db      *gorm.DB
-	kbIDs   []string
-	answer  string
-	now     time.Time
+	// phrases collects the phrase amendments the answer relies on, by
+	// amended document, amender and phrase; phraseOrder keeps first sight.
+	phrases     map[string]*phraseChange
+	phraseOrder []string
+	ctx         context.Context
+	db          *gorm.DB
+	kbIDs       []string
+	answer      string
+	now         time.Time
 }
 
 type legalHistoryRow struct {
@@ -193,6 +207,13 @@ func (h *legalHistory) forward(c legalHistoryChunk, a vietnamese_legal.AmendRef)
 	if old == "" || a.Article == "" || !(mentionsDoc(h.answer, old) || h.names(c.Doc.Number, c.ID)) {
 		return nil
 	}
+	if a.Phrase {
+		// the answer repeats the replaced wording
+		if answerUsesPhrase(h.answer, a.From) {
+			h.addPhrase(legalHistoryDoc{Number: old}, c.Doc, a)
+		}
+		return nil
+	}
 	prov := vietnamese_legal.AmendRef{Article: a.Article, Khoan: a.Khoan, Diem: a.Diem}.String()
 	if !answerUsesProvision(h.answer, a.Article, a.Khoan, quotedProvision(c.Content, a.Khoan)) {
 		return nil
@@ -222,9 +243,9 @@ func (h *legalHistory) backward(c legalHistoryChunk) []*legalHistoryLine {
 	// Common article numbers are amended in many documents: first those
 	// naming this document's số hiệu, then those naming a document by title.
 	if err := h.db.Raw(legalHistorySelect+` AND c.knowledge_id <> ?
-		AND c.metadata->'legal'->'amends' @> ?::jsonb
-		ORDER BY strpos(c.metadata->'legal'->>'amends', ?) > 0 DESC,
-			c.metadata->'legal'->>'amends' !~ '[0-9]+/[0-9]{4}' DESC
+		AND jsonb_exists(c.metadata->'legal', 'amends') AND c.metadata->'legal'->'amends' @> ?::jsonb
+		ORDER BY strpos(`+legalQuotedAmends+`, ?) > 0 DESC,
+			`+legalQuotedAmends+` !~ '[0-9]+/[0-9]{4}' DESC
 		LIMIT ?`,
 		h.kbIDs, c.KnowledgeID, string(filter), c.Doc.Number, legalHistoryCandidates).Scan(&rows).Error; err != nil {
 		logger.Warnf(h.ctx, "[LegalHistory] amending chunks: %v", err)
@@ -248,6 +269,9 @@ func (h *legalHistory) backward(c legalHistoryChunk) []*legalHistoryLine {
 			}
 			if a.Khoan != "" && len(khoans) > 0 && !khoans[a.Khoan] {
 				continue
+			}
+			if a.Phrase {
+				continue // backwardPhrases
 			}
 			if !answerUsesProvision(h.answer, a.Article, a.Khoan, provisionText(c.Content, a.Khoan)) {
 				continue
@@ -274,6 +298,123 @@ func (h *legalHistory) backward(c legalHistoryChunk) []*legalHistoryLine {
 		lines = append(lines, &legalHistoryLine{key: c.Doc.Number + "|" + prov, text: text})
 	}
 	return lines
+}
+
+// phraseChange is one phrase amendment over the provisions it touches:
+// "cụm từ “500 triệu đồng” được thay bằng “01 tỷ đồng”".
+type phraseChange struct {
+	old, amender legalHistoryDoc
+	from, to     string
+	provs        []string
+}
+
+// legalPhraseProvs caps the provisions named on one phrase line.
+const legalPhraseProvs = 4
+
+func (h *legalHistory) addPhrase(old, amender legalHistoryDoc, a vietnamese_legal.AmendRef) {
+	key := old.Number + "|" + amender.Number + "|" + a.From + "|" + a.To
+	p := h.phrases[key]
+	if p == nil {
+		p = &phraseChange{old: old, amender: amender, from: a.From, to: a.To}
+		h.phrases[key] = p
+		h.phraseOrder = append(h.phraseOrder, key)
+	}
+	if old.Type != "" && p.old.Type == "" {
+		p.old = old
+	}
+	prov := vietnamese_legal.AmendRef{Article: a.Article, Khoan: a.Khoan, Diem: a.Diem}.String()
+	for _, have := range p.provs {
+		if have == prov {
+			return
+		}
+	}
+	p.provs = append(p.provs, prov)
+}
+
+// phraseLines renders the collected phrase changes, one line each.
+func (h *legalHistory) phraseLines() []legalHistoryLine {
+	var out []legalHistoryLine
+	for _, key := range h.phraseOrder {
+		p := h.phrases[key]
+		if p.old.Type == "" {
+			if d, ok := h.documentByNumber(p.old.Number); ok {
+				p.old = d
+			}
+		}
+		provs := p.provs
+		more := ""
+		if len(provs) > legalPhraseProvs {
+			provs, more = provs[:legalPhraseProvs], ", …"
+		}
+		change := "được thay bằng “" + p.to + "”"
+		if p.to == "" {
+			change = "được bãi bỏ"
+		}
+		text := fmt.Sprintf("%s%s %s: cụm từ “%s” %s bởi %s%s.",
+			strings.Join(provs, ", "), more, p.old.label(), p.from, change, p.amender.label(), h.dateText(p.amender))
+		out = append(out, legalHistoryLine{key: p.old.Number + "|phrase|" + key, text: text})
+	}
+	return out
+}
+
+// documentByNumber reads a searched document's identity by số hiệu.
+func (h *legalHistory) documentByNumber(number string) (legalHistoryDoc, bool) {
+	var rows []legalHistoryRow
+	if err := h.db.Raw(legalHistorySelect+` AND k.metadata->>'doc_number' = ? AND c.metadata->'legal' IS NOT NULL LIMIT 1`,
+		h.kbIDs, number).Scan(&rows).Error; err != nil || len(rows) == 0 {
+		return legalHistoryDoc{}, false
+	}
+	cs := parseLegalHistoryRows(rows)
+	if len(cs) == 0 {
+		return legalHistoryDoc{}, false
+	}
+	return cs[0].Doc, true
+}
+
+// answerUsesPhrase reports whether the answer repeats phrase ("01 tỷ đồng"
+// also as "1 tỷ đồng"), ignoring case and spacing, not inside a longer word
+// or number (findPhrase).
+func answerUsesPhrase(answer, phrase string) bool {
+	if utf8.RuneCountInString(foldSpaces(phrase)) < 3 {
+		return false
+	}
+	return len(findPhrase(answer, phrase)) > 0 || len(findPhrase(answer, strings.TrimLeft(strings.TrimSpace(phrase), "0"))) > 0
+}
+
+// foldSpaces lower-cases s and collapses its whitespace.
+func foldSpaces(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), " "))
+}
+
+// legalQuotedAmends is the text of a chunk's quoted-rewrite amendments,
+// its phrase amendments left out, for ranking amending chunks.
+// (No "?" in it: gorm would read it as a placeholder.)
+const legalQuotedAmends = `(SELECT coalesce(jsonb_agg(e), '[]'::jsonb) FROM jsonb_array_elements(c.metadata->'legal'->'amends') e
+	WHERE NOT jsonb_exists(e, 'phrase'))::text`
+
+// backwardPhrases records the phrase amendments in force of the named
+// chunks whose replaced words they still hold and the answer repeats.
+func (h *legalHistory) backwardPhrases(chunks []legalHistoryChunk) {
+	if len(chunks) == 0 {
+		return
+	}
+	for id, changes := range h.phraseChanges(chunks) {
+		var c legalHistoryChunk
+		for _, x := range chunks {
+			if x.ID == id {
+				c = x
+			}
+		}
+		for _, ch := range changes {
+			at, known := phraseEffect(ch.Amender, h.now.Location())
+			if !known || at.After(h.now) || len(findPhrase(c.Content, ch.From)) == 0 || !answerUsesPhrase(h.answer, ch.From) {
+				continue
+			}
+			h.addPhrase(c.Doc, ch.Amender, vietnamese_legal.AmendRef{
+				Article: c.Legal.ArticleNos[0], Khoan: ch.Khoan, Diem: ch.Diem, Phrase: true, From: ch.From, To: ch.To,
+			})
+		}
+	}
 }
 
 // provisionChunk finds, in the searched KBs, the chunk holding Điều article
@@ -464,18 +605,12 @@ func shortQuote(s string) string {
 	return string(r) + "…"
 }
 
-// legalHistoryTarget is a catalogue document an amendment may name.
-type legalHistoryTarget struct {
-	DocumentNumber string
-	Title          string
-}
-
 // amendedNumber is the số hiệu of the document an amendment names: written
 // in the text ("Nghị định số 75/2019/NĐ-CP"), else — when the text names it
 // only by title ("Luật Giáo dục") — the catalogue document of exactly that
 // title (not "Luật Giáo dục đại học"): one the amending document is
-// recorded to amend, else the latest one issued before it and not fully
-// expired.
+// recorded to amend, else the one in force when it was issued, read from
+// the catalogue dates (ResolveLegalDocumentName).
 func (h *legalHistory) amendedNumber(amender legalHistoryDoc, name string) string {
 	if n := legalDocNumberRe.FindString(name); n != "" {
 		return n
@@ -493,47 +628,35 @@ func (h *legalHistory) amendedNumber(amender legalHistoryDoc, name string) strin
 	return n
 }
 
+// lookupAmended resolves a name with ResolveLegalDocumentName as of the
+// amending document's issue date; a name that stays ambiguous (a newer
+// law of that name issued but not yet in force) names nothing, and so do a
+// trimmed match (a shorter law than the name written) and an issue date
+// that does not parse.
 func (h *legalHistory) lookupAmended(amender legalHistoryDoc, name string) string {
-	var targets []legalHistoryTarget
-	if amender.ExternalID != "" {
-		if err := h.db.Raw(`SELECT t.document_number, t.title FROM legal_document_relations r
-			JOIN legal_documents t ON t.id = r.to_id
-			WHERE r.from_id = ? AND r.relation IN ('amends', 'replaces', 'repeals')`, amender.ExternalID).
-			Scan(&targets).Error; err != nil {
-			logger.Warnf(h.ctx, "[LegalHistory] catalogue targets: %v", err)
+	var at time.Time
+	if amender.IssueDate != "" {
+		var err error
+		if at, err = time.Parse("2006-01-02", amender.IssueDate); err != nil {
+			logger.Debugf(h.ctx, "[LegalHistory] amender %s: issue date %q: %v", amender.Number, amender.IssueDate, err)
+			return ""
 		}
 	}
-	for _, t := range targets {
-		if titleBase(t.Title) == name {
-			return t.DocumentNumber
-		}
-	}
-	issued := amender.IssueDate
-	if issued == "" {
-		issued = "9999-12-31"
-	}
-	targets = nil
-	if err := h.db.Raw(`SELECT document_number, title FROM legal_documents
-		WHERE lower(title) LIKE ? AND coalesce(status, '') NOT LIKE 'Hết hiệu lực toàn bộ%'
-		AND issued_on < ? ORDER BY issued_on DESC LIMIT 10`, name+" số %", issued).
-		Scan(&targets).Error; err != nil {
-		logger.Warnf(h.ctx, "[LegalHistory] catalogue by title: %v", err)
+	m, err := ResolveLegalDocumentName(h.ctx, h.db, LegalNameQuery{Name: name, At: at, AmenderID: amender.ExternalID})
+	if err != nil {
+		logger.Warnf(h.ctx, "[LegalHistory] catalogue by name: %v", err)
 		return ""
 	}
-	for _, t := range targets {
-		if titleBase(t.Title) == name {
-			return t.DocumentNumber
-		}
+	if m.Resolution == LegalNameAmbiguous {
+		logger.Debugf(h.ctx, "[LegalHistory] %q named by %s is ambiguous (%d candidates)", name, amender.Number, len(m.Candidates))
 	}
-	return ""
-}
-
-// titleBase is a catalogue title without its số hiệu, lower-cased: "Luật
-// Giáo dục số 43/2019/QH14" → "luật giáo dục".
-func titleBase(title string) string {
-	title = strings.ToLower(strings.Join(strings.Fields(title), " "))
-	if i := strings.Index(title, " số "); i > 0 {
-		return title[:i]
+	if m.Chosen == nil {
+		return ""
 	}
-	return title
+	if m.Trimmed {
+		// the catalogue may lack the law written; a shorter title is a guess
+		logger.Debugf(h.ctx, "[LegalHistory] %q read as %s after dropping %q: skipped", name, m.Chosen.DocumentNumber, m.Dropped)
+		return ""
+	}
+	return m.Chosen.DocumentNumber
 }

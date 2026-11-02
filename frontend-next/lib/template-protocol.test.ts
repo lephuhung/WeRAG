@@ -62,3 +62,22 @@ test('"bỏ qua" at once: a skipped result, remembered per document across reloa
  for (const yes of ['bỏ qua','Bỏ qua nhé','không cần mẫu','văn bản trắng.']) assert.equal(isTemplateSkip(yes),true,yes);
  for (const no of ['thôi','không cần','để trống','bỏ qua phần căn cứ, còn lại là kế hoạch tập huấn','Soạn kế hoạch tập huấn','không cần hỏi thêm, tạo kế hoạch tập huấn']) assert.equal(isTemplateSkip(no),false,no);
 });
+
+test('the form types need the fields their layout prints', ()=>{
+ const ready=(template_id:string,extra:Record<string,unknown>)=>parseTemplateResponse({schema_version:1,request_id:'r',document_id:'d',template_id,status:'ready',fields:{...fields,...extra}});
+ assert.equal(ready('bien-ban',{}),null);
+ assert.equal(ready('bien-ban',{secretary_name:'Phạm Thị D'})?.status,'ready');
+ assert.equal(ready('cong-dien',{issuer_line:'GIÁM ĐỐC SỞ điện:'}),null);
+ assert.equal(ready('cong-dien',{issuer_line:'GIÁM ĐỐC SỞ điện:',receiver_lines:['- Các phòng;']})?.status,'ready');
+ // a resolution's proposal line is optional, a decision's is not
+ assert.equal(ready('nghi-quyet',{grounds:['Căn cứ Luật;'],decision_authority:'SỞ NỘI VỤ'})?.status,'ready');
+ assert.equal(ready('quyet-dinh',{grounds:['Căn cứ Luật;'],decision_authority:'GIÁM ĐỐC SỞ NỘI VỤ'}),null);
+ assert.equal(ready('giay-gioi-thieu',{})?.status,'ready');
+});
+
+test('redo names the new types', async()=>{
+ const { redoTemplateId }=await import('./template-protocol.ts');
+ assert.equal(redoTemplateId('soạn lại nghị quyết',null),'nghi-quyet');
+ assert.equal(redoTemplateId('tạo lại giấy mời nhé','cong-van'),'giay-moi');
+ assert.equal(redoTemplateId('làm lại biên bản',null),'bien-ban');
+});

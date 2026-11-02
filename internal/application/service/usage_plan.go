@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -67,6 +68,9 @@ func normalizePlan(plan *types.UsagePlan) error {
 	}
 	if plan.ScopeKind == types.UsagePlanScopeUser {
 		plan.Mode = types.UsageModePool
+	}
+	if plan.PriceVND < 0 || plan.PriceQuarterVND < 0 || plan.PriceYearVND < 0 {
+		return apperrors.NewBadRequestError("prices must be >= 0")
 	}
 	if plan.Limits == nil {
 		plan.Limits = types.UsageLimits{}
@@ -130,6 +134,57 @@ func (s *usagePlanService) UpdatePlan(ctx context.Context, plan *types.UsagePlan
 	return plan, nil
 }
 
+// GrantSignupPlan gives a newly created account the personal plan named by
+// the setting usage.signup_plan_id, for usage.signup_plan_days days (0 = no
+// end date). Nothing happens when the setting is empty, the plan is gone,
+// inactive or not a personal plan, or the account already holds a package.
+func (s *usagePlanService) GrantSignupPlan(ctx context.Context, userID string) (*types.UsageSubscriptionView, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" || s.settings == nil {
+		return nil, nil
+	}
+	planID := strings.TrimSpace(s.settings.GetString(ctx, types.UsageSignupPlanSettingKey, "", ""))
+	if planID == "" {
+		return nil, nil
+	}
+	plan, err := s.repo.GetPlan(ctx, planID)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if plan == nil || !plan.IsActive || plan.ScopeKind != types.UsagePlanScopeUser {
+		logger.Warnf(ctx, "signup plan %s is missing, inactive or not personal; no package granted", planID)
+		return nil, nil
+	}
+	cur, err := s.repo.GetActiveSubscription(ctx, types.UsageScopeUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	if cur != nil {
+		return nil, nil
+	}
+	now := s.now()
+	sub := &types.UsageSubscription{
+		ScopeType: types.UsageScopeUser,
+		ScopeID:   userID,
+		PlanID:    plan.ID,
+		Mode:      types.UsageModePool,
+		StartsAt:  now,
+		Status:    types.UsageSubscriptionActive,
+		Note:      "Gói tặng khi đăng ký",
+	}
+	days := s.settings.GetInt(ctx, types.UsageSignupPlanDaysSettingKey, "", types.UsageSignupPlanDaysDefault)
+	if days < 0 {
+		// only 0 means "no end date": a negative value written through the
+		// API must not hand out a never-expiring package
+		days = types.UsageSignupPlanDaysDefault
+	}
+	if days > 0 {
+		ends := types.EndOfDayVN(now.AddDate(0, 0, int(min(days, 3650))))
+		sub.EndsAt = &ends
+	}
+	return s.CreateSubscription(ctx, sub)
+}
+
 func (s *usagePlanService) DeletePlan(ctx context.Context, id string) error {
 	if _, err := s.GetPlan(ctx, id); err != nil {
 		return err
@@ -190,6 +245,11 @@ func (s *usagePlanService) normalizeSubscription(ctx context.Context, sub *types
 	if sub.StartsAt.IsZero() {
 		sub.StartsAt = s.now()
 	}
+	if sub.EndsAt != nil {
+		// a day ends at 24:00 Vietnam time (usage_calendar.go)
+		end := types.EndOfDayVN(*sub.EndsAt)
+		sub.EndsAt = &end
+	}
 	if sub.EndsAt != nil && !sub.EndsAt.After(sub.StartsAt) {
 		return apperrors.NewBadRequestError("ends_at must be after starts_at")
 	}
@@ -204,15 +264,97 @@ func (s *usagePlanService) ListSubscriptions(
 	if err != nil {
 		return nil, err
 	}
+	var guests []*types.User
+	if s.users != nil && (filter.ScopeType == "" || filter.ScopeType == types.UsageScopeUser) {
+		if guests, err = s.users.ListGuestUsers(ctx); err != nil {
+			return nil, err
+		}
+	}
+	isGuest := make(map[string]bool, len(guests))
+	for _, u := range guests {
+		isGuest[u.ID] = true
+	}
 	views := make([]*types.UsageSubscriptionView, 0, len(subs))
 	for _, sub := range subs {
-		v, err := s.view(ctx, sub)
+		scope := personalCounterScope(sub)
+		if sub.ScopeType == types.UsageScopeUser && isGuest[sub.ScopeID] {
+			// the guard counts every portal turn of a Guest in the guest
+			// scope, whatever package they hold (a bought one too)
+			scope = types.UsageScopeGuest
+		}
+		v, err := s.viewCounted(ctx, sub, scope)
 		if err != nil {
 			return nil, err
 		}
 		views = append(views, v)
 	}
-	return views, nil
+	implicit, err := s.implicitGuestViews(ctx, filter, subs, guests)
+	if err != nil {
+		return nil, err
+	}
+	return append(views, implicit...), nil
+}
+
+// implicitGuestViews lists the guest plan of every Guest whose own package
+// does not apply: no active personal subscription yet (the usage guard
+// subscribes a Guest on their first question, so without these rows the
+// admin page would not show the package of a Guest who has not asked
+// anything), a bought one that is not current (the guard then applies the
+// guest plan), or a system-admin one kept from a revoked SuperAdmin role
+// (closed by the guard on the next question). Only for listings that
+// could hold such a row (personal scope, active, any or the guest plan).
+func (s *usagePlanService) implicitGuestViews(
+	ctx context.Context, filter types.UsageSubscriptionFilter, subs []*types.UsageSubscription, guests []*types.User,
+) ([]*types.UsageSubscriptionView, error) {
+	if len(guests) == 0 || filter.ScopeID != "" ||
+		(filter.Status != "" && filter.Status != types.UsageSubscriptionActive) ||
+		(filter.PlanID != "" && filter.PlanID != types.UsageGuestPlanID) {
+		return nil, nil
+	}
+	plan, err := s.guard.planByCode(ctx, types.UsageGuestPlanCode)
+	if err != nil || plan == nil {
+		return nil, err
+	}
+	// the listing may be filtered (guest plan only): ask for any active row
+	active := subs
+	if filter.ScopeType != "" || filter.Status != "" || filter.PlanID != "" {
+		if active, err = s.repo.ListSubscriptions(ctx, types.UsageSubscriptionFilter{
+			ScopeType: types.UsageScopeUser, Status: types.UsageSubscriptionActive,
+		}); err != nil {
+			return nil, err
+		}
+	}
+	now := s.now()
+	held := map[string]bool{}
+	for _, sub := range active {
+		if sub.ScopeType == types.UsageScopeUser && sub.Status == types.UsageSubscriptionActive &&
+			(rolePlan(sub.Plan) == types.UsageGuestPlanCode ||
+				(sub.IsCurrentAt(now) && rolePlan(sub.Plan) != types.UsageSystemAdminPlanCode)) {
+			held[sub.ScopeID] = true
+		}
+	}
+	var out []*types.UsageSubscriptionView
+	for _, u := range guests {
+		if held[u.ID] {
+			continue
+		}
+		sub := &types.UsageSubscription{
+			ScopeType: types.UsageScopeUser, ScopeID: u.ID, PlanID: plan.ID, Plan: plan,
+			Mode: types.UsageModePool, StartsAt: u.CreatedAt, Status: types.UsageSubscriptionActive,
+		}
+		statuses, err := s.guard.limitStatus(ctx, sub.EffectiveLimits(), types.UsageScopeGuest, u.ID, now)
+		if err != nil {
+			return nil, err
+		}
+		name := u.Username
+		if name == "" {
+			name = u.Email
+		}
+		out = append(out, &types.UsageSubscriptionView{
+			UsageSubscription: sub, ScopeName: name, Current: true, Limits: statuses, Implicit: true,
+		})
+	}
+	return out, nil
 }
 
 func (s *usagePlanService) GetSubscription(ctx context.Context, id string) (*types.UsageSubscriptionView, error) {
@@ -230,6 +372,24 @@ func (s *usagePlanService) GetSubscription(ctx context.Context, id string) (*typ
 // of the counters it governs (pool: the workspace; personal: the person;
 // seat mode: the workspace totals, as seats are per person).
 func (s *usagePlanService) view(ctx context.Context, sub *types.UsageSubscription) (*types.UsageSubscriptionView, error) {
+	return s.viewCounted(ctx, sub, personalCounterScope(sub))
+}
+
+// personalCounterScope is the counter scope a subscription reads when the
+// owner's account kind is not known: a guest plan counts the person's turns
+// in the public portal (guest scope). ListSubscriptions knows the Guests and
+// uses the guest scope for every package a Guest holds.
+func personalCounterScope(sub *types.UsageSubscription) string {
+	if sub.ScopeType == types.UsageScopeUser && rolePlan(sub.Plan) == types.UsageGuestPlanCode {
+		return types.UsageScopeGuest
+	}
+	return sub.ScopeType
+}
+
+// viewCounted is view reading the counters of counterScope.
+func (s *usagePlanService) viewCounted(
+	ctx context.Context, sub *types.UsageSubscription, counterScope string,
+) (*types.UsageSubscriptionView, error) {
 	now := s.now()
 	v := &types.UsageSubscriptionView{
 		UsageSubscription: sub,
@@ -237,7 +397,7 @@ func (s *usagePlanService) view(ctx context.Context, sub *types.UsageSubscriptio
 		Current:           sub.IsCurrentAt(now),
 		Limits:            []types.UsageLimitStatus{},
 	}
-	statuses, err := s.guard.limitStatus(ctx, sub.EffectiveLimits(), sub.ScopeType, sub.ScopeID, now)
+	statuses, err := s.guard.limitStatus(ctx, sub.EffectiveLimits(), counterScope, sub.ScopeID, now)
 	if err != nil {
 		return nil, err
 	}
@@ -282,12 +442,19 @@ func (s *usagePlanService) CreateSubscription(
 	}
 	if sub.Status == types.UsageSubscriptionActive {
 		// Changing plan: the previous active subscription of the scope is
-		// closed, its seats go with it.
+		// closed, its seats go with it. The guest plan is no package the
+		// person chose: its row is removed rather than left as "cancelled"
+		// in their history (the guard applies the guest plan without a row
+		// once a bought package runs out).
 		prev, err := s.repo.GetActiveSubscription(ctx, sub.ScopeType, sub.ScopeID)
 		if err != nil {
 			return nil, err
 		}
-		if prev != nil {
+		if prev != nil && rolePlan(prev.Plan) == types.UsageGuestPlanCode {
+			if err := s.repo.DeleteSubscription(ctx, prev.ID); err != nil {
+				return nil, err
+			}
+		} else if prev != nil {
 			prev.Status = types.UsageSubscriptionCancelled
 			if err := s.repo.UpdateSubscription(ctx, prev); err != nil {
 				return nil, err
@@ -352,7 +519,7 @@ func (s *usagePlanService) TenantOverview(ctx context.Context) ([]*types.UsageTe
 	keys := types.UsagePeriodKeysAt(s.now())
 	out := make([]*types.UsageTenantOverview, 0, len(tenants))
 	for _, t := range tenants {
-		if t.Kind == types.TenantKindConfigProfile {
+		if t.IsHiddenTenant() {
 			continue
 		}
 		scopeID := types.UsageTenantScopeID(t.ID)
@@ -433,7 +600,8 @@ func (s *usagePlanService) RevokeSeat(ctx context.Context, subscriptionID, userI
 }
 
 func (s *usagePlanService) TenantUsage(ctx context.Context, tenantID uint64) (*types.UsageTenantUsage, error) {
-	out := &types.UsageTenantUsage{Enforced: s.guard.Enforced(ctx), Seats: []*types.UsageSeat{}}
+	out := &types.UsageTenantUsage{Enforced: s.guard.Enforced(ctx), Seats: []*types.UsageSeat{},
+		Addons: []*types.UsageSubscriptionAddon{}}
 	sub, err := s.repo.GetActiveSubscription(ctx, types.UsageScopeTenant, types.UsageTenantScopeID(tenantID))
 	if err != nil {
 		return nil, err
@@ -446,6 +614,19 @@ func (s *usagePlanService) TenantUsage(ctx context.Context, tenantID uint64) (*t
 		return nil, err
 	}
 	out.Subscription = v
+	addons, err := s.repo.ListSubscriptionAddons(ctx, sub.ID)
+	if err != nil {
+		return nil, err
+	}
+	now := s.now()
+	for _, a := range addons {
+		if a.IsCurrentAt(now) {
+			if a.EndsAt == nil {
+				a.EndsAt = sub.EndsAt // shown as "ends with the subscription"
+			}
+			out.Addons = append(out.Addons, a)
+		}
+	}
 	if sub.Mode == types.UsageModeSeat {
 		seats, err := s.repo.ListSeats(ctx, sub.ID)
 		if err != nil {
@@ -492,4 +673,205 @@ func (s *usagePlanService) RevokeTenantSeat(ctx context.Context, tenantID uint64
 		return err
 	}
 	return s.repo.RemoveSeat(ctx, sub.ID, userID)
+}
+
+func (s *usagePlanService) ListSubscriptionAddons(
+	ctx context.Context, subscriptionID string,
+) ([]*types.UsageSubscriptionAddon, error) {
+	if _, err := s.repo.GetSubscription(ctx, subscriptionID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperrors.NewNotFoundError("subscription not found")
+		}
+		return nil, err
+	}
+	return s.repo.ListSubscriptionAddons(ctx, subscriptionID)
+}
+
+// GrantSubscriptionAddon gives a subscription the right to use one
+// specialist agent, or extends an existing grant (never shortens it; price and grantor are replaced).
+// Only an "addon" agent can be granted: a basic one is already everyone's
+// and an internal one follows its "Tổ chức áp dụng" list.
+func (s *usagePlanService) GrantSubscriptionAddon(
+	ctx context.Context, subscriptionID string, grant types.UsageSubscriptionAddonGrant, grantedBy string,
+) (*types.UsageSubscriptionAddon, error) {
+	if _, err := s.repo.GetSubscription(ctx, subscriptionID); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperrors.NewNotFoundError("subscription not found")
+		}
+		return nil, err
+	}
+	agentID := strings.TrimSpace(grant.AgentID)
+	if agentID == "" {
+		return nil, apperrors.NewBadRequestError("agent_id is required")
+	}
+	distribution, found, err := s.repo.CustomAgentDistribution(ctx, agentID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, apperrors.NewNotFoundError("agent not found")
+	}
+	if distribution != types.AgentDistributionAddon {
+		return nil, apperrors.NewBadRequestError(
+			"chỉ cấp quyền dùng cho trợ lý có cách phân phối Chuyên ngành (addon)")
+	}
+	if grant.PriceVND < 0 {
+		return nil, apperrors.NewBadRequestError("price_vnd must be >= 0")
+	}
+	addon := &types.UsageSubscriptionAddon{
+		SubscriptionID: subscriptionID,
+		AgentID:        agentID,
+		StartsAt:       s.now(),
+		EndsAt:         grant.EndsAt,
+		PriceVND:       grant.PriceVND,
+		GrantedBy:      grantedBy,
+	}
+	if grant.StartsAt != nil && !grant.StartsAt.IsZero() {
+		addon.StartsAt = *grant.StartsAt
+	}
+	if addon.EndsAt != nil {
+		end := types.EndOfDayVN(*addon.EndsAt)
+		addon.EndsAt = &end
+	}
+	if addon.EndsAt != nil && !addon.EndsAt.After(addon.StartsAt) {
+		return nil, apperrors.NewBadRequestError("ends_at must be after starts_at")
+	}
+	if err := s.repo.UpsertSubscriptionAddon(ctx, addon); err != nil {
+		return nil, err
+	}
+	return addon, nil
+}
+
+// RevokeSubscriptionAddon takes an add-on back: the agent disappears from
+// the subscription holders' lists and their next turn with it gets 2104.
+func (s *usagePlanService) RevokeSubscriptionAddon(ctx context.Context, subscriptionID, agentID string) error {
+	deleted, err := s.repo.DeleteSubscriptionAddon(ctx, subscriptionID, strings.TrimSpace(agentID))
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return apperrors.NewNotFoundError("add-on not found")
+	}
+	return nil
+}
+
+// includedPlanAgents names the basic agents every plan includes as users
+// see them: the configuration profile's stored row when there is one (a
+// SuperAdmin may have renamed it), localised like the agent picker, and
+// leaving out one that is switched off. A read failure falls back to
+// builtin_agents.yaml.
+func includedPlanAgents(ctx context.Context, repo interfaces.UsagePlanRepository) []types.UsagePlanAgent {
+	stored := map[string]*types.CustomAgent{}
+	if repo != nil {
+		rows, err := repo.ProfileBuiltinAgents(ctx, types.UsageIncludedAgentIDs)
+		if err != nil {
+			logger.Warnf(ctx, "usage: included agents read from the profile failed: %v", err)
+		}
+		for _, r := range rows {
+			if _, ok := stored[r.ID]; !ok {
+				stored[r.ID] = r
+			}
+		}
+	}
+	out := make([]types.UsagePlanAgent, 0, len(types.UsageIncludedAgentIDs))
+	for _, id := range types.UsageIncludedAgentIDs {
+		a := stored[id]
+		if a != nil {
+			types.ApplyBuiltinAgentLocalization(ctx, a)
+		} else {
+			a = types.GetBuiltinAgentWithContext(ctx, id, 0)
+		}
+		if a == nil || !a.EffectiveEnabled() {
+			continue
+		}
+		out = append(out, types.UsagePlanAgent{ID: id, Name: a.Name})
+	}
+	return out
+}
+
+func (s *usagePlanService) ListAgentAddons(ctx context.Context, includeInactive bool) (*types.UsageAgentAddonCatalogue, error) {
+	rows, err := s.repo.ListAgentAddons(ctx, includeInactive)
+	if err != nil {
+		return nil, err
+	}
+	return &types.UsageAgentAddonCatalogue{Addons: rows, IncludedAgents: includedPlanAgents(ctx, s.repo)}, nil
+}
+
+// validateAgentAddon normalizes a catalogue row and checks it: an addon
+// agent, a price >= 0, plans that exist.
+func (s *usagePlanService) validateAgentAddon(ctx context.Context, row *types.UsageAgentAddon) error {
+	row.AgentID = strings.TrimSpace(row.AgentID)
+	row.Description = strings.TrimSpace(row.Description)
+	row.PlanIDs = row.PlanIDs.Normalized()
+	if row.AgentID == "" {
+		return apperrors.NewBadRequestError("agent_id is required")
+	}
+	if row.PriceVND < 0 {
+		return apperrors.NewBadRequestError("price_vnd must be >= 0")
+	}
+	distribution, found, err := s.repo.CustomAgentDistribution(ctx, row.AgentID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return apperrors.NewNotFoundError("agent not found")
+	}
+	if distribution != types.AgentDistributionAddon {
+		return apperrors.NewBadRequestError(
+			"chỉ trợ lý có cách phân phối Chuyên ngành (addon) mới bán kèm gói dịch vụ được")
+	}
+	for _, id := range row.PlanIDs {
+		if _, err := s.repo.GetPlan(ctx, id); err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return apperrors.NewBadRequestError(fmt.Sprintf("plan %q does not exist", id))
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *usagePlanService) CreateAgentAddon(ctx context.Context, row *types.UsageAgentAddon) (*types.UsageAgentAddon, error) {
+	if err := s.validateAgentAddon(ctx, row); err != nil {
+		return nil, err
+	}
+	if _, err := s.repo.GetAgentAddon(ctx, row.AgentID); err == nil {
+		return nil, apperrors.NewConflictError("this agent is already in the add-on catalogue")
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	if err := s.repo.CreateAgentAddon(ctx, row); err != nil {
+		return nil, err
+	}
+	return s.repo.GetAgentAddon(ctx, row.AgentID)
+}
+
+func (s *usagePlanService) UpdateAgentAddon(ctx context.Context, row *types.UsageAgentAddon) (*types.UsageAgentAddon, error) {
+	if _, err := s.repo.GetAgentAddon(ctx, strings.TrimSpace(row.AgentID)); err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperrors.NewNotFoundError("add-on not found")
+		}
+		return nil, err
+	}
+	if err := s.validateAgentAddon(ctx, row); err != nil {
+		return nil, err
+	}
+	if err := s.repo.UpdateAgentAddon(ctx, row); err != nil {
+		return nil, err
+	}
+	return s.repo.GetAgentAddon(ctx, row.AgentID)
+}
+
+// DeleteAgentAddon takes an agent out of the catalogue. Subscriptions that
+// already hold it keep their rights until they end (usage_subscription_addons
+// is untouched).
+func (s *usagePlanService) DeleteAgentAddon(ctx context.Context, agentID string) error {
+	deleted, err := s.repo.DeleteAgentAddon(ctx, strings.TrimSpace(agentID))
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return apperrors.NewNotFoundError("add-on not found")
+	}
+	return nil
 }

@@ -65,6 +65,7 @@ export function DocumentPane({
   onEditorDisabled,
   onOpsOutcome: reportOpsOutcome,
   onSpellingStatus,
+  spellingRunToken = 0,
 }: {
   sessionId: string;
   documentId: string;
@@ -84,6 +85,9 @@ export function DocumentPane({
   /** The visible document's live spellcheck, and how to select one of its
    * listed mistakes in this editor. */
   onSpellingStatus?: (status: LiveSpellingStatus, actions: SpellingActions, editor: EditorActions) => void;
+  /** Bumped by the page to review the paragraphs not reviewed yet now,
+   * without waiting for a pause in typing. */
+  spellingRunToken?: number;
 }) {
   const { t } = useT();
   const toast = useToast();
@@ -367,6 +371,9 @@ export function DocumentPane({
     if (active) onSpellingStatus?.(spellingStatus, spellingActions, editorActions);
   }, [active, spellingStatus, spellingActions, editorActions, onSpellingStatus]);
   liveSpellingOutcomeRef.current = liveSpelling.onOutcome;
+  useEffect(() => {
+    if (spellingRunToken) scheduleSpelling(0);
+  }, [spellingRunToken, scheduleSpelling]);
   const allBatches = useMemo(
     () => (liveSpelling.batches.length > 0 ? [...opsBatches, ...liveSpelling.batches] : opsBatches),
     [opsBatches, liveSpelling.batches],
@@ -541,7 +548,7 @@ export function Pill({ tone, children }: { tone: "ok" | "warn" | "muted"; childr
     tone === "ok"
       ? "bg-success/10 text-success"
       : tone === "warn"
-        ? "bg-amber-500/15 text-amber-600" // same as processing chips in knowledge/processing-timeline
+        ? "bg-running/15 text-running" // same as processing chips in knowledge/processing-timeline
         : "bg-surface-strong text-muted";
   return <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[11.5px] font-medium ${cls}`}>{children}</span>;
 }

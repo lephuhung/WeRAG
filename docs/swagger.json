@@ -326,7 +326,7 @@
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Lấy mọi trợ lý của tổ chức hiện tại (gồm cả trợ lý tích hợp sẵn)",
+                "description": "Lấy mọi trợ lý của tổ chức hiện tại (gồm cả trợ lý tích hợp sẵn). Trợ lý đang tắt chỉ có khi quản trị hệ thống gửi include_disabled=true.",
                 "consumes": [
                     "application/json"
                 ],
@@ -337,6 +337,14 @@
                     "Trợ lý"
                 ],
                 "summary": "Lấy danh sách trợ lý",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "SuperAdmin: gồm cả trợ lý đang tắt",
+                        "name": "include_disabled",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "danh sách trợ lý",
@@ -396,6 +404,38 @@
                         "description": "tham số không hợp lệ",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/domain-packs": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    },
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Trả về các bộ kỹ năng chuyên môn có trong phiên bản này để chọn cho trợ lý suy luận: phiên bản, mốc dữ liệu, hạn rà soát (overdue = đã quá hạn) và công cụ bắt buộc",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Trợ lý"
+                ],
+                "summary": "Lấy danh sách bộ kỹ năng chuyên môn (domain pack)",
+                "responses": {
+                    "200": {
+                        "description": "danh sách bộ kỹ năng",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     }
                 }
@@ -683,6 +723,53 @@
                         "description": "không tìm thấy trợ lý",
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_errors.AppError"
+                        }
+                    }
+                }
+            }
+        },
+        "/agents/{id}/enabled": {
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Công tắc lúc chạy cho trợ lý tích hợp sẵn và trợ lý tuỳ chỉnh. Trợ lý tích hợp sẵn đang tắt không hiện trong danh sách chọn nhưng vẫn mở được theo id; trợ lý tuỳ chỉnh đang tắt bị ẩn với mọi người trừ quản trị hệ thống (lượt chat tiếp theo nhận 2104). Chưa đặt = giá trị trong builtin_agents.yaml (tích hợp sẵn) hoặc bật (tuỳ chỉnh).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Trợ lý"
+                ],
+                "summary": "Bật/tắt trợ lý (quản trị hệ thống)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "agent id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "enabled",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.SetAgentEnabledRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     }
                 }
@@ -2065,6 +2152,38 @@
                         "schema": {
                             "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsageQuoteRequest"
                         }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/billing/subscription": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Held add-ons (with their end) and the add-ons still on sale with the subscription's plan, for a mid-term purchase (quote/order with kind \"addon\").",
+                "tags": [
+                    "Thanh toán"
+                ],
+                "summary": "The scope's current subscription and its specialist agents",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "tenant or user",
+                        "name": "scope",
+                        "in": "query",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -15570,6 +15689,143 @@
                 }
             }
         },
+        "/system/admin/usage/agent-addons": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Rows with the agent name, whether the agent is still an addon agent and how many current subscriptions hold it; also the basic agents every plan includes.",
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Catalogue of specialist agents sold with service plans",
+                "parameters": [
+                    {
+                        "type": "boolean",
+                        "description": "include deactivated rows (default true)",
+                        "name": "include_inactive",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Put a specialist (addon) agent in the catalogue",
+                "parameters": [
+                    {
+                        "description": "catalogue row (plan_ids [] = every plan)",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsageAgentAddon"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/usage/agent-addons/{agent_id}": {
+            "put": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Update a catalogue row",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "agent id",
+                        "name": "agent_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "catalogue row",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsageAgentAddon"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Take an agent out of the catalogue (bought rights stay until they end)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "agent id",
+                        "name": "agent_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/system/admin/usage/orders": {
             "get": {
                 "security": [
@@ -16131,6 +16387,117 @@
                 }
             }
         },
+        "/system/admin/usage/subscriptions/{id}/addons": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Specialist agents a subscription may use",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "subscription id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Manual grant by a SuperAdmin (tests, negotiated deals). Re-granting replaces the price and can only extend the period (a right is never shortened; revoke with DELETE).",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Grant a specialist (addon) agent to a subscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "subscription id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "add-on",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.UsageSubscriptionAddonGrant"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/admin/usage/subscriptions/{id}/addons/{agent_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "tags": [
+                    "Gói sử dụng"
+                ],
+                "summary": "Take a specialist agent back from a subscription",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "subscription id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "agent id",
+                        "name": "agent_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/system/admin/usage/subscriptions/{id}/seats": {
             "get": {
                 "security": [
@@ -16487,6 +16854,102 @@
                 }
             }
         },
+        "/system/domain-packs": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Các bộ kỹ năng chuyên môn có trong bản build: phiên bản, mốc dữ\nliệu, hạn rà soát, số văn bản trích dẫn, số công thức, số\nagent đang dùng (mọi Tổ chức).",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Danh sách bộ kỹ năng chuyên môn (SuperAdmin)",
+                "responses": {
+                    "200": {
+                        "description": "Danh sách gói",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackSummary"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/system/domain-packs/{name}": {
+            "get": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Văn bản trích dẫn (tra danh mục chỉ đọc: trạng thái, có\ntrong KB, ghi chú hiệu lực, tệp trích, công thức dùng),\ncông thức (căn cứ ok/warning), agent đang dùng. Không ghi\nyêu cầu nào; POST …/reconcile mới ghi.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Chi tiết bộ kỹ năng chuyên môn (SuperAdmin)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tên bộ kỹ năng (domain pack)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Chi tiết gói",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackDetail"
+                        }
+                    }
+                }
+            }
+        },
+        "/system/domain-packs/{name}/reconcile": {
+            "post": {
+                "security": [
+                    {
+                        "Bearer": []
+                    }
+                ],
+                "description": "Tra từng số hiệu trong catalogue.yaml của gói theo\nlegal_documents.number_key: found (một văn bản, kèm\nstatus_note khi danh mục ghi hết hiệu lực hoặc bị thay thế),\nmissing (không có; ghi một yêu cầu bổ sung văn bản nguồn\ndetail.origin = pack:\u003ctên gói\u003e, không trùng yêu cầu đã có) hoặc ambiguous\n(nhiều văn bản cùng số hiệu). Không sửa legal_documents.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Đối chiếu danh mục của bộ kỹ năng chuyên môn",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Tên bộ kỹ năng (domain pack)",
+                        "name": "name",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Kết quả đối chiếu",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileResult"
+                        }
+                    }
+                }
+            }
+        },
         "/system/info": {
             "get": {
                 "description": "Lấy phiên bản hệ thống, thông tin bản dựng và cấu hình engine",
@@ -16532,6 +16995,369 @@
                 "responses": {
                     "200": {
                         "description": "Documents",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-drafts": {
+            "get": {
+                "description": "status is fetching, ocr, ready, reviewing, approved, failed\nor all (default); newest change first, without OCR text.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "List OCR drafts",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Draft status or all",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Items and total",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-drafts/{id}": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "One OCR draft with its raw OCR text and request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Draft ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The draft",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Deletes a draft that was not approved (the PDF stays\nstored); its requests go back to \"requested\".",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Discard an OCR draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Draft ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "success",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-drafts/{id}/approve": {
+            "post": {
+                "description": "Converts the draft's current text to vbpl-style HTML (prov-*\nmarkup), checks it with the vbpl converter and ingests it into\nthe public knowledge base like a portal page\n(source_format pdf_reviewed). 400 when the structure check\nstill blocks or the converter reads another article count.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Approve a reviewed draft and ingest it",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Draft ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Target knowledge base",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.ApproveLegalDraftRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "draft, request, result, knowledge_id, articles",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-drafts/{id}/open": {
+            "post": {
+                "description": "The first call builds the draft's .docx and opens it in a\nhidden document-assistant session of the platform\norganization owned by the caller; later calls return the same\nids. The session routes (/sessions/{session_id}/documents/\n{document_id}/...) are called with X-Tenant-ID = tenant_id.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Open an OCR draft in the editor",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Draft ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "draft, editor, session_id, document_id, tenant_id, pdf_url",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-drafts/{id}/structure": {
+            "get": {
+                "description": "Saves the open editor, reads the draft's current text and\nreports its Phần/Chương/Mục/Điều tree, articles, khoản/điểm\ncounts and warnings; ready_to_approve is false while a\nblocking warning remains.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Check the legal structure of a draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Draft ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Structure report",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-requests": {
+            "get": {
+                "description": "Pages the requests to add legal documents, most recently\nrequested first. status is requested (default), fetched,\nreviewing, added, rejected or all; counts holds the total per\nstatus; an item's draft is the OCR draft of a scanned PDF.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "List legal document requests",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "requested, fetched, reviewing, added, rejected or all",
+                        "name": "status",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size",
+                        "name": "page_size",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Items, total and counts",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-requests/public-knowledge-bases": {
+            "get": {
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Public knowledge bases a request can be ingested into",
+                "responses": {
+                    "200": {
+                        "description": "[{id, name}]",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-requests/{id}": {
+            "put": {
+                "description": "action \"ingest\" fetches the document's HTML full text from\nvbpl.vn into the public knowledge base knowledge_base_id (same\ncode as the MCP tool legal_ingest_document); a document vbpl.vn\nhas only as a scanned PDF answers 400 (it goes through a\nreviewed OCR draft: POST /system/legal-requests/{id}/fetch) and\nits portal availability is stored as detail.portal; \"reject\" keeps note as the\nreason users see; \"added\" records a document added by hand.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Ingest, reject or close a legal document request",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Decision",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.LegalRequestDecision"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated item",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-requests/{id}/fetch": {
+            "post": {
+                "description": "For a document vbpl.vn has only as a scanned PDF: downloads\nthe PDF and OCRs it into a draft (up to 20 pages while the\nrequest waits, longer scans in the background: status \"ocr\").\nAn existing draft is returned as it is; a failed one is\nfetched again. 400 when vbpl.vn has the HTML full text (ingest\nit directly) or no full text at all.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Fetch a request's scanned PDF into an OCR draft",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The draft",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/system/legal-requests/{id}/portal-check": {
+            "post": {
+                "description": "Reads the document's portal page (no download) and stores\ndetail.portal = {checked_at, status, html, pdf_file, exists}\non the request: HTML full text, only an original PDF scan,\nor nothing.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Rà soát pháp lý"
+                ],
+                "summary": "Check what vbpl.vn offers for a requested document",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Request ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated item",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -19266,6 +20092,7 @@
                 2101,
                 2102,
                 2103,
+                2104,
                 2200,
                 2201,
                 2300
@@ -19293,6 +20120,7 @@
                 "ErrAgentMissingAllowedTools",
                 "ErrAgentInvalidMaxIterations",
                 "ErrAgentInvalidTemperature",
+                "ErrAgentUnavailable",
                 "ErrVectorStoreBindingInvalid",
                 "ErrVectorStoreUnavailable",
                 "ErrModelInUse"
@@ -20161,6 +20989,13 @@
                     "description": "===== Data Analysis Settings =====\nWhether to run the legacy in-pipeline DuckDB SQL data-analysis stage when\nthe retrieved chunks include CSV/Excel files. This issues an extra LLM\ncall to generate a SQL query and is disabled by default because most\nquick-answer / RAG-style agents do not want the added latency.",
                     "type": "boolean"
                 },
+                "domain_packs": {
+                    "description": "DomainPacks names the embedded domain packs (domain-packs/\u003cname\u003e) this\nagent reads: read-only skills with reference files and a code-appended\nanswer footer. Independent of SkillsSelectionMode and of the sandbox\n(docs/domain-pack-standard.md §6).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "embedding_top_k": {
                     "description": "===== Retrieval Strategy Settings (for both modes) =====\nEmbedding/Vector retrieval top K",
                     "type": "integer"
@@ -20372,6 +21207,10 @@
                     "description": "Vector retrieval threshold",
                     "type": "number"
                 },
+                "verify_document_numbers": {
+                    "description": "VerifyDocumentNumbers removes every số hiệu of the answer that is in\nneither the legal catalogue nor this turn's evidence, before the user\nsees it (agent/answer_numbers.go). nil: on for an agent with domain\npacks, off for others; set it to turn the check on or off explicitly.",
+                    "type": "boolean"
+                },
                 "vlm_model_id": {
                     "description": "VLM model ID for image analysis (optional, falls back to organization-level VLM)",
                     "type": "string"
@@ -20491,6 +21330,522 @@
                     "type": "integer"
                 },
                 "template_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackAgent": {
+            "type": "object",
+            "properties": {
+                "addon_active": {
+                    "type": "boolean"
+                },
+                "addon_holders": {
+                    "type": "integer"
+                },
+                "addon_price_vnd": {
+                    "description": "AddonPriceVND and AddonActive are the agent's row in the add-on\ncatalogue (usage_agent_addons); nil = not in the catalogue.\nAddonHolders counts the current subscriptions holding the add-on.",
+                    "type": "integer"
+                },
+                "applies_to": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackAgentScope"
+                    }
+                },
+                "applies_to_tenant_ids": {
+                    "description": "AppliesToTenantIDs is the agent's \"Tổ chức áp dụng\" list ([] = every\nTổ chức on its configuration profile); AppliesTo names them.",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "distribution": {
+                    "description": "Distribution is the agent's \"Cách phân phối\" (basic | addon |\ninternal); the list above only counts for internal.",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "tenant_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackAgentScope": {
+            "type": "object",
+            "properties": {
+                "tenant_id": {
+                    "type": "integer"
+                },
+                "tenant_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackDetail": {
+            "type": "object",
+            "properties": {
+                "agent_count": {
+                    "type": "integer"
+                },
+                "agents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackAgent"
+                    }
+                },
+                "answer_footer": {
+                    "type": "string"
+                },
+                "as_of": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "attribution": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "document_count": {
+                    "type": "integer"
+                },
+                "documents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackDocumentView"
+                    }
+                },
+                "domain": {
+                    "type": "string"
+                },
+                "draft_documents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackDraft"
+                    }
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileError"
+                    }
+                },
+                "formula_count": {
+                    "type": "integer"
+                },
+                "formulas": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackFormulaView"
+                    }
+                },
+                "licence": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "origin": {
+                    "type": "string"
+                },
+                "overdue": {
+                    "type": "boolean"
+                },
+                "required_tools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "review_by": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackDocumentView": {
+            "type": "object",
+            "properties": {
+                "articles": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "cited_in": {
+                    "description": "CitedIn lists the pack files citing the number (computed at load).",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "documents": {
+                    "description": "Documents are the catalogue rows holding the number (0, 1 or more).",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileDocument"
+                    }
+                },
+                "formulas": {
+                    "description": "Formulas are the ids of the formulas whose basis names the number.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "lookup": {
+                    "description": "Lookup is found, missing or ambiguous; \"\" when the lookup failed.",
+                    "type": "string"
+                },
+                "number": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "used_for": {
+                    "type": "string"
+                },
+                "warning": {
+                    "description": "Warning: what the pack says about this document needs checking\n(missing, ambiguous, a status note, no KB holds the text).",
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackDraft": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackFormulaBasis": {
+            "type": "object",
+            "properties": {
+                "article": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "number": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "ok | warning",
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackFormulaSample": {
+            "type": "object",
+            "properties": {
+                "expected": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "number",
+                        "format": "float64"
+                    }
+                },
+                "inputs": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "number",
+                        "format": "float64"
+                    }
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackFormulaVar": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "source": {
+                    "description": "input | kb",
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackFormulaView": {
+            "type": "object",
+            "properties": {
+                "basis": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackFormulaBasis"
+                    }
+                },
+                "examples": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackFormulaSample"
+                    }
+                },
+                "expression": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "tool": {
+                    "type": "string"
+                },
+                "variables": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackFormulaVar"
+                    }
+                },
+                "warning": {
+                    "description": "Warning: one of its basis documents has a warning.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackReconcileAmbiguous": {
+            "type": "object",
+            "properties": {
+                "documents": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileDocument"
+                    }
+                },
+                "number": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "used_for": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackReconcileDocument": {
+            "type": "object",
+            "properties": {
+                "doc_type": {
+                    "type": "string"
+                },
+                "document_number": {
+                    "type": "string"
+                },
+                "effective_on": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "expired_on": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "held_in_kb": {
+                    "description": "HeldInKB: a public knowledge base holds the full text (an approved\nlegal identity link, or an ingested copy not linked yet).",
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "issuer": {
+                    "type": "string"
+                },
+                "request": {
+                    "description": "Request is the request to add the full text when no KB holds it.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileRequest"
+                        }
+                    ]
+                },
+                "status": {
+                    "type": "string"
+                },
+                "status_note": {
+                    "description": "StatusNote is set when the catalogue holds the document expired,\nreplaced, suspended, not yet in force or amended: what the pack says\nabout it needs checking.",
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackReconcileError": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "number": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackReconcileFound": {
+            "type": "object",
+            "properties": {
+                "document": {
+                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileDocument"
+                },
+                "number": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "used_for": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackReconcileMissing": {
+            "type": "object",
+            "properties": {
+                "number": {
+                    "type": "string"
+                },
+                "request": {
+                    "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileRequest"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "used_for": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackReconcileRequest": {
+            "type": "object",
+            "properties": {
+                "created": {
+                    "description": "Created is true when this reconcile recorded it, false when an\nexisting one (any status) was found and left as it was.",
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackReconcileResult": {
+            "type": "object",
+            "properties": {
+                "ambiguous": {
+                    "description": "Ambiguous: several catalogue rows share the number (số hiệu is not\nunique); the SuperAdmin decides which one the pack means.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileAmbiguous"
+                    }
+                },
+                "errors": {
+                    "description": "Errors lists the numbers whose check failed; the others are still\nreported, so one bad row does not hide the rest.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileError"
+                    }
+                },
+                "found": {
+                    "description": "Found: exactly one catalogue row has the number.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileFound"
+                    }
+                },
+                "missing": {
+                    "description": "Missing: no catalogue row has it; a legal document request was\nrecorded (or an existing one is reported).",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_Tencent_WeKnora_internal_types.DomainPackReconcileMissing"
+                    }
+                },
+                "pack": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.DomainPackSummary": {
+            "type": "object",
+            "properties": {
+                "agent_count": {
+                    "type": "integer"
+                },
+                "as_of": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "attribution": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "document_count": {
+                    "type": "integer"
+                },
+                "domain": {
+                    "type": "string"
+                },
+                "formula_count": {
+                    "type": "integer"
+                },
+                "licence": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "origin": {
+                    "type": "string"
+                },
+                "overdue": {
+                    "type": "boolean"
+                },
+                "required_tools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "review_by": {
+                    "description": "YYYY-MM-DD",
+                    "type": "string"
+                },
+                "version": {
                     "type": "string"
                 }
             }
@@ -21546,6 +22901,24 @@
                 }
             }
         },
+        "github_com_Tencent_WeKnora_internal_types.LegalRequestDecision": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "description": "Action is \"ingest\" (fetch from vbpl.vn into KnowledgeBaseID), \"reject\"\nor \"added\" (added by hand).",
+                    "type": "string"
+                },
+                "knowledge_base_id": {
+                    "type": "string"
+                },
+                "knowledge_id": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_Tencent_WeKnora_internal_types.LegalReviewDecision": {
             "type": "object",
             "properties": {
@@ -22512,7 +23885,7 @@
                     "type": "string"
                 },
                 "paddleocr_vl_repetition_penalty": {
-                    "description": "openai mode: repetition_penalty for /chat/completions (vLLM extension);\ndefault 1.05 breaks degenerate loops, \"1\"/\"0\" disables.",
+                    "description": "openai mode: repetition_penalty for /chat/completions (vLLM extension);\n\"1.1\" is the value to configure for SenOCR-Vi (measured 2026-10-18:\n1.05 still loops on big table pages, 1.15 alters plain text), \"1\"/\"0\"\ndisables. Only an explicit value is sent.",
                     "type": "string"
                 },
                 "paddleocr_vl_use_chart_recognition": {
@@ -23983,6 +25356,50 @@
                 }
             }
         },
+        "github_com_Tencent_WeKnora_internal_types.UsageAgentAddon": {
+            "type": "object",
+            "properties": {
+                "agent_available": {
+                    "type": "boolean"
+                },
+                "agent_id": {
+                    "type": "string"
+                },
+                "agent_name": {
+                    "description": "Filled by listings, not stored: the agent's name, whether it is still\na live addon agent (deleted or converted agents are never sold), and\nhow many current subscriptions hold it.",
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "holders": {
+                    "type": "integer"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "plan_ids": {
+                    "description": "PlanIDs are the plans it is sold with; [] = every plan.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "price_vnd": {
+                    "description": "PriceVND per month: for a seat-mode plan per seat per month.",
+                    "type": "integer"
+                },
+                "sort_order": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "github_com_Tencent_WeKnora_internal_types.UsageLimit": {
             "type": "object",
             "properties": {
@@ -24136,6 +25553,17 @@
         "github_com_Tencent_WeKnora_internal_types.UsageQuoteRequest": {
             "type": "object",
             "properties": {
+                "addon_agent_ids": {
+                    "description": "AddonAgentIDs are the specialist agents bought with it.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "kind": {
+                    "description": "Kind \"plan\" (default) or \"addon\": add-ons on the scope's current\nsubscription, priced for the rest of its period (PlanID, Months and\nSeats are then taken from the subscription).",
+                    "type": "string"
+                },
                 "months": {
                     "type": "integer"
                 },
@@ -24202,6 +25630,29 @@
                     "type": "string"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "github_com_Tencent_WeKnora_internal_types.UsageSubscriptionAddonGrant": {
+            "type": "object",
+            "required": [
+                "agent_id"
+            ],
+            "properties": {
+                "agent_id": {
+                    "type": "string"
+                },
+                "ends_at": {
+                    "description": "EndsAt nil = until the subscription ends.",
+                    "type": "string"
+                },
+                "price_vnd": {
+                    "description": "PriceVND is the agreed monthly price (0 = free).",
+                    "type": "integer"
+                },
+                "starts_at": {
+                    "description": "StartsAt defaults to now.",
                     "type": "string"
                 }
             }
@@ -25354,6 +26805,14 @@
                 }
             }
         },
+        "internal_handler.ApproveLegalDraftRequest": {
+            "type": "object",
+            "properties": {
+                "knowledge_base_id": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_handler.BatchDeleteKnowledgeRequest": {
             "type": "object",
             "required": [
@@ -25411,6 +26870,13 @@
                 "name"
             ],
             "properties": {
+                "applies_to_tenant_ids": {
+                    "description": "AppliesToTenantIDs is \"Tổ chức áp dụng\": the workspaces allowed to use\nan internal agent. Empty or absent = every Tổ chức. Only allowed with\ndistribution \"internal\".",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
                 "avatar": {
                     "type": "string"
                 },
@@ -25419,6 +26885,15 @@
                 },
                 "description": {
                     "type": "string"
+                },
+                "distribution": {
+                    "description": "Distribution is \"Cách phân phối\": basic | addon | internal. Absent:\ninternal with a non-empty applies_to_tenant_ids, addon with domain\npacks, else basic.",
+                    "type": "string",
+                    "enum": [
+                        "basic",
+                        "addon",
+                        "internal"
+                    ]
                 },
                 "name": {
                     "type": "string"
@@ -26600,6 +28075,17 @@
                 }
             }
         },
+        "internal_handler.SetAgentEnabledRequest": {
+            "type": "object",
+            "required": [
+                "enabled"
+            ],
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
         "internal_handler.StorageCheckRequest": {
             "type": "object",
             "properties": {
@@ -26773,6 +28259,13 @@
         "internal_handler.UpdateAgentRequest": {
             "type": "object",
             "properties": {
+                "applies_to_tenant_ids": {
+                    "description": "AppliesToTenantIDs is \"Tổ chức áp dụng\". A pointer for the same reason\nas Avatar: absent keeps the stored list, [] clears it (every Tổ chức).",
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
                 "avatar": {
                     "description": "Avatar travels as a pointer so an omitted field can be told apart from\nan explicit clear: nil keeps the stored avatar, a pointer to \"\" wipes\nit. As a plain string the two cases were indistinguishable, so a caller\nthat PUT only a config silently zeroed the avatar and still got a 200.",
                     "type": "string"
@@ -26782,6 +28275,15 @@
                 },
                 "description": {
                     "type": "string"
+                },
+                "distribution": {
+                    "description": "Distribution is \"Cách phân phối\" (basic | addon | internal); absent\nkeeps the stored one. Leaving internal without sending a list clears\nthe stored \"Tổ chức áp dụng\".",
+                    "type": "string",
+                    "enum": [
+                        "basic",
+                        "addon",
+                        "internal"
+                    ]
                 },
                 "name": {
                     "type": "string"

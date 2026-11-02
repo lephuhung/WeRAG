@@ -332,6 +332,21 @@ func TestWorkspaceSwitchOffDisablesReadAndWrite(t *testing.T) {
 	require.ErrorIs(t, err, ErrMemoryDisabled)
 }
 
+// A Guest in the public portal neither saves nor recalls memory: the memory
+// routes that would let them see or delete it are Member-only.
+func TestPublicPortalHasNoMemory(t *testing.T) {
+	svc, _, tenantRepo := newMemoryHarness(t)
+	ctx := enabledCtx(t, tenantRepo, 1, "alice")
+	_, err := svc.Remember(ctx, types.MemoryItem{Kind: types.MemoryKindFact, Content: "điều đã ghi nhớ"})
+	require.NoError(t, err)
+
+	portalCtx := context.WithValue(ctx, types.TenantInfoContextKey,
+		&types.Tenant{ID: 1, Kind: types.TenantKindPublicPortal})
+	require.Empty(t, svc.Recall(portalCtx, "điều đã ghi nhớ").Prompt)
+	_, err = svc.Remember(portalCtx, types.MemoryItem{Kind: types.MemoryKindFact, Content: "điều mới"})
+	require.ErrorIs(t, err, ErrMemoryDisabled)
+}
+
 // Memory is a platform setting: a per-user opt-out stored before that change
 // must not keep switching memory off for the user, who has no way to undo it.
 func TestStoredUserSwitchIsIgnored(t *testing.T) {
