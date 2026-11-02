@@ -212,6 +212,16 @@ func TestUsageGuardLapsedTenantPackageYieldsToOwnPackage(t *testing.T) {
 	require.True(t, ent.NotStarted)
 	require.NotNil(t, ent.StartsAt)
 	require.True(t, ent.StartsAt.Equal(later))
+	// the refusal stays "expired" but says when the package starts
+	err = checkTurn(g, context.Background(), 10003, "user-2")
+	require.Equal(t, types.UsageDenialExpired, denialReason(t, err))
+	d := err.(*apperrors.AppError).Details.(types.UsageDenial)
+	require.NotNil(t, d.StartsAt)
+	require.True(t, d.StartsAt.Equal(later))
+	p, err := g.PreviewSession(context.Background(), 10003, "user-2", "", types.SessionCapHard)
+	require.NoError(t, err)
+	require.True(t, p.Denied)
+	require.NotNil(t, p.DenialStartsAt)
 	own.Plan = &types.UsagePlan{Name: "Go", Code: "go", ScopeKind: "user"}
 	ent, err = g.Entitlement(context.Background(), 10003, "user-1")
 	require.NoError(t, err)
@@ -224,6 +234,8 @@ func TestUsageGuardLapsedTenantPackageYieldsToOwnPackage(t *testing.T) {
 	require.True(t, ent.Expired)
 	require.False(t, ent.NotStarted)
 	require.Nil(t, ent.StartsAt)
+	err = checkTurn(g, context.Background(), 10003, "user-2")
+	require.Nil(t, err.(*apperrors.AppError).Details.(types.UsageDenial).StartsAt)
 }
 
 func TestUsageGuardSeatModeNeedsSeatAndCountsUser(t *testing.T) {

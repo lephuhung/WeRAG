@@ -30,6 +30,7 @@ const TONE_COLOR: Record<ContextTone, string> = {
 const DENIAL_TEXT = {
   noPackage: "ctx.denied.noPackage",
   expired: "ctx.denied.expired",
+  notStarted: "ctx.denied.notStarted",
   noSeat: "ctx.denied.noSeat",
   limit: "ctx.denied.limit",
 } as const;

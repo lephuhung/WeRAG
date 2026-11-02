@@ -86,6 +86,7 @@ Một số endpoint cũ trả `{"success":false,"message":"…"}` không có `er
 |---|---|---|
 | `no_subscription` | Tổ chức hoặc tài khoản chưa có gói | `chat.err.usage.noSubscription` |
 | `expired` | Gói đã hết hạn | `chat.err.usage.expired` |
+| `expired` + `details.starts_at` | Gói chưa đến ngày bắt đầu (`starts_at`); `reason` giữ `expired` cho client cũ, frontend đổi thành `not_started` | `chat.err.usage.notStarted` |
 | `no_seat` | Tài khoản chưa được cấp chỗ trong gói của tổ chức | `chat.err.usage.noSeat` |
 | `limit_exhausted` | Hết hạn mức của kỳ | `chat.err.usage.limit` |
 | `session_limit` | Cuộc trò chuyện chạm trần của gói; client mời mở phiên mới kèm tóm tắt (`POST /sessions/:id/continue`) | `chat.err.usage.sessionLimit` |

@@ -197,7 +197,7 @@ func (s *SessionContextUsageService) Usage(
 		}
 	}
 	out.Enforced, out.PlanName = preview.Enforced, preview.PlanName
-	out.Denied, out.DenialReason = preview.Denied, preview.DenialReason
+	out.Denied, out.DenialReason, out.StartsAt = preview.Denied, preview.DenialReason, preview.DenialStartsAt
 	out.TurnTokenCap = preview.Features.TurnTokenCap
 	out.HistoryBudget = preview.Features.EffectiveHistoryTokens(out.ModelWindow)
 	out.Session = types.SessionContextSessionStatus{

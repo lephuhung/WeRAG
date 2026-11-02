@@ -20,6 +20,7 @@ export type ChatErrorKey =
   | "chat.err.tenantRequired"
   | "chat.err.usage.noSubscription"
   | "chat.err.usage.expired"
+  | "chat.err.usage.notStarted"
   | "chat.err.usage.noSeat"
   | "chat.err.usage.limit"
   | "chat.err.usage.sessionLimit"
@@ -68,13 +69,15 @@ export function parseErrorEnvelope(body: string): ErrorEnvelope {
     const flat: ErrorEnvelope = typeof p?.code === "string" && p.code ? { errorCode: p.code } : {};
     if (p && typeof p.error === "object" && p.error) {
       const e = p.error as { code?: unknown; message?: unknown; details?: unknown };
-      const details = e.details && typeof e.details === "object" ? (e.details as { reason?: unknown }) : null;
+      const details = e.details && typeof e.details === "object" ? (e.details as { reason?: unknown; starts_at?: unknown }) : null;
       const out: ErrorEnvelope = {
         code: typeof e.code === "number" ? e.code : undefined,
         message: typeof e.message === "string" ? e.message : undefined,
         ...flat,
       };
       if (details && typeof details.reason === "string") out.reason = details.reason;
+      // an "expired" refusal with a start date: the package starts later
+      if (out.reason === "expired" && typeof details?.starts_at === "string" && details.starts_at) out.reason = "not_started";
       return out;
     }
     if (typeof p?.error === "string") return { message: p.error, ...flat };
@@ -90,6 +93,7 @@ export function parseErrorEnvelope(body: string): ErrorEnvelope {
 const USAGE_REASON_KEYS: Record<string, ChatErrorKey> = {
   no_subscription: "chat.err.usage.noSubscription",
   expired: "chat.err.usage.expired",
+  not_started: "chat.err.usage.notStarted",
   no_seat: "chat.err.usage.noSeat",
   limit_exhausted: "chat.err.usage.limit",
   session_limit: "chat.err.usage.sessionLimit",
@@ -170,7 +174,12 @@ export function chatErrorTextKey(key: ChatErrorKey | null, isGuest: boolean): Ch
 export function chatErrorTextKey(key: ChatErrorKey | null, isGuest: boolean): ChatErrorTextKey | null {
   if (!isGuest || !key) return key;
   if (key === "chat.err.usage.limit") return "chat.err.guest.usageLimit";
-  if (key === "chat.err.usage.noSubscription" || key === "chat.err.usage.expired" || key === "chat.err.usage.noSeat") {
+  if (
+    key === "chat.err.usage.noSubscription" ||
+    key === "chat.err.usage.expired" ||
+    key === "chat.err.usage.notStarted" ||
+    key === "chat.err.usage.noSeat"
+  ) {
     return "chat.err.guest.unavailable";
   }
   return key;

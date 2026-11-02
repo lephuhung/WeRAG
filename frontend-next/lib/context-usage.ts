@@ -30,7 +30,8 @@ export type ContextUsage = {
   enforced: boolean;
   /** Enforcement is on and the caller's package would refuse a turn. */
   denied: boolean;
-  /** Why: no_subscription, expired, no_seat or limit_exhausted. */
+  /** Why: no_subscription, expired, no_seat or limit_exhausted, or
+   * not_started (an "expired" package that starts later, see starts_at). */
   reason: string;
 };
 
@@ -71,7 +72,12 @@ export function parseContextUsage(raw: unknown): ContextUsage | null {
     plan_name: typeof r.plan_name === "string" ? r.plan_name : "",
     enforced: r.enforced === true,
     denied: r.denied === true,
-    reason: typeof r.reason === "string" ? r.reason : "",
+    reason:
+      r.reason === "expired" && typeof r.starts_at === "string" && r.starts_at
+        ? "not_started"
+        : typeof r.reason === "string"
+          ? r.reason
+          : "",
   };
 }
 
@@ -91,10 +97,12 @@ export function shouldFetchContext(prev: ContextFetchState | null, next: Context
 }
 
 /** The i18n key suffix naming why a package refuses turns. */
-export function denialKey(reason: string): "noPackage" | "expired" | "noSeat" | "limit" {
+export function denialKey(reason: string): "noPackage" | "expired" | "notStarted" | "noSeat" | "limit" {
   switch (reason) {
     case "expired":
       return "expired";
+    case "not_started":
+      return "notStarted";
     case "no_seat":
       return "noSeat";
     case "limit_exhausted":

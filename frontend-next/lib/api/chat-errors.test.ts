@@ -60,6 +60,11 @@ describe("chatErrorKey", () => {
     assert.equal(chatErrorKey(new ChatStreamError(429, 1006, "limit", "limit_exhausted")), "chat.err.usage.limit");
     assert.equal(chatErrorKey(new ChatStreamError(429, 1006, "seat", "no_seat")), "chat.err.usage.noSeat");
     assert.equal(chatErrorKey(new ChatStreamError(429, 1006, "expired", "expired")), "chat.err.usage.expired");
+    // an "expired" refusal that carries a start date: not started yet
+    const notStarted = parseErrorEnvelope(JSON.stringify({ error: { code: 1006, message: "x", details: { reason: "expired", starts_at: "2026-11-09T17:00:00Z" } } }));
+    assert.equal(notStarted.reason, "not_started");
+    assert.equal(chatErrorKey(new ChatStreamError(429, 1006, "x", notStarted.reason)), "chat.err.usage.notStarted");
+    assert.equal(chatErrorTextKey("chat.err.usage.notStarted", true), "chat.err.guest.unavailable");
   });
   it("recognizes the per-session cap", () => {
     const e = new ChatStreamError(429, 1006, "session limit reached", "session_limit");

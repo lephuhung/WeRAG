@@ -123,6 +123,7 @@ func (g *usageGuard) PreviewSession(
 			if appErr, ok := err.(*apperrors.AppError); ok {
 				if d, ok := appErr.Details.(types.UsageDenial); ok {
 					preview.DenialReason = d.Reason
+					preview.DenialStartsAt = d.StartsAt
 				}
 			}
 		}
@@ -182,8 +183,12 @@ func usageDenial(ent *types.UsageEntitlement, userID string) error {
 			WithDetails(types.UsageDenial{Reason: types.UsageDenialNoSubscription})
 	}
 	if ent.Expired {
-		return apperrors.NewTooManyRequestsError("the usage package has expired").
-			WithDetails(types.UsageDenial{Reason: types.UsageDenialExpired})
+		msg := "the usage package has expired"
+		if ent.NotStarted {
+			msg = "the usage package has not started yet"
+		}
+		return apperrors.NewTooManyRequestsError(msg).
+			WithDetails(types.UsageDenial{Reason: types.UsageDenialExpired, StartsAt: ent.StartsAt})
 	}
 	realUser := userID != "" && !types.IsSyntheticUserID(userID)
 	if ent.Mode == types.UsageModeSeat && realUser && !ent.HasSeat {

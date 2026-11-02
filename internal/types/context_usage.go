@@ -1,5 +1,7 @@
 package types
 
+import "time"
+
 // Values of SessionContextUsage.Mode.
 const (
 	ContextUsageModeAgent       = "agent"
@@ -50,6 +52,8 @@ type SessionContextUsage struct {
 	// no_subscription, expired, no_seat, limit_exhausted).
 	Denied       bool   `json:"denied"`
 	DenialReason string `json:"reason,omitempty"`
+	// StartsAt: the "expired" package has not started yet; it starts then.
+	StartsAt *time.Time `json:"starts_at,omitempty"`
 }
 
 // SessionContextLastTurn is the token usage of one turn, summed over its
@@ -85,6 +89,8 @@ type UsageSessionPreview struct {
 	// UsageDenial reason. A session cap is reported in Session instead.
 	Denied       bool
 	DenialReason string
+	// DenialStartsAt: the refused package has not started yet (UsageDenial.StartsAt).
+	DenialStartsAt *time.Time
 	// Features are the caps that apply; zero when not Enforced.
 	Features UsagePlanFeatures
 	// Session is the session's lifetime counters against those caps; its

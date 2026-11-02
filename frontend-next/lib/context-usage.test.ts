@@ -96,6 +96,9 @@ describe("denialKey", () => {
   it("names each refusal", () => {
     assert.equal(denialKey("no_subscription"), "noPackage");
     assert.equal(denialKey("expired"), "expired");
+    assert.equal(denialKey("not_started"), "notStarted");
+    assert.equal(parseContextUsage({ denied: true, reason: "expired", starts_at: "2026-11-09T17:00:00Z" })?.reason, "not_started");
+    assert.equal(parseContextUsage({ denied: true, reason: "expired" })?.reason, "expired");
     assert.equal(denialKey("no_seat"), "noSeat");
     assert.equal(denialKey("limit_exhausted"), "limit");
     assert.equal(denialKey(""), "noPackage");

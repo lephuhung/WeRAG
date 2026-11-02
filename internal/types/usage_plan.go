@@ -334,6 +334,9 @@ type UsageDenial struct {
 	Used   int64  `json:"used,omitempty"`
 	// SessionID is the capped session (session_limit only).
 	SessionID string `json:"session_id,omitempty"`
+	// StartsAt: an "expired" refusal of a package that has not started
+	// yet, and when it starts (the reason stays "expired" for old clients).
+	StartsAt *time.Time `json:"starts_at,omitempty"`
 }
 
 // UsageSubscriptionFilter narrows a subscription listing.
