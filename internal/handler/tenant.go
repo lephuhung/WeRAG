@@ -698,15 +698,22 @@ type apiKeyActingUserResponse struct {
 	IsActive bool   `json:"is_active"`
 }
 
-// apiKeyActingUser mirrors the X-API-Key auth path: the organization's first
-// user (GetUserByTenantID). Nil when there is none (keys then act as a
-// synthetic system user and never lock).
+// apiKeyActingUser mirrors the X-API-Key auth path (GetUserByTenantID: the
+// earliest active admin member, else the earliest home user). Nil when there
+// is none (keys then act as a synthetic system user and never lock) or the
+// lookup failed (logged).
 func (h *TenantHandler) apiKeyActingUser(ctx context.Context, tenantID uint64) *apiKeyActingUserResponse {
 	if h.userService == nil {
 		return nil
 	}
 	u, err := h.userService.GetUserByTenantID(ctx, tenantID)
-	if err != nil || u == nil {
+	if err != nil {
+		if !stderrors.Is(err, repository.ErrUserNotFound) {
+			logger.Warnf(ctx, "[api-keys] acting user lookup failed: tenant=%d err=%v", tenantID, err)
+		}
+		return nil
+	}
+	if u == nil {
 		return nil
 	}
 	return &apiKeyActingUserResponse{ID: u.ID, Username: u.Username, Email: u.Email, IsActive: u.IsActive}

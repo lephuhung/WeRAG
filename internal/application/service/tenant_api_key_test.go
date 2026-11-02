@@ -313,7 +313,9 @@ func TestTenantAPIKeyServiceRevokeAPIKey(t *testing.T) {
 	}
 }
 
-func TestTenantAPIKeyServiceAuthenticateThrottlesLastUsedUpdates(t *testing.T) {
+// AuthenticateAPIKey alone records nothing (a key refused later in auth
+// must not look used); TouchAPIKeyLastUsed writes at most once per interval.
+func TestTenantAPIKeyServiceTouchThrottlesLastUsedUpdates(t *testing.T) {
 	ctx := context.Background()
 	repo := newFakeTenantAPIKeyRepo()
 	svc := NewTenantAPIKeyService(repo)
@@ -326,10 +328,21 @@ func TestTenantAPIKeyServiceAuthenticateThrottlesLastUsedUpdates(t *testing.T) {
 		t.Fatalf("CreateAPIKey returned error: %v", err)
 	}
 
+	var keyID uint64
 	for i := 0; i < 5; i++ {
-		if _, err := svc.AuthenticateAPIKey(ctx, created.Token); err != nil {
+		key, err := svc.AuthenticateAPIKey(ctx, created.Token)
+		if err != nil {
 			t.Fatalf("AuthenticateAPIKey #%d returned error: %v", i+1, err)
 		}
+		keyID = key.ID
+	}
+	time.Sleep(50 * time.Millisecond)
+	if repo.lastUsedUpdateCount != 0 {
+		t.Fatalf("AuthenticateAPIKey wrote last_used %d times, want 0", repo.lastUsedUpdateCount)
+	}
+
+	for i := 0; i < 5; i++ {
+		svc.TouchAPIKeyLastUsed(keyID)
 	}
 
 	deadline := time.Now().Add(500 * time.Millisecond)

@@ -98,10 +98,29 @@ func (r *userRepository) GetUserByUsername(ctx context.Context, username string)
 	return &user, nil
 }
 
-// GetUserByTenantID gets the first user (owner) of a tenant
+// GetUserByTenantID returns the user an organization API key acts as, in
+// one query:
+//
+//  1. the earliest active admin member of the tenant (tenant_members role
+//     admin or legacy owner, status active, not deleted; earliest
+//     membership created_at, then membership id);
+//  2. else the earliest user whose home pointer users.tenant_id is the
+//     tenant (created_at, then id).
+//
+// The id tiebreaks make the choice deterministic when timestamps tie. The
+// row's is_active is not filtered: a locked choice is returned so the caller
+// can refuse it, rather than silently moving the key to another account.
 func (r *userRepository) GetUserByTenantID(ctx context.Context, tenantID uint64) (*types.User, error) {
 	var user types.User
-	if err := r.db.WithContext(ctx).Where("tenant_id = ?", tenantID).Order("created_at ASC").First(&user).Error; err != nil {
+	err := r.db.WithContext(ctx).
+		Joins("LEFT JOIN tenant_members tm ON tm.user_id = users.id AND tm.tenant_id = ? "+
+			"AND tm.deleted_at IS NULL AND tm.status = ? AND tm.role IN ?",
+			tenantID, types.TenantMemberStatusActive,
+			[]types.TenantRole{types.TenantRoleAdmin, types.TenantRoleOwner}).
+		Where("tm.id IS NOT NULL OR users.tenant_id = ?", tenantID).
+		Order("CASE WHEN tm.id IS NULL THEN 1 ELSE 0 END, tm.created_at ASC, tm.id ASC, users.created_at ASC, users.id ASC").
+		Take(&user).Error
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrUserNotFound
 		}

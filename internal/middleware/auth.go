@@ -797,6 +797,9 @@ func authenticateAPIKeyRequest(
 	if c.IsAborted() {
 		return false
 	}
+	// Only an accepted key counts as used (not one refused above, e.g. for
+	// a locked acting user).
+	apiKeyService.TouchAPIKeyLastUsed(key.ID)
 	// Per-route API-key authorization (full access + capabilities + KB scope)
 	// is enforced by middleware.APIKeyRouteAuthorizer on the /api/v1 group.
 	// Key-management and any other undeclared route is denied there.
@@ -882,6 +885,9 @@ func attachAPIKeyAuthContext(
 		principal, user = platformAPIKeyIdentity(key)
 		user.TenantID = tenantID
 	} else {
+		// The acting user: earliest active admin member, else the earliest
+		// home user (see UserRepository.GetUserByTenantID). A locked choice
+		// is refused below, never swapped for another admin.
 		user, err = userService.GetUserByTenantID(c.Request.Context(), tenantID)
 		if err != nil || user == nil {
 			user = &types.User{

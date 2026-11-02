@@ -77,3 +77,49 @@ func TestTenantAPIKeyWithoutOwnerUsesSyntheticUser(t *testing.T) {
 	userID, _ := types.UserIDFromContext(c.Request.Context())
 	require.True(t, types.IsSyntheticUserID(userID), userID)
 }
+
+type touchCountingKeyService struct {
+	interfaces.TenantAPIKeyService
+	key     *types.TenantAPIKey
+	touched []uint64
+}
+
+func (s *touchCountingKeyService) AuthenticateAPIKey(context.Context, string) (*types.TenantAPIKey, error) {
+	return s.key, nil
+}
+
+func (s *touchCountingKeyService) TouchAPIKeyLastUsed(id uint64) { s.touched = append(s.touched, id) }
+
+// last_used_at moves only for an accepted request, not for a key refused
+// because its acting user is locked.
+func TestAPIKeyLastUsedTouchedOnlyWhenAccepted(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		active   bool
+		wantCode int
+		touched  int
+	}{
+		{"locked owner", false, http.StatusUnauthorized, 0},
+		{"active owner", true, http.StatusOK, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			tenantID := uint64(42)
+			keys := &touchCountingKeyService{key: &types.TenantAPIKey{
+				ID: 5, TenantID: &tenantID, ScopeType: types.APIKeyScopeTenant, FullAccess: true,
+			}}
+			users := &apiKeyOwnerUserService{owner: &types.User{ID: "u-owner", TenantID: tenantID, IsActive: tc.active}}
+			r := gin.New()
+			r.Use(Auth(&fakeTenantService{tenant: &types.Tenant{ID: tenantID}}, users, nil, keys, nil))
+			r.GET("/api/v1/knowledge-bases", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/knowledge-bases", nil)
+			req.Header.Set("X-API-Key", "sk-test")
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+
+			require.Equal(t, tc.wantCode, rec.Code, rec.Body.String())
+			require.Len(t, keys.touched, tc.touched)
+		})
+	}
+}
