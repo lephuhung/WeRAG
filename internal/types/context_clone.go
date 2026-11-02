@@ -113,7 +113,11 @@ var contextCloneAcrossDetach = map[ContextKey]bool{
 	// every call site that has an opinion. An inherited label is worse than no
 	// label, because usage is aggregated by purpose and a background call
 	// would be filed under whatever its parent was doing.
-	LLMCallPurposeContextKey:             false,
+	LLMCallPurposeContextKey: false,
+	// One request's access-log line leaves its body out (a secret in it, e.g.
+	// the billing webhook secret). It is a gin key read by the logger
+	// middleware for that request; detached work writes no access log.
+	LogOmitRequestBodyContextKey:         false,
 	LLMPromptPrefixFingerprintContextKey: false,
 	// Who is authoring one wiki page write. Absent deliberately means the wiki
 	// ingest pipeline, which is what detached work should look like; an
