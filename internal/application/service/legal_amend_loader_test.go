@@ -604,6 +604,29 @@ func TestLegalCitedArticlesOf(t *testing.T) {
 		{"joined, the next chain B's own", "Bãi bỏ Điều 3, sửa đổi Điều 4 Nghị định này.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
 		{"joined, the next chain another document's", "Bãi bỏ Điều 3, sửa đổi Điều 4 của Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
 		{"not joined across a clause end", "Bãi bỏ Điều 3, sửa đổi như sau; Điều 4 của Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"3"}},
+		// a joined chain with no chain after it: a part or a phrase of the clause's document
+		{"joined, then a Phụ lục of the document", "Bãi bỏ điểm c khoản 2 Điều 3, thay thế Phụ lục I của Thông tư số 01/2018/TT-BCT.", `["Điều 10. Hiệu lực thi hành"]`, "01/2018/TT-BCT", "Thông tư", "", []string{"3"}},
+		{"joined, then a phrase in the whole document", "Bãi bỏ Điều 3, thay thế cụm từ “X” bằng cụm từ “Y” trong toàn văn Thông tư số 01/2018/TT-BCT.", `["Điều 10. Hiệu lực thi hành"]`, "01/2018/TT-BCT", "Thông tư", "", []string{"3"}},
+		{"joined, then only a purpose", "Bãi bỏ Điều 3, sửa đổi cho phù hợp với Luật Doanh nghiệp số 59/2020/QH14.", `["Điều 10. Hiệu lực thi hành"]`, "59/2020/QH14", "Luật", "", nil},
+		// a new Điều goes into the document of its insertion point
+		{"inserted Điều takes its insertion point's document", "Bãi bỏ Điều 3, Điều 5 và bổ sung Điều 6a vào sau Điều 6 của Nghị định số 14/2016/NĐ-CP.", `["Điều 10. Hiệu lực thi hành"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"3", "5", "6a"}},
+		{"inserted into another document", "Bổ sung Điều 6a vào sau Điều 6 của Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
+		{"inserted, the heading's subject", "Bổ sung Điều 6a vào sau Điều 6.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"6a"}},
+		// a lower-case letter is no division number ("mục c"), "bỏ phiếu" no operation
+		{"mục c is no division", "Bãi bỏ Điều 5 mục c theo quy định tại Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"5"}},
+		{"bỏ phiếu is no operation bullet", "Sửa đổi khoản 2 Điều 5 như sau: Hội đồng họp định kỳ; - Bỏ phiếu kín đối với trường hợp tại Điều 7.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"5"}},
+		// Fable R1: a bare verb on any object is an operation, its idioms are not
+		{"Bỏ quy định is the next operation", "2. Sửa đổi khoản 1 Điều 4 như sau: 1. Nội dung mới. 3. Bỏ quy định về lệ phí tại khoản 2 Điều 9.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"4", "9"}},
+		{"Bỏ số is the next operation", "2. Sửa đổi khoản 1 Điều 4 như sau: 1. Nội dung mới. 3. Bỏ số “19” tại khoản 1 Điều 6.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"4", "6"}},
+		{"Bỏ khổ đầu before a history remark", "Bỏ khổ đầu điểm c khoản 2 Điều 1 đã được sửa đổi, bổ sung bởi Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"1"}},
+		{"bỏ thầu is no operation", "Sửa đổi khoản 2 Điều 5 như sau: Nhà thầu được mời; - Bỏ thầu theo quy định tại Điều 7.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"5"}},
+		{"thay mặt is no operation", "Sửa đổi khoản 2 Điều 5 như sau: Chủ tịch ký; - Thay mặt Hội đồng theo Điều 7.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"5"}},
+		// Fable R1: a capital letter numbers a division; insertion chains settle like others
+		{"Phần A is a division", "Bãi bỏ Điều 5 Phần A Phụ lục I Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
+		{"insertion point joined to another document", "Bổ sung Điều 6a vào sau Điều 6, sửa đổi Điều 7 Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
+		{"insertion point in B itself", "Bổ sung Điều 6a vào sau Điều 6 Nghị định này.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
+		{"joined, the next chain only a history", "Bãi bỏ Điều 3, bỏ nội dung đã được sửa đổi bởi khoản 1 Điều 2 Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"3"}},
+		{"bỏ cụm từ stays an operation bullet", "Sửa đổi một số điều như sau: - Bỏ cụm từ “X” tại Điều 7.", `["Điều 1. Sửa đổi, bổ sung một số điều của Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"7"}},
 		{"B2 joined operations, then a reference", "Bãi bỏ Điều 3, sửa đổi Điều 4 theo Nghị định số 14/2016/NĐ-CP.", `["Điều 10. Hiệu lực thi hành"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
 		{"B2 a comma before another document", "Sửa đổi Điều 5, Nghị định số 20/2020/NĐ-CP.", `["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
 		{"B2 another document attached stays its", "Bãi bỏ Điều 16 Luật Đầu tư số 61/2020/QH14.", `["Điều 10. Hiệu lực thi hành"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
@@ -923,4 +946,13 @@ func TestLoadLegalAmendmentsDocumentLevelRank(t *testing.T) {
 	}
 	r := load.Resolve(amendAt("2026-10-20"), map[string]bool{"kb-pub": true})["a3"]
 	require.NotContains(t, r.ModelContent, "9/2026/TT-BTC")
+}
+
+func TestLegalDivisionNumbers(t *testing.T) {
+	for _, ok := range []string{" Chương II", " chương ii", " Mục 2", " Phần thứ nhất", " Phần IV", " của Chương XIV", " Chương V", " mục 3a", " Phần A", " Mục Đ"} {
+		require.True(t, legalDivisionRe.MatchString(ok), ok)
+	}
+	for _, bad := range []string{" mục c", " phần li", " Phần c", " mục lục", " phần lớn", " Chương Cục bộ", " Phần Ab"} {
+		require.False(t, legalDivisionRe.MatchString(bad), bad)
+	}
 }
