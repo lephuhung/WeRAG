@@ -395,3 +395,30 @@ func TestDocumentTemplateStateKeepsTheLastDraft(t *testing.T) {
 		t.Fatalf("last draft lost in JSON (Redis): %s", raw)
 	}
 }
+
+// A signer signing KT./TL. for their own title is asked again.
+func TestDocumentTemplateSignerNotForTheirOwnTitle(t *testing.T) {
+	for _, c := range []struct{ written, authority string }{
+		{"Người ký: Nguyễn Văn An, Phó Giám đốc, ký thay Giám đốc.", "KT"},
+		{"Người ký: Nguyễn Văn An, Chánh Văn phòng, thừa lệnh Giám đốc.", "TL"},
+	} {
+		d := planDraft()
+		d["signer"] = map[string]string{"name": "Nguyễn Văn An", "position": "Giám đốc", "authority": c.authority, "on_behalf_of": "Giám đốc"}
+		model := &scriptedChat{replies: []string{draftJSON(t, d)}}
+		out, _ := PrepareDocumentTemplate(context.Background(), templateInput(model, "ke-hoach",
+			"Tạo kế hoạch đào tạo AI cho cán bộ, 3 lớp tập huấn. "+c.written))
+		missing, _ := out.Data["missing_fields"].([]string)
+		if out.Ready || !strings.Contains(strings.Join(missing, "|"), "Người ký") {
+			t.Errorf("%q: %s. GIÁM ĐỐC | GIÁM ĐỐC not asked: %s", c.written, c.authority, out.Answer)
+		}
+	}
+	// the signer's own title stays
+	d := planDraft()
+	d["signer"] = map[string]string{"name": "Nguyễn Văn An", "position": "Phó Giám đốc", "authority": "KT", "on_behalf_of": "Giám đốc"}
+	model := &scriptedChat{replies: []string{draftJSON(t, d)}}
+	out, _ := PrepareDocumentTemplate(context.Background(), templateInput(model, "ke-hoach",
+		"Tạo kế hoạch đào tạo AI cho cán bộ, 3 lớp tập huấn. Người ký: Nguyễn Văn An, Phó Giám đốc, ký thay Giám đốc."))
+	if !out.Ready || strings.Join(out.Data["fields"].(map[string]interface{})["signature_lines"].([]string), "|") != "KT. GIÁM ĐỐC|PHÓ GIÁM ĐỐC" {
+		t.Errorf("deputy signer refused: %s", out.Answer)
+	}
+}

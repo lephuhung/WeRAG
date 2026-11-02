@@ -882,6 +882,13 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 			onBehalf = profile.HeadTitle
 		}
 	}
+	// nobody signs KT./TL./TUQ. for their own title: "Giám đốc" signing
+	// "KT. Giám đốc" is a title the model took from "ký thay Giám đốc"
+	if (signing == "KT" || signing == "TL" || signing == "TUQ") && signerPos != "" && onBehalf != "" &&
+		strings.Trim(fold(signerPos), " .;:,") == strings.Trim(fold(onBehalf), " .;:,") {
+		need("Người ký: họ tên và chức vụ")
+		signerName, signerPos = "", ""
+	}
 	if signing != "" && signing != "truc_tiep" && onBehalf == "" {
 		if signing == "TM" {
 			need("Tên tập thể lãnh đạo ghi sau TM.")
