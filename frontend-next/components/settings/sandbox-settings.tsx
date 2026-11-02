@@ -38,14 +38,9 @@ export function SandboxSettings() {
   const { t } = useT();
   const toast = useToast();
   const auth = useAuth();
-  const activeTenantId = Number(auth.selectedTenantId ?? auth.tenant?.id ?? 0);
-  const currentRole =
-    auth.memberships.find((m) => String(m.tenant_id) === String(activeTenantId))?.role ?? "";
-  const isSystemAdmin = auth.user?.is_system_admin === true;
-  /* Sandbox configs (all /sandbox-configs routes incl. workspace-policy
-   * and per-config skills) are Admin+ on the backend, so all Tenant
-   * Admins may manage — not just legacy owners. */
-  const canManage = currentRole === "owner" || currentRole === "admin" || isSystemAdmin;
+  /* Every /sandbox-configs route (workspace policy and per-config skills
+   * included) is SystemAdmin-only on the backend. */
+  const canManage = auth.user?.is_system_admin === true;
 
   const [configs, setConfigs] = useState<SandboxConfigRecord[]>([]);
   const [scriptsDisabled, setScriptsDisabled] = useState(false);

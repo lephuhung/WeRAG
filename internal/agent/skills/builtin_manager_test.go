@@ -16,7 +16,7 @@ func TestManagerBuiltinSkillsBypassTenantAllowlistButRemainReadOnly(t *testing.T
 	mgr := NewManager(&ManagerConfig{Enabled: true, AllowedSkills: []string{"tenant-only"}}, nil).WithBuiltinSource(builtins)
 	require.NoError(t, mgr.Initialize(ctx))
 	metadata := mgr.GetAllMetadata()
-	require.Len(t, metadata, 4)
+	require.Len(t, metadata, len(expectedBuiltinNames))
 	for i, meta := range metadata {
 		require.Equal(t, expectedBuiltinNames[i], meta.Name)
 		skill, err := mgr.LoadSkill(ctx, meta.Name)

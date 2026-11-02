@@ -322,9 +322,11 @@ func (s *agentService) CreateAgentEngine(
 		}
 	}
 
-	// Legal instruction skills are always readable by ordinary Smart Reasoning
-	// agents. Tenant/host skills still follow SkillsEnabled and their sandbox
-	// selection; install mode remains a separate privileged workflow.
+	// Legal instruction skills are readable by ordinary Smart Reasoning agents
+	// unless the agent opted out (BuiltinSkillsDisabled); the agent's domain
+	// packs are attached either way. Tenant/host skills still follow
+	// SkillsEnabled and their sandbox selection; install mode remains a
+	// separate privileged workflow.
 	if !config.SkillInstallMode() {
 		skillsManager, err := s.initializeSkillsManager(ctx, sessionID, config, toolRegistry)
 		if err != nil {
@@ -698,9 +700,20 @@ func (s *agentService) initializeSkillsManager(
 	config *types.AgentConfig,
 	toolRegistry *tools.ToolRegistry,
 ) (*skills.Manager, error) {
-	builtins, err := skills.NewBuiltinSource(legalskillassets.FS)
-	if err != nil {
-		return nil, err
+	// Domain packs need no sandbox and do not follow SkillsEnabled or
+	// BuiltinSkillsDisabled, so no early return below may run while the agent
+	// has a pack this run can use: agents that opt out of the built-ins (the
+	// document assistant, data and wiki agents) still get their packs.
+	hasPacks := len(s.usableDomainPacks(ctx, config, toolRegistry, false)) > 0
+	if config.BuiltinSkillsDisabled && !config.SkillsEnabled && !hasPacks {
+		return nil, nil
+	}
+	var builtins *skills.BuiltinSource
+	if !config.BuiltinSkillsDisabled {
+		var err error
+		if builtins, err = skills.NewBuiltinSource(legalskillassets.FS); err != nil {
+			return nil, err
+		}
 	}
 	tenantID, _ := types.TenantIDFromContext(ctx)
 	sandboxMgr, configID, err := resolveSandboxForExecution(
@@ -717,7 +730,12 @@ func (s *agentService) initializeSkillsManager(
 
 	logger.Infof(ctx, "Workspace sandbox in use: config=%s type=%s", configID, sandboxMgr.GetType())
 
-	// Tenant/host selections do not restrict the application's four legal skills.
+	if builtins == nil && sandboxUnavailable && !hasPacks {
+		return nil, nil
+	}
+
+	// Tenant/host selections restrict neither the application's built-in
+	// legal skills nor the agent's domain packs.
 	skillsConfig := &skills.ManagerConfig{Enabled: true}
 	if config.SkillsEnabled && !sandboxUnavailable {
 		skillsConfig.SkillDirs = config.SkillDirs
@@ -731,7 +749,9 @@ func (s *agentService) initializeSkillsManager(
 		}
 	}
 
-	// Initialize (discover skills)
+	// Initialize (discover skills). The host loader skips unreadable
+	// directories and the tenant source drops unusable rows when it is built,
+	// so an error here comes from the built-ins or the packs themselves.
 	if err := skillsManager.Initialize(ctx); err != nil {
 		return nil, fmt.Errorf("failed to initialize skills: %w", err)
 	}

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -187,4 +188,54 @@ func TestDomainPackPromptsCarryBodiesUpToTheCap(t *testing.T) {
 			t.Fatalf("pack %d of %d: body %d bytes (budget %d)", i, len(capped), len(p.Body), agent.MaxDomainPackPromptBytes)
 		}
 	}
+}
+
+// The early returns in initializeSkillsManager (built-ins opted out, sandbox
+// unavailable) once dropped the agent's domain packs with the built-ins.
+func TestDomainPackSurvivesSkillsManagerEarlyReturns(t *testing.T) {
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(7))
+	packRegistry := func() *tools.ToolRegistry {
+		registry := tools.NewToolRegistry()
+		registry.RegisterTool(tools.NewSequentialThinkingTool())
+		return registry
+	}
+	names := func(t *testing.T, cfg *types.AgentConfig, svc *agentService) []string {
+		t.Helper()
+		mgr, err := svc.initializeSkillsManager(ctx, "sess", cfg, packRegistry())
+		require.NoError(t, err)
+		require.NotNil(t, mgr, "the agent's domain pack needs a skills manager")
+		var out []string
+		for _, meta := range mgr.GetAllMetadata() {
+			out = append(out, meta.Name)
+		}
+		return out
+	}
+
+	t.Run("built-ins opted out", func(t *testing.T) {
+		cfg := &types.AgentConfig{BuiltinSkillsDisabled: true, DomainPacks: []string{testPack}}
+		require.Equal(t, []string{testPack}, names(t, cfg, testPackService(t)))
+	})
+
+	t.Run("built-ins opted out and sandbox unavailable", func(t *testing.T) {
+		svc := testPackService(t)
+		svc.sandboxResolver = stubSandboxResolver{err: errors.New("sandbox down")}
+		cfg := &types.AgentConfig{BuiltinSkillsDisabled: true, SkillsEnabled: true,
+			SandboxConfigID: "cfg-remote", DomainPacks: []string{testPack}}
+		require.Equal(t, []string{testPack}, names(t, cfg, svc))
+	})
+
+	t.Run("sandbox unavailable keeps built-ins and the pack", func(t *testing.T) {
+		svc := testPackService(t)
+		svc.sandboxResolver = stubSandboxResolver{err: errors.New("sandbox down")}
+		cfg := &types.AgentConfig{SkillsEnabled: true, SandboxConfigID: "cfg-remote",
+			DomainPacks: []string{testPack}}
+		require.Equal(t, append(append([]string(nil), bundledLegalSkillNames...), testPack), names(t, cfg, svc))
+	})
+
+	t.Run("a pack this run cannot use does not keep the manager alive", func(t *testing.T) {
+		cfg := &types.AgentConfig{BuiltinSkillsDisabled: true, DomainPacks: []string{testPack}}
+		mgr, err := testPackService(t).initializeSkillsManager(ctx, "sess", cfg, tools.NewToolRegistry())
+		require.NoError(t, err)
+		require.Nil(t, mgr, "without its required tools the pack is not offered")
+	})
 }

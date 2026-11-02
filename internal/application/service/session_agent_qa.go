@@ -903,6 +903,7 @@ func (s *sessionService) configureSkillsFromAgent(
 		return
 	}
 	agentConfig.SandboxConfigID = customAgent.Config.SandboxConfigID
+	agentConfig.BuiltinSkillsDisabled = !builtinLegalSkillsApply(customAgent)
 	switch customAgent.Config.SkillsSelectionMode {
 	case "all":
 		agentConfig.SkillsEnabled = true
@@ -925,6 +926,24 @@ func (s *sessionService) configureSkillsFromAgent(
 		agentConfig.SkillsEnabled = false
 		logger.Warnf(ctx, "Unknown SkillsSelectionMode=%s: skills disabled", customAgent.Config.SkillsSelectionMode)
 	}
+}
+
+// builtinLegalSkillsApply reports whether the bundled legal skills belong in
+// this agent's prompt. The document assistant, data analysis and wiki agents
+// have their own tools for that work; listing the skills there only costs
+// prompt tokens and invites read_file calls the agent cannot use.
+func builtinLegalSkillsApply(customAgent *types.CustomAgent) bool {
+	switch customAgent.ID {
+	case types.BuiltinDocumentAssistantID, types.BuiltinDataAnalystID,
+		types.BuiltinWikiResearcherID, types.BuiltinWikiFixerID:
+		return false
+	}
+	switch customAgent.Config.AgentType {
+	case types.AgentTypeDataAnalysis, types.AgentTypeWikiQA:
+		return false
+	}
+	// A copy of the document assistant has a new ID; its editing tools give it away.
+	return !slices.Contains(customAgent.Config.AllowedTools, tools.ToolRewriteParagraphs)
 }
 
 // questionOriginInTargets keeps a suggested question's origin only when this

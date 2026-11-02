@@ -54,8 +54,8 @@ func TestManagerShowsPackOnlyWhenWired(t *testing.T) {
 
 	with := newPackManager(t, &skills.ManagerConfig{Enabled: true}, true)
 	names := metadataNames(with)
-	require.Len(t, names, 5)
-	assert.Equal(t, samplePack, names[4], "packs come after the built-ins")
+	require.Len(t, names, len(metadataNames(without))+1)
+	assert.Equal(t, samplePack, names[len(names)-1], "packs come after the built-ins")
 	assert.True(t, with.IsReadOnlySkill(samplePack))
 	assert.True(t, with.IsBuiltinSkill(samplePack), "the old name stays an alias")
 }

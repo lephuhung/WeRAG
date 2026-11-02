@@ -16,9 +16,6 @@ var ErrInvalidBuiltin = errors.New("invalid built-in skill")
 
 var builtinNames = []string{
 	"legal-document-summary",
-	"legal-document-comparison",
-	"legal-latest-guidance",
-	"legal-question-abbreviations",
 }
 
 // IsBuiltinName reports whether a name is reserved by the application.

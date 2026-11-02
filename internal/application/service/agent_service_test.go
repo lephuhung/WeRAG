@@ -204,7 +204,7 @@ func TestCreateAgentEngineOpensSandboxToolsOnlyForInstallMode(t *testing.T) {
 		require.True(t, toolOffered(chatModel.lastToolNames, tools.ToolReadFile))
 		require.True(t, toolOffered(chatModel.lastToolNames, tools.ToolWriteSandboxFile))
 		require.True(t, toolOffered(chatModel.lastToolNames, tools.ToolEditSandboxFile))
-		require.Len(t, engine.(*agent.AgentEngine).GetSkillsManager().GetAllMetadata(), 4)
+		require.Len(t, engine.(*agent.AgentEngine).GetSkillsManager().GetAllMetadata(), len(bundledLegalSkillNames))
 	})
 
 	t.Run("skills disabled without skills or install mode gets no shell or skill tools but keeps file tools", func(t *testing.T) {
@@ -235,7 +235,7 @@ func TestCreateAgentEngineOpensSandboxToolsOnlyForInstallMode(t *testing.T) {
 		require.True(t, toolOffered(chatModel.lastToolNames, tools.ToolEditSandboxFile))
 		require.False(t, toolOffered(chatModel.lastToolNames, tools.LegacyToolReadSkill))
 		require.False(t, toolOffered(chatModel.lastToolNames, tools.LegacyToolExecuteSkillScript))
-		require.Len(t, engine.(*agent.AgentEngine).GetSkillsManager().GetAllMetadata(), 4)
+		require.Len(t, engine.(*agent.AgentEngine).GetSkillsManager().GetAllMetadata(), len(bundledLegalSkillNames))
 	})
 
 	t.Run("skills enabled with skill dirs keeps existing behavior", func(t *testing.T) {
@@ -395,7 +395,7 @@ func TestCreateAgentEngineShellFollowsSkillsEnabledWithoutInstalledSkills(t *tes
 	require.True(t, toolOffered(chatModel.lastToolNames, tools.ToolReadFile))
 	require.True(t, toolOffered(chatModel.lastToolNames, tools.ToolWriteSandboxFile))
 	require.True(t, toolOffered(chatModel.lastToolNames, tools.ToolEditSandboxFile))
-	require.Len(t, engine.(*agent.AgentEngine).GetSkillsManager().GetAllMetadata(), 4)
+	require.Len(t, engine.(*agent.AgentEngine).GetSkillsManager().GetAllMetadata(), len(bundledLegalSkillNames))
 }
 
 // Whether an installed skill is invocable is decided when the AgentConfig is
@@ -487,7 +487,7 @@ func TestSkillsManagerOffersTheInjectedInstalledSkills(t *testing.T) {
 
 		require.NoError(t, err)
 		require.Empty(t, skillNamesOf(mgr),
-			"an unavailable tenant skill must not be advertised beside the four built-ins")
+			"an unavailable tenant skill must not be advertised beside the built-ins")
 	})
 }
 

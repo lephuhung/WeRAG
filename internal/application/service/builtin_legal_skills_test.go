@@ -14,9 +14,6 @@ import (
 
 var bundledLegalSkillNames = []string{
 	"legal-document-summary",
-	"legal-document-comparison",
-	"legal-latest-guidance",
-	"legal-question-abbreviations",
 }
 
 func TestBuiltinLegalSkillsRunWithoutSandboxOrTenantSkills(t *testing.T) {
@@ -61,7 +58,7 @@ func TestBuiltinLegalSkillsSurviveUnavailableSandboxConfig(t *testing.T) {
 	require.NoError(t, err)
 	mgr := engine.(*agent.AgentEngine).GetSkillsManager()
 	require.NotNil(t, mgr, "built-in instructions must not depend on resolving a named sandbox")
-	require.Len(t, mgr.GetAllMetadata(), 4)
+	require.Len(t, mgr.GetAllMetadata(), len(bundledLegalSkillNames))
 }
 
 func TestBuiltinLegalSkillsExcludeInstallerAndDisabledTenantRows(t *testing.T) {
@@ -83,4 +80,35 @@ func TestBuiltinLegalSkillsExcludeInstallerAndDisabledTenantRows(t *testing.T) {
 		names = append(names, item.Name)
 	}
 	require.Equal(t, bundledLegalSkillNames, names)
+}
+
+func TestBuiltinLegalSkillsSkipAgentsWithTheirOwnTools(t *testing.T) {
+	for _, agent := range []*types.CustomAgent{
+		{ID: types.BuiltinDocumentAssistantID},
+		{ID: types.BuiltinDataAnalystID},
+		{ID: types.BuiltinWikiResearcherID},
+		{ID: types.BuiltinWikiFixerID},
+		{ID: "custom-data", Config: types.CustomAgentConfig{AgentType: types.AgentTypeDataAnalysis}},
+		{ID: "custom-wiki", Config: types.CustomAgentConfig{AgentType: types.AgentTypeWikiQA}},
+		{ID: "doc-assistant-copy", Config: types.CustomAgentConfig{AllowedTools: []string{tools.ToolRewriteParagraphs}}},
+	} {
+		require.False(t, builtinLegalSkillsApply(agent), agent.ID)
+	}
+	require.True(t, builtinLegalSkillsApply(&types.CustomAgent{ID: types.BuiltinSmartReasoningID}))
+	require.True(t, builtinLegalSkillsApply(&types.CustomAgent{ID: "custom", Config: types.CustomAgentConfig{AgentType: types.AgentTypeRAGQA}}))
+
+	cfg := &types.AgentConfig{}
+	(&sessionService{}).configureSkillsFromAgent(context.Background(), cfg, &types.CustomAgent{ID: types.BuiltinDocumentAssistantID})
+	require.True(t, cfg.BuiltinSkillsDisabled)
+}
+
+func TestDisabledBuiltinSkillsLeaveNoSkillManagerOrReader(t *testing.T) {
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(7))
+	cfg := &types.AgentConfig{BuiltinSkillsDisabled: true}
+	registry := tools.NewToolRegistry()
+	mgr, err := (&agentService{}).initializeSkillsManager(ctx, "sess", cfg, registry)
+	require.NoError(t, err)
+	require.Nil(t, mgr)
+	_, err = registry.GetTool(tools.ToolReadFile)
+	require.Error(t, err, "without skills or a sandbox there is nothing for read_file to read")
 }

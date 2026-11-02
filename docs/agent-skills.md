@@ -9,7 +9,7 @@ Agent Skills 是一种让 Agent 通过阅读"使用说明书"来学习新能力�
 
 ### 内置越南法律技能（Smart Reasoning）
 
-`examples/skills/` 下的 `legal-document-summary`、`legal-document-comparison`、`legal-latest-guidance`、`legal-question-abbreviations` 四份 `SKILL.md` 在构建时嵌入应用。普通 Smart Reasoning 智能体默认能看到它们的名称和描述，并按需通过 `read_file(path="skill://legal-document-comparison/SKILL.md")` 读取说明；无需沙箱、zip 安装或开启租户技能。`none`/`selected` 仅控制租户技能；与内置技能重名的租户包不覆盖内置内容，`shell_exec(skill_name=...)` 也不能执行此重名包。技能只能引导智能体使用当前 WeKnora 中有权读取的法律资料，不会自行从外部搜索资料或扩大知识库权限。编辑 Markdown 后须重新构建和部署应用。Quick Answer/RAG 暂不使用这些内置技能；租户技能的 catalog/配置界面不一定列出内置技能，仍按下文流程安装其他自定义技能。
+`examples/skills/legal-document-summary/SKILL.md` 在构建时嵌入应用（2026-10-18 起只保留这一个；文档助手、数据分析和 Wiki 智能体不加载）。普通 Smart Reasoning 智能体默认能看到它的名称和描述，并按需通过 `read_file(path="skill://legal-document-summary/SKILL.md")` 读取说明；无需沙箱、zip 安装或开启租户技能。`none`/`selected` 仅控制租户技能；与内置技能重名的租户包不覆盖内置内容，`shell_exec(skill_name=...)` 也不能执行此重名包。技能只能引导智能体使用当前 WeKnora 中有权读取的法律资料，不会自行从外部搜索资料或扩大知识库权限。编辑 Markdown 后须重新构建和部署应用。Quick Answer/RAG 不使用该内置技能；租户技能的 catalog/配置界面不一定列出内置技能，仍按下文流程安装其他自定义技能。
 
 ### 核心特性
 

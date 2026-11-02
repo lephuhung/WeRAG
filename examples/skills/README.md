@@ -8,9 +8,6 @@
 skills/
 ├── README.md              # 本文件
 ├── legal-document-summary/SKILL.md
-├── legal-document-comparison/SKILL.md
-├── legal-latest-guidance/SKILL.md
-├── legal-question-abbreviations/SKILL.md
 └── pdf-processing/        # PDF 处理技能示例
     ├── SKILL.md           # 主文件（Level 2）
     ├── FORMS.md           # 补充文档（Level 3）
@@ -63,49 +60,12 @@ mkdir my-new-skill/scripts
 
 | Skill | Khi dùng |
 |------|----------|
-| [`legal-document-summary`](legal-document-summary/SKILL.md) | Tóm tắt phạm vi, nội dung và mốc thời gian được nêu trong văn bản. |
-| [`legal-document-comparison`](legal-document-comparison/SKILL.md) | Đối chiếu các văn bản/điều khoản và căn cứ về điểm khác nhau. |
-| [`legal-latest-guidance`](legal-latest-guidance/SKILL.md) | Trả lời cùng một vấn đề theo hướng dẫn mới hơn trong các tài liệu nội bộ có thể đọc. |
-| [`legal-question-abbreviations`](legal-question-abbreviations/SKILL.md) | Nhận diện ứng viên từ viết tắt trong câu hỏi gốc và dùng kết quả phân giải đã được hệ thống xác minh. |
+| [`legal-document-summary`](legal-document-summary/SKILL.md) | Tóm tắt phạm vi, nội dung và mốc thời gian được nêu trong văn bản; đối chiếu hai hay nhiều văn bản/điều khoản. |
 
-Bốn skill pháp luật trên được **đóng gói sẵn khi build ứng dụng**, tự có mặt cho mọi agent ở chế độ **Smart Reasoning**; không cần sandbox, tải zip hay bật lựa chọn Skills tenant. Chúng chỉ chứa `SKILL.md`, không chạy script. Agent thấy tên và mô tả trước, rồi đọc hướng dẫn khi cần bằng `read_file(path="skill://legal-document-summary/SKILL.md")` (thay tên để đọc skill khác). `shell_exec(skill_name=...)` không chạy được các skill tích hợp, kể cả khi tenant đã cài một gói trùng tên. `none` và `selected` chỉ giới hạn các skill tenant. Quick Answer/RAG chưa dùng các skill tích hợp.
+Skill trên được **đóng gói sẵn khi build ứng dụng** và có mặt cho các agent ở chế độ **Smart Reasoning**, trừ Soạn thảo văn bản, Phân tích dữ liệu và các agent Wiki (chúng có tool riêng cho việc này); không cần sandbox, tải zip hay bật lựa chọn Skills tenant. Skill chỉ chứa `SKILL.md`, không chạy script. Agent thấy tên và mô tả trước, rồi đọc hướng dẫn khi cần bằng `read_file(path="skill://legal-document-summary/SKILL.md")`. `shell_exec(skill_name=...)` không chạy được skill tích hợp, kể cả khi tenant đã cài một gói trùng tên. `none` và `selected` chỉ giới hạn các skill tenant. Quick Answer/RAG không dùng skill tích hợp.
 
-Các file Markdown tại đây là **nguồn nội dung duy nhất**: sửa trong Git cần build và triển khai lại ứng dụng. Việc cài zip trong [hướng dẫn Agent Skills](../../docs/agent-skills.md#安装租户技能) vẫn áp dụng cho **skill tùy biến khác**, không cần cho bốn skill này. Giao diện catalog/picker có thể chỉ hiển thị skill tenant, không quyết định việc bật skill tích hợp. Agent vẫn phải có quyền truy vấn văn bản pháp luật đã nạp vào kho tri thức WeKnora; skill không tải thêm văn bản.
+Ba skill trước đây (`legal-document-comparison`, `legal-latest-guidance`, `legal-question-abbreviations`) đã bỏ ngày 2026-10-18: hiệu lực văn bản do `check_legal_status` và khối "Lịch sử sửa đổi" do code sinh ra đảm nhận, từ viết tắt do cổng phân giải trong backend đảm nhận; phần đối chiếu còn hữu ích đã gộp vào `legal-document-summary`.
 
-**Giới hạn:** Các skill chỉ hướng dẫn cách dùng văn bản agent **đọc được trong hệ thống**, không tra cứu web và không tự xác nhận văn bản “mới nhất” ngoài tập tài liệu đã đối chiếu. Skill từ viết tắt không thay thế chốt phân giải của backend và không tự xác nhận nghĩa dựa trên tài liệu truy xuất. Cùng vấn đề và cùng phạm vi thì ưu tiên hướng dẫn có hiệu lực mới hơn ở thời điểm hỏi; không vì ngày mới hơn mà suy ra văn bản cũ hết hiệu lực. Thiếu ngày hiệu lực, phạm vi hoặc căn cứ quan hệ văn bản thì nêu giới hạn thay vì đoán.
+Các file Markdown tại đây là **nguồn nội dung duy nhất**: sửa trong Git cần build và triển khai lại ứng dụng. Việc cài zip trong [hướng dẫn Agent Skills](../../docs/agent-skills.md#安装租户技能) vẫn áp dụng cho **skill tùy biến khác**, không cần cho skill tích hợp. Giao diện catalog/picker có thể chỉ hiển thị skill tenant, không quyết định việc bật skill tích hợp. Agent vẫn phải có quyền truy vấn văn bản pháp luật đã nạp vào kho tri thức WeKnora; skill không tải thêm văn bản.
 
-## 示例：pdf-processing
-
-这是一个功能完整的示例技能，展示了：
-
-- **SKILL.md**: 包含 YAML frontmatter 的主文件
-- **FORMS.md**: 补充参考文档
-- **scripts/**: 可在沙箱中执行的 Python 脚本
-
-### 技能描述
-
-```yaml
-name: pdf-processing
-description: Extract text and tables from PDF files, fill forms, merge documents.
-```
-
-### 包含的脚本
-
-| 脚本 | 功能 |
-|------|------|
-| `analyze_form.py` | 分析 PDF 表单字段 |
-| `extract_text.py` | 从 PDF 提取文本 |
-
-### 使用示例
-
-Agent 会根据用户请求自动调用：
-
-```
-用户: "分析一下这个 PDF 表单有哪些字段"
-
-Agent: 
-  1. 识别匹配 pdf-processing 技能
-  2. 调用 read_file(path="skill://pdf-processing/SKILL.md") 加载技能内容
-  3. 调用 shell_exec(skill_name="pdf-processing", command=...) 执行 analyze_form.py
-  4. 返回表单字段分析结果
-```
+**Giới hạn:** Skill chỉ hướng dẫn cách dùng văn bản agent **đọc được trong hệ thống**, không tra cứu web. Tình trạng hiệu lực lấy từ `check_legal_status` khi có công cụ này; không vì ngày mới hơn mà suy ra văn bản cũ hết hiệu lực. Thiếu căn cứ thì nêu giới hạn thay vì đoán.

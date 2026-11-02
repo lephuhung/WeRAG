@@ -30,14 +30,24 @@ export function SkillsSettings() {
   const { t } = useT();
   const toast = useToast();
   const auth = useAuth();
-  const activeTenantId = Number(auth.selectedTenantId ?? auth.tenant?.id ?? 0);
-  const currentRole =
-    auth.memberships.find((m) => String(m.tenant_id) === String(activeTenantId))?.role ?? "";
-  const isSystemAdmin = auth.user?.is_system_admin === true;
-  /* Skill catalog writes (POST /skills/catalog, install, DELETE) are
-   * Admin+ on the backend, so all Tenant Admins may manage — not just
-   * legacy owners. Catalog reads stay Admin+ server-side as well. */
-  const canManage = currentRole === "owner" || currentRole === "admin" || isSystemAdmin;
+  /* Skill catalog writes (POST /skills/catalog, install, DELETE) and the
+   * per-config skill routes are SystemAdmin-only on the backend: an install
+   * bakes a root shell's output into a sandbox image. */
+  const canManage = auth.user?.is_system_admin === true;
+  const installStatusLabel = (status: string) => {
+    switch (status) {
+      case "installing":
+        return t("skillc.status.installing");
+      case "ready":
+        return t("skillc.status.ready");
+      case "failed":
+        return t("skillc.status.failed");
+      case "removing":
+        return t("skillc.status.removing");
+      default:
+        return status;
+    }
+  };
 
   const [catalog, setCatalog] = useState<SkillCatalogItem[]>([]);
   const [sandboxes, setSandboxes] = useState<SandboxConfigRecord[]>([]);
@@ -338,14 +348,14 @@ export function SkillsSettings() {
                         <span
                           key={inst.sandbox_config_id}
                           className={`badge-pill text-xs font-medium ${
-                            inst.status === "installed"
+                            inst.status === "ready"
                               ? "badge-success"
                               : inst.status === "failed"
                               ? "badge-error"
                               : ""
                           }`}
                         >
-                          {inst.sandbox_config_name || inst.sandbox_config_id} ({inst.status})
+                          {inst.sandbox_config_name || inst.sandbox_config_id} ({installStatusLabel(inst.status)})
                         </span>
                       ))}
                     </div>

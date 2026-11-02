@@ -13,9 +13,9 @@ import (
 func TestBuiltinLegalMentionPinsOnlyAvailableBuiltinsInNoneMode(t *testing.T) {
 	cfg := &types.AgentConfig{SkillsEnabled: false, AllowedSkills: []string{"tenant-only"}}
 	applyPerRequestSkillScope(context.Background(), cfg, "none", []string{
-		"unknown", "legal-document-summary", "tenant-only", "legal-document-summary", "legal-question-abbreviations",
+		"unknown", "legal-document-summary", "tenant-only", "legal-question-abbreviations",
 	})
-	require.Equal(t, []string{"legal-document-summary", "legal-question-abbreviations"}, cfg.PinnedSkillNames)
+	require.Equal(t, []string{"legal-document-summary"}, cfg.PinnedSkillNames)
 	require.False(t, cfg.SkillsEnabled)
 	require.Equal(t, []string{"tenant-only"}, cfg.AllowedSkills)
 }

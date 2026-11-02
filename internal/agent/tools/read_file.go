@@ -69,7 +69,32 @@ func (t *ReadFileTool) updateDescription() {
 	if t.skills != nil && t.skills.IsEnabled() {
 		scopes = append(scopes, "Skill resources: skill://<name>/SKILL.md loads the allowed skill's instructions, file list and execution guidance; skill://<name>/<relative-file> reads a bundled resource. These are package resources, not shell paths or arbitrary host files.")
 	}
+	t.schema = readFileSchema(t.workspace != nil)
 	t.description = "Read text from the available file sources.\n" + strings.Join(scopes, "\n") + "\noffset is a 1-based line number; limit defaults to 2000 lines. max_bytes is capped at 65536; the tool output budget also applies. Continue at the returned next_offset when truncated. Binary content is suppressed."
+}
+
+// readFileSchema drops the sandbox wording from the path field when the
+// session has no sandbox, so the model does not guess /workspace paths.
+func readFileSchema(withSandbox bool) json.RawMessage {
+	schema := utils.GenerateSchema[ReadFileInput]()
+	if withSandbox {
+		return schema
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(schema, &doc); err != nil {
+		return schema
+	}
+	props, _ := doc["properties"].(map[string]any)
+	path, _ := props["path"].(map[string]any)
+	if path == nil {
+		return schema
+	}
+	path["description"] = "skill:// resource or saved web:// page; there is no sandbox filesystem"
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return schema
+	}
+	return out
 }
 
 func (t *ReadFileTool) Execute(ctx context.Context, args json.RawMessage) (*types.ToolResult, error) {
@@ -100,7 +125,8 @@ func (t *ReadFileTool) Execute(ctx context.Context, args json.RawMessage) (*type
 		return &types.ToolResult{
 			Success: false,
 			Error: "sandbox file access is unavailable; " +
-				"only listed skill resources or available saved web:// pages can be read",
+				"only listed skill resources or available saved web:// pages can be read. " +
+				"Attached files and knowledge-base documents are read with the document tools (such as read_document), not read_file",
 		}, nil
 	}
 	return t.workspace.read(ctx, input)
