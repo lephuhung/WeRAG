@@ -778,10 +778,11 @@ var (
 	// history after it is a remark on the Điều the line amends.
 	legalOperationVerbRe = regexp.MustCompile(`(?i)(?:^|[^\p{L}])(?:sửa\s+đổi|bổ\s+sung|bãi\s+bỏ|thay\s+thế|thay|bỏ|đính\s+chính)(?:[^\p{L}]|$)`)
 	// legalDivisionRe starts the text after a chain naming a division
-	// ("Mục 5 Chương XIV của Bộ luật …", "Phần II"). Điều are numbered
-	// through a whole document, so the Điều is the document's that the
-	// clause cites, else the heading's subject's.
-	legalDivisionRe = regexp.MustCompile(`^\s*(?:của\s+)?(?i:chương|mục|phần|tiểu\s+mục)\s+[0-9IVXLC]+[a-zA-Z]?(?:[^\p{L}\p{N}]|$)`)
+	// ("Mục 5 Chương XIV của Bộ luật …", "Phần II", "chương ii", "Phần
+	// thứ nhất"). Điều are numbered through a whole document, so the Điều
+	// is the document's that the clause cites, else the heading's
+	// subject's.
+	legalDivisionRe = regexp.MustCompile(`^\s*(?:của\s+)?(?i:chương|mục|phần|tiểu\s+mục)\s+(?:(?i:thứ)\s+\p{L}+|(?i:[0-9ivxlc]+)[a-zA-Z]?)(?:[^\p{L}\p{N}]|$)`)
 	// legalDocPartRe starts the text after a chain naming a part of a
 	// document by its title-cased name ("Quy chế …", "Phụ lục II", "Mẫu
 	// số 03", "mẫu 07-1/HĐTV"): its Điều are the part's. "quy định về" in
@@ -912,17 +913,21 @@ func legalDropInlineNewText(line string) string {
 var (
 	legalNhuSauRe = regexp.MustCompile(`(?i)như\s+sau\s*:?`)
 	// legalOperationStartRe starts a numbered operation: "13. Sửa đổi …",
-	// "a) Bãi bỏ …", "12. Điểm a khoản 8 Điều 34 …".
+	// "a) Bãi bỏ …", "12. Điểm a khoản 8 Điều 34 …", a bullet "- Bỏ …" at
+	// the start or after ":", ";" or a sentence end (a dash inside a
+	// sentence, "từ 2020 - bỏ mức thu", is no bullet).
 	// legalOperationLeadRe: the text after "như sau:" is itself an
 	// operation ("… như sau: Bãi bỏ khoản 4 Điều 21 Thông tư …").
 	legalOperationLeadRe  = regexp.MustCompile(`^\s*(?:[-–•+]\s*)?(?:Sửa\s+đổi|Bổ\s+sung|Bãi\s+bỏ|Thay\s+thế|Thay|Bỏ|Đính\s+chính)\s`)
-	legalOperationStartRe = regexp.MustCompile(`(?i)(?:^|\s)(?:\d+[a-zđ]?\.|[a-zđ]\)|[-–•+])\s*(?:sửa\s+đổi|bổ\s+sung|bãi\s+bỏ|thay\s+thế|thay|bỏ|đính\s+chính|(?:điểm|khoản|điều)\s+(?:\d+[a-zđ]?|[a-zđ])(?:[\s,]|$))`)
+	legalOperationStartRe = regexp.MustCompile(`(?i)(?:(?:^|\s)(?:\d+[a-zđ]?\.|[a-zđ]\))|(?:^|[:;.])\s*[-–•+])\s*(?:sửa\s+đổi|bổ\s+sung|bãi\s+bỏ|thay\s+thế|thay|bỏ|đính\s+chính|(?:điểm|khoản|điều)\s+(?:\d+[a-zđ]?|[a-zđ])(?:[\s,]|$))`)
 )
 
 // legalDropUnquotedNewText removes the new wording written after "như
 // sau:" without quotes, up to the next numbered operation of a line
 // flattened from several ("… Điều 15 như sau: a) Sửa đổi khoản 1 …" keeps
-// "a) Sửa đổi …"), else to the end of the line.
+// "a) Sửa đổi …"), else to the end of the line. What is kept on each
+// side of the dropped wording is joined with " ; ", a clause end: "Sửa đổi
+// một số điều như sau 1. Bãi bỏ Điều 3" never reads "điều 1".
 func legalDropUnquotedNewText(line string) string {
 	var b strings.Builder
 	for {
@@ -934,7 +939,7 @@ func legalDropUnquotedNewText(line string) string {
 		b.WriteString(line[:loc[0]])
 		rest := line[loc[1]:]
 		if legalOperationLeadRe.MatchString(rest) {
-			b.WriteString(" ") // "… như sau: Bãi bỏ khoản 4 Điều 21 …"
+			b.WriteString(" ; ") // "… như sau: Bãi bỏ khoản 4 Điều 21 …"
 			line = rest
 			continue
 		}
@@ -942,7 +947,7 @@ func legalDropUnquotedNewText(line string) string {
 		if next == nil {
 			return b.String()
 		}
-		b.WriteString(" ")
+		b.WriteString(" ; ")
 		line = rest[next[0]:]
 	}
 }

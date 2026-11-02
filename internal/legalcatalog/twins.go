@@ -2,6 +2,7 @@ package legalcatalog
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -53,6 +54,7 @@ type Twin struct {
 //     row is a placeholder ("(tạm nhập - chờ toàn văn)") and the new one
 //     is not, the full copy is imported instead and the placeholder is
 //     aliased to it: its edges move to the full copy.
+//
 //   - A catalogued row keyed with a look-alike whose folded key other rows
 //     hold, and that is the same document as one of them, keeps its number
 //     and key (the rest is updated) and is aliased to it: the key keeps
@@ -61,9 +63,16 @@ type Twin struct {
 //     reviewed and the holder was not, or the holder is a placeholder:
 //     then the look-alike row is rekeyed (both stay under the key) and,
 //     for a placeholder, the placeholder is aliased to it.
+//
 //   - Not the same document: a row keyed with Ð keeps its key (the twins
 //     migration 000175 left for a SuperAdmin, listed in Unreachable); any
 //     other look-alike (Cyrillic, dashes) is rekeyed.
+//
+//   - Of several rows that are the same document, a full copy is matched
+//     before a placeholder, and the import is weighed in a fixed order
+//     (catalogued rows, then new ones, each by id): the surviving row and
+//     the placeholder's alias do not depend on the file's order, and two
+//     new full copies of one placeholder are one row.
 //
 // An attached twin keeps its row: KB documents point at it by id
 // (knowledge metadata external_id, legal_document_links), so it stays
@@ -86,16 +95,37 @@ func ResolveTwins(existing, docs []*types.LegalDocument) TwinResolution {
 			res.StatusDiffers = append(res.StatusDiffers, Attached{Twin: twin, Survivor: survivor})
 		}
 	}
-	for _, d := range docs {
+	// replace aliases a placeholder to its full copy once: a later full
+	// copy that matches the placeholder but not that copy is another row.
+	replace := func(placeholder, full *types.LegalDocument) {
+		if _, done := res.Alias[placeholder.ID]; !done {
+			attach(placeholder, full)
+		}
+	}
+	dropped := map[*types.LegalDocument]bool{}
+	for _, d := range resolveOrder(docs, byID) {
 		cur := byID[d.ID]
 		if cur == nil {
 			if s := sameDocumentIn(byKey[d.NumberKey], d); s != nil {
 				if !IsPlaceholder(s.Title) || IsPlaceholder(d.Title) {
 					attach(d, s)
+					dropped[d] = true
 					continue
 				}
-				attach(s, d) // the full copy replaces the placeholder
+				replace(s, d) // the full copy replaces the placeholder
 			}
+			// a catalogued Ð twin left unreachable (weighed first) is
+			// attached to its new Latin copy
+			unreachable := res.Unreachable[:0]
+			for _, u := range res.Unreachable {
+				if _, done := res.Alias[u.Row.ID]; !done && vietnamese_legal.CatalogNumberKey(u.Row.NumberKey) == d.NumberKey &&
+					SameDocument(u.Row, d) {
+					attach(u.Row, d)
+					continue
+				}
+				unreachable = append(unreachable, u)
+			}
+			res.Unreachable = unreachable
 		} else if cur.NumberKey != d.NumberKey && vietnamese_legal.CatalogNumberKey(cur.NumberKey) == d.NumberKey {
 			if holders := others(byKey[d.NumberKey], d.ID); len(holders) > 0 {
 				s := sameDocumentIn(holders, d)
@@ -104,10 +134,9 @@ func ResolveTwins(existing, docs []*types.LegalDocument) TwinResolution {
 				case s != nil && (cur.ReviewedAt == nil || s.ReviewedAt != nil) && !placeholder:
 					attach(d, s)
 					d.DocumentNumber, d.NumberKey = cur.DocumentNumber, cur.NumberKey
-					res.Keep = append(res.Keep, d)
 					continue
 				case placeholder:
-					attach(s, d) // rekeyed below, the placeholder's edges with it
+					replace(s, d) // rekeyed below, the placeholder's edges with it
 				case s == nil && strings.ContainsAny(cur.NumberKey, "Ðð"):
 					var ids []string
 					for _, h := range holders {
@@ -115,29 +144,68 @@ func ResolveTwins(existing, docs []*types.LegalDocument) TwinResolution {
 					}
 					res.Unreachable = append(res.Unreachable, Twin{Row: d, Holders: ids})
 					d.DocumentNumber, d.NumberKey = cur.DocumentNumber, cur.NumberKey
-					res.Keep = append(res.Keep, d)
 					continue
 				}
 				// else: a reviewed copy is not hidden behind an unreviewed
 				// one, it is rekeyed
 			}
 		}
-		res.Keep = append(res.Keep, d)
 		if d.NumberKey != "" && (cur == nil || cur.NumberKey != d.NumberKey) {
 			byKey[d.NumberKey] = append(byKey[d.NumberKey], d)
+		}
+	}
+	for _, d := range docs {
+		if !dropped[d] {
+			res.Keep = append(res.Keep, d)
 		}
 	}
 	return res
 }
 
-// sameDocumentIn returns the first of rows that is d under another id.
+// resolveOrder is the order ResolveTwins weighs an import in, whatever
+// the file's: catalogued rows first (a row already in the catalogue is
+// kept over a new copy of it), then new rows, each by id. So of one
+// document under several ids the same row survives every time.
+func resolveOrder(docs []*types.LegalDocument, byID map[string]*types.LegalDocument) []*types.LegalDocument {
+	out := append([]*types.LegalDocument(nil), docs...)
+	sort.SliceStable(out, func(i, j int) bool {
+		ci, cj := byID[out[i].ID] != nil, byID[out[j].ID] != nil
+		if ci != cj {
+			return ci
+		}
+		return idLess(out[i].ID, out[j].ID)
+	})
+	return out
+}
+
+// idLess orders vbpl ids numerically ("9" before "10"), other ids as text.
+func idLess(a, b string) bool {
+	digits := func(s string) bool {
+		return s != "" && strings.IndexFunc(s, func(r rune) bool { return r < '0' || r > '9' }) < 0
+	}
+	if digits(a) && digits(b) && len(a) != len(b) {
+		return len(a) < len(b)
+	}
+	return a < b
+}
+
+// sameDocumentIn returns the row of rows that is d under another id,
+// preferring a full copy to a placeholder ("(tạm nhập - chờ toàn văn)")
+// when several are: the placeholder is replaced by that copy, not by d.
 func sameDocumentIn(rows []*types.LegalDocument, d *types.LegalDocument) *types.LegalDocument {
+	var placeholder *types.LegalDocument
 	for _, r := range rows {
-		if r.ID != d.ID && SameDocument(r, d) {
+		if r.ID == d.ID || !SameDocument(r, d) {
+			continue
+		}
+		if !IsPlaceholder(r.Title) {
 			return r
 		}
+		if placeholder == nil {
+			placeholder = r
+		}
 	}
-	return nil
+	return placeholder
 }
 
 // SameDocument reports whether two catalogue rows of one number key are
@@ -179,28 +247,64 @@ var issuerAbbrev = strings.NewReplacer("UBND ", "Ủy ban nhân dân ", "HĐND "
 // placeRe is a place a title names: "tỉnh Hà Giang", "thành phố Hồ Chí
 // Minh", "huyện Mường Khương", "xã Tân Lập" (title-cased words after the
 // unit).
-var placeRe = regexp.MustCompile(`(?:^|[^\p{L}])(?i:tỉnh|thành\s+phố|huyện|quận|thị\s+xã|thị\s+trấn|xã|phường)\s+((?:\p{Lu}\p{Ll}*(?:\s+|$))+)`)
+var placeRe = regexp.MustCompile(`(?:^|[^\p{L}])((?i:tỉnh|thành\s+phố|huyện|quận|thị\s+xã|thị\s+trấn|xã|phường))\s+((?:\p{Lu}\p{Ll}*(?:\s+|$))+)`)
 
 // PlacesAgree reports whether two titles that both name places share
 // one (one place's words a prefix of the other's: "Thừa Thiên Huế" and
 // "Thừa Thiên"): "… tỉnh Hà Giang" and "… tỉnh Hà Nam" are two
-// provinces' decisions.
+// provinces' decisions. A reading one title has and the other writes as
+// common words ("chính sách Xã Hội" and "chính sách xã hội", "Đề án Xã
+// Nông thôn mới" and "xã nông thôn mới") is title case, not a place.
 func PlacesAgree(a, b string) bool {
 	pa, pb := titlePlaces(a), titlePlaces(b)
+	pa, pb = withoutCommonWords(pa, pb, b), withoutCommonWords(pb, pa, a)
 	if len(pa) == 0 || len(pb) == 0 {
 		return true
 	}
 	for _, x := range pa {
 		for _, y := range pb {
-			if len(x) > len(y) {
-				x, y = y, x
-			}
-			if strings.Join(y[:len(x)], " ") == strings.Join(x, " ") {
+			if prefixAgree(x.name, y.name) {
 				return true
 			}
 		}
 	}
 	return false
+}
+
+func prefixAgree(x, y []string) bool {
+	if len(x) > len(y) {
+		x, y = y, x
+	}
+	return strings.Join(y[:len(x)], " ") == strings.Join(x, " ")
+}
+
+// withoutCommonWords drops the places of one title that the other title
+// (other, read as places in theirs) writes in its words without reading
+// them as a place: the same words, only cased otherwise.
+func withoutCommonWords(places, theirs []titlePlace, other string) []titlePlace {
+	text := " " + strings.Join(lowerWords(other), " ") + " "
+	var out []titlePlace
+	for _, x := range places {
+		read := false
+		for _, y := range theirs {
+			if y.unit == x.unit && prefixAgree(x.name, y.name) {
+				read = true
+				break
+			}
+		}
+		if !read && strings.Contains(text, " "+x.unit+" "+strings.Join(x.name, " ")+" ") {
+			continue
+		}
+		out = append(out, x)
+	}
+	return out
+}
+
+// lowerWords is a title's letter-and-digit words, look-alikes folded,
+// lower case.
+func lowerWords(s string) []string {
+	return strings.FieldsFunc(strings.ToLower(vietnamese_legal.FoldNumberLookalikes(s)),
+		func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
 }
 
 // placeStop are title-cased words that start the rest of a title after a
@@ -209,18 +313,35 @@ var placeStop = map[string]bool{"về": true, "ban": true, "quy": true, "sửa":
 	"phê": true, "thực": true, "ngày": true, "năm": true, "giai": true, "đến": true, "theo": true, "của": true,
 	"và": true, "trong": true, "tại": true, "thuộc": true, "giao": true, "điều": true, "bãi": true, "thành": true}
 
-func titlePlaces(title string) [][]string {
-	var out [][]string
-	for _, m := range placeRe.FindAllStringSubmatch(vietnamese_legal.FoldNumberLookalikes(title), -1) {
+// titlePlace is a place read in a title: its unit ("tỉnh", "thành phố")
+// and name words, lower case.
+type titlePlace struct {
+	unit string
+	name []string
+}
+
+func titlePlaces(title string) []titlePlace {
+	var out []titlePlace
+	title = vietnamese_legal.FoldNumberLookalikes(title)
+	// the next place may start right after this one's name ("chính sách
+	// Xã Hội tỉnh Hà Giang"): the search goes on before the space the
+	// name's last word consumed
+	for pos := 0; pos < len(title); {
+		loc := placeRe.FindStringSubmatchIndex(title[pos:])
+		if loc == nil {
+			break
+		}
+		unit, run := title[pos+loc[2]:pos+loc[3]], title[pos+loc[4]:pos+loc[5]]
+		pos += loc[4] + len(strings.TrimRightFunc(run, unicode.IsSpace))
 		var name []string
-		for _, w := range strings.Fields(strings.ToLower(m[1])) {
+		for _, w := range strings.Fields(strings.ToLower(run)) {
 			if placeStop[w] || len(name) == 4 {
 				break
 			}
 			name = append(name, w)
 		}
 		if len(name) > 0 {
-			out = append(out, name)
+			out = append(out, titlePlace{unit: strings.Join(lowerWords(unit), " "), name: name})
 		}
 	}
 	return out

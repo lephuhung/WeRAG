@@ -258,7 +258,7 @@ func main() {
 		log.Printf("pruned %d documents absent from this import", len(gone))
 	}
 	if *merge {
-		if err := mergeRelations(ctx, db, ids, rels); err != nil {
+		if err := mergeRelations(ctx, db, ids, alias, edges.survivor, rels); err != nil {
 			log.Fatalf("merge relations: %v", err)
 		}
 	} else {
@@ -402,11 +402,22 @@ func openDB() (*gorm.DB, error) {
 }
 
 // mergeRelations replaces the edges touching the imported documents and
-// leaves every other edge of the catalogue alone.
-func mergeRelations(ctx context.Context, db *gorm.DB, ids map[string]bool, rels []*types.LegalDocumentRelation) error {
+// leaves every other edge of the catalogue alone. An edge already stored
+// at an aliased twin (alias, from legalcatalog.ResolveTwins) that is not
+// in this import (a catalogued placeholder replaced by its full copy)
+// moves to the surviving row (survivor) with the new edges: left at the
+// twin it would be stored twice, at the twin and at the survivor.
+func mergeRelations(ctx context.Context, db *gorm.DB, ids map[string]bool, alias map[string]string,
+	survivor func(string) string, rels []*types.LegalDocumentRelation) error {
 	all := make([]string, 0, len(ids))
 	for id := range ids {
 		all = append(all, id)
+	}
+	twins := make([]string, 0, len(alias))
+	for id := range alias {
+		if !ids[id] {
+			twins = append(twins, id)
+		}
 	}
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for start := 0; start < len(all); start += 1000 {
@@ -416,11 +427,42 @@ func mergeRelations(ctx context.Context, db *gorm.DB, ids map[string]bool, rels 
 				return err
 			}
 		}
+		var moved []*types.LegalDocumentRelation
+		for start := 0; start < len(twins); start += 1000 {
+			batch := twins[start:min(start+1000, len(twins))]
+			var old []*types.LegalDocumentRelation
+			if err := tx.Where("from_id IN ? OR to_id IN ?", batch, batch).Find(&old).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("from_id IN ? OR to_id IN ?", batch, batch).
+				Delete(&types.LegalDocumentRelation{}).Error; err != nil {
+				return err
+			}
+			moved = append(moved, old...)
+		}
+		rels = append(rels, repointEdges(moved, survivor)...)
 		if len(rels) == 0 {
 			return nil
 		}
 		return tx.Clauses(clause.OnConflict{DoNothing: true}).CreateInBatches(rels, 1000).Error
 	})
+}
+
+// repointEdges moves stored edges to the surviving rows of their ends,
+// dropping the self edges (a twin and its survivor) and repeats.
+func repointEdges(old []*types.LegalDocumentRelation, survivor func(string) string) []*types.LegalDocumentRelation {
+	seen := map[edgeKey]bool{}
+	var out []*types.LegalDocumentRelation
+	for _, r := range old {
+		from, to := survivor(r.FromID), survivor(r.ToID)
+		k := edgeKey{from, to, string(r.Relation)}
+		if from == to || seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, &types.LegalDocumentRelation{FromID: from, ToID: to, Relation: r.Relation, SourceLabel: r.SourceLabel})
+	}
+	return out
 }
 
 // existingIDs returns which of ids already have a catalogue row.

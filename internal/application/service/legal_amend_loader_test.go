@@ -656,6 +656,19 @@ func TestLegalCitedArticlesOf(t *testing.T) {
 		{"L9 a numbered item is no list member", "Bãi bỏ Điều 15, 9. Sửa đổi Điều 16.",
 			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"15", "16"}},
 		{"a law named before its number", "Bãi bỏ Điều 7 của Luật Đất đai số 45/2013/QH13.", `[]`, "45/2013/QH13", "Luật", "", []string{"7"}},
+		// Fable LOW (k7)
+		{"text kept around 'như sau' does not merge labels", "Sửa đổi một số điều như sau 1. Bãi bỏ Điều 3.",
+			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"3"}},
+		{"'Phần thứ nhất' of another code", "Bãi bỏ Điều 5 Phần thứ nhất Bộ luật Dân sự số 91/2015/QH13.",
+			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
+		{"a lower-case chapter of another code", "Bãi bỏ Điều 5 chương ii Bộ luật Dân sự số 91/2015/QH13.",
+			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", nil},
+		{"'Phần thứ hai' of the subject", "Bãi bỏ Điều 5 Phần thứ hai.",
+			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"5"}},
+		{"a dash inside the new wording is no bullet", "Sửa đổi Điều 5 như sau: Áp dụng từ 2020 - bỏ mức thu tại Điều 9.",
+			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"5"}},
+		{"a dash bullet after a sentence end", "Sửa đổi Điều 5 như sau: Áp dụng từ 2020. - Bãi bỏ Điều 9.",
+			`["Điều 1. Sửa đổi Nghị định số 14/2016/NĐ-CP"]`, "14/2016/NĐ-CP", "Nghị định", "", []string{"5", "9"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
