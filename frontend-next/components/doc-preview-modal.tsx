@@ -95,7 +95,7 @@ export function DocPreviewModal({
       })
       .catch((err) => {
         if (!active) return;
-        setError(err instanceof Error ? err.message : "Failed to load document preview");
+        setError(err instanceof Error ? err.message : t("ui.err.docPreview"));
       })
       .finally(() => {
         if (active) setLoading(false);

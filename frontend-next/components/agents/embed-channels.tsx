@@ -99,9 +99,9 @@ export function AgentEmbedChannels({ agentId, open, onClose, agentName }: {
     setLoading(true);
     listEmbedChannels(agentId)
       .then((res) => setChannels(res.data ?? []))
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load channels"))
+      .catch((e) => setError(e instanceof Error ? e.message : t("ui.err.loadChannels")))
       .finally(() => setLoading(false));
-  }, [agentId]);
+  }, [agentId, t]);
 
   useEffect(() => {
     if (open) {
@@ -185,7 +185,7 @@ export function AgentEmbedChannels({ agentId, open, onClose, agentName }: {
             </div>
           ))}
           {channels !== null && channels.length === 0 && !loading && (
-            <p className="caption text-muted-soft">No embed channels for this agent yet.</p>
+            <p className="caption text-muted-soft">{t("ui.embed.none")}</p>
           )}
         </div>
 
@@ -292,7 +292,7 @@ function EmbedChannelForm({ agentId, channel, onClose, onSaved }: {
       else await createEmbedChannel(agentId, payload);
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      setError(e instanceof Error ? e.message : t("ui.err.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -313,7 +313,7 @@ function EmbedChannelForm({ agentId, channel, onClose, onSaved }: {
             <input className="input" value={draft.name} onChange={(e) => patch("name", e.target.value)} />
           </label>
           <label className="block w-full sm:w-[180px]">
-            <span className="caption mb-1.5 block text-muted">Rate / minute</span>
+            <span className="caption mb-1.5 block text-muted">{t("ui.embed.ratePerMin")}</span>
             <input
               className="input"
               type="number"
@@ -324,7 +324,7 @@ function EmbedChannelForm({ agentId, channel, onClose, onSaved }: {
             />
           </label>
           <label className="block w-full sm:w-[180px]">
-            <span className="caption mb-1.5 block text-muted">Rate / day</span>
+            <span className="caption mb-1.5 block text-muted">{t("ui.embed.ratePerDay")}</span>
             <input
               className="input"
               type="number"

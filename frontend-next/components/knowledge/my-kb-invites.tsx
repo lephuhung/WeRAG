@@ -24,9 +24,9 @@ export function MyKBInvites({ onAccepted }: { onAccepted?: () => void }) {
     try {
       setInvites(await listMyKBInvites());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load invitations");
+      setError(e instanceof Error ? e.message : t("ui.inv.loadFailed"));
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void load();
@@ -39,14 +39,14 @@ export function MyKBInvites({ onAccepted }: { onAccepted?: () => void }) {
     try {
       const res = await acceptKBInviteByID(inviteId);
       if (res.success) {
-        setNotice("Invitation accepted. The knowledge base is now listed as shared with you (read-only).");
+        setNotice(t("ui.inv.accepted"));
         await load();
         onAccepted?.();
       } else {
-        setError(res.message || "Failed to accept invitation");
+        setError(res.message || t("ui.inv.acceptFailed"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to accept invitation");
+      setError(err instanceof Error ? err.message : t("ui.inv.acceptFailed"));
     } finally {
       setBusy(false);
     }
@@ -61,15 +61,15 @@ export function MyKBInvites({ onAccepted }: { onAccepted?: () => void }) {
     try {
       const res = await acceptKBInvite(token.trim());
       if (res.success) {
-        setNotice("Token redeemed. The knowledge base is now available read-only.");
+        setNotice(t("ui.inv.redeemed"));
         setToken("");
         await load();
         onAccepted?.();
       } else {
-        setError(res.message || "Invalid or expired token");
+        setError(res.message || t("ui.inv.badToken"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Invalid or expired token");
+      setError(err instanceof Error ? err.message : t("ui.inv.badToken"));
     } finally {
       setBusy(false);
     }
@@ -81,9 +81,9 @@ export function MyKBInvites({ onAccepted }: { onAccepted?: () => void }) {
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-sm font-semibold text-ink">Knowledge bases shared with me</h3>
+        <h3 className="text-sm font-semibold text-ink">{t("ui.inv.sharedTitle")}</h3>
         <p className="caption text-muted mt-0.5">
-          Invitations from other workspaces. Accepted items are read-only.
+          {t("ui.inv.sharedDesc")}
         </p>
         {/* Tenant-join invites are a separate flow — accepting here never
          * changes workspace membership. */}
@@ -95,22 +95,22 @@ export function MyKBInvites({ onAccepted }: { onAccepted?: () => void }) {
 
       <form onSubmit={redeemToken} className="flex flex-wrap items-end gap-2">
         <label className="block min-w-52 flex-1">
-          <span className="caption mb-1 block text-muted">Redeem a token</span>
+          <span className="caption mb-1 block text-muted">{t("ui.inv.redeemLabel")}</span>
           <input
             type="text"
             className="input font-mono text-xs"
-            placeholder="Paste an invitation token…"
+            placeholder={t("ui.inv.redeemPh")}
             value={token}
             onChange={(e) => setToken(e.target.value)}
           />
         </label>
         <button type="submit" disabled={busy || !token.trim()} className="btn btn-outline btn-sm">
-          {busy ? "Redeeming…" : "Redeem"}
+          {busy ? t("ui.inv.redeeming") : t("ui.inv.redeem")}
         </button>
       </form>
 
       {pending.length === 0 && decided.length === 0 && (
-        <p className="caption text-muted">No invitations.</p>
+        <p className="caption text-muted">{t("ui.inv.none")}</p>
       )}
 
       {pending.length > 0 && (
@@ -127,7 +127,7 @@ export function MyKBInvites({ onAccepted }: { onAccepted?: () => void }) {
                 onClick={() => void acceptByID(inv.id)}
                 className="btn btn-primary btn-sm text-xs"
               >
-                Accept read access
+                {t("ui.inv.accept")}
               </button>
             </div>
           ))}

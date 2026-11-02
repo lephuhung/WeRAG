@@ -261,7 +261,7 @@ const toast = useToast();
           setDenied(true);
           return;
         }
-        setError(e instanceof Error ? e.message : "Failed to load");
+        setError(e instanceof Error ? e.message : t("ui.err.load"));
       });
     getSystemParseDefaults()
       .then((def) => alive && setParseDefaults(def))
@@ -488,11 +488,11 @@ const toast = useToast();
 
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h1 className="display-lg">{kb?.name ?? "Knowledge base"}</h1>
+            <h1 className="display-lg">{kb?.name ?? t("ui.kb.titleFallback")}</h1>
             <p className="body-sm mt-1.5 max-w-[560px] text-body">{kb?.description ?? ""}</p>
             {error && <p className="caption mt-2 text-error">{error}</p>}
-            <div className="caption mt-2.5 flex items-center gap-4 text-muted">
-              <span>{t("kbUi.documentCount", { count: kb?.knowledge_count ?? kb?.document_count ?? docsTotal ?? "—" })}</span>
+            <div className="caption mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-muted">
+              <span className="whitespace-nowrap">{t("kbUi.documentCount", { count: kb?.knowledge_count ?? kb?.document_count ?? docsTotal ?? "—" })}</span>
               {/* Public identity keys off owner + visibility: a converted
                * row's foreign data scope must never mislabel it "Shared".
                * Invited rows keep the Shared marker. */}
@@ -550,7 +550,7 @@ const toast = useToast();
             }`}
           >
             <IconDoc className="h-4 w-4" />
-            <span>Tài liệu & Wiki</span>
+            <span>{t("ui.kb.docsWiki")}</span>
             {(kb?.knowledge_count ?? kb?.document_count) != null && (
               <span className="rounded-full bg-surface-strong px-2 py-0.5 text-[11px] font-medium text-muted">
                 {kb?.knowledge_count ?? kb?.document_count}

@@ -22,6 +22,7 @@ import {
   IconUser,
 } from "@/components/icons";
 import { copyToClipboard } from "@/lib/clipboard";
+import { useT } from "@/lib/i18n";
 
 export type PeopleRecord = Record<string, unknown> & {
   _source_schema?: string;
@@ -174,7 +175,7 @@ function getNameField(record: Record<string, unknown>): string {
   return "";
 }
 
-function mergePeople(people: PeopleRecord[]): MergedPerson[] {
+function mergePeople(people: PeopleRecord[], noName: string): MergedPerson[] {
   const fieldOrder = Object.keys(FIELD_CONFIG);
   const groups = new Map<string, PeopleRecord[]>();
   const order: string[] = [];
@@ -214,7 +215,7 @@ function mergePeople(people: PeopleRecord[]): MergedPerson[] {
     if (!name) {
       const phoneVal = PHONE_KEYS.map((k) => fieldMap.get(k)?.[0]).find(Boolean);
       const uidVal = fieldMap.get("uid")?.[0] || fieldMap.get("uids")?.[0];
-      name = phoneVal || (uidVal ? `UID ${uidVal}` : "") || "(Không có tên)";
+      name = phoneVal || (uidVal ? `UID ${uidVal}` : "") || noName;
     }
 
     // Only labelled fields render — raw/unmapped columns are usually internal
@@ -234,8 +235,9 @@ export function PeopleCard({
   people: PeopleRecord[];
   isLoadingMore?: boolean;
 }) {
+  const { t } = useT();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
-  const merged = useMemo(() => mergePeople(people), [people]);
+  const merged = useMemo(() => mergePeople(people, t("ui.people.noName")), [people, t]);
 
   if (!people || people.length === 0) return null;
 
@@ -267,7 +269,7 @@ export function PeopleCard({
               className={`btn btn-ghost btn-sm absolute right-3 top-3 p-1.5 ${
                 copiedKey === person.groupKey ? "text-success" : "text-muted hover:text-ink"
               }`}
-              title="Copy"
+              title={t("common.copy")}
             >
               {copiedKey === person.groupKey ? (
                 <IconCheck className="h-4 w-4" />
@@ -346,7 +348,7 @@ export function PeopleCard({
       {isLoadingMore && (
         <div className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-hairline p-3 text-muted">
           <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-muted-soft border-t-transparent" />
-          <span className="text-xs font-medium">Đang tìm kiếm thêm cơ sở dữ liệu...</span>
+          <span className="text-xs font-medium">{t("ui.people.searchingMore")}</span>
         </div>
       )}
     </div>

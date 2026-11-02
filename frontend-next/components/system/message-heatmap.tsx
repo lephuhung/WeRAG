@@ -110,11 +110,11 @@ export function MessageHeatmap({ days, data }: { days: number; data: MessageDayA
           className="mr-2 grid shrink-0 text-[10px] leading-none text-muted-soft"
           style={{ gridTemplateRows: `repeat(${WEEKDAY_ROWS}, ${CELL}px)`, rowGap: GAP }}
         >
-          <span>Mon</span>
+          <span>{t("ui.day.mon")}</span>
           <span />
-          <span>Wed</span>
+          <span>{t("ui.day.wed")}</span>
           <span />
-          <span>Fri</span>
+          <span>{t("ui.day.fri")}</span>
           <span />
           <span />
         </div>

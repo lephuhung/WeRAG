@@ -6,6 +6,7 @@ import { IconDoc } from "@/components/icons";
 import { Markdown } from "@/components/markdown";
 import { getChunkByIdOnly } from "@/lib/api/knowledge";
 import { copyToClipboard } from "@/lib/clipboard";
+import { useT } from "@/lib/i18n";
 
 export type KnowledgeReferenceItem = {
   id?: string;
@@ -36,6 +37,7 @@ export const ReferencesDrawer = memo(function ReferencesDrawer({
   references?: KnowledgeReferenceItem[];
   activeKey?: string | null;
 }) {
+  const { t } = useT();
   const [copied, setCopied] = useState(false);
   const [chunkContentMap, setChunkContentMap] = useState<Record<string, string>>({});
   const [loadingChunkId, setLoadingChunkId] = useState<string | null>(null);
@@ -108,7 +110,7 @@ export const ReferencesDrawer = memo(function ReferencesDrawer({
     currentRef?.knowledge_title ||
     currentRef?.knowledge_filename ||
     currentRef?.knowledge_id ||
-    "Văn bản gốc";
+    t("ui.ref.title");
 
   const isWeb = currentRef?.chunk_type === "web_search" || Boolean(currentRef?.metadata?.url);
   const webUrl = currentRef?.metadata?.url || (currentRef?.id?.startsWith("http") ? currentRef.id : undefined);
@@ -125,11 +127,11 @@ export const ReferencesDrawer = memo(function ReferencesDrawer({
     <SlidePanel
       open={open}
       onClose={onClose}
-      label="Văn bản gốc"
+      label={t("ui.ref.title")}
       width="w-[540px]"
     >
       <SlidePanelHeader
-        title="Văn bản gốc"
+        title={t("ui.ref.title")}
         subtitle={title}
         onClose={onClose}
       />
@@ -138,7 +140,7 @@ export const ReferencesDrawer = memo(function ReferencesDrawer({
         {!currentRef ? (
           <div className="flex flex-col items-center justify-center py-20 text-center text-muted">
             <IconDoc className="h-8 w-8 stroke-[1.4] opacity-50 mb-2" />
-            <p className="text-[13.5px] font-medium text-ink">Không tìm thấy thông tin đoạn trích</p>
+            <p className="text-[13.5px] font-medium text-ink">{t("ui.ref.notFound")}</p>
           </div>
         ) : (
           <div className="flex flex-col gap-4">
@@ -162,12 +164,12 @@ export const ReferencesDrawer = memo(function ReferencesDrawer({
                     type="button"
                     onClick={() => handleCopy(contentText)}
                     className="flex items-center gap-1 rounded-lg border border-hairline bg-surface-card px-2.5 py-1 text-[12px] text-muted hover:text-ink hover:border-ink/30 transition-colors cursor-pointer"
-                    title="Sao chép nội dung"
+                    title={t("ui.ref.copyContent")}
                   >
                     {copied ? (
                       <>
                         <span className="text-success">✓</span>
-                        <span className="text-success font-medium">Đã chép</span>
+                        <span className="text-success font-medium">{t("ui.copied")}</span>
                       </>
                     ) : (
                       <>
@@ -175,7 +177,7 @@ export const ReferencesDrawer = memo(function ReferencesDrawer({
                           <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                         </svg>
-                        <span>Copy</span>
+                        <span>{t("common.copy")}</span>
                       </>
                     )}
                   </button>
@@ -187,9 +189,9 @@ export const ReferencesDrawer = memo(function ReferencesDrawer({
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 rounded-lg border border-hairline bg-surface-card px-2.5 py-1 text-[12px] text-muted hover:text-ink transition-colors"
-                    title="Mở liên kết web"
+                    title={t("ui.ref.openWebTitle")}
                   >
-                    <span>Mở web</span>
+                    <span>{t("ui.ref.openWeb")}</span>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3 w-3">
                       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                       <polyline points="15 3 21 3 21 9" />
@@ -206,9 +208,9 @@ export const ReferencesDrawer = memo(function ReferencesDrawer({
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1 rounded-lg border border-hairline bg-surface-card px-2.5 py-1 text-[12px] text-muted hover:text-ink transition-colors"
-                    title="Mở trong kho tri thức"
+                    title={t("ui.ref.openInKbTitle")}
                   >
-                    <span>Xem file</span>
+                    <span>{t("ui.ref.viewFile")}</span>
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-3 w-3">
                       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                       <polyline points="15 3 21 3 21 9" />
@@ -227,13 +229,13 @@ export const ReferencesDrawer = memo(function ReferencesDrawer({
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                   </svg>
-                  <span>Đang tải nội dung văn bản gốc...</span>
+                  <span>{t("ui.ref.loading")}</span>
                 </div>
               ) : shownText ? (
                 <Markdown text={shownText} />
               ) : (
                 <div className="flex flex-col items-center justify-center py-16 text-muted-soft text-xs italic text-center">
-                  (Không tìm thấy nội dung văn bản gốc cho đoạn trích này)
+                  {t("ui.ref.noContent")}
                 </div>
               )}
             </div>

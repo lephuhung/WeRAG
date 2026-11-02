@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { IconBulb } from "@/components/icons";
+import { useT } from "@/lib/i18n";
 import {
   createAbbreviation,
   listAbbreviations,
@@ -28,6 +29,7 @@ export function AbbreviationSuggestionCard({
   candidates: string[];
   refreshKey: number;
 }) {
+  const { t } = useT();
   const shorts = useMemo(
     () => dedupeCandidates(candidates).slice(0, 10),
     [candidates],
@@ -90,7 +92,7 @@ export function AbbreviationSuggestionCard({
         description: description.trim() || undefined,
       });
       if (!res.success || !res.data) {
-        setError("Gửi đề xuất thất bại");
+        setError(t("ui.abbr.submitFailed"));
         return;
       }
       const row = res.data;
@@ -104,7 +106,7 @@ export function AbbreviationSuggestionCard({
       setFullForm("");
       setDescription("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Gửi đề xuất thất bại");
+      setError(e instanceof Error ? e.message : t("ui.abbr.submitFailed"));
     } finally {
       setSubmitting(false);
     }
@@ -134,8 +136,7 @@ export function AbbreviationSuggestionCard({
                     Chờ Owner/SuperAdmin duyệt
                   </span>
                   <p className="mt-2">
-                    Đã gửi đề xuất. Nghĩa này chỉ được sử dụng sau khi Owner hoặc
-                    SuperAdmin kích hoạt.
+                    {t("ui.abbr.sentNote")}
                   </p>
                 </div>
               </div>
@@ -178,7 +179,7 @@ export function AbbreviationSuggestionCard({
                     }}
                     className="mt-2 inline-flex items-center gap-1 rounded-full bg-warning px-3.5 py-1.5 text-[13px] font-medium text-on-primary shadow-sm transition-colors hover:opacity-90"
                   >
-                    {rows.length > 0 ? "Đề xuất nghĩa khác" : "Bổ sung nghĩa"}
+                    {rows.length > 0 ? t("ui.abbr.suggestOther") : t("ui.abbr.addMeaning")}
                   </button>
                 ) : (
                   <form
@@ -190,7 +191,7 @@ export function AbbreviationSuggestionCard({
                   >
                     <div>
                       <label className="mb-1 block text-[12px] text-muted">
-                        Từ viết tắt
+                        {t("ui.abbr.short")}
                       </label>
                       <input
                         value={short}
@@ -200,20 +201,20 @@ export function AbbreviationSuggestionCard({
                     </div>
                     <div>
                       <label className="mb-1 block text-[12px] text-muted">
-                        Nghĩa đầy đủ <span className="text-error">*</span>
+                        {t("ui.abbr.full")} <span className="text-error">*</span>
                       </label>
                       <input
                         value={fullForm}
                         onChange={(e) => setFullForm(e.target.value)}
                         maxLength={255}
                         required
-                        placeholder="Ví dụ: Ủy ban nhân dân"
+                        placeholder={t("ui.abbr.fullPh")}
                         className="w-full rounded-md border border-hairline bg-surface-card px-3 py-1.5 text-[13px] text-ink"
                       />
                     </div>
                     <div>
                       <label className="mb-1 block text-[12px] text-muted">
-                        Mô tả (không bắt buộc)
+                        {t("ui.abbr.desc")}
                       </label>
                       <input
                         value={description}
@@ -229,7 +230,7 @@ export function AbbreviationSuggestionCard({
                         disabled={submitting || !fullForm.trim()}
                         className="rounded-full bg-ink px-3.5 py-1.5 text-[13px] text-on-primary transition-opacity disabled:opacity-50"
                       >
-                        {submitting ? "Đang gửi..." : "Gửi đề xuất"}
+                        {submitting ? t("ui.abbr.sending") : t("ui.abbr.submit")}
                       </button>
                       <button
                         type="button"
@@ -237,7 +238,7 @@ export function AbbreviationSuggestionCard({
                         onClick={() => setOpenForm(null)}
                         className="rounded-full border border-hairline px-3.5 py-1.5 text-[13px] text-body"
                       >
-                        Hủy
+                        {t("common.cancel")}
                       </button>
                     </div>
                   </form>

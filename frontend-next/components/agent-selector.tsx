@@ -22,7 +22,7 @@ import { useDialogFocus } from "@/components/use-dialog-focus";
 export function AgentModeButton({ onOpen, locked = false }: { onOpen: () => void; locked?: boolean }) {
   const { selectedAgent, isAgentStreamMode } = useChatContext();
   const { t } = useT();
-  const label = selectedAgent?.name ?? (isAgentStreamMode ? "Agent mode" : "Normal mode");
+  const label = selectedAgent?.name ?? (isAgentStreamMode ? t("ui.agent.agentMode") : t("ui.agent.normalMode"));
   return (
     <button
       onClick={onOpen}
@@ -118,16 +118,16 @@ export function AgentSelector({ open, onClose }: { open: boolean; onClose: () =>
       <div ref={panelRef} role="dialog" aria-label={t("chat.agentPicker")} className="card absolute bottom-full left-0 z-50 mb-2 flex max-h-[320px] w-[300px] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
           {quick && (
-            <AgentRow name="Normal mode" desc={quick.description ?? "Fast RAG answers"} active={current(quick.id)} onClick={() => pick(quick.id)} />
+            <AgentRow name={t("ui.agent.normalMode")} desc={quick.description ?? t("ui.agent.quickDesc")} active={current(quick.id)} onClick={() => pick(quick.id)} />
           )}
           {smart && (
-            <AgentRow name={t("chat.reasoningMode")} desc={smart.description ?? "Reasoning with tools"} active={current(smart.id)} onClick={() => pick(smart.id)} />
+            <AgentRow name={t("chat.reasoningMode")} desc={smart.description ?? t("ui.agent.reasoningDesc")} active={current(smart.id)} onClick={() => pick(smart.id)} />
           )}
           {otherBuiltins.map((a) => (
             <AgentRow key={a.id} name={builtinName(a)} desc={builtinDesc(a)} active={current(a.id)} onClick={() => pick(a.id)} />
           ))}
           {customs.length > 0 && (
-            <div className="caption-uppercase px-3 pb-1 pt-2 text-muted-soft">My agents</div>
+            <div className="caption-uppercase px-3 pb-1 pt-2 text-muted-soft">{t("ui.agent.myAgents")}</div>
           )}
           {customs.map((a) => (
             <AgentRow key={a.id} name={a.name} desc={a.description} active={current(a.id)} onClick={() => pick(a.id)} />
@@ -176,6 +176,7 @@ function AgentRow({
   active: boolean;
   onClick: () => void;
 }) {
+  const { t } = useT();
   return (
     <button
       onClick={onClick}
@@ -187,7 +188,7 @@ function AgentRow({
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2 text-[14px] font-medium text-ink">
           <span className="truncate">{name}</span>
-          {active && <span className="caption shrink-0 text-muted">current</span>}
+          {active && <span className="caption shrink-0 text-muted">{t("ui.agent.current")}</span>}
         </span>
         {desc && <span className="caption block truncate text-muted">{desc}</span>}
       </span>

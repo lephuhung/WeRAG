@@ -643,6 +643,12 @@ html.dark {
   }
 }
 
+/* New-chat suggestions: fade up once when the list arrives. */
+@keyframes suggestion-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
 @keyframes shimmerSweep {
   0% {
     background-position: 100% 50%;

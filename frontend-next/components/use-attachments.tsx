@@ -99,7 +99,7 @@ export function useAttachments(sessionId?: string) {
       patch(localId, { documentId: data.id, status: data.status, progress: 100, source });
       if (data.status !== "ready" && data.status !== "failed") poll(localId, data.id);
     } catch (e) {
-      patch(localId, { status: "failed", error: e instanceof Error ? e.message : "Upload failed" });
+      patch(localId, { status: "failed", error: e instanceof Error ? e.message : t("ui.err.uploadFailed") });
     }
   };
 

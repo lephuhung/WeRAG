@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useT } from "@/lib/i18n";
 
 type ToastKind = "success" | "error" | "info";
 type ToastItem = {
@@ -95,6 +96,7 @@ function ToastRow({
   accent: string;
   onDismiss: (id: number) => void;
 }) {
+  const { t } = useT();
   const [leaving, setLeaving] = useState(false);
   const duration = item.durationMs ?? AUTO_DISMISS_MS;
 
@@ -119,7 +121,7 @@ function ToastRow({
       <p className="min-w-0 flex-1 text-[13px] leading-snug break-words text-ink">{item.message}</p>
       <button
         type="button"
-        aria-label="Close"
+        aria-label={t("common.close")}
         onClick={(e) => {
           e.stopPropagation();
           onDismiss(item.id);

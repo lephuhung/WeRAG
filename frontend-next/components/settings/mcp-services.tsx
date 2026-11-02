@@ -183,7 +183,7 @@ export function McpServiceForm({ service, onClose, onSaved }: {
         ) : (
           <div className="flex flex-col gap-4 sm:flex-row">
             <label className="block w-full sm:w-[140px]">
-              <span className="caption mb-1.5 block text-muted">Command</span>
+              <span className="caption mb-1.5 block text-muted">{t("ui.mcp.command")}</span>
               <Select
                 value={cmd}
                 onChange={(v) => setCmd(v as "uvx" | "npx")}

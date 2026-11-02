@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 import { renderChatMarkdown, setActiveArtifacts } from "@/lib/markdown";
 import { downloadArtifact, type ArtifactMeta } from "@/lib/api/chat";
 import { hydrateArtifactImages, loadArtifactFullURL } from "@/lib/artifact-images";
+import { useT } from "@/lib/i18n";
 
 type HoveredArtifact = {
   /** Fixed-viewport position of the image's top-right corner. */
@@ -34,6 +35,7 @@ export const Markdown = memo(function Markdown({
   /** Session/message identity for authenticated artifact downloads. */
   imageContext?: { sessionId: string; messageId: string } | null;
 }) {
+  const { t } = useT();
   // Defer the source so rapid stream chunks coalesce into a single parse
   // instead of re-running marked + DOMPurify + highlight.js per token.
   // memo() additionally skips reconciling past messages entirely — their
@@ -209,8 +211,8 @@ export const Markdown = memo(function Markdown({
               <button
                 type="button"
                 className="flex items-center gap-1 rounded-full bg-black/60 px-2.5 py-1 text-xs text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/80"
-                aria-label="Mở ảnh lớn"
-                title="Xem ảnh lớn"
+                aria-label={t("ui.img.openLarge")}
+                title={t("ui.img.viewLarge")}
                 onClick={(event) => {
                   event.stopPropagation();
                   setHovered(null);
@@ -228,8 +230,8 @@ export const Markdown = memo(function Markdown({
               <button
                 type="button"
                 className="flex items-center gap-1 rounded-full bg-black/60 px-2.5 py-1 text-xs text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/80"
-                aria-label="Tải xuống ảnh"
-                title="Tải ảnh gốc"
+                aria-label={t("ui.img.download")}
+                title={t("ui.img.downloadOriginal")}
                 onClick={(event) => {
                   event.stopPropagation();
                   void downloadHoveredImage();
@@ -240,7 +242,7 @@ export const Markdown = memo(function Markdown({
                   <polyline points="7 10 12 15 17 10" />
                   <line x1="12" y1="15" x2="12" y2="3" />
                 </svg>
-                Tải xuống
+                {t("ui.img.downloadShort")}
               </button>
             </div>,
             document.body,
@@ -253,7 +255,7 @@ export const Markdown = memo(function Markdown({
               onClick={() => setLightbox(null)}
               role="dialog"
               aria-modal="true"
-              aria-label={lightbox.alt || "image preview"}
+              aria-label={lightbox.alt || t("ui.img.preview")}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -264,7 +266,7 @@ export const Markdown = memo(function Markdown({
               />
               <button
                 type="button"
-                aria-label="Close"
+                aria-label={t("common.close")}
                 className="absolute top-4 right-4 rounded-full bg-white/10 px-3 py-1.5 text-sm text-white hover:bg-white/20"
                 onClick={() => setLightbox(null)}
               >

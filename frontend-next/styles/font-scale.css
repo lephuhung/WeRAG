@@ -34,6 +34,10 @@
   input:not([type="checkbox"]):not([type="radio"]), select { min-height: 44px; }
   [data-document-tabs] [role="tab"] { min-height: 48px; min-width: 180px; }
   .btn, button[aria-label]:not([role="switch"]):not([role="tab"]) { min-height: 44px; min-width: 44px; }
+  /* The chat composer's icon row keeps the 44px tap height but packs its
+     icon buttons at 36px wide, so a phone keeps the mode name, tools and
+     send button on one row. The send button (.btn) stays 44px square. */
+  [data-composer-toolbar] button[aria-label]:not([role="switch"]):not([role="tab"]):not(.btn) { min-width: 36px; }
 }
 
 input::placeholder, textarea::placeholder { color: var(--color-muted); opacity: 1; }

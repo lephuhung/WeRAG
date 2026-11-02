@@ -331,7 +331,7 @@ export function SettingsModal({
           <div className="flex items-center gap-2 px-3 pt-3">
             <button
               onClick={onClose}
-              aria-label="Close"
+              aria-label={t("common.close")}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-strong hover:text-ink"
             >
               <IconClose className="h-4 w-4" />

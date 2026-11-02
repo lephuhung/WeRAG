@@ -81,7 +81,7 @@ export function WikiBrowser({
       const res = await getWikiIndex(kbId, { limit: 50 });
       setIndex(res as { intro: string; groups: WikiIndexGroup[] });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load wiki index");
+      setError(err instanceof Error ? err.message : t("ui.err.wikiIndex"));
     } finally {
       setLoading(false);
     }

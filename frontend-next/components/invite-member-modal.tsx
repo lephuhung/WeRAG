@@ -8,12 +8,14 @@ import { Modal } from "@/components/modal";
 import { Select } from "@/components/select";
 import { addMember, createInviteLink, type TenantRole } from "@/lib/api/tenants";
 import { copyToClipboard } from "@/lib/clipboard";
+import type { LocaleKey } from "@/lib/i18n";
+import { useT } from "@/lib/i18n";
 
 /* Assignable workspace roles: Admin and Member. The legacy owner role is
  * retired and never offered. */
-const ROLES: { id: TenantRole; label: string; desc: string }[] = [
-  { id: "admin", label: "Admin", desc: "Manage members, knowledge bases, models, integrations, skills, and storage" },
-  { id: "member", label: "Member", desc: "Read knowledge bases, upload documents, and chat with agents" },
+const ROLES: { id: TenantRole; labelKey: LocaleKey; descKey: LocaleKey }[] = [
+  { id: "admin", labelKey: "acct.roleAdmin", descKey: "mem.roleAdminDesc" },
+  { id: "member", labelKey: "acct.roleMember", descKey: "mem.roleMemberDesc" },
 ];
 
 export function InviteMemberModal({
@@ -29,6 +31,7 @@ export function InviteMemberModal({
    * can refresh its member/invitation lists. */
   onInvited?: () => void;
 }) {
+  const { t } = useT();
   const [tab, setTab] = useState<"email" | "link">("email");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<TenantRole>("member");
@@ -38,8 +41,10 @@ export function InviteMemberModal({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const roleOptions = ROLES.map((r) => ({ value: r.id, label: r.label }));
-  const roleDesc = ROLES.find((r) => r.id === role)?.desc ?? "";
+  const roleOptions = ROLES.map((r) => ({ value: r.id, label: t(r.labelKey) }));
+  const roleEntry = ROLES.find((r) => r.id === role);
+  const roleDesc = roleEntry ? t(roleEntry.descKey) : "";
+  const roleLabel = roleEntry ? t(roleEntry.labelKey) : role;
 
   const inviteByEmail = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,10 +58,10 @@ export function InviteMemberModal({
         onClose();
         onInvited?.();
       } else {
-        setError(res.message || "Failed to send invitation");
+        setError(res.message || t("ui.invm.sendFailed"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to send invitation");
+      setError(err instanceof Error ? err.message : t("ui.invm.sendFailed"));
     } finally {
       setBusy(false);
     }
@@ -79,17 +84,17 @@ export function InviteMemberModal({
         );
         onInvited?.();
       } else {
-        setError(res.message || "Failed to generate invite link");
+        setError(res.message || t("ui.invm.linkFailed"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate invite link");
+      setError(err instanceof Error ? err.message : t("ui.invm.linkFailed"));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Modal open={open} title="Invite to Organization" onClose={onClose}>
+    <Modal open={open} title={t("ui.invm.title")} onClose={onClose}>
       <div className="space-y-5">
         {/* Tabs */}
         <div className="flex border-b border-hairline pb-2 gap-4">
@@ -104,7 +109,7 @@ export function InviteMemberModal({
                   : "border-transparent text-muted hover:text-ink"
               }`}
             >
-              {k === "email" ? "Invite by Email" : "Shareable Link"}
+              {k === "email" ? t("ui.invm.byEmail") : t("ui.invm.byLink")}
             </button>
           ))}
         </div>
@@ -114,7 +119,7 @@ export function InviteMemberModal({
         {tab === "email" ? (
           <form onSubmit={inviteByEmail} className="space-y-4">
             <label className="block">
-              <span className="caption mb-1.5 block text-muted">Email address</span>
+              <span className="caption mb-1.5 block text-muted">{t("ui.invm.email")}</span>
               <input
                 type="email"
                 required
@@ -126,7 +131,7 @@ export function InviteMemberModal({
             </label>
 
             <label className="block">
-              <span className="caption mb-1.5 block text-muted">Initial role</span>
+              <span className="caption mb-1.5 block text-muted">{t("ui.invm.initialRole")}</span>
               <Select
                 value={role}
                 onChange={(v) => setRole(v as TenantRole)}
@@ -137,17 +142,17 @@ export function InviteMemberModal({
 
             <div className="flex justify-end gap-3 pt-3">
               <button type="button" className="btn btn-outline" onClick={onClose}>
-                Cancel
+                {t("common.cancel")}
               </button>
               <button type="submit" disabled={busy || !email.trim()} className="btn btn-primary">
-                {busy ? "Sending…" : "Send Invitation"}
+                {busy ? t("ui.invm.sending") : t("ui.invm.send")}
               </button>
             </div>
           </form>
         ) : (
           <div className="space-y-4">
             <label className="block">
-              <span className="caption mb-1.5 block text-muted">Assign role for joiners</span>
+              <span className="caption mb-1.5 block text-muted">{t("ui.invm.joinRole")}</span>
               <Select
                 value={role}
                 onChange={(v) => setRole(v as TenantRole)}
@@ -157,10 +162,10 @@ export function InviteMemberModal({
             </label>
 
             <label className="block">
-              <span className="caption mb-1.5 block text-muted">Note / Message (optional)</span>
+              <span className="caption mb-1.5 block text-muted">{t("ui.invm.note")}</span>
               <input
                 type="text"
-                placeholder="e.g. Engineering team onboarding"
+                placeholder={t("ui.invm.notePh")}
                 className="input"
                 value={msg}
                 onChange={(e) => setMsg(e.target.value)}
@@ -169,7 +174,7 @@ export function InviteMemberModal({
 
             {generatedLink ? (
               <div className="rounded-xl border border-hairline bg-surface-strong/50 p-4 space-y-2">
-                <span className="caption font-medium text-ink">Active invite link</span>
+                <span className="caption font-medium text-ink">{t("ui.invm.activeLink")}</span>
                 <div className="flex items-center gap-2">
                   <input
                     type="text"
@@ -188,11 +193,11 @@ export function InviteMemberModal({
                     }}
                     className="btn btn-primary shrink-0 text-xs"
                   >
-                    {linkCopied ? "Copied!" : "Copy link"}
+                    {linkCopied ? t("ui.invm.copied") : t("mem.copyLink")}
                   </button>
                 </div>
                 <p className="caption text-muted text-[11px]">
-                  Anyone with this link can join this workspace as {role}.
+                  {t("ui.invm.linkHint", { role: roleLabel })}
                 </p>
               </div>
             ) : (
@@ -202,13 +207,13 @@ export function InviteMemberModal({
                 disabled={busy}
                 className="btn btn-primary w-full"
               >
-                {busy ? "Generating…" : "Generate Invite Link"}
+                {busy ? t("ui.invm.generating") : t("ui.invm.generate")}
               </button>
             )}
 
             <div className="flex justify-end pt-2">
               <button type="button" className="btn btn-outline" onClick={onClose}>
-                Close
+                {t("common.close")}
               </button>
             </div>
           </div>

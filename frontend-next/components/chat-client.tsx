@@ -273,12 +273,12 @@ function parseThinkAndContent(
 
 // User messages carry attachment metadata so the bubble can show which files
 // were sent — both the optimistic row and history rows from `m.attachments`.
-function attachmentsFromHistory(m: ChatMessage): UiAttachment[] | undefined {
+function attachmentsFromHistory(m: ChatMessage, imageName: (n: number) => string): UiAttachment[] | undefined {
   const files = (m.attachments ?? [])
     .filter((a) => a.file_name)
     .map((a) => ({ name: a.file_name!, size: a.file_size }));
   const images = (m.images ?? []).map((img, i) => ({
-    name: `Ảnh ${i + 1}`,
+    name: imageName(i + 1),
     title: img.caption?.trim(),
     isImage: true,
   }));
@@ -990,7 +990,7 @@ function ChatBody({ id }: { id: string }) {
               peopleData:
                 m.role === "assistant" ? peopleDataFromHistory(m) : undefined,
               attachments:
-                m.role === "user" ? attachmentsFromHistory(m) : undefined,
+                m.role === "user" ? attachmentsFromHistory(m, (n) => tr("ui.img.nth", { n })) : undefined,
               document_selection:
                 m.role === "user" ? documentSelectionForDisplay(m.document_selection) : undefined,
               document_mentions: m.role === "user" ? documentMentionsFromHistory(m) : undefined,
@@ -2577,7 +2577,7 @@ function ChatBody({ id }: { id: string }) {
             <GuestChatNote className="mt-3" />
           ) : !compact && (
             <p className="caption mt-3 text-center text-muted-soft">
-              Answers are grounded in your knowledge bases — verify important details.
+              {tr("chat.groundedNote")}
             </p>
           )}
         </div>

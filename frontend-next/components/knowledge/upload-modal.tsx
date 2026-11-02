@@ -123,7 +123,7 @@ export function UploadModal({
   };
 
   return (
-    <Modal open={open} title="Upload documents" onClose={handleClose} width="w-[560px]">
+    <Modal open={open} title={t("ui.kb.uploadTitle")} onClose={handleClose} width="w-[560px]">
       <div className="space-y-4">
         {/* Drop zone */}
         <div
@@ -154,9 +154,9 @@ export function UploadModal({
           <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-surface-strong text-ink">
             <IconPlus className="h-5 w-5" />
           </div>
-          <p className="text-[14px] font-medium text-ink">Click or drag & drop files here</p>
+          <p className="text-[14px] font-medium text-ink">{t("ui.up.drop")}</p>
           <p className="caption mt-1 text-muted-soft">
-            Supports PDF, DOCX, TXT, MD, XLSX, CSV, PPTX and more
+            {t("ui.up.types")}
           </p>
         </div>
         {rejected.length > 0 && (
@@ -197,7 +197,7 @@ export function UploadModal({
         {/* Actions */}
         <div className="flex items-center justify-end gap-3 pt-2">
           <button type="button" className="btn btn-outline" onClick={handleClose}>
-            Cancel
+            {t("common.cancel")}
           </button>
           <button
             type="button"

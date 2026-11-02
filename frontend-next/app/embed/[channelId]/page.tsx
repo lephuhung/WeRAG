@@ -24,6 +24,7 @@ import { streamEmbedChat, type StreamChunk } from "@/lib/api/stream";
 import { Markdown } from "@/components/markdown";
 import { Composer, type ComposerSend } from "@/components/composer";
 import { IconDoc, IconPlus } from "@/components/icons";
+import { useT } from "@/lib/i18n";
 
 type StoredSession = { id: string; sig: string; agentId: string };
 
@@ -65,11 +66,12 @@ export default function EmbedPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  const { t, locale } = useT();
   const visitorId = getOrCreateEmbedVisitorId(channelId);
 
   useEffect(() => {
-    document.documentElement.lang = "en";
-  }, []);
+    document.documentElement.lang = locale;
+  }, [locale]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -133,7 +135,7 @@ export default function EmbedPage() {
         })),
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load chat");
+      setError(e instanceof Error ? e.message : t("ui.err.loadChat"));
     } finally {
       setLoading(false);
     }
@@ -257,14 +259,14 @@ export default function EmbedPage() {
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-canvas">
-        <p className="caption text-muted">Loading chat…</p>
+        <p className="caption text-muted">{t("ui.embed.loading")}</p>
       </div>
     );
   }
   if (status === "awaiting-token") {
     return (
       <div className="flex h-screen items-center justify-center bg-canvas">
-        <p className="caption text-muted">Waiting for channel token…</p>
+        <p className="caption text-muted">{t("ui.embed.waitingToken")}</p>
       </div>
     );
   }
@@ -297,7 +299,7 @@ export default function EmbedPage() {
           className="btn btn-outline btn-sm"
           disabled={messages.length === 0}
           onClick={() => void newChat()}
-          aria-label="New chat"
+          aria-label={t("nav.newChat")}
         >
           <IconPlus className="h-4 w-4" />
         </button>

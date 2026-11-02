@@ -36,7 +36,7 @@ export default function NewPublicKnowledgeBase() {
           : null;
       router.push(id ? `/platform/knowledge-bases/${id}` : "/platform/knowledge-bases");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Create failed");
+      setError(err instanceof Error ? err.message : t("ui.err.createFailed"));
     } finally {
       setBusy(false);
     }
@@ -45,32 +45,32 @@ export default function NewPublicKnowledgeBase() {
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto w-full max-w-[640px] px-4 py-6 sm:px-8 sm:py-10 lg:px-12">
-        <div className="caption-uppercase mb-3 text-muted">Platform</div>
+        <div className="caption-uppercase mb-3 text-muted">{t("ui.np.platform")}</div>
         <h1 className="display-xl mb-4">{t("kbPublic.newPublic")}</h1>
         <p className="body-sm mb-10 max-w-[520px] text-body">{t("kbPublic.sectionDesc")}</p>
         {!isSystemAdmin && (
           <p className="body-sm mb-6 rounded-xl border border-warning/40 bg-warning-surface px-4 py-3 text-warning">
-            Only platform system admins can create public knowledge bases.
+            {t("ui.np.adminOnly")}
           </p>
         )}
         <form className="card p-4 sm:p-8" onSubmit={submit}>
           <label className="mb-5 block">
-            <span className="caption mb-1.5 block text-muted">Name</span>
+            <span className="caption mb-1.5 block text-muted">{t("ui.np.name")}</span>
             <input
               className="input"
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Civil Code"
+              placeholder={t("ui.np.namePh")}
             />
           </label>
           <label className="mb-6 block">
-            <span className="caption mb-1.5 block text-muted">Description</span>
+            <span className="caption mb-1.5 block text-muted">{t("ui.np.desc")}</span>
             <textarea
               className="input min-h-[96px] resize-y"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="What does this collection cover?"
+              placeholder={t("ui.np.descPh")}
             />
           </label>
           {error && <p className="body-sm mb-4 text-error">{error}</p>}

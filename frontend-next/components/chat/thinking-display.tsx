@@ -2,7 +2,7 @@
 
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Markdown } from "@/components/markdown";
-import { useT } from "@/lib/i18n";
+import { useT, type LocaleKey } from "@/lib/i18n";
 import { IconBulb, IconCheckCircleFilled, IconMinusCircle } from "@/components/icons";
 import {
   stepsSummaryNodes,
@@ -28,12 +28,12 @@ function tailSlice(text: string, max: number): { visible: string; truncated: boo
   return { visible: nl > 0 ? tail.slice(nl + 1) : tail, truncated: true };
 }
 
-function fmtDuration(seconds: number): string {
-  if (seconds < 3) return "vài giây";
-  if (seconds < 60) return `${seconds} giây`;
+function fmtDuration(seconds: number, t: (key: LocaleKey, vars?: Record<string, string | number>) => string): string {
+  if (seconds < 3) return t("ui.dur.fewSeconds");
+  if (seconds < 60) return t("ui.dur.seconds", { s: seconds });
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
-  return s ? `${m} phút ${s} giây` : `${m} phút`;
+  return s ? t("ui.dur.minSec", { m, s }) : t("ui.dur.minutes", { m });
 }
 
 const isThinkingStep = (
@@ -226,7 +226,7 @@ export const ThinkingDisplay = memo(function ThinkingDisplay({
               <>
                 {label}
                 {!streaming && elapsed != null && (
-                  <span className="font-normal text-muted-soft"> · {fmtDuration(elapsed)}</span>
+                  <span className="font-normal text-muted-soft"> · {fmtDuration(elapsed, t)}</span>
                 )}
                 {hasTools && (
                   <span className="font-normal text-muted-soft">

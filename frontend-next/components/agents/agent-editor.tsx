@@ -566,7 +566,7 @@ export function AgentEditorModal({
       }
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      setError(e instanceof Error ? e.message : t("ui.err.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -606,7 +606,7 @@ export function AgentEditorModal({
               tab === "basic" ? "bg-surface-card text-ink shadow-sm" : "text-muted hover:text-ink"
             }`}
           >
-            Basic info
+            {t("ui.ae.basicInfo")}
           </button>
           <button
             type="button"
@@ -802,7 +802,7 @@ export function AgentEditorModal({
                     </span>
                   </span>
                   {rerankModels.length === 0 && (
-                    <span className="caption text-amber-600 text-[10px]">No rerank models</span>
+                    <span className="caption text-amber-600 text-[10px]">{t("ui.ae.noRerank")}</span>
                   )}
                 </div>
                 <Select
@@ -836,7 +836,7 @@ export function AgentEditorModal({
             <div className="rounded-[10px] border border-hairline bg-surface-strong/40 px-3 py-2 text-[11.5px] text-muted flex items-center gap-2">
               <span className="text-primary font-bold">ℹ</span>
               <span>
-                <strong>Embedding &amp; ReRank:</strong> Model Embedding được gắn cố định theo từng Cơ sở tri thức (KB). Model ReRank được cấu hình tại đây để xếp hạng lại tài liệu tìm kiếm.
+                <strong>Embedding &amp; ReRank:</strong> {t("ui.ae.rerankNote")}
               </span>
             </div>
 
@@ -846,7 +846,7 @@ export function AgentEditorModal({
                   <span className="caption mb-1.5 block text-muted">{t("agent.systemPrompt")}</span>
                   <textarea
                     className="input w-full h-auto min-h-[84px] font-mono text-[12px] resize-y"
-                    placeholder="Instructions for the agent's behavior, tone, and tool usage guidelines…"
+                    placeholder={t("ui.ae.promptPh")}
                     value={draft.system_prompt}
                     disabled={readOnly}
                     onChange={(e) => patch("system_prompt", e.target.value)}
@@ -902,7 +902,7 @@ export function AgentEditorModal({
                   disabled={readOnly}
                   onChange={(e) => patch("citation_enabled", e.target.checked)}
                 />
-                <span>Enable citations and source references in answers</span>
+                <span>{t("ui.ae.citations")}</span>
               </label>
 
               <label className="flex items-center gap-2 text-ink cursor-pointer select-none">
@@ -1204,7 +1204,7 @@ export function AgentEditorModal({
         {tab === "knowledge" && (
           <div className="space-y-4">
             <div>
-              <span className="caption mb-1.5 block text-muted">Knowledge Retrieval Scope</span>
+              <span className="caption mb-1.5 block text-muted">{t("ui.ae.kbScope")}</span>
               {draft.kb_selection_mode === "public" ? (
                 /* the guest assistant's fixed scope: kept as is on save, and
                    the server reapplies it on every guest turn anyway */
@@ -1226,7 +1226,7 @@ export function AgentEditorModal({
                         : "border-hairline text-muted hover:border-ink hover:text-ink"
                     } ${readOnly ? "opacity-60 cursor-not-allowed" : ""}`}
                   >
-                    {mode === "all" ? "All Knowledge Bases" : mode === "selected" ? "Selected Only" : "Disable KB"}
+                    {mode === "all" ? t("ui.ae.kbAll") : mode === "selected" ? t("ui.ae.selectedOnly") : t("ui.ae.kbOff")}
                   </button>
                 ))}
               </div>
@@ -1235,10 +1235,10 @@ export function AgentEditorModal({
 
             {draft.kb_selection_mode === "selected" && (
               <div>
-                <span className="caption mb-2 block text-muted">Choose Knowledge Bases</span>
+                <span className="caption mb-2 block text-muted">{t("ui.ae.chooseKbs")}</span>
                 <div className="max-h-[220px] overflow-y-auto space-y-1.5 rounded-[12px] border border-hairline p-2">
                   {kbs.length === 0 ? (
-                    <p className="caption text-muted p-2">No knowledge bases found in this organization.</p>
+                    <p className="caption text-muted p-2">{t("ui.ae.noKbs")}</p>
                   ) : (
                     kbs.map((k) => (
                       <label
@@ -1279,7 +1279,7 @@ export function AgentEditorModal({
                     <div>
                       <div className="font-medium text-ink">{t("agent.retrieveOnlyWhenMentioned")}</div>
                       <div className="caption text-muted">
-                        Khi bật, agent chỉ tìm trong tri thức nếu người dùng có gõ @tên_tri_thức hoặc @tên_tệp.
+                        {t("ui.ae.mentionOnlyHint")}
                       </div>
                     </div>
                   </label>
@@ -1612,9 +1612,9 @@ export function AgentEditorModal({
                   onChange={(e) => patch("web_search_enabled", e.target.checked)}
                 />
                 <div>
-                  <div className="font-medium text-ink">Web Search Tool</div>
+                  <div className="font-medium text-ink">{t("ui.ae.webTool")}</div>
                   <div className="caption text-muted">
-                    Allows agent to search external internet resources when question needs fresh facts.
+                    {t("ui.ae.webToolDesc")}
                   </div>
                 </div>
               </label>
@@ -1635,7 +1635,7 @@ export function AgentEditorModal({
                         : "border-hairline text-muted hover:border-ink hover:text-ink"
                     } ${readOnly ? "opacity-60 cursor-not-allowed" : ""}`}
                   >
-                    {mode === "all" ? "All Enabled MCP" : mode === "selected" ? "Selected Only" : "Disable MCP"}
+                    {mode === "all" ? t("ui.ae.mcpAll") : mode === "selected" ? t("ui.ae.selectedOnly") : t("ui.ae.mcpOff")}
                   </button>
                 ))}
               </div>
@@ -1643,7 +1643,7 @@ export function AgentEditorModal({
               {draft.mcp_selection_mode === "selected" && (
                 <div className="max-h-[180px] overflow-y-auto space-y-1.5 rounded-[12px] border border-hairline p-2">
                   {mcpList.length === 0 ? (
-                    <p className="caption text-muted p-2">No registered MCP services.</p>
+                    <p className="caption text-muted p-2">{t("ui.ae.noMcp")}</p>
                   ) : (
                     mcpList.map((m) => (
                       <label
@@ -1684,7 +1684,7 @@ export function AgentEditorModal({
             disabled={saving || (!isBuiltin && !draft.name.trim())}
             onClick={() => void save()}
           >
-            {saving ? "Saving…" : t("common.save")}
+            {saving ? t("ui.saving") : t("common.save")}
           </button>
         )}
       </div>

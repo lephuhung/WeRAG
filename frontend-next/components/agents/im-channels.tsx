@@ -61,8 +61,8 @@ export function AgentIMChannels({ agentId, open, onClose, agentName }: {
   const load = useCallback(() => {
     listIMChannels(agentId)
       .then((res) => setChannels(res.data ?? []))
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load channels"));
-  }, [agentId]);
+      .catch((e) => setError(e instanceof Error ? e.message : t("ui.err.loadChannels")));
+  }, [agentId, t]);
 
   useEffect(() => {
     if (!open) return;
@@ -249,7 +249,7 @@ function IMChannelFields({ agentId, agents, channel, onClose, onSaved }: {
       else await createIMChannel(agent, payload);
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
+      setError(e instanceof Error ? e.message : t("ui.err.saveFailed"));
     } finally {
       setSaving(false);
     }

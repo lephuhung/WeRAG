@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiPost } from "@/lib/api-client";
 import { getSuggestedQuestions, type SuggestedQuestion } from "@/lib/api/extra";
 import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext } from "@/lib/chat-context";
@@ -27,12 +27,36 @@ import { chatErrorKey, chatErrorTextKey } from "@/lib/api/chat-errors";
 import { shouldRefreshAccount } from "@/lib/guest-chat";
 import { useAuth } from "@/lib/auth";
 
-const FALLBACK_SUGGESTIONS = [
-  "Summarize the latest release notes",
-  "Compare embedding models for my docs",
-  "Draft an FAQ from the support knowledge base",
-  "Explain hybrid retrieval in this project",
-];
+/* Suggested questions are fetched once per page load and shared: the
+ * endpoint samples a random set on every call, so refetching on each visit
+ * (or each render) swapped the list under the reader's eyes. The cache is
+ * keyed by user + organization — sign-out/in and organization switches do
+ * not reload the page, and another organization's questions must not show. */
+let suggestedCache: { key: string; questions: SuggestedQuestion[] } | null = null;
+let suggestedInFlight: { key: string; promise: Promise<SuggestedQuestion[]> } | null = null;
+const SUGGESTION_SKELETON_WIDTHS = ["72%", "58%", "80%"];
+
+function cachedSuggestions(key: string): SuggestedQuestion[] | null {
+  return suggestedCache?.key === key ? suggestedCache.questions : null;
+}
+
+function loadSuggestedOnce(key: string): Promise<SuggestedQuestion[]> {
+  const cached = cachedSuggestions(key);
+  if (cached) return Promise.resolve(cached);
+  if (suggestedInFlight?.key === key) return suggestedInFlight.promise;
+  const promise = getSuggestedQuestions()
+    .then((questions) => {
+      suggestedCache = { key, questions };
+      return questions;
+    })
+    // a failure is not cached: the next visit tries again
+    .catch(() => [] as SuggestedQuestion[])
+    .finally(() => {
+      if (suggestedInFlight?.promise === promise) suggestedInFlight = null;
+    });
+  suggestedInFlight = { key, promise };
+  return promise;
+}
 
 function CreateChatBody({ kbId }: { kbId?: string }) {
   const router = useRouter();
@@ -47,13 +71,15 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
     setDocPaneBusyState(v);
   };
   const [error, setError] = useState<string | null>(null);
-  const [suggested, setSuggested] = useState<SuggestedQuestion[] | null>(null);
+  const { refreshMe, user, selectedTenantId } = useAuth();
+  const userId = user?.id;
+  const suggestionKey = `${userId ?? ""}:${selectedTenantId ?? ""}`;
+  const [suggested, setSuggested] = useState<SuggestedQuestion[] | null>(() => cachedSuggestions(suggestionKey));
   const [images, setImages] = useState<Array<{ preview: string; file: File }>>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const attachments = useAttachments(undefined);
   const ctx = useChatContext();
   const { t } = useT();
-  const { refreshMe } = useAuth();
 
   const addImages = (files: File[]) => {
     const allowed = ["image/jpeg", "image/png", "image/gif", "image/webp"];
@@ -100,7 +126,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
         {},
       );
       const sessionId = res.data?.id;
-      if (!sessionId) throw new Error(res.message ?? "Failed to create session");
+      if (!sessionId) throw new Error(res.message ?? t("ui.err.createSession"));
       // Upload the selected files/images against the fresh session BEFORE
       // navigating, then stage only the attachment IDs (opaque server
       // handles — never raw bytes) plus their display-only file names in a
@@ -168,22 +194,25 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
       // and the page follows the new kind
       if (shouldRefreshAccount(err, { isGuest: ctx.isGuest, sessionCall: false })) void refreshMe();
       const key = chatErrorKey(err);
-      setError(key ? t(chatErrorTextKey(key, ctx.isGuest)) : err instanceof Error ? err.message : "Failed to create session");
+      setError(key ? t(chatErrorTextKey(key, ctx.isGuest)) : err instanceof Error ? err.message : t("ui.err.createSession"));
     } finally {
       setBusy(false);
     }
   };
 
-  const loadSuggested = async () => {
-    try {
-      const qs = await getSuggestedQuestions();
-      setSuggested(qs);
-    } catch {
-      setSuggested([]);
-    }
-  };
   // a guest gets no suggestions: the route needs an organization
-  if (suggested === null && typeof window !== "undefined" && !ctx.isGuest) void loadSuggested();
+  useEffect(() => {
+    // a member always has an organization; wait for it so the key is final
+    if (ctx.isGuest || !userId || !selectedTenantId) return;
+    setSuggested(cachedSuggestions(suggestionKey));
+    let cancelled = false;
+    void loadSuggestedOnce(suggestionKey).then((qs) => {
+      if (!cancelled) setSuggested(qs);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ctx.isGuest, userId, selectedTenantId, suggestionKey]);
 
   const isDocumentAssistant = ctx.settings.selectedAgentId === BUILTIN_DOCUMENT_ASSISTANT_ID;
 
@@ -195,7 +224,9 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
         <Orb color="mint" size={300} className="bottom-[-100px] left-[10%]" />
       </div>
 
-      <div className="relative my-auto w-full max-w-[768px] shrink-0 py-6 sm:py-10">
+      {/* Top-anchored, not vertically centred: the suggestions load after
+          the page and their height must not move the title and composer. */}
+      <div className="relative w-full max-w-[768px] shrink-0 pb-6 pt-[6vh] sm:pb-10 sm:pt-[14vh]">
         <h1 className="display-xl mb-3 text-center">{t("cc.title")}</h1>
         <p className={`${ctx.isGuest ? "mb-3" : "mb-10"} text-center text-muted`}>
           {t(ctx.isGuest ? "guest.ccSubtitle" : "cc.subtitle")}
@@ -247,9 +278,14 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
 
         {/* Generic suggestions do not apply to the document assistant. */}
         {!isDocumentAssistant && !ctx.isGuest && (
-        <div className="mt-6 flex flex-wrap justify-center gap-2.5">
-          {suggested?.length
-            ? suggested.map((item) => (
+        <div className="mt-6 flex flex-wrap justify-center gap-2.5" aria-busy={suggested === null}>
+          {suggested === null ? (
+            SUGGESTION_SKELETON_WIDTHS.map((w, i) => (
+              <span key={i} aria-hidden className="h-9 max-w-full animate-pulse rounded-[20px] bg-surface-strong/70" style={{ width: w }} />
+            ))
+          ) : (
+            <div className="contents motion-safe:[&>button]:animate-[suggestion-in_220ms_ease-out_both]">
+              {suggested.map((item) => (
                 <button
                   key={item.question}
                   onClick={() =>
@@ -269,25 +305,9 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
                 >
                   {item.question}
                 </button>
-              ))
-            : FALLBACK_SUGGESTIONS.map((s) => (
-                <button
-                  key={s}
-                  onClick={() =>
-                    void send(
-                      buildSuggestionSend({
-                        query: s,
-                        attachments: attachments.items,
-                        imageFiles: images.map((i) => i.file),
-                      }),
-                    )
-                  }
-                  disabled={busy || docPaneBusy}
-                  className="h-auto max-w-full shrink-0 whitespace-normal break-words rounded-[20px] border border-hairline-strong bg-surface-card px-3 py-2 text-left text-[12px] leading-relaxed text-body transition-colors hover:border-ink hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink disabled:opacity-50 sm:px-4 sm:text-[14px]"
-                >
-                  {s}
-                </button>
               ))}
+            </div>
+          )}
         </div>
         )}
       </div>

@@ -185,7 +185,7 @@ export function ContextRing({
       <div
         id={tipId}
         role="tooltip"
-        className={`pointer-events-none absolute right-0 z-50 w-max ${placement === "above" ? "bottom-full mb-1" : "top-full mt-1"} max-w-[min(280px,calc(100vw-2rem))] rounded-[8px] bg-ink px-2.5 py-1.5 text-[12px] leading-snug text-canvas shadow-[0_4px_16px_rgba(0,0,0,0.12)] transition-opacity duration-150 ${
+        className={`pointer-events-none absolute z-50 w-max ${placement === "above" ? "-right-14 bottom-full mb-1 sm:right-0" : "right-0 top-full mt-1"} max-w-[min(280px,calc(100vw-2rem))] rounded-[8px] bg-ink px-2.5 py-1.5 text-[12px] leading-snug text-canvas shadow-[0_4px_16px_rgba(0,0,0,0.12)] transition-opacity duration-150 ${
           open ? "opacity-100" : "opacity-0 group-hover:opacity-100"
         }`}
       >

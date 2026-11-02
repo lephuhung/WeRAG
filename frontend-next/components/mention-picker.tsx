@@ -194,14 +194,14 @@ export function MentionPicker({
                   if (item) onSelect(item);
                 }
               }}
-              placeholder="Tìm KB, file, tag…"
+              placeholder={t("ui.mention.searchPh")}
               className="w-full rounded-[8px] bg-surface-strong py-1.5 pl-8 pr-3 text-[13px] text-ink placeholder:text-muted-soft focus:outline-none focus:ring-1 focus:ring-primary/40"
             />
           </div>
         </div>
         <div ref={listRef} className="max-h-[280px] overflow-y-auto p-1.5">
-          {loading && items.length === 0 && <div className="caption px-3 py-3 text-muted">Loading…</div>}
-          {!loading && items.length === 0 && <div className="caption px-3 py-3 text-muted">No matches — sign in to load KBs</div>}
+          {loading && items.length === 0 && <div className="caption px-3 py-3 text-muted">{t("common.loading")}</div>}
+          {!loading && items.length === 0 && <div className="caption px-3 py-3 text-muted">{t("ui.mention.noMatches")}</div>}
           {groups.map((g) => {
             const rows = items.filter((i) => i.type === g);
             if (rows.length === 0) return null;

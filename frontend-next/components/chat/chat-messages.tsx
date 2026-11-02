@@ -221,8 +221,8 @@ const UserMessageBubble = memo(function UserMessageBubble({
             type="button"
             onClick={() => onEdit(message.content)}
             className="flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
-            title="Chỉnh sửa câu hỏi"
-            aria-label="Chỉnh sửa câu hỏi"
+            title={t("ui.msg.editQuestion")}
+            aria-label={t("ui.msg.editQuestion")}
           >
             <IconEdit className="h-3.5 w-3.5" />
           </button>
@@ -231,8 +231,8 @@ const UserMessageBubble = memo(function UserMessageBubble({
           type="button"
           onClick={handleCopy}
           className="flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
-          title={copied ? "Đã sao chép" : "Sao chép câu hỏi"}
-          aria-label="Sao chép câu hỏi"
+          title={copied ? t("ui.msg.copiedDone") : t("ui.msg.copyQuestion")}
+          aria-label={t("ui.msg.copyQuestion")}
         >
           {copied ? (
             <IconCheck className="h-3.5 w-3.5 text-success" />
@@ -245,8 +245,8 @@ const UserMessageBubble = memo(function UserMessageBubble({
             type="button"
             onClick={() => onFork(message)}
             className="flex h-7 w-7 items-center justify-center rounded-md border border-transparent text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
-            title="Tạo nhánh từ câu hỏi này"
-            aria-label="Tạo nhánh từ câu hỏi này"
+            title={t("ui.msg.forkFromQuestion")}
+            aria-label={t("ui.msg.forkFromQuestion")}
           >
             <IconFork className="h-3.5 w-3.5" />
           </button>
@@ -413,6 +413,7 @@ function BotMessageActions({
   /** Present when the answer is finished and saved, so it can be rated. */
   feedback?: { sessionId: string; messageId: string; initial?: MessageFeedback; initialComment?: string };
 }) {
+  const { t } = useT();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -429,8 +430,8 @@ function BotMessageActions({
         type="button"
         onClick={handleCopy}
         className="flex h-7 w-7 items-center justify-center rounded-md border border-hairline/60 bg-surface-card/60 text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
-        title={copied ? "Đã sao chép" : "Sao chép câu trả lời"}
-        aria-label="Sao chép câu trả lời"
+        title={copied ? t("ui.msg.copiedDone") : t("ui.msg.copyAnswer")}
+        aria-label={t("ui.msg.copyAnswer")}
       >
         {copied ? (
           <IconCheck className="h-3.5 w-3.5 text-success" />
@@ -444,8 +445,8 @@ function BotMessageActions({
           type="button"
           onClick={onFork}
           className="flex h-7 w-7 items-center justify-center rounded-md border border-hairline/60 bg-surface-card/60 text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
-          title="Tạo nhánh hội thoại mới"
-          aria-label="Tạo nhánh hội thoại mới"
+          title={t("ui.msg.forkConversation")}
+          aria-label={t("ui.msg.forkConversation")}
         >
           <IconFork className="h-3.5 w-3.5" />
         </button>
@@ -456,8 +457,8 @@ function BotMessageActions({
           type="button"
           onClick={onRegenerate}
           className="flex h-7 w-7 items-center justify-center rounded-md border border-hairline/60 bg-surface-card/60 text-muted hover:border-hairline hover:bg-surface-strong hover:text-ink transition-colors cursor-pointer"
-          title="Tạo lại câu trả lời"
-          aria-label="Tạo lại câu trả lời"
+          title={t("ui.msg.regenerate")}
+          aria-label={t("ui.msg.regenerate")}
         >
           <IconRefresh className="h-3.5 w-3.5" />
         </button>

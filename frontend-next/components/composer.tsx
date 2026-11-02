@@ -307,13 +307,13 @@ export function Composer({
   const agentControl = isGuest ? (
     // fixed: a guest chats with the public-lookup assistant only
     <span
-      className="flex h-7 max-w-[160px] items-center rounded-full bg-accent-surface px-2.5 text-[12.5px] font-medium text-accent sm:max-w-[260px]"
+      className="flex h-7 min-w-0 max-w-[160px] items-center rounded-full bg-accent-surface px-2.5 text-[12.5px] font-medium text-accent sm:max-w-[260px]"
       title={t("guest.agentLocked")}
     >
       <span className="min-w-0 truncate">{selectedAgent?.name ?? t("guest.agentName")}</span>
     </span>
   ) : (
-    <div className={uploadsBecomeSources ? "relative min-w-0 [&>button]:max-w-full" : "relative"}>
+    <div className={`relative min-w-0 [&>button]:max-w-full ${uploadsBecomeSources ? "" : "max-w-[160px] sm:max-w-[240px]"}`}>
       <AgentModeButton locked={!!agentLockFileName} onOpen={() => { closePopups(); setAgentOpen(true); }} />
       {agentLockFileName ? (
         <AgentLockNotice open={agentOpen} fileName={agentLockFileName} onClose={() => setAgentOpen(false)} />
@@ -335,11 +335,12 @@ export function Composer({
             : t("composer.webSearchOff")
           : t("composer.webSearchUnavailable")
       }
-      className={`flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full text-[12.5px] font-medium transition-colors ${uploadsBecomeSources ? "w-7 justify-center" : "px-2 sm:px-2.5"} ${
+      className={`flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full text-[12.5px] font-medium transition-colors ${uploadsBecomeSources ? "w-7 justify-center" : "w-7 justify-center min-[400px]:w-auto min-[400px]:px-2 sm:px-2.5"} ${
         websearchOn ? "bg-accent-surface text-accent" : "text-muted hover:bg-surface-strong hover:text-ink"
       } ${webSearchReady ? "" : "opacity-50"}`}
     >
-      <IconGlobe className="h-3.5 w-3.5" />{!uploadsBecomeSources && ` ${t("composer.webLabel")}`}
+      <IconGlobe className="h-3.5 w-3.5 shrink-0" />
+      {!uploadsBecomeSources && <span className="hidden min-[400px]:inline">{t("composer.webLabel")}</span>}
     </button>
   );
   const attachmentControl = (
@@ -544,10 +545,11 @@ export function Composer({
         />}
       </div>
 
-      <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-        {/* Left group wraps internally on narrow screens; send stays pinned
-            right on the first row instead of dropping to a line of its own. */}
-        <div className={uploadsBecomeSources ? "flex shrink-0 items-center gap-1.5" : "flex min-w-0 flex-1 flex-wrap items-center gap-1.5 sm:gap-2"}>
+      <div data-composer-toolbar className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+        {/* One row on every width: the left group never wraps (a second row
+            left the send button floating between the two). On a narrow phone
+            the agent name truncates and Web shows only its globe. */}
+        <div className={uploadsBecomeSources ? "flex shrink-0 items-center gap-1.5" : "flex min-w-0 flex-1 flex-nowrap items-center gap-1 sm:gap-2"}>
           {isGuest ? (
             // no web search, attachments or images for a guest
             <>{agentControl}{toolbarStart}</>
