@@ -133,7 +133,7 @@ export function AbbreviationSuggestionCard({
                 </div>
                 <div className="mt-1">
                   <span className="inline-flex items-center rounded-full bg-warning-surface px-2 py-0.5 text-[12px] text-warning">
-                    Chờ Owner/SuperAdmin duyệt
+                    {t("ui.abbr.awaitingApproval")}
                   </span>
                   <p className="mt-2">
                     {t("ui.abbr.sentNote")}
@@ -146,7 +146,7 @@ export function AbbreviationSuggestionCard({
                   <div className="space-y-1 text-[13px] text-body">
                     <div className="mb-1.5 flex items-center gap-1.5 font-medium text-ink">
                       <IconBulb className="h-4 w-4 shrink-0 text-warning" />
-                      Có nghĩa đang chờ duyệt cho “{short}”
+                      {t("ui.abbr.pendingFor", { short })}
                     </div>
                     {rows.map((r) => (
                       <div key={r.id} className="flex items-center gap-2">
@@ -154,7 +154,7 @@ export function AbbreviationSuggestionCard({
                           {r.short_form} → {r.full_form}
                         </span>
                         <span className="inline-flex items-center rounded-full bg-warning-surface px-2 py-0.5 text-[12px] text-warning">
-                          Chờ Owner/SuperAdmin duyệt
+                          {t("ui.abbr.awaitingApproval")}
                         </span>
                       </div>
                     ))}
@@ -163,7 +163,7 @@ export function AbbreviationSuggestionCard({
                   <p className="flex items-center gap-1.5 text-[13px] text-body">
                     <IconBulb className="h-4 w-4 shrink-0 text-warning" />
                     <span>
-                      Hệ thống chưa có nghĩa được duyệt cho{" "}
+                      {t("ui.abbr.noApprovedFor")}{" "}
                       <strong className="font-semibold text-ink">“{short}”</strong>.
                     </span>
                   </p>

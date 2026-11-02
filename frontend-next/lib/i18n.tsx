@@ -3898,6 +3898,9 @@ const en = {
   "ui.dur.minutes": "{m} min",
   "ui.dur.minSec": "{m} min {s} s",
   "ui.abbr.submitFailed": "Could not send the suggestion",
+  "ui.abbr.pendingFor": "Meanings awaiting approval for “{short}”",
+  "ui.abbr.noApprovedFor": "No approved meaning yet for",
+  "ui.abbr.awaitingApproval": "Awaiting Owner/SuperAdmin approval",
   "ui.abbr.suggestOther": "Suggest another meaning",
   "ui.abbr.addMeaning": "Add a meaning",
   "ui.abbr.sending": "Sending…",
@@ -7817,6 +7820,9 @@ const vi: Record<keyof typeof en, string> = {
   "ui.dur.minutes": "{m} phút",
   "ui.dur.minSec": "{m} phút {s} giây",
   "ui.abbr.submitFailed": "Gửi đề xuất thất bại",
+  "ui.abbr.pendingFor": "Có nghĩa đang chờ duyệt cho “{short}”",
+  "ui.abbr.noApprovedFor": "Hệ thống chưa có nghĩa được duyệt cho",
+  "ui.abbr.awaitingApproval": "Chờ Owner/SuperAdmin duyệt",
   "ui.abbr.suggestOther": "Đề xuất nghĩa khác",
   "ui.abbr.addMeaning": "Bổ sung nghĩa",
   "ui.abbr.sending": "Đang gửi…",
@@ -7900,13 +7906,18 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const t = (k: keyof typeof en, vars?: Record<string, string | number>) => {
-    const raw = dicts[locale]?.[k] ?? (en as Record<string, string>)[k] ?? String(k);
-    if (!vars) return raw;
-    return raw.replace(/\{(\w+)\}/g, (_, name: string) =>
-      vars[name] === undefined ? `{${name}}` : String(vars[name]),
-    );
-  };
+  // stable per locale: effects that list t in their deps refetch only on a
+  // language switch, not on every provider render
+  const t = useCallback(
+    (k: keyof typeof en, vars?: Record<string, string | number>) => {
+      const raw = dicts[locale]?.[k] ?? (en as Record<string, string>)[k] ?? String(k);
+      if (!vars) return raw;
+      return raw.replace(/\{(\w+)\}/g, (_, name: string) =>
+        vars[name] === undefined ? `{${name}}` : String(vars[name]),
+      );
+    },
+    [locale],
+  );
 
   return <I18nContext.Provider value={{ locale, setLocale, t }}>{children}</I18nContext.Provider>;
 }
