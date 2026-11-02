@@ -68,6 +68,11 @@ type DocumentTemplateInput struct {
 	// Conversation is the earlier conversation the document is drafted
 	// from (the agent hand-off), oldest first; nil for a plain request.
 	Conversation []TemplateTurn
+	// LastDraft is the draft of the request's previous turn
+	// (DocumentTemplateOutcome.Draft): a turn that only skips the
+	// questions ("bỏ qua") builds the document from it instead of drafting
+	// again, so a skip cannot lose what the draft held.
+	LastDraft json.RawMessage
 }
 
 // TemplateTurn is one message of the earlier conversation.
@@ -140,6 +145,9 @@ type DocumentTemplateOutcome struct {
 	Learned *TemplateUserContext
 	// Asked is Input.Asked with the conflicts asked in this turn.
 	Asked map[string]string
+	// Draft is the checked draft of this turn, for the next turn's
+	// LastDraft (nil when none was made).
+	Draft json.RawMessage
 }
 
 // templateDraft is the model's JSON.
@@ -210,6 +218,7 @@ var emptyAskWords = map[string]bool{
 	"và": true, "để": true, "tôi": true, "mình": true, "nhé": true, "nha": true, "ạ": true, "đi": true,
 	"luôn": true, "cho": true, "giúp": true, "hết": true, "tất": true, "cả": true, "phần": true, "này": true,
 	"thôi": true, "ok": true, "vâng": true, "được": true, "rồi": true, "trống": true, "trắng": true, "mới": true,
+	"sau": true,
 }
 
 // keepBlankRe: a message that turns the template down ("bỏ qua", "không
@@ -229,18 +238,17 @@ func saidNothing(inputs []string) bool {
 		return false
 	}
 	for _, m := range inputs {
-		f := fold(m)
-		if buildNowRe.MatchString(f) {
+		if buildNowRe.MatchString(fold(m)) || !onlySkipWords(m) {
 			return false
-		}
-		t := keepBlankRe.ReplaceAllString(skipAsksRe.ReplaceAllString(templatePromptRe.ReplaceAllString(f, " "), " "), " ")
-		for _, w := range strings.FieldsFunc(t, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }) {
-			if !emptyAskWords[w] {
-				return false
-			}
 		}
 	}
 	return true
+}
+
+// skipOnly: the current message (the last input) skips the questions and
+// says nothing else (onlySkipWords), so the previous draft still holds.
+func skipOnly(inputs []string) bool {
+	return wantsBlanks(inputs) && onlySkipWords(inputs[len(inputs)-1])
 }
 
 // wantsBlanks: the current message (the last input) skips the questions.
@@ -357,6 +365,35 @@ func PrepareDocumentTemplate(ctx context.Context, in DocumentTemplateInput) (*Do
 	// there, since the user asked for that content in the document.
 	userText := conversationUserText(in.Conversation) + strings.Join(in.Inputs, "\n")
 	factText := userText + "\n" + conversationAssistantText(in.Conversation)
+	// a skip with nothing new: the previous turn's draft, not a new one
+	// that may drop what it held
+	var draft *templateDraft
+	if len(in.LastDraft) > 0 && !in.KeepBlanks && skipOnly(in.Inputs) {
+		var d templateDraft
+		if json.Unmarshal(in.LastDraft, &d) == nil {
+			draft = &d
+		}
+	}
+	if draft == nil {
+		d, err := checkedDraft(ctx, in, factText)
+		if err != nil {
+			return nil, err
+		}
+		draft = d
+	}
+	bad := draftViolations(draft, factText, in.Today)
+	out := assembleTemplate(in, draft, userText, bad)
+	if raw, err := json.Marshal(draft); err == nil {
+		out.Draft = raw
+	}
+	return out, nil
+}
+
+// checkedDraft drafts the document and corrects the draft once for each
+// failure class: the facts it invents (draftViolations), then the facts
+// the user settled that it leaves out (draftOmissions). A correction is
+// kept only when it fixes what it was asked to and adds no invented fact.
+func checkedDraft(ctx context.Context, in DocumentTemplateInput, factText string) (*templateDraft, error) {
 	draft, err := draftTemplate(ctx, in, "")
 	if err != nil {
 		return nil, err
@@ -371,8 +408,16 @@ func PrepareDocumentTemplate(ctx context.Context, in DocumentTemplateInput) (*Do
 			bad = draftViolations(draft, factText, in.Today)
 		}
 	}
-	out := assembleTemplate(in, draft, userText, bad)
-	return out, nil
+	facts := settledFacts(in.Conversation, in.Inputs)
+	if left := draftOmissions(draft, facts); len(left) > 0 {
+		// once more, told what was left out
+		retry, err := draftTemplate(ctx, in, "Bạn đã bỏ sót: "+strings.Join(left, "; ")+
+			". Đó là các thông tin người dùng đã chốt: đưa đủ chúng vào nội dung, đúng như người dùng viết, giữ các nội dung khác, không thêm số liệu nào khác, và trả lời lại bằng một đối tượng JSON như trên.")
+		if err == nil && len(draftOmissions(retry, facts)) < len(left) && len(draftViolations(retry, factText, in.Today)) <= len(bad) {
+			draft = retry
+		}
+	}
+	return draft, nil
 }
 
 // draftTemplate asks the model for the draft.
@@ -505,15 +550,15 @@ var subjectPrefixRe = regexp.MustCompile(`(?i)^(v/v|về việc)\s*:?\s*`)
 // "tôi công tác ở…", "phòng của tôi…"); "Tạo cho tôi…" is not one.
 var selfRe = regexp.MustCompile(`(^|[^\p{L}])(tôi|mình)\s+(là|làm|đang là|đang làm|công tác|thuộc|ở)([^\p{L}]|$)|của (tôi|mình)([^\p{L}]|$)`)
 
-// saidOfSelf: one of the messages that may say who the user is
-// (selfInputs) contains s.
-func saidOfSelf(inputs []string, s string) bool {
+// spokenOfSelf is the part of v one of the messages that may say who the
+// user is (selfInputs) holds (spokenValue), "" when none does.
+func spokenOfSelf(inputs []string, wider, v string, head bool) string {
 	for _, m := range inputs {
-		if said(m, s) {
-			return true
+		if s, partial := spokenValue(m, wider, v, head); s != "" && !partial {
+			return s
 		}
 	}
-	return false
+	return ""
 }
 
 // signing forms: the words the user must have written for each.
@@ -543,9 +588,26 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 	if profile == nil {
 		profile = &types.TenantAgencyProfile{}
 	}
-	pick := func(field, label, saved, stated string) string {
-		stated = strings.TrimSpace(stated)
-		if stated == "" || !said(userText, stated) {
+	// the conversation's words: the rest of a title or an agency the model
+	// lengthened must be found there (spokenValue)
+	wider := userText + "\n" + conversationAssistantText(in.Conversation)
+	// partials are the agency values the model wrote with a placeholder
+	// ("CÔNG AN TỈNH ……"): not used as stated, kept for the blanks
+	partials := map[string]string{}
+	pick := func(field, label, saved, raw string) string {
+		stated, partial := spokenValue(userText, wider, raw, true)
+		if stated == "" {
+			return saved
+		}
+		// only a part of what the model wrote is the user's: enough when
+		// nothing is saved, no reason to question the saved one
+		if whole, _ := stripPlaceholders(raw); saved != "" && fold(whole) != fold(stated) {
+			return saved
+		}
+		if partial {
+			if saved == "" {
+				partials[field] = stated
+			}
 			return saved
 		}
 		if saved == "" || fold(saved) == fold(stated) || fold(out.Asked[field]) == fold(stated) {
@@ -611,11 +673,11 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 	// document is about is not the user's
 	user := in.User
 	learned := TemplateUserContext{}
-	if u, a := strings.TrimSpace(d.DraftingUnit), strings.TrimSpace(d.DraftingUnitAbbr); u != "" && a != "" &&
-		saidOfSelf(selfInputs(in), u) && saidOfSelf(selfInputs(in), a) {
+	self := selfInputs(in)
+	if u, a := spokenOfSelf(self, wider, d.DraftingUnit, true), spokenOfSelf(self, wider, d.DraftingUnitAbbr, false); u != "" && a != "" {
 		learned.Unit, learned.UnitAbbr = u, a
 	}
-	if p := strings.TrimSpace(d.UserPosition); p != "" && saidOfSelf(selfInputs(in), p) {
+	if p := spokenOfSelf(self, wider, d.UserPosition, true); p != "" {
 		learned.Position = p
 	}
 	if learned.Unit != "" {
@@ -638,7 +700,7 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 
 	// the content
 	subject := strings.TrimSuffix(strings.TrimSpace(subjectPrefixRe.ReplaceAllString(strings.TrimSpace(d.Subject), "")), ".")
-	form, formMissing := formValues(req.TemplateID, d, userText)
+	form, formMissing := formValues(req.TemplateID, d, userText, wider)
 	switch {
 	case untitledSubject(req.TemplateID):
 		// no trích yếu line: the chat names it by the person
@@ -707,14 +769,16 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 		if req.TemplateID == "nghi-quyet" {
 			// a resolution's proposal line ("Xét Tờ trình số …") is
 			// optional, kept only as the user wrote it
-			if core := strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(basis, "Xét"), "Theo đề nghị của")), "."); core != "" && said(userText, core) {
-				requestBasis = endWith(basis, ".")
+			if core := strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(basis, "Xét"), "Theo đề nghị của")), "."); core != "" {
+				if c, _ := spokenValue(userText, wider, core, false); c != "" {
+					requestBasis = endWith(strings.Replace(basis, core, c, 1), ".")
+				}
 			}
 			// the collective that resolves: set with the signer (TM. …)
 			decisionAuthority = strings.ToUpper(agency)
 		} else {
-			unit := strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(basis, "Theo đề nghị của")), ".")
-			if unit == "" || !said(userText, unit) {
+			unit, _ := spokenValue(userText, wider, strings.TrimSuffix(strings.TrimSpace(strings.TrimPrefix(basis, "Theo đề nghị của")), "."), true)
+			if unit == "" {
 				need("Đơn vị đề nghị (Theo đề nghị của …)")
 			} else {
 				requestBasis = "Theo đề nghị của " + unit + "."
@@ -737,9 +801,14 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 	if minutes {
 		signerName, signerPos, signing, onBehalf = form["chair_name"], "CHỦ TỌA", "truc_tiep", ""
 	}
-	if !minutes && (signerName == "" || signerPos == "" || !said(userText, signerName) || !said(userText, signerPos)) {
-		need("Người ký: họ tên và chức vụ")
-		signerName, signerPos = "", ""
+	if !minutes {
+		// a name as the user wrote it, a title or the part of it they wrote
+		signerName, _ = spokenValue(userText, wider, signerName, false)
+		signerPos, _ = spokenValue(userText, wider, signerPos, true)
+		if signerName == "" || signerPos == "" {
+			need("Người ký: họ tên và chức vụ")
+			signerName, signerPos = "", ""
+		}
 	}
 	if signing == "TRUC_TIEP" {
 		signing = "truc_tiep"
@@ -748,9 +817,7 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 		need("Hình thức ký: ký trực tiếp, hay TM./KT./TL./TUQ./Q. (ghi rõ)")
 		signing = ""
 	}
-	if onBehalf != "" && !said(userText, onBehalf) {
-		onBehalf = ""
-	}
+	onBehalf, _ = spokenValue(userText, wider, onBehalf, true)
 	if onBehalf == "" {
 		switch signing {
 		case "TM":
@@ -805,6 +872,17 @@ func assembleTemplate(in DocumentTemplateInput, d *templateDraft, userText strin
 			if strings.TrimSpace(*v) == "" {
 				*v = templateBlank
 			}
+		}
+		// what the user wrote of an agency the model completed with a
+		// placeholder stays, the rest is a blank ("CÔNG AN TỈNH ……")
+		if agency == "" && partials["agency_name"] != "" {
+			agency = partials["agency_name"] + " " + templateBlank
+		}
+		if locality == "" && partials["locality"] != "" {
+			locality = partials["locality"] + " " + templateBlank
+		}
+		if parent == "" && partials["parent_agency"] != "" {
+			parent = partials["parent_agency"] + " " + templateBlank
 		}
 		for _, v := range []*string{&agency, &abbr, &locality, &user.UnitAbbr, &subject} {
 			blank(v)
@@ -932,7 +1010,8 @@ func groundSaid(userText, g string) bool {
 		}
 		return true
 	}
-	return said(userText, core)
+	c, _ := spokenValue(userText, userText, core, false)
+	return c != ""
 }
 
 func endWith(s, end string) string {
