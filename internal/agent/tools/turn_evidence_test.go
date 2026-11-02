@@ -58,6 +58,8 @@ func TestRevenueThresholds(t *testing.T) {
 	require.Equal(t, 6, legalRank("02/VBHN-VPQH"))
 	require.Equal(t, 4, legalRank("12/VBHN-VPCP"))
 	require.Equal(t, 2, legalRank("24/2026/VBHN-BTC"))
+	require.Empty(t, revenueThresholds("hộ có doanh thu từ 500 triệu đồng trở xuống không phải nộp lệ phí môn bài"), "a fee, not a tax")
+	require.Empty(t, revenueThresholds("doanh thu từ 500 triệu đồng trở xuống thì không phải nộp hồ sơ"), "no tax in the sentence")
 }
 
 func TestCheckThresholdBasis(t *testing.T) {
@@ -81,6 +83,8 @@ func TestCheckThresholdBasis(t *testing.T) {
 	require.Contains(t, msg, "mới hơn")
 	require.NotContains(t, msg, "500.000.000", "never names a figure: the decree's text holds an old one")
 	require.NotContains(t, msg, "1.000.000.000")
+	require.NotContains(t, msg, "100.000.000", "nor the figure passed")
+	require.Empty(t, check("NĐ 68/2026", 1e9), "a basis without its suffix")
 	// a document that states no figure, or the decree, cannot carry the
 	// circular's figure
 	require.Contains(t, check("68/2026/NĐ-CP", 1e8), "68/2026/NĐ-CP")

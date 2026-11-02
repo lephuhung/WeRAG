@@ -145,6 +145,10 @@ var (
 	thresholdSubjectRe = regexp.MustCompile(`(?i)doanh\s+thu`)
 	thresholdExemptRe  = regexp.MustCompile(`(?i)không\s+phải\s+nộp|không\s+chịu\s+thuế|không\s+thuộc\s+diện\s+chịu`)
 	sentenceSplitRe    = regexp.MustCompile(`[.;\n]\s`)
+	thresholdTaxRe     = regexp.MustCompile(`(?i)thuế`)
+	thresholdFeeRe     = regexp.MustCompile(`(?i)lệ\s+phí|môn\s+bài`)
+	// "68/2026" in a basis written without its suffix ("NĐ 68/2026")
+	numberYearOnlyRe = regexp.MustCompile(`\b(\d{1,4}/(?:19|20)\d\d)\b`)
 )
 
 // revenueThresholds are the amounts (đồng) a text states as the revenue up
@@ -153,7 +157,9 @@ func revenueThresholds(text string) []float64 {
 	text = evidenceNoteRe.ReplaceAllString(text, " ")
 	var out []float64
 	for _, sentence := range sentenceSplitRe.Split(text, -1) {
-		if !thresholdSubjectRe.MatchString(sentence) || !thresholdExemptRe.MatchString(sentence) {
+		// a tax threshold: "thuế" in the sentence, not a fee's (lệ phí môn bài)
+		if !thresholdSubjectRe.MatchString(sentence) || !thresholdExemptRe.MatchString(sentence) ||
+			!thresholdTaxRe.MatchString(sentence) || thresholdFeeRe.MatchString(sentence) {
 			continue
 		}
 		for _, m := range thresholdAmountRe.FindAllStringSubmatch(sentence, -1) {
@@ -269,6 +275,16 @@ func checkThresholdBasis(ctx context.Context, identity LegalDocIdentityFunc, bas
 		keys = append(keys, vietnamese_legal.CatalogNumberKey(basis[sp[0]:sp[1]]))
 	}
 	if len(keys) == 0 {
+		// no full số hiệu: match "68/2026" against the evidence documents
+		for _, m := range numberYearOnlyRe.FindAllStringSubmatch(basis, -1) {
+			for k := range byKey {
+				if strings.HasPrefix(k, m[1]+"/") {
+					keys = append(keys, k)
+				}
+			}
+		}
+	}
+	if len(keys) == 0 {
 		keys = []string{vietnamese_legal.CatalogNumberKey(basis)}
 	}
 	var cited *evDoc
@@ -286,7 +302,7 @@ func checkThresholdBasis(ctx context.Context, identity LegalDocIdentityFunc, bas
 	if !known {
 		return fmt.Errorf("Văn bản %s ghi ở %s không có trong kết quả tra cứu đã trả về ở các bước trước của lượt này "+
 			"(lệnh tra cứu gọi cùng lúc với công cụ tính chưa được tính). "+
-			"Tra văn bản quy định %s (search_knowledge hoặc read_document) trước, rồi gọi lại với đúng số hiệu văn bản đã đọc", basis, basisParam, label)
+			"Tra văn bản quy định %s (search_knowledge hoặc read_document) trước, rồi gọi lại với đúng số hiệu đầy đủ của văn bản đã đọc (ví dụ 68/2026/NĐ-CP)", basis, basisParam, label)
 	}
 	if cited != nil && cited.id.Status == "Hết hiệu lực toàn bộ" {
 		return fmt.Errorf("Văn bản %s đã hết hiệu lực toàn bộ; tra văn bản đang có hiệu lực quy định %s", cited.id.Number, label)
@@ -323,6 +339,10 @@ func checkThresholdBasis(ctx context.Context, identity LegalDocIdentityFunc, bas
 		if e == anchor || len(e.values) == 0 || containsAmount(e.values, value) || e.id.Status == "Hết hiệu lực toàn bộ" {
 			continue
 		}
+		// a consolidated text's date is the consolidation, not an enactment
+		if strings.Contains(strings.ToUpper(e.id.Number), "/VBHN-") {
+			continue
+		}
 		date := issuedOn(e.id)
 		if legalRank(e.id.Number) < anchorRank || date == "" || anchorDate == "" || date <= anchorDate {
 			continue
@@ -332,9 +352,9 @@ func checkThresholdBasis(ctx context.Context, identity LegalDocIdentityFunc, bas
 		}
 	}
 	if newer != nil {
-		return fmt.Errorf("Văn bản %s (ban hành %s) mới hơn và có hiệu lực pháp lý không thấp hơn %s cũng quy định %s, không phải con số %s. "+
+		return fmt.Errorf("Văn bản %s (ban hành %s) mới hơn và có hiệu lực pháp lý không thấp hơn %s cũng quy định %s. "+
 			"Đọc lại %s trong lời văn hiện hành của %s (search_knowledge hoặc read_document), rồi gọi lại và ghi số hiệu văn bản đã dùng ở %s",
-			newer.id.Number, issuedOn(newer.id), anchor.id.Number, label, formatVNDPlain(value), label, newer.id.Number, basisParam)
+			newer.id.Number, issuedOn(newer.id), anchor.id.Number, label, label, newer.id.Number, basisParam)
 	}
 	return nil
 }
