@@ -39,6 +39,8 @@ func (e *AgentEngine) forcedToolRound(
 	messages = e.modelContext.EncodeMessages(messages)
 	reportModelContextLeaks(ctx, "Agent", e.modelContext, messages)
 	modelID := e.chatModel.GetModelID()
+	// the usage of a call whose answer is not used is still spent
+	var spent types.TokenUsage
 
 	if _, known := ignoresToolChoice.Load(modelID); !known {
 		callCtx := types.WithLLMCallMetadata(ctx, "agent_round", chat.PromptPrefixFingerprint(messages, opts))
@@ -53,6 +55,7 @@ func (e *AgentEngine) forcedToolRound(
 			e.emitForcedToolCalls(ctx, calls, iteration, sessionID)
 			return resp, true
 		}
+		spent = resp.Usage
 		ignoresToolChoice.Store(modelID, true)
 		logger.Warnf(ctx, "[Agent][Forced] model %s ignored tool_choice=%s (finish=%s, %d chars of text); asking for the arguments as JSON",
 			modelID, forced, resp.FinishReason, len(resp.Content))
@@ -63,6 +66,7 @@ func (e *AgentEngine) forcedToolRound(
 		logger.Warnf(ctx, "[Agent][Forced] %s arguments as JSON: %v", forced, err)
 		return nil, false
 	}
+	resp.Usage.Accumulate(spent)
 	e.emitForcedToolCalls(ctx, resp.ToolCalls, iteration, sessionID)
 	return resp, true
 }

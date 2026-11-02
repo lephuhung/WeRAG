@@ -1388,7 +1388,8 @@ func (s *agentService) registerTools(
 				WithFormulaBlock(s.domainPacks.FormulaBlock(tools.ToolCompareTaxMethods))
 		case tools.ToolCalculateHouseholdTax:
 			toolToRegister = tools.NewCalculateHouseholdTaxTool().
-				WithFormulaBlock(s.domainPacks.FormulaBlock(tools.ToolCalculateHouseholdTax))
+				WithFormulaBlock(s.domainPacks.FormulaBlock(tools.ToolCalculateHouseholdTax)).
+				WithLegalDocIdentity(s.legalDocIdentity)
 
 		case tools.ToolShellExec, tools.ToolReadFile, tools.LegacyToolReadSkill, tools.LegacyToolExecuteSkillScript,
 			tools.ToolListSandboxFiles, tools.LegacyToolReadSandboxFile, tools.ToolWriteSandboxFile,
