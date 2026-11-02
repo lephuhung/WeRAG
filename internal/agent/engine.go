@@ -719,6 +719,9 @@ func (e *AgentEngine) runReActIteration(
 	ctx = withTurnButtons(ctx, state.RoundSteps)
 	// invented document numbers never reach the user (answer_numbers.go)
 	ctx = e.withNumberCheck(ctx, state, query, *messagesPtr)
+	// a calculation tool checks the basis of its legal figures against what
+	// this turn's tools returned (tools/turn_evidence.go)
+	ctx = agenttools.WithTurnSteps(ctx, state.RoundSteps)
 
 	var (
 		response      *types.ChatResponse

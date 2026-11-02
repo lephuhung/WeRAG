@@ -30,6 +30,10 @@ var calculateHouseholdTaxTool = BaseTool{
       "type": "number",
       "description": "Ngưỡng doanh thu năm không phải nộp GTGT, TNCN theo văn bản hiện hành, đơn vị đồng (ví dụ 1 tỷ = 1000000000)"
     },
+    "can_cu_nguong": {
+      "type": "string",
+      "description": "Số hiệu văn bản đã tra trong lượt này quy định nguong_doanh_thu (ví dụ 68/2026/NĐ-CP); văn bản mới hơn, cấp cao hơn thì ưu tiên"
+    },
     "ty_le_gtgt": {
       "type": "number",
       "description": "Tỷ lệ % GTGT trên doanh thu theo ngành nghề, ghi theo PHẦN TRĂM: 1 nghĩa là 1%"
@@ -67,7 +71,7 @@ var calculateHouseholdTaxTool = BaseTool{
       "description": "Tùy chọn: doanh thu của một quý hoặc tháng, đơn vị đồng, để tính GTGT của kỳ đó"
     }
   },
-  "required": ["doanh_thu", "nguong_doanh_thu", "ty_le_gtgt", "ty_le_tncn", "tran_doanh_thu_theo_doanh_thu"]
+  "required": ["doanh_thu", "nguong_doanh_thu", "can_cu_nguong", "ty_le_gtgt", "ty_le_tncn", "tran_doanh_thu_theo_doanh_thu"]
 }`),
 }
 
@@ -76,11 +80,21 @@ type CalculateHouseholdTaxTool struct {
 	BaseTool
 	// formulaBlock is the "Công thức áp dụng" text of formulas.yaml.
 	formulaBlock string
+	// identity looks up the legal identity of the turn's evidence documents,
+	// for the can_cu_nguong check; nil skips the check.
+	identity LegalDocIdentityFunc
 }
 
 // NewCalculateHouseholdTaxTool creates the tool; it needs no service.
 func NewCalculateHouseholdTaxTool() *CalculateHouseholdTaxTool {
 	return &CalculateHouseholdTaxTool{BaseTool: calculateHouseholdTaxTool}
+}
+
+// WithLegalDocIdentity sets the lookup the threshold's basis is checked
+// with (checkThresholdBasis).
+func (t *CalculateHouseholdTaxTool) WithLegalDocIdentity(fn LegalDocIdentityFunc) *CalculateHouseholdTaxTool {
+	t.identity = fn
+	return t
 }
 
 // WithFormulaBlock sets the formulas text appended to every result.
@@ -103,7 +117,7 @@ func (t *CalculateHouseholdTaxTool) fail(msg string) (*types.ToolResult, error) 
 
 // Execute checks the figures, then calculates. A missing figure is never
 // filled in.
-func (t *CalculateHouseholdTaxTool) Execute(_ context.Context, args json.RawMessage) (*types.ToolResult, error) {
+func (t *CalculateHouseholdTaxTool) Execute(ctx context.Context, args json.RawMessage) (*types.ToolResult, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(args, &raw); err != nil {
 		return t.fail(fmt.Sprintf("Không đọc được tham số: %v", err))
@@ -129,6 +143,13 @@ func (t *CalculateHouseholdTaxTool) Execute(_ context.Context, args json.RawMess
 	}
 	if len(invalid) > 0 {
 		return t.fail("Tham số phải là số (đơn vị đồng cho số tiền): " + strings.Join(invalid, ", "))
+	}
+	var basis string
+	if err := json.Unmarshal(raw["can_cu_nguong"], &basis); err != nil || strings.TrimSpace(basis) == "" {
+		return t.fail("Thiếu tham số bắt buộc: can_cu_nguong (số hiệu văn bản quy định ngưỡng doanh thu, đã tra trong lượt này)")
+	}
+	if err := checkThresholdBasis(ctx, t.identity, "can_cu_nguong", "ngưỡng doanh thu", strings.TrimSpace(basis), values["nguong_doanh_thu"]); err != nil {
+		return t.fail(err.Error())
 	}
 	uncapped := false
 	if b, ok := raw["giam_khong_gioi_han_doanh_thu"]; ok {
