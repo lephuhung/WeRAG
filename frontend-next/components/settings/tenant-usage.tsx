@@ -91,7 +91,12 @@ function PersonalUsage() {
         <div className="card divide-y divide-hairline">
           <InfoRow label={t("tus.plan")} desc="" className="px-4">
             <span className="text-[14px] text-ink">{ent.plan_name || ent.plan_code}</span>
-            {ent.expired && <span className="badge-pill ml-2 text-[11px] text-error">{t("usg.expired")}</span>}
+            {ent.expired &&
+              (ent.not_started ? (
+                <span className="badge-pill ml-2 text-[11px] text-info">{t("usg.notStarted", { date: ent.starts_at ? formatDate(ent.starts_at) : "" })}</span>
+              ) : (
+                <span className="badge-pill ml-2 text-[11px] text-error">{t("usg.expired")}</span>
+              ))}
           </InfoRow>
           {ent.ends_at && (
             <InfoRow label={t("tus.endsAt")} desc="" className="px-4">

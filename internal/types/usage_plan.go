@@ -282,14 +282,32 @@ type UsageEntitlement struct {
 	CountedScope string `json:"counted_scope"`
 	// CounterScopeType / CounterScopeID name the counter rows the limits
 	// were read from (the guest scope for a Guest's turns).
-	CounterScopeType string             `json:"-"`
-	CounterScopeID   string             `json:"-"`
-	EndsAt           *time.Time         `json:"ends_at,omitempty"`
-	Expired          bool               `json:"expired"`
-	Limits           []UsageLimitStatus `json:"limits"`
+	CounterScopeType string     `json:"-"`
+	CounterScopeID   string     `json:"-"`
+	EndsAt           *time.Time `json:"ends_at,omitempty"`
+	Expired          bool       `json:"expired"`
+	// NotStarted: Expired because the package starts later (StartsAt), not
+	// because it ended; the refusal is the same, the wording is not.
+	NotStarted bool               `json:"not_started,omitempty"`
+	StartsAt   *time.Time         `json:"starts_at,omitempty"`
+	Limits     []UsageLimitStatus `json:"limits"`
 	// Features are the plan's per-turn and per-session caps (zero =
 	// unlimited); see UsagePlanFeatures.
 	Features UsagePlanFeatures `json:"features"`
+	// LapsedTenant is the Tổ chức package that ended (or has not started)
+	// while the caller's own package stands in for it; nil otherwise. It
+	// lets a Tenant Admin still see that the Tổ chức needs a renewal.
+	LapsedTenant *UsageLapsedPackage `json:"lapsed_tenant,omitempty"`
+}
+
+// UsageLapsedPackage names a package that no longer applies.
+type UsageLapsedPackage struct {
+	SubscriptionID string     `json:"subscription_id"`
+	PlanID         string     `json:"plan_id"`
+	PlanName       string     `json:"plan_name"`
+	EndsAt         *time.Time `json:"ends_at,omitempty"`
+	// NotStarted: the package starts later rather than having ended.
+	NotStarted bool `json:"not_started,omitempty"`
 }
 
 // UsageDenialReason labels why a turn was refused (error details).

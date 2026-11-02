@@ -65,7 +65,12 @@ export interface UsageEntitlement {
   counted_scope: "tenant" | "user" | "";
   ends_at?: string | null;
   expired: boolean;
+  /** expired because it starts later (starts_at), not because it ended */
+  not_started?: boolean;
+  starts_at?: string | null;
   limits: UsageLimitStatus[];
+  /** The Tổ chức package that lapsed while the caller's own package stands in. */
+  lapsed_tenant?: { subscription_id: string; plan_id: string; plan_name: string; ends_at?: string | null; not_started?: boolean } | null;
 }
 
 /** Mirrors types.UsageSummary. Either scope is absent when the caller has no

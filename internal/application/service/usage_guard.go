@@ -262,28 +262,54 @@ func (g *usageGuard) Entitlement(ctx context.Context, tenantID uint64, userID st
 					return nil, err
 				}
 			}
-			return ent, nil
-		}
-	}
-	if realUser {
-		sub, err := g.plans.GetActiveSubscription(ctx, types.UsageScopeUser, userID)
-		if err != nil {
-			return nil, err
-		}
-		// a SuperAdmin package outlives a revoked SuperAdmin role, and a
-		// guest package the account's Guest days: ignore both
-		role := rolePlan(subPlan(sub))
-		if sub != nil && !(role == types.UsageSystemAdminPlanCode && !systemAdmin) && role != types.UsageGuestPlanCode {
-			ent := entitlementFrom(sub, types.UsageScopeUser, now)
-			ent.HasSeat = true
-			ent.CountedScope = types.UsageScopeUser
-			if err := g.fillLimitStatus(ctx, ent, sub.EffectiveLimits(), types.UsageScopeUser, userID, now); err != nil {
-				return nil, err
+			// A Tổ chức package that ended (or has not started) yields to a
+			// current package of the person's own; without one the lapsed
+			// Tổ chức package is reported, so the refusal says "expired".
+			if ent.Expired && realUser {
+				own, err := g.personalEntitlement(ctx, userID, systemAdmin, now)
+				if err != nil {
+					return nil, err
+				}
+				if own != nil && !own.Expired {
+					own.LapsedTenant = &types.UsageLapsedPackage{
+						SubscriptionID: ent.SubscriptionID, PlanID: ent.PlanID,
+						PlanName: ent.PlanName, EndsAt: ent.EndsAt, NotStarted: ent.NotStarted,
+					}
+					return own, nil
+				}
 			}
 			return ent, nil
 		}
 	}
+	if realUser {
+		return g.personalEntitlement(ctx, userID, systemAdmin, now)
+	}
 	return nil, nil
+}
+
+// personalEntitlement is the person's own package outside the portal: nil
+// when they hold none, or only a role package that does not apply (a
+// SuperAdmin package after losing the role, a guest package).
+func (g *usageGuard) personalEntitlement(
+	ctx context.Context, userID string, systemAdmin bool, now time.Time,
+) (*types.UsageEntitlement, error) {
+	sub, err := g.plans.GetActiveSubscription(ctx, types.UsageScopeUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	// a SuperAdmin package outlives a revoked SuperAdmin role, and a
+	// guest package the account's Guest days: ignore both
+	role := rolePlan(subPlan(sub))
+	if sub == nil || (role == types.UsageSystemAdminPlanCode && !systemAdmin) || role == types.UsageGuestPlanCode {
+		return nil, nil
+	}
+	ent := entitlementFrom(sub, types.UsageScopeUser, now)
+	ent.HasSeat = true
+	ent.CountedScope = types.UsageScopeUser
+	if err := g.fillLimitStatus(ctx, ent, sub.EffectiveLimits(), types.UsageScopeUser, userID, now); err != nil {
+		return nil, err
+	}
+	return ent, nil
 }
 
 // portalTenant reports whether tenantID is the public portal the request
@@ -420,6 +446,11 @@ func entitlementFrom(sub *types.UsageSubscription, source string, now time.Time)
 		EndsAt:         sub.EndsAt,
 		Expired:        !sub.IsCurrentAt(now),
 		Limits:         []types.UsageLimitStatus{},
+	}
+	if ent.Expired && sub.Status == types.UsageSubscriptionActive && now.Before(sub.StartsAt) {
+		ent.NotStarted = true
+		starts := sub.StartsAt
+		ent.StartsAt = &starts
 	}
 	if sub.Plan != nil {
 		ent.PlanCode = sub.Plan.Code

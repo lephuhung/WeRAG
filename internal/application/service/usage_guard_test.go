@@ -147,6 +147,85 @@ func TestUsageGuardExpiredSubscriptionBlocks(t *testing.T) {
 	require.Equal(t, types.UsageDenialExpired, denialReason(t, err))
 }
 
+func TestUsageGuardLapsedTenantPackageYieldsToOwnPackage(t *testing.T) {
+	ended := guardNow.Add(-time.Minute)
+	later := guardNow.Add(48 * time.Hour)
+	own := &types.UsageSubscription{ID: "sub-u", Mode: "pool", Status: "active", EndsAt: &later,
+		Plan: &types.UsagePlan{Name: "Go", Code: "go", ScopeKind: "user", Limits: types.UsageLimits{{Metric: "questions", Period: "day", Limit: 5}}}}
+	plans := &fakeUsagePlanRepo{active: map[string]*types.UsageSubscription{
+		"tenant/10003": {ID: "sub-t", Mode: "pool", Status: "active", EndsAt: &ended, Plan: poolPlan()},
+		"user/user-1":  own,
+	}}
+	counters := &countingRepo{rows: map[string][]*types.UsageCounter{
+		"user/user-1": {{Metric: "questions", PeriodKey: "2026-10-13", Value: 2}},
+	}}
+	g := newGuard(plans, counters, true)
+
+	// the person's own current package governs, counted on their counters
+	require.NoError(t, checkTurn(g, context.Background(), 10003, "user-1"))
+	ent, err := g.Entitlement(context.Background(), 10003, "user-1")
+	require.NoError(t, err)
+	require.Equal(t, "user", ent.Source)
+	require.Equal(t, "sub-u", ent.SubscriptionID)
+	require.False(t, ent.Expired)
+	require.Equal(t, int64(3), ent.Limits[0].Remaining)
+	require.NotNil(t, ent.LapsedTenant)
+	require.Equal(t, "sub-t", ent.LapsedTenant.SubscriptionID)
+	require.Equal(t, "Basic", ent.LapsedTenant.PlanName)
+
+	// a seat package that lapsed: a member without a seat still falls back
+	plans.active["tenant/10003"] = &types.UsageSubscription{ID: "sub-t", Mode: "seat", Seats: 1, Status: "active", EndsAt: &ended, Plan: poolPlan()}
+	ent, err = g.Entitlement(context.Background(), 10003, "user-1")
+	require.NoError(t, err)
+	require.Equal(t, "sub-u", ent.SubscriptionID)
+	require.True(t, ent.HasSeat)
+	require.Equal(t, "user", ent.CountedScope)
+
+	// someone without a package of their own still gets "expired"
+	err = checkTurn(g, context.Background(), 10003, "user-2")
+	require.Equal(t, types.UsageDenialExpired, denialReason(t, err))
+
+	// an own package that also lapsed: the Tổ chức one is reported
+	own.EndsAt = &ended
+	ent, err = g.Entitlement(context.Background(), 10003, "user-1")
+	require.NoError(t, err)
+	require.Equal(t, "tenant", ent.Source)
+	require.True(t, ent.Expired)
+	require.Nil(t, ent.LapsedTenant)
+
+	// a guest-plan subscription never stands in for the Tổ chức package
+	own.EndsAt = &later
+	own.Plan = &types.UsagePlan{ID: types.UsageGuestPlanID, Name: "Khách", ScopeKind: "user"}
+	err = checkTurn(g, context.Background(), 10003, "user-1")
+	require.Equal(t, types.UsageDenialExpired, denialReason(t, err))
+
+	// machine principals keep the Tổ chức package (no person to fall back on)
+	err = checkTurn(g, context.Background(), 10003, "system-10003")
+	require.Equal(t, types.UsageDenialExpired, denialReason(t, err))
+
+	// a Tổ chức package that starts later is "not started", not "ended"
+	plans.active["tenant/10003"] = &types.UsageSubscription{ID: "sub-t", Mode: "pool", Status: "active",
+		StartsAt: later, Plan: poolPlan()}
+	ent, err = g.Entitlement(context.Background(), 10003, "user-2")
+	require.NoError(t, err)
+	require.True(t, ent.Expired)
+	require.True(t, ent.NotStarted)
+	require.NotNil(t, ent.StartsAt)
+	require.True(t, ent.StartsAt.Equal(later))
+	own.Plan = &types.UsagePlan{Name: "Go", Code: "go", ScopeKind: "user"}
+	ent, err = g.Entitlement(context.Background(), 10003, "user-1")
+	require.NoError(t, err)
+	require.Equal(t, "sub-u", ent.SubscriptionID)
+	require.True(t, ent.LapsedTenant.NotStarted)
+	// an ended package is not "not started"
+	plans.active["tenant/10003"] = &types.UsageSubscription{ID: "sub-t", Mode: "pool", Status: "active", EndsAt: &ended, Plan: poolPlan()}
+	ent, err = g.Entitlement(context.Background(), 10003, "user-2")
+	require.NoError(t, err)
+	require.True(t, ent.Expired)
+	require.False(t, ent.NotStarted)
+	require.Nil(t, ent.StartsAt)
+}
+
 func TestUsageGuardSeatModeNeedsSeatAndCountsUser(t *testing.T) {
 	plans := &fakeUsagePlanRepo{
 		active: map[string]*types.UsageSubscription{

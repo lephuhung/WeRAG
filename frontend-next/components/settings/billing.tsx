@@ -35,6 +35,7 @@ import {
 } from "@/lib/api/usage";
 import { addonLineDetail, keepOffered, toggleAddonId } from "@/lib/agent-addon-catalogue";
 import { formatDateTime } from "@/lib/datetime";
+import { BILLING_INTENT_EVENT, clearBillingIntent, readBillingIntent, type BillingIntent } from "@/lib/billing-intent";
 import { useConfirm } from "@/components/confirm-dialog";
 import { ConsolePage } from "@/components/settings/console-page";
 import { FieldLabel } from "@/components/settings/field";
@@ -98,9 +99,25 @@ export function BillingPage() {
   const isAdmin = role === "admin" || role === "owner" || auth.user?.is_system_admin === true;
 
   const [info, setInfo] = useState<UsageBillingInfo | null>(null);
-  const [scope, setScope] = useState<UsageScopeKind>(isAdmin ? "tenant" : "user");
+  // a banner's Renew/Buy button names the scope and plan to open on
+  const [intent] = useState(() => readBillingIntent());
+  useEffect(() => clearBillingIntent(), []);
+  useEffect(() => {
+    const onIntent = (e: Event) => {
+      const next = (e as CustomEvent<BillingIntent>).detail;
+      clearBillingIntent();
+      if (!next || (next.scope === "tenant" && !isAdmin)) return;
+      setScope(next.scope);
+      setPlanId(next.planId);
+    };
+    window.addEventListener(BILLING_INTENT_EVENT, onIntent);
+    return () => window.removeEventListener(BILLING_INTENT_EVENT, onIntent);
+  }, [isAdmin]);
+  // (a scope the person may not buy for drops the intent's plan too)
+  const intentAllowed = !!intent && (intent.scope === "user" || isAdmin);
+  const [scope, setScope] = useState<UsageScopeKind>(intentAllowed ? intent.scope : isAdmin ? "tenant" : "user");
   const [plans, setPlans] = useState<UsagePlan[]>([]);
-  const [planId, setPlanId] = useState("");
+  const [planId, setPlanId] = useState(intentAllowed ? intent.planId : "");
   const [months, setMonths] = useState(1);
   const [seats, setSeats] = useState(1);
   const [promoText, setPromoText] = useState("");

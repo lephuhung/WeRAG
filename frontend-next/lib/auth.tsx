@@ -18,6 +18,8 @@ export type UserInfo = {
   can_access_all_tenants?: boolean;
   is_system_admin?: boolean;
   preferences?: { language?: string | null; work_unit?: string | null; province_id?: string | null };
+  /** ISO time the account was created (the welcome banner's window). */
+  created_at?: string;
 };
 
 export type TenantInfo = {

@@ -10,6 +10,7 @@ import { GlobalFileDrop } from "@/components/upload-tasks/global-file-drop";
 import { ToastProvider } from "@/components/toast";
 import { ConfirmProvider } from "@/components/confirm-dialog";
 import { WorkContextPrompt } from "@/components/work-context-prompt";
+import { PlanBannerBar } from "@/components/plan-banner";
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -24,6 +25,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
                 <Sidebar />
                 <div className="flex min-w-0 flex-1 flex-col">
                   <Header />
+                  <PlanBannerBar />
                   <main className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</main>
                 </div>
               </div>
