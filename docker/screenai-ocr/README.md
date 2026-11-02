@@ -33,7 +33,9 @@ Cập nhật component: xoá volume `screenai_component` rồi khởi động l�
 
 ## Đăng ký làm model VLLM trong WeKnora
 
-Trong Cài đặt → Mô hình, thêm model loại `VLLM`, nguồn `remote`:
+Trước tiên thêm `screenai-ocr` vào danh sách SSRF whitelist (xem Lưu ý bên dưới): khi lưu model, app kiểm tra Base URL ngay, nên chưa có whitelist thì lưu sẽ bị từ chối (400).
+
+Sau đó, trong Cài đặt → Mô hình, thêm model loại `VLLM`, nguồn `remote`:
 
 | Trường | Giá trị |
 |---|---|

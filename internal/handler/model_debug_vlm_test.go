@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"image"
 	"image/png"
 	"mime/multipart"
 	"net/http"
@@ -110,4 +111,44 @@ func TestDebugModelVLLMWithoutUploadUsesBuiltInTestImage(t *testing.T) {
 	assert.Equal(t, assets.VLMTestPNG, stub.images[0])
 	_, err := png.Decode(bytes.NewReader(stub.images[0]))
 	assert.NoError(t, err, "the built-in test image must be a decodable PNG")
+}
+
+// A real upload reaches the model unchanged and is not marked generated.
+func TestDebugModelVLLMWithUploadUsesTheUpload(t *testing.T) {
+	model := &types.Model{ID: "chrome-id", Name: "chrome", Type: types.ModelTypeVLLM, Source: types.ModelSourceRemote}
+	stub := &stubDebugVLM{}
+	svc := &stubDebugModelService{model: model, vlm: stub}
+
+	img := &bytes.Buffer{}
+	require.NoError(t, png.Encode(img, image.NewGray(image.Rect(0, 0, 1, 1))))
+	body := &bytes.Buffer{}
+	form := multipart.NewWriter(body)
+	require.NoError(t, form.WriteField("input", "OCR:"))
+	part, err := form.CreateFormFile("file", "mine.png")
+	require.NoError(t, err)
+	_, err = part.Write(img.Bytes())
+	require.NoError(t, err)
+	require.NoError(t, form.Close())
+
+	req := httptest.NewRequest(http.MethodPost, "/models/chrome-id/debug", body)
+	req.Header.Set("Content-Type", form.FormDataContentType())
+	w := httptest.NewRecorder()
+	newDebugModelTestRouter(svc).ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code, "body=%s", w.Body.String())
+	var envelope struct {
+		Data struct {
+			Request struct {
+				File struct {
+					Name      string `json:"name"`
+					Generated bool   `json:"generated"`
+				} `json:"file"`
+			} `json:"request"`
+		} `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &envelope))
+	assert.Equal(t, "mine.png", envelope.Data.Request.File.Name)
+	assert.False(t, envelope.Data.Request.File.Generated)
+	require.Len(t, stub.images, 1)
+	assert.Equal(t, img.Bytes(), stub.images[0])
 }

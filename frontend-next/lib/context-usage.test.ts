@@ -99,6 +99,8 @@ describe("denialKey", () => {
     assert.equal(denialKey("not_started"), "notStarted");
     assert.equal(parseContextUsage({ denied: true, reason: "expired", starts_at: "2026-11-09T17:00:00Z" })?.reason, "not_started");
     assert.equal(parseContextUsage({ denied: true, reason: "expired" })?.reason, "expired");
+    assert.equal(parseContextUsage({ denied: true, reason: "expired", starts_at: "2026-11-09T17:00:00Z" })?.starts_at, "2026-11-09T17:00:00Z");
+    assert.equal(parseContextUsage({ denied: true, reason: "expired" })?.starts_at, "");
     assert.equal(denialKey("no_seat"), "noSeat");
     assert.equal(denialKey("limit_exhausted"), "limit");
     assert.equal(denialKey(""), "noPackage");

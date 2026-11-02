@@ -9,7 +9,7 @@ import { withArtifactIndexes } from "@/lib/artifact-images";
 import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext, type MentionRequestItem } from "@/lib/chat-context";
 import { useT } from "@/lib/i18n";
 import { dayStarts } from "@/lib/message-time";
-import { chatErrorKey, chatErrorTextKey, isSessionLimitError } from "@/lib/api/chat-errors";
+import { chatErrorKey, chatErrorText, isSessionLimitError, type ChatErrorKey } from "@/lib/api/chat-errors";
 import { shouldRefreshAccount } from "@/lib/guest-chat";
 import { sessionUsageFromComplete, type SessionUsage } from "@/lib/session-limits";
 import { ContextCompactedDivider, SessionLimitCard, SessionUsageBanner } from "@/components/chat/session-limit";
@@ -346,6 +346,11 @@ function ChatBody({ id }: { id: string }) {
   // documents, forks, follow-ups or other organization-only calls.
   const guest = ctx.isGuest;
   const { t: tr } = useT();
+  // a chat error as this account reads it (with a package's start date)
+  const trError = (key: ChatErrorKey, err: unknown) => {
+    const m = chatErrorText(key, guest, err);
+    return tr(m.key, m.vars);
+  };
   const { user, refreshMe } = useAuth();
   // Non-admin callers never send a model override; the server resolves the
   // model assigned to the selected response mode.
@@ -1364,7 +1369,7 @@ function ChatBody({ id }: { id: string }) {
         // Stale upload/session errors never surface into the new session.
         if (!isLive()) return;
         const key = chatErrorKey(e);
-        setError(key ? tr(chatErrorTextKey(key, guest)) : e instanceof Error ? e.message : tr("chat.err.generic"));
+        setError(key ? trError(key, e) : e instanceof Error ? e.message : tr("chat.err.generic"));
         setBusy(false);
         onAccountError(e, false);
         return;
@@ -1433,7 +1438,7 @@ function ChatBody({ id }: { id: string }) {
         // Stale upload errors never surface into the new session.
         if (!isLive()) return;
         const key = chatErrorKey(e);
-        setError(key ? tr(chatErrorTextKey(key, guest)) : e instanceof Error ? e.message : tr("chat.err.generic"));
+        setError(key ? trError(key, e) : e instanceof Error ? e.message : tr("chat.err.generic"));
         setBusy(false);
         onAccountError(e, false);
         return;
@@ -1952,7 +1957,7 @@ function ChatBody({ id }: { id: string }) {
         if (!isLive()) return;
         if (e instanceof DOMException && e.name === "AbortError") return;
         const errorKey = chatErrorKey(e);
-        const errorText = errorKey ? tr(chatErrorTextKey(errorKey, guest)) : e instanceof Error ? e.message : tr("chat.err.generic");
+        const errorText = errorKey ? trError(errorKey, e) : e instanceof Error ? e.message : tr("chat.err.generic");
         console.error("[streamChat] Error:", e);
         onAccountError(e);
         // a used-up session gets the "open a new session" card instead of

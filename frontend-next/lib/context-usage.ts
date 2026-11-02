@@ -33,6 +33,8 @@ export type ContextUsage = {
   /** Why: no_subscription, expired, no_seat or limit_exhausted, or
    * not_started (an "expired" package that starts later, see starts_at). */
   reason: string;
+  /** When a not_started package starts (ISO time), else "". */
+  starts_at: string;
 };
 
 export type ContextTone = "neutral" | "amber" | "red";
@@ -78,6 +80,7 @@ export function parseContextUsage(raw: unknown): ContextUsage | null {
         : typeof r.reason === "string"
           ? r.reason
           : "",
+    starts_at: typeof r.starts_at === "string" ? r.starts_at : "",
   };
 }
 

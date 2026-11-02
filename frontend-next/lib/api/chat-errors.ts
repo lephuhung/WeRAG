@@ -3,6 +3,7 @@
  * used to surface. */
 import { ApiError } from "../api-client.ts";
 import { TENANT_MEMBERSHIP_REQUIRED, TENANT_REQUIRED } from "../auth-recovery.ts";
+import { formatDate } from "../datetime.ts";
 
 /** Backend error code for "another turn is already running" (HTTP 409). */
 export const ERR_TURN_RUNNING = 1005;
@@ -47,7 +48,9 @@ export class ChatStreamError extends Error {
   reason?: string;
   /** Top-level string code of the body (`TENANT_REQUIRED`…), if any. */
   errorCode?: string;
-  constructor(status: number, code?: number, serverMessage?: string, reason?: string, errorCode?: string) {
+  /** `details.starts_at`: when a not-started package starts (ISO time). */
+  startsAt?: string;
+  constructor(status: number, code?: number, serverMessage?: string, reason?: string, errorCode?: string, startsAt?: string) {
     super(serverMessage || `HTTP ${status}`);
     this.name = "ChatStreamError";
     this.status = status;
@@ -55,10 +58,11 @@ export class ChatStreamError extends Error {
     this.serverMessage = serverMessage;
     this.reason = reason;
     this.errorCode = errorCode;
+    this.startsAt = startsAt;
   }
 }
 
-export type ErrorEnvelope = { code?: number; message?: string; reason?: string; errorCode?: string };
+export type ErrorEnvelope = { code?: number; message?: string; reason?: string; errorCode?: string; startsAt?: string };
 
 /** Reads `{"error":{"code","message","details":{"reason"}}}`, the auth
  * middleware's flat `{"error":"…","code":"TENANT_REQUIRED"}` (string code
@@ -77,7 +81,10 @@ export function parseErrorEnvelope(body: string): ErrorEnvelope {
       };
       if (details && typeof details.reason === "string") out.reason = details.reason;
       // an "expired" refusal with a start date: the package starts later
-      if (out.reason === "expired" && typeof details?.starts_at === "string" && details.starts_at) out.reason = "not_started";
+      if (out.reason === "expired" && typeof details?.starts_at === "string" && details.starts_at) {
+        out.reason = "not_started";
+        out.startsAt = details.starts_at;
+      }
       return out;
     }
     if (typeof p?.error === "string") return { message: p.error, ...flat };
@@ -163,7 +170,7 @@ export function chatErrorKey(e: unknown): ChatErrorKey | null {
 
 /** Translation keys a chat error turns into: the error keys plus the guest
  * variants of the usage refusals. */
-export type ChatErrorTextKey = ChatErrorKey | "chat.err.guest.usageLimit" | "chat.err.guest.unavailable";
+export type ChatErrorTextKey = ChatErrorKey | "chat.err.guest.usageLimit" | "chat.err.guest.unavailable" | "chat.err.usage.notStartedOn";
 
 /** The text key for a chat error key as this account reads it. A guest has
  * no organization admin to contact: its usage refusals get their own texts
@@ -192,4 +199,22 @@ export function errorStatusAndCode(e: unknown): { status?: number; errorCode?: s
     return { status: e.status, errorCode: parseErrorEnvelope(JSON.stringify(e.payload ?? {})).errorCode };
   }
   return {};
+}
+
+/** The text key and its variables for a chat error as this account reads
+ * it: chatErrorTextKey, plus the start date of a not-started package when
+ * the error carries one (only stream errors do; others keep the dateless
+ * sentence). */
+export function chatErrorText(
+  key: ChatErrorKey,
+  isGuest: boolean,
+  err: unknown,
+): { key: ChatErrorTextKey; vars?: Record<string, string> } {
+  const textKey = chatErrorTextKey(key, isGuest);
+  const startsAt = err instanceof ChatStreamError ? err.startsAt : undefined;
+  if (textKey === "chat.err.usage.notStarted" && startsAt) {
+    const date = formatDate(startsAt);
+    if (date) return { key: "chat.err.usage.notStartedOn", vars: { date } };
+  }
+  return { key: textKey };
 }

@@ -3,7 +3,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { ChatStreamError, ERR_AGENT_UNAVAILABLE, ERR_PUBLIC_LOOKUP_UNAVAILABLE, ERR_TURN_RUNNING, chatErrorKey, chatErrorTextKey, isSessionLimitError, parseErrorEnvelope } from "./chat-errors.ts";
+import { ChatStreamError, ERR_AGENT_UNAVAILABLE, ERR_PUBLIC_LOOKUP_UNAVAILABLE, ERR_TURN_RUNNING, chatErrorKey, chatErrorText, chatErrorTextKey, isSessionLimitError, parseErrorEnvelope } from "./chat-errors.ts";
 import { ApiError } from "../api-client.ts";
 
 describe("parseErrorEnvelope", () => {
@@ -65,6 +65,16 @@ describe("chatErrorKey", () => {
     assert.equal(notStarted.reason, "not_started");
     assert.equal(chatErrorKey(new ChatStreamError(429, 1006, "x", notStarted.reason)), "chat.err.usage.notStarted");
     assert.equal(chatErrorTextKey("chat.err.usage.notStarted", true), "chat.err.guest.unavailable");
+    // the stream error carries the start date: the sentence names it (GMT+7)
+    assert.equal(notStarted.startsAt, "2026-11-09T17:00:00Z");
+    const withDate = new ChatStreamError(429, 1006, "x", "not_started", undefined, notStarted.startsAt);
+    assert.deepEqual(chatErrorText("chat.err.usage.notStarted", false, withDate), {
+      key: "chat.err.usage.notStartedOn",
+      vars: { date: "10/11/2026" },
+    });
+    // no date (another error kind): the dateless sentence; a guest keeps its own
+    assert.deepEqual(chatErrorText("chat.err.usage.notStarted", false, new Error("x")), { key: "chat.err.usage.notStarted" });
+    assert.deepEqual(chatErrorText("chat.err.usage.notStarted", true, withDate), { key: "chat.err.guest.unavailable" });
   });
   it("recognizes the per-session cap", () => {
     const e = new ChatStreamError(429, 1006, "session limit reached", "session_limit");

@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
+import { formatDate } from "@/lib/datetime";
 import { getContextUsage } from "@/lib/api/context-usage";
 import {
   contextFill,
@@ -122,7 +123,12 @@ export function ContextRing({
   const tok = (n: number) => formatTokens(n, locale);
   const cnt = (n: number) => formatCount(n, locale);
   // with a refusing package "no cap" would be wrong: say why instead
-  const denial = usage.denied ? t(DENIAL_TEXT[denialKey(usage.reason)]) : "";
+  const denialK = usage.denied ? denialKey(usage.reason) : null;
+  const denial = !denialK
+    ? ""
+    : denialK === "notStarted" && usage.starts_at
+      ? t("ctx.denied.notStartedOn", { date: formatDate(usage.starts_at) })
+      : t(DENIAL_TEXT[denialK]);
   const noCap = denial || t("ctx.unlimited");
   const budget = usage.history_budget || usage.model_window;
   const s = usage.session;
