@@ -689,12 +689,23 @@ func legalCitedArticlesOf(content, heading, aNumber, aType, aBase string) map[st
 			if legalBeforeAfterRe.MatchString(line[:kw]) || legalHistoryRefRe.MatchString(line[:kw]) || legalSelfRefRe.MatchString(line[m[3]:]) {
 				continue
 			}
-			// the rest of the chain of labels, then the document it names
-			pos := m[3]
+			// the rest of the chain of labels, then the document it names;
+			// bare numbers after a Điều are Điều too ("các Điều 4, 5 và 6")
+			pos, kind := m[3], "điều"
+			arts := []string{strings.ToLower(line[m[2]:m[3]])}
 			for {
 				loc := legalChainMoreRe.FindStringSubmatchIndex(line[pos:])
 				if loc == nil {
 					break
+				}
+				if loc[8] >= 0 && legalItemLabelRe.MatchString(line[pos+loc[9]:]) {
+					break
+				}
+				switch {
+				case loc[4] >= 0:
+					kind = strings.ToLower(line[pos+loc[4] : pos+loc[5]])
+				case kind == "điều":
+					arts = append(arts, strings.ToLower(line[pos+loc[8]:pos+loc[9]]))
 				}
 				pos += loc[3]
 			}
@@ -719,13 +730,23 @@ func legalCitedArticlesOf(content, heading, aNumber, aType, aBase string) map[st
 					break
 				}
 			}
+			// a part of another document ("Quy chế ban hành kèm theo
+			// Quyết định số …", "Phụ lục II Nghị định số …") is that
+			// document's; with none cited in its clause, nobody's known
+			part := legalDocPartRe.MatchString(line[pos:]) && !legalHeadingNames(heading, line[pos:])
+			if part && attached == nil {
+				attached = legalClauseCitation(line, pos, cites)
+			}
 			switch {
 			case attached != nil && isA(*attached):
-			case attached == nil && subjectA && !legalUnreadLawAt(line, pos, aBase):
+			case attached == nil && subjectA && !part && !legalUnreadLawAt(line, pos, aBase) &&
+				!legalHistoryOnly(line, kw, pos, cites):
 			default:
 				continue
 			}
-			out[strings.ToLower(line[m[2]:m[3]])] = true
+			for _, a := range arts {
+				out[a] = true
+			}
 		}
 	}
 	return out
@@ -740,8 +761,27 @@ var (
 	// đổi …` it closes the wording before.
 	legalInlineNewTextRe = regexp.MustCompile(`(?i)(?:như\s+sau\s*:?|cụm\s+từ)\s*[“"]|“\s*(?:\d+[a-zđ]?\.|[a-zđ]\)|Điều\s+\d)|(?:^|[\s:])"(?:\d+[a-zđ]?\.|[a-zđ]\)|Điều\s+\d)`)
 	// legalChainMoreRe continues a chain of labels after "Điều N": ", Điều
-	// 6", "; khoản 2 Điều 10", " và điểm a", ", 7".
-	legalChainMoreRe = regexp.MustCompile(`(?i)^(\s*(?:[,;]\s*|\s(?:và|hoặc)\s+)?(?:(?:các\s+)?(?:điểm|khoản|điều)\s+[0-9a-zđ]+|\d+[a-zđ]?))(?:[^\p{L}\p{N}]|$)`)
+	// 6", " khoản 2 Điều 10", " và điểm a", ", 7" (group 2 the label, 3
+	// its value, 4 a bare number). ";" ends it: "Sửa đổi Điều 5; Điều 7
+	// Thông tư … được bãi bỏ" are two operations.
+	// A bare number needs its separator.
+	legalChainMoreRe = regexp.MustCompile(`(?i)^(\s*(?:,\s*|\s(?:và|hoặc)\s+)?(?:các\s+)?(điểm|khoản|điều)\s+([0-9a-zđ]+)|\s*(?:,\s*|\s(?:và|hoặc)\s+)(\d+[a-zđ]?))(?:[^\p{L}\p{N}]|$)`)
+	// legalItemLabelRe follows a number that labels the next item ("9.
+	// Bãi bỏ", "3) Sửa đổi"), not one more in a list.
+	legalItemLabelRe = regexp.MustCompile(`^[.)]\s+\p{Lu}`)
+	// legalHistoryAfterRe starts the text after a chain recording an
+	// earlier amendment: "đã bị bãi bỏ theo …", "đã được sửa đổi, bổ sung
+	// bởi …".
+	legalHistoryAfterRe = regexp.MustCompile(`(?i)^[\s,]*(?:đã\s+)?(?:được|bị)\s+(?:sửa\s+đổi|bổ\s+sung|bãi\s+bỏ|thay\s+thế)[^.;:]*?\s(?:bởi|theo|tại)\s`)
+	// legalOperationVerbRe is an operation written before a chain ("Sửa
+	// đổi, bổ sung khoản 2 Điều 4, được sửa đổi … tại … Thông tư …"): the
+	// history after it is a remark on the Điều the line amends.
+	legalOperationVerbRe = regexp.MustCompile(`(?i)(?:^|[^\p{L}])(?:sửa\s+đổi|bổ\s+sung|bãi\s+bỏ|thay\s+thế|thay|bỏ|đính\s+chính)(?:[^\p{L}]|$)`)
+	// legalDocPartRe starts the text after a chain naming a part of a
+	// document by its title-cased name ("Quy chế …", "Phụ lục II", "Mẫu
+	// số 03", "mẫu 07-1/HĐTV"): its Điều are the part's. "quy định về" in
+	// lower case is a verb ("Điều 12 quy định về nguồn vốn").
+	legalDocPartRe = regexp.MustCompile(`^\s*(?:Quy\s+chế|Quy\s+định|Quy\s+trình|Điều\s+lệ|(?i:phụ\s+lục|mẫu)|Danh\s+mục|Biểu|Chương\s+trình|Chế\s+độ|Tiêu\s+chuẩn)(?:[^\p{L}]|$)`)
 	// legalChainLinkRe is what may stand between a chain and the document
 	// it belongs to.
 	legalChainLinkRe = regexp.MustCompile(`(?i)^\s*(?:của\s+|tại\s+)?`)
@@ -751,7 +791,7 @@ var (
 	legalHeadingStopRe = regexp.MustCompile(`(?i)quy\s+định\s+chi\s+tiết|hướng\s+dẫn|thi\s+hành|được\s+sửa\s+đổi|được\s+bổ\s+sung|sau\s+đây\s+(?:gọi|viết)`)
 	// legalHeadingJoinRe: two subjects joined ("Nghị định số 88/… và
 	// Nghị định số 254/…", "…, Nghị định số …").
-	legalHeadingJoinRe = regexp.MustCompile(`(?i)(?:^|\s|,)(?:và|,)\s*$`)
+	legalHeadingJoinRe = regexp.MustCompile(`(?i)(?:^|\s|,|;)(?:và|,|;)\s*$`)
 	legalCuaRe         = regexp.MustCompile(`(?i)(?:^|\s)của\s`)
 	// legalDocTypeLeadRe / legalDocTypeTailRe are the type words before a
 	// number ("Nghị định số ", "Thông tư liên tịch ").
@@ -760,21 +800,54 @@ var (
 )
 
 // legalTypeWordsRe is a type written in a way legalDocTypeLeadRe does not
-// read ("Nghị đỉnh số " in an OCR copy): up to three words, "số", then
-// the number.
-var legalTypeWordsRe = regexp.MustCompile(`(?i)^(?:\p{L}+\s+){0,2}\p{L}+\s+(?:số\s*:?\s*)?$`)
+// read ("Nghị đỉnh số " in an OCR copy): up to three words opening like
+// a type, "số", then the number. Other words ("Quy chế ban hành kèm
+// theo", "Phụ lục II", "và Luật") are not a type.
+var legalTypeWordsRe = regexp.MustCompile(`(?i)^(?:Bộ|Luật|Pháp|Nghị|Thông|Quyết|Chỉ|Văn|Hiến|Lệnh|Sắc)\s+(?:\p{L}+\s+){0,1}(?:\p{L}+\s+)?(?:số\s*:?\s*)?$`)
 
-// legalTypeWords reports whether gap, between a chain and a citation, is
-// such type words and not a list going on ("và Luật …").
-func legalTypeWords(gap string) bool {
-	if !legalTypeWordsRe.MatchString(gap) {
+func legalTypeWords(gap string) bool { return legalTypeWordsRe.MatchString(gap) }
+
+// legalHeadingNames reports whether the heading names the part text
+// starts with ("Quy chế Đại lý đổi ngoại tệ" under "Sửa đổi … của Quy
+// chế Đại lý đổi ngoại tệ ban hành kèm theo …"): the subject's part.
+func legalHeadingNames(heading, text string) bool {
+	w := strings.Fields(strings.ToLower(text))
+	if len(w) < 3 {
 		return false
 	}
-	switch strings.ToLower(strings.Fields(gap)[0]) {
-	case "và", "hoặc", "đến", "tới", "của", "tại", "theo":
+	return strings.Contains(strings.Join(strings.Fields(strings.ToLower(heading)), " "), strings.Join(w[:3], " "))
+}
+
+// legalHistoryOnly reports whether the chain of "Điều N" (keyword at byte
+// kw, chain ending at pos) is the subject of an amendment history and no
+// operation: "Điều 8 đã bị bãi bỏ theo khoản 3 Điều 1 Thông tư số …"
+// (the history names its author's document, no operation verb comes
+// before). "Điều 7 được sửa đổi tại khoản 9 như sau" is an operation.
+func legalHistoryOnly(line string, kw, pos int, cites []vietnamese_legal.Citation) bool {
+	loc := legalHistoryAfterRe.FindStringIndex(line[pos:])
+	if loc == nil || legalOperationVerbRe.MatchString(line[:kw]) {
 		return false
 	}
-	return true
+	return legalClauseCitation(line, pos+loc[1], cites) != nil
+}
+
+// legalClauseCitation is the first of cites after byte offset pos of line
+// in the same clause (before a ";" or a sentence end).
+func legalClauseCitation(line string, pos int, cites []vietnamese_legal.Citation) *vietnamese_legal.Citation {
+	end := len(line)
+	if k := strings.IndexAny(line[pos:], ";"); k >= 0 {
+		end = pos + k
+	}
+	if k := strings.Index(line[pos:], ". "); k >= 0 && pos+k < end {
+		end = pos + k
+	}
+	from, to := utf8.RuneCountInString(line[:pos]), utf8.RuneCountInString(line[:end])
+	for i := range cites {
+		if cites[i].Start >= from && cites[i].Start < to {
+			return &cites[i]
+		}
+	}
+	return nil
 }
 
 // legalDropInlineNewText removes the new wording a line quotes, from its
@@ -788,7 +861,7 @@ func legalDropInlineNewText(line string) string {
 		loc := legalInlineNewTextRe.FindStringIndex(line)
 		if loc == nil {
 			b.WriteString(line)
-			return b.String()
+			return legalDropUnquotedNewText(b.String())
 		}
 		b.WriteString(line[:loc[0]])
 		b.WriteString(" ")
@@ -817,9 +890,47 @@ func legalDropInlineNewText(line string) string {
 			}
 		}
 		if end < 0 {
-			return b.String()
+			return legalDropUnquotedNewText(b.String())
 		}
 		line = rest[end:]
+	}
+}
+
+var (
+	legalNhuSauRe = regexp.MustCompile(`(?i)như\s+sau\s*:`)
+	// legalOperationStartRe starts a numbered operation: "13. Sửa đổi …",
+	// "a) Bãi bỏ …", "12. Điểm a khoản 8 Điều 34 …".
+	// legalOperationLeadRe: the text after "như sau:" is itself an
+	// operation ("… như sau: Bãi bỏ khoản 4 Điều 21 Thông tư …").
+	legalOperationLeadRe  = regexp.MustCompile(`^\s*(?:Sửa\s+đổi|Bổ\s+sung|Bãi\s+bỏ|Thay\s+thế|Thay|Bỏ|Đính\s+chính)\s`)
+	legalOperationStartRe = regexp.MustCompile(`(?i)(?:^|\s)(?:\d+[a-zđ]?\.|[a-zđ]\))\s+(?:sửa\s+đổi|bổ\s+sung|bãi\s+bỏ|thay\s+thế|thay|bỏ|đính\s+chính|(?:điểm|khoản|điều)\s+(?:\d+[a-zđ]?|[a-zđ])(?:[\s,]|$))`)
+)
+
+// legalDropUnquotedNewText removes the new wording written after "như
+// sau:" without quotes, up to the next numbered operation of a line
+// flattened from several ("… Điều 15 như sau: a) Sửa đổi khoản 1 …" keeps
+// "a) Sửa đổi …"), else to the end of the line.
+func legalDropUnquotedNewText(line string) string {
+	var b strings.Builder
+	for {
+		loc := legalNhuSauRe.FindStringIndex(line)
+		if loc == nil {
+			b.WriteString(line)
+			return b.String()
+		}
+		b.WriteString(line[:loc[0]])
+		rest := line[loc[1]:]
+		if legalOperationLeadRe.MatchString(rest) {
+			b.WriteString(" ") // "… như sau: Bãi bỏ khoản 4 Điều 21 …"
+			line = rest
+			continue
+		}
+		next := legalOperationStartRe.FindStringIndex(rest)
+		if next == nil {
+			return b.String()
+		}
+		b.WriteString(" ")
+		line = rest[next[0]:]
 	}
 }
 
