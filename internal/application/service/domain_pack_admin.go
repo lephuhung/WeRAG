@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -50,12 +52,15 @@ func (r *DomainPackReconciler) Detail(ctx context.Context, name string) (*types.
 	if !ok {
 		return nil, apperrors.NewNotFoundError(fmt.Sprintf("domain pack %q is not in this build", name))
 	}
-	// stored edits may come from another backend: apply them first
-	rows, err := r.loadFormulaOverrides(ctx)
-	if err != nil {
-		return nil, err
+	// stored edits may come from another backend: apply them first; when
+	// the table cannot be read the page still shows, with the edits held
+	// in memory (who and when unknown)
+	rows, loadErr := r.loadFormulaOverrides(ctx)
+	if loadErr != nil {
+		logger.Warnf(ctx, "domain pack %s detail: %v", pack.Name(), loadErr)
 	}
 	edits := formulaEdits(rows, pack.Name())
+	editors := r.editorNames(ctx, edits)
 	now := r.now()
 	m := pack.Manifest.Metadata
 	out := &types.DomainPackDetail{
@@ -65,6 +70,21 @@ func (r *DomainPackReconciler) Detail(ctx context.Context, name string) (*types.
 		Documents:         []types.DomainPackDocumentView{},
 		Formulas:          []types.DomainPackFormulaView{},
 		Errors:            []types.DomainPackReconcileError{},
+	}
+	if loadErr != nil {
+		out.Errors = append(out.Errors, types.DomainPackReconcileError{
+			Error: "không đọc được các bản sửa công thức đã lưu: " + loadErr.Error(),
+		})
+	}
+	// an edit whose formula this build no longer ships: shown here so it
+	// can be removed (DELETE …/formulas/:id)
+	for _, id := range slices.Sorted(maps.Keys(edits)) {
+		if _, ok := pack.ShippedFormula(id); !ok {
+			out.Errors = append(out.Errors, types.DomainPackReconcileError{
+				FormulaID: id,
+				Error:     fmt.Sprintf("bản sửa công thức %s không còn công thức tương ứng trong gói; xoá bản sửa", id),
+			})
+		}
 	}
 	for _, d := range m.DraftDocuments {
 		draft := types.DomainPackDraft{Title: d.Title, Version: d.Version}
@@ -148,12 +168,20 @@ func (r *DomainPackReconciler) Detail(ctx context.Context, name string) (*types.
 		for _, ex := range fm.Examples {
 			fv.Examples = append(fv.Examples, types.DomainPackFormulaSample{Inputs: ex.Inputs, Expected: ex.Expected})
 		}
-		if row := edits[fm.ID]; row != nil && !pack.FormulaEdited(fm.ID) {
+		row := edits[fm.ID]
+		switch {
+		case row != nil && !pack.FormulaEdited(fm.ID):
 			// stored but refused by this build (see LoadFormulaOverrides)
 			fv.EditNotApplied = true
-		} else if row != nil {
-			at := row.UpdatedAt
-			fv.Edited, fv.EditedBy, fv.EditedAt = true, r.editorName(ctx, row.UpdatedBy), &at
+		case pack.FormulaEdited(fm.ID):
+			fv.Edited = true
+			if row != nil {
+				at := row.UpdatedAt
+				fv.EditedBy, fv.EditedAt = editors[row.UpdatedBy], &at
+				// "" = an edit stored before the hash was kept: unknown
+				fv.ShippedChanged = row.Formula.ShippedHash != "" &&
+					row.Formula.ShippedHash != pack.ShippedFormulaHash(fm.ID)
+			}
 			if shipped, ok := pack.ShippedFormula(fm.ID); ok {
 				orig := editFromFormula(shipped)
 				fv.Shipped = &orig

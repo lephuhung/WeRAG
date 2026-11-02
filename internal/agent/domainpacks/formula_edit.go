@@ -1,6 +1,9 @@
 package domainpacks
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strings"
@@ -47,8 +50,8 @@ func (p *Pack) FormulaEdited(id string) bool {
 
 // CheckFormulaEdit validates edit as the replacement of the shipped formula
 // edit.ID: the checks formulas.yaml passes, the same tool and variable
-// names, no rate written as a constant, and every example reproduced by
-// the Go implementation (money ±1 đ, ratios ±1e-9). It returns the edit
+// names, no rate or amount written as a constant, and every example
+// reproduced by the Go implementation (ExampleValueMatches). It returns the edit
 // with the tool set from the shipped formula and text fields trimmed.
 func (p *Pack) CheckFormulaEdit(edit Formula) (Formula, []string) {
 	shipped, ok := p.ShippedFormula(edit.ID)
@@ -67,12 +70,7 @@ func (p *Pack) CheckFormulaEdit(edit Formula) (Formula, []string) {
 		b.Number, b.Article = strings.TrimSpace(b.Number), strings.TrimSpace(b.Article)
 	}
 
-	catalogued := map[string]bool{}
-	if p.catalogue != nil {
-		for _, d := range p.catalogue.Documents {
-			catalogued[vietnamese_legal.CatalogNumberKey(d.Number)] = true
-		}
-	}
+	catalogued := catalogueArticles(p.catalogue)
 	required := map[string]bool{}
 	for _, t := range p.Manifest.Metadata.RequiredTools {
 		required[t] = true
@@ -125,8 +123,10 @@ func (p *Pack) CheckFormulaEdit(edit Formula) (Formula, []string) {
 	if len(edit.Examples) > maxFormulaExamples {
 		problems = append(problems, fmt.Sprintf("at most %d examples", maxFormulaExamples))
 	}
-	if constantRatePattern.MatchString(edit.Expression) {
-		problems = append(problems, "the expression writes a rate as a constant; make it a variable with source kb")
+	for field, text := range map[string]string{"name": edit.Name, "expression": edit.Expression} {
+		if constantRatePattern.MatchString(text) {
+			problems = append(problems, fmt.Sprintf("the %s writes a rate as a constant; make it a variable with source kb", field))
+		}
 	}
 	if len(problems) > 0 {
 		return Formula{}, problems
@@ -154,16 +154,53 @@ func checkExamples(fm Formula) []string {
 				problems = append(problems, fmt.Sprintf("examples[%d]: the implementation has no output %q", i, key))
 				continue
 			}
-			tol := 1e-9
-			if math.Abs(want) >= 1 {
-				tol = 1 // money: ±1 đ
-			}
-			if math.IsNaN(want) || math.IsNaN(v) || math.IsInf(v, 0) || math.Abs(v-want) > tol {
+			if !ExampleValueMatches(want, v) {
 				problems = append(problems, fmt.Sprintf("examples[%d]: %s is %v, not %v", i, key, v, want))
 			}
 		}
 	}
 	return problems
+}
+
+// moneyScale is the magnitude from which an example value is read as an
+// amount in đồng, written to the đồng (±1 đ).
+const moneyScale = 1e6
+
+// ExampleValueMatches reports whether got, computed by the Go
+// implementation, reproduces want written in an example: ±1 đ for an
+// amount of a million or more; ±0.5 for a whole number of a thousand or
+// more (an amount written rounded, 833333 for 833333.33); otherwise within
+// 1e-9 relative (1e-9 absolute below 1). A rate of 5 against 5.4 or a
+// ratio of 0.075 against 0.08 does not match.
+func ExampleValueMatches(want, got float64) bool {
+	if math.IsNaN(want) || math.IsInf(want, 0) || math.IsNaN(got) || math.IsInf(got, 0) {
+		return false
+	}
+	tol := 1e-9 * math.Max(1, math.Abs(want))
+	switch {
+	case math.Abs(want) >= moneyScale:
+		tol = math.Max(tol, 1)
+	case math.Abs(want) >= 1000 && want == math.Trunc(want):
+		tol = math.Max(tol, 0.5)
+	}
+	return math.Abs(got-want) <= tol
+}
+
+// ShippedFormulaHash identifies the wording formulas.yaml ships for
+// formula id: an edit stores it, and a different hash later says the
+// shipped formula changed since the edit was made. "" when id is not
+// shipped.
+func (p *Pack) ShippedFormulaHash(id string) string {
+	fm, ok := p.ShippedFormula(id)
+	if !ok {
+		return ""
+	}
+	data, err := json.Marshal(fm) // maps are written in key order
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:8])
 }
 
 // SetFormulaOverrides replaces the edits of the pack (formula id → edit).

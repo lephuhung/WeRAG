@@ -41,7 +41,9 @@ type DomainPackReconciler struct {
 	// edits of the pack formulas (domain_pack_formula_edit.go)
 	overrides interfaces.DomainPackFormulaOverrideRepository
 	users     interfaces.UserRepository
-	now       func() time.Time
+	// serialises reload and save, logs stale edits once
+	formulaEdits *formulaEditState
+	now          func() time.Time
 }
 
 // NewDomainPackReconciler creates the reconciler.
@@ -51,7 +53,7 @@ func NewDomainPackReconciler(packs *domainpacks.Registry, catalog interfaces.Leg
 	overrides interfaces.DomainPackFormulaOverrideRepository, users interfaces.UserRepository,
 ) *DomainPackReconciler {
 	r := &DomainPackReconciler{packs: packs, catalog: catalog, requests: requests, reviews: reviews,
-		overrides: overrides, users: users, now: domainPackNow}
+		overrides: overrides, users: users, formulaEdits: newFormulaEditState(), now: domainPackNow}
 	if agents != nil {
 		r.agents = agents
 	}
