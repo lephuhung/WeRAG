@@ -175,7 +175,7 @@ func (s *legalGraphFocusService) topHeld(ctx context.Context, kbID string, limit
 // forms (translate() with the whole table is ~25× slower); SQLite folds
 // the text with REPLACE and matches with LIKE.
 func (s *legalGraphFocusService) searchHeld(ctx context.Context, kbID, q string, limit int) ([]string, error) {
-	words := strings.Fields(legalFoldText(q))
+	words := legalSearchWords(q)
 	if len(words) == 0 {
 		return nil, nil
 	}
@@ -214,6 +214,26 @@ func (s *legalGraphFocusService) searchHeld(ctx context.Context, kbID, q string,
 		ORDER BY (CASE WHEN `+strings.Join(inNum, " AND ")+` THEN 0 ELSE 1 END), (x.issued_on IS NULL), x.issued_on DESC, x.id
 		LIMIT ?`, args...).Scan(&ids).Error
 	return ids, err
+}
+
+// Bounds of a picker query: each word is one more regex / LIKE over the
+// KB's documents.
+const (
+	legalSearchMaxRunes = 200
+	legalSearchMaxWords = 10
+)
+
+// legalSearchWords folds q into its search words: at most
+// legalSearchMaxRunes runes of it, at most legalSearchMaxWords words.
+func legalSearchWords(q string) []string {
+	if r := []rune(q); len(r) > legalSearchMaxRunes {
+		q = string(r[:legalSearchMaxRunes])
+	}
+	words := strings.Fields(legalFoldText(q))
+	if len(words) > legalSearchMaxWords {
+		words = words[:legalSearchMaxWords]
+	}
+	return words
 }
 
 // anchorCount counts the KB's held catalogue documents.
@@ -262,15 +282,20 @@ func (s *legalGraphFocusService) KBFocus(ctx context.Context, kbID, docID, q str
 		}
 	}
 
-	// Picker candidates: the search hits, else the best connected.
+	// Picker candidates: the search hits, else the best connected — the
+	// latter only for a request without doc (the first load: they seed the
+	// picker and name the default focus).
 	var candIDs []string
 	degree := map[string]int{}
-	if q != "" {
+	switch {
+	case q != "":
 		if candIDs, err = s.searchHeld(ctx, kbID, q, legalFocusCandidates); err != nil {
 			return nil, err
 		}
-	} else if candIDs, degree, err = s.topHeld(ctx, kbID, legalFocusCandidates); err != nil {
-		return nil, err
+	case docID == "":
+		if candIDs, degree, err = s.topHeld(ctx, kbID, legalFocusCandidates); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.fillCandidates(ctx, kbID, candIDs, degree, out); err != nil {
 		return nil, err

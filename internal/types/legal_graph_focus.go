@@ -92,7 +92,7 @@ type LegalGraphFocus struct {
 	Documents map[string]*LegalGraphDoc `json:"documents"`
 
 	// Candidates are held documents for the picker: those matching q, or
-	// the best connected when q is empty.
+	// the best connected when q and the requested doc are both empty.
 	Candidates []*LegalGraphDoc `json:"candidates"`
 	// AnchorCount is how many catalogued documents the KB holds.
 	AnchorCount int `json:"anchor_count"`

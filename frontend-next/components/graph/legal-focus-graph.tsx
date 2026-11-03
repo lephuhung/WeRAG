@@ -387,11 +387,14 @@ function usePanZoom(contentW: number, contentH: number, focusX: number, fitKey: 
 
   // Refit on a new focus, full screen or a resized box only: expanding a
   // group or showing căn cứ keeps the reader's pan and zoom.
+  // The latest fit through a ref: fit itself changes with the content
+  // height, which must not refit. The key names everything that does.
   const fitRef = useRef(fit);
   fitRef.current = fit;
+  const refitKey = `${fitKey}|${size.w}x${size.h}`;
   useEffect(() => {
     fitRef.current();
-  }, [fitKey, size.w, size.h]);
+  }, [refitKey]);
 
   const zoomAt = useCallback((factor: number, cx: number, cy: number) => {
     setView((v) => {

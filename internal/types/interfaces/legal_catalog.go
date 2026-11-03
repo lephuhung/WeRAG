@@ -284,6 +284,7 @@ type LegalGraphFocusService interface {
 	// neighbour of a held document (types.ErrLegalGraphFocusNotFound
 	// otherwise); empty, the best-connected held document is focused, or
 	// with q set only the candidates are returned. q filters the
-	// held-document candidates of the picker.
+	// held-document candidates of the picker; without q the best-
+	// connected ones come only with an empty docID (the first load).
 	KBFocus(ctx context.Context, kbID, docID, q string) (*types.LegalGraphFocus, error)
 }

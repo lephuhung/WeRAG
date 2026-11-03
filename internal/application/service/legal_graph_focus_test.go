@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -171,6 +172,17 @@ func TestLegalGraphFocus(t *testing.T) {
 	g, err = svc.KBFocus(ctx, "kb", "", "50%")
 	require.NoError(t, err)
 	require.Empty(t, g.Candidates, "LIKE wildcards are literal")
+
+	// A focus request without q reads no candidates (the picker keeps the
+	// first load's).
+	g, err = svc.KBFocus(ctx, "kb", "law", "")
+	require.NoError(t, err)
+	require.Empty(t, g.Candidates)
+	// A long q is cut to 10 words: the junk after them is ignored.
+	g, err = svc.KBFocus(ctx, "kb", "", "luat ve dat dai 31/2024/qh15 luat ve dat dai luat zzz zzz zzz")
+	require.NoError(t, err)
+	require.Len(t, g.Candidates, 1)
+	require.Equal(t, "law", g.Candidates[0].ID)
 
 	// An empty KB has nothing to focus.
 	g, err = svc.KBFocus(ctx, "empty", "", "")
@@ -349,4 +361,15 @@ func TestLegalGraphFocusLoadCap(t *testing.T) {
 	}
 	require.True(t, got["amender"], "a strong relation outranks the căn cứ crowd")
 	require.True(t, got["row-src"])
+}
+
+func TestLegalSearchWords(t *testing.T) {
+	require.Equal(t, []string{"nghi", "dinh", "15"}, legalSearchWords("  Nghị  ĐỊNH 15 "))
+	many := strings.Repeat("a ", 30)
+	require.Len(t, legalSearchWords(many), legalSearchMaxWords)
+	long := strings.Repeat("ộ", 500)
+	words := legalSearchWords(long)
+	require.Len(t, words, 1)
+	require.Len(t, []rune(words[0]), legalSearchMaxRunes)
+	require.Empty(t, legalSearchWords("   "))
 }
