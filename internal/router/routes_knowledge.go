@@ -411,4 +411,5 @@ func RegisterKnowledgeGraphViewRoutes(r *gin.RouterGroup, h *handler.KnowledgeGr
 	}
 	r.GET("/knowledge-bases/:id/entity-graph", g.Member(), g.KBAccessRead("id"), h.GetEntityGraph)
 	r.GET("/knowledge-bases/:id/legal-graph", g.Member(), g.KBAccessRead("id"), h.GetLegalGraph)
+	r.GET("/knowledge-bases/:id/legal-graph/focus", g.Member(), g.KBAccessRead("id"), h.GetLegalGraphFocus)
 }

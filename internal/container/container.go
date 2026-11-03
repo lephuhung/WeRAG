@@ -222,6 +222,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// /abbreviations API and the resolve_abbreviation agent tool.
 	must(container.Provide(service.NewAbbreviationService))
 	must(container.Provide(service.NewLegalCatalogService))
+	must(container.Provide(service.NewLegalGraphFocusService))
 	must(container.Provide(service.NewLegalReviewService))
 	// vbpl.vn ingest shared by the MCP feed and the SuperAdmin request queue
 	must(container.Provide(service.NewLegalFeedService))

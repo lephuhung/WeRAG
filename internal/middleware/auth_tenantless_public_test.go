@@ -56,6 +56,7 @@ func TestTenantOptionalPublicReadSurface(t *testing.T) {
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/files", true},
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/entity-graph", true},
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/legal-graph", true},
+		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/legal-graph/focus", true},
 		{http.MethodGet, "/api/v1/knowledgebase/kb-1/wiki/pages", true},
 		{http.MethodGet, "/api/v1/knowledgebase/kb-1/wiki/pages/some-slug", true},
 		{http.MethodGet, "/api/v1/knowledgebase/kb-1/wiki/revisions/some-slug", true},
@@ -93,6 +94,8 @@ func TestTenantOptionalPublicReadSurface(t *testing.T) {
 		{http.MethodDelete, "/api/v1/chunks/doc-1/ch-1", false},
 		// Deny: unknown shapes and trailing-slash variants fail closed.
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/unknown", false},
+		{http.MethodPost, "/api/v1/knowledge-bases/kb-1/legal-graph/focus", false},
+		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/legal-graph/other", false},
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/knowledge/", false},
 		{http.MethodGet, "/api/v1/knowledgebase/kb-1/other", false},
 		{http.MethodPost, "/api/v1/knowledge/abc/download", false},
@@ -109,6 +112,7 @@ func TestTenantlessKBAssetRoutesReachAndRemainBoundByKBGuards(t *testing.T) {
 		"/api/v1/knowledge-bases/:id/files",
 		"/api/v1/knowledge-bases/:id/entity-graph",
 		"/api/v1/knowledge-bases/:id/legal-graph",
+		"/api/v1/knowledge-bases/:id/legal-graph/focus",
 	}
 	public := publicTestKB("kb", 9)
 	published := tenantTestKB("kb", 9)

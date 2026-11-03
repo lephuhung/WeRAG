@@ -318,6 +318,9 @@ func matchTenantlessKBReadShape(rest string, isGet, isPost bool) bool {
 		}
 	case 3:
 		switch segs[1] {
+		case "legal-graph":
+			// GET the focused legal graph (same KB guard as legal-graph).
+			return segs[2] == "focus" && isGet
 		case "knowledge":
 			// GET folders; POST batch-download (originals).
 			if segs[2] == "folders" {

@@ -276,3 +276,13 @@ type DomainPackFormulaOverrideRepository interface {
 	// Delete removes the edit of (pack, formula); none is not an error.
 	Delete(ctx context.Context, packName, formulaID string) error
 }
+
+// LegalGraphFocusService reads the focused legal graph of a KB page.
+type LegalGraphFocusService interface {
+	// KBFocus returns one catalogue document's relations and provision
+	// links seen from a KB: docID must be held by the KB or a direct
+	// neighbour of a held document (types.ErrLegalGraphFocusNotFound
+	// otherwise); empty, the best-connected held document is focused. q
+	// filters the held-document candidates of the picker.
+	KBFocus(ctx context.Context, kbID, docID, q string) (*types.LegalGraphFocus, error)
+}
