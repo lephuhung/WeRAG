@@ -88,8 +88,91 @@ func paidAt(o *types.UsageOrder) time.Time {
 	return o.CreatedAt
 }
 
-// planCreditLine values the unused days of cur at the per-month price its
-// last paid plan order charged (after its promo code).
+// creditTranche is a part of the units (seats) of a package or add-on
+// valued at the price one order paid for them: monthly per unit, after that
+// order's promo (num/den). paid is false for units no paid order covers (a
+// SuperAdmin grant): they are worth nothing.
+type creditTranche struct {
+	units    int
+	monthly  int64
+	num, den int64
+	paid     bool
+}
+
+// orderTranche is the tranche of units an order paid for.
+func orderTranche(o *types.UsageOrder, units int, monthly int64) creditTranche {
+	num, den := paidFactor(o)
+	return creditTranche{units: units, monthly: monthly, num: num, den: den, paid: true}
+}
+
+// trancheCredit values the last `take` of `total` units for days. The
+// tranches are oldest first and capped at total; the units above them are
+// unpaid. Units given up are taken from the newest (unpaid ones first).
+// paid reports whether any of them was paid for.
+func trancheCredit(tranches []creditTranche, total, take, days int) (amount int64, paid bool) {
+	var list []creditTranche
+	left := total
+	for _, t := range tranches {
+		if left <= 0 {
+			break
+		}
+		if t.units > left {
+			t.units = left
+		}
+		if t.units <= 0 {
+			continue
+		}
+		list = append(list, t)
+		left -= t.units
+	}
+	if left > 0 {
+		list = append(list, creditTranche{units: left})
+	}
+	if take > total {
+		take = total
+	}
+	for i := len(list) - 1; i >= 0 && take > 0; i-- {
+		t := list[i]
+		n := t.units
+		if n > take {
+			n = take
+		}
+		take -= n
+		if t.paid {
+			paid = true
+			amount += creditAmount(t.monthly, n, days, t.num, t.den)
+		}
+	}
+	return amount, paid
+}
+
+// paidOrdersAfter are the paid orders applied to subscription sub, paid
+// after `after` (all of them when zero), oldest first.
+func (s *usageBillingService) paidOrdersAfter(
+	ctx context.Context, sub *types.UsageSubscription, after time.Time,
+) ([]*types.UsageOrder, error) {
+	orders, err := s.repo.ListOrders(ctx, types.UsageOrderFilter{
+		ScopeType: sub.ScopeType, ScopeID: sub.ScopeID, Status: types.UsageOrderPaid,
+	})
+	if err != nil {
+		return nil, err
+	}
+	var out []*types.UsageOrder
+	for _, o := range orders {
+		if o.SubscriptionID == nil || *o.SubscriptionID != sub.ID || !paidAt(o).After(after) {
+			continue
+		}
+		out = append(out, o)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return paidAt(out[i]).Before(paidAt(out[j])) })
+	return out, nil
+}
+
+// planCreditLine values the unused days of cur in tranches (review M1): the
+// seats of its last paid plan order at the per-month price that order
+// charged (after its promo code), then the seats each later seat order
+// bought at its own price and promo; seats above them (a SuperAdmin grant)
+// are worth nothing. A pool package is one unit at the plan order's price.
 func (s *usageBillingService) planCreditLine(
 	ctx context.Context, cur *types.UsageSubscription, planName string, now time.Time,
 ) (types.UsageCreditLine, error) {
@@ -100,40 +183,82 @@ func (s *usageBillingService) planCreditLine(
 	}
 	line.Days = creditDays(now, *cur.EndsAt)
 	o, err := s.lastPaidPlanOrder(ctx, cur)
-	if err != nil || o == nil {
-		return line, err
-	}
-	line.Paid = true
-	num, den := paidFactor(o)
-	line.AmountVND = creditAmount(o.UnitPriceVND, units, line.Days, num, den)
-	return line, nil
-}
-
-// addonCreditLine values the unused days of a held add-on the order drops,
-// at the price frozen on its row (after the promo of the order that sold it).
-func (s *usageBillingService) addonCreditLine(
-	ctx context.Context, h *types.UsageSubscriptionAddon, units int, end, now time.Time,
-) (types.UsageCreditLine, error) {
-	line := types.UsageCreditLine{
-		Kind: types.UsageCreditAddon, AgentID: h.AgentID, Name: h.AgentName, Units: units,
-		Days: creditDays(now, end),
-	}
-	if h.OrderID == nil {
-		return line, nil
-	}
-	o, err := s.repo.GetOrder(ctx, *h.OrderID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return line, nil
-	}
 	if err != nil {
 		return line, err
 	}
-	if o.Status != types.UsageOrderPaid {
-		return line, nil
+	var tranches []creditTranche
+	var after time.Time
+	if o != nil {
+		n := units
+		if cur.Mode == types.UsageModeSeat && o.Mode == types.UsageModeSeat && o.Seats > 0 && o.Seats < n {
+			n = o.Seats
+		}
+		tranches = append(tranches, orderTranche(o, n, o.UnitPriceVND))
+		after = paidAt(o)
 	}
-	line.Paid = true
-	num, den := paidFactor(o)
-	line.AmountVND = creditAmount(h.PriceVND, units, line.Days, num, den)
+	if cur.Mode == types.UsageModeSeat {
+		later, err := s.paidOrdersAfter(ctx, cur, after)
+		if err != nil {
+			return line, err
+		}
+		for _, so := range later {
+			if so.Kind == types.UsageOrderKindSeats {
+				tranches = append(tranches, orderTranche(so, so.Seats, so.UnitPriceVND))
+			}
+		}
+	}
+	line.AmountVND, line.Paid = trancheCredit(tranches, units, units, line.Days)
+	return line, nil
+}
+
+// addonCreditLine values the unused days of `take` of the heldUnits units
+// of a held add-on (all of them when the order drops it, the units not
+// carried over when it keeps it on fewer seats), in tranches like
+// planCreditLine: the units the order that sold it paid for, at the price
+// frozen on its row, then the units later orders on sub added to it
+// (extra-seat parts of seat orders and renewals) at their own price and
+// promo; units above them are worth nothing. The newest units go first.
+func (s *usageBillingService) addonCreditLine(
+	ctx context.Context, h *types.UsageSubscriptionAddon, sub *types.UsageSubscription,
+	heldUnits, take int, end, now time.Time,
+) (types.UsageCreditLine, error) {
+	line := types.UsageCreditLine{
+		Kind: types.UsageCreditAddon, AgentID: h.AgentID, Name: h.AgentName, Units: take,
+		Days: creditDays(now, end),
+	}
+	var tranches []creditTranche
+	var after time.Time
+	if h.OrderID != nil {
+		o, err := s.repo.GetOrder(ctx, *h.OrderID)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return line, err
+		}
+		if err == nil && o.Status == types.UsageOrderPaid {
+			n := heldUnits
+			for _, l := range o.Addons {
+				if l.AgentID == h.AgentID && !l.SeatsOnly && l.Units > 0 {
+					n = l.Units
+					break
+				}
+			}
+			tranches = append(tranches, orderTranche(o, n, h.PriceVND))
+			after = paidAt(o)
+		}
+	}
+	if sub != nil && (h.OrderID == nil || len(tranches) > 0) {
+		later, err := s.paidOrdersAfter(ctx, sub, after)
+		if err != nil {
+			return line, err
+		}
+		for _, o := range later {
+			for _, l := range o.Addons {
+				if l.AgentID == h.AgentID && l.ExtraUnits > 0 {
+					tranches = append(tranches, orderTranche(o, l.ExtraUnits, l.UnitPriceVND))
+				}
+			}
+		}
+	}
+	line.AmountVND, line.Paid = trancheCredit(tranches, heldUnits, take, line.Days)
 	return line, nil
 }
 
@@ -174,6 +299,11 @@ func (s *usageBillingService) pricePlanChange(ctx context.Context, q *types.Usag
 	if !cur.IsCurrentAt(now) {
 		return nil
 	}
+	// the credit counts the seats the package has now (review H2)
+	if cur.Mode == types.UsageModeSeat {
+		priced := cur.Seats
+		q.PricedSeats = &priced
+	}
 	name := ""
 	if cur.Plan != nil {
 		name = cur.Plan.Name
@@ -204,6 +334,11 @@ func (s *usageBillingService) pricePlanChange(ctx context.Context, q *types.Usag
 // and an order priced with nothing to replace (a renewal, a first package)
 // that would now replace a running package of another plan without credit.
 func refuseReplacedMoved(o *types.UsageOrder, cur *types.UsageSubscription, now time.Time) error {
+	// priced on another seat count: a seat order added seats meanwhile, so
+	// the credit (or a renewal's proration) no longer matches (review H2)
+	if o.PricedSeats != nil && cur != nil && cur.IsCurrentAt(now) && cur.Seats != *o.PricedSeats {
+		return seatsChangedError(o, cur)
+	}
 	if o.ReplacesSubscriptionID == nil {
 		if cur != nil && cur.IsCurrentAt(now) && !renewsSubscription(cur, o.PlanID, o.Mode, now) {
 			return apperrors.NewConflictError(fmt.Sprintf(
@@ -227,6 +362,23 @@ func refuseReplacedMoved(o *types.UsageOrder, cur *types.UsageSubscription, now 
 	return apperrors.NewConflictError(fmt.Sprintf(
 		"the package changed since order %s was priced; cancel it and order again", o.OrderCode)).
 		WithDetails(map[string]string{"reason": "subscription_changed"})
+}
+
+// seatsChangedError refuses an order priced on another seat count than the
+// current subscription has.
+func seatsChangedError(o *types.UsageOrder, cur *types.UsageSubscription) error {
+	return apperrors.NewConflictError(fmt.Sprintf(
+		"the subscription now has %d seats but order %s was priced for %d; cancel it and order again",
+		cur.Seats, o.OrderCode, *o.PricedSeats)).
+		WithDetails(map[string]string{"reason": "subscription_changed"})
+}
+
+// seatSensitivePlanOrder: a plan order whose price depends on the seats of
+// the scope's current subscription (a seat-mode order, or one priced
+// against a seat subscription it renews or replaces).
+func seatSensitivePlanOrder(o *types.UsageOrder) bool {
+	return o.Kind != types.UsageOrderKindAddon && o.Kind != types.UsageOrderKindSeats &&
+		(o.Mode == types.UsageModeSeat || o.PricedSeats != nil)
 }
 
 // carrySeats gives the new seat subscription the seats assigned on the

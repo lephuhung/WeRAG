@@ -157,7 +157,8 @@ func (r *usagePlanRepository) ProfileBuiltinAgents(ctx context.Context, ids []st
 }
 
 // PendingOrderAddons maps each pending order of a scope to the add-on agents
-// it buys.
+// it buys (seats-only lines, which only pay added seats on a held right,
+// are not a purchase of the agent).
 func (r *usagePlanRepository) PendingOrderAddons(ctx context.Context, scopeType, scopeID string) (map[string][]string, error) {
 	var orders []*types.UsageOrder
 	if err := r.conn(ctx).Select("id", "addons").
@@ -168,6 +169,9 @@ func (r *usagePlanRepository) PendingOrderAddons(ctx context.Context, scopeType,
 	out := make(map[string][]string, len(orders))
 	for _, o := range orders {
 		for _, l := range o.Addons {
+			if l.SeatsOnly {
+				continue
+			}
 			out[o.ID] = append(out[o.ID], l.AgentID)
 		}
 	}

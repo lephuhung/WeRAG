@@ -170,13 +170,22 @@ func (s *usageBillingService) ReopenOrder(ctx context.Context, id string, force 
 		switch o.Kind {
 		case types.UsageOrderKindAddon:
 		case types.UsageOrderKindSeats:
-			// a newer seat order may be waiting (no override: see CreateOrder)
+			// a newer seat or plan order may be waiting (no override: see
+			// CreateOrder)
 			if err := s.refusePendingSeatOrder(ctx, o.ScopeType, o.ScopeID); err != nil {
+				return err
+			}
+			if err := s.refusePendingPlanOrder(ctx, o.ScopeType, o.ScopeID); err != nil {
 				return err
 			}
 		default:
 			if !force {
 				if err := s.refusePendingPlanOrder(ctx, o.ScopeType, o.ScopeID); err != nil {
+					return err
+				}
+			}
+			if seatSensitivePlanOrder(o) {
+				if err := s.refusePendingSeatOrder(ctx, o.ScopeType, o.ScopeID); err != nil {
 					return err
 				}
 			}

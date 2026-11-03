@@ -235,15 +235,116 @@ func TestSeatOrderPendingDuplicateRefused(t *testing.T) {
 	require.Equal(t, 409, code)
 	require.Equal(t, "seats_order_pending", reason)
 
-	// a plan renewal is not blocked by it, nor the other way round
-	_, err = f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 3}, "10003", "u1")
-	require.NoError(t, err)
-
 	// once the first is cancelled another may be placed
 	_, err = f.svc.CancelOrder(ctx, first.ID, false)
 	require.NoError(t, err)
 	_, err = f.svc.CreateOrder(ctx, seatsReq(2), "10003", "u1")
 	require.NoError(t, err)
+}
+
+// Review H1/H2: a seat order and a plan order priced on the same seats are
+// never pending together, either way round, and confirm_duplicate does not
+// override it.
+func TestSeatOrderAndPlanOrderRefuseEachOther(t *testing.T) {
+	ctx := context.Background()
+	end := endOfVN(2026, 11, 12)
+	renewal := types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 5, ConfirmDuplicate: true}
+	change := types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "term", Months: 1, Seats: 2, ConfirmDuplicate: true}
+	toPool := types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1, ConfirmDuplicate: true}
+
+	f := newBillingFixture(t)
+	f.paidSeats(t, "seat", 3, end, 1, 49_000)
+	seats, err := f.svc.CreateOrder(ctx, seatsReq(2), "10003", "u1")
+	require.NoError(t, err)
+	for _, req := range []types.UsageQuoteRequest{renewal, change, toPool} {
+		_, err = f.svc.CreateOrder(ctx, req, "10003", "u1")
+		code, reason := errCodeReason(t, err)
+		require.Equal(t, 409, code, req.PlanID)
+		require.Equal(t, "seats_order_pending", reason, req.PlanID)
+	}
+	_, err = f.svc.CancelOrder(ctx, seats.ID, false)
+	require.NoError(t, err)
+
+	plan, err := f.svc.CreateOrder(ctx, renewal, "10003", "u1")
+	require.NoError(t, err)
+	require.Equal(t, 3, *plan.PricedSeats)
+	r := seatsReq(1)
+	r.ConfirmDuplicate = true
+	_, err = f.svc.CreateOrder(ctx, r, "10003", "u1")
+	code, reason := errCodeReason(t, err)
+	require.Equal(t, 409, code)
+	require.Equal(t, "plan_order_pending", reason)
+}
+
+// sneakSeatOrder places a seat order although plan orders are pending (as
+// a race past the cross refusal, or a SuperAdmin reopen would) and
+// confirms it.
+func (f *billingFixture) sneakSeatOrder(t *testing.T, k int, promo string) *types.UsageOrderView {
+	t.Helper()
+	ctx := context.Background()
+	hidden := map[string]bool{}
+	for id, o := range f.repo.orders {
+		if o.Status == types.UsageOrderPending {
+			o.Status = types.UsageOrderExpired
+			hidden[id] = true
+		}
+	}
+	r := seatsReq(k)
+	r.PromoCode = promo
+	o, err := f.svc.CreateOrder(ctx, r, "10003", "u1")
+	require.NoError(t, err)
+	for id := range hidden {
+		f.repo.orders[id].Status = types.UsageOrderPending
+	}
+	v, err := f.svc.ConfirmOrder(ctx, o.ID, "sa")
+	require.NoError(t, err)
+	return v
+}
+
+// Review H1: a renewal priced before a seat order is refused once the seats
+// grew, instead of charging the added seats a second time.
+func TestRenewalAfterSeatOrderIsRefused(t *testing.T) {
+	f := newBillingFixture(t)
+	withAddonCatalogue(f)
+	ctx := context.Background()
+	end := endOfVN(2026, 11, 12)
+	f.paidSeats(t, "seat", 3, end, 1, 49_000)
+	f.heldThue(t)
+	renew, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 5}, "10003", "u1")
+	require.NoError(t, err)
+	require.Equal(t, int64(101_267), renew.ProrationVND, "it also pays the 2 added seats for the rest of the period")
+	f.sneakSeatOrder(t, 2, "")
+	require.Equal(t, 5, f.plans.active["tenant/10003"].Seats)
+
+	_, err = f.svc.ConfirmOrder(ctx, renew.ID, "sa")
+	code, reason := errCodeReason(t, err)
+	require.Equal(t, 409, code)
+	require.Equal(t, "subscription_changed", reason)
+	require.Equal(t, end, *f.plans.active["tenant/10003"].EndsAt, "not extended")
+
+	// a legacy order (no priced seats) keeps the old "fewer seats" check
+	legacy, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 5, ConfirmDuplicate: true}, "10003", "u1")
+	require.NoError(t, err)
+	f.repo.orders[legacy.ID].PricedSeats = nil
+	f.repo.orders[legacy.ID].Seats = 4
+	_, err = f.svc.ConfirmOrder(ctx, legacy.ID, "sa")
+	require.Equal(t, 409, appErrHTTP(t, err))
+}
+
+// Review H2: a plan change priced before a seat order is refused: its credit
+// ignores the seats just paid.
+func TestPlanChangeAfterSeatOrderIsRefused(t *testing.T) {
+	f := newBillingFixture(t)
+	ctx := context.Background()
+	f.paidSeats(t, "seat", 3, endOfVN(2026, 11, 12), 1, 49_000)
+	change, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1}, "10003", "u1")
+	require.NoError(t, err)
+	require.Equal(t, 3, *change.PricedSeats)
+	f.sneakSeatOrder(t, 2, "")
+	_, err = f.svc.ConfirmOrder(ctx, change.ID, "sa")
+	_, reason := errCodeReason(t, err)
+	require.Equal(t, "subscription_changed", reason)
+	require.Equal(t, "seat", f.plans.active["tenant/10003"].PlanID)
 }
 
 // Confirming refuses a package that moved since the quote: renewed (another
@@ -257,10 +358,8 @@ func TestSeatOrderAgainstAChangedPackageIsRefused(t *testing.T) {
 		f.paidSeats(t, "seat", 3, end, 1, 49_000)
 		o, err := f.svc.CreateOrder(ctx, seatsReq(2), "10003", "u1")
 		require.NoError(t, err)
-		renew, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 3}, "10003", "u1")
-		require.NoError(t, err)
-		_, err = f.svc.ConfirmOrder(ctx, renew.ID, "sa")
-		require.NoError(t, err)
+		later := endOfVN(2026, 12, 12) // e.g. a SuperAdmin extension
+		f.plans.active["tenant/10003"].EndsAt = &later
 		_, err = f.svc.ConfirmOrder(ctx, o.ID, "sa")
 		code, reason := errCodeReason(t, err)
 		require.Equal(t, 409, code)
@@ -272,10 +371,8 @@ func TestSeatOrderAgainstAChangedPackageIsRefused(t *testing.T) {
 		f.paidSeats(t, "seat", 3, end, 1, 49_000)
 		o, err := f.svc.CreateOrder(ctx, seatsReq(2), "10003", "u1")
 		require.NoError(t, err)
-		change, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "term", Months: 1, Seats: 3}, "10003", "u1")
-		require.NoError(t, err)
-		_, err = f.svc.ConfirmOrder(ctx, change.ID, "sa")
-		require.NoError(t, err)
+		f.plans.active["tenant/10003"] = &types.UsageSubscription{ID: "sub-new", ScopeType: "tenant", ScopeID: "10003",
+			PlanID: "seat", Mode: "seat", Seats: 3, StartsAt: billingNow, EndsAt: &end, Status: types.UsageSubscriptionActive}
 		_, err = f.svc.ConfirmOrder(ctx, o.ID, "sa")
 		_, reason := errCodeReason(t, err)
 		require.Equal(t, "subscription_changed", reason)
@@ -388,5 +485,124 @@ func TestPlanChangeKeptAddonCreditsDroppedSeats(t *testing.T) {
 func TestSeatOrderEmailLabel(t *testing.T) {
 	o := &types.UsageOrderView{UsageOrder: &types.UsageOrder{Kind: types.UsageOrderKindSeats, PlanName: "Seat", Seats: 2,
 		Mode: "seat", Addons: types.UsageOrderAddonLines{{AgentID: "thue", Name: "Thuế HKD", SeatsOnly: true}}}}
-	require.Equal(t, "Seat · thêm 2 chỗ đến hết kỳ hiện tại · Trợ lý chuyên ngành: Thuế HKD", orderWhatLabel(o))
+	require.Equal(t, "Seat · thêm 2 chỗ đến hết kỳ hiện tại · Trợ lý chuyên ngành tính thêm cho chỗ mới: Thuế HKD", orderWhatLabel(o))
+}
+
+// planCredit is the plan line of a plan change quote to the pool plan.
+func planCredit(t *testing.T, f *billingFixture) types.UsageCreditLine {
+	t.Helper()
+	none := []string{}
+	q, err := f.svc.Quote(context.Background(), types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 12,
+		KeepAddonAgentIDs: &none}, "10003")
+	require.NoError(t, err)
+	require.Equal(t, types.UsageCreditPlan, q.CreditLines[0].Kind)
+	return q.CreditLines[0]
+}
+
+// Review M1: the plan-change credit values the package in tranches — the
+// plan order's seats at its price and promo, each later seat order's at its
+// own, seats nobody paid for (a grant) at nothing.
+func TestPlanChangeCreditInSeatTranches(t *testing.T) {
+	end := endOfVN(2026, 11, 12) // 30 days credited
+
+	// seats bought with a 100 % code are not credited
+	f := newBillingFixture(t)
+	f.paidSeats(t, "seat", 3, end, 1, 49_000)
+	f.promo(t, types.UsagePromoCode{Code: "FREE", DiscountType: types.UsagePromoPercent, DiscountValue: 100, IsActive: true})
+	f.sneakSeatOrder(t, 2, "FREE")
+	c := planCredit(t, f)
+	require.Equal(t, 5, c.Units)
+	require.True(t, c.Paid)
+	require.Equal(t, int64(49_000*3), c.AmountVND, "3 × 49.000 × 30/30; the 2 free seats count 0 (not 245.000)")
+
+	// the price changed between the plan order and the seat order
+	g := newBillingFixture(t)
+	g.paidSeats(t, "seat", 3, end, 1, 49_000)
+	g.svc.plans.(*planCatalog).plans["seat"].PriceVND = 60_000
+	so := g.sneakSeatOrder(t, 2, "")
+	require.Equal(t, int64(60_000), so.UnitPriceVND)
+	require.Equal(t, int64(49_000*3+60_000*2), planCredit(t, g).AmountVND)
+
+	// a half-price seat order, then a SuperAdmin grant of 2 more seats
+	h := newBillingFixture(t)
+	h.paidSeats(t, "seat", 3, end, 1, 49_000)
+	h.promo(t, types.UsagePromoCode{Code: "HALF", DiscountType: types.UsagePromoPercent, DiscountValue: 50, IsActive: true})
+	h.sneakSeatOrder(t, 2, "HALF")
+	h.plans.active["tenant/10003"].Seats = 7
+	c = planCredit(t, h)
+	require.Equal(t, 7, c.Units)
+	require.Equal(t, int64(49_000*3+49_000), c.AmountVND, "2 seats at half price = 49.000, granted ones 0")
+
+	// a seat order older than the last plan order is covered by that order
+	k := newBillingFixture(t)
+	k.paidSeats(t, "seat", 3, end, 1, 49_000)
+	k.sneakSeatOrder(t, 2, "")
+	ord := k.repo.orders["o-seat"]
+	later := billingNow.Add(time.Hour)
+	ord.PaidAt, ord.Seats = &later, 5
+	require.Equal(t, int64(49_000*5), planCredit(t, k).AmountVND)
+}
+
+// Review M1 for F5: the add-on seats not carried over are taken newest
+// first, each at the price its order paid.
+func TestKeptAddonDroppedSeatsCreditInTranches(t *testing.T) {
+	f := newBillingFixture(t)
+	withAddonCatalogue(f)
+	ctx := context.Background()
+	end := endOfVN(2026, 11, 12)
+	f.paidSeats(t, "seat", 3, end, 1, 49_000)
+	f.repo.orders["o-seat"].Addons = types.UsageOrderAddonLines{{AgentID: "thue", Name: "Thuế HKD", UnitPriceVND: 99_000, Units: 3, Months: 1}}
+	f.heldThue(t)
+	f.promo(t, types.UsagePromoCode{Code: "FREE", DiscountType: types.UsagePromoPercent, DiscountValue: 100, IsActive: true})
+	f.sneakSeatOrder(t, 2, "FREE") // thue for the 2 new seats, free
+
+	// 5 → 2 seats: 3 seats not carried = the 2 free ones (0) + 1 paid (99.000)
+	q, err := f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "term", Months: 3, Seats: 2}, "10003")
+	require.NoError(t, err)
+	require.True(t, q.HeldAddons[0].Kept)
+	require.Equal(t, 3, q.HeldAddons[0].DroppedUnits)
+	require.Equal(t, int64(99_000), q.HeldAddons[0].UnitsCreditVND)
+
+	// dropped entirely: the 3 paid seats only (297.000), not 5 × 99.000
+	none := []string{}
+	q, err = f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "term", Months: 3, Seats: 2,
+		KeepAddonAgentIDs: &none}, "10003")
+	require.NoError(t, err)
+	require.Equal(t, int64(297_000), q.HeldAddons[0].CreditVND)
+}
+
+// Review L1: an add-on held past the subscription's end is charged for the
+// extra seats only up to that end, and the order still confirms.
+func TestSeatOrderAddonStopsAtTheSubscriptionEnd(t *testing.T) {
+	f := newBillingFixture(t)
+	withAddonCatalogue(f)
+	ctx := context.Background()
+	end := endOfVN(2026, 11, 12)
+	f.paidSeats(t, "seat", 3, end, 1, 49_000)
+	f.heldThue(t)
+	far := endOfVN(2027, 1, 31)
+	f.right("sub-s", "thue").EndsAt = &far
+	q, err := f.svc.Quote(ctx, seatsReq(2), "10003")
+	require.NoError(t, err)
+	require.Equal(t, end, *q.Addons[0].CoveredUntil)
+	require.Equal(t, int64(198_000), q.Addons[0].AmountVND, "one full month, not 3+")
+	o, err := f.svc.CreateOrder(ctx, seatsReq(2), "10003", "u1")
+	require.NoError(t, err)
+	_, err = f.svc.ConfirmOrder(ctx, o.ID, "sa")
+	require.NoError(t, err)
+	require.Equal(t, 5, f.plans.active["tenant/10003"].Seats)
+}
+
+// Review M2: the seats-only lines of a pending seat order do not count as
+// buying the agent.
+func TestPendingSeatOrderLinesAreNotAddonPurchases(t *testing.T) {
+	f := newBillingFixture(t)
+	withAddonCatalogue(f)
+	ctx := context.Background()
+	f.paidSeats(t, "seat", 3, endOfVN(2026, 11, 12), 1, 49_000)
+	f.heldThue(t)
+	_, err := f.svc.CreateOrder(ctx, seatsReq(2), "10003", "u1")
+	require.NoError(t, err)
+	require.NoError(t, f.svc.refusePendingAddons(ctx, "tenant", "10003",
+		types.UsageOrderAddonLines{{AgentID: "thue"}}))
 }

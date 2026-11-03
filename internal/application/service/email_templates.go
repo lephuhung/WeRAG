@@ -124,7 +124,20 @@ func orderScopeLabel(o *types.UsageOrderView) string {
 func orderWhatLabel(o *types.UsageOrderView) string {
 	var parts []string
 	if o.Kind == types.UsageOrderKindSeats {
-		parts = append(parts, fmt.Sprintf("%s · thêm %d chỗ đến hết kỳ hiện tại", o.PlanName, o.Seats))
+		p := fmt.Sprintf("%s · thêm %d chỗ đến hết kỳ hiện tại", o.PlanName, o.Seats)
+		// the add-ons are already held: the order only pays them for the new seats
+		if len(o.Addons) > 0 {
+			names := make([]string, 0, len(o.Addons))
+			for _, a := range o.Addons {
+				n := a.Name
+				if n == "" {
+					n = a.AgentID
+				}
+				names = append(names, n)
+			}
+			p += " · Trợ lý chuyên ngành tính thêm cho chỗ mới: " + strings.Join(names, ", ")
+		}
+		return p
 	} else if o.Kind != types.UsageOrderKindAddon {
 		p := o.PlanName
 		if o.Months > 0 {

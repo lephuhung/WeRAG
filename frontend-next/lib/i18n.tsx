@@ -5860,7 +5860,7 @@ const vi: Record<keyof typeof en, string> = {
   "bill.seatsOrderLine": "{seats} chỗ thêm × {days} ngày còn lại",
   "bill.seatsOrderLineDetail": "{price}/chỗ/tháng",
   "bill.seatsAddonLine": "Trợ lý chuyên ngành {name}: {n} chỗ thêm, đến hết ngày {date}",
-  "bill.creditUnitsLine": "Trợ lý {name}: {n} chỗ không mang sang ({days} ngày)",
+  "bill.creditUnitsLine": "Trợ lý chuyên ngành {name}: {n} chỗ không mang sang ({days} ngày)",
   "bill.heldUnitsCredit": "{n} chỗ không mang sang: trừ lại {amount}",
   "bill.err.not_seat_plan": "Gói đang dùng không bán theo chỗ.",
   "bill.err.seats_none": "Hãy chọn ít nhất một chỗ.",

@@ -209,7 +209,7 @@ func (s *usageBillingService) priceAddonsWithPlan(
 					choice := types.UsageHeldAddonChoice{
 						AgentID: id, Name: h.AgentName, EndsAt: covered, Kept: true, BoughtAgain: true,
 					}
-					if err := s.creditDroppedUnits(ctx, q, &choice, h, heldUnits, units, covered, now); err != nil {
+					if err := s.creditDroppedUnits(ctx, q, &choice, h, cur, heldUnits, units, covered, now); err != nil {
 						return err
 					}
 					q.HeldAddons = append(q.HeldAddons, choice)
@@ -238,7 +238,7 @@ func (s *usageBillingService) priceAddonsWithPlan(
 				}
 				continue
 			}
-			credit, err := s.addonCreditLine(ctx, h, heldUnits, *covered, now)
+			credit, err := s.addonCreditLine(ctx, h, cur, heldUnits, heldUnits, *covered, now)
 			if err != nil {
 				return err
 			}
@@ -251,7 +251,7 @@ func (s *usageBillingService) priceAddonsWithPlan(
 				CarryVND: line.AmountVND, CreditVND: credit.AmountVND,
 			}
 			if kept {
-				if err := s.creditDroppedUnits(ctx, q, &choice, h, heldUnits, units, covered, now); err != nil {
+				if err := s.creditDroppedUnits(ctx, q, &choice, h, cur, heldUnits, units, covered, now); err != nil {
 					return err
 				}
 				q.HeldAddons = append(q.HeldAddons, choice)
@@ -276,12 +276,12 @@ func (s *usageBillingService) priceAddonsWithPlan(
 // add-on itself is still carried over (DroppedAddons skips the line).
 func (s *usageBillingService) creditDroppedUnits(
 	ctx context.Context, q *types.UsageQuote, choice *types.UsageHeldAddonChoice,
-	h *types.UsageSubscriptionAddon, heldUnits, units int, covered *time.Time, now time.Time,
+	h *types.UsageSubscriptionAddon, cur *types.UsageSubscription, heldUnits, units int, covered *time.Time, now time.Time,
 ) error {
 	if units >= heldUnits || covered == nil || !covered.After(now) {
 		return nil
 	}
-	line, err := s.addonCreditLine(ctx, h, heldUnits-units, *covered, now)
+	line, err := s.addonCreditLine(ctx, h, cur, heldUnits, heldUnits-units, *covered, now)
 	if err != nil {
 		return err
 	}

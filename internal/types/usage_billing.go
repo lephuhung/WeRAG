@@ -166,11 +166,16 @@ type UsageOrder struct {
 	// (in SubtotalVND) pays the seats added for the ProratedDays left on the
 	// current period; SavingsVND is what the quarter/year term saved
 	// (informational, already in the plan line).
-	ProrationVND int64     `json:"proration_vnd"`
-	ProratedDays int       `json:"prorated_days"`
-	SavingsVND   int64     `json:"savings_vnd"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ProrationVND int64 `json:"proration_vnd"`
+	ProratedDays int   `json:"prorated_days"`
+	SavingsVND   int64 `json:"savings_vnd"`
+	// PricedSeats: the seats of the current seat subscription a plan order
+	// (renewal or plan change) was priced against; confirming refuses
+	// another count (a seat order added seats meanwhile). nil = not priced
+	// against seats (and legacy orders).
+	PricedSeats *int      `json:"priced_seats,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // TableName returns the table name.
@@ -250,6 +255,8 @@ type UsageQuote struct {
 	// SubscriptionEndsAt: when the package ends once this order is applied
 	// now (renewal: from the current end).
 	SubscriptionEndsAt *time.Time `json:"subscription_ends_at,omitempty"`
+	// PricedSeats: see UsageOrder.PricedSeats.
+	PricedSeats *int `json:"priced_seats,omitempty"`
 }
 
 // UsageBillingInfo is what the payment page needs besides the order.
@@ -270,7 +277,7 @@ type UsageOrderFilter struct {
 	ScopeID   string
 	Status    string
 	CreatedBy string
-	// Kind: plan|addon ("" = both).
+	// Kind: plan|addon|seats ("" = all).
 	Kind  string
 	Limit int
 }

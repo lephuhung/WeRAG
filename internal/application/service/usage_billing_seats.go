@@ -125,8 +125,11 @@ func (s *usageBillingService) quoteSeatsOnly(
 	if err != nil {
 		return nil, err
 	}
+	// A right SuperAdmin removes or shortens after this quote keeps what the
+	// order paid for it (the overpayment is not refunded automatically); a
+	// right added or lengthened is refused at confirmation instead.
 	for _, h := range held {
-		covered := heldAddonEnd(h, cur)
+		covered := seatAddonEnd(h, cur)
 		if !h.IsCurrentAt(now) || covered == nil || !covered.After(now) {
 			continue
 		}
@@ -145,13 +148,18 @@ func (s *usageBillingService) quoteSeatsOnly(
 	return q, nil
 }
 
-// heldAddonEnd is where a held right runs to: its own end, else the
-// subscription's.
-func heldAddonEnd(h *types.UsageSubscriptionAddon, sub *types.UsageSubscription) *time.Time {
-	if h.EndsAt != nil {
-		return h.EndsAt
+// seatAddonEnd is how long a held right serves extra seats: to its own end
+// (else the subscription's), never past the subscription's end — the seats
+// stop there (review L1).
+func seatAddonEnd(h *types.UsageSubscriptionAddon, sub *types.UsageSubscription) *time.Time {
+	end := h.EndsAt
+	if end == nil {
+		end = sub.EndsAt
 	}
-	return sub.EndsAt
+	if end != nil && sub.EndsAt != nil && end.After(*sub.EndsAt) {
+		end = sub.EndsAt
+	}
+	return end
 }
 
 // refusePendingSeatOrder refuses a seat order while the scope has another
@@ -200,7 +208,7 @@ func (s *usageBillingService) applySeatsOrder(ctx context.Context, o *types.Usag
 		return "", err
 	}
 	for _, h := range held {
-		end := heldAddonEnd(h, cur)
+		end := seatAddonEnd(h, cur)
 		if !h.IsCurrentAt(now) || end == nil || !end.After(now) {
 			continue
 		}
