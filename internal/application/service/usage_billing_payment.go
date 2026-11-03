@@ -206,9 +206,18 @@ func (s *usageBillingService) settlePayment(
 	default:
 		t.Status, t.Reason = types.UsagePaymentOrderClosed, "the order is already "+o.Status
 	}
-	if t.Status == types.UsagePaymentUnmatched && t.AmountVND < o.TotalVND {
-		t.Status, t.Reason = types.UsagePaymentUnderpaid,
-			fmt.Sprintf("transferred %d of %d VND", t.AmountVND, o.TotalVND)
+	// short transfers add up: the buyer is asked to send the rest with the
+	// same content, and the one that completes the total confirms
+	var earlier []*types.UsagePaymentTransaction
+	if t.Status == types.UsagePaymentUnmatched {
+		var before int64
+		if earlier, before, err = s.shortPayments(ctx, o.ID); err != nil {
+			return err
+		}
+		if received := before + t.AmountVND; received < o.TotalVND {
+			t.Status, t.Reason = types.UsagePaymentUnderpaid,
+				fmt.Sprintf("transferred %d of %d VND", received, o.TotalVND)
+		}
 	}
 	if t.Status != types.UsagePaymentUnmatched {
 		result.Order = s.view(ctx, o)
@@ -232,8 +241,20 @@ func (s *usageBillingService) settlePayment(
 	switch {
 	case err == nil:
 		t.Status = types.UsagePaymentMatched
-		if extra := t.AmountVND - o.TotalVND; extra > 0 {
-			t.Reason = fmt.Sprintf("overpaid by %d VND", extra)
+		paid := t.AmountVND
+		for _, e := range earlier {
+			paid += e.AmountVND
+			e.Status = types.UsagePaymentMatched
+			e.Reason = fmt.Sprintf("completed by transfer %s", t.ExternalID)
+			if err := s.repo.UpdatePaymentTransaction(ctx, e); err != nil {
+				return err
+			}
+		}
+		if len(earlier) > 0 {
+			t.Reason = fmt.Sprintf("completes %d VND in %d transfers", paid, len(earlier)+1)
+		}
+		if extra := paid - o.TotalVND; extra > 0 {
+			t.Reason = strings.TrimPrefix(t.Reason+"; ", "; ") + fmt.Sprintf("overpaid by %d VND", extra)
 		}
 		result.Order = view
 	case errors.As(err, &appErr):
@@ -257,7 +278,8 @@ func (s *usageBillingService) reopenExpiredOrder(ctx context.Context, o *types.U
 			return err
 		}
 		if !ok {
-			return apperrors.NewConflictError("the order expired and its promo code has no use left")
+			return apperrors.NewConflictError("the order expired and its promo code has no use left").
+				WithDetails(map[string]string{"reason": "promo_exhausted"})
 		}
 	}
 	o.Status = types.UsageOrderPending

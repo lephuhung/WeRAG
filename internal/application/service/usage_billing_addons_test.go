@@ -566,7 +566,7 @@ func TestRenewalPricedAgainstAMovedEndIsRefused(t *testing.T) {
 		AddonAgentIDs: []string{"thue"}}, "10003", "u1")
 	require.NoError(t, err)
 	require.Equal(t, end, *withAddon.Addons[0].SubscriptionEnd)
-	plain, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1}, "10003", "u2")
+	plain, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1, ConfirmDuplicate: true}, "10003", "u2")
 	require.NoError(t, err)
 	_, err = f.svc.ConfirmOrder(ctx, plain.ID, "sa")
 	require.NoError(t, err)

@@ -160,19 +160,40 @@ func (m *memBillingRepo) UpdateOrder(_ context.Context, o *types.UsageOrder) err
 func (m *memBillingRepo) ListOrders(_ context.Context, f types.UsageOrderFilter) ([]*types.UsageOrder, error) {
 	var out []*types.UsageOrder
 	for _, o := range m.orders {
-		if f.Status != "" && o.Status != f.Status {
+		if (f.Status != "" && o.Status != f.Status) || (f.ScopeType != "" && o.ScopeType != f.ScopeType) ||
+			(f.ScopeID != "" && o.ScopeID != f.ScopeID) || (f.Kind != "" && o.Kind != f.Kind) ||
+			(f.CreatedBy != "" && o.CreatedBy != f.CreatedBy) {
 			continue
 		}
 		cp := *o
 		out = append(out, &cp)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].OrderCode < out[j].OrderCode })
+	if f.Limit > 0 && len(out) > f.Limit {
+		out = out[:f.Limit]
+	}
+	return out, nil
+}
+func (m *memBillingRepo) CountOrders(ctx context.Context, f types.UsageOrderFilter) (int64, error) {
+	f.Limit = 0
+	out, err := m.ListOrders(ctx, f)
+	return int64(len(out)), err
+}
+func (m *memBillingRepo) ListOrderPayments(_ context.Context, orderID string) ([]*types.UsagePaymentTransaction, error) {
+	var out []*types.UsagePaymentTransaction
+	for _, p := range m.payments {
+		if p.OrderID != nil && *p.OrderID == orderID {
+			cp := *p
+			out = append(out, &cp)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].TransactedAt.After(out[j].TransactedAt) })
 	return out, nil
 }
 func (m *memBillingRepo) ExpirePendingOrders(_ context.Context, now time.Time) ([]*types.UsageOrder, error) {
 	var out []*types.UsageOrder
 	for _, o := range m.orders {
-		if o.Status == types.UsageOrderPending && o.ExpiresAt != nil && o.ExpiresAt.Before(now) {
+		if o.Status == types.UsageOrderPending && o.TotalVND > 0 && o.ExpiresAt != nil && o.ExpiresAt.Before(now) {
 			o.Status = types.UsageOrderExpired
 			cp := *o
 			out = append(out, &cp)
@@ -256,6 +277,14 @@ func (m *memPlanRepo) UpsertSubscriptionAddon(_ context.Context, a *types.UsageS
 	return nil
 }
 
+func (m *memPlanRepo) GetSubscription(_ context.Context, id string) (*types.UsageSubscription, error) {
+	for _, s := range m.active {
+		if s.ID == id {
+			return s, nil
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
+}
 func (m *memPlanRepo) GetActiveSubscription(_ context.Context, scopeType, scopeID string) (*types.UsageSubscription, error) {
 	return m.active[scopeType+"/"+scopeID], nil
 }
@@ -656,7 +685,7 @@ func TestBillingConfirmRefusesOrderOutgrownBySubscription(t *testing.T) {
 	// both renewals priced against 5 seats; the bigger one is paid first
 	small, err := f.svc.CreateOrder(context.Background(), types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 5}, "10003", "u1")
 	require.NoError(t, err)
-	big, err := f.svc.CreateOrder(context.Background(), types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 50}, "10003", "u1")
+	big, err := f.svc.CreateOrder(context.Background(), types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 50, ConfirmDuplicate: true}, "10003", "u1")
 	require.NoError(t, err)
 	_, err = f.svc.ConfirmOrder(context.Background(), big.ID, "sa")
 	require.NoError(t, err)

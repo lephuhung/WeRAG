@@ -222,9 +222,12 @@ type UsageBillingRepository interface {
 	GetOrderForUpdate(ctx context.Context, id string) (*types.UsageOrder, error)
 	GetOrderByCode(ctx context.Context, code string) (*types.UsageOrder, error)
 	ListOrders(ctx context.Context, filter types.UsageOrderFilter) ([]*types.UsageOrder, error)
+	// CountOrders counts the orders filter matches (Limit ignored).
+	CountOrders(ctx context.Context, filter types.UsageOrderFilter) (int64, error)
 	UpdateOrder(ctx context.Context, order *types.UsageOrder) error
 	// ExpirePendingOrders flips pending orders past their expires_at and
 	// returns the ones this call flipped so promo uses can be released.
+	// Orders of 0 đồng never expire: they wait for a SuperAdmin.
 	ExpirePendingOrders(ctx context.Context, now time.Time) ([]*types.UsageOrder, error)
 	// InTransaction runs fn in one transaction; the usage plan repository
 	// called with fn's ctx writes in it too.
@@ -239,6 +242,9 @@ type UsageBillingRepository interface {
 	CreatePaymentTransaction(ctx context.Context, t *types.UsagePaymentTransaction) (bool, error)
 	GetPaymentTransactionByExternalID(ctx context.Context, source, externalID string) (*types.UsagePaymentTransaction, error)
 	UpdatePaymentTransaction(ctx context.Context, t *types.UsagePaymentTransaction) error
+	// ListOrderPayments returns the transfers matched to one order, newest
+	// first.
+	ListOrderPayments(ctx context.Context, orderID string) ([]*types.UsagePaymentTransaction, error)
 	// ListPaymentTransactions returns one page and the total matching filter.
 	ListPaymentTransactions(ctx context.Context, filter types.UsagePaymentFilter) ([]*types.UsagePaymentTransaction, int64, error)
 }
@@ -258,14 +264,26 @@ type UsageBillingService interface {
 	// left on the current period.
 	Quote(ctx context.Context, req types.UsageQuoteRequest, scopeID string) (*types.UsageQuote, error)
 	// CreateOrder freezes a quote for scopeID. A promo that cannot be used
-	// is an error here (the quote already told the buyer). Total 0 orders
-	// are confirmed on the spot.
+	// is an error here (the quote already told the buyer). A plan order
+	// while the scope has another plan order waiting for payment is refused
+	// (409, reason plan_order_pending) unless req.ConfirmDuplicate. Total 0
+	// orders wait for a SuperAdmin and never expire.
 	CreateOrder(ctx context.Context, req types.UsageQuoteRequest, scopeID, createdBy string) (*types.UsageOrderView, error)
+	// GetOrder and GetOrderByCode return the single-order view (resulting
+	// package end, transfers received).
 	GetOrder(ctx context.Context, id string) (*types.UsageOrderView, error)
 	GetOrderByCode(ctx context.Context, code string) (*types.UsageOrderView, error)
 	ListOrders(ctx context.Context, filter types.UsageOrderFilter) ([]*types.UsageOrderView, error)
+	// CountPendingOrders counts the orders waiting for payment or for a
+	// SuperAdmin.
+	CountPendingOrders(ctx context.Context) (int64, error)
 	// CancelOrder voids a pending order and releases its promo use.
 	CancelOrder(ctx context.Context, id string) (*types.UsageOrderView, error)
+	// ReopenOrder puts an expired order back to pending (SuperAdmin, e.g.
+	// money that came after it expired): its promo use is taken again and
+	// it gets a fresh payment window. Confirming it still refuses a plan
+	// change whose replaced package has moved.
+	ReopenOrder(ctx context.Context, id string) (*types.UsageOrderView, error)
 	// ConfirmOrder marks a pending order paid and applies it: the scope's
 	// current subscription of the same plan is extended by the order's
 	// months (seats raised to the order's; an order for fewer seats than

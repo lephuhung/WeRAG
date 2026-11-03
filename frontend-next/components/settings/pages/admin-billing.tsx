@@ -26,7 +26,10 @@ import {
   createUsagePromo,
   deleteUsagePromo,
   formatPriceVND,
+  getPendingUsageOrderCount,
   listAllUsageOrders,
+  PENDING_ORDERS_EVENT,
+  reopenUsageOrder,
   listUsagePlans,
   listUsagePromos,
   updateUsagePromo,
@@ -95,8 +98,12 @@ export default function AdminBilling() {
   const [promoEditing, setPromoEditing] = useState<UsagePromoCode | null>(null);
   const [promoForm, setPromoForm] = useState<PromoForm>(emptyPromo);
 
+  const [pendingCount, setPendingCount] = useState(0);
   const loadOrders = useCallback(async (f: UsageOrderStatus | "") => {
-    setOrders(await listAllUsageOrders(f || undefined));
+    const [list, n] = await Promise.all([listAllUsageOrders(f || undefined), getPendingUsageOrderCount()]);
+    setOrders(list);
+    setPendingCount(n);
+    window.dispatchEvent(new CustomEvent(PENDING_ORDERS_EVENT, { detail: n }));
   }, []);
 
   const load = useCallback(async () => {
@@ -279,6 +286,18 @@ export default function AdminBilling() {
     });
     if (ok) toast.success(t("common.saved"));
   };
+  const reopenOrder = async (o: UsageOrder) => {
+    const yes = await confirm({
+      title: t("badm.reopen"),
+      message: t("badm.reopenConfirm", { code: o.order_code }),
+    });
+    if (!yes) return;
+    const ok = await run(async () => {
+      await reopenUsageOrder(o.id);
+      await loadOrders(filter);
+    });
+    if (ok) toast.success(t("common.saved"));
+  };
   const changeFilter = (f: UsageOrderStatus | "") => {
     setFilter(f);
     void run(() => loadOrders(f));
@@ -342,6 +361,7 @@ export default function AdminBilling() {
             {(["pending", "paid", "cancelled", "expired"] as UsageOrderStatus[]).map((s) => (
               <Pill key={s} active={filter === s} onClick={() => changeFilter(s)}>
                 {t(statusKey(s))}
+                {s === "pending" && pendingCount > 0 ? ` (${pendingCount})` : ""}
               </Pill>
             ))}
           </PillGroup>
@@ -393,6 +413,9 @@ export default function AdminBilling() {
                     <button type="button" className="btn btn-primary btn-sm w-full px-2" disabled={busy} onClick={() => void confirmOrder(o)}>{t("badm.confirm")}</button>
                     <button type="button" className="btn btn-danger btn-sm w-full px-2" disabled={busy} onClick={() => void cancelOrder(o)}>{t("badm.cancelOrder")}</button>
                   </div>
+                )}
+                {o.status === "expired" && (
+                  <button type="button" className="btn btn-outline btn-sm w-full px-2" disabled={busy} onClick={() => void reopenOrder(o)}>{t("badm.reopen")}</button>
                 )}
               </td>
             </>

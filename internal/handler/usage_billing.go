@@ -316,6 +316,38 @@ func (h *UsageBillingHandler) AdminCancelOrder(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
 }
 
+// AdminReopenOrder godoc
+// @Summary      Reopen an expired order (SuperAdmin)
+// @Description  For money that arrived after the order expired: the order is pending again with a fresh payment window and its promo use taken again; confirm it afterwards.
+// @Tags         Gói sử dụng
+// @Param        id path string true "order id"
+// @Success      200 {object} map[string]interface{}
+// @Security     Bearer
+// @Router       /system/admin/usage/orders/{id}/reopen [post]
+func (h *UsageBillingHandler) AdminReopenOrder(c *gin.Context) {
+	order, err := h.billing.ReopenOrder(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
+}
+
+// AdminPendingOrderCount godoc
+// @Summary      How many orders wait for payment or confirmation (SuperAdmin)
+// @Tags         Gói sử dụng
+// @Success      200 {object} map[string]interface{} "data: {pending}"
+// @Security     Bearer
+// @Router       /system/admin/usage/orders/pending-count [get]
+func (h *UsageBillingHandler) AdminPendingOrderCount(c *gin.Context) {
+	n, err := h.billing.CountPendingOrders(c.Request.Context())
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"pending": n}})
+}
+
 // ListPromos godoc
 // @Summary      Promo codes (SuperAdmin)
 // @Tags         Gói sử dụng

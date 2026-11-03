@@ -295,15 +295,14 @@ func (s *usageBillingService) CreateOrder(
 	if scopeID == "" {
 		return nil, apperrors.NewBadRequestError("scope_id is required")
 	}
+	// an expired order no longer blocks a new one (same add-on, a plan
+	// order asking for confirmation) nor holds its promo use
+	if err := s.expireDue(ctx); err != nil {
+		return nil, err
+	}
 	q, promo, err := s.quote(ctx, req, scopeID, true)
 	if err != nil {
 		return nil, err
-	}
-	// an expired order no longer blocks a new one for the same add-on
-	if len(q.Addons) > 0 {
-		if err := s.expireDue(ctx); err != nil {
-			return nil, err
-		}
 	}
 	now := s.now()
 	order := &types.UsageOrder{
@@ -329,6 +328,9 @@ func (s *usageBillingService) CreateOrder(
 		Addons:        q.Addons,
 		CreditVND:     q.CreditVND,
 		CreditLines:   q.CreditLines,
+		ProrationVND:  q.ProrationVND,
+		ProratedDays:  q.ProratedDays,
+		SavingsVND:    q.SavingsVND,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
@@ -348,19 +350,24 @@ func (s *usageBillingService) CreateOrder(
 		id := promo.ID
 		order.PromoCodeID = &id
 	}
-	if ttl := s.settings.GetInt(ctx, types.BillingOrderTTLHoursSettingKey, "", 72); ttl > 0 {
-		exp := now.Add(time.Duration(ttl) * time.Hour)
-		order.ExpiresAt = &exp
-	}
+	order.ExpiresAt = s.paymentDeadline(ctx, order.TotalVND, now)
 	// The promo use is reserved in the order's transaction: the code's last
 	// use goes to one order only, and a failed insert gives it back.
 	err = s.repo.InTransaction(ctx, func(ctx context.Context) error {
-		// one pending order per add-on and scope (checked under the scope
-		// lock, so two tabs cannot both pass)
-		if len(order.Addons) > 0 {
+		// one pending order per add-on and scope, and no second plan order
+		// unconfirmed (checked under the scope lock, so two tabs cannot
+		// both pass)
+		if len(order.Addons) > 0 || order.Kind == types.UsageOrderKindPlan {
 			if err := s.repo.LockScope(ctx, order.ScopeType, order.ScopeID); err != nil {
 				return err
 			}
+		}
+		if order.Kind == types.UsageOrderKindPlan && !req.ConfirmDuplicate {
+			if err := s.refusePendingPlanOrder(ctx, order.ScopeType, order.ScopeID); err != nil {
+				return err
+			}
+		}
+		if len(order.Addons) > 0 {
 			if err := s.refusePendingAddons(ctx, order.ScopeType, order.ScopeID, order.Addons); err != nil {
 				return err
 			}
@@ -402,6 +409,7 @@ func (s *usageBillingService) CreateOrder(
 	// A 0-đồng order (a 100 % code, a free add-on) waits for a SuperAdmin
 	// like any other: nothing is ever confirmed automatically (user
 	// decision 19/10/2026), and the payment webhook ignores amounts ≤ 0.
+	// It has no payment deadline: the buyer has nothing left to do.
 	return s.view(ctx, order), nil
 }
 
@@ -433,7 +441,7 @@ func (s *usageBillingService) GetOrder(ctx context.Context, id string) (*types.U
 	if err != nil {
 		return nil, err
 	}
-	return s.view(ctx, o), nil
+	return s.detailView(ctx, o)
 }
 
 func (s *usageBillingService) GetOrderByCode(ctx context.Context, code string) (*types.UsageOrderView, error) {
@@ -447,7 +455,7 @@ func (s *usageBillingService) GetOrderByCode(ctx context.Context, code string) (
 	if err != nil {
 		return nil, err
 	}
-	return s.view(ctx, o), nil
+	return s.detailView(ctx, o)
 }
 
 func (s *usageBillingService) ListOrders(ctx context.Context, filter types.UsageOrderFilter) ([]*types.UsageOrderView, error) {
