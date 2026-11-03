@@ -305,7 +305,11 @@ export function AccountMenu() {
               ) : null}
               {!isSystemAdmin && (
                 <button type="button" className="caption mt-1.5 block w-full text-left text-muted underline hover:text-ink" onClick={() => openSettings("billing")}>
-                  {t("acct.buyPlan")}
+                  {/* a member covered by the Tổ chức package: a personal one only
+                      applies once the Tổ chức package lapses */}
+                  {usage.entitlement?.source === "tenant" && !usage.entitlement.expired && role !== "admin" && role !== "owner"
+                    ? t("acct.buyPersonalPlan")
+                    : t("acct.buyPlan")}
                 </button>
               )}
             </div>

@@ -11,11 +11,13 @@ import {
   formatPriceVND,
   getBillingInfo,
   getMyUsage,
+  getTenantUsage,
   listPurchasablePlans,
   planTermPrices,
   type UsageBillingInfo,
   type UsagePlan,
   type UsageSummary,
+  type UsageTenantUsage,
 } from "@/lib/api/usage";
 import { useAuth, useTenantRole } from "@/lib/auth";
 import { openBilling } from "@/lib/billing-intent";
@@ -55,6 +57,9 @@ export function PlanBannerBar() {
   const userId = auth.user?.id ?? "";
   const tenantKey = String(auth.selectedTenantId ?? auth.tenant?.id ?? "");
   const [usage, setUsage] = useState<UsageSummary | null>(null);
+  // the Tổ chức package's add-ons and chỗ, for its admin; undefined while
+  // loading, so the no_seat button does not flip from "add" to "give"
+  const [tenantUsage, setTenantUsage] = useState<UsageTenantUsage | null | undefined>(undefined);
   // undefined while loading: the banner waits for it, so the buy button
   // does not pop in after the text
   const [info, setInfo] = useState<UsageBillingInfo | null | undefined>(undefined);
@@ -62,18 +67,25 @@ export function PlanBannerBar() {
   // bumped on dismiss so the banner re-reads localStorage
   const [dismissTick, setDismissTick] = useState(0);
 
+  const adminTenant = isTenantAdmin && !isSystemAdmin && tenantKey !== "" && tenantKey !== "0" ? tenantKey : "";
   const refresh = useCallback(() => {
     getMyUsage()
       .then((r) => setUsage(r.data ?? null))
       .catch(() => {
         /* non-fatal: no banner */
       });
-  }, []);
+    if (adminTenant) {
+      getTenantUsage(adminTenant)
+        .then(setTenantUsage)
+        .catch(() => setTenantUsage(null));
+    }
+  }, [adminTenant]);
 
   useEffect(() => {
     if (!userId || isSystemAdmin) return;
     // a Tổ chức switch must not show the old Tổ chức's package
     setUsage(null);
+    setTenantUsage(undefined);
     refresh();
     getBillingInfo()
       .then(setInfo)
@@ -98,6 +110,7 @@ export function PlanBannerBar() {
   const banner = useMemo(() => {
     void dismissTick;
     if (!usage || !auth.user || info === undefined) return null;
+    if (adminTenant && tenantUsage === undefined) return null;
     return planBanner({
       now: new Date(),
       isSystemAdmin,
@@ -107,8 +120,14 @@ export function PlanBannerBar() {
       entitlement: usage.entitlement,
       userCreatedAt: auth.user.created_at ?? "",
       dismissed: (key) => storedDismissal(userId, key),
+      tenantAddons: tenantUsage?.addons ?? [],
+      tenantEndedAddons: tenantUsage?.ended_addons ?? [],
+      tenantSeats:
+        tenantUsage?.subscription?.mode === "seat"
+          ? { total: tenantUsage.subscription.seats, used: tenantUsage.subscription.seats_used }
+          : null,
     });
-  }, [usage, auth.user, info, isSystemAdmin, isTenantAdmin, tenantKey, userId, dismissTick]);
+  }, [usage, tenantUsage, adminTenant, auth.user, info, isSystemAdmin, isTenantAdmin, tenantKey, userId, dismissTick]);
 
   // the welcome banner lists the packages on offer (when they can be bought)
   const welcomeScope = banner?.kind === "welcome" && info?.enabled === true ? banner.scope : null;
@@ -140,7 +159,10 @@ export function PlanBannerBar() {
   };
 
   const billingOn = info?.enabled === true;
-  const buy = () => openBilling({ scope: banner.scope, planId: banner.kind === "welcome" ? "" : banner.planId });
+  const buy = () =>
+    banner.assignSeat
+      ? window.dispatchEvent(new CustomEvent("weknora:open-settings", { detail: "usage" }))
+      : openBilling({ scope: banner.scope, planId: banner.kind === "welcome" ? "" : banner.planId });
   const plan = banner.planName;
   // shown as the last day the package can be used
   const date = banner.endsAt ? formatDate(lastUsableDay(banner.endsAt)) : "";
@@ -173,8 +195,14 @@ export function PlanBannerBar() {
       action = "pbn.upgrade";
       break;
     case "no_seat":
-      message = t("pbn.noSeat", { plan });
-      action = "pbn.addSeats";
+      message = banner.assignSeat ? t("pbn.noSeatFree", { plan }) : t("pbn.noSeat", { plan });
+      action = banner.assignSeat ? "pbn.assignSeat" : "pbn.addSeats";
+      break;
+    case "addon_expired":
+      message = banner.addonEnded
+        ? t("pbn.addonEnded", { name: banner.agentName, date })
+        : t("pbn.addonEnding", { name: banner.agentName, date });
+      action = "pbn.addonBuyAgain";
       break;
     case "no_plan":
       message = t("pbn.noPlan");
@@ -195,7 +223,8 @@ export function PlanBannerBar() {
   }
   // a package bought ahead needs nobody to act
   const askAdmin = !banner.canBuy && banner.kind !== "not_started";
-  const showBuy = banner.canBuy && billingOn;
+  // giving out a chỗ needs no payment
+  const showBuy = banner.canBuy && (billingOn || banner.assignSeat);
   const contact = !askAdmin && banner.kind !== "not_started" && !billingOn && info?.contact ? info.contact : "";
 
   return (

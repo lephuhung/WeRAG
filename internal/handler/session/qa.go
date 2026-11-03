@@ -240,7 +240,7 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 	// Get custom agent if agent_id is provided.
 	customAgent, effectiveTenantID := h.resolveAgent(ctx, c, request.AgentID)
 	if err := unavailableAgentError(request.AgentID, customAgent); err != nil {
-		return nil, nil, err
+		return nil, nil, h.explainEndedAddon(ctx, request.AgentID, err)
 	}
 	if portal {
 		if err := publicLookupUnavailable(customAgent); err != nil {
@@ -731,6 +731,46 @@ func unavailableAgentError(agentID string, agent *types.CustomAgent) error {
 		return nil
 	}
 	return errors.NewAgentUnavailableError(agentUnavailableMessage)
+}
+
+// endedAddonLookup is the part of the usage guard that tells an add-on
+// right that ran out from an agent the caller never had (the real guard
+// implements it; test fakes need not).
+type endedAddonLookup interface {
+	EndedAddon(ctx context.Context, tenantID uint64, userID, agentID string) (*types.UsageSubscriptionAddon, error)
+}
+
+// agentAddonEndedMessage answers a turn whose specialist assistant was an
+// add-on of the caller's package and its right has ended.
+const agentAddonEndedMessage = "Quyền dùng trợ lý chuyên ngành %s đã hết hạn vào cuối ngày %s. " +
+	"Quản trị Tổ chức (hoặc bạn, với gói cá nhân) có thể mua lại ở trang Mua gói; " +
+	"trong lúc đó hãy chọn trợ lý khác để tiếp tục."
+
+// explainEndedAddon turns the generic 2104 refusal into "the add-on right
+// ended" (details.reason addon_expired, with agent_name and ends_at) when
+// the caller's governing package held that agent and its right has run
+// out. Anything else, or a lookup failure, keeps the generic refusal: it
+// only names an agent the caller's own package once held.
+func (h *Handler) explainEndedAddon(ctx context.Context, agentID string, generic error) error {
+	lookup, ok := h.usageGuard.(endedAddonLookup)
+	if !ok || h.usageGuard == nil {
+		return generic
+	}
+	tenantID, _ := types.TenantIDFromContext(ctx)
+	userID, _ := types.UserIDFromContext(ctx)
+	ended, err := lookup.EndedAddon(ctx, tenantID, userID, agentID)
+	if err != nil || ended == nil || ended.EndsAt == nil {
+		return generic
+	}
+	name := ended.AgentName
+	if name == "" {
+		name = agentID
+	}
+	lastDay := ended.EndsAt.Add(-time.Nanosecond).In(types.UsageLocation()).Format("02/01/2006")
+	return errors.NewAgentUnavailableError(fmt.Sprintf(agentAddonEndedMessage, name, lastDay)).
+		WithDetails(map[string]any{
+			"reason": "addon_expired", "agent_id": agentID, "agent_name": name, "ends_at": ended.EndsAt,
+		})
 }
 
 // pinDocumentAssistant returns the document assistant's ID when the session

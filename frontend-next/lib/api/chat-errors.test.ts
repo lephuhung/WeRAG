@@ -3,7 +3,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { ChatStreamError, ERR_AGENT_UNAVAILABLE, ERR_PUBLIC_LOOKUP_UNAVAILABLE, ERR_TURN_RUNNING, chatErrorKey, chatErrorText, chatErrorTextKey, isSessionLimitError, parseErrorEnvelope } from "./chat-errors.ts";
+import { ChatStreamError, ERR_AGENT_UNAVAILABLE, ERR_PUBLIC_LOOKUP_UNAVAILABLE, ERR_TURN_RUNNING, chatErrorKey, chatErrorText, chatErrorTextKey, isSessionLimitError, limitResetDate, parseErrorEnvelope } from "./chat-errors.ts";
 import { ApiError } from "../api-client.ts";
 
 describe("parseErrorEnvelope", () => {
@@ -145,5 +145,71 @@ describe("backend code before HTTP status", () => {
     assert.equal(chatErrorKey(new ChatStreamError(503, 2201, "vector store")), "chat.err.unavailable");
     assert.equal(chatErrorKey(new ChatStreamError(500, 1007, "internal")), "chat.err.server");
     assert.equal(chatErrorKey(new ChatStreamError(409, 2001, "exists")), null);
+  });
+});
+
+describe("chatErrorText by role", () => {
+  const member = { hasTenant: true, isTenantAdmin: false };
+  const admin = { hasTenant: true, isTenantAdmin: true };
+  const self = { hasTenant: false };
+  const err = (reason: string) => new ChatStreamError(429, 1006, "x", reason);
+
+  it("tells a member to ask the admin and the others to buy", () => {
+    assert.deepEqual(chatErrorText("chat.err.usage.noSubscription", false, err("no_subscription"), member), { key: "chat.err.usage.noSubscription" });
+    assert.deepEqual(chatErrorText("chat.err.usage.noSubscription", false, err("no_subscription"), admin), { key: "chat.err.usage.noSubscriptionAdmin", action: "billing" });
+    assert.deepEqual(chatErrorText("chat.err.usage.noSubscription", false, err("no_subscription"), self), { key: "chat.err.usage.noSubscriptionSelf", action: "billing" });
+    assert.deepEqual(chatErrorText("chat.err.usage.expired", false, err("expired"), member), { key: "chat.err.usage.expired" });
+    assert.deepEqual(chatErrorText("chat.err.usage.expired", false, err("expired"), admin), { key: "chat.err.usage.expiredBuy", action: "billing" });
+    assert.deepEqual(chatErrorText("chat.err.usage.noSeat", false, err("no_seat"), admin), { key: "chat.err.usage.noSeatAdmin", action: "seats" });
+    assert.deepEqual(chatErrorText("chat.err.usage.noSeat", false, err("no_seat"), member), { key: "chat.err.usage.noSeat" });
+  });
+
+  it("names the limit that ran out and when it counts again", () => {
+    const body = JSON.stringify({ error: { code: 1006, message: "x", details: { reason: "limit_exhausted", metric: "questions", period: "month", limit: 500, used: 500 } } });
+    const env = parseErrorEnvelope(body);
+    assert.deepEqual(env.usage, { metric: "questions", period: "month", limit: 500, used: 500 });
+    const e = new ChatStreamError(429, 1006, "x", env.reason);
+    e.usage = env.usage;
+    const now = new Date("2026-12-31T18:00:00Z"); // 01/01/2027 01:00 VN
+    assert.deepEqual(chatErrorText("chat.err.usage.limit", false, e, member, now), {
+      key: "chat.err.usage.limitDetail",
+      vars: { limit: "500", date: "01/02/2027" },
+      varKeys: { unit: "pbn.questions", period: "chat.err.usage.perMonth" },
+    });
+    assert.equal(chatErrorText("chat.err.usage.limit", false, e, self, now).action, "billing");
+    // the ApiError path reads the same details
+    const api = new ApiError(429, "x", JSON.parse(body));
+    assert.equal(chatErrorText("chat.err.usage.limit", false, api, admin, now).key, "chat.err.usage.limitDetailBuy");
+    // no details: the plain sentence
+    assert.deepEqual(chatErrorText("chat.err.usage.limit", false, err("limit_exhausted"), admin, now), { key: "chat.err.usage.limitBuy", action: "billing" });
+  });
+
+  it("limitResetDate follows the Vietnam calendar", () => {
+    assert.equal(limitResetDate("day", new Date("2026-11-30T18:00:00Z")), "02/12/2026");
+    assert.equal(limitResetDate("month", new Date("2026-11-30T16:00:00Z")), "01/12/2026");
+    assert.equal(limitResetDate("session"), "");
+  });
+
+  it("a guest whose allowance ran out is offered a package, as the banner does", () => {
+    assert.deepEqual(chatErrorText("chat.err.usage.limit", true, err("limit_exhausted"), self), { key: "chat.err.guest.usageLimit", action: "billing" });
+  });
+
+  it("says a specialist assistant's right ended", () => {
+    const body = JSON.stringify({ error: { code: ERR_AGENT_UNAVAILABLE, message: "x", details: { reason: "addon_expired", agent_name: "Thuế", ends_at: "2026-11-03T17:00:00Z" } } });
+    const env = parseErrorEnvelope(body);
+    const e = new ChatStreamError(404, env.code, env.message, env.reason);
+    e.addon = env.addon;
+    assert.deepEqual(chatErrorText("chat.err.agentUnavailable", false, e, member), {
+      key: "chat.err.agentAddonExpired",
+      vars: { name: "Thuế", date: "03/11/2026" },
+    });
+    assert.equal(chatErrorText("chat.err.agentUnavailable", false, e, admin).action, "billing");
+    // a guest's own package: they buy it again themselves
+    assert.deepEqual(chatErrorText("chat.err.agentUnavailable", true, e, member), {
+      key: "chat.err.agentAddonExpiredBuy",
+      vars: { name: "Thuế", date: "03/11/2026" },
+      action: "billing",
+    });
+    assert.deepEqual(chatErrorText("chat.err.agentUnavailable", false, new ChatStreamError(404, ERR_AGENT_UNAVAILABLE, "x"), admin), { key: "chat.err.agentUnavailable" });
   });
 });

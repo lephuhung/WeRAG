@@ -3,7 +3,7 @@
  * used to surface. */
 import { ApiError } from "../api-client.ts";
 import { TENANT_MEMBERSHIP_REQUIRED, TENANT_REQUIRED } from "../auth-recovery.ts";
-import { formatDate } from "../datetime.ts";
+import { formatDate, formatLastDay, vnParts } from "../datetime.ts";
 
 /** Backend error code for "another turn is already running" (HTTP 409). */
 export const ERR_TURN_RUNNING = 1005;
@@ -50,6 +50,10 @@ export class ChatStreamError extends Error {
   errorCode?: string;
   /** `details.starts_at`: when a not-started package starts (ISO time). */
   startsAt?: string;
+  /** The limit a limit_exhausted refusal ran into (details). */
+  usage?: UsageLimitDetails;
+  /** The specialist assistant whose add-on right ended (reason addon_expired). */
+  addon?: AddonEndedDetails;
   constructor(status: number, code?: number, serverMessage?: string, reason?: string, errorCode?: string, startsAt?: string) {
     super(serverMessage || `HTTP ${status}`);
     this.name = "ChatStreamError";
@@ -62,7 +66,20 @@ export class ChatStreamError extends Error {
   }
 }
 
-export type ErrorEnvelope = { code?: number; message?: string; reason?: string; errorCode?: string; startsAt?: string };
+/** details of a limit_exhausted refusal: which limit, and how much of it. */
+export type UsageLimitDetails = { metric: string; period: string; limit: number; used: number };
+/** details of a 2104 refusal whose add-on right ended. */
+export type AddonEndedDetails = { name: string; endsAt: string };
+
+export type ErrorEnvelope = {
+  code?: number;
+  message?: string;
+  reason?: string;
+  errorCode?: string;
+  startsAt?: string;
+  usage?: UsageLimitDetails;
+  addon?: AddonEndedDetails;
+};
 
 /** Reads `{"error":{"code","message","details":{"reason"}}}`, the auth
  * middleware's flat `{"error":"…","code":"TENANT_REQUIRED"}` (string code
@@ -73,7 +90,10 @@ export function parseErrorEnvelope(body: string): ErrorEnvelope {
     const flat: ErrorEnvelope = typeof p?.code === "string" && p.code ? { errorCode: p.code } : {};
     if (p && typeof p.error === "object" && p.error) {
       const e = p.error as { code?: unknown; message?: unknown; details?: unknown };
-      const details = e.details && typeof e.details === "object" ? (e.details as { reason?: unknown; starts_at?: unknown }) : null;
+      const details =
+        e.details && typeof e.details === "object"
+          ? (e.details as { reason?: unknown; starts_at?: unknown; metric?: unknown; period?: unknown; limit?: unknown; used?: unknown; agent_name?: unknown; ends_at?: unknown })
+          : null;
       const out: ErrorEnvelope = {
         code: typeof e.code === "number" ? e.code : undefined,
         message: typeof e.message === "string" ? e.message : undefined,
@@ -84,6 +104,12 @@ export function parseErrorEnvelope(body: string): ErrorEnvelope {
       if (out.reason === "expired" && typeof details?.starts_at === "string" && details.starts_at) {
         out.reason = "not_started";
         out.startsAt = details.starts_at;
+      }
+      if (out.reason === "limit_exhausted" && typeof details?.metric === "string" && typeof details.period === "string" && typeof details.limit === "number") {
+        out.usage = { metric: details.metric, period: details.period, limit: details.limit, used: typeof details.used === "number" ? details.used : details.limit };
+      }
+      if (out.reason === "addon_expired" && typeof details?.ends_at === "string") {
+        out.addon = { name: typeof details.agent_name === "string" ? details.agent_name : "", endsAt: details.ends_at };
       }
       return out;
     }
@@ -169,8 +195,21 @@ export function chatErrorKey(e: unknown): ChatErrorKey | null {
 }
 
 /** Translation keys a chat error turns into: the error keys plus the guest
- * variants of the usage refusals. */
-export type ChatErrorTextKey = ChatErrorKey | "chat.err.guest.usageLimit" | "chat.err.guest.unavailable" | "chat.err.usage.notStartedOn";
+ * variants of the usage refusals and the role-aware usage texts. */
+export type ChatErrorTextKey =
+  | ChatErrorKey
+  | "chat.err.guest.usageLimit"
+  | "chat.err.guest.unavailable"
+  | "chat.err.usage.notStartedOn"
+  | "chat.err.usage.noSubscriptionAdmin"
+  | "chat.err.usage.noSubscriptionSelf"
+  | "chat.err.usage.expiredBuy"
+  | "chat.err.usage.noSeatAdmin"
+  | "chat.err.usage.limitBuy"
+  | "chat.err.usage.limitDetail"
+  | "chat.err.usage.limitDetailBuy"
+  | "chat.err.agentAddonExpired"
+  | "chat.err.agentAddonExpiredBuy";
 
 /** The text key for a chat error key as this account reads it. A guest has
  * no organization admin to contact: its usage refusals get their own texts
@@ -201,20 +240,108 @@ export function errorStatusAndCode(e: unknown): { status?: number; errorCode?: s
   return {};
 }
 
-/** The text key and its variables for a chat error as this account reads
- * it: chatErrorTextKey, plus the start date of a not-started package when
- * the error carries one (only stream errors do; others keep the dateless
- * sentence). */
+/** Who reads the error: decides between "buy or renew" (a person without a
+ * Tổ chức, or its admin) and "ask your Tổ chức admin" (a member). */
+export type ChatErrorViewer = { isTenantAdmin?: boolean; hasTenant?: boolean };
+
+/** What the error bubble offers: open the billing page, or the Tổ chức
+ * usage page where an admin gives out chỗ. */
+export type ChatErrorAction = "billing" | "seats";
+
+export type ChatErrorText = {
+  key: ChatErrorTextKey;
+  vars?: Record<string, string>;
+  /** Variables that are themselves translation keys (unit, period). */
+  varKeys?: Record<string, string>;
+  action?: ChatErrorAction;
+};
+
+/** The VN calendar day a limit of `period` counts again from: tomorrow for
+ * a day limit, the 1st of next month for a month limit ("" otherwise). */
+export function limitResetDate(period: string, now: Date = new Date()): string {
+  const p = vnParts(now);
+  if (!p) return "";
+  let y = p.year;
+  let m = p.month;
+  let d = p.day;
+  if (period === "day") {
+    // noon UTC of the VN day, plus a day: no zone edge to trip on
+    const next = new Date(Date.UTC(y, m - 1, d, 12) + 24 * 60 * 60 * 1000);
+    y = next.getUTCFullYear();
+    m = next.getUTCMonth() + 1;
+    d = next.getUTCDate();
+  } else if (period === "month") {
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+    d = 1;
+  } else {
+    return "";
+  }
+  return `${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}/${y}`;
+}
+
+/** The text key, its variables and the bubble's action for a chat error as
+ * this account reads it: chatErrorTextKey, plus the start date of a
+ * not-started package, the limit that ran out with the day it counts again,
+ * the specialist assistant whose right ended, and who can act (buy / renew
+ * for a person without a Tổ chức or its admin; ask the admin otherwise). */
 export function chatErrorText(
   key: ChatErrorKey,
   isGuest: boolean,
   err: unknown,
-): { key: ChatErrorTextKey; vars?: Record<string, string> } {
+  viewer: ChatErrorViewer = {},
+  now: Date = new Date(),
+): ChatErrorText {
   const textKey = chatErrorTextKey(key, isGuest);
-  const startsAt = err instanceof ChatStreamError ? err.startsAt : undefined;
-  if (textKey === "chat.err.usage.notStarted" && startsAt) {
-    const date = formatDate(startsAt);
-    if (date) return { key: "chat.err.usage.notStartedOn", vars: { date } };
+  const stream = err instanceof ChatStreamError ? err : null;
+  const env = stream ?? (err instanceof ApiError ? parseErrorEnvelope(JSON.stringify(err.payload ?? {})) : null);
+  // a guest's own (personal) package: they buy it themselves, as the banner says
+  if (textKey === "chat.err.guest.usageLimit") return { key: textKey, action: "billing" };
+  // a guest's other refusals have their own texts; an add-on of their own
+  // package that ran out reads as for anyone buying for themselves
+  if (isGuest && textKey !== "chat.err.agentUnavailable") return { key: textKey };
+  const self = isGuest || !viewer.hasTenant;
+  const canBuy = self || !!viewer.isTenantAdmin;
+  switch (textKey) {
+    case "chat.err.usage.notStarted": {
+      const date = stream?.startsAt ? formatDate(stream.startsAt) : "";
+      return date ? { key: "chat.err.usage.notStartedOn", vars: { date } } : { key: textKey };
+    }
+    case "chat.err.usage.noSubscription":
+      if (self) return { key: "chat.err.usage.noSubscriptionSelf", action: "billing" };
+      if (viewer.isTenantAdmin) return { key: "chat.err.usage.noSubscriptionAdmin", action: "billing" };
+      return { key: textKey };
+    case "chat.err.usage.expired":
+      return canBuy ? { key: "chat.err.usage.expiredBuy", action: "billing" } : { key: textKey };
+    case "chat.err.usage.noSeat":
+      return viewer.isTenantAdmin ? { key: "chat.err.usage.noSeatAdmin", action: "seats" } : { key: textKey };
+    case "chat.err.usage.limit": {
+      const u = env?.usage;
+      const date = u ? limitResetDate(u.period, now) : "";
+      if (u && date && u.limit > 0) {
+        return {
+          key: canBuy ? "chat.err.usage.limitDetailBuy" : "chat.err.usage.limitDetail",
+          vars: { limit: u.limit.toLocaleString("vi-VN"), date },
+          varKeys: {
+            unit: u.metric === "tokens" ? "pbn.tokens" : "pbn.questions",
+            period: u.period === "day" ? "chat.err.usage.perDay" : "chat.err.usage.perMonth",
+          },
+          ...(canBuy ? { action: "billing" as const } : {}),
+        };
+      }
+      return canBuy ? { key: "chat.err.usage.limitBuy", action: "billing" } : { key: textKey };
+    }
+    case "chat.err.agentUnavailable": {
+      const a = env?.reason === "addon_expired" ? env.addon : undefined;
+      const date = a ? formatLastDay(a.endsAt) : "";
+      if (!a || !date) return { key: textKey };
+      return canBuy
+        ? { key: "chat.err.agentAddonExpiredBuy", vars: { name: a.name, date }, action: "billing" }
+        : { key: "chat.err.agentAddonExpired", vars: { name: a.name, date } };
+    }
   }
   return { key: textKey };
 }

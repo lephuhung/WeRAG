@@ -14,7 +14,9 @@ import { fetchAllTenantMembers, type TenantMember } from "@/lib/api/tenants";
 import {
   assignTenantSeat,
   formatTokens,
+  getBillingInfo,
   getMyUsage,
+  getScopeAddons,
   getTenantUsage,
   revokeTenantSeat,
   type UsageSummary,
@@ -22,6 +24,7 @@ import {
 } from "@/lib/api/usage";
 import { formatDate, formatLastDay } from "@/lib/datetime";
 import { useInModalNav } from "@/components/system/in-modal-nav";
+import { openBilling } from "@/lib/billing-intent";
 import { ConsolePage } from "@/components/settings/console-page";
 import { InfoRow } from "@/components/settings/info-row";
 import { Loading } from "@/components/settings/loading";
@@ -138,6 +141,23 @@ function OrganizationUsage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [pick, setPick] = useState("");
+  // the admin may buy more assistants online: billing is open and the
+  // current package (with an end) still has add-ons on sale
+  const [canBuyAddons, setCanBuyAddons] = useState(false);
+  useEffect(() => {
+    if (!isAdmin || !tenantId) return;
+    let alive = true;
+    Promise.all([getBillingInfo(), getScopeAddons("tenant")])
+      .then(([info, sa]) => {
+        if (alive) setCanBuyAddons(info.enabled && !!sa.subscription?.ends_at && sa.purchasable.length > 0);
+      })
+      .catch(() => {
+        if (alive) setCanBuyAddons(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [isAdmin, tenantId]);
 
   const load = useCallback(async () => {
     if (!tenantId) return;
@@ -242,6 +262,15 @@ function OrganizationUsage() {
                   </li>
                 ))}
               </ul>
+            )}
+            {isAdmin && sub.current && canBuyAddons && (
+              <button
+                type="button"
+                className="btn btn-outline btn-sm mt-1.5"
+                onClick={() => openBilling({ scope: "tenant", planId: sub.plan_id })}
+              >
+                {t("tus.buyAddons")}
+              </button>
             )}
           </InfoRow>
           <InfoRow label={sub.mode === "seat" ? t("tus.limitsPerSeat") : t("tus.limitsPool")} desc={t("tus.limitsDesc")} className="px-4">

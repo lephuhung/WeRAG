@@ -19,6 +19,7 @@ import {
   planPriceForMonths,
   planTermPrices,
   getBillingInfo,
+  getMyUsage,
   getScopeAddons,
   getUsageOrder,
   listMyUsageOrders,
@@ -33,7 +34,9 @@ import {
   type UsageQuote,
   type UsageScopeAddons,
   type UsageScopeKind,
+  type UsageSummary,
 } from "@/lib/api/usage";
+import { capLines, planCapsFromFeatures } from "@/lib/plan-caps";
 import { addonLineDetail, keepOffered, toggleAddonId } from "@/lib/agent-addon-catalogue";
 import { orderAmountDue, orderPaymentHeld, orderPlanLineVND, pendingPlanOrderCode } from "@/lib/billing-order";
 import { formatDateTime, formatLastDay } from "@/lib/datetime";
@@ -124,6 +127,14 @@ export function BillingPage() {
   const isAdmin = role === "admin" || role === "owner" || auth.user?.is_system_admin === true;
 
   const [info, setInfo] = useState<UsageBillingInfo | null>(null);
+  // the package covering the person now: a Tổ chức package makes a
+  // personal one wait until it lapses
+  const [myUsage, setMyUsage] = useState<UsageSummary | null>(null);
+  useEffect(() => {
+    getMyUsage()
+      .then((r) => setMyUsage(r.data ?? null))
+      .catch(() => setMyUsage(null));
+  }, [tenantId]);
   // a banner's Renew/Buy button names the scope and plan to open on
   const [intent] = useState(() => readBillingIntent());
   useEffect(() => clearBillingIntent(), []);
@@ -226,13 +237,19 @@ export function BillingPage() {
     if (monthChoices.length > 0 && !monthChoices.includes(months)) setMonths(monthChoices[0]);
   }, [monthChoices, months]);
 
-  /* "12 tháng · gói năm", "3 tháng · gói quý (tiết kiệm 15.000 VNĐ)". */
+  /* "gói quý", "2 gói quý": how many term packages make up m months. */
+  const termLabel = (term: "quarter" | "year", m: number) => {
+    const n = term === "year" ? m / 12 : m / 3;
+    if (n > 1) return t(term === "year" ? "bill.termYearN" : "bill.termQuarterN", { n });
+    return term === "year" ? t("bill.termYear") : t("bill.termQuarter");
+  };
+  /* "12 tháng · gói năm", "6 tháng · 2 gói quý (tiết kiệm 15.000 VNĐ)". */
   const monthOptionLabel = (m: number) => {
     const priced = plan ? planPriceForMonths(plan, m) : null;
     const base = t("bill.monthsN", { n: m });
     if (!plan || !priced || priced.term === "month") return base;
     const full = plan.price_vnd > 0 ? plan.price_vnd * m : 0;
-    const termName = priced.term === "year" ? t("bill.termYear") : t("bill.termQuarter");
+    const termName = termLabel(priced.term, m);
     return full > priced.total
       ? `${base} · ${termName} (${t("bill.saving", { price: formatPriceVND(full - priced.total) })})`
       : `${base} · ${termName}`;
@@ -241,8 +258,7 @@ export function BillingPage() {
   const orderLength = (o: UsageOrder) => {
     if (o.kind === "addon") return t("bill.addonOrder");
     const base = t("bill.monthsN", { n: o.months });
-    if (o.billing_term === "year") return `${base} · ${t("bill.termYear")}`;
-    if (o.billing_term === "quarter") return `${base} · ${t("bill.termQuarter")}`;
+    if (o.billing_term === "year" || o.billing_term === "quarter") return `${base} · ${termLabel(o.billing_term, o.months)}`;
     return base;
   };
 
@@ -395,6 +411,18 @@ export function BillingPage() {
     for (const h of scopeAddons?.held ?? []) m[h.agent_id] = h.ends_at ?? scopeAddons?.subscription?.ends_at ?? null;
     return m;
   }, [scopeAddons]);
+  /* "2 trợ lý chuyên ngành mua thêm, từ 99.000 VNĐ/chỗ/tháng". */
+  const addonsAvailableLine = (p: UsagePlan) => {
+    const offers = p.addons ?? [];
+    const priced = offers.map((a) => a.price_vnd).filter((v) => v > 0);
+    if (priced.length === 0) return t("bill.addonsAvailable", { n: offers.length });
+    const lo = Math.min(...priced);
+    const hi = Math.max(...priced);
+    const unit = p.mode === "seat" && scope === "tenant" ? t("bill.perSeatMonth") : t("bill.perMonth");
+    return lo === hi
+      ? t("bill.addonsAvailablePrice", { n: offers.length, price: `${formatPriceVND(lo)}${unit}` })
+      : t("bill.addonsAvailableFrom", { n: offers.length, price: `${formatPriceVND(lo)}${unit}` });
+  };
   const renderLines = (lines: UsageOrderAddonLine[] | undefined) =>
     (lines ?? []).map((l) => (
       <div key={l.agent_id} className="flex justify-between gap-3">
@@ -433,6 +461,9 @@ export function BillingPage() {
   const scopeId = scope === "tenant" ? String(tenantId) : String(auth.user?.id ?? "");
   const pendingOrders = orders.filter((o) => o.status === "pending" && o.scope_type === scope && o.scope_id === scopeId);
 
+  // a current Tổ chức package covers the person: a personal one would wait
+  const myEnt = myUsage?.entitlement ?? null;
+  const coveredBy = myEnt && myEnt.source === "tenant" && !myEnt.expired ? myEnt.plan_name : "";
   // a code typed but not applied would silently be ignored by the order
   const promoPending = promoText.trim().toUpperCase() !== promo.trim().toUpperCase();
   const canBuy = !!info?.enabled && !!quote && !busy && !quoting && !promoPending && seats === seatsText && (!seatMode || seats > 0);
@@ -662,6 +693,11 @@ export function BillingPage() {
         </div>
       )}
 
+      {!isAdmin && auth.membershipState === "member" && <p className="caption text-muted">{t("bill.memberTenantHint")}</p>}
+      {scope === "user" && coveredBy && (
+        <Notice tone="info">{t("bill.coveredByTenant", { plan: coveredBy })}</Notice>
+      )}
+
       {pendingOrders.map((o) => (
         <Notice
           key={o.id}
@@ -714,13 +750,20 @@ export function BillingPage() {
               <ul className="caption mt-2 space-y-0.5 text-body">
                 {p.limits.length === 0 ? <li>{t("usg.unlimited")}</li> : p.limits.map((l, i) => <li key={i}>• {usageLimitLabel(l, limitNames)}</li>)}
               </ul>
+              {capLines(planCapsFromFeatures(p.features), p.mode, scope, t).length > 0 && (
+                <ul className="caption mt-1 space-y-0.5 text-body">
+                  {capLines(planCapsFromFeatures(p.features), p.mode, scope, t).map((line) => (
+                    <li key={line}>• {line}</li>
+                  ))}
+                </ul>
+              )}
               {(p.included_agents ?? []).length > 0 && (
                 <p className="caption mt-2 text-muted">
                   {t("bill.includedAgents", { names: (p.included_agents ?? []).map((a) => a.name).join(", ") })}
                 </p>
               )}
               {(p.addons ?? []).length > 0 && (
-                <p className="caption mt-0.5 text-muted-soft">{t("bill.addonsAvailable", { n: (p.addons ?? []).length })}</p>
+                <p className="caption mt-0.5 text-muted-soft">{addonsAvailableLine(p)}</p>
               )}
             </button>
           ))}
@@ -776,6 +819,7 @@ export function BillingPage() {
           {(plan.addons ?? []).length > 0 && (
             <div className="mt-4">
               <span className="caption mb-1 block text-muted">{t("bill.addonsTitle")}</span>
+              {seatMode && <span className="caption mb-1 block text-muted-soft">{t("bill.addonsAllSeats")}</span>}
               <div className="space-y-1.5">
                 {(plan.addons ?? []).map((a) => (
                   <label key={a.agent_id} className="flex cursor-pointer items-start gap-2.5 rounded-md border border-hairline px-3 py-2 select-none">
@@ -923,6 +967,7 @@ export function BillingPage() {
                 ))}
               </div>
               <p className="caption mt-2 text-muted-soft">{t("bill.midTermRule")}</p>
+              {scopeAddons.subscription.mode === "seat" && <p className="caption mt-1 text-muted-soft">{t("bill.addonsAllSeats")}</p>}
               {extraError && <p className="caption mt-2 text-error">{extraError}</p>}
               {extraQuote && (
                 <div className="mt-3 space-y-1 border-t border-hairline pt-3 text-[14px]">

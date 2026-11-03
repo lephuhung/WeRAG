@@ -29,6 +29,7 @@ import { IllustrationCard } from "@/components/chat/illustration-card";
 import { AbbreviationSuggestionCard } from "@/components/chat/abbreviation-suggestion-card";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { ErrorNote } from "@/components/chat/error-note";
+import { openBilling } from "@/lib/billing-intent";
 import { ReferenceChip } from "@/components/chat/reference-chip";
 import type { KnowledgeReferenceItem } from "@/components/chat/references-drawer";
 import type { ChoiceOption } from "@/lib/choice-list";
@@ -643,7 +644,12 @@ const AssistantMessage = memo(function AssistantMessage({
           <p className={`${compact ? "text-[13px]" : "text-[14px]"} leading-relaxed text-body`}>{m.streaming && !m.thinking && (!m.steps || m.steps.length === 0) ? "…" : ""}</p>
         )}
         {/* One error surface per turn — the same text is never shown twice. */}
-        {m.errorText && <ErrorNote className="mt-2">{m.errorText}</ErrorNote>}
+        {m.errorText && (
+          <ErrorNote className="mt-2">
+            {m.errorText}
+            {m.errorAction && <ErrorActionButton action={m.errorAction} />}
+          </ErrorNote>
+        )}
         {hasPeopleCard && (
           <PeopleCard people={m.peopleData!} isLoadingMore={m.streaming} />
         )}
@@ -737,3 +743,24 @@ const AssistantMessage = memo(function AssistantMessage({
 });
 
 export { AssistantMessage, DayDivider, UserMessageBubble };
+
+/* The way out of a package refusal: buy or renew (billing page), or give
+ * out a chỗ (the Tổ chức usage page, for its admin). */
+export function ErrorActionButton({ action }: { action: "billing" | "seats" }) {
+  const { t } = useT();
+  return (
+    <span className="mt-1.5 block">
+      <button
+        type="button"
+        className="btn btn-sm btn-outline"
+        onClick={() =>
+          action === "seats"
+            ? window.dispatchEvent(new CustomEvent("weknora:open-settings", { detail: "usage" }))
+            : openBilling()
+        }
+      >
+        {action === "seats" ? t("chat.err.action.seats") : t("chat.err.action.billing")}
+      </button>
+    </span>
+  );
+}

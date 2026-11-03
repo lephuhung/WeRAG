@@ -420,7 +420,7 @@ var registry = map[string]settingSpec{
 		Default:  types.UsageEnforceDefault,
 		Category: "chat",
 		Description: "Bật kiểm tra gói sử dụng trước mỗi lượt hỏi: không có thuê bao, hết hạn, " +
-			"không có seat hoặc hết hạn mức → từ chối (429). Quản trị hệ thống không bị chặn. Có hiệu lực ngay. " +
+			"chưa được cấp chỗ hoặc hết hạn mức → từ chối (429). Quản trị hệ thống không bị chặn. Có hiệu lực ngay. " +
 			"Mặc định bật; chỉ tắt khi kiểm thử.",
 	},
 	// usage.signup_plan_id / usage.signup_plan_days: the personal package

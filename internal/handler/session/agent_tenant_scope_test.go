@@ -16,6 +16,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/application/service"
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -126,4 +127,31 @@ func TestUnavailableAgentErrorKeepsBuiltinFallback(t *testing.T) {
 		"a switched-off built-in still answers as plain chat")
 	require.NoError(t, unavailableAgentError("group", &types.CustomAgent{ID: "group"}))
 	require.Error(t, unavailableAgentError("group", nil))
+}
+
+// endedAddonGuard is a usage guard that knows one ended add-on right.
+type endedAddonGuard struct {
+	interfaces.UsageGuard
+	addon *types.UsageSubscriptionAddon
+}
+
+func (g endedAddonGuard) EndedAddon(_ context.Context, _ uint64, _, agentID string) (*types.UsageSubscriptionAddon, error) {
+	if g.addon != nil && g.addon.AgentID == agentID {
+		return g.addon, nil
+	}
+	return nil, nil
+}
+
+func TestExplainEndedAddon(t *testing.T) {
+	end := time.Date(2026, 11, 3, 17, 0, 0, 0, time.UTC) // 04/11 00:00 VN: last day 03/11
+	generic := unavailableAgentError("thue", nil)
+	h := &Handler{usageGuard: endedAddonGuard{addon: &types.UsageSubscriptionAddon{AgentID: "thue", AgentName: "Thuế", EndsAt: &end}}}
+	err := h.explainEndedAddon(context.Background(), "thue", generic)
+	require.Contains(t, err.Error(), "Thuế")
+	require.Contains(t, err.Error(), "03/11/2026")
+	appErr, ok := err.(*apperrors.AppError)
+	require.True(t, ok)
+	require.Equal(t, "addon_expired", appErr.Details.(map[string]any)["reason"])
+	require.Equal(t, generic, h.explainEndedAddon(context.Background(), "other", generic))
+	require.Equal(t, generic, (&Handler{}).explainEndedAddon(context.Background(), "thue", generic), "no guard")
 }

@@ -7,9 +7,9 @@ import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
 import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { withArtifactIndexes } from "@/lib/artifact-images";
 import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext, type MentionRequestItem } from "@/lib/chat-context";
-import { useT } from "@/lib/i18n";
+import { useT, type LocaleKey } from "@/lib/i18n";
 import { dayStarts } from "@/lib/message-time";
-import { chatErrorKey, chatErrorText, isSessionLimitError, type ChatErrorKey } from "@/lib/api/chat-errors";
+import { chatErrorKey, chatErrorText, isSessionLimitError, type ChatErrorAction, type ChatErrorKey } from "@/lib/api/chat-errors";
 import { shouldRefreshAccount } from "@/lib/guest-chat";
 import { sessionUsageFromComplete, type SessionUsage } from "@/lib/session-limits";
 import { ContextCompactedDivider, SessionLimitCard, SessionUsageBanner } from "@/components/chat/session-limit";
@@ -80,7 +80,7 @@ import { useDocumentTemplate } from "@/components/doc-workspace/use-document-tem
 import { DocumentTemplateBar, DocumentTemplatePicker } from "@/components/doc-workspace/document-template-picker";
 import { isTemplateSkip, templatePrompt } from "@/lib/template-protocol";
 import { findingCheckOp, findingSelectOp, type FormatFinding } from "@/lib/format-findings";
-import { useAuth } from "@/lib/auth";
+import { useAuth, useTenantRole } from "@/lib/auth";
 import { useToast } from "@/components/toast";
 import { Composer, type ComposerSend } from "@/components/composer";
 import { useAttachments, formatFileSize, type PendingAttachment } from "@/components/use-attachments";
@@ -101,7 +101,7 @@ import { detachSessionActivity, updateSessionActivity } from "@/lib/session-acti
 import { uploadImagesWithFallback } from "@/lib/image-upload-fallback";
 import { GuestChatNote } from "@/components/chat/guest-chat-note";
 import { ReferencesDrawer, type KnowledgeReferenceItem } from "@/components/chat/references-drawer";
-import { AssistantMessage, DayDivider, UserMessageBubble } from "@/components/chat/chat-messages";
+import { AssistantMessage, DayDivider, ErrorActionButton, UserMessageBubble } from "@/components/chat/chat-messages";
 import type { UiAttachment, UiIllustration, UiMessage, UiRewriteProposal } from "@/components/chat/chat-types";
 import { ErrorNote } from "@/components/chat/error-note";
 import { IconClose } from "@/components/icons";
@@ -346,12 +346,17 @@ function ChatBody({ id }: { id: string }) {
   // documents, forks, follow-ups or other organization-only calls.
   const guest = ctx.isGuest;
   const { t: tr } = useT();
-  // a chat error as this account reads it (with a package's start date)
-  const trError = (key: ChatErrorKey, err: unknown) => {
-    const m = chatErrorText(key, guest, err);
-    return tr(m.key, m.vars);
+  const { user, refreshMe, selectedTenantId, tenant } = useAuth();
+  const { isTenantAdmin } = useTenantRole();
+  const tenantKey = String(selectedTenantId ?? tenant?.id ?? "");
+  // a chat error as this account reads it (with a package's start date, the
+  // limit that ran out, and "buy" or "ask your admin" by role)
+  const errorMessage = (key: ChatErrorKey, err: unknown): { text: string; action?: ChatErrorAction } => {
+    const m = chatErrorText(key, guest, err, { isTenantAdmin, hasTenant: tenantKey !== "" && tenantKey !== "0" });
+    const vars: Record<string, string> = { ...(m.vars ?? {}) };
+    for (const [k, v] of Object.entries(m.varKeys ?? {})) vars[k] = tr(v as LocaleKey);
+    return { text: tr(m.key, vars), action: m.action };
   };
-  const { user, refreshMe } = useAuth();
   // Non-admin callers never send a model override; the server resolves the
   // model assigned to the selected response mode.
   const canPickModel = user?.is_system_admin === true;
@@ -724,6 +729,15 @@ function ChatBody({ id }: { id: string }) {
   const [images, setImages] = useState<Array<{ preview: string; file: File }>>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  // the way out offered with a package refusal shown as the page-level
+  // note; kept with its text, so a later error never shows a stale button
+  const [errorAction, setErrorAction] = useState<{ text: string; action: ChatErrorAction } | null>(null);
+  const showError = (key: ChatErrorKey | null, e: unknown) => {
+    const described = key ? errorMessage(key, e) : null;
+    const text = described ? described.text : e instanceof Error ? e.message : tr("chat.err.generic");
+    setError(text);
+    setErrorAction(described?.action ? { text, action: described.action } : null);
+  };
   // Per-session caps of the usage plan: the session a session_limit refusal
   // named, and the 80% warning of the last completed turn. Both are kept
   // with the session they belong to, so they vanish on navigation.
@@ -1368,8 +1382,7 @@ function ChatBody({ id }: { id: string }) {
       } catch (e) {
         // Stale upload/session errors never surface into the new session.
         if (!isLive()) return;
-        const key = chatErrorKey(e);
-        setError(key ? trError(key, e) : e instanceof Error ? e.message : tr("chat.err.generic"));
+        showError(chatErrorKey(e), e);
         setBusy(false);
         onAccountError(e, false);
         return;
@@ -1437,8 +1450,7 @@ function ChatBody({ id }: { id: string }) {
         }
         // Stale upload errors never surface into the new session.
         if (!isLive()) return;
-        const key = chatErrorKey(e);
-        setError(key ? trError(key, e) : e instanceof Error ? e.message : tr("chat.err.generic"));
+        showError(chatErrorKey(e), e);
         setBusy(false);
         onAccountError(e, false);
         return;
@@ -1957,7 +1969,9 @@ function ChatBody({ id }: { id: string }) {
         if (!isLive()) return;
         if (e instanceof DOMException && e.name === "AbortError") return;
         const errorKey = chatErrorKey(e);
-        const errorText = errorKey ? trError(errorKey, e) : e instanceof Error ? e.message : tr("chat.err.generic");
+        const described = errorKey ? errorMessage(errorKey, e) : null;
+        const errorText = described ? described.text : e instanceof Error ? e.message : tr("chat.err.generic");
+        const turnAction = described?.action;
         console.error("[streamChat] Error:", e);
         onAccountError(e);
         // a used-up session gets the "open a new session" card instead of
@@ -1969,6 +1983,7 @@ function ChatBody({ id }: { id: string }) {
               ? {
                   ...msg,
                   errorText,
+                  errorAction: turnAction,
                   isError: true,
                   streaming: false,
                 }
@@ -1979,6 +1994,7 @@ function ChatBody({ id }: { id: string }) {
         // take it, it goes to the page-level note.
         if (!isSessionLimitError(e) && !messagesRef.current.some((msg) => msg.id === asstId)) {
           setError(errorText);
+          setErrorAction(turnAction ? { text: errorText, action: turnAction } : null);
         }
       })
       .finally(() => {
@@ -2386,7 +2402,12 @@ function ChatBody({ id }: { id: string }) {
             )}
             </Fragment>
           ))}
-          {error && <ErrorNote className="mb-4">{error}</ErrorNote>}
+          {error && (
+            <ErrorNote className="mb-4">
+              {error}
+              {errorAction?.text === error && <ErrorActionButton action={errorAction.action} />}
+            </ErrorNote>
+          )}
           {sessionLimitFor && sessionLimitFor === id && <SessionLimitCard sessionId={id} compact={compact} />}
         </div>
       </div>
