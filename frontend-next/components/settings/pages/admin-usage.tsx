@@ -107,9 +107,19 @@ function dateFromEndsAt(v: string | null | undefined): string {
   if (!v) return "";
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return "";
-  // Render in Vietnam time to match endsAtFromDate.
-  const vn = new Date(d.getTime() + 7 * 3600_000);
+  // Render in Vietnam time to match endsAtFromDate. An end is stored as the
+  // Vietnam midnight after the last usable day: show (and edit) that day,
+  // else every save would move the end one day later.
+  const vn = new Date(d.getTime() - 1 + 7 * 3600_000);
   return vn.toISOString().slice(0, 10);
+}
+
+/* Starts are stored as the Vietnam midnight that begins the day: that day. */
+function dateFromStartsAt(v: string | null | undefined): string {
+  if (!v) return "";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Date(d.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
 }
 
 function notStarted(sub: { starts_at: string }): boolean {
@@ -252,7 +262,7 @@ function subFormFrom(sub: UsageSubscriptionView | null | undefined, plans: Usage
     plan_id: sub.plan_id,
     mode: sub.mode,
     seats: sub.seats,
-    starts_at: dateFromEndsAt(sub.starts_at) || todayVN(),
+    starts_at: dateFromStartsAt(sub.starts_at) || todayVN(),
     custom_start: true,
     ends_at: dateFromEndsAt(sub.ends_at),
     note: sub.note,
@@ -742,7 +752,7 @@ export default function AdminUsage() {
                         <span className="badge-pill text-[11px]">{sub.mode === "seat" ? t("usg.seatsUsed", { used: sub.seats_used, total: sub.seats }) : t("usg.modePool")}</span>
                         {!sub.current && (
                           <span className="badge-pill text-[11px] text-error">
-                            {notStarted(sub) ? t("usg.notStarted", { date: dateFromEndsAt(sub.starts_at) }) : t("usg.expired")}
+                            {notStarted(sub) ? t("usg.notStarted", { date: dateFromStartsAt(sub.starts_at) }) : t("usg.expired")}
                           </span>
                         )}
                         {sub.limits_override && <span className="badge-pill text-[11px]">{t("usg.overridden")}</span>}
@@ -800,7 +810,7 @@ export default function AdminUsage() {
                   <div className="caption text-muted">
                     {sub.plan?.name ?? sub.plan_id}
                     {sub.implicit ? ` · ${t("usg.implicitGuest")}` : ""}
-                    {sub.status !== "active" ? ` · ${t("usg.cancelled")}` : !sub.current ? ` · ${notStarted(sub) ? t("usg.notStarted", { date: dateFromEndsAt(sub.starts_at) }) : t("usg.expired")}` : ""}
+                    {sub.status !== "active" ? ` · ${t("usg.cancelled")}` : !sub.current ? ` · ${notStarted(sub) ? t("usg.notStarted", { date: dateFromStartsAt(sub.starts_at) }) : t("usg.expired")}` : ""}
                     {sub.ends_at ? ` · ${t("usg.endsAt", { date: dateFromEndsAt(sub.ends_at) })}` : ""}
                   </div>
                 </div>
@@ -930,7 +940,7 @@ export default function AdminUsage() {
                   mode: p?.mode ?? subForm.mode,
                   limits: subForm.override ? subForm.limits : (p?.limits ?? []),
                   custom_start: samePlan,
-                  starts_at: samePlan ? dateFromEndsAt(ex.starts_at) || todayVN() : todayVN(),
+                  starts_at: samePlan ? dateFromStartsAt(ex.starts_at) || todayVN() : todayVN(),
                 });
               }}
             >

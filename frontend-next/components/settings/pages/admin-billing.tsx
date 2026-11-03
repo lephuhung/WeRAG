@@ -379,6 +379,7 @@ export default function AdminBilling() {
                 {o.plan_name} · {o.kind === "addon" ? t("bill.addonOrder") : t("bill.monthsN", { n: o.months })}{o.mode === "seat" ? ` · ${t("bill.seatsN", { n: o.seats })}` : ""}
                 {(o.addons ?? []).length > 0 ? ` · ${(o.addons ?? []).map((a) => a.name || a.agent_id).join(", ")}` : ""}
                 {o.promo_code ? <span className="caption block text-muted">{o.promo_code} −{formatPriceVND(o.discount_vnd)}</span> : null}
+                {o.credit_vnd ? <span className="caption block text-muted">{t("bill.credit")} −{formatPriceVND(o.credit_vnd)}</span> : null}
               </td>
               <td className="px-5 py-3.5 text-right align-middle tabular-nums text-ink">{formatPriceVND(o.total_vnd)}</td>
               <td className="px-5 py-3.5 align-middle">

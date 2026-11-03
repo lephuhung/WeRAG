@@ -150,9 +150,17 @@ type UsageOrder struct {
 	Kind                 string  `json:"kind"                   gorm:"type:varchar(16);default:'plan'"`
 	TargetSubscriptionID *string `json:"target_subscription_id" gorm:"type:varchar(36)"`
 	// Addons are the add-on lines, prices frozen when the order was made.
-	Addons    UsageOrderAddonLines `json:"addons"   gorm:"type:jsonb"`
-	CreatedAt time.Time            `json:"created_at"`
-	UpdatedAt time.Time            `json:"updated_at"`
+	Addons UsageOrderAddonLines `json:"addons"   gorm:"type:jsonb"`
+	// CreditVND is taken off a plan change for the unused paid days of the
+	// replaced subscription (CreditLines, usage_plan_change.go); it is
+	// capped at the subtotal. ReplacesSubscriptionID/ReplacesEndsAt are the
+	// subscription it was priced against: confirming refuses another one.
+	CreditVND              int64            `json:"credit_vnd"`
+	CreditLines            UsageCreditLines `json:"credit_lines"             gorm:"type:jsonb"`
+	ReplacesSubscriptionID *string          `json:"replaces_subscription_id" gorm:"type:varchar(36)"`
+	ReplacesEndsAt         *time.Time       `json:"replaces_ends_at"`
+	CreatedAt              time.Time        `json:"created_at"`
+	UpdatedAt              time.Time        `json:"updated_at"`
 }
 
 // TableName returns the table name.
@@ -172,6 +180,9 @@ type UsageQuoteRequest struct {
 	Kind string `json:"kind"`
 	// AddonAgentIDs are the specialist agents bought with it.
 	AddonAgentIDs []string `json:"addon_agent_ids"`
+	// KeepAddonAgentIDs: on a plan change, the held add-ons to carry over.
+	// nil = the default (those that cost nothing to carry).
+	KeepAddonAgentIDs *[]string `json:"keep_addon_agent_ids"`
 }
 
 // UsageQuote prices a request. PromoError is set (and no discount applied)
@@ -206,6 +217,23 @@ type UsageQuote struct {
 	// Addons are the add-on lines; AddonsVND their sum (in SubtotalVND).
 	Addons    UsageOrderAddonLines `json:"addons"`
 	AddonsVND int64                `json:"addons_vnd"`
+	// Plan change: what the order replaces, the credit for its unused paid
+	// days (CreditVND applied, CreditUnusedVND the part above the subtotal
+	// that is lost), and the choice for each held add-on.
+	Replaces        *UsageReplacedSubscription `json:"replaces,omitempty"`
+	CreditLines     UsageCreditLines           `json:"credit_lines,omitempty"`
+	CreditVND       int64                      `json:"credit_vnd,omitempty"`
+	CreditUnusedVND int64                      `json:"credit_unused_vnd,omitempty"`
+	HeldAddons      []UsageHeldAddonChoice     `json:"held_addons,omitempty"`
+	// SeatsCarried: seats already assigned on the scope's seat subscription
+	// that the new one keeps.
+	SeatsCarried int `json:"seats_carried,omitempty"`
+	// SeatsHeld: seats assigned on that subscription (more than SeatsCarried:
+	// the latest assigned are not carried).
+	SeatsHeld int `json:"seats_held,omitempty"`
+	// SubscriptionEndsAt: when the package ends once this order is applied
+	// now (renewal: from the current end).
+	SubscriptionEndsAt *time.Time `json:"subscription_ends_at,omitempty"`
 }
 
 // UsageBillingInfo is what the payment page needs besides the order.

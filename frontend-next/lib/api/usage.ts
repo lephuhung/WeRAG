@@ -483,6 +483,8 @@ export interface UsageOrder {
   kind?: UsageOrderKind;
   target_subscription_id?: string | null;
   addons?: UsageOrderAddonLine[];
+  credit_vnd?: number;
+  credit_lines?: UsageCreditLine[];
   created_at: string;
   updated_at: string;
   /** What to write in the bank transfer so the payment matches the order. */
@@ -531,6 +533,33 @@ export interface UsageQuoteRequest {
   note?: string;
   kind?: UsageOrderKind;
   addon_agent_ids?: string[];
+  /** Plan change: held add-ons to carry over; omitted = the server default
+   * (those that cost nothing to carry). */
+  keep_addon_agent_ids?: string[];
+}
+
+/** Mirrors types.UsageCreditLine: unused paid days of the replaced package
+ * (kind "plan") or of an add-on the order drops (kind "addon"). */
+export interface UsageCreditLine {
+  kind: "plan" | "addon";
+  agent_id?: string;
+  name: string;
+  units: number;
+  days: number;
+  amount_vnd: number;
+  /** false: nobody paid for that time (grant, gift) → not credited. */
+  paid: boolean;
+}
+
+/** Mirrors types.UsageHeldAddonChoice. */
+export interface UsageHeldAddonChoice {
+  agent_id: string;
+  name: string;
+  ends_at?: string | null;
+  kept: boolean;
+  carry_vnd: number;
+  credit_vnd: number;
+  bought_again?: boolean;
 }
 
 /** Mirrors types.UsageQuote. promo_error is a reason label (see promoErrorKey). */
@@ -558,6 +587,21 @@ export interface UsageQuote {
   target_subscription_id?: string;
   addons?: UsageOrderAddonLine[];
   addons_vnd?: number;
+  /** Plan change: the package replaced, the credit for its unused paid days
+   * (credit_vnd applied; credit_unused_vnd above the order, lost), and the
+   * carry/drop choice for each held add-on. */
+  replaces?: { subscription_id: string; plan_id: string; plan_name: string; ends_at?: string | null } | null;
+  credit_lines?: UsageCreditLine[];
+  credit_vnd?: number;
+  credit_unused_vnd?: number;
+  held_addons?: UsageHeldAddonChoice[];
+  /** Seats already assigned that the new seat package keeps. */
+  seats_carried?: number;
+  /** Seats assigned on the previous seat package (more than seats_carried:
+   * the latest assigned lose theirs). */
+  seats_held?: number;
+  /** When the package ends if the order is confirmed now. */
+  subscription_ends_at?: string | null;
 }
 
 /** Mirrors types.UsageBillingInfo. */
@@ -675,6 +719,33 @@ export const BILLING_SETTING_KEYS = {
 } as const;
 
 /** i18n key for a quote's promo_error. */
+/** Locale key for a billing refusal's details.reason, or null when the
+ * reason is unknown (the caller then shows the server message). */
+export function billingErrorKey(reason: string | undefined): string | null {
+  switch (reason) {
+    case "addon_held":
+    case "addon_none":
+    case "addon_not_sold":
+    case "addon_pending":
+    case "no_subscription":
+    case "open_ended_subscription":
+    case "order_not_pending":
+    case "plan_not_sold":
+    case "subscription_changed":
+    case "term_not_sold":
+      return `bill.err.${reason}`;
+    case "promo_not_found":
+    case "promo_inactive":
+    case "promo_not_started":
+    case "promo_expired":
+    case "promo_exhausted":
+    case "promo_wrong_plan":
+      return `bill.${reason}`;
+    default:
+      return null;
+  }
+}
+
 export function promoErrorKey(reason: string): string {
   switch (reason) {
     case "promo_not_found":

@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { formatDate, formatDateTime, formatTime, vnDayKey, vnDaysAgo, vnIntl, vnParts, TIME_ZONE } from "./datetime.ts";
+import { formatDate, formatLastDay, formatDateTime, formatTime, vnDayKey, vnDaysAgo, vnIntl, vnParts, TIME_ZONE } from "./datetime.ts";
 
 const HERE = fileURLToPath(new URL("./datetime.ts", import.meta.url));
 
@@ -87,4 +87,10 @@ describe("vnDayKey / vnDaysAgo", () => {
     assert.equal(vnDaysAgo("2026-10-10T03:00:00Z", now), 7);
     assert.equal(vnDaysAgo("2026-09-30T20:00:00Z", now), 16); // across a month end
   });
+});
+
+it("formatLastDay shows the day before a package end stored as Vietnam midnight", () => {
+  assert.equal(formatLastDay("2027-01-14T00:00:00+07:00"), "13/01/2027");
+  assert.equal(formatLastDay("2027-01-13T16:59:59.999Z"), "13/01/2027");
+  assert.equal(formatLastDay(null), "");
 });
