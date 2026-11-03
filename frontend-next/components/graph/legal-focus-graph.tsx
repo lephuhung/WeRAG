@@ -166,8 +166,10 @@ function Card({
     <button
       type="button"
       data-card
-      disabled={!doc.focusable}
-      onClick={onFocus}
+      // aria-disabled, not disabled: a disabled button gets no hover (the
+      // edge highlight) and swallows the pointer events of a pan.
+      aria-disabled={!doc.focusable}
+      onClick={doc.focusable ? onFocus : undefined}
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
       title={doc.focusable ? doc.title : `${doc.title}\n${t("graph.lf.notFocusable")}`}
@@ -290,7 +292,12 @@ function Picker({ kbId, initial, onPick }: { kbId: string; initial: LegalGraphDo
           setOpen(true);
         }}
         onKeyDown={(e) => {
-          if (e.key === "Escape") setOpen(false);
+          if (e.key === "Escape" && open) {
+            // close the list only, not the full screen view
+            e.preventDefault();
+            e.stopPropagation();
+            setOpen(false);
+          }
           if (e.key === "Enter" && list?.[0]) {
             onPick(list[0]);
             setOpen(false);
@@ -346,6 +353,10 @@ function usePanZoom(contentW: number, contentH: number, focusX: number, fitKey: 
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<View>({ zoom: 1, x: 0, y: 0 });
   const drag = useRef<{ px: number; py: number; x: number; y: number } | null>(null);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const contentRef = useRef({ w: contentW, h: contentH });
+  contentRef.current = { w: contentW, h: contentH };
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -374,10 +385,13 @@ function usePanZoom(contentW: number, contentH: number, focusX: number, fitKey: 
     setView({ zoom, x, y });
   }, [size, contentW, contentH, focusX]);
 
-  // Refit whenever the content or the box changes shape.
+  // Refit on a new focus, full screen or a resized box only: expanding a
+  // group or showing căn cứ keeps the reader's pan and zoom.
+  const fitRef = useRef(fit);
+  fitRef.current = fit;
   useEffect(() => {
-    fit();
-  }, [fit, fitKey]);
+    fitRef.current();
+  }, [fitKey, size.w, size.h]);
 
   const zoomAt = useCallback((factor: number, cx: number, cy: number) => {
     setView((v) => {
@@ -391,9 +405,14 @@ function usePanZoom(contentW: number, contentH: number, focusX: number, fitKey: 
     const el = ref.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
+      const zooming = e.ctrlKey || e.metaKey;
+      const z = viewRef.current.zoom;
+      const overflows = contentRef.current.w * z > el.clientWidth || contentRef.current.h * z > el.clientHeight;
+      // Leave the page scroll alone unless zooming or there is more to see.
+      if (!zooming && !overflows) return;
       e.preventDefault();
       const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? el.clientHeight : 1;
-      if (e.ctrlKey || e.metaKey) {
+      if (zooming) {
         const rect = el.getBoundingClientRect();
         zoomAt(Math.exp(-e.deltaY * unit * 0.0015), e.clientX - rect.left, e.clientY - rect.top);
       } else {
@@ -406,7 +425,8 @@ function usePanZoom(contentW: number, contentH: number, focusX: number, fitKey: 
 
   const handlers = {
     onPointerDown: (e: React.PointerEvent) => {
-      if ((e.target as HTMLElement).closest("[data-card],button")) return;
+      // Pan from anywhere but a live control (a focusable card, a button).
+      if ((e.target as HTMLElement).closest('button:not([aria-disabled="true"]),input,a')) return;
       drag.current = { px: e.clientX, py: e.clientY, x: view.x, y: view.y };
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     },
@@ -424,9 +444,22 @@ function usePanZoom(contentW: number, contentH: number, focusX: number, fitKey: 
 
 /* ---------- The view ---------- */
 
+interface FocusRequest {
+  /** The document to focus; "" = the KB's best connected. */
+  doc: string;
+  /** The breadcrumb once it has loaded (f: the loaded focus). */
+  trail: (trail: LegalGraphDoc[], f: LegalGraphDoc) => LegalGraphDoc[];
+  /** Bumped per request, so a retry of the same document refetches. */
+  n: number;
+}
+
+const resetTrail = (_: LegalGraphDoc[], f: LegalGraphDoc) => [f];
+
 export function LegalFocusGraph({ kbId, onOpenKnowledge }: { kbId: string; onOpenKnowledge?: (knowledgeId: string) => void }) {
   const { t } = useT();
-  const [target, setTarget] = useState("");
+  // A focus request; its trail change applies only once the focus loads,
+  // so a 404 or a network error leaves the breadcrumb on the shown doc.
+  const [req, setReq] = useState<FocusRequest>({ doc: "", trail: resetTrail, n: 0 });
   const [trail, setTrail] = useState<LegalGraphDoc[]>([]);
   const [data, setData] = useState<LegalGraphFocus | null>(null);
   const [error, setError] = useState("");
@@ -440,54 +473,58 @@ export function LegalFocusGraph({ kbId, onOpenKnowledge }: { kbId: string; onOpe
   const [full, setFull] = useState(false);
   useEffect(() => {
     if (!full) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setFull(false);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !e.defaultPrevented && setFull(false);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [full]);
 
+  const request = useCallback(
+    (doc: string, change: FocusRequest["trail"]) => setReq((r) => ({ doc, trail: change, n: r.n + 1 })),
+    [],
+  );
+  // Another KB: start over from its best-connected document.
+  const shownKb = useRef(kbId);
   useEffect(() => {
-    setTarget("");
+    if (shownKb.current === kbId) return;
+    shownKb.current = kbId;
+    request("", resetTrail);
     setTrail([]);
     setTopCandidates([]);
-  }, [kbId]);
+  }, [kbId, request]);
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
     setError("");
-    getLegalGraphFocus(kbId, { doc: target || undefined })
+    getLegalGraphFocus(kbId, { doc: req.doc || undefined })
       .then((r) => {
         if (!alive) return;
         const d = r.data;
         setData(d);
         setExpanded(new Set());
         setHoverDoc(null);
-        if (!target && d.candidates?.length) setTopCandidates(d.candidates);
-        if (d.focus) {
-          const f = d.focus;
-          setTrail((tr) => (tr.length && tr[tr.length - 1].id === f.id ? [...tr.slice(0, -1), f] : tr.length ? tr : [f]));
-        }
+        if (!req.doc && d.candidates?.length) setTopCandidates(d.candidates);
+        const f = d.focus;
+        if (f) setTrail((tr) => req.trail(tr, f));
       })
       .catch((e) => alive && setError(e instanceof Error ? e.message : String(e)))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
-  }, [kbId, target]);
+  }, [kbId, req]);
 
   const focusDoc = useCallback(
     (d: LegalGraphDoc) => {
       if (!d.focusable || d.id === data?.focus?.id) return;
-      setTrail((tr) => [...tr, d].slice(-12));
-      setTarget(d.id);
+      request(d.id, (tr, f) => [...tr, f].slice(-12));
     },
-    [data?.focus?.id],
+    [data?.focus?.id, request],
   );
   const goTo = (i: number) => {
     const d = trail[i];
     if (!d) return;
-    setTrail(trail.slice(0, i + 1));
-    setTarget(d.id);
+    request(d.id, (tr, f) => [...tr.slice(0, i), f]);
   };
 
   const layout = useMemo(() => (data?.focus ? layoutColumns(data, showBasis, expanded) : null), [data, showBasis, expanded]);
@@ -495,7 +532,7 @@ export function LegalFocusGraph({ kbId, onOpenKnowledge }: { kbId: string; onOpe
     () => (data?.neighbours ?? []).filter((n) => n.relations[0] === "based_on").length,
     [data],
   );
-  const fitKey = `${data?.focus?.id}|${showBasis}|${layout?.height}|${full}`;
+  const fitKey = `${data?.focus?.id}|${full}`;
   const pz = usePanZoom(WIDTH, layout?.height ?? 400, X_CENTRE + CENTRE_W / 2, fitKey);
 
   const toggleGroup = (key: string) =>
@@ -519,7 +556,7 @@ export function LegalFocusGraph({ kbId, onOpenKnowledge }: { kbId: string; onOpe
     >
       {/* toolbar */}
       <div className="flex flex-wrap items-center gap-2 border-b border-hairline px-4 py-2.5 sm:px-6">
-        <Picker kbId={kbId} initial={topCandidates} onPick={(d) => { setTrail([d]); setTarget(d.id); }} />
+        <Picker kbId={kbId} initial={topCandidates} onPick={(d) => request(d.id, resetTrail)} />
         {trail.length > 1 && (
           <button type="button" className="btn btn-ghost btn-sm h-8 gap-1 px-2 text-[12px]" onClick={() => goTo(trail.length - 2)}>
             <IconChevronLeft className="h-3.5 w-3.5" />
