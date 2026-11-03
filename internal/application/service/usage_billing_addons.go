@@ -613,6 +613,48 @@ func (s *usageBillingService) ScopeAddons(ctx context.Context, scopeType, scopeI
 	return out, nil
 }
 
+// refuseExtendedSeatLines refuses a plan order (renewal or plan change)
+// whose added seats were charged for a held add-on up to the end the right
+// had then (CoveredUntil of a line with ExtraUnits) when the right now runs
+// longer (an add-on order extended it meanwhile): the added seats would get
+// the extension for free (review L4; applySeatsOrder checks the same).
+func (s *usageBillingService) refuseExtendedSeatLines(
+	ctx context.Context, o *types.UsageOrder, cur *types.UsageSubscription, now time.Time,
+) error {
+	if cur == nil || !cur.IsCurrentAt(now) {
+		return nil
+	}
+	priced := map[string]time.Time{}
+	for _, l := range o.Addons {
+		if l.ExtraUnits > 0 && l.CoveredUntil != nil {
+			priced[l.AgentID] = *l.CoveredUntil
+		}
+	}
+	if len(priced) == 0 {
+		return nil
+	}
+	held, err := s.planRepo.ListSubscriptionAddons(ctx, cur.ID)
+	if err != nil {
+		return err
+	}
+	for _, h := range held {
+		p, ok := priced[h.AgentID]
+		if !ok || !h.IsCurrentAt(now) {
+			continue
+		}
+		end := h.EndsAt
+		if end == nil {
+			end = cur.EndsAt
+		}
+		if end == nil || end.After(p) {
+			return apperrors.NewConflictError(fmt.Sprintf(
+				"a specialist agent of the package was extended since order %s was priced; cancel it and order again", o.OrderCode)).
+				WithDetails(map[string]string{"reason": "subscription_changed", "agent_id": h.AgentID})
+		}
+	}
+	return nil
+}
+
 // refuseMovedSubscription refuses a renewal whose add-on lines were priced
 // against another subscription end than the current one (another order
 // renewed it meanwhile): confirmed, it would grant the add-on for a period

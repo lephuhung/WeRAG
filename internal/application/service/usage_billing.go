@@ -607,6 +607,10 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 	if err := refuseReplacedMoved(o, cur, now); err != nil {
 		return "", err
 	}
+	// the added seats were charged for a held right up to its end then
+	if err := s.refuseExtendedSeatLines(ctx, o, cur, now); err != nil {
+		return "", err
+	}
 	if renewsSubscription(cur, o.PlanID, o.Mode, now) {
 		// priced on another seat count (a seat order added seats since):
 		// the added seats would be charged twice (review H1)

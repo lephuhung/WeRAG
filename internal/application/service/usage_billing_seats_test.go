@@ -276,10 +276,10 @@ func TestSeatOrderAndPlanOrderRefuseEachOther(t *testing.T) {
 	require.Equal(t, "plan_order_pending", reason)
 }
 
-// sneakSeatOrder places a seat order although plan orders are pending (as
-// a race past the cross refusal, or a SuperAdmin reopen would) and
-// confirms it.
-func (f *billingFixture) sneakSeatOrder(t *testing.T, k int, promo string) *types.UsageOrderView {
+// sneakOrder places req although orders are pending (as a race past the
+// cross refusal between seat and plan orders, or a SuperAdmin reopen with
+// force, would) and confirms it.
+func (f *billingFixture) sneakOrder(t *testing.T, req types.UsageQuoteRequest) *types.UsageOrderView {
 	t.Helper()
 	ctx := context.Background()
 	hidden := map[string]bool{}
@@ -289,9 +289,7 @@ func (f *billingFixture) sneakSeatOrder(t *testing.T, k int, promo string) *type
 			hidden[id] = true
 		}
 	}
-	r := seatsReq(k)
-	r.PromoCode = promo
-	o, err := f.svc.CreateOrder(ctx, r, "10003", "u1")
+	o, err := f.svc.CreateOrder(ctx, req, "10003", "u1")
 	require.NoError(t, err)
 	for id := range hidden {
 		f.repo.orders[id].Status = types.UsageOrderPending
@@ -299,6 +297,14 @@ func (f *billingFixture) sneakSeatOrder(t *testing.T, k int, promo string) *type
 	v, err := f.svc.ConfirmOrder(ctx, o.ID, "sa")
 	require.NoError(t, err)
 	return v
+}
+
+// sneakSeatOrder: sneakOrder for k seats with promo.
+func (f *billingFixture) sneakSeatOrder(t *testing.T, k int, promo string) *types.UsageOrderView {
+	t.Helper()
+	r := seatsReq(k)
+	r.PromoCode = promo
+	return f.sneakOrder(t, r)
 }
 
 // Review H1: a renewal priced before a seat order is refused once the seats
@@ -353,13 +359,14 @@ func TestSeatOrderAgainstAChangedPackageIsRefused(t *testing.T) {
 	ctx := context.Background()
 	end := endOfVN(2026, 11, 12)
 
+	// a real plan order confirmed while the seat order waits
 	t.Run("renewed", func(t *testing.T) {
 		f := newBillingFixture(t)
 		f.paidSeats(t, "seat", 3, end, 1, 49_000)
 		o, err := f.svc.CreateOrder(ctx, seatsReq(2), "10003", "u1")
 		require.NoError(t, err)
-		later := endOfVN(2026, 12, 12) // e.g. a SuperAdmin extension
-		f.plans.active["tenant/10003"].EndsAt = &later
+		f.sneakOrder(t, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 3})
+		require.Equal(t, endOfVN(2026, 12, 12), *f.plans.active["tenant/10003"].EndsAt)
 		_, err = f.svc.ConfirmOrder(ctx, o.ID, "sa")
 		code, reason := errCodeReason(t, err)
 		require.Equal(t, 409, code)
@@ -371,10 +378,11 @@ func TestSeatOrderAgainstAChangedPackageIsRefused(t *testing.T) {
 		f.paidSeats(t, "seat", 3, end, 1, 49_000)
 		o, err := f.svc.CreateOrder(ctx, seatsReq(2), "10003", "u1")
 		require.NoError(t, err)
-		f.plans.active["tenant/10003"] = &types.UsageSubscription{ID: "sub-new", ScopeType: "tenant", ScopeID: "10003",
-			PlanID: "seat", Mode: "seat", Seats: 3, StartsAt: billingNow, EndsAt: &end, Status: types.UsageSubscriptionActive}
+		f.sneakOrder(t, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "term", Months: 1, Seats: 3})
+		require.Equal(t, "term", f.plans.active["tenant/10003"].PlanID)
 		_, err = f.svc.ConfirmOrder(ctx, o.ID, "sa")
-		_, reason := errCodeReason(t, err)
+		code, reason := errCodeReason(t, err)
+		require.Equal(t, 409, code)
 		require.Equal(t, "subscription_changed", reason)
 	})
 	t.Run("add-on bought since", func(t *testing.T) {
@@ -605,4 +613,43 @@ func TestPendingSeatOrderLinesAreNotAddonPurchases(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, f.svc.refusePendingAddons(ctx, "tenant", "10003",
 		types.UsageOrderAddonLines{{AgentID: "thue"}}))
+}
+
+// Review L4: a renewal whose added seats were charged for a held add-on up
+// to the end it had then is refused once an add-on order extended it.
+func TestRenewalSeatLineAgainstAnExtendedAddonIsRefused(t *testing.T) {
+	f := newBillingFixture(t)
+	withAddonCatalogue(f)
+	ctx := context.Background()
+	end := endOfVN(2026, 11, 12)
+	f.paidSeats(t, "seat", 3, end, 1, 49_000)
+	f.heldThue(t)
+	frozen := endOfVN(2026, 10, 31)
+	f.right("sub-s", "thue").EndsAt = &frozen
+
+	renew, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 5}, "10003", "u1")
+	require.NoError(t, err)
+	require.Len(t, renew.Addons, 1)
+	require.True(t, renew.Addons[0].SeatsOnly)
+	require.Equal(t, frozen, *renew.Addons[0].CoveredUntil)
+
+	// the agent bought mid-term to 12/11 for the 3 seats, confirmed first
+	add, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", Kind: "addon", AddonAgentIDs: []string{"thue"}}, "10003", "u1")
+	require.NoError(t, err)
+	_, err = f.svc.ConfirmOrder(ctx, add.ID, "sa")
+	require.NoError(t, err)
+	require.Equal(t, end, *f.right("sub-s", "thue").EndsAt)
+
+	_, err = f.svc.ConfirmOrder(ctx, renew.ID, "sa")
+	code, reason := errCodeReason(t, err)
+	require.Equal(t, 409, code)
+	require.Equal(t, "subscription_changed", reason)
+	require.Equal(t, 3, f.plans.active["tenant/10003"].Seats)
+
+	// priced again now, the renewal pays the 2 seats up to 12/11 and goes through
+	again, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 5, ConfirmDuplicate: true}, "10003", "u1")
+	require.NoError(t, err)
+	require.Equal(t, end, *again.Addons[0].CoveredUntil)
+	_, err = f.svc.ConfirmOrder(ctx, again.ID, "sa")
+	require.NoError(t, err)
 }
