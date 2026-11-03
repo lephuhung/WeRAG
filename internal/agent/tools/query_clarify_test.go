@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Tencent/WeKnora/internal/docformat"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -149,4 +150,91 @@ func TestBroadQueryLeavesPersonalAndEmptyTopicsAlone(t *testing.T) {
 			t.Errorf("%q must still be asked about", q)
 		}
 	}
+}
+
+// replyJudge answers every labeling call with reply (or err) and counts them.
+type replyJudge struct {
+	reply string
+	err   error
+	calls int
+}
+
+func (j *replyJudge) Complete(context.Context, []docformat.Message) (string, error) {
+	j.calls++
+	return j.reply, j.err
+}
+
+func TestBroadQueryJudgeTakesTheCardAway(t *testing.T) {
+	cat := &fakeTitles{n: 60}
+	for name, j := range map[string]*replyJudge{
+		"not broad":  {reply: `{"broad": false, "topic": ""}`},
+		"error":      {err: fmt.Errorf("timeout")},
+		"unreadable": {reply: `maybe`},
+		"no field":   {reply: `{"topic": "đất đai"}`},
+	} {
+		if card := BroadQueryClarification(context.Background(), cat, "s-judge-"+name, BroadQueryInput{Query: "luật đất đai", Judge: j}); card != nil {
+			t.Errorf("%s: card shown", name)
+		}
+		if j.calls != 1 {
+			t.Errorf("%s: %d judge calls", name, j.calls)
+		}
+	}
+}
+
+func TestBroadQueryJudgeIsNotAskedWhenTheRulesShowNoCard(t *testing.T) {
+	j := &replyJudge{reply: `{"broad": true, "topic": "đất đai"}`}
+	if card := BroadQueryClarification(context.Background(), &fakeTitles{n: 5}, "s-few", BroadQueryInput{Query: "luật đất đai", Judge: j}); card != nil {
+		t.Fatal("the judge cannot add a card the catalogue does not back")
+	}
+	if j.calls != 0 {
+		t.Fatalf("%d judge calls below the match threshold", j.calls)
+	}
+}
+
+func TestBroadQueryJudgeNamesTheSubject(t *testing.T) {
+	cat := &fakeTitles{n: 60}
+	// the rules strip "hội" (folded "hoi", a request word): the judge's
+	// subject replaces the cut one and the titles are searched for it
+	j := &replyJudge{reply: `{"broad": true, "topic": "bảo hiểm xã hội"}`}
+	card := BroadQueryClarification(context.Background(), cat, "s-subject", BroadQueryInput{Query: "bảo hiểm xã hội", Judge: j})
+	if card == nil || card.Topic != "bảo hiểm xã hội" {
+		t.Fatalf("card %+v", card)
+	}
+	if strings.Join(cat.words, " ") != "bảo hiểm xã hội" {
+		t.Fatalf("searched %q", cat.words)
+	}
+	// a subject that is not in the message is ignored: the rules' topic stays
+	cat = &fakeTitles{n: 60}
+	j = &replyJudge{reply: `{"broad": true, "topic": "thuế"}`}
+	card = BroadQueryClarification(context.Background(), cat, "s-invented", BroadQueryInput{Query: "quy định về đất đai", Judge: j})
+	if card == nil || card.Topic != "đất đai" {
+		t.Fatalf("card %+v", card)
+	}
+	// "luật đất đai" from the judge loses its document type like the rules'
+	j = &replyJudge{reply: `{"broad": true, "topic": "luật đất đai"}`}
+	if card = BroadQueryClarification(context.Background(), &fakeTitles{n: 60}, "s-type", BroadQueryInput{Query: "luật đất đai", Judge: j}); card == nil || card.Topic != "đất đai" {
+		t.Fatalf("card %+v", card)
+	}
+}
+
+func TestBroadQueryJudgedSubjectNeedsEnoughTitles(t *testing.T) {
+	cat := &shrinkingTitles{first: 60, then: 3}
+	j := &replyJudge{reply: `{"broad": true, "topic": "bảo hiểm xã hội"}`}
+	if card := BroadQueryClarification(context.Background(), cat, "s-shrink", BroadQueryInput{Query: "bảo hiểm xã hội", Judge: j}); card != nil {
+		t.Fatalf("card over %d titles", card.Total)
+	}
+}
+
+// shrinkingTitles matches first documents on the first search, then then.
+type shrinkingTitles struct {
+	first, then, calls int
+}
+
+func (s *shrinkingTitles) SearchTitles(ctx context.Context, words []string, limit int) ([]*types.LegalDocument, error) {
+	n := s.first
+	if s.calls > 0 {
+		n = s.then
+	}
+	s.calls++
+	return (&fakeTitles{n: n}).SearchTitles(ctx, words, limit)
 }

@@ -11,6 +11,7 @@ import (
 
 	"golang.org/x/text/unicode/norm"
 
+	"github.com/Tencent/WeKnora/internal/docformat"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -21,7 +22,9 @@ import (
 // and vaguely. Before retrieval, when the catalogue holds at least
 // broadQueryMinMatches documents whose titles carry the topic, the turn is
 // answered with a card: the document types and issuers the topic spans,
-// the newest documents in force, or "search anyway". No model is called.
+// the newest documents in force, or "search anyway". When the input has a
+// Judge, the model confirms the card first and names the subject
+// (query_clarify_judge.go); it can only take the card away.
 //
 // It never asks when the question carries an anchor (a number, a year, a
 // section reference, a quote, an @-mention), when it is about the user or
@@ -153,6 +156,9 @@ type BroadQueryInput struct {
 	Query string
 	// Disabled turns the gate off (the setting).
 	Disabled bool
+	// Judge, when set, confirms the card the rules would show: "not
+	// broad", an error or a timeout leaves the turn to run as usual.
+	Judge docformat.Completer
 }
 
 // BroadQueryClarification runs the gate for a turn; nil means go on.
@@ -193,6 +199,37 @@ func BroadQueryClarification(ctx context.Context, catalog TitleSearcher, session
 	if len(docs) < broadQueryMinMatches {
 		return nil
 	}
+	if in.Judge != nil {
+		broad, judged, err := judgeBroadQuery(ctx, in.Judge, query)
+		if err != nil {
+			logger.Warnf(ctx, "[BroadQuery] session=%s topic=%q: judge failed, no card: %v", sessionID, strings.Join(topicWords, " "), err)
+			return nil
+		}
+		if !broad {
+			logger.Infof(ctx, "[BroadQuery] session=%s topic=%q matches %d titles but the judge says not broad: no card", sessionID, strings.Join(topicWords, " "), len(docs))
+			return nil
+		}
+		// the subject as the user wrote it: the rules' word stripping can
+		// cut a content word ("bảo hiểm xã hội" → "bảo hiểm xã")
+		if words := judgedTopicWords(query, judged); words != nil && !sameFoldedWords(words, foldedTopic) {
+			topicWords = words
+			foldedTopic = foldedTopic[:0]
+			for _, w := range topicWords {
+				foldedTopic = append(foldedTopic, foldSearch(w))
+			}
+			key = strings.Join(foldedTopic, " ")
+			if broadQueryAsked(ctx, sessionID, key) {
+				return nil
+			}
+			if docs, err = catalog.SearchTitles(ctx, topicWords, broadQuerySearchLimit); err != nil {
+				logger.Warnf(ctx, "[BroadQuery] session=%s title search: %v", sessionID, err)
+				return nil
+			}
+			if len(docs) < broadQueryMinMatches {
+				return nil
+			}
+		}
+	}
 	topic := strings.Join(topicWords, " ")
 	card := &BroadQueryCard{Query: query, Topic: topic, Total: len(docs), key: key}
 	for _, g := range topGroups(docs, func(d *types.LegalDocument) string { return d.DocType }, broadQueryTypeOptions) {
@@ -215,6 +252,19 @@ func BroadQueryClarification(ctx context.Context, catalog TitleSearcher, session
 	)
 	logger.Infof(ctx, "[BroadQuery] session=%s topic=%q matches %d catalogue documents: asking", sessionID, topic, len(docs))
 	return card
+}
+
+// sameFoldedWords reports whether words fold to the folded words want.
+func sameFoldedWords(words, want []string) bool {
+	if len(words) != len(want) {
+		return false
+	}
+	for i, w := range words {
+		if foldSearch(w) != want[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // foldPunctToSpace turns punctuation into spaces so the personal pattern

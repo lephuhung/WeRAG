@@ -50,8 +50,9 @@ func (s *sessionService) KnowledgeQA(
 		return err
 	}
 	// a short generic question spanning dozens of catalogue documents is
-	// answered with a card to narrow it (type, issuer, newest); no model runs
-	if asked, err := s.broadQueryClarification(ctx, req, eventBus, false); asked || err != nil {
+	// answered with a card to narrow it (type, issuer, newest), once the
+	// labeling model confirms it is one
+	if asked, err := s.broadQueryClarification(ctx, req, eventBus, false, s.knowledgeQAJudge(ctx, req)); asked || err != nil {
 		return err
 	}
 	// files that all failed to be read are answered with the cause; no model runs

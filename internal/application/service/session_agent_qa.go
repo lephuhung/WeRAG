@@ -272,8 +272,9 @@ func (s *sessionService) AgentQA(
 		return err
 	}
 	// a short generic question spanning dozens of catalogue documents is
-	// answered with a card to narrow it (type, issuer, newest); no model runs
-	if asked, err := s.broadQueryClarification(ctx, req, eventBus, true); asked || err != nil {
+	// answered with a card to narrow it (type, issuer, newest), once the
+	// labeling model confirms it is one
+	if asked, err := s.broadQueryClarification(ctx, req, eventBus, true, intentModel); asked || err != nil {
 		return err
 	}
 	// files that all failed to be read (a photo without text, an unreadable
