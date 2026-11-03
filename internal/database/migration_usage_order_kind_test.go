@@ -1,6 +1,7 @@
 package database
 
 import (
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -31,32 +32,86 @@ func TestUsageOrderKindCheckAllowsEveryKind(t *testing.T) {
 	}
 }
 
+// The test reads the CHECK in this form only (whitespace and case free,
+// "--" comments ignored):
+//
+//	ALTER TABLE usage_orders ADD CONSTRAINT chk_usage_orders_kind
+//	    CHECK (kind IN ('plan', 'addon', 'seats'));
+//
+// optionally preceded by DROP CONSTRAINT [IF EXISTS] chk_usage_orders_kind.
+// The newest *.up.sql that mentions chk_usage_orders_kind decides: if it
+// cannot be parsed in that form, or drops the constraint without adding it
+// back afterwards, the test fails rather than falling back to an older
+// migration (write the new constraint in the form above).
 var (
-	usageOrderKindCheckRe = regexp.MustCompile(`(?is)chk_usage_orders_kind\s+CHECK\s*\(\s*kind\s+IN\s*\(([^)]*)\)`)
-	sqlStringRe           = regexp.MustCompile(`'([^']*)'`)
+	usageOrderKindMentionRe = regexp.MustCompile(`(?i)chk_usage_orders_kind`)
+	usageOrderKindAddRe     = regexp.MustCompile(`(?is)ADD\s+CONSTRAINT\s+chk_usage_orders_kind\s+CHECK\s*\(\s*kind\s+IN\s*\(([^)]*)\)\s*\)`)
+	usageOrderKindDropRe    = regexp.MustCompile(`(?is)DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?chk_usage_orders_kind\b`)
+	sqlStringRe             = regexp.MustCompile(`'([^']*)'`)
+	sqlLineCommentRe        = regexp.MustCompile(`--[^\n]*`)
 )
 
-// latestUsageOrderKindCheck returns the values of the highest-numbered
-// .up.sql migration that adds chk_usage_orders_kind.
+// latestUsageOrderKindCheck returns the values allowed by the newest
+// .up.sql migration that mentions chk_usage_orders_kind.
 func latestUsageOrderKindCheck(t *testing.T, dir string) []string {
 	t.Helper()
 	files, err := filepath.Glob(filepath.Join(dir, "*.up.sql"))
 	require.NoError(t, err)
 	sort.Strings(files) // zero-padded version prefixes sort numerically
-	var allowed []string
+	var newest, sql string
 	for _, f := range files {
 		raw, err := os.ReadFile(f)
 		require.NoError(t, err)
-		sql := regexp.MustCompile(`--[^\n]*`).ReplaceAllString(string(raw), "")
-		for _, m := range usageOrderKindCheckRe.FindAllStringSubmatch(sql, -1) {
-			allowed = allowed[:0:0]
-			for _, s := range sqlStringRe.FindAllStringSubmatch(m[1], -1) {
-				allowed = append(allowed, s[1])
-			}
+		body := sqlLineCommentRe.ReplaceAllString(string(raw), "")
+		if usageOrderKindMentionRe.MatchString(body) {
+			newest, sql = f, body
 		}
 	}
-	require.NotEmpty(t, allowed, "no chk_usage_orders_kind CHECK found in %s", dir)
+	require.NotEmpty(t, newest, "no migration in %s mentions chk_usage_orders_kind", dir)
+	allowed, err := parseUsageOrderKindCheck(filepath.Base(newest), sql)
+	require.NoError(t, err)
 	return allowed
+}
+
+// parseUsageOrderKindCheck reads the allowed kinds from one migration's
+// SQL (comments already removed), refusing any other form.
+func parseUsageOrderKindCheck(name, sql string) ([]string, error) {
+	adds := usageOrderKindAddRe.FindAllStringSubmatchIndex(sql, -1)
+	if len(adds) == 0 {
+		return nil, fmt.Errorf("%s mentions chk_usage_orders_kind but has no "+
+			"ADD CONSTRAINT chk_usage_orders_kind CHECK (kind IN (...)) the test can read", name)
+	}
+	last := adds[len(adds)-1]
+	for _, d := range usageOrderKindDropRe.FindAllStringIndex(sql, -1) {
+		if d[0] > last[0] {
+			return nil, fmt.Errorf("%s drops chk_usage_orders_kind without adding it back afterwards", name)
+		}
+	}
+	var allowed []string
+	for _, v := range sqlStringRe.FindAllStringSubmatch(sql[last[2]:last[3]], -1) {
+		allowed = append(allowed, v[1])
+	}
+	if len(allowed) == 0 {
+		return nil, fmt.Errorf("%s: chk_usage_orders_kind allows no kind", name)
+	}
+	return allowed, nil
+}
+
+func TestParseUsageOrderKindCheckForms(t *testing.T) {
+	got, err := parseUsageOrderKindCheck("ok.up.sql", "ALTER TABLE usage_orders DROP CONSTRAINT IF EXISTS chk_usage_orders_kind;\n"+
+		"ALTER TABLE usage_orders\n    ADD CONSTRAINT chk_usage_orders_kind CHECK (kind IN ('plan', 'addon', 'seats'));")
+	require.NoError(t, err)
+	require.Equal(t, []string{"plan", "addon", "seats"}, got)
+
+	for name, sql := range map[string]string{
+		"drop only":     "ALTER TABLE usage_orders DROP CONSTRAINT chk_usage_orders_kind;",
+		"drop after":    "ALTER TABLE usage_orders ADD CONSTRAINT chk_usage_orders_kind CHECK (kind IN ('plan')); ALTER TABLE usage_orders DROP CONSTRAINT IF EXISTS chk_usage_orders_kind;",
+		"other form":    "ALTER TABLE usage_orders ADD CONSTRAINT chk_usage_orders_kind CHECK (kind = ANY (ARRAY['plan']));",
+		"empty IN list": "ALTER TABLE usage_orders ADD CONSTRAINT chk_usage_orders_kind CHECK (kind IN ());",
+	} {
+		_, err := parseUsageOrderKindCheck(name, sql)
+		require.Errorf(t, err, "%s must be refused", name)
+	}
 }
 
 // usageOrderKindConstants parses internal/types for string constants named
