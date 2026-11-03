@@ -262,3 +262,48 @@ func TestTopicOnlyUpdateSkipsWhenSiblingsShareTheTopic(t *testing.T) {
 	require.NoError(t, err)
 	require.EqualValues(t, 2, total, "%v", items)
 }
+
+// The chat that lost "Đội 4": the user introduced themselves and the model
+// rewrote the old fact under the same topic into a profile note. No change
+// was said, so the old note stays and the new one is added beside it; a
+// same-kind update still replaces, so a correction does not leave two
+// contradictory facts.
+func TestTargetedUpdateNeedsTheCollisionRule(t *testing.T) {
+	s, _, tr := newMemoryHarness(t)
+	ctx := enabledCtx(t, tr, 1, "alice")
+	scope, cfg, ok := s.enabledScope(ctx)
+	require.True(t, ok)
+	_, err := s.Remember(ctx, types.MemoryItem{Kind: types.MemoryKindFact, Topic: "đơn vị công tác", Content: "Phụ trách Đội 4, ký trực tiếp văn bản trong phòng PA05"})
+	require.NoError(t, err)
+	existing, _, err := s.ListItems(ctx, types.MemoryStatusActive, 10, 0)
+	require.NoError(t, err)
+	require.Len(t, existing, 1)
+	zero := 0
+	segment := transcriptSegment{sessionID: "s", lines: []transcriptLine{{sessionID: "s", messageID: "m1", content: "Tôi tên là Hưng, công tác tại phòng PA05 công an tỉnh Hà Tĩnh"}}}
+	require.NoError(t, s.applyDecisions(ctx, scope, cfg, segment, []*types.MemoryItem{existing[0]}, []extractionDecision{
+		{Action: "update", Target: &zero, Kind: types.MemoryKindProfile, Topic: "đơn vị công tác", Content: "Tên là Hưng, công tác tại phòng PA05 Công an tỉnh Hà Tĩnh"},
+	}))
+	items, total, err := s.ListItems(ctx, types.MemoryStatusActive, 10, 0)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, total, "%v", items)
+
+	moved := transcriptSegment{sessionID: "s", lines: []transcriptLine{{sessionID: "s", messageID: "m2", content: "Tôi phụ trách Đội 2"}}}
+	var fact *types.MemoryItem
+	for _, it := range items {
+		if it.Kind == types.MemoryKindFact {
+			fact = it
+		}
+	}
+	require.NotNil(t, fact)
+	require.NoError(t, s.applyDecisions(ctx, scope, cfg, moved, []*types.MemoryItem{fact}, []extractionDecision{
+		{Action: "update", Target: &zero, Kind: types.MemoryKindFact, Topic: "đơn vị công tác", Content: "Phụ trách Đội 2 trong phòng PA05"},
+	}))
+	items, total, err = s.ListItems(ctx, types.MemoryStatusActive, 10, 0)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, total, "%v", items)
+	var contents []string
+	for _, it := range items {
+		contents = append(contents, it.Content)
+	}
+	require.NotContains(t, strings.Join(contents, "|"), "Đội 4")
+}

@@ -1272,7 +1272,24 @@ func (s *Service) applyDecisions(
 			}
 			var targetID string
 			if action == "update" && target != nil {
-				targetID = target.ID
+				// An update rewrites the old note it names. Turning it into
+				// another kind is a different statement unless the user said
+				// something changed: the model merging "tên, đơn vị" into the
+				// "Đội 4" fact as a profile lost Đội 4, so the statement is
+				// added beside the old note instead. A same-kind rewrite keeps
+				// the model's choice ("Tôi phụ trách Đội 2" replaces "Đội 4"
+				// rather than leaving both). A target gone since the snapshot
+				// keeps the ID so the write fails as a conflict.
+				live, err := s.repo.GetItem(ctx, scope, target.ID)
+				if err != nil {
+					return fmt.Errorf("find memory decision target: %w", err)
+				}
+				if live == nil || live.Status != types.MemoryStatusActive || saysSomethingChanged(source.content) ||
+					!types.IsValidMemoryKind(item.Kind) || live.Kind == item.Kind {
+					targetID = target.ID
+				} else {
+					logger.Infof(ctx, "memory: update of %q kept the old note (kind changed with no change cue)", target.Topic)
+				}
 			}
 			if _, err := s.writeReplacing(ctx, scope, cfg, item, targetID, source.content); err != nil {
 				if errors.Is(err, ErrPreviouslyForgotten) || errors.Is(err, ErrSensitiveContent) ||

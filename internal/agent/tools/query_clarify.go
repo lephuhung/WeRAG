@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/text/unicode/norm"
+
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -22,7 +24,9 @@ import (
 // the newest documents in force, or "search anyway". No model is called.
 //
 // It never asks when the question carries an anchor (a number, a year, a
-// section reference, a quote, an @-mention), when it is longer than
+// section reference, a quote, an @-mention), when it is about the user or
+// the assistant ("về tôi", "của bạn"), when the topic left is only
+// function words ("có", "là"), when it is longer than
 // broadQueryMaxWords words, when the topic is longer than
 // broadQueryMaxTopicWords words, when the user asked to search anyway or
 // for everything, or when it already asked for that topic this session.
@@ -66,7 +70,36 @@ var (
 	broadQueryAnchorRe = regexp.MustCompile(`[0-9"“”'@]`)
 	// the user asked for everything or to search anyway
 	broadQueryAllRe = regexp.MustCompile(`\b(tim chung|tat ca|toan bo|moi van ban|het)\b`)
+	// the question is about a person in the chat, not the corpus: "về tôi",
+	// "của bạn", "tôi là ai". Matched with the diacritics kept, since
+	// folded "ban", "minh", "to" are also "bản", "minh bạch", "tổ chức".
+	broadQueryPersonalRe = regexp.MustCompile(` (về|của) (tôi|mình|tớ|tui|tao|bạn|chúng tôi|chúng mình) | (tôi|mình|bạn) là ai `)
 )
+
+// broadQueryFunctionWords never make a topic on their own: a question whose
+// topic is only these ("bạn có thông tin gì về tôi" → "có") names nothing to
+// look up, and a title search for them matches the whole catalogue. Kept
+// with diacritics: folded "do thi", "dau khi", "dang" are also "đô thị",
+// "dầu khí", "Đảng".
+var broadQueryFunctionWords = map[string]bool{}
+
+func init() {
+	for _, w := range strings.Fields(`có là được bị sẽ đã đang vừa sắp thì mà và hay hoặc như này đó kia ấy
+		ai đâu sao bao nhiêu mấy rồi chưa chẳng nữa cũng đều từng mới rất quá lắm hơn nhất
+		ở tại khi nếu vì nên để thế vậy đấy`) {
+		broadQueryFunctionWords[w] = true
+	}
+}
+
+// onlyFunctionWords reports whether every topic word is a function word.
+func onlyFunctionWords(words []string) bool {
+	for _, w := range words {
+		if !broadQueryFunctionWords[strings.Trim(strings.ToLower(norm.NFC.String(w)), ".,;:!?()")] {
+			return false
+		}
+	}
+	return true
+}
 
 // BroadQueryOption is one way to narrow the question.
 type BroadQueryOption struct {
@@ -129,7 +162,8 @@ func BroadQueryClarification(ctx context.Context, catalog TitleSearcher, session
 		return nil
 	}
 	folded := foldSearch(query)
-	if broadQueryAnchorRe.MatchString(query) || searchReferenceRe.MatchString(folded) || broadQueryAllRe.MatchString(folded) {
+	if broadQueryAnchorRe.MatchString(query) || searchReferenceRe.MatchString(folded) || broadQueryAllRe.MatchString(folded) ||
+		broadQueryPersonalRe.MatchString(" "+strings.Join(strings.Fields(strings.Map(foldPunctToSpace, strings.ToLower(norm.NFC.String(query)))), " ")+" ") {
 		return nil
 	}
 	words := strings.Fields(query)
@@ -140,7 +174,7 @@ func BroadQueryClarification(ctx context.Context, catalog TitleSearcher, session
 	// "luật đất đai", "nghị định về cán bộ": the document type named up
 	// front is one of the choices the card offers, so the topic is the rest
 	topicWords = stripLeadingDocType(topicWords)
-	if len(topicWords) == 0 || len(topicWords) > broadQueryMaxTopicWords {
+	if len(topicWords) == 0 || len(topicWords) > broadQueryMaxTopicWords || onlyFunctionWords(topicWords) {
 		return nil
 	}
 	foldedTopic := make([]string, 0, len(topicWords))
@@ -181,6 +215,15 @@ func BroadQueryClarification(ctx context.Context, catalog TitleSearcher, session
 	)
 	logger.Infof(ctx, "[BroadQuery] session=%s topic=%q matches %d catalogue documents: asking", sessionID, topic, len(docs))
 	return card
+}
+
+// foldPunctToSpace turns punctuation into spaces so the personal pattern
+// sees "về tôi?" as words.
+func foldPunctToSpace(r rune) rune {
+	if strings.ContainsRune(".,;:!?()", r) {
+		return ' '
+	}
+	return r
 }
 
 // broadQueryTopic strips the request phrases around the topic and returns

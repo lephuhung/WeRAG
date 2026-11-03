@@ -119,3 +119,34 @@ func TestBroadQueryLeavesAnchoredAndNarrowQuestionsAlone(t *testing.T) {
 		t.Fatal("the setting turns the gate off")
 	}
 }
+
+// A question about a person in the chat, or one whose leftover topic is only
+// function words, names nothing in the corpus: no card.
+func TestBroadQueryLeavesPersonalAndEmptyTopicsAlone(t *testing.T) {
+	cat := &fakeTitles{n: 400}
+	for _, q := range []string{
+		"Bạn có thông tin gì về tôi nào",
+		"bạn biết gì về tôi?",
+		"thông tin của tôi",
+		"bạn nhớ gì về tôi",
+		"bạn lưu gì về tôi",
+		"to\u0302i la\u0300 ai", // NFD input
+		"cho tôi biết bạn có thông tin gì về tôi",
+		"tôi là ai",
+		"bạn là ai vậy",
+		"có không",
+		"là gì vậy",
+	} {
+		if card := BroadQueryClarification(context.Background(), cat, "s-personal", BroadQueryInput{Query: q}); card != nil {
+			t.Errorf("%q asked about %q", q, card.Topic)
+		}
+	}
+	freshSessionStores(t)
+	for _, q := range []string{"quy định về thuế", "có những quy định gì về đất đai", "thông tin về cán bộ",
+		"quy định về tổ chức", "văn bản về minh bạch tài chính", "quyết định của ban chỉ huy", "quy định về bán hàng",
+		"quy định về đô thị", "luật dầu khí", "quy định về Đảng", "quy chế làm việc"} {
+		if card := BroadQueryClarification(context.Background(), cat, "s-topic-"+q, BroadQueryInput{Query: q}); card == nil {
+			t.Errorf("%q must still be asked about", q)
+		}
+	}
+}
