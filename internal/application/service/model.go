@@ -602,6 +602,12 @@ func (s *modelService) getModelUsageDetails(
 			types.ModelUsageBindingExtractModel,
 		)
 	}
+	if strings.TrimSpace(memory.GateModelID) == modelID {
+		details.LongTermMemory.Bindings = append(
+			details.LongTermMemory.Bindings,
+			types.ModelUsageBindingGateModel,
+		)
+	}
 	return details, nil
 }
 

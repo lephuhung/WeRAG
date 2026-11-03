@@ -19,6 +19,7 @@ export const KNOWN_MODEL_USAGE_BINDINGS = [
   "query_understand_model",
   "follow_up_model",
   "extract_model",
+  "gate_model",
 ] as const;
 
 export type KnownModelUsageBinding = (typeof KNOWN_MODEL_USAGE_BINDINGS)[number];

@@ -30,6 +30,7 @@ const (
 	gateDropReported    gateVerdict = "someone else's words, not a statement about the user"
 	gateDropPasted      gateVerdict = "pasted text, not a statement about the user"
 	gateDropLookup      gateVerdict = "lookup phrase, not a statement"
+	gateDropOther       gateVerdict = "greeting, short reply or answer to a prompt"
 	gateMarkedInferred  gateVerdict = "profile from a question is a guess"
 	gateDemotedToTask   gateVerdict = "fact from a question/command is current work, kept as task"
 	gateTaskGivenExpiry gateVerdict = "task without an end date expires in a week"
@@ -38,7 +39,7 @@ const (
 func (v gateVerdict) dropped() bool {
 	switch v {
 	case gateDropDocument, gateDropPreference, gateDropProfile,
-		gateDropReported, gateDropPasted, gateDropLookup:
+		gateDropReported, gateDropPasted, gateDropLookup, gateDropOther:
 		return true
 	}
 	return false
@@ -220,52 +221,62 @@ func looksLikeQuestion(text string) bool {
 // the (possibly adjusted) decision and what was done to it. The source is the
 // user's own sentence the decision points at.
 func gateDecision(decision extractionDecision, source string) (extractionDecision, gateVerdict) {
+	return gateForClass(decision, source, ruleClass(source))
+}
+
+// gateForClass applies the gate to a decision whose source sentence is of
+// the given class (from the rules or the classifier model). Two checks stay
+// in code whatever the class: a long paste or chat log is never the user
+// speaking, and "hãy nhớ / từ nay" is the user asking to keep something.
+func gateForClass(decision extractionDecision, source string, class sentenceClass) (extractionDecision, gateVerdict) {
 	text := normalizeForGate(source)
 	kind := strings.ToLower(strings.TrimSpace(decision.Kind))
-	durable := hasAny(text, durableCues)
+	explicit := hasAny(text, explicitMemoryCues)
 
-	verdict := gateKept
-	// Pasted material is checked before the durable cues: an official letter
+	// Pasted material is checked before anything else: an official letter
 	// pasted in for rewriting says "chúng tôi" throughout, and a chat log
 	// pasted in for advice says "em đang" — neither is the user speaking.
-	if isPastedMaterial(source) && !hasAny(text, explicitMemoryCues) {
+	if isPastedMaterial(source) && !explicit {
 		return decision, gateDropPasted
 	}
-	if !durable {
-		switch {
-		case reportsSomeoneElse(text):
-			return decision, gateDropReported
-		case mentionsOpenDocument(text):
-			return decision, gateDropDocument
-		case startsWithCommand(text) && hasAny(text, documentNouns):
-			return decision, gateDropDocument
-		case startsWithCommand(text):
-			switch kind {
-			case types.MemoryKindPreference:
-				return decision, gateDropPreference
-			case types.MemoryKindProfile:
-				return decision, gateDropProfile
-			case types.MemoryKindFact:
-				decision.Kind = types.MemoryKindTask
-				verdict = gateDemotedToTask
+	if explicit {
+		class = classSelf
+	}
+
+	verdict := gateKept
+	switch class {
+	case classPasted:
+		return decision, gateDropPasted
+	case classReported:
+		return decision, gateDropReported
+	case classDocument:
+		return decision, gateDropDocument
+	case classOther:
+		return decision, gateDropOther
+	case classLookup:
+		return decision, gateDropLookup
+	case classCommand:
+		switch kind {
+		case types.MemoryKindPreference:
+			return decision, gateDropPreference
+		case types.MemoryKindProfile:
+			return decision, gateDropProfile
+		case types.MemoryKindFact:
+			decision.Kind = types.MemoryKindTask
+			verdict = gateDemotedToTask
+		}
+	case classQuestion:
+		switch kind {
+		case types.MemoryKindPreference:
+			return decision, gateDropPreference
+		case types.MemoryKindProfile:
+			if !decision.Inferred {
+				decision.Inferred = true
+				verdict = gateMarkedInferred
 			}
-		case looksLikeQuestion(text):
-			switch kind {
-			case types.MemoryKindPreference:
-				return decision, gateDropPreference
-			case types.MemoryKindProfile:
-				if !decision.Inferred {
-					decision.Inferred = true
-					verdict = gateMarkedInferred
-				}
-			case types.MemoryKindFact:
-				decision.Kind = types.MemoryKindTask
-				verdict = gateDemotedToTask
-			}
-		// After the question rule: a short question is still a question and
-		// keeps its week as current work.
-		case isLookupPhrase(text):
-			return decision, gateDropLookup
+		case types.MemoryKindFact:
+			decision.Kind = types.MemoryKindTask
+			verdict = gateDemotedToTask
 		}
 	}
 

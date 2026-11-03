@@ -1169,6 +1169,8 @@ func (s *Service) applyDecisions(
 	// supersede each other, leaving a superseded row from a single run.
 	seenTopics := make(map[string]struct{}, len(decisions))
 	deleted := 0
+	// resolved on the first add/update, so a run of "none" costs nothing
+	var classifier *gateClassifier
 
 	for _, decision := range decisions {
 		if applied >= extractMaxItemsPerRun {
@@ -1178,18 +1180,28 @@ func (s *Service) applyDecisions(
 		if action == "" || action == "none" || action == "noop" {
 			continue
 		}
+		gateSource := ""
 		if action == "add" || action == "update" {
 			// The model decides what a sentence says; the code decides whether
 			// that is a memory at all. Prompt rules alone did not hold.
-			gated, verdict := gateDecision(decision, decision.resolveSource(segment).content)
+			if classifier == nil {
+				classifier = s.newGateClassifier(ctx, cfg)
+			}
+			source := decision.resolveSource(segment).content
+			class, byModel := classifier.classOf(ctx, source)
+			gated, verdict := gateForClass(decision, source, class)
 			if verdict.dropped() {
-				logger.Infof(ctx, "memory: gate dropped %s %q (%s)", decision.Kind, decision.Topic, verdict)
+				logger.Infof(ctx, "memory: gate dropped %s %q (%s; class %s by %s)",
+					decision.Kind, decision.Topic, verdict, class, map[bool]string{true: "model", false: "rules"}[byModel])
 				continue
 			}
 			if verdict != gateKept {
 				logger.Infof(ctx, "memory: gate changed %s %q (%s)", decision.Kind, decision.Topic, verdict)
 			}
 			decision = gated
+			if byModel {
+				gateSource = types.MemoryGateModel
+			}
 		}
 
 		topic := types.SanitizeMemoryTopic(decision.Topic)
@@ -1269,6 +1281,7 @@ func (s *Service) applyDecisions(
 				SourceMessageID: source.messageID,
 				ExpiresAt:       parseExpiry(decision.ExpiresAt),
 				Inferred:        decision.Inferred,
+				GateSource:      gateSource,
 			}
 			var targetID string
 			if action == "update" && target != nil {

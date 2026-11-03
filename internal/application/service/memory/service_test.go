@@ -370,6 +370,9 @@ type stubPlatformSettings struct {
 
 func (s *stubPlatformSettings) GetBool(context.Context, string, string, bool) bool { return true }
 
+// GetString leaves the auxiliary model unset, so the write gate uses its rules.
+func (s *stubPlatformSettings) GetString(context.Context, string, string, string) string { return "" }
+
 func (s *stubPlatformSettings) GetJSON(_ context.Context, key string) (types.JSON, bool) {
 	if key != types.MemoryConfigSettingKey || s.memoryConfig == nil {
 		return nil, false

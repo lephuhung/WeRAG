@@ -40,6 +40,11 @@ const (
 	MemoryOriginExplicit  = "explicit"  // the user asked for it in the conversation
 	MemoryOriginExtracted = "extracted" // distilled by the background extraction task
 	MemoryOriginManual    = "manual"    // created or edited in the memory manager
+	// MemoryGateModel marks a row whose source sentence the classifier model
+	// judged (MemoryItem.GateSource).
+	MemoryGateModel = "model"
+	// MemoryGateModelOff as MemoryConfig.GateModelID turns the classifier off.
+	MemoryGateModelOff = "off"
 )
 
 // Memory item statuses. Contradicted items become superseded rather than being
@@ -302,9 +307,14 @@ type MemoryItem struct {
 	// the same key as an active one supersedes it, which is how contradictions
 	// ("I use MySQL" then "I moved to Postgres") resolve without an LLM in the
 	// read path.
-	NormalizedKey   string     `json:"normalized_key" gorm:"column:normalized_key;type:varchar(255);not null;default:''"`
-	Importance      int        `json:"importance"         gorm:"not null;default:3"`
-	Origin          string     `json:"origin"             gorm:"type:varchar(16);not null;default:'extracted'"`
+	NormalizedKey string `json:"normalized_key" gorm:"column:normalized_key;type:varchar(255);not null;default:''"`
+	Importance    int    `json:"importance"         gorm:"not null;default:3"`
+	Origin        string `json:"origin"             gorm:"type:varchar(16);not null;default:'extracted'"`
+	// GateSource is which write gate let a distilled statement through:
+	// MemoryGateModel when the classifier model judged the user's sentence,
+	// empty for the word-list rules. The daily rules-only re-check skips the
+	// model-judged rows, or it would undo the model's call a day later.
+	GateSource      string     `json:"-" gorm:"column:gate_source;type:varchar(16);not null;default:''"`
 	Status          string     `json:"status"             gorm:"type:varchar(16);not null;default:'active'"`
 	SourceSessionID string     `json:"source_session_id"  gorm:"column:source_session_id;type:varchar(36)"`
 	SourceMessageID string     `json:"source_message_id"  gorm:"column:source_message_id;type:varchar(36)"`
@@ -346,6 +356,11 @@ type MemoryConfig struct {
 	// the settings UI promises, so the extraction task must never fail merely
 	// because this is blank.
 	ExtractModelID string `json:"extract_model_id"`
+	// GateModelID is the small model that classes the user's sentence for the
+	// write gate (statement about the user, someone else's words, lookup...).
+	// Empty means the platform auxiliary model (llm.auxiliary_model_id);
+	// MemoryGateModelOff keeps the word-list rules only.
+	GateModelID string `json:"gate_model_id"`
 	// MaxItems caps active items per subject. 0 means DefaultMemoryMaxItems.
 	MaxItems int `json:"max_items"`
 	// ExtractDelaySeconds is how long a finished turn waits before
@@ -459,6 +474,7 @@ func (c *MemoryConfig) Normalize() {
 		c.WriteMode = MemoryWriteExplicitOnly
 	}
 	c.ExtractModelID = strings.TrimSpace(c.ExtractModelID)
+	c.GateModelID = strings.TrimSpace(c.GateModelID)
 	c.EmbeddingModelID = strings.TrimSpace(c.EmbeddingModelID)
 	if c.MaxItems <= 0 {
 		c.MaxItems = DefaultMemoryMaxItems

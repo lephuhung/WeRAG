@@ -2021,6 +2021,14 @@ func (h *TenantHandler) updateTenantMemoryConfigInternal(c *gin.Context) {
 		c.Error(errors.NewBadRequestError(err.Error()))
 		return
 	}
+	if strings.EqualFold(cfg.GateModelID, types.MemoryGateModelOff) {
+		cfg.GateModelID = types.MemoryGateModelOff
+	} else {
+		if err := h.validateConfigModelID(ctx, "gate_model_id", cfg.GateModelID, ""); err != nil {
+			c.Error(errors.NewBadRequestError(err.Error()))
+			return
+		}
+	}
 	if err := h.validateConfigModelID(ctx, "embedding_model_id", cfg.EmbeddingModelID, types.ModelTypeEmbedding); err != nil {
 		c.Error(errors.NewBadRequestError(err.Error()))
 		return
