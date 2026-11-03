@@ -42,6 +42,8 @@ export interface MemoryConfig {
   enabled: boolean;
   write_mode: "explicit_only" | "auto";
   extract_model_id: string;
+  /** "" = platform auxiliary model, "off" = word-list rules only */
+  gate_model_id: string;
   max_items: number;
   /** Debounce before distillation runs, in seconds. */
   extract_delay_seconds: number;

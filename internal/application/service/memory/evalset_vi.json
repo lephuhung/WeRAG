@@ -586,6 +586,337 @@
         "Viết lại cho gọn giúp tôi đoạn sau:\nKính gửi: Sở Nội vụ tỉnh Thừa Thiên Huế.\nThực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Thực hiện Kế hoạch số 45/KH-UBND, chúng tôi đã triển khai rà soát hồ sơ cán bộ, công chức cấp xã trên địa bàn phường. Chúng tôi đề nghị Sở Nội vụ xem xét, hướng dẫn việc bố trí công chức văn hóa - xã hội sau sắp xếp. Chúng tôi đang chờ ý kiến của Sở."
       ],
       "mem_max": 0
+    },
+    {
+      "name": "self_task_agency_deadline",
+      "group": "self_more",
+      "lines": [
+        "Thứ 5 tuần sau phải gửi báo cáo sơ kết 6 tháng cho Văn phòng UBND tỉnh"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "task"
+      ],
+      "expect_expiry": true
+    },
+    {
+      "name": "self_task_boss_assigned",
+      "group": "self_more",
+      "lines": [
+        "Sếp vừa giao em soạn kế hoạch kiểm tra công vụ quý 4, hạn cuối tháng"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "task"
+      ],
+      "expect_expiry": true
+    },
+    {
+      "name": "self_task_submit_ministry",
+      "group": "self_more",
+      "lines": [
+        "Cuối tuần này tôi phải nộp hồ sơ đề nghị khen thưởng lên Bộ Công an"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "task"
+      ],
+      "expect_expiry": true
+    },
+    {
+      "name": "self_unit_commune",
+      "group": "self_more",
+      "lines": [
+        "Mình làm công chức tư pháp - hộ tịch ở xã Phong Điền"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "profile"
+      ],
+      "expect_substrings": [
+        "Phong Điền"
+      ]
+    },
+    {
+      "name": "self_role_deputy",
+      "group": "self_more",
+      "lines": [
+        "Em là phó đội trưởng Đội tổng hợp, Phòng Tham mưu"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "profile"
+      ],
+      "expect_substrings": [
+        "Tham mưu"
+      ]
+    },
+    {
+      "name": "self_tool_vnpt",
+      "group": "self_more",
+      "lines": [
+        "Đơn vị mình ký số bằng VNPT-CA, văn bản đi đều qua hệ thống iOffice"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "fact"
+      ],
+      "expect_substrings": [
+        "iOffice"
+      ]
+    },
+    {
+      "name": "self_field_land",
+      "group": "self_more",
+      "lines": [
+        "Công việc chính của tôi là giải quyết đơn thư khiếu nại về đất đai"
+      ],
+      "mem_min": 1,
+      "expect_substrings": [
+        "đất đai"
+      ]
+    },
+    {
+      "name": "self_pref_table",
+      "group": "self_more",
+      "lines": [
+        "Lần sau có số liệu thì trình bày dạng bảng cho tôi dễ xem"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "preference"
+      ]
+    },
+    {
+      "name": "self_pref_cite",
+      "group": "self_more",
+      "lines": [
+        "Mặc định khi trả lời thì ghi rõ điều, khoản của văn bản căn cứ"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "preference"
+      ]
+    },
+    {
+      "name": "self_pref_no_english",
+      "group": "self_more",
+      "lines": [
+        "Mỗi khi soạn văn bản đừng chen từ tiếng Anh vào"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "preference"
+      ]
+    },
+    {
+      "name": "self_form_answer",
+      "group": "self_more",
+      "lines": [
+        "Họ tên: Trần Thị Hoa\nĐơn vị: Phòng PC06\nChức vụ: Cán bộ"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "profile"
+      ],
+      "expect_substrings": [
+        "PC06"
+      ]
+    },
+    {
+      "name": "self_progress_done",
+      "group": "self_more",
+      "lines": [
+        "Kế hoạch tuyên truyền đã trình ký xong sáng nay"
+      ],
+      "mem_min": 1,
+      "existing": [
+        {
+          "kind": "task",
+          "topic": "kế hoạch tuyên truyền",
+          "content": "Đang soạn kế hoạch tuyên truyền pháp luật năm 2027"
+        }
+      ],
+      "targets": [
+        0
+      ]
+    },
+    {
+      "name": "self_moved_unit",
+      "group": "self_more",
+      "lines": [
+        "Từ tháng 10 tôi chuyển về Phòng PV01 rồi"
+      ],
+      "mem_min": 1,
+      "expect_substrings": [
+        "PV01"
+      ],
+      "existing": [
+        {
+          "kind": "profile",
+          "topic": "đơn vị công tác",
+          "content": "Công tác tại Phòng PA05"
+        }
+      ],
+      "targets": [
+        0
+      ]
+    },
+    {
+      "name": "self_also_handles",
+      "group": "self_more",
+      "lines": [
+        "Ngoài văn thư tôi còn kiêm nhiệm công tác lưu trữ của phòng"
+      ],
+      "mem_min": 1,
+      "expect_substrings": [
+        "lưu trữ"
+      ],
+      "existing": [
+        {
+          "kind": "profile",
+          "topic": "nhiệm vụ",
+          "content": "Phụ trách công tác văn thư của phòng"
+        }
+      ],
+      "keep_substrings": [
+        "văn thư",
+        "lưu trữ"
+      ]
+    },
+    {
+      "name": "self_question_with_unit",
+      "group": "self_more",
+      "lines": [
+        "Bên em ở Công an phường Thuận Hóa, thủ tục xác nhận cư trú cần những giấy tờ gì?"
+      ],
+      "mem_min": 1,
+      "kinds": [
+        "profile"
+      ],
+      "expect_substrings": [
+        "Thuận Hóa"
+      ]
+    },
+    {
+      "name": "rep_citizen_complaint",
+      "group": "reported_more",
+      "lines": [
+        "Theo phản ánh của người dân thì công trình xây dựng trái phép đã hoàn thiện phần móng"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "rep_contractor_report",
+      "group": "reported_more",
+      "lines": [
+        "Bên nhà thầu báo tiến độ chậm khoảng 3 tuần do thiếu vật liệu"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "rep_colleague_view",
+      "group": "reported_more",
+      "lines": [
+        "Đồng chí Phương cho rằng quyết định xử phạt này ban hành sai thẩm quyền"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "rep_neighbor_said",
+      "group": "reported_more",
+      "lines": [
+        "Hàng xóm khai với tổ công tác là đêm đó không nghe thấy gì"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "rep_department_claims",
+      "group": "reported_more",
+      "lines": [
+        "Phía Sở Xây dựng khẳng định đã gửi văn bản trả lời từ tháng trước"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "rep_suspect_statement",
+      "group": "reported_more",
+      "lines": [
+        "Đối tượng khai nhận đã mua lại chiếc xe máy với giá 5 triệu đồng"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "rep_they_want",
+      "group": "reported_more",
+      "lines": [
+        "Họ muốn bên mình cung cấp danh sách hộ nghèo kèm số căn cước"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "rep_meeting_note",
+      "group": "reported_more",
+      "lines": [
+        "Trong cuộc họp, lãnh đạo Sở nhấn mạnh phải hoàn thành giải ngân trước 30/11"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "rep_victim_family",
+      "group": "reported_more",
+      "lines": [
+        "Gia đình bị hại đề nghị xử lý nghiêm và yêu cầu bồi thường 200 triệu"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "rep_online_claim",
+      "group": "reported_more",
+      "lines": [
+        "Trên mạng đang lan truyền thông tin xã sắp giải tỏa toàn bộ khu chợ cũ"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "other_choice_reply",
+      "group": "other_more",
+      "lines": [
+        "Chọn phương án 2"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "other_abbrev_answer",
+      "group": "other_more",
+      "lines": [
+        "QLHC = quản lý hành chính"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "other_greeting_ask",
+      "group": "other_more",
+      "lines": [
+        "Chào bạn, hôm nay mình hỏi vài câu nhé"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "lookup_number_only",
+      "group": "other_more",
+      "lines": [
+        "CCCD 046090001234"
+      ],
+      "mem_max": 0
+    },
+    {
+      "name": "lookup_topic_phrase",
+      "group": "other_more",
+      "lines": [
+        "mức thu lệ phí trước bạ ô tô điện"
+      ],
+      "mem_max": 0
     }
   ]
 }

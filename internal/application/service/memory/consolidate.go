@@ -247,8 +247,10 @@ func (s *Service) regateStored(
 	kept := items[:0:0]
 	archived := 0
 	for _, item := range items {
+		// A row the classifier model let through is the model's call; the
+		// rules re-judging it would archive it a day after it was written.
 		if item == nil || item.Origin != types.MemoryOriginExtracted || item.Kind == types.MemoryKindInterest ||
-			item.SourceSessionID == "" || item.SourceMessageID == "" {
+			item.GateSource == types.MemoryGateModel || item.SourceSessionID == "" || item.SourceMessageID == "" {
 			kept = append(kept, item)
 			continue
 		}
@@ -326,6 +328,14 @@ func (s *Service) mergeRedundant(
 			continue
 		}
 		primary := cluster[0]
+		// The merge keeps the model's call when any member had it, or the
+		// rules-only re-check would archive the merged row the next day.
+		gateSource := ""
+		for _, member := range cluster {
+			if member != nil && member.GateSource == types.MemoryGateModel {
+				gateSource = types.MemoryGateModel
+			}
+		}
 		replacement, err := s.write(ctx, scope, cfg, types.MemoryItem{
 			Kind:            primary.Kind,
 			Topic:           primary.Topic,
@@ -334,6 +344,7 @@ func (s *Service) mergeRedundant(
 			Origin:          primary.Origin,
 			SourceSessionID: primary.SourceSessionID,
 			SourceMessageID: primary.SourceMessageID,
+			GateSource:      gateSource,
 		})
 		if err != nil || replacement == nil {
 			if err != nil {

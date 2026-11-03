@@ -62,6 +62,7 @@ const (
 	ModelUsageBindingQueryUnderstandModel ModelUsageBinding = "query_understand_model"
 	ModelUsageBindingFollowUpModel        ModelUsageBinding = "follow_up_model"
 	ModelUsageBindingExtractModel         ModelUsageBinding = "extract_model"
+	ModelUsageBindingGateModel            ModelUsageBinding = "gate_model"
 )
 
 // ModelUsageResource is the minimal, non-sensitive projection returned when a

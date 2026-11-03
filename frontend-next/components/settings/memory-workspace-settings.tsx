@@ -23,6 +23,7 @@ const DEFAULT_CONFIG: MemoryConfig = {
   enabled: false,
   write_mode: "auto",
   extract_model_id: "",
+  gate_model_id: "",
   max_items: 200,
   extract_delay_seconds: 15,
   extract_min_interval_seconds: 300,
@@ -212,6 +213,30 @@ export function MemoryWorkspaceSettings() {
                 onChange={(v) => setConfig({ ...config, extract_model_id: v })}
                 options={[
                   { value: "", label: t("memw.defaultModel") },
+                  ...chatModels.map((m) => ({
+                    value: m.id ?? "",
+                    label: `${m.display_name || m.name} (${m.parameters?.provider || "remote"})`,
+                  })),
+                ]}
+              />
+            </div>
+
+            <div className="rounded-xl border border-hairline p-5 space-y-2">
+              <FieldLabel htmlFor="memw-gate-model" className="text-sm font-medium text-ink">
+                {t("memw.gateModel")}
+              </FieldLabel>
+              <span className="caption text-muted block mt-0.5 mb-2">
+                {t("memw.gateModelDesc")}
+              </span>
+              <Select
+                id="memw-gate-model"
+                disabled={!canEdit}
+                className="text-sm"
+                value={config.gate_model_id ?? ""}
+                onChange={(v) => setConfig({ ...config, gate_model_id: v })}
+                options={[
+                  { value: "", label: t("memw.gateModelAuxiliary") },
+                  { value: "off", label: t("memw.gateModelOff") },
                   ...chatModels.map((m) => ({
                     value: m.id ?? "",
                     label: `${m.display_name || m.name} (${m.parameters?.provider || "remote"})`,

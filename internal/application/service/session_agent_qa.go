@@ -8,6 +8,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/agent"
 	"github.com/Tencent/WeKnora/internal/agent/skills"
@@ -122,6 +123,8 @@ func (s *sessionService) AgentQA(
 		logger.Warnf(ctx, "Failed to get chat model: %v", err)
 		return fmt.Errorf("failed to get chat model: %w", err)
 	}
+	// the short labeling calls before the turn (setting llm.intent_model_id)
+	intentModel := s.intentCompleter(ctx, summaryModel, effectiveModelID)
 
 	// The model's own metadata decides two things the agent cannot guess: how
 	// much history fits before compaction, and whether images can be passed
@@ -288,7 +291,7 @@ func (s *sessionService) AgentQA(
 	if sel := req.DocumentSelection.Normalized(); sel != nil && req.CustomAgent != nil &&
 		req.CustomAgent.ID == types.BuiltinDocumentAssistantID &&
 		s.documentWorkspaces != nil && s.documentWorkspaces.DocumentsEnabled() {
-		intent := tools.ClassifySelectionIntent(ctx, docformat.ChatCompleter(summaryModel), req.Query, sel.Text)
+		intent := tools.ClassifySelectionIntent(ctx, intentModel, req.Query, sel.Text)
 		if tool := tools.FirstToolForSelection(intent); tool != "" {
 			ctx = types.WithFirstToolChoice(ctx, tool)
 			logger.Infof(ctx, "Highlighted passage, intent %s: the turn starts with %s", intent, tool)
@@ -300,13 +303,13 @@ func (s *sessionService) AgentQA(
 	// law, "iPhone 18 Pro not released"); see tools.ClassifyKnowledgeLookup
 	if types.FirstToolChoiceFromContext(ctx) == "" && req.CustomAgent != nil &&
 		req.CustomAgent.ID == types.BuiltinDocumentAssistantID &&
-		tools.ClassifyKnowledgeLookup(ctx, docformat.ChatCompleter(summaryModel), req.Query, attachmentNames(req.Attachments)...) {
+		tools.ClassifyKnowledgeLookup(ctx, intentModel, req.Query, attachmentNames(req.Attachments)...) {
 		ctx = types.WithFirstToolChoice(ctx, tools.ToolSearchKnowledge)
 		ctx = types.WithGroundingRequired(ctx)
 		logger.Infof(ctx, "Question beyond the open document: the turn starts with %s and needs evidence", tools.ToolSearchKnowledge)
 	} else if types.FirstToolChoiceFromContext(ctx) == "" && req.CustomAgent != nil &&
 		req.CustomAgent.ID != types.BuiltinDocumentAssistantID && agentRequiresRerankModel(req.CustomAgent) &&
-		tools.ClassifyChatKnowledgeLookup(ctx, docformat.ChatCompleter(summaryModel), req.Query) {
+		tools.ClassifyChatKnowledgeLookup(ctx, intentModel, req.Query) {
 		// the same for a chat agent with a knowledge base: a legal or factual
 		// question is answered from what the tools return, not from memory
 		ctx = types.WithFirstToolChoice(ctx, tools.ToolSearchKnowledge)
@@ -525,6 +528,56 @@ func (s *sessionService) applyCompactionModel(
 	}
 	engine.SetCompactionModel(model, modelID, window)
 	logger.Infof(ctx, "Compaction summaries by model %s (window %d)", modelID, window)
+}
+
+// intentCompleter is the model for the labeling calls before an agent turn:
+// the intent model when one is set (types.IntentModelSettingKey), falling
+// back to the answering model on any error, else the answering model.
+func (s *sessionService) intentCompleter(ctx context.Context, answering chat.Chat, answeringModelID string) docformat.Completer {
+	fallback := docformat.ChatCompleter(answering)
+	if s.systemSettings == nil {
+		return fallback
+	}
+	modelID := strings.TrimSpace(s.systemSettings.GetString(ctx, types.IntentModelSettingKey, "WEKNORA_INTENT_MODEL_ID", ""))
+	if modelID == "" || modelID == answeringModelID {
+		return fallback
+	}
+	model, err := s.modelService.GetChatModel(ctx, modelID)
+	if err != nil || model == nil {
+		logger.Warnf(ctx, "Intent model %s unavailable, labeling with the answering model: %v", modelID, err)
+		return fallback
+	}
+	return fallbackCompleter{primary: docformat.ChatCompleter(model), fallback: fallback, primaryID: modelID}
+}
+
+// intentPrimaryTimeout bounds the intent model inside the caller's budget,
+// so a stalled small model leaves time for the answering model; without it a
+// hang used the whole budget and the grounding gate read "no lookup".
+const intentPrimaryTimeout = 5 * time.Second
+
+// fallbackCompleter asks primary and, when it fails, fallback.
+type fallbackCompleter struct {
+	primary, fallback docformat.Completer
+	primaryID         string
+	timeout           time.Duration // 0 = intentPrimaryTimeout
+}
+
+func (f fallbackCompleter) Complete(ctx context.Context, messages []docformat.Message) (string, error) {
+	timeout := f.timeout
+	if timeout <= 0 {
+		timeout = intentPrimaryTimeout
+	}
+	pctx, cancel := context.WithTimeout(ctx, timeout)
+	reply, err := f.primary.Complete(pctx, messages)
+	cancel()
+	if err == nil {
+		return reply, nil
+	}
+	if ctx.Err() != nil {
+		return "", err
+	}
+	logger.Warnf(ctx, "Intent model %s failed, labeling with the answering model: %v", f.primaryID, err)
+	return f.fallback.Complete(ctx, messages)
 }
 
 // applyUsageTurnCaps narrows the run to the caller's usage plan: the plan's

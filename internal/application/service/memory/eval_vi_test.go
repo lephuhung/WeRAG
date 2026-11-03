@@ -111,8 +111,9 @@ type viGrade struct {
 }
 
 // gradeViCase scores one model response. With gated false it scores the
-// model's raw decisions; with gated true, what the write gate lets through.
-func gradeViCase(c viEvalCase, resp extractionResponse, gated bool) viGrade {
+// model's raw decisions; with gated true, what the write gate lets through,
+// classing each source sentence with classOf (nil: the word-list rules).
+func gradeViCase(c viEvalCase, resp extractionResponse, gated bool, classOf func(string) sentenceClass) viGrade {
 	g := viGrade{name: c.Name, group: c.Group}
 	fail := func(format string, args ...any) { g.failures = append(g.failures, fmt.Sprintf(format, args...)) }
 
@@ -132,7 +133,11 @@ func gradeViCase(c viEvalCase, resp extractionResponse, gated bool) viGrade {
 					continue
 				}
 			} else {
-				adjusted, verdict := gateDecision(d, source)
+				class := ruleClass(source)
+				if classOf != nil {
+					class = classOf(source)
+				}
+				adjusted, verdict := gateForClass(d, source, class)
 				if verdict.dropped() {
 					g.gateDropped++
 					continue
@@ -354,8 +359,35 @@ func TestVietnamesePromptEval(t *testing.T) {
 		defer out.Close()
 	}
 
+	// WEKNORA_MEMORY_EVAL_GATE_MODEL (+ _GATE_BASE_URL) also grades the same
+	// output through the classifier-model gate, so the two gates are compared
+	// on identical extraction decisions.
+	var classOf func(string) sentenceClass
+	gateModelID := strings.TrimSpace(os.Getenv("WEKNORA_MEMORY_EVAL_GATE_MODEL"))
+	if gateModelID != "" {
+		gateModel, err := chat.NewChat(&chat.ChatConfig{
+			Source: types.ModelSourceRemote, ModelName: gateModelID, APIKey: "none",
+			BaseURL:  firstNonEmpty(os.Getenv("WEKNORA_MEMORY_EVAL_GATE_BASE_URL"), "http://10.10.0.240:8001/v1"),
+			Provider: string(provider.ProviderGeneric),
+		}, nil)
+		require.NoError(t, err)
+		cache := map[string]sentenceClass{}
+		classOf = func(source string) sentenceClass {
+			if c, ok := cache[source]; ok {
+				return c
+			}
+			c, err := classifySentence(context.Background(), gateModel, source)
+			if err != nil {
+				t.Logf("gate model failed on %q, using rules: %v", truncateForLog(source, 40), err)
+				c = ruleClass(source)
+			}
+			cache[source] = c
+			return c
+		}
+	}
+
 	set := loadViEvalSet(t)
-	type tally struct{ runs, passed, rawPassed, memories, gateDropped, topics, actionTopics int }
+	type tally struct{ runs, passed, rawPassed, modelGatePassed, memories, gateDropped, topics, actionTopics int }
 	byGroup := map[string]*tally{}
 	total := &tally{}
 	for _, c := range set.Cases {
@@ -366,8 +398,12 @@ func TestVietnamesePromptEval(t *testing.T) {
 				t.Errorf("case %q: %v", c.Name, err)
 				continue
 			}
-			g := gradeViCase(c, resp, true)
-			raw := gradeViCase(c, resp, false)
+			g := gradeViCase(c, resp, true, nil)
+			raw := gradeViCase(c, resp, false, nil)
+			var mg viGrade
+			if classOf != nil {
+				mg = gradeViCase(c, resp, true, classOf)
+			}
 			for _, tl := range []*tally{total, groupTally(byGroup, c.Group)} {
 				tl.runs++
 				tl.memories += g.memories
@@ -380,16 +416,22 @@ func TestVietnamesePromptEval(t *testing.T) {
 				if len(raw.failures) == 0 {
 					tl.rawPassed++
 				}
+				if classOf != nil && len(mg.failures) == 0 {
+					tl.modelGatePassed++
+				}
 			}
 			if len(g.failures) == 0 {
 				t.Logf("PASS  %-30s topics=%v", c.Name, resp.Topics)
 			} else {
 				t.Logf("FAIL  %-30s %s", c.Name, strings.Join(g.failures, " | "))
 			}
+			if classOf != nil && len(mg.failures) > 0 {
+				t.Logf("MFAIL %-30s %s", c.Name, strings.Join(mg.failures, " | "))
+			}
 			if out != nil {
 				line, _ := json.Marshal(map[string]any{
 					"prompt": promptLabel, "temperature": temperature, "case": c.Name, "group": c.Group,
-					"failures": g.failures, "raw_failures": raw.failures, "memories": resp.Memories, "topics": resp.Topics, "raw": rawText,
+					"failures": g.failures, "raw_failures": raw.failures, "model_gate_failures": mg.failures, "memories": resp.Memories, "topics": resp.Topics, "raw": rawText,
 				})
 				fmt.Fprintln(out, string(line))
 			}
@@ -403,11 +445,11 @@ func TestVietnamesePromptEval(t *testing.T) {
 	t.Logf("=== prompt=%s model=%s temperature=%.1f repeat=%d", promptLabel, modelID, temperature, repeat)
 	for _, g := range groups {
 		tl := byGroup[g]
-		t.Logf("%-22s stored pass %2d/%2d  model pass %2d/%2d  stored=%2d (gate dropped %2d)  topics=%2d action-shaped=%2d",
-			g, tl.passed, tl.runs, tl.rawPassed, tl.runs, tl.memories, tl.gateDropped, tl.topics, tl.actionTopics)
+		t.Logf("%-22s stored pass %2d/%2d  model-gate pass %2d/%2d  model pass %2d/%2d  stored=%2d (gate dropped %2d)  topics=%2d action-shaped=%2d",
+			g, tl.passed, tl.runs, tl.modelGatePassed, tl.runs, tl.rawPassed, tl.runs, tl.memories, tl.gateDropped, tl.topics, tl.actionTopics)
 	}
-	t.Logf("%-22s stored pass %2d/%2d  model pass %2d/%2d  stored=%2d (gate dropped %2d)  topics=%2d action-shaped=%2d",
-		"TOTAL", total.passed, total.runs, total.rawPassed, total.runs, total.memories, total.gateDropped, total.topics, total.actionTopics)
+	t.Logf("%-22s stored pass %2d/%2d  model-gate pass %2d/%2d  model pass %2d/%2d  stored=%2d (gate dropped %2d)  topics=%2d action-shaped=%2d",
+		"TOTAL", total.passed, total.runs, total.modelGatePassed, total.runs, total.rawPassed, total.runs, total.memories, total.gateDropped, total.topics, total.actionTopics)
 }
 
 func groupTally[T any](m map[string]*T, key string) *T {

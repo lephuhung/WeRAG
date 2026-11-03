@@ -469,6 +469,7 @@ func (s *Service) writeReplacing(ctx context.Context, scope interfaces.MemorySco
 		Status:          inferenceStatus(item, existing),
 		SourceSessionID: item.SourceSessionID,
 		SourceMessageID: item.SourceMessageID,
+		GateSource:      item.GateSource,
 		ValidFrom:       time.Now(),
 		ExpiresAt:       item.ExpiresAt,
 	}
