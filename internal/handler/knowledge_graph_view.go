@@ -1,6 +1,7 @@
 package handler
 
 import (
+	stderrors "errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,6 +20,7 @@ type KnowledgeGraphViewHandler struct {
 	graph     interfaces.RetrieveGraphRepository
 	kbService interfaces.KnowledgeBaseService
 	legal     interfaces.LegalCatalogService
+	focus     interfaces.LegalGraphFocusService
 }
 
 // NewKnowledgeGraphViewHandler creates the handler.
@@ -26,8 +28,9 @@ func NewKnowledgeGraphViewHandler(
 	graph interfaces.RetrieveGraphRepository,
 	kbService interfaces.KnowledgeBaseService,
 	legal interfaces.LegalCatalogService,
+	focus interfaces.LegalGraphFocusService,
 ) *KnowledgeGraphViewHandler {
-	return &KnowledgeGraphViewHandler{graph: graph, kbService: kbService, legal: legal}
+	return &KnowledgeGraphViewHandler{graph: graph, kbService: kbService, legal: legal, focus: focus}
 }
 
 // GetEntityGraph godoc
@@ -98,6 +101,47 @@ func (h *KnowledgeGraphViewHandler) GetLegalGraph(c *gin.Context) {
 	view, err := h.legal.KBGraph(ctx, c.Param("id"), limit)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kb_id": c.Param("id")})
+		c.Error(errors.NewInternalServerError("failed to read the legal relation graph"))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": view})
+}
+
+// GetLegalGraphFocus godoc
+// @Summary      Focused legal relation graph of a knowledge base
+// @Description  One catalogue document in focus: the documents it acts on
+// @Description  (direction "out": amends, replaces, repeals, guides, or is
+// @Description  based on them) and those acting on it ("in"), at most 60 per
+// @Description  direction and relation (neighbour_totals has the counts),
+// @Description  plus its provision-level links in both directions (at most
+// @Description  600 rows each; *_total and provisions_truncated report the
+// @Description  rest). doc must be held by the KB (approved legal link) or a
+// @Description  direct neighbour of a held document, else 404; empty, the
+// @Description  best-connected held document is focused — or, with q, only
+// @Description  the candidates are returned (focus null). q filters the
+// @Description  held-document candidates of the picker (number or title,
+// @Description  diacritics optional).
+// @Tags         Đồ thị tri thức
+// @Produce      json
+// @Param        id   path  string true  "Knowledge base ID"
+// @Param        doc  query string false "Legal document ID (catalogue)"
+// @Param        q    query string false "Picker search over the KB's documents"
+// @Success      200 {object} map[string]interface{} "LegalGraphFocus"
+// @Failure      404 {object} map[string]interface{} "Document not reachable from this KB"
+// @Router       /knowledge-bases/{id}/legal-graph/focus [get]
+func (h *KnowledgeGraphViewHandler) GetLegalGraphFocus(c *gin.Context) {
+	ctx := c.Request.Context()
+	if h.focus == nil {
+		c.Error(errors.NewNotFoundError("legal graph unavailable"))
+		return
+	}
+	view, err := h.focus.KBFocus(ctx, c.Param("id"), c.Query("doc"), c.Query("q"))
+	if stderrors.Is(err, types.ErrLegalGraphFocusNotFound) {
+		c.Error(errors.NewNotFoundError("legal document not found in this knowledge base"))
+		return
+	}
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kb_id": c.Param("id"), "doc": c.Query("doc")})
 		c.Error(errors.NewInternalServerError("failed to read the legal relation graph"))
 		return
 	}
