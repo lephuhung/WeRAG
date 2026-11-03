@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
-import { useT, type Locale } from "@/lib/i18n";
+import { useEffect, useState } from "react";
+import { translate, useT, type Locale, type LocaleKey } from "@/lib/i18n";
 import { BrandLockup } from "@/components/brand-logo";
 import { LEGAL_OPERATOR, legalDocument, type LegalPageKey } from "@/lib/legal-content";
 
-const LINKS: { page: LegalPageKey; href: string; label: string }[] = [
+const LINKS: { page: LegalPageKey; href: string; label: LocaleKey }[] = [
   { page: "privacy", href: "/chinh-sach-bao-mat", label: "legal.navPrivacy" },
   { page: "terms", href: "/dieu-khoan", label: "legal.navTerms" },
   { page: "support", href: "/ho-tro", label: "legal.navSupport" },
@@ -15,34 +15,38 @@ const LINKS: { page: LegalPageKey; href: string; label: string }[] = [
 /**
  * Privacy, terms and support: public pages, readable without signing in,
  * with a vi/en switch (Microsoft's reviewers read the English one;
- * `?lang=en` opens it directly).
+ * `?lang=en` opens it directly). The switch is local to these pages: it
+ * never changes the visitor's app language.
  */
 export function LegalPage({ page }: { page: LegalPageKey }) {
-  const { t, locale, setLocale } = useT();
+  const { locale: appLocale } = useT();
+  const [pageLocale, setPageLocale] = useState<Locale | null>(null);
+  const locale = pageLocale ?? appLocale;
 
   useEffect(() => {
     const lang = new URLSearchParams(window.location.search).get("lang");
-    if (lang === "en" || lang === "vi") setLocale(lang, false);
-  }, [setLocale]);
+    if (lang === "en" || lang === "vi") setPageLocale(lang);
+  }, []);
 
   const doc = legalDocument(page, locale);
   const otherLocale: Locale = locale === "vi" ? "en" : "vi";
+  const label = (key: LocaleKey, vars?: Record<string, string>) => translate(locale, key, vars);
 
   return (
-    <div className="min-h-screen bg-[var(--color-canvas)] text-[var(--color-ink)]">
+    <div lang={locale} className="min-h-screen bg-[var(--color-canvas)] text-[var(--color-ink)]">
       <header className="mx-auto flex max-w-3xl items-center justify-between gap-4 px-6 py-6">
         <Link href="/gioi-thieu" aria-label="weRAG">
           <BrandLockup size="md" />
         </Link>
         <button
           type="button"
-          onClick={() => setLocale(otherLocale)}
+          onClick={() => setPageLocale(otherLocale)}
           className="rounded-md border border-[var(--color-hairline-strong)] px-3 py-1.5 text-xs font-medium hover:bg-[var(--color-surface-strong)]"
         >
           {otherLocale === "en" ? "English" : "Tiếng Việt"}
         </button>
       </header>
-      <nav className="mx-auto flex max-w-3xl flex-wrap gap-2 px-6" aria-label={t("legal.navAria")}>
+      <nav className="mx-auto flex max-w-3xl flex-wrap gap-2 px-6" aria-label={label("legal.navAria")}>
         {LINKS.map((link) => (
           <Link
             key={link.page}
@@ -54,14 +58,14 @@ export function LegalPage({ page }: { page: LegalPageKey }) {
                 : "text-[var(--color-muted)] hover:text-[var(--color-ink)]"
             }`}
           >
-            {t(link.label as Parameters<typeof t>[0])}
+            {label(link.label)}
           </Link>
         ))}
       </nav>
       <main className="mx-auto max-w-3xl px-6 pb-16 pt-8">
         <h1 className="text-3xl font-semibold">{doc.title}</h1>
         <p className="mt-2 text-xs text-[var(--color-muted)]">
-          {t("legal.updated", { date: LEGAL_OPERATOR.updated })}
+          {label("legal.updated", { date: LEGAL_OPERATOR.updated })}
         </p>
         <p className="mt-6 leading-7 text-[var(--color-body)]">{doc.intro}</p>
         {doc.sections.map((section) => (

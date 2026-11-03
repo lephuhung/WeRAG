@@ -9,13 +9,15 @@ export const MAC_WEF_DIR = "~/Library/Containers/com.microsoft.Word/Data/Documen
 /**
  * A Windows batch file that installs the add-in for the current user:
  * it downloads the manifest into %LOCALAPPDATA%\WeRAG and registers it
- * under HKCU\…\Office\16.0\WEF\Developer (Word 2016, 2019, 2021, 365).
+ * under HKCU\…\Office\16.0\WEF\Developer (Office 16.0 = 2019, 2021, 2024, 365; the add-in needs WordApi 1.3).
  * No admin rights and no shared folder. "/remove" undoes both steps.
  *
  * Paths reach PowerShell through environment variables, never through
  * quoted literals, so a user folder with an apostrophe cannot break the
  * command. Lines end in CRLF and the file has no BOM (cmd would read a
- * BOM as part of the first command).
+ * BOM as part of the first command). On a dev server the origin resolves
+ * to https://localhost:3000 (resolveWordAddinOrigin), so only a deployed
+ * server's installer works on another PC.
  */
 export function renderWindowsInstaller(origin: string): string {
   const manifestUrl = `${validateWordAddinOrigin(origin)}/word-addin/manifest.xml`;

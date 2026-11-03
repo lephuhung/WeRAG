@@ -10,21 +10,6 @@ import { WordAddinInstall } from "./word-addin-install";
 export type AuthMode = "login" | "register" | "word";
 
 /**
- * Renders a translated string that carries **bold** markers — the
- * translations keep the emphasis of the original markup without shipping
- * HTML through the dictionary.
- */
-export function richText(text: string): ReactNode[] {
-  return text.split(/(\*\*[^*]+\*\*)/g).map((part, index) =>
-    part.startsWith("**") && part.endsWith("**") ? (
-      <b key={index}>{part.slice(2, -2)}</b>
-    ) : (
-      <span key={index}>{part}</span>
-    ),
-  );
-}
-
-/**
  * The frame of every public authentication screen: the marketing column
  * (sign-in and sign-up only) and the form side. All three auth pages use
  * it, so they share one layout, one palette and one focus treatment.

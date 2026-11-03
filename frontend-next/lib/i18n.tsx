@@ -1050,7 +1050,7 @@ const en = {
   "auth.installTabMac": "macOS",
   "auth.installTabWeb": "Word on the web",
   "auth.installWinDownload": "↓ Download the Windows installer",
-  "auth.installWinStep1": "**Run the downloaded file** **werag-word-addin-windows.cmd**. If Windows warns about it, choose **More info → Run anyway**.",
+  "auth.installWinStep1": "**Run the downloaded file** **werag-word-addin-windows.cmd**. If the browser blocks the download, choose **Keep** (Edge/Chrome: **Keep anyway**); if Windows warns about it, choose **More info → Run anyway**.",
   "auth.installWinStep2": "**Restart Word.** Close every Word window, then open Word again.",
   "auth.installWinStep3": "**Start.** Click **Trợ lý soạn thảo** (Drafting assistant) on the **Home** tab. Not there yet? Open **Insert → My Add-ins** and choose **WeRAG soạn thảo**.",
   "auth.installWinNote": "For Word 2019 and later and Microsoft 365; no administrator rights needed. To uninstall, run the file with the **/remove** parameter. Managed computers may block this: then ask your administrator to publish the add-in through a shared folder catalogue or Microsoft 365.",
@@ -5218,7 +5218,7 @@ const vi: Record<keyof typeof en, string> = {
   "auth.installTabMac": "macOS",
   "auth.installTabWeb": "Word trên web",
   "auth.installWinDownload": "↓ Tải bộ cài cho Windows",
-  "auth.installWinStep1": "**Chạy file vừa tải** **werag-word-addin-windows.cmd**. Nếu Windows cảnh báo, chọn **More info (Thông tin thêm) → Run anyway (Vẫn chạy)**.",
+  "auth.installWinStep1": "**Chạy file vừa tải** **werag-word-addin-windows.cmd**. Nếu trình duyệt chặn tải xuống, chọn **Keep (Giữ lại)** (Edge/Chrome: **Keep anyway**); nếu Windows cảnh báo, chọn **More info (Thông tin thêm) → Run anyway (Vẫn chạy)**.",
   "auth.installWinStep2": "**Mở lại Word.** Đóng hết cửa sổ Word rồi mở lại.",
   "auth.installWinStep3": "**Bắt đầu.** Bấm **Trợ lý soạn thảo** ở thẻ **Home (Trang đầu)**. Nếu chưa thấy, vào **Insert (Chèn) → My Add-ins (Phần bổ trợ của tôi)** và chọn **WeRAG soạn thảo**.",
   "auth.installWinNote": "Áp dụng cho Word 2019 trở lên và Microsoft 365, không cần quyền quản trị. Gỡ cài đặt: chạy file với tham số **/remove**. Máy do cơ quan quản lý có thể chặn cách này; khi đó nhờ quản trị viên cài qua thư mục dùng chung hoặc Microsoft 365.",
@@ -8366,6 +8366,16 @@ const I18nContext = createContext<I18n>({
     );
   },
 });
+
+/** A string in a given locale, outside the app's current one (e.g. the
+ * public legal pages, whose vi/en switch must not change the app language). */
+export function translate(locale: Locale, k: LocaleKey, vars?: Record<string, string | number>): string {
+  const raw = dicts[locale]?.[k] ?? (en as Record<string, string>)[k] ?? String(k);
+  if (!vars) return raw;
+  return raw.replace(/\{(\w+)\}/g, (_, name: string) =>
+    vars[name] === undefined ? `{${name}}` : String(vars[name]),
+  );
+}
 
 export function I18nProvider({ children }: { children: React.ReactNode }) {
   /* Vietnamese is the default UI language; an explicit saved choice wins. */

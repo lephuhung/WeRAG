@@ -51,8 +51,8 @@ const vi: Record<LegalPageKey, LegalDocument> = {
       {
         heading: "3. Xử lý bằng trí tuệ nhân tạo",
         paragraphs: [
-          "Các mô hình ngôn ngữ, nhận dạng chữ (OCR) và kiểm tra chính tả của weRAG chạy trên máy chủ do chúng tôi vận hành. Nội dung tài liệu của bạn không được gửi tới nhà cung cấp AI bên thứ ba và không được bán hay chia sẻ để huấn luyện mô hình của bên khác.",
-          "Khi tính năng tìm kiếm web được bật, chỉ câu truy vấn tìm kiếm (không phải tài liệu của bạn) được gửi tới dịch vụ tìm kiếm đã cấu hình.",
+          "Trên dịch vụ weRAG do chúng tôi cung cấp, các mô hình ngôn ngữ, nhận dạng chữ (OCR) và kiểm tra chính tả chạy trên máy chủ do chúng tôi vận hành; chúng tôi không dùng nhà cung cấp AI bên ngoài. Nội dung tài liệu của bạn không được bán hay chia sẻ để huấn luyện mô hình của bên khác. Tổ chức tự triển khai weRAG trên máy chủ riêng có thể cấu hình mô hình khác; khi đó chính sách của tổ chức đó được áp dụng.",
+          "Khi tính năng tìm kiếm web được bật, một câu truy vấn ngắn được tạo từ yêu cầu của bạn (không phải toàn bộ tài liệu) được gửi tới dịch vụ tìm kiếm đã cấu hình.",
         ],
       },
       {
@@ -73,7 +73,7 @@ const vi: Record<LegalPageKey, LegalDocument> = {
       {
         heading: "6. Thời gian lưu giữ",
         paragraphs: [
-          "Dữ liệu được giữ trong thời gian tài khoản còn hoạt động. Khi bạn xóa cuộc trò chuyện, tệp hoặc yêu cầu xóa tài khoản, dữ liệu được xóa khỏi hệ thống; các bản sao lưu cũ tự hết hạn theo chu kỳ sao lưu.",
+          `Dữ liệu được giữ trong thời gian tài khoản còn hoạt động. Khi bạn xóa cuộc trò chuyện hoặc tài liệu, dữ liệu đó không còn truy cập được qua dịch vụ và tệp gốc được xóa khỏi kho lưu trữ. Để xóa hẳn toàn bộ dữ liệu hoặc xóa tài khoản, gửi yêu cầu tới ${op.email}; các bản sao lưu cũ tự hết hạn theo chu kỳ sao lưu.`,
         ],
       },
       {
@@ -85,7 +85,7 @@ const vi: Record<LegalPageKey, LegalDocument> = {
       {
         heading: "8. Add-in cho Microsoft Word",
         bullets: [
-          "Add-in chỉ đọc văn bản khi bạn dùng một chức năng của nó.",
+          "Khi khung add-in đang mở, add-in đọc các đoạn văn của văn bản để kiểm tra chính tả liên tục và gửi những đoạn mới hoặc vừa sửa tới máy chủ weRAG. Đóng khung add-in thì việc đọc dừng lại.",
           "Add-in chỉ thay đổi văn bản khi bạn bấm nút áp dụng hoặc đồng ý trong cuộc trò chuyện.",
           "Đăng nhập qua trình duyệt bằng mã thiết bị; add-in không thấy mật khẩu của bạn.",
         ],
@@ -224,8 +224,8 @@ const en: Record<LegalPageKey, LegalDocument> = {
       {
         heading: "3. AI processing",
         paragraphs: [
-          "weRAG's language, OCR and spelling models run on servers we operate. Your document content is not sent to third-party AI providers and is never sold or shared to train other parties' models.",
-          "When web search is enabled, only the search query (not your documents) is sent to the configured search service.",
+          "On the weRAG service we provide, the language, OCR and spelling models run on servers we operate; we do not use external AI providers. Your document content is never sold or shared to train other parties' models. Organisations that run weRAG on their own servers may configure other models; their own policy then applies.",
+          "When web search is enabled, a short search query derived from your request (not your whole document) is sent to the configured search service.",
         ],
       },
       {
@@ -246,7 +246,7 @@ const en: Record<LegalPageKey, LegalDocument> = {
       {
         heading: "6. Retention",
         paragraphs: [
-          "Data is kept while your account is active. When you delete a conversation or file, or ask us to delete your account, the data is removed from the system; older backups expire on the backup schedule.",
+          `Data is kept while your account is active. When you delete a conversation or document, it is no longer accessible through the service and the original file is removed from storage. To have all your data purged or your account deleted, send a request to ${op.email}; older backups expire on the backup schedule.`,
         ],
       },
       {
@@ -258,7 +258,7 @@ const en: Record<LegalPageKey, LegalDocument> = {
       {
         heading: "8. The Microsoft Word add-in",
         bullets: [
-          "The add-in reads the document only when you use one of its features.",
+          "While the add-in pane is open, it reads the document's paragraphs for continuous spell checking and sends new or edited paragraphs to the weRAG server. Closing the pane stops this.",
           "The add-in changes the document only when you click an apply button or agree in the conversation.",
           "Sign-in happens in your browser with a device code; the add-in never sees your password.",
         ],

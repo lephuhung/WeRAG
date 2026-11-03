@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { copyToClipboard } from "@/lib/clipboard";
 import { renderMacInstallCommand } from "@/lib/word-addin/installer";
-import { richText } from "./auth-shell";
+import { richText } from "@/lib/rich-text";
 import styles from "./auth-shell.module.css";
 
 type Platform = "windows" | "mac" | "web";
@@ -49,15 +49,12 @@ export function WordAddinInstall() {
   return (
     <div className={styles.installGuide}>
       <strong>{t("auth.installTitle")}</strong>
-      <div className={styles.installTabs} role="tablist" aria-label={t("auth.installTitle")}>
+      <div className={styles.installTabs} role="group" aria-label={t("auth.installTitle")}>
         {PLATFORMS.map((item) => (
           <button
             key={item}
             type="button"
-            role="tab"
-            id={`word-install-tab-${item}`}
-            aria-selected={platform === item}
-            aria-controls="word-install-panel"
+            aria-pressed={platform === item}
             className={styles.installTab}
             onClick={() => setPlatform(item)}
           >
@@ -65,7 +62,7 @@ export function WordAddinInstall() {
           </button>
         ))}
       </div>
-      <div id="word-install-panel" role="tabpanel" aria-labelledby={`word-install-tab-${platform}`}>
+      <div aria-live="polite">
         {platform === "windows" && (
           <>
             <a
