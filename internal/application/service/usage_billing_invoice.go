@@ -127,6 +127,12 @@ func (s *usageBillingService) MarkInvoiceIssued(
 		return nil, apperrors.NewBadRequestError("date must be YYYY-MM-DD").
 			WithDetails(map[string]string{"reason": "invoice_date_invalid"})
 	}
+	// a typo in the year (2062, 2016) is refused: at most a year either way
+	today, _ := parseInvoiceDate("", now)
+	if date.Before(today.AddDate(-1, 0, 0)) || date.After(today.AddDate(1, 0, 0)) {
+		return nil, apperrors.NewBadRequestError("the invoice date must be within a year of today").
+			WithDetails(map[string]string{"reason": "invoice_date_invalid"})
+	}
 	err = s.repo.InTransaction(ctx, func(ctx context.Context) error {
 		o, err := s.getOrderForUpdate(ctx, id)
 		if err != nil {

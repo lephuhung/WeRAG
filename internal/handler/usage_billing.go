@@ -369,7 +369,7 @@ func (h *UsageBillingHandler) AdminMarkInvoiceIssued(c *gin.Context) {
 		usageAdminFail(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": order.WithAdminFields()})
 }
 
 // AdminUnmarkInvoiceIssued godoc
@@ -385,23 +385,28 @@ func (h *UsageBillingHandler) AdminUnmarkInvoiceIssued(c *gin.Context) {
 		usageAdminFail(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": order.WithAdminFields()})
 }
 
 // AdminListOrders godoc
 // @Summary      Every order (SuperAdmin)
 // @Tags         Gói sử dụng
-// @Param        status query string false "pending|paid|cancelled|expired"
+// @Param        status            query string false "pending|paid|cancelled|expired"
+// @Param        invoice_requested query bool   false "only orders that asked for a VAT invoice"
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
 // @Router       /system/admin/usage/orders [get]
 func (h *UsageBillingHandler) AdminListOrders(c *gin.Context) {
+	ir := strings.TrimSpace(c.Query("invoice_requested"))
 	orders, err := h.billing.ListOrders(c.Request.Context(), types.UsageOrderFilter{
-		Status: strings.TrimSpace(c.Query("status")), Limit: 500,
+		Status: strings.TrimSpace(c.Query("status")), InvoiceRequested: ir == "true" || ir == "1", Limit: 500,
 	})
 	if err != nil {
 		usageAdminFail(c, err)
 		return
+	}
+	for _, o := range orders {
+		o.WithAdminFields()
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": orders})
 }

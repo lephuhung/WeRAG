@@ -11,7 +11,7 @@ import { RequireSystemAccess } from "@/components/require-system-access";
 import { Select } from "@/components/select";
 import { ADMIN_GROUPS, type AdminSection } from "@/components/admin/admin-sections";
 import { adminSectionHref } from "@/components/admin/admin-routes";
-import { AWAITING_ORDERS_EVENT, getAwaitingAdminOrderCount } from "@/lib/api/usage";
+import { AWAITING_ORDERS_EVENT, getBillingAdminCounts, type BillingAdminCounts } from "@/lib/api/usage";
 
 const ALL_SECTIONS = ADMIN_GROUPS.flatMap((g) => g.items);
 
@@ -35,21 +35,30 @@ function AdminConsole() {
   const label = (s: AdminSection) => (s.labelKey ? t(s.labelKey) : s.fallback);
   const open = (key: string) => router.push(adminSectionHref(key), { scroll: false });
 
-  // pending orders that need a SuperAdmin, as a badge on Billing
-  const [pendingOrders, setPendingOrders] = useState(0);
+  // pending orders that need a SuperAdmin and VAT invoices to issue, as a
+  // badge on Billing (the tooltip names both)
+  const [billingCounts, setBillingCounts] = useState<BillingAdminCounts>({ awaiting_admin: 0, invoices_to_issue: 0 });
   useEffect(() => {
     let alive = true;
-    getAwaitingAdminOrderCount()
-      .then((n) => alive && setPendingOrders(n))
+    getBillingAdminCounts()
+      .then((c) => alive && setBillingCounts(c))
       .catch(() => undefined);
-    const onCount = (e: Event) => setPendingOrders(Number((e as CustomEvent<number>).detail) || 0);
+    const onCount = (e: Event) => {
+      const c = (e as CustomEvent<BillingAdminCounts>).detail;
+      setBillingCounts({ awaiting_admin: Number(c?.awaiting_admin) || 0, invoices_to_issue: Number(c?.invoices_to_issue) || 0 });
+    };
     window.addEventListener(AWAITING_ORDERS_EVENT, onCount);
     return () => {
       alive = false;
       window.removeEventListener(AWAITING_ORDERS_EVENT, onCount);
     };
   }, [active.key]);
+  const pendingOrders = billingCounts.awaiting_admin + billingCounts.invoices_to_issue;
   const badge = (s: AdminSection) => (s.key === "billing" && pendingOrders > 0 ? pendingOrders : 0);
+  const billingBadgeTitle = [
+    billingCounts.awaiting_admin > 0 ? t("badm.awaitingAdmin", { n: billingCounts.awaiting_admin }) : "",
+    billingCounts.invoices_to_issue > 0 ? t("badm.invoicesToIssue", { n: billingCounts.invoices_to_issue }) : "",
+  ].filter(Boolean).join(" · ");
 
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -72,7 +81,7 @@ function AdminConsole() {
                   <s.icon className="h-[18px] w-[18px] shrink-0" />
                   <span className="min-w-0 flex-1 truncate text-left">{label(s)}</span>
                   {badge(s) > 0 && (
-                    <span className="badge-pill badge-warning shrink-0 text-[11px] tabular-nums" title={t("badm.awaitingAdmin", { n: badge(s) })}>
+                    <span className="badge-pill badge-warning shrink-0 text-[11px] tabular-nums" title={billingBadgeTitle}>
                       {badge(s)}
                     </span>
                   )}

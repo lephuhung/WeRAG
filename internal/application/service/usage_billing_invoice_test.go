@@ -192,6 +192,17 @@ func TestMarkInvoiceIssued(t *testing.T) {
 
 	_, err = f.svc.MarkInvoiceIssued(ctx, o.ID, "admin", types.UsageInvoiceIssue{Date: "03/11/2026"})
 	require.Equal(t, "invoice_date_invalid", badRequestReason(t, err))
+	// at most a year from today (13/10/2026) either way
+	for _, d := range []string{"2027-10-14", "2025-10-12", "2062-10-13"} {
+		_, err = f.svc.MarkInvoiceIssued(ctx, o.ID, "admin", types.UsageInvoiceIssue{Date: d})
+		require.Equal(t, "invoice_date_invalid", badRequestReason(t, err), d)
+	}
+	for _, d := range []string{"2027-10-13", "2025-10-13"} {
+		_, err = f.svc.MarkInvoiceIssued(ctx, o.ID, "admin", types.UsageInvoiceIssue{Date: d})
+		require.NoError(t, err, d)
+	}
+	_, err = f.svc.UnmarkInvoiceIssued(ctx, o.ID)
+	require.NoError(t, err)
 	_, err = f.svc.MarkInvoiceIssued(ctx, o.ID, "admin", types.UsageInvoiceIssue{InvoiceSeries: "1C26TAAAAAAAAAAAAAA"})
 	require.Equal(t, "invoice_too_long", badRequestReason(t, err))
 
@@ -259,4 +270,23 @@ func TestOrderReceipt(t *testing.T) {
 	require.Equal(t, "10003", r.BuyerName, "no tenant repo in the fixture: the scope id")
 	require.Equal(t, o.OrderCode, r.Order.OrderCode)
 	require.NotNil(t, r.Order.SubscriptionEndsAt)
+}
+
+// The seller tax code is stored without the spaces people type, and only
+// in the shape of a Vietnamese tax code (empty = left off the receipt).
+func TestSellerTaxCodeSetting(t *testing.T) {
+	svc := &systemSettingService{
+		repo: &memSettingRepo{rows: map[string]*types.SystemSetting{}}, audit: &memAudit{},
+		cache: map[string]*types.SystemSetting{},
+	}
+	ctx := context.Background()
+	key := types.BillingSellerTaxCodeSettingKey
+	row, err := svc.Update(ctx, key, " 3300 123 456 - 001 ")
+	require.NoError(t, err)
+	require.Equal(t, "3300123456-001", settingString(t, row))
+	_, err = svc.Update(ctx, key, "33001")
+	require.Error(t, err)
+	row, err = svc.Update(ctx, key, "")
+	require.NoError(t, err)
+	require.Equal(t, "", settingString(t, row))
 }

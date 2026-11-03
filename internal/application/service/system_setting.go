@@ -1322,6 +1322,7 @@ func (s *systemSettingService) Update(ctx context.Context, key string, rawValue 
 		return nil, fmt.Errorf("unknown setting key %q", key)
 	}
 
+	rawValue = normalizeRegistryValue(key, rawValue)
 	encoded, err := encodeForType(spec.Type, rawValue)
 	if err != nil {
 		return nil, fmt.Errorf("invalid value for %q (expected %s): %w", key, spec.Type, err)
@@ -1725,6 +1726,17 @@ func secretAuditValue(raw types.JSON) string {
 	return "[set]"
 }
 
+// normalizeRegistryValue cleans what people type before it is validated
+// and stored: the seller tax code loses its spaces ("0101 234 567").
+func normalizeRegistryValue(key string, rawValue any) any {
+	if key == types.BillingSellerTaxCodeSettingKey {
+		if v, ok := rawValue.(string); ok {
+			return types.NormalizeVNTaxCode(v)
+		}
+	}
+	return rawValue
+}
+
 // validateRegistryEntry runs key-specific structural validation that
 // goes beyond the type contract enforced by encodeForType. It is called
 // by Update right after the type/enum checks; nil error means the value
@@ -1740,6 +1752,7 @@ func validateRegistryEntry(key string, rawValue any) error {
 	switch key {
 	case types.BillingSellerTaxCodeSettingKey:
 		v, _ := rawValue.(string)
+		v = types.NormalizeVNTaxCode(v)
 		if v != "" && !types.ValidVNTaxCode(v) {
 			return errors.New("the tax code must be 10 digits, or 10 digits, '-' and 3 digits")
 		}

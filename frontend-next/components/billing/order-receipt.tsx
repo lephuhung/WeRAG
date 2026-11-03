@@ -136,7 +136,7 @@ export function OrderReceiptPage({ code }: { code: string }) {
       ["rcpt.account", [r.bank_account_no, r.bank_name].filter(Boolean).join(" — ")],
     ] as [LocaleKey, string][]
   ).filter(([, v]) => v.trim() !== "");
-  const buyerKind = o.scope_type === "tenant" ? tr("usg.scopeTenant") : tr("usg.scopeUser");
+  const buyerKind = o.scope_type === "tenant" ? tr("rcpt.buyerTenant") : tr("rcpt.buyerUser");
 
   return (
     <div className="min-h-dvh bg-canvas py-6 print:bg-white print:py-0">
@@ -236,14 +236,21 @@ export function OrderReceiptPage({ code }: { code: string }) {
         </table>
 
         <dl className="receipt-block mt-6 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-[12.5px]">
-          <dt className="text-neutral-500">{tr("rcpt.method")}</dt>
-          <dd>
-            {tr("rcpt.bankTransfer")}
-            {o.transfer_content ? <span className="text-neutral-500"> · {o.transfer_content}</span> : null}
-          </dd>
+          {o.total_vnd > 0 ? (
+            <>
+              <dt className="text-neutral-500">{tr("rcpt.method")}</dt>
+              <dd>
+                {tr("rcpt.bankTransfer")}
+                {/* the transfer content only when a transfer was matched to the order */}
+                {o.last_payment && o.transfer_content ? <span className="text-neutral-500"> · {o.transfer_content}</span> : null}
+              </dd>
+            </>
+          ) : (
+            <dd className="col-span-2">{tr("rcpt.noPayment")}</dd>
+          )}
           <dt className="text-neutral-500">{tr("rcpt.paidAt")}</dt>
           <dd>{formatDateTime(o.paid_at, RECEIPT_LOCALE)}</dd>
-          <dt className="text-neutral-500">{tr("rcpt.package")}</dt>
+          <dt className="text-neutral-500">{tr(o.kind === "addon" || o.kind === "seats" ? "rcpt.packageCurrent" : "rcpt.package")}</dt>
           <dd>{o.plan_name}</dd>
           {o.subscription_ends_at && (
             <>

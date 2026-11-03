@@ -316,6 +316,17 @@ type UsageOrderView struct {
 	SubscriptionEndsAt *time.Time         `json:"subscription_ends_at,omitempty"`
 	ReceivedVND        int64              `json:"received_vnd,omitempty"`
 	LastPayment        *UsageOrderPayment `json:"last_payment,omitempty"`
+	// AdminInvoiceIssuedBy: who marked the VAT invoice issued; set by the
+	// SuperAdmin routes only (WithAdminFields), never shown to buyers.
+	AdminInvoiceIssuedBy string `json:"invoice_issued_by,omitempty"`
+}
+
+// WithAdminFields adds what only a SuperAdmin sees to the view.
+func (v *UsageOrderView) WithAdminFields() *UsageOrderView {
+	if v != nil && v.UsageOrder != nil {
+		v.AdminInvoiceIssuedBy = v.InvoiceIssuedBy
+	}
+	return v
 }
 
 // UsageOrderPayment is a transfer as the buyer sees it on the order page.

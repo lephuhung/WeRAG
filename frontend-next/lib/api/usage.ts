@@ -523,6 +523,8 @@ export interface UsageOrder {
   invoice_email?: string;
   /** When a SuperAdmin marked the invoice issued (null = not yet). */
   invoice_issued_at?: string | null;
+  /** Who marked it issued (SuperAdmin views only). */
+  invoice_issued_by?: string;
   invoice_no?: string;
   invoice_series?: string;
   /** The date on the invoice (Vietnam midnight). */
@@ -783,8 +785,13 @@ export function deleteUsagePromo(id: string): Promise<void> {
   return apiDel(`${ADMIN}/promos/${encodeURIComponent(id)}`).then(() => undefined);
 }
 
-export function listAllUsageOrders(status?: UsageOrderStatus): Promise<UsageOrder[]> {
-  return apiGet<{ data?: UsageOrder[] }>(`${ADMIN}/orders${status ? `?status=${status}` : ""}`).then((r) => r.data ?? []);
+/** invoiceRequested: only the orders that asked for a VAT invoice. */
+export function listAllUsageOrders(status?: UsageOrderStatus, invoiceRequested = false): Promise<UsageOrder[]> {
+  const q = new URLSearchParams();
+  if (status) q.set("status", status);
+  if (invoiceRequested) q.set("invoice_requested", "true");
+  const qs = q.toString();
+  return apiGet<{ data?: UsageOrder[] }>(`${ADMIN}/orders${qs ? `?${qs}` : ""}`).then((r) => r.data ?? []);
 }
 
 export function confirmUsageOrder(id: string): Promise<UsageOrder> {
@@ -820,14 +827,8 @@ export function getBillingAdminCounts(): Promise<BillingAdminCounts> {
   }));
 }
 
-/** Everything the console menu's Billing badge counts. */
-export function getAwaitingAdminOrderCount(): Promise<number> {
-  return getBillingAdminCounts().then((c) => c.awaiting_admin + c.invoices_to_issue);
-}
-
-/** Window event the billing admin page fires with the new badge count
- * (awaiting orders + invoices to issue; detail: number), so the console
- * menu's badge follows. */
+/** Window event the billing admin page fires with the new counts (detail:
+ * BillingAdminCounts), so the console menu's badge follows. */
 export const AWAITING_ORDERS_EVENT = "werag:billing-awaiting-orders";
 
 /** system_settings keys of the receiving bank account and order policy. */

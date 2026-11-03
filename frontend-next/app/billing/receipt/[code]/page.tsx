@@ -10,7 +10,7 @@ export default async function ReceiptPage({ params }: { params: Promise<{ code: 
   return (
     <AuthProvider>
       <RequireAuth>
-        <OrderReceiptPage code={decodeURIComponent(code)} />
+        <OrderReceiptPage code={code} />
       </RequireAuth>
     </AuthProvider>
   );

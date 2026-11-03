@@ -33,7 +33,9 @@ type UsageOrderInvoice struct {
 	// not yet); InvoiceNo, InvoiceSeries and InvoiceDate are what the
 	// external system gave it (optional).
 	InvoiceIssuedAt *time.Time `json:"invoice_issued_at"`
-	InvoiceIssuedBy string     `json:"invoice_issued_by"  gorm:"type:varchar(36)"`
+	// InvoiceIssuedBy (a SuperAdmin's user id) is kept from buyer views;
+	// SuperAdmin views carry it as UsageOrderView.AdminInvoiceIssuedBy.
+	InvoiceIssuedBy string     `json:"-"                  gorm:"type:varchar(36)"`
 	InvoiceNo       string     `json:"invoice_no"         gorm:"type:varchar(32)"`
 	InvoiceSeries   string     `json:"invoice_series"     gorm:"type:varchar(16)"`
 	InvoiceDate     *time.Time `json:"invoice_date"`

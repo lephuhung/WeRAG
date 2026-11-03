@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -25,11 +27,24 @@ type invoiceBillingStub struct {
 	calls []string
 }
 
+func (s *invoiceBillingStub) ListOrders(_ context.Context, f types.UsageOrderFilter) ([]*types.UsageOrderView, error) {
+	s.calls = append(s.calls, "list "+f.Status+" "+strconv.FormatBool(f.InvoiceRequested))
+	return []*types.UsageOrderView{issuedView("o-ten")}, nil
+}
+
+// issuedView is a paid order whose invoice u-super marked issued.
+func issuedView(id string) *types.UsageOrderView {
+	at := time.Date(2026, 11, 3, 1, 0, 0, 0, time.UTC)
+	return &types.UsageOrderView{UsageOrder: &types.UsageOrder{ID: id, Status: types.UsageOrderPaid,
+		UsageOrderInvoice: types.UsageOrderInvoice{InvoiceRequested: true, InvoiceIssuedAt: &at, InvoiceIssuedBy: "u-super"}}}
+}
+
 func (s *invoiceBillingStub) GetOrderByCode(_ context.Context, code string) (*types.UsageOrderView, error) {
 	switch code {
 	case "WRTEN":
-		return &types.UsageOrderView{UsageOrder: &types.UsageOrder{ID: "o-ten", OrderCode: code,
-			ScopeType: types.UsageScopeTenant, ScopeID: "10003", CreatedBy: "u-buyer", Status: types.UsageOrderPaid}}, nil
+		v := issuedView("o-ten")
+		v.OrderCode, v.ScopeType, v.ScopeID, v.CreatedBy = code, types.UsageScopeTenant, "10003", "u-buyer"
+		return v, nil
 	case "WRME":
 		return &types.UsageOrderView{UsageOrder: &types.UsageOrder{ID: "o-me", OrderCode: code,
 			ScopeType: types.UsageScopeUser, ScopeID: "u-me", CreatedBy: "u-me", Status: types.UsageOrderPaid}}, nil
@@ -133,6 +148,10 @@ func TestBillingReceiptAndInvoiceAccess(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), `"seller_name":"weRAG"`) || stub.calls[0] != "receipt o-ten" {
 		t.Fatalf("receipt = %s %v", rec.Body.String(), stub.calls)
 	}
+	// who issued the invoice is a SuperAdmin detail
+	if strings.Contains(rec.Body.String(), "u-super") || strings.Contains(rec.Body.String(), "invoice_issued_by") {
+		t.Fatalf("buyer view leaks the issuer: %s", rec.Body.String())
+	}
 
 	// prefill: the Tổ chức's needs a Tổ chức admin, the personal one is the caller's
 	if rec := serveInvoiceRoute(t, &invoiceBillingStub{}, member, http.MethodGet, "/api/v1/billing/invoice-details?scope=tenant", ""); rec.Code != http.StatusForbidden {
@@ -147,6 +166,25 @@ func TestBillingReceiptAndInvoiceAccess(t *testing.T) {
 	if rec := serveInvoiceRoute(t, stub, me, http.MethodGet, "/api/v1/billing/invoice-details?scope=user", ""); rec.Code != http.StatusOK ||
 		stub.calls[0] != "last user u-me" {
 		t.Fatalf("personal prefill = %d %v", rec.Code, stub.calls)
+	}
+}
+
+// The SuperAdmin order list filters on the invoice request and carries
+// who issued each invoice.
+func TestAdminOrderListInvoiceFilter(t *testing.T) {
+	super := billingCaller{user: "u-super", role: types.TenantRoleOwner, super: true}
+	stub := &invoiceBillingStub{}
+	rec := serveInvoiceRoute(t, stub, super, http.MethodGet, "/api/v1/system/admin/usage/orders?status=paid&invoice_requested=true", "")
+	if rec.Code != http.StatusOK || stub.calls[0] != "list paid true" {
+		t.Fatalf("filtered list = %d %v", rec.Code, stub.calls)
+	}
+	if !strings.Contains(rec.Body.String(), `"invoice_issued_by":"u-super"`) {
+		t.Fatalf("admin view lacks the issuer: %s", rec.Body.String())
+	}
+	stub = &invoiceBillingStub{}
+	serveInvoiceRoute(t, stub, super, http.MethodGet, "/api/v1/system/admin/usage/orders", "")
+	if stub.calls[0] != "list  false" {
+		t.Fatalf("unfiltered list = %v", stub.calls)
 	}
 }
 

@@ -153,11 +153,11 @@ export default function AdminBilling() {
   const [invoiceCount, setInvoiceCount] = useState(0);
   const loadOrders = useCallback(async (f: OrderFilter) => {
     const status = f === "invoices" ? "paid" : f || undefined;
-    const [list, n] = await Promise.all([listAllUsageOrders(status), getBillingAdminCounts()]);
+    const [list, n] = await Promise.all([listAllUsageOrders(status, f === "invoices"), getBillingAdminCounts()]);
     setOrders(f === "invoices" ? list.filter(needsInvoice) : list);
     setAwaitingCount(n.awaiting_admin);
     setInvoiceCount(n.invoices_to_issue);
-    window.dispatchEvent(new CustomEvent(AWAITING_ORDERS_EVENT, { detail: n.awaiting_admin + n.invoices_to_issue }));
+    window.dispatchEvent(new CustomEvent(AWAITING_ORDERS_EVENT, { detail: n }));
   }, []);
   // the VAT invoice dialog of one order
   const [invoiceOrder, setInvoiceOrder] = useState<UsageOrder | null>(null);
