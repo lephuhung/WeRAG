@@ -8494,6 +8494,15 @@ const dicts: Record<Locale, Partial<Record<keyof typeof en, string>>> = { en, vi
 const STORAGE_KEY = "werag_locale";
 
 export type LocaleKey = keyof typeof en;
+
+/** A string in a given language whatever the reader's UI language — for
+ * documents that have one language of their own (the payment receipt is
+ * always Vietnamese). */
+export function translateIn(locale: Locale, k: LocaleKey, vars?: Record<string, string | number>): string {
+  const raw = dicts[locale]?.[k] ?? en[k] ?? String(k);
+  if (!vars) return raw;
+  return raw.replace(/\{(\w+)\}/g, (_, name: string) => (vars[name] === undefined ? `{${name}}` : String(vars[name])));
+}
 type I18n = {
   locale: Locale;
   /* persist=false skips the server write — used when applying the locale

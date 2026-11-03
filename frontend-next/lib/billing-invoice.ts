@@ -29,10 +29,20 @@ export function validTaxCode(s: string): boolean {
   return /^[0-9]{10}(-[0-9]{3})?$/.test(normalizeTaxCode(s));
 }
 
-/** One bare email address (no display name, no list). */
+/* What the server's check accepts (types validInvoiceEmail: Go's
+ * net/mail ParseAddress on a bare address, no " <>,;", a dot in the
+ * domain): a dot-atom local part (RFC 5322 atext, non-ASCII allowed, no
+ * quoted strings), and a dot-atom domain or a [domain literal]. */
+const ATEXT = "[A-Za-z0-9!#$%&'*+\\-/=?^_`{|}~\\u0080-\\u{10FFFF}]";
+const DOT_ATOM = `${ATEXT}+(?:\\.${ATEXT}+)*`;
+const INVOICE_EMAIL = new RegExp(`^${DOT_ATOM}@(?:${DOT_ATOM}|\\[[^\\[\\]\\\\\\s]*\\])$`, "u");
+
+/** One bare email address (no display name, no list), as the server
+ * accepts it. */
 export function validInvoiceEmail(s: string): boolean {
   const v = s.trim();
-  return /^[^\s@<>,;"]+@[^\s@<>,;"]+\.[^\s@<>,;".]+$/.test(v);
+  if (!INVOICE_EMAIL.test(v)) return false;
+  return v.slice(v.lastIndexOf("@") + 1).includes(".");
 }
 
 /** The details cleaned as the server stores them. */

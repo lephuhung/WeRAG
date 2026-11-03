@@ -1,6 +1,8 @@
 "use client";
 
-/* The payment receipt of a paid order: seller, buyer (with the VAT invoice
+/* The payment receipt of a paid order (always in Vietnamese: it is a
+ * payment document for Vietnamese organisations; only the on-screen
+ * buttons and messages follow the UI language): seller, buyer (with the VAT invoice
  * details when given), the order's lines, the total, how and when it was
  * paid and the package's last usable day. "In / Lưu PDF" prints it on A4
  * (the browser's "Save as PDF" makes the PDF). A receipt is not a VAT
@@ -9,7 +11,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useT, type LocaleKey } from "@/lib/i18n";
+import { translateIn, useT, type LocaleKey } from "@/lib/i18n";
 import { formatDateTime, formatLastDay } from "@/lib/datetime";
 import { addonLineDetail } from "@/lib/agent-addon-catalogue";
 import { orderPlanLineVND } from "@/lib/billing-order";
@@ -32,8 +34,12 @@ const PRINT_CSS = `
 
 type Line = { label: string; detail?: string; amount: number; sign?: "-" };
 
-function useOrderLines(o: UsageOrder | null): { lines: Line[]; totals: Line[] } {
-  const { t } = useT();
+/** The receipt's own language, whatever the UI language. */
+const RECEIPT_LOCALE = "vi" as const;
+const tr = (k: LocaleKey, vars?: Record<string, string | number>) => translateIn(RECEIPT_LOCALE, k, vars);
+
+function orderLines(o: UsageOrder | null): { lines: Line[]; totals: Line[] } {
+  const t = tr;
   if (!o) return { lines: [], totals: [] };
   const length = (() => {
     const base = t("bill.monthsN", { n: o.months });
@@ -86,7 +92,8 @@ function useOrderLines(o: UsageOrder | null): { lines: Line[]; totals: Line[] } 
 }
 
 export function OrderReceiptPage({ code }: { code: string }) {
-  const { t, locale } = useT();
+  // t: on-screen UI (buttons, messages); tr: the receipt document
+  const { t } = useT();
   const [receipt, setReceipt] = useState<UsageOrderReceipt | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -101,11 +108,11 @@ export function OrderReceiptPage({ code }: { code: string }) {
   }, [code]);
 
   useEffect(() => {
-    if (receipt) document.title = `${t("rcpt.title")} ${receipt.order.order_code}`;
-  }, [receipt, t]);
+    if (receipt) document.title = `${tr("rcpt.title")} ${receipt.order.order_code}`;
+  }, [receipt]);
 
   const o = receipt?.order ?? null;
-  const { lines, totals } = useOrderLines(o);
+  const { lines, totals } = orderLines(o);
 
   if (failed) {
     return (
@@ -129,7 +136,7 @@ export function OrderReceiptPage({ code }: { code: string }) {
       ["rcpt.account", [r.bank_account_no, r.bank_name].filter(Boolean).join(" — ")],
     ] as [LocaleKey, string][]
   ).filter(([, v]) => v.trim() !== "");
-  const buyerKind = o.scope_type === "tenant" ? t("usg.scopeTenant") : t("usg.scopeUser");
+  const buyerKind = o.scope_type === "tenant" ? tr("usg.scopeTenant") : tr("usg.scopeUser");
 
   return (
     <div className="min-h-dvh bg-canvas py-6 print:bg-white print:py-0">
@@ -144,7 +151,7 @@ export function OrderReceiptPage({ code }: { code: string }) {
       </div>
 
       <article
-        lang={locale}
+        lang={RECEIPT_LOCALE}
         className="receipt-sheet mx-auto w-[210mm] max-w-full min-h-[297mm] border border-neutral-200 bg-white px-[16mm] py-[14mm] text-[13px] leading-relaxed text-neutral-900 shadow-sm"
       >
         <header className="receipt-block flex flex-wrap items-start justify-between gap-6 border-b border-neutral-300 pb-4">
@@ -153,42 +160,42 @@ export function OrderReceiptPage({ code }: { code: string }) {
             <dl className="mt-1 grid grid-cols-[max-content_1fr] gap-x-3 text-[12px]">
               {sellerRows.map(([k, v]) => (
                 <div key={k} className="contents">
-                  <dt className="text-neutral-500">{t(k)}</dt>
+                  <dt className="text-neutral-500">{tr(k)}</dt>
                   <dd className="min-w-0 break-words">{v}</dd>
                 </div>
               ))}
             </dl>
           </div>
           <div className="text-right">
-            <h1 className="text-[19px] font-semibold uppercase tracking-wide">{t("rcpt.title")}</h1>
+            <h1 className="text-[19px] font-semibold uppercase tracking-wide">{tr("rcpt.title")}</h1>
             <div className="mt-1 text-[12px]">
-              {t("rcpt.number")}: <span className="font-mono font-semibold">{o.order_code}</span>
+              {tr("rcpt.number")}: <span className="font-mono font-semibold">{o.order_code}</span>
             </div>
-            {o.paid_at && <div className="text-[12px] text-neutral-600">{formatDateTime(o.paid_at, locale)}</div>}
+            {o.paid_at && <div className="text-[12px] text-neutral-600">{formatDateTime(o.paid_at, RECEIPT_LOCALE)}</div>}
           </div>
         </header>
 
         <section className="receipt-block mt-5">
-          <h2 className="text-[12px] font-semibold uppercase text-neutral-500">{t("rcpt.buyer")}</h2>
+          <h2 className="text-[12px] font-semibold uppercase text-neutral-500">{tr("rcpt.buyer")}</h2>
           <div className="mt-1 font-medium">
             {r.buyer_name} <span className="font-normal text-neutral-500">({buyerKind})</span>
           </div>
           {r.buyer_email && (
             <div className="text-[12px]">
-              {t("rcpt.email")}: {r.buyer_email}
+              {tr("rcpt.email")}: {r.buyer_email}
             </div>
           )}
           {invoice !== "none" && (
             <div className="mt-3 rounded border border-neutral-300 px-3 py-2">
-              <div className="text-[12px] font-semibold text-neutral-600">{t("rcpt.invoiceTo")}</div>
+              <div className="text-[12px] font-semibold text-neutral-600">{tr("rcpt.invoiceTo")}</div>
               <dl className="mt-1 grid grid-cols-[max-content_1fr] gap-x-3 text-[12.5px]">
-                <dt className="text-neutral-500">{t("rcpt.invoiceCompany")}</dt>
+                <dt className="text-neutral-500">{tr("rcpt.invoiceCompany")}</dt>
                 <dd className="min-w-0 break-words">{o.invoice_company_name}</dd>
-                <dt className="text-neutral-500">{t("rcpt.taxCode")}</dt>
+                <dt className="text-neutral-500">{tr("rcpt.taxCode")}</dt>
                 <dd className="font-mono">{o.invoice_tax_code}</dd>
-                <dt className="text-neutral-500">{t("rcpt.address")}</dt>
+                <dt className="text-neutral-500">{tr("rcpt.address")}</dt>
                 <dd className="min-w-0 break-words">{o.invoice_address}</dd>
-                <dt className="text-neutral-500">{t("rcpt.invoiceEmail")}</dt>
+                <dt className="text-neutral-500">{tr("rcpt.invoiceEmail")}</dt>
                 <dd className="min-w-0 break-words">{o.invoice_email}</dd>
               </dl>
             </div>
@@ -198,8 +205,8 @@ export function OrderReceiptPage({ code }: { code: string }) {
         <table className="mt-6 w-full border-collapse text-[12.5px]">
           <thead>
             <tr className="border-b border-neutral-400 text-left">
-              <th className="py-1.5 pr-3 font-semibold">{t("rcpt.items")}</th>
-              <th className="w-[32mm] py-1.5 text-right font-semibold">{t("rcpt.amount")}</th>
+              <th className="py-1.5 pr-3 font-semibold">{tr("rcpt.items")}</th>
+              <th className="w-[32mm] py-1.5 text-right font-semibold">{tr("rcpt.amount")}</th>
             </tr>
           </thead>
           <tbody>
@@ -222,32 +229,32 @@ export function OrderReceiptPage({ code }: { code: string }) {
               </tr>
             ))}
             <tr className="border-t border-neutral-400 align-top">
-              <td className="py-2 pr-3 text-right font-semibold">{t("rcpt.totalPaid")}</td>
+              <td className="py-2 pr-3 text-right font-semibold">{tr("rcpt.totalPaid")}</td>
               <td className="py-2 text-right text-[14px] font-semibold tabular-nums">{formatPriceVND(o.total_vnd)}</td>
             </tr>
           </tbody>
         </table>
 
         <dl className="receipt-block mt-6 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-[12.5px]">
-          <dt className="text-neutral-500">{t("rcpt.method")}</dt>
+          <dt className="text-neutral-500">{tr("rcpt.method")}</dt>
           <dd>
-            {t("rcpt.bankTransfer")}
+            {tr("rcpt.bankTransfer")}
             {o.transfer_content ? <span className="text-neutral-500"> · {o.transfer_content}</span> : null}
           </dd>
-          <dt className="text-neutral-500">{t("rcpt.paidAt")}</dt>
-          <dd>{formatDateTime(o.paid_at, locale)}</dd>
-          <dt className="text-neutral-500">{t("rcpt.package")}</dt>
+          <dt className="text-neutral-500">{tr("rcpt.paidAt")}</dt>
+          <dd>{formatDateTime(o.paid_at, RECEIPT_LOCALE)}</dd>
+          <dt className="text-neutral-500">{tr("rcpt.package")}</dt>
           <dd>{o.plan_name}</dd>
           {o.subscription_ends_at && (
             <>
-              <dt className="text-neutral-500">{t("rcpt.lastDay")}</dt>
+              <dt className="text-neutral-500">{tr("rcpt.lastDay")}</dt>
               <dd>{formatLastDay(o.subscription_ends_at)}</dd>
             </>
           )}
         </dl>
 
         <p className="receipt-block mt-8 border-t border-neutral-300 pt-3 text-[12px] italic text-neutral-600">
-          {invoice === "issued" ? issuedInvoiceText(o, t, "rcpt") : t("rcpt.notInvoice")}
+          {invoice === "issued" ? issuedInvoiceText(o, tr, "rcpt") : tr("rcpt.notInvoice")}
         </p>
       </article>
     </div>

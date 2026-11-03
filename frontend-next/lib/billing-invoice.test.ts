@@ -28,14 +28,21 @@ describe("validTaxCode", () => {
 });
 
 describe("validInvoiceEmail", () => {
-  it("accepts one bare address", () => {
-    assert.equal(validInvoiceEmail("ketoan@cong-ty.com.vn"), true);
-  });
-  it("refuses names, lists and partial addresses", () => {
-    for (const bad of ["", "kt", "kt@", "kt@localhost", "a@b.vn,c@d.vn", "a b@c.vn", "Kế toán <kt@a.vn>"]) {
-      assert.equal(validInvoiceEmail(bad), false, bad);
-    }
-  });
+  // the same answers as the server (types.validInvoiceEmail, checked with go test)
+  const server: [string, boolean][] = [
+    ["kt@a.vn", true], ["a+b@x.vn", true], ["Nguyễn@x.vn", true], ["kt@hưng.vn", true], ["a.b@x.vn", true],
+    [".a@x.vn", false], ["a.@x.vn", false], ["a..b@x.vn", false], ['"a"@x.vn', false], ['"a..b"@x.vn', false],
+    ['"a b"@x.vn', false], ["a@[1.2.3.4]", true], ["a@x..vn", false], ["a@.x.vn", false], ["a@x.vn.", false],
+    ["kt@localhost", false], ["a!#$%&'*/=?^_`{|}~-@x.vn", true], ["a@x_y.vn", true], ["a@x-y.vn", true],
+    ["a@b@c.vn", false], ["a\t@x.vn", false], ["a(c)@x.vn", false], ["a@x.vn(c)", false], ["a\\b@x.vn", false],
+    ["a@xn--abc.vn", true], ["a@1.2", true], ["A@B.VN", true], ["a@-x.vn", true],
+    ["", false], ["kt", false], ["kt@", false], ["a@b.vn,c@d.vn", false], ["a b@c.vn", false], ["Kế toán <kt@a.vn>", false],
+  ];
+  for (const [email, want] of server) {
+    it(`${want ? "accepts" : "refuses"} ${JSON.stringify(email)}`, () => {
+      assert.equal(validInvoiceEmail(email), want);
+    });
+  }
 });
 
 describe("invoiceProblems", () => {

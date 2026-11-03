@@ -55,6 +55,23 @@ func TestInvoiceDetailsNormalize(t *testing.T) {
 	}
 }
 
+// The browser checks emails the same way (frontend-next
+// lib/billing-invoice.test.ts carries this table too): keep them in step.
+func TestInvoiceEmailSameAsBrowser(t *testing.T) {
+	cases := map[string]bool{
+		"kt@a.vn": true, "a+b@x.vn": true, "Nguyễn@x.vn": true, "a@[1.2.3.4]": true, "a@x_y.vn": true,
+		"a!#$%&'*/=?^_`{|}~-@x.vn": true, "a@1.2": true,
+		".a@x.vn": false, "a..b@x.vn": false, `"a"@x.vn`: false, "a@x..vn": false, "a@x.vn.": false,
+		"kt@localhost": false, "a@b@c.vn": false, "a(c)@x.vn": false, `a\b@x.vn`: false,
+	}
+	for email, want := range cases {
+		d := testInvoice
+		d.Email = email
+		_, reason := d.Normalize()
+		require.Equal(t, want, reason == "", email)
+	}
+}
+
 func TestOrderWithInvoiceAndPrefill(t *testing.T) {
 	f := newBillingFixture(t)
 	ctx := context.Background()
