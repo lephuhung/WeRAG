@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/mail"
 	"os"
 	"sort"
 	"strconv"
@@ -108,6 +109,9 @@ type settingSpec struct {
 	// List/Get/Update return it masked (see maskSecretSetting) and the
 	// change audit carries no value. Only the typed Get* reads see it.
 	Secret bool
+	// HideTail masks a Secret without its last 4 characters (a password is
+	// too short to show any of it).
+	HideTail bool
 }
 
 // registry pins the set of legal keys. Expanding it is a deliberate,
@@ -512,6 +516,41 @@ var registry = map[string]settingSpec{
 		Type: "string", EnvName: types.BillingWebhookSecretEnv, Default: "", Category: "billing", Secret: true,
 		Description: "Khóa bí mật của dịch vụ tự kiểm tra giao dịch khi đẩy giao dịch vào webhook thanh toán. " +
 			"Để trống = tắt webhook. Có hiệu lực ngay; chỉ hiện đầy đủ một lần lúc tạo.",
+	},
+	// Outgoing email (SMTP), read per send, so a change applies to the next
+	// mail. Nothing is sent while the switch is off or host/sender is empty.
+	types.SMTPEnabledSettingKey: {
+		Type: "bool", Default: false, Category: "email",
+		Description: "Bật gửi email thông báo (đơn hàng mới, xác nhận thanh toán, nhắc gia hạn gói). Có hiệu lực ngay.",
+	},
+	types.SMTPHostSettingKey: {
+		Type: "string", Default: "", Category: "email",
+		Description: "Máy chủ SMTP, ví dụ smtp.gmail.com.",
+	},
+	types.SMTPPortSettingKey: {
+		Type: "int", Default: int64(types.DefaultSMTPPort), Category: "email",
+		Description: "Cổng SMTP: 587 với STARTTLS, 465 với TLS, 25 không mã hóa.",
+	},
+	types.SMTPUsernameSettingKey: {
+		Type: "string", Default: "", Category: "email",
+		Description: "Tên đăng nhập SMTP. Để trống nếu máy chủ không yêu cầu đăng nhập.",
+	},
+	types.SMTPPasswordSettingKey: {
+		Type: "string", Default: "", Category: "email", Secret: true, HideTail: true,
+		Description: "Mật khẩu SMTP. Không bao giờ hiện lại sau khi lưu.",
+	},
+	types.SMTPFromAddressSettingKey: {
+		Type: "string", Default: "", Category: "email",
+		Description: "Địa chỉ người gửi.",
+	},
+	types.SMTPFromNameSettingKey: {
+		Type: "string", Default: "", Category: "email",
+		Description: "Tên người gửi hiển thị.",
+	},
+	types.SMTPSecuritySettingKey: {
+		Type: "string", Default: types.SMTPSecuritySTARTTLS, Category: "email",
+		Enum:        []string{types.SMTPSecurityNone, types.SMTPSecuritySTARTTLS, types.SMTPSecurityTLS},
+		Description: "Mã hóa kết nối: none (không), starttls hoặc tls (TLS ngay từ đầu).",
 	},
 	// chat.web_search_enabled gates web search (network providers and the
 	// local-browser tool) platform-wide. The per-agent / per-request switches
@@ -1143,6 +1182,9 @@ func maskSecretSetting(row *types.SystemSetting, spec settingSpec) *types.System
 		if len(tail) > 4 {
 			tail = tail[len(tail)-4:]
 		}
+		if spec.HideTail {
+			tail = ""
+		}
 		v = "••••••••" + tail
 	}
 	cp.Value, _ = json.Marshal(v)
@@ -1697,6 +1739,39 @@ func validateRegistryEntry(key string, rawValue any) error {
 			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
 				return errors.New("the webhook secret may only contain letters, digits, '-' and '_'")
 			}
+		}
+	case types.SMTPPasswordSettingKey:
+		v, _ := rawValue.(string)
+		if strings.Contains(v, "••••") {
+			return errors.New("type the SMTP password again; the masked value cannot be saved")
+		}
+		if len(v) > 512 || strings.ContainsAny(v, "\r\n") {
+			return errors.New("invalid SMTP password")
+		}
+	case types.SMTPHostSettingKey, types.SMTPUsernameSettingKey, types.SMTPFromNameSettingKey:
+		v, _ := rawValue.(string)
+		if len(v) > 255 || strings.ContainsAny(v, "\r\n") {
+			return errors.New("the value must be one line of at most 255 characters")
+		}
+		if key == types.SMTPHostSettingKey && strings.ContainsAny(strings.TrimSpace(v), " \t/:") {
+			return errors.New("the SMTP host is a host name only, e.g. smtp.gmail.com")
+		}
+	case types.SMTPFromAddressSettingKey:
+		v, _ := rawValue.(string)
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return nil
+		}
+		if a, err := mail.ParseAddress(v); err != nil || a.Address != v {
+			return errors.New("the sender address must be a plain email address, e.g. no-reply@example.com")
+		}
+	case types.SMTPPortSettingKey:
+		n, err := coerceToPositiveInt64(rawValue)
+		if err != nil {
+			return err
+		}
+		if n < 1 || n > 65535 {
+			return errors.New("the SMTP port must be between 1 and 65535")
 		}
 	case "asynq.core_concurrency", "asynq.postprocess_concurrency",
 		"asynq.enrichment_concurrency", "asynq.maintenance_concurrency",

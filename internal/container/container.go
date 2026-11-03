@@ -238,6 +238,11 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewUsagePlanService))
 	// Self-service purchase: promo codes, orders, bank-transfer settlement.
 	must(container.Provide(service.NewUsageBillingService))
+	// email notifications: SMTP from the email.* settings; new and paid
+	// orders are mailed by a decorator, expiry reminders by a ticker
+	must(container.Provide(repository.NewEmailNotificationRepository))
+	must(container.Provide(service.NewEmailNotifier))
+	must(container.Decorate(service.NewBillingEmailNotifications))
 	// Platform-wide aggregate stats for the SystemAdmin overview dashboard.
 	must(container.Provide(service.NewStatsService))
 	// People lookup against the external MongoDB store. Always constructed;
@@ -501,6 +506,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(func(rdb *redis.Client) { tools.UseDocumentTemplateRedis(rdb) }))
 	must(container.Invoke(func(rdb *redis.Client) { handler.UseDeviceLoginRedis(rdb) }))
 	must(container.Invoke(startTemporaryDocumentCleanup))
+	must(container.Invoke(startEmailExpiryReminders))
 
 	// Chat pipeline components for processing chat requests
 	logger.Debugf(ctx, "[Container] Registering chat pipeline plugins...")
@@ -580,6 +586,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewUsageAdminHandler))
 	must(container.Provide(handler.NewTenantUsageHandler))
 	must(container.Provide(handler.NewUsageBillingHandler))
+	must(container.Provide(handler.NewEmailHandler))
 	must(container.Provide(handler.NewEvaluationHandler))
 	must(container.Provide(handler.NewInitializationHandler))
 	must(container.Provide(handler.NewAuthHandler))
@@ -1660,6 +1667,21 @@ func startForkSnapshotReaper(reaper *service.ForkSnapshotReaper, cleaner interfa
 	}()
 	cleaner.RegisterWithName("ForkSnapshotReaper", func() error {
 		close(stop)
+		return nil
+	})
+}
+
+// emailExpiryReminderInterval: how often package expiry reminders are
+// looked for (they go out in office hours, at most once per threshold).
+const emailExpiryReminderInterval = time.Hour
+
+// startEmailExpiryReminders runs the package expiry reminder loop and stops
+// it on shutdown, letting background mails finish.
+func startEmailExpiryReminders(n *service.EmailNotifier, cleaner interfaces.ResourceCleaner) {
+	stop := n.StartExpiryReminders(emailExpiryReminderInterval)
+	cleaner.RegisterWithName("EmailExpiryReminders", func() error {
+		stop()
+		n.Wait()
 		return nil
 	})
 }
