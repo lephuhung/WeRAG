@@ -102,12 +102,13 @@ export function PlanBannerBar() {
       now: new Date(),
       isSystemAdmin,
       isTenantAdmin,
+      hasTenant: tenantKey !== "" && tenantKey !== "0",
       enforced: usage.enforced,
       entitlement: usage.entitlement,
       userCreatedAt: auth.user.created_at ?? "",
       dismissed: (key) => storedDismissal(userId, key),
     });
-  }, [usage, auth.user, info, isSystemAdmin, isTenantAdmin, userId, dismissTick]);
+  }, [usage, auth.user, info, isSystemAdmin, isTenantAdmin, tenantKey, userId, dismissTick]);
 
   // the welcome banner lists the packages on offer (when they can be bought)
   const welcomeScope = banner?.kind === "welcome" && info?.enabled === true ? banner.scope : null;

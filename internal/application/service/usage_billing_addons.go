@@ -72,10 +72,13 @@ func (s *usageBillingService) sellableAddons(
 //     refused (addon_held).
 //   - Either way, seats added on a held right pay for the added seats while
 //     the held right still runs — also for a held add-on the order does not
-//     buy again (a "seats only" line that does not extend the right).
+//     buy again (a "seats only" line that does not extend the right). On a
+//     plan change such an add-on is carried over only when kept (keep, nil =
+//     those that cost nothing to carry); a dropped one is credited for its
+//     unused paid days (q.CreditLines) instead.
 //   - Renewal lines record the subscription end they were priced against.
 func (s *usageBillingService) priceAddonsWithPlan(
-	ctx context.Context, q *types.UsageQuote, agentIDs []string, scopeID string,
+	ctx context.Context, q *types.UsageQuote, agentIDs []string, keep *[]string, scopeID string,
 ) error {
 	rows, err := s.sellableAddons(ctx, q.Plan.ID, agentIDs)
 	if err != nil {
@@ -173,7 +176,10 @@ func (s *usageBillingService) priceAddonsWithPlan(
 		}
 		q.Addons = append(q.Addons, line)
 	}
-	// held add-ons the order does not buy again still pay for added seats
+	// held add-ons the order does not buy again: on a plan change the buyer
+	// chooses to carry each over (paying for the seats the order adds) or
+	// to drop it (credited for its unused paid days); a renewal keeps them
+	// to their paid end and charges the added seats
 	if cur != nil {
 		heldUnits := addonUnits(cur.Mode, cur.Seats)
 		bought := map[string]bool{}
@@ -185,31 +191,68 @@ func (s *usageBillingService) priceAddonsWithPlan(
 			ids = append(ids, id)
 		}
 		sort.Strings(ids)
+		var keepSet map[string]bool
+		if keep != nil {
+			keepSet = map[string]bool{}
+			for _, id := range *keep {
+				keepSet[strings.TrimSpace(id)] = true
+			}
+		}
 		for _, id := range ids {
 			h := held[id]
-			if bought[id] || units <= heldUnits {
-				continue
-			}
 			covered := h.EndsAt
 			if covered == nil {
 				covered = cur.EndsAt
+			}
+			if bought[id] {
+				if !renewal {
+					q.HeldAddons = append(q.HeldAddons, types.UsageHeldAddonChoice{
+						AgentID: id, Name: h.AgentName, EndsAt: covered, Kept: true, BoughtAgain: true,
+					})
+				}
+				continue
 			}
 			if covered == nil || !covered.After(now) {
 				continue
 			}
 			line := types.UsageOrderAddonLine{
 				AgentID: id, Name: h.AgentName, UnitPriceVND: h.PriceVND, SeatsOnly: true,
-				ExtraUnits: units - heldUnits, CoveredUntil: covered,
+				CoveredUntil: covered,
 			}
-			_, _, _, line.ExtraUnitsVND = types.PriceAddonRemainder(h.PriceVND, units-heldUnits, now, *covered)
-			line.AmountVND = line.ExtraUnitsVND
-			if renewal && cur.EndsAt != nil {
-				priced := *cur.EndsAt
-				line.SubscriptionEnd = &priced
+			if units > heldUnits {
+				line.ExtraUnits = units - heldUnits
+				_, _, _, line.ExtraUnitsVND = types.PriceAddonRemainder(h.PriceVND, units-heldUnits, now, *covered)
+				line.AmountVND = line.ExtraUnitsVND
 			}
-			if line.AmountVND > 0 {
-				q.Addons = append(q.Addons, line)
+			if renewal {
+				if line.AmountVND > 0 {
+					if cur.EndsAt != nil {
+						priced := *cur.EndsAt
+						line.SubscriptionEnd = &priced
+					}
+					q.Addons = append(q.Addons, line)
+				}
+				continue
 			}
+			credit, err := s.addonCreditLine(ctx, h, heldUnits, *covered, now)
+			if err != nil {
+				return err
+			}
+			kept := line.AmountVND == 0 // default: keep what costs nothing to carry
+			if keepSet != nil {
+				kept = keepSet[id]
+			}
+			q.HeldAddons = append(q.HeldAddons, types.UsageHeldAddonChoice{
+				AgentID: id, Name: h.AgentName, EndsAt: covered, Kept: kept,
+				CarryVND: line.AmountVND, CreditVND: credit.AmountVND,
+			})
+			if kept {
+				if line.AmountVND > 0 {
+					q.Addons = append(q.Addons, line)
+				}
+				continue
+			}
+			q.CreditLines = append(q.CreditLines, credit)
 		}
 	}
 	q.AddonsVND = q.Addons.Total()
@@ -276,7 +319,8 @@ func (s *usageBillingService) quoteAddonOnly(
 		return nil, apperrors.NewBadRequestError("scope_id is required")
 	}
 	if len(req.AddonAgentIDs) == 0 {
-		return nil, apperrors.NewBadRequestError("choose at least one specialist agent")
+		return nil, apperrors.NewBadRequestError("choose at least one specialist agent").
+			WithDetails(map[string]string{"reason": "addon_none"})
 	}
 	now := s.now()
 	cur, err := s.planRepo.GetActiveSubscription(ctx, req.ScopeType, scopeID)
@@ -348,7 +392,8 @@ func (s *usageBillingService) applyAddonOrder(ctx context.Context, o *types.Usag
 	}
 	if cur == nil || o.TargetSubscriptionID == nil || cur.ID != *o.TargetSubscriptionID || !cur.IsCurrentAt(now) {
 		return "", apperrors.NewConflictError(fmt.Sprintf(
-			"order %s adds agents to a subscription that is no longer current; cancel it and order again", o.OrderCode))
+			"order %s adds agents to a subscription that is no longer current; cancel it and order again", o.OrderCode)).
+			WithDetails(map[string]string{"reason": "subscription_changed"})
 	}
 	if err := s.grantOrderAddons(ctx, o, cur, now, nil); err != nil {
 		return "", err
@@ -441,7 +486,8 @@ func (s *usageBillingService) freezeUnrenewedAddons(
 
 // carryAddonsOver moves the current add-ons of a replaced subscription to
 // its successor (plan change): each keeps its paid end (its own end, else
-// the old subscription's), whether or not the new plan sells it.
+// the old subscription's), whether or not the new plan sells it — except
+// those the order drops (credited instead).
 func (s *usageBillingService) carryAddonsOver(
 	ctx context.Context, old, next *types.UsageSubscription, o *types.UsageOrder, now time.Time,
 ) error {
@@ -452,10 +498,12 @@ func (s *usageBillingService) carryAddonsOver(
 	if err != nil {
 		return err
 	}
-	// every current right moves, including one the order buys again: the
-	// order's line then only extends it (never-shorten merge)
+	// every current right the buyer kept moves, including one the order
+	// buys again: the order's line then only extends it (never-shorten
+	// merge); a dropped one ends with the replaced subscription
+	dropped := o.CreditLines.DroppedAddons()
 	for _, h := range held {
-		if !h.IsCurrentAt(now) {
+		if !h.IsCurrentAt(now) || dropped[h.AgentID] {
 			continue
 		}
 		end := h.EndsAt

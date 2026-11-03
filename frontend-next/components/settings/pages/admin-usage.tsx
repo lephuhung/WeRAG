@@ -107,8 +107,10 @@ function dateFromEndsAt(v: string | null | undefined): string {
   if (!v) return "";
   const d = new Date(v);
   if (Number.isNaN(d.getTime())) return "";
-  // Render in Vietnam time to match endsAtFromDate.
-  const vn = new Date(d.getTime() + 7 * 3600_000);
+  // Render in Vietnam time to match endsAtFromDate. An end is stored as the
+  // Vietnam midnight after the last usable day: show (and edit) that day,
+  // else every save would move the end one day later.
+  const vn = new Date(d.getTime() - 1 + 7 * 3600_000);
   return vn.toISOString().slice(0, 10);
 }
 

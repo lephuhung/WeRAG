@@ -12,6 +12,7 @@ import { ApiError } from "@/lib/api-client";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { IconCheck, IconCopy, IconRefresh } from "@/components/icons";
 import {
+  billingErrorKey,
   cancelMyUsageOrder,
   createUsageOrder,
   formatPriceVND,
@@ -34,7 +35,7 @@ import {
   type UsageScopeKind,
 } from "@/lib/api/usage";
 import { addonLineDetail, keepOffered, toggleAddonId } from "@/lib/agent-addon-catalogue";
-import { formatDateTime } from "@/lib/datetime";
+import { formatDateTime, formatLastDay } from "@/lib/datetime";
 import { BILLING_INTENT_EVENT, clearBillingIntent, readBillingIntent, type BillingIntent } from "@/lib/billing-intent";
 import { useConfirm } from "@/components/confirm-dialog";
 import { ConsolePage } from "@/components/settings/console-page";
@@ -81,12 +82,33 @@ function CopyButton({ value, label, copied }: { value: string; label: string; co
   );
 }
 
+type ErrDetails = { reason?: string; current_seats?: number };
+function errDetails(e: unknown): ErrDetails | undefined {
+  if (!(e instanceof ApiError)) return undefined;
+  return (e.payload as { error?: { details?: ErrDetails } } | undefined)?.error?.details;
+}
+
 /** The current seat count when the server refused a renewal with fewer
  * seats (reason seats_below_current), else null. */
 function seatsBelowCurrent(e: unknown): number | null {
-  if (!(e instanceof ApiError)) return null;
-  const details = (e.payload as { error?: { details?: { reason?: string; current_seats?: number } } } | undefined)?.error?.details;
+  const details = errDetails(e);
   return details?.reason === "seats_below_current" && typeof details.current_seats === "number" ? details.current_seats : null;
+}
+
+/** A billing refusal in the reader's language: known reasons have their own
+ * text, anything else falls back to the server message. */
+function useBillingError() {
+  const { t } = useT();
+  return useCallback(
+    (e: unknown, fallback: LocaleKey) => {
+      const current = seatsBelowCurrent(e);
+      if (current !== null) return t("bill.seatsBelowCurrent", { n: current });
+      const key = billingErrorKey(errDetails(e)?.reason);
+      if (key) return t(key as LocaleKey);
+      return e instanceof Error && e.message ? e.message : t(fallback);
+    },
+    [t],
+  );
 }
 
 export function BillingPage() {
@@ -94,6 +116,7 @@ export function BillingPage() {
   const auth = useAuth();
   const confirmAction = useConfirm();
   const toast = useToast();
+  const billingError = useBillingError();
   const tenantId = Number(auth.selectedTenantId ?? auth.tenant?.id ?? 0);
   const role = auth.memberships.find((m) => String(m.tenant_id) === String(tenantId))?.role ?? "";
   const isAdmin = role === "admin" || role === "owner" || auth.user?.is_system_admin === true;
@@ -119,7 +142,16 @@ export function BillingPage() {
   const [plans, setPlans] = useState<UsagePlan[]>([]);
   const [planId, setPlanId] = useState(intentAllowed ? intent.planId : "");
   const [months, setMonths] = useState(1);
+  // the seats box re-prices once typing pauses
+  const [seatsText, setSeatsText] = useState(1);
   const [seats, setSeats] = useState(1);
+  useEffect(() => {
+    const id = window.setTimeout(() => setSeats(seatsText), 300);
+    return () => window.clearTimeout(id);
+  }, [seatsText]);
+  // plan change: held add-ons carried over (null = the server default)
+  const [keepIds, setKeepIds] = useState<string[] | null>(null);
+  const [quoting, setQuoting] = useState(false);
   const [promoText, setPromoText] = useState("");
   const [promo, setPromo] = useState("");
   const [quote, setQuote] = useState<UsageQuote | null>(null);
@@ -167,10 +199,21 @@ export function BillingPage() {
     void load();
   }, [load]);
 
-  // a plan switch keeps only the add-ons the new plan sells
+  // a plan switch keeps only the add-ons the new plan sells; renewing the
+  // package in use ticks the agents it holds, so they do not stop at the
+  // old end unnoticed
+  const currentPlanId = scopeAddons?.subscription?.plan_id ?? "";
+  const heldIds = useMemo(() => (scopeAddons?.held ?? []).map((h) => h.agent_id), [scopeAddons]);
   useEffect(() => {
-    setAddonIds((cur) => keepOffered(cur, plan?.addons ?? []));
-  }, [plan]);
+    setAddonIds((cur) => {
+      const offered = plan?.addons ?? [];
+      const kept = keepOffered(cur, offered);
+      if (!plan || plan.id !== currentPlanId) return kept;
+      return keepOffered([...new Set([...kept, ...heldIds])], offered);
+    });
+    setKeepIds(null);
+  }, [plan, currentPlanId, heldIds]);
+  const renewing = !!plan && plan.id === currentPlanId;
 
   // ...and a month count the new plan is sold for (a yearly-only plan → 12)
   const monthChoices = useMemo(() => monthChoicesFor(plan), [plan]);
@@ -208,6 +251,7 @@ export function BillingPage() {
     // effect above); pricing the stale count would only flash a 400
     if (plan?.id === planId && !monthChoices.includes(months)) return;
     let alive = true;
+    setQuoting(true);
     quoteUsageOrder({
       scope_type: scope,
       plan_id: planId,
@@ -216,6 +260,7 @@ export function BillingPage() {
       promo_code: promo,
       kind: "plan",
       addon_agent_ids: addonIds,
+      ...(keepIds ? { keep_addon_agent_ids: keepIds } : {}),
     })
       .then((q) => {
         if (!alive) return;
@@ -225,13 +270,15 @@ export function BillingPage() {
       .catch((e) => {
         if (!alive) return;
         setQuote(null);
-        const current = seatsBelowCurrent(e);
-        setQuoteError(current !== null ? t("bill.seatsBelowCurrent", { n: current }) : e instanceof Error ? e.message : t("bill.loadFailed"));
+        setQuoteError(billingError(e, "bill.loadFailed"));
+      })
+      .finally(() => {
+        if (alive) setQuoting(false);
       });
     return () => {
       alive = false;
     };
-  }, [scope, planId, plan, monthChoices, months, seats, seatMode, promo, addonIds, t]);
+  }, [scope, planId, plan, monthChoices, months, seats, seatMode, promo, addonIds, keepIds, billingError]);
 
   // Price the add-ons bought on the current subscription.
   useEffect(() => {
@@ -250,12 +297,12 @@ export function BillingPage() {
       .catch((e) => {
         if (!alive) return;
         setExtraQuote(null);
-        setExtraError(e instanceof Error ? e.message : t("bill.loadFailed"));
+        setExtraError(billingError(e, "bill.loadFailed"));
       });
     return () => {
       alive = false;
     };
-  }, [scope, extraIds, promo, t]);
+  }, [scope, extraIds, promo, billingError]);
 
   // Poll a pending order until SuperAdmin confirms it.
   const pollRef = useRef<number | null>(null);
@@ -282,7 +329,7 @@ export function BillingPage() {
     try {
       await fn();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("bill.opFailed"));
+      setError(billingError(e, "bill.opFailed"));
     } finally {
       setBusy(false);
     }
@@ -298,6 +345,7 @@ export function BillingPage() {
         promo_code: promo,
         kind: "plan",
         addon_agent_ids: addonIds,
+        ...(keepIds ? { keep_addon_agent_ids: keepIds } : {}),
       });
       setOrder(o);
       await load();
@@ -351,7 +399,13 @@ export function BillingPage() {
     });
   };
 
-  const canBuy = !!info?.enabled && !!quote && !busy && (!seatMode || seats > 0);
+  // a code typed but not applied would silently be ignored by the order
+  const promoPending = promoText.trim().toUpperCase() !== promo.trim().toUpperCase();
+  const canBuy = !!info?.enabled && !!quote && !busy && !quoting && !promoPending && seats === seatsText && (!seatMode || seats > 0);
+  const toggleKeep = (id: string) => {
+    const cur = (quote?.held_addons ?? []).filter((h) => h.kept && !h.bought_again).map((h) => h.agent_id);
+    setKeepIds(toggleAddonId(cur, id));
+  };
 
   // ---- payment view ----------------------------------------------------------
   if (order) {
@@ -378,6 +432,9 @@ export function BillingPage() {
           <div className="space-y-1 px-4 py-3 text-[14px]">
             {renderLines(order.addons)}
             <div className="flex justify-between"><span className="text-muted">{t("bill.subtotal")}</span><span className="tabular-nums">{formatPriceVND(order.subtotal_vnd)}</span></div>
+            {!!order.credit_vnd && (
+              <div className="flex justify-between"><span className="text-muted">{t("bill.credit")}</span><span className="tabular-nums">−{formatPriceVND(order.credit_vnd)}</span></div>
+            )}
             {order.discount_vnd > 0 && (
               <div className="flex justify-between"><span className="text-muted">{t("bill.discount")} ({order.promo_code})</span><span className="tabular-nums">−{formatPriceVND(order.discount_vnd)}</span></div>
             )}
@@ -493,7 +550,7 @@ export function BillingPage() {
       {isAdmin && (
         <div className="flex gap-2">
           {(["tenant", "user"] as UsageScopeKind[]).map((s) => (
-            <button key={s} type="button" className={`btn btn-sm ${scope === s ? "btn-primary" : "btn-outline"}`} onClick={() => { setScope(s); setPromo(""); setPromoText(""); }}>
+            <button key={s} type="button" className={`btn btn-sm ${scope === s ? "btn-primary" : "btn-outline"}`} onClick={() => { setScope(s); setPromo(""); setPromoText(""); setKeepIds(null); }}>
               {s === "tenant" ? t("bill.scopeTenant") : t("bill.scopeUser")}
             </button>
           ))}
@@ -566,8 +623,8 @@ export function BillingPage() {
                   type="number"
                   min={1}
                   className="input"
-                  value={seats}
-                  onChange={(e) => setSeats(Math.max(1, Number(e.target.value) || 1))}
+                  value={seatsText}
+                  onChange={(e) => setSeatsText(Math.max(1, Number(e.target.value) || 1))}
                 />
               </div>
             )}
@@ -578,11 +635,12 @@ export function BillingPage() {
                   id="bill-promo"
                   aria-label={t("bill.promo")}
                   className="input uppercase"
-                  value={promoText} placeholder="VD: TET2027" onChange={(e) => setPromoText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setPromo(promoText.trim()); } }} />
+                  value={promoText} placeholder="VD: TET2027" onChange={(e) => setPromoText(e.target.value)} onBlur={() => setPromo(promoText.trim())} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); setPromo(promoText.trim()); } }} />
                 <button type="button" className="btn btn-outline" onClick={() => setPromo(promoText.trim())}>{t("bill.promoApply")}</button>
               </div>
-              {quote?.promo_code && quote.promo_error && <span className="caption mt-1 block text-error">{t(promoErrorKey(quote.promo_error) as LocaleKey)}</span>}
-              {quote?.promo_code && !quote.promo_error && (
+              {promoPending && <span className="caption mt-1 block text-warning">{t("bill.promoNotApplied")}</span>}
+              {!promoPending && quote?.promo_code && quote.promo_error && <span className="caption mt-1 block text-error">{t(promoErrorKey(quote.promo_error) as LocaleKey)}</span>}
+              {!promoPending && quote?.promo_code && !quote.promo_error && (
                 <span className="caption mt-1 block text-success">{t("bill.promoApplied", { name: quote.promo_name || quote.promo_code, amount: formatPriceVND(quote.discount_vnd) })}</span>
               )}
             </div>
@@ -599,7 +657,11 @@ export function BillingPage() {
                       {a.description && <span className="caption block text-muted">{a.description}</span>}
                       {a.agent_id in heldUntil && (
                         <span className="caption block text-warning">
-                          {heldUntil[a.agent_id] ? t("bill.addonHeldUntil", { date: fmtDate(heldUntil[a.agent_id]) }) : t("bill.addonHeld")}
+                          {renewing && !addonIds.includes(a.agent_id) && heldUntil[a.agent_id]
+                            ? t("bill.addonStops", { date: formatLastDay(heldUntil[a.agent_id]) })
+                            : heldUntil[a.agent_id]
+                              ? t("bill.addonHeldUntil", { date: formatLastDay(heldUntil[a.agent_id]) })
+                              : t("bill.addonHeld")}
                         </span>
                       )}
                     </span>
@@ -613,8 +675,44 @@ export function BillingPage() {
             </div>
           )}
           {quoteError && <p className="caption mt-2 text-error">{quoteError}</p>}
+          {quote?.replaces && (
+            <div className="mt-4">
+              <Notice tone="warning">
+                {quote.replaces.ends_at
+                  ? t("bill.replaces", { plan: quote.replaces.plan_name, date: formatLastDay(quote.replaces.ends_at) })
+                  : t("bill.replacesOpen", { plan: quote.replaces.plan_name })}
+              </Notice>
+              {(quote.held_addons ?? []).length > 0 && (
+                <div className="mt-3">
+                  <span className="caption mb-1 block text-muted">{t("bill.heldTitle")}</span>
+                  <div className="space-y-1.5">
+                    {(quote.held_addons ?? []).map((h) => (
+                      <label key={h.agent_id} className={`flex items-start gap-2.5 rounded-md border border-hairline px-3 py-2 select-none ${h.bought_again ? "opacity-70" : "cursor-pointer"}`}>
+                        <input type="checkbox" className="mt-0.5" checked={h.kept} disabled={h.bought_again || quoting} onChange={() => toggleKeep(h.agent_id)} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-[13.5px] text-ink">{t("bill.heldKeep", { name: h.name || h.agent_id })}</span>
+                          <span className="caption block text-muted">
+                            {h.bought_again
+                              ? t("bill.heldBoughtAgain")
+                              : h.kept
+                                ? h.carry_vnd > 0
+                                  ? t("bill.heldKeepCost", { amount: formatPriceVND(h.carry_vnd), date: formatLastDay(h.ends_at) })
+                                  : t("bill.heldKeepFree", { date: formatLastDay(h.ends_at) })
+                                : h.credit_vnd > 0
+                                  ? t("bill.heldDropCredit", { amount: formatPriceVND(h.credit_vnd) })
+                                  : t("bill.heldDrop")}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {!!quote?.seats_carried && <p className="caption mt-2 text-muted">{t("bill.seatsCarried", { n: quote.seats_carried })}</p>}
           {quote && (
-            <div className="mt-4 space-y-1 border-t border-hairline pt-3 text-[14px]">
+            <div className={`mt-4 space-y-1 border-t border-hairline pt-3 text-[14px] ${quoting ? "opacity-50" : ""}`} aria-busy={quoting}>
               {renderLines(quote.addons)}
               {!!quote.proration_vnd && (
                 <div className="flex justify-between">
@@ -629,8 +727,24 @@ export function BillingPage() {
                   <span className="tabular-nums">{formatPriceVND(quote.savings_vnd)}</span>
                 </div>
               )}
+              {(quote.credit_lines ?? []).map((c) => (
+                <div key={`${c.kind}:${c.agent_id ?? ""}`} className="flex justify-between gap-3">
+                  <span className="min-w-0 text-muted">
+                    {c.paid
+                      ? t("bill.creditLine", { name: c.name || c.agent_id || "", days: c.days })
+                      : t("bill.creditUnpaid", { name: c.name || c.agent_id || "" })}
+                  </span>
+                  <span className="tabular-nums">{c.paid ? `−${formatPriceVND(c.amount_vnd)}` : ""}</span>
+                </div>
+              ))}
+              {!!quote.credit_unused_vnd && (
+                <p className="caption text-warning">{t("bill.creditUnused", { amount: formatPriceVND(quote.credit_unused_vnd) })}</p>
+              )}
               {quote.discount_vnd > 0 && <div className="flex justify-between"><span className="text-muted">{t("bill.discount")}</span><span className="tabular-nums">−{formatPriceVND(quote.discount_vnd)}</span></div>}
               <div className="flex justify-between text-[15px] font-medium text-ink"><span>{t("bill.total")}</span><span className="tabular-nums">{formatPriceVND(quote.total_vnd)}</span></div>
+              {quote.subscription_ends_at && (
+                <p className="caption text-muted">{t("bill.newEnd", { date: formatLastDay(quote.subscription_ends_at) })}</p>
+              )}
             </div>
           )}
           <p className="caption mt-2 text-muted-soft">{t("bill.renewHint")}</p>
@@ -647,7 +761,7 @@ export function BillingPage() {
           <h3 className="text-[14px] font-medium text-ink">{t("bill.currentAddonsTitle")}</h3>
           <p className="caption text-muted">
             {scopeAddons.subscription.ends_at
-              ? t("bill.currentAddonsIntro", { date: fmtDate(scopeAddons.subscription.ends_at) })
+              ? t("bill.currentAddonsIntro", { date: formatLastDay(scopeAddons.subscription.ends_at) })
               : t("bill.currentAddonsOpen")}
           </p>
           {scopeAddons.held.length > 0 && (
@@ -655,7 +769,7 @@ export function BillingPage() {
               {scopeAddons.held.map((h) => (
                 <li key={h.agent_id}>
                   • {h.agent_name || h.agent_id}
-                  {h.ends_at ? ` — ${t("bill.addonUntil", { date: fmtDate(h.ends_at) })}` : ` — ${t("bill.addonWithSub")}`}
+                  {h.ends_at ? ` — ${t("bill.addonUntil", { date: formatLastDay(h.ends_at) })}` : ` — ${t("bill.addonWithSub")}`}
                 </li>
               ))}
             </ul>

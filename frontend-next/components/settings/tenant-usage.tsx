@@ -20,7 +20,7 @@ import {
   type UsageSummary,
   type UsageTenantUsage,
 } from "@/lib/api/usage";
-import { formatDate } from "@/lib/datetime";
+import { formatDate, formatLastDay } from "@/lib/datetime";
 import { useInModalNav } from "@/components/system/in-modal-nav";
 import { ConsolePage } from "@/components/settings/console-page";
 import { InfoRow } from "@/components/settings/info-row";
@@ -100,7 +100,7 @@ function PersonalUsage() {
           </InfoRow>
           {ent.ends_at && (
             <InfoRow label={t("tus.endsAt")} desc="" className="px-4">
-              <span className="caption text-body">{formatDate(ent.ends_at)}</span>
+              <span className="caption text-body">{formatLastDay(ent.ends_at)}</span>
             </InfoRow>
           )}
           <InfoRow label={t("tus.personalLimits")} desc={t("tus.limitsDesc")} className="px-4">
@@ -222,7 +222,7 @@ function OrganizationUsage() {
           </InfoRow>
           {sub.ends_at && (
             <InfoRow label={t("tus.endsAt")} desc="" className="px-4">
-              <span className="caption text-body">{formatDate(sub.ends_at)}</span>
+              <span className="caption text-body">{formatLastDay(sub.ends_at)}</span>
             </InfoRow>
           )}
           <InfoRow label={t("tus.addons")} desc={t("tus.addonsDesc")} className="px-4">
@@ -233,7 +233,7 @@ function OrganizationUsage() {
                 {(data.addons ?? []).map((a) => (
                   <li key={a.agent_id}>
                     {a.agent_name || a.agent_id}
-                    {a.ends_at ? ` — ${t("tus.addonUntil", { date: formatDate(a.ends_at) })}` : ""}
+                    {a.ends_at ? ` — ${t("tus.addonUntil", { date: formatLastDay(a.ends_at) })}` : ""}
                   </li>
                 ))}
               </ul>

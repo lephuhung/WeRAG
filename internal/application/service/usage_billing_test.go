@@ -191,6 +191,8 @@ type memPlanRepo struct {
 	addons    map[string]*types.UsageSubscriptionAddon
 	// billing gives PendingOrderAddons the orders
 	billing *memBillingRepo
+	// seats by subscription id
+	seats map[string][]*types.UsageSeat
 }
 
 func (m *memPlanRepo) PinSubscriptionAddonEnd(_ context.Context, subID, agentID string, end time.Time) error {

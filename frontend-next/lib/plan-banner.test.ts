@@ -152,3 +152,17 @@ test("vnDay follows the Vietnam calendar", () => {
   assert.equal(vnDay(new Date("2026-11-01T17:30:00Z")), "2026-11-02");
   assert.equal(vnDay(new Date("2026-11-01T16:30:00Z")), "2026-11-01");
 });
+
+test("a Tổ chức admin without a Tổ chức package is sent to buy for the Tổ chức", () => {
+  const none = planBanner(input({ isTenantAdmin: true, hasTenant: true, entitlement: null }));
+  assert.equal(none?.kind, "no_plan");
+  assert.equal(none?.scope, "tenant");
+  // their own (gift) package standing in: renewing it would not cover the members
+  const gift = planBanner(input({ isTenantAdmin: true, hasTenant: true, entitlement: ent({ expired: true }) }));
+  assert.equal(gift?.kind, "expired");
+  assert.equal(gift?.scope, "tenant");
+  assert.equal(gift?.planId, "");
+  // a tenantless person or a member keeps the personal scope
+  assert.equal(planBanner(input({ entitlement: null }))?.scope, "user");
+  assert.equal(planBanner(input({ isTenantAdmin: true, hasTenant: false, entitlement: null }))?.scope, "user");
+});

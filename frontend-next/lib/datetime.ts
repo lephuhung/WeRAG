@@ -63,6 +63,19 @@ export function formatDateTime(value: Date | string | number | null | undefined,
   return d ? `${formatTime(d, locale)} - ${formatDate(d)}` : "";
 }
 
+/** The last usable day of a package that ends at `endsAt`: ends are stored
+ * as the Vietnam midnight after that day ("2027-01-14T00:00+07:00" → 13/01). */
+export function lastUsableDay(endsAt: Date | string | number): Date | null {
+  const d = toDate(endsAt);
+  return d ? new Date(d.getTime() - 1) : null;
+}
+
+/** "13/01/2027" for a package end stored as 14/01 00:00 (see lastUsableDay). */
+export function formatLastDay(endsAt: Date | string | number | null | undefined): string {
+  if (endsAt === null || endsAt === undefined || endsAt === "") return "";
+  return formatDate(lastUsableDay(endsAt));
+}
+
 /** Day key ("2026-10-16") of an instant in Vietnam time — for "same day"
  * comparisons and grouping. */
 export function vnDayKey(value: Date | string | number | null | undefined): string {

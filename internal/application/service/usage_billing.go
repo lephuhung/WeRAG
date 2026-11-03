@@ -135,7 +135,8 @@ func (s *usageBillingService) quote(
 		return nil, nil, err
 	}
 	if !plan.IsActive || !plan.SoldOnline() {
-		return nil, nil, apperrors.NewBadRequestError("this plan is not sold online")
+		return nil, nil, apperrors.NewBadRequestError("this plan is not sold online").
+			WithDetails(map[string]string{"reason": "plan_not_sold"})
 	}
 	if plan.ScopeKind != req.ScopeType {
 		return nil, nil, apperrors.NewBadRequestError(fmt.Sprintf("plan %s is a %s plan", plan.Code, plan.ScopeKind))
@@ -180,20 +181,27 @@ func (s *usageBillingService) quote(
 		q.SubtotalVND = termTotal
 	}
 	q.Kind = types.UsageOrderKindPlan
-	if err := s.priceAddonsWithPlan(ctx, q, req.AddonAgentIDs, scopeID); err != nil {
+	if err := s.priceAddonsWithPlan(ctx, q, req.AddonAgentIDs, req.KeepAddonAgentIDs, scopeID); err != nil {
 		return nil, nil, err
 	}
-	q.TotalVND = q.SubtotalVND
+	if err := s.pricePlanChange(ctx, q, scopeID); err != nil {
+		return nil, nil, err
+	}
 	promo, err := s.applyPromo(ctx, q, req.PromoCode, strict)
 	return q, promo, err
 }
 
-// applyPromo discounts the whole subtotal (plan and add-ons) with code;
-// when strict, an unusable code is an error rather than a note.
+// applyPromo discounts what is left to pay (plan and add-ons, after a plan
+// change credit) with code; when strict, an unusable code is an error
+// rather than a note.
 func (s *usageBillingService) applyPromo(
 	ctx context.Context, q *types.UsageQuote, rawCode string, strict bool,
 ) (*types.UsagePromoCode, error) {
-	q.TotalVND = q.SubtotalVND
+	base := q.SubtotalVND - q.CreditVND
+	if base < 0 {
+		base = 0
+	}
+	q.TotalVND = base
 	code := types.NormalizeUsagePromoCode(rawCode)
 	if code == "" {
 		return nil, nil
@@ -212,8 +220,8 @@ func (s *usageBillingService) applyPromo(
 		return nil, nil
 	}
 	q.PromoName = p.Name
-	q.DiscountVND = p.Discount(q.SubtotalVND)
-	q.TotalVND = q.SubtotalVND - q.DiscountVND
+	q.DiscountVND = p.Discount(base)
+	q.TotalVND = base - q.DiscountVND
 	return p, nil
 }
 
@@ -319,12 +327,22 @@ func (s *usageBillingService) CreateOrder(
 		Note:          strings.TrimSpace(req.Note),
 		Kind:          q.Kind,
 		Addons:        q.Addons,
+		CreditVND:     q.CreditVND,
+		CreditLines:   q.CreditLines,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
 	if q.TargetSubscriptionID != "" {
 		target := q.TargetSubscriptionID
 		order.TargetSubscriptionID = &target
+	}
+	if q.Replaces != nil {
+		id := q.Replaces.SubscriptionID
+		order.ReplacesSubscriptionID = &id
+		if q.Replaces.EndsAt != nil {
+			e := *q.Replaces.EndsAt
+			order.ReplacesEndsAt = &e
+		}
 	}
 	if promo != nil {
 		id := promo.ID
@@ -458,7 +476,8 @@ func (s *usageBillingService) getPendingOrderForUpdate(ctx context.Context, id, 
 		return nil, err
 	}
 	if o.Status != types.UsageOrderPending {
-		return nil, apperrors.NewConflictError("only pending orders can be " + verb)
+		return nil, apperrors.NewConflictError("only pending orders can be " + verb).
+			WithDetails(map[string]string{"reason": "order_not_pending"})
 	}
 	return o, nil
 }
@@ -519,13 +538,18 @@ func (s *usageBillingService) ConfirmOrder(ctx context.Context, id, confirmedBy 
 
 // apply turns a paid order into subscription time: the scope's current
 // subscription of the same plan is extended, otherwise a new one starts
-// now and replaces whatever the scope had.
+// now and replaces whatever the scope had (its unused paid days were
+// credited on the order, its seats and kept add-ons move over).
 func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, now time.Time) (string, error) {
 	if o.Kind == types.UsageOrderKindAddon {
 		return s.applyAddonOrder(ctx, o, now)
 	}
 	cur, err := s.planRepo.GetActiveSubscription(ctx, o.ScopeType, o.ScopeID)
 	if err != nil {
+		return "", err
+	}
+	// a plan change was credited against the package it replaces
+	if err := refuseReplacedMoved(o, cur); err != nil {
 		return "", err
 	}
 	if renewsSubscription(cur, o.PlanID, o.Mode, now) {
@@ -599,6 +623,11 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 	}
 	v, err := s.plans.CreateSubscription(ctx, sub)
 	if err != nil {
+		return "", err
+	}
+	// a seat plan keeps the seats assigned on the previous one (lapsed or
+	// replaced), so members are not refused right after the payment
+	if err := s.carrySeats(ctx, cur, v.UsageSubscription); err != nil {
 		return "", err
 	}
 	// a plan change keeps the add-ons already paid for (to their paid end)
