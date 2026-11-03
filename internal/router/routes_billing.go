@@ -32,7 +32,7 @@ func RegisterBillingRoutes(r *gin.RouterGroup, h *handler.UsageBillingHandler, g
 
 	admin := r.Group("/system/admin/usage", g.SystemAdmin())
 	admin.GET("/orders", h.AdminListOrders)
-	admin.GET("/orders/pending-count", h.AdminPendingOrderCount)
+	admin.GET("/orders/awaiting-admin-count", h.AdminAwaitingOrderCount)
 	admin.POST("/orders/:id/confirm", h.AdminConfirmOrder)
 	admin.POST("/orders/:id/cancel", h.AdminCancelOrder)
 	admin.POST("/orders/:id/reopen", h.AdminReopenOrder)

@@ -410,7 +410,9 @@ func (s *usagePlanService) viewCounted(
 		UsageSubscription: sub,
 		ScopeName:         s.scopeName(ctx, sub.ScopeType, sub.ScopeID),
 		Current:           sub.IsCurrentAt(now),
-		Limits:            []types.UsageLimitStatus{},
+		NotStarted: sub.Status == types.UsageSubscriptionActive && !sub.StartsAt.IsZero() &&
+			now.Before(sub.StartsAt),
+		Limits: []types.UsageLimitStatus{},
 	}
 	statuses, err := s.guard.limitStatus(ctx, sub.EffectiveLimits(), counterScope, sub.ScopeID, now)
 	if err != nil {

@@ -11,7 +11,7 @@ import { RequireSystemAccess } from "@/components/require-system-access";
 import { Select } from "@/components/select";
 import { ADMIN_GROUPS, type AdminSection } from "@/components/admin/admin-sections";
 import { adminSectionHref } from "@/components/admin/admin-routes";
-import { getPendingUsageOrderCount, PENDING_ORDERS_EVENT } from "@/lib/api/usage";
+import { AWAITING_ORDERS_EVENT, getAwaitingAdminOrderCount } from "@/lib/api/usage";
 
 const ALL_SECTIONS = ADMIN_GROUPS.flatMap((g) => g.items);
 
@@ -35,18 +35,18 @@ function AdminConsole() {
   const label = (s: AdminSection) => (s.labelKey ? t(s.labelKey) : s.fallback);
   const open = (key: string) => router.push(adminSectionHref(key), { scroll: false });
 
-  // orders waiting for payment or confirmation, as a badge on Billing
+  // pending orders that need a SuperAdmin, as a badge on Billing
   const [pendingOrders, setPendingOrders] = useState(0);
   useEffect(() => {
     let alive = true;
-    getPendingUsageOrderCount()
+    getAwaitingAdminOrderCount()
       .then((n) => alive && setPendingOrders(n))
       .catch(() => undefined);
     const onCount = (e: Event) => setPendingOrders(Number((e as CustomEvent<number>).detail) || 0);
-    window.addEventListener(PENDING_ORDERS_EVENT, onCount);
+    window.addEventListener(AWAITING_ORDERS_EVENT, onCount);
     return () => {
       alive = false;
-      window.removeEventListener(PENDING_ORDERS_EVENT, onCount);
+      window.removeEventListener(AWAITING_ORDERS_EVENT, onCount);
     };
   }, [active.key]);
   const badge = (s: AdminSection) => (s.key === "billing" && pendingOrders > 0 ? pendingOrders : 0);
@@ -72,7 +72,7 @@ function AdminConsole() {
                   <s.icon className="h-[18px] w-[18px] shrink-0" />
                   <span className="min-w-0 flex-1 truncate text-left">{label(s)}</span>
                   {badge(s) > 0 && (
-                    <span className="badge-pill badge-warning shrink-0 text-[11px] tabular-nums" title={t("badm.pendingCount", { n: badge(s) })}>
+                    <span className="badge-pill badge-warning shrink-0 text-[11px] tabular-nums" title={t("badm.awaitingAdmin", { n: badge(s) })}>
                       {badge(s)}
                     </span>
                   )}

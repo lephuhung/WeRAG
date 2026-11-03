@@ -22,3 +22,12 @@ export function orderAmountDue(o: Pick<UsageOrder, "total_vnd" | "received_vnd">
 export function pendingPlanOrderCode(details: { reason?: string; order_code?: string } | undefined): string | null {
   return details?.reason === "plan_order_pending" ? (details.order_code ?? "") : null;
 }
+
+/** A pending order whose money has arrived but did not confirm it (the
+ * transfer was refused at confirmation, or what came adds up to the total
+ * across checkers): nothing more to transfer, a SuperAdmin handles it. */
+export function orderPaymentHeld(o: Pick<UsageOrder, "total_vnd" | "received_vnd" | "last_payment">): boolean {
+  if (o.last_payment?.status === "confirm_failed") return true;
+  const received = o.received_vnd ?? 0;
+  return received > 0 && received >= o.total_vnd;
+}

@@ -222,8 +222,13 @@ type UsageBillingRepository interface {
 	GetOrderForUpdate(ctx context.Context, id string) (*types.UsageOrder, error)
 	GetOrderByCode(ctx context.Context, code string) (*types.UsageOrder, error)
 	ListOrders(ctx context.Context, filter types.UsageOrderFilter) ([]*types.UsageOrder, error)
-	// CountOrders counts the orders filter matches (Limit ignored).
-	CountOrders(ctx context.Context, filter types.UsageOrderFilter) (int64, error)
+	// CountOrdersAwaitingAdmin counts the pending orders only a SuperAdmin
+	// can move on: 0 đồng, or holding money (UsagePaymentHeldStatuses).
+	CountOrdersAwaitingAdmin(ctx context.Context) (int64, error)
+	// ReceivedByOrder sums, per order, the transfers in
+	// UsagePaymentHeldStatuses (one query; the same amount and booking time
+	// reported twice counts once).
+	ReceivedByOrder(ctx context.Context, orderIDs []string) (map[string]int64, error)
 	UpdateOrder(ctx context.Context, order *types.UsageOrder) error
 	// ExpirePendingOrders flips pending orders past their expires_at and
 	// returns the ones this call flipped so promo uses can be released.
@@ -274,16 +279,21 @@ type UsageBillingService interface {
 	GetOrder(ctx context.Context, id string) (*types.UsageOrderView, error)
 	GetOrderByCode(ctx context.Context, code string) (*types.UsageOrderView, error)
 	ListOrders(ctx context.Context, filter types.UsageOrderFilter) ([]*types.UsageOrderView, error)
-	// CountPendingOrders counts the orders waiting for payment or for a
-	// SuperAdmin.
-	CountPendingOrders(ctx context.Context) (int64, error)
-	// CancelOrder voids a pending order and releases its promo use.
-	CancelOrder(ctx context.Context, id string) (*types.UsageOrderView, error)
+	// CountOrdersAwaitingAdmin counts the pending orders only a SuperAdmin
+	// can move on: 0 đồng, or holding money that did not confirm them.
+	CountOrdersAwaitingAdmin(ctx context.Context) (int64, error)
+	// CancelOrder voids a pending order and releases its promo use. An
+	// order that has received money is refused (409, reason
+	// payment_received) unless force (SuperAdmin).
+	CancelOrder(ctx context.Context, id string, force bool) (*types.UsageOrderView, error)
 	// ReopenOrder puts an expired order back to pending (SuperAdmin, e.g.
 	// money that came after it expired): its promo use is taken again and
-	// it gets a fresh payment window. Confirming it still refuses a plan
-	// change whose replaced package has moved.
-	ReopenOrder(ctx context.Context, id string) (*types.UsageOrderView, error)
+	// it gets a fresh payment window; transfers already recorded for it are
+	// settled again and confirm it when one source's add up to the total.
+	// A plan order is refused (409, plan_order_pending) while the scope has
+	// another plan order pending, unless force. Confirming still refuses a
+	// plan change whose replaced package has moved.
+	ReopenOrder(ctx context.Context, id string, force bool) (*types.UsageOrderView, error)
 	// ConfirmOrder marks a pending order paid and applies it: the scope's
 	// current subscription of the same plan is extended by the order's
 	// months (seats raised to the order's; an order for fewer seats than

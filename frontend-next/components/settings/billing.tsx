@@ -35,7 +35,7 @@ import {
   type UsageScopeKind,
 } from "@/lib/api/usage";
 import { addonLineDetail, keepOffered, toggleAddonId } from "@/lib/agent-addon-catalogue";
-import { orderAmountDue, orderPlanLineVND, pendingPlanOrderCode } from "@/lib/billing-order";
+import { orderAmountDue, orderPaymentHeld, orderPlanLineVND, pendingPlanOrderCode } from "@/lib/billing-order";
 import { formatDateTime, formatLastDay } from "@/lib/datetime";
 import { BILLING_INTENT_EVENT, clearBillingIntent, readBillingIntent, type BillingIntent } from "@/lib/billing-intent";
 import { useConfirm } from "@/components/confirm-dialog";
@@ -83,7 +83,7 @@ function CopyButton({ value, label, copied }: { value: string; label: string; co
   );
 }
 
-type ErrDetails = { reason?: string; current_seats?: number; order_code?: string };
+type ErrDetails = { reason?: string; current_seats?: number; order_code?: string; received_vnd?: number };
 function errDetails(e: unknown): ErrDetails | undefined {
   if (!(e instanceof ApiError)) return undefined;
   return (e.payload as { error?: { details?: ErrDetails } } | undefined)?.error?.details;
@@ -104,8 +104,9 @@ function useBillingError() {
     (e: unknown, fallback: LocaleKey) => {
       const current = seatsBelowCurrent(e);
       if (current !== null) return t("bill.seatsBelowCurrent", { n: current });
-      const key = billingErrorKey(errDetails(e)?.reason);
-      if (key) return t(key as LocaleKey);
+      const details = errDetails(e);
+      const key = billingErrorKey(details?.reason);
+      if (key) return t(key as LocaleKey, { amount: formatPriceVND(details?.received_vnd ?? 0) });
       return e instanceof Error && e.message ? e.message : t(fallback);
     },
     [t],
@@ -443,6 +444,8 @@ export function BillingPage() {
   // ---- payment view ----------------------------------------------------------
   if (order) {
     const pending = order.status === "pending";
+    // money arrived without confirming the order: a SuperAdmin handles it
+    const held = pending && orderPaymentHeld(order);
     return (
       <ConsolePage size="form" className="px-5 py-6">
         <button type="button" className="btn btn-outline btn-sm mb-4" onClick={() => setOrder(null)}>
@@ -523,7 +526,16 @@ export function BillingPage() {
               </div>
             </div>
           )}
-          {pending && order.total_vnd > 0 && (
+          {pending && order.total_vnd > 0 && held && (
+            <div className="border-t border-hairline px-4 py-3 text-[14px]">
+              <p className="text-ink">{t("bill.paymentHeld")}</p>
+              {!!order.received_vnd && (
+                <p className="caption mt-1 text-muted">{t("bill.receivedSoFar", { amount: formatPriceVND(order.received_vnd) })}</p>
+              )}
+              {info?.contact && <p className="caption mt-1 text-muted">{info.contact}</p>}
+            </div>
+          )}
+          {pending && order.total_vnd > 0 && !held && (
             <div className="border-t border-hairline px-4 py-3">
               <div className="text-[14px] font-medium text-ink">{t("bill.payTitle")}</div>
               <div className="mt-3 flex flex-wrap gap-5">
@@ -571,11 +583,14 @@ export function BillingPage() {
                   </p>
                 </div>
               </div>
-              <div className="mt-3 flex justify-end">
-                <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void cancelOrder(order)}>
-                  {t("bill.cancel")}
-                </button>
-              </div>
+              {/* an order that has received money is not cancelled here */}
+              {!order.received_vnd && (
+                <div className="mt-3 flex justify-end">
+                  <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void cancelOrder(order)}>
+                    {t("bill.cancel")}
+                  </button>
+                </div>
+              )}
             </div>
           )}
           {order.status === "paid" && (
@@ -656,9 +671,11 @@ export function BillingPage() {
               <button type="button" className="btn btn-outline btn-sm" onClick={() => openOrder(o)}>
                 {t("bill.open")}
               </button>
-              <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => void cancelOrder(o, true)}>
-                {t("bill.cancel")}
-              </button>
+              {!o.received_vnd && (
+                <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => void cancelOrder(o, true)}>
+                  {t("bill.cancel")}
+                </button>
+              )}
             </div>
           }
         >

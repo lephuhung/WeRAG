@@ -148,10 +148,40 @@ func (r *usageBillingRepository) ListOrders(ctx context.Context, filter types.Us
 	return out, nil
 }
 
-func (r *usageBillingRepository) CountOrders(ctx context.Context, filter types.UsageOrderFilter) (int64, error) {
+func (r *usageBillingRepository) CountOrdersAwaitingAdmin(ctx context.Context) (int64, error) {
 	var n int64
-	err := filterOrders(r.conn(ctx).Model(&types.UsageOrder{}), filter).Count(&n).Error
+	err := r.conn(ctx).Model(&types.UsageOrder{}).
+		Where("status = ?", types.UsageOrderPending).
+		Where("total_vnd <= 0 OR EXISTS (SELECT 1 FROM usage_payment_transactions p WHERE p.order_id = usage_orders.id AND p.status IN ?)",
+			types.UsagePaymentHeldStatuses).
+		Count(&n).Error
 	return n, err
+}
+
+// ReceivedByOrder groups by order, amount and booking time first, so a
+// transfer reported twice (two checkers, a re-push with a new id) counts
+// once, then sums per order.
+func (r *usageBillingRepository) ReceivedByOrder(ctx context.Context, orderIDs []string) (map[string]int64, error) {
+	out := map[string]int64{}
+	if len(orderIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		OrderID   string
+		AmountVND int64
+	}
+	err := r.conn(ctx).Model(&types.UsagePaymentTransaction{}).
+		Select("order_id, amount_vnd").
+		Where("order_id IN ? AND status IN ?", orderIDs, types.UsagePaymentHeldStatuses).
+		Group("order_id, amount_vnd, transacted_at").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.OrderID] += row.AmountVND
+	}
+	return out, nil
 }
 
 func filterOrders(q *gorm.DB, filter types.UsageOrderFilter) *gorm.DB {

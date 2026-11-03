@@ -43,7 +43,7 @@ func TestPlanOrderWhileOneIsPendingNeedsConfirmation(t *testing.T) {
 	require.NotEqual(t, first.OrderCode, second.OrderCode)
 
 	// once the pending ones are gone (cancelled, expired) no question is asked
-	_, err = f.svc.CancelOrder(ctx, first.ID)
+	_, err = f.svc.CancelOrder(ctx, first.ID, false)
 	require.NoError(t, err)
 	f.svc.now = func() time.Time { return billingNow.Add(49 * time.Hour) }
 	_, err = f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1}, "10003", "u1")
@@ -68,7 +68,7 @@ func TestFreeOrderNeverExpires(t *testing.T) {
 	_, err = f.svc.ListOrders(ctx, types.UsageOrderFilter{})
 	require.NoError(t, err)
 	require.Equal(t, types.UsageOrderPending, f.repo.orders[o.ID].Status)
-	n, err := f.svc.CountPendingOrders(ctx)
+	n, err := f.svc.CountOrdersAwaitingAdmin(ctx)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, n)
 
@@ -117,7 +117,7 @@ func TestReopenExpiredOrder(t *testing.T) {
 	o, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1, PromoCode: "ONCE"}, "10003", "u1")
 	require.NoError(t, err)
 
-	_, err = f.svc.ReopenOrder(ctx, o.ID)
+	_, err = f.svc.ReopenOrder(ctx, o.ID, false)
 	require.Equal(t, "order_not_expired", appErrReason(t, err)["reason"])
 
 	later := billingNow.Add(49 * time.Hour)
@@ -129,7 +129,7 @@ func TestReopenExpiredOrder(t *testing.T) {
 		require.Zero(t, p.UsedCount)
 	}
 
-	v, err := f.svc.ReopenOrder(ctx, o.ID)
+	v, err := f.svc.ReopenOrder(ctx, o.ID, false)
 	require.NoError(t, err)
 	require.Equal(t, types.UsageOrderPending, v.Status)
 	require.True(t, v.ExpiresAt.After(later), "a fresh payment window")
@@ -155,7 +155,7 @@ func TestReopenRefusesWhenPromoIsUsedUp(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, types.UsageOrderExpired, f.repo.orders[o.ID].Status)
 
-	_, err = f.svc.ReopenOrder(ctx, o.ID)
+	_, err = f.svc.ReopenOrder(ctx, o.ID, false)
 	require.Equal(t, 409, appErrHTTP(t, err))
 	require.Equal(t, types.UsageOrderExpired, f.repo.orders[o.ID].Status)
 }
@@ -174,7 +174,7 @@ func TestReopenedPlanChangeAgainstAMovedPackageIsRefused(t *testing.T) {
 	_, err = f.svc.ConfirmOrder(ctx, renew.ID, "sa")
 	require.NoError(t, err)
 
-	_, err = f.svc.ReopenOrder(ctx, change.ID)
+	_, err = f.svc.ReopenOrder(ctx, change.ID, false)
 	require.NoError(t, err)
 	_, err = f.svc.ConfirmOrder(ctx, change.ID, "sa")
 	require.Equal(t, 409, appErrHTTP(t, err))
@@ -204,4 +204,175 @@ func TestOrderViewShowsShortTransfersAndNewEnd(t *testing.T) {
 	require.Equal(t, types.UsageOrderPaid, v.Status)
 	require.Zero(t, v.ReceivedVND)
 	require.Equal(t, vnEnd(1), *v.SubscriptionEndsAt)
+}
+
+// H1: the transfer completing an order is refused at confirmation: the
+// money counts as received, nothing more is asked for (no QR), and the
+// refused transfer is shown so the page says a SuperAdmin handles it.
+func TestRefusedCompletingTransferCountsAsReceived(t *testing.T) {
+	f := newBillingFixture(t)
+	ctx := context.Background()
+	first, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 5}, "10003", "u1")
+	require.NoError(t, err)
+	_, err = f.svc.ConfirmOrder(ctx, first.ID, "sa")
+	require.NoError(t, err)
+	small, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 5}, "10003", "u1")
+	require.NoError(t, err)
+	big, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 50, ConfirmDuplicate: true}, "10003", "u1")
+	require.NoError(t, err)
+	_, err = f.svc.ConfirmOrder(ctx, big.ID, "sa")
+	require.NoError(t, err)
+
+	part := small.TotalVND / 2
+	t1, t2 := billingNow.Add(time.Hour), billingNow.Add(2*time.Hour)
+	res := f.pay(t, types.UsagePaymentWebhookRequest{TransactionID: "h1", AmountVND: part, Content: small.OrderCode, TransactedAt: &t1})
+	require.Equal(t, types.UsagePaymentUnderpaid, res.Transaction.Status)
+	res = f.pay(t, types.UsagePaymentWebhookRequest{TransactionID: "h2", AmountVND: small.TotalVND - part, Content: small.OrderCode, TransactedAt: &t2})
+	require.Equal(t, types.UsagePaymentConfirmFailed, res.Transaction.Status)
+
+	v, err := f.svc.GetOrderByCode(ctx, small.OrderCode)
+	require.NoError(t, err)
+	require.Equal(t, types.UsageOrderPending, v.Status)
+	require.Equal(t, small.TotalVND, v.ReceivedVND)
+	require.Equal(t, types.UsagePaymentConfirmFailed, v.LastPayment.Status)
+	require.Empty(t, v.QRURL, "nothing more to transfer")
+	n, err := f.svc.CountOrdersAwaitingAdmin(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, n)
+}
+
+// M1: short transfers add up within one source, and the same transfer
+// reported again (another checker, a new id) counts once.
+func TestShortTransfersAddUpOncePerSource(t *testing.T) {
+	f := newBillingFixture(t)
+	ctx := context.Background()
+	o := f.poolOrder(t)
+	at := billingNow.Add(time.Hour)
+
+	res := f.pay(t, types.UsagePaymentWebhookRequest{Source: "a", TransactionID: "1", AmountVND: 60_000, Content: o.OrderCode, TransactedAt: &at})
+	require.Equal(t, types.UsagePaymentUnderpaid, res.Transaction.Status)
+	// another checker reports the same transfer
+	res = f.pay(t, types.UsagePaymentWebhookRequest{Source: "b", TransactionID: "x", AmountVND: 60_000, Content: o.OrderCode, TransactedAt: &at})
+	require.Equal(t, types.UsagePaymentUnderpaid, res.Transaction.Status)
+	// the first checker re-pushes it with a new id
+	res = f.pay(t, types.UsagePaymentWebhookRequest{Source: "a", TransactionID: "2", AmountVND: 60_000, Content: o.OrderCode, TransactedAt: &at})
+	require.Equal(t, types.UsagePaymentUnderpaid, res.Transaction.Status)
+	require.Contains(t, res.Transaction.Reason, "counted once")
+	require.Equal(t, types.UsageOrderPending, f.repo.orders[o.ID].Status)
+
+	v, err := f.svc.GetOrderByCode(ctx, o.OrderCode)
+	require.NoError(t, err)
+	require.EqualValues(t, 60_000, v.ReceivedVND)
+	require.Contains(t, v.QRURL, "amount=40000")
+
+	later := at.Add(time.Hour)
+	res = f.pay(t, types.UsagePaymentWebhookRequest{Source: "a", TransactionID: "3", AmountVND: 40_000, Content: o.OrderCode, TransactedAt: &later})
+	require.Equal(t, types.UsagePaymentMatched, res.Transaction.Status)
+	require.Equal(t, types.UsageOrderPaid, f.repo.orders[o.ID].Status)
+}
+
+// M2: an order that received money is not cancelled by its buyer; a
+// SuperAdmin may force it.
+func TestCancelRefusedOnceMoneyIsReceived(t *testing.T) {
+	f := newBillingFixture(t)
+	ctx := context.Background()
+	o := f.poolOrder(t)
+	f.pay(t, types.UsagePaymentWebhookRequest{TransactionID: "c1", AmountVND: 60_000, Content: o.OrderCode})
+
+	_, err := f.svc.CancelOrder(ctx, o.ID, false)
+	require.Equal(t, 409, appErrHTTP(t, err))
+	d, ok := err.(*apperrors.AppError).Details.(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, "payment_received", d["reason"])
+	require.EqualValues(t, 60_000, d["received_vnd"])
+	require.Equal(t, types.UsageOrderPending, f.repo.orders[o.ID].Status)
+
+	v, err := f.svc.CancelOrder(ctx, o.ID, true)
+	require.NoError(t, err)
+	require.Equal(t, types.UsageOrderCancelled, v.Status)
+}
+
+// M3: transfers that came after the order expired are counted again when
+// a SuperAdmin reopens it; the listing shows the money received meanwhile.
+func TestReopenSettlesTransfersAlreadyRecorded(t *testing.T) {
+	f := newBillingFixture(t)
+	ctx := context.Background()
+	o := f.poolOrder(t)
+	f.svc.now = func() time.Time { return billingNow.Add(49 * time.Hour) }
+	_, err := f.svc.ListOrders(ctx, types.UsageOrderFilter{})
+	require.NoError(t, err)
+
+	res := f.pay(t, types.UsagePaymentWebhookRequest{TransactionID: "r1", AmountVND: 50_000, Content: o.OrderCode})
+	require.Equal(t, types.UsagePaymentOrderClosed, res.Transaction.Status)
+	t2 := billingNow.Add(50 * time.Hour)
+	res = f.pay(t, types.UsagePaymentWebhookRequest{TransactionID: "r2", AmountVND: 50_000, Content: o.OrderCode, TransactedAt: &t2})
+	require.Equal(t, types.UsagePaymentOrderClosed, res.Transaction.Status)
+
+	list, err := f.svc.ListOrders(ctx, types.UsageOrderFilter{})
+	require.NoError(t, err)
+	require.Len(t, list, 1)
+	require.EqualValues(t, 100_000, list[0].ReceivedVND)
+
+	v, err := f.svc.ReopenOrder(ctx, o.ID, false)
+	require.NoError(t, err)
+	require.Equal(t, types.UsageOrderPaid, v.Status)
+	require.Equal(t, types.UsagePaymentMatched, f.repo.payments["bank-poller/r1"].Status)
+	require.Equal(t, types.UsagePaymentMatched, f.repo.payments["bank-poller/r2"].Status)
+	require.NotNil(t, f.plans.active["tenant/10003"])
+}
+
+// Not enough after reopening: the order is pending with the money counted.
+func TestReopenWithShortTransfersStaysPending(t *testing.T) {
+	f := newBillingFixture(t)
+	ctx := context.Background()
+	o := f.poolOrder(t)
+	f.svc.now = func() time.Time { return billingNow.Add(49 * time.Hour) }
+	_, err := f.svc.ListOrders(ctx, types.UsageOrderFilter{})
+	require.NoError(t, err)
+	f.pay(t, types.UsagePaymentWebhookRequest{TransactionID: "s1", AmountVND: 30_000, Content: o.OrderCode})
+	require.Equal(t, types.UsageOrderExpired, f.repo.orders[o.ID].Status)
+
+	v, err := f.svc.ReopenOrder(ctx, o.ID, false)
+	require.NoError(t, err)
+	require.Equal(t, types.UsageOrderPending, v.Status)
+	require.EqualValues(t, 30_000, v.ReceivedVND)
+	require.Equal(t, types.UsagePaymentUnderpaid, f.repo.payments["bank-poller/s1"].Status)
+}
+
+// L1: a short transfer made in time but reported after expiry keeps the
+// order open.
+func TestShortTransferInTimeRevivesExpiredOrder(t *testing.T) {
+	f := newBillingFixture(t)
+	o := f.poolOrder(t)
+	f.svc.now = func() time.Time { return billingNow.Add(49 * time.Hour) }
+	_, err := f.svc.ListOrders(context.Background(), types.UsageOrderFilter{})
+	require.NoError(t, err)
+	require.Equal(t, types.UsageOrderExpired, f.repo.orders[o.ID].Status)
+
+	inTime := billingNow.Add(47 * time.Hour)
+	res := f.pay(t, types.UsagePaymentWebhookRequest{TransactionID: "l1", AmountVND: 60_000, Content: o.OrderCode, TransactedAt: &inTime})
+	require.Equal(t, types.UsagePaymentUnderpaid, res.Transaction.Status)
+	require.Equal(t, types.UsageOrderPending, f.repo.orders[o.ID].Status)
+	require.True(t, f.repo.orders[o.ID].ExpiresAt.After(billingNow.Add(49*time.Hour)), "a fresh payment window")
+}
+
+// L5: reopening a plan order while a newer one is pending needs force.
+func TestReopenRefusedWhileAnotherPlanOrderIsPending(t *testing.T) {
+	f := newBillingFixture(t)
+	ctx := context.Background()
+	old := f.poolOrder(t)
+	f.svc.now = func() time.Time { return billingNow.Add(49 * time.Hour) }
+	newer := f.poolOrder(t)
+	require.Equal(t, types.UsageOrderExpired, f.repo.orders[old.ID].Status)
+
+	_, err := f.svc.ReopenOrder(ctx, old.ID, false)
+	require.Equal(t, 409, appErrHTTP(t, err))
+	d := appErrReason(t, err)
+	require.Equal(t, "plan_order_pending", d["reason"])
+	require.Equal(t, newer.OrderCode, d["order_code"])
+	require.Equal(t, types.UsageOrderExpired, f.repo.orders[old.ID].Status)
+
+	v, err := f.svc.ReopenOrder(ctx, old.ID, true)
+	require.NoError(t, err)
+	require.Equal(t, types.UsageOrderPending, v.Status)
 }

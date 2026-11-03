@@ -352,10 +352,13 @@ type UsageSubscriptionFilter struct {
 // scope whose counters it governs.
 type UsageSubscriptionView struct {
 	*UsageSubscription
-	ScopeName string             `json:"scope_name"`
-	Current   bool               `json:"current"`
-	Limits    []UsageLimitStatus `json:"limit_status"`
-	SeatsUsed int64              `json:"seats_used"`
+	ScopeName string `json:"scope_name"`
+	Current   bool   `json:"current"`
+	// NotStarted: not current because it starts later (StartsAt), not
+	// because it ended.
+	NotStarted bool               `json:"not_started,omitempty"`
+	Limits     []UsageLimitStatus `json:"limit_status"`
+	SeatsUsed  int64              `json:"seats_used"`
 	// Implicit marks a Guest's guest plan before their first question: no
 	// subscription row exists yet (the usage guard creates it on that turn),
 	// so ID is empty and the row cannot be cancelled or edited.

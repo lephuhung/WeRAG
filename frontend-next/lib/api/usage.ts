@@ -256,6 +256,8 @@ export interface UsageSubscriptionInput {
 export interface UsageSubscriptionView extends UsageSubscription {
   scope_name: string;
   current: boolean;
+  /** Not current because it starts later, not because it ended. */
+  not_started?: boolean;
   limit_status: UsageLimitStatus[];
   seats_used: number;
   /* A Guest's guest plan before their first question: no row yet (id is
@@ -718,23 +720,30 @@ export function confirmUsageOrder(id: string): Promise<UsageOrder> {
   return apiPost<{ data: UsageOrder }>(`${ADMIN}/orders/${encodeURIComponent(id)}/confirm`, {}).then((r) => r.data);
 }
 
-export function cancelUsageOrder(id: string): Promise<UsageOrder> {
-  return apiPost<{ data: UsageOrder }>(`${ADMIN}/orders/${encodeURIComponent(id)}/cancel`, {}).then((r) => r.data);
+/** force: cancel although the order has received money (refused otherwise
+ * with reason payment_received). */
+export function cancelUsageOrder(id: string, force = false): Promise<UsageOrder> {
+  return apiPost<{ data: UsageOrder }>(`${ADMIN}/orders/${encodeURIComponent(id)}/cancel${force ? "?force=true" : ""}`, {}).then((r) => r.data);
 }
 
-/** Puts an expired order back to pending (money that came after expiry). */
-export function reopenUsageOrder(id: string): Promise<UsageOrder> {
-  return apiPost<{ data: UsageOrder }>(`${ADMIN}/orders/${encodeURIComponent(id)}/reopen`, {}).then((r) => r.data);
+/** Puts an expired order back to pending (money that came after expiry);
+ * transfers already recorded for it are counted again. force: although
+ * another plan order of the scope is pending (refused otherwise with
+ * reason plan_order_pending). */
+export function reopenUsageOrder(id: string, force = false): Promise<UsageOrder> {
+  return apiPost<{ data: UsageOrder }>(`${ADMIN}/orders/${encodeURIComponent(id)}/reopen${force ? "?force=true" : ""}`, {}).then((r) => r.data);
 }
 
-/** Orders waiting for payment or for a SuperAdmin to confirm them. */
-export function getPendingUsageOrderCount(): Promise<number> {
-  return apiGet<{ data?: { pending?: number } }>(`${ADMIN}/orders/pending-count`).then((r) => r.data?.pending ?? 0);
+/** Pending orders only a SuperAdmin can move on: 0 đồng, or money received
+ * without confirming them. */
+export function getAwaitingAdminOrderCount(): Promise<number> {
+  return apiGet<{ data?: { awaiting_admin?: number } }>(`${ADMIN}/orders/awaiting-admin-count`).then((r) => r.data?.awaiting_admin ?? 0);
 }
 
-/** Window event the billing admin page fires with the new pending count
- * (detail: number), so the console menu's badge follows. */
-export const PENDING_ORDERS_EVENT = "werag:billing-pending-orders";
+/** Window event the billing admin page fires with the new awaiting-admin
+ * count (detail: number), so the console menu's badge follows. */
+export const AWAITING_ORDERS_EVENT = "werag:billing-awaiting-orders";
+
 /** system_settings keys of the receiving bank account and order policy. */
 export const BILLING_SETTING_KEYS = {
   bankBin: "billing.bank_bin",
@@ -760,6 +769,7 @@ export function billingErrorKey(reason: string | undefined): string | null {
     case "open_ended_subscription":
     case "order_not_expired":
     case "order_not_pending":
+    case "payment_received":
     case "plan_not_sold":
     case "plan_order_pending":
     case "subscription_changed":

@@ -22,6 +22,12 @@ const (
 	usagePaymentMaxCodes = 5
 )
 
+// RecordPayment assumes ONE source (checker) per receiving bank account:
+// short transfers are only added up within the source that reported them,
+// and (source, transaction_id) is the only idempotency key, so a second
+// checker on the same account would report each transfer again under its
+// own name. A transfer with the same amount and booking time as one
+// already held for the order is counted once.
 func (s *usageBillingService) RecordPayment(
 	ctx context.Context, req types.UsagePaymentWebhookRequest, raw []byte,
 ) (*types.UsagePaymentResult, error) {
@@ -206,66 +212,154 @@ func (s *usageBillingService) settlePayment(
 	default:
 		t.Status, t.Reason = types.UsagePaymentOrderClosed, "the order is already "+o.Status
 	}
-	// short transfers add up: the buyer is asked to send the rest with the
-	// same content, and the one that completes the total confirms
+	// Short transfers add up: the buyer is asked to send the rest with the
+	// same content, and the one that completes the total confirms. Only the
+	// same source's transfers are added (one checker per bank account, see
+	// RecordPayment), and one with the same amount and booking time as an
+	// earlier one is the same transfer reported again.
 	var earlier []*types.UsagePaymentTransaction
 	if t.Status == types.UsagePaymentUnmatched {
-		var before int64
-		if earlier, before, err = s.shortPayments(ctx, o.ID); err != nil {
+		pays, err := s.repo.ListOrderPayments(ctx, o.ID)
+		if err != nil {
 			return err
 		}
-		if received := before + t.AmountVND; received < o.TotalVND {
+		var before int64
+		earlier, before = heldPayments(pays, t.Source, types.UsagePaymentUnderpaid)
+		if dup := samePaymentIn(earlier, t); dup != nil {
+			t.Status, t.Reason = types.UsagePaymentUnderpaid,
+				fmt.Sprintf("same amount and booking time as transfer %s; counted once", dup.ExternalID)
+		} else if received := before + t.AmountVND; received < o.TotalVND {
 			t.Status, t.Reason = types.UsagePaymentUnderpaid,
 				fmt.Sprintf("transferred %d of %d VND", received, o.TotalVND)
+		}
+	}
+	// a short transfer made in time keeps an expired order open, as a
+	// complete one does
+	if revive && t.Status == types.UsagePaymentUnderpaid {
+		err := s.repo.InTransaction(ctx, func(ctx context.Context) error {
+			o.ExpiresAt = s.paymentDeadline(ctx, o.TotalVND, s.now())
+			return s.reopenExpiredOrder(ctx, o)
+		})
+		var appErr *apperrors.AppError
+		switch {
+		case errors.As(err, &appErr):
+			t.Status, t.Reason = types.UsagePaymentOrderClosed,
+				"transferred in time but the order cannot be reopened: "+appErr.Message
+			if cur, gerr := s.repo.GetOrder(ctx, o.ID); gerr == nil {
+				o = cur
+			}
+		case err != nil:
+			return err
 		}
 	}
 	if t.Status != types.UsagePaymentUnmatched {
 		result.Order = s.view(ctx, o)
 		return s.repo.UpdatePaymentTransaction(ctx, t)
 	}
+	view, err := s.confirmPaid(ctx, o, append(earlier, t), paymentConfirmedBy(t.Source), revive)
+	if err != nil {
+		return err
+	}
+	result.Order = view
+	return nil
+}
 
+// confirmPaid confirms o with the transfers that pay it, the completing
+// one last (a savepoint: a refusal leaves the order as it was; revive
+// reopens the expired order first). On success they are all marked
+// matched; on a refusal the last is marked confirm_failed with the reason,
+// so the money shows as received and waits for a SuperAdmin. Every
+// transfer is written; only storage errors are returned.
+func (s *usageBillingService) confirmPaid(
+	ctx context.Context, o *types.UsageOrder, pays []*types.UsagePaymentTransaction, by string, revive bool,
+) (*types.UsageOrderView, error) {
+	last := pays[len(pays)-1]
 	var view *types.UsageOrderView
-	// a savepoint: a refused confirmation leaves the order as it was and
-	// the transaction is still stored with the reason
-	err = s.repo.InTransaction(ctx, func(ctx context.Context) error {
+	err := s.repo.InTransaction(ctx, func(ctx context.Context) error {
 		if revive {
 			if err := s.reopenExpiredOrder(ctx, o); err != nil {
 				return err
 			}
 		}
-		v, err := s.ConfirmOrder(ctx, o.ID, paymentConfirmedBy(t.Source))
+		v, err := s.ConfirmOrder(ctx, o.ID, by)
 		view = v
 		return err
 	})
 	var appErr *apperrors.AppError
 	switch {
 	case err == nil:
-		t.Status = types.UsagePaymentMatched
-		paid := t.AmountVND
-		for _, e := range earlier {
-			paid += e.AmountVND
-			e.Status = types.UsagePaymentMatched
-			e.Reason = fmt.Sprintf("completed by transfer %s", t.ExternalID)
-			if err := s.repo.UpdatePaymentTransaction(ctx, e); err != nil {
-				return err
+		var paid int64
+		for i, p := range pays {
+			if samePaymentIn(pays[:i], p) == nil {
+				paid += p.AmountVND
+			}
+			p.Status, p.Reason = types.UsagePaymentMatched, ""
+			if p != last {
+				p.Reason = fmt.Sprintf("completed by transfer %s", last.ExternalID)
 			}
 		}
-		if len(earlier) > 0 {
-			t.Reason = fmt.Sprintf("completes %d VND in %d transfers", paid, len(earlier)+1)
+		if len(pays) > 1 {
+			last.Reason = fmt.Sprintf("completes %d VND in %d transfers", paid, len(pays))
 		}
 		if extra := paid - o.TotalVND; extra > 0 {
-			t.Reason = strings.TrimPrefix(t.Reason+"; ", "; ") + fmt.Sprintf("overpaid by %d VND", extra)
+			last.Reason = strings.TrimPrefix(last.Reason+"; ", "; ") + fmt.Sprintf("overpaid by %d VND", extra)
 		}
-		result.Order = view
 	case errors.As(err, &appErr):
-		t.Status, t.Reason = types.UsagePaymentConfirmFailed, appErr.Message
+		last.Status, last.Reason = types.UsagePaymentConfirmFailed, appErr.Message
+		view = nil
 		if cur, gerr := s.repo.GetOrder(ctx, o.ID); gerr == nil {
-			result.Order = s.view(ctx, cur)
+			view = s.view(ctx, cur)
 		}
 	default:
-		return err
+		return nil, err
 	}
-	return s.repo.UpdatePaymentTransaction(ctx, t)
+	for _, p := range pays {
+		if err := s.repo.UpdatePaymentTransaction(ctx, p); err != nil {
+			return nil, err
+		}
+	}
+	return view, nil
+}
+
+// heldPayments returns the transfers of pays in statuses (of source, unless
+// it is "") and their sum, a transfer reported twice (same amount and
+// booking time) counted once.
+func heldPayments(
+	pays []*types.UsagePaymentTransaction, source string, statuses ...string,
+) ([]*types.UsagePaymentTransaction, int64) {
+	var out []*types.UsagePaymentTransaction
+	var sum int64
+	for _, p := range pays {
+		if source != "" && p.Source != source {
+			continue
+		}
+		held := false
+		for _, st := range statuses {
+			if p.Status == st {
+				held = true
+				break
+			}
+		}
+		if !held {
+			continue
+		}
+		if samePaymentIn(out, p) == nil {
+			sum += p.AmountVND
+		}
+		out = append(out, p)
+	}
+	return out, sum
+}
+
+// samePaymentIn returns the transfer of list with t's amount and booking
+// time (the same transfer reported again), nil when there is none.
+func samePaymentIn(list []*types.UsagePaymentTransaction, t *types.UsagePaymentTransaction) *types.UsagePaymentTransaction {
+	for _, p := range list {
+		if p != t && p.AmountVND == t.AmountVND && p.TransactedAt.Equal(t.TransactedAt) {
+			return p
+		}
+	}
+	return nil
 }
 
 // reopenExpiredOrder puts an expired order back to pending, taking back

@@ -160,7 +160,7 @@ func TestPaymentMadeBeforeExpiryReopensExpiredOrder(t *testing.T) {
 func TestPaymentSkipsClosedOrderNamedFirst(t *testing.T) {
 	f := newBillingFixture(t)
 	closed := f.poolOrder(t)
-	_, err := f.svc.CancelOrder(context.Background(), closed.ID)
+	_, err := f.svc.CancelOrder(context.Background(), closed.ID, false)
 	require.NoError(t, err)
 	open := f.poolOrder(t)
 	res := f.pay(t, types.UsagePaymentWebhookRequest{TransactionID: "m", AmountVND: 100_000, Content: closed.OrderCode + " " + open.OrderCode})

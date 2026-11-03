@@ -470,6 +470,9 @@ func (s *usageBillingService) ListOrders(ctx context.Context, filter types.Usage
 	for _, o := range orders {
 		out = append(out, s.view(ctx, o))
 	}
+	if err := s.addReceived(ctx, out); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -490,12 +493,17 @@ func (s *usageBillingService) getPendingOrderForUpdate(ctx context.Context, id, 
 	return o, nil
 }
 
-func (s *usageBillingService) CancelOrder(ctx context.Context, id string) (*types.UsageOrderView, error) {
+func (s *usageBillingService) CancelOrder(ctx context.Context, id string, force bool) (*types.UsageOrderView, error) {
 	var o *types.UsageOrder
 	err := s.repo.InTransaction(ctx, func(ctx context.Context) error {
 		var err error
 		if o, err = s.getPendingOrderForUpdate(ctx, id, "cancelled"); err != nil {
 			return err
+		}
+		if !force {
+			if err := s.refuseCancelWithMoney(ctx, o); err != nil {
+				return err
+			}
 		}
 		o.Status = types.UsageOrderCancelled
 		if err := s.repo.UpdateOrder(ctx, o); err != nil {

@@ -332,6 +332,14 @@ const (
 	UsagePaymentDirectionOut = "out"
 )
 
+// UsagePaymentHeldStatuses are the transfers that brought money for an
+// order without paying it: short, refused at confirmation, or arrived
+// while the order was closed. A pending order holding any of them cannot
+// be cancelled by its buyer, and SuperAdmin is asked to look at it.
+var UsagePaymentHeldStatuses = []string{
+	UsagePaymentUnderpaid, UsagePaymentConfirmFailed, UsagePaymentOrderClosed,
+}
+
 // UsagePaymentWebhookRequest is one transaction as the checker reports it.
 type UsagePaymentWebhookRequest struct {
 	// Source names the checker ("sepay", "casso", "bank-poller"); with

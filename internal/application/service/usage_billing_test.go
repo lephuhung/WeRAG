@@ -174,10 +174,28 @@ func (m *memBillingRepo) ListOrders(_ context.Context, f types.UsageOrderFilter)
 	}
 	return out, nil
 }
-func (m *memBillingRepo) CountOrders(ctx context.Context, f types.UsageOrderFilter) (int64, error) {
-	f.Limit = 0
-	out, err := m.ListOrders(ctx, f)
-	return int64(len(out)), err
+func (m *memBillingRepo) heldFor(orderID string) int64 {
+	pays, _ := m.ListOrderPayments(context.Background(), orderID)
+	_, sum := heldPayments(pays, "", types.UsagePaymentHeldStatuses...)
+	return sum
+}
+func (m *memBillingRepo) CountOrdersAwaitingAdmin(context.Context) (int64, error) {
+	var n int64
+	for _, o := range m.orders {
+		if o.Status == types.UsageOrderPending && (o.TotalVND <= 0 || m.heldFor(o.ID) > 0) {
+			n++
+		}
+	}
+	return n, nil
+}
+func (m *memBillingRepo) ReceivedByOrder(_ context.Context, ids []string) (map[string]int64, error) {
+	out := map[string]int64{}
+	for _, id := range ids {
+		if n := m.heldFor(id); n > 0 {
+			out[id] = n
+		}
+	}
+	return out, nil
 }
 func (m *memBillingRepo) ListOrderPayments(_ context.Context, orderID string) ([]*types.UsagePaymentTransaction, error) {
 	var out []*types.UsagePaymentTransaction
@@ -506,7 +524,7 @@ func TestBillingPromoRulesSurfaceAsQuoteNoteButBlockOrders(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "promo_exhausted", q.PromoError)
 	// Cancelling gives the use back.
-	_, err = f.svc.CancelOrder(context.Background(), o.ID)
+	_, err = f.svc.CancelOrder(context.Background(), o.ID, false)
 	require.NoError(t, err)
 	q, err = f.svc.Quote(context.Background(), types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1, PromoCode: "ONCE"}, "10003")
 	require.NoError(t, err)

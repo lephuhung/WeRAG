@@ -2,7 +2,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { orderAmountDue, orderPlanLineVND, pendingPlanOrderCode } from "./billing-order.ts";
+import { orderAmountDue, orderPaymentHeld, orderPlanLineVND, pendingPlanOrderCode } from "./billing-order.ts";
 import type { UsageOrderAddonLine } from "./api/usage.ts";
 
 const addon = (amount: number): UsageOrderAddonLine => ({ agent_id: "a", name: "A", unit_price_vnd: amount, units: 1, months: 1, amount_vnd: amount });
@@ -33,5 +33,15 @@ describe("pendingPlanOrderCode", () => {
     assert.equal(pendingPlanOrderCode({ reason: "plan_order_pending", order_code: "WRABCD2345" }), "WRABCD2345");
     assert.equal(pendingPlanOrderCode({ reason: "addon_pending" }), null);
     assert.equal(pendingPlanOrderCode(undefined), null);
+  });
+});
+
+describe("orderPaymentHeld", () => {
+  it("is set by a refused transfer or money covering the total", () => {
+    const at = "2026-11-03T10:00:00Z";
+    assert.equal(orderPaymentHeld({ total_vnd: 100, received_vnd: 100, last_payment: { amount_vnd: 40, status: "confirm_failed", transacted_at: at } }), true);
+    assert.equal(orderPaymentHeld({ total_vnd: 100, received_vnd: 100 }), true);
+    assert.equal(orderPaymentHeld({ total_vnd: 100, received_vnd: 60, last_payment: { amount_vnd: 60, status: "underpaid", transacted_at: at } }), false);
+    assert.equal(orderPaymentHeld({ total_vnd: 100 }), false);
   });
 });

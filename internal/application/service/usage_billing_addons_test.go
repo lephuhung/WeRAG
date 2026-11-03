@@ -422,7 +422,7 @@ func TestAddonRightsAreNeverShortenedOrPaidTwice(t *testing.T) {
 		_, err = f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1}, "10003", "u2")
 		require.NoError(t, err)
 		// once the first is cancelled, it can be ordered again
-		_, err = f.svc.CancelOrder(ctx, first.ID)
+		_, err = f.svc.CancelOrder(ctx, first.ID, false)
 		require.NoError(t, err)
 		_, err = f.svc.CreateOrder(ctx, addonReq, "10003", "u1")
 		require.NoError(t, err)
@@ -502,7 +502,7 @@ func TestPromoCodeOnAddonOrder(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, q.PromoError)
 	// cancelling gives it back
-	_, err = f.svc.CancelOrder(ctx, o.ID)
+	_, err = f.svc.CancelOrder(ctx, o.ID, false)
 	require.NoError(t, err)
 	require.Equal(t, 0, f.repo.promos[p.ID].UsedCount)
 	q, err = f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1, PromoCode: "MOT"}, "10003")

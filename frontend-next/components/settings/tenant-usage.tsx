@@ -214,7 +214,7 @@ function OrganizationUsage() {
           <InfoRow label={t("tus.plan")} desc={sub.plan?.description || ""} className="px-4">
             <span className="text-[14px] text-ink">{sub.plan?.name ?? sub.plan_id}</span>
             {!sub.current &&
-              (sub.starts_at && new Date(sub.starts_at).getTime() > Date.now() ? (
+              ((sub.not_started ?? (!!sub.starts_at && new Date(sub.starts_at).getTime() > Date.now())) ? (
                 <span className="badge-pill ml-2 text-[11px] text-info">{t("tus.notStarted", { date: formatDate(sub.starts_at) })}</span>
               ) : (
                 <span className="badge-pill ml-2 text-[11px] text-error">{t("usg.expired")}</span>
