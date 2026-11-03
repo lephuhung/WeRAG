@@ -228,6 +228,9 @@ type UsageQuote struct {
 	// SeatsCarried: seats already assigned on the scope's seat subscription
 	// that the new one keeps.
 	SeatsCarried int `json:"seats_carried,omitempty"`
+	// SeatsHeld: seats assigned on that subscription (more than SeatsCarried:
+	// the latest assigned are not carried).
+	SeatsHeld int `json:"seats_held,omitempty"`
 	// SubscriptionEndsAt: when the package ends once this order is applied
 	// now (renewal: from the current end).
 	SubscriptionEndsAt *time.Time `json:"subscription_ends_at,omitempty"`

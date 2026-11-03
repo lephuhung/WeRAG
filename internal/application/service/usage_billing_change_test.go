@@ -183,6 +183,24 @@ func TestPlanChangeAgainstAMovedPackageIsRefused(t *testing.T) {
 	require.Equal(t, 409, appErrHTTP(t, err))
 }
 
+// Review F2: a renewal priced while the package was "pool" must not replace
+// the "seat" package another order put in place meanwhile (no credit).
+func TestRenewalAgainstAReplacedPackageIsRefused(t *testing.T) {
+	f := newBillingFixture(t)
+	ctx := context.Background()
+	f.paidPool(t, endOfVN(2026, 11, 12), 100_000, 100_000, 0)
+	renew, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1}, "10003", "u1")
+	require.NoError(t, err)
+	require.Nil(t, renew.ReplacesSubscriptionID)
+	change, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 3}, "10003", "u1")
+	require.NoError(t, err)
+	_, err = f.svc.ConfirmOrder(ctx, change.ID, "sa")
+	require.NoError(t, err)
+	_, err = f.svc.ConfirmOrder(ctx, renew.ID, "sa")
+	require.Equal(t, 409, appErrHTTP(t, err))
+	require.Equal(t, "seat", f.plans.active["tenant/10003"].PlanID)
+}
+
 // H7: a seat plan bought again after it lapsed keeps the assigned seats
 // (earliest first, up to the seats bought).
 func TestSeatPlanBoughtAgainKeepsSeats(t *testing.T) {
@@ -199,6 +217,7 @@ func TestSeatPlanBoughtAgainKeepsSeats(t *testing.T) {
 	q, err := f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 2}, "10003")
 	require.NoError(t, err)
 	require.Equal(t, 2, q.SeatsCarried)
+	require.Equal(t, 3, q.SeatsHeld, "one assigned seat is not carried")
 	require.Nil(t, q.Replaces, "a lapsed package is not replaced, nothing to credit")
 
 	o, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 2}, "10003", "u1")

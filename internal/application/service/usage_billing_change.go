@@ -163,6 +163,7 @@ func (s *usageBillingService) pricePlanChange(ctx context.Context, q *types.Usag
 		if err != nil {
 			return err
 		}
+		q.SeatsHeld = int(n)
 		q.SeatsCarried = int(n)
 		if q.SeatsCarried > q.Seats {
 			q.SeatsCarried = q.Seats
@@ -197,9 +198,16 @@ func (s *usageBillingService) pricePlanChange(ctx context.Context, q *types.Usag
 }
 
 // refuseReplacedMoved refuses a plan-change order whose credit was priced
-// against another subscription (or another end) than the scope has now.
-func refuseReplacedMoved(o *types.UsageOrder, cur *types.UsageSubscription) error {
+// against another subscription (or another end) than the scope has now,
+// and an order priced with nothing to replace (a renewal, a first package)
+// that would now replace a running package of another plan without credit.
+func refuseReplacedMoved(o *types.UsageOrder, cur *types.UsageSubscription, now time.Time) error {
 	if o.ReplacesSubscriptionID == nil {
+		if cur != nil && cur.IsCurrentAt(now) && !renewsSubscription(cur, o.PlanID, o.Mode, now) {
+			return apperrors.NewConflictError(fmt.Sprintf(
+				"the package changed since order %s was priced; cancel it and order again", o.OrderCode)).
+				WithDetails(map[string]string{"reason": "subscription_changed"})
+		}
 		return nil
 	}
 	same := cur != nil && cur.ID == *o.ReplacesSubscriptionID

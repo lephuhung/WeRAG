@@ -203,16 +203,19 @@ export function BillingPage() {
   // package in use ticks the agents it holds, so they do not stop at the
   // old end unnoticed
   const currentPlanId = scopeAddons?.subscription?.plan_id ?? "";
-  const heldIds = useMemo(() => (scopeAddons?.held ?? []).map((h) => h.agent_id), [scopeAddons]);
+  // a string key: every load() brings a new array, and an unticked agent
+  // must not be ticked again by a refresh
+  const heldKey = (scopeAddons?.held ?? []).map((h) => h.agent_id).sort().join(",");
   useEffect(() => {
     setAddonIds((cur) => {
       const offered = plan?.addons ?? [];
       const kept = keepOffered(cur, offered);
       if (!plan || plan.id !== currentPlanId) return kept;
-      return keepOffered([...new Set([...kept, ...heldIds])], offered);
+      const held = heldKey ? heldKey.split(",") : [];
+      return keepOffered([...new Set([...kept, ...held])], offered);
     });
     setKeepIds(null);
-  }, [plan, currentPlanId, heldIds]);
+  }, [plan, currentPlanId, heldKey]);
   const renewing = !!plan && plan.id === currentPlanId;
 
   // ...and a month count the new plan is sold for (a yearly-only plan → 12)
@@ -711,6 +714,9 @@ export function BillingPage() {
             </div>
           )}
           {!!quote?.seats_carried && <p className="caption mt-2 text-muted">{t("bill.seatsCarried", { n: quote.seats_carried })}</p>}
+          {!!quote?.seats_held && quote.seats_held > (quote.seats_carried ?? 0) && (
+            <p className="caption mt-1 text-warning">{t("bill.seatsDropped", { n: quote.seats_held - (quote.seats_carried ?? 0), total: quote.seats_held })}</p>
+          )}
           {quote && (
             <div className={`mt-4 space-y-1 border-t border-hairline pt-3 text-[14px] ${quoting ? "opacity-50" : ""}`} aria-busy={quoting}>
               {renderLines(quote.addons)}

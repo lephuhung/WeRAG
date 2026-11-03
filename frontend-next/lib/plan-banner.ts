@@ -105,7 +105,9 @@ export function planBanner(input: PlanBannerInput): PlanBanner | null {
   // an admin whose Tổ chức has no package of its own (their personal package
   // or sign-up gift stands in) is sent to buy for the Tổ chức: a personal
   // package would not cover the members
-  const adminWithoutTenantPlan = input.isTenantAdmin && !!input.hasTenant && ent?.source === "user" && !ent.lapsed_tenant;
+  // (only when the personal package is gone or just a welcome: renewing a
+  // running personal package stays the admin's own choice)
+  const adminWithoutTenantPlan = input.isTenantAdmin && !!input.hasTenant && (!ent || (ent.source === "user" && !ent.lapsed_tenant));
 
   const make = (
     kind: PlanBannerKind,
@@ -113,13 +115,14 @@ export function planBanner(input: PlanBannerInput): PlanBanner | null {
     extra: Partial<PlanBanner> = {},
     dismissValue = day,
   ): PlanBanner => {
-    const scope = adminWithoutTenantPlan ? "tenant" : (ent?.source ?? "user");
+    const toTenant = adminWithoutTenantPlan && (kind === "no_plan" || kind === "expired" || kind === "welcome");
+    const scope = toTenant ? "tenant" : (ent?.source ?? "user");
     return {
       kind,
       tone,
       canBuy: scope === "user" || input.isTenantAdmin,
       scope,
-      planId: adminWithoutTenantPlan ? "" : (ent?.plan_id ?? ""),
+      planId: toTenant ? "" : (ent?.plan_id ?? ""),
       planName: ent?.plan_name ?? "",
       endsAt: ent?.ends_at ?? null,
       startsAt: null,
@@ -141,7 +144,7 @@ export function planBanner(input: PlanBannerInput): PlanBanner | null {
     if (!ent) {
       // a Tổ chức admin buys for the Tổ chức (a personal package would not
       // cover the members)
-      return input.enforced ? make("no_plan", "warning", { canBuy: true, scope: input.isTenantAdmin && input.hasTenant ? "tenant" : "user" }) : null;
+      return input.enforced ? make("no_plan", "warning", { canBuy: true }) : null;
     }
     // a Tổ chức package that lapsed while the admin's own package stands in:
     // the admin still has to renew it (members just use their own)

@@ -597,6 +597,9 @@ export interface UsageQuote {
   held_addons?: UsageHeldAddonChoice[];
   /** Seats already assigned that the new seat package keeps. */
   seats_carried?: number;
+  /** Seats assigned on the previous seat package (more than seats_carried:
+   * the latest assigned lose theirs). */
+  seats_held?: number;
   /** When the package ends if the order is confirmed now. */
   subscription_ends_at?: string | null;
 }

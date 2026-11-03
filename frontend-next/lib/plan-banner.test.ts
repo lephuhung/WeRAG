@@ -162,6 +162,12 @@ test("a Tổ chức admin without a Tổ chức package is sent to buy for the T
   assert.equal(gift?.kind, "expired");
   assert.equal(gift?.scope, "tenant");
   assert.equal(gift?.planId, "");
+  // a running personal package of an admin: renewing it stays personal
+  const expiring = planBanner(input({ isTenantAdmin: true, hasTenant: true,
+    entitlement: ent({ ends_at: new Date(NOW.getTime() + 3 * DAY).toISOString() }) }));
+  assert.equal(expiring?.kind, "expiring");
+  assert.equal(expiring?.scope, "user");
+  assert.equal(expiring?.planId, "plan1");
   // a tenantless person or a member keeps the personal scope
   assert.equal(planBanner(input({ entitlement: null }))?.scope, "user");
   assert.equal(planBanner(input({ isTenantAdmin: true, hasTenant: false, entitlement: null }))?.scope, "user");

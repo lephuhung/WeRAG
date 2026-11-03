@@ -549,7 +549,7 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 		return "", err
 	}
 	// a plan change was credited against the package it replaces
-	if err := refuseReplacedMoved(o, cur); err != nil {
+	if err := refuseReplacedMoved(o, cur, now); err != nil {
 		return "", err
 	}
 	if renewsSubscription(cur, o.PlanID, o.Mode, now) {
