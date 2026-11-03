@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -23,6 +24,12 @@ const (
 	emailAdminBillingPath = "/platform/admin?section=billing"
 	emailBuyPlanPath      = "/platform/system/workspace/billing"
 )
+
+// emailReceiptPath is the printable receipt page of a paid order
+// (frontend-next app/billing/receipt/[code]).
+func emailReceiptPath(code string) string {
+	return "/billing/receipt/" + url.PathEscape(code)
+}
 
 const (
 	// emailEventTimeout bounds one background notification (all its mails);
@@ -299,7 +306,9 @@ func (n *EmailNotifier) OrderPaid(ctx context.Context, order *types.UsageOrderVi
 		if len(to) == 0 {
 			return
 		}
-		_, _ = n.sendEach(ctx, cfg, orderPaidEmail(&o, n.paidUntil(ctx, &o), n.link(emailBuyPlanPath)), to)
+		c := orderPaidEmail(&o, n.paidUntil(ctx, &o), n.link(emailBuyPlanPath))
+		c.withReceipt(n.link(emailReceiptPath(o.OrderCode)))
+		_, _ = n.sendEach(ctx, cfg, c, to)
 	})
 }
 

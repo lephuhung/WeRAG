@@ -1,0 +1,11 @@
+DROP INDEX IF EXISTS idx_usage_orders_invoice_to_issue;
+ALTER TABLE usage_orders DROP COLUMN IF EXISTS invoice_date;
+ALTER TABLE usage_orders DROP COLUMN IF EXISTS invoice_series;
+ALTER TABLE usage_orders DROP COLUMN IF EXISTS invoice_no;
+ALTER TABLE usage_orders DROP COLUMN IF EXISTS invoice_issued_by;
+ALTER TABLE usage_orders DROP COLUMN IF EXISTS invoice_issued_at;
+ALTER TABLE usage_orders DROP COLUMN IF EXISTS invoice_email;
+ALTER TABLE usage_orders DROP COLUMN IF EXISTS invoice_address;
+ALTER TABLE usage_orders DROP COLUMN IF EXISTS invoice_tax_code;
+ALTER TABLE usage_orders DROP COLUMN IF EXISTS invoice_company_name;
+ALTER TABLE usage_orders DROP COLUMN IF EXISTS invoice_requested;

@@ -256,8 +256,9 @@ export function signInPath(): string {
   try {
     const path = window.location.pathname ?? "";
     if (path === "/word" || path.startsWith("/word/")) return "/word";
-    // an expired session opened from a link (email) comes back to the page
-    if (path.startsWith("/platform/")) return loginPathFor(path, window.location.search ?? "");
+    // an expired session opened from a link (email: console pages, payment
+    // receipts) comes back to the page
+    if (path.startsWith("/platform/") || path.startsWith("/billing/")) return loginPathFor(path, window.location.search ?? "");
   } catch {
     /* no location (tests) */
   }

@@ -28,8 +28,11 @@ import {
   formatPriceVND,
   AWAITING_ORDERS_EVENT,
   billingErrorKey,
-  getAwaitingAdminOrderCount,
+  getBillingAdminCounts,
   listAllUsageOrders,
+  markInvoiceIssued,
+  receiptHref,
+  unmarkInvoiceIssued,
   reopenUsageOrder,
   listUsagePlans,
   listUsagePromos,
@@ -40,7 +43,8 @@ import {
   type UsagePromoCode,
   type UsagePromoInput,
 } from "@/lib/api/usage";
-import { formatDateTime } from "@/lib/datetime";
+import { formatDate, formatDateTime } from "@/lib/datetime";
+import { invoiceNumberLabel, invoiceState, normalizeTaxCode, validTaxCode } from "@/lib/billing-invoice";
 import { ApiError } from "@/lib/api-client";
 import { pendingPlanOrderCode } from "@/lib/billing-order";
 import { WebhookGuide } from "./admin-billing-webhook-guide";
@@ -50,8 +54,21 @@ function errDetails(e: unknown): { reason?: string; order_code?: string; receive
   return (e.payload as { error?: { details?: { reason?: string; order_code?: string; received_vnd?: number } } } | undefined)?.error?.details;
 }
 
-type BankForm = { bankBin: string; bankName: string; accountNo: string; accountName: string; orderTTLHours: string; contact: string };
-const emptyBank: BankForm = { bankBin: "", bankName: "", accountNo: "", accountName: "", orderTTLHours: "72", contact: "" };
+type BankForm = {
+  bankBin: string; bankName: string; accountNo: string; accountName: string; orderTTLHours: string; contact: string;
+  sellerName: string; sellerTaxCode: string; sellerAddress: string;
+};
+const emptyBank: BankForm = {
+  bankBin: "", bankName: "", accountNo: "", accountName: "", orderTTLHours: "72", contact: "",
+  sellerName: "", sellerTaxCode: "", sellerAddress: "",
+};
+
+/* The order list filter: a status, or the paid orders whose VAT invoice
+ * is still to issue. */
+type OrderFilter = UsageOrderStatus | "" | "invoices";
+const needsInvoice = (o: UsageOrder) => o.status === "paid" && invoiceState(o) === "requested";
+
+type InvoiceForm = { no: string; series: string; date: string };
 
 /** 32 random bytes as hex: what the webhook secret setting accepts. */
 function newWebhookSecret(): string {
@@ -78,6 +95,30 @@ function fmtDateTime(v: string | null | undefined): string {
 type PromoForm = { code: string; name: string; discount_type: "percent" | "amount"; discount_value: number; plan_ids: string[]; max_uses: number; starts_at: string; ends_at: string; is_active: boolean; note: string };
 const emptyPromo: PromoForm = { code: "", name: "", discount_type: "percent", discount_value: 10, plan_ids: [], max_uses: 0, starts_at: todayVN(), ends_at: "", is_active: true, note: "" };
 
+/** A small copy button for one invoice detail. */
+function CopyValue({ value }: { value: string }) {
+  const { t } = useT();
+  const [done, setDone] = useState(false);
+  if (!value) return null;
+  return (
+    <button
+      type="button"
+      className="btn btn-outline btn-sm px-2"
+      title={t("bill.copy")}
+      aria-label={`${t("bill.copy")}: ${value}`}
+      onClick={() =>
+        void copyToClipboard(value).then((ok) => {
+          if (!ok) return;
+          setDone(true);
+          setTimeout(() => setDone(false), 1500);
+        })
+      }
+    >
+      <IconCopy className="h-3.5 w-3.5" /> {done ? t("bill.copied") : t("bill.copy")}
+    </button>
+  );
+}
+
 export default function AdminBilling() {
   const { t } = useT();
   const [allowed, setAllowed] = useState<boolean | null>(null);
@@ -100,33 +141,42 @@ export default function AdminBilling() {
   const [plans, setPlans] = useState<UsagePlan[]>([]);
   const [promos, setPromos] = useState<UsagePromoCode[]>([]);
   const [orders, setOrders] = useState<UsageOrder[]>([]);
-  const [filter, setFilter] = useState<UsageOrderStatus | "">("");
+  const [filter, setFilter] = useState<OrderFilter>("");
   const [activeTab, setActiveTab] = useState<"orders" | "promos">("orders");
   const [promoOpen, setPromoOpen] = useState(false);
   const [promoEditing, setPromoEditing] = useState<UsagePromoCode | null>(null);
   const [promoForm, setPromoForm] = useState<PromoForm>(emptyPromo);
 
   // pending orders only a SuperAdmin can move on (0 đồng, money received)
+  // and paid orders whose VAT invoice is still to issue
   const [awaitingCount, setAwaitingCount] = useState(0);
-  const loadOrders = useCallback(async (f: UsageOrderStatus | "") => {
-    const [list, n] = await Promise.all([listAllUsageOrders(f || undefined), getAwaitingAdminOrderCount()]);
-    setOrders(list);
-    setAwaitingCount(n);
+  const [invoiceCount, setInvoiceCount] = useState(0);
+  const loadOrders = useCallback(async (f: OrderFilter) => {
+    const status = f === "invoices" ? "paid" : f || undefined;
+    const [list, n] = await Promise.all([listAllUsageOrders(status, f === "invoices"), getBillingAdminCounts()]);
+    setOrders(f === "invoices" ? list.filter(needsInvoice) : list);
+    setAwaitingCount(n.awaiting_admin);
+    setInvoiceCount(n.invoices_to_issue);
     window.dispatchEvent(new CustomEvent(AWAITING_ORDERS_EVENT, { detail: n }));
   }, []);
+  // the VAT invoice dialog of one order
+  const [invoiceOrder, setInvoiceOrder] = useState<UsageOrder | null>(null);
+  const [invoiceForm, setInvoiceForm] = useState<InvoiceForm>({ no: "", series: "", date: "" });
 
   const load = useCallback(async () => {
     try {
       const K = BILLING_SETTING_KEYS;
-      const [bin, name, no, acct, ttl, contact, secret, pl, pr] = await Promise.all([
+      const [bin, name, no, acct, ttl, contact, secret, sName, sTax, sAddr, pl, pr] = await Promise.all([
         getSystemSetting(K.bankBin), getSystemSetting(K.bankName), getSystemSetting(K.accountNo),
         getSystemSetting(K.accountName), getSystemSetting(K.orderTTLHours), getSystemSetting(K.contact),
-        getSystemSetting(K.webhookSecret), listUsagePlans(true), listUsagePromos(true),
+        getSystemSetting(K.webhookSecret), getSystemSetting(K.sellerName), getSystemSetting(K.sellerTaxCode),
+        getSystemSetting(K.sellerAddress), listUsagePlans(true), listUsagePromos(true),
       ]);
       setSecretMasked(String(secret.value ?? ""));
       const bankForm: BankForm = {
         bankBin: String(bin.value ?? ""), bankName: String(name.value ?? ""), accountNo: String(no.value ?? ""),
         accountName: String(acct.value ?? ""), orderTTLHours: String(ttl.value ?? "72"), contact: String(contact.value ?? ""),
+        sellerName: String(sName.value ?? ""), sellerTaxCode: String(sTax.value ?? ""), sellerAddress: String(sAddr.value ?? ""),
       };
       setBank(bankForm);
       setBankBase(bankForm);
@@ -173,6 +223,7 @@ export default function AdminBilling() {
   };
 
   const bankDirty = JSON.stringify(bank) !== JSON.stringify(bankBase);
+  const sellerTaxBad = bank.sellerTaxCode.trim() !== "" && !validTaxCode(bank.sellerTaxCode);
 
   const saveBank = async (): Promise<boolean> => {
     const ok = await run(async () => {
@@ -183,9 +234,12 @@ export default function AdminBilling() {
       await updateSystemSetting(K.accountName, bank.accountName.trim());
       await updateSystemSetting(K.orderTTLHours, Math.max(1, Number(bank.orderTTLHours) || 72));
       await updateSystemSetting(K.contact, bank.contact.trim());
+      await updateSystemSetting(K.sellerName, bank.sellerName.trim());
+      await updateSystemSetting(K.sellerTaxCode, normalizeTaxCode(bank.sellerTaxCode));
+      await updateSystemSetting(K.sellerAddress, bank.sellerAddress.trim());
     });
     if (!ok) return false;
-    setBankBase({ ...bank, orderTTLHours: String(Math.max(1, Number(bank.orderTTLHours) || 72)) });
+    setBankBase({ ...bank, orderTTLHours: String(Math.max(1, Number(bank.orderTTLHours) || 72)), sellerTaxCode: normalizeTaxCode(bank.sellerTaxCode) });
     toast.success(t("common.saved"));
     return true;
   };
@@ -322,9 +376,43 @@ export default function AdminBilling() {
     });
     if (ok) toast.success(t("common.saved"));
   };
-  const changeFilter = (f: UsageOrderStatus | "") => {
+  const changeFilter = (f: OrderFilter) => {
     setFilter(f);
     void run(() => loadOrders(f));
+  };
+
+  // ---- VAT invoices
+  const openInvoice = (o: UsageOrder) => {
+    setInvoiceOrder(o);
+    setInvoiceForm({
+      no: o.invoice_no ?? "",
+      series: o.invoice_series ?? "",
+      date: o.invoice_date ? dateOf(o.invoice_date) : todayVN(),
+    });
+  };
+  const saveInvoiceIssued = async () => {
+    if (!invoiceOrder) return;
+    const ok = await run(async () => {
+      await markInvoiceIssued(invoiceOrder.id, { invoice_no: invoiceForm.no.trim(), invoice_series: invoiceForm.series.trim(), date: invoiceForm.date });
+      await loadOrders(filter);
+    });
+    if (ok) {
+      toast.success(t("common.saved"));
+      setInvoiceOrder(null);
+    }
+  };
+  const undoInvoiceIssued = async () => {
+    if (!invoiceOrder) return;
+    const yes = await confirm({ title: t("badm.invoiceUnmark"), message: t("badm.invoiceUnmarkConfirm", { code: invoiceOrder.order_code }), danger: true });
+    if (!yes) return;
+    const ok = await run(async () => {
+      await unmarkInvoiceIssued(invoiceOrder.id);
+      await loadOrders(filter);
+    });
+    if (ok) {
+      toast.success(t("common.saved"));
+      setInvoiceOrder(null);
+    }
   };
 
   const planName = (id: string) => plans.find((p) => p.id === id)?.name ?? id;
@@ -379,6 +467,7 @@ export default function AdminBilling() {
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <h3 className="text-[14px] font-medium text-ink">{t("badm.orders")}</h3>
           {awaitingCount > 0 && <span className="badge-pill badge-warning text-[11px]">{t("badm.awaitingAdmin", { n: awaitingCount })}</span>}
+          {invoiceCount > 0 && <span className="badge-pill badge-warning text-[11px]">{t("badm.invoicesToIssue", { n: invoiceCount })}</span>}
           <PillGroup ariaLabel={t("common.filters")}>
             <Pill active={filter === ""} onClick={() => changeFilter("")}>
               {t("badm.filterAll")}
@@ -388,6 +477,9 @@ export default function AdminBilling() {
                 {t(statusKey(s))}
               </Pill>
             ))}
+            <Pill active={filter === "invoices"} onClick={() => changeFilter("invoices")}>
+              {t("badm.filterInvoices")}
+            </Pill>
           </PillGroup>
           <button
             type="button"
@@ -435,6 +527,13 @@ export default function AdminBilling() {
               <td className="px-5 py-3.5 align-middle">
                 <span className={`badge-pill text-[11px] ${o.status === "paid" ? "text-success" : o.status === "pending" ? "text-warning" : "text-muted"}`}>{t(statusKey(o.status))}</span>
                 {o.status === "paid" && o.paid_at ? <span className="caption block text-muted-soft">{fmtDateTime(o.paid_at)}</span> : null}
+                {needsInvoice(o) && <span className="badge-pill badge-warning mt-1 inline-block text-[11px]">{t("badm.invoiceToIssue")}</span>}
+                {o.status === "paid" && invoiceState(o) === "issued" && (
+                  <span className="caption block text-success">
+                    {t("badm.invoiceIssuedShort")}
+                    {invoiceNumberLabel(o) ? ` ${invoiceNumberLabel(o)}` : ""}
+                  </span>
+                )}
               </td>
               <td className="caption whitespace-nowrap px-5 py-3.5 align-middle text-muted">{fmtDateTime(o.created_at)}</td>
               <td className="px-5 py-3.5 text-right align-middle">
@@ -446,6 +545,18 @@ export default function AdminBilling() {
                 )}
                 {o.status === "expired" && (
                   <button type="button" className="btn btn-outline btn-sm w-full px-2" disabled={busy} onClick={() => void reopenOrder(o)}>{t("badm.reopen")}</button>
+                )}
+                {o.status === "paid" && (
+                  <div className="flex flex-col items-stretch gap-1.5">
+                    {o.invoice_requested && (
+                      <button type="button" className={`btn btn-sm w-full px-2 ${needsInvoice(o) ? "btn-primary" : "btn-outline"}`} disabled={busy} onClick={() => openInvoice(o)}>
+                        {t("badm.invoiceOpen")}
+                      </button>
+                    )}
+                    <a className="btn btn-outline btn-sm w-full px-2" href={receiptHref(o.order_code)} target="_blank" rel="noopener">
+                      {t("bill.receipt")}
+                    </a>
+                  </div>
                 )}
               </td>
             </>
@@ -524,11 +635,28 @@ export default function AdminBilling() {
             <input id="bank-contact" className="input w-full" value={bank.contact} onChange={(e) => setBank({ ...bank, contact: e.target.value })} />
           </div>
         </div>
+        <h4 className="mt-5 text-[13.5px] font-medium text-ink">{t("badm.sellerTitle")}</h4>
+        <p className="caption mb-3 text-muted">{t("badm.sellerDesc")}</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="min-w-0 sm:col-span-2">
+            <FieldLabel htmlFor="seller-name">{t("badm.sellerName")}</FieldLabel>
+            <input id="seller-name" className="input w-full" value={bank.sellerName} onChange={(e) => setBank({ ...bank, sellerName: e.target.value })} />
+          </div>
+          <div className="min-w-0">
+            <FieldLabel htmlFor="seller-tax">{t("badm.sellerTaxCode")}</FieldLabel>
+            <input id="seller-tax" className="input w-full" inputMode="numeric" aria-invalid={sellerTaxBad || undefined} value={bank.sellerTaxCode} onChange={(e) => setBank({ ...bank, sellerTaxCode: e.target.value })} />
+            {sellerTaxBad && <span className="caption mt-1 block text-error">{t("bill.err.invoice_tax_code_invalid")}</span>}
+          </div>
+          <div className="min-w-0">
+            <FieldLabel htmlFor="seller-address">{t("badm.sellerAddress")}</FieldLabel>
+            <input id="seller-address" className="input w-full" value={bank.sellerAddress} onChange={(e) => setBank({ ...bank, sellerAddress: e.target.value })} />
+          </div>
+        </div>
         <div className="mt-5 flex items-center justify-end gap-3">
           <button
             type="button"
             className="btn btn-primary"
-            disabled={busy || !bankDirty}
+            disabled={busy || !bankDirty || sellerTaxBad}
             onClick={() => void saveBank().then((ok) => { if (ok) setBankOpen(false); })}
           >
             {t("common.save")}
@@ -568,6 +696,65 @@ export default function AdminBilling() {
         )}
         <p className="caption mt-3 text-muted-soft">{t("badm.webhookHelp")}</p>
         <WebhookGuide key={secretShown} enabled={!!secretMasked} secretShown={secretShown} />
+      </Modal>
+
+      {/* VAT invoice of a paid order */}
+      <Modal open={!!invoiceOrder} title={invoiceOrder ? t("badm.invoiceTitle", { code: invoiceOrder.order_code }) : ""} onClose={() => setInvoiceOrder(null)} width="w-[640px]">
+        {invoiceOrder && (
+          <>
+            <p className="caption mb-3 text-muted">{t("badm.invoiceDesc")}</p>
+            <dl className="grid grid-cols-[max-content_1fr_max-content] items-center gap-x-3 gap-y-1.5 text-[13.5px]">
+              {(
+                [
+                  ["bill.invoiceCompany", invoiceOrder.invoice_company_name ?? ""],
+                  ["bill.invoiceTaxCode", invoiceOrder.invoice_tax_code ?? ""],
+                  ["bill.invoiceAddress", invoiceOrder.invoice_address ?? ""],
+                  ["bill.invoiceEmail", invoiceOrder.invoice_email ?? ""],
+                  ["badm.invoiceTotal", String(invoiceOrder.total_vnd)],
+                ] as [LocaleKey, string][]
+              ).map(([k, v]) => (
+                <div key={k} className="contents">
+                  <dt className="text-muted">{t(k)}</dt>
+                  <dd className="min-w-0 break-words text-ink">{k === "badm.invoiceTotal" ? formatPriceVND(invoiceOrder.total_vnd) : v}</dd>
+                  <dd><CopyValue value={v} /></dd>
+                </div>
+              ))}
+              <dt className="text-muted">{t("badm.invoicePaidAt")}</dt>
+              <dd className="text-ink">{fmtDateTime(invoiceOrder.paid_at)}</dd>
+              <dd />
+            </dl>
+            {invoiceState(invoiceOrder) === "issued" && (
+              <p className="caption mt-3 text-success">
+                {t("badm.invoiceIssuedOn", { date: formatDate(invoiceOrder.invoice_date ?? invoiceOrder.invoice_issued_at ?? null) })}
+                {invoiceNumberLabel(invoiceOrder) ? ` · ${invoiceNumberLabel(invoiceOrder)}` : ""}
+              </p>
+            )}
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="min-w-0">
+                <FieldLabel htmlFor="inv-series">{t("badm.invoiceSeries")}</FieldLabel>
+                <input id="inv-series" className="input w-full" maxLength={16} value={invoiceForm.series} onChange={(e) => setInvoiceForm({ ...invoiceForm, series: e.target.value })} placeholder="1C26TAA" />
+              </div>
+              <div className="min-w-0">
+                <FieldLabel htmlFor="inv-no">{t("badm.invoiceNo")}</FieldLabel>
+                <input id="inv-no" className="input w-full" maxLength={32} value={invoiceForm.no} onChange={(e) => setInvoiceForm({ ...invoiceForm, no: e.target.value })} />
+              </div>
+              <div className="min-w-0">
+                <FieldLabel htmlFor="inv-date">{t("badm.invoiceDate")}</FieldLabel>
+                <input id="inv-date" className="input w-full" type="date" value={invoiceForm.date} onChange={(e) => setInvoiceForm({ ...invoiceForm, date: e.target.value })} />
+              </div>
+            </div>
+            <div className="mt-5 flex flex-wrap items-center justify-end gap-3">
+              {invoiceState(invoiceOrder) === "issued" && (
+                <button type="button" className="btn btn-danger mr-auto" disabled={busy} onClick={() => void undoInvoiceIssued()}>
+                  {t("badm.invoiceUnmark")}
+                </button>
+              )}
+              <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void saveInvoiceIssued()}>
+                {invoiceState(invoiceOrder) === "issued" ? t("common.save") : t("badm.invoiceMark")}
+              </button>
+            </div>
+          </>
+        )}
       </Modal>
 
       {/* Promo modal */}

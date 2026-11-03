@@ -29,6 +29,9 @@ func RegisterBillingRoutes(r *gin.RouterGroup, h *handler.UsageBillingHandler, g
 	billing.POST("/orders", h.CreateOrder)
 	billing.GET("/orders/:code", h.GetOrder)
 	billing.POST("/orders/:code/cancel", h.CancelOrder)
+	billing.PUT("/orders/:code/invoice", h.UpdateOrderInvoice)
+	billing.GET("/orders/:code/receipt", h.OrderReceipt)
+	billing.GET("/invoice-details", h.InvoiceDetails)
 
 	admin := r.Group("/system/admin/usage", g.SystemAdmin())
 	admin.GET("/orders", h.AdminListOrders)
@@ -36,6 +39,8 @@ func RegisterBillingRoutes(r *gin.RouterGroup, h *handler.UsageBillingHandler, g
 	admin.POST("/orders/:id/confirm", h.AdminConfirmOrder)
 	admin.POST("/orders/:id/cancel", h.AdminCancelOrder)
 	admin.POST("/orders/:id/reopen", h.AdminReopenOrder)
+	admin.POST("/orders/:id/invoice-issued", h.AdminMarkInvoiceIssued)
+	admin.DELETE("/orders/:id/invoice-issued", h.AdminUnmarkInvoiceIssued)
 	admin.GET("/payments", h.AdminListPayments)
 	admin.GET("/promos", h.ListPromos)
 	admin.POST("/promos", h.CreatePromo)
