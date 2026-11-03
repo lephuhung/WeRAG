@@ -109,6 +109,12 @@ test("a package bought ahead says when it starts, with nothing to buy", () => {
 
 test("seat package without a seat", () => {
   assert.equal(planBanner(input({ entitlement: ent({ source: "tenant", mode: "seat", has_seat: false }) }))?.kind, "no_seat");
+  // the admin's button leads to adding seats to the package in use
+  const admin = planBanner(input({ isTenantAdmin: true, entitlement: ent({ source: "tenant", mode: "seat", has_seat: false }) }));
+  assert.equal(admin?.canBuy, true);
+  assert.equal(admin?.addSeats, true);
+  // other banners lead to a plan
+  assert.equal(planBanner(input({ entitlement: null }))?.addSeats, false);
 });
 
 test("no package while enforced offers a personal one", () => {

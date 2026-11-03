@@ -140,7 +140,8 @@ export function PlanBannerBar() {
   };
 
   const billingOn = info?.enabled === true;
-  const buy = () => openBilling({ scope: banner.scope, planId: banner.kind === "welcome" ? "" : banner.planId });
+  const buy = () =>
+    openBilling({ scope: banner.scope, planId: banner.kind === "welcome" ? "" : banner.planId, ...(banner.addSeats ? { addSeats: true } : {}) });
   const plan = banner.planName;
   // shown as the last day the package can be used
   const date = banner.endsAt ? formatDate(lastUsableDay(banner.endsAt)) : "";

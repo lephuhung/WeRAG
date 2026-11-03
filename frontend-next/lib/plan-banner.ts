@@ -41,6 +41,9 @@ export type PlanBanner = {
   /** Scope and plan the billing page should open on. */
   scope: "tenant" | "user";
   planId: string;
+  /** The buy button leads to "add seats to the package in use" (no_seat on
+   * a Tổ chức seat package) rather than to a plan. */
+  addSeats: boolean;
   planName: string;
   endsAt: string | null;
   /** When a package that has not started yet begins (not_started only). */
@@ -123,6 +126,7 @@ export function planBanner(input: PlanBannerInput): PlanBanner | null {
       canBuy: scope === "user" || input.isTenantAdmin,
       scope,
       planId: toTenant ? "" : (ent?.plan_id ?? ""),
+      addSeats: kind === "no_seat" && scope === "tenant",
       planName: ent?.plan_name ?? "",
       endsAt: ent?.ends_at ?? null,
       startsAt: null,

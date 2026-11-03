@@ -123,7 +123,9 @@ func orderScopeLabel(o *types.UsageOrderView) string {
 // add-ons ("Trợ lý chuyên ngành").
 func orderWhatLabel(o *types.UsageOrderView) string {
 	var parts []string
-	if o.Kind != types.UsageOrderKindAddon {
+	if o.Kind == types.UsageOrderKindSeats {
+		parts = append(parts, fmt.Sprintf("%s · thêm %d chỗ đến hết kỳ hiện tại", o.PlanName, o.Seats))
+	} else if o.Kind != types.UsageOrderKindAddon {
 		p := o.PlanName
 		if o.Months > 0 {
 			p += fmt.Sprintf(" · %d tháng", o.Months)

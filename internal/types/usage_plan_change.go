@@ -23,10 +23,15 @@ import (
 const (
 	UsageCreditPlan  = "plan"
 	UsageCreditAddon = "addon"
+	// UsageCreditAddonUnits: a kept add-on carried to a plan with fewer
+	// units (seats) — the dropped units' unused paid days. The add-on itself
+	// is kept (not in DroppedAddons).
+	UsageCreditAddonUnits = "addon_units"
 )
 
 // UsageCreditLine is one part of a plan-change credit: the unused days of
-// the replaced plan, or of an add-on the order drops.
+// the replaced plan, of an add-on the order drops, or of the units a kept
+// add-on loses (Units = the units not carried over).
 type UsageCreditLine struct {
 	Kind    string `json:"kind"`
 	AgentID string `json:"agent_id,omitempty"`
@@ -129,4 +134,9 @@ type UsageHeldAddonChoice struct {
 	CreditVND int64      `json:"credit_vnd"`
 	// BoughtAgain: the order buys the agent again, so it is always kept.
 	BoughtAgain bool `json:"bought_again,omitempty"`
+	// DroppedUnits: kept on a plan with fewer units (seats) than the
+	// replaced one — the units not carried over, credited UnitsCreditVND
+	// (a credit line of kind addon_units).
+	DroppedUnits   int   `json:"dropped_units,omitempty"`
+	UnitsCreditVND int64 `json:"units_credit_vnd,omitempty"`
 }

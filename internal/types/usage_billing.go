@@ -145,10 +145,13 @@ type UsageOrder struct {
 	ExpiresAt      *time.Time `json:"expires_at"`
 	SubscriptionID *string    `json:"subscription_id" gorm:"type:varchar(36)"`
 	Note           string     `json:"note"            gorm:"type:text"`
-	// Kind is "plan" (a plan, with optional add-ons) or "addon" (add-ons
-	// bought on the current subscription TargetSubscriptionID).
-	Kind                 string  `json:"kind"                   gorm:"type:varchar(16);default:'plan'"`
-	TargetSubscriptionID *string `json:"target_subscription_id" gorm:"type:varchar(36)"`
+	// Kind is "plan" (a plan, with optional add-ons), "addon" (add-ons
+	// bought on the current subscription TargetSubscriptionID) or "seats"
+	// (Seats more seats on it for the rest of its period; TargetEndsAt is
+	// the end it was priced to: confirming refuses another end).
+	Kind                 string     `json:"kind"                   gorm:"type:varchar(16);default:'plan'"`
+	TargetSubscriptionID *string    `json:"target_subscription_id" gorm:"type:varchar(36)"`
+	TargetEndsAt         *time.Time `json:"target_ends_at,omitempty"`
 	// Addons are the add-on lines, prices frozen when the order was made.
 	Addons UsageOrderAddonLines `json:"addons"   gorm:"type:jsonb"`
 	// CreditVND is taken off a plan change for the unused paid days of the
@@ -181,9 +184,11 @@ type UsageQuoteRequest struct {
 	Seats     int    `json:"seats"`
 	PromoCode string `json:"promo_code"`
 	Note      string `json:"note"`
-	// Kind "plan" (default) or "addon": add-ons on the scope's current
+	// Kind "plan" (default), "addon": add-ons on the scope's current
 	// subscription, priced for the rest of its period (PlanID, Months and
-	// Seats are then taken from the subscription).
+	// Seats are then taken from the subscription), or "seats": Seats more
+	// seats on the current seat subscription for the rest of its period
+	// (PlanID and Months are ignored).
 	Kind string `json:"kind"`
 	// AddonAgentIDs are the specialist agents bought with it.
 	AddonAgentIDs []string `json:"addon_agent_ids"`

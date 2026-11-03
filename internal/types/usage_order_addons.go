@@ -11,6 +11,10 @@ import (
 const (
 	UsageOrderKindPlan  = "plan"
 	UsageOrderKindAddon = "addon"
+	// UsageOrderKindSeats: extra seats (chỗ) on the scope's current seat
+	// subscription for the rest of its period, no extra month (Seats = the
+	// seats added; TargetSubscriptionID/TargetEndsAt what it was priced on).
+	UsageOrderKindSeats = "seats"
 )
 
 // Leftover factors of a mid-term add-on purchase (decision 7.3): the part

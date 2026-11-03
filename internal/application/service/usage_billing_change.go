@@ -69,7 +69,9 @@ func (s *usageBillingService) lastPaidPlanOrder(ctx context.Context, sub *types.
 	}
 	var best *types.UsageOrder
 	for _, o := range orders {
-		if o.Kind == types.UsageOrderKindAddon || o.SubscriptionID == nil || *o.SubscriptionID != sub.ID {
+		// add-on and seat orders price part of a period, not the plan's month
+		if o.Kind == types.UsageOrderKindAddon || o.Kind == types.UsageOrderKindSeats ||
+			o.SubscriptionID == nil || *o.SubscriptionID != sub.ID {
 			continue
 		}
 		if best == nil || paidAt(o).After(paidAt(best)) {

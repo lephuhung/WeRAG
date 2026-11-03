@@ -206,9 +206,13 @@ func (s *usageBillingService) priceAddonsWithPlan(
 			}
 			if bought[id] {
 				if !renewal {
-					q.HeldAddons = append(q.HeldAddons, types.UsageHeldAddonChoice{
+					choice := types.UsageHeldAddonChoice{
 						AgentID: id, Name: h.AgentName, EndsAt: covered, Kept: true, BoughtAgain: true,
-					})
+					}
+					if err := s.creditDroppedUnits(ctx, q, &choice, h, heldUnits, units, covered, now); err != nil {
+						return err
+					}
+					q.HeldAddons = append(q.HeldAddons, choice)
 				}
 				continue
 			}
@@ -242,21 +246,49 @@ func (s *usageBillingService) priceAddonsWithPlan(
 			if keepSet != nil {
 				kept = keepSet[id]
 			}
-			q.HeldAddons = append(q.HeldAddons, types.UsageHeldAddonChoice{
+			choice := types.UsageHeldAddonChoice{
 				AgentID: id, Name: h.AgentName, EndsAt: covered, Kept: kept,
 				CarryVND: line.AmountVND, CreditVND: credit.AmountVND,
-			})
+			}
 			if kept {
+				if err := s.creditDroppedUnits(ctx, q, &choice, h, heldUnits, units, covered, now); err != nil {
+					return err
+				}
+				q.HeldAddons = append(q.HeldAddons, choice)
 				if line.AmountVND > 0 {
 					q.Addons = append(q.Addons, line)
 				}
 				continue
 			}
+			q.HeldAddons = append(q.HeldAddons, choice)
 			q.CreditLines = append(q.CreditLines, credit)
 		}
 	}
 	q.AddonsVND = q.Addons.Total()
 	q.SubtotalVND += q.AddonsVND
+	return nil
+}
+
+// creditDroppedUnits credits, for a held add-on a plan change keeps (or
+// buys again) on a plan with fewer units (seats) than the replaced one, the
+// units not carried over for the days their paid right still had (review
+// F5): addonCreditLine for heldUnits − units, kind addon_units, so the
+// add-on itself is still carried over (DroppedAddons skips the line).
+func (s *usageBillingService) creditDroppedUnits(
+	ctx context.Context, q *types.UsageQuote, choice *types.UsageHeldAddonChoice,
+	h *types.UsageSubscriptionAddon, heldUnits, units int, covered *time.Time, now time.Time,
+) error {
+	if units >= heldUnits || covered == nil || !covered.After(now) {
+		return nil
+	}
+	line, err := s.addonCreditLine(ctx, h, heldUnits-units, *covered, now)
+	if err != nil {
+		return err
+	}
+	line.Kind = types.UsageCreditAddonUnits
+	q.CreditLines = append(q.CreditLines, line)
+	choice.DroppedUnits = heldUnits - units
+	choice.UnitsCreditVND = line.AmountVND
 	return nil
 }
 
@@ -394,6 +426,17 @@ func (s *usageBillingService) applyAddonOrder(ctx context.Context, o *types.Usag
 		return "", apperrors.NewConflictError(fmt.Sprintf(
 			"order %s adds agents to a subscription that is no longer current; cancel it and order again", o.OrderCode)).
 			WithDetails(map[string]string{"reason": "subscription_changed"})
+	}
+	// priced for the seats it had then: seats added since (a seat order)
+	// would get the agent for free
+	units := addonUnits(cur.Mode, cur.Seats)
+	for _, l := range o.Addons {
+		if !l.SeatsOnly && l.Units < units {
+			return "", apperrors.NewConflictError(fmt.Sprintf(
+				"the package has %d seats now but order %s pays the agents for %d; cancel it and order again",
+				cur.Seats, o.OrderCode, l.Units)).
+				WithDetails(map[string]string{"reason": "subscription_changed"})
+		}
 	}
 	if err := s.grantOrderAddons(ctx, o, cur, now, nil); err != nil {
 		return "", err
