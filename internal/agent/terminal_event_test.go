@@ -122,5 +122,6 @@ func TestExecuteLoop_AllEmptyResponses_FallbackIsSoleTerminalAnswer(t *testing.T
 
 	done, content := recorder.snapshot()
 	assert.Equal(t, 1, done, "retries exhausted must still emit exactly one terminal answer event")
-	assert.Contains(t, content, "unable to generate a response", "the terminal answer must be the fallback text")
+	assert.Contains(t, content, "chưa soạn được câu trả lời", "the terminal answer must be the fallback text")
+	assert.Equal(t, 1+maxEmptyResponseRetries, mock.callCount, "an empty answer keeps its nudge retries")
 }

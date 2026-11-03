@@ -104,6 +104,13 @@ type AgentEngine struct {
 	// failureGuard disables a tool after identicalFailureLimit identical
 	// failures in the turn (failure_guard.go).
 	failureGuard toolFailureGuard
+	// heldBackRetried records that this turn already reran a round whose
+	// answer was held back (degenerate_answer.go); thinkingRetry asks for
+	// thinking on the next round, roundThinking is it for the round
+	// running (every call of it, transient-error retries included).
+	heldBackRetried bool
+	thinkingRetry   bool
+	roundThinking   bool
 }
 
 // maxSteerOverruns caps loop-end injects past MaxIterations. One extra round
@@ -725,6 +732,9 @@ func (e *AgentEngine) runReActIteration(
 	// a calculation tool checks the basis of its legal figures against what
 	// this turn's tools returned (tools/turn_evidence.go)
 	ctx = agenttools.WithTurnSteps(ctx, state.RoundSteps)
+	// an echoed question or an English plan is held back (degenerate_answer.go)
+	ctx = withAnswerCheckQuery(ctx, query)
+	e.roundThinking, e.thinkingRetry = e.thinkingRetry, false
 
 	var (
 		response      *types.ChatResponse
@@ -823,6 +833,16 @@ func (e *AgentEngine) runReActIteration(
 		}
 	}
 	response = resp
+	// a non-streamed answer (calc gate, grounding gate) gets the check the
+	// stream applies
+	// (an empty answer keeps its own nudge-and-retry path below)
+	if !response.AnswerStreamed && len(response.ToolCalls) == 0 && response.AnswerHeldBack == "" && response.Content != "" {
+		cleaned, kind := cleanFinalAnswer(ctx, query, agenttools.StripThinkBlocks(response.Content))
+		response.Content = cleaned
+		if kind != answerOK {
+			response.AnswerHeldBack = kind.String()
+		}
+	}
 	e.logContextDrift(ctx, round, currentTokens, response.Usage)
 	// Calibration needs only a prompt count; some providers report no total.
 	e.calibrateEstimator(ctx, round, *messagesPtr, tools, response.Usage, state)
@@ -893,6 +913,31 @@ func (e *AgentEngine) runReActIteration(
 		return iterOutcomeBreak, nil
 	}
 
+	// An answer held back by the lead check (degenerate_answer.go): the round
+	// reruns once with thinking on, then a fixed sentence answers.
+	if response.AnswerHeldBack != "" && len(response.ToolCalls) == 0 && isNaturalStopFinishReason(response.FinishReason) {
+		common.PipelineWarn(ctx, "Agent", "answer_held_back", map[string]interface{}{
+			"round": round, "kind": response.AnswerHeldBack, "retried": e.heldBackRetried,
+		})
+		if !e.heldBackRetried {
+			e.heldBackRetried = true
+			e.thinkingRetry = true
+			state.PendingSteerMessages = step.UserMessagesBefore
+			logger.Warnf(ctx, "[Agent][Round-%d] %s answer held back: rerunning the round with thinking on",
+				round, response.AnswerHeldBack)
+			return iterOutcomeContinue, nil
+		}
+		fallback := degenerateFallback(query, heldBackKind(response.AnswerHeldBack))
+		logger.Warnf(ctx, "[Agent][Round-%d] %s answer held back again: answering with the fixed sentence",
+			round, response.AnswerHeldBack)
+		e.emitFixedAnswer(ctx, sessionID, fallback)
+		step.Thought = fallback
+		state.FinalAnswer = fallback
+		state.IsComplete = true
+		state.RoundSteps = append(state.RoundSteps, step)
+		return iterOutcomeBreak, nil
+	}
+
 	// 2. Analyze: Check for stop conditions (natural stop with no tool calls)
 	verdict := e.analyzeResponse(ctx, response, step, state.CurrentRound, sessionID, roundStart)
 	if verdict.isDone {
@@ -917,26 +962,8 @@ func (e *AgentEngine) runReActIteration(
 			// sole terminal answer event (#2906).
 			logger.Warnf(ctx, "[Agent][Round-%d] Empty content after %d retries - using fallback",
 				round, maxEmptyResponseRetries)
-			fallback := "I'm sorry, I was unable to generate a response. Please try again."
-			answerID := generateEventID("answer")
-			_ = e.eventBus.Emit(ctx, event.Event{
-				ID:        answerID,
-				Type:      event.EventAgentFinalAnswer,
-				SessionID: sessionID,
-				Data: event.AgentFinalAnswerData{
-					Content: fallback,
-					Done:    false,
-				},
-			})
-			_ = e.eventBus.Emit(ctx, event.Event{
-				ID:        answerID,
-				Type:      event.EventAgentFinalAnswer,
-				SessionID: sessionID,
-				Data: event.AgentFinalAnswerData{
-					Content: "",
-					Done:    true,
-				},
-			})
+			fallback := degenerateFallback(query, answerBlank)
+			e.emitFixedAnswer(ctx, sessionID, fallback)
 			state.FinalAnswer = fallback
 			state.IsComplete = true
 			state.RoundSteps = append(state.RoundSteps, verdict.step)

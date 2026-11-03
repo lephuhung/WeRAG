@@ -394,7 +394,7 @@ func (e *AgentEngine) analyzeResponse(
 
 		answer := response.Content
 		if answer == "" {
-			answer = "Sorry, this request was blocked by the content safety policy. Please try rephrasing your question."
+			answer = "Xin lỗi, yêu cầu này bị bộ lọc nội dung an toàn chặn. Bạn diễn đạt lại câu hỏi giúp tôi nhé."
 		}
 
 		answerID := generateEventID("answer")

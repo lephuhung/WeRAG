@@ -15,7 +15,7 @@ conversation:
   rerank_top_k: 30
   search_full_content_top: 5  # search_knowledge: full chunk text for the top N results, snippet + head for the rest
   fallback_strategy: "model"
-  fallback_response: "Sorry, I am unable to answer this question."
+  fallback_response: "Xin lỗi, tôi chưa trả lời được câu hỏi này."
   fallback_prompt_id: "default_fallback_prompt"  # from prompt_templates/fallback.yaml (mode: "model")
   enable_rewrite: true
   enable_query_expansion: true
