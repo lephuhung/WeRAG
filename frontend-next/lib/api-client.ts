@@ -5,6 +5,7 @@
  */
 
 import { isAccountDisabledReply, noteSignedOutDisabled } from "./account-disabled.ts";
+import { loginPathFor } from "./safe-next.ts";
 
 const TOKEN_KEY = "weknora_token";
 const REFRESH_KEY = "weknora_refresh_token";
@@ -255,6 +256,8 @@ export function signInPath(): string {
   try {
     const path = window.location.pathname ?? "";
     if (path === "/word" || path.startsWith("/word/")) return "/word";
+    // an expired session opened from a link (email) comes back to the page
+    if (path.startsWith("/platform/")) return loginPathFor(path, window.location.search ?? "");
   } catch {
     /* no location (tests) */
   }

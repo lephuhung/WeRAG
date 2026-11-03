@@ -68,6 +68,7 @@ type RouterParams struct {
 	UsageAdminHandler           *handler.UsageAdminHandler
 	TenantUsageHandler          *handler.TenantUsageHandler
 	UsageBillingHandler         *handler.UsageBillingHandler
+	EmailHandler                *handler.EmailHandler `optional:"true"`
 	EvaluationHandler           *handler.EvaluationHandler
 	AuthHandler                 *handler.AuthHandler
 	InitializationHandler       *handler.InitializationHandler
@@ -338,6 +339,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		params.SystemHandler.BindDeploymentCapabilities(deploymentCapabilitiesFromRouter(params))
 		RegisterSystemRoutes(v1, params.SystemHandler, rbacGuards)
 		RegisterSystemAdminRoutes(v1, params.SystemHandler, params.StatsHandler, params.AuditLogHandler, params.UsageAdminHandler, rbacGuards)
+		RegisterEmailAdminRoutes(v1, params.EmailHandler, rbacGuards)
 		RegisterMCPServiceRoutes(v1, params.MCPServiceHandler, params.MCPCredentialsHandler, params.MCPOAuthHandler, rbacGuards)
 		RegisterWebSearchRoutes(v1, params.WebSearchHandler, rbacGuards)
 		RegisterWebSearchProviderRoutes(v1, params.WebSearchProviderHandler, params.WebSearchCredentialsHandler, rbacGuards)

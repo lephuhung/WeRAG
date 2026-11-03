@@ -3,7 +3,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { resolveSafeNextPath, DEFAULT_POST_LOGIN_ROUTE } from "./safe-next.ts";
+import { loginPathFor, resolveSafeNextPath, DEFAULT_POST_LOGIN_ROUTE } from "./safe-next.ts";
 
 describe("resolveSafeNextPath (issue 2)", () => {
   it("falls back for missing/empty values", () => {
@@ -52,5 +52,22 @@ describe("resolveSafeNextPath (issue 2)", () => {
       resolveSafeNextPath("/platform/kb/123?tab=docs#sec"),
       "/platform/kb/123?tab=docs#sec",
     );
+  });
+});
+
+describe("loginPathFor (email deep links)", () => {
+  it("carries the page and its query through the login page", () => {
+    const buy = loginPathFor("/platform/system/workspace/billing", "");
+    assert.equal(buy, "/login?next=%2Fplatform%2Fsystem%2Fworkspace%2Fbilling");
+    const admin = loginPathFor("/platform/admin", "?section=billing");
+    assert.equal(admin, "/login?next=%2Fplatform%2Fadmin%3Fsection%3Dbilling");
+    // the login page resolves what it receives back to the same page
+    assert.equal(resolveSafeNextPath(new URLSearchParams(admin.split("?")[1]).get("next")), "/platform/admin?section=billing");
+  });
+
+  it("sends the default page and unsafe targets to plain /login", () => {
+    assert.equal(loginPathFor(DEFAULT_POST_LOGIN_ROUTE), "/login");
+    assert.equal(loginPathFor("/"), "/login");
+    assert.equal(loginPathFor("//evil.example"), "/login");
   });
 });

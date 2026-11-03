@@ -443,6 +443,34 @@ export function updateSystemSetting(key: string, value: unknown): Promise<System
   return apiPut(`/api/v1/system/admin/settings/${encodeURIComponent(key)}`, { value });
 }
 
+/* Outgoing email (SMTP) settings, edited on the SuperAdmin "Email" page.
+ * The password is a secret: reads return it masked ("••••••••"). */
+export const EMAIL_SETTING_KEYS = {
+  enabled: "email.smtp_enabled",
+  host: "email.smtp_host",
+  port: "email.smtp_port",
+  username: "email.smtp_username",
+  password: "email.smtp_password",
+  fromAddress: "email.smtp_from_address",
+  fromName: "email.smtp_from_name",
+  security: "email.smtp_security",
+} as const;
+
+export type SMTPSecurity = "none" | "starttls" | "tls";
+
+export interface EmailTestResult {
+  sent: boolean;
+  /** The SuperAdmin address the test went to. */
+  to: string;
+  /** The SMTP error text when the send failed. */
+  error?: string;
+}
+
+/** Sends a test email to the signed-in SuperAdmin with the saved SMTP settings. */
+export function sendTestEmail(): Promise<EmailTestResult> {
+  return apiPost("/api/v1/system/admin/email/test", {});
+}
+
 /** Reset to ENV/built-in default by deleting the DB override. Idempotent. */
 export function resetSystemSetting(key: string): Promise<void> {
   return apiDel(`/api/v1/system/admin/settings/${encodeURIComponent(key)}`);
