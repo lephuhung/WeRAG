@@ -746,7 +746,7 @@ export { AssistantMessage, DayDivider, UserMessageBubble };
 
 /* The way out of a package refusal: buy or renew (billing page), or give
  * out a chỗ (the Tổ chức usage page, for its admin). */
-function ErrorActionButton({ action }: { action: "billing" | "seats" }) {
+export function ErrorActionButton({ action }: { action: "billing" | "seats" }) {
   const { t } = useT();
   return (
     <span className="mt-1.5 block">

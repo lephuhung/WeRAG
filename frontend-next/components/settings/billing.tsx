@@ -693,7 +693,7 @@ export function BillingPage() {
         </div>
       )}
 
-      {!isAdmin && tenantId > 0 && <p className="caption text-muted">{t("bill.memberTenantHint")}</p>}
+      {!isAdmin && auth.membershipState === "member" && <p className="caption text-muted">{t("bill.memberTenantHint")}</p>}
       {scope === "user" && coveredBy && (
         <Notice tone="info">{t("bill.coveredByTenant", { plan: coveredBy })}</Notice>
       )}

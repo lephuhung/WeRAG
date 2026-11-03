@@ -101,7 +101,7 @@ import { detachSessionActivity, updateSessionActivity } from "@/lib/session-acti
 import { uploadImagesWithFallback } from "@/lib/image-upload-fallback";
 import { GuestChatNote } from "@/components/chat/guest-chat-note";
 import { ReferencesDrawer, type KnowledgeReferenceItem } from "@/components/chat/references-drawer";
-import { AssistantMessage, DayDivider, UserMessageBubble } from "@/components/chat/chat-messages";
+import { AssistantMessage, DayDivider, ErrorActionButton, UserMessageBubble } from "@/components/chat/chat-messages";
 import type { UiAttachment, UiIllustration, UiMessage, UiRewriteProposal } from "@/components/chat/chat-types";
 import { ErrorNote } from "@/components/chat/error-note";
 import { IconClose } from "@/components/icons";
@@ -357,7 +357,6 @@ function ChatBody({ id }: { id: string }) {
     for (const [k, v] of Object.entries(m.varKeys ?? {})) vars[k] = tr(v as LocaleKey);
     return { text: tr(m.key, vars), action: m.action };
   };
-  const trError = (key: ChatErrorKey, err: unknown) => errorMessage(key, err).text;
   // Non-admin callers never send a model override; the server resolves the
   // model assigned to the selected response mode.
   const canPickModel = user?.is_system_admin === true;
@@ -730,6 +729,15 @@ function ChatBody({ id }: { id: string }) {
   const [images, setImages] = useState<Array<{ preview: string; file: File }>>([]);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  // the way out offered with a package refusal shown as the page-level
+  // note; kept with its text, so a later error never shows a stale button
+  const [errorAction, setErrorAction] = useState<{ text: string; action: ChatErrorAction } | null>(null);
+  const showError = (key: ChatErrorKey | null, e: unknown) => {
+    const described = key ? errorMessage(key, e) : null;
+    const text = described ? described.text : e instanceof Error ? e.message : tr("chat.err.generic");
+    setError(text);
+    setErrorAction(described?.action ? { text, action: described.action } : null);
+  };
   // Per-session caps of the usage plan: the session a session_limit refusal
   // named, and the 80% warning of the last completed turn. Both are kept
   // with the session they belong to, so they vanish on navigation.
@@ -1374,8 +1382,7 @@ function ChatBody({ id }: { id: string }) {
       } catch (e) {
         // Stale upload/session errors never surface into the new session.
         if (!isLive()) return;
-        const key = chatErrorKey(e);
-        setError(key ? trError(key, e) : e instanceof Error ? e.message : tr("chat.err.generic"));
+        showError(chatErrorKey(e), e);
         setBusy(false);
         onAccountError(e, false);
         return;
@@ -1443,8 +1450,7 @@ function ChatBody({ id }: { id: string }) {
         }
         // Stale upload errors never surface into the new session.
         if (!isLive()) return;
-        const key = chatErrorKey(e);
-        setError(key ? trError(key, e) : e instanceof Error ? e.message : tr("chat.err.generic"));
+        showError(chatErrorKey(e), e);
         setBusy(false);
         onAccountError(e, false);
         return;
@@ -1965,7 +1971,7 @@ function ChatBody({ id }: { id: string }) {
         const errorKey = chatErrorKey(e);
         const described = errorKey ? errorMessage(errorKey, e) : null;
         const errorText = described ? described.text : e instanceof Error ? e.message : tr("chat.err.generic");
-        const errorAction = described?.action;
+        const turnAction = described?.action;
         console.error("[streamChat] Error:", e);
         onAccountError(e);
         // a used-up session gets the "open a new session" card instead of
@@ -1977,7 +1983,7 @@ function ChatBody({ id }: { id: string }) {
               ? {
                   ...msg,
                   errorText,
-                  errorAction,
+                  errorAction: turnAction,
                   isError: true,
                   streaming: false,
                 }
@@ -1988,6 +1994,7 @@ function ChatBody({ id }: { id: string }) {
         // take it, it goes to the page-level note.
         if (!isSessionLimitError(e) && !messagesRef.current.some((msg) => msg.id === asstId)) {
           setError(errorText);
+          setErrorAction(turnAction ? { text: errorText, action: turnAction } : null);
         }
       })
       .finally(() => {
@@ -2395,7 +2402,12 @@ function ChatBody({ id }: { id: string }) {
             )}
             </Fragment>
           ))}
-          {error && <ErrorNote className="mb-4">{error}</ErrorNote>}
+          {error && (
+            <ErrorNote className="mb-4">
+              {error}
+              {errorAction?.text === error && <ErrorActionButton action={errorAction.action} />}
+            </ErrorNote>
+          )}
           {sessionLimitFor && sessionLimitFor === id && <SessionLimitCard sessionId={id} compact={compact} />}
         </div>
       </div>

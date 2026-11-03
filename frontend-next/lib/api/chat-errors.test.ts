@@ -204,6 +204,12 @@ describe("chatErrorText by role", () => {
       vars: { name: "Thuế", date: "03/11/2026" },
     });
     assert.equal(chatErrorText("chat.err.agentUnavailable", false, e, admin).action, "billing");
+    // a guest's own package: they buy it again themselves
+    assert.deepEqual(chatErrorText("chat.err.agentUnavailable", true, e, member), {
+      key: "chat.err.agentAddonExpiredBuy",
+      vars: { name: "Thuế", date: "03/11/2026" },
+      action: "billing",
+    });
     assert.deepEqual(chatErrorText("chat.err.agentUnavailable", false, new ChatStreamError(404, ERR_AGENT_UNAVAILABLE, "x"), admin), { key: "chat.err.agentUnavailable" });
   });
 });

@@ -264,6 +264,12 @@ func TestUsageGuardEndedAddon(t *testing.T) {
 	got, err = g.EndedAddon(ctx, 1, "", "other")
 	require.NoError(t, err)
 	require.Nil(t, got)
+	// the package itself ended: its refusal is the one to explain
+	require.NoError(t, db.Model(&types.UsageSubscription{}).Where("id = ?", "sub-1").
+		Update("ends_at", past).Error)
+	got, err = g.EndedAddon(ctx, 1, "", "thue")
+	require.NoError(t, err)
+	require.Nil(t, got, "the package expired with it")
 }
 
 // Review item 9: plan cards name the basic agents as the profile stores

@@ -539,7 +539,9 @@ func (g *usageGuard) EndedAddon(
 		return nil, nil
 	}
 	ent, err := g.Entitlement(ctx, tenantID, userID)
-	if err != nil || ent == nil || ent.SubscriptionID == "" {
+	// a package that itself ended (or has not started) is the refusal to
+	// explain, not its add-on
+	if err != nil || ent == nil || ent.SubscriptionID == "" || ent.Expired {
 		return nil, err
 	}
 	rows, err := g.plans.ListSubscriptionAddons(ctx, ent.SubscriptionID)
@@ -548,7 +550,9 @@ func (g *usageGuard) EndedAddon(
 	}
 	now := g.now()
 	for _, a := range rows {
-		if a.AgentID == agentID && a.EndsAt != nil && !a.EndsAt.After(now) {
+		// one that ended with the package is the package's end, not its own
+		if a.AgentID == agentID && a.EndsAt != nil && !a.EndsAt.After(now) &&
+			(ent.EndsAt == nil || a.EndsAt.Before(*ent.EndsAt)) {
 			return a, nil
 		}
 	}

@@ -57,8 +57,9 @@ export function PlanBannerBar() {
   const userId = auth.user?.id ?? "";
   const tenantKey = String(auth.selectedTenantId ?? auth.tenant?.id ?? "");
   const [usage, setUsage] = useState<UsageSummary | null>(null);
-  // the Tổ chức package's add-ons and chỗ, for its admin
-  const [tenantUsage, setTenantUsage] = useState<UsageTenantUsage | null>(null);
+  // the Tổ chức package's add-ons and chỗ, for its admin; undefined while
+  // loading, so the no_seat button does not flip from "add" to "give"
+  const [tenantUsage, setTenantUsage] = useState<UsageTenantUsage | null | undefined>(undefined);
   // undefined while loading: the banner waits for it, so the buy button
   // does not pop in after the text
   const [info, setInfo] = useState<UsageBillingInfo | null | undefined>(undefined);
@@ -84,7 +85,7 @@ export function PlanBannerBar() {
     if (!userId || isSystemAdmin) return;
     // a Tổ chức switch must not show the old Tổ chức's package
     setUsage(null);
-    setTenantUsage(null);
+    setTenantUsage(undefined);
     refresh();
     getBillingInfo()
       .then(setInfo)
@@ -109,6 +110,7 @@ export function PlanBannerBar() {
   const banner = useMemo(() => {
     void dismissTick;
     if (!usage || !auth.user || info === undefined) return null;
+    if (adminTenant && tenantUsage === undefined) return null;
     return planBanner({
       now: new Date(),
       isSystemAdmin,
@@ -125,7 +127,7 @@ export function PlanBannerBar() {
           ? { total: tenantUsage.subscription.seats, used: tenantUsage.subscription.seats_used }
           : null,
     });
-  }, [usage, tenantUsage, auth.user, info, isSystemAdmin, isTenantAdmin, tenantKey, userId, dismissTick]);
+  }, [usage, tenantUsage, adminTenant, auth.user, info, isSystemAdmin, isTenantAdmin, tenantKey, userId, dismissTick]);
 
   // the welcome banner lists the packages on offer (when they can be bought)
   const welcomeScope = banner?.kind === "welcome" && info?.enabled === true ? banner.scope : null;

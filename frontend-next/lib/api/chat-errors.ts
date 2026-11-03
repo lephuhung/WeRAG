@@ -300,8 +300,10 @@ export function chatErrorText(
   const env = stream ?? (err instanceof ApiError ? parseErrorEnvelope(JSON.stringify(err.payload ?? {})) : null);
   // a guest's own (personal) package: they buy it themselves, as the banner says
   if (textKey === "chat.err.guest.usageLimit") return { key: textKey, action: "billing" };
-  if (isGuest) return { key: textKey };
-  const self = !viewer.hasTenant;
+  // a guest's other refusals have their own texts; an add-on of their own
+  // package that ran out reads as for anyone buying for themselves
+  if (isGuest && textKey !== "chat.err.agentUnavailable") return { key: textKey };
+  const self = isGuest || !viewer.hasTenant;
   const canBuy = self || !!viewer.isTenantAdmin;
   switch (textKey) {
     case "chat.err.usage.notStarted": {

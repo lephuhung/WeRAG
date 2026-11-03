@@ -14,7 +14,9 @@ import { fetchAllTenantMembers, type TenantMember } from "@/lib/api/tenants";
 import {
   assignTenantSeat,
   formatTokens,
+  getBillingInfo,
   getMyUsage,
+  getScopeAddons,
   getTenantUsage,
   revokeTenantSeat,
   type UsageSummary,
@@ -139,6 +141,23 @@ function OrganizationUsage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [pick, setPick] = useState("");
+  // the admin may buy more assistants online: billing is open and the
+  // current package (with an end) still has add-ons on sale
+  const [canBuyAddons, setCanBuyAddons] = useState(false);
+  useEffect(() => {
+    if (!isAdmin || !tenantId) return;
+    let alive = true;
+    Promise.all([getBillingInfo(), getScopeAddons("tenant")])
+      .then(([info, sa]) => {
+        if (alive) setCanBuyAddons(info.enabled && !!sa.subscription?.ends_at && sa.purchasable.length > 0);
+      })
+      .catch(() => {
+        if (alive) setCanBuyAddons(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [isAdmin, tenantId]);
 
   const load = useCallback(async () => {
     if (!tenantId) return;
@@ -244,7 +263,7 @@ function OrganizationUsage() {
                 ))}
               </ul>
             )}
-            {isAdmin && sub.current && (
+            {isAdmin && sub.current && canBuyAddons && (
               <button
                 type="button"
                 className="btn btn-outline btn-sm mt-1.5"
