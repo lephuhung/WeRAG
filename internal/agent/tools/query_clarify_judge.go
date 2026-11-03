@@ -24,7 +24,9 @@ import (
 // card either.
 
 // broadQueryJudgeTimeout bounds the call; the rules only reach it on the
-// few turns they would answer with the card.
+// few turns they would answer with the card. It is shorter than the intent
+// model's own budget (intentPrimaryTimeout): a stalled intent model means
+// no card, not a second try with the answering model.
 const broadQueryJudgeTimeout = 4 * time.Second
 
 const broadQueryJudgePrompt = `You check one message a user sent to an assistant that answers from a catalogue of Vietnamese laws and official documents. A word rule would answer this message with a card asking the user to narrow the subject (by document type, issuer or newest documents) instead of answering. Decide whether that card fits.
@@ -32,13 +34,13 @@ const broadQueryJudgePrompt = `You check one message a user sent to an assistant
 broad = true only when the message asks in general about a whole subject area of law or administration and names nothing more specific: "luật đất đai", "quy định về cán bộ", "văn bản về phòng cháy chữa cháy", "bảo hiểm xã hội", "cho tôi biết về đấu thầu", "nghiên cứu khoa học". Naming a document type without its number ("nghị định về …", "thông tư về …", "luật …") keeps it broad: the card offers the types to pick from.
 
 broad = false for everything else:
-- greetings, thanks, small talk, test messages ("chào", "hi", "thử");
-- short replies and choices ("ok", "bỏ qua", "tiếp tục", "xem lại", "1");
-- requests about the conversation, the open document or attached files ("tìm trong văn bản", "tóm tắt", "nội dung chính là gì", "thông tin sơ bộ về văn bản");
-- questions about the user or the assistant ("bạn làm được gì");
-- a bare abbreviation or code ("VP", "UBND", "CA");
+- greetings, thanks, small talk, test messages ("chào anh", "cảm ơn", "test 123");
+- short replies and choices ("ừ", "đồng ý", "phương án 2", "làm lại đi");
+- requests about the conversation, the open document or attached files ("rà soát đoạn này", "file vừa gửi nói gì", "ý chính của tài liệu");
+- questions about the user or the assistant ("bạn biết gì về tôi", "bạn là ai");
+- a bare abbreviation or code ("PC06", "HĐND");
 - a specific question: a situation, a procedure, a penalty, a deadline, a definition, a comparison;
-- commands to write, draft, create or translate something ("tạo văn bản", "soạn công văn").
+- commands to write, draft, create or translate something ("lập kế hoạch", "dịch đoạn này").
 
 topic: when broad, the subject copied word for word from the message, without the request words ("cho tôi biết", "quy định về", "văn bản về", "luật"): "đất đai", "bảo hiểm xã hội". Empty when not broad.
 
@@ -75,26 +77,40 @@ func judgeBroadQuery(ctx context.Context, model docformat.Completer, query strin
 	return true, strings.TrimSpace(out.Topic), nil
 }
 
-// judgedTopicWords keeps the model's subject only when every word of it is
-// a word of the query (it may not invent a subject) and something besides
-// a document type and function words is left; nil otherwise.
+// judgedTopicWords keeps the model's subject only when it is a run of
+// consecutive words of the query, in order (it may not invent or reorder a
+// subject), and something besides a document type and function words is
+// left; nil otherwise. Words compare lower-cased, NFC, without punctuation.
 func judgedTopicWords(query, topic string) []string {
-	words := strings.Fields(strings.Map(foldPunctToSpace, topic))
+	words := strings.Fields(strings.Map(foldPunctToSpace, norm.NFC.String(topic)))
 	if len(words) == 0 || len(words) > broadQueryMaxTopicWords+2 {
 		return nil
 	}
-	inQuery := map[string]bool{}
-	for _, w := range strings.Fields(strings.Map(foldPunctToSpace, query)) {
-		inQuery[strings.ToLower(norm.NFC.String(w))] = true
-	}
-	for _, w := range words {
-		if !inQuery[strings.ToLower(norm.NFC.String(w))] {
-			return nil
-		}
+	queryWords := strings.Fields(strings.Map(foldPunctToSpace, norm.NFC.String(query)))
+	if !containsRun(queryWords, words) {
+		return nil
 	}
 	words = stripLeadingDocType(words)
 	if len(words) > broadQueryMaxTopicWords || onlyFunctionWords(words) {
 		return nil
 	}
 	return words
+}
+
+// containsRun reports whether run occurs in words as consecutive words,
+// compared case-insensitively.
+func containsRun(words, run []string) bool {
+	for i := 0; i+len(run) <= len(words); i++ {
+		match := true
+		for j, w := range run {
+			if strings.ToLower(words[i+j]) != strings.ToLower(w) {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }

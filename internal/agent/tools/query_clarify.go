@@ -117,8 +117,10 @@ type BroadQueryCard struct {
 	Topic   string
 	Total   int
 	Options []BroadQueryOption
-	// topic as folded words, for the session memory
-	key string
+	// topics as folded words, for the session memory: the rules' and,
+	// when the judge named another, the judged one, so a repeat or a click
+	// on an option is not asked about again whatever the judge says then
+	keys []string
 }
 
 // Data is the card payload (display_type broad_query_clarification).
@@ -191,6 +193,7 @@ func BroadQueryClarification(ctx context.Context, catalog TitleSearcher, session
 	if broadQueryAsked(ctx, sessionID, key) {
 		return nil
 	}
+	keys := []string{key}
 	docs, err := catalog.SearchTitles(ctx, topicWords, broadQuerySearchLimit)
 	if err != nil {
 		logger.Warnf(ctx, "[BroadQuery] session=%s title search: %v", sessionID, err)
@@ -221,6 +224,7 @@ func BroadQueryClarification(ctx context.Context, catalog TitleSearcher, session
 			if broadQueryAsked(ctx, sessionID, key) {
 				return nil
 			}
+			keys = append(keys, key)
 			if docs, err = catalog.SearchTitles(ctx, topicWords, broadQuerySearchLimit); err != nil {
 				logger.Warnf(ctx, "[BroadQuery] session=%s title search: %v", sessionID, err)
 				return nil
@@ -231,7 +235,7 @@ func BroadQueryClarification(ctx context.Context, catalog TitleSearcher, session
 		}
 	}
 	topic := strings.Join(topicWords, " ")
-	card := &BroadQueryCard{Query: query, Topic: topic, Total: len(docs), key: key}
+	card := &BroadQueryCard{Query: query, Topic: topic, Total: len(docs), keys: keys}
 	for _, g := range topGroups(docs, func(d *types.LegalDocument) string { return d.DocType }, broadQueryTypeOptions) {
 		card.Options = append(card.Options, BroadQueryOption{
 			Label:  g.name + " về " + topic,
@@ -415,13 +419,15 @@ func broadQueryAsked(ctx context.Context, sessionID, key string) bool {
 // MarkBroadQueryAsked records that the card was shown for the topic of
 // the card in this session, so the same topic is not asked about again.
 func MarkBroadQueryAsked(ctx context.Context, sessionID string, card *BroadQueryCard) {
-	if sessionID == "" || card == nil || card.key == "" {
+	if sessionID == "" || card == nil || len(card.keys) == 0 {
 		return
 	}
 	broadQueriesMu.Lock()
 	defer broadQueriesMu.Unlock()
 	topics := loadBroadQueries(ctx, sessionID)
-	topics[card.key] = true
+	for _, k := range card.keys {
+		topics[k] = true
+	}
 	if formatChecks.rdb == nil {
 		broadQueries.Store(sessionID, storedBroadQueries{topics: topics, expires: time.Now().Add(broadQueryTTL)})
 		return

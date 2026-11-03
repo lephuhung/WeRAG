@@ -82,7 +82,9 @@ func emitPipelineCardNormal(ctx context.Context, bus *event.EventBus, req *types
 // pipeline knows its chat model only after the gates, and the broad-question
 // judge runs on few turns.
 type lazyCompleter struct {
-	resolve func() (docformat.Completer, error)
+	// resolve gets the ctx of the first call, so its lookups share the
+	// caller's budget
+	resolve func(ctx context.Context) (docformat.Completer, error)
 	model   docformat.Completer
 	err     error
 	done    bool
@@ -90,7 +92,7 @@ type lazyCompleter struct {
 
 func (l *lazyCompleter) Complete(ctx context.Context, messages []docformat.Message) (string, error) {
 	if !l.done {
-		l.model, l.err = l.resolve()
+		l.model, l.err = l.resolve(ctx)
 		l.done = true
 	}
 	if l.err != nil {
@@ -101,9 +103,11 @@ func (l *lazyCompleter) Complete(ctx context.Context, messages []docformat.Messa
 
 // knowledgeQAJudge is the labeling model of a knowledge-QA turn, resolved
 // when first asked: the turn's chat model, or the intent model when one is
-// set (sessionService.intentCompleter).
+// set (sessionService.intentCompleter). Resolving repeats the pipeline's
+// knowledge-base lookup (idempotent; its errors only mean no card here and
+// are raised again by the pipeline).
 func (s *sessionService) knowledgeQAJudge(ctx context.Context, req *types.QARequest) docformat.Completer {
-	return &lazyCompleter{resolve: func() (docformat.Completer, error) {
+	return &lazyCompleter{resolve: func(ctx context.Context) (docformat.Completer, error) {
 		kbIDs, knowledgeIDs, err := s.resolveKnowledgeBases(ctx, req)
 		if err != nil {
 			return nil, err

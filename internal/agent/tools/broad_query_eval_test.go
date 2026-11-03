@@ -65,6 +65,9 @@ func TestBroadQueryEval(t *testing.T) {
 		items = append(items, it)
 	}
 	f.Close()
+	if len(items) == 0 {
+		t.Fatal("no items in " + path)
+	}
 
 	var out *os.File
 	if p := os.Getenv("WEKNORA_BROADQ_EVAL_OUT"); p != "" {

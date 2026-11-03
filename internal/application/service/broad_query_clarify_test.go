@@ -20,7 +20,7 @@ func (c *countingCompleter) Complete(context.Context, []docformat.Message) (stri
 func TestLazyCompleterResolvesOnce(t *testing.T) {
 	model := &countingCompleter{}
 	resolved := 0
-	l := &lazyCompleter{resolve: func() (docformat.Completer, error) { resolved++; return model, nil }}
+	l := &lazyCompleter{resolve: func(context.Context) (docformat.Completer, error) { resolved++; return model, nil }}
 	for i := 0; i < 2; i++ {
 		if reply, err := l.Complete(context.Background(), nil); err != nil || reply != "ok" {
 			t.Fatalf("reply %q err %v", reply, err)
@@ -29,7 +29,7 @@ func TestLazyCompleterResolvesOnce(t *testing.T) {
 	if resolved != 1 || model.calls != 2 {
 		t.Fatalf("resolved %d, calls %d", resolved, model.calls)
 	}
-	failing := &lazyCompleter{resolve: func() (docformat.Completer, error) { return nil, errors.New("no model") }}
+	failing := &lazyCompleter{resolve: func(context.Context) (docformat.Completer, error) { return nil, errors.New("no model") }}
 	if _, err := failing.Complete(context.Background(), nil); err == nil {
 		t.Fatal("a resolve error must reach the caller")
 	}

@@ -238,3 +238,49 @@ func (s *shrinkingTitles) SearchTitles(ctx context.Context, words []string, limi
 	s.calls++
 	return (&fakeTitles{n: n}).SearchTitles(ctx, words, limit)
 }
+
+func TestBroadQueryJudgedCardIsAskedOnce(t *testing.T) {
+	cat := &fakeTitles{n: 60}
+	j := &replyJudge{reply: `{"broad": true, "topic": "bảo hiểm xã hội"}`}
+	card := BroadQueryClarification(context.Background(), cat, "s-once", BroadQueryInput{Query: "bảo hiểm xã hội", Judge: j})
+	if card == nil {
+		t.Fatal("no card")
+	}
+	MarkBroadQueryAsked(context.Background(), "s-once", card)
+	// the repeat: the rules' own topic was marked too, so neither a second
+	// judge call nor a card, whatever the judge would say now
+	j2 := &replyJudge{reply: `{"broad": true, "topic": ""}`}
+	if again := BroadQueryClarification(context.Background(), cat, "s-once", BroadQueryInput{Query: "bảo hiểm xã hội", Judge: j2}); again != nil {
+		t.Fatal("asked again")
+	}
+	if j2.calls != 0 {
+		t.Fatalf("%d judge calls on a repeat", j2.calls)
+	}
+}
+
+func TestJudgedTopicWords(t *testing.T) {
+	cases := []struct{ query, topic, want string }{
+		{"Đất đai?", "đất đai", "đất đai"},
+		{"quy định về đất đai", "Đất Đai", "Đất Đai"},
+		{"quy định về đất đai", "đất đai", "đất đai"}, // NFD query, NFC topic
+		{"quy định về đất đai", "đai đất", ""},         // reordered
+		{"quy định về đất đai", "đất đất", ""},         // duplicated
+		{"quy định về đất đai", "thuế", ""},            // not in the message
+		{"luật đất đai", "luật đất đai", "đất đai"},
+		{"a b c d e f g", "a b c d e f g", ""}, // too long
+		{"bạn có gì", "có", ""},                // only function words
+	}
+	for _, c := range cases {
+		if got := strings.Join(judgedTopicWords(c.query, c.topic), " "); got != c.want {
+			t.Errorf("judgedTopicWords(%q, %q) = %q, want %q", c.query, c.topic, got, c.want)
+		}
+	}
+}
+
+func TestBroadQueryJudgeWithoutTopicKeepsTheRulesTopic(t *testing.T) {
+	j := &replyJudge{reply: `{"broad": true, "topic": ""}`}
+	card := BroadQueryClarification(context.Background(), &fakeTitles{n: 60}, "s-empty-topic", BroadQueryInput{Query: "quy định về đất đai", Judge: j})
+	if card == nil || card.Topic != "đất đai" {
+		t.Fatalf("card %+v", card)
+	}
+}
