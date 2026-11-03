@@ -618,7 +618,7 @@ func (s *usagePlanService) RevokeSeat(ctx context.Context, subscriptionID, userI
 
 func (s *usagePlanService) TenantUsage(ctx context.Context, tenantID uint64) (*types.UsageTenantUsage, error) {
 	out := &types.UsageTenantUsage{Enforced: s.guard.Enforced(ctx), Seats: []*types.UsageSeat{},
-		Addons: []*types.UsageSubscriptionAddon{}}
+		Addons: []*types.UsageSubscriptionAddon{}, EndedAddons: []*types.UsageSubscriptionAddon{}}
 	sub, err := s.repo.GetActiveSubscription(ctx, types.UsageScopeTenant, types.UsageTenantScopeID(tenantID))
 	if err != nil {
 		return nil, err
@@ -642,6 +642,14 @@ func (s *usagePlanService) TenantUsage(ctx context.Context, tenantID uint64) (*t
 				a.EndsAt = sub.EndsAt // shown as "ends with the subscription"
 			}
 			out.Addons = append(out.Addons, a)
+			continue
+		}
+		// ended lately while the subscription still runs: the admin may
+		// want it back
+		if a.EndsAt != nil && !a.EndsAt.After(now) &&
+			now.Sub(*a.EndsAt) <= types.UsageAddonEndedNoticeDays*24*time.Hour &&
+			(sub.EndsAt == nil || sub.EndsAt.After(*a.EndsAt)) {
+			out.EndedAddons = append(out.EndedAddons, a)
 		}
 	}
 	if sub.Mode == types.UsageModeSeat {

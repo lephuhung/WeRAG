@@ -2,18 +2,16 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useT, type LocaleKey } from "@/lib/i18n";
+import { useT } from "@/lib/i18n";
 import {
   formatPriceVND,
   listPublicPlans,
   planPrice,
   planTermPrices,
   type PublicUsagePlan,
-  type UsagePlanCaps,
 } from "@/lib/api/usage";
+import { capLines } from "@/lib/plan-caps";
 import styles from "./page.module.css";
-
-const num = (n: number) => n.toLocaleString("vi-VN");
 
 /* Every plan gets its own accent. The variant is picked from the plan's ID
  * — not from its position in the grid — so switching the Cá nhân / Tổ chức
@@ -45,38 +43,6 @@ const FEATURED_PLAN_NAMES: Record<string, true> = {
   "nâng cao": true,
   "chuyên nghiệp": true,
 };
-
-type Translate = (key: LocaleKey, vars?: Record<string, string | number>) => string;
-
-/* What a plan allows beyond its day/month quota, one line per cap it sets. */
-function capLines(
-  caps: UsagePlanCaps | undefined,
-  mode: PublicUsagePlan["mode"],
-  scope: "user" | "tenant",
-  t: Translate,
-): string[] {
-  const lines: string[] = [];
-  if (scope === "tenant") {
-    lines.push(mode === "seat" ? t("pricing.capSeat") : t("pricing.capShared"));
-  }
-  const c = caps ?? {};
-  if (c["session.max_turns"]) {
-    lines.push(t("pricing.capTurns", { n: num(c["session.max_turns"]) }));
-  }
-  if (c["session.max_tokens"]) {
-    lines.push(t("pricing.capTokens", { n: num(c["session.max_tokens"]) }));
-  }
-  if (c["context.history_tokens"]) {
-    lines.push(t("pricing.capHistory", { n: num(c["context.history_tokens"]) }));
-  }
-  if (c["agent.turn_token_cap"]) {
-    lines.push(t("pricing.capAgentTokens", { n: num(c["agent.turn_token_cap"]) }));
-  }
-  if (c["agent.max_iterations"]) {
-    lines.push(t("pricing.capAgentSteps", { n: num(c["agent.max_iterations"]) }));
-  }
-  return lines;
-}
 
 export function LandingPricing() {
   const { t } = useT();

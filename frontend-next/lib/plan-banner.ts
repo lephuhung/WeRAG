@@ -4,7 +4,12 @@
  * Urgent banners (the package stops or is about to stop answering) win over
  * the welcome banner a new account sees once. A banner whose package belongs
  * to the Tổ chức has no buy button for a member who cannot renew it: they are
- * told to ask an admin instead. */
+ * told to ask an admin instead.
+ *
+ * A Tenant Admin is also told when a specialist assistant (add-on) of the
+ * Tổ chức package is about to end or has just ended while the package goes
+ * on (addon_expired), and, on a seat package with a free chỗ, to give
+ * themselves one instead of buying more (no_seat with assignSeat). */
 
 type Limit = { metric: string; period: string; limit: number; used: number; remaining: number; exhausted: boolean };
 type Entitlement = {
@@ -29,6 +34,7 @@ export type PlanBannerKind =
   | "exhausted_day"
   | "exhausted_month"
   | "no_plan"
+  | "addon_expired"
   | "expiring"
   | "near_cap"
   | "welcome";
@@ -51,6 +57,13 @@ export type PlanBanner = {
   percent: number;
   /** Day/month limit that ran out (exhausted_*). */
   limit: Limit | null;
+  /** addon_expired: the assistant, and whether its end is already past
+   * (endsAt is then the add-on's end, not the package's). */
+  agentName: string;
+  addonEnded: boolean;
+  /** no_seat for an admin whose seat package still has a free chỗ: give
+   * one (seat page) rather than buy. */
+  assignSeat: boolean;
   /** Dismissal key and how long a dismissal lasts: a VN day (hidden for
    * that day only) or "forever". The caller stores the value under the key. */
   dismissKey: string;
@@ -69,10 +82,20 @@ export type PlanBannerInput = {
   userCreatedAt: string;
   /** Stored dismissal value for a key (see dismissKey), or null. */
   dismissed: (key: string) => string | null;
+  /** Tenant Admin only: the Tổ chức package's add-ons (current, with their
+   * end) and those that ended lately (GET /tenants/:id/usage). */
+  tenantAddons?: AddonRight[];
+  tenantEndedAddons?: AddonRight[];
+  /** Tenant Admin only: the Tổ chức seat package's size and chỗ given out. */
+  tenantSeats?: { total: number; used: number } | null;
 };
 
+type AddonRight = { agent_id: string; agent_name?: string; ends_at: string | null };
+
 /** Days before ends_at the renewal banner appears. */
-export const PLAN_EXPIRING_DAYS = 7;
+export const PLAN_EXPIRING_DAYS = 14;
+/** Days before and after an add-on's end its banner shows (addon_expired). */
+export const ADDON_NOTICE_DAYS = 7;
 /** Share of a month limit used at which the near-cap banner appears. */
 export const PLAN_NEAR_CAP_PERCENT = 90;
 /** How long after sign-up the welcome banner is offered. */
@@ -96,6 +119,36 @@ function usableDaysLeft(now: Date, endsAt: string): number {
   const a = Date.parse(vnDay(now));
   const b = Date.parse(vnDay(lastUsableDay(endsAt)));
   return Math.round((b - a) / DAY_MS) + 1;
+}
+
+/** The add-on to warn a Tenant Admin about: one that ended within
+ * ADDON_NOTICE_DAYS, else one ending within ADDON_NOTICE_DAYS before the
+ * package does (one ending with the package is the package's banner). */
+function addonNotice(
+  now: Date,
+  packageEndsAt: string | null,
+  input: PlanBannerInput,
+): { agentId: string; name: string; endsAt: string; ended: boolean } | null {
+  const pkgEnd = packageEndsAt ? new Date(packageEndsAt).getTime() : Infinity;
+  const window = ADDON_NOTICE_DAYS * DAY_MS;
+  const pickFrom = (rows: AddonRight[] | undefined, ended: boolean) => {
+    let best: { agentId: string; name: string; endsAt: string; ended: boolean; at: number } | null = null;
+    for (const a of rows ?? []) {
+      if (!a.ends_at) continue;
+      const at = new Date(a.ends_at).getTime();
+      if (!Number.isFinite(at) || at >= pkgEnd) continue;
+      const delta = at - now.getTime();
+      const inWindow = ended ? delta <= 0 && -delta <= window : delta > 0 && delta <= window;
+      if (!inWindow) continue;
+      // the most recent end first (ended), the soonest end first (ending)
+      if (!best || (ended ? at > best.at : at < best.at)) {
+        best = { agentId: a.agent_id, name: a.agent_name || a.agent_id, endsAt: a.ends_at, ended, at };
+      }
+    }
+    return best;
+  };
+  const b = pickFrom(input.tenantEndedAddons, true) ?? pickFrom(input.tenantAddons, false);
+  return b ? { agentId: b.agentId, name: b.name, endsAt: b.endsAt, ended: b.ended } : null;
 }
 
 export function planBanner(input: PlanBannerInput): PlanBanner | null {
@@ -129,6 +182,9 @@ export function planBanner(input: PlanBannerInput): PlanBanner | null {
       daysLeft: 0,
       percent: 0,
       limit: null,
+      agentName: "",
+      addonEnded: false,
+      assignSeat: false,
       dismissKey: kind === "welcome" ? "welcome" : `${kind}:${ent?.subscription_id ?? "none"}`,
       dismissValue,
       ...extra,
@@ -165,7 +221,12 @@ export function planBanner(input: PlanBannerInput): PlanBanner | null {
     // (nothing to act on, so hiding it is for good)
     if (ent.expired && ent.not_started) return make("not_started", "info", { canBuy: false, startsAt: ent.starts_at ?? null }, "forever");
     if (ent.expired) return make("expired", "error");
-    if (ent.mode === "seat" && !ent.has_seat) return make("no_seat", "warning");
+    if (ent.mode === "seat" && !ent.has_seat) {
+      // an admin with a chỗ left gives it out (to themselves) instead of buying
+      const seats = input.tenantSeats;
+      const assignSeat = input.isTenantAdmin && ent.source === "tenant" && !!seats && seats.used < seats.total;
+      return make("no_seat", "warning", { assignSeat });
+    }
     const month = ent.limits.find((l) => l.exhausted && l.period === "month");
     if (month) return make("exhausted_month", "error", { limit: month });
     const today = ent.limits.find((l) => l.exhausted && l.period === "day");
@@ -175,6 +236,17 @@ export function planBanner(input: PlanBannerInput): PlanBanner | null {
       if (Number.isFinite(left) && left > 0 && left <= PLAN_EXPIRING_DAYS * DAY_MS) {
         return make("expiring", "warning", { daysLeft: Math.max(1, usableDaysLeft(now, ent.ends_at)) });
       }
+    }
+    const addon = input.isTenantAdmin && ent.source === "tenant" ? addonNotice(now, ent.ends_at ?? null, input) : null;
+    if (addon) {
+      return make("addon_expired", addon.ended ? "error" : "warning", {
+        canBuy: true,
+        scope: "tenant",
+        agentName: addon.name,
+        addonEnded: addon.ended,
+        endsAt: addon.endsAt,
+        dismissKey: `addon_expired:${ent.subscription_id}:${addon.agentId}:${addon.ended ? "ended" : "ending"}`,
+      });
     }
     let percent = 0;
     for (const l of ent.limits) {

@@ -384,4 +384,12 @@ type UsageTenantUsage struct {
 	// Addons are the specialist agents the subscription holds (current
 	// rights, with their end).
 	Addons []*UsageSubscriptionAddon `json:"addons"`
+	// EndedAddons are the add-ons whose right ended within the last
+	// UsageAddonEndedNoticeDays while the subscription goes on: the Tenant
+	// Admin's "buy it again" banner.
+	EndedAddons []*UsageSubscriptionAddon `json:"ended_addons"`
 }
+
+// UsageAddonEndedNoticeDays is how long after an add-on ends (while its
+// subscription goes on) the organization still sees it as ended.
+const UsageAddonEndedNoticeDays = 7

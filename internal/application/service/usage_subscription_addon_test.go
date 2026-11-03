@@ -218,6 +218,52 @@ func TestTenantUsageListsHeldAddons(t *testing.T) {
 	require.Len(t, usage.Addons, 1, "expired rights are left out")
 	require.Equal(t, "Thuế", usage.Addons[0].AgentName)
 	require.WithinDuration(t, end, *usage.Addons[0].EndsAt, time.Second)
+	// ended an hour ago while the package goes on: offered again
+	require.Len(t, usage.EndedAddons, 1)
+	require.Equal(t, "old", usage.EndedAddons[0].AgentID)
+}
+
+// An add-on that ended long ago is no longer reported as ended.
+func TestTenantUsageEndedAddonsWindow(t *testing.T) {
+	svc, db := newAddonPlanServiceDB(t)
+	svc.guard = &usageGuard{}
+	ctx := context.Background()
+	require.NoError(t, db.Model(&types.UsageSubscription{}).Where("id = ?", "sub-1").
+		Update("ends_at", time.Now().AddDate(0, 2, 0)).Error)
+	long := time.Now().AddDate(0, 0, -(types.UsageAddonEndedNoticeDays + 1))
+	require.NoError(t, svc.repo.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+		SubscriptionID: "sub-1", AgentID: "thue", StartsAt: long.AddDate(0, -1, 0), EndsAt: &long}))
+	usage, err := svc.TenantUsage(ctx, 1)
+	require.NoError(t, err)
+	require.Empty(t, usage.Addons)
+	require.Empty(t, usage.EndedAddons)
+}
+
+// The guard names an add-on right of the caller's package that ran out,
+// and nothing for an agent the package never held or still holds.
+func TestUsageGuardEndedAddon(t *testing.T) {
+	svc, db := newAddonPlanServiceDB(t)
+	ctx := context.Background()
+	require.NoError(t, db.Model(&types.UsageSubscription{}).Where("id = ?", "sub-1").
+		Update("ends_at", time.Now().AddDate(0, 2, 0)).Error)
+	past := time.Now().Add(-time.Hour)
+	require.NoError(t, svc.repo.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+		SubscriptionID: "sub-1", AgentID: "thue", StartsAt: past.AddDate(0, -1, 0), EndsAt: &past}))
+	future := time.Now().AddDate(0, 1, 0)
+	require.NoError(t, svc.repo.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+		SubscriptionID: "sub-1", AgentID: "chung", StartsAt: past, EndsAt: &future}))
+	g := &usageGuard{plans: svc.repo, now: time.Now}
+	// a machine principal: no seat lookup
+	got, err := g.EndedAddon(ctx, 1, "", "thue")
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Equal(t, "Thuế", got.AgentName)
+	got, err = g.EndedAddon(ctx, 1, "", "chung")
+	require.NoError(t, err)
+	require.Nil(t, got, "still current")
+	got, err = g.EndedAddon(ctx, 1, "", "other")
+	require.NoError(t, err)
+	require.Nil(t, got)
 }
 
 // Review item 9: plan cards name the basic agents as the profile stores

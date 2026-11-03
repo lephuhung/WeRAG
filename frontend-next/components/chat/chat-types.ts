@@ -30,6 +30,8 @@ export type UiMessage = {
   isError?: boolean;
   /** The error of this turn, shown once in the bubble (see ErrorNote). */
   errorText?: string;
+  /** What the error offers: open the billing page, or the seat page. */
+  errorAction?: "billing" | "seats";
   assistantMessageId?: string;
   references?: KnowledgeReferenceItem[];
   abbreviationCandidates?: string[];

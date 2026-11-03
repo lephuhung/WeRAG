@@ -7,9 +7,9 @@ import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
 import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { withArtifactIndexes } from "@/lib/artifact-images";
 import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext, type MentionRequestItem } from "@/lib/chat-context";
-import { useT } from "@/lib/i18n";
+import { useT, type LocaleKey } from "@/lib/i18n";
 import { dayStarts } from "@/lib/message-time";
-import { chatErrorKey, chatErrorText, isSessionLimitError, type ChatErrorKey } from "@/lib/api/chat-errors";
+import { chatErrorKey, chatErrorText, isSessionLimitError, type ChatErrorAction, type ChatErrorKey } from "@/lib/api/chat-errors";
 import { shouldRefreshAccount } from "@/lib/guest-chat";
 import { sessionUsageFromComplete, type SessionUsage } from "@/lib/session-limits";
 import { ContextCompactedDivider, SessionLimitCard, SessionUsageBanner } from "@/components/chat/session-limit";
@@ -80,7 +80,7 @@ import { useDocumentTemplate } from "@/components/doc-workspace/use-document-tem
 import { DocumentTemplateBar, DocumentTemplatePicker } from "@/components/doc-workspace/document-template-picker";
 import { isTemplateSkip, templatePrompt } from "@/lib/template-protocol";
 import { findingCheckOp, findingSelectOp, type FormatFinding } from "@/lib/format-findings";
-import { useAuth } from "@/lib/auth";
+import { useAuth, useTenantRole } from "@/lib/auth";
 import { useToast } from "@/components/toast";
 import { Composer, type ComposerSend } from "@/components/composer";
 import { useAttachments, formatFileSize, type PendingAttachment } from "@/components/use-attachments";
@@ -346,12 +346,18 @@ function ChatBody({ id }: { id: string }) {
   // documents, forks, follow-ups or other organization-only calls.
   const guest = ctx.isGuest;
   const { t: tr } = useT();
-  // a chat error as this account reads it (with a package's start date)
-  const trError = (key: ChatErrorKey, err: unknown) => {
-    const m = chatErrorText(key, guest, err);
-    return tr(m.key, m.vars);
+  const { user, refreshMe, selectedTenantId, tenant } = useAuth();
+  const { isTenantAdmin } = useTenantRole();
+  const tenantKey = String(selectedTenantId ?? tenant?.id ?? "");
+  // a chat error as this account reads it (with a package's start date, the
+  // limit that ran out, and "buy" or "ask your admin" by role)
+  const errorMessage = (key: ChatErrorKey, err: unknown): { text: string; action?: ChatErrorAction } => {
+    const m = chatErrorText(key, guest, err, { isTenantAdmin, hasTenant: tenantKey !== "" && tenantKey !== "0" });
+    const vars: Record<string, string> = { ...(m.vars ?? {}) };
+    for (const [k, v] of Object.entries(m.varKeys ?? {})) vars[k] = tr(v as LocaleKey);
+    return { text: tr(m.key, vars), action: m.action };
   };
-  const { user, refreshMe } = useAuth();
+  const trError = (key: ChatErrorKey, err: unknown) => errorMessage(key, err).text;
   // Non-admin callers never send a model override; the server resolves the
   // model assigned to the selected response mode.
   const canPickModel = user?.is_system_admin === true;
@@ -1957,7 +1963,9 @@ function ChatBody({ id }: { id: string }) {
         if (!isLive()) return;
         if (e instanceof DOMException && e.name === "AbortError") return;
         const errorKey = chatErrorKey(e);
-        const errorText = errorKey ? trError(errorKey, e) : e instanceof Error ? e.message : tr("chat.err.generic");
+        const described = errorKey ? errorMessage(errorKey, e) : null;
+        const errorText = described ? described.text : e instanceof Error ? e.message : tr("chat.err.generic");
+        const errorAction = described?.action;
         console.error("[streamChat] Error:", e);
         onAccountError(e);
         // a used-up session gets the "open a new session" card instead of
@@ -1969,6 +1977,7 @@ function ChatBody({ id }: { id: string }) {
               ? {
                   ...msg,
                   errorText,
+                  errorAction,
                   isError: true,
                   streaming: false,
                 }

@@ -22,6 +22,7 @@ import {
 } from "@/lib/api/usage";
 import { formatDate, formatLastDay } from "@/lib/datetime";
 import { useInModalNav } from "@/components/system/in-modal-nav";
+import { openBilling } from "@/lib/billing-intent";
 import { ConsolePage } from "@/components/settings/console-page";
 import { InfoRow } from "@/components/settings/info-row";
 import { Loading } from "@/components/settings/loading";
@@ -242,6 +243,15 @@ function OrganizationUsage() {
                   </li>
                 ))}
               </ul>
+            )}
+            {isAdmin && sub.current && (
+              <button
+                type="button"
+                className="btn btn-outline btn-sm mt-1.5"
+                onClick={() => openBilling({ scope: "tenant", planId: sub.plan_id })}
+              >
+                {t("tus.buyAddons")}
+              </button>
             )}
           </InfoRow>
           <InfoRow label={sub.mode === "seat" ? t("tus.limitsPerSeat") : t("tus.limitsPool")} desc={t("tus.limitsDesc")} className="px-4">

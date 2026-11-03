@@ -527,3 +527,30 @@ func limitStatusFrom(limits types.UsageLimits, rows []*types.UsageCounter, now t
 	}
 	return out
 }
+
+// EndedAddon returns the caller's add-on right to agentID when it has
+// ended while the package that held it is still the one governing the
+// caller (nil otherwise): a chat turn naming that agent is then told the
+// right ran out instead of "this assistant does not exist". Read-only.
+func (g *usageGuard) EndedAddon(
+	ctx context.Context, tenantID uint64, userID, agentID string,
+) (*types.UsageSubscriptionAddon, error) {
+	if agentID == "" {
+		return nil, nil
+	}
+	ent, err := g.Entitlement(ctx, tenantID, userID)
+	if err != nil || ent == nil || ent.SubscriptionID == "" {
+		return nil, err
+	}
+	rows, err := g.plans.ListSubscriptionAddons(ctx, ent.SubscriptionID)
+	if err != nil {
+		return nil, err
+	}
+	now := g.now()
+	for _, a := range rows {
+		if a.AgentID == agentID && a.EndsAt != nil && !a.EndsAt.After(now) {
+			return a, nil
+		}
+	}
+	return nil, nil
+}

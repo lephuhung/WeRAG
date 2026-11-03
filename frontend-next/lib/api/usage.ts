@@ -4,6 +4,7 @@
  * seats. Identity for /me/usage comes from the session; the endpoint cannot
  * be pointed at someone else. */
 import { apiDel, apiGet, apiPost, apiPut } from "@/lib/api-client";
+import type { PlanCaps } from "@/lib/plan-caps";
 
 /** Questions and LLM tokens of one period (Vietnam calendar). */
 export interface UsagePeriodTotals {
@@ -385,6 +386,8 @@ export interface UsageTenantUsage {
   seats: UsageSeat[];
   /** Specialist agents the subscription holds, with their end. */
   addons?: UsageSubscriptionAddon[];
+  /** Add-ons whose right ended in the last 7 days while the package goes on. */
+  ended_addons?: UsageSubscriptionAddon[];
 }
 
 /** A right of a subscription to a specialist agent. */
@@ -651,15 +654,8 @@ export function listPurchasablePlans(scope: UsageScopeKind): Promise<UsagePlan[]
   return apiGet<{ data?: UsagePlan[] }>(`${BILLING}/plans?scope=${scope}`).then((r) => r.data ?? []);
 }
 
-/** A plan's per-turn and per-session caps (usage_plans.features, known keys
- * only); an absent key is no cap. */
-export interface UsagePlanCaps {
-  "agent.turn_token_cap"?: number;
-  "agent.max_iterations"?: number;
-  "context.history_tokens"?: number;
-  "session.max_turns"?: number;
-  "session.max_tokens"?: number;
-}
+/** A plan's per-turn and per-session caps (see lib/plan-caps). */
+export type UsagePlanCaps = PlanCaps;
 
 export type PublicUsagePlan = Pick<UsagePlan, "id" | "name" | "description" | "scope_kind" | "mode" | "limits" | "price_vnd" | "price_quarter_vnd" | "price_year_vnd" | "price_label" | "sort_order" | "included_agents" | "addons"> & { caps?: UsagePlanCaps };
 
