@@ -28,6 +28,7 @@ import { Notice } from "@/components/settings/notice";
 import { Pill, PillGroup } from "@/components/settings/pill";
 import { SectionHeader } from "@/components/settings/section-header";
 import { useToast } from "@/components/toast";
+import { TaskModelsCard } from "@/components/settings/task-models-card";
 
 const EMPTY_FORM = {
   name: "",
@@ -805,6 +806,8 @@ function SystemModels() {
         </div>
         {testMsg && <p className="caption mt-3 text-muted">{testMsg}</p>}
       </Modal>
+
+      {loaded && <TaskModelsCard models={models.map((m) => m.raw)} />}
 
       {/* Delete Confirmation Modal */}
       <Modal open={deleting !== null} title={t("mdl.deleteTitle")} onClose={() => setDeleting(null)}>

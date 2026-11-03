@@ -454,6 +454,18 @@ var registry = map[string]settingSpec{
 		Description: "Model nhỏ cho việc phụ ít rủi ro: đặt tiêu đề phiên và gợi ý câu hỏi tiếp theo, để model chính " +
 			"chỉ lo trả lời. Để trống thì dùng model trả lời. Model lỗi thì tự quay về model trả lời. Có hiệu lực ngay.",
 	},
+	// llm.intent_model_id: the model for the short labeling calls before an
+	// agent turn (needs the knowledge base? what does the highlighted-passage
+	// request want?). Empty = the answering model. Read per turn.
+	types.IntentModelSettingKey: {
+		Type:     "string",
+		EnvName:  "WEKNORA_INTENT_MODEL_ID",
+		Default:  "",
+		Category: "chat",
+		Description: "Model phân loại ý định trước mỗi lượt của trợ lý: câu hỏi có cần tra cứu kho tri thức không, " +
+			"yêu cầu về đoạn đang bôi đen là sửa câu chữ hay soát chính tả. Để trống thì dùng model trả lời. " +
+			"Model lỗi thì tự quay về model trả lời. Có hiệu lực từ lượt hỏi tiếp theo.",
+	},
 	// llm.compaction_model_id: the model that writes context-compaction
 	// summaries. Empty = the answering model. Its own context window sizes
 	// each summarization request; on failure the answering model retries
