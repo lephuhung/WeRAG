@@ -239,6 +239,10 @@ export default function AdminEmail() {
           </div>
         </div>
 
+        {form.security === "none" && form.username.trim() !== "" && (
+          <Notice tone="warning">{t("email.noneWithUser")}</Notice>
+        )}
+
         <div className="flex flex-wrap items-center justify-end gap-3">
           <button type="button" className="btn btn-outline" disabled={busy || dirty || !base.enabled} title={dirty ? t("email.saveFirst") : undefined}
             onClick={() => void sendTest()}>

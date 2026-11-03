@@ -38,6 +38,13 @@ func (r *emailNotificationRepository) Release(ctx context.Context, dedupeKey str
 	return r.db.WithContext(ctx).Where("dedupe_key = ?", dedupeKey).Delete(&types.EmailNotification{}).Error
 }
 
+func (r *emailNotificationRepository) ReleaseStale(ctx context.Context, kind string, before time.Time) (int64, error) {
+	res := r.db.WithContext(ctx).
+		Where("kind = ? AND recipients = ? AND created_at < ?", kind, types.EmailRecipientsPending, before).
+		Delete(&types.EmailNotification{})
+	return res.RowsAffected, res.Error
+}
+
 func (r *emailNotificationRepository) SetRecipients(ctx context.Context, dedupeKey string, n int) error {
 	return r.db.WithContext(ctx).Model(&types.EmailNotification{}).
 		Where("dedupe_key = ?", dedupeKey).Update("recipients", n).Error

@@ -28,6 +28,10 @@ const (
 	SecurityTLS      = "tls"
 )
 
+// ErrAuthNeedsTLS: a user name is set but the connection is not encrypted;
+// the password is never sent in clear (except to localhost).
+var ErrAuthNeedsTLS = errors.New("Máy chủ yêu cầu mã hóa (STARTTLS/TLS) để đăng nhập")
+
 // Config is one SMTP account.
 type Config struct {
 	Enabled     bool
@@ -144,11 +148,18 @@ func (s *SMTPSender) Send(ctx context.Context, cfg Config, msg Message) error {
 	}
 	if cfg.Username != "" {
 		if ok, _ := c.Extension("AUTH"); !ok {
+			// most servers offer AUTH only once the connection is encrypted
+			if cfg.Security != SecuritySTARTTLS && cfg.Security != SecurityTLS {
+				return ErrAuthNeedsTLS
+			}
 			return errors.New("the server does not offer AUTH")
 		}
 		// smtp.PlainAuth refuses unencrypted connections except to
 		// localhost, which is what we want for SecurityNone too.
 		if err := c.Auth(smtp.PlainAuth("", cfg.Username, cfg.Password, host)); err != nil {
+			if strings.Contains(err.Error(), "unencrypted connection") {
+				return ErrAuthNeedsTLS
+			}
 			return fmt.Errorf("AUTH: %w", err)
 		}
 	}

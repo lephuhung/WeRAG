@@ -161,6 +161,18 @@ func (m *memEmailStore) Release(_ context.Context, key string) error {
 	delete(m.claims, key)
 	return nil
 }
+func (m *memEmailStore) ReleaseStale(_ context.Context, kind string, before time.Time) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	for k, c := range m.claims {
+		if c.Kind == kind && c.Recipients == types.EmailRecipientsPending && c.CreatedAt.Before(before) {
+			delete(m.claims, k)
+			n++
+		}
+	}
+	return n, nil
+}
 func (m *memEmailStore) SetRecipients(_ context.Context, key string, n int) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -477,4 +489,93 @@ func TestFormatVND(t *testing.T) {
 	require.Equal(t, "1.000 đ", formatVND(1000))
 	require.Equal(t, "12.345.678 đ", formatVND(12345678))
 	require.True(t, strings.HasPrefix(formatVND(-5000), "-5.000"))
+}
+
+// A claim left pending by a backend that died mid-send is retried once it
+// is stale; a reminder nobody could receive is kept and never retried.
+func TestExpiryReminderStaleClaimRetriedNobodyKept(t *testing.T) {
+	f := newMailFixture(t, smtpOn())
+	ctx := context.Background()
+	f.store.subs = []*types.UsageSubscription{
+		{ID: "sub-u", ScopeType: types.UsageScopeUser, ScopeID: "personal", Status: types.UsageSubscriptionActive,
+			EndsAt: endsVN(t, "2027-01-05"), Plan: &types.UsagePlan{Name: "Go"}},
+		// tenant 8 has no admin
+		{ID: "sub-empty", ScopeType: types.UsageScopeTenant, ScopeID: "8", Status: types.UsageSubscriptionActive,
+			EndsAt: endsVN(t, "2027-01-05"), Plan: &types.UsagePlan{Name: "Go"}},
+	}
+	// the crash: sub-u's 7-day reminder claimed, never sent
+	key := expiryReminderKey("sub-u", *f.store.subs[0].EndsAt, 7)
+	_, _ = f.store.Claim(ctx, &types.EmailNotification{Kind: types.EmailNotificationSubscriptionExpiry,
+		DedupeKey: key, RefID: "sub-u", CreatedAt: f.now.Add(-5 * time.Minute)})
+
+	// still fresh: left alone (another backend may be sending it)
+	n, err := f.n.RunExpiryReminders(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 0, n)
+	require.Empty(t, f.sender.sent)
+	emptyKey := expiryReminderKey("sub-empty", *f.store.subs[1].EndsAt, 7)
+	require.Equal(t, types.EmailRecipientsNone, f.store.claims[emptyKey].Recipients)
+
+	// 15 minutes on: released and sent; the empty one stays as it was
+	f.now = f.now.Add(11 * time.Minute)
+	n, err = f.n.RunExpiryReminders(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	require.Equal(t, []string{"an@example.com"}, f.sender.recipients())
+	require.Equal(t, 1, f.store.claims[key].Recipients)
+	require.Equal(t, types.EmailRecipientsNone, f.store.claims[emptyKey].Recipients)
+
+	f.now = f.now.Add(time.Hour)
+	_, err = f.n.RunExpiryReminders(ctx)
+	require.NoError(t, err)
+	require.Len(t, f.sender.sent, 1)
+}
+
+// The paid mail falls back to the Tenant Admins when the buyer cannot be
+// mailed; a personal order has nobody else to tell.
+func TestOrderPaidFallsBackToTenantAdmins(t *testing.T) {
+	f := newMailFixture(t, smtpOn())
+	users := f.n.users.(*mailUserRepo).users
+	users["gone"] = &types.User{ID: "gone", Email: "gone2@example.com", IsActive: false}
+	users["noemail"] = &types.User{ID: "noemail", IsActive: true}
+	for _, buyer := range []string{"gone", "noemail", "deleted", ""} {
+		f.sender.sent = nil
+		o := testOrderView()
+		o.Status = types.UsageOrderPaid
+		o.CreatedBy = buyer
+		f.n.OrderPaid(context.Background(), o)
+		require.Equal(t, []string{"admin@example.com"}, f.sender.recipients(), "buyer %q", buyer)
+	}
+	f.sender.sent = nil
+	o := testOrderView()
+	o.Status = types.UsageOrderPaid
+	o.ScopeType, o.ScopeID, o.CreatedBy = types.UsageScopeUser, "gone", "gone"
+	f.n.OrderPaid(context.Background(), o)
+	require.Empty(t, f.sender.sent)
+}
+
+// Each mail of an event gets its own deadline.
+func TestSendEachGivesEveryMailItsOwnTimeout(t *testing.T) {
+	f := newMailFixture(t, smtpOn())
+	ds := &deadlineSender{}
+	f.n.sender = ds
+	_, err := f.n.sendEach(context.Background(), f.n.SMTPConfig(context.Background()), testEmail(f.now),
+		[]string{"a@example.com", "b@example.com"})
+	require.NoError(t, err)
+	require.Len(t, ds.left, 2)
+	for _, d := range ds.left {
+		require.LessOrEqual(t, d, emailMailTimeout)
+		require.Greater(t, d, emailMailTimeout-5*time.Second)
+	}
+}
+
+type deadlineSender struct{ left []time.Duration }
+
+func (d *deadlineSender) Send(ctx context.Context, _ mailer.Config, _ mailer.Message) error {
+	dl, ok := ctx.Deadline()
+	if !ok {
+		return errors.New("no deadline")
+	}
+	d.left = append(d.left, time.Until(dl))
+	return nil
 }

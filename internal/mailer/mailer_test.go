@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
+	"errors"
 	"net"
 	"strings"
 	"testing"
@@ -114,5 +115,41 @@ func TestSendPlainSMTP(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("no message delivered")
+	}
+}
+
+// A user name over an unencrypted connection to a server that offers no
+// AUTH there gives the clear message, not "no AUTH".
+func TestSendNoneWithUsernameNeedsTLS(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		r := bufio.NewReader(c)
+		_, _ = c.Write([]byte("220 test ESMTP\r\n"))
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				return
+			}
+			if strings.HasPrefix(strings.ToUpper(line), "EHLO") {
+				_, _ = c.Write([]byte("250-test\r\n250 STARTTLS\r\n"))
+			} else {
+				_, _ = c.Write([]byte("221 bye\r\n"))
+			}
+		}
+	}()
+	cfg := Config{Enabled: true, Host: "127.0.0.1", Port: ln.Addr().(*net.TCPAddr).Port, Username: "u", Password: "p",
+		FromAddress: "no-reply@example.com", Security: SecurityNone}
+	err = NewSMTPSender().Send(context.Background(), cfg, Message{To: []string{"a@example.com"}, Text: "x"})
+	if !errors.Is(err, ErrAuthNeedsTLS) {
+		t.Fatalf("err = %v", err)
 	}
 }

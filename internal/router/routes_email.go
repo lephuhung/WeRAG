@@ -7,11 +7,12 @@ import (
 )
 
 // RegisterEmailAdminRoutes registers the SuperAdmin email routes (the SMTP
-// account is edited as email.* system settings). Human SuperAdmin only.
+// account is edited as email.* system settings). Human SuperAdmin only:
+// never an API key (PlatformSuperAdmin).
 func RegisterEmailAdminRoutes(r *gin.RouterGroup, h *handler.EmailHandler, g *rbacGuards) {
 	if h == nil {
 		return
 	}
-	email := r.Group("/system/admin/email", g.SystemAdmin())
+	email := r.Group("/system/admin/email", g.PlatformSuperAdmin())
 	email.POST("/test", h.SendTest)
 }

@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { BrandLogo } from "@/components/brand-logo";
+import { loginPathFor } from "@/lib/safe-next";
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -12,7 +13,8 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
   const { t } = useT();
 
   useEffect(() => {
-    if (ready && !isLoggedIn) router.replace("/login");
+    // keep the page (e.g. a link from an email) for after the sign-in
+    if (ready && !isLoggedIn) router.replace(loginPathFor(window.location.pathname, window.location.search));
   }, [ready, isLoggedIn, router]);
 
   if (!ready) {

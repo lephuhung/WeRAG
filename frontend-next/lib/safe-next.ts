@@ -43,3 +43,13 @@ export function resolveSafeNextPath(raw: unknown): string {
   if (/[\s\x00-\x1f\x7f\\]/.test(decoded)) return DEFAULT_POST_LOGIN_ROUTE;
   return decoded;
 }
+
+/* The sign-in URL for a signed-out visit to `pathname` + `search`: the page
+ * travels in ?next= (validated again by the login page) so a deep link from
+ * an email survives the sign-in. Default/unsafe targets get plain /login. */
+export function loginPathFor(pathname: string, search = ""): string {
+  const target = `${pathname}${search}`;
+  const safe = resolveSafeNextPath(target);
+  if (safe !== target || safe === DEFAULT_POST_LOGIN_ROUTE || safe === "/") return "/login";
+  return `/login?next=${encodeURIComponent(target)}`;
+}

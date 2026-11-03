@@ -25,8 +25,10 @@ const (
 )
 
 const (
-	// emailSendTimeout bounds one background notification (all its mails).
-	emailSendTimeout = 2 * time.Minute
+	// emailEventTimeout bounds one background notification (all its mails);
+	// emailMailTimeout bounds each mail, so a slow one cannot starve the rest.
+	emailEventTimeout = 10 * time.Minute
+	emailMailTimeout  = 30 * time.Second
 	// emailTestTimeout bounds the "Gửi thử" request.
 	emailTestTimeout = 30 * time.Second
 	// expiryReminderLookahead covers the largest reminder threshold plus
@@ -118,7 +120,7 @@ func (n *EmailNotifier) link(path string) string {
 func (n *EmailNotifier) background(ctx context.Context, what string, fn func(ctx context.Context)) {
 	bg := context.WithoutCancel(ctx)
 	n.async(func() {
-		ctx, cancel := context.WithTimeout(bg, emailSendTimeout)
+		ctx, cancel := context.WithTimeout(bg, emailEventTimeout)
 		defer cancel()
 		defer func() {
 			if r := recover(); r != nil {
@@ -143,7 +145,10 @@ func (n *EmailNotifier) sendEach(ctx context.Context, cfg mailer.Config, c email
 		if err != nil {
 			return sent, err
 		}
-		if err := n.sender.Send(ctx, cfg, msg); err != nil {
+		mctx, cancel := context.WithTimeout(ctx, emailMailTimeout)
+		err = n.sender.Send(mctx, cfg, msg)
+		cancel()
+		if err != nil {
 			lastErr = err
 			logger.Warnf(ctx, "[Email] %q to %s failed: %v", c.Subject, addr, err)
 			continue
@@ -290,20 +295,35 @@ func (n *EmailNotifier) OrderPaid(ctx context.Context, order *types.UsageOrderVi
 		if buyer == "" && o.ScopeType == types.UsageScopeUser {
 			buyer = o.ScopeID
 		}
-		if buyer == "" {
-			return
-		}
-		u, err := n.users.GetUserByID(ctx, buyer)
-		if err != nil {
-			logger.Warnf(ctx, "[Email] order %s: buyer %s: %v", o.OrderCode, buyer, err)
-			return
-		}
-		to := addEmail(nil, map[string]bool{}, u)
+		to := n.buyerEmails(ctx, &o, buyer)
 		if len(to) == 0 {
 			return
 		}
 		_, _ = n.sendEach(ctx, cfg, orderPaidEmail(&o, n.paidUntil(ctx, &o), n.link(emailBuyPlanPath)), to)
 	})
+}
+
+// buyerEmails is who hears that an order was paid: the buyer; when the
+// buyer cannot be mailed (inactive, deleted, no email), the Tenant Admins
+// of a tenant order instead.
+func (n *EmailNotifier) buyerEmails(ctx context.Context, o *types.UsageOrderView, buyer string) []string {
+	if buyer != "" {
+		u, err := n.users.GetUserByID(ctx, buyer)
+		if err != nil {
+			logger.Warnf(ctx, "[Email] order %s: buyer %s: %v", o.OrderCode, buyer, err)
+		}
+		if to := addEmail(nil, map[string]bool{}, u); len(to) > 0 {
+			return to
+		}
+	}
+	if o.ScopeType != types.UsageScopeTenant {
+		return nil
+	}
+	to, err := n.scopeEmails(ctx, o.ScopeType, o.ScopeID)
+	if err != nil {
+		logger.Warnf(ctx, "[Email] order %s: organization admins: %v", o.OrderCode, err)
+	}
+	return to
 }
 
 // paidUntil is the end of what a paid order bought: the subscription end,
@@ -397,6 +417,13 @@ func (n *EmailNotifier) RunExpiryReminders(ctx context.Context) (int, error) {
 		return 0, nil
 	}
 	now := n.now()
+	// claims a crashed backend left mid-send are retried
+	if released, err := n.store.ReleaseStale(ctx, types.EmailNotificationSubscriptionExpiry,
+		now.Add(-types.EmailClaimStaleAfter)); err != nil {
+		return 0, err
+	} else if released > 0 {
+		logger.Infof(ctx, "[Email] released %d stale expiry reminder claim(s)", released)
+	}
 	subs, err := n.store.ListSubscriptionsEndingBetween(ctx, now, now.Add(expiryReminderLookahead))
 	if err != nil {
 		return 0, err
@@ -428,7 +455,8 @@ func (n *EmailNotifier) RunExpiryReminders(ctx context.Context) (int, error) {
 			continue
 		}
 		if len(to) == 0 {
-			// nobody to tell; keep the claim so it is not retried every run
+			// nobody to tell; kept (not pending) so it is not retried
+			_ = n.store.SetRecipients(ctx, key, types.EmailRecipientsNone)
 			continue
 		}
 		planName := sub.PlanID

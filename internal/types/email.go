@@ -35,6 +35,19 @@ const (
 	EmailNotificationSubscriptionExpiry = "subscription_expiry"
 )
 
+// EmailNotification.Recipients values besides a count: a claim still being
+// sent (or left by a backend that died mid-send, released after
+// EmailClaimStaleAfter) and one that had nobody to mail (kept, not retried).
+const (
+	EmailRecipientsPending = 0
+	EmailRecipientsNone    = -1
+)
+
+// EmailClaimStaleAfter is how long a claim may stay pending before a run
+// takes it for a crashed send and releases it for a retry. Longer than one
+// reminder run may take.
+const EmailClaimStaleAfter = 15 * time.Minute
+
 // EmailNotification records a notification that must be mailed at most
 // once (migration 000182): the row is claimed before sending (unique
 // DedupeKey, so two backends cannot both send it) and removed again when

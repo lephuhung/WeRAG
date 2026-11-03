@@ -15,7 +15,12 @@ type EmailNotificationRepository interface {
 	Claim(ctx context.Context, n *types.EmailNotification) (bool, error)
 	// Release deletes the claim of dedupeKey so a later run retries it.
 	Release(ctx context.Context, dedupeKey string) error
-	// SetRecipients records how many people the claimed mail went to.
+	// ReleaseStale deletes the claims of kind still pending
+	// (recipients = 0) that were made before `before`: their backend died
+	// before sending finished. Returns how many were released.
+	ReleaseStale(ctx context.Context, kind string, before time.Time) (int64, error)
+	// SetRecipients records how many people the claimed mail went to
+	// (types.EmailRecipientsNone when nobody).
 	SetRecipients(ctx context.Context, dedupeKey string, n int) error
 	// ListSubscriptionsEndingBetween lists active subscriptions whose end
 	// falls in (from, to], with their plan.

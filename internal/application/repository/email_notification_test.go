@@ -84,3 +84,31 @@ func TestListSubscriptionsEndingBetween(t *testing.T) {
 	require.NotNil(t, subs[0].Plan)
 	require.Equal(t, "Go", subs[0].Plan.Name)
 }
+
+func TestEmailNotificationReleaseStale(t *testing.T) {
+	db := setupEmailNotificationDB(t)
+	repo := NewEmailNotificationRepository(db)
+	ctx := context.Background()
+	now := time.Date(2027, 1, 1, 2, 0, 0, 0, time.UTC)
+	kind := types.EmailNotificationSubscriptionExpiry
+	for _, n := range []*types.EmailNotification{
+		{Kind: kind, DedupeKey: "old-pending", RefID: "a", CreatedAt: now.Add(-time.Hour)},
+		{Kind: kind, DedupeKey: "new-pending", RefID: "b", CreatedAt: now.Add(-time.Minute)},
+		{Kind: kind, DedupeKey: "old-sent", RefID: "c", CreatedAt: now.Add(-time.Hour)},
+		{Kind: kind, DedupeKey: "old-nobody", RefID: "d", CreatedAt: now.Add(-time.Hour)},
+		{Kind: "other", DedupeKey: "other-pending", RefID: "e", CreatedAt: now.Add(-time.Hour)},
+	} {
+		ok, err := repo.Claim(ctx, n)
+		require.NoError(t, err)
+		require.True(t, ok)
+	}
+	require.NoError(t, repo.SetRecipients(ctx, "old-sent", 2))
+	require.NoError(t, repo.SetRecipients(ctx, "old-nobody", types.EmailRecipientsNone))
+
+	released, err := repo.ReleaseStale(ctx, kind, now.Add(-types.EmailClaimStaleAfter))
+	require.NoError(t, err)
+	require.Equal(t, int64(1), released)
+	var keys []string
+	require.NoError(t, db.Model(&types.EmailNotification{}).Order("dedupe_key").Pluck("dedupe_key", &keys).Error)
+	require.Equal(t, []string{"new-pending", "old-nobody", "old-sent", "other-pending"}, keys)
+}
