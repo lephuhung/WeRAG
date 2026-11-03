@@ -126,6 +126,7 @@ func TestLegalGraphFocus(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, f.Candidates, 1)
 	require.Equal(t, "other", f.Candidates[0].ID)
+	require.Nil(t, f.Focus, "a picker search reads the candidates only")
 	f, err = svc.KBFocus(ctx, "kb", "", "luat dat dai 31")
 	require.NoError(t, err)
 	require.Len(t, f.Candidates, 1)

@@ -121,7 +121,8 @@ func (s *legalGraphFocusService) scope(ctx context.Context, kbID string) (*legal
 }
 
 // KBFocus returns the ego graph of docID seen from kbID. With docID empty
-// the best-connected held document is focused. q filters the candidates.
+// the best-connected held document is focused, unless q is set: a picker
+// search returns the candidates only (Focus nil). q filters the candidates.
 func (s *legalGraphFocusService) KBFocus(ctx context.Context, kbID, docID, q string) (*types.LegalGraphFocus, error) {
 	out := &types.LegalGraphFocus{
 		Neighbours: []*types.LegalGraphNeighbour{}, NeighbourTotals: map[string]int{},
@@ -150,13 +151,18 @@ func (s *legalGraphFocusService) KBFocus(ctx context.Context, kbID, docID, q str
 		return ranked[i] < ranked[j]
 	})
 	docID = strings.TrimSpace(docID)
-	if docID == "" {
-		docID = ranked[0]
-	} else if !sc.reach[docID] {
+	if docID != "" && !sc.reach[docID] {
 		return nil, types.ErrLegalGraphFocusNotFound
 	}
 	if err := s.candidates(ctx, sc, ranked, q, out); err != nil {
 		return nil, err
+	}
+	if docID == "" {
+		if strings.TrimSpace(q) != "" {
+			// a picker search: the candidates only
+			return out, nil
+		}
+		docID = ranked[0]
 	}
 
 	// Neighbours from the catalogue relations.

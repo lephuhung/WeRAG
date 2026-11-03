@@ -282,7 +282,8 @@ type LegalGraphFocusService interface {
 	// KBFocus returns one catalogue document's relations and provision
 	// links seen from a KB: docID must be held by the KB or a direct
 	// neighbour of a held document (types.ErrLegalGraphFocusNotFound
-	// otherwise); empty, the best-connected held document is focused. q
-	// filters the held-document candidates of the picker.
+	// otherwise); empty, the best-connected held document is focused, or
+	// with q set only the candidates are returned. q filters the
+	// held-document candidates of the picker.
 	KBFocus(ctx context.Context, kbID, docID, q string) (*types.LegalGraphFocus, error)
 }

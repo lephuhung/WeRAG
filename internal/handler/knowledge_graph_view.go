@@ -117,7 +117,8 @@ func (h *KnowledgeGraphViewHandler) GetLegalGraph(c *gin.Context) {
 // @Description  600 rows each; *_total and provisions_truncated report the
 // @Description  rest). doc must be held by the KB (approved legal link) or a
 // @Description  direct neighbour of a held document, else 404; empty, the
-// @Description  best-connected held document is focused. q filters the
+// @Description  best-connected held document is focused — or, with q, only
+// @Description  the candidates are returned (focus null). q filters the
 // @Description  held-document candidates of the picker (number or title,
 // @Description  diacritics optional).
 // @Tags         Đồ thị tri thức
