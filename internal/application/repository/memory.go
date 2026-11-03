@@ -478,6 +478,20 @@ func (r *memoryRepository) ExpireOverdue(
 	return result.RowsAffected, result.Error
 }
 
+func (r *memoryRepository) ArchiveItem(
+	ctx context.Context, scope interfaces.MemoryScope, id string,
+) error {
+	now := time.Now()
+	return r.scoped(ctx, scope).
+		Model(&types.MemoryItem{}).
+		Where("id = ? AND status IN ?", id, []string{types.MemoryStatusActive, types.MemoryStatusPending}).
+		Updates(map[string]interface{}{
+			"status":     types.MemoryStatusArchived,
+			"invalid_at": now,
+			"updated_at": now,
+		}).Error
+}
+
 func (r *memoryRepository) UpsertItemEmbedding(
 	ctx context.Context, scope interfaces.MemoryScope, embedding *types.MemoryItemEmbedding,
 ) error {

@@ -61,6 +61,21 @@ func (s *stubMessageRepo) set(sessionID string, messages []*types.Message) {
 	s.bySession[sessionID] = messages
 }
 
+func (s *stubMessageRepo) GetMessage(_ context.Context, sessionID, id string) (*types.Message, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	source := s.bySession[sessionID]
+	if source == nil {
+		source = s.messages
+	}
+	for _, m := range source {
+		if m.ID == id {
+			return m, nil
+		}
+	}
+	return nil, errors.New("message not found")
+}
+
 func (s *stubMessageRepo) GetMessagesBySessionBeforeTime(
 	_ context.Context, sessionID string, beforeTime time.Time, limit int,
 ) ([]*types.Message, error) {

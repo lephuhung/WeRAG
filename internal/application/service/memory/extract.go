@@ -183,6 +183,9 @@ func (s *Service) releaseSlot(ctx context.Context, scope interfaces.MemoryScope)
 	}
 }
 
+// maxDeletesPerRun is how many notes one extraction run may retire.
+const maxDeletesPerRun = 1
+
 // extractionDecision is one instruction from the extraction model.
 type extractionDecision struct {
 	// Action is add, update, delete or none. Anything else is ignored — an
@@ -1165,6 +1168,7 @@ func (s *Service) applyDecisions(
 	// Two decisions about the same topic inside one response would otherwise
 	// supersede each other, leaving a superseded row from a single run.
 	seenTopics := make(map[string]struct{}, len(decisions))
+	deleted := 0
 
 	for _, decision := range decisions {
 		if applied >= extractMaxItemsPerRun {
@@ -1207,6 +1211,17 @@ func (s *Service) applyDecisions(
 				if target == nil {
 					continue
 				}
+				// Without an index the topic is all there is, and a topic can
+				// hold several facts or tasks (siblings). Which one is meant
+				// is then a guess, so nothing is changed.
+				ambiguous, err := s.hasSiblings(ctx, scope, target)
+				if err != nil {
+					return err
+				}
+				if ambiguous {
+					logger.Infof(ctx, "memory: %s by topic %q skipped (several notes share it)", action, target.Topic)
+					continue
+				}
 			}
 			topic = target.Topic
 		}
@@ -1218,6 +1233,18 @@ func (s *Service) applyDecisions(
 
 		switch action {
 		case "delete":
+			// Retiring a note takes the user's own words saying it stopped
+			// being true, and at most one per run: a model that misreads a
+			// segment must not be able to empty the store in one pass.
+			if !deleteHasCue(decision.resolveSource(segment).content) {
+				logger.Infof(ctx, "memory: gate dropped delete of %q (no change cue in the source)", target.Topic)
+				continue
+			}
+			if deleted >= maxDeletesPerRun {
+				logger.Infof(ctx, "memory: gate dropped delete of %q (delete cap reached)", target.Topic)
+				continue
+			}
+			deleted++
 			// Superseding with no replacement keeps the note visible in the
 			// memory manager as something that stopped being true, which is
 			// more useful than it disappearing without explanation.
@@ -1247,7 +1274,7 @@ func (s *Service) applyDecisions(
 			if action == "update" && target != nil {
 				targetID = target.ID
 			}
-			if _, err := s.writeReplacing(ctx, scope, cfg, item, targetID); err != nil {
+			if _, err := s.writeReplacing(ctx, scope, cfg, item, targetID, source.content); err != nil {
 				if errors.Is(err, ErrPreviouslyForgotten) || errors.Is(err, ErrSensitiveContent) ||
 					errors.Is(err, types.ErrMemoryConflict) {
 					continue

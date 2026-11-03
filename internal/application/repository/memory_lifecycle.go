@@ -119,7 +119,9 @@ func (r *memoryRepository) ConfirmPendingItem(ctx context.Context, scope interfa
 			Updates(map[string]interface{}{"status": types.MemoryStatusSuperseded, "invalid_at": now, "superseded_by": id, "updated_at": now}).Error; err != nil {
 			return err
 		}
+		// A confirmed guess is the user's now, like a note they edited: the
+		// daily re-gate of distilled rows must not take it back.
 		return query().Model(&types.MemoryItem{}).Where("id = ?", id).
-			Updates(map[string]interface{}{"status": types.MemoryStatusActive, "updated_at": now}).Error
+			Updates(map[string]interface{}{"status": types.MemoryStatusActive, "origin": types.MemoryOriginManual, "updated_at": now}).Error
 	})
 }
