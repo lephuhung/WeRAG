@@ -2,16 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getWikiGraph, type WikiGraphData } from "@/lib/api/wiki";
-import { getEntityGraph, getLegalGraph, type EntityGraphResponse, type GraphView } from "@/lib/api/graph";
+import { getEntityGraph, type EntityGraphResponse } from "@/lib/api/graph";
 import { GraphCanvas, RelationList, type CanvasEdge, type CanvasNode, type TypeStyle } from "@/components/graph-canvas";
 import { GRAPH_FAMILY, type GraphFamily } from "@/components/graph/graph-palette";
 import { useT, type LocaleKey } from "@/lib/i18n";
-import { formatDate as vnFormatDate } from "@/lib/datetime";
+import { LegalFocusGraph } from "@/components/graph/legal-focus-graph";
 
 type GraphMode = "wiki" | "entity" | "legal";
 
 /* The KB page's graph tab: the wiki link graph, the entity graph extracted
- * from the KB's documents, and the relation graph of its legal documents. */
+ * from the KB's documents, and the focused relation graph of its legal
+ * documents (components/graph/legal-focus-graph.tsx). */
 export function KnowledgeGraph({
   kbId,
   onSelectSlug,
@@ -45,7 +46,7 @@ export function KnowledgeGraph({
       </div>
       {mode === "wiki" && <WikiGraph kbId={kbId} onSelectSlug={onSelectSlug} />}
       {mode === "entity" && <EntityGraph kbId={kbId} />}
-      {mode === "legal" && <LegalGraph kbId={kbId} onOpenKnowledge={onOpenKnowledge} />}
+      {mode === "legal" && <LegalFocusGraph kbId={kbId} onOpenKnowledge={onOpenKnowledge} />}
     </div>
   );
 }
@@ -290,100 +291,6 @@ function EntityGraph({ kbId }: { kbId: string }) {
           </button>
         </>
       )}
-    />
-  );
-}
-
-/* ---------- Legal relation graph (legal catalogue) ---------- */
-
-const LEGAL_GROUPS: Record<string, string[]> = {
-  law: ["Hiến pháp", "Bộ luật", "Luật", "Pháp lệnh", "Sắc lệnh", "Sắc luật", "Lệnh"],
-  decree: ["Nghị định"],
-  circular: ["Thông tư", "Thông tư liên tịch", "Thông tư liên bộ"],
-  decision: ["Quyết định", "Nghị quyết", "Nghị quyết liên tịch", "Chỉ thị"],
-};
-const LEGAL_FAMILY: Record<string, GraphFamily> = {
-  law: "red",
-  decree: "skyDeep",
-  circular: "emerald",
-  decision: "amber",
-  other: "slate",
-};
-
-function legalGroup(docType: string) {
-  for (const [group, docTypes] of Object.entries(LEGAL_GROUPS)) {
-    if (docTypes.includes(docType)) return group;
-  }
-  return "other";
-}
-
-function LegalGraph({ kbId, onOpenKnowledge }: { kbId: string; onOpenKnowledge?: (knowledgeId: string) => void }) {
-  const { t } = useT();
-  const relationLabel = useRelationLabel();
-  const [view, setView] = useState<GraphView | null>(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let alive = true;
-    setView(null);
-    setError("");
-    getLegalGraph(kbId, 150)
-      .then((r) => alive && setView(r.data))
-      .catch((e) => alive && setError(errorText(e)));
-    return () => {
-      alive = false;
-    };
-  }, [kbId]);
-
-  const types: Record<string, TypeStyle> = useMemo(
-    () => typeStyles(LEGAL_FAMILY, (k) => t(`graph.legal.${k}` as LocaleKey)),
-    [t]
-  );
-  const meta = useMemo(() => new Map((view?.nodes ?? []).map((n) => [n.id, n.meta ?? {}])), [view]);
-  const nodes: CanvasNode[] = useMemo(
-    () => (view?.nodes ?? []).map((n) => ({ id: n.id, title: n.name, type: legalGroup(n.type), weight: n.degree })),
-    [view]
-  );
-  const edges: CanvasEdge[] = useMemo(
-    () => (view?.edges ?? []).map((e) => ({ source: e.source, target: e.target, label: relationLabel(e.type) })),
-    [view, relationLabel]
-  );
-  const formatDate = (iso?: string) =>
-    (iso && vnFormatDate(iso)) || "—";
-
-  return (
-    <GraphCanvas
-      nodes={nodes}
-      edges={edges}
-      types={types}
-      directed
-      truncated={view?.truncated}
-      loading={view === null && !error}
-      error={error}
-      emptyText={t("graph.legalEmpty")}
-      renderDetails={(n, nodeEdges, byId) => {
-        const m = meta.get(n.id) ?? {};
-        return (
-          <>
-            {m.title && m.title !== n.title && <p className="caption mt-1 text-muted">{m.title}</p>}
-            <dl className="caption mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-              <dt className="text-muted">{t("graph.status")}</dt>
-              <dd className="text-ink">{m.status || "—"}</dd>
-              <dt className="text-muted">{t("graph.issued")}</dt>
-              <dd className="text-ink">{formatDate(m.issued_on)}</dd>
-            </dl>
-            <p className={`caption mt-2 ${m.in_kb ? "text-success" : "text-muted"}`}>
-              {m.in_kb ? t("graph.inKb") : t("graph.notInKb")}
-            </p>
-            <RelationList node={n} edges={nodeEdges} byId={byId} label={(e) => e.label ?? ""} />
-            {m.in_kb && m.knowledge_id && onOpenKnowledge && (
-              <button className="btn btn-primary btn-sm mt-3 w-full" onClick={() => onOpenKnowledge(m.knowledge_id)}>
-                {t("graph.openDoc")}
-              </button>
-            )}
-          </>
-        );
-      }}
     />
   );
 }
