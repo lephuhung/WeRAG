@@ -403,6 +403,9 @@ func TestOrderPaidMailsBuyerWithLastDay(t *testing.T) {
 	f.n.OrderPaid(context.Background(), o)
 	require.Equal(t, []string{"admin@example.com"}, f.sender.recipients())
 	require.Contains(t, f.sender.sent[0].Text, "dùng được đến hết ngày 01/04/2027")
+	// with the receipt to print
+	require.Contains(t, f.sender.sent[0].Text, "Biên nhận thanh toán (in hoặc lưu PDF): https://ai.example.vn/billing/receipt/WR7K2M")
+	require.Contains(t, f.sender.sent[0].HTML, `href="https://ai.example.vn/billing/receipt/WR7K2M"`)
 
 	// a pending order is never announced as paid
 	f.sender.sent = nil

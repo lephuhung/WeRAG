@@ -37,6 +37,11 @@ const (
 	BillingOrderTTLHoursSettingKey = "billing.order_ttl_hours"
 	// BillingContactSettingKey: free text shown on the payment page.
 	BillingContactSettingKey = "billing.contact"
+	// The seller as receipts print it: legal name, tax code (mã số thuế)
+	// and address; each is left out while empty.
+	BillingSellerNameSettingKey    = "billing.seller_name"
+	BillingSellerTaxCodeSettingKey = "billing.seller_tax_code"
+	BillingSellerAddressSettingKey = "billing.seller_address"
 )
 
 // UsagePromoCode is one row of usage_promo_codes.
@@ -173,9 +178,12 @@ type UsageOrder struct {
 	// (renewal or plan change) was priced against; confirming refuses
 	// another count (a seat order added seats meanwhile). nil = not priced
 	// against seats (and legacy orders).
-	PricedSeats *int      `json:"priced_seats,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	PricedSeats *int `json:"priced_seats,omitempty"`
+	// VAT invoice the buyer asked for (usage_billing_invoice.go): details
+	// editable until InvoiceIssuedAt is set by a SuperAdmin.
+	UsageOrderInvoice
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // TableName returns the table name.
@@ -204,6 +212,9 @@ type UsageQuoteRequest struct {
 	// order waiting for payment and wants another one anyway (without it
 	// the order is refused with reason plan_order_pending).
 	ConfirmDuplicate bool `json:"confirm_duplicate"`
+	// Invoice: the buyer wants a VAT invoice with these details (nil = no
+	// invoice; it can still be asked for later on the order).
+	Invoice *UsageInvoiceDetails `json:"invoice"`
 }
 
 // UsageQuote prices a request. PromoError is set (and no discount applied)
@@ -269,6 +280,10 @@ type UsageBillingInfo struct {
 	BankAccountName string `json:"bank_account_name"`
 	OrderTTLHours   int64  `json:"order_ttl_hours"`
 	Contact         string `json:"contact"`
+	// The seller printed on receipts (empty = left out).
+	SellerName    string `json:"seller_name"`
+	SellerTaxCode string `json:"seller_tax_code"`
+	SellerAddress string `json:"seller_address"`
 }
 
 // UsageOrderFilter narrows an order listing.
@@ -282,7 +297,9 @@ type UsageOrderFilter struct {
 	// AwaitingAdmin keeps the orders only a SuperAdmin can move on (the
 	// badge count of CountOrdersAwaitingAdmin).
 	AwaitingAdmin bool
-	Limit         int
+	// InvoiceRequested: only orders that asked for a VAT invoice.
+	InvoiceRequested bool
+	Limit            int
 }
 
 // UsageOrderView is an order as pages show it: with the name of what it
@@ -302,6 +319,17 @@ type UsageOrderView struct {
 	SubscriptionEndsAt *time.Time         `json:"subscription_ends_at,omitempty"`
 	ReceivedVND        int64              `json:"received_vnd,omitempty"`
 	LastPayment        *UsageOrderPayment `json:"last_payment,omitempty"`
+	// AdminInvoiceIssuedBy: who marked the VAT invoice issued; set by the
+	// SuperAdmin routes only (WithAdminFields), never shown to buyers.
+	AdminInvoiceIssuedBy string `json:"invoice_issued_by,omitempty"`
+}
+
+// WithAdminFields adds what only a SuperAdmin sees to the view.
+func (v *UsageOrderView) WithAdminFields() *UsageOrderView {
+	if v != nil && v.UsageOrder != nil {
+		v.AdminInvoiceIssuedBy = v.InvoiceIssuedBy
+	}
+	return v
 }
 
 // UsageOrderPayment is a transfer as the buyer sees it on the order page.

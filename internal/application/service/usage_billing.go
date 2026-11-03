@@ -59,6 +59,9 @@ func (s *usageBillingService) BillingInfo(ctx context.Context) *types.UsageBilli
 		BankAccountName: strings.TrimSpace(s.settings.GetString(ctx, types.BillingBankAccountNameSettingKey, "", "")),
 		OrderTTLHours:   s.settings.GetInt(ctx, types.BillingOrderTTLHoursSettingKey, "", 72),
 		Contact:         strings.TrimSpace(s.settings.GetString(ctx, types.BillingContactSettingKey, "", "")),
+		SellerName:      strings.TrimSpace(s.settings.GetString(ctx, types.BillingSellerNameSettingKey, "", "")),
+		SellerTaxCode:   strings.TrimSpace(s.settings.GetString(ctx, types.BillingSellerTaxCodeSettingKey, "", "")),
+		SellerAddress:   strings.TrimSpace(s.settings.GetString(ctx, types.BillingSellerAddressSettingKey, "", "")),
 	}
 	info.Enabled = info.BankAccountNo != ""
 	return info
@@ -308,6 +311,10 @@ func (s *usageBillingService) CreateOrder(
 	if scopeID == "" {
 		return nil, apperrors.NewBadRequestError("scope_id is required")
 	}
+	invoice, err := normalizeInvoiceRequest(req.Invoice)
+	if err != nil {
+		return nil, err
+	}
 	// an expired order no longer blocks a new one (same add-on, a plan
 	// order asking for confirmation) nor holds its promo use
 	if err := s.expireDue(ctx); err != nil {
@@ -367,6 +374,9 @@ func (s *usageBillingService) CreateOrder(
 	if promo != nil {
 		id := promo.ID
 		order.PromoCodeID = &id
+	}
+	if invoice != nil {
+		order.SetInvoiceDetails(*invoice)
 	}
 	order.ExpiresAt = s.paymentDeadline(ctx, order.TotalVND, now)
 	// The promo use is reserved in the order's transaction: the code's last

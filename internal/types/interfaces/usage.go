@@ -226,6 +226,9 @@ type UsageBillingRepository interface {
 	// on: pending at 0 đồng, or pending/expired holding money
 	// (UsagePaymentHeldStatuses); UsageOrderFilter.AwaitingAdmin lists them.
 	CountOrdersAwaitingAdmin(ctx context.Context) (int64, error)
+	// CountInvoicesToIssue counts the paid orders asking for a VAT invoice
+	// that no SuperAdmin has marked issued yet.
+	CountInvoicesToIssue(ctx context.Context) (int64, error)
 	// ReceivedByOrder is, per order, the largest per-source sum of the
 	// transfers in UsagePaymentHeldStatuses (one query; two checkers'
 	// reports of the same money do not add up).
@@ -284,6 +287,29 @@ type UsageBillingService interface {
 	// on: pending at 0 đồng, or pending/expired holding money that did not
 	// confirm them.
 	CountOrdersAwaitingAdmin(ctx context.Context) (int64, error)
+	// AdminCounts are the SuperAdmin billing badges: orders awaiting a
+	// SuperAdmin and VAT invoices to issue.
+	AdminCounts(ctx context.Context) (*types.UsageBillingAdminCounts, error)
+	// LastInvoiceDetails are the VAT invoice details of the scope's latest
+	// order that asked for one (nil when none did), to prefill a new order.
+	LastInvoiceDetails(ctx context.Context, scopeType, scopeID string) (*types.UsageInvoiceDetails, error)
+	// UpdateOrderInvoice asks for, changes or withdraws the VAT invoice of
+	// a pending or paid order. Refused once the invoice was marked issued
+	// (409, reason invoice_issued) and on cancelled/expired orders (409,
+	// reason invoice_order_closed); bad details are a 400 whose reason
+	// names the field (types.UsageInvoiceDetails.Normalize).
+	UpdateOrderInvoice(ctx context.Context, id string, req types.UsageInvoiceUpdate) (*types.UsageOrderView, error)
+	// MarkInvoiceIssued records that the VAT invoice of a paid order was
+	// issued in the external system (SuperAdmin; again to correct the
+	// number/series/date). Refused (409) unless the order is paid
+	// (order_not_paid) and asked for an invoice (invoice_not_requested).
+	MarkInvoiceIssued(ctx context.Context, id, by string, req types.UsageInvoiceIssue) (*types.UsageOrderView, error)
+	// UnmarkInvoiceIssued undoes MarkInvoiceIssued (a mistake): the buyer
+	// may edit the details again.
+	UnmarkInvoiceIssued(ctx context.Context, id string) (*types.UsageOrderView, error)
+	// OrderReceipt is the receipt of a paid order (409, reason
+	// order_not_paid, otherwise). The caller checks access to the order.
+	OrderReceipt(ctx context.Context, order *types.UsageOrderView) (*types.UsageOrderReceipt, error)
 	// CancelOrder voids a pending order and releases its promo use. An
 	// order that has received money is refused (409, reason
 	// payment_received) unless force (SuperAdmin).

@@ -171,6 +171,14 @@ func whereAwaitingAdmin(q *gorm.DB) *gorm.DB {
 	)
 }
 
+func (r *usageBillingRepository) CountInvoicesToIssue(ctx context.Context) (int64, error) {
+	var n int64
+	err := r.conn(ctx).Model(&types.UsageOrder{}).
+		Where("status = ? AND invoice_requested = ? AND invoice_issued_at IS NULL", types.UsageOrderPaid, true).
+		Count(&n).Error
+	return n, err
+}
+
 // ReceivedByOrder sums per order and source, then keeps each order's
 // largest source sum: two checkers report the same money, so their
 // reports never add up, while every transfer of one source counts.
@@ -217,6 +225,9 @@ func filterOrders(q *gorm.DB, filter types.UsageOrderFilter) *gorm.DB {
 	}
 	if filter.AwaitingAdmin {
 		q = whereAwaitingAdmin(q)
+	}
+	if filter.InvoiceRequested {
+		q = q.Where("invoice_requested = ?", true)
 	}
 	return q
 }

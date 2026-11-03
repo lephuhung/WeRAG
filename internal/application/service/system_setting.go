@@ -509,6 +509,19 @@ var registry = map[string]settingSpec{
 		Type: "string", EnvName: "", Default: "", Category: "billing",
 		Description: "Thông tin liên hệ hỗ trợ thanh toán hiển thị trên trang thanh toán.",
 	},
+	// The seller printed on payment receipts; an empty field is left out.
+	types.BillingSellerNameSettingKey: {
+		Type: "string", EnvName: "", Default: "", Category: "billing",
+		Description: "Tên pháp lý của bên bán in trên biên nhận thanh toán. Để trống thì không in.",
+	},
+	types.BillingSellerTaxCodeSettingKey: {
+		Type: "string", EnvName: "", Default: "", Category: "billing",
+		Description: "Mã số thuế của bên bán in trên biên nhận thanh toán. Để trống thì không in.",
+	},
+	types.BillingSellerAddressSettingKey: {
+		Type: "string", EnvName: "", Default: "", Category: "billing",
+		Description: "Địa chỉ của bên bán in trên biên nhận thanh toán. Để trống thì không in.",
+	},
 	// billing.webhook_secret authenticates the payment checker on POST
 	// /billing/payments/webhook; read per request, so a new value takes
 	// effect at once. Empty (and no ENV) = webhook off.
@@ -1309,6 +1322,7 @@ func (s *systemSettingService) Update(ctx context.Context, key string, rawValue 
 		return nil, fmt.Errorf("unknown setting key %q", key)
 	}
 
+	rawValue = normalizeRegistryValue(key, rawValue)
 	encoded, err := encodeForType(spec.Type, rawValue)
 	if err != nil {
 		return nil, fmt.Errorf("invalid value for %q (expected %s): %w", key, spec.Type, err)
@@ -1712,6 +1726,17 @@ func secretAuditValue(raw types.JSON) string {
 	return "[set]"
 }
 
+// normalizeRegistryValue cleans what people type before it is validated
+// and stored: the seller tax code loses its spaces ("0101 234 567").
+func normalizeRegistryValue(key string, rawValue any) any {
+	if key == types.BillingSellerTaxCodeSettingKey {
+		if v, ok := rawValue.(string); ok {
+			return types.NormalizeVNTaxCode(v)
+		}
+	}
+	return rawValue
+}
+
 // validateRegistryEntry runs key-specific structural validation that
 // goes beyond the type contract enforced by encodeForType. It is called
 // by Update right after the type/enum checks; nil error means the value
@@ -1732,6 +1757,12 @@ func validateRegistryEntry(key string, rawValue any) error {
 		v = strings.TrimSpace(v)
 		if v != "" && !types.ValidBankBIN(v) {
 			return errors.New("the bank BIN must be the bank's 6-digit NAPAS code, e.g. 970418 for BIDV or 970436 for Vietcombank")
+		}
+	case types.BillingSellerTaxCodeSettingKey:
+		v, _ := rawValue.(string)
+		v = types.NormalizeVNTaxCode(v)
+		if v != "" && !types.ValidVNTaxCode(v) {
+			return errors.New("the tax code must be 10 digits, or 10 digits, '-' and 3 digits")
 		}
 	case types.BillingWebhookSecretSettingKey:
 		// "" turns the webhook off; anything else must look generated, which
