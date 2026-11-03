@@ -167,14 +167,35 @@ func (s *usageBillingService) ReopenOrder(ctx context.Context, id string, force 
 			return err
 		}
 		// a newer plan order may be waiting: paying both would apply both
-		if !force && o.Kind != types.UsageOrderKindAddon {
+		switch o.Kind {
+		case types.UsageOrderKindAddon:
+		case types.UsageOrderKindSeats:
+			// a newer seat or plan order may be waiting (no override: see
+			// CreateOrder)
+			if err := s.refusePendingSeatOrder(ctx, o.ScopeType, o.ScopeID); err != nil {
+				return err
+			}
 			if err := s.refusePendingPlanOrder(ctx, o.ScopeType, o.ScopeID); err != nil {
 				return err
 			}
+		default:
+			if !force {
+				if err := s.refusePendingPlanOrder(ctx, o.ScopeType, o.ScopeID); err != nil {
+					return err
+				}
+			}
+			if seatSensitivePlanOrder(o) {
+				if err := s.refusePendingSeatOrder(ctx, o.ScopeType, o.ScopeID); err != nil {
+					return err
+				}
+			}
 		}
-		// another pending order may have bought the same add-on since
-		if err := s.refusePendingAddons(ctx, o.ScopeType, o.ScopeID, o.Addons); err != nil {
-			return err
+		// another pending order may have bought the same add-on since (a
+		// seat order's lines only pay its seats)
+		if o.Kind != types.UsageOrderKindSeats {
+			if err := s.refusePendingAddons(ctx, o.ScopeType, o.ScopeID, o.Addons); err != nil {
+				return err
+			}
 		}
 		o.ExpiresAt = s.paymentDeadline(ctx, o.TotalVND, s.now())
 		if err := s.reopenExpiredOrder(ctx, o); err != nil {

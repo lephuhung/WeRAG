@@ -420,7 +420,10 @@ export default function AdminBilling() {
                 {o.scope_name} <span className="caption text-muted-soft">({o.scope_type === "tenant" ? t("usg.scopeTenant") : t("usg.scopeUser")})</span>
               </td>
               <td className="break-words px-5 py-3.5 align-middle text-ink">
-                {o.plan_name} · {o.kind === "addon" ? t("bill.addonOrder") : t("bill.monthsN", { n: o.months })}{o.mode === "seat" ? ` · ${t("bill.seatsN", { n: o.seats })}` : ""}
+                {o.plan_name} ·{" "}
+                {o.kind === "seats"
+                  ? t("bill.addSeatsN", { n: o.seats })
+                  : `${o.kind === "addon" ? t("bill.addonOrder") : t("bill.monthsN", { n: o.months })}${o.mode === "seat" ? ` · ${t("bill.seatsN", { n: o.seats })}` : ""}`}
                 {(o.addons ?? []).length > 0 ? ` · ${(o.addons ?? []).map((a) => a.name || a.agent_id).join(", ")}` : ""}
                 {o.promo_code ? <span className="caption block text-muted">{o.promo_code} −{formatPriceVND(o.discount_vnd)}</span> : null}
                 {o.credit_vnd ? <span className="caption block text-muted">{t("bill.credit")} −{formatPriceVND(o.credit_vnd)}</span> : null}

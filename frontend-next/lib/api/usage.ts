@@ -484,9 +484,13 @@ export interface UsageOrder {
   expires_at: string | null;
   subscription_id: string | null;
   note: string;
-  /** "plan" (a plan, optional add-ons) or "addon" (add-ons on the current subscription). */
+  /** "plan" (a plan, optional add-ons), "addon" (add-ons on the current
+   * subscription) or "seats" (`seats` more seats on it for the rest of its
+   * period; proration_vnd/prorated_days price them). */
   kind?: UsageOrderKind;
   target_subscription_id?: string | null;
+  /** Seats order: the subscription end it was priced to. */
+  target_ends_at?: string | null;
   addons?: UsageOrderAddonLine[];
   credit_vnd?: number;
   credit_lines?: UsageCreditLine[];
@@ -511,7 +515,7 @@ export interface UsageOrder {
   last_payment?: { amount_vnd: number; status: string; transacted_at: string } | null;
 }
 
-export type UsageOrderKind = "plan" | "addon";
+export type UsageOrderKind = "plan" | "addon" | "seats";
 
 /** One add-on of a quote/order, priced when ordered. */
 export interface UsageOrderAddonLine {
@@ -560,9 +564,11 @@ export interface UsageQuoteRequest {
 }
 
 /** Mirrors types.UsageCreditLine: unused paid days of the replaced package
- * (kind "plan") or of an add-on the order drops (kind "addon"). */
+ * (kind "plan"), of an add-on the order drops (kind "addon"), or of the
+ * seats a kept add-on loses on a plan with fewer seats (kind "addon_units",
+ * units = the seats not carried over). */
 export interface UsageCreditLine {
-  kind: "plan" | "addon";
+  kind: "plan" | "addon" | "addon_units";
   agent_id?: string;
   name: string;
   units: number;
@@ -581,6 +587,9 @@ export interface UsageHeldAddonChoice {
   carry_vnd: number;
   credit_vnd: number;
   bought_again?: boolean;
+  /** Kept on a plan with fewer seats: the seats not carried over and their credit. */
+  dropped_units?: number;
+  units_credit_vnd?: number;
 }
 
 /** Mirrors types.UsageQuote. promo_error is a reason label (see promoErrorKey). */
@@ -762,12 +771,15 @@ export function billingErrorKey(reason: string | undefined): string | null {
     case "addon_not_sold":
     case "addon_pending":
     case "no_subscription":
+    case "not_seat_plan":
     case "open_ended_subscription":
     case "order_not_expired":
     case "order_not_pending":
     case "payment_received":
     case "plan_not_sold":
     case "plan_order_pending":
+    case "seats_none":
+    case "seats_order_pending":
     case "subscription_changed":
     case "term_not_sold":
       return `bill.err.${reason}`;

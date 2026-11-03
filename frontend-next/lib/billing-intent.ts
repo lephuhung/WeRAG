@@ -1,7 +1,8 @@
 /* The package the billing page should open on, handed over by a banner's
  * "Renew"/"Buy" button. Read by the next BillingPage mount, which then clears it. */
 
-export type BillingIntent = { scope: "tenant" | "user"; planId: string };
+/** addSeats: open on "add seats to the package in use" (the no-seat banner). */
+export type BillingIntent = { scope: "tenant" | "user"; planId: string; addSeats?: boolean };
 
 export const BILLING_INTENT_EVENT = "werag:billing-intent";
 

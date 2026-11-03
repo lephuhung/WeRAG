@@ -256,6 +256,9 @@ func (m *memPlanRepo) PendingOrderAddons(_ context.Context, scopeType, scopeID s
 			continue
 		}
 		for _, l := range o.Addons {
+			if l.SeatsOnly {
+				continue
+			}
 			out[o.ID] = append(out[o.ID], l.AgentID)
 		}
 	}

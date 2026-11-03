@@ -127,8 +127,19 @@ func (s *usageBillingService) quote(
 		}
 		promo, err := s.applyPromo(ctx, q, req.PromoCode, strict)
 		return q, promo, err
+	case types.UsageOrderKindSeats:
+		q, err := s.quoteSeatsOnly(ctx, req, scopeID)
+		if err != nil {
+			return nil, nil, err
+		}
+		// promo codes: the rule of the add-on-only (mid-term) orders
+		if !addonOrderPromoAllowed() {
+			req.PromoCode = ""
+		}
+		promo, err := s.applyPromo(ctx, q, req.PromoCode, strict)
+		return q, promo, err
 	default:
-		return nil, nil, apperrors.NewBadRequestError("kind must be plan or addon")
+		return nil, nil, apperrors.NewBadRequestError("kind must be plan, addon or seats")
 	}
 	plan, err := s.plans.GetPlan(ctx, strings.TrimSpace(req.PlanID))
 	if err != nil {
@@ -246,6 +257,8 @@ func (s *usageBillingService) priceSeatRenewal(ctx context.Context, q *types.Usa
 		return nil
 	}
 	q.CurrentSeats = cur.Seats
+	priced := cur.Seats
+	q.PricedSeats = &priced
 	if q.Seats < cur.Seats {
 		return apperrors.NewBadRequestError(fmt.Sprintf(
 			"the current subscription has %d seats; a renewal must cover at least that many", cur.Seats,
@@ -331,12 +344,17 @@ func (s *usageBillingService) CreateOrder(
 		ProrationVND:  q.ProrationVND,
 		ProratedDays:  q.ProratedDays,
 		SavingsVND:    q.SavingsVND,
+		PricedSeats:   q.PricedSeats,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
 	if q.TargetSubscriptionID != "" {
 		target := q.TargetSubscriptionID
 		order.TargetSubscriptionID = &target
+	}
+	if q.Kind == types.UsageOrderKindSeats && q.SubscriptionEndsAt != nil {
+		e := *q.SubscriptionEndsAt
+		order.TargetEndsAt = &e
 	}
 	if q.Replaces != nil {
 		id := q.Replaces.SubscriptionID
@@ -357,7 +375,7 @@ func (s *usageBillingService) CreateOrder(
 		// one pending order per add-on and scope, and no second plan order
 		// unconfirmed (checked under the scope lock, so two tabs cannot
 		// both pass)
-		if len(order.Addons) > 0 || order.Kind == types.UsageOrderKindPlan {
+		if len(order.Addons) > 0 || order.Kind != types.UsageOrderKindAddon {
 			if err := s.repo.LockScope(ctx, order.ScopeType, order.ScopeID); err != nil {
 				return err
 			}
@@ -367,7 +385,25 @@ func (s *usageBillingService) CreateOrder(
 				return err
 			}
 		}
-		if len(order.Addons) > 0 {
+		// one seat order at a time (no override: the next is priced on the
+		// seats the first adds), and none beside a pending plan order of the
+		// scope either way: each is priced on the seats the other changes
+		// (review H1/H2; no confirm_duplicate override for this cross case)
+		if order.Kind == types.UsageOrderKindSeats {
+			if err := s.refusePendingSeatOrder(ctx, order.ScopeType, order.ScopeID); err != nil {
+				return err
+			}
+			if err := s.refusePendingPlanOrder(ctx, order.ScopeType, order.ScopeID); err != nil {
+				return err
+			}
+		}
+		if seatSensitivePlanOrder(order) {
+			if err := s.refusePendingSeatOrder(ctx, order.ScopeType, order.ScopeID); err != nil {
+				return err
+			}
+		}
+		// a seat order's add-on lines only pay the new seats (seats_only)
+		if len(order.Addons) > 0 && order.Kind != types.UsageOrderKindSeats {
 			if err := s.refusePendingAddons(ctx, order.ScopeType, order.ScopeID, order.Addons); err != nil {
 				return err
 			}
@@ -557,8 +593,11 @@ func (s *usageBillingService) ConfirmOrder(ctx context.Context, id, confirmedBy 
 // now and replaces whatever the scope had (its unused paid days were
 // credited on the order, its seats and kept add-ons move over).
 func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, now time.Time) (string, error) {
-	if o.Kind == types.UsageOrderKindAddon {
+	switch o.Kind {
+	case types.UsageOrderKindAddon:
 		return s.applyAddonOrder(ctx, o, now)
+	case types.UsageOrderKindSeats:
+		return s.applySeatsOrder(ctx, o, now)
 	}
 	cur, err := s.planRepo.GetActiveSubscription(ctx, o.ScopeType, o.ScopeID)
 	if err != nil {
@@ -568,10 +607,19 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 	if err := refuseReplacedMoved(o, cur, now); err != nil {
 		return "", err
 	}
+	// the added seats were charged for a held right up to its end then
+	if err := s.refuseExtendedSeatLines(ctx, o, cur, now); err != nil {
+		return "", err
+	}
 	if renewsSubscription(cur, o.PlanID, o.Mode, now) {
-		// the order paid for o.Seats only (its quote refused fewer seats
-		// than the subscription had); seats added since then would be
-		// extended for free
+		// priced on another seat count (a seat order added seats since):
+		// the added seats would be charged twice (review H1)
+		if o.PricedSeats != nil && cur.Seats != *o.PricedSeats {
+			return "", seatsChangedError(o, cur)
+		}
+		// legacy orders without PricedSeats: the order paid for o.Seats
+		// only (its quote refused fewer seats than the subscription had);
+		// seats added since then would be extended for free
 		if o.Mode == types.UsageModeSeat && o.Seats < cur.Seats {
 			return "", apperrors.NewConflictError(fmt.Sprintf(
 				"the subscription now has %d seats but order %s pays for %d; cancel it and order again",

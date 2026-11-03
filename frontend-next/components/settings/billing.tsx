@@ -31,6 +31,7 @@ import {
   type UsageOrder,
   type UsagePlan,
   type UsageOrderAddonLine,
+  type UsageCreditLine,
   type UsageQuote,
   type UsageScopeAddons,
   type UsageScopeKind,
@@ -145,6 +146,7 @@ export function BillingPage() {
       if (!next || (next.scope === "tenant" && !isAdmin)) return;
       setScope(next.scope);
       setPlanId(next.planId);
+      if (next.addSeats) setFocusSeats(true);
     };
     window.addEventListener(BILLING_INTENT_EVENT, onIntent);
     return () => window.removeEventListener(BILLING_INTENT_EVENT, onIntent);
@@ -181,8 +183,25 @@ export function BillingPage() {
   const [extraIds, setExtraIds] = useState<string[]>([]);
   const [extraQuote, setExtraQuote] = useState<UsageQuote | null>(null);
   const [extraError, setExtraError] = useState("");
+  // extra seats on the current seat package (no extra month); the box
+  // re-prices once typing pauses
+  const [addSeatsText, setAddSeatsText] = useState(1);
+  const [addSeats, setAddSeats] = useState(1);
+  useEffect(() => {
+    const id = window.setTimeout(() => setAddSeats(addSeatsText), 300);
+    return () => window.clearTimeout(id);
+  }, [addSeatsText]);
+  const [seatsQuote, setSeatsQuote] = useState<UsageQuote | null>(null);
+  const [seatsError, setSeatsError] = useState("");
+  // the no-seat banner's button opens the page on the add-seats box
+  const [focusSeats, setFocusSeats] = useState(intentAllowed && intent?.addSeats === true);
+  const addSeatsRef = useRef<HTMLElement | null>(null);
 
   const plan = useMemo(() => plans.find((p) => p.id === planId) ?? null, [plans, planId]);
+  // the scope's current seat package with an end date: extra seats may be
+  // bought on it for the rest of its period (Tổ chức admins only)
+  const curSub = scopeAddons?.subscription ?? null;
+  const seatSub = scope === "tenant" && isAdmin && curSub?.mode === "seat" && !!curSub.ends_at ? curSub : null;
   const limitNames = { questions: t("usg.metricQuestions"), tokens: t("usg.metricTokens"), day: t("usg.periodDay"), month: t("usg.periodMonth") };
   const seatMode = scope === "tenant" && plan?.mode === "seat";
 
@@ -257,6 +276,7 @@ export function BillingPage() {
   /* An order's length: "12 tháng · gói năm". */
   const orderLength = (o: UsageOrder) => {
     if (o.kind === "addon") return t("bill.addonOrder");
+    if (o.kind === "seats") return t("bill.seatsOrder");
     const base = t("bill.monthsN", { n: o.months });
     if (o.billing_term === "year" || o.billing_term === "quarter") return `${base} · ${termLabel(o.billing_term, o.months)}`;
     return base;
@@ -324,6 +344,38 @@ export function BillingPage() {
       alive = false;
     };
   }, [scope, extraIds, promo, billingError]);
+
+  // Price extra seats on the current seat package.
+  const seatSubId = seatSub?.id ?? "";
+  useEffect(() => {
+    if (!seatSubId || addSeats < 1) {
+      setSeatsQuote(null);
+      setSeatsError("");
+      return;
+    }
+    let alive = true;
+    quoteUsageOrder({ scope_type: "tenant", plan_id: "", months: 0, kind: "seats", seats: addSeats, promo_code: promo })
+      .then((q) => {
+        if (!alive) return;
+        setSeatsQuote(q);
+        setSeatsError("");
+      })
+      .catch((e) => {
+        if (!alive) return;
+        setSeatsQuote(null);
+        setSeatsError(billingError(e, "bill.loadFailed"));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [seatSubId, addSeats, promo, billingError]);
+
+  // the no-seat banner: bring the add-seats box into view once it is there
+  useEffect(() => {
+    if (!focusSeats || !seatSubId) return;
+    addSeatsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setFocusSeats(false);
+  }, [focusSeats, seatSubId]);
 
   // Poll a pending order until SuperAdmin confirms it.
   const pollRef = useRef<number | null>(null);
@@ -398,6 +450,15 @@ export function BillingPage() {
       toast.success(t("bill.waiting"));
     });
 
+  const placeSeatsOrder = () =>
+    run(async () => {
+      const o = await createUsageOrder({ scope_type: "tenant", plan_id: "", months: 0, kind: "seats", seats: addSeats, promo_code: promo });
+      setOrder(o);
+      setAddSeatsText(1);
+      await load();
+      toast.success(t("bill.waiting"));
+    });
+
   const lineLabels = {
     months: (n: number) => t("bill.monthsN", { n }),
     half: (days: number) => t("bill.addonHalf", { days }),
@@ -423,8 +484,17 @@ export function BillingPage() {
       ? t("bill.addonsAvailablePrice", { n: offers.length, price: `${formatPriceVND(lo)}${unit}` })
       : t("bill.addonsAvailableFrom", { n: offers.length, price: `${formatPriceVND(lo)}${unit}` });
   };
-  const renderLines = (lines: UsageOrderAddonLine[] | undefined) =>
-    (lines ?? []).map((l) => (
+  const renderLines = (lines: UsageOrderAddonLine[] | undefined, kind?: UsageOrder["kind"]) =>
+    (lines ?? []).map((l) =>
+      kind === "seats" ? (
+        <div key={l.agent_id} className="flex justify-between gap-3">
+          <span className="min-w-0 text-muted">
+            {t("bill.seatsAddonLine", { name: l.name || l.agent_id, n: l.extra_units ?? 0, date: formatLastDay(l.covered_until ?? null) })}{" "}
+            <span className="caption text-muted-soft">{t("bill.seatsOrderLineDetail", { price: formatPriceVND(l.unit_price_vnd) })}</span>
+          </span>
+          <span className="tabular-nums">{formatPriceVND(l.amount_vnd)}</span>
+        </div>
+      ) : (
       <div key={l.agent_id} className="flex justify-between gap-3">
         <span className="min-w-0 text-muted">
           {t("bill.addonLine", { name: l.name || l.agent_id })}{" "}
@@ -432,7 +502,16 @@ export function BillingPage() {
         </span>
         <span className="tabular-nums">{formatPriceVND(l.amount_vnd)}</span>
       </div>
-    ));
+      ),
+    );
+
+  /* One part of a plan-change credit. */
+  const creditLabel = (c: UsageCreditLine) => {
+    const name = c.name || c.agent_id || "";
+    if (!c.paid) return t("bill.creditUnpaid", { name });
+    if (c.kind === "addon_units") return t("bill.creditUnitsLine", { name, n: c.units, days: c.days });
+    return t("bill.creditLine", { name, days: c.days });
+  };
 
   // stay: cancelled from the shop page's reminder, which stays put
   const cancelOrder = async (o: UsageOrder, stay = false) => {
@@ -491,13 +570,18 @@ export function BillingPage() {
               <div className="caption text-muted">
                 {order.plan_name} ·{" "}
                 {orderLength(order)}
-                {order.mode === "seat" ? ` · ${t("bill.seatsN", { n: order.seats })}` : ""} · {order.scope_name}
+                {order.kind === "seats"
+                  ? ` · ${t("bill.addSeatsN", { n: order.seats })}`
+                  : order.mode === "seat"
+                    ? ` · ${t("bill.seatsN", { n: order.seats })}`
+                    : ""}{" "}
+                · {order.scope_name}
               </div>
             </div>
             <span className={`badge-pill text-[11px] ${order.status === "paid" ? "badge-success" : pending ? "badge-warning" : "badge-neutral"}`}>{t(statusKey(order.status))}</span>
           </div>
           <div className="space-y-1 px-4 py-3 text-[14px]">
-            {order.kind !== "addon" && (
+            {order.kind !== "addon" && order.kind !== "seats" && (
               <div className="flex justify-between gap-3">
                 <span className="min-w-0 text-muted">
                   {t("bill.planLine", { name: order.plan_name })}{" "}
@@ -510,13 +594,23 @@ export function BillingPage() {
                 <span className="tabular-nums">{formatPriceVND(orderPlanLineVND(order))}</span>
               </div>
             )}
-            {!!order.proration_vnd && (
+            {order.kind === "seats" ? (
               <div className="flex justify-between gap-3">
-                <span className="min-w-0 text-muted">{t("bill.prorationOrder", { days: order.prorated_days ?? 0 })}</span>
-                <span className="tabular-nums">{formatPriceVND(order.proration_vnd)}</span>
+                <span className="min-w-0 text-muted">
+                  {t("bill.seatsOrderLine", { seats: order.seats, days: order.prorated_days ?? 0 })}{" "}
+                  <span className="caption text-muted-soft">{t("bill.seatsOrderLineDetail", { price: formatPriceVND(order.unit_price_vnd) })}</span>
+                </span>
+                <span className="tabular-nums">{formatPriceVND(order.proration_vnd ?? 0)}</span>
               </div>
+            ) : (
+              !!order.proration_vnd && (
+                <div className="flex justify-between gap-3">
+                  <span className="min-w-0 text-muted">{t("bill.prorationOrder", { days: order.prorated_days ?? 0 })}</span>
+                  <span className="tabular-nums">{formatPriceVND(order.proration_vnd)}</span>
+                </div>
+              )
             )}
-            {renderLines(order.addons)}
+            {renderLines(order.addons, order.kind)}
             <div className="flex justify-between"><span className="text-muted">{t("bill.subtotal")}</span><span className="tabular-nums">{formatPriceVND(order.subtotal_vnd)}</span></div>
             {!!order.savings_vnd && (
               <div className="caption flex justify-between text-success">
@@ -531,9 +625,7 @@ export function BillingPage() {
             {(order.credit_lines ?? []).map((c) => (
               <div key={`${c.kind}:${c.agent_id ?? ""}`} className="caption flex justify-between gap-3 pl-3 text-muted-soft">
                 <span className="min-w-0">
-                  {c.paid
-                    ? t("bill.creditLine", { name: c.name || c.agent_id || "", days: c.days })
-                    : t("bill.creditUnpaid", { name: c.name || c.agent_id || "" })}
+                  {creditLabel(c)}
                 </span>
                 <span className="tabular-nums">{c.paid ? formatPriceVND(c.amount_vnd) : ""}</span>
               </div>
@@ -874,6 +966,11 @@ export function BillingPage() {
                                   ? t("bill.heldDropCredit", { amount: formatPriceVND(h.credit_vnd) })
                                   : t("bill.heldDrop")}
                           </span>
+                          {h.kept && !!h.dropped_units && (
+                            <span className="caption block text-muted">
+                              {t("bill.heldUnitsCredit", { n: h.dropped_units, amount: formatPriceVND(h.units_credit_vnd ?? 0) })}
+                            </span>
+                          )}
                         </span>
                       </label>
                     ))}
@@ -905,9 +1002,7 @@ export function BillingPage() {
               {(quote.credit_lines ?? []).map((c) => (
                 <div key={`${c.kind}:${c.agent_id ?? ""}`} className="flex justify-between gap-3">
                   <span className="min-w-0 text-muted">
-                    {c.paid
-                      ? t("bill.creditLine", { name: c.name || c.agent_id || "", days: c.days })
-                      : t("bill.creditUnpaid", { name: c.name || c.agent_id || "" })}
+                    {creditLabel(c)}
                   </span>
                   <span className="tabular-nums">{c.paid ? `−${formatPriceVND(c.amount_vnd)}` : ""}</span>
                 </div>
@@ -929,6 +1024,61 @@ export function BillingPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {seatSub && (
+        <section ref={addSeatsRef} className="rounded-lg border border-hairline p-4">
+          <h3 className="text-[14px] font-medium text-ink">{t("bill.addSeatsTitle")}</h3>
+          <p className="caption text-muted">
+            {t("bill.addSeatsIntro", {
+              plan: seatSub.plan?.name ?? seatsQuote?.plan?.name ?? "",
+              seats: seatSub.seats,
+              date: formatLastDay(seatSub.ends_at),
+            })}
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <div className="block">
+              <FieldLabel htmlFor="bill-add-seats">{t("bill.addSeatsCount")}</FieldLabel>
+              <input
+                id="bill-add-seats"
+                type="number"
+                min={1}
+                className="input"
+                value={addSeatsText}
+                onChange={(e) => setAddSeatsText(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+              />
+            </div>
+          </div>
+          {(scopeAddons?.held ?? []).length > 0 && <p className="caption mt-2 text-muted-soft">{t("bill.addSeatsAddonsHint")}</p>}
+          {seatsError && <p className="caption mt-2 text-error">{seatsError}</p>}
+          {seatsQuote && (
+            <div className="mt-3 space-y-1 border-t border-hairline pt-3 text-[14px]">
+              <div className="flex justify-between gap-3">
+                <span className="min-w-0 text-muted">
+                  {t("bill.seatsOrderLine", { seats: seatsQuote.seats, days: seatsQuote.prorated_days ?? 0 })}{" "}
+                  <span className="caption text-muted-soft">{t("bill.seatsOrderLineDetail", { price: formatPriceVND(seatsQuote.unit_price_vnd) })}</span>
+                </span>
+                <span className="tabular-nums">{formatPriceVND(seatsQuote.proration_vnd ?? 0)}</span>
+              </div>
+              {renderLines(seatsQuote.addons, "seats")}
+              {seatsQuote.discount_vnd > 0 && <div className="flex justify-between"><span className="text-muted">{t("bill.discount")}</span><span className="tabular-nums">−{formatPriceVND(seatsQuote.discount_vnd)}</span></div>}
+              <div className="flex justify-between text-[15px] font-medium text-ink"><span>{t("bill.total")}</span><span className="tabular-nums">{formatPriceVND(seatsQuote.total_vnd)}</span></div>
+              <p className="caption text-muted">
+                {t("bill.addSeatsAfter", { n: (seatsQuote.current_seats ?? seatSub.seats) + seatsQuote.seats, date: formatLastDay(seatSub.ends_at) })}
+              </p>
+            </div>
+          )}
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={!info?.enabled || !seatsQuote || busy || addSeats !== addSeatsText || promoPending}
+              onClick={() => void placeSeatsOrder()}
+            >
+              {t("bill.buySeats")}
+            </button>
+          </div>
+        </section>
       )}
 
       {scopeAddons?.subscription && (scopeAddons.held.length > 0 || scopeAddons.purchasable.length > 0) && (
@@ -1008,7 +1158,8 @@ export function BillingPage() {
                 <span className="font-mono text-ink">{o.order_code}</span>
                 <span className="min-w-0 flex-1 truncate text-muted">
                   {o.plan_name} · {orderLength(o)}
-                  {(o.addons ?? []).length > 0 ? ` · ${t("bill.addonsN", { n: (o.addons ?? []).length })}` : ""} · {o.scope_name}
+                  {o.kind === "seats" ? ` · ${t("bill.addSeatsN", { n: o.seats })}` : ""}
+                  {o.kind !== "seats" && (o.addons ?? []).length > 0 ? ` · ${t("bill.addonsN", { n: (o.addons ?? []).length })}` : ""} · {o.scope_name}
                 </span>
                 <span className="tabular-nums text-ink">{formatPriceVND(o.total_vnd)}</span>
                 <span className={`badge-pill text-[11px] ${o.status === "paid" ? "badge-success" : o.status === "pending" ? "badge-warning" : "badge-neutral"}`}>{t(statusKey(o.status))}</span>

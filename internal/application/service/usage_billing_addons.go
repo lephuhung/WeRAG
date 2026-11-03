@@ -206,9 +206,13 @@ func (s *usageBillingService) priceAddonsWithPlan(
 			}
 			if bought[id] {
 				if !renewal {
-					q.HeldAddons = append(q.HeldAddons, types.UsageHeldAddonChoice{
+					choice := types.UsageHeldAddonChoice{
 						AgentID: id, Name: h.AgentName, EndsAt: covered, Kept: true, BoughtAgain: true,
-					})
+					}
+					if err := s.creditDroppedUnits(ctx, q, &choice, h, cur, heldUnits, units, covered, now); err != nil {
+						return err
+					}
+					q.HeldAddons = append(q.HeldAddons, choice)
 				}
 				continue
 			}
@@ -234,7 +238,7 @@ func (s *usageBillingService) priceAddonsWithPlan(
 				}
 				continue
 			}
-			credit, err := s.addonCreditLine(ctx, h, heldUnits, *covered, now)
+			credit, err := s.addonCreditLine(ctx, h, cur, heldUnits, heldUnits, *covered, now)
 			if err != nil {
 				return err
 			}
@@ -242,21 +246,49 @@ func (s *usageBillingService) priceAddonsWithPlan(
 			if keepSet != nil {
 				kept = keepSet[id]
 			}
-			q.HeldAddons = append(q.HeldAddons, types.UsageHeldAddonChoice{
+			choice := types.UsageHeldAddonChoice{
 				AgentID: id, Name: h.AgentName, EndsAt: covered, Kept: kept,
 				CarryVND: line.AmountVND, CreditVND: credit.AmountVND,
-			})
+			}
 			if kept {
+				if err := s.creditDroppedUnits(ctx, q, &choice, h, cur, heldUnits, units, covered, now); err != nil {
+					return err
+				}
+				q.HeldAddons = append(q.HeldAddons, choice)
 				if line.AmountVND > 0 {
 					q.Addons = append(q.Addons, line)
 				}
 				continue
 			}
+			q.HeldAddons = append(q.HeldAddons, choice)
 			q.CreditLines = append(q.CreditLines, credit)
 		}
 	}
 	q.AddonsVND = q.Addons.Total()
 	q.SubtotalVND += q.AddonsVND
+	return nil
+}
+
+// creditDroppedUnits credits, for a held add-on a plan change keeps (or
+// buys again) on a plan with fewer units (seats) than the replaced one, the
+// units not carried over for the days their paid right still had (review
+// F5): addonCreditLine for heldUnits − units, kind addon_units, so the
+// add-on itself is still carried over (DroppedAddons skips the line).
+func (s *usageBillingService) creditDroppedUnits(
+	ctx context.Context, q *types.UsageQuote, choice *types.UsageHeldAddonChoice,
+	h *types.UsageSubscriptionAddon, cur *types.UsageSubscription, heldUnits, units int, covered *time.Time, now time.Time,
+) error {
+	if units >= heldUnits || covered == nil || !covered.After(now) {
+		return nil
+	}
+	line, err := s.addonCreditLine(ctx, h, cur, heldUnits, heldUnits-units, *covered, now)
+	if err != nil {
+		return err
+	}
+	line.Kind = types.UsageCreditAddonUnits
+	q.CreditLines = append(q.CreditLines, line)
+	choice.DroppedUnits = heldUnits - units
+	choice.UnitsCreditVND = line.AmountVND
 	return nil
 }
 
@@ -394,6 +426,17 @@ func (s *usageBillingService) applyAddonOrder(ctx context.Context, o *types.Usag
 		return "", apperrors.NewConflictError(fmt.Sprintf(
 			"order %s adds agents to a subscription that is no longer current; cancel it and order again", o.OrderCode)).
 			WithDetails(map[string]string{"reason": "subscription_changed"})
+	}
+	// priced for the seats it had then: seats added since (a seat order)
+	// would get the agent for free
+	units := addonUnits(cur.Mode, cur.Seats)
+	for _, l := range o.Addons {
+		if !l.SeatsOnly && l.Units < units {
+			return "", apperrors.NewConflictError(fmt.Sprintf(
+				"the package has %d seats now but order %s pays the agents for %d; cancel it and order again",
+				cur.Seats, o.OrderCode, l.Units)).
+				WithDetails(map[string]string{"reason": "subscription_changed"})
+		}
 	}
 	if err := s.grantOrderAddons(ctx, o, cur, now, nil); err != nil {
 		return "", err
@@ -568,6 +611,48 @@ func (s *usageBillingService) ScopeAddons(ctx context.Context, scopeType, scopeI
 		})
 	}
 	return out, nil
+}
+
+// refuseExtendedSeatLines refuses a plan order (renewal or plan change)
+// whose added seats were charged for a held add-on up to the end the right
+// had then (CoveredUntil of a line with ExtraUnits) when the right now runs
+// longer (an add-on order extended it meanwhile): the added seats would get
+// the extension for free (review L4; applySeatsOrder checks the same).
+func (s *usageBillingService) refuseExtendedSeatLines(
+	ctx context.Context, o *types.UsageOrder, cur *types.UsageSubscription, now time.Time,
+) error {
+	if cur == nil || !cur.IsCurrentAt(now) {
+		return nil
+	}
+	priced := map[string]time.Time{}
+	for _, l := range o.Addons {
+		if l.ExtraUnits > 0 && l.CoveredUntil != nil {
+			priced[l.AgentID] = *l.CoveredUntil
+		}
+	}
+	if len(priced) == 0 {
+		return nil
+	}
+	held, err := s.planRepo.ListSubscriptionAddons(ctx, cur.ID)
+	if err != nil {
+		return err
+	}
+	for _, h := range held {
+		p, ok := priced[h.AgentID]
+		if !ok || !h.IsCurrentAt(now) {
+			continue
+		}
+		end := h.EndsAt
+		if end == nil {
+			end = cur.EndsAt
+		}
+		if end == nil || end.After(p) {
+			return apperrors.NewConflictError(fmt.Sprintf(
+				"a specialist agent of the package was extended since order %s was priced; cancel it and order again", o.OrderCode)).
+				WithDetails(map[string]string{"reason": "subscription_changed", "agent_id": h.AgentID})
+		}
+	}
+	return nil
 }
 
 // refuseMovedSubscription refuses a renewal whose add-on lines were priced

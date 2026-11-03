@@ -162,7 +162,7 @@ export function PlanBannerBar() {
   const buy = () =>
     banner.assignSeat
       ? window.dispatchEvent(new CustomEvent("weknora:open-settings", { detail: "usage" }))
-      : openBilling({ scope: banner.scope, planId: banner.kind === "welcome" ? "" : banner.planId });
+      : openBilling({ scope: banner.scope, planId: banner.kind === "welcome" ? "" : banner.planId, ...(banner.addSeats ? { addSeats: true } : {}) });
   const plan = banner.planName;
   // shown as the last day the package can be used
   const date = banner.endsAt ? formatDate(lastUsableDay(banner.endsAt)) : "";
