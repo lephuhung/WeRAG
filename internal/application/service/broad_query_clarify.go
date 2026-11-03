@@ -78,7 +78,8 @@ func emitPipelineCardNormal(ctx context.Context, bus *event.EventBus, req *types
 		Data: event.AgentFinalAnswerData{Done: true}})
 }
 
-// lazyCompleter resolves its model on the first call: the knowledge-QA
+// lazyCompleter resolves its model on the first call (one caller at a
+// time: it is not safe for concurrent use): the knowledge-QA
 // pipeline knows its chat model only after the gates, and the broad-question
 // judge runs on few turns.
 type lazyCompleter struct {
