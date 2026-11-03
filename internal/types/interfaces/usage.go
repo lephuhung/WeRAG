@@ -222,8 +222,9 @@ type UsageBillingRepository interface {
 	GetOrderForUpdate(ctx context.Context, id string) (*types.UsageOrder, error)
 	GetOrderByCode(ctx context.Context, code string) (*types.UsageOrder, error)
 	ListOrders(ctx context.Context, filter types.UsageOrderFilter) ([]*types.UsageOrder, error)
-	// CountOrdersAwaitingAdmin counts the pending orders only a SuperAdmin
-	// can move on: 0 đồng, or holding money (UsagePaymentHeldStatuses).
+	// CountOrdersAwaitingAdmin counts the orders only a SuperAdmin can move
+	// on: pending at 0 đồng, or pending/expired holding money
+	// (UsagePaymentHeldStatuses); UsageOrderFilter.AwaitingAdmin lists them.
 	CountOrdersAwaitingAdmin(ctx context.Context) (int64, error)
 	// ReceivedByOrder is, per order, the largest per-source sum of the
 	// transfers in UsagePaymentHeldStatuses (one query; two checkers'
@@ -279,8 +280,9 @@ type UsageBillingService interface {
 	GetOrder(ctx context.Context, id string) (*types.UsageOrderView, error)
 	GetOrderByCode(ctx context.Context, code string) (*types.UsageOrderView, error)
 	ListOrders(ctx context.Context, filter types.UsageOrderFilter) ([]*types.UsageOrderView, error)
-	// CountOrdersAwaitingAdmin counts the pending orders only a SuperAdmin
-	// can move on: 0 đồng, or holding money that did not confirm them.
+	// CountOrdersAwaitingAdmin counts the orders only a SuperAdmin can move
+	// on: pending at 0 đồng, or pending/expired holding money that did not
+	// confirm them.
 	CountOrdersAwaitingAdmin(ctx context.Context) (int64, error)
 	// CancelOrder voids a pending order and releases its promo use. An
 	// order that has received money is refused (409, reason

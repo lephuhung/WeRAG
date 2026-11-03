@@ -278,8 +278,11 @@ type UsageOrderFilter struct {
 	Status    string
 	CreatedBy string
 	// Kind: plan|addon|seats ("" = all).
-	Kind  string
-	Limit int
+	Kind string
+	// AwaitingAdmin keeps the orders only a SuperAdmin can move on (the
+	// badge count of CountOrdersAwaitingAdmin).
+	AwaitingAdmin bool
+	Limit         int
 }
 
 // UsageOrderView is an order as pages show it: with the name of what it

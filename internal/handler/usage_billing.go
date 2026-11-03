@@ -269,12 +269,15 @@ func (h *UsageBillingHandler) CancelOrder(c *gin.Context) {
 // @Summary      Every order (SuperAdmin)
 // @Tags         Gói sử dụng
 // @Param        status query string false "pending|paid|cancelled|expired"
+// @Param        awaiting_admin query bool false "only the orders the awaiting-admin count counts"
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
 // @Router       /system/admin/usage/orders [get]
 func (h *UsageBillingHandler) AdminListOrders(c *gin.Context) {
+	awaiting := c.Query("awaiting_admin")
 	orders, err := h.billing.ListOrders(c.Request.Context(), types.UsageOrderFilter{
 		Status: strings.TrimSpace(c.Query("status")), Limit: 500,
+		AwaitingAdmin: awaiting == "true" || awaiting == "1",
 	})
 	if err != nil {
 		usageAdminFail(c, err)

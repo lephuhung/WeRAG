@@ -274,6 +274,11 @@ func TestSeatOrderAndPlanOrderRefuseEachOther(t *testing.T) {
 	code, reason := errCodeReason(t, err)
 	require.Equal(t, 409, code)
 	require.Equal(t, "plan_order_pending", reason)
+	// no override exists for a seats order: the message and details say so
+	appErr := err.(*apperrors.AppError)
+	require.NotContains(t, appErr.Message, "confirm")
+	require.Contains(t, appErr.Message, "pay or cancel it first")
+	require.Equal(t, "true", appErr.Details.(map[string]string)["no_override"])
 }
 
 // sneakOrder places req although orders are pending (as a race past the

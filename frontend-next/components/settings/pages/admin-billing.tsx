@@ -42,13 +42,17 @@ import {
 } from "@/lib/api/usage";
 import { formatDateTime } from "@/lib/datetime";
 import { ApiError } from "@/lib/api-client";
-import { pendingPlanOrderCode } from "@/lib/billing-order";
+import { billingErrorRetryable, pendingPlanOrderCode } from "@/lib/billing-order";
 import { WebhookGuide } from "./admin-billing-webhook-guide";
 
 function errDetails(e: unknown): { reason?: string; order_code?: string; received_vnd?: number } | undefined {
   if (!(e instanceof ApiError)) return undefined;
   return (e.payload as { error?: { details?: { reason?: string; order_code?: string; received_vnd?: number } } } | undefined)?.error?.details;
 }
+
+/* The order list filter: a status, "" (all), or "awaiting" (the orders the
+ * "need attention" count counts). */
+type OrderFilter = UsageOrderStatus | "" | "awaiting";
 
 type BankForm = { bankBin: string; bankName: string; accountNo: string; accountName: string; orderTTLHours: string; contact: string };
 const emptyBank: BankForm = { bankBin: "", bankName: "", accountNo: "", accountName: "", orderTTLHours: "72", contact: "" };
@@ -82,6 +86,7 @@ export default function AdminBilling() {
   const { t } = useT();
   const [allowed, setAllowed] = useState<boolean | null>(null);
   const [error, setError] = useState("");
+  const [errorRetry, setErrorRetry] = useState(true);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const confirm = useConfirm();
@@ -100,7 +105,7 @@ export default function AdminBilling() {
   const [plans, setPlans] = useState<UsagePlan[]>([]);
   const [promos, setPromos] = useState<UsagePromoCode[]>([]);
   const [orders, setOrders] = useState<UsageOrder[]>([]);
-  const [filter, setFilter] = useState<UsageOrderStatus | "">("");
+  const [filter, setFilter] = useState<OrderFilter>("");
   const [activeTab, setActiveTab] = useState<"orders" | "promos">("orders");
   const [promoOpen, setPromoOpen] = useState(false);
   const [promoEditing, setPromoEditing] = useState<UsagePromoCode | null>(null);
@@ -108,7 +113,7 @@ export default function AdminBilling() {
 
   // pending orders only a SuperAdmin can move on (0 đồng, money received)
   const [awaitingCount, setAwaitingCount] = useState(0);
-  const loadOrders = useCallback(async (f: UsageOrderStatus | "") => {
+  const loadOrders = useCallback(async (f: OrderFilter) => {
     const [list, n] = await Promise.all([listAllUsageOrders(f || undefined), getAwaitingAdminOrderCount()]);
     setOrders(list);
     setAwaitingCount(n);
@@ -134,8 +139,10 @@ export default function AdminBilling() {
       setPromos(pr);
       await loadOrders(filter);
       setError("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("badm.loadFailed"));
+      setErrorRetry(true);
+    } catch {
+      setError(t("badm.loadFailed"));
+      setErrorRetry(true);
     } finally {
       setLoading(false);
     }
@@ -164,8 +171,20 @@ export default function AdminBilling() {
       return true;
     } catch (e) {
       const details = errDetails(e);
-      const key = billingErrorKey(details?.reason);
-      setError(key ? t(key as LocaleKey, { amount: formatPriceVND(details?.received_vnd ?? 0) }) : e instanceof Error ? e.message : t("badm.opFailed"));
+      // the buyer-facing text says "your package"; here it is the buyer's
+      const key = details?.reason === "subscription_changed" ? "badm.err.subscription_changed" : billingErrorKey(details?.reason);
+      const status = e instanceof ApiError ? e.status : undefined;
+      setError(
+        key
+          ? t(key as LocaleKey, { amount: formatPriceVND(details?.received_vnd ?? 0) })
+          : // a refusal's own text (SuperAdmins also read the English ones);
+            // a server error never shows its details
+            e instanceof Error && e.message && status !== undefined && status < 500
+            ? e.message
+            : t("bill.errGeneric"),
+      );
+      // a conflict stays a conflict: reloading the page does not help
+      setErrorRetry(billingErrorRetryable(status));
       return false;
     } finally {
       setBusy(false);
@@ -173,8 +192,11 @@ export default function AdminBilling() {
   };
 
   const bankDirty = JSON.stringify(bank) !== JSON.stringify(bankBase);
+  // VietQR needs the bank's 6-digit NAPAS BIN (the server refuses others)
+  const bankBinInvalid = bank.bankBin.trim() !== "" && !/^\d{6}$/.test(bank.bankBin.trim());
 
   const saveBank = async (): Promise<boolean> => {
+    if (bankBinInvalid) return false;
     const ok = await run(async () => {
       const K = BILLING_SETTING_KEYS;
       await updateSystemSetting(K.bankBin, bank.bankBin.trim());
@@ -322,7 +344,7 @@ export default function AdminBilling() {
     });
     if (ok) toast.success(t("common.saved"));
   };
-  const changeFilter = (f: UsageOrderStatus | "") => {
+  const changeFilter = (f: OrderFilter) => {
     setFilter(f);
     void run(() => loadOrders(f));
   };
@@ -343,9 +365,11 @@ export default function AdminBilling() {
         <Notice
           tone="error"
           action={
-            <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
-              {t("common.retry")}
-            </button>
+            errorRetry ? (
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+                {t("common.retry")}
+              </button>
+            ) : undefined
           }
         >
           {error}
@@ -378,10 +402,18 @@ export default function AdminBilling() {
       <section id="tabpanel-orders" role="tabpanel" aria-labelledby="tab-orders">
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <h3 className="text-[14px] font-medium text-ink">{t("badm.orders")}</h3>
-          {awaitingCount > 0 && <span className="badge-pill badge-warning text-[11px]">{t("badm.awaitingAdmin", { n: awaitingCount })}</span>}
+          {awaitingCount > 0 && (
+            <button type="button" className="badge-pill badge-warning text-[11px]" onClick={() => changeFilter("awaiting")}>
+              {t("badm.awaitingAdmin", { n: awaitingCount })}
+            </button>
+          )}
           <PillGroup ariaLabel={t("common.filters")}>
             <Pill active={filter === ""} onClick={() => changeFilter("")}>
               {t("badm.filterAll")}
+            </Pill>
+            {/* the same orders the "need attention" count counts */}
+            <Pill active={filter === "awaiting"} onClick={() => changeFilter("awaiting")}>
+              {t("badm.filterAwaiting")}
             </Pill>
             {(["pending", "paid", "cancelled", "expired"] as UsageOrderStatus[]).map((s) => (
               <Pill key={s} active={filter === s} onClick={() => changeFilter(s)}>
@@ -505,7 +537,8 @@ export default function AdminBilling() {
           </div>
           <div className="min-w-0">
             <FieldLabel htmlFor="bank-bin">{t("badm.bankBin")}</FieldLabel>
-            <input id="bank-bin" className="input w-full" inputMode="numeric" value={bank.bankBin} onChange={(e) => setBank({ ...bank, bankBin: e.target.value.replace(/[^\d]/g, "") })} placeholder="970436" />
+            <input id="bank-bin" className="input w-full" inputMode="numeric" maxLength={6} aria-invalid={bankBinInvalid} value={bank.bankBin} onChange={(e) => setBank({ ...bank, bankBin: e.target.value.replace(/[^\d]/g, "") })} placeholder="970418" />
+            {bankBinInvalid && <span className="caption mt-1 block text-error">{t("badm.bankBinInvalid")}</span>}
           </div>
           <div className="min-w-0">
             <FieldLabel htmlFor="bank-account-no">{t("badm.accountNo")}</FieldLabel>
@@ -528,7 +561,7 @@ export default function AdminBilling() {
           <button
             type="button"
             className="btn btn-primary"
-            disabled={busy || !bankDirty}
+            disabled={busy || !bankDirty || bankBinInvalid}
             onClick={() => void saveBank().then((ok) => { if (ok) setBankOpen(false); })}
           >
             {t("common.save")}

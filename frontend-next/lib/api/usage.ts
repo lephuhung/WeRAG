@@ -717,8 +717,11 @@ export function deleteUsagePromo(id: string): Promise<void> {
   return apiDel(`${ADMIN}/promos/${encodeURIComponent(id)}`).then(() => undefined);
 }
 
-export function listAllUsageOrders(status?: UsageOrderStatus): Promise<UsageOrder[]> {
-  return apiGet<{ data?: UsageOrder[] }>(`${ADMIN}/orders${status ? `?status=${status}` : ""}`).then((r) => r.data ?? []);
+/** Every order (SuperAdmin), by status; "awaiting" = the orders the
+ * awaiting-admin count counts (0 đồng, or holding money). */
+export function listAllUsageOrders(status?: UsageOrderStatus | "awaiting"): Promise<UsageOrder[]> {
+  const q = status === "awaiting" ? "?awaiting_admin=true" : status ? `?status=${status}` : "";
+  return apiGet<{ data?: UsageOrder[] }>(`${ADMIN}/orders${q}`).then((r) => r.data ?? []);
 }
 
 export function confirmUsageOrder(id: string): Promise<UsageOrder> {
@@ -739,8 +742,8 @@ export function reopenUsageOrder(id: string, force = false): Promise<UsageOrder>
   return apiPost<{ data: UsageOrder }>(`${ADMIN}/orders/${encodeURIComponent(id)}/reopen${force ? "?force=true" : ""}`, {}).then((r) => r.data);
 }
 
-/** Pending orders only a SuperAdmin can move on: 0 đồng, or money received
- * without confirming them. */
+/** Orders only a SuperAdmin can move on: pending at 0 đồng, or pending or
+ * expired with money received that did not confirm them. */
 export function getAwaitingAdminOrderCount(): Promise<number> {
   return apiGet<{ data?: { awaiting_admin?: number } }>(`${ADMIN}/orders/awaiting-admin-count`).then((r) => r.data?.awaiting_admin ?? 0);
 }

@@ -39,7 +39,18 @@ import {
 } from "@/lib/api/usage";
 import { capLines, planCapsFromFeatures } from "@/lib/plan-caps";
 import { addonLineDetail, keepOffered, toggleAddonId } from "@/lib/agent-addon-catalogue";
-import { orderAmountDue, orderPaymentHeld, orderPlanLineVND, pendingPlanOrderCode } from "@/lib/billing-order";
+import {
+  addonIdsForPlan,
+  billingErrorRetryable,
+  billingServerMessage,
+  defaultPlanSeats,
+  orderAmountDue,
+  orderPaymentHeld,
+  orderPlanLineVND,
+  pendingPlanOrderCode,
+  planNameAfterWord,
+  preferredPlanId,
+} from "@/lib/billing-order";
 import { formatDateTime, formatLastDay } from "@/lib/datetime";
 import { BILLING_INTENT_EVENT, clearBillingIntent, readBillingIntent, type BillingIntent } from "@/lib/billing-intent";
 import { useConfirm } from "@/components/confirm-dialog";
@@ -62,6 +73,11 @@ function fmtDate(v: string | null | undefined, locale: string): string {
   if (!v) return "";
   const d = new Date(v);
   return Number.isNaN(d.getTime()) ? "" : formatDateTime(d, locale);
+}
+
+/* A 0-đồng order has nothing to pay: it waits for a system administrator. */
+function orderStatusKey(o: Pick<UsageOrder, "status" | "total_vnd">): LocaleKey {
+  return o.status === "pending" && o.total_vnd <= 0 ? "bill.status.pendingAdmin" : statusKey(o.status);
 }
 
 function statusKey(s: UsageOrder["status"]): LocaleKey {
@@ -101,19 +117,22 @@ function seatsBelowCurrent(e: unknown): number | null {
 }
 
 /** A billing refusal in the reader's language: known reasons have their own
- * text, anything else falls back to the server message. */
+ * text; the server's message only when it is a refusal written in the
+ * reader's language; anything else (a server error, a network failure) a
+ * generic "try again or contact the administrator", never raw details. */
 function useBillingError() {
-  const { t } = useT();
+  const { t, locale } = useT();
   return useCallback(
-    (e: unknown, fallback: LocaleKey) => {
+    (e: unknown) => {
       const current = seatsBelowCurrent(e);
       if (current !== null) return t("bill.seatsBelowCurrent", { n: current });
       const details = errDetails(e);
       const key = billingErrorKey(details?.reason);
       if (key) return t(key as LocaleKey, { amount: formatPriceVND(details?.received_vnd ?? 0) });
-      return e instanceof Error && e.message ? e.message : t(fallback);
+      const status = e instanceof ApiError ? e.status : undefined;
+      return billingServerMessage(e instanceof Error ? e.message : "", status, locale) ?? t("bill.errGeneric");
     },
-    [t],
+    [t, locale],
   );
 }
 
@@ -145,7 +164,9 @@ export function BillingPage() {
       clearBillingIntent();
       if (!next || (next.scope === "tenant" && !isAdmin)) return;
       setScope(next.scope);
-      setPlanId(next.planId);
+      // an intent without a plan (welcome) keeps the page's choice
+      if (next.planId) setPlanId(next.planId);
+      planPickedRef.current = !!next.planId;
       if (next.addSeats) setFocusSeats(true);
     };
     window.addEventListener(BILLING_INTENT_EVENT, onIntent);
@@ -156,6 +177,9 @@ export function BillingPage() {
   const [scope, setScope] = useState<UsageScopeKind>(intentAllowed ? intent.scope : isAdmin ? "tenant" : "user");
   const [plans, setPlans] = useState<UsagePlan[]>([]);
   const [planId, setPlanId] = useState(intentAllowed ? intent.planId : "");
+  // a plan picked on purpose (a banner's intent, a click) is not replaced
+  // by the plan in use when the scope's subscription loads
+  const planPickedRef = useRef(intentAllowed && !!intent?.planId);
   const [months, setMonths] = useState(1);
   // the seats box re-prices once typing pauses
   const [seatsText, setSeatsText] = useState(1);
@@ -176,6 +200,7 @@ export function BillingPage() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [errorRetry, setErrorRetry] = useState(true);
   // specialist agents bought with the plan
   const [addonIds, setAddonIds] = useState<string[]>([]);
   // the scope's current subscription, its add-ons, and a mid-term purchase
@@ -202,6 +227,8 @@ export function BillingPage() {
   // bought on it for the rest of its period (Tổ chức admins only)
   const curSub = scopeAddons?.subscription ?? null;
   const seatSub = scope === "tenant" && isAdmin && curSub?.mode === "seat" && !!curSub.ends_at ? curSub : null;
+  // "Gói {plan}" with a plan named "Gói cơ bản" must not read "Gói Gói cơ bản"
+  const pn = (name: string | null | undefined) => planNameAfterWord(name, t("bill.planWord"));
   const limitNames = { questions: t("usg.metricQuestions"), tokens: t("usg.metricTokens"), day: t("usg.periodDay"), month: t("usg.periodMonth") };
   const seatMode = scope === "tenant" && plan?.mode === "seat";
 
@@ -218,10 +245,12 @@ export function BillingPage() {
           setExtraIds((cur) => keepOffered(cur, sa.purchasable));
         })
         .catch(() => setScopeAddons(null));
-      setPlanId((cur) => (pl.some((p) => p.id === cur) ? cur : (pl[0]?.id ?? "")));
+      setPlanId((cur) => preferredPlanId(pl.map((p) => p.id), cur, "", planPickedRef.current));
       setError("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("bill.loadFailed"));
+      setErrorRetry(true);
+    } catch {
+      setError(t("bill.loadFailed"));
+      setErrorRetry(true);
     } finally {
       setLoading(false);
     }
@@ -235,20 +264,36 @@ export function BillingPage() {
   // package in use ticks the agents it holds, so they do not stop at the
   // old end unnoticed
   const currentPlanId = scopeAddons?.subscription?.plan_id ?? "";
-  // a string key: every load() brings a new array, and an unticked agent
+  // the shop opens on the plan in use (a renewal), unless one was picked
+  const planIdsKey = plans.map((p) => p.id).join(",");
+  useEffect(() => {
+    if (!currentPlanId) return;
+    setPlanId((cur) => preferredPlanId(planIdsKey ? planIdsKey.split(",") : [], cur, currentPlanId, planPickedRef.current));
+  }, [planIdsKey, currentPlanId]);
+  // string keys: every load() brings new arrays, and an unticked agent
   // must not be ticked again by a refresh
   const heldKey = (scopeAddons?.held ?? []).map((h) => h.agent_id).sort().join(",");
+  const offeredKey = (plan?.addons ?? []).map((a) => a.agent_id).join(",");
+  const planKey = plan?.id ?? "";
   useEffect(() => {
-    setAddonIds((cur) => {
-      const offered = plan?.addons ?? [];
-      const kept = keepOffered(cur, offered);
-      if (!plan || plan.id !== currentPlanId) return kept;
-      const held = heldKey ? heldKey.split(",") : [];
-      return keepOffered([...new Set([...kept, ...held])], offered);
-    });
+    // a plan change leaves the held add-ons to the keep choice; only a
+    // renewal of the plan in use ticks them as purchases
+    const split = (k: string) => (k ? k.split(",") : []);
+    setAddonIds((cur) => addonIdsForPlan(cur, split(offeredKey), split(heldKey), !!planKey && planKey === currentPlanId));
     setKeepIds(null);
-  }, [plan, currentPlanId, heldKey]);
+  }, [planKey, offeredKey, currentPlanId, heldKey]);
   const renewing = !!plan && plan.id === currentPlanId;
+  // the seats box starts from the seats of the current seat package: a
+  // renewal may not buy fewer, a seat→seat change keeps the members' seats
+  const curMode = scopeAddons?.subscription?.mode;
+  const curSeats = scopeAddons?.subscription?.seats;
+  const planMode = plan?.mode;
+  useEffect(() => {
+    const n = defaultPlanSeats({ scope, planMode, currentMode: curMode, currentSeats: curSeats });
+    if (n === null) return;
+    setSeatsText(n);
+    setSeats(n);
+  }, [scope, planKey, planMode, curMode, curSeats]);
 
   // ...and a month count the new plan is sold for (a yearly-only plan → 12)
   const monthChoices = useMemo(() => monthChoicesFor(plan), [plan]);
@@ -311,7 +356,7 @@ export function BillingPage() {
       .catch((e) => {
         if (!alive) return;
         setQuote(null);
-        setQuoteError(billingError(e, "bill.loadFailed"));
+        setQuoteError(billingError(e));
       })
       .finally(() => {
         if (alive) setQuoting(false);
@@ -338,7 +383,7 @@ export function BillingPage() {
       .catch((e) => {
         if (!alive) return;
         setExtraQuote(null);
-        setExtraError(billingError(e, "bill.loadFailed"));
+        setExtraError(billingError(e));
       });
     return () => {
       alive = false;
@@ -363,7 +408,7 @@ export function BillingPage() {
       .catch((e) => {
         if (!alive) return;
         setSeatsQuote(null);
-        setSeatsError(billingError(e, "bill.loadFailed"));
+        setSeatsError(billingError(e));
       });
     return () => {
       alive = false;
@@ -402,7 +447,9 @@ export function BillingPage() {
     try {
       await fn();
     } catch (e) {
-      setError(billingError(e, "bill.opFailed"));
+      setError(billingError(e));
+      // a conflict (409) stays a conflict: reloading the page does not help
+      setErrorRetry(billingErrorRetryable(e instanceof ApiError ? e.status : undefined));
     } finally {
       setBusy(false);
     }
@@ -438,7 +485,7 @@ export function BillingPage() {
       }
       setOrder(o);
       await load();
-      toast.success(t("bill.waiting"));
+      toast.success(t(o.total_vnd > 0 ? "bill.waiting" : "bill.waitingAdmin"));
     });
 
   const placeAddonOrder = () =>
@@ -447,7 +494,7 @@ export function BillingPage() {
       setOrder(o);
       setExtraIds([]);
       await load();
-      toast.success(t("bill.waiting"));
+      toast.success(t(o.total_vnd > 0 ? "bill.waiting" : "bill.waitingAdmin"));
     });
 
   const placeSeatsOrder = () =>
@@ -456,7 +503,7 @@ export function BillingPage() {
       setOrder(o);
       setAddSeatsText(1);
       await load();
-      toast.success(t("bill.waiting"));
+      toast.success(t(o.total_vnd > 0 ? "bill.waiting" : "bill.waitingAdmin"));
     });
 
   const lineLabels = {
@@ -578,13 +625,13 @@ export function BillingPage() {
                 · {order.scope_name}
               </div>
             </div>
-            <span className={`badge-pill text-[11px] ${order.status === "paid" ? "badge-success" : pending ? "badge-warning" : "badge-neutral"}`}>{t(statusKey(order.status))}</span>
+            <span className={`badge-pill text-[11px] ${order.status === "paid" ? "badge-success" : pending ? "badge-warning" : "badge-neutral"}`}>{t(orderStatusKey(order))}</span>
           </div>
           <div className="space-y-1 px-4 py-3 text-[14px]">
             {order.kind !== "addon" && order.kind !== "seats" && (
               <div className="flex justify-between gap-3">
                 <span className="min-w-0 text-muted">
-                  {t("bill.planLine", { name: order.plan_name })}{" "}
+                  {t("bill.planLine", { name: pn(order.plan_name) })}{" "}
                   <span className="caption text-muted-soft">
                     {order.mode === "seat"
                       ? t("bill.planLineDetailSeats", { length: orderLength(order), seats: order.seats, price: formatPriceVND(order.unit_price_vnd) })
@@ -640,7 +687,7 @@ export function BillingPage() {
               <p>{t("bill.freeOrderWaits")}</p>
               <p className="caption mt-1 text-muted">{t("bill.freeNoDeadline")}</p>
               <p className="caption mt-1 flex items-center gap-1 text-muted">
-                <IconRefresh className="h-3.5 w-3.5 animate-spin" /> {t("bill.waiting")}
+                <IconRefresh className="h-3.5 w-3.5 animate-spin" /> {t("bill.waitingAdmin")}
               </p>
               <div className="mt-3 flex justify-end">
                 <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void cancelOrder(order)}>
@@ -719,11 +766,17 @@ export function BillingPage() {
           {order.status === "paid" && (
             <div className="border-t border-hairline px-4 py-3 text-[14px] text-success">
               {order.subscription_ends_at
-                ? t("bill.paidUntil", { time: fmtDate(order.paid_at, locale), plan: order.plan_name, date: formatLastDay(order.subscription_ends_at) })
+                ? t("bill.paidUntil", { time: fmtDate(order.paid_at, locale), plan: pn(order.plan_name), date: formatLastDay(order.subscription_ends_at) })
                 : t("bill.paidAt", { time: fmtDate(order.paid_at, locale) })}
             </div>
           )}
-          {(order.status === "cancelled" || order.status === "expired") && (
+          {order.status === "expired" && !!order.received_vnd && (
+            <div className="border-t border-hairline px-4 py-3 text-[14px]">
+              <p className="text-ink">{t("bill.expiredPaymentHeld", { amount: formatPriceVND(order.received_vnd) })}</p>
+              {info?.contact && <p className="caption mt-1 text-muted">{info.contact}</p>}
+            </div>
+          )}
+          {(order.status === "cancelled" || (order.status === "expired" && !order.received_vnd)) && (
             <div className="border-t border-hairline px-4 py-3 text-[14px] text-muted">
               <p>{t(order.status === "expired" ? "bill.expired" : "bill.cancelled")}</p>
               {order.total_vnd > 0 && (
@@ -740,9 +793,11 @@ export function BillingPage() {
           <Notice
             tone="error"
             action={
-              <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
-                {t("common.retry")}
-              </button>
+              errorRetry ? (
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+                  {t("common.retry")}
+                </button>
+              ) : undefined
             }
           >
             {error}
@@ -761,9 +816,11 @@ export function BillingPage() {
         <Notice
           tone="error"
           action={
-            <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
-              {t("common.retry")}
-            </button>
+            errorRetry ? (
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => void load()}>
+                {t("common.retry")}
+              </button>
+            ) : undefined
           }
         >
           {error}
@@ -778,7 +835,7 @@ export function BillingPage() {
       {isAdmin && (
         <div className="flex gap-2">
           {(["tenant", "user"] as UsageScopeKind[]).map((s) => (
-            <button key={s} type="button" className={`btn btn-sm ${scope === s ? "btn-primary" : "btn-outline"}`} onClick={() => { setScope(s); setPromo(""); setPromoText(""); setKeepIds(null); }}>
+            <button key={s} type="button" className={`btn btn-sm ${scope === s ? "btn-primary" : "btn-outline"}`} onClick={() => { planPickedRef.current = false; setScope(s); setPromo(""); setPromoText(""); setKeepIds(null); }}>
               {s === "tenant" ? t("bill.scopeTenant") : t("bill.scopeUser")}
             </button>
           ))}
@@ -787,7 +844,7 @@ export function BillingPage() {
 
       {!isAdmin && auth.membershipState === "member" && <p className="caption text-muted">{t("bill.memberTenantHint")}</p>}
       {scope === "user" && coveredBy && (
-        <Notice tone="info">{t("bill.coveredByTenant", { plan: coveredBy })}</Notice>
+        <Notice tone="info">{t("bill.coveredByTenant", { plan: pn(coveredBy) })}</Notice>
       )}
 
       {pendingOrders.map((o) => (
@@ -821,7 +878,10 @@ export function BillingPage() {
             <button
               key={p.id}
               type="button"
-              onClick={() => setPlanId(p.id)}
+              onClick={() => {
+                planPickedRef.current = true;
+                setPlanId(p.id);
+              }}
               className={`rounded-lg border p-4 text-left transition ${planId === p.id ? "border-ink ring-1 ring-ink" : "border-hairline hover:border-hairline-strong"}`}
             >
               <div className="text-[14px] font-medium text-ink">{p.name}</div>
@@ -943,8 +1003,8 @@ export function BillingPage() {
             <div className="mt-4">
               <Notice tone="warning">
                 {quote.replaces.ends_at
-                  ? t("bill.replaces", { plan: quote.replaces.plan_name, date: formatLastDay(quote.replaces.ends_at) })
-                  : t("bill.replacesOpen", { plan: quote.replaces.plan_name })}
+                  ? t("bill.replaces", { plan: pn(quote.replaces.plan_name), date: formatLastDay(quote.replaces.ends_at) })
+                  : t("bill.replacesOpen", { plan: pn(quote.replaces.plan_name) })}
               </Notice>
               {(quote.held_addons ?? []).length > 0 && (
                 <div className="mt-3">
@@ -1031,7 +1091,7 @@ export function BillingPage() {
           <h3 className="text-[14px] font-medium text-ink">{t("bill.addSeatsTitle")}</h3>
           <p className="caption text-muted">
             {t("bill.addSeatsIntro", {
-              plan: seatSub.plan?.name ?? seatsQuote?.plan?.name ?? "",
+              plan: pn(seatSub.plan?.name ?? seatsQuote?.plan?.name ?? ""),
               seats: seatSub.seats,
               date: formatLastDay(seatSub.ends_at),
             })}
@@ -1158,11 +1218,15 @@ export function BillingPage() {
                 <span className="font-mono text-ink">{o.order_code}</span>
                 <span className="min-w-0 flex-1 truncate text-muted">
                   {o.plan_name} · {orderLength(o)}
-                  {o.kind === "seats" ? ` · ${t("bill.addSeatsN", { n: o.seats })}` : ""}
+                  {o.kind === "seats"
+                    ? ` · ${t("bill.addSeatsN", { n: o.seats })}`
+                    : o.kind !== "addon" && o.mode === "seat"
+                      ? ` · ${t("bill.seatsN", { n: o.seats })}`
+                      : ""}
                   {o.kind !== "seats" && (o.addons ?? []).length > 0 ? ` · ${t("bill.addonsN", { n: (o.addons ?? []).length })}` : ""} · {o.scope_name}
                 </span>
                 <span className="tabular-nums text-ink">{formatPriceVND(o.total_vnd)}</span>
-                <span className={`badge-pill text-[11px] ${o.status === "paid" ? "badge-success" : o.status === "pending" ? "badge-warning" : "badge-neutral"}`}>{t(statusKey(o.status))}</span>
+                <span className={`badge-pill text-[11px] ${o.status === "paid" ? "badge-success" : o.status === "pending" ? "badge-warning" : "badge-neutral"}`}>{t(orderStatusKey(o))}</span>
                 <span className="caption text-muted-soft">{fmtDate(o.created_at, locale)}</span>
               </button>
             ))}
