@@ -255,7 +255,7 @@ func (h *UsageBillingHandler) CancelOrder(c *gin.Context) {
 		c.Error(apperrors.NewNotFoundError("order not found"))
 		return
 	}
-	updated, err := h.billing.CancelOrder(c.Request.Context(), order.ID)
+	updated, err := h.billing.CancelOrder(c.Request.Context(), order.ID, false)
 	if err != nil {
 		usageAdminFail(c, err)
 		return
@@ -300,20 +300,61 @@ func (h *UsageBillingHandler) AdminConfirmOrder(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
 }
 
+// forceParam reads ?force=true|1 (SuperAdmin overrides).
+func forceParam(c *gin.Context) bool {
+	v := strings.TrimSpace(c.Query("force"))
+	return v == "true" || v == "1"
+}
+
 // AdminCancelOrder godoc
 // @Summary      Cancel a pending order (SuperAdmin)
+// @Description  An order that has received money is refused (409, reason payment_received) unless force=true.
 // @Tags         Gói sử dụng
-// @Param        id path string true "order id"
+// @Param        id    path  string true  "order id"
+// @Param        force query bool   false "cancel although money was received"
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
 // @Router       /system/admin/usage/orders/{id}/cancel [post]
 func (h *UsageBillingHandler) AdminCancelOrder(c *gin.Context) {
-	order, err := h.billing.CancelOrder(c.Request.Context(), c.Param("id"))
+	order, err := h.billing.CancelOrder(c.Request.Context(), c.Param("id"), forceParam(c))
 	if err != nil {
 		usageAdminFail(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
+}
+
+// AdminReopenOrder godoc
+// @Summary      Reopen an expired order (SuperAdmin)
+// @Description  For money that arrived after the order expired: the order is pending again with a fresh payment window and its promo use reserved again; the transfers already recorded for it are counted again and confirm it when they cover the total. A plan order is refused (409, plan_order_pending) while another plan order of the scope waits for payment, unless force=true.
+// @Tags         Gói sử dụng
+// @Param        id    path  string true  "order id"
+// @Param        force query bool   false "reopen although another plan order is pending"
+// @Success      200 {object} map[string]interface{}
+// @Security     Bearer
+// @Router       /system/admin/usage/orders/{id}/reopen [post]
+func (h *UsageBillingHandler) AdminReopenOrder(c *gin.Context) {
+	order, err := h.billing.ReopenOrder(c.Request.Context(), c.Param("id"), forceParam(c))
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
+}
+
+// AdminAwaitingOrderCount godoc
+// @Summary      How many pending orders need a SuperAdmin (0 đồng, or money received without confirming them)
+// @Tags         Gói sử dụng
+// @Success      200 {object} map[string]interface{} "data: {awaiting_admin}"
+// @Security     Bearer
+// @Router       /system/admin/usage/orders/awaiting-admin-count [get]
+func (h *UsageBillingHandler) AdminAwaitingOrderCount(c *gin.Context) {
+	n, err := h.billing.CountOrdersAwaitingAdmin(c.Request.Context())
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"awaiting_admin": n}})
 }
 
 // ListPromos godoc

@@ -159,8 +159,15 @@ type UsageOrder struct {
 	CreditLines            UsageCreditLines `json:"credit_lines"             gorm:"type:jsonb"`
 	ReplacesSubscriptionID *string          `json:"replaces_subscription_id" gorm:"type:varchar(36)"`
 	ReplacesEndsAt         *time.Time       `json:"replaces_ends_at"`
-	CreatedAt              time.Time        `json:"created_at"`
-	UpdatedAt              time.Time        `json:"updated_at"`
+	// The quote's breakdown, kept so the order page adds up: ProrationVND
+	// (in SubtotalVND) pays the seats added for the ProratedDays left on the
+	// current period; SavingsVND is what the quarter/year term saved
+	// (informational, already in the plan line).
+	ProrationVND int64     `json:"proration_vnd"`
+	ProratedDays int       `json:"prorated_days"`
+	SavingsVND   int64     `json:"savings_vnd"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 }
 
 // TableName returns the table name.
@@ -183,6 +190,10 @@ type UsageQuoteRequest struct {
 	// KeepAddonAgentIDs: on a plan change, the held add-ons to carry over.
 	// nil = the default (those that cost nothing to carry).
 	KeepAddonAgentIDs *[]string `json:"keep_addon_agent_ids"`
+	// ConfirmDuplicate: the buyer saw that the scope already has a plan
+	// order waiting for payment and wants another one anyway (without it
+	// the order is refused with reason plan_order_pending).
+	ConfirmDuplicate bool `json:"confirm_duplicate"`
 }
 
 // UsageQuote prices a request. PromoError is set (and no discount applied)
@@ -254,7 +265,9 @@ type UsageOrderFilter struct {
 	ScopeID   string
 	Status    string
 	CreatedBy string
-	Limit     int
+	// Kind: plan|addon ("" = both).
+	Kind  string
+	Limit int
 }
 
 // UsageOrderView is an order as pages show it: with the name of what it
@@ -266,6 +279,21 @@ type UsageOrderView struct {
 	// payment can be matched to the order.
 	TransferContent string `json:"transfer_content"`
 	QRURL           string `json:"qr_url"`
+	// The single-order view (GetOrder/GetOrderByCode) adds:
+	// SubscriptionEndsAt, the end of the package a paid order went into
+	// (while that subscription is active); ReceivedVND, what short
+	// transfers for a pending order have brought so far (the QR then asks
+	// for the rest); LastPayment, the latest transfer matched to the order.
+	SubscriptionEndsAt *time.Time         `json:"subscription_ends_at,omitempty"`
+	ReceivedVND        int64              `json:"received_vnd,omitempty"`
+	LastPayment        *UsageOrderPayment `json:"last_payment,omitempty"`
+}
+
+// UsageOrderPayment is a transfer as the buyer sees it on the order page.
+type UsageOrderPayment struct {
+	AmountVND    int64     `json:"amount_vnd"`
+	Status       string    `json:"status"`
+	TransactedAt time.Time `json:"transacted_at"`
 }
 
 // Incoming payments.
@@ -303,6 +331,14 @@ const (
 	UsagePaymentDirectionIn  = "in"
 	UsagePaymentDirectionOut = "out"
 )
+
+// UsagePaymentHeldStatuses are the transfers that brought money for an
+// order without paying it: short, refused at confirmation, or arrived
+// while the order was closed. A pending order holding any of them cannot
+// be cancelled by its buyer, and SuperAdmin is asked to look at it.
+var UsagePaymentHeldStatuses = []string{
+	UsagePaymentUnderpaid, UsagePaymentConfirmFailed, UsagePaymentOrderClosed,
+}
 
 // UsagePaymentWebhookRequest is one transaction as the checker reports it.
 type UsagePaymentWebhookRequest struct {

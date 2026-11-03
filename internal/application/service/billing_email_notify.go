@@ -57,3 +57,13 @@ func (b *billingEmailNotify) RecordPayment(
 	}
 	return r, err
 }
+
+// ReopenOrder: reopening re-settles the transfers the order already
+// received and may confirm it.
+func (b *billingEmailNotify) ReopenOrder(ctx context.Context, id string, force bool) (*types.UsageOrderView, error) {
+	v, err := b.UsageBillingService.ReopenOrder(ctx, id, force)
+	if err == nil && v != nil && v.Status == types.UsageOrderPaid {
+		b.notifier.OrderPaid(ctx, v)
+	}
+	return v, err
+}

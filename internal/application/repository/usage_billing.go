@@ -137,7 +137,56 @@ func (r *usageBillingRepository) GetOrderByCode(ctx context.Context, code string
 }
 
 func (r *usageBillingRepository) ListOrders(ctx context.Context, filter types.UsageOrderFilter) ([]*types.UsageOrder, error) {
-	q := r.conn(ctx).Order("created_at DESC")
+	q := filterOrders(r.conn(ctx).Order("created_at DESC"), filter)
+	if filter.Limit > 0 {
+		q = q.Limit(filter.Limit)
+	}
+	var out []*types.UsageOrder
+	if err := q.Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *usageBillingRepository) CountOrdersAwaitingAdmin(ctx context.Context) (int64, error) {
+	var n int64
+	err := r.conn(ctx).Model(&types.UsageOrder{}).
+		Where("status = ?", types.UsageOrderPending).
+		Where("total_vnd <= 0 OR EXISTS (SELECT 1 FROM usage_payment_transactions p WHERE p.order_id = usage_orders.id AND p.status IN ?)",
+			types.UsagePaymentHeldStatuses).
+		Count(&n).Error
+	return n, err
+}
+
+// ReceivedByOrder sums per order and source, then keeps each order's
+// largest source sum: two checkers report the same money, so their
+// reports never add up, while every transfer of one source counts.
+func (r *usageBillingRepository) ReceivedByOrder(ctx context.Context, orderIDs []string) (map[string]int64, error) {
+	out := map[string]int64{}
+	if len(orderIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		OrderID string
+		Total   int64
+	}
+	err := r.conn(ctx).Model(&types.UsagePaymentTransaction{}).
+		Select("order_id, SUM(amount_vnd) AS total").
+		Where("order_id IN ? AND status IN ?", orderIDs, types.UsagePaymentHeldStatuses).
+		Group("order_id, source").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		if row.Total > out[row.OrderID] {
+			out[row.OrderID] = row.Total
+		}
+	}
+	return out, nil
+}
+
+func filterOrders(q *gorm.DB, filter types.UsageOrderFilter) *gorm.DB {
 	if filter.ScopeType != "" {
 		q = q.Where("scope_type = ?", filter.ScopeType)
 	}
@@ -150,14 +199,10 @@ func (r *usageBillingRepository) ListOrders(ctx context.Context, filter types.Us
 	if filter.CreatedBy != "" {
 		q = q.Where("created_by = ?", filter.CreatedBy)
 	}
-	if filter.Limit > 0 {
-		q = q.Limit(filter.Limit)
+	if filter.Kind != "" {
+		q = q.Where("kind = ?", filter.Kind)
 	}
-	var out []*types.UsageOrder
-	if err := q.Find(&out).Error; err != nil {
-		return nil, err
-	}
-	return out, nil
+	return q
 }
 
 func (r *usageBillingRepository) UpdateOrder(ctx context.Context, order *types.UsageOrder) error {
@@ -167,11 +212,13 @@ func (r *usageBillingRepository) UpdateOrder(ctx context.Context, order *types.U
 
 // ExpirePendingOrders flips due pending orders in one UPDATE and returns
 // only the rows this call flipped (RETURNING): a concurrent call never
-// gets the same order, so its promo use is released once.
+// gets the same order, so its promo use is released once. 0-đồng orders
+// wait for a SuperAdmin and never expire (older ones may carry an
+// expires_at).
 func (r *usageBillingRepository) ExpirePendingOrders(ctx context.Context, now time.Time) ([]*types.UsageOrder, error) {
 	var expired []*types.UsageOrder
 	err := r.conn(ctx).Model(&expired).Clauses(clause.Returning{}).
-		Where("status = ? AND expires_at IS NOT NULL AND expires_at < ?", types.UsageOrderPending, now).
+		Where("status = ? AND total_vnd > 0 AND expires_at IS NOT NULL AND expires_at < ?", types.UsageOrderPending, now).
 		Updates(map[string]interface{}{"status": types.UsageOrderExpired, "updated_at": now}).Error
 	if err != nil {
 		return nil, err
@@ -206,6 +253,16 @@ func (r *usageBillingRepository) GetPaymentTransactionByExternalID(
 func (r *usageBillingRepository) UpdatePaymentTransaction(ctx context.Context, t *types.UsagePaymentTransaction) error {
 	t.UpdatedAt = time.Now()
 	return r.conn(ctx).Model(t).Select("*").Omit("id", "created_at").Updates(t).Error
+}
+
+func (r *usageBillingRepository) ListOrderPayments(ctx context.Context, orderID string) ([]*types.UsagePaymentTransaction, error) {
+	var out []*types.UsagePaymentTransaction
+	err := r.conn(ctx).Where("order_id = ?", orderID).
+		Order("transacted_at DESC").Order("created_at DESC").Order("id DESC").Find(&out).Error
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (r *usageBillingRepository) ListPaymentTransactions(

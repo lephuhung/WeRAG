@@ -35,6 +35,7 @@ import {
   type UsageScopeKind,
 } from "@/lib/api/usage";
 import { addonLineDetail, keepOffered, toggleAddonId } from "@/lib/agent-addon-catalogue";
+import { orderAmountDue, orderPaymentHeld, orderPlanLineVND, pendingPlanOrderCode } from "@/lib/billing-order";
 import { formatDateTime, formatLastDay } from "@/lib/datetime";
 import { BILLING_INTENT_EVENT, clearBillingIntent, readBillingIntent, type BillingIntent } from "@/lib/billing-intent";
 import { useConfirm } from "@/components/confirm-dialog";
@@ -53,10 +54,10 @@ function monthChoicesFor(plan: UsagePlan | null): number[] {
   return MONTH_CHOICES.filter((m) => planPriceForMonths(plan, m) != null);
 }
 
-function fmtDate(v: string | null | undefined): string {
+function fmtDate(v: string | null | undefined, locale: string): string {
   if (!v) return "";
   const d = new Date(v);
-  return Number.isNaN(d.getTime()) ? "" : formatDateTime(d);
+  return Number.isNaN(d.getTime()) ? "" : formatDateTime(d, locale);
 }
 
 function statusKey(s: UsageOrder["status"]): LocaleKey {
@@ -82,7 +83,7 @@ function CopyButton({ value, label, copied }: { value: string; label: string; co
   );
 }
 
-type ErrDetails = { reason?: string; current_seats?: number };
+type ErrDetails = { reason?: string; current_seats?: number; order_code?: string; received_vnd?: number };
 function errDetails(e: unknown): ErrDetails | undefined {
   if (!(e instanceof ApiError)) return undefined;
   return (e.payload as { error?: { details?: ErrDetails } } | undefined)?.error?.details;
@@ -103,8 +104,9 @@ function useBillingError() {
     (e: unknown, fallback: LocaleKey) => {
       const current = seatsBelowCurrent(e);
       if (current !== null) return t("bill.seatsBelowCurrent", { n: current });
-      const key = billingErrorKey(errDetails(e)?.reason);
-      if (key) return t(key as LocaleKey);
+      const details = errDetails(e);
+      const key = billingErrorKey(details?.reason);
+      if (key) return t(key as LocaleKey, { amount: formatPriceVND(details?.received_vnd ?? 0) });
       return e instanceof Error && e.message ? e.message : t(fallback);
     },
     [t],
@@ -112,7 +114,7 @@ function useBillingError() {
 }
 
 export function BillingPage() {
-  const { t } = useT();
+  const { t, locale } = useT();
   const auth = useAuth();
   const confirmAction = useConfirm();
   const toast = useToast();
@@ -340,16 +342,32 @@ export function BillingPage() {
 
   const placeOrder = () =>
     run(async () => {
-      const o = await createUsageOrder({
+      const req = {
         scope_type: scope,
         plan_id: planId,
         months,
         seats: seatMode ? seats : 0,
         promo_code: promo,
-        kind: "plan",
+        kind: "plan" as const,
         addon_agent_ids: addonIds,
         ...(keepIds ? { keep_addon_agent_ids: keepIds } : {}),
-      });
+      };
+      let o: UsageOrder;
+      try {
+        o = await createUsageOrder(req);
+      } catch (e) {
+        // the scope already has a package order waiting for payment:
+        // paying both would apply both, so ask first
+        const code = pendingPlanOrderCode(errDetails(e));
+        if (code === null) throw e;
+        const yes = await confirmAction({
+          title: t("common.confirm"),
+          message: t("bill.duplicateConfirm", { code }),
+          confirmLabel: t("bill.duplicateYes"),
+        });
+        if (!yes) return;
+        o = await createUsageOrder({ ...req, confirm_duplicate: true });
+      }
       setOrder(o);
       await load();
       toast.success(t("bill.waiting"));
@@ -388,7 +406,8 @@ export function BillingPage() {
       </div>
     ));
 
-  const cancelOrder = async (o: UsageOrder) => {
+  // stay: cancelled from the shop page's reminder, which stays put
+  const cancelOrder = async (o: UsageOrder, stay = false) => {
     const ok = await confirmAction({
       title: t("common.confirm"),
       message: t("bill.cancelConfirm", { code: o.order_code }),
@@ -397,10 +416,22 @@ export function BillingPage() {
     if (!ok) return;
     await run(async () => {
       const u = await cancelMyUsageOrder(o.order_code);
-      setOrder(u);
+      if (!stay) setOrder(u);
       await load();
     });
   };
+
+  // the list rows lack the single-order details (transfers received, the
+  // package's new end): show the row at once, then the full view
+  const openOrder = (o: UsageOrder) => {
+    setOrder(o);
+    getUsageOrder(o.order_code)
+      .then((full) => setOrder((cur) => (cur && cur.id === full.id ? full : cur)))
+      .catch(() => undefined);
+  };
+  // the scope's orders still waiting, reminded at the top of the page
+  const scopeId = scope === "tenant" ? String(tenantId) : String(auth.user?.id ?? "");
+  const pendingOrders = orders.filter((o) => o.status === "pending" && o.scope_type === scope && o.scope_id === scopeId);
 
   // a code typed but not applied would silently be ignored by the order
   const promoPending = promoText.trim().toUpperCase() !== promo.trim().toUpperCase();
@@ -413,6 +444,8 @@ export function BillingPage() {
   // ---- payment view ----------------------------------------------------------
   if (order) {
     const pending = order.status === "pending";
+    // money arrived without confirming the order: a SuperAdmin handles it
+    const held = pending && orderPaymentHeld(order);
     return (
       <ConsolePage size="form" className="px-5 py-6">
         <button type="button" className="btn btn-outline btn-sm mb-4" onClick={() => setOrder(null)}>
@@ -433,11 +466,47 @@ export function BillingPage() {
             <span className={`badge-pill text-[11px] ${order.status === "paid" ? "badge-success" : pending ? "badge-warning" : "badge-neutral"}`}>{t(statusKey(order.status))}</span>
           </div>
           <div className="space-y-1 px-4 py-3 text-[14px]">
+            {order.kind !== "addon" && (
+              <div className="flex justify-between gap-3">
+                <span className="min-w-0 text-muted">
+                  {t("bill.planLine", { name: order.plan_name })}{" "}
+                  <span className="caption text-muted-soft">
+                    {order.mode === "seat"
+                      ? t("bill.planLineDetailSeats", { length: orderLength(order), seats: order.seats, price: formatPriceVND(order.unit_price_vnd) })
+                      : t("bill.planLineDetail", { length: orderLength(order), price: formatPriceVND(order.unit_price_vnd) })}
+                  </span>
+                </span>
+                <span className="tabular-nums">{formatPriceVND(orderPlanLineVND(order))}</span>
+              </div>
+            )}
+            {!!order.proration_vnd && (
+              <div className="flex justify-between gap-3">
+                <span className="min-w-0 text-muted">{t("bill.prorationOrder", { days: order.prorated_days ?? 0 })}</span>
+                <span className="tabular-nums">{formatPriceVND(order.proration_vnd)}</span>
+              </div>
+            )}
             {renderLines(order.addons)}
             <div className="flex justify-between"><span className="text-muted">{t("bill.subtotal")}</span><span className="tabular-nums">{formatPriceVND(order.subtotal_vnd)}</span></div>
+            {!!order.savings_vnd && (
+              <div className="caption flex justify-between text-success">
+                <span>{order.billing_term === "year" ? t("bill.savedYear") : t("bill.savedQuarter")}</span>
+                <span className="tabular-nums">{formatPriceVND(order.savings_vnd)}</span>
+              </div>
+            )}
             {!!order.credit_vnd && (
               <div className="flex justify-between"><span className="text-muted">{t("bill.credit")}</span><span className="tabular-nums">−{formatPriceVND(order.credit_vnd)}</span></div>
             )}
+            {/* what the credit is made of (capped at the subtotal above) */}
+            {(order.credit_lines ?? []).map((c) => (
+              <div key={`${c.kind}:${c.agent_id ?? ""}`} className="caption flex justify-between gap-3 pl-3 text-muted-soft">
+                <span className="min-w-0">
+                  {c.paid
+                    ? t("bill.creditLine", { name: c.name || c.agent_id || "", days: c.days })
+                    : t("bill.creditUnpaid", { name: c.name || c.agent_id || "" })}
+                </span>
+                <span className="tabular-nums">{c.paid ? formatPriceVND(c.amount_vnd) : ""}</span>
+              </div>
+            ))}
             {order.discount_vnd > 0 && (
               <div className="flex justify-between"><span className="text-muted">{t("bill.discount")} ({order.promo_code})</span><span className="tabular-nums">−{formatPriceVND(order.discount_vnd)}</span></div>
             )}
@@ -446,6 +515,7 @@ export function BillingPage() {
           {pending && order.total_vnd <= 0 && (
             <div className="border-t border-hairline px-4 py-3 text-[14px] text-muted">
               <p>{t("bill.freeOrderWaits")}</p>
+              <p className="caption mt-1 text-muted">{t("bill.freeNoDeadline")}</p>
               <p className="caption mt-1 flex items-center gap-1 text-muted">
                 <IconRefresh className="h-3.5 w-3.5 animate-spin" /> {t("bill.waiting")}
               </p>
@@ -456,7 +526,16 @@ export function BillingPage() {
               </div>
             </div>
           )}
-          {pending && order.total_vnd > 0 && (
+          {pending && order.total_vnd > 0 && held && (
+            <div className="border-t border-hairline px-4 py-3 text-[14px]">
+              <p className="text-ink">{t("bill.paymentHeld")}</p>
+              {!!order.received_vnd && (
+                <p className="caption mt-1 text-muted">{t("bill.receivedSoFar", { amount: formatPriceVND(order.received_vnd) })}</p>
+              )}
+              {info?.contact && <p className="caption mt-1 text-muted">{info.contact}</p>}
+            </div>
+          )}
+          {pending && order.total_vnd > 0 && !held && (
             <div className="border-t border-hairline px-4 py-3">
               <div className="text-[14px] font-medium text-ink">{t("bill.payTitle")}</div>
               <div className="mt-3 flex flex-wrap gap-5">
@@ -477,10 +556,19 @@ export function BillingPage() {
                     </div>
                   )}
                   {info?.bank_account_name && <div><span className="text-muted">{t("bill.accountName")}: </span><span className="text-ink">{info.bank_account_name}</span></div>}
+                  {!!order.received_vnd && order.received_vnd < order.total_vnd && (
+                    <p className="text-warning">
+                      {t("bill.underpaid", {
+                        received: formatPriceVND(order.received_vnd),
+                        total: formatPriceVND(order.total_vnd),
+                        rest: formatPriceVND(orderAmountDue(order)),
+                      })}
+                    </p>
+                  )}
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-muted">{t("bill.amount")}: </span>
-                    <span className="font-medium text-ink tabular-nums">{formatPriceVND(order.total_vnd)}</span>
-                    <CopyButton value={String(order.total_vnd)} label={t("bill.copy")} copied={t("bill.copied")} />
+                    <span className="font-medium text-ink tabular-nums">{formatPriceVND(orderAmountDue(order))}</span>
+                    <CopyButton value={String(orderAmountDue(order))} label={t("bill.copy")} copied={t("bill.copied")} />
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-muted">{t("bill.content")}: </span>
@@ -488,27 +576,41 @@ export function BillingPage() {
                     <CopyButton value={order.transfer_content} label={t("bill.copy")} copied={t("bill.copied")} />
                   </div>
                   <p className="caption text-muted-soft">{t("bill.contentHint")}</p>
-                  {order.expires_at && <p className="caption text-warning">{t("bill.expiresAt", { date: fmtDate(order.expires_at) })}</p>}
+                  {order.expires_at && <p className="caption text-warning">{t("bill.expiresAt", { date: fmtDate(order.expires_at, locale) })}</p>}
                   {info?.contact && <p className="caption text-muted">{info.contact}</p>}
                   <p className="caption flex items-center gap-1 text-muted">
                     <IconRefresh className="h-3.5 w-3.5 animate-spin" /> {t("bill.waiting")}
                   </p>
                 </div>
               </div>
-              <div className="mt-3 flex justify-end">
-                <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void cancelOrder(order)}>
-                  {t("bill.cancel")}
-                </button>
-              </div>
+              {/* an order that has received money is not cancelled here */}
+              {!order.received_vnd && (
+                <div className="mt-3 flex justify-end">
+                  <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void cancelOrder(order)}>
+                    {t("bill.cancel")}
+                  </button>
+                </div>
+              )}
             </div>
           )}
           {order.status === "paid" && (
             <div className="border-t border-hairline px-4 py-3 text-[14px] text-success">
-              {t("bill.paid")} {order.paid_at ? fmtDate(order.paid_at) : ""}
+              {order.subscription_ends_at
+                ? t("bill.paidUntil", { time: fmtDate(order.paid_at, locale), plan: order.plan_name, date: formatLastDay(order.subscription_ends_at) })
+                : t("bill.paidAt", { time: fmtDate(order.paid_at, locale) })}
             </div>
           )}
           {(order.status === "cancelled" || order.status === "expired") && (
-            <div className="border-t border-hairline px-4 py-3 text-[14px] text-muted">{t(order.status === "expired" ? "bill.expired" : "bill.cancelled")}</div>
+            <div className="border-t border-hairline px-4 py-3 text-[14px] text-muted">
+              <p>{t(order.status === "expired" ? "bill.expired" : "bill.cancelled")}</p>
+              {order.total_vnd > 0 && (
+                <p className="caption mt-1 text-muted">
+                  {info?.contact
+                    ? t("bill.closedTransferHint", { code: order.transfer_content, contact: info.contact })
+                    : t("bill.closedTransferHintAdmin", { code: order.transfer_content })}
+                </p>
+              )}
+            </div>
           )}
         </div>
         {error && (
@@ -559,6 +661,29 @@ export function BillingPage() {
           ))}
         </div>
       )}
+
+      {pendingOrders.map((o) => (
+        <Notice
+          key={o.id}
+          tone="warning"
+          action={
+            <div className="flex gap-2">
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => openOrder(o)}>
+                {t("bill.open")}
+              </button>
+              {!o.received_vnd && (
+                <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => void cancelOrder(o, true)}>
+                  {t("bill.cancel")}
+                </button>
+              )}
+            </div>
+          }
+        >
+          {o.total_vnd > 0
+            ? t("bill.pendingBanner", { code: o.order_code, total: formatPriceVND(o.total_vnd) })
+            : t("bill.pendingFreeBanner", { code: o.order_code })}
+        </Notice>
+      ))}
 
       {plans.length === 0 ? (
         <p className="caption text-muted-soft">{t("bill.noPlans")}</p>
@@ -753,7 +878,7 @@ export function BillingPage() {
               )}
             </div>
           )}
-          <p className="caption mt-2 text-muted-soft">{t("bill.renewHint")}</p>
+          <p className="caption mt-2 text-muted">{t("bill.renewHint")}</p>
           <div className="mt-3 flex justify-end">
             <button type="button" className="btn btn-primary" disabled={!canBuy} onClick={() => void placeOrder()}>
               {t("bill.buy")}
@@ -834,7 +959,7 @@ export function BillingPage() {
         ) : (
           <div className="divide-y divide-hairline rounded-lg border border-hairline">
             {orders.map((o) => (
-              <button key={o.id} type="button" className="flex w-full flex-wrap items-center gap-3 px-3 py-2 text-left text-[13.5px] hover:bg-surface-strong" onClick={() => setOrder(o)}>
+              <button key={o.id} type="button" className="flex w-full flex-wrap items-center gap-3 px-3 py-2 text-left text-[13.5px] hover:bg-surface-strong" onClick={() => openOrder(o)}>
                 <span className="font-mono text-ink">{o.order_code}</span>
                 <span className="min-w-0 flex-1 truncate text-muted">
                   {o.plan_name} · {orderLength(o)}
@@ -842,7 +967,7 @@ export function BillingPage() {
                 </span>
                 <span className="tabular-nums text-ink">{formatPriceVND(o.total_vnd)}</span>
                 <span className={`badge-pill text-[11px] ${o.status === "paid" ? "badge-success" : o.status === "pending" ? "badge-warning" : "badge-neutral"}`}>{t(statusKey(o.status))}</span>
-                <span className="caption text-muted-soft">{fmtDate(o.created_at)}</span>
+                <span className="caption text-muted-soft">{fmtDate(o.created_at, locale)}</span>
               </button>
             ))}
           </div>

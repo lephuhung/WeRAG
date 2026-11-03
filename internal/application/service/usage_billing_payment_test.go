@@ -111,10 +111,12 @@ func TestPaymentThatCannotConfirmIsKeptWithReason(t *testing.T) {
 	require.Equal(t, types.UsagePaymentIgnored, res.Transaction.Status)
 	require.Equal(t, types.UsageOrderPending, f.repo.orders[o.ID].Status)
 
-	// paid by the next transfer, then a second payment of the same order
+	// paid by the next transfer (with the short one before it), then a
+	// second payment of the same order
 	res = f.pay(t, types.UsagePaymentWebhookRequest{TransactionID: "e", AmountVND: 120_000, Content: o.OrderCode})
 	require.Equal(t, types.UsagePaymentMatched, res.Transaction.Status)
-	require.Equal(t, "overpaid by 20000 VND", res.Transaction.Reason)
+	require.Equal(t, "completes 219000 VND in 2 transfers; overpaid by 119000 VND", res.Transaction.Reason)
+	require.Equal(t, types.UsagePaymentMatched, f.repo.payments["bank-poller/b"].Status)
 	res = f.pay(t, types.UsagePaymentWebhookRequest{TransactionID: "f", AmountVND: 100_000, Content: o.OrderCode})
 	require.Equal(t, types.UsagePaymentOrderClosed, res.Transaction.Status)
 	require.Equal(t, vnEnd(1), *f.plans.active["tenant/10003"].EndsAt)
@@ -158,7 +160,7 @@ func TestPaymentMadeBeforeExpiryReopensExpiredOrder(t *testing.T) {
 func TestPaymentSkipsClosedOrderNamedFirst(t *testing.T) {
 	f := newBillingFixture(t)
 	closed := f.poolOrder(t)
-	_, err := f.svc.CancelOrder(context.Background(), closed.ID)
+	_, err := f.svc.CancelOrder(context.Background(), closed.ID, false)
 	require.NoError(t, err)
 	open := f.poolOrder(t)
 	res := f.pay(t, types.UsagePaymentWebhookRequest{TransactionID: "m", AmountVND: 100_000, Content: closed.OrderCode + " " + open.OrderCode})
@@ -174,7 +176,7 @@ func TestPaymentConfirmRefusalKeepsTransaction(t *testing.T) {
 	require.NoError(t, err)
 	small, err := f.svc.CreateOrder(context.Background(), types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 5}, "10003", "u1")
 	require.NoError(t, err)
-	big, err := f.svc.CreateOrder(context.Background(), types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 50}, "10003", "u1")
+	big, err := f.svc.CreateOrder(context.Background(), types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 50, ConfirmDuplicate: true}, "10003", "u1")
 	require.NoError(t, err)
 	_, err = f.svc.ConfirmOrder(context.Background(), big.ID, "sa")
 	require.NoError(t, err)

@@ -213,7 +213,12 @@ function OrganizationUsage() {
         <div className="card divide-y divide-hairline">
           <InfoRow label={t("tus.plan")} desc={sub.plan?.description || ""} className="px-4">
             <span className="text-[14px] text-ink">{sub.plan?.name ?? sub.plan_id}</span>
-            {!sub.current && <span className="badge-pill ml-2 text-[11px] text-error">{t("usg.expired")}</span>}
+            {!sub.current &&
+              ((sub.not_started ?? (!!sub.starts_at && new Date(sub.starts_at).getTime() > Date.now())) ? (
+                <span className="badge-pill ml-2 text-[11px] text-info">{t("tus.notStarted", { date: formatDate(sub.starts_at) })}</span>
+              ) : (
+                <span className="badge-pill ml-2 text-[11px] text-error">{t("usg.expired")}</span>
+              ))}
           </InfoRow>
           <InfoRow label={t("tus.mode")} desc={sub.mode === "seat" ? t("usg.modeSeatHint") : t("usg.modePoolHint")} className="px-4">
             <span className="caption text-body">

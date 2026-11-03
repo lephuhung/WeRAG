@@ -26,7 +26,11 @@ import {
   createUsagePromo,
   deleteUsagePromo,
   formatPriceVND,
+  AWAITING_ORDERS_EVENT,
+  billingErrorKey,
+  getAwaitingAdminOrderCount,
   listAllUsageOrders,
+  reopenUsageOrder,
   listUsagePlans,
   listUsagePromos,
   updateUsagePromo,
@@ -37,7 +41,14 @@ import {
   type UsagePromoInput,
 } from "@/lib/api/usage";
 import { formatDateTime } from "@/lib/datetime";
+import { ApiError } from "@/lib/api-client";
+import { pendingPlanOrderCode } from "@/lib/billing-order";
 import { WebhookGuide } from "./admin-billing-webhook-guide";
+
+function errDetails(e: unknown): { reason?: string; order_code?: string; received_vnd?: number } | undefined {
+  if (!(e instanceof ApiError)) return undefined;
+  return (e.payload as { error?: { details?: { reason?: string; order_code?: string; received_vnd?: number } } } | undefined)?.error?.details;
+}
 
 type BankForm = { bankBin: string; bankName: string; accountNo: string; accountName: string; orderTTLHours: string; contact: string };
 const emptyBank: BankForm = { bankBin: "", bankName: "", accountNo: "", accountName: "", orderTTLHours: "72", contact: "" };
@@ -95,8 +106,13 @@ export default function AdminBilling() {
   const [promoEditing, setPromoEditing] = useState<UsagePromoCode | null>(null);
   const [promoForm, setPromoForm] = useState<PromoForm>(emptyPromo);
 
+  // pending orders only a SuperAdmin can move on (0 đồng, money received)
+  const [awaitingCount, setAwaitingCount] = useState(0);
   const loadOrders = useCallback(async (f: UsageOrderStatus | "") => {
-    setOrders(await listAllUsageOrders(f || undefined));
+    const [list, n] = await Promise.all([listAllUsageOrders(f || undefined), getAwaitingAdminOrderCount()]);
+    setOrders(list);
+    setAwaitingCount(n);
+    window.dispatchEvent(new CustomEvent(AWAITING_ORDERS_EVENT, { detail: n }));
   }, []);
 
   const load = useCallback(async () => {
@@ -147,7 +163,9 @@ export default function AdminBilling() {
       await fn();
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("badm.opFailed"));
+      const details = errDetails(e);
+      const key = billingErrorKey(details?.reason);
+      setError(key ? t(key as LocaleKey, { amount: formatPriceVND(details?.received_vnd ?? 0) }) : e instanceof Error ? e.message : t("badm.opFailed"));
       return false;
     } finally {
       setBusy(false);
@@ -267,14 +285,39 @@ export default function AdminBilling() {
     if (ok) toast.success(t("common.saved"));
   };
   const cancelOrder = async (o: UsageOrder) => {
+    // an order that has received money is only cancelled on purpose
+    const received = o.received_vnd ?? 0;
     const yes = await confirm({
       title: t("badm.cancelOrder"),
-      message: t("badm.cancelConfirm", { code: o.order_code }),
+      message: received > 0
+        ? t("badm.cancelForceConfirm", { code: o.order_code, amount: formatPriceVND(received) })
+        : t("badm.cancelConfirm", { code: o.order_code }),
       danger: true,
     });
     if (!yes) return;
     const ok = await run(async () => {
-      await cancelUsageOrder(o.id);
+      await cancelUsageOrder(o.id, received > 0);
+      await loadOrders(filter);
+    });
+    if (ok) toast.success(t("common.saved"));
+  };
+  const reopenOrder = async (o: UsageOrder) => {
+    const yes = await confirm({
+      title: t("badm.reopen"),
+      message: t("badm.reopenConfirm", { code: o.order_code }),
+    });
+    if (!yes) return;
+    const ok = await run(async () => {
+      try {
+        await reopenUsageOrder(o.id);
+      } catch (e) {
+        // a newer plan order of the same buyer is waiting: ask first
+        const code = pendingPlanOrderCode(errDetails(e));
+        if (code === null) throw e;
+        const again = await confirm({ title: t("badm.reopen"), message: t("badm.reopenForceConfirm", { code }) });
+        if (!again) return;
+        await reopenUsageOrder(o.id, true);
+      }
       await loadOrders(filter);
     });
     if (ok) toast.success(t("common.saved"));
@@ -335,6 +378,7 @@ export default function AdminBilling() {
       <section id="tabpanel-orders" role="tabpanel" aria-labelledby="tab-orders">
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <h3 className="text-[14px] font-medium text-ink">{t("badm.orders")}</h3>
+          {awaitingCount > 0 && <span className="badge-pill badge-warning text-[11px]">{t("badm.awaitingAdmin", { n: awaitingCount })}</span>}
           <PillGroup ariaLabel={t("common.filters")}>
             <Pill active={filter === ""} onClick={() => changeFilter("")}>
               {t("badm.filterAll")}
@@ -381,7 +425,10 @@ export default function AdminBilling() {
                 {o.promo_code ? <span className="caption block text-muted">{o.promo_code} −{formatPriceVND(o.discount_vnd)}</span> : null}
                 {o.credit_vnd ? <span className="caption block text-muted">{t("bill.credit")} −{formatPriceVND(o.credit_vnd)}</span> : null}
               </td>
-              <td className="px-5 py-3.5 text-right align-middle tabular-nums text-ink">{formatPriceVND(o.total_vnd)}</td>
+              <td className="px-5 py-3.5 text-right align-middle tabular-nums text-ink">
+                {formatPriceVND(o.total_vnd)}
+                {!!o.received_vnd && <span className="caption block text-warning">{t("badm.received", { amount: formatPriceVND(o.received_vnd) })}</span>}
+              </td>
               <td className="px-5 py-3.5 align-middle">
                 <span className={`badge-pill text-[11px] ${o.status === "paid" ? "text-success" : o.status === "pending" ? "text-warning" : "text-muted"}`}>{t(statusKey(o.status))}</span>
                 {o.status === "paid" && o.paid_at ? <span className="caption block text-muted-soft">{fmtDateTime(o.paid_at)}</span> : null}
@@ -393,6 +440,9 @@ export default function AdminBilling() {
                     <button type="button" className="btn btn-primary btn-sm w-full px-2" disabled={busy} onClick={() => void confirmOrder(o)}>{t("badm.confirm")}</button>
                     <button type="button" className="btn btn-danger btn-sm w-full px-2" disabled={busy} onClick={() => void cancelOrder(o)}>{t("badm.cancelOrder")}</button>
                   </div>
+                )}
+                {o.status === "expired" && (
+                  <button type="button" className="btn btn-outline btn-sm w-full px-2" disabled={busy} onClick={() => void reopenOrder(o)}>{t("badm.reopen")}</button>
                 )}
               </td>
             </>

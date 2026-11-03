@@ -256,6 +256,8 @@ export interface UsageSubscriptionInput {
 export interface UsageSubscriptionView extends UsageSubscription {
   scope_name: string;
   current: boolean;
+  /** Not current because it starts later, not because it ended. */
+  not_started?: boolean;
   limit_status: UsageLimitStatus[];
   seats_used: number;
   /* A Guest's guest plan before their first question: no row yet (id is
@@ -485,12 +487,25 @@ export interface UsageOrder {
   addons?: UsageOrderAddonLine[];
   credit_vnd?: number;
   credit_lines?: UsageCreditLine[];
+  /** Added seats charged for the days left on the current period (in subtotal_vnd). */
+  proration_vnd?: number;
+  prorated_days?: number;
+  /** What the quarterly/yearly term saved (already in the plan line). */
+  savings_vnd?: number;
   created_at: string;
   updated_at: string;
   /** What to write in the bank transfer so the payment matches the order. */
   transfer_content: string;
-  /** VietQR image for a pending order; "" when billing is not configured. */
+  /** VietQR image for a pending order (for the rest when part was received);
+   * "" when billing is not configured. */
   qr_url: string;
+  /* Single-order view only (GET /billing/orders/{code}): */
+  /** End of the package a paid order went into (stored as the next VN midnight). */
+  subscription_ends_at?: string | null;
+  /** Short transfers received so far for a pending order. */
+  received_vnd?: number;
+  /** The latest transfer matched to the order. */
+  last_payment?: { amount_vnd: number; status: string; transacted_at: string } | null;
 }
 
 export type UsageOrderKind = "plan" | "addon";
@@ -536,6 +551,9 @@ export interface UsageQuoteRequest {
   /** Plan change: held add-ons to carry over; omitted = the server default
    * (those that cost nothing to carry). */
   keep_addon_agent_ids?: string[];
+  /** Place a plan order although the scope has one waiting for payment
+   * (otherwise refused with reason plan_order_pending). */
+  confirm_duplicate?: boolean;
 }
 
 /** Mirrors types.UsageCreditLine: unused paid days of the replaced package
@@ -702,9 +720,29 @@ export function confirmUsageOrder(id: string): Promise<UsageOrder> {
   return apiPost<{ data: UsageOrder }>(`${ADMIN}/orders/${encodeURIComponent(id)}/confirm`, {}).then((r) => r.data);
 }
 
-export function cancelUsageOrder(id: string): Promise<UsageOrder> {
-  return apiPost<{ data: UsageOrder }>(`${ADMIN}/orders/${encodeURIComponent(id)}/cancel`, {}).then((r) => r.data);
+/** force: cancel although the order has received money (refused otherwise
+ * with reason payment_received). */
+export function cancelUsageOrder(id: string, force = false): Promise<UsageOrder> {
+  return apiPost<{ data: UsageOrder }>(`${ADMIN}/orders/${encodeURIComponent(id)}/cancel${force ? "?force=true" : ""}`, {}).then((r) => r.data);
 }
+
+/** Puts an expired order back to pending (money that came after expiry);
+ * transfers already recorded for it are counted again. force: although
+ * another plan order of the scope is pending (refused otherwise with
+ * reason plan_order_pending). */
+export function reopenUsageOrder(id: string, force = false): Promise<UsageOrder> {
+  return apiPost<{ data: UsageOrder }>(`${ADMIN}/orders/${encodeURIComponent(id)}/reopen${force ? "?force=true" : ""}`, {}).then((r) => r.data);
+}
+
+/** Pending orders only a SuperAdmin can move on: 0 đồng, or money received
+ * without confirming them. */
+export function getAwaitingAdminOrderCount(): Promise<number> {
+  return apiGet<{ data?: { awaiting_admin?: number } }>(`${ADMIN}/orders/awaiting-admin-count`).then((r) => r.data?.awaiting_admin ?? 0);
+}
+
+/** Window event the billing admin page fires with the new awaiting-admin
+ * count (detail: number), so the console menu's badge follows. */
+export const AWAITING_ORDERS_EVENT = "werag:billing-awaiting-orders";
 
 /** system_settings keys of the receiving bank account and order policy. */
 export const BILLING_SETTING_KEYS = {
@@ -729,8 +767,11 @@ export function billingErrorKey(reason: string | undefined): string | null {
     case "addon_pending":
     case "no_subscription":
     case "open_ended_subscription":
+    case "order_not_expired":
     case "order_not_pending":
+    case "payment_received":
     case "plan_not_sold":
+    case "plan_order_pending":
     case "subscription_changed":
     case "term_not_sold":
       return `bill.err.${reason}`;

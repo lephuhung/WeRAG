@@ -4,13 +4,14 @@
  * is deep-linkable; the old /platform/system/* routes redirect here. */
 "use client";
 
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/lib/i18n";
 import { RequireSystemAccess } from "@/components/require-system-access";
 import { Select } from "@/components/select";
 import { ADMIN_GROUPS, type AdminSection } from "@/components/admin/admin-sections";
 import { adminSectionHref } from "@/components/admin/admin-routes";
+import { AWAITING_ORDERS_EVENT, getAwaitingAdminOrderCount } from "@/lib/api/usage";
 
 const ALL_SECTIONS = ADMIN_GROUPS.flatMap((g) => g.items);
 
@@ -34,6 +35,22 @@ function AdminConsole() {
   const label = (s: AdminSection) => (s.labelKey ? t(s.labelKey) : s.fallback);
   const open = (key: string) => router.push(adminSectionHref(key), { scroll: false });
 
+  // pending orders that need a SuperAdmin, as a badge on Billing
+  const [pendingOrders, setPendingOrders] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    getAwaitingAdminOrderCount()
+      .then((n) => alive && setPendingOrders(n))
+      .catch(() => undefined);
+    const onCount = (e: Event) => setPendingOrders(Number((e as CustomEvent<number>).detail) || 0);
+    window.addEventListener(AWAITING_ORDERS_EVENT, onCount);
+    return () => {
+      alive = false;
+      window.removeEventListener(AWAITING_ORDERS_EVENT, onCount);
+    };
+  }, [active.key]);
+  const badge = (s: AdminSection) => (s.key === "billing" && pendingOrders > 0 ? pendingOrders : 0);
+
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
       {/* left rail */}
@@ -54,6 +71,11 @@ function AdminConsole() {
                 >
                   <s.icon className="h-[18px] w-[18px] shrink-0" />
                   <span className="min-w-0 flex-1 truncate text-left">{label(s)}</span>
+                  {badge(s) > 0 && (
+                    <span className="badge-pill badge-warning shrink-0 text-[11px] tabular-nums" title={t("badm.awaitingAdmin", { n: badge(s) })}>
+                      {badge(s)}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -65,7 +87,7 @@ function AdminConsole() {
             value={active.key}
             onChange={open}
             ariaLabel={t("adminPage.title")}
-            options={ALL_SECTIONS.map((s) => ({ value: s.key, label: label(s) }))}
+            options={ALL_SECTIONS.map((s) => ({ value: s.key, label: badge(s) > 0 ? `${label(s)} (${badge(s)})` : label(s) }))}
           />
         </div>
       </aside>
