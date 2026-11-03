@@ -5,6 +5,7 @@
  * be pointed at someone else. */
 import { apiDel, apiGet, apiPost, apiPut } from "@/lib/api-client";
 import type { PlanCaps } from "@/lib/plan-caps";
+import type { InvoiceDetails } from "@/lib/billing-invoice";
 
 /** Questions and LLM tokens of one period (Vietnam calendar). */
 export interface UsagePeriodTotals {
@@ -513,6 +514,19 @@ export interface UsageOrder {
   received_vnd?: number;
   /** The latest transfer matched to the order. */
   last_payment?: { amount_vnd: number; status: string; transacted_at: string } | null;
+  /* VAT invoice (hóa đơn GTGT) the buyer asked for; editable while the
+   * order is pending or paid until a SuperAdmin marks it issued. */
+  invoice_requested?: boolean;
+  invoice_company_name?: string;
+  invoice_tax_code?: string;
+  invoice_address?: string;
+  invoice_email?: string;
+  /** When a SuperAdmin marked the invoice issued (null = not yet). */
+  invoice_issued_at?: string | null;
+  invoice_no?: string;
+  invoice_series?: string;
+  /** The date on the invoice (Vietnam midnight). */
+  invoice_date?: string | null;
 }
 
 export type UsageOrderKind = "plan" | "addon" | "seats";
@@ -561,6 +575,8 @@ export interface UsageQuoteRequest {
   /** Place a plan order although the scope has one waiting for payment
    * (otherwise refused with reason plan_order_pending). */
   confirm_duplicate?: boolean;
+  /** The buyer wants a VAT invoice with these details. */
+  invoice?: InvoiceDetails;
 }
 
 /** Mirrors types.UsageCreditLine: unused paid days of the replaced package
@@ -643,6 +659,23 @@ export interface UsageBillingInfo {
   bank_account_name: string;
   order_ttl_hours: number;
   contact: string;
+  seller_name?: string;
+  seller_tax_code?: string;
+  seller_address?: string;
+}
+
+/** Mirrors types.UsageOrderReceipt: a paid order with the seller and buyer
+ * a receipt prints (empty seller fields are left out). */
+export interface UsageOrderReceipt {
+  order: UsageOrder;
+  seller_name: string;
+  seller_tax_code: string;
+  seller_address: string;
+  seller_contact: string;
+  bank_name: string;
+  bank_account_no: string;
+  buyer_name: string;
+  buyer_email?: string;
 }
 
 const BILLING = "/api/v1/billing";
@@ -697,7 +730,40 @@ export function cancelMyUsageOrder(code: string): Promise<UsageOrder> {
   return apiPost<{ data: UsageOrder }>(`${BILLING}/orders/${encodeURIComponent(code)}/cancel`, {}).then((r) => r.data);
 }
 
+/** The VAT invoice details of the scope's latest order that asked for one
+ * (null when none did), to prefill the order form. */
+export function getLastInvoiceDetails(scope: UsageScopeKind): Promise<InvoiceDetails | null> {
+  return apiGet<{ data?: InvoiceDetails | null }>(`${BILLING}/invoice-details?scope=${scope}`).then((r) => r.data ?? null);
+}
+
+/** Asks for, changes (requested true + details) or withdraws (requested
+ * false) the VAT invoice of an order. */
+export function updateOrderInvoice(code: string, requested: boolean, details?: InvoiceDetails): Promise<UsageOrder> {
+  return apiPut<{ data: UsageOrder }>(`${BILLING}/orders/${encodeURIComponent(code)}/invoice`, { requested, ...(details ?? {}) }).then((r) => r.data);
+}
+
+/** The receipt of a paid order. */
+export function getOrderReceipt(code: string): Promise<UsageOrderReceipt> {
+  return apiGet<{ data: UsageOrderReceipt }>(`${BILLING}/orders/${encodeURIComponent(code)}/receipt`).then((r) => r.data);
+}
+
+/** The printable receipt page of a paid order. */
+export function receiptHref(code: string): string {
+  return `/billing/receipt/${encodeURIComponent(code)}`;
+}
+
 // SuperAdmin side.
+
+/** Marks the VAT invoice of a paid order issued (number, series and date
+ * YYYY-MM-DD optional; again to correct them). */
+export function markInvoiceIssued(id: string, input: { invoice_no?: string; invoice_series?: string; date?: string }): Promise<UsageOrder> {
+  return apiPost<{ data: UsageOrder }>(`${ADMIN}/orders/${encodeURIComponent(id)}/invoice-issued`, input).then((r) => r.data);
+}
+
+/** Undoes markInvoiceIssued: the buyer may edit the details again. */
+export function unmarkInvoiceIssued(id: string): Promise<UsageOrder> {
+  return apiDel<{ data: UsageOrder }>(`${ADMIN}/orders/${encodeURIComponent(id)}/invoice-issued`).then((r) => r.data);
+}
 
 export function listUsagePromos(includeInactive = true): Promise<UsagePromoCode[]> {
   return apiGet<{ data?: UsagePromoCode[] }>(`${ADMIN}/promos${includeInactive ? "?include_inactive=true" : ""}`).then(
@@ -739,14 +805,29 @@ export function reopenUsageOrder(id: string, force = false): Promise<UsageOrder>
   return apiPost<{ data: UsageOrder }>(`${ADMIN}/orders/${encodeURIComponent(id)}/reopen${force ? "?force=true" : ""}`, {}).then((r) => r.data);
 }
 
-/** Pending orders only a SuperAdmin can move on: 0 đồng, or money received
- * without confirming them. */
-export function getAwaitingAdminOrderCount(): Promise<number> {
-  return apiGet<{ data?: { awaiting_admin?: number } }>(`${ADMIN}/orders/awaiting-admin-count`).then((r) => r.data?.awaiting_admin ?? 0);
+/** What needs a SuperAdmin on the billing page: pending orders only a
+ * SuperAdmin can move on (0 đồng, or money received without confirming
+ * them) and paid orders whose VAT invoice is still to issue. */
+export interface BillingAdminCounts {
+  awaiting_admin: number;
+  invoices_to_issue: number;
 }
 
-/** Window event the billing admin page fires with the new awaiting-admin
- * count (detail: number), so the console menu's badge follows. */
+export function getBillingAdminCounts(): Promise<BillingAdminCounts> {
+  return apiGet<{ data?: Partial<BillingAdminCounts> }>(`${ADMIN}/orders/awaiting-admin-count`).then((r) => ({
+    awaiting_admin: r.data?.awaiting_admin ?? 0,
+    invoices_to_issue: r.data?.invoices_to_issue ?? 0,
+  }));
+}
+
+/** Everything the console menu's Billing badge counts. */
+export function getAwaitingAdminOrderCount(): Promise<number> {
+  return getBillingAdminCounts().then((c) => c.awaiting_admin + c.invoices_to_issue);
+}
+
+/** Window event the billing admin page fires with the new badge count
+ * (awaiting orders + invoices to issue; detail: number), so the console
+ * menu's badge follows. */
 export const AWAITING_ORDERS_EVENT = "werag:billing-awaiting-orders";
 
 /** system_settings keys of the receiving bank account and order policy. */
@@ -757,6 +838,10 @@ export const BILLING_SETTING_KEYS = {
   accountName: "billing.bank_account_name",
   orderTTLHours: "billing.order_ttl_hours",
   contact: "billing.contact",
+  /** The seller printed on receipts (empty = left out). */
+  sellerName: "billing.seller_name",
+  sellerTaxCode: "billing.seller_tax_code",
+  sellerAddress: "billing.seller_address",
   /** Secret of the payment checker; reads come back masked. */
   webhookSecret: "billing.webhook_secret",
 } as const;
@@ -766,6 +851,16 @@ export const BILLING_SETTING_KEYS = {
  * reason is unknown (the caller then shows the server message). */
 export function billingErrorKey(reason: string | undefined): string | null {
   switch (reason) {
+    case "invoice_address_required":
+    case "invoice_company_required":
+    case "invoice_date_invalid":
+    case "invoice_email_invalid":
+    case "invoice_issued":
+    case "invoice_not_requested":
+    case "invoice_order_closed":
+    case "invoice_tax_code_invalid":
+    case "invoice_too_long":
+    case "order_not_paid":
     case "addon_held":
     case "addon_none":
     case "addon_not_sold":

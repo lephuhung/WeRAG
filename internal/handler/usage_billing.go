@@ -263,7 +263,130 @@ func (h *UsageBillingHandler) CancelOrder(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": updated})
 }
 
+// InvoiceDetails godoc
+// @Summary      VAT invoice details of the scope's latest order that asked for one (to prefill)
+// @Tags         Thanh toán
+// @Param        scope query string true "tenant or user"
+// @Success      200 {object} map[string]interface{} "data: details or null"
+// @Security     Bearer
+// @Router       /billing/invoice-details [get]
+func (h *UsageBillingHandler) InvoiceDetails(c *gin.Context) {
+	scopeType := strings.TrimSpace(c.Query("scope"))
+	scopeID, ok := billingScope(c, scopeType)
+	if !ok {
+		return
+	}
+	d, err := h.billing.LastInvoiceDetails(c.Request.Context(), scopeType, scopeID)
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": d})
+}
+
+// UpdateOrderInvoice godoc
+// @Summary      Ask for, change or withdraw the VAT invoice of an order
+// @Description  Allowed on pending and paid orders until a SuperAdmin marks the invoice issued (409, reason invoice_issued); cancelled/expired orders are refused (409, reason invoice_order_closed). requested=false withdraws the request.
+// @Tags         Thanh toán
+// @Accept       json
+// @Param        code path string true "order code"
+// @Param        body body types.UsageInvoiceUpdate true "invoice details"
+// @Success      200 {object} map[string]interface{}
+// @Security     Bearer
+// @Router       /billing/orders/{code}/invoice [put]
+func (h *UsageBillingHandler) UpdateOrderInvoice(c *gin.Context) {
+	var req types.UsageInvoiceUpdate
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(apperrors.NewBadRequestError("invalid invoice body").WithDetails(err.Error()))
+		return
+	}
+	order, err := h.billing.GetOrderByCode(c.Request.Context(), c.Param("code"))
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	if !canSeeOrder(c, order.UsageOrder) {
+		c.Error(apperrors.NewNotFoundError("order not found"))
+		return
+	}
+	updated, err := h.billing.UpdateOrderInvoice(c.Request.Context(), order.ID, req)
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": updated})
+}
+
+// OrderReceipt godoc
+// @Summary      Payment receipt of a paid order
+// @Description  The order, the seller (billing.seller_* settings) and the buyer. Same access as the order; 409 (reason order_not_paid) unless paid.
+// @Tags         Thanh toán
+// @Param        code path string true "order code"
+// @Success      200 {object} map[string]interface{}
+// @Security     Bearer
+// @Router       /billing/orders/{code}/receipt [get]
+func (h *UsageBillingHandler) OrderReceipt(c *gin.Context) {
+	order, err := h.billing.GetOrderByCode(c.Request.Context(), c.Param("code"))
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	if !canSeeOrder(c, order.UsageOrder) {
+		c.Error(apperrors.NewNotFoundError("order not found"))
+		return
+	}
+	r, err := h.billing.OrderReceipt(c.Request.Context(), order)
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": r})
+}
+
 // ---- SuperAdmin ---------------------------------------------------------------
+
+// AdminMarkInvoiceIssued godoc
+// @Summary      Mark the VAT invoice of a paid order issued (SuperAdmin)
+// @Description  The e-invoice is issued in an external system; number, series and date (YYYY-MM-DD, default today) are optional. Marking again corrects them.
+// @Tags         Gói sử dụng
+// @Accept       json
+// @Param        id   path string                  true "order id"
+// @Param        body body types.UsageInvoiceIssue false "invoice number, series, date"
+// @Success      200 {object} map[string]interface{}
+// @Security     Bearer
+// @Router       /system/admin/usage/orders/{id}/invoice-issued [post]
+func (h *UsageBillingHandler) AdminMarkInvoiceIssued(c *gin.Context) {
+	var req types.UsageInvoiceIssue
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.Error(apperrors.NewBadRequestError("invalid invoice body").WithDetails(err.Error()))
+			return
+		}
+	}
+	by, _ := types.UserIDFromContext(c.Request.Context())
+	order, err := h.billing.MarkInvoiceIssued(c.Request.Context(), c.Param("id"), by, req)
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
+}
+
+// AdminUnmarkInvoiceIssued godoc
+// @Summary      Undo "invoice issued" on an order (SuperAdmin)
+// @Tags         Gói sử dụng
+// @Param        id path string true "order id"
+// @Success      200 {object} map[string]interface{}
+// @Security     Bearer
+// @Router       /system/admin/usage/orders/{id}/invoice-issued [delete]
+func (h *UsageBillingHandler) AdminUnmarkInvoiceIssued(c *gin.Context) {
+	order, err := h.billing.UnmarkInvoiceIssued(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": order})
+}
 
 // AdminListOrders godoc
 // @Summary      Every order (SuperAdmin)
@@ -343,18 +466,19 @@ func (h *UsageBillingHandler) AdminReopenOrder(c *gin.Context) {
 }
 
 // AdminAwaitingOrderCount godoc
-// @Summary      How many pending orders need a SuperAdmin (0 đồng, or money received without confirming them)
+// @Summary      How many orders need a SuperAdmin
+// @Description  awaiting_admin: pending orders of 0 đồng or with money received without confirming them; invoices_to_issue: paid orders asking for a VAT invoice not marked issued yet.
 // @Tags         Gói sử dụng
-// @Success      200 {object} map[string]interface{} "data: {awaiting_admin}"
+// @Success      200 {object} map[string]interface{} "data: {awaiting_admin, invoices_to_issue}"
 // @Security     Bearer
 // @Router       /system/admin/usage/orders/awaiting-admin-count [get]
 func (h *UsageBillingHandler) AdminAwaitingOrderCount(c *gin.Context) {
-	n, err := h.billing.CountOrdersAwaitingAdmin(c.Request.Context())
+	n, err := h.billing.AdminCounts(c.Request.Context())
 	if err != nil {
 		usageAdminFail(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"awaiting_admin": n}})
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": n})
 }
 
 // ListPromos godoc

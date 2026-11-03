@@ -31,6 +31,9 @@ type emailContent struct {
 	Outro    string
 	LinkText string
 	Link     string
+	// ExtraLinkText/ExtraLink: a second, plain link under the button.
+	ExtraLinkText string
+	ExtraLink     string
 }
 
 var emailHTMLTemplate = template.Must(template.New("mail").Parse(`<!DOCTYPE html>
@@ -45,6 +48,7 @@ var emailHTMLTemplate = template.Must(template.New("mail").Parse(`<!DOCTYPE html
 {{if .Outro}}<p style="margin:0 0 16px">{{.Outro}}</p>{{end}}
 {{if .Link}}<p style="margin:0 0 16px"><a href="{{.Link}}" style="display:inline-block;background:#1f1f1f;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:6px">{{.LinkText}}</a></p>
 <p style="margin:0;color:#6b6b66;font-size:12px">{{.Link}}</p>{{end}}
+{{if .ExtraLink}}<p style="margin:12px 0 0">{{.ExtraLinkText}}: <a href="{{.ExtraLink}}" style="color:#1f1f1f">{{.ExtraLink}}</a></p>{{end}}
 </div>
 <p style="max-width:560px;margin:12px auto 0;color:#9a9a94;font-size:12px">Email này được gửi tự động, vui lòng không trả lời.</p>
 </body></html>`))
@@ -67,6 +71,9 @@ func (c emailContent) render(to []string) (mailer.Message, error) {
 	}
 	if c.Link != "" {
 		text.WriteString(c.LinkText + ": " + c.Link + "\n\n")
+	}
+	if c.ExtraLink != "" {
+		text.WriteString(c.ExtraLinkText + ": " + c.ExtraLink + "\n\n")
 	}
 	text.WriteString("Email này được gửi tự động, vui lòng không trả lời.\n")
 	var html bytes.Buffer
@@ -214,6 +221,16 @@ func orderPaidEmail(o *types.UsageOrderView, endsAt *time.Time, buyLink string) 
 		LinkText: "Xem gói đang dùng",
 		Link:     buyLink,
 	}
+}
+
+// withReceipt adds the link to the order's payment receipt ("" = none:
+// no public address configured).
+func (c *emailContent) withReceipt(link string) {
+	if link == "" {
+		return
+	}
+	c.ExtraLinkText = "Biên nhận thanh toán (in hoặc lưu PDF)"
+	c.ExtraLink = link
 }
 
 // expiryReminderEmail reminds that a package ends soon.

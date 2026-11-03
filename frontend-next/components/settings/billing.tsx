@@ -22,7 +22,10 @@ import {
   getMyUsage,
   getScopeAddons,
   getUsageOrder,
+  getLastInvoiceDetails,
   listMyUsageOrders,
+  receiptHref,
+  updateOrderInvoice,
   listPurchasablePlans,
   promoErrorKey,
   quoteUsageOrder,
@@ -42,6 +45,8 @@ import { addonLineDetail, keepOffered, toggleAddonId } from "@/lib/agent-addon-c
 import { orderAmountDue, orderPaymentHeld, orderPlanLineVND, pendingPlanOrderCode } from "@/lib/billing-order";
 import { formatDateTime, formatLastDay } from "@/lib/datetime";
 import { BILLING_INTENT_EVENT, clearBillingIntent, readBillingIntent, type BillingIntent } from "@/lib/billing-intent";
+import { EMPTY_INVOICE, type InvoiceDetails } from "@/lib/billing-invoice";
+import { InvoiceFields, OrderInvoicePanel, invoiceRequestPart } from "@/components/settings/billing-invoice";
 import { useConfirm } from "@/components/confirm-dialog";
 import { ConsolePage } from "@/components/settings/console-page";
 import { FieldLabel } from "@/components/settings/field";
@@ -193,6 +198,32 @@ export function BillingPage() {
   }, [addSeatsText]);
   const [seatsQuote, setSeatsQuote] = useState<UsageQuote | null>(null);
   const [seatsError, setSeatsError] = useState("");
+  // VAT invoice asked for with the next order, prefilled from the scope's
+  // last order that asked for one
+  const [invoiceOn, setInvoiceOn] = useState(false);
+  const [invoice, setInvoice] = useState<InvoiceDetails>(EMPTY_INVOICE);
+  const [lastInvoice, setLastInvoice] = useState<InvoiceDetails | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setInvoiceOn(false);
+    setInvoice(EMPTY_INVOICE);
+    setLastInvoice(null);
+    getLastInvoiceDetails(scope)
+      .then((d) => {
+        if (!alive) return;
+        setLastInvoice(d);
+        if (d) setInvoice(d);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [scope]);
+  // {} = no invoice, { invoice } = valid details, null = details to fix
+  const invoicePart = invoiceRequestPart(invoiceOn, invoice);
+  const invoiceFields = (
+    <InvoiceFields requested={invoiceOn} onRequestedChange={setInvoiceOn} value={invoice} onChange={setInvoice} />
+  );
   // the no-seat banner's button opens the page on the add-seats box
   const [focusSeats, setFocusSeats] = useState(intentAllowed && intent?.addSeats === true);
   const addSeatsRef = useRef<HTMLElement | null>(null);
@@ -419,6 +450,7 @@ export function BillingPage() {
         kind: "plan" as const,
         addon_agent_ids: addonIds,
         ...(keepIds ? { keep_addon_agent_ids: keepIds } : {}),
+        ...(invoicePart ?? {}),
       };
       let o: UsageOrder;
       try {
@@ -443,7 +475,7 @@ export function BillingPage() {
 
   const placeAddonOrder = () =>
     run(async () => {
-      const o = await createUsageOrder({ scope_type: scope, plan_id: "", months: 0, kind: "addon", addon_agent_ids: extraIds, promo_code: promo });
+      const o = await createUsageOrder({ scope_type: scope, plan_id: "", months: 0, kind: "addon", addon_agent_ids: extraIds, promo_code: promo, ...(invoicePart ?? {}) });
       setOrder(o);
       setExtraIds([]);
       await load();
@@ -452,7 +484,7 @@ export function BillingPage() {
 
   const placeSeatsOrder = () =>
     run(async () => {
-      const o = await createUsageOrder({ scope_type: "tenant", plan_id: "", months: 0, kind: "seats", seats: addSeats, promo_code: promo });
+      const o = await createUsageOrder({ scope_type: "tenant", plan_id: "", months: 0, kind: "seats", seats: addSeats, promo_code: promo, ...(invoicePart ?? {}) });
       setOrder(o);
       setAddSeatsText(1);
       await load();
@@ -528,6 +560,25 @@ export function BillingPage() {
     });
   };
 
+  // ask for, change or withdraw the open order's VAT invoice
+  const saveOrderInvoice = async (requested: boolean, details?: InvoiceDetails): Promise<boolean> => {
+    if (!order) return false;
+    if (!requested) {
+      const ok = await confirmAction({ title: t("common.confirm"), message: t("bill.invoiceWithdrawConfirm", { code: order.order_code }) });
+      if (!ok) return false;
+    }
+    let saved = false;
+    await run(async () => {
+      const u = await updateOrderInvoice(order.order_code, requested, details);
+      setOrder(u);
+      if (requested && details) setLastInvoice(details);
+      saved = true;
+      toast.success(t("common.saved"));
+      await load();
+    });
+    return saved;
+  };
+
   // the list rows lack the single-order details (transfers received, the
   // package's new end): show the row at once, then the full view
   const openOrder = (o: UsageOrder) => {
@@ -545,7 +596,7 @@ export function BillingPage() {
   const coveredBy = myEnt && myEnt.source === "tenant" && !myEnt.expired ? myEnt.plan_name : "";
   // a code typed but not applied would silently be ignored by the order
   const promoPending = promoText.trim().toUpperCase() !== promo.trim().toUpperCase();
-  const canBuy = !!info?.enabled && !!quote && !busy && !quoting && !promoPending && seats === seatsText && (!seatMode || seats > 0);
+  const canBuy = !!info?.enabled && !!quote && !busy && !quoting && !promoPending && seats === seatsText && (!seatMode || seats > 0) && invoicePart !== null;
   const toggleKeep = (id: string) => {
     const cur = (quote?.held_addons ?? []).filter((h) => h.kept && !h.bought_again).map((h) => h.agent_id);
     setKeepIds(toggleAddonId(cur, id));
@@ -717,12 +768,18 @@ export function BillingPage() {
             </div>
           )}
           {order.status === "paid" && (
-            <div className="border-t border-hairline px-4 py-3 text-[14px] text-success">
-              {order.subscription_ends_at
-                ? t("bill.paidUntil", { time: fmtDate(order.paid_at, locale), plan: order.plan_name, date: formatLastDay(order.subscription_ends_at) })
-                : t("bill.paidAt", { time: fmtDate(order.paid_at, locale) })}
+            <div className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline px-4 py-3 text-[14px]">
+              <span className="text-success">
+                {order.subscription_ends_at
+                  ? t("bill.paidUntil", { time: fmtDate(order.paid_at, locale), plan: order.plan_name, date: formatLastDay(order.subscription_ends_at) })
+                  : t("bill.paidAt", { time: fmtDate(order.paid_at, locale) })}
+              </span>
+              <a className="btn btn-outline btn-sm" href={receiptHref(order.order_code)} target="_blank" rel="noopener">
+                {t("bill.receipt")}
+              </a>
             </div>
           )}
+          <OrderInvoicePanel order={order} busy={busy} prefill={lastInvoice} save={saveOrderInvoice} />
           {(order.status === "cancelled" || order.status === "expired") && (
             <div className="border-t border-hairline px-4 py-3 text-[14px] text-muted">
               <p>{t(order.status === "expired" ? "bill.expired" : "bill.cancelled")}</p>
@@ -1017,6 +1074,7 @@ export function BillingPage() {
               )}
             </div>
           )}
+          {invoiceFields}
           <p className="caption mt-2 text-muted">{t("bill.renewHint")}</p>
           <div className="mt-3 flex justify-end">
             <button type="button" className="btn btn-primary" disabled={!canBuy} onClick={() => void placeOrder()}>
@@ -1068,11 +1126,12 @@ export function BillingPage() {
               </p>
             </div>
           )}
+          {invoiceFields}
           <div className="mt-3 flex justify-end">
             <button
               type="button"
               className="btn btn-primary"
-              disabled={!info?.enabled || !seatsQuote || busy || addSeats !== addSeatsText || promoPending}
+              disabled={!info?.enabled || !seatsQuote || busy || addSeats !== addSeatsText || promoPending || invoicePart === null}
               onClick={() => void placeSeatsOrder()}
             >
               {t("bill.buySeats")}
@@ -1126,8 +1185,9 @@ export function BillingPage() {
                   <div className="flex justify-between text-[15px] font-medium text-ink"><span>{t("bill.total")}</span><span className="tabular-nums">{formatPriceVND(extraQuote.total_vnd)}</span></div>
                 </div>
               )}
+              {invoiceFields}
               <div className="mt-3 flex justify-end">
-                <button type="button" className="btn btn-primary" disabled={!info?.enabled || !extraQuote || busy} onClick={() => void placeAddonOrder()}>
+                <button type="button" className="btn btn-primary" disabled={!info?.enabled || !extraQuote || busy || invoicePart === null} onClick={() => void placeAddonOrder()}>
                   {t("bill.buyAddons")}
                 </button>
               </div>
@@ -1154,17 +1214,24 @@ export function BillingPage() {
         ) : (
           <div className="divide-y divide-hairline rounded-lg border border-hairline">
             {orders.map((o) => (
-              <button key={o.id} type="button" className="flex w-full flex-wrap items-center gap-3 px-3 py-2 text-left text-[13.5px] hover:bg-surface-strong" onClick={() => openOrder(o)}>
-                <span className="font-mono text-ink">{o.order_code}</span>
-                <span className="min-w-0 flex-1 truncate text-muted">
-                  {o.plan_name} · {orderLength(o)}
-                  {o.kind === "seats" ? ` · ${t("bill.addSeatsN", { n: o.seats })}` : ""}
-                  {o.kind !== "seats" && (o.addons ?? []).length > 0 ? ` · ${t("bill.addonsN", { n: (o.addons ?? []).length })}` : ""} · {o.scope_name}
-                </span>
-                <span className="tabular-nums text-ink">{formatPriceVND(o.total_vnd)}</span>
-                <span className={`badge-pill text-[11px] ${o.status === "paid" ? "badge-success" : o.status === "pending" ? "badge-warning" : "badge-neutral"}`}>{t(statusKey(o.status))}</span>
-                <span className="caption text-muted-soft">{fmtDate(o.created_at, locale)}</span>
-              </button>
+              <div key={o.id} className="flex items-center gap-2 pr-3 hover:bg-surface-strong">
+                <button type="button" className="flex min-w-0 flex-1 flex-wrap items-center gap-3 px-3 py-2 text-left text-[13.5px]" onClick={() => openOrder(o)}>
+                  <span className="font-mono text-ink">{o.order_code}</span>
+                  <span className="min-w-0 flex-1 truncate text-muted">
+                    {o.plan_name} · {orderLength(o)}
+                    {o.kind === "seats" ? ` · ${t("bill.addSeatsN", { n: o.seats })}` : ""}
+                    {o.kind !== "seats" && (o.addons ?? []).length > 0 ? ` · ${t("bill.addonsN", { n: (o.addons ?? []).length })}` : ""} · {o.scope_name}
+                  </span>
+                  <span className="tabular-nums text-ink">{formatPriceVND(o.total_vnd)}</span>
+                  <span className={`badge-pill text-[11px] ${o.status === "paid" ? "badge-success" : o.status === "pending" ? "badge-warning" : "badge-neutral"}`}>{t(statusKey(o.status))}</span>
+                  <span className="caption text-muted-soft">{fmtDate(o.created_at, locale)}</span>
+                </button>
+                {o.status === "paid" && (
+                  <a className="caption shrink-0 text-ink underline-offset-2 hover:underline" href={receiptHref(o.order_code)} target="_blank" rel="noopener">
+                    {t("bill.receipt")}
+                  </a>
+                )}
+              </div>
             ))}
           </div>
         )}

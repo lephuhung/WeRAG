@@ -162,13 +162,17 @@ func (m *memBillingRepo) ListOrders(_ context.Context, f types.UsageOrderFilter)
 	for _, o := range m.orders {
 		if (f.Status != "" && o.Status != f.Status) || (f.ScopeType != "" && o.ScopeType != f.ScopeType) ||
 			(f.ScopeID != "" && o.ScopeID != f.ScopeID) || (f.Kind != "" && o.Kind != f.Kind) ||
-			(f.CreatedBy != "" && o.CreatedBy != f.CreatedBy) {
+			(f.CreatedBy != "" && o.CreatedBy != f.CreatedBy) || (f.InvoiceRequested && !o.InvoiceRequested) {
 			continue
 		}
 		cp := *o
 		out = append(out, &cp)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].OrderCode < out[j].OrderCode })
+	if f.InvoiceRequested {
+		// newest first, as the repository lists them
+		sort.SliceStable(out, func(i, j int) bool { return out[i].CreatedAt.After(out[j].CreatedAt) })
+	}
 	if f.Limit > 0 && len(out) > f.Limit {
 		out = out[:f.Limit]
 	}
@@ -183,6 +187,15 @@ func (m *memBillingRepo) CountOrdersAwaitingAdmin(context.Context) (int64, error
 	var n int64
 	for _, o := range m.orders {
 		if o.Status == types.UsageOrderPending && (o.TotalVND <= 0 || m.heldFor(o.ID) > 0) {
+			n++
+		}
+	}
+	return n, nil
+}
+func (m *memBillingRepo) CountInvoicesToIssue(context.Context) (int64, error) {
+	var n int64
+	for _, o := range m.orders {
+		if o.Status == types.UsageOrderPaid && o.InvoiceRequested && o.InvoiceIssuedAt == nil {
 			n++
 		}
 	}

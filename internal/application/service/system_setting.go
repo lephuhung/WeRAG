@@ -509,6 +509,19 @@ var registry = map[string]settingSpec{
 		Type: "string", EnvName: "", Default: "", Category: "billing",
 		Description: "Thông tin liên hệ hỗ trợ thanh toán hiển thị trên trang thanh toán.",
 	},
+	// The seller printed on payment receipts; an empty field is left out.
+	types.BillingSellerNameSettingKey: {
+		Type: "string", EnvName: "", Default: "", Category: "billing",
+		Description: "Tên pháp lý của bên bán in trên biên nhận thanh toán. Để trống thì không in.",
+	},
+	types.BillingSellerTaxCodeSettingKey: {
+		Type: "string", EnvName: "", Default: "", Category: "billing",
+		Description: "Mã số thuế của bên bán in trên biên nhận thanh toán. Để trống thì không in.",
+	},
+	types.BillingSellerAddressSettingKey: {
+		Type: "string", EnvName: "", Default: "", Category: "billing",
+		Description: "Địa chỉ của bên bán in trên biên nhận thanh toán. Để trống thì không in.",
+	},
 	// billing.webhook_secret authenticates the payment checker on POST
 	// /billing/payments/webhook; read per request, so a new value takes
 	// effect at once. Empty (and no ENV) = webhook off.
@@ -1725,6 +1738,11 @@ func secretAuditValue(raw types.JSON) string {
 //     400 body verbatim).
 func validateRegistryEntry(key string, rawValue any) error {
 	switch key {
+	case types.BillingSellerTaxCodeSettingKey:
+		v, _ := rawValue.(string)
+		if v != "" && !types.ValidVNTaxCode(v) {
+			return errors.New("the tax code must be 10 digits, or 10 digits, '-' and 3 digits")
+		}
 	case types.BillingWebhookSecretSettingKey:
 		// "" turns the webhook off; anything else must look generated, which
 		// also refuses the masked value the page shows being saved back.
