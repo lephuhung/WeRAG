@@ -162,7 +162,8 @@ func (m *memBillingRepo) ListOrders(_ context.Context, f types.UsageOrderFilter)
 	for _, o := range m.orders {
 		if (f.Status != "" && o.Status != f.Status) || (f.ScopeType != "" && o.ScopeType != f.ScopeType) ||
 			(f.ScopeID != "" && o.ScopeID != f.ScopeID) || (f.Kind != "" && o.Kind != f.Kind) ||
-			(f.CreatedBy != "" && o.CreatedBy != f.CreatedBy) || (f.InvoiceRequested && !o.InvoiceRequested) {
+			(f.CreatedBy != "" && o.CreatedBy != f.CreatedBy) || (f.AwaitingAdmin && !m.awaitingAdmin(o)) ||
+			(f.InvoiceRequested && !o.InvoiceRequested) {
 			continue
 		}
 		cp := *o
@@ -183,10 +184,21 @@ func (m *memBillingRepo) heldFor(orderID string) int64 {
 	_, sum := heldPayments(pays, "", types.UsagePaymentHeldStatuses...)
 	return sum
 }
+
+// awaitingAdmin mirrors the repository's whereAwaitingAdmin.
+func (m *memBillingRepo) awaitingAdmin(o *types.UsageOrder) bool {
+	switch o.Status {
+	case types.UsageOrderPending:
+		return o.TotalVND <= 0 || m.heldFor(o.ID) > 0
+	case types.UsageOrderExpired:
+		return m.heldFor(o.ID) > 0
+	}
+	return false
+}
 func (m *memBillingRepo) CountOrdersAwaitingAdmin(context.Context) (int64, error) {
 	var n int64
 	for _, o := range m.orders {
-		if o.Status == types.UsageOrderPending && (o.TotalVND <= 0 || m.heldFor(o.ID) > 0) {
+		if m.awaitingAdmin(o) {
 			n++
 		}
 	}

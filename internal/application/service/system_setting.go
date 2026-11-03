@@ -1750,6 +1750,14 @@ func normalizeRegistryValue(key string, rawValue any) any {
 //     400 body verbatim).
 func validateRegistryEntry(key string, rawValue any) error {
 	switch key {
+	case types.BillingBankBINSettingKey:
+		// "" leaves the VietQR image out; anything else must be the bank's
+		// 6-digit NAPAS BIN, or the buyer's page shows a broken QR code.
+		v, _ := rawValue.(string)
+		v = strings.TrimSpace(v)
+		if v != "" && !types.ValidBankBIN(v) {
+			return errors.New("the bank BIN must be the bank's 6-digit NAPAS code, e.g. 970418 for BIDV or 970436 for Vietcombank")
+		}
 	case types.BillingSellerTaxCodeSettingKey:
 		v, _ := rawValue.(string)
 		v = types.NormalizeVNTaxCode(v)

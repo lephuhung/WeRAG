@@ -785,11 +785,18 @@ export function deleteUsagePromo(id: string): Promise<void> {
   return apiDel(`${ADMIN}/promos/${encodeURIComponent(id)}`).then(() => undefined);
 }
 
-/** invoiceRequested: only the orders that asked for a VAT invoice. */
-export function listAllUsageOrders(status?: UsageOrderStatus, invoiceRequested = false): Promise<UsageOrder[]> {
+/** Every order (SuperAdmin), by status. awaitingAdmin: only the orders the
+ * awaiting-admin count counts (pending at 0 đồng, or pending/expired
+ * holding money); invoiceRequested: only the orders that asked for a VAT
+ * invoice. */
+export function listAllUsageOrders(
+  status?: UsageOrderStatus,
+  opts: { awaitingAdmin?: boolean; invoiceRequested?: boolean } = {},
+): Promise<UsageOrder[]> {
   const q = new URLSearchParams();
   if (status) q.set("status", status);
-  if (invoiceRequested) q.set("invoice_requested", "true");
+  if (opts.awaitingAdmin) q.set("awaiting_admin", "true");
+  if (opts.invoiceRequested) q.set("invoice_requested", "true");
   const qs = q.toString();
   return apiGet<{ data?: UsageOrder[] }>(`${ADMIN}/orders${qs ? `?${qs}` : ""}`).then((r) => r.data ?? []);
 }
@@ -812,9 +819,9 @@ export function reopenUsageOrder(id: string, force = false): Promise<UsageOrder>
   return apiPost<{ data: UsageOrder }>(`${ADMIN}/orders/${encodeURIComponent(id)}/reopen${force ? "?force=true" : ""}`, {}).then((r) => r.data);
 }
 
-/** What needs a SuperAdmin on the billing page: pending orders only a
- * SuperAdmin can move on (0 đồng, or money received without confirming
- * them) and paid orders whose VAT invoice is still to issue. */
+/** What needs a SuperAdmin on the billing page: orders only a SuperAdmin
+ * can move on (pending at 0 đồng, or pending/expired holding money) and
+ * paid orders whose VAT invoice is still to issue. */
 export interface BillingAdminCounts {
   awaiting_admin: number;
   invoices_to_issue: number;

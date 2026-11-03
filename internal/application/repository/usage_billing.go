@@ -150,12 +150,25 @@ func (r *usageBillingRepository) ListOrders(ctx context.Context, filter types.Us
 
 func (r *usageBillingRepository) CountOrdersAwaitingAdmin(ctx context.Context) (int64, error) {
 	var n int64
-	err := r.conn(ctx).Model(&types.UsageOrder{}).
-		Where("status = ?", types.UsageOrderPending).
-		Where("total_vnd <= 0 OR EXISTS (SELECT 1 FROM usage_payment_transactions p WHERE p.order_id = usage_orders.id AND p.status IN ?)",
-			types.UsagePaymentHeldStatuses).
-		Count(&n).Error
+	err := whereAwaitingAdmin(r.conn(ctx).Model(&types.UsageOrder{})).Count(&n).Error
 	return n, err
+}
+
+// whereAwaitingAdmin keeps the orders only a SuperAdmin can move on: a
+// pending 0-đồng order (never confirmed automatically), a pending order
+// holding money that did not confirm it, and an expired order holding
+// money (transferred after it expired, or short when it expired). Reopening
+// such an order turns it pending again (and paid once the money covers
+// it), which settles it here. The admin list's "awaiting" filter and the
+// badge count both use this, so they always agree.
+func whereAwaitingAdmin(q *gorm.DB) *gorm.DB {
+	return q.Where(
+		"((status = ? AND total_vnd <= 0) OR (status IN ? AND EXISTS "+
+			"(SELECT 1 FROM usage_payment_transactions p WHERE p.order_id = usage_orders.id AND p.status IN ?)))",
+		types.UsageOrderPending,
+		[]string{types.UsageOrderPending, types.UsageOrderExpired},
+		types.UsagePaymentHeldStatuses,
+	)
 }
 
 func (r *usageBillingRepository) CountInvoicesToIssue(ctx context.Context) (int64, error) {
@@ -209,6 +222,9 @@ func filterOrders(q *gorm.DB, filter types.UsageOrderFilter) *gorm.DB {
 	}
 	if filter.Kind != "" {
 		q = q.Where("kind = ?", filter.Kind)
+	}
+	if filter.AwaitingAdmin {
+		q = whereAwaitingAdmin(q)
 	}
 	if filter.InvoiceRequested {
 		q = q.Where("invoice_requested = ?", true)

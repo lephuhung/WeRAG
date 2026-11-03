@@ -21,6 +21,7 @@ import {
 } from "@/lib/api/usage";
 import { useAuth, useTenantRole } from "@/lib/auth";
 import { openBilling } from "@/lib/billing-intent";
+import { planNameAfterWord } from "@/lib/billing-order";
 import { formatDate } from "@/lib/datetime";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { lastUsableDay, planBanner, type PlanBanner } from "@/lib/plan-banner";
@@ -163,7 +164,8 @@ export function PlanBannerBar() {
     banner.assignSeat
       ? window.dispatchEvent(new CustomEvent("weknora:open-settings", { detail: "usage" }))
       : openBilling({ scope: banner.scope, planId: banner.kind === "welcome" ? "" : banner.planId, ...(banner.addSeats ? { addSeats: true } : {}) });
-  const plan = banner.planName;
+  // "Gói {plan}" with a plan named "Gói cơ bản" must not read "Gói Gói cơ bản"
+  const plan = planNameAfterWord(banner.planName, t("bill.planWord"));
   // shown as the last day the package can be used
   const date = banner.endsAt ? formatDate(lastUsableDay(banner.endsAt)) : "";
   const limitName = banner.limit?.metric === "tokens" ? t("pbn.tokens") : t("pbn.questions");
@@ -212,8 +214,8 @@ export function PlanBannerBar() {
       const ent = usage?.entitlement;
       message = ent
         ? ent.ends_at
-          ? t("pbn.welcomeHasPlan", { plan: ent.plan_name, date: formatDate(lastUsableDay(ent.ends_at)) })
-          : t("pbn.welcomeHasPlanNoEnd", { plan: ent.plan_name })
+          ? t("pbn.welcomeHasPlan", { plan: planNameAfterWord(ent.plan_name, t("bill.planWord")), date: formatDate(lastUsableDay(ent.ends_at)) })
+          : t("pbn.welcomeHasPlanNoEnd", { plan: planNameAfterWord(ent.plan_name, t("bill.planWord")) })
         : usage?.enforced
           ? t("pbn.welcomeNoPlan")
           : t("pbn.welcomeBrowse");

@@ -222,8 +222,9 @@ type UsageBillingRepository interface {
 	GetOrderForUpdate(ctx context.Context, id string) (*types.UsageOrder, error)
 	GetOrderByCode(ctx context.Context, code string) (*types.UsageOrder, error)
 	ListOrders(ctx context.Context, filter types.UsageOrderFilter) ([]*types.UsageOrder, error)
-	// CountOrdersAwaitingAdmin counts the pending orders only a SuperAdmin
-	// can move on: 0 đồng, or holding money (UsagePaymentHeldStatuses).
+	// CountOrdersAwaitingAdmin counts the orders only a SuperAdmin can move
+	// on: pending at 0 đồng, or pending/expired holding money
+	// (UsagePaymentHeldStatuses); UsageOrderFilter.AwaitingAdmin lists them.
 	CountOrdersAwaitingAdmin(ctx context.Context) (int64, error)
 	// CountInvoicesToIssue counts the paid orders asking for a VAT invoice
 	// that no SuperAdmin has marked issued yet.
@@ -282,8 +283,9 @@ type UsageBillingService interface {
 	GetOrder(ctx context.Context, id string) (*types.UsageOrderView, error)
 	GetOrderByCode(ctx context.Context, code string) (*types.UsageOrderView, error)
 	ListOrders(ctx context.Context, filter types.UsageOrderFilter) ([]*types.UsageOrderView, error)
-	// CountOrdersAwaitingAdmin counts the pending orders only a SuperAdmin
-	// can move on: 0 đồng, or holding money that did not confirm them.
+	// CountOrdersAwaitingAdmin counts the orders only a SuperAdmin can move
+	// on: pending at 0 đồng, or pending/expired holding money that did not
+	// confirm them.
 	CountOrdersAwaitingAdmin(ctx context.Context) (int64, error)
 	// AdminCounts are the SuperAdmin billing badges: orders awaiting a
 	// SuperAdmin and VAT invoices to issue.

@@ -391,7 +391,7 @@ func (s *usageBillingService) CreateOrder(
 			}
 		}
 		if order.Kind == types.UsageOrderKindPlan && !req.ConfirmDuplicate {
-			if err := s.refusePendingPlanOrder(ctx, order.ScopeType, order.ScopeID); err != nil {
+			if err := s.refusePendingPlanOrder(ctx, order.ScopeType, order.ScopeID, true); err != nil {
 				return err
 			}
 		}
@@ -403,7 +403,7 @@ func (s *usageBillingService) CreateOrder(
 			if err := s.refusePendingSeatOrder(ctx, order.ScopeType, order.ScopeID); err != nil {
 				return err
 			}
-			if err := s.refusePendingPlanOrder(ctx, order.ScopeType, order.ScopeID); err != nil {
+			if err := s.refusePendingPlanOrder(ctx, order.ScopeType, order.ScopeID, false); err != nil {
 				return err
 			}
 		}
@@ -590,7 +590,16 @@ func (s *usageBillingService) ConfirmOrder(ctx context.Context, id, confirmedBy 
 		o.PaidAt = &now
 		o.ConfirmedBy = confirmedBy
 		o.SubscriptionID = &subID
-		return s.repo.UpdateOrder(ctx, o)
+		if err := s.repo.UpdateOrder(ctx, o); err != nil {
+			return err
+		}
+		// the payment checker marks the transfers it confirmed with itself
+		// (confirmPaid); a SuperAdmin's confirmation settles the money the
+		// order was holding, so it no longer shows as refused
+		if strings.HasPrefix(confirmedBy, paymentConfirmedByPrefix) {
+			return nil
+		}
+		return s.settleHeldPayments(ctx, o.ID, usagePaymentAdminConfirmedReason)
 	})
 	if err != nil {
 		return nil, err
@@ -732,9 +741,10 @@ func (s *usageBillingService) view(ctx context.Context, o *types.UsageOrder) *ty
 }
 
 // vietQRURL builds the img.vietqr.io image for a transfer, "" when the
-// receiving account is not configured.
+// receiving account is not configured or the stored BIN is not a valid
+// NAPAS BIN (the page then shows the transfer details only).
 func vietQRURL(info *types.UsageBillingInfo, amount int64, content string) string {
-	if info == nil || !info.Enabled || info.BankBIN == "" {
+	if info == nil || !info.Enabled || !types.ValidBankBIN(info.BankBIN) {
 		return ""
 	}
 	q := url.Values{}

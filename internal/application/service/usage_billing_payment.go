@@ -381,10 +381,39 @@ func (s *usageBillingService) reopenExpiredOrder(ctx context.Context, o *types.U
 	return s.repo.UpdateOrder(ctx, o)
 }
 
+// paymentConfirmedByPrefix starts the confirmed_by of an order the
+// payment checker confirmed.
+const paymentConfirmedByPrefix = "payment:"
+
+// usagePaymentAdminConfirmedReason is written on the transfers an order
+// was holding when a SuperAdmin confirmed it by hand.
+const usagePaymentAdminConfirmedReason = "confirmed by a system administrator"
+
+// settleHeldPayments marks the transfers order orderID is holding
+// (underpaid, confirm_failed, order_closed) matched with reason, in the
+// transaction of ctx. Only that order's transfers are touched.
+func (s *usageBillingService) settleHeldPayments(ctx context.Context, orderID, reason string) error {
+	pays, err := s.repo.ListOrderPayments(ctx, orderID)
+	if err != nil {
+		return err
+	}
+	held, _ := heldPayments(pays, "", types.UsagePaymentHeldStatuses...)
+	for _, p := range held {
+		if p.OrderID == nil || *p.OrderID != orderID {
+			continue
+		}
+		p.Status, p.Reason = types.UsagePaymentMatched, reason
+		if err := s.repo.UpdatePaymentTransaction(ctx, p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // paymentConfirmedBy is the confirmed_by of an order the checker paid
 // (the column holds 36 characters).
 func paymentConfirmedBy(source string) string {
-	by := "payment:" + source
+	by := paymentConfirmedByPrefix + source
 	if len(by) > 36 {
 		by = by[:36]
 	}

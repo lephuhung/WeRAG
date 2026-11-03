@@ -1,12 +1,14 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -23,12 +25,20 @@ func NewUsageAdminHandler(plans interfaces.UsagePlanService) *UsageAdminHandler 
 	return &UsageAdminHandler{plans: plans}
 }
 
+// usageAdminFail reports a usage/billing service error. AppErrors carry
+// messages written for the client; anything else is internal (a database
+// error, say) and is logged here, never sent: the client gets a generic
+// message without details.
 func usageAdminFail(c *gin.Context, err error) {
-	if appErr, ok := err.(*apperrors.AppError); ok {
+	var appErr *apperrors.AppError
+	if errors.As(err, &appErr) {
 		c.Error(appErr)
 		return
 	}
-	c.Error(apperrors.NewInternalServerError("usage packages operation failed").WithDetails(err.Error()))
+	logger.ErrorWithFields(c.Request.Context(), err, map[string]interface{}{
+		"path": c.FullPath(), "method": c.Request.Method,
+	})
+	c.Error(apperrors.NewInternalServerError("usage packages operation failed"))
 }
 
 // ListPlans godoc

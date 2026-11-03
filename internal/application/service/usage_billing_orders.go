@@ -30,10 +30,13 @@ func (s *usageBillingService) paymentDeadline(ctx context.Context, total int64, 
 	return &exp
 }
 
-// refusePendingPlanOrder refuses a plan order while the scope has another
-// one waiting for payment: paying both would apply both. The buyer may
-// confirm and order again (UsageQuoteRequest.ConfirmDuplicate).
-func (s *usageBillingService) refusePendingPlanOrder(ctx context.Context, scopeType, scopeID string) error {
+// refusePendingPlanOrder refuses an order while the scope has a plan
+// order waiting for payment: paying both would apply both. For a plan
+// order the buyer may confirm and order again
+// (UsageQuoteRequest.ConfirmDuplicate, overridable); a seats order has no
+// such override, so its refusal says to pay or cancel the waiting one and
+// carries no_override for the pages.
+func (s *usageBillingService) refusePendingPlanOrder(ctx context.Context, scopeType, scopeID string, overridable bool) error {
 	pending, err := s.repo.ListOrders(ctx, types.UsageOrderFilter{
 		ScopeType: scopeType, ScopeID: scopeID,
 		Status: types.UsageOrderPending, Kind: types.UsageOrderKindPlan, Limit: 1,
@@ -43,6 +46,10 @@ func (s *usageBillingService) refusePendingPlanOrder(ctx context.Context, scopeT
 	}
 	if len(pending) == 0 {
 		return nil
+	}
+	if !overridable {
+		return apperrors.NewConflictError("package order " + pending[0].OrderCode + " is already waiting for payment; pay or cancel it first").
+			WithDetails(map[string]string{"reason": "plan_order_pending", "order_code": pending[0].OrderCode, "no_override": "true"})
 	}
 	return apperrors.NewConflictError("order " + pending[0].OrderCode + " is already waiting for payment; confirm to place another one").
 		WithDetails(map[string]string{"reason": "plan_order_pending", "order_code": pending[0].OrderCode})
@@ -62,6 +69,11 @@ func (s *usageBillingService) detailView(ctx context.Context, o *types.UsageOrde
 	}
 	if len(pays) > 0 {
 		v.LastPayment = paymentBrief(pays[0])
+	}
+	// an expired order may hold money too (a transfer after it expired, or
+	// short when it did): the page says a SuperAdmin handles it
+	if o.Status == types.UsageOrderExpired {
+		_, v.ReceivedVND = heldPayments(pays, "", types.UsagePaymentHeldStatuses...)
 	}
 	if o.Status == types.UsageOrderPending {
 		_, v.ReceivedVND = heldPayments(pays, "", types.UsagePaymentHeldStatuses...)
@@ -175,12 +187,12 @@ func (s *usageBillingService) ReopenOrder(ctx context.Context, id string, force 
 			if err := s.refusePendingSeatOrder(ctx, o.ScopeType, o.ScopeID); err != nil {
 				return err
 			}
-			if err := s.refusePendingPlanOrder(ctx, o.ScopeType, o.ScopeID); err != nil {
+			if err := s.refusePendingPlanOrder(ctx, o.ScopeType, o.ScopeID, false); err != nil {
 				return err
 			}
 		default:
 			if !force {
-				if err := s.refusePendingPlanOrder(ctx, o.ScopeType, o.ScopeID); err != nil {
+				if err := s.refusePendingPlanOrder(ctx, o.ScopeType, o.ScopeID, true); err != nil {
 					return err
 				}
 			}

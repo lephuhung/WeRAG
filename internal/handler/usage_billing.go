@@ -392,14 +392,19 @@ func (h *UsageBillingHandler) AdminUnmarkInvoiceIssued(c *gin.Context) {
 // @Summary      Every order (SuperAdmin)
 // @Tags         Gói sử dụng
 // @Param        status            query string false "pending|paid|cancelled|expired"
+// @Param        awaiting_admin    query bool   false "only the orders the awaiting-admin count counts"
 // @Param        invoice_requested query bool   false "only orders that asked for a VAT invoice"
 // @Success      200 {object} map[string]interface{}
 // @Security     Bearer
 // @Router       /system/admin/usage/orders [get]
 func (h *UsageBillingHandler) AdminListOrders(c *gin.Context) {
-	ir := strings.TrimSpace(c.Query("invoice_requested"))
+	flag := func(name string) bool {
+		v := strings.TrimSpace(c.Query(name))
+		return v == "true" || v == "1"
+	}
 	orders, err := h.billing.ListOrders(c.Request.Context(), types.UsageOrderFilter{
-		Status: strings.TrimSpace(c.Query("status")), InvoiceRequested: ir == "true" || ir == "1", Limit: 500,
+		Status: strings.TrimSpace(c.Query("status")), Limit: 500,
+		AwaitingAdmin: flag("awaiting_admin"), InvoiceRequested: flag("invoice_requested"),
 	})
 	if err != nil {
 		usageAdminFail(c, err)

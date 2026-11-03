@@ -294,6 +294,9 @@ type UsageOrderFilter struct {
 	CreatedBy string
 	// Kind: plan|addon|seats ("" = all).
 	Kind string
+	// AwaitingAdmin keeps the orders only a SuperAdmin can move on (the
+	// badge count of CountOrdersAwaitingAdmin).
+	AwaitingAdmin bool
 	// InvoiceRequested: only orders that asked for a VAT invoice.
 	InvoiceRequested bool
 	Limit            int
