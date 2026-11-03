@@ -75,6 +75,9 @@ export function Landing() {
           <a href="#tinh-nang">{t("landing.navFeatures")}</a>
           <a href="#cach-hoat-dong">{t("landing.navHow")}</a>
           <a href="#goi-cuoc">{t("landing.navPricing")}</a>
+          <Link href="/chinh-sach-bao-mat">{t("legal.navPrivacy")}</Link>
+          <Link href="/dieu-khoan">{t("legal.navTerms")}</Link>
+          <Link href="/ho-tro">{t("legal.navSupport")}</Link>
         </nav>
         <LandingAccount />
       </header>
@@ -225,6 +228,9 @@ export function Landing() {
         <span>{t("landing.footerTagline")}</span>
         <div>
           <a href="#goi-cuoc">{t("landing.navPricing")}</a>
+          <Link href="/chinh-sach-bao-mat">{t("legal.navPrivacy")}</Link>
+          <Link href="/dieu-khoan">{t("legal.navTerms")}</Link>
+          <Link href="/ho-tro">{t("legal.navSupport")}</Link>
           <Link href="/platform/creatChat">
             {t("landing.enterApp")} ↗
           </Link>
