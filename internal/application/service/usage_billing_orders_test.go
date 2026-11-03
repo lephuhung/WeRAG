@@ -251,13 +251,9 @@ func TestShortTransfersAddUpOncePerSource(t *testing.T) {
 
 	res := f.pay(t, types.UsagePaymentWebhookRequest{Source: "a", TransactionID: "1", AmountVND: 60_000, Content: o.OrderCode, TransactedAt: &at})
 	require.Equal(t, types.UsagePaymentUnderpaid, res.Transaction.Status)
-	// another checker reports the same transfer
+	// another checker reports the same transfer: it does not add up
 	res = f.pay(t, types.UsagePaymentWebhookRequest{Source: "b", TransactionID: "x", AmountVND: 60_000, Content: o.OrderCode, TransactedAt: &at})
 	require.Equal(t, types.UsagePaymentUnderpaid, res.Transaction.Status)
-	// the first checker re-pushes it with a new id
-	res = f.pay(t, types.UsagePaymentWebhookRequest{Source: "a", TransactionID: "2", AmountVND: 60_000, Content: o.OrderCode, TransactedAt: &at})
-	require.Equal(t, types.UsagePaymentUnderpaid, res.Transaction.Status)
-	require.Contains(t, res.Transaction.Reason, "counted once")
 	require.Equal(t, types.UsageOrderPending, f.repo.orders[o.ID].Status)
 
 	v, err := f.svc.GetOrderByCode(ctx, o.OrderCode)
@@ -269,6 +265,21 @@ func TestShortTransfersAddUpOncePerSource(t *testing.T) {
 	res = f.pay(t, types.UsagePaymentWebhookRequest{Source: "a", TransactionID: "3", AmountVND: 40_000, Content: o.OrderCode, TransactedAt: &later})
 	require.Equal(t, types.UsagePaymentMatched, res.Transaction.Status)
 	require.Equal(t, types.UsageOrderPaid, f.repo.orders[o.ID].Status)
+}
+
+// Two real transfers of the same amount booked in the same minute by one
+// source both count (a bank app capping one transfer).
+func TestSameSourceTwinTransfersBothCount(t *testing.T) {
+	f := newBillingFixture(t)
+	o := f.poolOrder(t)
+	at := billingNow.Add(time.Hour)
+
+	res := f.pay(t, types.UsagePaymentWebhookRequest{Source: "a", TransactionID: "t1", AmountVND: 50_000, Content: o.OrderCode, TransactedAt: &at})
+	require.Equal(t, types.UsagePaymentUnderpaid, res.Transaction.Status)
+	res = f.pay(t, types.UsagePaymentWebhookRequest{Source: "a", TransactionID: "t2", AmountVND: 50_000, Content: o.OrderCode, TransactedAt: &at})
+	require.Equal(t, types.UsagePaymentMatched, res.Transaction.Status)
+	require.Equal(t, types.UsageOrderPaid, f.repo.orders[o.ID].Status)
+	require.Equal(t, "completed by transfer t2", f.repo.payments["a/t1"].Reason)
 }
 
 // M2: an order that received money is not cancelled by its buyer; a

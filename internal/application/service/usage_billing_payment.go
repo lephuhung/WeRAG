@@ -215,8 +215,10 @@ func (s *usageBillingService) settlePayment(
 	// Short transfers add up: the buyer is asked to send the rest with the
 	// same content, and the one that completes the total confirms. Only the
 	// same source's transfers are added (one checker per bank account, see
-	// RecordPayment), and one with the same amount and booking time as an
-	// earlier one is the same transfer reported again.
+	// RecordPayment): two checkers reporting the same money never add up,
+	// while two real transfers of the same amount from one source both count
+	// (a re-push of the same transfer keeps its external id and is a
+	// Duplicate).
 	var earlier []*types.UsagePaymentTransaction
 	if t.Status == types.UsagePaymentUnmatched {
 		pays, err := s.repo.ListOrderPayments(ctx, o.ID)
@@ -225,10 +227,11 @@ func (s *usageBillingService) settlePayment(
 		}
 		var before int64
 		earlier, before = heldPayments(pays, t.Source, types.UsagePaymentUnderpaid)
-		if dup := samePaymentIn(earlier, t); dup != nil {
-			t.Status, t.Reason = types.UsagePaymentUnderpaid,
-				fmt.Sprintf("same amount and booking time as transfer %s; counted once", dup.ExternalID)
-		} else if received := before + t.AmountVND; received < o.TotalVND {
+		// oldest first, the completing transfer last
+		for i, j := 0, len(earlier)-1; i < j; i, j = i+1, j-1 {
+			earlier[i], earlier[j] = earlier[j], earlier[i]
+		}
+		if received := before + t.AmountVND; received < o.TotalVND {
 			t.Status, t.Reason = types.UsagePaymentUnderpaid,
 				fmt.Sprintf("transferred %d of %d VND", received, o.TotalVND)
 		}
@@ -289,10 +292,8 @@ func (s *usageBillingService) confirmPaid(
 	switch {
 	case err == nil:
 		var paid int64
-		for i, p := range pays {
-			if samePaymentIn(pays[:i], p) == nil {
-				paid += p.AmountVND
-			}
+		for _, p := range pays {
+			paid += p.AmountVND
 			p.Status, p.Reason = types.UsagePaymentMatched, ""
 			if p != last {
 				p.Reason = fmt.Sprintf("completed by transfer %s", last.ExternalID)
@@ -321,14 +322,15 @@ func (s *usageBillingService) confirmPaid(
 	return view, nil
 }
 
-// heldPayments returns the transfers of pays in statuses (of source, unless
-// it is "") and their sum, a transfer reported twice (same amount and
-// booking time) counted once.
+// heldPayments returns the transfers of pays in statuses and the money
+// they brought. With a source, the sum of that source's transfers. With
+// source "", the largest per-source sum: two checkers report the same
+// money, so their reports never add up (see receivedAcrossSources).
 func heldPayments(
 	pays []*types.UsagePaymentTransaction, source string, statuses ...string,
 ) ([]*types.UsagePaymentTransaction, int64) {
 	var out []*types.UsagePaymentTransaction
-	var sum int64
+	bySource := map[string]int64{}
 	for _, p := range pays {
 		if source != "" && p.Source != source {
 			continue
@@ -343,23 +345,22 @@ func heldPayments(
 		if !held {
 			continue
 		}
-		if samePaymentIn(out, p) == nil {
-			sum += p.AmountVND
-		}
+		bySource[p.Source] += p.AmountVND
 		out = append(out, p)
 	}
-	return out, sum
+	return out, receivedAcrossSources(bySource)
 }
 
-// samePaymentIn returns the transfer of list with t's amount and booking
-// time (the same transfer reported again), nil when there is none.
-func samePaymentIn(list []*types.UsagePaymentTransaction, t *types.UsagePaymentTransaction) *types.UsagePaymentTransaction {
-	for _, p := range list {
-		if p != t && p.AmountVND == t.AmountVND && p.TransactedAt.Equal(t.TransactedAt) {
-			return p
+// receivedAcrossSources is the money an order received given each
+// source's sum: the largest one.
+func receivedAcrossSources(bySource map[string]int64) int64 {
+	var best int64
+	for _, v := range bySource {
+		if v > best {
+			best = v
 		}
 	}
-	return nil
+	return best
 }
 
 // reopenExpiredOrder puts an expired order back to pending, taking back

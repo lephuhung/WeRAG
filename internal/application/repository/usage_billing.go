@@ -158,28 +158,30 @@ func (r *usageBillingRepository) CountOrdersAwaitingAdmin(ctx context.Context) (
 	return n, err
 }
 
-// ReceivedByOrder groups by order, amount and booking time first, so a
-// transfer reported twice (two checkers, a re-push with a new id) counts
-// once, then sums per order.
+// ReceivedByOrder sums per order and source, then keeps each order's
+// largest source sum: two checkers report the same money, so their
+// reports never add up, while every transfer of one source counts.
 func (r *usageBillingRepository) ReceivedByOrder(ctx context.Context, orderIDs []string) (map[string]int64, error) {
 	out := map[string]int64{}
 	if len(orderIDs) == 0 {
 		return out, nil
 	}
 	var rows []struct {
-		OrderID   string
-		AmountVND int64
+		OrderID string
+		Total   int64
 	}
 	err := r.conn(ctx).Model(&types.UsagePaymentTransaction{}).
-		Select("order_id, amount_vnd").
+		Select("order_id, SUM(amount_vnd) AS total").
 		Where("order_id IN ? AND status IN ?", orderIDs, types.UsagePaymentHeldStatuses).
-		Group("order_id, amount_vnd, transacted_at").
+		Group("order_id, source").
 		Scan(&rows).Error
 	if err != nil {
 		return nil, err
 	}
 	for _, row := range rows {
-		out[row.OrderID] += row.AmountVND
+		if row.Total > out[row.OrderID] {
+			out[row.OrderID] = row.Total
+		}
 	}
 	return out, nil
 }

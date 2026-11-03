@@ -131,7 +131,7 @@ func (s *usageBillingService) refuseCancelWithMoney(ctx context.Context, o *type
 	if err != nil {
 		return err
 	}
-	_, received := heldPayments(pays, "", types.UsagePaymentUnderpaid, types.UsagePaymentConfirmFailed)
+	_, received := heldPayments(pays, "", types.UsagePaymentHeldStatuses...)
 	if received <= 0 {
 		return nil
 	}
@@ -221,6 +221,10 @@ func (s *usageBillingService) resettle(ctx context.Context, o *types.UsageOrder)
 	for _, src := range sources {
 		rows, sum := heldPayments(pays, src, types.UsagePaymentUnderpaid)
 		if sum >= o.TotalVND {
+			// oldest first, so the newest transfer completes the order
+			for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
+				rows[i], rows[j] = rows[j], rows[i]
+			}
 			_, err := s.confirmPaid(ctx, o, rows, paymentConfirmedBy(src), false)
 			return err
 		}

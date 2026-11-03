@@ -225,9 +225,9 @@ type UsageBillingRepository interface {
 	// CountOrdersAwaitingAdmin counts the pending orders only a SuperAdmin
 	// can move on: 0 đồng, or holding money (UsagePaymentHeldStatuses).
 	CountOrdersAwaitingAdmin(ctx context.Context) (int64, error)
-	// ReceivedByOrder sums, per order, the transfers in
-	// UsagePaymentHeldStatuses (one query; the same amount and booking time
-	// reported twice counts once).
+	// ReceivedByOrder is, per order, the largest per-source sum of the
+	// transfers in UsagePaymentHeldStatuses (one query; two checkers'
+	// reports of the same money do not add up).
 	ReceivedByOrder(ctx context.Context, orderIDs []string) (map[string]int64, error)
 	UpdateOrder(ctx context.Context, order *types.UsageOrder) error
 	// ExpirePendingOrders flips pending orders past their expires_at and
