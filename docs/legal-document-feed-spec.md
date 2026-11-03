@@ -644,13 +644,16 @@ khác (trước hết là thuvienphapluat.vn — TVPL) đẩy văn bản và cá
 `internal/application/service/legal_push*.go`, `internal/handler/legal_push.go`,
 migration `000178_legal_provision_link_candidates`, tab "Liên kết điều khoản"
 trên trang văn bản pháp luật của SuperAdmin
-(`frontend-next/components/settings/pages/admin-legal-links.tsx`). Bộ chuyển
-trang TVPL (9.5) chưa làm.
+(`frontend-next/components/settings/pages/admin-legal-links.tsx`), bộ chuyển
+trang TVPL `scripts/tvpl/` (9.5).
 
 Bối cảnh: server WeRAG (IP ra Internet `118.70.126.190`) bị Cloudflare của
-TVPL chặn (thử 05h22, 08h22, 10h07 ngày 02/11/2026, cả curl lẫn Chromium).
-Vì vậy bộ chuyển đổi trang TVPL chạy **ở máy người dùng** (trình duyệt,
-tài khoản và mạng của họ) và chỉ gọi API dưới đây; server không gọi TVPL.
+TVPL chặn với curl và Chromium (thử 01–03/11/2026). Ngày 03/11/2026 trình
+duyệt Lightpanda tải được trang TVPL từ chính server này (Cloudflare để nó
+qua bước kiểm tra JavaScript như một trình duyệt thường), nên bộ chuyển trang
+(9.5) chạy **trên server** bằng Lightpanda và gọi API dưới đây. Việc này có
+thể thay đổi bất cứ lúc nào: gặp kiểm tra của Cloudflare thì bộ chuyển dừng,
+không tìm đường khác. Cách bền vẫn là TVPL cho phép IP này theo thỏa thuận.
 
 ### 9.1 Ba nguyên tắc
 
@@ -841,25 +844,50 @@ duyệt)"; trùng với bộ đọc parser cùng thao tác → tầng 1), sau c�
 `legal.current_wording.feed_source` (mặc định tắt; tắt thì kết quả như cũ).
 Mã 16 `sua_doi` được đọc như sửa đổi; mã 9 `huong_dan` bị bỏ qua.
 
-### 9.5 Bộ chuyển trang TVPL (chạy ở máy người dùng)
+### 9.5 Bộ chuyển trang TVPL (`scripts/tvpl/`, chạy trên server)
 
-Script Python + Playwright dùng trình duyệt và tài khoản Pro của người dùng
-(phiên lưu bằng `storage_state`, không gửi mật khẩu cho WeRAG). Đọc theo
-cách đánh dấu của TVPL đã biết từ các crawler công khai:
+Python + trình duyệt Lightpanda (`scripts/tvpl/README.md`). Đã đối chiếu
+trên trang thật ngày 03/11/2026 (Luật Doanh nghiệp 59/2020/QH14, Nghị định
+123/2020/NĐ-CP và các văn bản ở 9.6):
 
-- nội dung trong `div.content1`;
-- đoạn có thay đổi: thuộc tính `atmm=".<lớp>"` hoặc
-  `onmouseover="lqhlTootip('.<lớp>')"` → chú thích ở `div.<lớp>`
-  ("… được sửa đổi bởi Khoản 3 Điều 1 Nghị định 80/2021/NĐ-CP");
-- nội dung chèn thêm: `<huongdan id="span-note_…">` → `div#note_…`
-  (dạng "nội dung |~| nguồn").
-
-Script nhận diện Điều/khoản/điểm theo chữ ("Điều 5.", "2.", "a)") để gắn
-lớp `prov-*` và `id`, tách chú thích thành `op` / `doc_number` / `path` /
-`eff_from` (regex, lưu nguyên văn vào `note`), rồi gọi API 9.3. Tốc độ:
-một văn bản mỗi lần, cách nhau ≥ 5 giây; dừng khi gặp trang đăng nhập hoặc
-kiểm tra của Cloudflare. Cấu trúc trang TVPL phải được xác nhận lại trên
-3–5 trang mẫu thật trước khi viết regex.
+- **Tải**: một trang mỗi lần, cách nhau ≥ 5 giây, lưu cache; dừng khi gặp
+  kiểm tra Cloudflare, trang đăng nhập hoặc chú thích bị khoá.
+- **Đăng nhập**: phần lớn văn bản chỉ hiện mã chú thích cho thành viên
+  (`clsopentLogin` khi chưa đăng nhập; riêng vài văn bản như Luật Doanh
+  nghiệp thì khách cũng xem được). Bộ chuyển đăng nhập như form của trang
+  (`/page/ajaxcontroler.aspx`, `CheckFullLogin` rồi `Login`), mật khẩu đọc
+  từ biến môi trường `TVPL_USER`/`TVPL_PASS` lúc chạy, chỉ nằm trong một
+  tệp script tạm (0600, trong thư mục cache 0700) suốt lần đăng nhập rồi bị
+  xoá; cookie phiên được giữ trong thư mục cache (0600).
+- **Nội dung**: `div.content1`. TVPL đặt neo `dieu_4`, `khoan_5_4`,
+  `diem_a_5_4` (`diem_dd_…` = điểm đ) trên phần lớn Điều/khoản/điểm; thiếu
+  neo thì nhận theo chữ ("Điều 5.", "2.", "a)"). Đoạn trích dẫn, tiêu đề
+  Chương/Mục và phụ lục là nội dung thường.
+- **Dấu thay đổi**: điều khoản có `atmm=".lqhlTootip-<mã>"`; nội dung chú
+  thích lấy từ `GET /page/apicontroler.aspx?Action=GetLqhlTip&lawID=<id
+  TVPL của A>&bookmarkID=<mã>` (đúng yêu cầu trang gửi khi người đọc bấm
+  vào điều khoản). Mỗi văn bản B là một `div.bmTitle` (`crid` = id TVPL của
+  B) + `div.bmContent` (lời văn mới, link sang B có `anchor=diem_a_1_1`) +
+  `div.bmContentOld` (lời văn cũ). Từ đó: `op` theo cụm "được/bị … bởi";
+  `doc_number` là số hiệu ghi trong chú thích, không có thì lấy số đầu tiên
+  trong slug link của B (`…-so-76-2025-QH15-659899.aspx`); `path` lấy từ
+  `anchor`, hoặc lời chú thích nếu cụ thể hơn ("bởi Khoản 3 Điều 2" khi
+  anchor chỉ là `dieu_2`); `eff_from` từ "có hiệu lực từ ngày"; `note` giữ
+  nguyên văn. Dấu trên đoạn không đánh số gắn vào điều khoản mà chú thích
+  nêu ("Khoản này…"); dấu trên tiêu đề Chương/Mục chỉ báo lại.
+- Thẻ `<huongdan>` và `#note_…` (nội dung TVPL chèn thêm) bị bỏ.
+- Chú thích không có cụm thao tác nhưng chỉ ra văn bản B ("… thực hiện
+  theo quy định tại Điều 10 Nghị định 151/2025/NĐ-CP"), hoặc nói về văn bản
+  khác ("Nội dung hướng dẫn Điều này tại Nghị định 103/2024/NĐ-CP nay được
+  sửa đổi bởi …") → `huong_dan` kèm `op_inferred`: lưu và hiện khi duyệt,
+  bộ giải không dùng. Trên Luật Đất đai 2024, quy tắc thứ hai bỏ 87 dấu
+  "sửa đổi" sai.
+- Nhận cấu trúc bám đúng bộ đọc `internal/vbpl` (số Điều/khoản/điểm, mở/đóng
+  trích dẫn, phụ lục chỉ sau Điều cuối); dấu trong bảng, tiêu đề, trích dẫn
+  hoặc phụ lục chỉ được báo lại (bộ đọc xoá id trong phụ lục, nên vị trí
+  `phuluc/` ở 9.2 chưa dùng được qua push).
+- Trang tải chưa đủ chú thích thì không lưu cache và không đẩy
+  (`incomplete`).
 
 ### 9.6 Hiện trạng
 
@@ -867,11 +895,15 @@ kiểm tra của Cloudflare. Cấu trúc trang TVPL phải được xác nhận 
    (9.4, chuỗi `en` + `vi`), công tắc `legal.current_wording.feed_source`;
    test `internal/vbpl/amend_markup_test.go`,
    `internal/application/service/legal_push_test.go`.
-2. Chưa: bộ chuyển TVPL (9.5) — cần 3–5 trang mẫu lưu từ trình duyệt đã
-   đăng nhập; mã 9 `huong_dan` trong câu trả lời.
-3. Sau khi có dữ liệu: đo trên các văn bản có cả thẻ biên tập vbpl và chú
-   thích TVPL — tỷ lệ trùng, mâu thuẫn, chỉ TVPL có — trước khi bật
-   `feed_source`.
+2. Xong (03/11/2026): bộ chuyển TVPL (9.5), `scripts/tvpl/`, test
+   `scripts/tvpl/test_tvpl_convert.py`. Đẩy thử Nghị định 123/2020/NĐ-CP lên
+   dev ở chế độ `links`: 135 dấu trên 116 điều khoản, mọi văn bản B phân
+   giải được trong danh mục, 128 ứng viên chờ duyệt (đa số `doc_only` vì B
+   chưa có toàn văn trong kho dev). Bộ đọc `internal/vbpl` nhận đúng vị trí
+   của mọi phần tử (đối chiếu id ↔ đường dẫn).
+3. Chưa: mã 9 `huong_dan` trong câu trả lời; đo trên các văn bản có cả thẻ
+   biên tập vbpl và chú thích TVPL — tỷ lệ trùng, mâu thuẫn, chỉ TVPL có —
+   trước khi bật `feed_source`.
 
 Ví dụ gọi:
 
