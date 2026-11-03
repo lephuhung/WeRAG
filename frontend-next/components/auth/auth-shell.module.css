@@ -450,6 +450,64 @@
   padding-left: 10px;
 }
 
+.installTabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 3px;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid var(--color-hairline);
+  border-radius: var(--radius-sm2);
+  background: var(--color-surface-strong);
+}
+.installTab {
+  padding: 6px 12px;
+  border: 0;
+  border-radius: calc(var(--radius-sm2) - 2px);
+  background: transparent;
+  color: var(--color-muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.installTab:hover {
+  color: var(--color-ink);
+}
+.installTab[aria-selected="true"] {
+  background: var(--color-surface-card);
+  color: var(--color-ink);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.installCommand {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 10px 0 4px 20px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-hairline-strong);
+  border-radius: var(--radius-sm2);
+  background: var(--color-surface-strong);
+}
+.installCommand code {
+  flex: 1;
+  min-width: 0;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--color-ink);
+  word-break: break-all;
+}
+.installCommand button {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--color-hairline-strong);
+  border-radius: var(--radius-sm2);
+  background: var(--color-surface-card);
+  color: var(--color-ink);
+  font-size: 10px;
+  cursor: pointer;
+}
+
 /* ---------- form side ---------- */
 .formSide {
   display: flex;
@@ -670,32 +728,12 @@
   .formFooter {
     margin-bottom: 6px;
   }
+}
+
+/* The add-in runs only in desktop Word (DesktopFormFactor), so phones and
+   tablets never see the install card. */
+@media (max-width: 800px), (hover: none) and (pointer: coarse) {
   .wordAddin {
-    gap: 12px;
-    margin: 20px 0 0;
-    padding: 13px 14px;
-  }
-  .wordIcon {
-    width: 34px;
-    height: 36px;
-    font-size: 20px;
-  }
-  .wordLabel {
-    font-size: 7px;
-    letter-spacing: 1px;
-  }
-  .wordAddin strong {
-    font-size: 12px;
-  }
-  .wordAddin p {
-    font-size: 10px;
-  }
-  .wordInstall summary {
-    margin-left: 46px;
-    font-size: 11px;
-    padding: 9px 12px;
-  }
-  .installGuide ol {
-    font-size: 11px;
+    display: none;
   }
 }

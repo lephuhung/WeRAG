@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useT } from "@/lib/i18n";
 import { BrandLockup } from "@/components/brand-logo";
 import styles from "./auth-shell.module.css";
+import { WordAddinInstall } from "./word-addin-install";
 
 export type AuthMode = "login" | "register" | "word";
 
@@ -128,23 +129,7 @@ export function AuthShell({
                 <summary>
                   {t("auth.addinInstall")} <span aria-hidden="true">↗</span>
                 </summary>
-                <div className={styles.installGuide}>
-                  <strong>{t("auth.installTitle")}</strong>
-                  <a
-                    className={styles.manifestDownload}
-                    href="/word-addin/manifest.xml"
-                    download="werag-word-addin.xml"
-                  >
-                    {t("auth.installDownload")} <span>.xml</span>
-                  </a>
-                  <ol>
-                    <li>{richText(t("auth.installStep1"))}</li>
-                    <li>{richText(t("auth.installStep2"))}</li>
-                    <li>{richText(t("auth.installStep3"))}</li>
-                    <li>{richText(t("auth.installStep4"))}</li>
-                  </ol>
-                  <p>{richText(t("auth.installCatalog"))}</p>
-                </div>
+                <WordAddinInstall />
               </details>
             </div>
             <div className={styles.features}>
