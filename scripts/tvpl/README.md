@@ -15,25 +15,47 @@ and the resolver reads approved TVPL links only when
 | `tvpl_push.py` | CLI: search by số hiệu → fetch → convert → push |
 | `test_tvpl_convert.py` | `python3 -m unittest scripts/tvpl/test_tvpl_convert.py` |
 
-## Run
+## Run (container)
 
-Lightpanda (tested: nightly `1.1.0-nightly.11582`, x86_64 Linux) —
-download `lightpanda-x86_64-linux` from
-<https://github.com/lightpanda-io/browser/releases/tag/nightly>, `chmod +x`.
-Python 3.10+ with `beautifulsoup4`.
+Compose service `tvpl` (profile `tvpl`, `docker/tvpl/Dockerfile`): Python,
+the scripts and Lightpanda **1.0.2** pinned by SHA-256. It runs on demand
+(`docker compose run --rm`), nothing stays up. `scripts/tvpl/run.sh` builds
+it if needed and runs it:
 
 ```bash
 # SuperAdmin JWT or an API key created in platform tenant 10000 (ingest)
 export WERAG_API_KEY=sk-...
-# only if notes are members-only (most documents): read at run time, only
-# in a 0600 temp script inside the 0700 cache dir during sign-in, then
-# deleted; the session cookies stay in --cache-dir/session-cookies.json
-export TVPL_USER=... TVPL_PASS=...
+# only if notes are members-only (most documents): passed to the container
+# as env, only in a 0600 temp script inside the 0700 cache during sign-in,
+# then deleted; the session cookies stay in the tvpl_cache volume
+export TVPL_USER=...; read -rs TVPL_PASS; export TVPL_PASS   # not in shell history
 
-python3 -I scripts/tvpl/tvpl_push.py --api http://localhost:18080/api/v1 \
-    --lightpanda ~/bin/lightpanda --cache-dir ~/data/tvpl-cache --out-dir ~/data/tvpl-out \
-    --login 123/2020/NĐ-CP 78/2021/TT-BTC
+sudo -E scripts/tvpl/run.sh --login 123/2020/NĐ-CP 78/2021/TT-BTC
+sudo -E scripts/tvpl/run.sh --dry-run 15/2018/NĐ-CP   # files only
+sudo -E scripts/tvpl/run.sh test                      # unit tests
 ```
+
+(`sudo -E` only if your user is not in the `docker` group; it keeps the
+env, and the output files still belong to you.) The API defaults to
+`WERAG_API=http://host.docker.internal:18080/api/v1` (dev backend on the
+host). Output goes to `./data/tvpl-out/<số hiệu>.html/.json`
+(`TVPL_OUT_DIR` to change); the cookies stay in the volume
+`<project>_tvpl_cache` (`docker volume rm` signs out). Only one run at a
+time per cache (lock file).
+
+Kept out of the way on purpose: `run.sh` refuses to start if `.env` holds
+`TVPL_PASS`/`TVPL_USER`/`WERAG_TOKEN`/`WERAG_API_KEY` (compose would read
+them from there and `docker compose config` would print them). The container
+sits on its own network `tvpl-net`, not `WeKnora-network`, and Lightpanda
+runs with `--block-private-networks`: page JavaScript cannot reach the
+databases or anything else on the LAN; only the Python push goes to the API
+through the host gateway. The converter runs as your uid with no
+capabilities; only the entrypoint's first lines (lock, chown) are root.
+
+Without the container: Python 3.10+ with `beautifulsoup4` and the
+Lightpanda binary (`lightpanda-x86_64-linux` from the GitHub release), then
+`python3 -I scripts/tvpl/tvpl_push.py --lightpanda PATH --cache-dir DIR
+--out-dir DIR …` with the same env.
 
 `--login` is needed once; later runs reuse the cookies until TVPL expires
 them (then the script stops with "hides the amendment notes … sign in").

@@ -1131,8 +1131,53 @@ services:
     profiles:
       - airag-models
 
+  # TVPL → WeRAG amendment-link converter with a pinned Lightpanda browser
+  # (docker/tvpl, scripts/tvpl). On demand only: scripts/tvpl/run.sh …
+  # Stops at a Cloudflare challenge; never add a way around it.
+  tvpl:
+    build:
+      # small contexts: this dir + the scripts, never the whole repo
+      context: ./docker/tvpl
+      additional_contexts:
+        tvplsrc: ./scripts/tvpl
+    image: werag-tvpl:latest
+    profiles:
+      - tvpl
+    restart: "no"
+    environment:
+      # passed through from the caller's shell, never stored
+      - WERAG_API=${WERAG_API:-http://host.docker.internal:18080/api/v1}
+      - WERAG_API_KEY
+      - WERAG_TOKEN
+      - TVPL_USER
+      - TVPL_PASS
+      - TVPL_UID=${TVPL_UID:-10001}
+      - TVPL_GID=${TVPL_GID:-10001}
+    volumes:
+      - tvpl_cache:/data/cache
+      - ${TVPL_OUT_DIR:-./data/tvpl-out}:/data/out
+    # own network: the browser runs site JavaScript and must not reach
+    # Postgres/Redis/MinIO by name; the API is reached via the host gateway
+    networks:
+      - tvpl-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    cap_drop:
+      - ALL
+    cap_add:  # root phase of the entrypoint only (chown, lock, setpriv)
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETUID
+      - SETGID
+      - SETPCAP
+    cpus: ${TVPL_CPUS:-2}
+    mem_limit: ${TVPL_MEM_LIMIT:-2g}
+
 networks:
   WeKnora-network:
+    driver: bridge
+  tvpl-net:
     driver: bridge
 
 volumes:
@@ -1152,3 +1197,4 @@ volumes:
   onlyoffice_db:
   onlyoffice_logs:
   screenai_component:
+  tvpl_cache:

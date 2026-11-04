@@ -846,7 +846,9 @@ Mã 16 `sua_doi` được đọc như sửa đổi; mã 9 `huong_dan` bị bỏ 
 
 ### 9.5 Bộ chuyển trang TVPL (`scripts/tvpl/`, chạy trên server)
 
-Python + trình duyệt Lightpanda (`scripts/tvpl/README.md`). Đã đối chiếu
+Python + trình duyệt Lightpanda 1.0.2, đóng gói trong container chạy theo
+lệnh (service compose `tvpl`, `scripts/tvpl/run.sh`; `scripts/tvpl/README.md`).
+Đã đối chiếu
 trên trang thật ngày 03/11/2026 (Luật Doanh nghiệp 59/2020/QH14, Nghị định
 123/2020/NĐ-CP và các văn bản ở 9.6):
 

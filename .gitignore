@@ -70,3 +70,4 @@ docformat/evaluation/samples/
 # sherpa-asr models (docker/sherpa-asr/download-models.sh)
 docker/sherpa-asr/models/
 docker/word-addin/dist/
+data/tvpl-out/
