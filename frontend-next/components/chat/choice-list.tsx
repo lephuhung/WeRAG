@@ -11,6 +11,7 @@ import { useT } from "@/lib/i18n";
 import { AGENT_HANDOFF_TYPE, optionMessage, type ChoiceList, type ChoiceOption } from "@/lib/choice-list";
 import { availableChatChoices } from "@/lib/mobile-chat-policy";
 import { useMobileChat } from "@/components/use-mobile-chat";
+import { DOCUMENT_EDITOR } from "@/components/doc-workspace/document-layout-policy";
 
 export function ChoiceListView({
   card: sourceCard,
@@ -56,7 +57,7 @@ export function ChoiceListView({
   };
 
   if (mobile && sourceCard.kind === AGENT_HANDOFF_TYPE) {
-    return <p className="mt-2 text-[13px] leading-relaxed text-muted">{t("docws.mobileWordUnavailable")}</p>;
+    return <p className="mt-2 text-[13px] leading-relaxed text-muted">{t("docws.mobileWordUnavailable", { n: DOCUMENT_EDITOR.stackedMinWidth })}</p>;
   }
 
   if (picked) {

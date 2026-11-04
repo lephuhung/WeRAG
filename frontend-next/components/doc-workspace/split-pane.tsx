@@ -4,8 +4,16 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Pointer
 import Link from "next/link";
 import { useT } from "@/lib/i18n";
 import styles from "./split-pane.module.css";
-import { DEFAULT_SPLIT_BOUNDS, clampLeftPct, type SplitBounds } from "./split-pane-math";
-import { DOCUMENT_EDITOR, DOCUMENT_SIDE_BY_SIDE_QUERY, DOCUMENT_STACKED_QUERY } from "./document-layout-policy";
+import { DEFAULT_SPLIT_BOUNDS, SPLIT_DIVIDER_PX, clampLeftPct, effectiveBounds, type SplitBounds } from "./split-pane-math";
+import {
+  DOCUMENT_EDITOR,
+  DOCUMENT_ROOMY_QUERY,
+  DOCUMENT_SIDE_BY_SIDE_QUERY,
+  DOCUMENT_STACKED_QUERY,
+  PANES_SIDE_BY_SIDE_QUERY,
+} from "./document-layout-policy";
+import { holdSidebarFold, resetSidebarFoldDismissal } from "@/lib/sidebar-state";
+import { useIsDesktopShell } from "@/components/shell-breakpoints";
 
 const DEFAULT_STORAGE_KEY = "werag.docWorkspace.leftPct";
 
@@ -19,7 +27,7 @@ function readStoredPct(key: string, bounds: SplitBounds): number {
   return bounds.def;
 }
 
-function useIsWide(query = DOCUMENT_STACKED_QUERY): boolean {
+function useMatches(query: string): boolean {
   const [wide, setWide] = useState(true);
   // Layout effect: the real breakpoint is applied before the first paint, so
   // phones never flash the side-by-side layout.
@@ -35,10 +43,11 @@ function useIsWide(query = DOCUMENT_STACKED_QUERY): boolean {
 }
 
 /* Two-pane layout for the document assistant: editor on the left (55–75%,
- * draggable, persisted per browser), chat on the right. Document mode needs
- * a viewport of at least 1440 × 800 CSS pixels; a smaller document viewport
- * stacks the editor above the assistant and covers the editor area with a
- * notice — the assistant itself stays usable.
+ * draggable, persisted per browser), chat on the right. Document mode
+ * follows document-layout-policy.ts: side by side from 1024 px (the app
+ * rail folds away below 1536 px), stacked on tablets, and a notice over the
+ * editor area only when the window is too low — the assistant itself
+ * always stays usable.
  *
  * `left={null}` renders the right pane alone with no divider and never
  * blocks: there is no editor to make room for. The element tree is
@@ -60,16 +69,35 @@ export function SplitPane({
   documentMode?: boolean;
 }) {
   const { t } = useT();
-  const wide = useIsWide(documentMode ? DOCUMENT_SIDE_BY_SIDE_QUERY : DOCUMENT_STACKED_QUERY);
+  const sideFits = useMatches(documentMode ? DOCUMENT_SIDE_BY_SIDE_QUERY : PANES_SIDE_BY_SIDE_QUERY);
+  const stackFits = useMatches(DOCUMENT_STACKED_QUERY);
+  const roomy = useMatches(DOCUMENT_ROOMY_QUERY);
+  const desktopShell = useIsDesktopShell();
   const [leftPct, setLeftPct] = useState(bounds.def);
-  const boundsRef = useRef(bounds);
-  boundsRef.current = bounds;
+  const [paneWidth, setPaneWidth] = useState(0);
+  /* In document mode the assistant keeps DOCUMENT_EDITOR.minAssistantPx:
+   * on a narrow window the editor's ceiling (and the separator's range)
+   * drops with the measured width, so drag, keys, aria and the rendered
+   * width always agree. */
+  const liveBounds = documentMode ? effectiveBounds(bounds, paneWidth, DOCUMENT_EDITOR.minAssistantPx) : bounds;
+  const nominalRef = useRef(bounds);
+  nominalRef.current = bounds;
   const [dragging, setDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const pctRef = useRef(leftPct);
 
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => setPaneWidth(Math.round(el.getBoundingClientRect().width));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   useEffect(() => {
-    const v = readStoredPct(storageKey, boundsRef.current);
+    const v = readStoredPct(storageKey, nominalRef.current);
     pctRef.current = v;
     setLeftPct(v);
   }, [storageKey]);
@@ -93,7 +121,9 @@ export function SplitPane({
     if (!box || box.width <= 0) return;
     setDragging(true);
     const onMove = (ev: PointerEvent) => {
-      update(clampLeftPct(((ev.clientX - box.left) / box.width) * 100, boundsRef.current));
+      /* Stored against the nominal bounds: dragging past a narrow window's
+       * ceiling means "as wide as possible", which a wide screen honours. */
+      update(clampLeftPct(((ev.clientX - box.left) / box.width) * 100, nominalRef.current));
     };
     const onUp = () => {
       setDragging(false);
@@ -108,45 +138,71 @@ export function SplitPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey]);
 
+  /* What is on screen: the stored preference within the live bounds. */
+  const shownPct = clampLeftPct(leftPct, liveBounds);
+
+  /* `leftPct` is the user's preference against the nominal bounds; only
+   * the display is clamped to the live ones. A key that cannot move the
+   * separator on this window changes nothing (it never narrows the
+   * preference kept for wider screens). */
+  const setPreference = (next: number) => {
+    update(next);
+    persist(next);
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     const step = e.shiftKey ? 5 : 1;
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
-      const next = clampLeftPct(leftPct + (e.key === "ArrowLeft" ? -step : step), bounds);
-      update(next);
-      persist(next);
+      const next = clampLeftPct(shownPct + (e.key === "ArrowLeft" ? -step : step), bounds);
+      if (clampLeftPct(next, liveBounds) === shownPct) return;
+      setPreference(next);
       return;
     }
     if (e.key === "Home") {
       e.preventDefault();
-      update(bounds.min);
-      persist(bounds.min);
+      setPreference(bounds.min);
       return;
     }
     if (e.key === "End") {
       e.preventDefault();
-      update(bounds.max);
-      persist(bounds.max);
+      setPreference(bounds.max);
       return;
     }
     if (e.key === "Enter" || e.key === " ") {
       /* Double-tap on the separator resets it to the default width. */
       e.preventDefault();
-      update(bounds.def);
-      persist(bounds.def);
+      setPreference(bounds.def);
     }
   };
 
-  const resetWidth = () => {
-    update(bounds.def);
-    persist(bounds.def);
-  };
+  const resetWidth = () => setPreference(bounds.def);
 
   const hasLeft = left !== null && left !== undefined && left !== false;
   /* Only block when there is an editor to make room for: with no left pane
    * (read-only mode) the assistant must stay usable on a phone. */
-  const blocked = documentMode && hasLeft && !wide;
-  const sideBySide = hasLeft && !blocked && (documentMode || wide);
+  /* Reachable only through the height: below the stacked width the chat
+   * page drops the editor (documentReadOnly, lib/mobile-chat-policy.ts) and
+   * a new chat resolves to another agent — hence the "too low" copy. */
+  const blocked = documentMode && hasLeft && !sideFits && !stackFits;
+  const sideBySide = hasLeft && sideFits;
+  /* Rail + editor + assistant do not fit on a 1024–1535 px laptop: fold the
+   * rail while the document is open (never stored; the edge tab keeps it
+   * back for this page load, leaving the page restores it). Layout effect:
+   * the rail is gone before the first paint instead of sliding out. */
+  const foldRail = documentMode && sideBySide && desktopShell && !roomy;
+  useLayoutEffect(() => {
+    if (!foldRail) return;
+    return holdSidebarFold();
+  }, [foldRail]);
+  /* Reset only on a real change to a wide window: on mount `roomy` starts as
+   * the `true` default, and its effect would otherwise wipe the user's
+   * unfold before the layout effect measures the real width. */
+  const prevRoomy = useRef<boolean | null>(null);
+  useEffect(() => {
+    if (documentMode && roomy && prevRoomy.current === false) resetSidebarFoldDismissal();
+    prevRoomy.current = roomy;
+  }, [documentMode, roomy]);
 
   return (
     <div className={styles.root}>
@@ -161,7 +217,11 @@ export function SplitPane({
               ? "relative flex min-w-0 flex-col overflow-hidden"
               : "hairline-b relative flex shrink-0 flex-col overflow-hidden"
           }
-          style={sideBySide ? { width: `${leftPct}%` } : { height: DOCUMENT_EDITOR.stackedEditorHeight }}
+          style={
+            sideBySide
+              ? { width: `${shownPct}%` }
+              : { height: blocked ? DOCUMENT_EDITOR.blockedNoticeHeight : DOCUMENT_EDITOR.stackedEditorHeight }
+          }
         >
           {/* The editor stays mounted (so an open document keeps its state)
               but is inert and invisible while the viewport is too small. */}
@@ -184,7 +244,7 @@ export function SplitPane({
                     {DOCUMENT_EDITOR.minSizeLabel}
                     <span>{t("docws.tooSmallMinLabel")}</span>
                   </div>
-                  <p>{t("docws.tooSmallHint")}</p>
+                  <p>{t("docws.tooSmallHint", { h: DOCUMENT_EDITOR.minHeight })}</p>
                   <Link href="/platform/creatChat">{t("docws.tooSmallBack")}</Link>
                 </section>
               </div>
@@ -196,17 +256,18 @@ export function SplitPane({
         <div
           role="separator"
           aria-orientation="vertical"
-          aria-valuemin={bounds.min}
-          aria-valuemax={bounds.max}
-          aria-valuenow={Math.round(leftPct)}
-          aria-valuetext={t("docws.resizeValue", { n: Math.round(leftPct) })}
+          aria-valuemin={Math.round(liveBounds.min)}
+          aria-valuemax={Math.round(liveBounds.max)}
+          aria-valuenow={Math.round(shownPct)}
+          aria-valuetext={t("docws.resizeValue", { n: Math.round(shownPct) })}
           aria-label={t("docws.resize")}
           title={t("docws.resize")}
           tabIndex={0}
           onPointerDown={startResize}
           onDoubleClick={resetWidth}
           onKeyDown={onKeyDown}
-          className="group relative z-10 w-1.5 shrink-0 cursor-col-resize bg-hairline/60 outline-none focus-visible:bg-ink/30"
+          style={{ width: SPLIT_DIVIDER_PX }}
+          className="group relative z-10 shrink-0 cursor-col-resize bg-hairline/60 outline-none focus-visible:bg-ink/30"
         >
           <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-hairline transition-colors group-hover:bg-ink/30" />
         </div>

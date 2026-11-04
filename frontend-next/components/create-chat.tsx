@@ -319,6 +319,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
   // creates the session and opens the chat on it (no first message).
   return (
     <SplitPane
+      documentMode={isDocumentAssistant}
       left={
         isDocumentAssistant ? (
           <DocWorkspace

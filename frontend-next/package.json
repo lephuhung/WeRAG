@@ -9,7 +9,8 @@
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "test:formula-number": "tsc --rewriteRelativeImportExtensions --esModuleInterop --skipLibCheck --target es2022 --module commonjs --types node --outDir node_modules/.cache/formula-number-test lib/formula-number.ts lib/formula-number.test.ts && node --test node_modules/.cache/formula-number-test/formula-number.test.js",
-    "test:legal-paths": "node --experimental-strip-types --test lib/legal-paths.test.ts"
+    "test:legal-paths": "node --experimental-strip-types --test lib/legal-paths.test.ts",
+    "test:doc-layout": "node --experimental-strip-types --test components/doc-workspace/document-layout-policy.test.ts"
   },
   "dependencies": {
     "d3-force": "^3.0.0",
