@@ -163,8 +163,8 @@ def main():
                     help="push mode (default links: only the review queue, never a KB)")
     ap.add_argument("--legal-document-id", help="catalogue id of A (only with a single document)")
     ap.add_argument("--lightpanda", help="Lightpanda binary (or LIGHTPANDA_BIN)")
-    ap.add_argument("--cache-dir", default=os.path.expanduser("~/data/tvpl-cache"))
-    ap.add_argument("--out-dir", default=os.path.expanduser("~/data/tvpl-out"))
+    ap.add_argument("--cache-dir", default=os.environ.get("TVPL_CACHE_DIR") or os.path.expanduser("~/data/tvpl-cache"))
+    ap.add_argument("--out-dir", default=os.environ.get("TVPL_OUT_DIR") or os.path.expanduser("~/data/tvpl-out"))
     ap.add_argument("--interval", type=float, default=tf.MIN_INTERVAL, help="seconds between page loads (≥ 5)")
     ap.add_argument("--refresh", action="store_true", help="load document pages again, ignoring the cache")
     ap.add_argument("--login", action="store_true", help="sign in first with TVPL_USER / TVPL_PASS")
@@ -192,7 +192,11 @@ def main():
             ap.error("set WERAG_API_KEY or WERAG_TOKEN (or use --dry-run)")
 
     log = lambda s: print(s, flush=True)  # noqa: E731
-    fetcher = tf.Fetcher(args.cache_dir, lightpanda=args.lightpanda, interval=args.interval, log=log)
+    try:
+        fetcher = tf.Fetcher(args.cache_dir, lightpanda=args.lightpanda, interval=args.interval, log=log)
+    except tf.TVPLError as e:
+        log(f"STOP: {e}")
+        return 1
     if args.login:
         try:
             fetcher.login(os.environ.get("TVPL_USER", ""), os.environ.get("TVPL_PASS", ""))

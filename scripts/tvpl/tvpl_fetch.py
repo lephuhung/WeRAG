@@ -14,6 +14,7 @@ Every fetched page is kept in a cache directory, so a rerun of the converter
 does not load TVPL again.
 """
 
+import fcntl
 import hashlib
 import json
 import os
@@ -147,6 +148,13 @@ class Fetcher:
         os.chmod(cache_dir, 0o700)  # holds the session cookies
         # the signed-in session (cookies), kept between runs; never the password
         self.cookie_jar = os.path.join(cache_dir, "session-cookies.json")
+        # one run per cache dir: runs share the session and the pacing
+        self._lock = open(os.path.join(cache_dir, ".lock"), "w")
+        try:
+            fcntl.flock(self._lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            self._lock.close()
+            raise TVPLError(f"another TVPL run is using {cache_dir}; wait for it to finish")
         self.interval = max(float(interval), MIN_INTERVAL)
         self.timeout = timeout
         self.log = log
@@ -198,6 +206,8 @@ class Fetcher:
         # page itself; "done" never comes on TVPL's ad-polling pages). The
         # wait script is checked after that and itself waits for the body.
         args += ["--wait-until", "networkalmostidle"]
+        # the browser never talks to the LAN (the API push is urllib, not this)
+        args += ["--block-private-networks"]
         for pat in _AD_URLS:
             args += ["--block-urls", pat]
         args += ["--wait-ms", str(wait_ms)]
