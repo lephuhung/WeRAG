@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Pointer
 import Link from "next/link";
 import { useT } from "@/lib/i18n";
 import styles from "./split-pane.module.css";
-import { DEFAULT_SPLIT_BOUNDS, clampLeftPct, effectiveBounds, type SplitBounds } from "./split-pane-math";
+import { DEFAULT_SPLIT_BOUNDS, SPLIT_DIVIDER_PX, clampLeftPct, effectiveBounds, type SplitBounds } from "./split-pane-math";
 import {
   DOCUMENT_EDITOR,
   DOCUMENT_ROOMY_QUERY,
@@ -80,8 +80,6 @@ export function SplitPane({
    * drops with the measured width, so drag, keys, aria and the rendered
    * width always agree. */
   const liveBounds = documentMode ? effectiveBounds(bounds, paneWidth, DOCUMENT_EDITOR.minAssistantPx) : bounds;
-  const boundsRef = useRef(liveBounds);
-  boundsRef.current = liveBounds;
   const nominalRef = useRef(bounds);
   nominalRef.current = bounds;
   const [dragging, setDragging] = useState(false);
@@ -91,7 +89,7 @@ export function SplitPane({
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
-    const measure = () => setPaneWidth(el.getBoundingClientRect().width);
+    const measure = () => setPaneWidth(Math.round(el.getBoundingClientRect().width));
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
@@ -123,7 +121,9 @@ export function SplitPane({
     if (!box || box.width <= 0) return;
     setDragging(true);
     const onMove = (ev: PointerEvent) => {
-      update(clampLeftPct(((ev.clientX - box.left) / box.width) * 100, boundsRef.current));
+      /* Stored against the nominal bounds: dragging past a narrow window's
+       * ceiling means "as wide as possible", which a wide screen honours. */
+      update(clampLeftPct(((ev.clientX - box.left) / box.width) * 100, nominalRef.current));
     };
     const onUp = () => {
       setDragging(false);
@@ -141,39 +141,42 @@ export function SplitPane({
   /* What is on screen: the stored preference within the live bounds. */
   const shownPct = clampLeftPct(leftPct, liveBounds);
 
+  /* `leftPct` is the user's preference against the nominal bounds; only
+   * the display is clamped to the live ones. A key that cannot move the
+   * separator on this window changes nothing (it never narrows the
+   * preference kept for wider screens). */
+  const setPreference = (next: number) => {
+    update(next);
+    persist(next);
+  };
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     const step = e.shiftKey ? 5 : 1;
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
-      const next = clampLeftPct(shownPct + (e.key === "ArrowLeft" ? -step : step), liveBounds);
-      update(next);
-      persist(next);
+      const next = clampLeftPct(shownPct + (e.key === "ArrowLeft" ? -step : step), bounds);
+      if (clampLeftPct(next, liveBounds) === shownPct) return;
+      setPreference(next);
       return;
     }
     if (e.key === "Home") {
       e.preventDefault();
-      update(liveBounds.min);
-      persist(liveBounds.min);
+      setPreference(bounds.min);
       return;
     }
     if (e.key === "End") {
       e.preventDefault();
-      update(liveBounds.max);
-      persist(liveBounds.max);
+      setPreference(bounds.max);
       return;
     }
     if (e.key === "Enter" || e.key === " ") {
       /* Double-tap on the separator resets it to the default width. */
       e.preventDefault();
-      update(liveBounds.def);
-      persist(liveBounds.def);
+      setPreference(bounds.def);
     }
   };
 
-  const resetWidth = () => {
-    update(liveBounds.def);
-    persist(liveBounds.def);
-  };
+  const resetWidth = () => setPreference(bounds.def);
 
   const hasLeft = left !== null && left !== undefined && left !== false;
   /* Only block when there is an editor to make room for: with no left pane
@@ -192,8 +195,13 @@ export function SplitPane({
     if (!foldRail) return;
     return holdSidebarFold();
   }, [foldRail]);
+  /* Reset only on a real change to a wide window: on mount `roomy` starts as
+   * the `true` default, and its effect would otherwise wipe the user's
+   * unfold before the layout effect measures the real width. */
+  const prevRoomy = useRef<boolean | null>(null);
   useEffect(() => {
-    if (documentMode && roomy) resetSidebarFoldDismissal();
+    if (documentMode && roomy && prevRoomy.current === false) resetSidebarFoldDismissal();
+    prevRoomy.current = roomy;
   }, [documentMode, roomy]);
 
   return (
@@ -236,7 +244,7 @@ export function SplitPane({
                     {DOCUMENT_EDITOR.minSizeLabel}
                     <span>{t("docws.tooSmallMinLabel")}</span>
                   </div>
-                  <p>{t("docws.tooSmallHint")}</p>
+                  <p>{t("docws.tooSmallHint", { h: DOCUMENT_EDITOR.minHeight })}</p>
                   <Link href="/platform/creatChat">{t("docws.tooSmallBack")}</Link>
                 </section>
               </div>
@@ -258,7 +266,8 @@ export function SplitPane({
           onPointerDown={startResize}
           onDoubleClick={resetWidth}
           onKeyDown={onKeyDown}
-          className="group relative z-10 w-1.5 shrink-0 cursor-col-resize bg-hairline/60 outline-none focus-visible:bg-ink/30"
+          style={{ width: SPLIT_DIVIDER_PX }}
+          className="group relative z-10 shrink-0 cursor-col-resize bg-hairline/60 outline-none focus-visible:bg-ink/30"
         >
           <div className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-hairline transition-colors group-hover:bg-ink/30" />
         </div>
