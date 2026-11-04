@@ -582,3 +582,21 @@ func (d *deadlineSender) Send(ctx context.Context, _ mailer.Config, _ mailer.Mes
 	d.left = append(d.left, time.Until(dl))
 	return nil
 }
+
+// e2e review MED-2: the expiry mail does not read "Gói Gói cơ bản".
+func TestExpiryReminderPlanNameNotDoubled(t *testing.T) {
+	end := time.Date(2026, 11, 13, 17, 0, 0, 0, time.UTC)
+	c := expiryReminderEmail("Gói cơ bản", "Tổ chức A", end, 3, "https://x")
+	require.Equal(t, "Gói cơ bản sắp hết hạn (còn 3 ngày)", c.Subject)
+	require.True(t, strings.HasPrefix(c.Intro, "Gói cơ bản của Tổ chức A"), c.Intro)
+	require.NotContains(t, c.Subject+c.Intro, "Gói Gói")
+	c = expiryReminderEmail("Go", "Tổ chức A", end, 0, "https://x")
+	require.Equal(t, "Gói Go sắp hết hạn (hôm nay là ngày cuối)", c.Subject)
+
+	for name, want := range map[string]string{
+		"Gói cơ bản": "cơ bản", "gói  Go": "Go", "GÓI Pro": "Pro", "Gói": "Gói", "Gói ": "Gói",
+		"Góicơ": "Góicơ", "Go": "Go", "  Cơ bản ": "Cơ bản", "": "",
+	} {
+		require.Equal(t, want, planNameAfterWord(name, "gói"), name)
+	}
+}

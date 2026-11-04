@@ -218,6 +218,9 @@ export function BillingPage() {
   // until then the plan, seats and add-on defaults are not settled and a
   // quote would only flash a refusal (seats_below_current, addon_held)
   const [addonsScope, setAddonsScope] = useState<UsageScopeKind | null>(null);
+  // the new end a renewal quote gave (which held add-ons it must extend);
+  // set to an equal value it does not re-render, so quoting does not loop
+  const [renewQuoteEnd, setRenewQuoteEnd] = useState<{ planId: string; months: number; endsAt: string } | null>(null);
   const [extraIds, setExtraIds] = useState<string[]>([]);
   const [extraQuote, setExtraQuote] = useState<UsageQuote | null>(null);
   const [extraError, setExtraError] = useState("");
@@ -318,9 +321,15 @@ export function BillingPage() {
   const heldKey = (scopeAddons?.held ?? []).map((h) => h.agent_id).sort().join(",");
   // a renewal pre-ticks only the held agents that would stop at the
   // package's end; one kept from a plan change beyond it does not need it
-  const extendKey = heldNeedingRenewal(scopeAddons?.held ?? [], scopeAddons?.subscription?.ends_at).sort().join(",");
+  // (against the renewal's new end once a quote gave it: the quote's end
+  // does not depend on the add-ons ticked, so re-pricing settles)
   const offeredKey = (plan?.addons ?? []).map((a) => a.agent_id).join(",");
   const planKey = plan?.id ?? "";
+  const renewalEnd =
+    !!planKey && planKey === currentPlanId && renewQuoteEnd?.planId === planKey && renewQuoteEnd.months === months
+      ? renewQuoteEnd.endsAt
+      : null;
+  const extendKey = heldNeedingRenewal(scopeAddons?.held ?? [], scopeAddons?.subscription?.ends_at, renewalEnd).sort().join(",");
   useEffect(() => {
     // a plan change leaves the held add-ons to the keep choice; only a
     // renewal of the plan in use ticks them as purchases
@@ -328,8 +337,10 @@ export function BillingPage() {
     setAddonIds((cur) =>
       addonIdsForPlan(cur, split(offeredKey), split(heldKey), !!planKey && planKey === currentPlanId, split(extendKey)),
     );
-    setKeepIds(null);
   }, [planKey, offeredKey, currentPlanId, heldKey, extendKey]);
+  useEffect(() => {
+    setKeepIds(null);
+  }, [planKey, offeredKey, currentPlanId, heldKey]);
   const renewing = !!plan && plan.id === currentPlanId;
   // the seats box starts from the seats of the current seat package: a
   // renewal may not buy fewer, a seat→seat change keeps the members' seats
@@ -410,6 +421,12 @@ export function BillingPage() {
           if (!alive) return;
           setQuote(q);
           setQuoteError("");
+          if (!q.replaces && q.subscription_ends_at) {
+            const endsAt = q.subscription_ends_at;
+            setRenewQuoteEnd((cur) =>
+              cur?.planId === planId && cur.months === months && cur.endsAt === endsAt ? cur : { planId, months, endsAt },
+            );
+          }
         })
         .catch((e) => {
           if (!alive) return;

@@ -111,7 +111,13 @@ export function addonIdsForPlan(
 ): string[] {
   const ok = new Set(offered);
   const kept = cur.filter((id) => ok.has(id));
-  if (renewing) return [...new Set([...kept, ...extend])].filter((id) => ok.has(id));
+  if (renewing) {
+    // a held agent the renewal does not need to extend (held past its new
+    // end) is not a purchase: the server would refuse it (addon_held)
+    const ext = new Set(extend);
+    const covered = new Set(held.filter((id) => !ext.has(id)));
+    return [...new Set([...kept.filter((id) => !covered.has(id)), ...extend])].filter((id) => ok.has(id));
+  }
   const isHeld = new Set(held);
   return kept.filter((id) => !isHeld.has(id));
 }
@@ -124,18 +130,26 @@ function endTime(v: string | null | undefined): number | null {
   return Number.isNaN(t) ? null : t;
 }
 
-/** The held add-ons a renewal pre-ticks: those whose right ends on or
- * before the package's end (or runs with it, no end of its own) and so
- * stops unless the renewal extends it. One already held beyond the
- * package's end (kept from a plan change) is left unticked: it does not
- * need extending, and the server refuses it (addon_held) when the renewal
- * does not reach past its end. */
-export function heldNeedingRenewal(held: HeldRight[], subEndsAt: string | null | undefined): string[] {
+/** The held add-ons a renewal pre-ticks: those whose right ends before
+ * the renewal's new end (renewalEndsAt, the quoted subscription_ends_at
+ * once known) or runs with the package (no end of its own), so it stops
+ * unless the renewal extends it. Until the new end is known, those ending
+ * on or before the package's current end. One already held to the new end
+ * or beyond (kept from a plan change) is left unticked: the server refuses
+ * it (addon_held). */
+export function heldNeedingRenewal(
+  held: HeldRight[],
+  subEndsAt: string | null | undefined,
+  renewalEndsAt?: string | null,
+): string[] {
   const sub = endTime(subEndsAt);
+  const next = endTime(renewalEndsAt);
   return held
     .filter((h) => {
       const end = endTime(h.ends_at);
-      return sub === null || end === null || end <= sub;
+      if (end === null) return true;
+      if (next !== null) return end < next;
+      return sub === null || end <= sub;
     })
     .map((h) => h.agent_id);
 }

@@ -160,6 +160,21 @@ describe("heldNeedingRenewal", () => {
     // the renewal ticks only those
     assert.deepEqual(addonIdsForPlan([], ["kept", "with"], ["kept", "with"], true, heldNeedingRenewal(held, subEnd)), ["with"]);
   });
+  it("uses the renewal's new end once the quote gave it (LOW-5)", () => {
+    const newEnd = "2027-01-03T17:00:00Z";
+    const held = [
+      { agent_id: "until-dec", ends_at: "2026-12-20T17:00:00Z" }, // after the current end, before the new one
+      { agent_id: "until-new", ends_at: newEnd }, // already to the new end
+      { agent_id: "beyond", ends_at: "2027-02-01T17:00:00Z" },
+      { agent_id: "with", ends_at: null },
+    ];
+    assert.deepEqual(heldNeedingRenewal(held, subEnd), ["with"]);
+    assert.deepEqual(heldNeedingRenewal(held, subEnd, newEnd), ["until-dec", "with"]);
+  });
+  it("drops a held agent the renewal does not need from the ticks", () => {
+    // "beyond" was ticked under a longer renewal; a shorter one covers it no more
+    assert.deepEqual(addonIdsForPlan(["beyond", "b"], ["beyond", "b", "x"], ["beyond", "x"], true, ["x"]), ["b", "x"]);
+  });
   it("ticks every held agent when the package has no end", () => {
     assert.deepEqual(heldNeedingRenewal([{ agent_id: "a", ends_at: "2027-01-31T17:00:00Z" }], null), ["a"]);
   });

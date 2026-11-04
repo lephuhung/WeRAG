@@ -78,25 +78,34 @@ func paidAt(o *types.UsageOrder) time.Time {
 //
 //	net × units taken / units of the piece × unused days / days of the period
 //
-// rounded down, where unused days are the Vietnamese calendar days of the
-// period after today (today has started and is not given back) up to the
-// end being credited, and the period's days count its first day (charges
-// count today). A piece never returns more than its net, and the pieces
-// of one line cover disjoint time, so a credit never gives back more than
-// was paid for the remaining time — whatever the length of the months (a
+// rounded down. net is what the order paid for the piece in cash or
+// applied credit, after its promo code; unused days are the Vietnamese
+// calendar days of the period after today (today has started and is not
+// given back) up to the end being credited; the period's days count its
+// first day (charges count today). A piece never returns more than its
+// net, and the pieces of one line cover disjoint time, so a credit never
+// gives back more than was paid (in cash or applied credit) for the
+// remaining time — whatever the length of the months (a
 // 31-day month is not worth 31/30 of its price) or the promo code.
 
-// paidPiece is money an order paid for units [lo, hi) over [start, end).
+// paidPiece is money an order paid for units [lo, hi) over [start, end),
+// in cash or applied credit (a plan change's credit is money paid earlier),
+// after its promo code.
 // minDays: the days the piece was priced for when that is longer than the
 // span (a proration quoted before it was confirmed).
+// upTo (when > 0) keeps only units below it creditable without changing
+// the piece's per-unit value: a piece of a replaced package counts only
+// the units carried over (the others were credited at that change).
 type paidPiece struct {
 	lo, hi     int
 	net        int64
 	start, end time.Time
 	minDays    int
+	upTo       int
 }
 
-// netPaid is part of order o after its promo code (paidFactor), rounded down.
+// netPaid is part of order o after its promo code (paidFactor), rounded
+// down: what was paid for it in cash or applied credit.
 func netPaid(o *types.UsageOrder, part int64) int64 {
 	if part <= 0 {
 		return 0
@@ -147,6 +156,9 @@ func piecesCredit(pieces []paidPiece, total, take int, now, until time.Time) (am
 		}
 		if hi > total {
 			hi = total
+		}
+		if p.upTo > 0 && hi > p.upTo {
+			hi = p.upTo
 		}
 		if hi <= lo {
 			continue
@@ -325,10 +337,10 @@ func addonPieces(orders []*types.UsageOrder, spans map[string]orderSpan, agentID
 	return out
 }
 
-// paidOrdersBySub are the paid orders of sub's scope applied to the
-// subscriptions ids, oldest first, grouped by subscription.
+// paidOrdersBySub are the paid orders of sub's scope, oldest first,
+// grouped by the subscription they were applied to.
 func (s *usageBillingService) paidOrdersBySub(
-	ctx context.Context, sub *types.UsageSubscription, ids ...string,
+	ctx context.Context, sub *types.UsageSubscription,
 ) (map[string][]*types.UsageOrder, error) {
 	orders, err := s.repo.ListOrders(ctx, types.UsageOrderFilter{
 		ScopeType: sub.ScopeType, ScopeID: sub.ScopeID, Status: types.UsageOrderPaid,
@@ -336,13 +348,9 @@ func (s *usageBillingService) paidOrdersBySub(
 	if err != nil {
 		return nil, err
 	}
-	want := map[string]bool{}
-	for _, id := range ids {
-		want[id] = true
-	}
 	out := map[string][]*types.UsageOrder{}
 	for _, o := range orders {
-		if o.SubscriptionID == nil || !want[*o.SubscriptionID] {
+		if o.SubscriptionID == nil {
 			continue
 		}
 		out[*o.SubscriptionID] = append(out[*o.SubscriptionID], o)
@@ -360,6 +368,45 @@ func (s *usageBillingService) paidOrdersBySub(
 	return out, nil
 }
 
+// addonChainMaxDepth bounds the walk back through replaced packages.
+const addonChainMaxDepth = 16
+
+// addonChain is the subscriptions a held right of agent on sub may have
+// been paid on, each with the units still creditable there (0 = all): sub
+// itself, then — through the plan-change order that started each one
+// (ReplacesSubscriptionID) — the packages it replaced, as long as that
+// change carried the agent over (a dropped agent was credited then: the
+// walk stops). A change to fewer units credited the units not carried, so
+// the replaced package's pieces count only up to the units carried. Cycles
+// and chains longer than addonChainMaxDepth stop the walk.
+func addonChain(bySub map[string][]*types.UsageOrder, subID, agentID string) map[string]int {
+	out := map[string]int{subID: 0}
+	upTo := 0
+	cur := subID
+	for depth := 0; depth < addonChainMaxDepth; depth++ {
+		var first *types.UsageOrder
+		for _, o := range bySub[cur] {
+			if o.Kind != types.UsageOrderKindAddon && o.Kind != types.UsageOrderKindSeats {
+				first = o
+				break
+			}
+		}
+		if first == nil || first.ReplacesSubscriptionID == nil || first.CreditLines.DroppedAddons()[agentID] {
+			break
+		}
+		prev := *first.ReplacesSubscriptionID
+		if _, seen := out[prev]; seen {
+			break
+		}
+		if u := addonUnits(first.Mode, first.Seats); upTo == 0 || u < upTo {
+			upTo = u
+		}
+		out[prev] = upTo
+		cur = prev
+	}
+	return out
+}
+
 // planCreditLine values the unused days of cur: what each paid order on it
 // (plan orders, the seats renewals and seat orders added) paid for the time
 // after today, at the price and promo of that order; seats no order paid
@@ -373,7 +420,7 @@ func (s *usageBillingService) planCreditLine(
 		return line, nil
 	}
 	line.Days = creditDays(now, *cur.EndsAt)
-	bySub, err := s.paidOrdersBySub(ctx, cur, cur.ID)
+	bySub, err := s.paidOrdersBySub(ctx, cur)
 	if err != nil {
 		return line, err
 	}
@@ -386,9 +433,10 @@ func (s *usageBillingService) planCreditLine(
 // addonCreditLine values the unused days, up to end, of the newest `take`
 // of the heldUnits units of a held add-on (all of them when the order drops
 // it, the units not carried over when it keeps it on fewer seats): what the
-// paid orders of sub — and of the subscription the order that last granted
-// it was applied to, for a right carried over from a replaced package —
-// paid for it after today. Units no order paid for are worth nothing.
+// paid orders of sub and of the packages it replaced that carried the
+// agent over (addonChain; a right kept and bought again on a plan change
+// names the new order only) paid for it after today, in cash or applied
+// credit. Units no order paid for are worth nothing.
 func (s *usageBillingService) addonCreditLine(
 	ctx context.Context, h *types.UsageSubscriptionAddon, sub *types.UsageSubscription,
 	heldUnits, take int, end, now time.Time,
@@ -400,24 +448,45 @@ func (s *usageBillingService) addonCreditLine(
 	if sub == nil {
 		return line, nil
 	}
-	ids := []string{sub.ID}
+	bySub, err := s.paidOrdersBySub(ctx, sub)
+	if err != nil {
+		return line, err
+	}
+	// sub, the packages it replaced that carried the agent over (a right
+	// kept and bought again on a plan change now names the new order), and
+	// the package of the order that last granted it
+	chain := addonChain(bySub, sub.ID, h.AgentID)
 	if h.OrderID != nil {
 		o, err := s.repo.GetOrder(ctx, *h.OrderID)
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return line, err
 		}
-		if err == nil && o.Status == types.UsageOrderPaid && o.SubscriptionID != nil && *o.SubscriptionID != sub.ID {
-			ids = append(ids, *o.SubscriptionID)
+		if err == nil && o.Status == types.UsageOrderPaid && o.SubscriptionID != nil {
+			if _, ok := chain[*o.SubscriptionID]; !ok {
+				// outside the chain (an older order without the replaced
+				// package recorded): only the fewest units carried count
+				least := 0
+				for id, u := range chain {
+					if id != sub.ID && u > 0 && (least == 0 || u < least) {
+						least = u
+					}
+				}
+				chain[*o.SubscriptionID] = least
+			}
 		}
 	}
-	bySub, err := s.paidOrdersBySub(ctx, sub, ids...)
-	if err != nil {
-		return line, err
+	ids := make([]string, 0, len(chain))
+	for id := range chain {
+		ids = append(ids, id)
 	}
+	sort.Strings(ids)
 	var pieces []paidPiece
 	for _, id := range ids {
 		orders := bySub[id]
-		pieces = append(pieces, addonPieces(orders, orderSpans(orders), h.AgentID)...)
+		for _, p := range addonPieces(orders, orderSpans(orders), h.AgentID) {
+			p.upTo = chain[id]
+			pieces = append(pieces, p)
+		}
 	}
 	line.AmountVND, line.Paid = piecesCredit(pieces, heldUnits, take, now, end)
 	return line, nil

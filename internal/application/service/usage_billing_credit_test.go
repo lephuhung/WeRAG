@@ -191,6 +191,30 @@ func TestPlanCreditNeverExceedsPaidProperty(t *testing.T) {
 				AddonAgentIDs: addons, PromoCode: promo()})
 			seats += add
 		}
+		// LOW-1: a chained plan change (the credit then rides on the
+		// replaced package's money as applied credit), to a seat plan,
+		// keeping or dropping the add-on, sometimes buying it again
+		if rng.Intn(2) == 0 {
+			clock = clock.Add(time.Duration(1+rng.Intn(48)) * time.Hour)
+			if clock.Before(end()) {
+				keep := []string{}
+				if rng.Intn(2) == 0 {
+					keep = []string{"thue"}
+				}
+				var again []string
+				if len(addons) > 0 && rng.Intn(3) == 0 {
+					again = []string{"thue"}
+				}
+				req := types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "term", Months: []int{1, 3}[rng.Intn(2)],
+					Seats: 1 + rng.Intn(4), AddonAgentIDs: again, KeepAddonAgentIDs: &keep, PromoCode: promo()}
+				if o, err := f.svc.CreateOrder(context.Background(), req, "10003", "u1"); err == nil {
+					_, err = f.svc.ConfirmOrder(context.Background(), o.ID, "sa")
+					require.NoError(t, err)
+				}
+			}
+		}
+		// bounded by the cash of all orders (credit applied on a change is
+		// that same money again, not new money)
 		paid := paidTotal(f)
 		last := int64(-1)
 		for clock.Before(end()) {
@@ -229,5 +253,61 @@ func TestPiecesCreditBoundedProperty(t *testing.T) {
 		amount, _ := piecesCredit(pieces, total, rng.Intn(10), now, now.Add(time.Duration(rng.Intn(4000))*time.Hour))
 		require.GreaterOrEqual(t, amount, int64(0))
 		require.LessOrEqual(t, amount, nets)
+	}
+}
+
+// Fable MED-1: a right kept and bought again on a plan change names the new
+// order, but the replaced package's paid time still backs it. A (pool, 3
+// months + thue) → B (seat, thue kept and bought again to 14/4) → C (term,
+// thue carried) → dropped: the credit counts A's unused time too.
+func TestAddonCreditFollowsReplacedPackages(t *testing.T) {
+	f := newBillingFixture(t)
+	withAddonCatalogue(f)
+	clock := billingNow
+	f.svc.now = func() time.Time { return clock }
+	a := f.buy(t, types.UsageQuoteRequest{PlanID: "pool", Months: 3, AddonAgentIDs: []string{"thue"}})
+	require.Equal(t, int64(297_000), a.Addons[0].AmountVND) // 13/10–13/1, 93 days
+	keep := []string{"thue"}
+	clock = clock.AddDate(0, 0, 1)
+	b := f.buy(t, types.UsageQuoteRequest{PlanID: "seat", Months: 6, Seats: 1, AddonAgentIDs: keep, KeepAddonAgentIDs: &keep})
+	bThue := b.Addons[0].AmountVND // 14/1–14/4 (91 days), priced by the add-on remainder rule
+	require.Positive(t, bThue)
+	require.Equal(t, b.ID, *f.right(*b.SubscriptionID, "thue").OrderID, "the right now names B's order")
+	clock = clock.AddDate(0, 0, 1)
+	c := f.buy(t, types.UsageQuoteRequest{PlanID: "term", Months: 1, Seats: 1, KeepAddonAgentIDs: &keep})
+	require.Empty(t, c.Addons)
+	require.Equal(t, endOfVN(2027, 4, 14), *f.right(*c.SubscriptionID, "thue").EndsAt)
+
+	clock = clock.AddDate(0, 0, 1) // 16/10: 17/10–13/1 = 89 days of A's 93
+	var thue *types.UsageCreditLine
+	lines := f.changeCredit(t)
+	for i := range lines {
+		if lines[i].AgentID == "thue" {
+			thue = &lines[i]
+		}
+	}
+	require.NotNil(t, thue)
+	require.Equal(t, int64(297_000*89/93)+bThue, thue.AmountVND, "A's unused time (284.225) + all of B's, not B's alone")
+	require.LessOrEqual(t, thue.AmountVND, 297_000+bThue, "the money behind the right")
+	require.LessOrEqual(t, lines.Total(), paidTotal(f), "never more than the cash of all orders")
+
+	// dropped on a change (credited then) and bought again: the old
+	// package's time is not counted a second time
+	g := newBillingFixture(t)
+	withAddonCatalogue(g)
+	clock = billingNow
+	g.svc.now = func() time.Time { return clock }
+	g.buy(t, types.UsageQuoteRequest{PlanID: "pool", Months: 3, AddonAgentIDs: []string{"thue"}})
+	none := []string{}
+	clock = clock.AddDate(0, 0, 1)
+	gb := g.buy(t, types.UsageQuoteRequest{PlanID: "seat", Months: 6, Seats: 1, KeepAddonAgentIDs: &none})
+	require.True(t, gb.CreditLines.DroppedAddons()["thue"])
+	add := g.buy(t, types.UsageQuoteRequest{Kind: types.UsageOrderKindAddon, AddonAgentIDs: []string{"thue"}})
+	clock = clock.AddDate(0, 0, 1)
+	for _, l := range g.changeCredit(t) {
+		if l.AgentID == "thue" {
+			require.LessOrEqual(t, l.AmountVND, add.Addons[0].AmountVND, "only the add-on order bought on B")
+			require.Positive(t, l.AmountVND)
+		}
 	}
 }
