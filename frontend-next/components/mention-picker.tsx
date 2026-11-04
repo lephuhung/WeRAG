@@ -6,6 +6,7 @@ import { useT } from "@/lib/i18n";
 import { useChatContext, type MentionRequestItem, type MentionType } from "@/lib/chat-context";
 import { IconDoc } from "@/components/icons";
 import { FileTypeIcon } from "@/components/files/file-type-icon";
+import { ClickAwayLayer } from "@/components/click-away-layer";
 
 /* Ports MentionSelector.vue + the @-menu half of Input-field.vue:
  * - button opens a grouped picker (KB / file / tag / MCP / skill)
@@ -169,7 +170,7 @@ export function MentionPicker({
   const groups: MentionType[] = ["document", "kb", "file", "tag", "mcp", "skill"];
   return (
     <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <ClickAwayLayer onClose={onClose} />
       <div className="card absolute bottom-full left-0 z-50 mb-2 max-h-[320px] w-[360px] max-w-[calc(100vw-2.5rem)] overflow-hidden shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
         <div className="shrink-0 border-b border-hairline p-1.5">
           <div className="relative">

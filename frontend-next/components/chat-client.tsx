@@ -2313,6 +2313,13 @@ function ChatBody({ id }: { id: string }) {
    * editor sits next to the chat there, so the column stays narrow. */
   const compact = ctx.isMobile || isDocumentAssistant;
 
+  /* The idle "check the format" trigger. A running check shows the progress
+   * ring instead — that one has to stay in the toolbar, so only the trigger
+   * may move into the attach menu when the composer is too narrow for it. */
+  const formatCheckTrigger =
+    isDocumentAssistant && !formatCheck && id !== "new" &&
+    (spellingStatus?.phase === "done" || spellingStatus?.phase === "failed");
+
   const templatePicker = (
     <DocumentTemplatePicker
       disabled={busy}
@@ -2556,12 +2563,12 @@ function ChatBody({ id }: { id: string }) {
             documents={isDocumentAssistant ? documentMentionOptions : undefined}
             uploadsBecomeSources={isDocumentAssistant}
             onOpenAttachmentForEditing={isDocumentAssistant ? (a) => void openAttachmentForEditing(a) : undefined}
+            toolbarStartMovable={formatCheckTrigger}
             toolbarStart={
               <>
-                {isDocumentAssistant && !formatCheck && id !== "new" &&
-                  (spellingStatus?.phase === "done" || spellingStatus?.phase === "failed") && (
-                    <FormatCheckButton iconOnly busy={false} onClick={() => void startFormatCheck()} />
-                  )}
+                {formatCheckTrigger && (
+                  <FormatCheckButton iconOnly busy={false} onClick={() => void startFormatCheck()} />
+                )}
                 {isDocumentAssistant && formatCheck && (
                   <FormatCheckRing
                     placement="above"

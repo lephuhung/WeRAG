@@ -14,6 +14,7 @@ import { FileTypeIcon } from "@/components/files/file-type-icon";
 import { DOC_MENTION_COLOR, DocMentionIcon } from "@/components/doc-mention";
 import { documentsNamedIn, splitDocumentMentions } from "@/lib/document-mentions";
 import { ErrorNote } from "@/components/chat/error-note";
+import { ClickAwayLayer } from "@/components/click-away-layer";
 
 /* Ports Input-field.vue's composer: textarea + @mention picker + image/file
  * attachments + agent-mode switch + websearch toggle + model picker + send/stop.
@@ -23,6 +24,30 @@ import { ErrorNote } from "@/components/chat/error-note";
 
 /* The composer field grows with the text, up to this height (px). */
 const COMPOSER_MAX_HEIGHT = 160;
+
+/* Below this content width the toolbar has no room for an extra trigger next
+ * to the attachment/web buttons: the format check moves into the attach menu.
+ * Same number as the `@min-[400px]:` classes below — the CSS tiers restyle,
+ * this one decides *where* a control is rendered. */
+const COMPOSER_NARROW_PX = 400;
+
+/* The composer is sized by the room it actually gets, not by the window.
+ *
+ * It lives in a 712 px chat column on a 1024 px laptop, but in the document
+ * assistant it shares the page with the editor and gets ~330-510 px — where
+ * viewport breakpoints (`sm:`, `min-[400px]:`) read the window and lie: the
+ * toolbar kept its full-size labels inside a narrow pane and the mode pill
+ * was squeezed down to an ellipsis. The card is a container-query context
+ * (`@container`) and every size below reads its own width. Container queries
+ * measure the **content box**, so a `p-3` card reaches a 400px threshold when
+ * its border box is ~426px:
+ *
+ *  · < 400px  narrow  — icon-only Web, 28px controls, 32px send, pill ≤ 120px
+ *  · 400-559  medium  — Web shows its label, 32px controls, 36px send
+ *  · ≥ 560px  wide    — 16px padding and 8px gaps, pill ≤ 240px
+ *
+ * The thresholds are the numbers the class names below spell out; keep them
+ * in step when one changes. */
 
 /* useLayoutEffect warns when the component is rendered on the server. */
 const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
@@ -61,6 +86,7 @@ export function Composer({
   onOpenAttachmentForEditing,
   sendRequest = null,
   toolbarStart = null,
+  toolbarStartMovable = false,
   toolbarEnd = null,
 }: {
   sessionId?: string;
@@ -92,6 +118,9 @@ export function Composer({
   sendRequest?: { text: string; seq: number } | null;
   /** Extra document tools after attachment and web search. */
   toolbarStart?: ReactNode;
+  /** This trigger may move into the attach menu when the composer is narrow
+   *  (a status ring showing progress must stay in the toolbar). */
+  toolbarStartMovable?: boolean;
   /** Shown just before the send button (e.g. the context usage ring). */
   toolbarEnd?: ReactNode;
 }) {
@@ -109,6 +138,28 @@ export function Composer({
   const [attachOpen, setAttachOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightRef = useRef<HTMLDivElement>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  /* The card's own width, read the way the container queries read it (content
+   * box), so a control can be rendered in the menu instead of the toolbar on
+   * the narrow tiers. Layout effect + ResizeObserver: the measurement lands
+   * before the first paint and follows the document editor's split drag. */
+  const [narrowCard, setNarrowCard] = useState(false);
+  useIsomorphicLayoutEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    /* Read the content box once up front (same number a container query
+     * sees) so the first paint already has the control in the right place;
+     * the observer then follows the document editor's split drag. */
+    const cs = getComputedStyle(el);
+    const contentWidth = () => el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    setNarrowCard(contentWidth() < COMPOSER_NARROW_PX);
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(([entry]) => setNarrowCard(entry.contentRect.width < COMPOSER_NARROW_PX));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const toolbarStartInMenu = narrowCard && toolbarStartMovable && toolbarStart !== null;
 
   useEffect(() => {
     if (autoFocus) textareaRef.current?.focus();
@@ -307,13 +358,13 @@ export function Composer({
   const agentControl = isGuest ? (
     // fixed: a guest chats with the public-lookup assistant only
     <span
-      className="flex h-7 min-w-0 max-w-[160px] items-center rounded-full bg-accent-surface px-2.5 text-[12.5px] font-medium text-accent sm:max-w-[260px]"
+      className="flex h-7 min-w-0 max-w-[160px] items-center rounded-full bg-accent-surface px-2.5 text-[12.5px] font-medium text-accent @min-[400px]:h-8 @min-[560px]:max-w-[260px]"
       title={t("guest.agentLocked")}
     >
       <span className="min-w-0 truncate">{selectedAgent?.name ?? t("guest.agentName")}</span>
     </span>
   ) : (
-    <div className={`relative min-w-0 [&>button]:max-w-full ${uploadsBecomeSources ? "" : "max-w-[160px] sm:max-w-[240px]"}`}>
+    <div className={`relative min-w-0 [&>button]:max-w-full ${uploadsBecomeSources ? "" : "max-w-[160px] @min-[560px]:max-w-[240px]"}`}>
       <AgentModeButton locked={!!agentLockFileName} onOpen={() => { closePopups(); setAgentOpen(true); }} />
       {agentLockFileName ? (
         <AgentLockNotice open={agentOpen} fileName={agentLockFileName} onClose={() => setAgentOpen(false)} />
@@ -335,12 +386,12 @@ export function Composer({
             : t("composer.webSearchOff")
           : t("composer.webSearchUnavailable")
       }
-      className={`flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full text-[12.5px] font-medium transition-colors ${uploadsBecomeSources ? "w-7 justify-center" : "w-7 justify-center min-[400px]:w-auto min-[400px]:px-2 sm:px-2.5"} ${
+      className={`flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full text-[12.5px] font-medium transition-colors @min-[400px]:h-8 ${uploadsBecomeSources ? "w-7 justify-center @min-[400px]:w-8" : "w-7 justify-center @min-[400px]:w-auto @min-[400px]:px-2 @min-[560px]:px-2.5"} ${
         websearchOn ? "bg-accent-surface text-accent" : "text-muted hover:bg-surface-strong hover:text-ink"
       } ${webSearchReady ? "" : "opacity-50"}`}
     >
       <IconGlobe className="h-3.5 w-3.5 shrink-0" />
-      {!uploadsBecomeSources && <span className="hidden min-[400px]:inline">{t("composer.webLabel")}</span>}
+      {!uploadsBecomeSources && <span className="hidden @min-[400px]:inline">{t("composer.webLabel")}</span>}
     </button>
   );
   const attachmentControl = (
@@ -361,7 +412,7 @@ export function Composer({
               ? t("composer.attachFiles")
               : t("composer.attachAfterSession")
         }
-        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors ${
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors @min-[400px]:h-8 @min-[400px]:w-8 ${
           images.length + attachments.length > 0 ? "bg-surface-strong text-ink" : "text-muted hover:bg-surface-strong hover:text-ink"
         }`}
       >
@@ -372,7 +423,7 @@ export function Composer({
       </button>
       {attachOpen && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setAttachOpen(false)} />
+          <ClickAwayLayer onClose={() => setAttachOpen(false)} />
           <div className="card absolute bottom-full left-0 z-50 mb-2 w-[230px] p-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
             <button
               onClick={() => {
@@ -406,6 +457,17 @@ export function Composer({
                 </span>
               </span>
             </button>
+            {toolbarStartInMenu && (
+              // The toolbar trigger, one tap away instead of taking the row's
+              // last free pixels (see COMPOSER_NARROW_PX). The click still
+              // lands on `toolbarStart` itself — this row only names it.
+              <div className="mt-1 border-t border-hairline pt-1" onClickCapture={() => setAttachOpen(false)}>
+                <div className="flex w-full items-center gap-2.5 rounded-md2 px-3 py-2 text-left text-[13px] text-body">
+                  {toolbarStart}
+                  <span className="min-w-0 flex-1 truncate leading-tight">{t("docws.fcStart")}</span>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -414,7 +476,8 @@ export function Composer({
 
   return (
     <div
-      className={`card relative flex flex-col gap-2 focus-within:ring-2 focus-within:ring-ink/25 ${compact ? "p-2.5" : "p-3 sm:p-4"}`}
+      ref={cardRef}
+      className={`card @container relative flex flex-col gap-2 focus-within:ring-2 focus-within:ring-ink/25 ${compact ? "p-2.5 @min-[560px]:p-3" : "p-3 @min-[560px]:p-4"}`}
       onClick={() => closePopups()}
     >
       {images.length > 0 && (
@@ -545,18 +608,18 @@ export function Composer({
         />}
       </div>
 
-      <div data-composer-toolbar className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+      <div data-composer-toolbar className="flex items-center gap-1.5 @min-[400px]:gap-2" onClick={(e) => e.stopPropagation()}>
         {/* One row on every width: the left group never wraps (a second row
             left the send button floating between the two). On a narrow phone
             the agent name truncates and Web shows only its globe. */}
-        <div className={uploadsBecomeSources ? "flex shrink-0 items-center gap-1.5" : "flex min-w-0 flex-1 flex-nowrap items-center gap-1 sm:gap-2"}>
+        <div className={uploadsBecomeSources ? "flex shrink-0 items-center gap-1.5 @min-[560px]:gap-2" : "flex min-w-0 flex-1 flex-nowrap items-center gap-1 @min-[560px]:gap-2"}>
           {isGuest ? (
             // no web search, attachments or images for a guest
-            <>{agentControl}{toolbarStart}</>
+            <>{agentControl}{!toolbarStartInMenu && toolbarStart}</>
           ) : uploadsBecomeSources ? (
-            <>{attachmentControl}{webControl}{toolbarStart}</>
+            <>{attachmentControl}{webControl}{!toolbarStartInMenu && toolbarStart}</>
           ) : (
-            <>{agentControl}{webControl}{attachmentControl}{toolbarStart}</>
+            <>{agentControl}{webControl}{attachmentControl}{!toolbarStartInMenu && toolbarStart}</>
           )}
 
           <DictationButton
@@ -569,14 +632,14 @@ export function Composer({
           />
         </div>
 
-        <div className={uploadsBecomeSources ? "relative ml-auto flex min-w-0 flex-1 items-center justify-end gap-1.5" : "relative ml-auto flex shrink-0 items-center gap-2"}>
+        <div className={uploadsBecomeSources ? "relative ml-auto flex min-w-0 flex-1 items-center justify-end gap-1 @min-[400px]:gap-1.5 @min-[560px]:gap-2" : "relative ml-auto flex shrink-0 items-center gap-2"}>
           {toolbarEnd}
           {uploadsBecomeSources && agentControl}
           {showStop ? (
             <button
               type="button"
               onClick={() => onStop?.()}
-              className="btn btn-outline h-9 shrink-0"
+              className="btn btn-outline h-8 shrink-0 @min-[400px]:h-9"
               title={t("composer.stopTitle")}
               aria-label={t("composer.stopTitle")}
             >
@@ -587,7 +650,7 @@ export function Composer({
               type="button"
               onClick={() => submit()}
               disabled={!value.trim() || isReplying}
-              className="btn btn-primary h-9 w-9 shrink-0 p-0! disabled:opacity-40"
+              className="btn btn-primary h-8 w-8 shrink-0 p-0! disabled:opacity-40 @min-[400px]:h-9 @min-[400px]:w-9"
               title={t("composer.sendTitle")}
               aria-label={t("composer.send")}
             >

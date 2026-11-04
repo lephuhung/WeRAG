@@ -12,6 +12,7 @@ import { useT } from "@/lib/i18n";
 import { IconChevronDown, IconLock } from "@/components/icons";
 import Link from "next/link";
 import { useDialogFocus } from "@/components/use-dialog-focus";
+import { ClickAwayLayer } from "@/components/click-away-layer";
 
 /* Ports AgentSelector.vue: builtin quick-answer / smart-reasoning + custom
  * agents. Selecting writes selectedAgentId into the chat context, mirroring
@@ -28,7 +29,7 @@ export function AgentModeButton({ onOpen, locked = false }: { onOpen: () => void
       onClick={onOpen}
       aria-haspopup="dialog"
       aria-pressed={isAgentStreamMode}
-      className={`flex h-7 max-w-[120px] items-center gap-1.5 rounded-full px-2.5 text-[12.5px] font-medium transition-colors sm:max-w-[240px] ${
+      className={`flex h-7 max-w-[120px] items-center gap-1 rounded-full px-2 text-[12.5px] font-medium transition-colors @min-[400px]:h-8 @min-[400px]:max-w-[160px] @min-[400px]:gap-1.5 @min-[400px]:px-2.5 @min-[560px]:max-w-[240px] ${
         isAgentStreamMode
           ? "bg-accent-surface text-accent"
           : "text-body hover:bg-surface-strong hover:text-ink"
@@ -61,7 +62,7 @@ export function AgentLockNotice({
   if (!open) return null;
   return (
     <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <ClickAwayLayer onClose={onClose} />
       <div
         role="dialog"
         aria-label={t("docws.modeLockedShort")}
@@ -114,7 +115,7 @@ export function AgentSelector({ open, onClose }: { open: boolean; onClose: () =>
 
   return (
     <>
-      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <ClickAwayLayer onClose={onClose} />
       <div ref={panelRef} role="dialog" aria-label={t("chat.agentPicker")} className="card absolute bottom-full left-0 z-50 mb-2 flex max-h-[320px] w-[300px] max-w-[calc(100vw-2.5rem)] flex-col overflow-hidden shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
         <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
           {quick && (

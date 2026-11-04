@@ -93,7 +93,7 @@ export function DictationButton({
       disabled={disabled || state === "starting"}
       title={listening ? t("dictation.stop") : t("dictation.start")}
       aria-pressed={listening}
-      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50 ${
+      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50 @min-[400px]:h-8 @min-[400px]:w-8 ${
         listening ? "animate-pulse bg-error/15 text-error" : "text-muted hover:bg-surface-strong hover:text-ink"
       }`}
     >
