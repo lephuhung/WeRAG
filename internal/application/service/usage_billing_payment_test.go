@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -215,4 +217,32 @@ func TestPaymentRequestValidation(t *testing.T) {
 		_, err := f.svc.RecordPayment(context.Background(), req, nil)
 		require.Error(t, err, "%+v", req)
 	}
+}
+
+// e2e review: fields stored in length-limited columns are refused with a
+// 400 and a reason, not left to fail the insert with a 500.
+func TestPaymentRequestFieldLengths(t *testing.T) {
+	f := newBillingFixture(t)
+	long := func(n int) string { return strings.Repeat("9", n) }
+	for _, c := range []struct {
+		req   types.UsagePaymentWebhookRequest
+		field string
+	}{
+		{types.UsagePaymentWebhookRequest{Source: "ok", TransactionID: "1", AccountNo: long(65)}, "account_no"},
+		{types.UsagePaymentWebhookRequest{Source: "ok", TransactionID: long(129)}, "transaction_id"},
+		{types.UsagePaymentWebhookRequest{Source: long(33), TransactionID: "1"}, "source"},
+		{types.UsagePaymentWebhookRequest{Source: "ok", TransactionID: "1", Content: long(4001)}, "content"},
+	} {
+		_, err := f.svc.RecordPayment(context.Background(), c.req, nil)
+		appErr, ok := err.(*apperrors.AppError)
+		require.True(t, ok, "%v", err)
+		require.Equal(t, 400, appErr.HTTPCode)
+		d := appErr.Details.(map[string]interface{})
+		require.Equal(t, "field_too_long", d["reason"])
+		require.Equal(t, c.field, d["field"])
+	}
+	// at the limit (in characters, Vietnamese letters count once) it is stored
+	res := f.pay(t, types.UsagePaymentWebhookRequest{Source: "ok", TransactionID: strings.Repeat("đ", 128),
+		AccountNo: long(64), AmountVND: 1})
+	require.Equal(t, types.UsagePaymentIgnored, res.Transaction.Status, "not the receiving account")
 }

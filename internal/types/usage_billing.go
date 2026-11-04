@@ -179,6 +179,14 @@ type UsageOrder struct {
 	// another count (a seat order added seats meanwhile). nil = not priced
 	// against seats (and legacy orders).
 	PricedSeats *int `json:"priced_seats,omitempty"`
+	// PeriodStartsAt/ResultEndsAt are set when the order is confirmed: the
+	// time it bought (a fresh plan: [confirm, end); a renewal: [old end,
+	// new end); a seat order: [confirm, package end); an add-on order: the
+	// latest end its rights got). The plan-change credit values each order
+	// by the share of this period still unused; the receipt shows
+	// ResultEndsAt as what the order bought. nil on older orders.
+	PeriodStartsAt *time.Time `json:"period_starts_at,omitempty"`
+	ResultEndsAt   *time.Time `json:"result_ends_at,omitempty"`
 	// VAT invoice the buyer asked for (usage_billing_invoice.go): details
 	// editable until InvoiceIssuedAt is set by a SuperAdmin.
 	UsageOrderInvoice
@@ -312,8 +320,9 @@ type UsageOrderView struct {
 	TransferContent string `json:"transfer_content"`
 	QRURL           string `json:"qr_url"`
 	// The single-order view (GetOrder/GetOrderByCode) adds:
-	// SubscriptionEndsAt, the end of the package a paid order went into
-	// (while that subscription is active); ReceivedVND, what short
+	// SubscriptionEndsAt, the end a paid order bought (ResultEndsAt; older
+	// orders: the end of the package it went into, while that subscription
+	// is active); ReceivedVND, what short
 	// transfers for a pending order have brought so far (the QR then asks
 	// for the rest); LastPayment, the latest transfer matched to the order.
 	SubscriptionEndsAt *time.Time         `json:"subscription_ends_at,omitempty"`

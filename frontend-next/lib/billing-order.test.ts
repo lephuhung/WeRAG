@@ -7,9 +7,13 @@ import {
   billingErrorRetryable,
   billingServerMessage,
   defaultPlanSeats,
+  heldNeedingRenewal,
+  heldOutlivesPackage,
   orderAmountDue,
   orderPaymentHeld,
   orderPlanLineVND,
+  orderSummaryParts,
+  orderWasPaidFor,
   pendingPlanOrderCode,
   planNameAfterWord,
   preferredPlanId,
@@ -137,5 +141,83 @@ describe("orderPaymentHeld", () => {
     assert.equal(orderPaymentHeld({ total_vnd: 100, received_vnd: 100 }), true);
     assert.equal(orderPaymentHeld({ total_vnd: 100, received_vnd: 60, last_payment: { amount_vnd: 60, status: "underpaid", transacted_at: at } }), false);
     assert.equal(orderPaymentHeld({ total_vnd: 100 }), false);
+  });
+});
+
+describe("heldNeedingRenewal", () => {
+  const subEnd = "2026-12-03T17:00:00Z"; // end of 3/12 VN
+  it("pre-ticks the held agents that stop at the package end or run with it", () => {
+    const held = [
+      { agent_id: "with", ends_at: null },
+      { agent_id: "same", ends_at: subEnd },
+      { agent_id: "early", ends_at: "2026-11-20T17:00:00Z" },
+    ];
+    assert.deepEqual(heldNeedingRenewal(held, subEnd), ["with", "same", "early"]);
+  });
+  it("leaves a right held beyond the package end unticked (addon_held)", () => {
+    const held = [{ agent_id: "kept", ends_at: "2027-01-31T17:00:00Z" }, { agent_id: "with" }];
+    assert.deepEqual(heldNeedingRenewal(held, subEnd), ["with"]);
+    // the renewal ticks only those
+    assert.deepEqual(addonIdsForPlan([], ["kept", "with"], ["kept", "with"], true, heldNeedingRenewal(held, subEnd)), ["with"]);
+  });
+  it("uses the renewal's new end once the quote gave it (LOW-5)", () => {
+    const newEnd = "2027-01-03T17:00:00Z";
+    const held = [
+      { agent_id: "until-dec", ends_at: "2026-12-20T17:00:00Z" }, // after the current end, before the new one
+      { agent_id: "until-new", ends_at: newEnd }, // already to the new end
+      { agent_id: "beyond", ends_at: "2027-02-01T17:00:00Z" },
+      { agent_id: "with", ends_at: null },
+    ];
+    assert.deepEqual(heldNeedingRenewal(held, subEnd), ["with"]);
+    assert.deepEqual(heldNeedingRenewal(held, subEnd, newEnd), ["until-dec", "with"]);
+  });
+  it("drops a held agent the renewal does not need from the ticks", () => {
+    // "beyond" was ticked under a longer renewal; a shorter one covers it no more
+    assert.deepEqual(addonIdsForPlan(["beyond", "b"], ["beyond", "b", "x"], ["beyond", "x"], true, ["x"]), ["b", "x"]);
+  });
+  it("ticks every held agent when the package has no end", () => {
+    assert.deepEqual(heldNeedingRenewal([{ agent_id: "a", ends_at: "2027-01-31T17:00:00Z" }], null), ["a"]);
+  });
+});
+
+describe("heldOutlivesPackage", () => {
+  it("is true only for a right ending after the package", () => {
+    const end = "2026-12-03T17:00:00Z";
+    assert.equal(heldOutlivesPackage({ agent_id: "a", ends_at: "2027-01-31T17:00:00Z" }, end), true);
+    assert.equal(heldOutlivesPackage({ agent_id: "a", ends_at: end }, end), false);
+    assert.equal(heldOutlivesPackage({ agent_id: "a", ends_at: null }, end), false);
+    assert.equal(heldOutlivesPackage({ agent_id: "a", ends_at: "2027-01-31T17:00:00Z" }, null), false);
+  });
+});
+
+describe("orderSummaryParts", () => {
+  const l = {
+    length: () => "1 tháng",
+    seats: (n: number) => `${n} chỗ`,
+    addSeats: (n: number) => `thêm ${n} chỗ`,
+    addons: (n: number) => `${n} trợ lý`,
+  };
+  it("says a seat order's seats once", () => {
+    assert.equal(orderSummaryParts({ kind: "seats", mode: "seat", seats: 2, plan_name: "Go", addons: [] }, { ...l, length: () => "thêm chỗ" }).join(" · "), "Go · thêm 2 chỗ");
+  });
+  it("gives a plan order its length, seats and add-ons", () => {
+    assert.deepEqual(orderSummaryParts({ kind: "plan", mode: "seat", seats: 5, plan_name: "Go", addons: [addon(1)] }, l), ["Go", "1 tháng", "5 chỗ", "1 trợ lý"]);
+    assert.deepEqual(orderSummaryParts({ kind: "plan", mode: "pool", seats: 0, plan_name: "Gói cơ bản", addons: [] }, l), ["Gói cơ bản", "1 tháng"]);
+  });
+  it("gives an add-on order its kind only", () => {
+    assert.deepEqual(orderSummaryParts({ kind: "addon", mode: "pool", seats: 0, plan_name: "Go", addons: [addon(1)] }, { ...l, length: () => "trợ lý chuyên ngành" }), ["Go", "trợ lý chuyên ngành"]);
+  });
+});
+
+describe("orderWasPaidFor", () => {
+  it("is false for a 0-đồng order (confirmed, not paid)", () => {
+    assert.equal(orderWasPaidFor({ total_vnd: 0 }), false);
+    assert.equal(orderWasPaidFor({ total_vnd: 49_000 }), true);
+  });
+});
+
+describe("planNameAfterWord on the receipt's plan line", () => {
+  it("does not repeat the word", () => {
+    assert.equal(`Gói ${planNameAfterWord("Gói cơ bản", "gói")}`, "Gói cơ bản");
   });
 });

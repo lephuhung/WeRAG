@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -18,6 +19,11 @@ import (
 const (
 	usagePaymentMaxSourceLen     = 32
 	usagePaymentMaxExternalIDLen = 128
+	// usagePaymentMaxAccountNoLen is usage_payment_transactions.account_no
+	// (VARCHAR(64)); usagePaymentMaxContentLen bounds the transfer content
+	// (TEXT, but a bank description is a few hundred characters at most).
+	usagePaymentMaxAccountNoLen = 64
+	usagePaymentMaxContentLen   = 4000
 	// usagePaymentMaxCodes bounds the lookups for one transfer content.
 	usagePaymentMaxCodes = 5
 )
@@ -74,8 +80,11 @@ func (s *usageBillingService) newPaymentTransaction(
 	req types.UsagePaymentWebhookRequest, raw []byte,
 ) (*types.UsagePaymentTransaction, string, error) {
 	source := strings.ToLower(strings.TrimSpace(req.Source))
-	if source == "" || len(source) > usagePaymentMaxSourceLen {
-		return nil, "", apperrors.NewBadRequestError(fmt.Sprintf("source is required (at most %d characters)", usagePaymentMaxSourceLen))
+	if source == "" {
+		return nil, "", paymentFieldError("source", "field_required", "source is required")
+	}
+	if len(source) > usagePaymentMaxSourceLen {
+		return nil, "", paymentFieldTooLong("source", usagePaymentMaxSourceLen)
 	}
 	for _, r := range source {
 		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.') {
@@ -83,8 +92,21 @@ func (s *usageBillingService) newPaymentTransaction(
 		}
 	}
 	externalID := strings.TrimSpace(req.TransactionID)
-	if externalID == "" || len(externalID) > usagePaymentMaxExternalIDLen {
-		return nil, "", apperrors.NewBadRequestError(fmt.Sprintf("transaction_id is required (at most %d characters)", usagePaymentMaxExternalIDLen))
+	if externalID == "" {
+		return nil, "", paymentFieldError("transaction_id", "field_required", "transaction_id is required")
+	}
+	if utf8.RuneCountInString(externalID) > usagePaymentMaxExternalIDLen {
+		return nil, "", paymentFieldTooLong("transaction_id", usagePaymentMaxExternalIDLen)
+	}
+	// stored in columns with a length limit: refused here (400) rather
+	// than failing the insert (500)
+	accountNo := strings.TrimSpace(req.AccountNo)
+	if utf8.RuneCountInString(accountNo) > usagePaymentMaxAccountNoLen {
+		return nil, "", paymentFieldTooLong("account_no", usagePaymentMaxAccountNoLen)
+	}
+	content := strings.TrimSpace(req.Content)
+	if utf8.RuneCountInString(content) > usagePaymentMaxContentLen {
+		return nil, "", paymentFieldTooLong("content", usagePaymentMaxContentLen)
 	}
 	direction := strings.ToLower(strings.TrimSpace(req.Direction))
 	if direction == "" {
@@ -106,14 +128,25 @@ func (s *usageBillingService) newPaymentTransaction(
 		Source:       source,
 		ExternalID:   externalID,
 		AmountVND:    req.AmountVND,
-		Content:      strings.TrimSpace(req.Content),
-		AccountNo:    strings.TrimSpace(req.AccountNo),
+		Content:      content,
+		AccountNo:    accountNo,
 		TransactedAt: at,
 		Status:       types.UsagePaymentUnmatched,
 		Raw:          types.JSON(raw),
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}, direction, nil
+}
+
+// paymentFieldTooLong refuses a webhook field longer than its column.
+func paymentFieldTooLong(field string, max int) error {
+	return apperrors.NewBadRequestError(fmt.Sprintf("%s must be at most %d characters", field, max)).
+		WithDetails(map[string]interface{}{"reason": "field_too_long", "field": field, "max_length": max})
+}
+
+func paymentFieldError(field, reason, msg string) error {
+	return apperrors.NewBadRequestError(msg).
+		WithDetails(map[string]interface{}{"reason": reason, "field": field})
 }
 
 // screenPayment marks transactions that are not money in to the

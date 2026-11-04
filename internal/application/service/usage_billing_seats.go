@@ -222,6 +222,7 @@ func (s *usageBillingService) applySeatsOrder(ctx context.Context, o *types.Usag
 	}
 	cur.Seats += o.Seats
 	cur.Note = appendOrderNote(cur.Note, o.OrderCode)
+	o.PeriodStartsAt, o.ResultEndsAt = timePtr(now), timePtr(*cur.EndsAt)
 	if err := s.planRepo.UpdateSubscription(ctx, cur); err != nil {
 		return "", err
 	}

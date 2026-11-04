@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/Tencent/WeKnora/internal/mailer"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -233,6 +234,29 @@ func (c *emailContent) withReceipt(link string) {
 	c.ExtraLink = link
 }
 
+// planNameAfterWord is the plan name to put after the word for "package"
+// in a sentence ("Gói %s"): a name that already starts with that word
+// ("Gói cơ bản") loses it, so the sentence does not read "Gói Gói cơ bản".
+// Case-insensitive; a name that is only the word stays. The twin of
+// frontend-next/lib/billing-order.ts planNameAfterWord.
+func planNameAfterWord(name, word string) string {
+	n := strings.TrimSpace(name)
+	w := strings.TrimSpace(word)
+	if w == "" {
+		return n
+	}
+	nr, wr := []rune(n), []rune(w)
+	if len(nr) <= len(wr) || !strings.EqualFold(string(nr[:len(wr)]), w) {
+		return n
+	}
+	rest := string(nr[len(wr):])
+	trimmed := strings.TrimLeftFunc(rest, unicode.IsSpace)
+	if trimmed == rest || strings.TrimSpace(trimmed) == "" {
+		return n // "Góicơ", or only the word followed by spaces
+	}
+	return strings.TrimSpace(trimmed)
+}
+
 // expiryReminderEmail reminds that a package ends soon.
 func expiryReminderEmail(planName, scopeLabel string, endsAt time.Time, daysLeft int, buyLink string) emailContent {
 	last := formatDateVN(types.LastUsableDayVN(endsAt))
@@ -240,10 +264,12 @@ func expiryReminderEmail(planName, scopeLabel string, endsAt time.Time, daysLeft
 	if daysLeft == 0 {
 		when = "hôm nay là ngày cuối"
 	}
+	// "Gói %s" with a plan named "Gói cơ bản" must not read "Gói Gói cơ bản"
+	after := planNameAfterWord(planName, "gói")
 	return emailContent{
-		Subject: fmt.Sprintf("Gói %s sắp hết hạn (%s)", planName, when),
+		Subject: fmt.Sprintf("Gói %s sắp hết hạn (%s)", after, when),
 		Intro: fmt.Sprintf("Gói %s của %s dùng được đến hết ngày %s (%s). Hãy gia hạn để không bị gián đoạn.",
-			planName, scopeLabel, last, when),
+			after, scopeLabel, last, when),
 		Lines: []emailLine{
 			{"Gói", planName},
 			{"Dùng cho", scopeLabel},

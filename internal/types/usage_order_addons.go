@@ -44,6 +44,10 @@ type UsageOrderAddonLine struct {
 	// priced to (the right ends there even if the subscription is extended
 	// before the order is paid).
 	PaidUntil *time.Time `json:"paid_until,omitempty"`
+	// PaidFrom: mid-term purchase only — where the priced time starts (now,
+	// or the end of a right already held); with PaidUntil the period the
+	// line paid for.
+	PaidFrom *time.Time `json:"paid_from,omitempty"`
 	// CoveredUntil: the end of the right the scope already holds (renewal,
 	// plan change); only the time after it is charged.
 	CoveredUntil *time.Time `json:"covered_until,omitempty"`
