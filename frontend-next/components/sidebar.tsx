@@ -27,7 +27,7 @@ import {
   IconSearch,
   IconTrash,
 } from "@/components/icons";
-import { setSidebarFolded, setSidebarHidden, useSidebarFolded, useSidebarHidden } from "@/lib/sidebar-state";
+import { dismissSidebarFold, setSidebarHidden, useSidebarFolded, useSidebarHidden } from "@/lib/sidebar-state";
 import { dayBucket, type DayBucket } from "@/lib/message-time";
 import { useDialogFocus } from "@/components/use-dialog-focus";
 import {
@@ -282,7 +282,7 @@ export function Sidebar() {
         <button
           type="button"
           onClick={() => {
-            setSidebarFolded(false);
+            dismissSidebarFold();
             setSidebarHidden(false);
           }}
           title={t("sidebar.show")}

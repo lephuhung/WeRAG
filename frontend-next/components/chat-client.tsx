@@ -70,6 +70,7 @@ import { type ProposalOutcome } from "@/components/chat/rewrite-proposal-card";
 import type { RasterImage } from "@/lib/illustration-render";
 import { selectionSuggestions, type SelectionSuggestionKey } from "@/lib/selection-suggestions";
 import { SplitPane } from "@/components/doc-workspace/split-pane";
+import { DOCUMENT_EDITOR } from "@/components/doc-workspace/document-layout-policy";
 import { DocWorkspace, type SessionDocument } from "@/components/doc-workspace/doc-workspace";
 import { FormatCheckRing } from "@/components/doc-workspace/format-check-ring";
 import { FormatCheckButton, SpellingRing } from "@/components/doc-workspace/spelling-ring";
@@ -2105,7 +2106,7 @@ function ChatBody({ id }: { id: string }) {
   const startTemplateHandoff = docTemplate.handoff;
   const runHandoff = useCallback(
     async (option: ChoiceOption) => {
-      if (ctx.isMobile) throw new Error(tr("docws.mobileWordUnavailable"));
+      if (ctx.isMobile) throw new Error(tr("docws.mobileWordUnavailable", { n: DOCUMENT_EDITOR.stackedMinWidth }));
       const h = option.handoff;
       if (!h) return;
       // no session yet (the page has not moved to the new one): say so

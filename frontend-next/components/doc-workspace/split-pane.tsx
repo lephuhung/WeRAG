@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Pointer
 import Link from "next/link";
 import { useT } from "@/lib/i18n";
 import styles from "./split-pane.module.css";
-import { DEFAULT_SPLIT_BOUNDS, clampLeftPct, type SplitBounds } from "./split-pane-math";
+import { DEFAULT_SPLIT_BOUNDS, clampLeftPct, effectiveBounds, type SplitBounds } from "./split-pane-math";
 import {
   DOCUMENT_EDITOR,
   DOCUMENT_ROOMY_QUERY,
@@ -12,7 +12,7 @@ import {
   DOCUMENT_STACKED_QUERY,
   PANES_SIDE_BY_SIDE_QUERY,
 } from "./document-layout-policy";
-import { setSidebarFolded } from "@/lib/sidebar-state";
+import { holdSidebarFold, resetSidebarFoldDismissal } from "@/lib/sidebar-state";
 import { useIsDesktopShell } from "@/components/shell-breakpoints";
 
 const DEFAULT_STORAGE_KEY = "werag.docWorkspace.leftPct";
@@ -45,7 +45,7 @@ function useMatches(query: string): boolean {
 /* Two-pane layout for the document assistant: editor on the left (55–75%,
  * draggable, persisted per browser), chat on the right. Document mode
  * follows document-layout-policy.ts: side by side from 1024 px (the app
- * rail folds away below 1440 px), stacked on tablets, and a notice over the
+ * rail folds away below 1536 px), stacked on tablets, and a notice over the
  * editor area only when the window is too low — the assistant itself
  * always stays usable.
  *
@@ -74,14 +74,32 @@ export function SplitPane({
   const roomy = useMatches(DOCUMENT_ROOMY_QUERY);
   const desktopShell = useIsDesktopShell();
   const [leftPct, setLeftPct] = useState(bounds.def);
-  const boundsRef = useRef(bounds);
-  boundsRef.current = bounds;
+  const [paneWidth, setPaneWidth] = useState(0);
+  /* In document mode the assistant keeps DOCUMENT_EDITOR.minAssistantPx:
+   * on a narrow window the editor's ceiling (and the separator's range)
+   * drops with the measured width, so drag, keys, aria and the rendered
+   * width always agree. */
+  const liveBounds = documentMode ? effectiveBounds(bounds, paneWidth, DOCUMENT_EDITOR.minAssistantPx) : bounds;
+  const boundsRef = useRef(liveBounds);
+  boundsRef.current = liveBounds;
+  const nominalRef = useRef(bounds);
+  nominalRef.current = bounds;
   const [dragging, setDragging] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const pctRef = useRef(leftPct);
 
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const measure = () => setPaneWidth(el.getBoundingClientRect().width);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   useEffect(() => {
-    const v = readStoredPct(storageKey, boundsRef.current);
+    const v = readStoredPct(storageKey, nominalRef.current);
     pctRef.current = v;
     setLeftPct(v);
   }, [storageKey]);
@@ -120,54 +138,63 @@ export function SplitPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey]);
 
+  /* What is on screen: the stored preference within the live bounds. */
+  const shownPct = clampLeftPct(leftPct, liveBounds);
+
   const onKeyDown = (e: React.KeyboardEvent) => {
     const step = e.shiftKey ? 5 : 1;
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
-      const next = clampLeftPct(leftPct + (e.key === "ArrowLeft" ? -step : step), bounds);
+      const next = clampLeftPct(shownPct + (e.key === "ArrowLeft" ? -step : step), liveBounds);
       update(next);
       persist(next);
       return;
     }
     if (e.key === "Home") {
       e.preventDefault();
-      update(bounds.min);
-      persist(bounds.min);
+      update(liveBounds.min);
+      persist(liveBounds.min);
       return;
     }
     if (e.key === "End") {
       e.preventDefault();
-      update(bounds.max);
-      persist(bounds.max);
+      update(liveBounds.max);
+      persist(liveBounds.max);
       return;
     }
     if (e.key === "Enter" || e.key === " ") {
       /* Double-tap on the separator resets it to the default width. */
       e.preventDefault();
-      update(bounds.def);
-      persist(bounds.def);
+      update(liveBounds.def);
+      persist(liveBounds.def);
     }
   };
 
   const resetWidth = () => {
-    update(bounds.def);
-    persist(bounds.def);
+    update(liveBounds.def);
+    persist(liveBounds.def);
   };
 
   const hasLeft = left !== null && left !== undefined && left !== false;
   /* Only block when there is an editor to make room for: with no left pane
    * (read-only mode) the assistant must stay usable on a phone. */
+  /* Reachable only through the height: below the stacked width the chat
+   * page drops the editor (documentReadOnly, lib/mobile-chat-policy.ts) and
+   * a new chat resolves to another agent — hence the "too low" copy. */
   const blocked = documentMode && hasLeft && !sideFits && !stackFits;
   const sideBySide = hasLeft && sideFits;
-  /* Rail + editor + assistant do not fit on a 1024–1439 px laptop: fold the
-   * rail while the document is open (never stored; the edge tab or leaving
-   * the page brings it back). */
+  /* Rail + editor + assistant do not fit on a 1024–1535 px laptop: fold the
+   * rail while the document is open (never stored; the edge tab keeps it
+   * back for this page load, leaving the page restores it). Layout effect:
+   * the rail is gone before the first paint instead of sliding out. */
   const foldRail = documentMode && sideBySide && desktopShell && !roomy;
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!foldRail) return;
-    setSidebarFolded(true);
-    return () => setSidebarFolded(false);
+    return holdSidebarFold();
   }, [foldRail]);
+  useEffect(() => {
+    if (documentMode && roomy) resetSidebarFoldDismissal();
+  }, [documentMode, roomy]);
 
   return (
     <div className={styles.root}>
@@ -184,11 +211,8 @@ export function SplitPane({
           }
           style={
             sideBySide
-              ? documentMode
-                ? /* keep the assistant readable on a narrow window */
-                  { width: `min(${leftPct}%, calc(100% - ${DOCUMENT_EDITOR.minAssistantPx}px))` }
-                : { width: `${leftPct}%` }
-              : { height: DOCUMENT_EDITOR.stackedEditorHeight }
+              ? { width: `${shownPct}%` }
+              : { height: blocked ? DOCUMENT_EDITOR.blockedNoticeHeight : DOCUMENT_EDITOR.stackedEditorHeight }
           }
         >
           {/* The editor stays mounted (so an open document keeps its state)
@@ -224,10 +248,10 @@ export function SplitPane({
         <div
           role="separator"
           aria-orientation="vertical"
-          aria-valuemin={bounds.min}
-          aria-valuemax={bounds.max}
-          aria-valuenow={Math.round(leftPct)}
-          aria-valuetext={t("docws.resizeValue", { n: Math.round(leftPct) })}
+          aria-valuemin={Math.round(liveBounds.min)}
+          aria-valuemax={Math.round(liveBounds.max)}
+          aria-valuenow={Math.round(shownPct)}
+          aria-valuetext={t("docws.resizeValue", { n: Math.round(shownPct) })}
           aria-label={t("docws.resize")}
           title={t("docws.resize")}
           tabIndex={0}
