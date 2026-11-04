@@ -51,3 +51,25 @@ export function sidebarHiddenNow(): boolean {
 export function useSidebarHidden(): boolean {
   return useSyncExternalStore(subscribe, get, () => false);
 }
+
+/* A page that needs the room (an open document on a small laptop) can fold
+ * the rail away for as long as it is shown. Unlike `setSidebarHidden` this
+ * is never stored: closing the page, or the edge tab, brings the rail back. */
+let folded = false;
+const foldListeners = new Set<() => void>();
+
+export function setSidebarFolded(next: boolean): void {
+  if (folded === next) return;
+  folded = next;
+  foldListeners.forEach((fn) => fn());
+}
+
+function subscribeFolded(fn: () => void): () => void {
+  foldListeners.add(fn);
+  return () => foldListeners.delete(fn);
+}
+
+/** True while a page keeps the desktop rail folded away. */
+export function useSidebarFolded(): boolean {
+  return useSyncExternalStore(subscribeFolded, () => folded, () => false);
+}

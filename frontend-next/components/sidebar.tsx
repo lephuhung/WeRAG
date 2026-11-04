@@ -27,7 +27,7 @@ import {
   IconSearch,
   IconTrash,
 } from "@/components/icons";
-import { setSidebarHidden, useSidebarHidden } from "@/lib/sidebar-state";
+import { setSidebarFolded, setSidebarHidden, useSidebarFolded, useSidebarHidden } from "@/lib/sidebar-state";
 import { dayBucket, type DayBucket } from "@/lib/message-time";
 import { useDialogFocus } from "@/components/use-dialog-focus";
 import {
@@ -79,9 +79,11 @@ export function Sidebar() {
   // hidden on desktop by a full-width page (the legal draft review); the
   // tab at the left edge brings it back from any page
   const savedSidebarHidden = useSidebarHidden();
+  // folded (not stored) while an open document needs the width
+  const sidebarFolded = useSidebarFolded();
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const inAdmin = pathname === "/platform/admin" || pathname.startsWith("/platform/admin/");
-  const desktopHidden = inAdmin ? !adminMenuOpen : savedSidebarHidden;
+  const desktopHidden = inAdmin ? !adminMenuOpen : savedSidebarHidden || sidebarFolded;
   const isDesktop = useIsDesktopShell();
   const railRef = useRef<HTMLElement | null>(null);
   /* The rail is off-screen below the shell breakpoint while the drawer is
@@ -279,7 +281,10 @@ export function Sidebar() {
       {desktopHidden && !inAdmin && (
         <button
           type="button"
-          onClick={() => setSidebarHidden(false)}
+          onClick={() => {
+            setSidebarFolded(false);
+            setSidebarHidden(false);
+          }}
           title={t("sidebar.show")}
           aria-label={t("sidebar.show")}
           className="fixed left-0 top-1/2 z-40 hidden h-12 w-5 -translate-y-1/2 items-center justify-center rounded-r-md border border-l-0 border-hairline bg-canvas text-muted-soft shadow-sm transition-colors hover:text-ink lg:flex"

@@ -5,7 +5,15 @@ import Link from "next/link";
 import { useT } from "@/lib/i18n";
 import styles from "./split-pane.module.css";
 import { DEFAULT_SPLIT_BOUNDS, clampLeftPct, type SplitBounds } from "./split-pane-math";
-import { DOCUMENT_EDITOR, DOCUMENT_SIDE_BY_SIDE_QUERY, DOCUMENT_STACKED_QUERY } from "./document-layout-policy";
+import {
+  DOCUMENT_EDITOR,
+  DOCUMENT_ROOMY_QUERY,
+  DOCUMENT_SIDE_BY_SIDE_QUERY,
+  DOCUMENT_STACKED_QUERY,
+  PANES_SIDE_BY_SIDE_QUERY,
+} from "./document-layout-policy";
+import { setSidebarFolded } from "@/lib/sidebar-state";
+import { useIsDesktopShell } from "@/components/shell-breakpoints";
 
 const DEFAULT_STORAGE_KEY = "werag.docWorkspace.leftPct";
 
@@ -19,7 +27,7 @@ function readStoredPct(key: string, bounds: SplitBounds): number {
   return bounds.def;
 }
 
-function useIsWide(query = DOCUMENT_STACKED_QUERY): boolean {
+function useMatches(query: string): boolean {
   const [wide, setWide] = useState(true);
   // Layout effect: the real breakpoint is applied before the first paint, so
   // phones never flash the side-by-side layout.
@@ -35,10 +43,11 @@ function useIsWide(query = DOCUMENT_STACKED_QUERY): boolean {
 }
 
 /* Two-pane layout for the document assistant: editor on the left (55–75%,
- * draggable, persisted per browser), chat on the right. Document mode needs
- * a viewport of at least 1440 × 800 CSS pixels; a smaller document viewport
- * stacks the editor above the assistant and covers the editor area with a
- * notice — the assistant itself stays usable.
+ * draggable, persisted per browser), chat on the right. Document mode
+ * follows document-layout-policy.ts: side by side from 1024 px (the app
+ * rail folds away below 1440 px), stacked on tablets, and a notice over the
+ * editor area only when the window is too low — the assistant itself
+ * always stays usable.
  *
  * `left={null}` renders the right pane alone with no divider and never
  * blocks: there is no editor to make room for. The element tree is
@@ -60,7 +69,10 @@ export function SplitPane({
   documentMode?: boolean;
 }) {
   const { t } = useT();
-  const wide = useIsWide(documentMode ? DOCUMENT_SIDE_BY_SIDE_QUERY : DOCUMENT_STACKED_QUERY);
+  const sideFits = useMatches(documentMode ? DOCUMENT_SIDE_BY_SIDE_QUERY : PANES_SIDE_BY_SIDE_QUERY);
+  const stackFits = useMatches(DOCUMENT_STACKED_QUERY);
+  const roomy = useMatches(DOCUMENT_ROOMY_QUERY);
+  const desktopShell = useIsDesktopShell();
   const [leftPct, setLeftPct] = useState(bounds.def);
   const boundsRef = useRef(bounds);
   boundsRef.current = bounds;
@@ -145,8 +157,17 @@ export function SplitPane({
   const hasLeft = left !== null && left !== undefined && left !== false;
   /* Only block when there is an editor to make room for: with no left pane
    * (read-only mode) the assistant must stay usable on a phone. */
-  const blocked = documentMode && hasLeft && !wide;
-  const sideBySide = hasLeft && !blocked && (documentMode || wide);
+  const blocked = documentMode && hasLeft && !sideFits && !stackFits;
+  const sideBySide = hasLeft && sideFits;
+  /* Rail + editor + assistant do not fit on a 1024–1439 px laptop: fold the
+   * rail while the document is open (never stored; the edge tab or leaving
+   * the page brings it back). */
+  const foldRail = documentMode && sideBySide && desktopShell && !roomy;
+  useEffect(() => {
+    if (!foldRail) return;
+    setSidebarFolded(true);
+    return () => setSidebarFolded(false);
+  }, [foldRail]);
 
   return (
     <div className={styles.root}>
@@ -161,7 +182,14 @@ export function SplitPane({
               ? "relative flex min-w-0 flex-col overflow-hidden"
               : "hairline-b relative flex shrink-0 flex-col overflow-hidden"
           }
-          style={sideBySide ? { width: `${leftPct}%` } : { height: DOCUMENT_EDITOR.stackedEditorHeight }}
+          style={
+            sideBySide
+              ? documentMode
+                ? /* keep the assistant readable on a narrow window */
+                  { width: `min(${leftPct}%, calc(100% - ${DOCUMENT_EDITOR.minAssistantPx}px))` }
+                : { width: `${leftPct}%` }
+              : { height: DOCUMENT_EDITOR.stackedEditorHeight }
+          }
         >
           {/* The editor stays mounted (so an open document keeps its state)
               but is inert and invisible while the viewport is too small. */}
