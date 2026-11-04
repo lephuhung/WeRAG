@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { ProcessingTimeline } from "@/components/knowledge/processing-timeline";
+import { LargeViewOnly } from "@/components/large-view-only";
 import { useT } from "@/lib/i18n";
 
 /* The trace drawer's width bounds (the drag handle and its keyboard
@@ -110,13 +111,18 @@ export function ProcessingTimelineDrawer({
         >
           <div className="mx-auto h-full w-px bg-transparent transition-colors hover:bg-ink/30" />
         </div>
-        <ProcessingTimeline
-          knowledgeId={knowledgeId}
-          parseStatus={parseStatus}
-          docTitle={docTitle}
-          showClose
-          onClose={onClose}
-        />
+        {/* Gated: the waterfall needs 220 px of names plus a readable bar
+            area, which this drawer (96vw at most) cannot give on a phone.
+            The gate also keeps its fetches from running there. */}
+        <LargeViewOnly id="timeline" onClose={onClose}>
+          <ProcessingTimeline
+            knowledgeId={knowledgeId}
+            parseStatus={parseStatus}
+            docTitle={docTitle}
+            showClose
+            onClose={onClose}
+          />
+        </LargeViewOnly>
       </aside>
     </>
   );

@@ -7,6 +7,7 @@ import { GraphCanvas, RelationList, type CanvasEdge, type CanvasNode, type TypeS
 import { GRAPH_FAMILY, type GraphFamily } from "@/components/graph/graph-palette";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { LegalFocusGraph } from "@/components/graph/legal-focus-graph";
+import { LargeViewOnly } from "@/components/large-view-only";
 
 type GraphMode = "wiki" | "entity" | "legal";
 
@@ -29,25 +30,31 @@ export function KnowledgeGraph({
     ["entity", "graph.modeEntity"],
     ["legal", "graph.modeLegal"],
   ];
+/* The whole tab is gated: all three modes are dragged and zoomed maps, so a
+ * window too small for one is too small for all of them (the thresholds and
+ * the notice live in lib/large-view-policy.ts + components/large-view-only.tsx).
+ * Skipping the body also skips its fetches. */
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-1 border-b border-hairline px-6 pt-3">
-        {modes.map(([m, key]) => (
-          <button
-            key={m}
-            onClick={() => setMode(m)}
-            className={`-mb-px border-b-2 px-3 pb-2 text-[13px] font-medium transition-colors ${
-              mode === m ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink"
-            }`}
-          >
-            {t(key)}
-          </button>
-        ))}
+    <LargeViewOnly id="graph">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="flex items-center gap-1 border-b border-hairline px-6 pt-3">
+          {modes.map(([m, key]) => (
+            <button
+              key={m}
+              onClick={() => setMode(m)}
+              className={`-mb-px border-b-2 px-3 pb-2 text-[13px] font-medium transition-colors ${
+                mode === m ? "border-ink text-ink" : "border-transparent text-muted hover:text-ink"
+              }`}
+            >
+              {t(key)}
+            </button>
+          ))}
+        </div>
+        {mode === "wiki" && <WikiGraph kbId={kbId} onSelectSlug={onSelectSlug} />}
+        {mode === "entity" && <EntityGraph kbId={kbId} />}
+        {mode === "legal" && <LegalFocusGraph kbId={kbId} onOpenKnowledge={onOpenKnowledge} />}
       </div>
-      {mode === "wiki" && <WikiGraph kbId={kbId} onSelectSlug={onSelectSlug} />}
-      {mode === "entity" && <EntityGraph kbId={kbId} />}
-      {mode === "legal" && <LegalFocusGraph kbId={kbId} onOpenKnowledge={onOpenKnowledge} />}
-    </div>
+    </LargeViewOnly>
   );
 }
 
