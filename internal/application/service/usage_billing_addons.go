@@ -403,10 +403,11 @@ func (s *usageBillingService) quoteAddonOnly(
 			}
 		}
 		months, days, factor, amount := types.PriceAddonRemainder(a.PriceVND, units, from, until)
-		end := until
+		end, start := until, from
 		q.Addons = append(q.Addons, types.UsageOrderAddonLine{
 			AgentID: a.AgentID, Name: a.AgentName, UnitPriceVND: a.PriceVND, Units: units,
-			Months: months, LeftoverDays: days, LeftoverFactor: factor, AmountVND: amount, PaidUntil: &end,
+			Months: months, LeftoverDays: days, LeftoverFactor: factor, AmountVND: amount,
+			PaidFrom: &start, PaidUntil: &end,
 		})
 	}
 	q.AddonsVND = q.Addons.Total()
@@ -440,6 +441,17 @@ func (s *usageBillingService) applyAddonOrder(ctx context.Context, o *types.Usag
 	}
 	if err := s.grantOrderAddons(ctx, o, cur, now, nil); err != nil {
 		return "", err
+	}
+	// what the order bought: its rights from now to the latest end they got
+	o.PeriodStartsAt = timePtr(now)
+	for _, l := range o.Addons {
+		end := cur.EndsAt
+		if l.PaidUntil != nil {
+			end = l.PaidUntil
+		}
+		if !l.SeatsOnly && end != nil && (o.ResultEndsAt == nil || end.After(*o.ResultEndsAt)) {
+			o.ResultEndsAt = timePtr(*end)
+		}
 	}
 	return cur.ID, nil
 }

@@ -97,14 +97,77 @@ export function defaultPlanSeats(opts: {
 }
 
 /** The add-ons ticked as purchases after the plan choice changed. Renewing
- * the plan in use ticks the agents the scope holds, so they do not stop
- * at the old end unnoticed; a plan change leaves the held ones to the
- * "keep" choice (they carry over to their paid end) instead of buying them
- * again, which the server refuses while they are covered (addon_held). */
-export function addonIdsForPlan(cur: string[], offered: string[], held: string[], renewing: boolean): string[] {
+ * the plan in use ticks the held agents the renewal must extend (`extend`,
+ * default all held; see heldNeedingRenewal), so they do not stop at the
+ * old end unnoticed; a plan change leaves the held ones to the "keep"
+ * choice (they carry over to their paid end) instead of buying them again,
+ * which the server refuses while they are covered (addon_held). */
+export function addonIdsForPlan(
+  cur: string[],
+  offered: string[],
+  held: string[],
+  renewing: boolean,
+  extend: string[] = held,
+): string[] {
   const ok = new Set(offered);
   const kept = cur.filter((id) => ok.has(id));
-  if (renewing) return [...new Set([...kept, ...held])].filter((id) => ok.has(id));
+  if (renewing) return [...new Set([...kept, ...extend])].filter((id) => ok.has(id));
   const isHeld = new Set(held);
   return kept.filter((id) => !isHeld.has(id));
+}
+
+type HeldRight = { agent_id: string; ends_at?: string | null };
+
+function endTime(v: string | null | undefined): number | null {
+  if (!v) return null;
+  const t = new Date(v).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
+/** The held add-ons a renewal pre-ticks: those whose right ends on or
+ * before the package's end (or runs with it, no end of its own) and so
+ * stops unless the renewal extends it. One already held beyond the
+ * package's end (kept from a plan change) is left unticked: it does not
+ * need extending, and the server refuses it (addon_held) when the renewal
+ * does not reach past its end. */
+export function heldNeedingRenewal(held: HeldRight[], subEndsAt: string | null | undefined): string[] {
+  const sub = endTime(subEndsAt);
+  return held
+    .filter((h) => {
+      const end = endTime(h.ends_at);
+      return sub === null || end === null || end <= sub;
+    })
+    .map((h) => h.agent_id);
+}
+
+/** Whether a held right runs past the package's end (it does not end with
+ * the package). */
+export function heldOutlivesPackage(h: HeldRight, subEndsAt: string | null | undefined): boolean {
+  const sub = endTime(subEndsAt);
+  const end = endTime(h.ends_at);
+  return sub !== null && end !== null && end > sub;
+}
+
+/** The parts of an order's one-line summary, to join with " · ": the plan,
+ * then what was bought — a seat order "thêm 2 chỗ" (not also its kind
+ * "thêm chỗ"), an add-on order its kind, a plan order its length, its
+ * seats on a seat plan and how many add-ons came with it. */
+export function orderSummaryParts(
+  o: Pick<UsageOrder, "kind" | "mode" | "seats" | "plan_name" | "addons">,
+  l: { length: () => string; seats: (n: number) => string; addSeats: (n: number) => string; addons?: (n: number) => string },
+): string[] {
+  if (o.kind === "seats") return [o.plan_name, l.addSeats(o.seats)];
+  const parts = [o.plan_name, l.length()];
+  if (o.kind === "addon") return parts;
+  if (o.mode === "seat") parts.push(l.seats(o.seats));
+  const n = (o.addons ?? []).length;
+  if (l.addons && n > 0) parts.push(l.addons(n));
+  return parts;
+}
+
+/** Whether money changed hands for a paid order: a 0-đồng one (a credit or
+ * a promo covered it) was confirmed, not paid, so its time reads
+ * "confirmed at". */
+export function orderWasPaidFor(o: Pick<UsageOrder, "total_vnd">): boolean {
+  return o.total_vnd > 0;
 }

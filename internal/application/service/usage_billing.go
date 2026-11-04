@@ -658,6 +658,7 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 		}
 		ends := types.SubscriptionEndVN(from, o.Months)
 		cur.EndsAt = &ends
+		o.PeriodStartsAt, o.ResultEndsAt = timePtr(from), timePtr(ends)
 		if o.Mode == types.UsageModeSeat && o.Seats > cur.Seats {
 			cur.Seats = o.Seats
 		}
@@ -686,6 +687,7 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 		return cur.ID, nil
 	}
 	ends := types.SubscriptionEndVN(now, o.Months)
+	o.PeriodStartsAt, o.ResultEndsAt = timePtr(now), timePtr(ends)
 	sub := &types.UsageSubscription{
 		ScopeType: o.ScopeType,
 		ScopeID:   o.ScopeID,
@@ -722,6 +724,9 @@ func (s *usageBillingService) apply(ctx context.Context, o *types.UsageOrder, no
 	}
 	return v.ID, nil
 }
+
+// timePtr is a pointer to a copy of t.
+func timePtr(t time.Time) *time.Time { return &t }
 
 func appendOrderNote(note, code string) string {
 	tag := "order " + code

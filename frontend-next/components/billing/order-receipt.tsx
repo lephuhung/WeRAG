@@ -14,7 +14,7 @@ import Link from "next/link";
 import { translateIn, useT, type LocaleKey } from "@/lib/i18n";
 import { formatDateTime, formatLastDay } from "@/lib/datetime";
 import { addonLineDetail } from "@/lib/agent-addon-catalogue";
-import { orderPlanLineVND } from "@/lib/billing-order";
+import { orderPlanLineVND, orderWasPaidFor, planNameAfterWord } from "@/lib/billing-order";
 import { invoiceState } from "@/lib/billing-invoice";
 import { issuedInvoiceText } from "@/components/settings/billing-invoice";
 import { formatPriceVND, getOrderReceipt, type UsageOrder, type UsageOrderReceipt } from "@/lib/api/usage";
@@ -64,7 +64,8 @@ function orderLines(o: UsageOrder | null): { lines: Line[]; totals: Line[] } {
   } else {
     if (o.kind !== "addon") {
       lines.push({
-        label: t("bill.planLine", { name: o.plan_name }),
+        // "Gói {name}" with a plan named "Gói cơ bản" must not read "Gói Gói cơ bản"
+        label: t("bill.planLine", { name: planNameAfterWord(o.plan_name, t("bill.planWord")) }),
         detail:
           o.mode === "seat"
             ? t("bill.planLineDetailSeats", { length, seats: o.seats, price: formatPriceVND(o.unit_price_vnd) })
@@ -248,7 +249,8 @@ export function OrderReceiptPage({ code }: { code: string }) {
           ) : (
             <dd className="col-span-2">{tr("rcpt.noPayment")}</dd>
           )}
-          <dt className="text-neutral-500">{tr("rcpt.paidAt")}</dt>
+          {/* a 0-đồng order was confirmed, nothing was paid */}
+          <dt className="text-neutral-500">{tr(orderWasPaidFor(o) ? "rcpt.paidAt" : "rcpt.confirmedAt")}</dt>
           <dd>{formatDateTime(o.paid_at, RECEIPT_LOCALE)}</dd>
           <dt className="text-neutral-500">{tr(o.kind === "addon" || o.kind === "seats" ? "rcpt.packageCurrent" : "rcpt.package")}</dt>
           <dd>{o.plan_name}</dd>

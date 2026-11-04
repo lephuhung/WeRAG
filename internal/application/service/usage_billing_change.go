@@ -41,23 +41,6 @@ func paidFactor(o *types.UsageOrder) (num, den int64) {
 	return base - o.DiscountVND, base
 }
 
-// creditAmount is monthly × units × days / 30 × num / den, rounded down:
-// a credit never gives back more than was paid.
-func creditAmount(monthly int64, units, days int, num, den int64) int64 {
-	if monthly <= 0 || units <= 0 || days <= 0 || num <= 0 || den <= 0 {
-		return 0
-	}
-	v := new(big.Int).SetInt64(monthly)
-	v.Mul(v, big.NewInt(int64(units)))
-	v.Mul(v, big.NewInt(int64(days)))
-	v.Mul(v, big.NewInt(num))
-	v.Quo(v, big.NewInt(int64(usageProrationDaysPerMonth)*den))
-	if !v.IsInt64() {
-		return 0
-	}
-	return v.Int64()
-}
-
 // lastPaidPlanOrder is the latest paid plan order applied to subscription
 // subID, nil when none (a SuperAdmin grant, a sign-up gift).
 func (s *usageBillingService) lastPaidPlanOrder(ctx context.Context, sub *types.UsageSubscription) (*types.UsageOrder, error) {
@@ -88,91 +71,299 @@ func paidAt(o *types.UsageOrder) time.Time {
 	return o.CreatedAt
 }
 
-// creditTranche is a part of the units (seats) of a package or add-on
-// valued at the price one order paid for them: monthly per unit, after that
-// order's promo (num/den). paid is false for units no paid order covers (a
-// SuperAdmin grant): they are worth nothing.
-type creditTranche struct {
-	units    int
-	monthly  int64
-	num, den int64
-	paid     bool
+// A credit values what each paid order bought, by the share of it still
+// unused (user decision 03/11/2026, e2e review): every order is split into
+// pieces — units [lo, hi) (seats, 1 for a pool package) paid net VND for
+// the period [start, end) — and a piece gives back
+//
+//	net × units taken / units of the piece × unused days / days of the period
+//
+// rounded down, where unused days are the Vietnamese calendar days of the
+// period after today (today has started and is not given back) up to the
+// end being credited, and the period's days count its first day (charges
+// count today). A piece never returns more than its net, and the pieces
+// of one line cover disjoint time, so a credit never gives back more than
+// was paid for the remaining time — whatever the length of the months (a
+// 31-day month is not worth 31/30 of its price) or the promo code.
+
+// paidPiece is money an order paid for units [lo, hi) over [start, end).
+// minDays: the days the piece was priced for when that is longer than the
+// span (a proration quoted before it was confirmed).
+type paidPiece struct {
+	lo, hi     int
+	net        int64
+	start, end time.Time
+	minDays    int
 }
 
-// orderTranche is the tranche of units an order paid for.
-func orderTranche(o *types.UsageOrder, units int, monthly int64) creditTranche {
+// netPaid is part of order o after its promo code (paidFactor), rounded down.
+func netPaid(o *types.UsageOrder, part int64) int64 {
+	if part <= 0 {
+		return 0
+	}
 	num, den := paidFactor(o)
-	return creditTranche{units: units, monthly: monthly, num: num, den: den, paid: true}
+	return mulDivFloor(part, num, den)
 }
 
-// trancheCredit values the last `take` of `total` units for days. The
-// tranches are oldest first and capped at total; the units above them are
-// unpaid. Units given up are taken from the newest (unpaid ones first).
-// paid reports whether any of them was paid for.
-func trancheCredit(tranches []creditTranche, total, take, days int) (amount int64, paid bool) {
-	var list []creditTranche
-	left := total
-	for _, t := range tranches {
-		if left <= 0 {
-			break
-		}
-		if t.units > left {
-			t.units = left
-		}
-		if t.units <= 0 {
-			continue
-		}
-		list = append(list, t)
-		left -= t.units
+// mulDivFloor is a × b / c rounded down (0 when it does not fit, c ≤ 0).
+func mulDivFloor(a, b, c int64) int64 {
+	if a <= 0 || b <= 0 || c <= 0 {
+		return 0
 	}
-	if left > 0 {
-		list = append(list, creditTranche{units: left})
+	v := new(big.Int).Mul(big.NewInt(a), big.NewInt(b))
+	v.Quo(v, big.NewInt(c))
+	if !v.IsInt64() {
+		return 0
 	}
+	return v.Int64()
+}
+
+// creditFrom is where credited time starts: the next Vietnamese midnight
+// (today is not given back).
+func creditFrom(now time.Time) time.Time {
+	return types.EndOfDayVN(now.Add(time.Nanosecond))
+}
+
+// piecesCredit values the newest `take` of `total` units ([total-take,
+// total)) from tomorrow to until. Units above total no longer exist; units
+// no piece covers (a SuperAdmin grant, a gift) are worth nothing. paid
+// reports whether a paid order covers any of the units taken.
+func piecesCredit(pieces []paidPiece, total, take int, now, until time.Time) (amount int64, paid bool) {
 	if take > total {
 		take = total
 	}
-	for i := len(list) - 1; i >= 0 && take > 0; i-- {
-		t := list[i]
-		n := t.units
-		if n > take {
-			n = take
+	if take <= 0 {
+		return 0, false
+	}
+	tLo := total - take
+	from := creditFrom(now)
+	for _, p := range pieces {
+		if p.hi <= p.lo {
+			continue
 		}
-		take -= n
-		if t.paid {
-			paid = true
-			amount += creditAmount(t.monthly, n, days, t.num, t.den)
+		lo, hi := p.lo, p.hi
+		if lo < tLo {
+			lo = tLo
 		}
+		if hi > total {
+			hi = total
+		}
+		if hi <= lo {
+			continue
+		}
+		paid = true
+		periodDays := types.CalendarDaysVN(p.start, p.end)
+		if p.minDays > periodDays {
+			periodDays = p.minDays
+		}
+		if periodDays <= 0 || p.net <= 0 {
+			continue
+		}
+		start, end := p.start, p.end
+		if from.After(start) {
+			start = from
+		}
+		if until.Before(end) {
+			end = until
+		}
+		days := types.CalendarDaysVN(start, end)
+		if days <= 0 {
+			continue
+		}
+		if days > periodDays {
+			days = periodDays
+		}
+		amount += mulDivFloor(p.net, int64(hi-lo)*int64(days), int64(p.hi-p.lo)*int64(periodDays))
 	}
 	return amount, paid
 }
 
-// paidOrdersAfter are the paid orders applied to subscription sub, paid
-// after `after` (all of them when zero), oldest first.
-func (s *usageBillingService) paidOrdersAfter(
-	ctx context.Context, sub *types.UsageSubscription, after time.Time,
-) ([]*types.UsageOrder, error) {
+// orderSpan is what a paid order did to its subscription: the period it
+// bought and the units (seats) before and after it.
+type orderSpan struct {
+	start, end    time.Time
+	before, after int
+}
+
+// orderSpans walks the paid orders of one subscription, oldest first. The
+// period is the one stored at confirmation (PeriodStartsAt/ResultEndsAt);
+// older orders get it rebuilt the way apply computed it: a plan order
+// from its payment, or from the previous end when it renewed; a seat order
+// from its payment to the end it was priced to. Units follow the seats each
+// order set or added.
+func orderSpans(orders []*types.UsageOrder) map[string]orderSpan {
+	out := make(map[string]orderSpan, len(orders))
+	var prevEnd *time.Time
+	units := 0
+	for _, o := range orders {
+		sp := orderSpan{before: units, start: paidAt(o)}
+		switch o.Kind {
+		case types.UsageOrderKindAddon:
+			sp.after = units
+			if o.PeriodStartsAt != nil {
+				sp.start = *o.PeriodStartsAt
+			}
+			out[o.ID] = sp
+			continue
+		case types.UsageOrderKindSeats:
+			units += o.Seats
+			sp.after = units
+			switch {
+			case o.PeriodStartsAt != nil && o.ResultEndsAt != nil:
+				sp.start, sp.end = *o.PeriodStartsAt, *o.ResultEndsAt
+			case o.TargetEndsAt != nil:
+				sp.end = *o.TargetEndsAt
+			case prevEnd != nil:
+				sp.end = *prevEnd
+			}
+			out[o.ID] = sp
+			continue
+		}
+		if u := addonUnits(o.Mode, o.Seats); u > units {
+			units = u
+		}
+		sp.after = units
+		if o.PeriodStartsAt != nil && o.ResultEndsAt != nil {
+			sp.start, sp.end = *o.PeriodStartsAt, *o.ResultEndsAt
+		} else {
+			if prevEnd != nil && prevEnd.After(sp.start) {
+				sp.start = *prevEnd
+			}
+			sp.end = types.SubscriptionEndVN(sp.start, o.Months)
+		}
+		e := sp.end
+		prevEnd = &e
+		out[o.ID] = sp
+	}
+	return out
+}
+
+// planPieces are what the paid orders of one subscription paid for the
+// package itself: a plan order's plan line for its units over its period
+// and the seats a renewal added for the rest of the period it extended; a
+// seat order's seats to the end it was priced to. Add-on lines are left to
+// addonPieces.
+func planPieces(orders []*types.UsageOrder, spans map[string]orderSpan) []paidPiece {
+	var out []paidPiece
+	for _, o := range orders {
+		sp := spans[o.ID]
+		switch o.Kind {
+		case types.UsageOrderKindAddon:
+		case types.UsageOrderKindSeats:
+			out = append(out, paidPiece{lo: sp.before, hi: sp.after, net: netPaid(o, o.ProrationVND),
+				start: sp.start, end: sp.end, minDays: o.ProratedDays})
+		default:
+			part := o.SubtotalVND - o.ProrationVND - o.Addons.Total()
+			out = append(out, paidPiece{lo: 0, hi: addonUnits(o.Mode, o.Seats), net: netPaid(o, part),
+				start: sp.start, end: sp.end})
+			if o.ProrationVND > 0 && o.Mode == types.UsageModeSeat {
+				lo := sp.before
+				if o.PricedSeats != nil {
+					lo = *o.PricedSeats
+				}
+				out = append(out, paidPiece{lo: lo, hi: o.Seats, net: netPaid(o, o.ProrationVND),
+					start: paidAt(o), end: sp.start, minDays: o.ProratedDays})
+			}
+		}
+	}
+	return out
+}
+
+// addonPieces are what the paid orders of one subscription paid for agent:
+// each line's main time (a mid-term purchase: [PaidFrom, PaidUntil); a
+// renewal: from the end it extended, or from the end of a right held past
+// it, to the order's end; a plan change buying it again: from the carried
+// end; else the order's period), a renewal's gap up to the old end, and the
+// seats a line added while the held right still ran.
+func addonPieces(orders []*types.UsageOrder, spans map[string]orderSpan, agentID string) []paidPiece {
+	var out []paidPiece
+	for _, o := range orders {
+		sp := spans[o.ID]
+		paid := paidAt(o)
+		for _, l := range o.Addons {
+			if l.AgentID != agentID {
+				continue
+			}
+			if l.SeatsOnly {
+				if l.ExtraUnits > 0 && l.CoveredUntil != nil {
+					out = append(out, paidPiece{lo: sp.after - l.ExtraUnits, hi: sp.after,
+						net: netPaid(o, l.ExtraUnitsVND), start: paid, end: *l.CoveredUntil})
+				}
+				continue
+			}
+			start, end := sp.start, sp.end
+			switch {
+			case l.PaidUntil != nil:
+				start, end = paid, *l.PaidUntil
+				if l.PaidFrom != nil {
+					start = *l.PaidFrom
+				}
+			case l.SubscriptionEnd != nil:
+				start = *l.SubscriptionEnd
+				if l.CoveredUntil != nil && l.CoveredUntil.After(start) {
+					start = *l.CoveredUntil
+				}
+			case l.CoveredUntil != nil:
+				start = *l.CoveredUntil
+			}
+			main := l.AmountVND - l.GapVND - l.ExtraUnitsVND
+			out = append(out, paidPiece{lo: 0, hi: l.Units, net: netPaid(o, main), start: start, end: end})
+			if l.GapVND > 0 && l.SubscriptionEnd != nil {
+				gs := paid
+				if l.CoveredUntil != nil {
+					gs = *l.CoveredUntil
+				}
+				out = append(out, paidPiece{lo: 0, hi: l.Units, net: netPaid(o, l.GapVND), start: gs, end: *l.SubscriptionEnd})
+			}
+			if l.ExtraUnits > 0 && l.CoveredUntil != nil {
+				ee := minTime(*l.CoveredUntil, end)
+				out = append(out, paidPiece{lo: l.Units - l.ExtraUnits, hi: l.Units,
+					net: netPaid(o, l.ExtraUnitsVND), start: paid, end: ee})
+			}
+		}
+	}
+	return out
+}
+
+// paidOrdersBySub are the paid orders of sub's scope applied to the
+// subscriptions ids, oldest first, grouped by subscription.
+func (s *usageBillingService) paidOrdersBySub(
+	ctx context.Context, sub *types.UsageSubscription, ids ...string,
+) (map[string][]*types.UsageOrder, error) {
 	orders, err := s.repo.ListOrders(ctx, types.UsageOrderFilter{
 		ScopeType: sub.ScopeType, ScopeID: sub.ScopeID, Status: types.UsageOrderPaid,
 	})
 	if err != nil {
 		return nil, err
 	}
-	var out []*types.UsageOrder
+	want := map[string]bool{}
+	for _, id := range ids {
+		want[id] = true
+	}
+	out := map[string][]*types.UsageOrder{}
 	for _, o := range orders {
-		if o.SubscriptionID == nil || *o.SubscriptionID != sub.ID || !paidAt(o).After(after) {
+		if o.SubscriptionID == nil || !want[*o.SubscriptionID] {
 			continue
 		}
-		out = append(out, o)
+		out[*o.SubscriptionID] = append(out[*o.SubscriptionID], o)
 	}
-	sort.SliceStable(out, func(i, j int) bool { return paidAt(out[i]).Before(paidAt(out[j])) })
+	for id := range out {
+		list := out[id]
+		sort.SliceStable(list, func(i, j int) bool {
+			a, b := paidAt(list[i]), paidAt(list[j])
+			if !a.Equal(b) {
+				return a.Before(b)
+			}
+			return list[i].CreatedAt.Before(list[j].CreatedAt)
+		})
+	}
 	return out, nil
 }
 
-// planCreditLine values the unused days of cur in tranches (review M1): the
-// seats of its last paid plan order at the per-month price that order
-// charged (after its promo code), then the seats each later seat order
-// bought at its own price and promo; seats above them (a SuperAdmin grant)
-// are worth nothing. A pool package is one unit at the plan order's price.
+// planCreditLine values the unused days of cur: what each paid order on it
+// (plan orders, the seats renewals and seat orders added) paid for the time
+// after today, at the price and promo of that order; seats no order paid
+// for (a SuperAdmin grant) are worth nothing. A pool package is one unit.
 func (s *usageBillingService) planCreditLine(
 	ctx context.Context, cur *types.UsageSubscription, planName string, now time.Time,
 ) (types.UsageCreditLine, error) {
@@ -182,42 +373,22 @@ func (s *usageBillingService) planCreditLine(
 		return line, nil
 	}
 	line.Days = creditDays(now, *cur.EndsAt)
-	o, err := s.lastPaidPlanOrder(ctx, cur)
+	bySub, err := s.paidOrdersBySub(ctx, cur, cur.ID)
 	if err != nil {
 		return line, err
 	}
-	var tranches []creditTranche
-	var after time.Time
-	if o != nil {
-		n := units
-		if cur.Mode == types.UsageModeSeat && o.Mode == types.UsageModeSeat && o.Seats > 0 && o.Seats < n {
-			n = o.Seats
-		}
-		tranches = append(tranches, orderTranche(o, n, o.UnitPriceVND))
-		after = paidAt(o)
-	}
-	if cur.Mode == types.UsageModeSeat {
-		later, err := s.paidOrdersAfter(ctx, cur, after)
-		if err != nil {
-			return line, err
-		}
-		for _, so := range later {
-			if so.Kind == types.UsageOrderKindSeats {
-				tranches = append(tranches, orderTranche(so, so.Seats, so.UnitPriceVND))
-			}
-		}
-	}
-	line.AmountVND, line.Paid = trancheCredit(tranches, units, units, line.Days)
+	orders := bySub[cur.ID]
+	pieces := planPieces(orders, orderSpans(orders))
+	line.AmountVND, line.Paid = piecesCredit(pieces, units, units, now, *cur.EndsAt)
 	return line, nil
 }
 
-// addonCreditLine values the unused days of `take` of the heldUnits units
-// of a held add-on (all of them when the order drops it, the units not
-// carried over when it keeps it on fewer seats), in tranches like
-// planCreditLine: the units the order that sold it paid for, at the price
-// frozen on its row, then the units later orders on sub added to it
-// (extra-seat parts of seat orders and renewals) at their own price and
-// promo; units above them are worth nothing. The newest units go first.
+// addonCreditLine values the unused days, up to end, of the newest `take`
+// of the heldUnits units of a held add-on (all of them when the order drops
+// it, the units not carried over when it keeps it on fewer seats): what the
+// paid orders of sub — and of the subscription the order that last granted
+// it was applied to, for a right carried over from a replaced package —
+// paid for it after today. Units no order paid for are worth nothing.
 func (s *usageBillingService) addonCreditLine(
 	ctx context.Context, h *types.UsageSubscriptionAddon, sub *types.UsageSubscription,
 	heldUnits, take int, end, now time.Time,
@@ -226,39 +397,29 @@ func (s *usageBillingService) addonCreditLine(
 		Kind: types.UsageCreditAddon, AgentID: h.AgentID, Name: h.AgentName, Units: take,
 		Days: creditDays(now, end),
 	}
-	var tranches []creditTranche
-	var after time.Time
+	if sub == nil {
+		return line, nil
+	}
+	ids := []string{sub.ID}
 	if h.OrderID != nil {
 		o, err := s.repo.GetOrder(ctx, *h.OrderID)
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return line, err
 		}
-		if err == nil && o.Status == types.UsageOrderPaid {
-			n := heldUnits
-			for _, l := range o.Addons {
-				if l.AgentID == h.AgentID && !l.SeatsOnly && l.Units > 0 {
-					n = l.Units
-					break
-				}
-			}
-			tranches = append(tranches, orderTranche(o, n, h.PriceVND))
-			after = paidAt(o)
+		if err == nil && o.Status == types.UsageOrderPaid && o.SubscriptionID != nil && *o.SubscriptionID != sub.ID {
+			ids = append(ids, *o.SubscriptionID)
 		}
 	}
-	if sub != nil && (h.OrderID == nil || len(tranches) > 0) {
-		later, err := s.paidOrdersAfter(ctx, sub, after)
-		if err != nil {
-			return line, err
-		}
-		for _, o := range later {
-			for _, l := range o.Addons {
-				if l.AgentID == h.AgentID && l.ExtraUnits > 0 {
-					tranches = append(tranches, orderTranche(o, l.ExtraUnits, l.UnitPriceVND))
-				}
-			}
-		}
+	bySub, err := s.paidOrdersBySub(ctx, sub, ids...)
+	if err != nil {
+		return line, err
 	}
-	line.AmountVND, line.Paid = trancheCredit(tranches, heldUnits, take, line.Days)
+	var pieces []paidPiece
+	for _, id := range ids {
+		orders := bySub[id]
+		pieces = append(pieces, addonPieces(orders, orderSpans(orders), h.AgentID)...)
+	}
+	line.AmountVND, line.Paid = piecesCredit(pieces, heldUnits, take, now, end)
 	return line, nil
 }
 

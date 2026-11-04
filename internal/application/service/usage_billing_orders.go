@@ -94,7 +94,12 @@ func (s *usageBillingService) detailView(ctx context.Context, o *types.UsageOrde
 			v.QRURL = vietQRURL(s.BillingInfo(ctx), o.TotalVND-v.ReceivedVND, o.OrderCode)
 		}
 	}
-	if o.Status == types.UsageOrderPaid && o.SubscriptionID != nil {
+	// what the order bought (stored when it was confirmed); older orders
+	// show the end of the package they went into
+	if o.Status == types.UsageOrderPaid && o.ResultEndsAt != nil {
+		e := *o.ResultEndsAt
+		v.SubscriptionEndsAt = &e
+	} else if o.Status == types.UsageOrderPaid && o.SubscriptionID != nil {
 		sub, err := s.planRepo.GetSubscription(ctx, *o.SubscriptionID)
 		switch {
 		case err == nil && sub != nil && sub.Status == types.UsageSubscriptionActive && sub.EndsAt != nil:

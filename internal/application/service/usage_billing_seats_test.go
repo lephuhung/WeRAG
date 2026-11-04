@@ -35,6 +35,7 @@ func (f *billingFixture) paidSeats(t *testing.T, planID string, seats int, end t
 		ID: "o-seat", OrderCode: "WRSEAT", ScopeType: "tenant", ScopeID: "10003", PlanID: planID, Kind: "plan",
 		Mode: "seat", Seats: seats, Months: months, UnitPriceVND: unit, SubtotalVND: sub, TotalVND: sub,
 		Status: types.UsageOrderPaid, PaidAt: &paid, SubscriptionID: &subID,
+		PeriodStartsAt: fixturePeriodStart(end), ResultEndsAt: &end,
 	}))
 }
 
@@ -43,6 +44,12 @@ func (f *billingFixture) paidSeats(t *testing.T, planID string, seats int, end t
 func (f *billingFixture) heldThue(t *testing.T) {
 	t.Helper()
 	oid := "o-seat"
+	o := f.repo.orders[oid]
+	line := types.UsageOrderAddonLine{AgentID: "thue", Name: "Thuế HKD", UnitPriceVND: 99_000,
+		Units: o.Seats, Months: o.Months, AmountVND: 99_000 * int64(o.Seats*o.Months)}
+	o.Addons = append(o.Addons, line)
+	o.SubtotalVND += line.AmountVND
+	o.TotalVND += line.AmountVND
 	require.NoError(t, f.plans.UpsertSubscriptionAddon(context.Background(), &types.UsageSubscriptionAddon{
 		SubscriptionID: "sub-s", AgentID: "thue", AgentName: "Thuế HKD", StartsAt: billingNow.AddDate(0, -1, 0),
 		PriceVND: 99_000, OrderID: &oid}))
@@ -514,7 +521,9 @@ func planCredit(t *testing.T, f *billingFixture) types.UsageCreditLine {
 
 // Review M1: the plan-change credit values the package in tranches — the
 // plan order's seats at its price and promo, each later seat order's at its
-// own, seats nobody paid for (a grant) at nothing.
+// own, seats nobody paid for (a grant) at nothing. The fixture order paid
+// for the 30 days left; a seat order made today for 31 days charged
+// 31/30 of a month and gives back 30/31 of that (TestPlanCreditSeatOrderTranche).
 func TestPlanChangeCreditInSeatTranches(t *testing.T) {
 	end := endOfVN(2026, 11, 12) // 30 days credited
 
@@ -545,15 +554,6 @@ func TestPlanChangeCreditInSeatTranches(t *testing.T) {
 	c = planCredit(t, h)
 	require.Equal(t, 7, c.Units)
 	require.Equal(t, int64(49_000*3+49_000), c.AmountVND, "2 seats at half price = 49.000, granted ones 0")
-
-	// a seat order older than the last plan order is covered by that order
-	k := newBillingFixture(t)
-	k.paidSeats(t, "seat", 3, end, 1, 49_000)
-	k.sneakSeatOrder(t, 2, "")
-	ord := k.repo.orders["o-seat"]
-	later := billingNow.Add(time.Hour)
-	ord.PaidAt, ord.Seats = &later, 5
-	require.Equal(t, int64(49_000*5), planCredit(t, k).AmountVND)
 }
 
 // Review M1 for F5: the add-on seats not carried over are taken newest
@@ -564,7 +564,6 @@ func TestKeptAddonDroppedSeatsCreditInTranches(t *testing.T) {
 	ctx := context.Background()
 	end := endOfVN(2026, 11, 12)
 	f.paidSeats(t, "seat", 3, end, 1, 49_000)
-	f.repo.orders["o-seat"].Addons = types.UsageOrderAddonLines{{AgentID: "thue", Name: "Thuế HKD", UnitPriceVND: 99_000, Units: 3, Months: 1}}
 	f.heldThue(t)
 	f.promo(t, types.UsagePromoCode{Code: "FREE", DiscountType: types.UsagePromoPercent, DiscountValue: 100, IsActive: true})
 	f.sneakSeatOrder(t, 2, "FREE") // thue for the 2 new seats, free

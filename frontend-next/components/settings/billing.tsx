@@ -47,9 +47,13 @@ import {
   billingErrorRetryable,
   billingServerMessage,
   defaultPlanSeats,
+  heldNeedingRenewal,
+  heldOutlivesPackage,
   orderAmountDue,
   orderPaymentHeld,
   orderPlanLineVND,
+  orderSummaryParts,
+  orderWasPaidFor,
   pendingPlanOrderCode,
   planNameAfterWord,
   preferredPlanId,
@@ -210,6 +214,10 @@ export function BillingPage() {
   const [addonIds, setAddonIds] = useState<string[]>([]);
   // the scope's current subscription, its add-ons, and a mid-term purchase
   const [scopeAddons, setScopeAddons] = useState<UsageScopeAddons | null>(null);
+  // the scope whose current subscription (scopeAddons) has been loaded:
+  // until then the plan, seats and add-on defaults are not settled and a
+  // quote would only flash a refusal (seats_below_current, addon_held)
+  const [addonsScope, setAddonsScope] = useState<UsageScopeKind | null>(null);
   const [extraIds, setExtraIds] = useState<string[]>([]);
   const [extraQuote, setExtraQuote] = useState<UsageQuote | null>(null);
   const [extraError, setExtraError] = useState("");
@@ -274,8 +282,12 @@ export function BillingPage() {
         .then((sa) => {
           setScopeAddons(sa);
           setExtraIds((cur) => keepOffered(cur, sa.purchasable));
+          setAddonsScope(scope);
         })
-        .catch(() => setScopeAddons(null));
+        .catch(() => {
+          setScopeAddons(null);
+          setAddonsScope(scope);
+        });
       setPlanId((cur) => preferredPlanId(pl.map((p) => p.id), cur, "", planPickedRef.current));
       setError("");
       setErrorRetry(true);
@@ -304,15 +316,20 @@ export function BillingPage() {
   // string keys: every load() brings new arrays, and an unticked agent
   // must not be ticked again by a refresh
   const heldKey = (scopeAddons?.held ?? []).map((h) => h.agent_id).sort().join(",");
+  // a renewal pre-ticks only the held agents that would stop at the
+  // package's end; one kept from a plan change beyond it does not need it
+  const extendKey = heldNeedingRenewal(scopeAddons?.held ?? [], scopeAddons?.subscription?.ends_at).sort().join(",");
   const offeredKey = (plan?.addons ?? []).map((a) => a.agent_id).join(",");
   const planKey = plan?.id ?? "";
   useEffect(() => {
     // a plan change leaves the held add-ons to the keep choice; only a
     // renewal of the plan in use ticks them as purchases
     const split = (k: string) => (k ? k.split(",") : []);
-    setAddonIds((cur) => addonIdsForPlan(cur, split(offeredKey), split(heldKey), !!planKey && planKey === currentPlanId));
+    setAddonIds((cur) =>
+      addonIdsForPlan(cur, split(offeredKey), split(heldKey), !!planKey && planKey === currentPlanId, split(extendKey)),
+    );
     setKeepIds(null);
-  }, [planKey, offeredKey, currentPlanId, heldKey]);
+  }, [planKey, offeredKey, currentPlanId, heldKey, extendKey]);
   const renewing = !!plan && plan.id === currentPlanId;
   // the seats box starts from the seats of the current seat package: a
   // renewal may not buy fewer, a seat→seat change keeps the members' seats
@@ -357,6 +374,12 @@ export function BillingPage() {
     if (o.billing_term === "year" || o.billing_term === "quarter") return `${base} · ${termLabel(o.billing_term, o.months)}`;
     return base;
   };
+  /* The labels of an order's one-line summary (orderSummaryParts). */
+  const summaryLabels = (o: UsageOrder) => ({
+    length: () => orderLength(o),
+    seats: (n: number) => t("bill.seatsN", { n }),
+    addSeats: (n: number) => t("bill.addSeatsN", { n }),
+  });
 
   // Re-price whenever the choice changes.
   useEffect(() => {
@@ -367,35 +390,41 @@ export function BillingPage() {
     // a plan switch first moves months to one the plan is sold for (the
     // effect above); pricing the stale count would only flash a 400
     if (plan?.id === planId && !monthChoices.includes(months)) return;
+    // the scope's subscription decides the defaults (plan in use, seats,
+    // held add-ons): wait for it, then let those defaults apply
+    if (addonsScope !== scope || seats !== seatsText) return;
     let alive = true;
-    setQuoting(true);
-    quoteUsageOrder({
-      scope_type: scope,
-      plan_id: planId,
-      months,
-      seats: seatMode ? seats : 0,
-      promo_code: promo,
-      kind: "plan",
-      addon_agent_ids: addonIds,
-      ...(keepIds ? { keep_addon_agent_ids: keepIds } : {}),
-    })
-      .then((q) => {
-        if (!alive) return;
-        setQuote(q);
-        setQuoteError("");
+    const timer = window.setTimeout(() => {
+      setQuoting(true);
+      quoteUsageOrder({
+        scope_type: scope,
+        plan_id: planId,
+        months,
+        seats: seatMode ? seats : 0,
+        promo_code: promo,
+        kind: "plan",
+        addon_agent_ids: addonIds,
+        ...(keepIds ? { keep_addon_agent_ids: keepIds } : {}),
       })
-      .catch((e) => {
-        if (!alive) return;
-        setQuote(null);
-        setQuoteError(billingError(e));
-      })
-      .finally(() => {
-        if (alive) setQuoting(false);
-      });
+        .then((q) => {
+          if (!alive) return;
+          setQuote(q);
+          setQuoteError("");
+        })
+        .catch((e) => {
+          if (!alive) return;
+          setQuote(null);
+          setQuoteError(billingError(e));
+        })
+        .finally(() => {
+          if (alive) setQuoting(false);
+        });
+    }, 50);
     return () => {
       alive = false;
+      window.clearTimeout(timer);
     };
-  }, [scope, planId, plan, monthChoices, months, seats, seatMode, promo, addonIds, keepIds, billingError]);
+  }, [scope, addonsScope, planId, plan, monthChoices, months, seats, seatsText, seatMode, promo, addonIds, keepIds, billingError]);
 
   // Price the add-ons bought on the current subscription.
   useEffect(() => {
@@ -666,14 +695,7 @@ export function BillingPage() {
                 {t("bill.order")} <span className="font-mono">{order.order_code}</span>
               </div>
               <div className="caption text-muted">
-                {order.plan_name} ·{" "}
-                {orderLength(order)}
-                {order.kind === "seats"
-                  ? ` · ${t("bill.addSeatsN", { n: order.seats })}`
-                  : order.mode === "seat"
-                    ? ` · ${t("bill.seatsN", { n: order.seats })}`
-                    : ""}{" "}
-                · {order.scope_name}
+                {[...orderSummaryParts(order, summaryLabels(order)), order.scope_name].join(" · ")}
               </div>
             </div>
             <span className={`badge-pill text-[11px] ${order.status === "paid" ? "badge-success" : pending ? "badge-warning" : "badge-neutral"}`}>{t(orderStatusKey(order))}</span>
@@ -818,8 +840,12 @@ export function BillingPage() {
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-hairline px-4 py-3 text-[14px]">
               <span className="text-success">
                 {order.subscription_ends_at
-                  ? t("bill.paidUntil", { time: fmtDate(order.paid_at, locale), plan: pn(order.plan_name), date: formatLastDay(order.subscription_ends_at) })
-                  : t("bill.paidAt", { time: fmtDate(order.paid_at, locale) })}
+                  ? t(orderWasPaidFor(order) ? "bill.paidUntil" : "bill.confirmedUntil", {
+                      time: fmtDate(order.paid_at, locale),
+                      plan: pn(order.plan_name),
+                      date: formatLastDay(order.subscription_ends_at),
+                    })
+                  : t(orderWasPaidFor(order) ? "bill.paidAt" : "bill.confirmedAt", { time: fmtDate(order.paid_at, locale) })}
               </span>
               <a className="btn btn-outline btn-sm" href={receiptHref(order.order_code)} target="_blank" rel="noopener">
                 {t("bill.receipt")}
@@ -1205,7 +1231,12 @@ export function BillingPage() {
           <h3 className="text-[14px] font-medium text-ink">{t("bill.currentAddonsTitle")}</h3>
           <p className="caption text-muted">
             {scopeAddons.subscription.ends_at
-              ? t("bill.currentAddonsIntro", { date: formatLastDay(scopeAddons.subscription.ends_at) })
+              ? t(
+                  scopeAddons.held.some((h) => heldOutlivesPackage(h, scopeAddons.subscription?.ends_at))
+                    ? "bill.currentAddonsIntroOwnEnds"
+                    : "bill.currentAddonsIntro",
+                  { date: formatLastDay(scopeAddons.subscription.ends_at) },
+                )
               : t("bill.currentAddonsOpen")}
           </p>
           {scopeAddons.held.length > 0 && (
@@ -1214,6 +1245,7 @@ export function BillingPage() {
                 <li key={h.agent_id}>
                   • {h.agent_name || h.agent_id}
                   {h.ends_at ? ` — ${t("bill.addonUntil", { date: formatLastDay(h.ends_at) })}` : ` — ${t("bill.addonWithSub")}`}
+                  {heldOutlivesPackage(h, scopeAddons.subscription?.ends_at) && ` (${t("bill.addonBeyondPackage")})`}
                 </li>
               ))}
             </ul>
@@ -1278,13 +1310,10 @@ export function BillingPage() {
                 <button type="button" className="flex min-w-0 flex-1 flex-wrap items-center gap-3 px-3 py-2 text-left text-[13.5px]" onClick={() => openOrder(o)}>
                   <span className="font-mono text-ink">{o.order_code}</span>
                   <span className="min-w-0 flex-1 truncate text-muted">
-                    {o.plan_name} · {orderLength(o)}
-                    {o.kind === "seats"
-                      ? ` · ${t("bill.addSeatsN", { n: o.seats })}`
-                      : o.kind !== "addon" && o.mode === "seat"
-                        ? ` · ${t("bill.seatsN", { n: o.seats })}`
-                        : ""}
-                    {o.kind !== "seats" && (o.addons ?? []).length > 0 ? ` · ${t("bill.addonsN", { n: (o.addons ?? []).length })}` : ""} · {o.scope_name}
+                    {[
+                      ...orderSummaryParts(o, { ...summaryLabels(o), addons: (n) => t("bill.addonsN", { n }) }),
+                      o.scope_name,
+                    ].join(" · ")}
                   </span>
                   <span className="tabular-nums text-ink">{formatPriceVND(o.total_vnd)}</span>
                   <span className={`badge-pill text-[11px] ${o.status === "paid" ? "badge-success" : o.status === "pending" ? "badge-warning" : "badge-neutral"}`}>{t(orderStatusKey(o))}</span>

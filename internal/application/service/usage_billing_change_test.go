@@ -33,7 +33,8 @@ func (m *memPlanRepo) AddSeat(_ context.Context, s *types.UsageSeat) error {
 }
 
 // paidPool gives tenant 10003 a pool subscription ending at end, paid by an
-// order at unit/month with discount off subtotal.
+// order at unit/month with discount off subtotal. The order bought the 30
+// days before end (fixturePeriod), so its unused days are worth all of it.
 func (f *billingFixture) paidPool(t *testing.T, end time.Time, unit, subtotal, discount int64) {
 	t.Helper()
 	f.plans.active["tenant/10003"] = &types.UsageSubscription{ID: "sub-1", ScopeType: "tenant", ScopeID: "10003",
@@ -44,7 +45,15 @@ func (f *billingFixture) paidPool(t *testing.T, end time.Time, unit, subtotal, d
 		ID: "o-old", OrderCode: "WROLD", ScopeType: "tenant", ScopeID: "10003", PlanID: "pool", Kind: "plan",
 		Months: 1, UnitPriceVND: unit, SubtotalVND: subtotal, DiscountVND: discount, TotalVND: subtotal - discount,
 		Status: types.UsageOrderPaid, PaidAt: &paid, SubscriptionID: &subID,
+		PeriodStartsAt: fixturePeriodStart(end), ResultEndsAt: &end,
 	}))
+}
+
+// fixturePeriodStart is 30 days before end: the period the fixture orders
+// paid for, entirely after billingNow's today when end is 12/11.
+func fixturePeriodStart(end time.Time) *time.Time {
+	s := end.AddDate(0, 0, -30)
+	return &s
 }
 
 // H2: another plan bought while the current one runs credits its unused
@@ -125,6 +134,8 @@ func TestPlanChangeHeldAddonIsTheBuyersChoice(t *testing.T) {
 	ctx := context.Background()
 	end := endOfVN(2026, 11, 12)
 	f.paidPool(t, end, 100_000, 199_000, 0)
+	f.repo.orders["o-old"].Addons = types.UsageOrderAddonLines{{AgentID: "thue", Name: "Thuế HKD",
+		UnitPriceVND: 99_000, Units: 1, Months: 1, AmountVND: 99_000}}
 	oldID := "o-old"
 	require.NoError(t, f.plans.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
 		SubscriptionID: "sub-1", AgentID: "thue", AgentName: "Thuế HKD", StartsAt: billingNow, PriceVND: 99_000, OrderID: &oldID}))
