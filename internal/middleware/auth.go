@@ -160,6 +160,21 @@ func isTenantOptionalAPI(path, method string) bool {
 		}
 	}
 	switch {
+	case path == "/api/v1/system/legal-documents/push" && method == http.MethodPost:
+		// External-source legal-document feed: an operator account flagged
+		// users.can_upload_legal_documents may hold no workspace of its own
+		// (the flag is account-level, like IsSystemAdmin). The route's own
+		// guard (RequireLegalUploader / legalPushAllowed) decides; every other
+		// tenantless caller is still refused there.
+		return true
+	case path == "/api/v1/system/legal-requests" && method == http.MethodGet:
+		// Same operator reading the request queue it is expected to fill.
+		return true
+	case strings.HasPrefix(path, "/api/v1/system/legal-requests/") && method == http.MethodPut:
+		// Same operator closing a request as "added" (the handler restricts
+		// the action for a narrow caller). The portal-check and :id/fetch
+		// routes stay out of this shape.
+		return !strings.HasSuffix(path, "/portal-check") && !strings.HasSuffix(path, "/fetch")
 	case path == "/api/v1/knowledge-bases/public" && method == http.MethodPost:
 		// Platform public-KB creation: an explicit human SuperAdmin with
 		// no active workspace must reach the route; its dedicated guard
@@ -390,9 +405,10 @@ func isTenantlessKBLifecyclePath(path, method string) bool {
 
 func attachTenantlessUserContext(c *gin.Context, user *types.User) {
 	applyAuthSession(c, authSession{
-		User:        user,
-		Principal:   types.Principal{Type: types.PrincipalWebUser, ID: user.ID},
-		SystemAdmin: user.IsSystemAdmin,
+		User:          user,
+		Principal:     types.Principal{Type: types.PrincipalWebUser, ID: user.ID},
+		SystemAdmin:   user.IsSystemAdmin,
+		LegalUploader: user.CanUploadLegalDocuments,
 	})
 }
 
@@ -572,12 +588,13 @@ func authenticateJWTUser(
 				"[auth] SuperAdmin %s has no membership in tenant %d; serving %s with no tenant role",
 				user.ID, targetTenantID, c.Request.URL.Path)
 			applyAuthSession(c, authSession{
-				User:        user,
-				Principal:   types.Principal{Type: types.PrincipalWebUser, ID: user.ID},
-				TenantID:    targetTenantID,
-				Tenant:      tenant,
-				Role:        "",
-				SystemAdmin: true,
+				User:          user,
+				Principal:     types.Principal{Type: types.PrincipalWebUser, ID: user.ID},
+				TenantID:      targetTenantID,
+				Tenant:        tenant,
+				Role:          "",
+				SystemAdmin:   true,
+				LegalUploader: user.CanUploadLegalDocuments,
 			})
 			return true
 		}
@@ -612,12 +629,13 @@ func authenticateJWTUser(
 		"[auth] resolved role=%s for user=%s in tenant=%d (jwt_tenant=%d, header=%q, cross_switch=%v)",
 		role, user.ID, targetTenantID, jwtTenantID, c.GetHeader("X-Tenant-ID"), crossTenantSwitch)
 	applyAuthSession(c, authSession{
-		User:        user,
-		Principal:   types.Principal{Type: types.PrincipalWebUser, ID: user.ID},
-		TenantID:    targetTenantID,
-		Tenant:      tenant,
-		Role:        role,
-		SystemAdmin: user.IsSystemAdmin,
+		User:          user,
+		Principal:     types.Principal{Type: types.PrincipalWebUser, ID: user.ID},
+		TenantID:      targetTenantID,
+		Tenant:        tenant,
+		Role:          role,
+		SystemAdmin:   user.IsSystemAdmin,
+		LegalUploader: user.CanUploadLegalDocuments,
 	})
 	return true
 }

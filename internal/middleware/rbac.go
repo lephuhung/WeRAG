@@ -272,6 +272,51 @@ func RequireRoleOrSystemAdmin(min types.TenantRole, cfg *config.Config) gin.Hand
 	}
 }
 
+// RequireLegalUploader admits an explicit human SuperAdmin, or a human account
+// flagged users.can_upload_legal_documents.
+//
+// The external-source legal-document feed (docs/legal-document-feed-spec.md §9)
+// is filled by an operator account that may only upload documents: pushing a
+// document, reading the queue of documents users asked for, and closing such a
+// request as "added". The flag is read from the auth session (attached in
+// applyAuthSession), never from the request, and machine principals never carry
+// it — API keys keep the apiKeyIngest policy on the push route.
+//
+// No tenant context is required: an operator may have no workspace of their
+// own, and the flag is account-level authority like IsSystemAdmin. A tenantless
+// non-operator gets 401 (nothing identifies them to act as), a tenant-scoped
+// one gets 403.
+func RequireLegalUploader(cfg *config.Config) gin.HandlerFunc {
+	warnOnNilConfig(cfg)
+	return func(c *gin.Context) {
+		ctx := c.Request.Context()
+		caller := types.CallerFromContext(ctx)
+		if access.IsExplicitHumanSuperAdmin(ctx, caller) {
+			c.Next()
+			return
+		}
+		if access.IsAuthenticatedHuman(ctx, caller) && types.CanUploadLegalDocumentsFromContext(ctx) {
+			c.Next()
+			return
+		}
+		uid, _ := types.UserIDFromContext(ctx)
+		if caller.TenantID == 0 {
+			logger.Warnf(ctx,
+				"[rbac] legal-document uploader required (no tenant context): user=%s path=%s",
+				uid, c.Request.URL.Path)
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			c.Abort()
+			return
+		}
+		logger.Warnf(ctx,
+			"[rbac] legal-document uploader required: user=%s path=%s", uid, c.Request.URL.Path)
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "Forbidden: legal document upload permission required",
+		})
+		c.Abort()
+	}
+}
+
 // RequireExplicitHumanSuperAdmin allows only an explicit human platform
 // administrator: the system-admin flag plus a real non-synthetic user ID.
 // CanAccessAllTenants alone never qualifies, and machine principals

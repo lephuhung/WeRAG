@@ -29,8 +29,10 @@ func NewLegalPushHandler(svc *service.LegalPushService) *LegalPushHandler {
 }
 
 // legalPushAllowed: an API key of the platform tenant (the route's API-key
-// policy already required full access or the ingest capability), or an
-// explicit human SuperAdmin.
+// policy already required full access or the ingest capability), an explicit
+// human SuperAdmin, or a human account flagged users.can_upload_legal_documents
+// — the narrow permission the external-source feed's operator account holds
+// (push only; the server still files every link in the SuperAdmin review queue).
 func legalPushAllowed(ctx context.Context) error {
 	caller := types.CallerFromContext(ctx)
 	if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey {
@@ -40,6 +42,9 @@ func legalPushAllowed(ctx context.Context) error {
 		return nil
 	}
 	if access.IsExplicitHumanSuperAdmin(ctx, caller) {
+		return nil
+	}
+	if access.IsAuthenticatedHuman(ctx, caller) && types.CanUploadLegalDocumentsFromContext(ctx) {
 		return nil
 	}
 	return errors.NewForbiddenError("Forbidden: system administrator required")

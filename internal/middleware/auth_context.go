@@ -29,6 +29,11 @@ type authSession struct {
 	// TenantRoleFromContext's fail-closed Viewer default.
 	Role        types.TenantRole
 	SystemAdmin bool
+	// LegalUploader carries users.can_upload_legal_documents: the narrow
+	// permission for the external-source legal-document feed (push, request
+	// queue, closing a request as added). Always false for API-key and
+	// synthetic principals.
+	LegalUploader bool
 	// APIKeyScope marks machine principals; the APIKeyGate authorizes them
 	// per-route from this scope.
 	APIKeyScope *types.TenantAPIKeyScope
@@ -70,6 +75,7 @@ func applyAuthSession(c *gin.Context, s authSession) {
 		set(types.TenantRoleContextKey, s.Role)
 	}
 	set(types.SystemAdminContextKey, s.SystemAdmin)
+	set(types.LegalUploaderContextKey, s.LegalUploader)
 	if s.APIKeyScope != nil {
 		ctx = types.WithTenantAPIKeyScope(ctx, *s.APIKeyScope)
 	}

@@ -194,6 +194,19 @@ func IsSystemAdminFromContext(ctx context.Context) bool {
 	return v
 }
 
+// CanUploadLegalDocumentsFromContext reports whether the authenticated human
+// may push legal documents from an external source, read the legal-document
+// request queue and close a request as added. The flag comes from
+// users.can_upload_legal_documents and is never attached to API-key
+// principals. Returns false (fail-closed) when the key is absent.
+func CanUploadLegalDocumentsFromContext(ctx context.Context) bool {
+	v, ok := ctx.Value(LegalUploaderContextKey).(bool)
+	if !ok {
+		return false
+	}
+	return v
+}
+
 // CanManageModelConfig reports whether the caller may create or modify
 // model definitions (catalog entries and their credentials). Model config
 // is platform-owned: only system administrators — and platform API keys,

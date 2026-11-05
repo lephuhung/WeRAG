@@ -519,6 +519,15 @@ func (g *rbacGuards) PlatformSuperAdmin() gin.HandlerFunc {
 	return middleware.RequireExplicitHumanSuperAdmin(g.cfg)
 }
 
+// LegalUploader gates the external-source legal-document feed
+// (docs/legal-document-feed-spec.md §9): pushing a document from another
+// source, reading the queue of legal-document requests, and closing a
+// request as "added". It admits an explicit human SuperAdmin or a human
+// account flagged users.can_upload_legal_documents — never an API key.
+func (g *rbacGuards) LegalUploader() gin.HandlerFunc {
+	return middleware.RequireLegalUploader(g.cfg)
+}
+
 // Ownership-or-role guards. Required role here is the privilege level
 // that bypasses the ownership check; Contributors ALWAYS pass when they
 // own the resource.

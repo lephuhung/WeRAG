@@ -756,6 +756,15 @@ khác bị 403. Phải là key **tạo trong tổ chức 10000**
 gắn tổ chức nên bị từ chối. Hoặc JWT của SuperAdmin (người thật). Ở chế độ `full`, danh sách
 KB của key phải chứa KB đích.
 
+Ngoài ra, một **tài khoản người thật có cờ `users.can_upload_legal_documents`**
+cũng đẩy được (migration 000188): đây là quyền hẹp cho tài khoản vận hành nguồn
+ngoài (extension Chrome TVPL). Cờ này chỉ mở đúng ba việc — push, đọc
+`GET /system/legal-requests`, đóng đề nghị bằng `PUT /system/legal-requests/{id}`
+với `action = added`; `ingest`/`reject` và `portal-check` vẫn là SuperAdmin.
+Cờ không gắn với API key (key giữ chính sách `ingest` ở trên) và không cấp quyền
+KB, duyệt liên kết hay cấu hình. Bật/tắt bằng
+`UPDATE users SET can_upload_legal_documents = TRUE|FALSE WHERE …`.
+
 `mode`:
 
 | Giá trị | Hành vi |

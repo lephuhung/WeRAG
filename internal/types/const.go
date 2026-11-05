@@ -40,6 +40,11 @@ const (
 	// SessionTenantIDContextKey is the context key for session owner's tenant ID.
 	// When set (e.g. in pipeline with shared agent), session/message lookups use this instead of TenantIDContextKey.
 	SessionTenantIDContextKey ContextKey = "SessionTenantID"
+	// LegalUploaderContextKey carries users.can_upload_legal_documents: the
+	// narrow permission to push legal documents from an external source
+	// (docs/legal-document-feed-spec.md §9), read the legal-document request
+	// queue and close a request as added. Never set for API-key principals.
+	LegalUploaderContextKey ContextKey = "LegalUploader"
 	// SessionIDContextKey carries the current session ID through the chat pipeline
 	// so that stateful sandbox backends (notably CubeSandbox) can route script
 	// execution to the persistent, per-session MicroVM instance.

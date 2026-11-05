@@ -25,18 +25,21 @@ func RegisterLegalReviewRoutes(r *gin.RouterGroup, h *handler.LegalReviewHandler
 	r.GET("/system/legal-catalog/search", g.PlatformSuperAdmin(), h.SearchLegalCatalog)
 }
 
-// RegisterLegalRequestRoutes wires the SuperAdmin queue of requests to add
-// legal documents users asked about that no knowledge base holds.
+// RegisterLegalRequestRoutes wires the queue of requests to add legal
+// documents users asked about that no knowledge base holds. Reading the queue
+// and closing a request as "added" are open to the external-source feed's
+// operator account (users.can_upload_legal_documents); ingesting from vbpl.vn,
+// rejecting a request and the portal check stay with the SuperAdmin.
 func RegisterLegalRequestRoutes(r *gin.RouterGroup, h *handler.LegalRequestHandler, g *rbacGuards) {
 	if h == nil {
 		return
 	}
-	requests := r.Group("/system/legal-requests", g.PlatformSuperAdmin())
+	requests := r.Group("/system/legal-requests")
 	{
-		requests.GET("", h.ListLegalRequests)
-		requests.GET("/public-knowledge-bases", h.ListLegalRequestKnowledgeBases)
-		requests.PUT("/:id", h.DecideLegalRequest)
-		requests.POST("/:id/portal-check", h.CheckLegalRequestPortal)
+		requests.GET("", g.LegalUploader(), h.ListLegalRequests)
+		requests.GET("/public-knowledge-bases", g.PlatformSuperAdmin(), h.ListLegalRequestKnowledgeBases)
+		requests.PUT("/:id", g.LegalUploader(), h.DecideLegalRequest)
+		requests.POST("/:id/portal-check", g.PlatformSuperAdmin(), h.CheckLegalRequestPortal)
 	}
 }
 

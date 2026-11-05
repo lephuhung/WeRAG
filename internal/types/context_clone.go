@@ -34,6 +34,13 @@ var contextCloneAcrossDetach = map[ContextKey]bool{
 	UserIDContextKey:      true,
 	PrincipalContextKey:   true,
 	SystemAdminContextKey: true,
+	// LegalUploaderContextKey is a per-request GRANT (users.can_upload_legal_documents
+	// as resolved for this request). Background work must not inherit it: a
+	// detached goroutine that kept the flag could push legal documents or close
+	// requests after the request that carried it ended. Deliberately false —
+	// dropping a grant fails closed, and every push re-checks it at the route
+	// and in the handler.
+	LegalUploaderContextKey: false,
 	// TenantRoleContextKey: the caller's resolved role in the active tenant
 	// (PR 2 #1303). Must survive for the same reason as TenantIDContextKey —
 	// any handler that does `ctx := logger.CloneContext(c.Request.Context())`

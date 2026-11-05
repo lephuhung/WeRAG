@@ -114,6 +114,11 @@ type User struct {
 	CanAccessAllTenants bool `json:"can_access_all_tenants" gorm:"default:false"`
 	// Whether the user is a system administrator (independent of organization roles)
 	IsSystemAdmin bool `json:"is_system_admin" gorm:"default:false;index"`
+	// Whether the user may upload legal documents from an external source
+	// (docs/legal-document-feed-spec.md §9): the push endpoint, the queue of
+	// legal-document requests, and closing a request as added. It grants no
+	// other authority — no knowledge-base access, no review, no configuration.
+	CanUploadLegalDocuments bool `json:"can_upload_legal_documents" gorm:"default:false"`
 	// Per-user UI/feature preferences.
 	// Stored as JSON (jsonb on Postgres, TEXT on SQLite) via the
 	// driver.Valuer / sql.Scanner methods on UserPreferences.

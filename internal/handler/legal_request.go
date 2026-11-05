@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"context"
 	"net/http"
+	"strings"
 
+	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -10,9 +13,17 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// LegalRequestHandler exposes the SuperAdmin queue of requests to add legal
-// documents the system lacks (a chat question named a số hiệu no knowledge
-// base holds). The router gates every route on an explicit human SuperAdmin.
+// isExplicitHumanSuperAdminCaller is the handler-side twin of the router
+// guard: the platform account that may do everything with a request.
+func isExplicitHumanSuperAdminCaller(ctx context.Context) bool {
+	return access.IsExplicitHumanSuperAdmin(ctx, types.CallerFromContext(ctx))
+}
+
+// LegalRequestHandler exposes the queue of requests to add legal documents the
+// system lacks (a chat question named a số hiệu no knowledge base holds).
+// Reading the queue and closing a request as "added" are open to the
+// external-source feed's operator account (users.can_upload_legal_documents);
+// ingesting from vbpl.vn and rejecting stay SuperAdmin-only.
 type LegalRequestHandler struct {
 	svc interfaces.LegalRequestService
 }
@@ -80,6 +91,14 @@ func (h *LegalRequestHandler) DecideLegalRequest(c *gin.Context) {
 	var req types.LegalRequestDecision
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.Error(errors.NewBadRequestError("invalid request").WithDetails(err.Error()))
+		return
+	}
+	// A caller holding only users.can_upload_legal_documents may close a
+	// request as "added" (it just pushed the document); ingesting from
+	// vbpl.vn and rejecting still need the SuperAdmin.
+	if types.CanUploadLegalDocumentsFromContext(ctx) && !isExplicitHumanSuperAdminCaller(ctx) &&
+		!strings.EqualFold(strings.TrimSpace(req.Action), types.LegalRequestActionAdded) {
+		c.Error(errors.NewForbiddenError("only a SuperAdmin may ingest or reject a legal document request"))
 		return
 	}
 	item, err := h.svc.Decide(ctx, c.Param("id"), &req)
