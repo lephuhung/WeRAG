@@ -231,6 +231,10 @@ func (s *legalRequestService) Claim(
 		if existing == nil {
 			return nil, apperrors.NewNotFoundError("legal document request not found")
 		}
+		if !types.IsLegalRequestOpen(existing.Status) {
+			return nil, apperrors.NewConflictError("this legal document request is already closed").
+				WithDetails("status: " + existing.Status)
+		}
 		return nil, apperrors.NewConflictError("another operator is fetching this document").
 			WithDetails("claimed_by: " + existing.ClaimedBy)
 	}

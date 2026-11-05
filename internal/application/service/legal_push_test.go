@@ -71,6 +71,19 @@ func TestLegalPushLinks(t *testing.T) {
 	}
 	require.True(t, problemOnContent, "a mark on prov-content is reported")
 
+	// mark_results resolves EVERY mark, including the good outcomes, so a
+	// client that draws the link graph does not see a matched mark as unknown.
+	statuses := map[string]bool{}
+	for _, m := range res.MarkResults {
+		statuses[m.Status] = true
+	}
+	for _, want := range []string{"matched", "duplicate", "doc_only", "unresolved", "target_missing"} {
+		require.True(t, statuses[want], "mark_results must carry status %q", want)
+	}
+	for _, m := range res.MarkResults {
+		require.NotEmpty(t, m.ElementID, "every mark names its element")
+	}
+
 	items, total, counts, err := svc.ListCandidates(ctx, LegalLinkCandidateFilter{MatchStatus: "matched"}, 0, 50)
 	require.NoError(t, err)
 	require.EqualValues(t, 1, total)

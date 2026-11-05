@@ -76,6 +76,20 @@ type LegalPushProblem struct {
 	Reason    string `json:"reason"`
 }
 
+// LegalPushMark is the resolution of ONE mark, including the good outcomes.
+// Problems only carry the ones needing attention, so a caller that wants to
+// show every mark (the TVPL extension's link graph) needs this list: without
+// it a matched mark is indistinguishable from one never resolved.
+type LegalPushMark struct {
+	ElementID string `json:"element_id"`
+	DocNumber string `json:"doc_number,omitempty"`
+	// Path is the mark's position inside B ("" when the note named none).
+	Path   string `json:"path,omitempty"`
+	Op     string `json:"op,omitempty"`
+	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
+}
+
 // LegalPushResult is the answer of a push.
 type LegalPushResult struct {
 	LegalDocumentID string `json:"legal_document_id"`
@@ -93,6 +107,8 @@ type LegalPushResult struct {
 	// KeptDecisions counts marks a SuperAdmin already approved or rejected.
 	KeptDecisions int                `json:"kept_decisions"`
 	Problems      []LegalPushProblem `json:"problems"`
+	// MarkResults resolves every mark, in document order (see LegalPushMark).
+	MarkResults []LegalPushMark `json:"mark_results"`
 }
 
 // legalPushMeta is the pushed metadata, read and checked.
@@ -449,6 +465,10 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 				return nil, err
 			}
 			out = append(out, c)
+			res.MarkResults = append(res.MarkResults, LegalPushMark{
+				ElementID: mp.ElementID, DocNumber: c.AmenderDocNumber, Path: c.SourcePath,
+				Op: c.Op, Status: c.MatchStatus, Reason: c.MatchReason,
+			})
 			if c.MatchStatus != types.LegalLinkMatched && c.MatchStatus != types.LegalLinkDuplicate {
 				res.Problems = append(res.Problems, LegalPushProblem{ElementID: mp.ElementID, Status: c.MatchStatus,
 					DocNumber: c.AmenderDocNumber, Reason: c.MatchReason})

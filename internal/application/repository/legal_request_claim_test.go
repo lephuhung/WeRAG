@@ -83,3 +83,41 @@ func TestLegalRequestDecisionClearsClaim(t *testing.T) {
 		t.Fatalf("decision must clear the lease: %+v", decided)
 	}
 }
+
+func TestLegalRequestClaimRefusesClosedRequest(t *testing.T) {
+	repo, _ := newLegalRequestRepo(t)
+	ctx := context.Background()
+	row := seedRequest(t, repo)
+
+	// Someone finishes the queue entry, which clears the lease.
+	if _, err := repo.Decide(ctx, row.ID, types.LegalRequestAdded, "u-1", "done", "k1", "kb1"); err != nil {
+		t.Fatal(err)
+	}
+	// A stale queue view must not restart the pipeline on a closed request.
+	if claimed, err := repo.Claim(ctx, row.ID, "u-2", true); err != nil || claimed != nil {
+		t.Fatalf("closed request must not be claimable, got %+v %v", claimed, err)
+	}
+}
+
+func TestLegalRequestMarkAddedClearsLease(t *testing.T) {
+	repo, db := newLegalRequestRepo(t)
+	ctx := context.Background()
+	row := seedRequest(t, repo)
+	if err := db.Model(&types.LegalDocumentRequest{}).Where("id = ?", row.ID).
+		Update("legal_document_id", "155366").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.Claim(ctx, row.ID, "u-1", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.MarkAddedByDocument(ctx, "155366", "k1", "kb1", "feed:tvpl"); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := repo.Get(ctx, row.ID)
+	if err != nil || stored == nil {
+		t.Fatalf("get: %v %v", stored, err)
+	}
+	if stored.ClaimedBy != "" || stored.ClaimedAt != nil {
+		t.Fatalf("ingest of the document must clear the lease: %+v", stored)
+	}
+}

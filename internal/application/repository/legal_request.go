@@ -176,8 +176,11 @@ func (r *legalRequestRepository) Claim(
 	now := time.Now()
 	q := r.db.WithContext(ctx).Model(&types.LegalDocumentRequest{}).Where("id = ?", id)
 	if claim {
-		q = q.Where("claimed_by = '' OR claimed_at IS NULL OR claimed_by = ? OR claimed_at < ?",
-			userID, now.Add(-types.LegalRequestClaimLease))
+		// Only an open request can be taken: a queue entry someone else already
+		// closed must not restart the fetch pipeline.
+		q = q.Where("status IN ?", types.LegalRequestOpenStatuses).
+			Where("claimed_by = '' OR claimed_at IS NULL OR claimed_by = ? OR claimed_at < ?",
+				userID, now.Add(-types.LegalRequestClaimLease))
 	} else {
 		q = q.Where("claimed_by = ?", userID)
 	}
@@ -261,6 +264,9 @@ func (r *legalRequestRepository) MarkAddedByDocument(
 		Updates(map[string]any{
 			"status": types.LegalRequestAdded, "decided_by": actor, "decided_at": now,
 			"knowledge_id": knowledgeID, "knowledge_base_id": kbID, "updated_at": now,
+			// An ingest of this document finishes the queue entry: the lease
+			// must not survive a later reopen and block the next operator.
+			"claimed_by": "", "claimed_at": nil,
 		})
 	return res.RowsAffected, res.Error
 }
