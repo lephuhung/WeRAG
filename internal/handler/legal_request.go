@@ -93,15 +93,25 @@ func (h *LegalRequestHandler) DecideLegalRequest(c *gin.Context) {
 		c.Error(errors.NewBadRequestError("invalid request").WithDetails(err.Error()))
 		return
 	}
+	action := strings.ToLower(strings.TrimSpace(req.Action))
 	// A caller holding only users.can_upload_legal_documents may close a
-	// request as "added" (it just pushed the document); ingesting from
-	// vbpl.vn and rejecting still need the SuperAdmin.
+	// request as "added" (it just pushed the document) and hold/release the
+	// operator lease; ingesting from vbpl.vn and rejecting still need the
+	// SuperAdmin.
 	if types.CanUploadLegalDocumentsFromContext(ctx) && !isExplicitHumanSuperAdminCaller(ctx) &&
-		!strings.EqualFold(strings.TrimSpace(req.Action), types.LegalRequestActionAdded) {
+		action != types.LegalRequestActionAdded &&
+		action != types.LegalRequestActionClaim &&
+		action != types.LegalRequestActionRelease {
 		c.Error(errors.NewForbiddenError("only a SuperAdmin may ingest or reject a legal document request"))
 		return
 	}
-	item, err := h.svc.Decide(ctx, c.Param("id"), &req)
+	var item *types.LegalRequestItem
+	var err error
+	if action == types.LegalRequestActionClaim || action == types.LegalRequestActionRelease {
+		item, err = h.svc.Claim(ctx, c.Param("id"), action, req.Note)
+	} else {
+		item, err = h.svc.Decide(ctx, c.Param("id"), &req)
+	}
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)

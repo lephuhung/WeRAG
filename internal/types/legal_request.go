@@ -40,6 +40,13 @@ type LegalDocumentRequest struct {
 	DecidedAt    *time.Time `json:"decided_at"`
 	DecisionNote string     `json:"decision_note" gorm:"type:text;not null;default:''"`
 
+	// ClaimedBy/ClaimedAt are the operator lease: one person is fetching this
+	// document right now (the external-source feed has several operators).
+	// The lease expires after LegalRequestClaimLease so a closed browser does
+	// not block the queue forever, and any decision clears it.
+	ClaimedBy string     `json:"claimed_by" gorm:"type:varchar(36);not null;default:''"`
+	ClaimedAt *time.Time `json:"claimed_at"`
+
 	Detail    JSON      `json:"detail"     gorm:"type:jsonb"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -132,7 +139,15 @@ const (
 	LegalRequestActionIngest = "ingest"
 	LegalRequestActionReject = "reject"
 	LegalRequestActionAdded  = "added"
+	// LegalRequestActionClaim / Release take (or drop) the operator lease on
+	// one request, so several operators do not fetch the same document.
+	LegalRequestActionClaim   = "claim"
+	LegalRequestActionRelease = "release"
 )
+
+// LegalRequestClaimLease is how long a claim keeps other operators out. A
+// claim is refreshed by claiming again; it never outlives the lease.
+const LegalRequestClaimLease = 30 * time.Minute
 
 // LegalPublicKB is a platform public knowledge base a request can be
 // ingested into.

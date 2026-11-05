@@ -10,6 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
+
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -79,5 +81,32 @@ func TestDecideLegalRequest_SuperAdminKeepsEveryAction(t *testing.T) {
 		if w.Code != http.StatusOK {
 			t.Fatalf("%s should pass for a SuperAdmin, got %d: %s", action, w.Code, w.Body.String())
 		}
+	}
+}
+
+func TestDecideLegalRequest_NarrowUploaderMayClaimAndRelease(t *testing.T) {
+	operator := types.Caller{TenantID: types.PlatformTenantID, UserID: "u-operator"}
+
+	for _, action := range []string{types.LegalRequestActionClaim, types.LegalRequestActionRelease} {
+		svc := &fakeLegalRequestService{}
+		w := decide(t, decideRouterWithCaller(svc, operator, false, true), action)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s should pass for the uploader, got %d: %s", action, w.Code, w.Body.String())
+		}
+		if svc.claimedID != "r1" || svc.claimAction != action {
+			t.Fatalf("%s did not reach Claim: id=%q action=%q", action, svc.claimedID, svc.claimAction)
+		}
+		if svc.decision != nil {
+			t.Fatalf("%s must not go through Decide", action)
+		}
+	}
+}
+
+func TestDecideLegalRequest_ClaimConflictIsConflict(t *testing.T) {
+	operator := types.Caller{TenantID: types.PlatformTenantID, UserID: "u-operator"}
+	svc := &fakeLegalRequestService{claimErr: apperrors.NewConflictError("another operator is fetching this document")}
+	w := decide(t, decideRouterWithCaller(svc, operator, false, true), types.LegalRequestActionClaim)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("want 409 for a foreign claim, got %d: %s", w.Code, w.Body.String())
 	}
 }

@@ -455,7 +455,7 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 			}
 		}
 	}
-	r.recordMissing(meta.feed)
+	r.recordMissing(meta)
 
 	// 5. store: pending candidates of this document are replaced; decided
 	// ones stay and the same mark is not asked again
@@ -717,7 +717,7 @@ func (s *LegalPushService) linkHeld(ctx context.Context, c *types.LegalProvision
 
 // recordMissing files a legal document request for every amender the
 // catalogue does not know at all, flagged with the feed as requester.
-func (r *legalPushResolver) recordMissing(feed string) {
+func (r *legalPushResolver) recordMissing(meta *legalPushMeta) {
 	if r.s.requests == nil {
 		return
 	}
@@ -736,9 +736,15 @@ func (r *legalPushResolver) recordMissing(feed string) {
 			continue
 		}
 		now := time.Now()
+		// Name the pushed document: operators picking the row up need to know
+		// which A referenced B (several documents reference the same B).
+		query := "văn bản tác động trong dữ liệu đẩy từ " + meta.feed
+		if a := meta.ref.label(); a != "" {
+			query += " (A: " + a + ")"
+		}
 		if _, err := r.s.requests.Record(r.ctx, &types.LegalDocumentRequest{
-			NumberKey: nk, DocumentNumber: d.ref.Number, Source: legalCap("feed:"+feed, 32), Status: types.LegalRequestRequested,
-			FirstRequestedAt: now, LastRequestedAt: now, LastQuery: "văn bản tác động trong dữ liệu đẩy từ " + feed,
+			NumberKey: nk, DocumentNumber: d.ref.Number, Source: legalCap("feed:"+meta.feed, 32), Status: types.LegalRequestRequested,
+			FirstRequestedAt: now, LastRequestedAt: now, LastQuery: query,
 		}); err != nil {
 			logger.Warnf(r.ctx, "[LegalPush] request for %s: %v", d.ref.Number, err)
 		}

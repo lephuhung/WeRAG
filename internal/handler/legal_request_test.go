@@ -22,6 +22,10 @@ type fakeLegalRequestService struct {
 	decision      *types.LegalRequestDecision
 	decideErr     error
 	checkedID     string
+	claimedID     string
+	claimAction   string
+	claimNote     string
+	claimErr      error
 }
 
 func (f *fakeLegalRequestService) List(_ context.Context, status string, offset, limit int) ([]*types.LegalRequestItem, int64, map[string]int64, error) {
@@ -40,6 +44,15 @@ func (f *fakeLegalRequestService) Decide(_ context.Context, id string, d *types.
 	}
 	return &types.LegalRequestItem{LegalDocumentRequest: &types.LegalDocumentRequest{ID: id, Status: types.LegalRequestRejected,
 		DecisionNote: d.Note}}, nil
+}
+
+func (f *fakeLegalRequestService) Claim(_ context.Context, id, action, note string) (*types.LegalRequestItem, error) {
+	f.claimedID, f.claimAction, f.claimNote = id, action, note
+	if f.claimErr != nil {
+		return nil, f.claimErr
+	}
+	return &types.LegalRequestItem{LegalDocumentRequest: &types.LegalDocumentRequest{ID: id,
+		ClaimedBy: "u-operator", Status: types.LegalRequestRequested}}, nil
 }
 
 func (f *fakeLegalRequestService) CheckPortal(_ context.Context, id string) (*types.LegalRequestItem, error) {

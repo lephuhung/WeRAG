@@ -26,6 +26,10 @@ func (stubLegalRequestService) Decide(_ context.Context, id string, d *types.Leg
 	return &types.LegalRequestItem{LegalDocumentRequest: &types.LegalDocumentRequest{ID: id, Status: types.LegalRequestAdded}}, nil
 }
 
+func (stubLegalRequestService) Claim(_ context.Context, id, action, _ string) (*types.LegalRequestItem, error) {
+	return &types.LegalRequestItem{LegalDocumentRequest: &types.LegalDocumentRequest{ID: id, ClaimedBy: "u"}}, nil
+}
+
 func (stubLegalRequestService) PublicKnowledgeBases(context.Context) ([]types.LegalPublicKB, error) {
 	return []types.LegalPublicKB{}, nil
 }

@@ -202,6 +202,41 @@ func (s *legalRequestService) Decide(
 	return s.item(ctx, decided)
 }
 
+// Claim takes or releases the operator lease on one request. The lease is a
+// soft lock for the external-source feed, where several operators look at the
+// same queue: claiming makes "someone is on it" visible, and LegalRequestClaimLease
+// keeps a closed browser from blocking the row forever. It never changes the
+// status; the decision does that and clears the lease.
+func (s *legalRequestService) Claim(
+	ctx context.Context, id, action, note string,
+) (*types.LegalRequestItem, error) {
+	caller := types.CallerFromContext(ctx)
+	if caller.UserID == "" {
+		return nil, apperrors.NewUnauthorizedError("claiming a legal document request needs a signed-in operator")
+	}
+	claim := strings.EqualFold(strings.TrimSpace(action), types.LegalRequestActionClaim)
+	if !claim && !strings.EqualFold(strings.TrimSpace(action), types.LegalRequestActionRelease) {
+		return nil, apperrors.NewBadRequestError("action must be claim or release")
+	}
+	row, err := s.requests.Claim(ctx, id, caller.UserID, claim)
+	if err != nil {
+		return nil, err
+	}
+	if row == nil {
+		// Either the row is gone or another operator holds the lease.
+		existing, gerr := s.requests.Get(ctx, id)
+		if gerr != nil {
+			return nil, gerr
+		}
+		if existing == nil {
+			return nil, apperrors.NewNotFoundError("legal document request not found")
+		}
+		return nil, apperrors.NewConflictError("another operator is fetching this document").
+			WithDetails("claimed_by: " + existing.ClaimedBy)
+	}
+	return s.item(ctx, row)
+}
+
 // ingest fetches the request's document from vbpl.vn into a public KB with
 // the same code as the MCP tool legal_ingest_document.
 func (s *legalRequestService) ingest(

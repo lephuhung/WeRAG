@@ -164,8 +164,14 @@ type LegalRequestRepository interface {
 	ListByNumberKey(ctx context.Context, numberKey string) ([]*types.LegalDocumentRequest, error)
 	// List pages requests of a status ("" = all), newest last request first.
 	List(ctx context.Context, status string, offset, limit int) ([]*types.LegalDocumentRequest, int64, error)
-	// Decide sets the status of one request with the decision fields.
+	// Decide sets the status of one request with the decision fields. A
+	// decision clears the operator lease.
 	Decide(ctx context.Context, id, status, decidedBy, note, knowledgeID, kbID string) (*types.LegalDocumentRequest, error)
+	// Claim takes (claim=true) or releases the operator lease. Claiming
+	// succeeds when the lease is free, expired, or already held by the same
+	// user; it returns nil when another operator holds it. Releasing only
+	// clears the caller's own lease. A claim never changes the status.
+	Claim(ctx context.Context, id, userID string, claim bool) (*types.LegalDocumentRequest, error)
 	// UpdateDetail merges the top-level keys of detail into the request's
 	// Detail JSON (other keys are kept) and returns the stored row, nil
 	// when the request is absent.
@@ -201,6 +207,9 @@ type LegalRequestService interface {
 	// Decide applies a SuperAdmin decision; "ingest" fetches the document
 	// from vbpl.vn into a public KB first.
 	Decide(ctx context.Context, id string, d *types.LegalRequestDecision) (*types.LegalRequestItem, error)
+	// Claim takes or releases the operator lease on one request so several
+	// operators (the external-source feed) do not fetch the same document.
+	Claim(ctx context.Context, id, action string, note string) (*types.LegalRequestItem, error)
 	// PublicKnowledgeBases lists the KBs a request can be ingested into.
 	PublicKnowledgeBases(ctx context.Context) ([]types.LegalPublicKB, error)
 	// CheckPortal reads what vbpl.vn offers for the request's document

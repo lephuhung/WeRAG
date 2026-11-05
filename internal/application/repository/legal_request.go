@@ -154,7 +154,38 @@ func (r *legalRequestRepository) Decide(
 	res := r.db.WithContext(ctx).Model(&types.LegalDocumentRequest{}).Where("id = ?", id).Updates(map[string]any{
 		"status": status, "decided_by": decidedBy, "decided_at": now, "decision_note": note,
 		"knowledge_id": knowledgeID, "knowledge_base_id": kbID, "updated_at": now,
+		// A decision closes the work: whoever held the lease is done.
+		"claimed_by": "", "claimed_at": nil,
 	})
+	if res.Error != nil {
+		return nil, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return nil, nil
+	}
+	return r.Get(ctx, id)
+}
+
+// Claim takes or releases the operator lease. Taking only wins when the lease
+// is free, expired, or already the caller's; releasing only clears the caller's
+// own lease. Returns nil when the row is absent or the lease belongs to someone
+// else (the service turns that into 409).
+func (r *legalRequestRepository) Claim(
+	ctx context.Context, id, userID string, claim bool,
+) (*types.LegalDocumentRequest, error) {
+	now := time.Now()
+	q := r.db.WithContext(ctx).Model(&types.LegalDocumentRequest{}).Where("id = ?", id)
+	if claim {
+		q = q.Where("claimed_by = '' OR claimed_at IS NULL OR claimed_by = ? OR claimed_at < ?",
+			userID, now.Add(-types.LegalRequestClaimLease))
+	} else {
+		q = q.Where("claimed_by = ?", userID)
+	}
+	values := map[string]any{"claimed_by": userID, "claimed_at": now, "updated_at": now}
+	if !claim {
+		values = map[string]any{"claimed_by": "", "claimed_at": nil, "updated_at": now}
+	}
+	res := q.Updates(values)
 	if res.Error != nil {
 		return nil, res.Error
 	}
