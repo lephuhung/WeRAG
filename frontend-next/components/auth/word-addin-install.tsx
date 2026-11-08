@@ -22,7 +22,7 @@ function detectPlatform(): Platform {
  * The install guide under "Install the Word add-in": one tab per way of
  * getting the manifest into Word, opened on the visitor's own system.
  */
-export function WordAddinInstall() {
+export function WordAddinInstall({ inDialog = false }: { inDialog?: boolean }) {
   const { t } = useT();
   const [platform, setPlatform] = useState<Platform>("windows");
   const [macCommand, setMacCommand] = useState("");
@@ -47,8 +47,8 @@ export function WordAddinInstall() {
   };
 
   return (
-    <div className={styles.installGuide}>
-      <strong>{t("auth.installTitle")}</strong>
+    <div className={inDialog ? `${styles.installGuide} ${styles.installGuideDialog}` : styles.installGuide}>
+      {!inDialog && <strong>{t("auth.installTitle")}</strong>}
       <div className={styles.installTabs} role="group" aria-label={t("auth.installTitle")}>
         {PLATFORMS.map((item) => (
           <button

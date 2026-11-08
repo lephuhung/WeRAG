@@ -424,6 +424,35 @@
   color: var(--color-muted);
   line-height: 1.8;
 }
+/* Inside the signed-in dialog: the dialog already titles it, and the text
+   no longer has to fit the login page's side card. */
+.installGuideDialog {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.installGuideDialog .installTabs {
+  margin-top: 0;
+}
+.installGuideDialog ol,
+.installGuideDialog .manifestDownload,
+.installGuideDialog .installTab {
+  font-size: 13px;
+}
+.installGuideDialog ol {
+  line-height: 1.65;
+}
+.installGuideDialog p {
+  margin-top: 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-muted);
+}
+.installGuideDialog .installCommand code,
+.installGuideDialog .installCommand button {
+  font-size: 12px;
+}
+
 .manifestDownload {
   display: flex;
   align-items: center;

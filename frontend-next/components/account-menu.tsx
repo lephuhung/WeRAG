@@ -15,12 +15,15 @@ import { useT, type Locale } from "@/lib/i18n";
 import { consumeSettingsRedirect } from "@/lib/settings-deep-link";
 import { useToast } from "@/components/toast";
 import { SettingsModal } from "@/components/settings-modal";
+import { Modal } from "@/components/modal";
+import { WordAddinInstall } from "@/components/auth/word-addin-install";
 import { UsagePlanPill } from "@/components/usage-plan-pill";
 import { ADMIN_PATH } from "@/components/admin/admin-routes";
 import {
   IconBook,
   IconChevronRight,
   IconChevronUp,
+  IconDownload,
   IconLogout,
   IconPulse,
   IconSettings,
@@ -67,6 +70,7 @@ export function AccountMenu() {
   const [open, setOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState("general");
+  const [wordInstallOpen, setWordInstallOpen] = useState(false);
   const [pending, setPending] = useState(0);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -343,6 +347,18 @@ export function AccountMenu() {
             <IconSettings className="h-[18px] w-[18px] shrink-0" />
             <span className="flex-1 text-left">{t("user.settings")}</span>
           </button>
+          {/* desktop only, like the install card on the login page */}
+          <button
+            type="button"
+            className="nav-item max-[800px]:hidden [@media(hover:none)_and_(pointer:coarse)]:hidden"
+            onClick={() => {
+              setOpen(false);
+              setWordInstallOpen(true);
+            }}
+          >
+            <IconDownload className="h-[18px] w-[18px] shrink-0" />
+            <span className="flex-1 text-left">{t("auth.addinInstall")}</span>
+          </button>
           {isSystemAdmin && (
             <button
               type="button"
@@ -396,6 +412,14 @@ export function AccountMenu() {
         initialSection={settingsSection}
         pendingAbbrev={pending}
       />
+      <Modal
+        open={wordInstallOpen}
+        onClose={() => setWordInstallOpen(false)}
+        title={t("auth.installTitle")}
+        width="w-[620px]"
+      >
+        <WordAddinInstall inDialog />
+      </Modal>
     </div>
   );
 }

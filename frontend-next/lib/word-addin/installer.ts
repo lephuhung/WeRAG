@@ -83,5 +83,6 @@ export function renderWindowsInstaller(origin: string): string {
  */
 export function renderMacInstallCommand(siteOrigin: string): string {
   const manifestUrl = `${new URL(siteOrigin).origin}/word-addin/manifest.xml`;
-  return `mkdir -p ${MAC_WEF_DIR} && curl -fsSL "${manifestUrl}" -o ${MAC_WEF_DIR}/werag-word-addin.xml`;
+  // curl -s prints nothing on success, so the last step says it worked.
+  return `mkdir -p ${MAC_WEF_DIR} && curl -fsSL "${manifestUrl}" -o ${MAC_WEF_DIR}/werag-word-addin.xml && echo "Đã cài xong add-in WeRAG"`;
 }

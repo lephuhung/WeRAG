@@ -21,6 +21,6 @@ test("the Windows installer is CRLF, BOM-free and refuses non-HTTPS origins", ()
 test("the macOS command fetches from the page origin into Word's wef folder", () => {
   assert.equal(
     renderMacInstallCommand("https://legal.example.vn/login"),
-    'mkdir -p ~/Library/Containers/com.microsoft.Word/Data/Documents/wef && curl -fsSL "https://legal.example.vn/word-addin/manifest.xml" -o ~/Library/Containers/com.microsoft.Word/Data/Documents/wef/werag-word-addin.xml',
+    'mkdir -p ~/Library/Containers/com.microsoft.Word/Data/Documents/wef && curl -fsSL "https://legal.example.vn/word-addin/manifest.xml" -o ~/Library/Containers/com.microsoft.Word/Data/Documents/wef/werag-word-addin.xml && echo "Đã cài xong add-in WeRAG"',
   );
 });
