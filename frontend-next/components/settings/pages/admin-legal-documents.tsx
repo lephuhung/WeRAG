@@ -405,6 +405,15 @@ export default function AdminLegalDocuments() {
   );
 }
 
+/* A catalogue row a legal feed (TVPL…) created: not vbpl.vn's, not a reviewer's. */
+function isFeedSource(source: string | undefined): boolean {
+  return !!source && source !== "vbpl" && source !== "manual";
+}
+
+function sourceLabel(source: string): string {
+  return source === "tvpl" ? "thuvienphapluat.vn" : source;
+}
+
 /* The cells of one review row (the <tr> comes from <DataTable>). */
 function ReviewCells({ item, alerts }: { item: LegalReviewItem; alerts: boolean }) {
   const { t } = useT();
@@ -428,6 +437,11 @@ function ReviewCells({ item, alerts }: { item: LegalReviewItem; alerts: boolean 
         {pending && (
           <span className="badge-pill badge-warning mt-1 inline-block text-[10px]">
             {t("lrev.sourcePending")}
+          </span>
+        )}
+        {doc && isFeedSource(doc.source) && (
+          <span className="badge-pill badge-info mt-1 inline-block text-[10px]">
+            {t("lrev.feedSource", { source: sourceLabel(doc.source) })}
           </span>
         )}
       </td>
@@ -677,6 +691,7 @@ export function ReviewDialog({
                   <span className="caption text-muted">
                     {[d.issuer, showDay(isoDay(d.issued_on)), d.status].filter(Boolean).join(" · ")}
                     {d.source === "manual" ? ` · ${t("lrev.manual")}` : ""}
+                    {isFeedSource(d.source) ? ` · ${t("lrev.feedSource", { source: sourceLabel(d.source) })}` : ""}
                   </span>
                 </span>
               </label>

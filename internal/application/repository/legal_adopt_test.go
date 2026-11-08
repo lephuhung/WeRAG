@@ -150,8 +150,9 @@ func TestAdoptLegalDocument(t *testing.T) {
 	require.NoError(t, db.First(&v, "id = ?", "v777").Error)
 	require.Equal(t, "vbpl", v.Source, "the portal row keeps its source")
 	require.Equal(t, "sa", v.ReviewedBy)
-	require.Equal(t, "Chưa xác định", v.Status, "the reviewed values stay")
-	require.Contains(t, string(v.SourcePending), "Còn hiệu lực", "the portal's differing value waits for the reviewer")
+	require.Equal(t, "Còn hiệu lực", v.Status, "the feed placeholder status is no curated value: the portal's stays")
+	require.Contains(t, string(v.SourcePending), `"title"`, "the reviewed title differs from the portal's: parked")
+	require.NotContains(t, string(v.SourcePending), `"status"`, "the placeholder status was set aside, so it does not differ")
 
 	// only a feed row is adopted
 	_, err = AdoptLegalDocument(ctx, db, "nd68", "v777")

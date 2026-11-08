@@ -587,7 +587,7 @@ func (s *LegalPushService) ingest(ctx context.Context, a *types.LegalDocument, c
 	}
 	res, err = s.feed.IngestHTML(grantCtx, LegalIngestDocument{
 		VBPLID: a.ID, DocumentNumber: a.DocumentNumber, DocType: a.DocType, Status: a.Status, FileName: name,
-		Metadata: md, SourceFormat: LegalSourceHTML, ReviewedBy: "feed:" + meta.feed,
+		Metadata: md, SourceFormat: LegalSourceHTML, ReviewedBy: LegalFeedReviewerPrefix + meta.feed,
 		LogDetail: map[string]any{"feed": meta.feed, "feed_doc_id": meta.feedDocID, "feed_url": meta.feedURL,
 			"catalogue_created": created},
 	}, in.Content, kb, actor, "push "+meta.feed+" "+meta.feedDocID)

@@ -179,6 +179,19 @@ func TestLegalFeedIngestFromPortal(t *testing.T) {
 		t.Fatalf("draft log detail = %s", detail)
 	}
 
+	// a legal feed's push vouches for nothing: its identity link waits for a
+	// reviewer instead of being approved like a portal fetch
+	res, err = feed.IngestHTML(ctx, LegalIngestDocument{VBPLID: "tvpl-9", DocumentNumber: "9/2026/NĐ-CP", FileName: "9.html",
+		Metadata: map[string]string{"external_id": "tvpl-9", "source": "tvpl"}, ReviewedBy: LegalFeedReviewerPrefix + "tvpl"},
+		draftHTML, kb, actor, "push tvpl 9")
+	if err != nil || res.Result != "created" {
+		t.Fatalf("feed ingest: %+v %v", res, err)
+	}
+	if l := reviews.links["k-new"]; l == nil || l.ReviewStatus != types.LegalReviewPending || l.ReviewedBy != "" ||
+		l.ReviewedAt != nil || l.LegalDocumentID != "tvpl-9" || !strings.Contains(string(l.Suggestion), `"9/2026/NĐ-CP"`) {
+		t.Fatalf("feed review link = %+v", l)
+	}
+
 	portal, err := feed.CheckPortal(ctx, "3003")
 	if err != nil || !portal.Exists || portal.HTML || portal.PDFFile != "VanBanGoc_3 TT.pdf" || portal.Status != "Còn hiệu lực" {
 		t.Fatalf("check 3003: %+v %v", portal, err)

@@ -318,8 +318,21 @@ func movedMarkKey(detail types.JSON, fromID, toID string) (types.JSON, bool) {
 
 // inheritReview passes a SuperAdmin's review of the feed row to the portal
 // row: the curated values and reviewer stay, the portal's differing values
-// wait in source_pending. The portal row keeps its source.
+// wait in source_pending. A value the feed row never had (an empty date,
+// the "Chưa xác định" status a push writes when its source gave none) is
+// no curated value: the portal's stays. The portal row keeps its source.
 func inheritReview(tx *gorm.DB, from, to *types.LegalDocument) error {
+	curated := *from
+	if curated.EffectiveOn == nil {
+		curated.EffectiveOn = to.EffectiveOn
+	}
+	if curated.ExpiredOn == nil {
+		curated.ExpiredOn = to.ExpiredOn
+	}
+	if s := strings.TrimSpace(curated.Status); s == "" || s == types.LegalStatusUnknown {
+		curated.Status = to.Status
+	}
+	from = &curated
 	upd := map[string]any{
 		"document_number": from.DocumentNumber, "number_key": from.NumberKey, "title": from.Title,
 		"doc_type": from.DocType, "issuer": from.Issuer, "issued_on": from.IssuedOn,

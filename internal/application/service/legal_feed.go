@@ -163,6 +163,10 @@ func refuse(format string, args ...any) error {
 	return &LegalFeedRefusal{msg: fmt.Sprintf(format, args...)}
 }
 
+// LegalFeedReviewerPrefix starts the ReviewedBy of a document a legal feed
+// pushed ("feed:tvpl"): not a reviewer, so its identity link stays pending.
+const LegalFeedReviewerPrefix = "feed:"
+
 // LegalPDFOnlyMessage is the refusal for a document vbpl.vn has only as a
 // scanned PDF: a scan is never ingested as raw OCR.
 const LegalPDFOnlyMessage = "vbpl.vn chỉ có bản PDF scan của văn bản này; bản scan không được nạp thẳng: " +
@@ -247,8 +251,20 @@ type LegalIngestDocument struct {
 	LogDetail map[string]any
 	// ReviewedBy is who vouches for the document's identity on its legal
 	// review link: the approving SuperAdmin of a reviewed draft;
-	// "" = types.LegalReviewerVBPL (fetched by its vbpl.vn id).
+	// "" = types.LegalReviewerVBPL (fetched by its vbpl.vn id);
+	// "feed:<name>" = a legal feed's word only, the link waits for a reviewer.
 	ReviewedBy string
+	// priorLink is the review link of the copy this ingest replaces when a
+	// human decided it (IngestHTML sets it): the decision carries over.
+	priorLink *types.LegalDocumentLink
+}
+
+// legalHumanReview reports whether a review link holds a person's
+// decision (not an import's or a feed's automatic one).
+func legalHumanReview(l *types.LegalDocumentLink) bool {
+	return l != nil && l.ReviewedAt != nil && l.ReviewedBy != "" && l.ReviewedBy != types.LegalReviewerVBPL &&
+		!strings.HasPrefix(l.ReviewedBy, LegalFeedReviewerPrefix) &&
+		(l.ReviewStatus == types.LegalReviewApproved || l.ReviewStatus == types.LegalReviewRejected)
 }
 
 // IngestHTML adds a document's HTML (the portal's, or one built from a
@@ -311,6 +327,12 @@ func (s *LegalFeedService) IngestHTML(
 			s.markRequestsAdded(ctx, res, actor)
 			return res, nil
 		}
+		// a reviewer's decision on the outdated copy carries over to the new one
+		if s.Reviews != nil {
+			if old, err := s.Reviews.GetLink(ctx, e.ID); err == nil && old != nil && legalHumanReview(old) {
+				doc.priorLink = old
+			}
+		}
 		if err := s.knowledge.DeleteKnowledge(ctx, e.ID); err != nil {
 			return nil, fmt.Errorf("failed to delete the outdated copy %s: %w", e.ID, err)
 		}
@@ -353,9 +375,12 @@ func (s *LegalFeedService) IngestHTML(
 
 // saveReviewLink records the approved legal review link of an ingested
 // document, as the review scan does for a document imported from vbpl.vn:
-// legal_document_id is the vbpl.vn id it was fetched by. An unchanged copy
-// gets one only when it has none (a reviewer's decision is kept). Best
-// effort: a failure is logged and the scan links the document later.
+// legal_document_id is the vbpl.vn id it was fetched by. A document a legal
+// feed pushed (ReviewedBy "feed:<name>") is only the feed's word for it: its
+// link waits in the review queue (pending), and approving it there also
+// confirms the feed's catalogue row. An unchanged copy gets a link only
+// when it has none (a reviewer's decision is kept). Best effort: a failure
+// is logged and the scan links the document later.
 func (s *LegalFeedService) saveReviewLink(ctx context.Context, doc LegalIngestDocument, knowledgeID, kbID string, fresh bool) {
 	if s.Reviews == nil || knowledgeID == "" {
 		return
@@ -377,6 +402,12 @@ func (s *LegalFeedService) saveReviewLink(ctx context.Context, doc LegalIngestDo
 	link := &types.LegalDocumentLink{
 		KnowledgeID: knowledgeID, KnowledgeBaseID: kbID, LegalDocumentID: doc.VBPLID,
 		ReviewStatus: types.LegalReviewApproved, Suggestion: types.JSON(sug), ReviewedBy: by, ReviewedAt: &now,
+	}
+	if strings.HasPrefix(by, LegalFeedReviewerPrefix) {
+		link.ReviewStatus, link.ReviewedBy, link.ReviewedAt = types.LegalReviewPending, "", nil
+	}
+	if p := doc.priorLink; p != nil && p.LegalDocumentID == doc.VBPLID {
+		link.ReviewStatus, link.ReviewedBy, link.ReviewedAt = p.ReviewStatus, p.ReviewedBy, p.ReviewedAt
 	}
 	if err := s.Reviews.SaveLink(ctx, link); err != nil {
 		logger.Warnf(ctx, "[LegalFeed] review link of %s (%s): %v", knowledgeID, doc.VBPLID, err)

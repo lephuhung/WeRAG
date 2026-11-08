@@ -24,7 +24,7 @@ import (
 // hiệu lực" — a document is only called in force on a source's word.
 const (
 	legalFeedStatusPending = "Chưa có hiệu lực"
-	legalFeedStatusUnknown = "Chưa xác định"
+	legalFeedStatusUnknown = types.LegalStatusUnknown
 )
 
 // legalFeedTitleMinLetters is how many letters a title needs besides its

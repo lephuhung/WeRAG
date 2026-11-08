@@ -45,6 +45,10 @@ const LegalDocumentSourceManual = "manual"
 // LegalDocumentSourceVBPL marks catalogue rows imported from vbpl.vn.
 const LegalDocumentSourceVBPL = "vbpl"
 
+// LegalStatusUnknown is the catalogue status of a document whose validity
+// no source stated ("Chưa xác định"; the portal uses the same words).
+const LegalStatusUnknown = "Chưa xác định"
+
 // IsFeedRow reports whether the row was created by a legal feed push (a
 // document vbpl.vn did not list yet, e.g. source "tvpl"): a provisional row
 // that a later vbpl import of the same document replaces.
