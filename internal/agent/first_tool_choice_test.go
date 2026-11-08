@@ -98,7 +98,9 @@ func TestForcedToolRoundKeepsAHonouredCall(t *testing.T) {
 	resp, ok := engine.forcedToolRound(context.Background(), []chat.Message{{Role: "user", Content: "x"}}, rewriteTool,
 		&chat.ChatOptions{ToolChoice: "rewrite_paragraphs"}, "rewrite_paragraphs", 0, "s1")
 	require.True(t, ok)
-	require.Equal(t, []types.LLMToolCall{call}, resp.ToolCalls)
+	require.Len(t, resp.ToolCalls, 1)
+	require.Equal(t, call.ID, resp.ToolCalls[0].ID)
+	require.Equal(t, call.Function, resp.ToolCalls[0].Function)
 	require.Len(t, model.opts, 1)
 }
 

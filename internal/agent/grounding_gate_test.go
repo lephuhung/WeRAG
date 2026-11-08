@@ -59,7 +59,9 @@ func TestUngroundedRoundKeepsAToolCall(t *testing.T) {
 	resp, err := engine.ungroundedRound(context.Background(), []chat.Message{{Role: "user", Content: "x"}},
 		&chat.ChatOptions{}, 1, "s1")
 	require.NoError(t, err)
-	require.Equal(t, []types.LLMToolCall{call}, resp.ToolCalls)
+	require.Len(t, resp.ToolCalls, 1)
+	require.Equal(t, call.ID, resp.ToolCalls[0].ID)
+	require.Equal(t, call.Function, resp.ToolCalls[0].Function)
 	require.Empty(t, resp.Content)
 }
 

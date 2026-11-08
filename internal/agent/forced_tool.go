@@ -44,7 +44,7 @@ func (e *AgentEngine) forcedToolRound(
 
 	if _, known := ignoresToolChoice.Load(modelID); !known {
 		callCtx := types.WithLLMCallMetadata(ctx, "agent_round", chat.PromptPrefixFingerprint(messages, opts))
-		resp, err := e.chatModel.Chat(callCtx, messages, opts)
+		resp, err := e.roundChat(callCtx, messages, opts)
 		if err != nil {
 			logger.Warnf(ctx, "[Agent][Forced] %s call failed: %v", forced, err)
 			return nil, false
@@ -94,7 +94,7 @@ func (e *AgentEngine) forcedToolArgsAsJSON(
 		PromptCacheKey:      opts.PromptCacheKey,
 	}
 	callCtx := types.WithLLMCallMetadata(ctx, "agent_round_forced_json", chat.PromptPrefixFingerprint(msgs, jsonOpts))
-	resp, err := e.chatModel.Chat(callCtx, msgs, jsonOpts)
+	resp, err := e.roundChat(callCtx, msgs, jsonOpts)
 	if err != nil {
 		return nil, err
 	}

@@ -244,6 +244,27 @@ func watchStreamStall(
 	return stalled, func() { once.Do(func() { close(done) }) }
 }
 
+// roundChat runs one non-streaming model round and restores the model-facing
+// dN/cN handles in the returned tool-call arguments.
+//
+// Streaming rounds decode in streamLLMToEventBus. The non-streaming rounds
+// (the grounding and calculation gates, and the forced first tool) call the
+// model directly, so they must decode here as well: a tool given "d20" looks
+// it up as a durable document id and fails with "knowledge_id d20 is not a
+// document in the current scope".
+func (e *AgentEngine) roundChat(
+	ctx context.Context, messages []chat.Message, opts *chat.ChatOptions,
+) (*types.ChatResponse, error) {
+	resp, err := e.chatModel.Chat(ctx, messages, opts)
+	if err != nil {
+		return nil, err
+	}
+	if resp != nil {
+		e.modelContext.DecodeToolCalls(resp.ToolCalls)
+	}
+	return resp, nil
+}
+
 // streamThinkingToEventBus streams the thinking process through EventBus
 func (e *AgentEngine) streamThinkingToEventBus(
 	ctx context.Context,

@@ -117,7 +117,7 @@ func (e *AgentEngine) calcGateRound(
 	encoded := e.modelContext.EncodeMessages(messages)
 	reportModelContextLeaks(ctx, "Agent", e.modelContext, encoded)
 	callCtx := types.WithLLMCallMetadata(ctx, "agent_round_calc_gate", chat.PromptPrefixFingerprint(encoded, opts))
-	resp, err := e.chatModel.Chat(callCtx, encoded, opts)
+	resp, err := e.roundChat(callCtx, encoded, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,7 @@ func (e *AgentEngine) calcGateRound(
 		retry := append(append([]chat.Message{}, messages...), chat.Message{Role: "user", Content: calcToolNudge(names)})
 		encoded = e.modelContext.EncodeMessages(retry)
 		callCtx = types.WithLLMCallMetadata(ctx, "agent_round_calc_gate_retry", chat.PromptPrefixFingerprint(encoded, opts))
-		again, err := e.chatModel.Chat(callCtx, encoded, opts)
+		again, err := e.roundChat(callCtx, encoded, opts)
 		if err != nil {
 			return nil, err
 		}

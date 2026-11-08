@@ -111,7 +111,7 @@ func (e *AgentEngine) ungroundedRound(
 	messages = e.modelContext.EncodeMessages(messages)
 	reportModelContextLeaks(ctx, "Agent", e.modelContext, messages)
 	callCtx := types.WithLLMCallMetadata(ctx, "agent_round_ungrounded", chat.PromptPrefixFingerprint(messages, opts))
-	resp, err := e.chatModel.Chat(callCtx, messages, opts)
+	resp, err := e.roundChat(callCtx, messages, opts)
 	if err != nil {
 		return nil, err
 	}
