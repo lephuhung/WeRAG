@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"sort"
 	"time"
 
 	"gorm.io/gorm"
@@ -242,4 +243,42 @@ func (r *usagePlanRepository) CustomAgentDistribution(ctx context.Context, agent
 		return "", false, nil
 	}
 	return rows[0].Distribution, true, nil
+}
+
+// LiveAddonAgents lists the live custom agents of distribution "addon" with
+// at least one switched-on row, one per id (named from the first row by
+// tenant, as in the add-on catalogue listing), sorted by name.
+func (r *usagePlanRepository) LiveAddonAgents(ctx context.Context) ([]types.UsagePlanAgent, error) {
+	var rows []struct {
+		ID      string
+		Name    string
+		Enabled *bool
+	}
+	if err := r.conn(ctx).Table("custom_agents").Select("id, name, enabled").
+		Where("is_builtin = ? AND deleted_at IS NULL AND distribution = ?", false, types.AgentDistributionAddon).
+		Order("tenant_id ASC").Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	// live when any row qualifies (as fillAgentAddons decides availability);
+	// named from the first row by tenant
+	out := make([]types.UsagePlanAgent, 0, len(rows))
+	names := map[string]string{}
+	live := map[string]bool{}
+	var order []string
+	for _, a := range rows {
+		if _, ok := names[a.ID]; !ok {
+			names[a.ID] = a.Name
+			order = append(order, a.ID)
+		}
+		if a.Enabled == nil || *a.Enabled {
+			live[a.ID] = true
+		}
+	}
+	for _, id := range order {
+		if live[id] {
+			out = append(out, types.UsagePlanAgent{ID: id, Name: names[id]})
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
 }

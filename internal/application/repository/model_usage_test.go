@@ -33,8 +33,14 @@ CREATE TABLE IF NOT EXISTS custom_agents (
 `
 
 // agentAddonTestDDL is the slice of the usage tables the "addon" agent
-// visibility condition reads (migration 000137 + 000166).
+// visibility condition reads (migration 000137 + 000166 + 000191).
 const agentAddonTestDDL = `
+CREATE TABLE IF NOT EXISTS usage_plans (
+    id VARCHAR(36) PRIMARY KEY,
+    code VARCHAR(64),
+    name VARCHAR(128),
+    included_agent_ids TEXT NOT NULL DEFAULT '[]'
+);
 CREATE TABLE IF NOT EXISTS usage_subscriptions (
     id VARCHAR(36) PRIMARY KEY,
     scope_type VARCHAR(16) NOT NULL,

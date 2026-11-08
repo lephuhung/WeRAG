@@ -258,7 +258,11 @@ function OrganizationUsage() {
                 {(data.addons ?? []).map((a) => (
                   <li key={a.agent_id}>
                     {a.agent_name || a.agent_id}
-                    {a.ends_at ? ` — ${t("tus.addonUntil", { date: formatLastDay(a.ends_at) })}` : ""}
+                    {a.included
+                      ? ` — ${t("bill.addonIncludedInPlan")}`
+                      : a.ends_at
+                        ? ` — ${t("tus.addonUntil", { date: formatLastDay(a.ends_at) })}`
+                        : ""}
                   </li>
                 ))}
               </ul>

@@ -2,7 +2,7 @@
  * docs/agent-addon-plans.md §4–§5): pure helpers for the agent editor and
  * the admin plan cards. Type-only imports so the node test runner can load
  * it. */
-import type { UsageAgentAddon, UsageAgentAddonInput, UsageOrderAddonLine, UsagePlan } from "./api/usage.ts";
+import type { UsageAgentAddon, UsageAgentAddonInput, UsageOrderAddonLine, UsagePlan, UsagePlanAgent } from "./api/usage.ts";
 
 /** The editor's "Bán kèm gói dịch vụ" fields. */
 export interface AddonSaleDraft {
@@ -48,11 +48,31 @@ export function shouldSaveAddonSale(existing: boolean, touched: boolean, distrib
 
 /** The add-ons a plan's card lists: active rows whose agent is still a
  * specialist agent and that are sold with this plan, by sort order. */
-export function addonsForPlan(rows: UsageAgentAddon[], plan: Pick<UsagePlan, "id">): UsageAgentAddon[] {
+export function addonsForPlan(
+  rows: UsageAgentAddon[],
+  plan: Pick<UsagePlan, "id"> & Partial<Pick<UsagePlan, "included_agent_ids">>,
+): UsageAgentAddon[] {
+  const included = new Set(plan.included_agent_ids ?? []);
   return rows
     .filter((r) => r.is_active && r.agent_available !== false)
     .filter((r) => (r.plan_ids ?? []).length === 0 || r.plan_ids.includes(plan.id))
+    // an agent the plan includes is never sold with it
+    .filter((r) => !included.has(r.agent_id))
     .sort((a, b) => a.sort_order - b.sort_order || (a.agent_name ?? "").localeCompare(b.agent_name ?? "", "vi"));
+}
+
+/** The specialist agents a plan includes, named from the live addon agents
+ * (an id that is no longer a live addon agent grants nothing and is left
+ * out), in the plan's order. */
+export function planIncludedAgents(
+  plan: Partial<Pick<UsagePlan, "included_agent_ids">>,
+  addonAgents: UsagePlanAgent[],
+): UsagePlanAgent[] {
+  const byId = new Map(addonAgents.map((a) => [a.id, a]));
+  return (plan.included_agent_ids ?? []).flatMap((id) => {
+    const a = byId.get(id);
+    return a ? [{ id, name: a.name, included: true }] : [];
+  });
 }
 
 /** Adds or removes one add-on from a buyer's choice. */

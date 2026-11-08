@@ -28,7 +28,7 @@ func setupEmailNotificationDB(t *testing.T) *gorm.DB {
 		id VARCHAR(36) PRIMARY KEY, code VARCHAR(64), name VARCHAR(128), description TEXT,
 		scope_kind VARCHAR(16), mode VARCHAR(16), limits TEXT, features TEXT, price_label VARCHAR(128),
 		price_vnd INTEGER, price_quarter_vnd INTEGER, price_year_vnd INTEGER, sort_order INTEGER,
-		is_active BOOLEAN, created_at DATETIME, updated_at DATETIME)`).Error)
+		is_active BOOLEAN, included_agent_ids TEXT NOT NULL DEFAULT '[]', created_at DATETIME, updated_at DATETIME)`).Error)
 	require.NoError(t, db.Exec(`CREATE TABLE usage_subscriptions (
 		id VARCHAR(36) PRIMARY KEY, scope_type VARCHAR(16), scope_id VARCHAR(64), plan_id VARCHAR(36),
 		mode VARCHAR(16), seats INTEGER, limits_override TEXT, starts_at DATETIME, ends_at DATETIME,

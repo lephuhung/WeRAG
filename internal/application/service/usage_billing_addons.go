@@ -27,12 +27,18 @@ func addonUnits(mode string, seats int) int {
 }
 
 // sellableAddons maps the requested agent ids to their catalogue rows,
-// refusing any that is not on sale with planID. Duplicates are dropped.
+// refusing any that is not on sale with plan, and any the plan includes
+// (addon_included: nobody pays for what the plan already grants).
+// Duplicates are dropped.
 func (s *usageBillingService) sellableAddons(
-	ctx context.Context, planID string, agentIDs []string,
+	ctx context.Context, plan *types.UsagePlan, agentIDs []string,
 ) ([]*types.UsageAgentAddon, error) {
 	if len(agentIDs) == 0 {
 		return nil, nil
+	}
+	planID := ""
+	if plan != nil {
+		planID = plan.ID
 	}
 	catalogue, err := s.planRepo.ListAgentAddons(ctx, false)
 	if err != nil {
@@ -50,6 +56,10 @@ func (s *usageBillingService) sellableAddons(
 			continue
 		}
 		seen[id] = true
+		if plan.IncludesAgent(id) {
+			return nil, apperrors.NewBadRequestError("trợ lý này đã có sẵn trong gói, không cần mua thêm").
+				WithDetails(map[string]string{"reason": "addon_included", "agent_id": id})
+		}
 		a := byID[id]
 		if a == nil || !a.IsActive || !a.AgentAvailable || !a.PlanIDs.Includes(planID) {
 			return nil, apperrors.NewBadRequestError("this specialist agent is not sold with the plan").
@@ -80,7 +90,7 @@ func (s *usageBillingService) sellableAddons(
 func (s *usageBillingService) priceAddonsWithPlan(
 	ctx context.Context, q *types.UsageQuote, agentIDs []string, keep *[]string, scopeID string,
 ) error {
-	rows, err := s.sellableAddons(ctx, q.Plan.ID, agentIDs)
+	rows, err := s.sellableAddons(ctx, q.Plan, agentIDs)
 	if err != nil {
 		return err
 	}
@@ -223,7 +233,10 @@ func (s *usageBillingService) priceAddonsWithPlan(
 				AgentID: id, Name: h.AgentName, UnitPriceVND: h.PriceVND, SeatsOnly: true,
 				CoveredUntil: covered,
 			}
-			if units > heldUnits {
+			// the new plan includes the agent for every seat: no added
+			// seats to pay (on a plan change the buyer may still drop the
+			// bought right for its credit)
+			if units > heldUnits && !q.Plan.IncludesAgent(id) {
 				line.ExtraUnits = units - heldUnits
 				_, _, _, line.ExtraUnitsVND = types.PriceAddonRemainder(h.PriceVND, units-heldUnits, now, *covered)
 				line.AmountVND = line.ExtraUnitsVND
@@ -373,7 +386,7 @@ func (s *usageBillingService) quoteAddonOnly(
 			return nil, err
 		}
 	}
-	rows, err := s.sellableAddons(ctx, plan.ID, req.AddonAgentIDs)
+	rows, err := s.sellableAddons(ctx, plan, req.AddonAgentIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -582,7 +595,7 @@ func (s *usageBillingService) carryAddonsOver(
 // ScopeAddons is the buyer's view of a scope: its current subscription,
 // the add-ons it holds and those still on sale with its plan for it.
 func (s *usageBillingService) ScopeAddons(ctx context.Context, scopeType, scopeID string) (*types.UsageScopeAddons, error) {
-	out := &types.UsageScopeAddons{Held: []*types.UsageSubscriptionAddon{}, Purchasable: []types.UsagePlanAddonOffer{}}
+	out := &types.UsageScopeAddons{Held: []*types.UsageSubscriptionAddon{}, Included: []types.UsagePlanAgent{}, Purchasable: []types.UsagePlanAddonOffer{}}
 	now := s.now()
 	cur, err := s.planRepo.GetActiveSubscription(ctx, scopeType, strings.TrimSpace(scopeID))
 	if err != nil {
@@ -595,16 +608,14 @@ func (s *usageBillingService) ScopeAddons(ctx context.Context, scopeType, scopeI
 		return out, nil
 	}
 	out.Subscription = cur
-	held, err := s.planRepo.ListSubscriptionAddons(ctx, cur.ID)
+	rights, err := loadAgentRights(ctx, s.planRepo, cur, now)
 	if err != nil {
 		return nil, err
 	}
+	// an agent both bought and included is in Held only (flagged Included)
+	out.Held, out.Included = rights.Held, rights.Included
 	holds := map[string]bool{}
-	for _, h := range held {
-		if !h.IsCurrentAt(now) {
-			continue
-		}
-		out.Held = append(out.Held, h)
+	for _, h := range rights.Held {
 		if cur.EndsAt == nil || h.EndsAt == nil || !h.EndsAt.Before(*cur.EndsAt) {
 			holds[h.AgentID] = true
 		}
@@ -614,7 +625,8 @@ func (s *usageBillingService) ScopeAddons(ctx context.Context, scopeType, scopeI
 		return nil, err
 	}
 	for _, a := range catalogue {
-		if !a.IsActive || !a.AgentAvailable || !a.PlanIDs.Includes(cur.PlanID) || holds[a.AgentID] {
+		if !a.IsActive || !a.AgentAvailable || !a.PlanIDs.Includes(cur.PlanID) || holds[a.AgentID] ||
+			rights.Plan.IncludesAgent(a.AgentID) {
 			continue
 		}
 		out.Purchasable = append(out.Purchasable, types.UsagePlanAddonOffer{

@@ -141,12 +141,29 @@ type UsagePlan struct {
 	// months) and a year (12 months), per seat in seat mode; usually below
 	// 3 or 12 monthly prices. 0 = that term is sold at the monthly price
 	// (or not at all when PriceVND is 0 too). See PriceForMonths.
-	PriceQuarterVND int64     `json:"price_quarter_vnd"`
-	PriceYearVND    int64     `json:"price_year_vnd"`
-	SortOrder       int       `json:"sort_order"`
-	IsActive        bool      `json:"is_active"   gorm:"default:true"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	PriceQuarterVND int64 `json:"price_quarter_vnd"`
+	PriceYearVND    int64 `json:"price_year_vnd"`
+	SortOrder       int   `json:"sort_order"`
+	IsActive        bool  `json:"is_active"   gorm:"default:true"`
+	// IncludedAgentIDs are specialist ("addon" distribution) agents the plan
+	// includes: every current subscriber sees them with no purchase
+	// (migration 000191). The basic agents are not listed here.
+	IncludedAgentIDs UsageAgentIDList `json:"included_agent_ids" gorm:"type:jsonb"`
+	CreatedAt        time.Time        `json:"created_at"`
+	UpdatedAt        time.Time        `json:"updated_at"`
+}
+
+// IncludesAgent reports whether the plan includes the addon agent agentID.
+func (p *UsagePlan) IncludesAgent(agentID string) bool {
+	if p == nil {
+		return false
+	}
+	for _, id := range p.IncludedAgentIDs {
+		if id == agentID {
+			return true
+		}
+	}
+	return false
 }
 
 // TableName returns the table name.

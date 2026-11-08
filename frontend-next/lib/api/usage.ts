@@ -207,9 +207,13 @@ export interface UsagePlan {
   price_year_vnd: number;
   sort_order: number;
   is_active: boolean;
+  /** Specialist (addon) agents the plan includes: every current subscriber
+   * uses them without buying them. */
+  included_agent_ids: string[];
   created_at: string;
   updated_at: string;
-  /** GET /billing/plans only: the basic agents the plan includes. */
+  /** GET /billing/plans only: the basic agents plus the specialist agents
+   * the plan includes (those flagged `included`). */
   included_agents?: UsagePlanAgent[];
   /** GET /billing/plans only: specialist agents sold with the plan. */
   addons?: UsagePlanAddonOffer[];
@@ -220,6 +224,8 @@ export type UsagePlanInput = Omit<UsagePlan, "id" | "created_at" | "updated_at" 
 export interface UsagePlanAgent {
   id: string;
   name: string;
+  /** A specialist agent the plan includes (not a basic one). */
+  included?: boolean;
 }
 
 export interface UsagePlanAddonOffer {
@@ -258,6 +264,8 @@ export type UsageAgentAddonInput = Pick<
 export interface UsageAgentAddonCatalogue {
   addons: UsageAgentAddon[];
   included_agents: UsagePlanAgent[];
+  /** Every live addon agent, sold or not: what a plan may include. */
+  addon_agents: UsagePlanAgent[];
 }
 
 export interface UsageSubscription {
@@ -323,7 +331,11 @@ const ADMIN = "/api/v1/system/admin/usage";
 export function listAgentAddons(includeInactive = true): Promise<UsageAgentAddonCatalogue> {
   return apiGet<{ data?: UsageAgentAddonCatalogue }>(
     `${ADMIN}/agent-addons${includeInactive ? "" : "?include_inactive=false"}`,
-  ).then((r) => ({ addons: r.data?.addons ?? [], included_agents: r.data?.included_agents ?? [] }));
+  ).then((r) => ({
+    addons: r.data?.addons ?? [],
+    included_agents: r.data?.included_agents ?? [],
+    addon_agents: r.data?.addon_agents ?? [],
+  }));
 }
 
 export function createAgentAddon(input: UsageAgentAddonInput): Promise<UsageAgentAddon> {
@@ -436,6 +448,8 @@ export interface UsageSubscriptionAddon {
   ends_at: string | null;
   price_vnd: number;
   order_id: string | null;
+  /** Organization usage view: included in the plan, not bought (no end of its own). */
+  included?: boolean;
 }
 
 /** GET /billing/subscription: the scope's current subscription, the
@@ -443,6 +457,8 @@ export interface UsageSubscriptionAddon {
 export interface UsageScopeAddons {
   subscription?: UsageSubscription | null;
   held: UsageSubscriptionAddon[];
+  /** Specialist agents the subscription's plan includes (no end of their own). */
+  included: UsagePlanAgent[];
   purchasable: UsagePlanAddonOffer[];
 }
 
@@ -726,6 +742,7 @@ export function getScopeAddons(scope: UsageScopeKind): Promise<UsageScopeAddons>
   return apiGet<{ data?: UsageScopeAddons }>(`${BILLING}/subscription?scope=${scope}`).then((r) => ({
     subscription: r.data?.subscription ?? null,
     held: r.data?.held ?? [],
+    included: r.data?.included ?? [],
     purchasable: r.data?.purchasable ?? [],
   }));
 }
@@ -906,6 +923,7 @@ export function billingErrorKey(reason: string | undefined): string | null {
     case "invoice_too_long":
     case "order_not_paid":
     case "addon_held":
+    case "addon_included":
     case "addon_none":
     case "addon_not_sold":
     case "addon_pending":

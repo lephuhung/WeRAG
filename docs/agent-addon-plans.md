@@ -31,7 +31,7 @@ Mỗi agent tuỳ chỉnh có đúng một **cách phân phối** (trường m�
 | Cách phân phối | Ai thấy | Dùng cho |
 | --- | --- | --- |
 | **Cơ bản** | mọi Tổ chức (lượt hỏi vẫn qua kiểm gói dịch vụ `usage.enforce`, mặc định bật) | 2 agent cơ bản |
-| **Chuyên ngành (bán kèm)** | thành viên của Tổ chức có gói dịch vụ còn hạn **và** đã mua agent này | agent có bộ kỹ năng |
+| **Chuyên ngành (bán kèm)** | thành viên của Tổ chức có gói dịch vụ còn hạn **và** đã mua agent này, **hoặc** gói đó có sẵn agent này (§10) | agent có bộ kỹ năng |
 | **Nội bộ** | chỉ các Tổ chức trong "Tổ chức áp dụng" | agent thử, agent riêng một đơn vị không bán |
 
 - Agent có bộ kỹ năng mặc định là **Chuyên ngành**, chưa thuộc gói nào ⇒ chưa ai thấy cho tới khi được bán — không còn nguy cơ "tạo xong là mọi Tổ chức thấy".
@@ -43,6 +43,7 @@ Mỗi agent tuỳ chỉnh có đúng một **cách phân phối** (trường m�
 
 - `custom_agents.distribution` (`basic` | `addon` | `internal`), mặc định `basic` cho agent cũ để không đổi hành vi; agent mới có `domain_packs` → `addon`.
 - Danh mục bán kèm: bảng `usage_agent_addons` (`agent_id`, `price_vnd` mỗi tháng, `plan_ids` jsonb — rỗng = bán kèm mọi gói, mô tả cho người mua, `is_active`, `sort_order`). Giá là dữ liệu do SuperAdmin sửa lúc chạy, không seed (cùng quy tắc với `usage_plans`).
+- Agent có sẵn trong gói: `usage_plans.included_agent_ids` (jsonb, mặc định `[]`, migration 000191) — danh sách agent Chuyên ngành mà mọi thuê bao còn hạn của gói dùng được không phải mua (§10).
 - Quyền dùng: bảng `usage_subscription_addons` (`subscription_id`, `agent_id`, `starts_at`, `ends_at`, `price_vnd` đã chốt, `order_id`). Gắn vào **thuê bao** (tenant hoặc cá nhân), hết hạn cùng thuê bao trừ khi gia hạn.
 - Đơn hàng: `usage_orders` thêm danh sách agent mua kèm (giá chốt từng agent) để báo giá, mã khuyến mãi và xác nhận thanh toán (thủ công hoặc webhook) dùng chung luồng hiện có.
 
@@ -76,6 +77,8 @@ thấy(agent, caller) =
   ∨ distribution = internal ∧ (applies_to rỗng ∨ tenant ∈ applies_to)
   ∨ distribution = addon ∧ ∃ usage_subscription_addons còn hạn của thuê bao đang hiệu lực
                            (tenant của caller, hoặc thuê bao cá nhân của caller) chứa agent
+  ∨ distribution = addon ∧ ∃ thuê bao đang hiệu lực (cùng phạm vi) có gói
+                           với included_agent_ids chứa agent            (§10)
 ```
 
 - `usage.enforce` mặc định **bật**; công tắc chỉ để tắt khi kiểm thử. Dù tắt, agent `addon` vẫn chỉ hiện khi đã mua — quyền dùng tính theo dữ liệu thuê bao, không theo công tắc kiểm hạn mức (7.4).
@@ -198,3 +201,13 @@ Mỗi giai đoạn: Opus làm, Fable rà (khi còn hạn mức), migration theo 
 ## 9. Rà soát
 
 - 2026-10-19: Fable hết hạn mức (HTTP 429) khi rà nhánh này; theo quyết định của người dùng, một agent Opus độc lập rà trước (bản rà: scratchpad `review-agent-addons-opus.md`): quyền truy cập đạt; phần tiền có 2 lỗi CAO + 2 TRUNG BÌNH, đã sửa ở §8.4; mục 5, 7, 8 do người dùng chốt (§7.7–7.9). **Còn nợ: Fable rà lại toàn bộ `38e230f7..HEAD` (giai đoạn A, B, C, nút bật/tắt) khi có hạn mức**, kể cả khi đã merge.
+
+## 10. Agent có sẵn trong gói (08/11/2026)
+
+Quyết định của người dùng ngày 08/11/2026: một gói dịch vụ có thể **có sẵn** một số agent Chuyên ngành (ví dụ gói Go có sẵn agent DeepSeek "Suy luận nâng cao", gói rẻ hơn chỉ có 2 agent cơ bản Qwen).
+
+- Dữ liệu: `usage_plans.included_agent_ids` (migration 000191). SuperAdmin chọn trong trình sửa gói ("Trợ lý có sẵn trong gói").
+- Chọn được: chỉ agent tuỳ chỉnh còn sống, cách phân phối Chuyên ngành, có ít nhất một bản ghi đang bật (không built-in, không Cơ bản/Nội bộ). Id mới không đạt bị từ chối (`included_agent_not_found` / `included_agent_not_addon`); id cũ của gói đã hết đạt (agent bị xoá/đổi cách phân phối) được bỏ lặng lẽ khi lưu gói.
+- Quyền dùng: mọi thuê bao đang hiệu lực của gói (Tổ chức, hoặc cá nhân của người dùng thật) thấy và dùng agent, không cần mua, không tick lúc đặt hàng — cùng cổng §6, theo dữ liệu thuê bao, không theo `usage.enforce`.
+- Bán: agent có sẵn trong gói **không bao giờ** nằm trong danh sách mua kèm của gói đó (`addons` của `GET /billing/plans`, `purchasable` của trang Mua gói); báo giá/đặt hàng chứa nó với gói đó bị từ chối mã `addon_included`. Thêm ghế không tính tiền cho quyền đã mua của agent mà gói mới có sẵn; khi đổi gói người mua vẫn có thể bỏ quyền đã mua để nhận tiền hoàn.
+- Hiển thị: thẻ gói ghi "Gồm: <agent cơ bản>, <agent có sẵn>"; trang "Gói sử dụng" và trang Mua gói liệt kê agent có sẵn với nhãn "có sẵn trong gói", không có ngày hết hạn riêng. Agent vừa mua vừa có sẵn chỉ hiện **một lần** (nhãn có sẵn); quyền đã mua của agent có sẵn đã hết hạn không hiện thông báo "mua lại".

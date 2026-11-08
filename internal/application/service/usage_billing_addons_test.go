@@ -603,3 +603,83 @@ func TestSeatIncreaseChargesHeldAddonNotBoughtAgain(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, held, *f.right("sub-1", "thue").EndsAt, "the right is not extended by a seats-only line")
 }
+
+// A plan that includes a specialist agent (included_agent_ids) grants it:
+// the agent is listed as included on the offer, never offered or sold as an
+// add-on with that plan (addon_included), and its holders pay no added
+// seats for a bought right of it.
+func TestPlanIncludedAgentIsNotSold(t *testing.T) {
+	f := newBillingFixture(t)
+	withAddonCatalogue(f)
+	ctx := context.Background()
+	f.svc.plans.(*planCatalog).plans["seat"].IncludedAgentIDs = types.UsageAgentIDList{"thue", "suyluan"}
+	f.plans.extraAgents = []types.UsagePlanAgent{{ID: "suyluan", Name: "Suy luận nâng cao"}}
+
+	// GET /billing/plans: basic + included agents, included not in addons
+	offers, err := f.svc.PurchasablePlans(ctx, "tenant")
+	require.NoError(t, err)
+	for _, o := range offers {
+		addonIDs := []string{}
+		for _, a := range o.Addons {
+			addonIDs = append(addonIDs, a.AgentID)
+		}
+		var includedIDs []string
+		for _, a := range o.IncludedAgents {
+			if a.Included {
+				includedIDs = append(includedIDs, a.ID)
+			}
+		}
+		switch o.ID {
+		case "seat":
+			require.Equal(t, []string{"thue", "suyluan"}, includedIDs)
+			require.Equal(t, []string{"kt"}, addonIDs)
+			require.Equal(t, "Suy luận nâng cao", o.IncludedAgents[len(o.IncludedAgents)-1].Name)
+		case "pool":
+			require.Empty(t, includedIDs)
+			require.Equal(t, []string{"thue"}, addonIDs)
+		}
+	}
+
+	// a plan order may not buy what the plan includes
+	_, err = f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 2,
+		AddonAgentIDs: []string{"thue"}}, "10003")
+	require.Equal(t, "addon_included", badRequestReason(t, err))
+	// the same agent is still sold with a plan that does not include it
+	_, err = f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1,
+		AddonAgentIDs: []string{"thue"}}, "10003")
+	require.NoError(t, err)
+
+	// on a running subscription to the plan: not purchasable, refused
+	end := types.EndOfDayVN(billingNow.AddDate(0, 2, 0))
+	f.plans.active["tenant/10003"] = &types.UsageSubscription{ID: "sub-1", ScopeType: "tenant", ScopeID: "10003",
+		PlanID: "seat", Mode: "seat", Seats: 2, StartsAt: billingNow.AddDate(0, -1, 0), EndsAt: &end,
+		Status: types.UsageSubscriptionActive}
+	_, err = f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "tenant", Kind: "addon",
+		AddonAgentIDs: []string{"thue"}}, "10003")
+	require.Equal(t, "addon_included", badRequestReason(t, err))
+	out, err := f.svc.ScopeAddons(ctx, "tenant", "10003")
+	require.NoError(t, err)
+	require.Equal(t, []types.UsagePlanAgent{
+		{ID: "thue", Name: "Thuế HKD", Included: true},
+		{ID: "suyluan", Name: "Suy luận nâng cao", Included: true},
+	}, out.Included)
+	require.Len(t, out.Purchasable, 1)
+	require.Equal(t, "kt", out.Purchasable[0].AgentID)
+
+	// a right bought before the plan included it: adding seats costs
+	// nothing for it
+	require.NoError(t, f.plans.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+		SubscriptionID: "sub-1", AgentID: "thue", StartsAt: billingNow.AddDate(0, -1, 0), EndsAt: &end, PriceVND: 99_000}))
+	q, err := f.svc.Quote(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "seat", Months: 1, Seats: 5}, "10003")
+	require.NoError(t, err)
+	for _, l := range q.Addons {
+		require.NotEqual(t, "thue", l.AgentID, "no seats-only line for an included agent")
+	}
+	// bought and included: once, in Held, flagged, with its stored end
+	out, err = f.svc.ScopeAddons(ctx, "tenant", "10003")
+	require.NoError(t, err)
+	require.Len(t, out.Held, 1)
+	require.True(t, out.Held[0].Included)
+	require.Equal(t, end, *out.Held[0].EndsAt)
+	require.Equal(t, []types.UsagePlanAgent{{ID: "suyluan", Name: "Suy luận nâng cao", Included: true}}, out.Included)
+}

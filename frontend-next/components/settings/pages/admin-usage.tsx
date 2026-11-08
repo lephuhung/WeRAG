@@ -50,7 +50,7 @@ import {
   planPrice,
   type UsageAgentAddonCatalogue,
 } from "@/lib/api/usage";
-import { addonsForPlan } from "@/lib/agent-addon-catalogue";
+import { addonsForPlan, planIncludedAgents, togglePlanId } from "@/lib/agent-addon-catalogue";
 
 const USER_PAGE = 30;
 
@@ -68,6 +68,7 @@ const emptyPlan: UsagePlanInput = {
   price_year_vnd: 0,
   sort_order: 0,
   is_active: true,
+  included_agent_ids: [],
 };
 
 /* One VND amount input: digits only, "" for 0. */
@@ -289,7 +290,7 @@ export default function AdminUsage() {
   const [tenants, setTenants] = useState<UsageTenantOverview[]>([]);
   const [personal, setPersonal] = useState<UsageSubscriptionView[]>([]);
   // basic agents every plan includes + specialist agents sold with plans
-  const [catalogue, setCatalogue] = useState<UsageAgentAddonCatalogue>({ addons: [], included_agents: [] });
+  const [catalogue, setCatalogue] = useState<UsageAgentAddonCatalogue>({ addons: [], included_agents: [], addon_agents: [] });
   const [q, setQ] = useState("");
 
   const [planOpen, setPlanOpen] = useState(false);
@@ -335,7 +336,7 @@ export default function AdminUsage() {
       // the plan cards still render if the catalogue cannot be read
       listAgentAddons(true)
         .then(setCatalogue)
-        .catch(() => setCatalogue({ addons: [], included_agents: [] }));
+        .catch(() => setCatalogue({ addons: [], included_agents: [], addon_agents: [] }));
     } catch (e) {
       setError(e instanceof Error ? e.message : t("usg.loadFailed"));
     } finally {
@@ -429,6 +430,7 @@ export default function AdminUsage() {
       price_year_vnd: p.price_year_vnd ?? 0,
       sort_order: p.sort_order,
       is_active: p.is_active,
+      included_agent_ids: [...(p.included_agent_ids ?? [])],
     };
     setPlanForm(form);
     setPlanBase(form);
@@ -679,14 +681,15 @@ export default function AdminUsage() {
                       </p>
                     ))}
                   {p.description && <p className="caption whitespace-pre-line leading-relaxed text-muted">{p.description}</p>}
-                  {catalogue.included_agents.length > 0 && (
-                    <div className="caption text-muted">
-                      {t("usg.includedAgents", {
-                        n: catalogue.included_agents.length,
-                        names: catalogue.included_agents.map((a) => a.name).join(", "),
-                      })}
-                    </div>
-                  )}
+                  {(() => {
+                    // basic agents, then the specialist agents this plan includes
+                    const agents = [...catalogue.included_agents, ...planIncludedAgents(p, catalogue.addon_agents)];
+                    return agents.length > 0 ? (
+                      <div className="caption text-muted">
+                        {t("usg.includedAgents", { n: agents.length, names: agents.map((a) => a.name).join(", ") })}
+                      </div>
+                    ) : null;
+                  })()}
                   {addonsForPlan(catalogue.addons, p).length > 0 && (
                     <div className="caption text-muted">
                       {t("usg.addonAgents")}{" "}
@@ -899,6 +902,37 @@ export default function AdminUsage() {
               onChange={(features) => setPlanForm({ ...planForm, features })}
             />
           </div>
+          <fieldset>
+            <legend className="caption mb-2 block text-muted">{t("usg.planIncludedAgents")}</legend>
+            {(() => {
+              const chosen = planForm.included_agent_ids ?? [];
+              const liveIds = new Set(catalogue.addon_agents.map((a) => a.id));
+              // ticked ids whose agent was switched off, deleted or converted:
+              // shown struck through so they can still be unticked
+              const dead = chosen
+                .filter((id) => !liveIds.has(id))
+                .map((id) => ({ id, name: catalogue.addons.find((r) => r.agent_id === id)?.agent_name || id, live: false }));
+              const choices = [...catalogue.addon_agents.map((a) => ({ id: a.id, name: a.name, live: true })), ...dead];
+              if (choices.length === 0) return <p className="caption text-muted-soft">{t("usg.planIncludedAgentsNone")}</p>;
+              return (
+                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                  {choices.map((a) => (
+                    <label key={a.id} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={chosen.includes(a.id)}
+                        onChange={() => setPlanForm({ ...planForm, included_agent_ids: togglePlanId(chosen, a.id) })}
+                      />
+                      <span className={a.live ? "caption text-body" : "caption text-muted-soft line-through"}>
+                        {a.live ? a.name : t("usg.planIncludedAgentUnavailable", { name: a.name })}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              );
+            })()}
+            <p className="caption mt-1 text-muted-soft">{t("usg.planIncludedAgentsHint")}</p>
+          </fieldset>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <FieldLabel htmlFor="plan-order" className="mb-0">{t("usg.planOrder")}</FieldLabel>

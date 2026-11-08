@@ -19,6 +19,10 @@ var UsageIncludedAgentIDs = []string{BuiltinDocumentAssistantID, BuiltinSmartRea
 // plans an add-on is sold with; empty = every plan.
 type UsagePlanIDList []string
 
+// UsageAgentIDList is a jsonb list of agent ids (usage_plans
+// included_agent_ids); same storage rules as UsagePlanIDList.
+type UsageAgentIDList = UsagePlanIDList
+
 // Value implements driver.Valuer; nil is stored as [].
 func (l UsagePlanIDList) Value() (driver.Value, error) {
 	if l == nil {
@@ -124,6 +128,9 @@ func (UsageAgentAddon) TableName() string { return "usage_agent_addons" }
 type UsagePlanAgent struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	// Included marks a specialist agent the plan includes
+	// (usage_plans.included_agent_ids), as opposed to a basic agent.
+	Included bool `json:"included,omitempty"`
 }
 
 // UsagePlanAddonOffer is a specialist agent a buyer may add to a plan.
@@ -149,4 +156,7 @@ type UsagePlanOffer struct {
 type UsageAgentAddonCatalogue struct {
 	Addons         []*UsageAgentAddon `json:"addons"`
 	IncludedAgents []UsagePlanAgent   `json:"included_agents"`
+	// AddonAgents are every live addon-distribution agent, sold or not:
+	// the choices for a plan's included_agent_ids.
+	AddonAgents []UsagePlanAgent `json:"addon_agents"`
 }
