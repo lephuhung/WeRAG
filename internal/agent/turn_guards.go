@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
-	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -90,34 +89,45 @@ func overCallCap(name string, calls int) bool {
 	return ok && calls >= limit
 }
 
-// dropExhaustedTools removes the tools that failed maxToolFailuresPerTurn
-// times or more, or reached their maxToolCallsPerTurn cap, in the steps so
-// far.
-func dropExhaustedTools(tools []chat.Tool, steps []types.AgentStep) []chat.Tool {
+// exhaustedTools maps each tool that failed maxToolFailuresPerTurn times or
+// more, or reached its maxToolCallsPerTurn cap, in the steps so far to the
+// error a further call gets instead of running.
+//
+// The tool stays in the offered list: the tool schema is part of the prompt
+// prefix providers cache (DeepSeek, vLLM prefix caching), and dropping one
+// mid-turn re-reads the whole prompt uncached. Seen 2026-11-07 on
+// deepseek-flash: search_knowledge reaching its cap of 6 made the next round
+// read 70k of 84k prompt tokens from scratch, half the turn's cache misses.
+// The call that reached the cap already told the model to stop
+// (noteExhaustedTools); a call after that is refused here.
+func exhaustedTools(steps []types.AgentStep) map[string]string {
 	failures := toolFailureCounts(steps)
 	calls := toolCallCounts(steps)
-	exhausted := func(name string) bool {
-		return failures[name] >= maxToolFailuresPerTurn || overCallCap(name, calls[name])
-	}
-	found := false
-	for _, t := range tools {
-		if exhausted(t.Function.Name) {
-			found = true
-			break
+	var out map[string]string
+	add := func(name, text string) {
+		if out == nil {
+			out = map[string]string{}
+		}
+		if _, ok := out[name]; !ok {
+			out[name] = text
 		}
 	}
-	if !found {
-		return tools
-	}
-	out := make([]chat.Tool, 0, len(tools))
-	for _, t := range tools {
-		if exhausted(t.Function.Name) {
-			continue
+	for name, n := range failures {
+		if n >= maxToolFailuresPerTurn {
+			add(name, fmt.Sprintf(toolWithdrawnText, name, fmt.Sprintf("đã lỗi %d lần", n)))
 		}
-		out = append(out, t)
+	}
+	for name, n := range calls {
+		if overCallCap(name, n) {
+			add(name, fmt.Sprintf(toolWithdrawnText, name, fmt.Sprintf("đã gọi %d lần", n)))
+		}
 	}
 	return out
 }
+
+// toolWithdrawnText is the error of a call to an exhausted tool.
+const toolWithdrawnText = "[Công cụ %s %s trong lượt này và không còn được cung cấp nữa; lần gọi này không được thực hiện. " +
+	"ĐỪNG gọi lại: trả lời người dùng với những gì đã có, nói rõ việc chưa làm được và vì sao.]"
 
 // carriesStopNote reports whether an error already tells the model the tool
 // is withdrawn: this guard's note or the repeated-failure guard's text.

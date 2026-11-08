@@ -56,9 +56,17 @@ func (e *AgentEngine) forcedToolRound(
 			return resp, true
 		}
 		spent = resp.Usage
-		ignoresToolChoice.Store(modelID, true)
-		logger.Warnf(ctx, "[Agent][Forced] model %s ignored tool_choice=%s (finish=%s, %d chars of text); asking for the arguments as JSON",
-			modelID, forced, resp.FinishReason, len(resp.Content))
+		// Only a plain-text reply marks the model for the rest of the
+		// process. A reply with other tool calls is a one-off miss: marking
+		// on it sent every later turn of deepseek-flash (which honours a
+		// named tool_choice) through the JSON fallback, whose tool-less
+		// request breaks the provider's prompt cache for the next round
+		// (~11k uncached tokens per turn, 2026-11-08).
+		if len(resp.ToolCalls) == 0 {
+			ignoresToolChoice.Store(modelID, true)
+		}
+		logger.Warnf(ctx, "[Agent][Forced] model %s ignored tool_choice=%s (finish=%s, %d chars of text, calls=%v); asking for the arguments as JSON",
+			modelID, forced, resp.FinishReason, len(resp.Content), toolCallNames(resp.ToolCalls))
 	}
 
 	resp, err := e.forcedToolArgsAsJSON(ctx, messages, opts, forced, params)
@@ -138,6 +146,15 @@ func toolParameters(tools []chat.Tool, name string) json.RawMessage {
 		}
 	}
 	return nil
+}
+
+// toolCallNames lists the called tool names, for logs.
+func toolCallNames(calls []types.LLMToolCall) []string {
+	names := make([]string, 0, len(calls))
+	for _, tc := range calls {
+		names = append(names, tc.Function.Name)
+	}
+	return names
 }
 
 func callsTo(calls []types.LLMToolCall, name string) []types.LLMToolCall {

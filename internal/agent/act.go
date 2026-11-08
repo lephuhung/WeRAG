@@ -434,6 +434,9 @@ func (e *AgentEngine) runToolCall(
 	if refused, ok := e.refuseDisabledTool(ctx, tc, round, assistantMessageID); ok {
 		return refused
 	}
+	if refused, ok := e.refuseExhaustedTool(ctx, tc, round); ok {
+		return refused
+	}
 	toolCall := e.executeOneToolCall(ctx, tc, i, iteration, round, sessionID, assistantMessageID)
 	e.recordToolOutcome(ctx, &toolCall, round, assistantMessageID)
 	return toolCall

@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	"github.com/Tencent/WeKnora/internal/logger"
-	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -124,21 +123,21 @@ func (g *toolFailureGuard) record(messageID, name string, success bool, errMsg s
 	return text, true
 }
 
-// filterTools drops the tools disabled in this turn from the offered list.
-func (g *toolFailureGuard) filterTools(messageID string, tools []chat.Tool) []chat.Tool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.resetLocked(messageID)
-	if len(g.disabled) == 0 {
-		return tools
+// refuseExhaustedTool returns the refused call for a tool exhausted in this
+// turn (exhaustedTools), without running it; ok is false when it may run.
+func (e *AgentEngine) refuseExhaustedTool(ctx context.Context, tc types.LLMToolCall, round int) (types.ToolCall, bool) {
+	text, off := e.exhausted[tc.Function.Name]
+	if !off {
+		return types.ToolCall{}, false
 	}
-	out := make([]chat.Tool, 0, len(tools))
-	for _, t := range tools {
-		if _, off := g.disabled[t.Function.Name]; !off {
-			out = append(out, t)
-		}
-	}
-	return out
+	logger.Infof(ctx, "[Agent][Round-%d] Refusing call to %s: exhausted this turn", round, tc.Function.Name)
+	return types.ToolCall{
+		ID:               tc.ID,
+		Name:             tc.Function.Name,
+		Args:             map[string]any{"_raw": tc.Function.Arguments},
+		ProviderMetadata: tc.ProviderMetadata,
+		Result:           &types.ToolResult{Success: false, Error: text},
+	}, true
 }
 
 // refuseDisabledTool returns the refused call for a tool disabled in this
