@@ -2,13 +2,13 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
 	"sync"
 
 	"github.com/Tencent/WeKnora/internal/logger"
-	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -16,13 +16,13 @@ import (
 // discover_mcp_tools called 38 times in 5 turns, 82 % with the same wrong
 // server_id; call_mcp_tool retried on "Error executing tool generate_image";
 // web_search called while not offered ("tool not found"). The round-boundary
-// guard in turn_guards.go withdraws a tool from the offered list, but the
-// model still calls withdrawn or never-offered names, and it counts by the
-// resolved MCP target, so the call_mcp_tool proxy itself stays offered.
-// This guard sits where calls execute: after identicalFailureLimit
-// consecutive failures of one tool name with the same normalised error in a
-// turn, further calls are refused without running and the name is dropped
-// from the tools offered for the rest of the turn.
+// guard in turn_guards.go counts by the resolved MCP target and refuses
+// the exhausted target when it is called again; the model also calls
+// never-offered names. This guard sits where calls execute: after
+// identicalFailureLimit consecutive failures of one tool name with the same
+// normalised error in a turn, further calls are refused without running.
+// Neither guard changes the offered tool list: the tool schema is part of
+// the prompt prefix providers cache (see exhaustedTools).
 
 // identicalFailureLimit is the number of consecutive identical failures of
 // one tool after which it is disabled for the rest of the turn.
@@ -124,21 +124,31 @@ func (g *toolFailureGuard) record(messageID, name string, success bool, errMsg s
 	return text, true
 }
 
-// filterTools drops the tools disabled in this turn from the offered list.
-func (g *toolFailureGuard) filterTools(messageID string, tools []chat.Tool) []chat.Tool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.resetLocked(messageID)
-	if len(g.disabled) == 0 {
-		return tools
+// refuseExhaustedTool returns the refused call for a tool exhausted in this
+// turn (exhaustedTools), without running it; ok is false when it may run.
+// exhaustedTools keys by the executed name, so a call through the MCP proxy
+// is matched by its resolved target as well, and the refused call carries
+// that target so its ExecutionName reads the same as the calls that ran.
+func (e *AgentEngine) refuseExhaustedTool(ctx context.Context, tc types.LLMToolCall, round int) (types.ToolCall, bool) {
+	if len(e.exhausted) == 0 {
+		return types.ToolCall{}, false
 	}
-	out := make([]chat.Tool, 0, len(tools))
-	for _, t := range tools {
-		if _, off := g.disabled[t.Function.Name]; !off {
-			out = append(out, t)
+	name := tc.Function.Name
+	var target *types.ToolCallTarget
+	if e.toolRegistry != nil && len(tc.UnresolvedHandles) == 0 {
+		if target = e.toolRegistry.MCPCallTarget(ctx, name, json.RawMessage(tc.Function.Arguments)); target != nil {
+			name = target.Name
 		}
 	}
-	return out
+	text, off := e.exhausted[name]
+	if !off {
+		return types.ToolCall{}, false
+	}
+	logger.Infof(ctx, "[Agent][Round-%d] Refusing call to %s: exhausted this turn", round, name)
+	refused := unrunToolCall(tc, text)
+	refused.Target = target
+	refused.Result.Refused = true
+	return refused, true
 }
 
 // refuseDisabledTool returns the refused call for a tool disabled in this
@@ -150,13 +160,9 @@ func (e *AgentEngine) refuseDisabledTool(ctx context.Context, tc types.LLMToolCa
 	}
 	logger.Infof(ctx, "[Agent][Round-%d] Refusing call to %s: disabled after %d identical failures this turn",
 		round, tc.Function.Name, identicalFailureLimit)
-	return types.ToolCall{
-		ID:               tc.ID,
-		Name:             tc.Function.Name,
-		Args:             map[string]any{"_raw": tc.Function.Arguments},
-		ProviderMetadata: tc.ProviderMetadata,
-		Result:           &types.ToolResult{Success: false, Error: text},
-	}, true
+	refused := unrunToolCall(tc, text)
+	refused.Result.Refused = true
+	return refused, true
 }
 
 // recordToolOutcome feeds a finished call to the guard and, when it disabled

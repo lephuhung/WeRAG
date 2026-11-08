@@ -104,6 +104,10 @@ type AgentEngine struct {
 	// failureGuard disables a tool after identicalFailureLimit identical
 	// failures in the turn (failure_guard.go).
 	failureGuard toolFailureGuard
+	// exhausted maps the tools refused for the rest of the turn to their
+	// refusal text; recomputed before each round from the turn's steps and
+	// only read while the round's tool calls run.
+	exhausted map[string]string
 }
 
 // maxSteerOverruns caps loop-end injects past MaxIterations. One extra round
@@ -622,10 +626,12 @@ loop:
 			e.toolRegistry.RefreshMCPTools(ctx)
 			tools = e.buildToolsForLLM()
 		}
-		// a tool that failed maxToolFailuresPerTurn times is withdrawn
-		tools = dropExhaustedTools(tools, state.RoundSteps)
-		// and one disabled by identical failures, by its offered name
-		tools = e.failureGuard.filterTools(messageID, tools)
+		// a tool that failed maxToolFailuresPerTurn times or reached its call
+		// cap is refused from now on (refuseExhaustedTool, by executed name)
+		// but stays offered: the tool list is part of the cached prompt
+		// prefix (see exhaustedTools). Tools disabled by identical failures
+		// are refused by refuseDisabledTool, by the called name.
+		e.exhausted = exhaustedTools(state.RoundSteps)
 
 		// Each iteration runs inside an "agent.round.<N>" Langfuse span.
 		// We execute the body in a closure so `defer span.Finish()` fires at

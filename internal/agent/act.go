@@ -298,15 +298,23 @@ func (e *AgentEngine) refuseToolCalls(
 	step *types.AgentStep, iteration int, sessionID, reason string,
 ) {
 	for i, tc := range response.ToolCalls {
-		toolCall := types.ToolCall{
-			ID:               agenttools.NormalizeToolCallID(tc.ID, tc.Function.Name, i),
-			Name:             tc.Function.Name,
-			Args:             map[string]any{"_raw": tc.Function.Arguments},
-			ProviderMetadata: tc.ProviderMetadata,
-			Result:           &types.ToolResult{Success: false, Error: reason},
-		}
+		tc.ID = agenttools.NormalizeToolCallID(tc.ID, tc.Function.Name, i)
+		toolCall := unrunToolCall(tc, reason)
 		step.ToolCalls = append(step.ToolCalls, toolCall)
 		e.emitToolOutcome(ctx, toolCall, iteration, sessionID)
+	}
+}
+
+// unrunToolCall is the record of a call that was not executed: the
+// provider's call as it came, raw arguments, and text as its error. Guards
+// that turn a call away set Result.Refused as well (see types.ToolResult).
+func unrunToolCall(tc types.LLMToolCall, text string) types.ToolCall {
+	return types.ToolCall{
+		ID:               tc.ID,
+		Name:             tc.Function.Name,
+		Args:             map[string]any{"_raw": tc.Function.Arguments},
+		ProviderMetadata: tc.ProviderMetadata,
+		Result:           &types.ToolResult{Success: false, Error: text},
 	}
 }
 
@@ -432,6 +440,9 @@ func (e *AgentEngine) runToolCall(
 ) types.ToolCall {
 	tc.ID = agenttools.NormalizeToolCallID(tc.ID, tc.Function.Name, i)
 	if refused, ok := e.refuseDisabledTool(ctx, tc, round, assistantMessageID); ok {
+		return refused
+	}
+	if refused, ok := e.refuseExhaustedTool(ctx, tc, round); ok {
 		return refused
 	}
 	toolCall := e.executeOneToolCall(ctx, tc, i, iteration, round, sessionID, assistantMessageID)

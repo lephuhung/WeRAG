@@ -23,8 +23,23 @@ import (
 // is built here. A model seen ignoring tool_choice goes straight to JSON.
 
 // ignoresToolChoice remembers chat model ids that answered a named
-// tool_choice without calling the tool (for the life of the process).
+// tool_choice without calling the tool (for the life of the process): at
+// once on a plain-text reply, or after forcedToolMissLimit consecutive
+// replies calling other tools (forcedToolMisses). A single other-tool reply
+// is not remembered: deepseek-flash honours a named tool_choice, and marking
+// it on one miss (2026-11-08) sent every later turn through the tool-less
+// JSON fallback, which broke the provider's prompt cache for the next round
+// (~11k uncached tokens per turn).
 var ignoresToolChoice sync.Map
+
+// forcedToolMisses counts, per model id, the consecutive forced rounds that
+// came back calling other tools; a honoured call resets it.
+var forcedToolMisses sync.Map
+
+// forcedToolMissLimit is the number of consecutive other-tool replies after
+// which the model is treated as ignoring tool_choice, so a model whose
+// parser always emits another call does not pay a wasted round per turn.
+const forcedToolMissLimit = 3
 
 // forcedToolRound runs the round as a call to `forced`. ok=false when no
 // call could be had: the caller then streams the round as usual.
@@ -50,15 +65,18 @@ func (e *AgentEngine) forcedToolRound(
 			return nil, false
 		}
 		if calls := callsTo(resp.ToolCalls, forced); len(calls) > 0 {
+			forcedToolMisses.Delete(modelID)
 			resp.ToolCalls = calls
 			resp.Content = ""
 			e.emitForcedToolCalls(ctx, calls, iteration, sessionID)
 			return resp, true
 		}
 		spent = resp.Usage
-		ignoresToolChoice.Store(modelID, true)
-		logger.Warnf(ctx, "[Agent][Forced] model %s ignored tool_choice=%s (finish=%s, %d chars of text); asking for the arguments as JSON",
-			modelID, forced, resp.FinishReason, len(resp.Content))
+		if len(resp.ToolCalls) == 0 || countForcedToolMiss(modelID) >= forcedToolMissLimit {
+			ignoresToolChoice.Store(modelID, true)
+		}
+		logger.Warnf(ctx, "[Agent][Forced] model %s ignored tool_choice=%s (finish=%s, %d chars of text, calls=%v); asking for the arguments as JSON",
+			modelID, forced, resp.FinishReason, len(resp.Content), toolCallNames(resp.ToolCalls))
 	}
 
 	resp, err := e.forcedToolArgsAsJSON(ctx, messages, opts, forced, params)
@@ -138,6 +156,26 @@ func toolParameters(tools []chat.Tool, name string) json.RawMessage {
 		}
 	}
 	return nil
+}
+
+// countForcedToolMiss adds one other-tool reply for the model and returns
+// the consecutive count.
+func countForcedToolMiss(modelID string) int {
+	n := 1
+	if v, ok := forcedToolMisses.Load(modelID); ok {
+		n = v.(int) + 1
+	}
+	forcedToolMisses.Store(modelID, n)
+	return n
+}
+
+// toolCallNames lists the called tool names, for logs.
+func toolCallNames(calls []types.LLMToolCall) []string {
+	names := make([]string, 0, len(calls))
+	for _, tc := range calls {
+		names = append(names, tc.Function.Name)
+	}
+	return names
 }
 
 func callsTo(calls []types.LLMToolCall, name string) []types.LLMToolCall {

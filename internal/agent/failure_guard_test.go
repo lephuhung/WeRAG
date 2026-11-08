@@ -40,8 +40,8 @@ func offeredNames(opts *chat.ChatOptions) []string {
 }
 
 // A tool failing the same way three times is disabled for the turn: the
-// fourth call is not executed, its result says so, and the tool is no
-// longer offered after the third failure.
+// fourth call is not executed and its result says so. The tool stays
+// offered: the tool list is part of the cached prompt prefix.
 func TestFailureGuardDisablesToolAfterThreeIdenticalFailures(t *testing.T) {
 	const name = "discover_mcp_tools"
 	responses := make([]mockResponse, 0, 5)
@@ -85,7 +85,7 @@ func TestFailureGuardDisablesToolAfterThreeIdenticalFailures(t *testing.T) {
 
 	require.Len(t, model.opts, 5)
 	assert.Contains(t, offeredNames(model.opts[2]), name, "offered until the third failure")
-	assert.NotContains(t, offeredNames(model.opts[3]), name, "withdrawn after the third failure")
+	assert.Contains(t, offeredNames(model.opts[3]), name, "still offered: the tool list is part of the cached prefix")
 	assert.Contains(t, offeredNames(model.opts[3]), "other_tool")
 }
 
@@ -116,4 +116,50 @@ func TestNormalizeToolError(t *testing.T) {
 		normalizeToolError("read failed for 11111111-2222-3333-4444-555555555555 at page  12"))
 	assert.Equal(t, normalizeToolError("chunk a1b2c3d4e5 missing"), normalizeToolError("chunk ffee0099aa missing"))
 	assert.NotEqual(t, normalizeToolError("tool not found"), normalizeToolError("timeout"))
+}
+
+// A read tool past its per-turn call cap is refused without running, and the
+// offered tool list stays byte-identical across rounds, so a provider prompt
+// cache keeps hitting (DeepSeek re-read 70k tokens when it was dropped).
+func TestExhaustedToolRefusedButStillOffered(t *testing.T) {
+	const name = agenttools.ToolSearchKnowledge
+	limit := maxToolCallsPerTurn[name]
+	responses := make([]mockResponse, 0, limit+2)
+	for i := 1; i <= limit+1; i++ {
+		responses = append(responses, mockResponse{chunks: []types.StreamResponse{{
+			ResponseType: types.ResponseTypeAnswer,
+			Content:      fmt.Sprintf("searching %d", i),
+			ToolCalls: []types.LLMToolCall{{
+				ID: fmt.Sprintf("tc%d", i), Type: "function",
+				Function: types.FunctionCall{Name: name, Arguments: fmt.Sprintf(`{"query":"q%d"}`, i)},
+			}},
+		}}})
+	}
+	responses = append(responses, mockResponse{chunks: []types.StreamResponse{
+		{ResponseType: types.ResponseTypeAnswer, Content: "answer", Done: true, FinishReason: "stop"},
+	}})
+	model := &mockChat{responses: responses}
+	engine := newTestEngine(t, model, withMaxIterations(20))
+	engine.eventBus = event.NewEventBus()
+	registry := agenttools.NewToolRegistry()
+	tool := newCountingTool(name)
+	registry.RegisterTool(tool)
+	registry.RegisterTool(newCountingTool("other_tool"))
+	engine.toolRegistry = registry
+
+	state := &types.AgentState{RoundSteps: []types.AgentStep{}}
+	messages := []chat.Message{{Role: "system", Content: "sys"}, {Role: "user", Content: "start"}}
+	_, err := engine.executeLoop(context.Background(), state, "start", messages,
+		engine.buildToolsForLLM(), "sess", "msg")
+	require.NoError(t, err)
+
+	assert.Equal(t, limit, tool.calls, "the call past the cap must not run")
+	require.GreaterOrEqual(t, len(state.RoundSteps), limit+1)
+	refused := state.RoundSteps[limit].ToolCalls[0].Result
+	assert.False(t, refused.Success)
+	assert.Contains(t, refused.Error, "không còn được cung cấp")
+	first := offeredNames(model.opts[0])
+	for i, opts := range model.opts {
+		assert.Equal(t, first, offeredNames(opts), "round %d offers the same tools", i+1)
+	}
 }
