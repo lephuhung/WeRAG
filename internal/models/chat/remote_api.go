@@ -83,6 +83,16 @@ func NewRemoteAPIChat(chatConfig *ChatConfig) (*RemoteAPIChat, error) {
 		}
 	}
 
+	adapter := resolveProvider(providerName, modelName)
+	thinkingOverride := parseThinkingOverride(chatConfig.ExtraConfig)
+	if thinkingOverride == nil && usesDeepSeekThinkingField(providerName, config.BaseURL, modelName) {
+		// DeepSeek selects thinking with {"thinking":{"type":...}} and ignores
+		// the generic adapter's chat_template_kwargs. Without this the model
+		// stays in thinking mode and the first round's forced tool_choice is
+		// rejected with HTTP 400 (see usesDeepSeekThinkingField).
+		thinkingOverride = thinkingTypeField{}
+	}
+
 	return &RemoteAPIChat{
 		modelName:        modelName,
 		client:           openai.NewClientWithConfig(config),
@@ -93,8 +103,8 @@ func NewRemoteAPIChat(chatConfig *ChatConfig) (*RemoteAPIChat, error) {
 		appID:            chatConfig.AppID,
 		appSecret:        chatConfig.AppSecret,
 		customHeaders:    chatConfig.CustomHeaders,
-		adapter:          resolveProvider(providerName, modelName),
-		thinkingOverride: parseThinkingOverride(chatConfig.ExtraConfig),
+		adapter:          adapter,
+		thinkingOverride: thinkingOverride,
 	}, nil
 }
 
@@ -161,8 +171,23 @@ func (c *RemoteAPIChat) logRequest(ctx context.Context, req any, isStream bool) 
 	}
 }
 
-// Chat thực hiện trò chuyện không stream
+// Chat thực hiện trò chuyện không stream.
+//
+// A provider that rejects a forced tool_choice while the model is in thinking
+// mode gets one retry with the choice left to the model (see
+// tool_choice_retry.go); the round still runs instead of failing the turn.
 func (c *RemoteAPIChat) Chat(ctx context.Context, messages []Message, opts *ChatOptions) (*types.ChatResponse, error) {
+	resp, err := c.chat(ctx, messages, opts)
+	if err != nil && forcedToolChoice(opts) && isThinkingToolChoiceError(err) {
+		logger.Warnf(ctx, "[LLM Request] Model %s rejected the forced tool_choice in thinking mode; "+
+			"retrying with tool_choice=auto: %v", c.modelName, err)
+		return c.chat(ctx, messages, withoutForcedToolChoice(opts))
+	}
+	return resp, err
+}
+
+// chat runs a single non-stream round.
+func (c *RemoteAPIChat) chat(ctx context.Context, messages []Message, opts *ChatOptions) (*types.ChatResponse, error) {
 	// Chỉ thêm timeout dự phòng khi bên gọi chưa đặt deadline, tránh yêu cầu treo chặn worker mãi;
 	// nếu bên gọi đã đặt deadline ngắn hơn hay dài hơn thì đều được tôn trọng nguyên vẹn.
 	timeoutCtx, cancel := withLLMTimeout(ctx, defaultChatTimeout)
@@ -276,8 +301,22 @@ func (c *RemoteAPIChat) chatWithRawHTTP(ctx context.Context, endpoint string, cu
 	return result, nil
 }
 
-// ChatStream thực hiện trò chuyện dạng stream
+// ChatStream thực hiện trò chuyện dạng stream.
+//
+// Like Chat, a forced tool_choice rejected because of thinking mode is retried
+// once with the choice left to the model.
 func (c *RemoteAPIChat) ChatStream(ctx context.Context, messages []Message, opts *ChatOptions) (<-chan types.StreamResponse, error) {
+	stream, err := c.chatStream(ctx, messages, opts)
+	if err != nil && forcedToolChoice(opts) && isThinkingToolChoiceError(err) {
+		logger.Warnf(ctx, "[LLM Stream] Model %s rejected the forced tool_choice in thinking mode; "+
+			"retrying with tool_choice=auto: %v", c.modelName, err)
+		return c.chatStream(ctx, messages, withoutForcedToolChoice(opts))
+	}
+	return stream, err
+}
+
+// chatStream runs a single streaming round.
+func (c *RemoteAPIChat) chatStream(ctx context.Context, messages []Message, opts *ChatOptions) (<-chan types.StreamResponse, error) {
 	// Chỉ thêm timeout dự phòng khi bên gọi chưa đặt deadline; gọi stream có timeout mặc định dài hơn,
 	// vì mô hình có suy luận có thể mất hàng chục giây đến vài phút mới ra token đầu tiên.
 	timeoutCtx, cancel := withLLMTimeout(ctx, defaultStreamTimeout)

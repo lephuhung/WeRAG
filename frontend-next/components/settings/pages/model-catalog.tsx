@@ -29,14 +29,22 @@ import { Pill, PillGroup } from "@/components/settings/pill";
 import { SectionHeader } from "@/components/settings/section-header";
 import { useToast } from "@/components/toast";
 import { TaskModelsCard } from "@/components/settings/task-models-card";
+import {
+  MODEL_PRESETS,
+  defaultThinkingControl,
+  resolveThinkingControl,
+  type ThinkingControl,
+} from "@/lib/model-presets";
 
 const EMPTY_FORM = {
+  presetId: "",
   name: "",
   provider: "",
   type: "KnowledgeQA",
   baseUrl: "",
   apiKey: "",
   accountId: "",
+  thinkingControl: "none" as ThinkingControl,
 };
 
 /* Decision models (Jev-API) only come from these two providers; Clef runs on
@@ -324,15 +332,40 @@ function SystemModels() {
     setEditing(m);
     setTestMsg(null);
     setForm({
+      presetId: "",
       name: m.name,
       provider: m.provider,
       type: m.type,
       baseUrl: m.raw.parameters?.base_url ?? "",
       apiKey: "",
       accountId: m.raw.parameters?.extra_config?.account_id ?? "",
+      thinkingControl: resolveThinkingControl(
+        m.raw.parameters?.extra_config?.thinking_control,
+        m.provider,
+        m.raw.parameters?.base_url ?? "",
+        m.name,
+      ),
     });
     setActionError("");
     setModalOpen(true);
+  };
+
+  const preset = MODEL_PRESETS.find((p) => p.id === form.presetId);
+
+  const applyPreset = (id: string) => {
+    const next = MODEL_PRESETS.find((p) => p.id === id);
+    if (!next) {
+      setForm({ ...form, presetId: id });
+      return;
+    }
+    const baseUrl = next.baseUrl || form.baseUrl;
+    setForm({
+      ...form,
+      presetId: id,
+      provider: next.provider,
+      baseUrl,
+      thinkingControl: defaultThinkingControl(next.provider, baseUrl, form.name),
+    });
   };
 
   const isDecision = form.type === "Decision";
@@ -358,10 +391,26 @@ function SystemModels() {
     }
     setSaving(true);
     setActionError("");
-    const accountPatch =
-      needsAccountId && form.accountId.trim()
-        ? { extra_config: { account_id: form.accountId.trim() } }
-        : {};
+    // thinking_control picks the wire field used to turn thinking off (DeepSeek
+    // needs {"thinking":{"type":...}}, not chat_template_kwargs), and the
+    // account ID lives in the same map. Merge with what is already stored so an
+    // edit never drops unrelated keys.
+    const extraConfig: Record<string, string> = {
+      ...(editing?.raw.parameters?.extra_config ?? {}),
+    };
+    if (form.thinkingControl === defaultThinkingControl(form.provider, form.baseUrl, form.name)) {
+      // Unset means "the adapter default applies", and that is exactly this
+      // value: not writing it leaves a form nobody touched behaving as before,
+      // and clears an override chosen for the provider we just switched away
+      // from instead of letting it outlive its model.
+      delete extraConfig.thinking_control;
+    } else {
+      extraConfig.thinking_control = form.thinkingControl;
+    }
+    if (needsAccountId && form.accountId.trim()) {
+      extraConfig.account_id = form.accountId.trim();
+    }
+    const hasExtraConfig = Object.keys(extraConfig).length > 0;
     try {
       if (editing) {
         await updateModel(editing.id, {
@@ -371,7 +420,7 @@ function SystemModels() {
             provider: form.provider.trim() || editing.raw.parameters?.provider,
             base_url: form.baseUrl || editing.raw.parameters?.base_url,
             ...(form.apiKey ? { api_key: form.apiKey } : {}),
-            ...accountPatch,
+            ...(hasExtraConfig ? { extra_config: extraConfig } : {}),
           },
         });
       } else {
@@ -383,7 +432,7 @@ function SystemModels() {
             provider: form.provider.trim() || undefined,
             base_url: form.baseUrl || undefined,
             api_key: form.apiKey || undefined,
-            ...accountPatch,
+            ...(hasExtraConfig ? { extra_config: extraConfig } : {}),
           },
         });
       }
@@ -692,17 +741,52 @@ function SystemModels() {
         title={editing ? t("mdl.edit") : t("mdl.add")}
         onClose={() => setModalOpen(false)}
       >
+        {!editing && !isDecision && (
+          <div className="mb-4">
+            <FieldLabel htmlFor="mdl-preset">{t("mdl.preset")}</FieldLabel>
+            <Select
+              id="mdl-preset"
+              ariaLabel={t("mdl.preset")}
+              value={form.presetId}
+              placeholder={t("mdl.presetPh")}
+              onChange={applyPreset}
+              options={MODEL_PRESETS.map((p) => ({ value: p.id, label: p.label }))}
+            />
+          </div>
+        )}
         <div className="mb-4">
           <FieldLabel htmlFor="mdl-name" required>{t("mdl.name")}</FieldLabel>
           <input
             id="mdl-name"
             className="input"
-            placeholder="e.g. Qwen/Qwen3.6-35B-A3B-FP8"
+            placeholder={preset?.models[0] ?? "e.g. Qwen/Qwen3.6-35B-A3B-FP8"}
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             required
             aria-required="true"
           />
+          {preset && preset.models.length > 0 && (
+            <div className="caption mt-2 flex flex-wrap items-center gap-1.5">
+              <span>{t("mdl.suggestedIds")}</span>
+              <PillGroup ariaLabel={t("mdl.suggestedIds")}>
+                {preset.models.map((m) => (
+                  <Pill
+                    key={m}
+                    active={form.name === m}
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        name: m,
+                        thinkingControl: defaultThinkingControl(form.provider, form.baseUrl, m),
+                      })
+                    }
+                  >
+                    {m}
+                  </Pill>
+                ))}
+              </PillGroup>
+            </div>
+          )}
         </div>
         <div className="mb-4">
           <FieldLabel htmlFor="mdl-type">{t("mdl.type")}</FieldLabel>
@@ -779,6 +863,24 @@ function SystemModels() {
             onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
           />
         </div>
+        {!isDecision && (
+          <div className="mb-4">
+            <FieldLabel htmlFor="mdl-thinking">{t("mdl.thinkingControl")}</FieldLabel>
+            <Select
+              id="mdl-thinking"
+              ariaLabel={t("mdl.thinkingControl")}
+              value={form.thinkingControl}
+              onChange={(v) => setForm({ ...form, thinkingControl: v as ThinkingControl })}
+              options={[
+                { value: "thinking_type", label: t("mdl.thinkingType") },
+                { value: "enable_thinking", label: t("mdl.thinkingEnable") },
+                { value: "chat_template_kwargs", label: t("mdl.thinkingChatTemplate") },
+                { value: "none", label: t("mdl.thinkingNone") },
+              ]}
+            />
+            <p className="caption mt-2 text-muted-soft">{t("mdl.thinkingHint")}</p>
+          </div>
+        )}
         <div className="mb-4">
           <FieldLabel htmlFor="mdl-api-key">
             {t("mdl.apiKey")}{editing ? t("mdl.apiKeyKeep") : ""}

@@ -140,6 +140,35 @@ func parseThinkingOverride(extraConfig map[string]string) ThinkingStrategy {
 	}
 }
 
+// usesDeepSeekThinkingField reports whether the endpoint is DeepSeek's own
+// OpenAI-compatible API, which selects thinking per request with
+// {"thinking":{"type":"enabled"|"disabled"}}.
+//
+// The generic adapter emits chat_template_kwargs (a vLLM/Qwen convention) and
+// DeepSeek ignores it, so the model stayed in thinking mode while the first
+// agent round forced tool_choice — the API then answers HTTP 400 "Thinking
+// mode does not support this tool_choice".
+//
+// Models that can only ever think (deepseek-reasoner / R1) must not receive the
+// field; they keep the adapter default and the forced-tool retry in
+// remote_api.go covers their first round instead.
+func usesDeepSeekThinkingField(providerName provider.ProviderName, baseURL, modelName string) bool {
+	if isDeepSeekAlwaysThinking(modelName) {
+		return false
+	}
+	if strings.EqualFold(string(providerName), "deepseek") {
+		return true
+	}
+	return strings.Contains(strings.ToLower(baseURL), "api.deepseek.com")
+}
+
+// isDeepSeekAlwaysThinking reports the DeepSeek model ids whose reasoning
+// cannot be switched off at the API level.
+func isDeepSeekAlwaysThinking(modelName string) bool {
+	name := strings.ToLower(modelName)
+	return strings.Contains(name, "deepseek-r1") || strings.Contains(name, "deepseek-reasoner")
+}
+
 // EffectiveThinkingControl reports the provider field that will carry
 // ChatOptions.Thinking. It intentionally shares the same adapter/override
 // resolution as the real request path so diagnostics do not guess from the
