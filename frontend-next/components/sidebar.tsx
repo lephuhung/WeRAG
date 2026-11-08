@@ -278,10 +278,17 @@ export function Sidebar() {
       {/* Desktop: the translate makes the rail its own stacking layer, so it
        * needs a z-index above the page (the ONLYOFFICE pane is z-10) or the
        * account menu, wider than the rail, opens under the editor. */}
-      {desktopHidden && !inAdmin && (
+      {/* The way back must exist wherever the rail is hidden — including the
+       * admin console, whose rail is a local toggle rather than the stored
+       * preference (that page is full-width by design). */}
+      {desktopHidden && (
         <button
           type="button"
           onClick={() => {
+            if (inAdmin) {
+              setAdminMenuOpen(true);
+              return;
+            }
             dismissSidebarFold();
             setSidebarHidden(false);
           }}

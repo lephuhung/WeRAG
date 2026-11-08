@@ -1,7 +1,12 @@
 /* Whether the app's left rail is hidden on desktop. A page that needs the
  * whole width (the legal draft review: PDF + editor side by side) offers a
- * toggle; the rail itself shows a small tab to bring it back, so the choice
- * is safe to remember across pages. Stored per browser. */
+ * toggle; the rail itself shows a small tab to bring it back.
+ *
+ * The stored value is scoped to the page that hid the rail. A full page load
+ * (typing another URL, reopening the browser) never inherits it: a reviewer
+ * who left the full-width review page by typing a URL used to come back to a
+ * rail-less app, because React's unmount cleanup — the only thing that put the
+ * rail back — does not run when the document is replaced. */
 import { useSyncExternalStore } from "react";
 
 const STORAGE_KEY = "werag_sidebar_hidden";
@@ -9,11 +14,23 @@ let hidden = false;
 let loaded = false;
 const listeners = new Set<() => void>();
 
+/** page + query of the view that hid the rail; the review page keeps its
+ * PDF/editor context in the query, so paths alone are too coarse. */
+function scopeKey(): string {
+  if (typeof window === "undefined") return "";
+  return `${window.location.pathname}${window.location.search}`;
+}
+
 function load(): void {
   if (loaded) return;
   loaded = true;
   try {
-    hidden = typeof window !== "undefined" && window.localStorage.getItem(STORAGE_KEY) === "1";
+    const raw = window.localStorage.getItem(STORAGE_KEY) ?? "";
+    // "1" is the pre-scope value: it names no page, so it must not keep the
+    // rail hidden on a fresh load. Older tabs are also the ones most likely
+    // to be stuck this way.
+    const [flag, scope] = raw.split("|");
+    hidden = flag === "1" && scope === scopeKey();
   } catch {
     hidden = false;
   }
@@ -35,7 +52,7 @@ export function setSidebarHidden(next: boolean): void {
   if (hidden === next) return;
   hidden = next;
   try {
-    window.localStorage.setItem(STORAGE_KEY, next ? "1" : "0");
+    window.localStorage.setItem(STORAGE_KEY, next ? `1|${scopeKey()}` : "0");
   } catch {
     /* private window: the choice lasts for this page load only */
   }
