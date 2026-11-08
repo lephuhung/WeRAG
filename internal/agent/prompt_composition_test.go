@@ -28,7 +28,7 @@ func TestPromptSectionsUseActualSourcesAndKeepCustomBase(t *testing.T) {
 				names = append(names, tools.ToolWebSearch)
 			}
 			options := &BuildSystemPromptOptions{
-				SelectedTools: names, MemoryPrompt: "Saved memory", ProtocolPrompt: "Citation protocol",
+				SelectedTools: names, ProtocolPrompt: "Citation protocol",
 			}
 			const custom = "My workflow. Web: {{web_search_status}}"
 			sections := BuildSystemPromptSections([]*KnowledgeBaseInfo{{ID: "kb"}}, !web, options, custom)
@@ -36,8 +36,12 @@ func TestPromptSectionsUseActualSourcesAndKeepCustomBase(t *testing.T) {
 			for _, section := range sections {
 				ids = append(ids, section.Name)
 			}
+			// No "memory" section: the memory envelope is per-turn data and
+			// rides in the user turn, so the system prompt stays stable
+			// enough for the provider's prompt cache (see
+			// TestAgentMemoryIsKeptOutOfTheSystemPrompt).
 			require.Equal(t, []string{
-				"base", "steering", "runtime_contract", "sources", "tools", "output", "memory", "protocol",
+				"base", "steering", "runtime_contract", "sources", "tools", "output", "protocol",
 			}, ids)
 			wantBase := "My workflow. Web: Disabled"
 			if web {

@@ -19,6 +19,19 @@ export interface UsagePeriodTotals {
   ocr_tokens?: number;
   /** Images and scanned pages read by the OCR model. */
   ocr_pages?: number;
+  /**
+   * Share of `prompt_tokens` a provider's prompt cache served, and the rest.
+   * Both absent when the provider reports no cache figures (which is not the
+   * same as "nothing was cached").
+   */
+  cache_read_tokens?: number;
+  cache_miss_tokens?: number;
+  /**
+   * What these calls cost the deployment, in millionths of a đồng, priced at
+   * the call with the model's tariff and the peak/off-peak hour. SuperAdmin
+   * only: it is the operator's spend, not the tenant's consumption.
+   */
+  cost_micro_vnd?: number;
 }
 
 /** Every workspace summed — mirrors types.UsageStats. */
@@ -95,6 +108,29 @@ export function formatTokens(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(n >= 10_000 ? 0 : 1)}K`;
   return n.toLocaleString();
+}
+
+/**
+ * Millionths of a đồng → "1.234 VNĐ". Calls cost fractions of a đồng and are
+ * stored scaled by 1e6 (see UsagePeriodTotals.cost_micro_vnd); a month of them
+ * is ordinary money.
+ */
+export function formatMicroVND(microVND: number | undefined): string {
+  if (!microVND) return "0 VNĐ";
+  return formatPriceVND(microVND / 1e6);
+}
+
+/**
+ * Prompt-cache hit rate of a period, or null when the provider reports no cache
+ * figures at all (both counters absent), which must not render as 0%.
+ */
+export function cacheHitRate(totals: UsagePeriodTotals | undefined): number | null {
+  if (!totals) return null;
+  const read = totals.cache_read_tokens ?? 0;
+  const miss = totals.cache_miss_tokens ?? 0;
+  const prompt = read + miss;
+  if (prompt <= 0) return null;
+  return Math.round((read / prompt) * 100);
 }
 
 /** "49000" / 49000 → "49.000 VNĐ"; non-numeric legacy labels are shown as-is. */

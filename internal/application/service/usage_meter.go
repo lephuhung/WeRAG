@@ -109,11 +109,20 @@ func (m *usageMeter) RecordMessageUsage(ctx context.Context, msg *types.Message)
 	}
 	tenantID, _ := types.TenantIDFromContext(ctx)
 	userID, _ := types.UserIDFromContext(ctx)
-	increments := buildUsageIncrements(ctx, tenantID, userID, msg.SessionID, m.now(), map[string]int64{
+	deltas := map[string]int64{
 		types.UsageMetricTokens:           int64(total),
 		types.UsageMetricPromptTokens:     int64(u.PromptTokens),
 		types.UsageMetricCompletionTokens: int64(u.CompletionTokens),
-	})
+		// A provider that reports no cache figures leaves both at zero, and
+		// a zero delta adds no row: "no cache_read_tokens counter" then
+		// means "this provider tells us nothing", not "nothing was cached".
+		types.UsageMetricCacheReadTokens: int64(u.CacheReadTokens),
+		types.UsageMetricCacheMissTokens: int64(u.CacheMissTokens),
+		// Priced when the model was called (models/chat stamps it, see
+		// models/pricing); an unpriced model contributes tokens but no money.
+		types.UsageMetricCostMicroVND: u.CostMicroVND,
+	}
+	increments := buildUsageIncrements(ctx, tenantID, userID, msg.SessionID, m.now(), deltas)
 	// The mark and the counters commit together: a failure leaves the
 	// message uncounted for the next save to count. A client disconnect
 	// must not lose the count.

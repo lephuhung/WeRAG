@@ -48,6 +48,33 @@ const (
 	UsageMetricOCRTokens = "ocr_tokens"
 	// UsageMetricOCRPages counts the images / scanned pages those calls read.
 	UsageMetricOCRPages = "ocr_pages"
+	// UsageMetricCacheReadTokens is the part of prompt_tokens the provider
+	// served from its prompt cache (DeepSeek prompt_cache_hit_tokens,
+	// OpenAI/Anthropic cache reads). A subset of prompt_tokens, like the
+	// OCR counters are a subset of tokens: never add it to the total.
+	//
+	// It is counted because nothing else explains the bill: a cached input
+	// token costs up to 1/100 of an uncached one, so the same token count
+	// can cost ten times more from one month to the next.
+	UsageMetricCacheReadTokens = "cache_read_tokens"
+	// UsageMetricCacheMissTokens is the rest of prompt_tokens: what the
+	// provider had to read from scratch. DeepSeek reports it directly and
+	// other providers derive it as prompt_tokens - cache reads, but only
+	// when they report cache figures at all — a provider that reports
+	// nothing leaves both counters at zero instead of pretending the whole
+	// prompt missed.
+	UsageMetricCacheMissTokens = "cache_miss_tokens"
+	// UsageMetricCostMicroVND is what the calls cost the deployment, in
+	// millionths of a đồng, priced at the moment of the call with the
+	// model's tariff and the hour it ran (see models/pricing). Millionths
+	// because one answer costs a fraction of a đồng: rounding each turn
+	// to a whole đồng would drift by up to a đồng per turn.
+	//
+	// Only the operator sees this. It is what a package's price has to
+	// cover, and it is kept apart from the token counters so a price
+	// change never rewrites history: each turn keeps the cost it was
+	// stamped with.
+	UsageMetricCostMicroVND = "cost_micro_vnd"
 
 	// UsageTimezone is the calendar used for period keys. Deployments are
 	// provincial Vietnamese units, so "today" means today in Vietnam
@@ -115,6 +142,16 @@ type UsagePeriodTotals struct {
 	// OCRPages the images and scanned pages read.
 	OCRTokens int64 `json:"ocr_tokens"`
 	OCRPages  int64 `json:"ocr_pages"`
+	// CacheReadTokens is the share of PromptTokens a provider's prompt
+	// cache served, CacheMissTokens the rest. Both are zero when the
+	// provider reports no cache figures; CacheReadTokens/PromptTokens is
+	// the hit rate quoted on the dashboard.
+	CacheReadTokens int64 `json:"cache_read_tokens"`
+	CacheMissTokens int64 `json:"cache_miss_tokens"`
+	// CostMicroVND is what these calls cost, in millionths of a đồng. Only
+	// a SuperAdmin report shows it: it is the operator's spend, not the
+	// tenant's consumption.
+	CostMicroVND int64 `json:"cost_micro_vnd"`
 }
 
 // AddMetric folds one counter row into the totals.
@@ -132,6 +169,12 @@ func (t *UsagePeriodTotals) AddMetric(metric string, value int64) {
 		t.OCRTokens += value
 	case UsageMetricOCRPages:
 		t.OCRPages += value
+	case UsageMetricCacheReadTokens:
+		t.CacheReadTokens += value
+	case UsageMetricCacheMissTokens:
+		t.CacheMissTokens += value
+	case UsageMetricCostMicroVND:
+		t.CostMicroVND += value
 	}
 }
 

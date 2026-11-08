@@ -47,7 +47,7 @@ type AgentEngine struct {
 	compactKnowledgeDirectory bool
 	sessionID                 string                // Session ID for logging and event emission
 	systemPromptTemplate      string                // System prompt template (optional, uses default if empty)
-	memoryPrompt              string                // Long-term memory envelope appended to the system prompt
+	memoryPrompt              string                // Long-term memory envelope, rendered into the per-turn user turn (never the system prompt: see SetMemoryPrompt)
 	skillsManager             *skills.Manager       // Skills manager for Progressive Disclosure (optional)
 	draftNotice               DraftNoticeFunc       // domain-pack draft labels (optional)
 	numberCatalog             NumberCatalogFunc     // answer number check (optional, answer_numbers.go)
@@ -179,10 +179,13 @@ func (e *AgentEngine) systemPromptOptions(ctx context.Context) *BuildSystemPromp
 		Language:         types.LanguageNameFromContext(ctx),
 		Config:           e.appConfig,
 		SkillInstallMode: e.config.SkillInstallMode(),
-		MemoryPrompt:     e.memoryPrompt,
-		ProtocolPrompt:   e.modelContext.ProtocolPrompt(),
-		UserContext:      types.UserContextPrompt(ctx),
-		DomainPacks:      e.domainPackPrompts,
+		// No MemoryPrompt: the memory envelope rides in the per-turn user turn
+		// (RenderUserTurnContent), so the system prompt stays byte-identical
+		// across the turns of a session and the provider's prompt cache keeps
+		// the history. See BuildSystemPromptOptions.
+		ProtocolPrompt: e.modelContext.ProtocolPrompt(),
+		UserContext:    types.UserContextPrompt(ctx),
+		DomainPacks:    e.domainPackPrompts,
 	}
 	if e.skillsManager != nil && e.skillsManager.IsEnabled() {
 		opts.SkillsMetadata = e.skillsManager.GetAllMetadata()
@@ -218,7 +221,9 @@ func (e *AgentEngine) buildSystemPrompt(ctx context.Context) string {
 }
 
 // SetMemoryPrompt supplies the long-term memory envelope for this run. Empty
-// input leaves the system prompt untouched.
+// input adds nothing. The envelope is rendered into the per-turn user turn
+// (RenderUserTurnContent), never into the system prompt: it changes with the
+// question, and the system prompt is the head of the provider's cached prefix.
 func (e *AgentEngine) SetMemoryPrompt(prompt string) {
 	e.memoryPrompt = prompt
 }

@@ -146,7 +146,10 @@ func (c *RemoteAPIChat) buildOutbound(
 	body = cachedBody
 
 	endpoint = c.adapter.Endpoint(c.baseURL, c.modelID, isStream)
-	useRawHTTP = useRaw || c.adapter.ForceRawHTTP() || endpoint != "" || forceRaw
+	useRawHTTP = useRaw || c.adapter.ForceRawHTTP() || endpoint != "" || forceRaw ||
+		// A provider that reports cache counters in fields the SDK drops
+		// needs the undecoded body: see cacheAccountingOutOfBand.
+		cacheAccountingOutOfBand(c.baseURL)
 	return body, endpoint, useRawHTTP, nil
 }
 
@@ -170,6 +173,21 @@ func (c *RemoteAPIChat) Chat(ctx context.Context, messages []Message, opts *Chat
 		return nil, err
 	}
 	if useRawHTTP {
+		result, rawErr := c.chatWithRawHTTP(timeoutCtx, endpoint, body, opts)
+		// A provider that refuses images must still answer in text. The SDK
+		// branch below has always done this; the raw path needs it too now that
+		// an endpoint reporting prompt-cache counters out of band (DeepSeek)
+		// always takes it — otherwise attaching an image to a non-vision model
+		// fails the whole round where it used to degrade to the text
+		// description.
+		if rawErr == nil || !isMultimodalNotSupportedError(rawErr) {
+			return result, rawErr
+		}
+		logger.Warnf(timeoutCtx, "[LLM Request] Model %s does not support multimodal, retrying without images", c.modelName)
+		body, endpoint, _, err = c.buildOutbound(timeoutCtx, stripImagesFromMessages(messages), opts, false)
+		if err != nil {
+			return nil, err
+		}
 		return c.chatWithRawHTTP(timeoutCtx, endpoint, body, opts)
 	}
 

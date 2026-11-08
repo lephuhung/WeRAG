@@ -79,10 +79,10 @@ func prepareMessagesWithHistory(chatManage *types.ChatManage) []chat.Message {
 		"contexts": chatManage.RenderedContexts,
 	})
 	systemPrompt += "\n\n" + types.SourceDataBoundaryPrompt + "\n\n" + types.SourcedAnswerOutputPrompt
-	// Memory goes at the end of the system prompt, after the retrieved-context
-	// placeholders have been rendered, so a remembered sentence can never be
-	// substituted into prompt structure.
-	systemPrompt += chatManage.UserContextPrompt + chatManage.LegalCatalogPrompt + chatManage.MemoryPrompt
+	// The requester's profile stays in the system message: it is fixed for the
+	// person and identical on every turn of a session, so it does not cost a
+	// cache miss. Anything recalled per query does NOT belong here — see below.
+	systemPrompt += chatManage.UserContextPrompt
 
 	chatMessages := []chat.Message{
 		{Role: "system", Content: systemPrompt},
@@ -95,9 +95,17 @@ func prepareMessagesWithHistory(chatManage *types.ChatManage) []chat.Message {
 	}
 	chatMessages = AppendHistoryMessages(chatMessages, chatManage.History)
 
+	// Long-term memory and the legal catalogue are recalled for THIS query, so
+	// they ride with the user turn instead of the system message. The system
+	// message is the head of the provider's cached prefix: a block that changes
+	// with every question there throws away the cache for the whole history
+	// below it (DeepSeek serves a cached prefix only on a full match), which is
+	// most of a long conversation's input tokens.
+	//
 	// Add current user message. Only include images when the chat model supports
 	// vision; non-vision models rely on the text description in UserContent.
-	userMsg := chat.Message{Role: "user", Content: chatManage.UserContent}
+	userMsg := chat.Message{Role: "user",
+		Content: chatManage.MemoryPrompt + chatManage.LegalCatalogPrompt + chatManage.UserContent}
 	if chatManage.ChatModelSupportsVision && len(chatManage.Images) > 0 {
 		userMsg.Images = chatManage.Images
 	}

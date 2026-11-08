@@ -159,3 +159,90 @@ func TestUsageMeterRecordOCRUsageJoinsTokenQuota(t *testing.T) {
 	m.RecordOCRUsage(context.Background(), 10003, "user-1", "", 0, types.VLMUsage{})
 	require.Empty(t, repo.added, "nothing read, nothing counted")
 }
+
+// A message carries the prompt-cache split and the cost its call was stamped
+// with; both land in the counters, because the token total alone cannot
+// explain a bill (a cached input token costs 1/100 of an uncached one) nor a
+// package's margin.
+func TestUsageMeterCountsCacheSplitAndCost(t *testing.T) {
+	repo := &fakeUsageCounterRepo{}
+	m := &usageMeter{repo: repo, now: time.Now}
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(7))
+
+	m.RecordMessageUsage(ctx, &types.Message{ID: "m1", Role: "assistant", Usage: &types.TokenUsage{
+		PromptTokens: 1000, CompletionTokens: 100, TotalTokens: 1100,
+		CacheReadTokens: 800, CacheMissTokens: 200, CacheReported: true,
+		CostMicroVND: 4_000_000,
+	}})
+	sum := map[string]int64{}
+	for _, inc := range repo.added {
+		if inc.ScopeType == types.UsageScopeTenant && len(inc.PeriodKey) == 7 {
+			sum[inc.Metric] += inc.Delta
+		}
+	}
+	require.Equal(t, int64(1100), sum[types.UsageMetricTokens])
+	require.Equal(t, int64(800), sum[types.UsageMetricCacheReadTokens])
+	require.Equal(t, int64(200), sum[types.UsageMetricCacheMissTokens])
+	require.Equal(t, int64(4_000_000), sum[types.UsageMetricCostMicroVND], "micro-VND")
+}
+
+// A provider that reports nothing about its cache leaves both counters absent
+// rather than claiming a 100% miss rate: "no row" is the signal that the
+// deployment is blind here, and a zero row would look like a real measurement.
+func TestUsageMeterOmitsCacheCountersWhenUnreported(t *testing.T) {
+	repo := &fakeUsageCounterRepo{}
+	m := &usageMeter{repo: repo, now: time.Now}
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(7))
+
+	m.RecordMessageUsage(ctx, &types.Message{ID: "m1", Role: "assistant", Usage: &types.TokenUsage{
+		PromptTokens: 1000, CompletionTokens: 100, TotalTokens: 1100,
+	}})
+	for _, inc := range repo.added {
+		require.NotEqual(t, types.UsageMetricCacheReadTokens, inc.Metric)
+		require.NotEqual(t, types.UsageMetricCacheMissTokens, inc.Metric)
+		require.NotEqual(t, types.UsageMetricCostMicroVND, inc.Metric)
+	}
+}
+
+// A full cache miss is reported as such: the miss counter is written, so a
+// report can tell "caching never hit" from "the provider says nothing".
+func TestUsageMeterRecordsAFullMiss(t *testing.T) {
+	repo := &fakeUsageCounterRepo{}
+	m := &usageMeter{repo: repo, now: time.Now}
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(7))
+
+	m.RecordMessageUsage(ctx, &types.Message{ID: "m1", Role: "assistant", Usage: &types.TokenUsage{
+		PromptTokens: 500, CompletionTokens: 50, TotalTokens: 550,
+		CacheMissTokens: 500, CacheReported: true,
+	}})
+	var misses, reads int64
+	for _, inc := range repo.added {
+		// The month row only: the day row carries the same delta.
+		if inc.ScopeType != types.UsageScopeTenant || len(inc.PeriodKey) != 7 {
+			continue
+		}
+		switch inc.Metric {
+		case types.UsageMetricCacheMissTokens:
+			misses += inc.Delta
+		case types.UsageMetricCacheReadTokens:
+			reads += inc.Delta
+		}
+	}
+	require.Equal(t, int64(500), misses)
+	require.Zero(t, reads)
+}
+
+// The dashboard totals fold the new metrics, so a period shows its hit rate
+// and its money without a second query.
+func TestUsagePeriodTotalsFoldCacheAndCost(t *testing.T) {
+	totals := types.UsagePeriodTotals{}
+	totals.AddMetric(types.UsageMetricPromptTokens, 1000)
+	totals.AddMetric(types.UsageMetricCacheReadTokens, 750)
+	totals.AddMetric(types.UsageMetricCacheMissTokens, 250)
+	totals.AddMetric(types.UsageMetricCostMicroVND, 2_500_000)
+
+	require.Equal(t, int64(1000), totals.PromptTokens)
+	require.Equal(t, int64(750), totals.CacheReadTokens)
+	require.Equal(t, int64(250), totals.CacheMissTokens)
+	require.Equal(t, int64(2_500_000), totals.CostMicroVND)
+}

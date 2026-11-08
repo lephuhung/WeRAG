@@ -26,7 +26,7 @@ import {
   type SystemInfo,
   type SystemStats,
 } from "@/lib/api/system";
-import { formatTokens } from "@/lib/api/usage";
+import { cacheHitRate, formatMicroVND, formatTokens } from "@/lib/api/usage";
 import { MessageHeatmap } from "@/components/system/message-heatmap";
 import { IconRefresh } from "@/components/icons";
 
@@ -203,6 +203,22 @@ function AdminDashboardBody() {
         ? t("dash.tokensMonthSub", {
             questions: stats.usage.month.questions.toLocaleString(),
             today: formatTokens(stats.usage.today.tokens),
+          })
+        : undefined,
+    },
+    {
+      // What the answers cost, not what was asked: a cached input token costs
+      // up to 1/100 of an uncached one, so the token card alone cannot say
+      // whether a package price still covers its use.
+      label: t("dash.llmCostMonth"),
+      value: stats?.usage ? formatMicroVND(stats.usage.month.cost_micro_vnd) : "—",
+      sub: stats?.usage
+        ? t("dash.llmCostMonthSub", {
+            today: formatMicroVND(stats.usage.today.cost_micro_vnd),
+            cache:
+              cacheHitRate(stats.usage.month) === null
+                ? t("dash.cacheUnreported")
+                : t("dash.cacheHit", { n: `${cacheHitRate(stats.usage.month)}` }),
           })
         : undefined,
     },

@@ -31,6 +31,11 @@ type AgentEngine interface {
 
 	// SetMemoryPrompt supplies the long-term memory envelope for this run.
 	// It must be called before Execute; an empty string is a no-op.
+	//
+	// It is injected into the per-turn user turn, never into the system
+	// prompt: the recall changes with the question, so a system-prompt block
+	// would invalidate the provider's prompt cache for the whole history on
+	// every turn, and the envelope is data about the user, not policy.
 	SetMemoryPrompt(prompt string)
 
 	// SetSteerSink enables mid-run message injection for this run. Nil

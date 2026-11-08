@@ -64,6 +64,23 @@ func providerCacheAccountingStatus(name provider.ProviderName) types.PromptCache
 	}
 }
 
+// cacheAccountingOutOfBand reports whether the endpoint reports its prompt
+// cache counters outside the OpenAI shape: as usage.prompt_cache_hit_tokens /
+// prompt_cache_miss_tokens, or usage.cache_read_input_tokens, which the pinned
+// OpenAI SDK does not decode (its Usage carries prompt_tokens_details only).
+//
+// Such a call must take the raw HTTP path — non-stream and stream — because
+// applyRawPromptCacheUsage needs the undecoded body. Without it DeepSeek
+// answers every call with cache_read_tokens = 0 and cache_status =
+// unsupported, and a cost report reads a cached token at the uncached price,
+// which on DeepSeek overstates input up to 100x. That is the difference
+// between a package that is profitable and one that is priced off a wrong
+// bill.
+func cacheAccountingOutOfBand(baseURL string) bool {
+	host := strings.ToLower(baseURL)
+	return strings.Contains(host, "deepseek") || strings.Contains(host, "moonshot")
+}
+
 func tokenUsageFromOpenAI(usage openai.Usage, providerName provider.ProviderName) types.TokenUsage {
 	u := types.TokenUsage{
 		PromptTokens:     usage.PromptTokens,
@@ -94,11 +111,15 @@ func cachedTokens(details *openai.PromptTokensDetails) int {
 
 type rawPromptCacheUsage struct {
 	Usage struct {
-		PromptTokens        int  `json:"prompt_tokens"`
-		PromptCacheHit      *int `json:"prompt_cache_hit_tokens"`
-		PromptCacheMiss     *int `json:"prompt_cache_miss_tokens"`
-		CacheReadInput      *int `json:"cache_read_input_tokens"`
-		CacheCreationInput  *int `json:"cache_creation_input_tokens"`
+		PromptTokens       int  `json:"prompt_tokens"`
+		PromptCacheHit     *int `json:"prompt_cache_hit_tokens"`
+		PromptCacheMiss    *int `json:"prompt_cache_miss_tokens"`
+		CacheReadInput     *int `json:"cache_read_input_tokens"`
+		CacheCreationInput *int `json:"cache_creation_input_tokens"`
+		// CachedTokens at the root of usage is what Moonshot/Kimi and other
+		// OpenAI-compatible gateways report; OpenAI itself nests it under
+		// prompt_tokens_details (handled below).
+		CachedTokens        *int `json:"cached_tokens"`
 		PromptTokensDetails *struct {
 			CachedTokens     *int `json:"cached_tokens"`
 			CacheWriteTokens *int `json:"cache_write_tokens"`
@@ -126,6 +147,11 @@ func applyRawPromptCacheUsage(data []byte, usage *types.TokenUsage) {
 		read := valueOrZero(raw.Usage.CacheReadInput)
 		write := valueOrZero(raw.Usage.CacheCreationInput)
 		usage.SetPromptCacheUsage(read, write, max(0, usage.PromptTokens-read), true)
+		return
+	}
+	if raw.Usage.CachedTokens != nil {
+		read := *raw.Usage.CachedTokens
+		usage.SetPromptCacheUsage(read, 0, max(0, usage.PromptTokens-read), true)
 		return
 	}
 	if details := raw.Usage.PromptTokensDetails; details != nil {

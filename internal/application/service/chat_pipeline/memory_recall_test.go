@@ -69,11 +69,18 @@ func TestMemoryReachesTheMessagesSentToTheModel(t *testing.T) {
 	messages := prepareMessagesWithHistory(chatManage)
 	require.NotEmpty(t, messages)
 	require.Equal(t, "system", messages[0].Role)
-	require.Contains(t, messages[0].Content, "Trả lời hãy đưa thẳng kết luận",
-		"the recalled memory must be present in the system message")
-	require.Contains(t, messages[0].Content, "<user_memory>")
 	require.True(t, strings.HasPrefix(messages[0].Content, "Bạn là một trợ lý."),
-		"memory must be appended after the configured prompt, not replace it")
+		"the configured prompt still opens the system message")
+	// The recalled memory rides with the user turn, not the system message: it
+	// is recalled for this query, and the system message is the head of the
+	// provider's cached prefix (see docs/llm-cache-and-cost.md).
+	require.NotContains(t, messages[0].Content, "<user_memory>")
+	require.NotContains(t, messages[0].Content, "Trả lời hãy đưa thẳng kết luận")
+	last := messages[len(messages)-1]
+	require.Equal(t, "user", last.Role)
+	require.Contains(t, last.Content, "<user_memory>")
+	require.Contains(t, last.Content, "Trả lời hãy đưa thẳng kết luận")
+	require.Contains(t, last.Content, "Giúp tôi xem lỗi này", "the question stays in its own turn")
 }
 
 func TestMemoryIsAbsentWhenNothingRecalled(t *testing.T) {
@@ -88,7 +95,9 @@ func TestMemoryIsAbsentWhenNothingRecalled(t *testing.T) {
 	require.Empty(t, chatManage.UsedMemories)
 
 	messages := prepareMessagesWithHistory(chatManage)
-	require.NotContains(t, messages[0].Content, "<user_memory>")
+	for _, message := range messages {
+		require.NotContains(t, message.Content, "<user_memory>")
+	}
 }
 
 func TestMemoryRecallEmitsWhatTheAnswerSaw(t *testing.T) {

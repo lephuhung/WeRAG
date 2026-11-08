@@ -490,6 +490,15 @@ func renderPromptPlaceholdersWithStatus(
 }
 
 // BuildSystemPromptOptions contains optional parameters for BuildSystemPrompt
+//
+// This struct deliberately has no MemoryPrompt field. The long-term memory
+// envelope is recalled per turn — the situational part and the query-matched
+// interests change with the question — and it is data about the user, not
+// policy. The system prompt is the head of the provider's cached prefix, so a
+// memory block in it invalidates the cache for the entire conversation on every
+// turn; the engine therefore injects it into the per-turn user turn instead
+// (AgentEngine.RenderUserTurnContent). Every field here must stay stable across
+// the turns of one session, or the same loss comes back.
 type BuildSystemPromptOptions struct {
 	SelectedTools    []string // Actual registered tools for this turn, after capability filtering
 	SkillsMetadata   []*skills.SkillMetadata
@@ -497,10 +506,9 @@ type BuildSystemPromptOptions struct {
 	SkillInstallMode bool
 	Language         string         // User language name for {{language}} placeholder (e.g. "Chinese (Simplified)")
 	Config           *config.Config // Config for reading prompt templates; nil leaves the default base empty
-	MemoryPrompt     string
 	ProtocolPrompt   string
 	// UserContext is the requester's profile (work unit, province),
-	// types.UserContextPrompt.
+	// types.UserContextPrompt. Stable per person, so it may stay here.
 	UserContext string
 	// DomainPacks are the agent's domain packs whose SKILL.md body is
 	// rendered in full (formatDomainPacks).
@@ -615,8 +623,12 @@ func BuildSystemPromptSections(
 		if options.UserContext != "" {
 			sections = append(sections, SystemPromptSection{"user_context", options.UserContext})
 		}
-		sections = append(sections, SystemPromptSection{"memory", options.MemoryPrompt},
-			SystemPromptSection{"protocol", options.ProtocolPrompt})
+		// The long-term memory envelope used to close this list. It moved to
+		// the user turn: a byte change anywhere in the system message
+		// invalidates the provider's prompt cache for the whole conversation
+		// that follows it, and the recall changes with the question. Do not
+		// add it back here (see BuildSystemPromptOptions).
+		sections = append(sections, SystemPromptSection{"protocol", options.ProtocolPrompt})
 	}
 	return sections
 }

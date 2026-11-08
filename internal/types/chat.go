@@ -35,6 +35,19 @@ type TokenUsage struct {
 	// turn's history loading and first compaction check are calibrated before
 	// any provider count of their own. Zero when the turn measured none.
 	ContextTokenScale float64 `json:"context_token_scale,omitempty"`
+
+	// CostMicroVND is what this usage cost the deployment, in millionths of
+	// a đồng, stamped once by the LLM call that produced it (see
+	// models/pricing).
+	//
+	// It carries json:"-" on purpose: this is the operator's cost, not the
+	// tenant's, and TokenUsage is serialised into every message and every
+	// stream event a client sees. Publishing it would hand the margin of
+	// each package to the people buying it. The money is not lost by being
+	// unserialised: the usage meter folds it into the cost_micro_vnd
+	// counter as the message is saved, and the counters are the system of
+	// record for reports.
+	CostMicroVND int64 `json:"-"`
 }
 
 // SetPromptCacheUsage normalizes provider-specific cache counters into the
@@ -96,6 +109,8 @@ func (u *TokenUsage) Accumulate(other TokenUsage) {
 	u.CacheWriteTokens += other.CacheWriteTokens
 	u.CacheMissTokens += other.CacheMissTokens
 	u.CacheReported = u.CacheReported || other.CacheReported
+	// Money adds: a turn of several rounds costs what its rounds cost.
+	u.CostMicroVND += other.CostMicroVND
 	// A scale is a ratio, not a count: the newest measurement stands.
 	if other.ContextTokenScale > 0 {
 		u.ContextTokenScale = other.ContextTokenScale

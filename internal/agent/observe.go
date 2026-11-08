@@ -740,15 +740,24 @@ func commonStringPrefix(a, b string) string {
 }
 
 // RenderUserTurnContent builds the user-turn payload for the current LLM call
-// (runtime_context + must_use + query). Used by Execute and finalize paths only;
-// not written to rendered_content / history.
+// (runtime_context + long-term memory + must_use + query). Used by Execute and
+// finalize paths only; not written to rendered_content / history.
+//
+// Everything that changes from turn to turn belongs here, at the END of the
+// request: the system prompt and the history above it are what the provider's
+// prompt cache matches byte for byte, and DeepSeek only serves a cached prefix
+// when it fully matches a persisted cache unit. A per-turn block placed before
+// the history therefore costs the whole conversation every turn (see
+// docs/llm-cache-and-cost.md).
 func (e *AgentEngine) RenderUserTurnContent(sessionID, query string) string {
 	e.registerRuntimeReferences()
 	runtimeCtx := buildRuntimeContextBlock(sessionID, e.knowledgeBasesInfo, e.selectedDocs, e.questionOrigin,
 		e.compactKnowledgeDirectory)
 	runtimeCtx = e.modelContext.CompactKnownText(runtimeCtx)
 	mustUse := buildMustUseBlock(e.pinnedMCPServices, e.pinnedSkills)
-	return composeUserTurnContent(runtimeCtx, mustUse, query)
+	// The memory envelope is per-turn data about the user (the recall picks
+	// facts and interests by this question), so it rides with the question.
+	return composeUserTurnContent(runtimeCtx, strings.TrimSpace(e.memoryPrompt), mustUse, query)
 }
 
 // registerRuntimeReferences makes bound KBs, pinned documents and recent
