@@ -187,9 +187,12 @@ func writeLegalStatusReport(b *strings.Builder, rep *types.LegalStatusReport) {
 	}
 	if doc.SourceUpdatedAt != nil {
 		fmt.Fprintf(b, "- Tình trạng hiệu lực: %s (theo %s, cập nhật %s)%s\n",
-			status, doc.Source, doc.SourceUpdatedAt.Format("02/01/2006"), note)
+			status, types.LegalSourceLabel(doc.Source), doc.SourceUpdatedAt.Format("02/01/2006"), note)
 	} else {
-		fmt.Fprintf(b, "- Tình trạng hiệu lực: %s (theo %s)%s\n", status, doc.Source, note)
+		fmt.Fprintf(b, "- Tình trạng hiệu lực: %s (theo %s)%s\n", status, types.LegalSourceLabel(doc.Source), note)
+	}
+	if doc.Unverified() {
+		fmt.Fprintf(b, "- LƯU Ý: %s\n", types.LegalUnverifiedNote(doc))
 	}
 	for _, g := range legalLinkGroups {
 		var others []*types.LegalDocument

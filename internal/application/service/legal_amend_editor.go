@@ -10,6 +10,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/Tencent/WeKnora/internal/legalcatalog"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/Tencent/WeKnora/internal/vbpl"
@@ -155,6 +156,12 @@ type legalEditorTarget struct {
 // editorTarget is the provision of A an editor link tags.
 func (t legalEditorTarget) editorTarget(lk types.LegalProvisionLink, at LegalProvisionRef) LegalEditorTargetRef {
 	ref := LegalEditorTargetRef{ID: lk.TargetProvisionID, Key: legalChunkKey(at), Article: at.Article, Repeated: t.repeated.articles[at.Article]}
+	if legalcatalog.IsSyntheticProvisionID(ref.ID) {
+		// a made-up id (a feed's link, a provision no portal copy named)
+		// is no chunk's id: the provision is matched by its number only
+		ref.ID = ""
+		return ref
+	}
 	if ref.Repeated {
 		ref.DieuID = t.repeated.dieuOf[lk.TargetProvisionID]
 		if ref.Key == "dieu" {
@@ -391,6 +398,15 @@ func (l *legalAmendLoader) editorEdges(load *LegalAmendLoad, targets map[string]
 	}
 	t0 = time.Now()
 	texts, err := l.editorSourceTexts(bIDs, srcIDs)
+	if err == nil {
+		var misses []types.LegalProvisionLink
+		for _, p := range alone {
+			if _, ok := texts[p.link.SourceDocID+"|"+p.link.SourceProvisionID]; !ok {
+				misses = append(misses, p.link)
+			}
+		}
+		err = l.editorSourceTextsByPath(misses, texts)
+	}
 	load.Took["editor_texts"] += time.Since(t0)
 	if err != nil {
 		return st, err
@@ -496,6 +512,73 @@ func (l *legalAmendLoader) editorSourceTexts(bIDs, srcIDs []string) (map[string]
 		}
 	}
 	return out, nil
+}
+
+// editorSourceTextsByPath finds, by source_path, the B provisions
+// editorSourceTexts could not find by id, in copies of B whose chunks carry
+// no provision ids (a legal feed's text: processVBPLFile keeps no ids for
+// it); added to out under the link's "B id|provision id" key. A copy with
+// portal ids is never read by path: there another id means another
+// provision.
+func (l *legalAmendLoader) editorSourceTextsByPath(links []types.LegalProvisionLink, out map[string]legalEditorSource) error {
+	type want struct{ key, article, chunkKey string }
+	byDoc := map[string][]want{}
+	var bIDs []string
+	for _, lk := range links {
+		at, ok := legalPathRef(lk.SourcePath)
+		if !ok || lk.SourceDocID == "" {
+			continue
+		}
+		if _, seen := byDoc[lk.SourceDocID]; !seen {
+			bIDs = append(bIDs, lk.SourceDocID)
+		}
+		byDoc[lk.SourceDocID] = append(byDoc[lk.SourceDocID],
+			want{lk.SourceDocID + "|" + lk.SourceProvisionID, at.Article, legalChunkKey(at)})
+	}
+	allowed := make([]string, 0, len(l.allowed))
+	for id := range l.allowed {
+		allowed = append(allowed, id)
+	}
+	if len(bIDs) == 0 || len(allowed) == 0 {
+		return nil
+	}
+	ext := legalJSONText(l.db, "k.metadata", "external_id")
+	src := legalJSONText(l.db, "k.metadata", "source")
+	var kids []string
+	if err := l.db.Raw(`SELECT k.id FROM knowledges k WHERE k.deleted_at IS NULL AND `+ext+` IN ? AND k.knowledge_base_id IN ? AND `+
+		`COALESCE(`+src+`, '') NOT IN ('', 'vbpl')`, bIDs, allowed).Scan(&kids).Error; err != nil {
+		return fmt.Errorf("editor source documents by path: %w", err)
+	}
+	if len(kids) == 0 {
+		return nil
+	}
+	var rows []legalAmendRow
+	if err := l.db.Raw(legalAmendSelect+` AND c.knowledge_id IN ? AND c.knowledge_base_id IN ? ORDER BY c.id LIMIT ?`,
+		kids, allowed, legalEditorChunksMax).Scan(&rows).Error; err != nil {
+		return fmt.Errorf("editor source texts by path: %w", err)
+	}
+	for _, r := range rows {
+		legal, km := parseLegalAmendRow(r)
+		if legal == nil || len(legal.ProvisionIDs) > 0 || len(legal.ArticleNos) != 1 {
+			continue
+		}
+		bID := firstNonEmptyString(kmString(km, "external_id"), legal.SourceDocID)
+		for _, w := range byDoc[bID] {
+			if !strings.EqualFold(legal.ArticleNos[0], w.article) || w.chunkKey == "" {
+				continue
+			}
+			text, start, labelled, ok := legalProvisionSpan(r.Content, legal, w.chunkKey)
+			if !ok {
+				continue
+			}
+			if have, dup := out[w.key]; dup && (have.labelled || !labelled) {
+				continue
+			}
+			out[w.key] = legalEditorSource{chunkID: r.ID, kbID: r.KnowledgeBaseID, knowledgeID: r.KnowledgeID,
+				text: text, startRune: start, labelled: labelled, headingPath: legal.HeadingPath}
+		}
+	}
+	return nil
 }
 
 // legalProvisionSpan is the text of the chunk's provision key ("dieu",

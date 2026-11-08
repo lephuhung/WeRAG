@@ -275,7 +275,7 @@ func (e *LegalAmendEdge) editorHolds(c LegalProvisionChunk) (holds, ambiguous bo
 	single := c.Legal != nil && len(c.Legal.ArticleNos) == 1
 	for _, t := range e.EditorTargets {
 		if single && t.Key != "" && strings.EqualFold(c.Legal.ArticleNos[0], t.Article) {
-			if have, ok := c.Legal.ProvisionIDs[t.Key]; ok {
+			if have, ok := c.Legal.ProvisionIDs[t.Key]; ok && t.ID != "" {
 				if have == t.ID {
 					return true, false
 				}

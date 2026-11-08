@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -149,7 +150,7 @@ func main() {
 	// them (-report lists them).
 	var catalogued []*types.LegalDocument
 	if err := db.WithContext(ctx).Model(&types.LegalDocument{}).
-		Select("id", "document_number", "number_key", "doc_type", "title", "issuer", "issued_on", "status", "reviewed_at").Order("id").
+		Select("id", "source", "document_number", "number_key", "doc_type", "title", "issuer", "issued_on", "status", "reviewed_at").Order("id").
 		Find(&catalogued).Error; err != nil {
 		log.Fatalf("load catalogue keys: %v", err)
 	}
@@ -225,7 +226,7 @@ func main() {
 			continue
 		}
 		var pending types.JSON
-		if diff := reviewDiff(cur, d); len(diff) > 0 {
+		if diff := legalcatalog.ReviewDiff(cur, d); len(diff) > 0 {
 			raw, err := json.Marshal(diff)
 			if err != nil {
 				log.Fatalf("encode pending values: %v", err)
@@ -240,6 +241,9 @@ func main() {
 	if err := repo.UpsertDocuments(ctx, fresh); err != nil {
 		log.Fatalf("upsert documents: %v", err)
 	}
+	// A legal feed's row of a document the portal now lists hands its
+	// references (KB copy, links, requests) to the portal row and goes.
+	adoptFeedRows(ctx, db, feedAdoptions(catalogued, alias))
 	log.Printf("kept %d reviewed documents, %d of them differ from the portal", len(reviewedByID), conflicts)
 	if *prune {
 		var existing []string
@@ -275,6 +279,74 @@ func main() {
 	log.Printf("imported %d documents and %d relations (snapshot %s)", len(docs), len(rels), *snapshot)
 	for reason, n := range skipped {
 		log.Printf("skipped %d relation rows: %s", n, reason)
+	}
+}
+
+// feedAdoptions are the feed rows (types.LegalDocument.IsFeedRow) the
+// import aliased to a portal row, feed id → portal id. A portal row two
+// feed rows were aliased to adopts neither: two KB copies cannot share its
+// id, a SuperAdmin picks (logged).
+func feedAdoptions(catalogued []*types.LegalDocument, alias map[string]string) map[string]string {
+	feed := map[string]bool{}
+	for _, d := range catalogued {
+		if d.IsFeedRow() {
+			feed[d.ID] = true
+		}
+	}
+	survivor := func(id string) string {
+		for hop := 0; hop < 4; hop++ {
+			s, ok := alias[id]
+			if !ok || s == id {
+				break
+			}
+			id = s
+		}
+		return id
+	}
+	byPortal := map[string][]string{}
+	for twin := range alias {
+		if feed[twin] {
+			s := survivor(twin)
+			if !feed[s] {
+				byPortal[s] = append(byPortal[s], twin)
+			}
+		}
+	}
+	out := map[string]string{}
+	for portal, twins := range byPortal {
+		if len(twins) > 1 {
+			log.Printf("feed rows %s are all the portal document %s: not adopted, a SuperAdmin decides",
+				strings.Join(twins, ", "), portal)
+			continue
+		}
+		out[twins[0]] = portal
+	}
+	return out
+}
+
+// adoptFeedRows runs repository.AdoptLegalDocument for every pair; a
+// failure is logged and leaves that feed row for the next import.
+func adoptFeedRows(ctx context.Context, db *gorm.DB, pairs map[string]string) {
+	ids := make([]string, 0, len(pairs))
+	for from := range pairs {
+		ids = append(ids, from)
+	}
+	sort.Strings(ids)
+	for _, from := range ids {
+		to := pairs[from]
+		res, err := repository.AdoptLegalDocument(ctx, db, from, to)
+		if err != nil {
+			log.Printf("adopt feed row %s → %s: %v", from, to, err)
+			continue
+		}
+		log.Printf("feed row %s adopted by %s: %d knowledges (KBs %s: rebuild their wiki catalogue), %d chunks, "+
+			"%d requests, %d provision links (%d merged), %d candidates, review inherited %v",
+			from, to, len(res.KnowledgeIDs), strings.Join(res.KnowledgeBaseIDs, ","), res.Chunks,
+			res.Requests, res.ProvisionLinks, res.LinksMerged, res.Candidates, res.ReviewInherited)
+	}
+	if len(ids) > 0 {
+		log.Printf("%d feed rows adopted by their portal row; re-ingest their KB copies from vbpl.vn "+
+			"(legal_ingest_document) to get the portal's provision ids", len(ids))
 	}
 }
 
@@ -504,32 +576,6 @@ func readJSONL(path string, fn func([]byte) error) error {
 		}
 	}
 	return sc.Err()
-}
-
-// reviewDiff returns the portal values of the fields a reviewer curates
-// that differ from the reviewed row, keyed by JSON field name.
-func reviewDiff(cur, in *types.LegalDocument) map[string]string {
-	diff := map[string]string{}
-	cmp := func(name, a, b string) {
-		if strings.TrimSpace(a) != strings.TrimSpace(b) {
-			diff[name] = b
-		}
-	}
-	day := func(t *time.Time) string {
-		if t == nil {
-			return ""
-		}
-		return t.Format("2006-01-02")
-	}
-	cmp("document_number", cur.DocumentNumber, in.DocumentNumber)
-	cmp("title", cur.Title, in.Title)
-	cmp("doc_type", cur.DocType, in.DocType)
-	cmp("issuer", cur.Issuer, in.Issuer)
-	cmp("issued_on", day(cur.IssuedOn), day(in.IssuedOn))
-	cmp("effective_on", day(cur.EffectiveOn), day(in.EffectiveOn))
-	cmp("expired_on", day(cur.ExpiredOn), day(in.ExpiredOn))
-	cmp("status", cur.Status, in.Status)
-	return diff
 }
 
 // parseVNDate reads the portal's dd/mm/yyyy dates; anything else (empty,

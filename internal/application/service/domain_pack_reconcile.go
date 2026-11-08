@@ -318,6 +318,9 @@ func (r *DomainPackReconciler) document(ctx context.Context, d *types.LegalDocum
 // amended it. "" when none of these holds.
 func reconcileStatusNote(d *types.LegalDocument, links []types.LegalRelationLink, now time.Time) string {
 	var notes []string
+	if d.Unverified() {
+		notes = append(notes, types.LegalUnverifiedNote(d))
+	}
 	status := strings.TrimSpace(d.Status)
 	lower := strings.ToLower(status)
 	switch {

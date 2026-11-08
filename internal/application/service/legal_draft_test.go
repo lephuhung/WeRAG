@@ -246,7 +246,7 @@ func newDraftTestService(t *testing.T) (*LegalDraftService, *gorm.DB, *feedKnowl
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&types.LegalDocumentRequest{}, &types.LegalDocumentDraft{}); err != nil {
+	if err := db.AutoMigrate(&types.LegalDocumentRequest{}, &types.LegalDocumentDraft{}, &types.LegalDocument{}); err != nil {
 		t.Fatal(err)
 	}
 	for _, ddl := range []string{

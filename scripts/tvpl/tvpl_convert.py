@@ -259,7 +259,7 @@ def page_properties(soup):
     """The "Thuộc tính" rows of a TVPL page: số hiệu, loại, cơ quan, dates."""
     out = {}
     want = {"Số hiệu:": "doc_number", "Loại văn bản:": "doc_type", "Nơi ban hành:": "issuer",
-            "Ngày ban hành:": "issue_date", "Ngày hiệu lực:": "eff_from"}
+            "Ngày ban hành:": "issue_date", "Ngày hiệu lực:": "eff_from", "Tình trạng:": "eff_status"}
     for td in soup.find_all(["td", "th"]):
         label = " ".join(td.get_text(" ", strip=True).split())
         key = want.get(label)
@@ -551,14 +551,32 @@ def convert(page_html, tips, source_url, source_doc_id=None):
         a = "".join(f' {k}="{htmlmod.escape(v, quote=True)}"' for k, v in attrs.items())
         lines.append(f"<p{a}>{inner}</p>")
 
-    title = (soup.title.get_text(strip=True) if soup.title else "") or props.get("doc_number", "")
+    page_title = page_title_of(soup)
+    title = page_title or props.get("doc_number", "")
     doc = ("<!DOCTYPE html>\n<html lang=\"vi\"><head><meta charset=\"utf-8\">"
            f"<title>{htmlmod.escape(title)}</title></head><body>\n" + "\n".join(lines) + "\n</body></html>\n")
     meta = {"source": SOURCE, "source_url": source_url, "source_doc_id": law_id, "format": FORMAT}
-    for k in ("doc_number", "doc_type", "issuer", "issue_date"):
+    for k in META_KEYS:
         if props.get(k):
             meta[k] = props[k]
+    # the server needs the full name to create a catalogue row for a
+    # document vbpl.vn does not list yet (and to match it when it does)
+    if page_title:
+        meta["title"] = page_title
     return doc, meta, report
+
+
+# The page properties sent as metadata (spec §9.2).
+META_KEYS = ("doc_number", "doc_type", "issuer", "issue_date", "eff_from", "eff_status")
+
+# " - Thư Viện Pháp Luật" and the like after the document's name in <title>.
+_SITE_SUFFIX_RE = re.compile(r"\s*[-–|]\s*th[ưu]\s*vi[ệe]n\s*ph[áa]p\s*lu[ậa]t.*$", re.I)
+
+
+def page_title_of(soup):
+    """The document's name from the page <title>, the site's suffix cut."""
+    raw = soup.title.get_text(strip=True) if soup.title else ""
+    return _SITE_SUFFIX_RE.sub("", " ".join(raw.split())).strip()
 
 
 def _inline(el):

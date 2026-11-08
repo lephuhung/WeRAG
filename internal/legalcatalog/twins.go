@@ -53,7 +53,11 @@ type Twin struct {
 //     imported row is not imported: Alias maps it to that row. When that
 //     row is a placeholder ("(tạm nhập - chờ toàn văn)") and the new one
 //     is not, the full copy is imported instead and the placeholder is
-//     aliased to it: its edges move to the full copy.
+//     aliased to it: its edges move to the full copy. A legal feed's row
+//     (source "tvpl"…, types.LegalDocument.IsFeedRow) is treated like a
+//     placeholder: the portal copy is imported and the feed row aliased to
+//     it (the importer then hands the feed row's references over,
+//     repository.AdoptLegalDocument).
 //
 //   - A catalogued row keyed with a look-alike whose folded key other rows
 //     hold, and that is the same document as one of them, keeps its number
@@ -120,7 +124,7 @@ func ResolveTwins(existing, docs []*types.LegalDocument) TwinResolution {
 			attach(placeholder, full)
 		}
 		for _, p := range byKey[placeholder.NumberKey] {
-			if _, done := res.Alias[p.ID]; !done && p.ID != full.ID && IsPlaceholder(p.Title) && SameDocument(p, full) {
+			if _, done := res.Alias[p.ID]; !done && p.ID != full.ID && provisional(p) && SameDocument(p, full) {
 				attach(p, full)
 			}
 		}
@@ -130,7 +134,7 @@ func ResolveTwins(existing, docs []*types.LegalDocument) TwinResolution {
 		cur := byID[d.ID]
 		if cur == nil {
 			if s := sameDocumentIn(byKey[d.NumberKey], d); s != nil {
-				if !IsPlaceholder(s.Title) || IsPlaceholder(d.Title) {
+				if !provisional(s) || provisional(d) {
 					attach(d, s)
 					dropped[d] = true
 					continue
@@ -152,7 +156,7 @@ func ResolveTwins(existing, docs []*types.LegalDocument) TwinResolution {
 		} else if cur.NumberKey != d.NumberKey && vietnamese_legal.CatalogNumberKey(cur.NumberKey) == d.NumberKey {
 			if holders := others(byKey[d.NumberKey], d.ID); len(holders) > 0 {
 				s := sameDocumentIn(holders, d)
-				placeholder := s != nil && IsPlaceholder(s.Title) && !IsPlaceholder(d.Title)
+				placeholder := s != nil && provisional(s) && !provisional(d)
 				switch {
 				case s != nil && (cur.ReviewedAt == nil || s.ReviewedAt != nil) && !placeholder:
 					attach(d, s)
@@ -225,7 +229,7 @@ func sameDocumentIn(rows []*types.LegalDocument, d *types.LegalDocument) *types.
 		if r.ID == d.ID || !SameDocument(r, d) {
 			continue
 		}
-		if !IsPlaceholder(r.Title) {
+		if !provisional(r) {
 			return r
 		}
 		if placeholder == nil {
@@ -257,6 +261,13 @@ var placeholderRe = regexp.MustCompile(`(?i)\(\s*(?:tạm\s+nhập\s*[-–,]?\s*
 // IsPlaceholder reports whether a catalogue title marks a row waiting for
 // its full text.
 func IsPlaceholder(title string) bool { return placeholderRe.MatchString(title) }
+
+// provisional reports whether a row waits to be replaced by a full portal
+// copy of its document: a portal placeholder, or a legal feed's row (a
+// document vbpl.vn did not list when the feed pushed it). Such a row is
+// never the surviving row of a portal copy: the copy is imported and the
+// row is aliased to it.
+func provisional(r *types.LegalDocument) bool { return IsPlaceholder(r.Title) || r.IsFeedRow() }
 
 // IssuersAgree reports whether two issuer fields can name the same
 // issuer: the places of local issuers agree ("Ủy ban nhân dân tỉnh Hà

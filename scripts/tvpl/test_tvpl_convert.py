@@ -184,7 +184,19 @@ class ConvertTests(unittest.TestCase):
         self.assertEqual(self.meta, {"source": "tvpl", "source_url": "https://thuvienphapluat.vn/van-ban/x/a-445980.aspx",
                                      "source_doc_id": "445980", "format": "werag-legal-html/1",
                                      "doc_number": "1/2020/NĐ-CP", "doc_type": "Nghị định", "issuer": "Chính phủ",
-                                     "issue_date": "2020-10-19"})
+                                     "issue_date": "2020-10-19", "title": "Nghị định 1/2020/NĐ-CP"})
+
+    def test_page_title_and_status(self):
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup("<html><head><title>Nghị định 15/2026/NĐ-CP quy định chi tiết - Thư Viện Pháp Luật</title></head>"
+                             "<body><table><tr><td>Tình trạng:</td><td>Còn hiệu lực</td></tr>"
+                             "<tr><td>Ngày hiệu lực:</td><td>01/12/2026</td></tr></table></body></html>", "html.parser")
+        self.assertEqual(c.page_title_of(soup), "Nghị định 15/2026/NĐ-CP quy định chi tiết")
+        props = c.page_properties(soup)
+        self.assertEqual(props["eff_status"], "Còn hiệu lực")
+        self.assertEqual(props["eff_from"], "2026-12-01")
+        hidden = BeautifulSoup("<table><tr><td>Tình trạng:</td><td>Đã biết</td></tr></table>", "html.parser")
+        self.assertNotIn("eff_status", c.page_properties(hidden))
 
     def test_structure(self):
         ids = [i for _, i, _, _ in self.paras if i]

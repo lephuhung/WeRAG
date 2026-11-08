@@ -45,6 +45,39 @@ const LegalDocumentSourceManual = "manual"
 // LegalDocumentSourceVBPL marks catalogue rows imported from vbpl.vn.
 const LegalDocumentSourceVBPL = "vbpl"
 
+// IsFeedRow reports whether the row was created by a legal feed push (a
+// document vbpl.vn did not list yet, e.g. source "tvpl"): a provisional row
+// that a later vbpl import of the same document replaces.
+func (d *LegalDocument) IsFeedRow() bool {
+	if d == nil {
+		return false
+	}
+	s := d.Source
+	return s != "" && s != LegalDocumentSourceVBPL && s != LegalDocumentSourceManual
+}
+
+// Unverified reports whether the row's values come only from a legal feed:
+// a feed row no SuperAdmin has confirmed yet.
+func (d *LegalDocument) Unverified() bool { return d.IsFeedRow() && d.ReviewedAt == nil }
+
+// LegalSourceLabel names a catalogue source for a reader ("tvpl" →
+// "thuvienphapluat.vn"; "vbpl" and other names as they are).
+func LegalSourceLabel(source string) string {
+	switch source {
+	case "tvpl":
+		return "thuvienphapluat.vn"
+	case "":
+		return "nguồn"
+	}
+	return source
+}
+
+// LegalUnverifiedNote is how an answer qualifies an Unverified row.
+func LegalUnverifiedNote(d *LegalDocument) string {
+	return "dòng danh mục lấy từ " + LegalSourceLabel(d.Source) +
+		", chưa có trên vbpl.vn và chưa được SuperAdmin đối chiếu: trạng thái, ngày tháng chỉ để tham khảo"
+}
+
 // LegalReviewerVBPL is the reviewed_by of links approved without a reviewer:
 // the knowledge was imported from vbpl.vn and names its catalogue row.
 const LegalReviewerVBPL = "vbpl-import"

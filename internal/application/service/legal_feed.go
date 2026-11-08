@@ -282,6 +282,12 @@ func (s *LegalFeedService) IngestHTML(
 		VBPLMarkup: vbpl.LooksLikeVBPL(content),
 	}
 
+	// A legal feed's row of this document hands over its KB copy first:
+	// the portal's text then replaces the feed's below.
+	if err := s.adoptFeedTwin(ctx, vbplID, doc.DocumentNumber, kb.ID); err != nil {
+		return nil, err
+	}
+
 	// Where is this document already? Same KB + same bytes → nothing to do;
 	// same KB + other bytes → replace; another public KB → refuse (one copy).
 	var existing []struct {

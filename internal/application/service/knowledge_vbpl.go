@@ -90,9 +90,17 @@ func (s *knowledgeService) processVBPLFile(
 	if len(editorTags) > 0 {
 		places = vbpl.ProvisionPlaces(doc)
 	}
+	// A legal feed's file (TVPL…) has prov-* markup but no vbpl.vn ids: its
+	// element ids are the feed's own. Its chunks name their source and keep
+	// no provision ids, so nothing reads them as portal ids (vbpl.vn links,
+	// the editors' provision tags); provisions are known by their path.
+	feed := legalFeedSource(knowledge)
 	chunks := make([]types.ParsedChunk, len(planned))
 	for i, c := range planned {
 		legal := c.Legal()
+		if feed != "" {
+			legal.Source, legal.ProvisionIDs = feed, nil
+		}
 		legal.SourceDocID = sourceDocID
 		legal.AppendixFiles = appendixFiles[i]
 		legal.Citations = citations[i]
@@ -197,14 +205,36 @@ func vbplAppendixFiles(knowledge *types.Knowledge) []vbpl.AttachedFile {
 // whole Điều with provision metadata, so generated questions add little
 // while costing one LLM call per chunk across ~200k chunks: they are never
 // generated for it, even when the locked parse defaults turn them on.
+// A legal feed's document (legalFeedSource) is chunked the same way and is
+// skipped too.
 func vbplSkipsQuestionGeneration(knowledge *types.Knowledge) bool {
+	source, format := knowledgeSourceFormat(knowledge)
+	return source == "vbpl" || legalFeedSourceOf(source, format) != ""
+}
+
+// legalFeedSource is the feed a public legal document was pushed by
+// (metadata source "tvpl" with format werag-legal-html/1), "" for vbpl.vn
+// pages and any other upload.
+func legalFeedSource(knowledge *types.Knowledge) string {
+	return legalFeedSourceOf(knowledgeSourceFormat(knowledge))
+}
+
+func legalFeedSourceOf(source, format string) string {
+	if source == "" || source == "vbpl" || format != vbpl.LegalHTMLFormatV1 {
+		return ""
+	}
+	return source
+}
+
+func knowledgeSourceFormat(knowledge *types.Knowledge) (source, format string) {
 	if knowledge == nil || len(knowledge.Metadata) == 0 {
-		return false
+		return "", ""
 	}
 	m, err := knowledge.Metadata.Map()
 	if err != nil {
-		return false
+		return "", ""
 	}
-	source, _ := m["source"].(string)
-	return source == "vbpl"
+	source, _ = m["source"].(string)
+	format, _ = m["format"].(string)
+	return strings.TrimSpace(source), strings.TrimSpace(format)
 }

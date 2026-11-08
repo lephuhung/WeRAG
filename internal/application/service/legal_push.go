@@ -2,8 +2,6 @@ package service
 
 import (
 	"context"
-	"crypto/sha1"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,6 +13,7 @@ import (
 	"gorm.io/gorm"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/legalcatalog"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -49,8 +48,8 @@ const (
 	LegalPushFull  = "full"
 )
 
-// legalProvisionIDMax is the length of legal_provision_links.target_provision_id;
-// a pushed element id is stored there as is (mode full).
+// legalProvisionIDMax is the length of legal_provision_links.target_provision_id
+// and of the candidates' target_element_id check.
 const legalProvisionIDMax = 64
 
 // LegalPushMaxBytes bounds a pushed file.
@@ -109,13 +108,20 @@ type LegalPushResult struct {
 	Problems      []LegalPushProblem `json:"problems"`
 	// MarkResults resolves every mark, in document order (see LegalPushMark).
 	MarkResults []LegalPushMark `json:"mark_results"`
+	// CatalogueCreated: the catalogue had no row for the document, the push
+	// created a provisional feed row (source = feed, waiting for a SuperAdmin;
+	// a later vbpl.vn import of the same document replaces it).
+	CatalogueCreated bool `json:"catalogue_created,omitempty"`
 }
 
 // legalPushMeta is the pushed metadata, read and checked.
 type legalPushMeta struct {
 	feed, feedDocID, feedURL string
 	ref                      legalDocRef
-	raw                      map[string]string
+	// title, effFrom (YYYY-MM-DD) and effStatus describe the document for a
+	// catalogue row the push creates; unused when the catalogue has one.
+	title, effFrom, effStatus string
+	raw                       map[string]string
 }
 
 // legalDocRef names a catalogue document the way a feed can.
@@ -138,7 +144,7 @@ func readLegalPushMeta(m map[string]string) (*legalPushMeta, error) {
 		return nil, apperrors.NewBadRequestError(fmt.Sprintf("metadata.format must be %q", vbpl.LegalHTMLFormatV1))
 	case !legalPushFeedRe.MatchString(out.feed):
 		return nil, apperrors.NewBadRequestError("metadata.source must be a short lower-case name such as \"tvpl\"")
-	case out.feed == "vbpl" || out.feed == types.LegalProvisionLinkSourceEditor:
+	case out.feed == "vbpl" || out.feed == types.LegalProvisionLinkSourceEditor || out.feed == types.LegalDocumentSourceManual:
 		return nil, apperrors.NewBadRequestError("metadata.source: vbpl.vn documents are ingested from the portal (legal_ingest_document)")
 	case out.feedDocID == "" || len(out.feedDocID) > 64:
 		return nil, apperrors.NewBadRequestError("metadata.source_doc_id is required (≤ 64 characters)")
@@ -147,6 +153,7 @@ func readLegalPushMeta(m map[string]string) (*legalPushMeta, error) {
 	}
 	out.ref = legalDocRef{ID: get("legal_document_id"), Number: get("doc_number"), IssueDate: get("issue_date"),
 		Issuer: get("issuer"), DocType: get("doc_type")}
+	out.title, out.effFrom, out.effStatus = get("title"), get("eff_from"), get("eff_status")
 	if out.ref.ID == "" && out.ref.Number == "" {
 		return nil, apperrors.NewBadRequestError("metadata.legal_document_id or metadata.doc_number is required")
 	}
@@ -347,8 +354,7 @@ func (s *LegalPushService) heldProvisions(ctx context.Context, knowledgeID strin
 // of a document no KB holds, or one the chunks do not tag): stable, and
 // short enough for legal_provision_links (varchar 64).
 func legalSyntheticProvisionID(docID, path string) string {
-	sum := sha1.Sum([]byte(docID + "#" + path))
-	return "fp-" + hex.EncodeToString(sum[:])[:24]
+	return legalcatalog.SyntheticProvisionID(docID, path)
 }
 
 func legalPushDate(s string) *time.Time {
@@ -387,14 +393,23 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 		return nil, apperrors.NewBadRequestError("mode must be auto, links or full")
 	}
 
-	// 1. A in the catalogue
+	// 1. A in the catalogue; the số hiệu is the key shared with vbpl.vn,
+	// SameDocument tells the documents of one number apart
 	a, cands, reason, err := s.resolveDoc(ctx, meta.ref)
 	if err != nil {
 		return nil, fmt.Errorf("catalogue lookup: %w", err)
 	}
+	var feedRow *types.LegalDocument // a catalogue row to create (mode full only)
 	if a == nil {
-		return nil, legalUnprocessable("không xác định được văn bản "+meta.ref.label()+": "+reason,
-			map[string]any{"candidates": legalDocCandidates(cands)})
+		var why string
+		a, feedRow, why = s.resolveByNumber(meta, in.Content, mode, cands)
+		if a == nil && feedRow == nil {
+			return nil, legalUnprocessable("không xác định được văn bản "+meta.ref.label()+": "+reason+why,
+				map[string]any{"candidates": legalDocCandidates(cands)})
+		}
+		if feedRow != nil {
+			a = feedRow
+		}
 	}
 
 	// 2. structure and marks of the pushed file
@@ -419,6 +434,8 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 		return nil, fmt.Errorf("held document lookup: %w", err)
 	}
 	switch {
+	case feedRow != nil:
+		mode = LegalPushFull // a new row: nothing holds the document
 	case mode == LegalPushAuto && held != nil:
 		mode = LegalPushLinks
 	case mode == LegalPushAuto:
@@ -431,11 +448,12 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 
 	var target *legalHeldProvisions
 	if mode == LegalPushFull {
-		kres, err := s.ingest(ctx, a, meta, in, caller, actor)
+		kres, created, err := s.ingest(ctx, a, feedRow != nil, meta, in, caller, actor)
 		if err != nil {
 			return nil, err
 		}
 		res.KnowledgeID, res.KnowledgeBaseID, res.Ingest = kres.KnowledgeID, kres.KnowledgeBaseID, kres.Result
+		res.CatalogueCreated = created
 	} else if held != nil {
 		res.KnowledgeID, res.KnowledgeBaseID = held.KnowledgeID, held.KnowledgeBaseID
 		if target, err = s.heldProvisions(ctx, held.KnowledgeID); err != nil {
@@ -497,36 +515,57 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 		Action: "push_" + mode, VBPLID: a.ID, KnowledgeID: res.KnowledgeID, KnowledgeBaseID: res.KnowledgeBaseID,
 		DocumentNumber: a.DocumentNumber, Reason: meta.feed + " " + meta.feedDocID,
 		Detail: map[string]any{"feed": meta.feed, "feed_doc_id": meta.feedDocID, "feed_url": meta.feedURL,
-			"links": res.Links, "pending": res.Pending, "kept_decisions": kept, "problems": len(res.Problems), "ingest": res.Ingest},
+			"links": res.Links, "pending": res.Pending, "kept_decisions": kept, "problems": len(res.Problems), "ingest": res.Ingest,
+			"catalogue_created": res.CatalogueCreated},
 	})
 	return res, nil
 }
 
-// ingest adds A's pushed full text to the public KB of its type.
-func (s *LegalPushService) ingest(ctx context.Context, a *types.LegalDocument, meta *legalPushMeta, in LegalPushInput,
+// ingest adds A's pushed full text to the public KB of its type. With
+// create, a is a feed row the catalogue does not hold yet: it is inserted
+// once every check passed and removed again when the ingest fails, so a
+// refused push leaves no row behind. created reports the insert.
+func (s *LegalPushService) ingest(ctx context.Context, a *types.LegalDocument, create bool, meta *legalPushMeta, in LegalPushInput,
 	caller types.Caller, actor LegalFeedActor,
-) (*LegalIngestResult, error) {
+) (res *LegalIngestResult, created bool, err error) {
 	if s.feed == nil || s.requests == nil || s.kbs == nil {
-		return nil, apperrors.NewServiceUnavailableError("knowledge ingest is not available")
+		return nil, false, apperrors.NewServiceUnavailableError("knowledge ingest is not available")
 	}
 	if strings.HasPrefix(strings.TrimSpace(a.Status), LegalExpiredStatusPrefix) {
-		return nil, apperrors.NewBadRequestError(fmt.Sprintf("văn bản %s (%s) \"%s\": văn bản hết hiệu lực toàn bộ chỉ giữ dòng danh mục, không nạp toàn văn",
+		if create {
+			return nil, false, apperrors.NewBadRequestError(fmt.Sprintf("văn bản %s \"%s\" theo nguồn %s: văn bản hết hiệu lực toàn bộ "+
+				"không được nạp toàn văn, cũng không tạo dòng danh mục mới", a.DocumentNumber, a.Status, a.Source))
+		}
+		return nil, false, apperrors.NewBadRequestError(fmt.Sprintf("văn bản %s (%s) \"%s\": văn bản hết hiệu lực toàn bộ chỉ giữ dòng danh mục, không nạp toàn văn",
 			a.ID, a.DocumentNumber, a.Status))
 	}
 	kbs, err := s.requests.PublicKnowledgeBases(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("public knowledge bases: %w", err)
+		return nil, false, fmt.Errorf("public knowledge bases: %w", err)
 	}
 	kbRef, ok := LegalTypeTargets(kbs)[strings.TrimSpace(a.DocType)]
 	if !ok {
-		return nil, legalUnprocessable(fmt.Sprintf("không kho công khai nào nhận loại văn bản %q", a.DocType), nil)
+		return nil, false, legalUnprocessable(fmt.Sprintf("không kho công khai nào nhận loại văn bản %q", a.DocType), nil)
 	}
 	if scope, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey && !scope.AllowsKnowledgeBase(kbRef.ID) {
-		return nil, apperrors.NewForbiddenError("API key không được ghi vào kho " + kbRef.ID)
+		return nil, false, apperrors.NewForbiddenError("API key không được ghi vào kho " + kbRef.ID)
 	}
 	kb, grantCtx, err := publicKBWriteContext(ctx, s.kbs, kbRef.ID, caller)
 	if err != nil {
-		return nil, err
+		return nil, false, err
+	}
+	if create {
+		if created, err = s.insertFeedRow(ctx, a); err != nil {
+			return nil, false, err
+		}
+		if created {
+			defer func() {
+				if err != nil {
+					s.dropFeedRow(ctx, a)
+					created = false
+				}
+			}()
+		}
 	}
 	md := map[string]string{
 		"external_id": a.ID, "source": meta.feed, "source_url": meta.feedURL, "source_doc_id": meta.feedDocID,
@@ -546,11 +585,13 @@ func (s *LegalPushService) ingest(ctx context.Context, a *types.LegalDocument, m
 		}
 		name += ".html"
 	}
-	return s.feed.IngestHTML(grantCtx, LegalIngestDocument{
+	res, err = s.feed.IngestHTML(grantCtx, LegalIngestDocument{
 		VBPLID: a.ID, DocumentNumber: a.DocumentNumber, DocType: a.DocType, Status: a.Status, FileName: name,
 		Metadata: md, SourceFormat: LegalSourceHTML, ReviewedBy: "feed:" + meta.feed,
-		LogDetail: map[string]any{"feed": meta.feed, "feed_doc_id": meta.feedDocID, "feed_url": meta.feedURL},
+		LogDetail: map[string]any{"feed": meta.feed, "feed_doc_id": meta.feedDocID, "feed_url": meta.feedURL,
+			"catalogue_created": created},
 	}, in.Content, kb, actor, "push "+meta.feed+" "+meta.feedDocID)
+	return res, created, err
 }
 
 // legalResolvedDoc is a resolved amender B (or why it is not).
@@ -630,7 +671,9 @@ func (r *legalPushResolver) candidate(a *types.LegalDocument, meta *legalPushMet
 	case place.Path == "":
 		status(types.LegalLinkTargetMissing, "phần tử thiếu số Điều/khoản/điểm, không xác định được vị trí trong văn bản")
 	case mode == LegalPushFull:
-		c.TargetProvisionID = elementID // the chunks of the ingested copy carry it
+		// the ingested copy is a feed's text: its chunks carry no portal
+		// ids (processVBPLFile), the provision is named by its path
+		c.TargetProvisionID = legalSyntheticProvisionID(a.ID, place.Path)
 	case target == nil:
 		c.TargetProvisionID = legalSyntheticProvisionID(a.ID, place.Path)
 		reasons = append(reasons, "chưa có toàn văn trong kho: vị trí theo tệp đẩy lên")

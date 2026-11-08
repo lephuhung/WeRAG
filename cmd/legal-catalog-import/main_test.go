@@ -126,3 +126,19 @@ func TestMergeRelationsMovesTwinEdges(t *testing.T) {
 		t.Errorf("edges = %v, want %v", edges, want)
 	}
 }
+
+func TestFeedAdoptions(t *testing.T) {
+	cat := []*types.LegalDocument{
+		{ID: "tvpl-1", Source: "tvpl"}, {ID: "tvpl-2", Source: "tvpl"}, {ID: "tvpl-3", Source: "tvpl"},
+		{ID: "ph", Source: "vbpl"},
+	}
+	alias := map[string]string{
+		"tvpl-1": "v1",                 // one feed row → adopted
+		"tvpl-2": "v2", "tvpl-3": "v2", // two feed rows of one portal row → neither
+		"ph": "v4", // a portal placeholder: not a feed row
+	}
+	got := feedAdoptions(cat, alias)
+	if len(got) != 1 || got["tvpl-1"] != "v1" {
+		t.Fatalf("feedAdoptions = %v, want only tvpl-1 → v1", got)
+	}
+}

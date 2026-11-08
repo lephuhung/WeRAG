@@ -85,6 +85,9 @@ func TestLegalFeedIngestFromPortal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.AutoMigrate(&types.LegalDocument{}); err != nil {
+		t.Fatal(err)
+	}
 	for _, ddl := range []string{
 		`CREATE TABLE knowledges (id TEXT, knowledge_base_id TEXT, file_hash TEXT, metadata TEXT, deleted_at DATETIME)`,
 		`CREATE TABLE knowledge_bases (id TEXT, owner_tenant_id INTEGER, deleted_at DATETIME)`,

@@ -744,6 +744,8 @@ TVPL) **không** đưa vào toàn văn A; lời văn mới luôn đọc từ B.
 | `source_doc_id` | có | id văn bản tại nguồn (`470561`) |
 | `legal_document_id` | nên có | id danh mục của A nếu đã biết |
 | `doc_number`, `doc_type`, `issuer`, `issue_date` | có | để phân giải A khi thiếu `legal_document_id` |
+| `title` | nên có | tên đầy đủ (thẻ `<title>` trang, bỏ hậu tố trang web); bắt buộc khi A chưa có trong danh mục (xem 9.3 bước 1) |
+| `eff_from`, `eff_status` | nên có | ngày hiệu lực `YYYY-MM-DD` và ô "Tình trạng" của nguồn; dùng cho dòng danh mục tạo mới |
 | `format` | có | `werag-legal-html/1` |
 
 ### 9.3 API đẩy lên
@@ -777,12 +779,42 @@ Xử lý phía server:
 
 1. Phân giải A về `legal_documents.id` (id → số hiệu + ngày ban hành + cơ
    quan, dùng `CatalogNumberKey` / `ResolveLegalDocumentName` sẵn có).
-   Không tìm thấy hoặc nhiều ứng viên → `422` kèm `candidates`, không ghi gì.
+   **Số hiệu là khoá chung với vbpl.vn** (2026-11-08): trong các dòng cùng số
+   hiệu, dòng `legalcatalog.SameDocument` với metadata (ngày, loại, cơ quan,
+   tiêu đề) là A. Không dòng nào của số hiệu là A:
+   - số hiệu chưa có dòng nào, hoặc chỉ có văn bản khác ngày/loại (số hiệu
+     dùng lại), và mode `full`/`auto` → server **tạo dòng danh mục tạm**
+     `id = "<nguồn>-<source_doc_id>"`, `source = <nguồn>`, chưa duyệt; cần đủ
+     `doc_number`, `doc_type`, `issuer`, `issue_date`, `title` (không chỉ số
+     hiệu). Trạng thái = `eff_status` của nguồn ("Hết hiệu lực" của TVPL đọc là
+     "Hết hiệu lực toàn bộ" → không nạp), thiếu thì "Chưa có hiệu lực" nếu
+     `eff_from` sau hôm nay, còn lại "Chưa xác định" — **không bao giờ suy ra
+     "Còn hiệu lực"**. Dòng được ghi sau khi kiểm cấu trúc và quyền ghi KB, nạp
+     lỗi thì xoá; các đề nghị mở của số hiệu (chưa gắn dòng) được gắn và đóng
+     khi nạp xong. Kết quả có `catalogue_created: true`;
+   - có văn bản cùng số hiệu, ngày và loại nhưng khác tiêu đề/cơ quan, hoặc
+     nhiều dòng cùng là A, hoặc mode `links` → `422` kèm `candidates`, không
+     ghi gì (người đẩy chọn `legal_document_id` rồi gửi lại).
+   Dòng tạm hiện trong câu trả lời (`check_legal_status`) kèm lưu ý "chưa có
+   trên vbpl.vn, chưa được SuperAdmin đối chiếu". Khi vbpl.vn có cùng văn bản:
+   lệnh nhập danh mục (`cmd/legal-catalog-import`, `ResolveTwins` coi dòng tạm
+   như placeholder) hoặc lần nạp từ vbpl (`IngestHTML`) gọi
+   `repository.AdoptLegalDocument`: mọi tham chiếu (tài liệu KB, chunk,
+   liên kết duyệt, đề nghị, bản nháp, quan hệ, liên kết điều khoản + id tổng
+   hợp `fp-`, candidates + `mark_key`) chuyển sang id vbpl, dòng tạm bị xoá; duyệt
+   của SuperAdmin trên dòng tạm được giữ (giá trị vbpl khác nằm ở
+   `source_pending`). Nạp lại toàn văn từ vbpl (`legal_ingest_document`) thay bản
+   của nguồn ngay trong KB (bản nguồn ở kho khác kho đang nạp → từ chối, không
+   chuyển gì). Sau khi nhận lại, chạy `legal_wiki_rebuild` cho các kho được ghi
+   trong log (wiki catalogue không tự dựng lại, như mọi lần nạp).
 2. Đọc cấu trúc bằng `internal/vbpl` (cùng bộ chuyển với vbpl). Không có
    cấu trúc dùng được → `422 no_structure`.
 3. Với mỗi `data-amend`: phân giải B như bước 1; tìm điều khoản đích trên
-   **bản A đang có trong KB** theo vị trí (chế độ `links`) hoặc theo `id`
-   của tệp (chế độ `full`); tìm điều khoản nguồn trong B theo `path` (id
+   **bản A đang có trong KB** theo vị trí (chế độ `links`) hoặc theo vị trí
+   trong tệp (chế độ `full`, id tổng hợp `fp-`: chunk của bản nguồn ngoài
+   không giữ id điều khoản — chỉ vbpl.vn có id thật, `knowledge_vbpl.go`
+   ghi `legal.source = <nguồn>` và bỏ `provision_ids`; nội dung điều khoản của
+   B trên bản nguồn ngoài được đọc theo `path`); tìm điều khoản nguồn trong B theo `path` (id
    điều khoản vbpl nếu B có trong KB, không có thì khoá tổng hợp
    `path:<id danh mục B>#<path>`).
 4. Ghi mỗi liên kết vào bảng chờ `legal_provision_link_candidates`
