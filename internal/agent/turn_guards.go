@@ -14,7 +14,8 @@ import (
 //   - a tool that keeps failing: draw_diagram was called 30 times with the
 //     same rejected source, discover_mcp_tools 29 times with the same wrong
 //     server_id. After maxToolFailuresPerTurn failures the tool's result
-//     tells the model to stop and the tool is no longer offered this turn.
+//     tells the model to stop and further calls this turn are refused
+//     without running (the tool stays offered, see exhaustedTools).
 //   - a tool result that ends the turn: check_document_format sending the
 //     check to the background asks for a short fixed reply, and the model
 //     added its own (wrong) findings instead. A result whose Data carries
@@ -23,10 +24,10 @@ import (
 //
 // And a third, seen 2026-10-16: search_document_section called 21 times in
 // one turn, one Điều per call. The read tools in maxToolCallsPerTurn are
-// withdrawn after that many calls, successful or not.
+// refused after that many calls, successful or not.
 
 // maxToolFailuresPerTurn is the number of failed calls of one tool after
-// which the tool is withdrawn for the rest of the turn.
+// which its calls are refused for the rest of the turn.
 const maxToolFailuresPerTurn = 3
 
 // toolExhaustedNote ends the error of the failure that reached the cap.
@@ -34,8 +35,8 @@ const toolExhaustedNote = "\n\n[Công cụ %s đã lỗi %d lần trong lượt 
 	"ĐỪNG gọi lại: trả lời người dùng với những gì đã có, nói rõ việc chưa làm được và vì sao.]"
 
 // maxToolCallsPerTurn caps the calls of a read tool in one turn, whatever
-// their outcome; the call that reaches the cap carries toolCapNote and the
-// tool is no longer offered this turn.
+// their outcome; the call that reaches the cap carries toolCapNote and
+// further calls this turn are refused.
 var maxToolCallsPerTurn = map[string]int{
 	agenttools.ToolSearchDocumentSection: 8,
 	agenttools.ToolReadDocument:          8,
@@ -56,12 +57,13 @@ var toolCapHint = map[string]string{
 // with a fixed answer (see forcedFinalMessage).
 const ToolResultFinalMessageKey = "final_message"
 
-// toolFailureCounts counts the failed calls per tool over the steps.
+// toolFailureCounts counts the failed calls per tool over the steps; a
+// call a guard refused did not run and is not one of them.
 func toolFailureCounts(steps []types.AgentStep) map[string]int {
 	counts := map[string]int{}
 	for _, s := range steps {
 		for _, tc := range s.ToolCalls {
-			if tc.Result != nil && !tc.Result.Success {
+			if tc.Result != nil && !tc.Result.Success && !tc.Result.Refused {
 				counts[tc.ExecutionName()]++
 			}
 		}
@@ -69,12 +71,13 @@ func toolFailureCounts(steps []types.AgentStep) map[string]int {
 	return counts
 }
 
-// toolCallCounts counts every executed call per tool over the steps.
+// toolCallCounts counts every executed call per tool over the steps
+// (refused calls did not run).
 func toolCallCounts(steps []types.AgentStep) map[string]int {
 	counts := map[string]int{}
 	for _, s := range steps {
 		for _, tc := range s.ToolCalls {
-			if tc.Result != nil {
+			if tc.Result != nil && !tc.Result.Refused {
 				counts[tc.ExecutionName()]++
 			}
 		}

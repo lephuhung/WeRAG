@@ -104,33 +104,56 @@ func TestForcedToolRoundKeepsAHonouredCall(t *testing.T) {
 	require.Len(t, model.opts, 1)
 }
 
-// A reply calling another tool is a one-off miss: this round falls back to
-// JSON, but the model keeps getting the named tool_choice on the next turn
-// (deepseek-flash honours it; the tool-less fallback breaks its prompt cache).
-func TestForcedToolRoundOtherToolIsNotRemembered(t *testing.T) {
-	const id = "other-tool-once-test"
+// A reply calling another tool is a miss, not proof the model ignores
+// tool_choice: the round falls back to JSON, the next turn tries the named
+// tool_choice again (deepseek-flash honours it; the tool-less fallback breaks
+// its prompt cache), and only forcedToolMissLimit consecutive misses mark
+// the model.
+func TestForcedToolRoundOtherToolMarksOnlyAfterRepeatedMisses(t *testing.T) {
+	const id = "other-tool-misses-test"
 	defer ignoresToolChoice.Delete(id)
+	defer forcedToolMisses.Delete(id)
+	otherTool := func(callID string) *types.ChatResponse {
+		return &types.ChatResponse{FinishReason: "tool_calls", ToolCalls: []types.LLMToolCall{{ID: callID, Type: "function",
+			Function: types.FunctionCall{Name: "thinking", Arguments: `{}`}}}}
+	}
+	// fresh replies each time: forcedToolArgsAsJSON rewrites the response it gets
+	jsonReply := func() *types.ChatResponse {
+		return &types.ChatResponse{Content: `{"variants":[]}`, FinishReason: "stop"}
+	}
+	honoured := &types.ChatResponse{FinishReason: "tool_calls", ToolCalls: []types.LLMToolCall{{ID: "ok", Type: "function",
+		Function: types.FunctionCall{Name: "rewrite_paragraphs", Arguments: `{"variants":[]}`}}}}
 	model := &scriptedChat{id: id, replies: []*types.ChatResponse{
-		{FinishReason: "tool_calls", ToolCalls: []types.LLMToolCall{{ID: "a", Type: "function",
-			Function: types.FunctionCall{Name: "thinking", Arguments: `{}`}}}},
-		{Content: `{"variants":[]}`, FinishReason: "stop"},
-		{FinishReason: "tool_calls", ToolCalls: []types.LLMToolCall{{ID: "b", Type: "function",
-			Function: types.FunctionCall{Name: "rewrite_paragraphs", Arguments: `{"variants":[]}`}}}},
+		otherTool("a"), jsonReply(), // miss 1
+		honoured,                    // resets the count
+		otherTool("b"), jsonReply(), // miss 1
+		otherTool("c"), jsonReply(), // miss 2
+		otherTool("d"), jsonReply(), // miss 3: marked
+		jsonReply(), // straight to JSON
 	}}
 	engine := newTestEngine(t, model)
 	msgs := []chat.Message{{Role: "system", Content: "s"}, {Role: "user", Content: "viết lại"}}
 	opts := &chat.ChatOptions{ToolChoice: "rewrite_paragraphs", Tools: rewriteTool}
-
-	resp, ok := engine.forcedToolRound(context.Background(), msgs, rewriteTool, opts, "rewrite_paragraphs", 0, "s1")
-	require.True(t, ok)
-	require.Equal(t, "rewrite_paragraphs", resp.ToolCalls[0].Function.Name)
+	run := func() *types.ChatResponse {
+		resp, ok := engine.forcedToolRound(context.Background(), msgs, rewriteTool, opts, "rewrite_paragraphs", 0, "s")
+		require.True(t, ok)
+		require.Equal(t, "rewrite_paragraphs", resp.ToolCalls[0].Function.Name)
+		return resp
+	}
+	run()
 	_, marked := ignoresToolChoice.Load(id)
-	require.False(t, marked, "another tool call must not mark the model")
-
-	resp, ok = engine.forcedToolRound(context.Background(), msgs, rewriteTool, opts, "rewrite_paragraphs", 0, "s2")
-	require.True(t, ok)
-	require.Equal(t, "b", resp.ToolCalls[0].ID, "the next turn tries tool_choice again")
-	require.Empty(t, model.opts[2].Format)
+	require.False(t, marked, "one other-tool reply must not mark the model")
+	require.Equal(t, "ok", run().ToolCalls[0].ID, "the next turn tries tool_choice again")
+	run()
+	run()
+	_, marked = ignoresToolChoice.Load(id)
+	require.False(t, marked, "two consecutive misses are not enough")
+	run()
+	_, marked = ignoresToolChoice.Load(id)
+	require.True(t, marked, "the third consecutive miss marks the model")
+	run()
+	require.NotEmpty(t, model.opts[len(model.opts)-1].Format, "a marked model goes straight to JSON")
+	require.Len(t, model.opts, 10)
 }
 
 func TestJSONObjectOf(t *testing.T) {

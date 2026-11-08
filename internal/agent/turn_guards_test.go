@@ -23,6 +23,27 @@ func TestExhaustedTools(t *testing.T) {
 	}
 }
 
+// A refused call did not run: it neither adds to the call count nor turns
+// a capped tool into a "failed 3 times" one.
+func TestExhaustedToolsSkipRefusedCalls(t *testing.T) {
+	refused := types.ToolCall{Name: "search_knowledge", Result: &types.ToolResult{Success: false, Refused: true, Error: "refused"}}
+	var steps []types.AgentStep
+	for i := 0; i < 6; i++ {
+		steps = append(steps, types.AgentStep{ToolCalls: []types.ToolCall{okCall("search_knowledge")}})
+	}
+	for i := 0; i < 3; i++ {
+		steps = append(steps, types.AgentStep{ToolCalls: []types.ToolCall{refused}})
+	}
+	got := exhaustedTools(steps)
+	if !strings.Contains(got["search_knowledge"], "đã gọi 6 lần") {
+		t.Fatalf("refused calls must not change the count, got %q", got["search_knowledge"])
+	}
+	// refusals alone exhaust nothing
+	if got := exhaustedTools([]types.AgentStep{{ToolCalls: []types.ToolCall{refused, refused, refused}}}); len(got) != 0 {
+		t.Fatalf("refused calls are not failures, got %v", got)
+	}
+}
+
 func TestNoteExhaustedTools(t *testing.T) {
 	prior := []types.AgentStep{{ToolCalls: []types.ToolCall{failedCall("draw_diagram"), failedCall("draw_diagram")}}}
 	step := types.AgentStep{ToolCalls: []types.ToolCall{failedCall("draw_diagram"), {Name: "search_knowledge", Result: &types.ToolResult{Success: true}}}}

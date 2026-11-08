@@ -627,9 +627,10 @@ loop:
 			tools = e.buildToolsForLLM()
 		}
 		// a tool that failed maxToolFailuresPerTurn times or reached its call
-		// cap is refused from now on, but stays offered: the tool list is part
-		// of the cached prompt prefix (see exhaustedTools). Tools disabled by
-		// identical failures are refused the same way (refuseDisabledTool).
+		// cap is refused from now on (refuseExhaustedTool, by executed name)
+		// but stays offered: the tool list is part of the cached prompt
+		// prefix (see exhaustedTools). Tools disabled by identical failures
+		// are refused by refuseDisabledTool, by the called name.
 		e.exhausted = exhaustedTools(state.RoundSteps)
 
 		// Each iteration runs inside an "agent.round.<N>" Langfuse span.

@@ -392,11 +392,16 @@ type ToolResult struct {
 	// A non-nil empty slice means output inspection found no eligible changes;
 	// nil means no output inspection result is available.
 	OutputFiles []string               `json:"-"`
-	Success     bool                   `json:"success"`          // Whether the tool executed successfully
-	Output      string                 `json:"output"`           // Human-readable output
-	Data        map[string]interface{} `json:"data,omitempty"`   // Structured data for programmatic use
-	Error       string                 `json:"error,omitempty"`  // Error message if execution failed
-	Images      []string               `json:"images,omitempty"` // Base64 data URIs from tool (e.g. MCP image content)
+	Success     bool                   `json:"success"`         // Whether the tool executed successfully
+	Output      string                 `json:"output"`          // Human-readable output
+	Data        map[string]interface{} `json:"data,omitempty"`  // Structured data for programmatic use
+	Error       string                 `json:"error,omitempty"` // Error message if execution failed
+	// Refused marks a call a per-turn guard turned away before it ran (the
+	// tool was exhausted or disabled this turn). It is not an executed
+	// call: the call and failure counts of the guards skip it, so the
+	// refusal text keeps reporting the tool's real history.
+	Refused bool     `json:"refused,omitempty"`
+	Images  []string `json:"images,omitempty"` // Base64 data URIs from tool (e.g. MCP image content)
 	// GeneratedImages carries tool-produced binary images that must survive
 	// as user-visible files (e.g. text-to-image results). Unlike Images —
 	// which are ephemeral model inputs dropped before persistence — these
