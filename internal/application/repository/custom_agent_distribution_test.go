@@ -222,6 +222,83 @@ func TestAgentDistributionAddonExpiry(t *testing.T) {
 	require.NotContains(t, at(distNow), "addon")
 }
 
+// TestAgentDistributionPlanIncludedAgent: an addon agent listed in a plan's
+// included_agent_ids is visible to every current subscriber of that plan
+// (tenant or personal) with no add-on row, and to nobody else.
+func TestAgentDistributionPlanIncludedAgent(t *testing.T) {
+	db, repo := distributionFixture(t)
+	ctx := context.Background()
+	require.NoError(t, db.Exec(`INSERT INTO tenants (id, kind, config_profile_id) VALUES
+		(3, 'workspace', 9), (4, 'workspace', 9)`).Error)
+	require.NoError(t, db.Exec(`INSERT INTO usage_plans (id, code, name, included_agent_ids) VALUES
+		('plan', 'plan', 'Plan', '[]'), ('go', 'go', 'Go', '["incl"]')`).Error)
+	require.NoError(t, repo.CreateAgent(ctx, &types.CustomAgent{
+		ID: "incl", Name: "incl", TenantID: 9, Distribution: types.AgentDistributionAddon}))
+	month, yesterday := distNow.AddDate(0, 1, 0), distNow.AddDate(0, 0, -1)
+	for _, s := range []*types.UsageSubscription{
+		{ID: "sub-go-t3", ScopeType: types.UsageScopeTenant, ScopeID: "3", PlanID: "go", StartsAt: distNow.AddDate(0, -1, 0), EndsAt: &month, Status: "active"},
+		{ID: "sub-go-t4", ScopeType: types.UsageScopeTenant, ScopeID: "4", PlanID: "go", StartsAt: distNow.AddDate(0, -1, 0), EndsAt: &yesterday, Status: "active"},
+		{ID: "sub-go-u", ScopeType: types.UsageScopeUser, ScopeID: "u-go", PlanID: "go", StartsAt: distNow.AddDate(0, -1, 0), Status: "active"},
+	} {
+		require.NoError(t, db.Omit("Plan").Create(s).Error)
+	}
+	sees := func(viewer types.AgentViewer) bool {
+		t.Helper()
+		viewer.Now = distNow
+		list, err := repo.ListVisibleAgents(ctx, viewer)
+		require.NoError(t, err)
+		listed := false
+		for _, a := range list {
+			listed = listed || a.ID == "incl"
+		}
+		_, err = repo.GetVisibleAgentByID(ctx, "incl", viewer)
+		require.Equal(t, listed, err == nil, "get answers like the list")
+		return listed
+	}
+	cases := []struct {
+		name   string
+		viewer types.AgentViewer
+		want   bool
+	}{
+		{"member of a Tổ chức on the including plan", types.AgentViewer{TenantID: 3, UserID: "u-3"}, true},
+		{"API key of that Tổ chức", types.AgentViewer{TenantID: 3, UserID: "system-3"}, true},
+		{"subscription to the including plan expired", types.AgentViewer{TenantID: 4, UserID: "u-4"}, false},
+		{"subscription to another plan", types.AgentViewer{TenantID: 1, UserID: "u-member1"}, false},
+		{"personal subscriber of the including plan", types.AgentViewer{TenantID: 2, UserID: "u-go"}, true},
+		{"API key cannot use a personal plan", types.AgentViewer{TenantID: 2, UserID: "system-2"}, false},
+		{"another person in the same Tổ chức", types.AgentViewer{TenantID: 2, UserID: "u-member2"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, sees(tc.viewer))
+		})
+	}
+	// the plan grants only the agents it lists
+	require.NotContains(t, visibleIDs(t, repo, types.AgentViewer{TenantID: 3, UserID: "u-3", Now: distNow}), "addon")
+	// a cancelled subscription grants nothing
+	require.NoError(t, db.Model(&types.UsageSubscription{}).Where("id = ?", "sub-go-t3").
+		Update("status", types.UsageSubscriptionCancelled).Error)
+	require.False(t, sees(types.AgentViewer{TenantID: 3, UserID: "u-3"}))
+}
+
+// An addon agent is live when any of its rows is switched on, even if the
+// first row by tenant is off (same rule as the catalogue's availability).
+func TestLiveAddonAgentsAnyEnabledRow(t *testing.T) {
+	db, repo := distributionFixture(t)
+	ctx := context.Background()
+	require.NoError(t, repo.CreateAgent(ctx, &types.CustomAgent{
+		ID: "addon", Name: "addon copy", TenantID: 10, Distribution: types.AgentDistributionAddon}))
+	require.NoError(t, db.Exec("UPDATE custom_agents SET enabled = ? WHERE id = ? AND tenant_id = ?", false, "addon", 9).Error)
+	plans := NewUsagePlanRepository(db)
+	live, err := plans.LiveAddonAgents(ctx)
+	require.NoError(t, err)
+	require.Equal(t, []types.UsagePlanAgent{{ID: "addon", Name: "addon"}}, live, "named from the first row")
+	require.NoError(t, db.Exec("UPDATE custom_agents SET enabled = ? WHERE id = ?", false, "addon").Error)
+	live, err = plans.LiveAddonAgents(ctx)
+	require.NoError(t, err)
+	require.Empty(t, live)
+}
+
 func TestAgentDistributionOwnRowsAndRevoke(t *testing.T) {
 	_, repo := distributionFixture(t)
 	ctx := context.Background()

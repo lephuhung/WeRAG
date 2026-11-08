@@ -161,7 +161,11 @@ func PriceAddonRemainder(unit int64, units int, from, until time.Time) (months, 
 type UsageScopeAddons struct {
 	Subscription *UsageSubscription        `json:"subscription,omitempty"`
 	Held         []*UsageSubscriptionAddon `json:"held"`
-	Purchasable  []UsagePlanAddonOffer     `json:"purchasable"`
+	// Included are the specialist agents the subscription's plan includes
+	// (usage_plans.included_agent_ids): no end of their own, they last as
+	// long as the subscription. Never in Purchasable.
+	Included    []UsagePlanAgent      `json:"included"`
+	Purchasable []UsagePlanAddonOffer `json:"purchasable"`
 }
 
 // AddonPeriodSplit splits [from, until) into whole months and the days left

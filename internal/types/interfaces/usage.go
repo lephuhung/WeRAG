@@ -98,6 +98,10 @@ type UsagePlanRepository interface {
 	// CustomAgentDistribution returns the distribution of a live custom
 	// (not built-in) agent; found is false when no such agent exists.
 	CustomAgentDistribution(ctx context.Context, agentID string) (distribution string, found bool, err error)
+	// LiveAddonAgents lists the live, switched-on custom agents of
+	// distribution "addon" (id + name, one per id, by name): what a plan
+	// may include, and the names of the agents plans include.
+	LiveAddonAgents(ctx context.Context) ([]types.UsagePlanAgent, error)
 
 	// Catalogue of specialist agents sold with plans (usage_agent_addons).
 	// Listings fill the agent name, availability and holder count.

@@ -111,6 +111,10 @@ type UsageSubscriptionAddon struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	// AgentName is filled by the listing for the admin page; not stored.
 	AgentName string `json:"agent_name,omitempty" gorm:"-"`
+	// Included marks, in the organization's usage view, an agent the
+	// subscription's plan includes (usage_plans.included_agent_ids) rather
+	// than one bought: it has no end of its own. Not stored.
+	Included bool `json:"included,omitempty" gorm:"-"`
 }
 
 // TableName returns the table name.

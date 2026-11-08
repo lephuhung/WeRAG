@@ -138,6 +138,11 @@ func TestAgentTenantScopePostgresSQL(t *testing.T) {
 	require.Contains(t, sql, "(tenant_id = $3 OR distribution = $4")
 	require.Contains(t, sql, "WHERE usa.agent_id = custom_agents.id")
 	require.Contains(t, sql, "OR (us.scope_type = $15 AND us.scope_id = $16)")
+	// the plan-included EXISTS (migration 000191) on the same scope
+	require.Contains(t, sql, "JOIN usage_plans up ON up.id = us.plan_id")
+	require.Contains(t, sql, "up.included_agent_ids @> jsonb_build_array(custom_agents.id)")
+	require.Contains(t, sql, "OR (us.scope_type = $22 AND us.scope_id = $23)")
 	require.Equal(t, "u-1", stmt.Vars[len(stmt.Vars)-4])
-	require.Contains(t, sql, "(is_builtin = $17 OR COALESCE(enabled, $18) = $19)")
+	require.Equal(t, "u-1", stmt.Vars[15])
+	require.Contains(t, sql, "(is_builtin = $24 OR COALESCE(enabled, $25) = $26)")
 }

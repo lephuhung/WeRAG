@@ -6,6 +6,7 @@ import {
   addonSaleDraft,
   addonSaleInput,
   addonsForPlan,
+  planIncludedAgents,
   addonLineDetail,
   keepOffered,
   toggleAddonId,
@@ -59,6 +60,27 @@ describe("addonsForPlan", () => {
     ];
     assert.deepEqual(addonsForPlan(rows, { id: "go" }).map((r) => r.agent_id), ["go-only", "all"]);
     assert.deepEqual(addonsForPlan(rows, { id: "plus" }).map((r) => r.agent_id), ["plus-only", "all"]);
+  });
+  it("leaves out the agents the plan includes", () => {
+    const rows = [row({ agent_id: "all" }), row({ agent_id: "deepseek" })];
+    assert.deepEqual(
+      addonsForPlan(rows, { id: "go", included_agent_ids: ["deepseek"] }).map((r) => r.agent_id),
+      ["all"],
+    );
+  });
+});
+
+describe("planIncludedAgents", () => {
+  it("names the included agents in the plan's order, dropping dead ids", () => {
+    const live = [
+      { id: "a", name: "A" },
+      { id: "deepseek", name: "Suy luận nâng cao" },
+    ];
+    assert.deepEqual(planIncludedAgents({ included_agent_ids: ["deepseek", "gone", "a"] }, live), [
+      { id: "deepseek", name: "Suy luận nâng cao", included: true },
+      { id: "a", name: "A", included: true },
+    ]);
+    assert.deepEqual(planIncludedAgents({}, live), []);
   });
 });
 

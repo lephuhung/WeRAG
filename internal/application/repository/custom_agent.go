@@ -147,7 +147,9 @@ func applyProfileSwitch(row *types.CustomAgent, tenantID uint64, profileSwitch *
 //   - distribution "basic": everyone;
 //   - "internal": applies_to_tenant_ids empty or containing the tenant;
 //   - "addon": a current usage_subscription_addons row for the agent on a
-//     current subscription of the tenant or of the viewer's own person;
+//     current subscription of the tenant or of the viewer's own person, or
+//     such a subscription to a plan that includes the agent
+//     (usage_plans.included_agent_ids);
 //   - and, for a custom agent, not switched off (enabled is not false).
 //
 // Built-in rows are always basic (the API refuses anything else).
@@ -163,7 +165,7 @@ func whereAgentVisibleTo(query *gorm.DB, viewer types.AgentViewer) *gorm.DB {
 			OR EXISTS (SELECT 1 FROM json_each(applies_to_tenant_ids) AS s WHERE s.value = ?))`
 	}
 	args := []interface{}{tenantID, types.AgentDistributionBasic, types.AgentDistributionInternal, tenantID}
-	addon, addonArgs := addonVisibleSQL(viewer)
+	addon, addonArgs := addonVisibleSQL(viewer, query.Dialector.Name() == "postgres")
 	args = append(args, types.AgentDistributionAddon)
 	args = append(args, addonArgs...)
 	// a custom agent the SuperAdmin switched off is hidden from everyone
@@ -175,28 +177,46 @@ func whereAgentVisibleTo(query *gorm.DB, viewer types.AgentViewer) *gorm.DB {
 		Where("(is_builtin = ? OR COALESCE(enabled, ?) = ?)", true, true, true)
 }
 
-// addonVisibleSQL is the "bought" half of whereAgentVisibleTo: an EXISTS on
-// usage_subscription_addons (index on agent_id) joined to the subscription
-// by primary key, both current at the viewer's instant. Correlated on
+// addonVisibleSQL is the "addon" half of whereAgentVisibleTo: the agent is
+// bought — an EXISTS on usage_subscription_addons (index on agent_id) joined
+// to the subscription by primary key, both current at the viewer's instant —
+// or included in the plan of a current subscription of the same scope (an
+// EXISTS on usage_subscriptions joined to usage_plans). Correlated on
 // custom_agents.id, so the outer query must read custom_agents unaliased.
-func addonVisibleSQL(viewer types.AgentViewer) (string, []interface{}) {
+func addonVisibleSQL(viewer types.AgentViewer, postgres bool) (string, []interface{}) {
 	if viewer.AllAddons {
 		return "1 = 1", nil
 	}
 	now := viewer.At()
 	scope := "(us.scope_type = ? AND us.scope_id = ?)"
-	args := []interface{}{now, now, types.UsageSubscriptionActive, now, now,
-		types.UsageScopeTenant, types.UsageTenantScopeID(viewer.TenantID)}
+	scopeArgs := []interface{}{types.UsageScopeTenant, types.UsageTenantScopeID(viewer.TenantID)}
 	if viewer.UserID != "" && !types.IsSyntheticUserID(viewer.UserID) {
 		scope = "(" + scope + " OR (us.scope_type = ? AND us.scope_id = ?))"
-		args = append(args, types.UsageScopeUser, viewer.UserID)
+		scopeArgs = append(scopeArgs, types.UsageScopeUser, viewer.UserID)
 	}
-	return `EXISTS (SELECT 1 FROM usage_subscription_addons usa
+	currentSub := "us.status = ? AND us.starts_at <= ? AND (us.ends_at IS NULL OR us.ends_at > ?)"
+	subArgs := []interface{}{types.UsageSubscriptionActive, now, now}
+	includes := "up.included_agent_ids @> jsonb_build_array(custom_agents.id)"
+	if !postgres {
+		// the SQLite test schema stores the list as JSON text
+		includes = "EXISTS (SELECT 1 FROM json_each(up.included_agent_ids) AS e WHERE e.value = custom_agents.id)"
+	}
+	args := []interface{}{now, now}
+	args = append(args, subArgs...)
+	args = append(args, scopeArgs...)
+	args = append(args, subArgs...)
+	args = append(args, scopeArgs...)
+	return `(EXISTS (SELECT 1 FROM usage_subscription_addons usa
 			JOIN usage_subscriptions us ON us.id = usa.subscription_id
 			WHERE usa.agent_id = custom_agents.id
 			AND usa.starts_at <= ? AND (usa.ends_at IS NULL OR usa.ends_at > ?)
-			AND us.status = ? AND us.starts_at <= ? AND (us.ends_at IS NULL OR us.ends_at > ?)
-			AND ` + scope + `)`, args
+			AND ` + currentSub + `
+			AND ` + scope + `)
+		OR EXISTS (SELECT 1 FROM usage_subscriptions us
+			JOIN usage_plans up ON up.id = us.plan_id
+			WHERE ` + currentSub + `
+			AND ` + scope + `
+			AND ` + includes + `))`, args
 }
 
 // InvalidScopeTenantIDs returns the ids in tenantIDs that cannot be in the

@@ -79,6 +79,10 @@ func (s *usageBillingService) PurchasablePlans(ctx context.Context, scopeKind st
 		return nil, err
 	}
 	included := includedPlanAgents(ctx, s.planRepo)
+	live, err := s.planRepo.LiveAddonAgents(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]*types.UsagePlanOffer, 0, len(all))
 	for _, p := range all {
 		if scopeKind != "" && p.ScopeKind != scopeKind {
@@ -87,13 +91,15 @@ func (s *usageBillingService) PurchasablePlans(ctx context.Context, scopeKind st
 		if !p.SoldOnline() {
 			continue
 		}
+		// basic agents, then the specialist agents this plan includes
+		agents := append(append([]types.UsagePlanAgent{}, included...), planOwnAgents(p, live)...)
 		offer := &types.UsagePlanOffer{
 			UsagePlan:      p,
-			IncludedAgents: included,
+			IncludedAgents: agents,
 			Addons:         []types.UsagePlanAddonOffer{},
 		}
 		for _, a := range catalogue {
-			if !a.IsActive || !a.AgentAvailable || !a.PlanIDs.Includes(p.ID) {
+			if !a.IsActive || !a.AgentAvailable || !a.PlanIDs.Includes(p.ID) || p.IncludesAgent(a.AgentID) {
 				continue
 			}
 			offer.Addons = append(offer.Addons, types.UsagePlanAddonOffer{

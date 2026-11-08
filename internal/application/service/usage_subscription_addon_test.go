@@ -126,6 +126,53 @@ func TestAgentAddonCatalogueValidation(t *testing.T) {
 	require.Equal(t, 404, appErrCode(t, svc.DeleteAgentAddon(ctx, "thue")))
 }
 
+func TestPlanIncludedAgentsValidation(t *testing.T) {
+	svc, db := newAddonPlanServiceDB(t)
+	ctx := context.Background()
+	reason := func(err error) string {
+		t.Helper()
+		appErr, ok := err.(*apperrors.AppError)
+		require.True(t, ok, "%v", err)
+		require.Equal(t, 400, appErr.HTTPCode)
+		return appErr.Details.(map[string]string)["reason"]
+	}
+	plan := func(ids ...string) *types.UsagePlan {
+		return &types.UsagePlan{Code: "adv", Name: "Nâng cao", IncludedAgentIDs: ids}
+	}
+
+	created, err := svc.CreatePlan(ctx, plan(" thue ", "thue"))
+	require.NoError(t, err)
+	require.Equal(t, types.UsageAgentIDList{"thue"}, created.IncludedAgentIDs, "trimmed, deduplicated")
+	stored, err := svc.GetPlan(ctx, created.ID)
+	require.NoError(t, err)
+	require.Equal(t, types.UsageAgentIDList{"thue"}, stored.IncludedAgentIDs)
+
+	_, err = svc.CreatePlan(ctx, &types.UsagePlan{Code: "b", Name: "B", IncludedAgentIDs: []string{"chung"}})
+	require.Equal(t, "included_agent_not_addon", reason(err), "a basic agent needs no inclusion")
+	_, err = svc.CreatePlan(ctx, &types.UsagePlan{Code: "c", Name: "C", IncludedAgentIDs: []string{"nope"}})
+	require.Equal(t, "included_agent_not_found", reason(err))
+
+	// an update without the field keeps the list; [] clears it
+	kept, err := svc.UpdatePlan(ctx, &types.UsagePlan{ID: created.ID, Code: "adv", Name: "Nâng cao 2"})
+	require.NoError(t, err)
+	require.Equal(t, types.UsageAgentIDList{"thue"}, kept.IncludedAgentIDs)
+	// the agent became basic since: an unrelated edit still saves, without it
+	require.NoError(t, db.Exec("UPDATE custom_agents SET distribution = 'basic' WHERE id = 'thue'").Error)
+	dropped, err := svc.UpdatePlan(ctx, &types.UsagePlan{ID: created.ID, Code: "adv", Name: "Nâng cao 3",
+		IncludedAgentIDs: types.UsageAgentIDList{"thue"}})
+	require.NoError(t, err)
+	require.Empty(t, dropped.IncludedAgentIDs)
+	_, err = svc.UpdatePlan(ctx, &types.UsagePlan{ID: created.ID, Code: "adv", Name: "Nâng cao 3",
+		IncludedAgentIDs: types.UsageAgentIDList{"chung"}})
+	require.Equal(t, "included_agent_not_addon", reason(err), "newly added ones are checked")
+	require.NoError(t, db.Exec("UPDATE custom_agents SET distribution = 'addon' WHERE id = 'thue'").Error)
+
+	// the admin catalogue lists every live addon agent as a choice
+	catalogue, err := svc.ListAgentAddons(ctx, true)
+	require.NoError(t, err)
+	require.Equal(t, []types.UsagePlanAgent{{ID: "thue", Name: "Thuế"}}, catalogue.AddonAgents)
+}
+
 func TestPurchasablePlansCarryAgents(t *testing.T) {
 	// the two basic agents, as builtin_agents.yaml would register them
 	for id, name := range map[string]string{
@@ -221,6 +268,39 @@ func TestTenantUsageListsHeldAddons(t *testing.T) {
 	// ended an hour ago while the package goes on: offered again
 	require.Len(t, usage.EndedAddons, 1)
 	require.Equal(t, "old", usage.EndedAddons[0].AgentID)
+}
+
+// The organization's usage view lists the agents its plan includes,
+// flagged, with no end of their own; one also bought is shown once.
+func TestTenantUsageListsPlanIncludedAgents(t *testing.T) {
+	svc, db := newAddonPlanServiceDB(t)
+	svc.guard = &usageGuard{}
+	ctx := context.Background()
+	agents := repository.NewCustomAgentRepository(db)
+	require.NoError(t, agents.CreateAgent(ctx, &types.CustomAgent{
+		ID: "ds", Name: "Suy luận nâng cao", TenantID: 9, Distribution: types.AgentDistributionAddon}))
+	require.NoError(t, db.Model(&types.UsagePlan{}).Where("id = ?", "p").
+		Update("included_agent_ids", types.UsageAgentIDList{"ds", "thue"}).Error)
+	_, err := svc.GrantSubscriptionAddon(ctx, "sub-1", types.UsageSubscriptionAddonGrant{AgentID: "thue"}, "sa")
+	require.NoError(t, err)
+	// a bought right of "ds" that ended an hour ago: the plan still gives
+	// it, so no "buy it again" banner
+	past := time.Now().Add(-time.Hour)
+	require.NoError(t, svc.repo.UpsertSubscriptionAddon(ctx, &types.UsageSubscriptionAddon{
+		SubscriptionID: "sub-1", AgentID: "ds", StartsAt: past.AddDate(0, -1, 0), EndsAt: &past}))
+
+	usage, err := svc.TenantUsage(ctx, 1)
+	require.NoError(t, err)
+	require.Empty(t, usage.EndedAddons)
+	require.Len(t, usage.Addons, 2)
+	byID := map[string]*types.UsageSubscriptionAddon{}
+	for _, a := range usage.Addons {
+		byID[a.AgentID] = a
+	}
+	require.True(t, byID["ds"].Included)
+	require.Nil(t, byID["ds"].EndsAt)
+	require.Equal(t, "Suy luận nâng cao", byID["ds"].AgentName)
+	require.True(t, byID["thue"].Included, "bought and included: shown as included")
 }
 
 // An add-on that ended long ago is no longer reported as ended.

@@ -1243,7 +1243,7 @@ export function BillingPage() {
         </section>
       )}
 
-      {scopeAddons?.subscription && (scopeAddons.held.length > 0 || scopeAddons.purchasable.length > 0) && (
+      {scopeAddons?.subscription && (scopeAddons.held.length > 0 || scopeAddons.included.length > 0 || scopeAddons.purchasable.length > 0) && (
         <section className="rounded-lg border border-hairline p-4">
           <h3 className="text-[14px] font-medium text-ink">{t("bill.currentAddonsTitle")}</h3>
           <p className="caption text-muted">
@@ -1256,12 +1256,22 @@ export function BillingPage() {
                 )
               : t("bill.currentAddonsOpen")}
           </p>
-          {scopeAddons.held.length > 0 && (
+          {(scopeAddons.held.length > 0 || scopeAddons.included.length > 0) && (
             <ul className="caption mt-2 space-y-0.5 text-body">
+              {/* specialist agents the plan includes: no end of their own */}
+              {scopeAddons.included.map((a) => (
+                <li key={`included-${a.id}`}>
+                  • {a.name} — {t("bill.addonIncludedInPlan")}
+                </li>
+              ))}
               {scopeAddons.held.map((h) => (
                 <li key={h.agent_id}>
                   • {h.agent_name || h.agent_id}
-                  {h.ends_at ? ` — ${t("bill.addonUntil", { date: formatLastDay(h.ends_at) })}` : ` — ${t("bill.addonWithSub")}`}
+                  {h.included
+                    ? ` — ${t("bill.addonIncludedInPlan")}`
+                    : h.ends_at
+                      ? ` — ${t("bill.addonUntil", { date: formatLastDay(h.ends_at) })}`
+                      : ` — ${t("bill.addonWithSub")}`}
                   {heldOutlivesPackage(h, scopeAddons.subscription?.ends_at) && ` (${t("bill.addonBeyondPackage")})`}
                 </li>
               ))}

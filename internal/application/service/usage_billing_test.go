@@ -257,6 +257,17 @@ type memPlanRepo struct {
 	billing *memBillingRepo
 	// seats by subscription id
 	seats map[string][]*types.UsageSeat
+	// extraAgents are live addon agents that are not in the catalogue
+	extraAgents []types.UsagePlanAgent
+	// planByID answers GetPlan (the fixture's plan catalogue)
+	planByID map[string]*types.UsagePlan
+}
+
+func (m *memPlanRepo) GetPlan(_ context.Context, id string) (*types.UsagePlan, error) {
+	if p := m.planByID[id]; p != nil {
+		return p, nil
+	}
+	return nil, gorm.ErrRecordNotFound
 }
 
 func (m *memPlanRepo) PinSubscriptionAddonEnd(_ context.Context, subID, agentID string, end time.Time) error {
@@ -269,6 +280,18 @@ func (m *memPlanRepo) PinSubscriptionAddonEnd(_ context.Context, subID, agentID 
 
 func (m *memPlanRepo) ProfileBuiltinAgents(context.Context, []string) ([]*types.CustomAgent, error) {
 	return nil, nil
+}
+
+// LiveAddonAgents answers the catalogue's available agents (named by the
+// catalogue row) plus extraAgents (addon agents not on sale).
+func (m *memPlanRepo) LiveAddonAgents(context.Context) ([]types.UsagePlanAgent, error) {
+	out := append([]types.UsagePlanAgent{}, m.extraAgents...)
+	for _, a := range m.catalogue {
+		if a.AgentAvailable {
+			out = append(out, types.UsagePlanAgent{ID: a.AgentID, Name: a.AgentName})
+		}
+	}
+	return out, nil
 }
 
 func (m *memPlanRepo) PendingOrderAddons(_ context.Context, scopeType, scopeID string) (map[string][]string, error) {
@@ -419,6 +442,7 @@ func newBillingFixture(t *testing.T) *billingFixture {
 			PriceQuarterVND: 135_000, PriceYearVND: 480_000, IsActive: true},
 		"yearly": {ID: "yearly", Code: "yearly", Name: "Yearly", ScopeKind: "user", Mode: "pool", PriceYearVND: 300_000, IsActive: true},
 	}, repo: planRepo, now: billingNow}
+	planRepo.planByID = catalog.plans
 	repo := newMemBillingRepo()
 	repo.plans = planRepo
 	planRepo.billing = repo

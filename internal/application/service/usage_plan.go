@@ -100,8 +100,47 @@ func (s *usagePlanService) GetPlan(ctx context.Context, id string) (*types.Usage
 	return plan, err
 }
 
+// validateIncludedAgents normalizes plan.IncludedAgentIDs (trimmed, no
+// blanks or duplicates, sorted, never nil) and checks each is a live custom
+// agent of distribution "addon": basic agents need no inclusion, internal
+// ones are never sold, built-ins are always basic. An id the plan already
+// had (previous) that no longer qualifies — the agent was deleted or
+// converted since — is dropped quietly so an unrelated edit still saves; a
+// newly added one is refused.
+func (s *usagePlanService) validateIncludedAgents(ctx context.Context, plan *types.UsagePlan, previous types.UsageAgentIDList) error {
+	had := map[string]bool{}
+	for _, id := range previous {
+		had[id] = true
+	}
+	ids := plan.IncludedAgentIDs.Normalized()
+	plan.IncludedAgentIDs = make(types.UsageAgentIDList, 0, len(ids))
+	for _, id := range ids {
+		distribution, found, err := s.repo.CustomAgentDistribution(ctx, id)
+		if err != nil {
+			return err
+		}
+		if had[id] && (!found || distribution != types.AgentDistributionAddon) {
+			continue
+		}
+		if !found {
+			return apperrors.NewBadRequestError(fmt.Sprintf("included agent %q does not exist", id)).
+				WithDetails(map[string]string{"reason": "included_agent_not_found", "agent_id": id})
+		}
+		if distribution != types.AgentDistributionAddon {
+			return apperrors.NewBadRequestError(
+				"chỉ trợ lý có cách phân phối Chuyên ngành (addon) mới có sẵn trong gói được").
+				WithDetails(map[string]string{"reason": "included_agent_not_addon", "agent_id": id})
+		}
+		plan.IncludedAgentIDs = append(plan.IncludedAgentIDs, id)
+	}
+	return nil
+}
+
 func (s *usagePlanService) CreatePlan(ctx context.Context, plan *types.UsagePlan) (*types.UsagePlan, error) {
 	if err := normalizePlan(plan); err != nil {
+		return nil, err
+	}
+	if err := s.validateIncludedAgents(ctx, plan, nil); err != nil {
 		return nil, err
 	}
 	plan.ID = uuid.New().String()
@@ -122,6 +161,14 @@ func (s *usagePlanService) UpdatePlan(ctx context.Context, plan *types.UsagePlan
 		return nil, err
 	}
 	if err := normalizePlan(plan); err != nil {
+		return nil, err
+	}
+	// a client that does not send the field (older admin page, script)
+	// keeps the plan's list; an explicit [] clears it
+	if plan.IncludedAgentIDs == nil {
+		plan.IncludedAgentIDs = existing.IncludedAgentIDs
+	}
+	if err := s.validateIncludedAgents(ctx, plan, existing.IncludedAgentIDs); err != nil {
 		return nil, err
 	}
 	plan.CreatedAt = existing.CreatedAt
@@ -631,23 +678,21 @@ func (s *usagePlanService) TenantUsage(ctx context.Context, tenantID uint64) (*t
 		return nil, err
 	}
 	out.Subscription = v
-	addons, err := s.repo.ListSubscriptionAddons(ctx, sub.ID)
+	now := s.now()
+	rights, err := loadAgentRights(ctx, s.repo, sub, now)
 	if err != nil {
 		return nil, err
 	}
-	now := s.now()
-	for _, a := range addons {
-		if a.IsCurrentAt(now) {
-			if a.EndsAt == nil {
-				a.EndsAt = sub.EndsAt // shown as "ends with the subscription"
-			}
-			out.Addons = append(out.Addons, a)
-			continue
+	for _, a := range rights.Held {
+		if a.EndsAt == nil && !a.Included {
+			a.EndsAt = sub.EndsAt // shown as "ends with the subscription"
 		}
+	}
+	out.Addons = rights.Rows()
+	for _, a := range rights.Ended {
 		// ended lately while the subscription still runs: the admin may
 		// want it back
-		if a.EndsAt != nil && !a.EndsAt.After(now) &&
-			now.Sub(*a.EndsAt) <= types.UsageAddonEndedNoticeDays*24*time.Hour &&
+		if a.EndsAt != nil && now.Sub(*a.EndsAt) <= types.UsageAddonEndedNoticeDays*24*time.Hour &&
 			(sub.EndsAt == nil || sub.EndsAt.After(*a.EndsAt)) {
 			out.EndedAddons = append(out.EndedAddons, a)
 		}
@@ -819,7 +864,121 @@ func (s *usagePlanService) ListAgentAddons(ctx context.Context, includeInactive 
 	if err != nil {
 		return nil, err
 	}
-	return &types.UsageAgentAddonCatalogue{Addons: rows, IncludedAgents: includedPlanAgents(ctx, s.repo)}, nil
+	addonAgents, err := s.repo.LiveAddonAgents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &types.UsageAgentAddonCatalogue{
+		Addons: rows, IncludedAgents: includedPlanAgents(ctx, s.repo), AddonAgents: addonAgents,
+	}, nil
+}
+
+// planOwnAgents names the specialist agents plan includes, in the plan's
+// order, flagged Included; ids that are no longer live addon agents (live =
+// LiveAddonAgents) are left out — they grant nothing either.
+func planOwnAgents(plan *types.UsagePlan, live []types.UsagePlanAgent) []types.UsagePlanAgent {
+	out := []types.UsagePlanAgent{}
+	if plan == nil || len(plan.IncludedAgentIDs) == 0 {
+		return out
+	}
+	names := make(map[string]string, len(live))
+	for _, a := range live {
+		names[a.ID] = a.Name
+	}
+	for _, id := range plan.IncludedAgentIDs {
+		if name, ok := names[id]; ok {
+			out = append(out, types.UsagePlanAgent{ID: id, Name: name, Included: true})
+		}
+	}
+	return out
+}
+
+// agentRights is what a subscription gives in specialist agents at one
+// instant: the add-ons it bought and the agents its plan includes
+// (usage_plans.included_agent_ids). The one place inclusion is merged with
+// purchases for the organization's usage view, the buy page and the
+// "buy it again" banner.
+type agentRights struct {
+	// Plan is the subscription's plan (nil when it is gone).
+	Plan *types.UsagePlan
+	// Held are the current bought rows; one for an agent the plan also
+	// includes is flagged Included (its stored end is kept: renewal pricing
+	// reads it).
+	Held []*types.UsageSubscriptionAddon
+	// Included are the live agents the plan includes that are not bought,
+	// only while the subscription is current.
+	Included []types.UsagePlanAgent
+	// Ended are bought rows no longer current (ends_at passed), never for
+	// an agent the plan includes: nothing to buy again.
+	Ended []*types.UsageSubscriptionAddon
+	sub   *types.UsageSubscription
+}
+
+// loadAgentRights reads the rights of sub at now. The plan is the preloaded
+// sub.Plan, else read by id (a missing plan includes nothing).
+func loadAgentRights(
+	ctx context.Context, repo interfaces.UsagePlanRepository, sub *types.UsageSubscription, now time.Time,
+) (*agentRights, error) {
+	out := &agentRights{Held: []*types.UsageSubscriptionAddon{}, Included: []types.UsagePlanAgent{},
+		Ended: []*types.UsageSubscriptionAddon{}, sub: sub}
+	if sub == nil {
+		return out, nil
+	}
+	out.Plan = sub.Plan
+	if out.Plan == nil {
+		plan, err := repo.GetPlan(ctx, sub.PlanID)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
+		out.Plan = plan
+	}
+	var included []types.UsagePlanAgent
+	if sub.IsCurrentAt(now) && out.Plan != nil && len(out.Plan.IncludedAgentIDs) > 0 {
+		live, err := repo.LiveAddonAgents(ctx)
+		if err != nil {
+			return nil, err
+		}
+		included = planOwnAgents(out.Plan, live)
+	}
+	isIncluded := make(map[string]bool, len(included))
+	for _, a := range included {
+		isIncluded[a.ID] = true
+	}
+	rows, err := repo.ListSubscriptionAddons(ctx, sub.ID)
+	if err != nil {
+		return nil, err
+	}
+	bought := map[string]bool{}
+	for _, a := range rows {
+		switch {
+		case a.IsCurrentAt(now):
+			a.Included = isIncluded[a.AgentID]
+			bought[a.AgentID] = true
+			out.Held = append(out.Held, a)
+		case a.EndsAt != nil && !a.EndsAt.After(now) && !isIncluded[a.AgentID]:
+			out.Ended = append(out.Ended, a)
+		}
+	}
+	for _, a := range included {
+		if !bought[a.ID] {
+			out.Included = append(out.Included, a)
+		}
+	}
+	return out, nil
+}
+
+// Rows lists every agent right once: the bought rows, then a synthesized
+// Included row (no end of its own) per plan-included agent not bought.
+func (r *agentRights) Rows() []*types.UsageSubscriptionAddon {
+	out := append([]*types.UsageSubscriptionAddon{}, r.Held...)
+	for _, a := range r.Included {
+		row := &types.UsageSubscriptionAddon{AgentID: a.ID, AgentName: a.Name, Included: true}
+		if r.sub != nil {
+			row.SubscriptionID, row.StartsAt = r.sub.ID, r.sub.StartsAt
+		}
+		out = append(out, row)
+	}
+	return out
 }
 
 // validateAgentAddon normalizes a catalogue row and checks it: an addon
