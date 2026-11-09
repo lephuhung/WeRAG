@@ -84,6 +84,13 @@ func (r *legalRequestRepository) Record(
 	}
 	switch existing.Status {
 	case types.LegalRequestRequested, types.LegalRequestFetched, types.LegalRequestReviewing:
+		if existing.RequestCount == 0 {
+			// Queued by the import, nobody had asked: the first real request
+			// counts, also from a caller without a session (a legal feed).
+			err = db.Model(&types.LegalDocumentRequest{}).
+				Where("id = ? AND status = ?", existing.ID, existing.Status).Updates(bump).Error
+			break
+		}
 		// still open (a draft of its PDF may be under review): the same
 		// session asking again does not count twice, the state is kept
 		err = db.Model(&types.LegalDocumentRequest{}).
@@ -143,7 +150,10 @@ func (r *legalRequestRepository) List(
 	if limit <= 0 {
 		limit = 50
 	}
-	err := q.Order("last_requested_at DESC").Order("id").Offset(offset).Limit(limit).Find(&rows).Error
+	// Requests people made come before the ones the import queued by itself
+	// (request_count 0), or a nightly batch would bury them.
+	err := q.Order("CASE WHEN request_count > 0 THEN 0 ELSE 1 END").
+		Order("last_requested_at DESC").Order("id").Offset(offset).Limit(limit).Find(&rows).Error
 	return rows, total, err
 }
 
@@ -217,6 +227,10 @@ func (r *legalRequestRepository) UpdateDetail(
 			}
 		}
 		for k, v := range detail {
+			if v == nil { // a nil value removes the key
+				delete(merged, k)
+				continue
+			}
 			merged[k] = v
 		}
 		raw, err := json.Marshal(merged)

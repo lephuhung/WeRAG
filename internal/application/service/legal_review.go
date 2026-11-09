@@ -117,8 +117,7 @@ func (s *legalReviewService) suggest(
 	}
 	// A document ingested from vbpl.vn names the portal row it came from
 	// (metadata.external_id): its identity is known, not parsed, so the link
-	// is approved without a reviewer. The catalogue row is left unreviewed so
-	// that later portal imports keep updating its status.
+	// is approved without a reviewer.
 	if k.ExternalID != "" {
 		docs, err := s.catalog.GetByIDs(ctx, []string{k.ExternalID})
 		if err != nil {
@@ -311,7 +310,9 @@ func (s *legalReviewService) Decide(
 }
 
 // reviewedDocument returns the catalogue row an approval writes: the picked
-// row, or a new manual one, with the reviewer's fields applied.
+// row, or a new manual one, with the reviewer's fields applied. A vbpl row
+// keeps the portal's values: vbpl.vn is the standard, and the next import
+// would replace any edit.
 func (s *legalReviewService) reviewedDocument(
 	ctx context.Context, d *types.LegalReviewDecision,
 ) (*types.LegalDocument, error) {
@@ -331,7 +332,7 @@ func (s *legalReviewService) reviewedDocument(
 		}
 		doc = &types.LegalDocument{ID: uuid.NewString(), Source: types.LegalDocumentSourceManual}
 	}
-	if f := d.Document; f != nil {
+	if f := d.Document; f != nil && doc.Source != types.LegalDocumentSourceVBPL {
 		var err error
 		if doc.IssuedOn, err = parseReviewDate(f.IssuedOn, "issued_on"); err != nil {
 			return nil, err

@@ -75,8 +75,9 @@ type LegalReviewRepository interface {
 	// status says it expired. kbID "" = every KB.
 	ListSupersededLinks(ctx context.Context, kbID string, offset, limit int) ([]LegalLinkRow, int64, error)
 	// ListSourceChangedLinks pages approved links whose reviewed catalogue
-	// row holds newer portal values in source_pending (an import never
-	// overwrites a reviewed row), so the SuperAdmin can settle them.
+	// row holds newer portal values in source_pending (only rows that do
+	// not come from vbpl.vn: an import updates those), so the SuperAdmin
+	// can settle them.
 	// kbID "" = every KB.
 	ListSourceChangedLinks(ctx context.Context, kbID string, offset, limit int) ([]LegalLinkRow, int64, error)
 	// ApprovedDocumentIDs returns which of ids have an approved link.

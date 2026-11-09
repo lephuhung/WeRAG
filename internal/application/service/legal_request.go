@@ -4,6 +4,7 @@ import (
 	"context"
 	stderrors "errors"
 	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
@@ -190,8 +191,27 @@ func (s *legalRequestService) Decide(
 			note = "Bổ sung từ vbpl.vn (" + res.Result + ", " + res.SourceFormat + ")"
 		}
 		decided, err = s.requests.Decide(ctx, id, types.LegalRequestAdded, caller.UserID, note, res.KnowledgeID, res.KnowledgeBaseID)
+	case types.LegalRequestActionTVPLRecheck:
+		decided, err = s.requests.UpdateDetail(ctx, id, map[string]any{types.LegalRequestDetailTVPLNotFound: nil})
+	case types.LegalRequestActionNotOnTVPL:
+		if !types.IsLegalRequestOpen(row.Status) {
+			return nil, apperrors.NewConflictError("this legal document request is already closed").
+				WithDetails("status: " + row.Status)
+		}
+		if row.ClaimedBy != "" && row.ClaimedBy != caller.UserID && row.ClaimedAt != nil &&
+			time.Since(*row.ClaimedAt) < types.LegalRequestClaimLease {
+			return nil, apperrors.NewConflictError("another operator is fetching this document").
+				WithDetails("claimed_by: " + row.ClaimedBy)
+		}
+		// The operator is done with it: drop their lease (a no-op otherwise).
+		if _, err := s.requests.Claim(ctx, id, caller.UserID, false); err != nil {
+			return nil, err
+		}
+		decided, err = s.requests.UpdateDetail(ctx, id, map[string]any{types.LegalRequestDetailTVPLNotFound: map[string]any{
+			"at": time.Now(), "by": caller.UserID, "note": note,
+		}})
 	default:
-		return nil, apperrors.NewBadRequestError("action must be ingest, reject or added")
+		return nil, apperrors.NewBadRequestError("action must be ingest, reject, added, not_on_tvpl or tvpl_recheck")
 	}
 	if err != nil {
 		return nil, err

@@ -95,11 +95,13 @@ func (h *LegalRequestHandler) DecideLegalRequest(c *gin.Context) {
 	}
 	action := strings.ToLower(strings.TrimSpace(req.Action))
 	// A caller holding only users.can_upload_legal_documents may close a
-	// request as "added" (it just pushed the document) and hold/release the
-	// operator lease; ingesting from vbpl.vn and rejecting still need the
-	// SuperAdmin.
+	// request as "added" (it just pushed the document), note that TVPL lacks
+	// it and hold/release the operator lease; ingesting from vbpl.vn and
+	// rejecting still need the SuperAdmin.
 	if types.CanUploadLegalDocumentsFromContext(ctx) && !isExplicitHumanSuperAdminCaller(ctx) &&
 		action != types.LegalRequestActionAdded &&
+		action != types.LegalRequestActionNotOnTVPL &&
+		action != types.LegalRequestActionTVPLRecheck &&
 		action != types.LegalRequestActionClaim &&
 		action != types.LegalRequestActionRelease {
 		c.Error(errors.NewForbiddenError("only a SuperAdmin may ingest or reject a legal document request"))

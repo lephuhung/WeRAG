@@ -51,6 +51,15 @@ func (r *queueRepo) Decide(_ context.Context, id, status, by, note, kid, kbID st
 	return row, nil
 }
 
+func (r *queueRepo) Claim(_ context.Context, id, userID string, claim bool) (*types.LegalDocumentRequest, error) {
+	row := r.rows[id]
+	if row == nil || (!claim && row.ClaimedBy != userID) {
+		return nil, nil
+	}
+	row.ClaimedBy = ""
+	return row, nil
+}
+
 func (r *queueRepo) KnowledgeParseStatuses(_ context.Context, ids []string) (map[string]string, error) {
 	out := map[string]string{}
 	for _, id := range ids {
@@ -153,6 +162,46 @@ func TestLegalRequestServiceQueue(t *testing.T) {
 	if err != nil || it.Status != types.LegalRequestAdded || it.KnowledgeID != "k9" || it.Document == nil ||
 		it.KnowledgeParseStatus != "processing" {
 		t.Fatalf("added: %+v %v", it, err)
+	}
+}
+
+func TestLegalRequestNotOnTVPLKeepsTheRequestOpen(t *testing.T) {
+	repo := &queueRepo{rows: map[string]*types.LegalDocumentRequest{
+		"open":   {ID: "open", Status: types.LegalRequestRequested, ClaimedBy: "u1"},
+		"closed": {ID: "closed", Status: types.LegalRequestAdded},
+	}}
+	svc := NewLegalRequestService(repo, queueCatalog{}, nil, nil, nil)
+	ctx := types.WithCaller(context.Background(), types.Caller{UserID: "u1"})
+
+	it, err := svc.Decide(ctx, "open", &types.LegalRequestDecision{Action: types.LegalRequestActionNotOnTVPL, Note: " đã tìm "})
+	if err != nil || it.Status != types.LegalRequestRequested || it.ClaimedBy != "" {
+		t.Fatalf("mark: %+v %v", it, err)
+	}
+	var detail map[string]map[string]any
+	if err := json.Unmarshal(it.Detail, &detail); err != nil {
+		t.Fatal(err)
+	}
+	mark := detail[types.LegalRequestDetailTVPLNotFound]
+	if mark["by"] != "u1" || mark["note"] != "đã tìm" {
+		t.Fatalf("detail = %v", detail)
+	}
+	if _, err := svc.Decide(ctx, "closed", &types.LegalRequestDecision{Action: types.LegalRequestActionNotOnTVPL}); httpStatus(err) != http.StatusConflict {
+		t.Fatalf("closed request: %v", err)
+	}
+	// Another operator's live lease is respected.
+	now := time.Now()
+	repo.rows["held"] = &types.LegalDocumentRequest{ID: "held", Status: types.LegalRequestRequested, ClaimedBy: "u2", ClaimedAt: &now}
+	if _, err := svc.Decide(ctx, "held", &types.LegalRequestDecision{Action: types.LegalRequestActionNotOnTVPL}); httpStatus(err) != http.StatusConflict {
+		t.Fatalf("held by another operator: %v", err)
+	}
+	// Undo.
+	it, err = svc.Decide(ctx, "open", &types.LegalRequestDecision{Action: types.LegalRequestActionTVPLRecheck})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var after map[string]any
+	if err := json.Unmarshal(it.Detail, &after); err != nil || after[types.LegalRequestDetailTVPLNotFound] != nil {
+		t.Fatalf("after undo: %v %v", after, err)
 	}
 }
 

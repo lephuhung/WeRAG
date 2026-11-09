@@ -165,9 +165,9 @@ type legalIngestedRow struct {
 	DocumentNumber    string `json:"document_number"`
 	DocType           string `json:"doc_type"`
 	Status            string `json:"status"`
-	// PortalStatus is the portal's newer status parked in source_pending
-	// when the catalogue row is SuperAdmin-reviewed (imports never overwrite
-	// a reviewed row); empty when the row is current.
+	// PortalStatus is the portal's status parked in source_pending on a
+	// reviewed row that does not come from vbpl.vn (an import updates vbpl
+	// rows directly); empty when the row is current.
 	PortalStatus string     `json:"portal_status,omitempty"`
 	EffectiveOn  *time.Time `json:"effective_on"`
 	ExpiredOn    *time.Time `json:"expired_on"`
@@ -365,7 +365,7 @@ func (s *Server) handleLegalSyncStatus(ctx context.Context, req mcp.CallToolRequ
 	}
 	if totals.ReviewedPen > 0 {
 		text += fmt.Sprintf("; %d reviewed catalogue row(s) hold newer portal values in source_pending that a "+
-			"SuperAdmin has not applied (their status may be outdated)", totals.ReviewedPen)
+			"SuperAdmin has not applied (rows from sources other than vbpl.vn; their status may be outdated)", totals.ReviewedPen)
 	}
 	text += "."
 	return mcp.NewToolResultStructured(map[string]any{
@@ -587,7 +587,9 @@ func legalListRequestsTool() mcp.Tool {
 			"says what vbpl.vn offers: html true, or only pdf_file (then call legal_fetch_draft: the scan is OCRed into a "+
 			"draft a SuperAdmin reviews, never ingested as raw OCR), or neither. A row's draft {id, status, ocr_pages, error} "+
 			"is that OCR draft (status fetching, ocr, ready, reviewing, approved or failed). Request status fetched means a "+
-			"draft exists, reviewing that it is open in the editor. Most recently requested first."),
+			"draft exists, reviewing that it is open in the editor. Rows people asked for come first, most recent first; "+
+			"source vbpl_no_text with request_count 0 means nobody asked yet: the nightly import queued a document in force "+
+			"vbpl.vn publishes no full text for, for an operator to add from thuvienphapluat.vn."),
 		mcp.WithString("status", mcp.Description("requested (default), fetched, reviewing, added, rejected or all")),
 		mcp.WithNumber("limit", mcp.Description("Maximum rows, default 100, max 500")),
 	)
@@ -604,6 +606,11 @@ type legalRequestRow struct {
 	RequestCount    int       `json:"request_count"`
 	LastRequestedAt time.Time `json:"last_requested_at"`
 	URL             string    `json:"url,omitempty"`
+	// Source says where the request came from ("catalogue", "feed:tvpl",
+	// "vbpl_no_text"…).
+	Source string `json:"source,omitempty"`
+	// TVPLNotFound: an operator looked it up on thuvienphapluat.vn in vain.
+	TVPLNotFound bool `json:"tvpl_not_found,omitempty"`
 	// Portal is what vbpl.vn offers for the document (html, pdf_file,
 	// exists, checked_at), when a SuperAdmin check or ingest recorded it.
 	Portal json.RawMessage `json:"portal,omitempty"`
@@ -645,7 +652,8 @@ func (s *Server) handleLegalListRequests(ctx context.Context, req mcp.CallToolRe
 	out := make([]legalRequestRow, 0, len(rows))
 	for _, r := range rows {
 		row := legalRequestRow{ID: r.ID, VBPLID: r.LegalDocumentID, DocumentNumber: r.DocumentNumber, Title: r.Title,
-			DocType: r.DocType, Status: r.Status, RequestCount: r.RequestCount, LastRequestedAt: r.LastRequestedAt}
+			DocType: r.DocType, Status: r.Status, RequestCount: r.RequestCount, LastRequestedAt: r.LastRequestedAt,
+			Source: r.Source}
 		if r.LegalDocumentID != "" {
 			row.URL = fmt.Sprintf(vbplDocURL, r.LegalDocumentID)
 			row.Draft = drafts[r.LegalDocumentID]
@@ -655,6 +663,9 @@ func (s *Server) handleLegalListRequests(ctx context.Context, req mcp.CallToolRe
 			if json.Unmarshal(r.Detail, &detail) == nil {
 				if p := detail[types.LegalRequestDetailPortal]; len(p) > 0 && string(p) != "null" {
 					row.Portal = p
+				}
+				if m := detail[types.LegalRequestDetailTVPLNotFound]; len(m) > 0 && string(m) != "null" {
+					row.TVPLNotFound = true
 				}
 			}
 		}

@@ -24,9 +24,10 @@ type LegalDocument struct {
 	ExpiredOn       *time.Time `json:"expired_on"        gorm:"type:date"`
 	Status          string     `json:"status"            gorm:"type:varchar(64);not null;default:''"`
 	SourceUpdatedAt *time.Time `json:"source_updated_at"`
-	// ReviewedAt is set once a SuperAdmin confirmed the row: from then on
-	// it is the curated truth and a re-import parks differing portal
-	// values in SourcePending instead of overwriting.
+	// ReviewedAt is set once a SuperAdmin confirmed the row. vbpl.vn is the
+	// standard, so a re-import still updates a vbpl row (the old values go
+	// to legal_feed_log); only rows from another source park portal values
+	// in SourcePending.
 	ReviewedBy    string     `json:"reviewed_by"    gorm:"type:varchar(36);not null;default:''"`
 	ReviewedAt    *time.Time `json:"reviewed_at"`
 	SourcePending JSON       `json:"source_pending" gorm:"type:jsonb"`

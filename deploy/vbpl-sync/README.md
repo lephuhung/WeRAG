@@ -7,6 +7,9 @@ Container chạy `sync.sh` theo lịch (`VBPL_SYNC_CRON`, mặc định 02:30 gi
    hoặc thay đổi (metadata, toàn văn HTML trừ văn bản hết hiệu lực toàn bộ,
    quan hệ);
 3. `legal-catalog-import`: nạp vào `legal_documents` / `legal_document_relations`;
+   văn bản chưa hết hiệu lực toàn bộ mà vbpl.vn không có toàn văn và kho công khai
+   chưa có bản nào được đưa vào hàng chờ đề nghị bổ sung (`source=vbpl_no_text`,
+   tối đa 500 văn bản mỗi đêm) để lấy từ thuvienphapluat.vn bằng extension;
 4. `mc mirror` thư mục làm việc lên MinIO (`$VBPL_S3_BUCKET/$VBPL_S3_PREFIX`).
 
 Dữ liệu nằm ở bucket riêng `werag-vbpl` (prefix `vbpl/`) trên MinIO dùng chung

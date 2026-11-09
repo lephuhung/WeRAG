@@ -83,6 +83,9 @@ func TestLegalRequestRoutes_OperatorMayReadAndClose(t *testing.T) {
 	if code := serve(engine, http.MethodPut, "/api/v1/system/legal-requests/r1", body); code != http.StatusOK {
 		t.Fatalf("operator PUT added = %d, want 200", code)
 	}
+	if code := serve(engine, http.MethodPut, "/api/v1/system/legal-requests/r1", `{"action":"not_on_tvpl"}`); code != http.StatusOK {
+		t.Fatalf("operator PUT not_on_tvpl = %d, want 200", code)
+	}
 	// The routes that stay SuperAdmin-only must not be reachable by the operator.
 	if code := serve(engine, http.MethodGet, "/api/v1/system/legal-requests/public-knowledge-bases", ""); code != http.StatusForbidden {
 		t.Fatalf("operator public-knowledge-bases = %d, want 403", code)

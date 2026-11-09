@@ -317,11 +317,18 @@ func movedMarkKey(detail types.JSON, fromID, toID string) (types.JSON, bool) {
 }
 
 // inheritReview passes a SuperAdmin's review of the feed row to the portal
-// row: the curated values and reviewer stay, the portal's differing values
-// wait in source_pending. A value the feed row never had (an empty date,
-// the "Chưa xác định" status a push writes when its source gave none) is
-// no curated value: the portal's stays. The portal row keeps its source.
+// row. A vbpl row takes only the reviewer: vbpl.vn is the standard and its
+// values stay. On a row from another source the curated values and reviewer
+// stay, the differing values wait in source_pending; a value the feed row
+// never had (an empty date, the "Chưa xác định" status a push writes when
+// its source gave none) is no curated value: that row's stays. The target
+// keeps its source.
 func inheritReview(tx *gorm.DB, from, to *types.LegalDocument) error {
+	if to.Source == types.LegalDocumentSourceVBPL {
+		return tx.Model(&types.LegalDocument{}).Where("id = ?", to.ID).Updates(map[string]any{
+			"reviewed_by": from.ReviewedBy, "reviewed_at": from.ReviewedAt, "source_pending": nil, "updated_at": time.Now(),
+		}).Error
+	}
 	curated := *from
 	if curated.EffectiveOn == nil {
 		curated.EffectiveOn = to.EffectiveOn

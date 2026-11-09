@@ -29,7 +29,7 @@ python3 -I -u /app/crawl_vbpl.py "$WORK" ${VBPL_CRAWL_ARGS:-}
 
 log "import into $DB_HOST/$DB_NAME"
 legal-catalog-import -documents "$WORK/documents.jsonl" -relations "$WORK/relations.jsonl" \
-	-snapshot "$(date -u +%F)"
+	-snapshot "$(date -u +%F)" -enqueue-no-fulltext
 
 # --remove also deletes the HTML of documents that turned fully expired;
 # it needs delete rights, which append-only (backup) keys lack.

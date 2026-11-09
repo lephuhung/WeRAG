@@ -130,6 +130,15 @@ type LegalRequestDecision struct {
 	Note            string `json:"note"`
 }
 
+// LegalRequestSourceNoFullText marks a request nobody asked for: the nightly
+// import queued a document in force that vbpl.vn publishes no full text for.
+// Its RequestCount stays 0 until a user really asks.
+const LegalRequestSourceNoFullText = "vbpl_no_text"
+
+// LegalRequestDetailTVPLNotFound is the Detail key an operator sets when the
+// document is not on thuvienphapluat.vn either: {at, by, note}.
+const LegalRequestDetailTVPLNotFound = "tvpl_not_found"
+
 // LegalRequestDetailPortal is the Detail key holding what vbpl.vn offers
 // for the document (service.LegalPortalAvailability).
 const LegalRequestDetailPortal = "portal"
@@ -139,6 +148,12 @@ const (
 	LegalRequestActionIngest = "ingest"
 	LegalRequestActionReject = "reject"
 	LegalRequestActionAdded  = "added"
+	// LegalRequestActionNotOnTVPL records that the operator looked the
+	// document up on thuvienphapluat.vn and it is not there. The request
+	// stays open: another source or a SuperAdmin may still add it.
+	LegalRequestActionNotOnTVPL = "not_on_tvpl"
+	// LegalRequestActionTVPLRecheck undoes it (a misclick, or TVPL has it now).
+	LegalRequestActionTVPLRecheck = "tvpl_recheck"
 	// LegalRequestActionClaim / Release take (or drop) the operator lease on
 	// one request, so several operators do not fetch the same document.
 	LegalRequestActionClaim   = "claim"

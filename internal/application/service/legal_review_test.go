@@ -25,7 +25,7 @@ func TestLegalReviewFlow(t *testing.T) {
 
 	day := func(s string) *time.Time { d, _ := time.Parse("2006-01-02", s); return &d }
 	require.NoError(t, catalog.UpsertDocuments(ctx, []*types.LegalDocument{
-		{ID: "bmnn-2018", Source: "vbpl", DocumentNumber: "29/2018/QH14", NumberKey: "29/2018/QH14",
+		{ID: "bmnn-2018", Source: "manual", DocumentNumber: "29/2018/QH14", NumberKey: "29/2018/QH14",
 			Title: "Luật Bảo vệ bí mật nhà nước số 29/2018/QH14", IssuedOn: day("2018-11-15"), Status: "Còn hiệu lực"},
 		{ID: "bmnn-2025", Source: "vbpl", DocumentNumber: "117/2025/QH15", NumberKey: "117/2025/QH15",
 			Title: "Luật Bảo vệ bí mật nhà nước số 117/2025/QH15", IssuedOn: day("2025-12-10"), Status: "Còn hiệu lực"},
@@ -161,4 +161,29 @@ func TestPickCatalogMatch(t *testing.T) {
 	require.Equal(t, "142847", pickCatalogMatch([]*types.LegalDocument{dupA, dupB}, "142847", "Luật"), "external id wins")
 	require.Equal(t, "", pickCatalogMatch([]*types.LegalDocument{dupA, dupB}, "", "Luật"), "true duplicates stay open")
 	require.Equal(t, "25684", pickCatalogMatch([]*types.LegalDocument{nq}, "", "Luật"), "a single match is kept")
+}
+
+// TestLegalReviewApproveKeepsVBPLValues: vbpl.vn is the standard, so the
+// reviewer's form does not change a portal row (the next import would).
+func TestLegalReviewApproveKeepsVBPLValues(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&types.KnowledgeBase{}, &types.Knowledge{}, &types.Chunk{},
+		&types.LegalDocument{}, &types.LegalDocumentRelation{}, &types.LegalDocumentLink{}))
+	ctx := types.WithCaller(context.Background(), types.Caller{UserID: "admin-1"})
+	catalog := repository.NewLegalCatalogRepository(db)
+	svc := NewLegalReviewService(catalog, repository.NewLegalReviewRepository(db), nil, nil)
+	require.NoError(t, catalog.UpsertDocuments(ctx, []*types.LegalDocument{{ID: "179941", Source: types.LegalDocumentSourceVBPL,
+		DocumentNumber: "67/2025/QH15", NumberKey: "67/2025/QH15", Title: "Luật Thuế", Status: "Còn hiệu lực"}}))
+	require.NoError(t, db.Create(&types.KnowledgeBase{ID: "kb-pub", Name: "Luật", Visibility: types.KBVisibilityPublic}).Error)
+	require.NoError(t, db.Create(&types.Knowledge{ID: "k1", KnowledgeBaseID: "kb-pub", Title: "a.html",
+		ParseStatus: types.ParseStatusCompleted, Metadata: types.JSON(`{"external_id":"179941"}`)}).Error)
+	_, err = svc.Scan(ctx)
+	require.NoError(t, err)
+
+	item, err := svc.Decide(ctx, "k1", &types.LegalReviewDecision{Action: "approve", LegalDocumentID: "179941",
+		Document: &types.LegalDocumentFields{DocumentNumber: "67/2025/QH15", Title: "Sửa tay", Status: "Hết hiệu lực toàn bộ"}})
+	require.NoError(t, err)
+	require.Equal(t, "Luật Thuế", item.Document.Title)
+	require.Equal(t, "Còn hiệu lực", item.Document.Status)
 }

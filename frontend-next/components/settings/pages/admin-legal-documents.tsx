@@ -591,6 +591,8 @@ export function ReviewDialog({
 
   const set = (k: keyof LegalDocumentFields) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
   const pending = linked?.source_pending ?? null;
+  // vbpl.vn is the standard: its row's values are not edited here.
+  const pickedIsVbpl = options.find((d) => d.id === pickedId)?.source === "vbpl";
   const s = item.suggestion;
 
   return (
@@ -707,7 +709,8 @@ export function ReviewDialog({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {pickedIsVbpl && <p className="caption text-muted">{t("lrev.vbplStandard")}</p>}
+        <fieldset disabled={pickedIsVbpl} className="m-0 grid min-w-0 grid-cols-1 gap-3 border-0 p-0 sm:grid-cols-2">
           <Field label={t("lrev.f.number")} value={form.document_number} onChange={set("document_number")} mono />
           <Field label={t("lrev.f.type")} value={form.doc_type} onChange={set("doc_type")} />
           <div className="sm:col-span-2">
@@ -735,7 +738,7 @@ export function ReviewDialog({
           <div className="sm:col-span-2">
             <Field label={t("lrev.f.field")} value={form.field} onChange={set("field")} />
           </div>
-        </div>
+        </fieldset>
 
         {error && <Notice tone="error">{error}</Notice>}
 

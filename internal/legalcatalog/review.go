@@ -32,3 +32,28 @@ func ReviewDiff(cur, in *types.LegalDocument) map[string]string {
 	cmp("status", cur.Status, in.Status)
 	return diff
 }
+
+// KeepReviewedWhereBlank fills the curated fields the portal left blank in
+// in from the reviewed row: a blank is missing data, not a correction.
+func KeepReviewedWhereBlank(in, cur *types.LegalDocument) {
+	text := func(in *string, cur string) {
+		if strings.TrimSpace(*in) == "" {
+			*in = cur
+		}
+	}
+	if strings.TrimSpace(in.DocumentNumber) == "" {
+		in.DocumentNumber, in.NumberKey = cur.DocumentNumber, cur.NumberKey
+	}
+	text(&in.Title, cur.Title)
+	text(&in.DocType, cur.DocType)
+	text(&in.Issuer, cur.Issuer)
+	text(&in.Status, cur.Status)
+	day := func(in **time.Time, cur *time.Time) {
+		if *in == nil {
+			*in = cur
+		}
+	}
+	day(&in.IssuedOn, cur.IssuedOn)
+	day(&in.EffectiveOn, cur.EffectiveOn)
+	day(&in.ExpiredOn, cur.ExpiredOn)
+}

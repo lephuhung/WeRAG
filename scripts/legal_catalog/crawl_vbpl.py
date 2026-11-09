@@ -76,6 +76,10 @@ SERVER_ERROR_RETRIES = 2
 # "Không còn phù hợp" keep the full text.
 EXPIRED_STATUS = "Hết hiệu lực toàn bộ"
 
+# Smaller pages are the portal's empty HTML shells (83 bytes), not a full
+# text: same threshold as MinHTMLBytes in internal/vbpl.
+MIN_HTML_BYTES = 200
+
 # Relation codes of the portal front-end (enum in its JS bundle).
 RELATION_LABELS = {
     1: "Bãi bỏ", 2: "Bản dịch", 3: "Căn cứ", 4: "Dẫn chiếu",
@@ -347,7 +351,6 @@ def crawl_documents(client, db, action, args):
         # The full text lives in html/; keep the rest of the payload.
         detail.pop("documentContent", None)
         detail.pop("documentContentEn", None)
-        detail["_has_html"] = bool(content)
         with db:
             db.execute(
                 "UPDATE docs SET detail=?, diagram=?, fetched_sig=?, fetched_at=?, error=NULL WHERE id=?",
@@ -358,7 +361,14 @@ def crawl_documents(client, db, action, args):
             log(f"fetched {n}/{len(todo)} ({rate:.2f} doc/s, ~{(len(todo) - n) / max(rate, 1e-9) / 3600:.1f} h left)")
 
 
-def document_row(item, detail):
+def has_full_text(html_dir, doc_id):
+    try:
+        return os.path.getsize(os.path.join(html_dir, f"{doc_id}.html")) >= MIN_HTML_BYTES
+    except OSError:
+        return False
+
+
+def document_row(item, detail, has_html):
     issues = detail.get("documentIssues") or []
     return {
         "id": str(detail.get("id") or item["id"]),
@@ -377,7 +387,7 @@ def document_row(item, detail):
         "pham_vi": "Trung ương" if detail.get("isLw") is not False else "Địa phương",
         "tinh_trang_hieu_luc": (detail.get("effStatus") or {}).get("name") or "",
         "url": f"{SITE}/van-ban/chi-tiet/{item['id']}",
-        "has_html": bool(detail.get("_has_html")),
+        "has_html": has_html,
         "updated_date": detail.get("updatedDate") or item.get("updatedDate") or "",
     }
 
@@ -425,6 +435,7 @@ def relation_rows(doc_id, diagram):
 
 def export(db, args):
     out_dir = args.out_dir
+    html_dir = os.path.join(out_dir, "html")
     docs = rels = 0
     seen, exported = set(), set()
     with open(os.path.join(out_dir, "documents.jsonl.tmp"), "w", encoding="utf-8") as fd, \
@@ -434,7 +445,8 @@ def export(db, args):
             detail = json.loads(detail)
             if not args.all_central and not issued_since(detail, args.min_year, unknown=False):
                 continue
-            fd.write(json.dumps(document_row(json.loads(item), detail), ensure_ascii=False) + "\n")
+            row = document_row(json.loads(item), detail, has_full_text(html_dir, doc_id))
+            fd.write(json.dumps(row, ensure_ascii=False) + "\n")
             exported.add(doc_id)
             docs += 1
             for row in relation_rows(doc_id, json.loads(diagram)):

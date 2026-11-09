@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
@@ -180,5 +181,44 @@ func TestLegalRequestListByNumberKey(t *testing.T) {
 	}
 	if rows, _ := repo.ListByNumberKey(ctx, " "); len(rows) != 0 {
 		t.Fatalf("blank key must match nothing, got %d", len(rows))
+	}
+}
+
+// TestLegalRequestListPutsPeopleFirst: a request the import queued by itself
+// (count 0) never comes before one a person made, however recent it is.
+func TestLegalRequestListPutsPeopleFirst(t *testing.T) {
+	repo, db := newLegalRequestRepo(t)
+	ctx := context.Background()
+	asked, err := repo.Record(ctx, &types.LegalDocumentRequest{NumberKey: "1/2026/ND-CP", LastSessionID: "s1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO legal_document_requests
+		(id, number_key, legal_document_id, status, request_count, first_requested_at, last_requested_at)
+		VALUES ('auto', '2/2026/ND-CP', '', 'requested', 0, ?, ?)`,
+		asked.LastRequestedAt.Add(time.Hour), asked.LastRequestedAt.Add(time.Hour)).Error; err != nil {
+		t.Fatal(err)
+	}
+	rows, total, err := repo.List(ctx, types.LegalRequestRequested, 0, 10)
+	if err != nil || total != 2 || rows[0].ID != asked.ID || rows[1].ID != "auto" {
+		t.Fatalf("rows = %+v, total = %d, err = %v", rows, total, err)
+	}
+}
+
+// TestLegalRequestRecordCountsTheFirstRealAskWithoutASession: a queued row
+// (count 0, no session) is counted when a legal feed, which has no session
+// either, names the document.
+func TestLegalRequestRecordCountsTheFirstRealAskWithoutASession(t *testing.T) {
+	repo, db := newLegalRequestRepo(t)
+	ctx := context.Background()
+	now := time.Now()
+	if err := db.Exec(`INSERT INTO legal_document_requests
+		(id, number_key, legal_document_id, source, status, request_count, first_requested_at, last_requested_at)
+		VALUES ('auto', '2/2026/ND-CP', '10', ?, 'requested', 0, ?, ?)`, types.LegalRequestSourceNoFullText, now, now).Error; err != nil {
+		t.Fatal(err)
+	}
+	row, err := repo.Record(ctx, &types.LegalDocumentRequest{NumberKey: "2/2026/ND-CP", LegalDocumentID: "10", Source: "feed:tvpl"})
+	if err != nil || row.ID != "auto" || row.RequestCount != 1 {
+		t.Fatalf("row = %+v, err = %v", row, err)
 	}
 }

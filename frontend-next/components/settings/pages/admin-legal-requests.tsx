@@ -324,6 +324,12 @@ function RequestCells({
             {t("lreq.packOrigin", { name: packOrigin })}
           </span>
         )}
+        {item.source === "vbpl_no_text" && (
+          <span className="badge-pill badge-accent mt-1 inline-block text-[10.5px]">{t("lreq.noFullText")}</span>
+        )}
+        {!!item.detail?.tvpl_not_found && (
+          <span className="badge-pill badge-error mt-1 ml-1 inline-block text-[10.5px]">{t("lreq.tvplNotFound")}</span>
+        )}
         {title && (
           <div className="caption mt-0.5 line-clamp-2 text-body" title={title}>
             {title}

@@ -52,6 +52,9 @@ type vbplDocument struct {
 	// MetadataOnly marks a row built from the portal's list alone (a
 	// document outside the crawl scope, or one whose detail failed).
 	MetadataOnly bool `json:"metadata_only"`
+	// HasHTML is whether the portal published a full text; nil in a file
+	// from an older crawl, which says nothing either way.
+	HasHTML *bool `json:"has_html"`
 }
 
 type vbplRelation struct {
@@ -68,6 +71,8 @@ func main() {
 	report := flag.String("report", "", "Write the Ð twins left unreachable by number (TSV) to this file")
 	merge := flag.Bool("merge", false,
 		"Partial import: replace only the relations touching these documents, keep the rest of the catalogue")
+	enqueueNoText := flag.Bool("enqueue-no-fulltext", false,
+		"Queue documents in force the portal publishes no full text for, so an operator can add them from another source")
 	flag.Parse()
 	if *docsPath == "" || *relsPath == "" || *snapshot == "" {
 		flag.Usage()
@@ -91,6 +96,7 @@ func main() {
 	var docs []*types.LegalDocument
 	ids := map[string]bool{}
 	listOnly := map[string]bool{}
+	noFullText := map[string]bool{}
 	if err := readJSONL(*docsPath, func(raw []byte) error {
 		var d vbplDocument
 		if err := json.Unmarshal(raw, &d); err != nil {
@@ -102,13 +108,15 @@ func main() {
 		ids[d.ID] = true
 		if d.MetadataOnly {
 			listOnly[d.ID] = true
+		} else if d.HasHTML != nil && !*d.HasHTML {
+			noFullText[d.ID] = true
 		}
 		docs = append(docs, &types.LegalDocument{
 			ID:              d.ID,
 			Source:          "vbpl",
 			DocumentNumber:  legalcatalog.CleanVBPLNumber(d.SoKyHieu),
 			NumberKey:       vietnamese_legal.CatalogNumberKey(legalcatalog.CleanVBPLNumber(d.SoKyHieu)),
-			Title:           strings.TrimSpace(d.Title),
+			Title:           strings.Join(strings.Fields(d.Title), " "), // the portal's titles hold line breaks
 			DocType:         strings.TrimSpace(d.LoaiVanBan),
 			Issuer:          strings.TrimSpace(d.CoQuanBanHanh),
 			Signer:          strings.TrimSpace(d.NguoiKy),
@@ -207,8 +215,7 @@ func main() {
 	}
 	rels, skipped := edges.rels, edges.skipped
 
-	// Reviewed rows are the curated truth: the portal never overwrites them.
-	// Differing portal values are parked in source_pending for the reviewer.
+	// vbpl.vn is the standard: its values go straight onto reviewed vbpl rows.
 	var reviewed []*types.LegalDocument
 	if err := db.WithContext(ctx).Where("reviewed_at IS NOT NULL").Find(&reviewed).Error; err != nil {
 		log.Fatalf("load reviewed documents: %v", err)
@@ -217,25 +224,18 @@ func main() {
 	for _, d := range reviewed {
 		reviewedByID[d.ID] = d
 	}
-	fresh := docs[:0:0]
-	conflicts := 0
-	for _, d := range docs {
-		cur := reviewedByID[d.ID]
-		if cur == nil {
-			fresh = append(fresh, d)
-			continue
-		}
-		var pending types.JSON
-		if diff := legalcatalog.ReviewDiff(cur, d); len(diff) > 0 {
-			raw, err := json.Marshal(diff)
-			if err != nil {
-				log.Fatalf("encode pending values: %v", err)
-			}
-			pending = types.JSON(raw)
-			conflicts++
-		}
-		if err := repo.SetSourcePending(ctx, d.ID, pending); err != nil {
-			log.Fatalf("park pending values: %v", err)
+	rec, err := reconcileReviewed(docs, reviewedByID)
+	if err != nil {
+		log.Fatalf("compare reviewed documents: %v", err)
+	}
+	fresh := rec.fresh
+	// The old values first: nothing is overwritten without its record.
+	if err := logPortalOverwrites(ctx, db, rec.overwritten); err != nil {
+		log.Fatalf("log portal overwrites: %v", err)
+	}
+	for id, pending := range rec.pending {
+		if err := repo.SetSourcePending(ctx, id, pending); err != nil {
+			log.Fatalf("set pending values: %v", err)
 		}
 	}
 	if err := repo.UpsertDocuments(ctx, fresh); err != nil {
@@ -244,7 +244,8 @@ func main() {
 	// A legal feed's row of a document the portal now lists hands its
 	// references (KB copy, links, requests) to the portal row and goes.
 	adoptFeedRows(ctx, db, feedAdoptions(catalogued, alias))
-	log.Printf("kept %d reviewed documents, %d of them differ from the portal", len(reviewedByID), conflicts)
+	log.Printf("%d reviewed documents: %d updated from the portal, %d not from the portal hold new values",
+		len(reviewedByID), len(rec.overwritten), rec.parked)
 	if *prune {
 		var existing []string
 		if err := db.WithContext(ctx).Model(&types.LegalDocument{}).
@@ -274,6 +275,20 @@ func main() {
 		}
 		if err := repo.ReplaceRelations(ctx, rels); err != nil {
 			log.Fatalf("replace relations: %v", err)
+		}
+	}
+	if n, err := linkPortalKnowledge(ctx, db); err != nil {
+		log.Printf("link portal documents: %v", err)
+	} else {
+		log.Printf("%d portal documents in public knowledge bases linked to their catalogue row", n)
+	}
+	if *enqueueNoText {
+		// The catalogue is already imported: a queue problem is not worth
+		// failing the night's sync (and skipping its MinIO push).
+		if n, err := enqueueNoFullText(ctx, db, docs, catalogued, noFullText, time.Now()); err != nil {
+			log.Printf("queue documents without full text: %v", err)
+		} else {
+			log.Printf("%d documents without full text added to the request queue", n)
 		}
 	}
 	log.Printf("imported %d documents and %d relations (snapshot %s)", len(docs), len(rels), *snapshot)
