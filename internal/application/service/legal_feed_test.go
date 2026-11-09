@@ -15,6 +15,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/stretchr/testify/require"
 )
 
 type feedKnowledge struct {
@@ -89,7 +90,7 @@ func TestLegalFeedIngestFromPortal(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, ddl := range []string{
-		`CREATE TABLE knowledges (id TEXT, knowledge_base_id TEXT, file_hash TEXT, metadata TEXT, deleted_at DATETIME)`,
+		`CREATE TABLE knowledges (id TEXT, knowledge_base_id TEXT, file_hash TEXT, title TEXT, file_name TEXT, metadata TEXT, deleted_at DATETIME)`,
 		`CREATE TABLE knowledge_bases (id TEXT, owner_tenant_id INTEGER, deleted_at DATETIME)`,
 		`CREATE TABLE legal_feed_log (id INTEGER PRIMARY KEY, action TEXT, vbpl_id TEXT, knowledge_id TEXT, knowledge_base_id TEXT,
 			document_number TEXT, reason TEXT, actor_endpoint_id TEXT, actor_tenant_id INTEGER, detail TEXT, created_at DATETIME)`,
@@ -218,4 +219,50 @@ func TestLegalFeedReviewLinkKeepsReviewerDecision(t *testing.T) {
 	if l := reviews.links["k2"]; l == nil || l.ReviewStatus != types.LegalReviewApproved || l.ReviewedBy != types.LegalReviewerVBPL {
 		t.Fatalf("an unchanged copy without a link got none: %+v", l)
 	}
+}
+
+type feedKnowledgeDeleting struct {
+	feedKnowledge
+	db      *gorm.DB
+	deleted []string
+}
+
+func (f *feedKnowledgeDeleting) DeleteKnowledge(_ context.Context, id string) error {
+	f.deleted = append(f.deleted, id)
+	return f.db.Exec(`UPDATE knowledges SET deleted_at = '2026-01-01' WHERE id = ?`, id).Error
+}
+
+// TestLegalFeedReplaceKeepsDisplayTitleAndRecordsEdits: a new portal text
+// replaces the copy; a display title someone set stays, and chunk edits that
+// go with the old text leave a trace.
+func TestLegalFeedReplaceKeepsDisplayTitleAndRecordsEdits(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	for _, ddl := range []string{
+		`CREATE TABLE knowledges (id TEXT, knowledge_base_id TEXT, file_hash TEXT, title TEXT, file_name TEXT, metadata TEXT, deleted_at DATETIME)`,
+		`CREATE TABLE knowledge_bases (id TEXT, owner_tenant_id INTEGER, deleted_at DATETIME)`,
+		`CREATE TABLE chunk_revisions (knowledge_id TEXT, chunk_id TEXT)`,
+		`CREATE TABLE legal_feed_log (id INTEGER PRIMARY KEY, action TEXT, vbpl_id TEXT, knowledge_id TEXT, knowledge_base_id TEXT,
+			document_number TEXT, reason TEXT, actor_endpoint_id TEXT, actor_tenant_id INTEGER, detail TEXT, created_at DATETIME)`,
+		`INSERT INTO knowledge_bases VALUES ('kb', 0, NULL)`,
+		`INSERT INTO knowledges VALUES ('old', 'kb', 'stale', 'Tiêu đề đã sửa', 'a.html', '{"external_id":"9"}', NULL),
+			('k-new', 'kb', 'x', 'b.html', 'b.html', '{}', NULL)`,
+		`INSERT INTO chunk_revisions VALUES ('old', 'c1'), ('old', 'c1'), ('old', 'c2')`,
+	} {
+		require.NoError(t, db.Exec(ddl).Error)
+	}
+	require.NoError(t, db.AutoMigrate(&types.LegalDocument{}))
+	know := &feedKnowledgeDeleting{db: db}
+	feed := NewLegalFeedService(db, know, &feedRequests{})
+	res, err := feed.IngestHTML(context.Background(), LegalIngestDocument{VBPLID: "9", DocumentNumber: "9/2026/ND-CP", FileName: "b.html",
+		Metadata: map[string]string{"external_id": "9"}}, []byte("<p>văn bản mới</p>"), &types.KnowledgeBase{ID: "kb"}, LegalFeedActor{UserID: "u"}, "r")
+	require.NoError(t, err)
+	require.Equal(t, "replaced", res.Result)
+	require.Equal(t, []string{"old"}, know.deleted)
+
+	var title, detail string
+	require.NoError(t, db.Raw(`SELECT title FROM knowledges WHERE id = 'k-new'`).Row().Scan(&title))
+	require.Equal(t, "Tiêu đề đã sửa", title)
+	require.NoError(t, db.Raw(`SELECT detail FROM legal_feed_log WHERE action = 'ingest_replaced'`).Row().Scan(&detail))
+	require.Contains(t, detail, `"edited_chunks_replaced":2`)
 }

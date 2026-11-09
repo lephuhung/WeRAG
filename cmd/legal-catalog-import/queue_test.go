@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -204,5 +205,80 @@ func TestQueueAutoIngest(t *testing.T) {
 		if r.Status != types.LegalRequestRequested {
 			t.Errorf("%s = %s", id, r.Status)
 		}
+	}
+}
+
+func TestQueueChangedText(t *testing.T) {
+	db := queueTestDB(t)
+	ctx := context.Background()
+	now := time.Now()
+	for _, stmt := range []string{
+		`ALTER TABLE knowledges ADD COLUMN parse_status TEXT DEFAULT 'completed'`,
+		`ALTER TABLE knowledges ADD COLUMN file_hash TEXT DEFAULT ''`,
+		`INSERT INTO knowledge_bases (id, owner_tenant_id) VALUES ('kb', 0), ('private', 7)`,
+		`INSERT INTO knowledges (id, knowledge_base_id, metadata, file_hash, parse_status) VALUES
+			('new', 'kb', '{"external_id":"10","source":"vbpl"}', 'old', 'completed'),
+			('same', 'kb', '{"external_id":"20","source":"vbpl"}', 'h20', 'completed'),
+			('feed', 'kb', '{"external_id":"30","source":"tvpl"}', 'old', 'completed'),
+			('parsing', 'kb', '{"external_id":"40","source":"vbpl"}', 'old', 'processing'),
+			('priv', 'private', '{"external_id":"50","source":"vbpl"}', 'old', 'completed'),
+			('closed', 'kb', '{"external_id":"60","source":"vbpl"}', 'old', 'completed'),
+			('no', 'kb', '{"external_id":"70","source":"vbpl"}', 'old', 'completed'),
+			('gone', 'kb', '{"external_id":"80","source":"vbpl"}', 'old', 'completed')`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, r := range []types.LegalDocumentRequest{
+		{ID: "was-added", NumberKey: "k60", LegalDocumentID: "60", Status: types.LegalRequestAdded, KnowledgeID: "closed", KnowledgeBaseID: "kb", DecidedBy: "x", DecidedAt: &now, FirstRequestedAt: now, LastRequestedAt: now},
+		{ID: "rejected", NumberKey: "k70", LegalDocumentID: "70", Status: types.LegalRequestRejected, Detail: types.JSON(`{"auto_ingest_skip":"x","keep":1}`), DecisionNote: "n", FirstRequestedAt: now, LastRequestedAt: now},
+	} {
+		r := r
+		if err := db.Create(&r).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	var docs []*types.LegalDocument
+	sums := map[string]string{}
+	for _, id := range []string{"10", "20", "30", "40", "50", "60", "70"} {
+		docs = append(docs, queueDoc(id, "k"+id))
+		sums[id] = "h" + id
+	}
+	expired := queueDoc("80", "k80")
+	expired.Status = "Hết hiệu lực toàn bộ"
+	docs = append(docs, expired)
+	sums["80"] = "h80"
+
+	n, err := queueChangedText(ctx, db, docs, sums, now)
+	if err != nil || n != 3 {
+		t.Fatalf("queued = %d, err = %v, want the changed, the added and the rejected one", n, err)
+	}
+	var rejected types.LegalDocumentRequest
+	db.Take(&rejected, "id = ?", "rejected")
+	if rejected.Status != types.LegalRequestAutoIngest || autoIngestSkipped(rejected.Detail) || rejected.DecisionNote != "" ||
+		!strings.Contains(string(rejected.Detail), `"keep"`) {
+		t.Errorf("a rejection must not stop a text update: %+v", rejected)
+	}
+	var fresh types.LegalDocumentRequest
+	if err := db.Take(&fresh, "legal_document_id = ?", "10").Error; err != nil {
+		t.Fatal(err)
+	}
+	if fresh.Status != types.LegalRequestAutoIngest || fresh.KnowledgeBaseID != "kb" || fresh.RequestCount != 0 {
+		t.Errorf("fresh = %+v", fresh)
+	}
+	var added types.LegalDocumentRequest
+	db.Take(&added, "id = ?", "was-added")
+	if added.Status != types.LegalRequestAutoIngest || added.KnowledgeBaseID != "kb" || added.KnowledgeID != "" || added.DecidedAt != nil {
+		t.Errorf("added = %+v", added)
+	}
+	var count int64
+	db.Model(&types.LegalDocumentRequest{}).Where("status = ?", types.LegalRequestAutoIngest).Count(&count)
+	if count != 3 {
+		t.Errorf("%d rows queued, want 3", count)
+	}
+	// Once queued, the next night adds nothing.
+	if n, err := queueChangedText(ctx, db, docs, sums, now); err != nil || n != 0 {
+		t.Errorf("second run = %d, %v", n, err)
 	}
 }

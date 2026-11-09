@@ -46,6 +46,7 @@ Usage:
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -361,11 +362,15 @@ def crawl_documents(client, db, action, args):
             log(f"fetched {n}/{len(todo)} ({rate:.2f} doc/s, ~{(len(todo) - n) / max(rate, 1e-9) / 3600:.1f} h left)")
 
 
-def has_full_text(html_dir, doc_id):
+def full_text_md5(html_dir, doc_id):
+    """MD5 of the published full text (the file hash a knowledge base stores),
+    "" when the portal has none."""
     try:
-        return os.path.getsize(os.path.join(html_dir, f"{doc_id}.html")) >= MIN_HTML_BYTES
+        with open(os.path.join(html_dir, f"{doc_id}.html"), "rb") as f:
+            content = f.read()
     except OSError:
-        return False
+        return ""
+    return hashlib.md5(content).hexdigest() if len(content) >= MIN_HTML_BYTES else ""
 
 
 def document_row(item, detail, has_html):
@@ -445,7 +450,9 @@ def export(db, args):
             detail = json.loads(detail)
             if not args.all_central and not issued_since(detail, args.min_year, unknown=False):
                 continue
-            row = document_row(json.loads(item), detail, has_full_text(html_dir, doc_id))
+            digest = full_text_md5(html_dir, doc_id)
+            row = document_row(json.loads(item), detail, bool(digest))
+            row["html_md5"] = digest
             fd.write(json.dumps(row, ensure_ascii=False) + "\n")
             exported.add(doc_id)
             docs += 1

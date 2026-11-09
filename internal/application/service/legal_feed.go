@@ -310,12 +310,16 @@ func (s *LegalFeedService) IngestHTML(
 		ID              string
 		KnowledgeBaseID string
 		FileHash        string
+		Title           string
+		FileName        string
 	}
-	if err := s.db.WithContext(ctx).Raw(`SELECT k.id, k.knowledge_base_id, k.file_hash FROM knowledges k
+	if err := s.db.WithContext(ctx).Raw(`SELECT k.id, k.knowledge_base_id, k.file_hash, k.title, k.file_name FROM knowledges k
 		JOIN knowledge_bases kb ON kb.id = k.knowledge_base_id AND kb.owner_tenant_id = 0 AND kb.deleted_at IS NULL
 		WHERE k.deleted_at IS NULL AND k.metadata->>'external_id' = ?`, vbplID).Scan(&existing).Error; err != nil {
 		return nil, fmt.Errorf("lookup failed: %w", err)
 	}
+	var editedTitle string
+	var editedChunks int64
 	for _, e := range existing {
 		if e.KnowledgeBaseID != kb.ID {
 			return nil, refuse("document %s is already held by knowledge base %s as %s; a document lives "+
@@ -332,6 +336,15 @@ func (s *LegalFeedService) IngestHTML(
 			if old, err := s.Reviews.GetLink(ctx, e.ID); err == nil && old != nil && legalHumanReview(old) {
 				doc.priorLink = old
 			}
+		}
+		// A display title someone set outlives the text; hand edits of the
+		// chunks do not (the new text is the standard), so they are recorded.
+		if e.Title != "" && e.Title != e.FileName {
+			editedTitle = e.Title
+		}
+		if err := s.db.WithContext(ctx).Raw(`SELECT COUNT(DISTINCT chunk_id) FROM chunk_revisions WHERE knowledge_id = ?`,
+			e.ID).Scan(&editedChunks).Error; err != nil {
+			logger.Warnf(ctx, "[LegalFeed] counting edited chunks of %s: %v", e.ID, err)
 		}
 		if err := s.knowledge.DeleteKnowledge(ctx, e.ID); err != nil {
 			return nil, fmt.Errorf("failed to delete the outdated copy %s: %w", e.ID, err)
@@ -356,6 +369,12 @@ func (s *LegalFeedService) IngestHTML(
 		res.Result = "replaced"
 	}
 	res.KnowledgeID, res.Knowledge = created.ID, created
+	if editedTitle != "" {
+		if err := s.db.WithContext(ctx).Model(&types.Knowledge{}).Where("id = ?", created.ID).
+			UpdateColumn("title", editedTitle).Error; err != nil {
+			logger.Warnf(ctx, "[LegalFeed] keeping the display title of %s: %v", created.ID, err)
+		}
+	}
 	logDetail := map[string]any{"replaced_knowledge_id": res.ReplacedKnowledgeID, "status": doc.Status, "md5": hash,
 		"vbpl_markup": res.VBPLMarkup, "source_format": format}
 	for k, v := range doc.LogDetail {
@@ -363,6 +382,10 @@ func (s *LegalFeedService) IngestHTML(
 	}
 	if actor.UserID != "" {
 		logDetail["actor_user_id"] = actor.UserID
+	}
+	if editedChunks > 0 {
+		logDetail["edited_chunks_replaced"] = editedChunks
+		logger.Warnf(ctx, "[LegalFeed] %s: %d hand-edited chunks replaced by the portal's new text", vbplID, editedChunks)
 	}
 	WriteLegalFeedLog(ctx, s.db, actor, LegalFeedEntry{
 		Action: "ingest_" + res.Result, VBPLID: vbplID, KnowledgeID: created.ID, KnowledgeBaseID: kb.ID,

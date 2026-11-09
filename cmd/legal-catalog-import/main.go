@@ -55,6 +55,8 @@ type vbplDocument struct {
 	// HasHTML is whether the portal published a full text; nil in a file
 	// from an older crawl, which says nothing either way.
 	HasHTML *bool `json:"has_html"`
+	// HTMLMD5 is the hash of the published full text ("" when none).
+	HTMLMD5 string `json:"html_md5"`
 }
 
 type vbplRelation struct {
@@ -98,7 +100,7 @@ func main() {
 	var docs []*types.LegalDocument
 	ids := map[string]bool{}
 	listOnly := map[string]bool{}
-	noFullText, hasHTML := map[string]bool{}, map[string]bool{}
+	noFullText, hasHTML, htmlMD5 := map[string]bool{}, map[string]bool{}, map[string]string{}
 	if err := readJSONL(*docsPath, func(raw []byte) error {
 		var d vbplDocument
 		if err := json.Unmarshal(raw, &d); err != nil {
@@ -113,6 +115,7 @@ func main() {
 		} else if d.HasHTML != nil {
 			if *d.HasHTML {
 				hasHTML[d.ID] = true
+				htmlMD5[d.ID] = d.HTMLMD5
 			} else {
 				noFullText[d.ID] = true
 			}
@@ -316,6 +319,11 @@ func main() {
 			log.Printf("queue documents for auto-ingest: %v", err)
 		} else {
 			log.Printf("%d new documents and %d waiting requests queued for auto-ingest", added, moved)
+		}
+		if n, err := queueChangedText(ctx, db, docs, htmlMD5, time.Now()); err != nil {
+			log.Printf("queue documents with a changed text: %v", err)
+		} else {
+			log.Printf("%d documents whose text changed on the portal queued for re-ingest", n)
 		}
 	}
 	log.Printf("imported %d documents and %d relations (snapshot %s)", len(docs), len(rels), *snapshot)

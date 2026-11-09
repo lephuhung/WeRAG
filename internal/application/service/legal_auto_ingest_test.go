@@ -105,6 +105,27 @@ func TestLegalAutoIngestOutcomes(t *testing.T) {
 	}
 }
 
+func TestLegalAutoIngestReplacesInTheKBHoldingTheCopy(t *testing.T) {
+	row := func(id string) *types.LegalDocumentRequest {
+		return &types.LegalDocumentRequest{ID: id, LegalDocumentID: id, DocType: "Công văn", KnowledgeBaseID: "kb-copy", Status: types.LegalRequestAutoIngest}
+	}
+	repo := &autoRepo{queueRepo: queueRepo{rows: map[string]*types.LegalDocumentRequest{"ok": row("ok"), "pdf": row("pdf")}}}
+	var usedKB string
+	w := &LegalAutoIngest{requests: repo, kbs: autoKBs{}, tenants: autoTenants{}, ingest: func(_ context.Context, id string, kb *types.KnowledgeBase,
+		_ LegalFeedActor, _ string) (*LegalIngestResult, error) {
+		if id == "pdf" {
+			return nil, &LegalFeedRefusal{msg: "chỉ có PDF", PDFOnly: true, Portal: &LegalPortalAvailability{}}
+		}
+		usedKB = kb.ID
+		repo.rows[id].Status, repo.rows[id].ClaimedBy = types.LegalRequestAdded, ""
+		return &LegalIngestResult{Result: "replaced", KnowledgeID: "k"}, nil
+	}}
+	require.Equal(t, 1, w.Tick(context.Background()))
+	require.Equal(t, "kb-copy", usedKB, "the KB of the copy, whatever the type's KB")
+	require.Empty(t, repo.returned, "a refused update does not go to the operators")
+	require.Equal(t, types.LegalRequestRejected, repo.rows["pdf"].Status)
+}
+
 func TestLegalAutoIngestSurvivesAPanic(t *testing.T) {
 	repo := &autoRepo{queueRepo: queueRepo{rows: map[string]*types.LegalDocumentRequest{
 		"ok": {ID: "ok", LegalDocumentID: "ok", DocType: "Nghị định", Status: types.LegalRequestAutoIngest},

@@ -120,23 +120,24 @@ func enqueueNoFullText(
 			len(fresh), maxNoFullTextRequests, len(fresh)-maxNoFullTextRequests)
 		fresh = fresh[:maxNoFullTextRequests]
 	}
-	return insertRequests(ctx, db, fresh, types.LegalRequestSourceNoFullText, types.LegalRequestRequested, now)
+	return insertRequests(ctx, db, fresh, nil, types.LegalRequestSourceNoFullText, types.LegalRequestRequested, now)
 }
 
-// insertRequests adds rows nobody asked for (request_count 0).
+// insertRequests adds rows nobody asked for (request_count 0). kbIDs names
+// the public KB holding a document's current copy, if any.
 func insertRequests(
-	ctx context.Context, db *gorm.DB, fresh []*types.LegalDocument, source, status string, now time.Time,
+	ctx context.Context, db *gorm.DB, fresh []*types.LegalDocument, kbIDs map[string]string, source, status string, now time.Time,
 ) (int, error) {
 	added := 0
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, d := range fresh {
 			// Raw: gorm would turn the zero request_count into its default 1.
 			res := tx.Exec(`INSERT INTO legal_document_requests
-				(id, number_key, document_number, doc_type, title, legal_document_id, source, status,
+				(id, number_key, document_number, doc_type, title, legal_document_id, knowledge_base_id, source, status,
 				 request_count, first_requested_at, last_requested_at, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
 				ON CONFLICT (number_key, legal_document_id) DO NOTHING`,
-				uuid.NewString(), d.NumberKey, d.DocumentNumber, d.DocType, d.Title, d.ID, source, status, now, now, now, now)
+				uuid.NewString(), d.NumberKey, d.DocumentNumber, d.DocType, d.Title, d.ID, kbIDs[d.ID], source, status, now, now, now, now)
 			if res.Error != nil {
 				return res.Error
 			}
@@ -235,6 +236,17 @@ func autoIngestSkipped(detail types.JSON) bool {
 	return len(v) > 0 && string(v) != "null"
 }
 
+// withoutAutoIngestSkip removes the worker's give-up marker.
+func withoutAutoIngestSkip(detail types.JSON) (types.JSON, error) {
+	var d map[string]json.RawMessage
+	if err := json.Unmarshal(detail, &d); err != nil {
+		return nil, err
+	}
+	delete(d, types.LegalRequestDetailAutoIngestSkip)
+	raw, err := json.Marshal(d)
+	return types.JSON(raw), err
+}
+
 // queueAutoIngest hands the imported documents vbpl.vn has the full text of,
 // and no public KB holds, to the backend's auto-ingest worker: a new row, or
 // a waiting or formerly added request of that document (nobody working on it,
@@ -260,35 +272,129 @@ func queueAutoIngest(
 			}
 			continue
 		}
-		held := r.ClaimedBy != "" && r.ClaimedAt != nil && now.Sub(*r.ClaimedAt) < types.LegalRequestClaimLease
-		// An added request whose document no public KB holds any more (its
-		// text was removed when it expired, the portal has it in force again).
-		reopen := r.Status == types.LegalRequestAdded
-		if (r.Status != types.LegalRequestRequested && !reopen) || held || autoIngestSkipped(r.Detail) {
-			continue
+		// An added request here is one whose document no public KB holds any
+		// more (its text was removed when it expired, the portal has it in
+		// force again).
+		n, err := moveToAutoIngest(ctx, db, r, "", false, now)
+		if err != nil {
+			return added, moved, err
 		}
-		source := r.Source
-		if source == types.LegalRequestSourceNoFullText {
-			source = types.LegalRequestSourceHTML
-		}
-		values := map[string]any{"status": types.LegalRequestAutoIngest, "source": source, "updated_at": now}
-		if reopen {
-			values["knowledge_id"], values["knowledge_base_id"] = "", ""
-			values["decided_by"], values["decided_at"], values["decision_note"] = "", nil, ""
-		}
-		res := db.WithContext(ctx).Model(&types.LegalDocumentRequest{}).
-			Where("id = ? AND status = ?", r.ID, r.Status).
-			Where("claimed_by = '' OR claimed_at IS NULL OR claimed_at < ?", now.Add(-types.LegalRequestClaimLease)).
-			Updates(values)
-		if res.Error != nil {
-			return added, moved, fmt.Errorf("move request %s: %w", r.ID, res.Error)
-		}
-		moved += int(res.RowsAffected)
+		moved += n
 	}
 	if len(fresh) > maxNoFullTextRequests {
 		log.Printf("%d documents to ingest are over the limit of %d a night: the rest wait", len(fresh), maxNoFullTextRequests)
 		fresh = fresh[:maxNoFullTextRequests]
 	}
-	added, err = insertRequests(ctx, db, fresh, types.LegalRequestSourceHTML, types.LegalRequestAutoIngest, now)
+	added, err = insertRequests(ctx, db, fresh, nil, types.LegalRequestSourceHTML, types.LegalRequestAutoIngest, now)
 	return added, moved, err
+}
+
+// moveToAutoIngest hands a waiting or added request to the worker, unless a
+// person is working on it or the worker gave up on it. kbID names the public
+// KB holding the copy to replace ("": the worker picks one by type). A text
+// update (update true) concerns a document the KB holds, so an earlier
+// rejection or give-up, which was about adding it, does not stop it.
+func moveToAutoIngest(ctx context.Context, db *gorm.DB, r requestRow, kbID string, update bool, now time.Time) (int, error) {
+	held := r.ClaimedBy != "" && r.ClaimedAt != nil && now.Sub(*r.ClaimedAt) < types.LegalRequestClaimLease
+	added := r.Status == types.LegalRequestAdded || (update && r.Status == types.LegalRequestRejected)
+	if (r.Status != types.LegalRequestRequested && !added) || held || (!update && autoIngestSkipped(r.Detail)) {
+		return 0, nil
+	}
+	source := r.Source
+	if source == types.LegalRequestSourceNoFullText {
+		source = types.LegalRequestSourceHTML
+	}
+	values := map[string]any{"status": types.LegalRequestAutoIngest, "source": source, "knowledge_base_id": kbID, "updated_at": now}
+	if added {
+		values["knowledge_id"] = ""
+		values["decided_by"], values["decided_at"], values["decision_note"] = "", nil, ""
+	}
+	if update && autoIngestSkipped(r.Detail) {
+		detail, err := withoutAutoIngestSkip(r.Detail)
+		if err != nil {
+			return 0, fmt.Errorf("request %s detail: %w", r.ID, err)
+		}
+		values["detail"] = detail
+	}
+	res := db.WithContext(ctx).Model(&types.LegalDocumentRequest{}).
+		Where("id = ? AND status = ?", r.ID, r.Status).
+		Where("claimed_by = '' OR claimed_at IS NULL OR claimed_at < ?", now.Add(-types.LegalRequestClaimLease)).
+		Updates(values)
+	if res.Error != nil {
+		return 0, fmt.Errorf("move request %s: %w", r.ID, res.Error)
+	}
+	return int(res.RowsAffected), nil
+}
+
+// queueChangedText hands the worker the documents whose full text on the
+// portal is no longer the one a public KB holds (the knowledge's file hash
+// against the crawl's). Only copies from the portal count: a copy pushed from
+// another source has other bytes by nature. Returns the documents queued.
+func queueChangedText(
+	ctx context.Context, db *gorm.DB, docs []*types.LegalDocument, htmlMD5 map[string]string, now time.Time,
+) (int, error) {
+	has := make(map[string]bool, len(htmlMD5))
+	for id, sum := range htmlMD5 {
+		has[id] = sum != ""
+	}
+	candidates := noFullTextCandidates(docs, has)
+	ids := make([]string, 0, len(candidates))
+	for _, d := range candidates {
+		ids = append(ids, d.ID)
+	}
+	copyKB := map[string]string{}
+	err := inChunks(ids, func(part []string) error {
+		var rows []struct {
+			ExternalID      string
+			KnowledgeBaseID string
+			FileHash        string
+		}
+		if err := db.WithContext(ctx).Raw(`SELECT k.metadata->>'external_id' AS external_id, k.knowledge_base_id, k.file_hash
+			FROM knowledges k
+			JOIN knowledge_bases kb ON kb.id = k.knowledge_base_id AND kb.owner_tenant_id = 0 AND kb.deleted_at IS NULL
+			WHERE k.deleted_at IS NULL AND k.parse_status = ? AND k.metadata->>'source' = ?
+			  AND k.metadata->>'external_id' IN ?`,
+			types.ParseStatusCompleted, types.LegalDocumentSourceVBPL, part).Scan(&rows).Error; err != nil {
+			return fmt.Errorf("public KB copies: %w", err)
+		}
+		for _, r := range rows {
+			if r.FileHash != "" && r.FileHash != htmlMD5[r.ExternalID] {
+				copyKB[r.ExternalID] = r.KnowledgeBaseID
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	var changed []*types.LegalDocument
+	for _, d := range candidates {
+		if _, ok := copyKB[d.ID]; ok {
+			changed = append(changed, d)
+		}
+	}
+	if len(changed) > maxNoFullTextRequests {
+		log.Printf("%d documents with a changed text are over the limit of %d a night: the rest wait", len(changed), maxNoFullTextRequests)
+		changed = changed[:maxNoFullTextRequests]
+	}
+	requests, err := loadRequests(ctx, db, changed)
+	if err != nil {
+		return 0, err
+	}
+	var fresh []*types.LegalDocument
+	queued := 0
+	for _, d := range changed {
+		r, ok := requests[d.NumberKey+"\x00"+d.ID]
+		if !ok {
+			fresh = append(fresh, d)
+			continue
+		}
+		n, err := moveToAutoIngest(ctx, db, r, copyKB[d.ID], true, now)
+		if err != nil {
+			return queued, err
+		}
+		queued += n
+	}
+	n, err := insertRequests(ctx, db, fresh, copyKB, types.LegalRequestSourceHTML, types.LegalRequestAutoIngest, now)
+	return queued + n, err
 }

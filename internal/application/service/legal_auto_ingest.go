@@ -89,8 +89,9 @@ func (w *LegalAutoIngest) Tick(ctx context.Context) (added int) {
 		if tried == legalAutoIngestBatch {
 			break
 		}
-		// A type without a KB waits here until one exists.
-		if _, ok := targets[row.DocType]; !ok || legalAutoIngestGivenUp(row) {
+		// A type without a KB waits here until one exists; a text update
+		// goes to the KB holding the copy.
+		if _, ok := targets[row.DocType]; (!ok && row.KnowledgeBaseID == "") || legalAutoIngestGivenUp(row) {
 			continue
 		}
 		tried++
@@ -118,14 +119,17 @@ func legalAutoIngestGivenUp(row *types.LegalDocumentRequest) bool {
 // KB, a stale id) closes the row with its reason; a transient failure is
 // retried on a later tick.
 func (w *LegalAutoIngest) one(ctx context.Context, row *types.LegalDocumentRequest, targets map[string]types.LegalPublicKB) bool {
-	target := targets[row.DocType]
+	kbID := row.KnowledgeBaseID
+	if kbID == "" {
+		kbID = targets[row.DocType].ID
+	}
 	claimed, err := w.requests.Claim(ctx, row.ID, legalAutoIngestActor, true)
 	if err != nil || claimed == nil {
 		return false // another replica has it, or the row just closed
 	}
-	kb, err := w.kbs.GetKnowledgeBaseByIDOnly(ctx, target.ID)
+	kb, err := w.kbs.GetKnowledgeBaseByIDOnly(ctx, kbID)
 	if err != nil || kb == nil {
-		w.retryLater(ctx, row, "knowledge base "+target.ID+" is not available")
+		w.retryLater(ctx, row, "knowledge base "+kbID+" is not available")
 		return false
 	}
 	scoped, err := access.WithKBTaskWrite(ctx, kb, kb.TenantID)
@@ -145,7 +149,9 @@ func (w *LegalAutoIngest) one(ctx context.Context, row *types.LegalDocumentReque
 			w.retryLater(ctx, row, err.Error())
 			return false
 		}
-		if refusal.Portal == nil {
+		// A refused text update keeps the copy the KB has: nothing for the
+		// operators to fetch.
+		if refusal.Portal == nil || row.KnowledgeBaseID != "" {
 			logger.Warnf(ctx, "[LegalAutoIngest] %s (%s) closed: %s", row.LegalDocumentID, row.DocumentNumber, refusal.Error())
 			if _, err := w.requests.Decide(ctx, row.ID, types.LegalRequestRejected, legalAutoIngestActor,
 				"Tự nạp từ vbpl.vn: "+refusal.Error(), "", ""); err != nil {
