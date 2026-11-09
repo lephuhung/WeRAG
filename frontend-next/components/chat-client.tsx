@@ -11,6 +11,7 @@ import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext, type Menti
 import { SHELL_HEADER_SLOT_ID } from "@/components/shell-breakpoints";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { dayStarts } from "@/lib/message-time";
+import { turnFailureView } from "@/lib/turn-failure";
 import { chatErrorKey, chatErrorText, isSessionLimitError, type ChatErrorAction, type ChatErrorKey } from "@/lib/api/chat-errors";
 import { shouldRefreshAccount } from "@/lib/guest-chat";
 import { sessionUsageFromComplete, type SessionUsage } from "@/lib/session-limits";
@@ -1006,6 +1007,8 @@ function ChatBody({ id }: { id: string }) {
                   ? abbreviationCandidatesFromHistory(m)
                   : undefined,
               isCompleted: m.is_completed === true,
+              // a turn the model failed to answer reloads as it streamed
+              ...(m.role === "assistant" ? (turnFailureView<LocaleKey>(m.failure, tr) ?? {}) : {}),
               peopleData:
                 m.role === "assistant" ? peopleDataFromHistory(m) : undefined,
               attachments:
@@ -1202,7 +1205,11 @@ function ChatBody({ id }: { id: string }) {
               return;
             }
             if (kind === "error") {
-              const errorText = c.content || (c.data?.error as string) || tr("chat.err.generic");
+              // a model failure is shown in the UI language (lib/turn-failure)
+              const failure = turnFailureView<LocaleKey>(c.data?.error_code, tr);
+              const errorText = failure
+                ? failure.errorText
+                : c.content || (c.data?.error as string) || tr("chat.err.generic");
               setMessages((m) =>
                 m.map((msg) =>
                   msg.assistantMessageId === inflightId
@@ -1607,8 +1614,13 @@ function ChatBody({ id }: { id: string }) {
         Boolean(c.tool_call_id || c.tool_name || c.data?.tool_call_id || c.data?.tool_name);
 
       if (kind === "error" && !toolScopedError) {
-        const errorText = c.content || (c.data?.error as string) || tr("chat.err.generic");
-        console.error("[applyChunk] Error event received:", errorText, c);
+        // a model failure is shown in the UI language (lib/turn-failure);
+        // an interrupted answer already ends with its note, so no second one
+        const failure = turnFailureView<LocaleKey>(c.data?.error_code, tr);
+        const errorText = failure
+          ? failure.errorText
+          : c.content || (c.data?.error as string) || tr("chat.err.generic");
+        console.error("[applyChunk] Error event received:", c.content || errorText, c);
         setMessages((m) =>
           m.map((msg) =>
             matchAssistant(msg)
@@ -1625,7 +1637,7 @@ function ChatBody({ id }: { id: string }) {
         // The error lives in the answer bubble (one surface). Without a
         // bubble to carry it (the turn never got one), it goes to the
         // page-level note instead.
-        if (!messagesRef.current.some(matchAssistant)) setError(errorText);
+        if (!messagesRef.current.some(matchAssistant) && errorText) setError(errorText);
         // A backend error event is terminal for the turn, but older backends
         // keep the SSE socket open after it — without aborting, streamChat
         // never settles and `busy` stays locked, silently swallowing every

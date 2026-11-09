@@ -732,7 +732,7 @@ const AssistantMessage = memo(function AssistantMessage({
           <FollowUpSuggestions
             sessionId={sessionId}
             messageId={m.assistantMessageId ?? null}
-            enabled={!m.streaming && m.isCompleted === true}
+            enabled={!m.streaming && m.isCompleted === true && !m.isError}
             ensure={m.suggestionEnsure === true}
             onAsk={onAsk}
           />

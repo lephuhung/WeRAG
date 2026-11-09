@@ -2294,6 +2294,13 @@ func (h *Handler) completeAssistantMessage(
 	assistantMessage.IsCompleted = true
 	_ = h.messageService.UpdateMessage(ctx, assistantMessage)
 
+	// A turn the model failed to answer is stored (with its failure mark)
+	// but is no answer: it is not indexed as one, gets no follow-ups and
+	// teaches the memory nothing.
+	if assistantMessage.TurnFailed() {
+		return
+	}
+
 	// Asynchronously index the Q&A pair into the chat history knowledge base for vector search.
 	// Use WithoutCancel so the goroutine survives after the HTTP request context is done.
 	bgCtx := context.WithoutCancel(ctx)

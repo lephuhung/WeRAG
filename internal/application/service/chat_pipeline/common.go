@@ -224,7 +224,13 @@ func loadAndProcessHistory(
 	}
 
 	historyMap := make(map[string]*types.History)
+	// turns the model failed to answer (types.TurnFailure*) stay out of the
+	// prompt, like turns without an answer
+	failed := make(map[string]bool)
 	for _, message := range history {
+		if message.Role != "user" && message.TurnFailed() {
+			failed[message.RequestID] = true
+		}
 		h, ok := historyMap[message.RequestID]
 		if !ok {
 			h = &types.History{}
@@ -251,8 +257,8 @@ func loadAndProcessHistory(
 	}
 
 	historyList := make([]*types.History, 0, len(historyMap))
-	for _, h := range historyMap {
-		if h.Answer != "" && h.Query != "" {
+	for requestID, h := range historyMap {
+		if h.Answer != "" && h.Query != "" && !failed[requestID] {
 			historyList = append(historyList, h)
 		}
 	}

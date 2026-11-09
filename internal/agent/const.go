@@ -60,8 +60,12 @@ const (
 	// call itself follows the service's advanced_config.timeout.
 	generateIllustrationToolTimeout = 10 * time.Minute
 
-	// maxLLMRetries is the maximum number of retries for transient LLM errors.
+	// maxLLMRetries is the maximum number of retries for transient LLM errors
+	// (retryableModelError: no 4xx, nothing of the answer shown yet).
 	maxLLMRetries = 2
+	// llmRetryBaseDelay is the pause before retry n: n×llmRetryBaseDelay
+	// (1 s, then 2 s).
+	llmRetryBaseDelay = time.Second
 
 	// maxEmptyResponseRetries is the maximum number of retries when the LLM
 	// returns an empty content with a natural stop (no tool calls). This guards

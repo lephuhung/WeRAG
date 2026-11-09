@@ -67,14 +67,29 @@ func TestStreamFinalAnswerToEventBus_EmptySynthesisGetsFallback(t *testing.T) {
 	assert.Equal(t, state.FinalAnswer, *content, "the fallback is streamed like an answer")
 }
 
-func TestHandleMaxIterations_FailedSynthesisGetsVietnameseFallback(t *testing.T) {
+// A synthesis whose model call fails is a model failure, not "the budget
+// ran out" (model_failure.go): no answer text, the failure notice instead.
+func TestHandleMaxIterations_FailedSynthesisIsModelFailure(t *testing.T) {
 	engine := newTestEngine(t, &mockChat{}) // no response prepared: the call fails
 	state := &types.AgentState{}
 	engine.handleMaxIterations(context.Background(), "q", state, "sess-1", emptyMessages())
 	assert.True(t, state.IsComplete)
+	assert.Empty(t, state.FinalAnswer)
+	assert.NotContains(t, state.FinalAnswer, "ngân sách")
+	assert.Equal(t, types.TurnFailureModelUnavailable, engine.turnFailure)
+}
+
+// A synthesis that fails for a reason other than the model keeps the
+// code-built fallback.
+func TestHandleMaxIterations_NonModelSynthesisErrorKeepsFallback(t *testing.T) {
+	engine := newTestEngine(t, &mockChat{})
+	engine.abbreviationBinding = &types.AbbreviationBinding{} // RequireTurn fails: not a model error
+	state := &types.AgentState{}
+	engine.handleMaxIterations(context.Background(), "q", state, "sess-1", emptyMessages())
+	assert.True(t, state.IsComplete)
 	assert.True(t, strings.HasPrefix(state.FinalAnswer, "Lượt này đã dùng hết ngân sách xử lý sau 0 bước"), state.FinalAnswer)
-	assert.NotContains(t, state.FinalAnswer, "Sorry")
 	assert.Contains(t, state.FinalAnswer, "chia yêu cầu thành nhiều lượt", "no legal tool ran: no Điều wording")
+	assert.Empty(t, engine.turnFailure)
 }
 
 func TestAppendSourceEditNote(t *testing.T) {

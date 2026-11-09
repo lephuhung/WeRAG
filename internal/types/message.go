@@ -498,6 +498,10 @@ type Message struct {
 	// and projects only AbbreviationPublicState fields: no owner, principal,
 	// snapshot or definition spans.
 	Abbreviation *AbbreviationPublicState `json:"abbreviation,omitempty" gorm:"-"`
+	// Failure is the chat UI's view of ExecutionContext.TurnFailure, filled on
+	// read (AfterFind): why the turn has no (complete) answer, one of the
+	// TurnFailure* codes, "" for a normal turn.
+	Failure string `json:"failure,omitempty" gorm:"-"`
 	// Message creation timestamp
 	CreatedAt time.Time `json:"created_at"`
 	// Last update timestamp
@@ -535,6 +539,10 @@ type MessageExecutionContext struct {
 	// without this the LLM wrapper auto-creates an orphan chat.completion
 	// trace instead of nesting under the agent turn.
 	LangfuseTraceparent string `json:"langfuse_traceparent,omitempty"`
+	// TurnFailure marks an assistant turn the answering model could not
+	// answer (TurnFailure* codes, see turn_failure.go); "" for a normal turn.
+	// Stored here, not in a column of its own, so it needs no migration.
+	TurnFailure string `json:"turn_failure,omitempty"`
 }
 
 func (c MessageExecutionContext) Value() (driver.Value, error) {
@@ -593,7 +601,14 @@ func (a *AgentSteps) Scan(value interface{}) error {
 // AfterFind exposes the row's context checkpoint to the chat UI.
 func (m *Message) AfterFind(*gorm.DB) error {
 	m.ContextCompacted = m.ContextCheckpoint.Marker()
+	m.Failure = m.ExecutionContext.TurnFailure
 	return nil
+}
+
+// TurnFailed reports an assistant turn that ended without a (complete)
+// answer because the model failed (MessageExecutionContext.TurnFailure).
+func (m *Message) TurnFailed() bool {
+	return m != nil && m.ExecutionContext.TurnFailure != ""
 }
 
 // BeforeCreate is a GORM hook that runs before creating a new message record

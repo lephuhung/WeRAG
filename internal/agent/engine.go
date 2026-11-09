@@ -108,6 +108,11 @@ type AgentEngine struct {
 	// refusal text; recomputed before each round from the turn's steps and
 	// only read while the round's tool calls run.
 	exhausted map[string]string
+	// turnFailure is the types.TurnFailure* code of a turn the model could
+	// not answer, "" otherwise; turnFailureCause is the raw error behind it,
+	// kept for the log and the span (model_failure.go).
+	turnFailure      string
+	turnFailureCause error
 }
 
 // maxSteerOverruns caps loop-end injects past MaxIterations. One extra round
@@ -462,7 +467,9 @@ func (e *AgentEngine) Execute(
 		"steps":      len(state.RoundSteps),
 		"complete":   state.IsComplete,
 	})
-	finishAgentSpan(agentSpan, state, nil)
+	// a turn ended by a model failure succeeded as a run (the notice went
+	// out) but the span records why it has no answer
+	finishAgentSpan(agentSpan, state, e.turnFailureCause)
 	return state, nil
 }
 
@@ -640,6 +647,12 @@ loop:
 		outcome, iterErr := e.runReActIteration(ctx, state, &messages, tools,
 			sessionID, messageID, query, &emptyRetries, &consecutiveSameContent, &lastResponseContent)
 		if iterErr != nil {
+			if endsTurnAsModelFailure(ctx, iterErr) {
+				// the error event goes out before the deferred completion,
+				// so the client receives it while the stream is open
+				e.endTurnOnModelFailure(ctx, state, sessionID, iterErr)
+				return state, nil
+			}
 			return state, iterErr
 		}
 		// The plan's per-turn token cap is checked between rounds: a round
@@ -922,36 +935,18 @@ func (e *AgentEngine) runReActIteration(
 				})
 				return iterOutcomeContinue, nil
 			}
-			// Retries exhausted — use fallback message rather than empty answer.
-			// analyzeResponse emitted nothing for the empty rounds (they were
-			// retryable), so the fallback must be emitted here as the turn's
-			// sole terminal answer event (#2906).
-			logger.Warnf(ctx, "[Agent][Round-%d] Empty content after %d retries - using fallback",
+			// Retries exhausted: the model produced no answer. analyzeResponse
+			// emitted nothing for the empty rounds (they were retryable), so
+			// the turn ends with the model-failure notice as its only
+			// terminal output (#2906, model_failure.go).
+			logger.Warnf(ctx, "[Agent][Round-%d] Empty content after %d retries - ending as a model failure",
 				round, maxEmptyResponseRetries)
-			fallback := "I'm sorry, I was unable to generate a response. Please try again."
-			answerID := generateEventID("answer")
-			_ = e.eventBus.Emit(ctx, event.Event{
-				ID:        answerID,
-				Type:      event.EventAgentFinalAnswer,
-				SessionID: sessionID,
-				Data: event.AgentFinalAnswerData{
-					Content: fallback,
-					Done:    false,
-				},
-			})
-			_ = e.eventBus.Emit(ctx, event.Event{
-				ID:        answerID,
-				Type:      event.EventAgentFinalAnswer,
-				SessionID: sessionID,
-				Data: event.AgentFinalAnswerData{
-					Content: "",
-					Done:    true,
-				},
-			})
-			state.FinalAnswer = fallback
-			state.IsComplete = true
 			state.RoundSteps = append(state.RoundSteps, verdict.step)
 			e.closeAnswerStream(ctx, sessionID, verdict.answerID)
+			e.endTurnOnModelFailure(ctx, state, sessionID, types.NewModelCallError(fmt.Errorf(
+				"model returned no content and no tool call %d times (finish=%s)",
+				maxEmptyResponseRetries+1, response.FinishReason)))
+			state.IsComplete = true
 			return iterOutcomeBreak, nil
 		}
 		// Loop-end inject: a user message queued while this finishing round

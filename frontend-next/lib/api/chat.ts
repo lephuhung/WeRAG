@@ -191,6 +191,8 @@ export type ChatMessage = {
   content?: string;
   created_at?: string;
   is_completed?: boolean;
+  /** Why the model left this turn without a (complete) answer (lib/turn-failure). */
+  failure?: string;
   knowledge_references?: KnowledgeReferenceItem[];
   agent_steps?: ChatMessageAgentStep[];
   /** Total wall-clock time of the agent turn — shown in the steps header. */

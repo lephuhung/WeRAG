@@ -72,7 +72,10 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	logger.Debugf(ctx, "[Agent][FinalAnswer] AnswerID: %s", answerID)
 	ctx = withTurnButtons(ctx, state.RoundSteps)
 	ctx = e.withNumberCheck(ctx, state, query, conversation)
+	// streamed is what reached the answer area, kept for a failure mid-way
+	var streamed strings.Builder
 	emitBus := func(content string) {
+		streamed.WriteString(content)
 		e.eventBus.Emit(ctx, event.Event{
 			ID:        answerID,
 			Type:      event.EventAgentFinalAnswer,
@@ -137,7 +140,7 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 			"session_id": sessionID,
 			"error":      err.Error(),
 		})
-		return err
+		return withPartialAnswer(err, answerID, streamed.String())
 	}
 
 	// Safety net: strip any residual <think> blocks that may have leaked through
@@ -227,7 +230,12 @@ func (e *AgentEngine) handleMaxIterations(
 		common.PipelineError(ctx, "Agent", "final_answer_failed", map[string]interface{}{
 			"error": err.Error(),
 		})
-		state.FinalAnswer = e.synthesisFallback(state)
+		if endsTurnAsModelFailure(ctx, err) {
+			// the model is failing: say so, not "the budget ran out"
+			e.endTurnOnModelFailure(ctx, state, sessionID, err)
+		} else {
+			state.FinalAnswer = e.synthesisFallback(state)
+		}
 	}
 	state.IsComplete = true
 }

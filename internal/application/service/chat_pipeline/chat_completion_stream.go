@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/event"
+	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal/abbreviation"
@@ -95,13 +98,31 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 	pipelineInfo(ctx, "Stream", "model_call", map[string]interface{}{
 		"chat_model": chatManage.ChatModelID,
 	})
+	retriesLeft := quickAnswerModelRetries
 	responseChan, err := chatModel.ChatStream(ctx, chatMessages, opt)
+	for err != nil && retriesLeft > 0 && quickAnswerRetryable(err) && waitQuickAnswerRetry(ctx, err) {
+		retriesLeft--
+		responseChan, err = chatModel.ChatStream(ctx, chatMessages, opt)
+	}
 	if err != nil {
 		pipelineError(ctx, "Stream", "model_call", map[string]interface{}{
 			"chat_model": chatManage.ChatModelID,
 			"error":      err.Error(),
 		})
-		return ErrModelCall.WithError(err)
+		if ctx.Err() != nil {
+			// a user stop: the stop path finishes the turn
+			return ErrModelCall.WithError(err)
+		}
+		// The model refused the call: the turn ends with the failure
+		// notice and a Done that persists it (quickAnswerModelFailure).
+		emitQuickAnswerModelFailure(ctx, chatManage, "", err)
+		_ = eventBus.Emit(ctx, types.Event{
+			ID:        fmt.Sprintf("%s-answer", uuid.New().String()[:8]),
+			Type:      types.EventType(event.EventAgentFinalAnswer),
+			SessionID: chatManage.SessionID,
+			Data:      event.AgentFinalAnswerData{Done: true},
+		})
+		return next()
 	}
 	if responseChan == nil {
 		pipelineError(ctx, "Stream", "model_call", map[string]interface{}{
@@ -127,6 +148,10 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 		answerID := fmt.Sprintf("%s-answer", uuid.New().String()[:8])
 		thinkingOpen := false
 		answerCompleted := false
+		// answerShown: answer text reached the bus; emittedAny: anything
+		// did (thinking included), which rules out a retry
+		answerShown := false
+		emittedAny := false
 		// pendingDone holds the terminal answer event back while the provider
 		// has not reported usage yet. OpenAI-compatible streams send
 		// finish_reason first and the usage block on a trailing chunk, and
@@ -182,6 +207,7 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 			}
 			answerTail := answerDecoder.Flush()
 			if answerTail != "" {
+				answerShown, emittedAny = true, true
 				_ = eventBus.Emit(ctx, types.Event{
 					ID:        answerID,
 					Type:      types.EventType(event.EventAgentFinalAnswer),
@@ -218,15 +244,42 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 						"session_id": chatManage.SessionID,
 						"error":      response.Content,
 					})
-					eventBus.Emit(ctx, types.Event{
-						ID:        fmt.Sprintf("%s-error", uuid.New().String()[:8]),
-						Type:      types.EventType(event.EventError),
-						SessionID: chatManage.SessionID,
-						Data: event.ErrorData{
-							Error:     response.Content,
-							Stage:     "chat_completion_stream",
+					if answerCompleted || ctx.Err() != nil {
+						continue
+					}
+					cause := errors.New(response.Content)
+					// broken before any output: one quick retry, a fresh stream
+					if !emittedAny && retriesLeft > 0 && quickAnswerRetryable(cause) && waitQuickAnswerRetry(ctx, cause) {
+						retriesLeft--
+						if again, err := chatModel.ChatStream(ctx, chatMessages, opt); err == nil && again != nil {
+							responseChan = again
+							continue
+						} else if err != nil {
+							cause = err
+						}
+					}
+					// The model broke off: a partial answer keeps its text
+					// and gets the note; otherwise the failure notice.
+					flushDecoders()
+					closeThinking()
+					if answerShown {
+						eventBus.Emit(ctx, types.Event{
+							ID:        answerID,
+							Type:      types.EventType(event.EventAgentFinalAnswer),
 							SessionID: chatManage.SessionID,
-						},
+							Data:      event.AgentFinalAnswerData{Content: types.ModelInterruptedNote},
+						})
+						emitQuickAnswerModelFailure(ctx, chatManage, types.TurnFailureModelInterrupted, cause)
+					} else {
+						emitQuickAnswerModelFailure(ctx, chatManage, "", cause)
+					}
+					// the Done persists the turn (usage of the broken call, if any)
+					answerCompleted, pendingDone = true, false
+					eventBus.Emit(ctx, types.Event{
+						ID:        answerID,
+						Type:      types.EventType(event.EventAgentFinalAnswer),
+						SessionID: chatManage.SessionID,
+						Data:      event.AgentFinalAnswerData{Done: true, Usage: response.Usage},
 					})
 					continue
 				}
@@ -243,7 +296,7 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 						response.Content += thinkingDecoder.Flush()
 					}
 					if response.Content != "" {
-						thinkingOpen = true
+						thinkingOpen, emittedAny = true, true
 						eventBus.Emit(ctx, types.Event{
 							ID:        thinkingID,
 							Type:      types.EventType(event.EventAgentThought),
@@ -274,6 +327,14 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 						answerCompleted = true
 					}
 					closeThinking()
+					if response.Content != "" {
+						answerShown, emittedAny = true, true
+					}
+					if response.Done && !answerShown && ctx.Err() == nil {
+						// a completion with no text: no answer was produced
+						emitQuickAnswerModelFailure(ctx, chatManage, "",
+							errors.New("model returned an empty completion"))
+					}
 					if response.Done && response.Usage == nil {
 						// Stream the last text now; the Done flag waits for usage.
 						if response.Content != "" {
@@ -303,4 +364,77 @@ func (p *PluginChatCompletionStream) OnEvent(ctx context.Context,
 	}()
 
 	return next()
+}
+
+// The quick answer has no retry of its own: one quick retry covers an error
+// that is clearly transient (refused or reset connection, 502/503/504, a
+// timeout) before anything was shown. Never a 4xx, never after output.
+const (
+	quickAnswerModelRetries    = 1
+	quickAnswerModelRetryDelay = time.Second
+)
+
+// quickAnswerTransientMarkers are the lower-cased error texts retried once.
+var quickAnswerTransientMarkers = []string{
+	"connection refused", "connection reset", "broken pipe",
+	"status 502", "status 503", "status 504",
+	"status code: 502", "status code: 503", "status code: 504",
+	"timeout", "timed out", "deadline exceeded",
+}
+
+func quickAnswerRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, m := range quickAnswerTransientMarkers {
+		if strings.Contains(msg, m) {
+			return true
+		}
+	}
+	return false
+}
+
+// waitQuickAnswerRetry pauses before the retry; false when the turn was
+// stopped meanwhile.
+func waitQuickAnswerRetry(ctx context.Context, cause error) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	logger.Warnf(ctx, "[Stream] Model call failed, retrying once in %v: %v", quickAnswerModelRetryDelay, cause)
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(quickAnswerModelRetryDelay):
+		return true
+	}
+}
+
+// emitQuickAnswerModelFailure sends the failure notice of a quick-answer
+// turn (types/turn_failure.go): an error event with the user-facing text
+// and the failure code, which the stream handler records on the message.
+// An empty code picks the unavailable notice, the after-search one when
+// the turn had retrieval results. The raw cause goes to the log only.
+func emitQuickAnswerModelFailure(ctx context.Context, chatManage *types.ChatManage, code string, cause error) {
+	if code == "" {
+		code = types.TurnFailureModelUnavailable
+		if len(chatManage.MergeResult) > 0 {
+			code = types.TurnFailureModelUnavailableAfterSearch
+		}
+	}
+	logger.Errorf(ctx, "[Stream] Model failure ends the quick answer (%s): %v", code, cause)
+	if chatManage.EventBus == nil {
+		return
+	}
+	_ = chatManage.EventBus.Emit(ctx, types.Event{
+		ID:        fmt.Sprintf("%s-error", uuid.New().String()[:8]),
+		Type:      types.EventType(event.EventError),
+		SessionID: chatManage.SessionID,
+		Data: event.ErrorData{
+			Error:     types.TurnFailureMessage(code),
+			ErrorCode: code,
+			Stage:     "chat_completion_stream",
+			SessionID: chatManage.SessionID,
+		},
+	})
 }

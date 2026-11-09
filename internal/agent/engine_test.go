@@ -765,9 +765,12 @@ func TestExecuteLoop_EmptyContentWithStop_ShouldNotCompleteWithEmpty(t *testing.
 
 	assert.NoError(t, err)
 	assert.True(t, state.IsComplete)
-	assert.NotEmpty(t, state.FinalAnswer,
-		"BUG: FinalAnswer is empty when LLM returns empty content with stop. "+
-			"analyzeResponse() should not allow empty content to be accepted as final answer.")
+	// An empty answer is never accepted: after the nudges the turn ends as
+	// a model failure (model_failure.go) — no answer text, the notice goes
+	// out as an error event and the turn is marked.
+	assert.Equal(t, 3, mock.callCount, "initial attempt + 2 nudges")
+	assert.Empty(t, state.FinalAnswer, "no invented answer")
+	assert.Equal(t, types.TurnFailureModelUnavailable, engine.turnFailure)
 }
 
 // ---------------------------------------------------------------------------

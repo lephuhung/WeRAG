@@ -97,11 +97,11 @@ func TestExecuteLoop_EmptyThenAnswer_EmitsSingleTerminalAnswer(t *testing.T) {
 	assert.NotContains(t, content, "unable to generate", "the retry succeeded, no fallback should surface")
 }
 
-// TestExecuteLoop_AllEmptyResponses_FallbackIsSoleTerminalAnswer covers the
+// TestExecuteLoop_AllEmptyResponses_EndAsModelFailure covers the
 // exhausted-retry path: analyzeResponse stays silent for every empty round,
-// so the fallback the loop selects must be emitted as the turn's sole
-// terminal answer.
-func TestExecuteLoop_AllEmptyResponses_FallbackIsSoleTerminalAnswer(t *testing.T) {
+// and the turn ends with the model-failure notice as its only terminal
+// output — an error event, no invented answer (model_failure.go).
+func TestExecuteLoop_AllEmptyResponses_EndAsModelFailure(t *testing.T) {
 	// 1 initial attempt + maxEmptyResponseRetries nudges.
 	responses := make([]mockResponse, 0, 1+maxEmptyResponseRetries)
 	for i := 0; i < 1+maxEmptyResponseRetries; i++ {
@@ -118,9 +118,10 @@ func TestExecuteLoop_AllEmptyResponses_FallbackIsSoleTerminalAnswer(t *testing.T
 
 	require.NoError(t, err)
 	assert.True(t, state.IsComplete)
-	assert.NotEmpty(t, state.FinalAnswer)
+	assert.Empty(t, state.FinalAnswer)
 
 	done, content := recorder.snapshot()
-	assert.Equal(t, 1, done, "retries exhausted must still emit exactly one terminal answer event")
-	assert.Contains(t, content, "unable to generate a response", "the terminal answer must be the fallback text")
+	assert.Equal(t, 0, done, "no answer stream was opened, none is closed")
+	assert.Empty(t, content, "no invented answer text")
+	assert.Equal(t, types.TurnFailureModelUnavailable, engine.turnFailure)
 }

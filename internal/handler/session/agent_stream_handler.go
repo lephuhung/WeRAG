@@ -742,6 +742,17 @@ func (h *AgentStreamHandler) handleError(ctx context.Context, evt event.Event) e
 		"stage": data.Stage,
 		"error": data.Error,
 	}
+	// A model failure (types.TurnFailure*) marks the turn on the message, so
+	// the persisted row, a reload and the next turn's history agree with
+	// what the stream showed. Its Error is already the user-facing text.
+	if types.IsTurnFailure(data.ErrorCode) {
+		metadata["error_code"] = data.ErrorCode
+		h.mu.Lock()
+		if h.assistantMessage != nil {
+			h.assistantMessage.ExecutionContext.TurnFailure = data.ErrorCode
+		}
+		h.mu.Unlock()
+	}
 
 	// Append error event to stream
 	if err := h.streamManager.AppendEvent(h.ctx, h.sessionID, h.assistantMessageID, interfaces.StreamEvent{
@@ -1012,6 +1023,9 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 		"total_steps":       data.TotalSteps,
 		"total_duration_ms": data.TotalDurationMs,
 		"final_content":     h.assistantMessage.Content,
+	}
+	if failure := h.assistantMessage.ExecutionContext.TurnFailure; failure != "" {
+		completeData["failure"] = failure
 	}
 	// Attach the freshly-collected artifacts so the frontend can render the
 	// download button without waiting for a page refresh. We strip the

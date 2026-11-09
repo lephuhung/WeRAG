@@ -348,7 +348,10 @@ func completeHistoryTurns(rows []*types.Message, reachedStart bool) []*agentHist
 
 	complete := make([]*agentHistoryTurn, 0, len(turns))
 	for _, t := range turns {
-		if len(t.users) > 0 && t.assistant != nil && t.assistant.IsCompleted {
+		// a turn the model failed to answer (types.TurnFailure*) is left
+		// out: its question returns when the user asks again, and an empty
+		// or broken-off answer would only mislead the model
+		if len(t.users) > 0 && t.assistant != nil && t.assistant.IsCompleted && !t.assistant.TurnFailed() {
 			sort.SliceStable(t.users, func(i, j int) bool {
 				return t.users[i].CreatedAt.Before(t.users[j].CreatedAt)
 			})
@@ -497,6 +500,8 @@ func (r *historyReplay) track(msg *types.Message) *types.Message {
 		Role:        msg.Role,
 		CreatedAt:   msg.CreatedAt,
 		IsCompleted: msg.IsCompleted,
+		// grouping leaves failed turns out (completeHistoryTurns)
+		ExecutionContext: types.MessageExecutionContext{TurnFailure: msg.ExecutionContext.TurnFailure},
 	}
 }
 

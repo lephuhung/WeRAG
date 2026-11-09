@@ -65,7 +65,7 @@ func (e *AgentEngine) streamLLMToEventBus(
 	stream, err := e.chatModel.ChatStream(llmCtx, messages, opts)
 	if err != nil {
 		logger.Errorf(ctx, "[Agent][Stream] Failed to start LLM stream: %v", err)
-		return nil, err
+		return nil, types.NewModelCallError(err)
 	}
 
 	result := &streamLLMResult{}
@@ -197,7 +197,7 @@ func (e *AgentEngine) streamLLMToEventBus(
 	// preamble stand in as the final answer while a 30 KB write_sandbox_file
 	// call was silently dropped.
 	if result.StreamError != "" {
-		return result, fmt.Errorf("LLM stream error: %s", result.StreamError)
+		return result, types.NewModelCallError(fmt.Errorf("LLM stream error: %s", result.StreamError))
 	}
 
 	return result, nil
@@ -257,7 +257,7 @@ func (e *AgentEngine) roundChat(
 ) (*types.ChatResponse, error) {
 	resp, err := e.chatModel.Chat(ctx, messages, opts)
 	if err != nil {
-		return nil, err
+		return nil, types.NewModelCallError(err)
 	}
 	if resp != nil {
 		e.modelContext.DecodeToolCalls(resp.ToolCalls)
@@ -330,6 +330,9 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	splitter := agenttools.NewThinkStreamSplitter()
 	thinkingOpen := false
 	answerStreamed := false
+	// streamedAnswer is what reached the answer area, kept for a stream that
+	// breaks after its answer started (model_failure.go)
+	var streamedAnswer strings.Builder
 	// emitAnswerRaw writes to the event bus; emitAnswer goes through the
 	// answer guard first when the turn has one (answer_guard.go)
 	var emitAnswerRaw func(content string)
@@ -393,6 +396,7 @@ func (e *AgentEngine) streamThinkingToEventBus(
 		}
 		closeThinking()
 		answerStreamed = true
+		streamedAnswer.WriteString(content)
 		emittedEventTypes["final_answer_chunk"]++
 		e.eventBus.Emit(ctx, event.Event{
 			ID:        answerID,
@@ -515,6 +519,12 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	)
 	if err != nil {
 		logger.Errorf(ctx, "[Agent][Thinking] Iteration-%d failed: %v", iteration+1, err)
+		if answerStreamed && len(pendingToolCalls) == 0 {
+			// part of the answer is on screen: no retry may repeat it
+			return nil, withPartialAnswer(err, answerID, streamedAnswer.String())
+		}
+		// text before a tool call was a preamble the client already moved
+		// into the steps; nothing of an answer is shown
 		return nil, err
 	}
 
@@ -634,16 +644,25 @@ func (e *AgentEngine) callLLMWithRetry(
 		response, err = e.streamThinkingToEventBus(ctx, messages, tools, iteration, sessionID)
 	}
 
-	if err != nil && isTransientError(err) {
-		// Retry transient errors (timeout, rate limit, server errors) up to maxLLMRetries times
+	if err != nil && retryableModelError(err) {
+		// Retry transient errors (timeout, rate limit, server errors) up to
+		// maxLLMRetries times, waiting retry×llmRetryBaseDelay. Never a 4xx,
+		// never once answer text was shown (it would be shown twice), and
+		// never after a user stop.
 		for retry := 1; retry <= maxLLMRetries; retry++ {
-			retryDelay := time.Duration(retry) * time.Second
+			retryDelay := time.Duration(retry) * llmRetryBaseDelay
 			logger.Warnf(ctx, "[Agent][Round-%d] LLM transient error (attempt %d/%d), retrying in %v: %v",
 				round, retry, maxLLMRetries, retryDelay, err)
-			time.Sleep(retryDelay)
+			select {
+			case <-ctx.Done():
+			case <-time.After(retryDelay):
+			}
+			if ctx.Err() != nil {
+				break
+			}
 
 			response, err = e.streamThinkingToEventBus(ctx, messages, tools, iteration, sessionID)
-			if err == nil || !isTransientError(err) {
+			if err == nil || !retryableModelError(err) {
 				break
 			}
 		}
@@ -657,7 +676,10 @@ func (e *AgentEngine) callLLMWithRetry(
 
 		// Graceful degradation: if we have tool results from previous rounds,
 		// try to synthesize a final answer from them instead of losing everything.
-		if totalTC := countTotalToolCalls(state.RoundSteps); totalTC > 0 {
+		// Not after a user stop, and not once part of an answer was shown: a
+		// synthesized answer would follow it as a second one.
+		_, partial := partialAnswerOf(err)
+		if totalTC := countTotalToolCalls(state.RoundSteps); totalTC > 0 && !partial && ctx.Err() == nil {
 			logger.Warnf(ctx, "[Agent] LLM failed but have %d steps with %d tool calls — "+
 				"attempting final answer synthesis from existing results",
 				len(state.RoundSteps), totalTC)
@@ -667,6 +689,10 @@ func (e *AgentEngine) callLLMWithRetry(
 			})
 			if synthErr := e.streamFinalAnswerToEventBus(ctx, query, state, sessionID, messages); synthErr != nil {
 				logger.Errorf(ctx, "[Agent] Final answer synthesis also failed: %v", synthErr)
+				if _, synthPartial := partialAnswerOf(synthErr); synthPartial {
+					// the synthesis broke off after part of its answer
+					return nil, fmt.Errorf("LLM call failed: %v (synthesis also failed: %w)", err, synthErr)
+				}
 				return nil, fmt.Errorf("LLM call failed: %w (synthesis also failed: %v)", err, synthErr)
 			}
 			state.IsComplete = true
