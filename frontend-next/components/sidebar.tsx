@@ -373,7 +373,10 @@ export function Sidebar() {
                   type="button"
                   title={t("sidebar.deleteChat")}
                   aria-label={t("sidebar.deleteChat")}
-                  className={`${activity.has(s.id) ? "" : "ml-auto "}hidden h-5 w-5 shrink-0 items-center justify-center rounded text-muted-soft transition-colors hover:text-error group-hover:flex`}
+                  // Hiện khi hover (chuột) hoặc khi hàng được focus (bàn phím), và
+                  // LUÔN hiện trên thiết bị không có hover (điện thoại/máy tính bảng):
+                  // trước đây chỉ `group-hover:flex` nên mobile không bao giờ thấy nút.
+                  className={`${activity.has(s.id) ? "" : "ml-auto "}hidden h-5 w-5 shrink-0 items-center justify-center rounded text-muted-soft transition-colors hover:text-error group-hover:flex group-focus-within:flex max-lg:flex [@media(hover:none)_and_(pointer:coarse)]:flex`}
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
