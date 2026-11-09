@@ -141,6 +141,13 @@ type LegalRequestDecision struct {
 // Its RequestCount stays 0 until a user really asks.
 const LegalRequestSourceNoFullText = "vbpl_no_text"
 
+// LegalExpiredRetentionDaysSettingKey: how many days a fully expired
+// document keeps its full text in a public KB; its catalogue row stays.
+const LegalExpiredRetentionDaysSettingKey = "legal.expired_retention_days"
+
+// LegalExpiredRetentionDefaultDays is that setting's default.
+const LegalExpiredRetentionDefaultDays = 15
+
 // LegalRequestSourceHTML marks a request the nightly import queued for the
 // auto-ingest worker: vbpl.vn has the full text, no public KB holds it.
 const LegalRequestSourceHTML = "vbpl_html"

@@ -170,22 +170,28 @@ func TestQueueAutoIngest(t *testing.T) {
 		{ID: "busy", NumberKey: "claimed", LegalDocumentID: "30", Status: types.LegalRequestRequested, ClaimedBy: "u1", ClaimedAt: &now, FirstRequestedAt: now, LastRequestedAt: now},
 		{ID: "gave", NumberKey: "skipped", LegalDocumentID: "40", Status: types.LegalRequestRequested, Detail: types.JSON(`{"auto_ingest_skip":"x"}`), FirstRequestedAt: now, LastRequestedAt: now},
 		{ID: "no", NumberKey: "rejected", LegalDocumentID: "50", Status: types.LegalRequestRejected, FirstRequestedAt: now, LastRequestedAt: now},
+		{ID: "back", NumberKey: "reinstated", LegalDocumentID: "60", Status: types.LegalRequestAdded, KnowledgeID: "gone", KnowledgeBaseID: "kb", DecidedBy: "x", DecidedAt: &now, FirstRequestedAt: now, LastRequestedAt: now},
 	} {
 		r := r
 		if err := db.Create(&r).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
-	docs := []*types.LegalDocument{queueDoc("10", "new"), queueDoc("20", "waiting"), queueDoc("30", "claimed"), queueDoc("40", "skipped"), queueDoc("50", "rejected")}
-	html := map[string]bool{"10": true, "20": true, "30": true, "40": true, "50": true}
+	docs := []*types.LegalDocument{queueDoc("10", "new"), queueDoc("20", "waiting"), queueDoc("30", "claimed"), queueDoc("40", "skipped"), queueDoc("50", "rejected"), queueDoc("60", "reinstated")}
+	html := map[string]bool{"10": true, "20": true, "30": true, "40": true, "50": true, "60": true}
 	added, moved, err := queueAutoIngest(ctx, db, docs, nil, html, now)
-	if err != nil || added != 1 || moved != 1 {
+	if err != nil || added != 1 || moved != 2 {
 		t.Fatalf("added = %d, moved = %d, err = %v", added, moved, err)
 	}
 	var waiting types.LegalDocumentRequest
 	db.Take(&waiting, "id = ?", "wait")
 	if waiting.Status != types.LegalRequestAutoIngest || waiting.Source != types.LegalRequestSourceHTML {
 		t.Errorf("waiting = %+v", waiting)
+	}
+	var back types.LegalDocumentRequest
+	db.Take(&back, "id = ?", "back")
+	if back.Status != types.LegalRequestAutoIngest || back.KnowledgeID != "" || back.DecidedAt != nil {
+		t.Errorf("reinstated = %+v", back)
 	}
 	var fresh types.LegalDocumentRequest
 	db.Take(&fresh, "legal_document_id = ?", "10")

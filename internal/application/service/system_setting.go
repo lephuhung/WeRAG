@@ -501,6 +501,10 @@ var registry = map[string]settingSpec{
 		Type: "string", EnvName: "", Default: "", Category: "billing",
 		Description: "Tên chủ tài khoản nhận tiền.",
 	},
+	types.LegalExpiredRetentionDaysSettingKey: {
+		Type: "int", EnvName: "", Default: int64(types.LegalExpiredRetentionDefaultDays), Category: "legal",
+		Description: "Số ngày văn bản hết hiệu lực toàn bộ còn giữ toàn văn trong kho công khai; hết hạn thì xóa nội dung, giữ số hiệu và metadata trong danh mục.",
+	},
 	types.BillingOrderTTLHoursSettingKey: {
 		Type: "int", EnvName: "", Default: int64(72), Category: "billing",
 		Description: "Đơn hàng chưa thanh toán tự hết hạn sau số giờ này.",

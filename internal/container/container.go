@@ -476,6 +476,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		// Documents the nightly vbpl.vn sync found with a full text no public
 		// KB holds are added in small batches.
 		must(container.Invoke(startLegalAutoIngest))
+		// A fully expired document keeps its text for a while, then only its
+		// catalogue row remains.
+		must(container.Invoke(startLegalExpiredRetention))
 		// Install the distributed per-model chat concurrency governor. Only
 		// available with Redis (the shared semaphore backend); Lite mode is
 		// single-process and low-volume, so it runs ungated.
@@ -1697,6 +1700,17 @@ func startWikiRunWindow(inspector *asynq.Inspector, settings interfaces.SystemSe
 ) {
 	stop := router.StartWikiRunWindow(inspector, settings)
 	cleaner.RegisterWithName("WikiRunWindow", func() error {
+		stop()
+		return nil
+	})
+}
+
+// startLegalExpiredRetention runs the worker of service.LegalExpiredRetention.
+func startLegalExpiredRetention(db *gorm.DB, knowledge interfaces.KnowledgeService, kbs interfaces.KnowledgeBaseService,
+	tenants interfaces.TenantRepository, settings interfaces.SystemSettingService, cleaner interfaces.ResourceCleaner,
+) {
+	stop := service.StartLegalExpiredRetention(service.NewLegalExpiredRetention(db, knowledge, kbs, tenants, settings))
+	cleaner.RegisterWithName("LegalExpiredRetention", func() error {
 		stop()
 		return nil
 	})

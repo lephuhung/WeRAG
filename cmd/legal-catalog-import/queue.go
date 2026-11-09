@@ -12,7 +12,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/legalcatalog"
 	"github.com/Tencent/WeKnora/internal/types"
-	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
@@ -37,17 +36,6 @@ func noFullTextCandidates(docs []*types.LegalDocument, noFullText map[string]boo
 		}
 	}
 	return out
-}
-
-// sameIssue reports whether two catalogue rows of one số hiệu are the same
-// document: same type class, same issue day, issuers that agree. The title
-// is left out on purpose: the portal's second copy often has a bare title
-// ("Thông tư 25/2026/TT-BGDĐT"), which legalcatalog.SameDocument cannot match.
-func sameIssue(a, b *types.LegalDocument) bool {
-	return a.IssuedOn != nil && b.IssuedOn != nil &&
-		a.IssuedOn.Format("2006-01-02") == b.IssuedOn.Format("2006-01-02") &&
-		vietnamese_legal.DocTypeClass(a.DocType) == vietnamese_legal.DocTypeClass(b.DocType) &&
-		legalcatalog.IssuersAgree(a.Issuer, b.Issuer)
 }
 
 // inChunks runs fn over ids in pieces small enough for one IN list.
@@ -192,7 +180,7 @@ func withoutPublicCopy(
 	for _, d := range candidates {
 		copyHeld := held[d.ID]
 		for _, s := range siblings[d.NumberKey] {
-			copyHeld = copyHeld || (s.ID != d.ID && held[s.ID] && sameIssue(d, s))
+			copyHeld = copyHeld || (s.ID != d.ID && held[s.ID] && legalcatalog.SameIssue(d, s))
 		}
 		if !copyHeld {
 			out = append(out, d)
@@ -208,6 +196,7 @@ type requestRow struct {
 	LegalDocumentID string
 	Source          string
 	Status          string
+	KnowledgeID     string
 	ClaimedBy       string
 	ClaimedAt       *time.Time
 	Detail          types.JSON
@@ -224,7 +213,7 @@ func loadRequests(ctx context.Context, db *gorm.DB, candidates []*types.LegalDoc
 	err := inChunks(keys, func(part []string) error {
 		var rows []requestRow
 		if err := db.WithContext(ctx).Model(&types.LegalDocumentRequest{}).
-			Select("id", "number_key", "legal_document_id", "source", "status", "claimed_by", "claimed_at", "detail").
+			Select("id", "number_key", "legal_document_id", "source", "status", "knowledge_id", "claimed_by", "claimed_at", "detail").
 			Where("number_key IN ?", part).Scan(&rows).Error; err != nil {
 			return fmt.Errorf("existing requests: %w", err)
 		}
@@ -248,7 +237,8 @@ func autoIngestSkipped(detail types.JSON) bool {
 
 // queueAutoIngest hands the imported documents vbpl.vn has the full text of,
 // and no public KB holds, to the backend's auto-ingest worker: a new row, or
-// a waiting request of that document (nobody working on it, not given up on).
+// a waiting or formerly added request of that document (nobody working on it,
+// not given up on).
 // Returns the rows added and the requests moved.
 func queueAutoIngest(
 	ctx context.Context, db *gorm.DB, docs, catalogued []*types.LegalDocument, hasHTML map[string]bool, now time.Time,
@@ -271,17 +261,25 @@ func queueAutoIngest(
 			continue
 		}
 		held := r.ClaimedBy != "" && r.ClaimedAt != nil && now.Sub(*r.ClaimedAt) < types.LegalRequestClaimLease
-		if r.Status != types.LegalRequestRequested || held || autoIngestSkipped(r.Detail) {
+		// An added request whose document no public KB holds any more (its
+		// text was removed when it expired, the portal has it in force again).
+		reopen := r.Status == types.LegalRequestAdded
+		if (r.Status != types.LegalRequestRequested && !reopen) || held || autoIngestSkipped(r.Detail) {
 			continue
 		}
 		source := r.Source
 		if source == types.LegalRequestSourceNoFullText {
 			source = types.LegalRequestSourceHTML
 		}
+		values := map[string]any{"status": types.LegalRequestAutoIngest, "source": source, "updated_at": now}
+		if reopen {
+			values["knowledge_id"], values["knowledge_base_id"] = "", ""
+			values["decided_by"], values["decided_at"], values["decision_note"] = "", nil, ""
+		}
 		res := db.WithContext(ctx).Model(&types.LegalDocumentRequest{}).
-			Where("id = ? AND status = ?", r.ID, types.LegalRequestRequested).
+			Where("id = ? AND status = ?", r.ID, r.Status).
 			Where("claimed_by = '' OR claimed_at IS NULL OR claimed_at < ?", now.Add(-types.LegalRequestClaimLease)).
-			Updates(map[string]any{"status": types.LegalRequestAutoIngest, "source": source, "updated_at": now})
+			Updates(values)
 		if res.Error != nil {
 			return added, moved, fmt.Errorf("move request %s: %w", r.ID, res.Error)
 		}
