@@ -590,7 +590,7 @@ func legalListRequestsTool() mcp.Tool {
 			"draft exists, reviewing that it is open in the editor. Rows people asked for come first, most recent first; "+
 			"source vbpl_no_text with request_count 0 means nobody asked yet: the nightly import queued a document in force "+
 			"vbpl.vn publishes no full text for, for an operator to add from thuvienphapluat.vn."),
-		mcp.WithString("status", mcp.Description("requested (default), fetched, reviewing, added, rejected or all")),
+		mcp.WithString("status", mcp.Description("requested (default), fetched, reviewing, added, rejected, auto_ingest (the backend is adding it from vbpl.vn) or all")),
 		mcp.WithNumber("limit", mcp.Description("Maximum rows, default 100, max 500")),
 	)
 }
@@ -628,9 +628,10 @@ func (s *Server) handleLegalListRequests(ctx context.Context, req mcp.CallToolRe
 		status = types.LegalRequestRequested
 	case "all":
 		status = ""
-	case types.LegalRequestFetched, types.LegalRequestReviewing, types.LegalRequestAdded, types.LegalRequestRejected:
+	case types.LegalRequestFetched, types.LegalRequestReviewing, types.LegalRequestAdded, types.LegalRequestRejected,
+		types.LegalRequestAutoIngest:
 	default:
-		return mcp.NewToolResultError("status must be requested, fetched, reviewing, added, rejected or all"), nil
+		return mcp.NewToolResultError("status must be requested, fetched, reviewing, added, rejected, auto_ingest or all"), nil
 	}
 	limit := clampInt(req.GetInt("limit", defaultLegalRequestsLimit), 1, maxLegalRequestsLimit, defaultLegalRequestsLimit)
 	rows, total, err := s.legalRequests.List(ctx, status, 0, limit)

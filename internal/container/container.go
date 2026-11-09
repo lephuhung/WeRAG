@@ -473,6 +473,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		// Wiki generation runs only inside the SuperAdmin's run window
 		// (wiki.run_window, overnight by default) so chat keeps the LLM.
 		must(container.Invoke(startWikiRunWindow))
+		// Documents the nightly vbpl.vn sync found with a full text no public
+		// KB holds are added in small batches.
+		must(container.Invoke(startLegalAutoIngest))
 		// Install the distributed per-model chat concurrency governor. Only
 		// available with Redis (the shared semaphore backend); Lite mode is
 		// single-process and low-volume, so it runs ungated.
@@ -1694,6 +1697,17 @@ func startWikiRunWindow(inspector *asynq.Inspector, settings interfaces.SystemSe
 ) {
 	stop := router.StartWikiRunWindow(inspector, settings)
 	cleaner.RegisterWithName("WikiRunWindow", func() error {
+		stop()
+		return nil
+	})
+}
+
+// startLegalAutoIngest runs the worker of service.LegalAutoIngest.
+func startLegalAutoIngest(requests interfaces.LegalRequestRepository, kbs interfaces.KnowledgeBaseService,
+	tenants interfaces.TenantRepository, feed *service.LegalFeedService, cleaner interfaces.ResourceCleaner,
+) {
+	stop := service.StartLegalAutoIngest(service.NewLegalAutoIngest(requests, kbs, tenants, feed))
+	cleaner.RegisterWithName("LegalAutoIngest", func() error {
 		stop()
 		return nil
 	})

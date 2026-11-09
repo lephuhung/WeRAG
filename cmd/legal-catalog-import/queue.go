@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"sort"
@@ -99,54 +100,20 @@ func heldInPublicKB(ctx context.Context, db *gorm.DB, ids []string) (map[string]
 func enqueueNoFullText(
 	ctx context.Context, db *gorm.DB, docs, catalogued []*types.LegalDocument, noFullText map[string]bool, now time.Time,
 ) (int, error) {
-	candidates := noFullTextCandidates(docs, noFullText)
-	if len(candidates) == 0 {
-		return 0, nil
-	}
-	wanted := map[string]bool{}
-	ids, keys := make([]string, 0, len(candidates)), make([]string, 0, len(candidates))
-	for _, d := range candidates {
-		ids, keys = append(ids, d.ID), append(keys, d.NumberKey)
-		wanted[d.NumberKey] = true
-	}
-	siblings := map[string][]*types.LegalDocument{}
-	for _, c := range catalogued {
-		if wanted[c.NumberKey] {
-			siblings[c.NumberKey] = append(siblings[c.NumberKey], c)
-			ids = append(ids, c.ID)
-		}
-	}
-	held, err := heldInPublicKB(ctx, db, ids)
+	candidates, err := withoutPublicCopy(ctx, db, noFullTextCandidates(docs, noFullText), catalogued)
 	if err != nil {
 		return 0, err
 	}
-	requested := map[string]bool{}
-	if err := inChunks(keys, func(part []string) error {
-		var existing []struct {
-			NumberKey       string
-			LegalDocumentID string
-		}
-		if err := db.WithContext(ctx).Model(&types.LegalDocumentRequest{}).Select("number_key", "legal_document_id").
-			Where("number_key IN ?", part).Scan(&existing).Error; err != nil {
-			return fmt.Errorf("existing requests: %w", err)
-		}
-		for _, r := range existing {
-			requested[r.NumberKey+"\x00"+r.LegalDocumentID] = true
-		}
-		return nil
-	}); err != nil {
+	requested, err := loadRequests(ctx, db, candidates)
+	if err != nil {
 		return 0, err
 	}
 	var fresh []*types.LegalDocument
 	for _, d := range candidates {
-		if held[d.ID] || requested[d.NumberKey+"\x00"+d.ID] || requested[d.NumberKey+"\x00"] {
+		if _, ok := requested[d.NumberKey+"\x00"+d.ID]; ok {
 			continue
 		}
-		copyHeld := false
-		for _, s := range siblings[d.NumberKey] {
-			copyHeld = copyHeld || (s.ID != d.ID && held[s.ID] && sameIssue(d, s))
-		}
-		if !copyHeld {
+		if _, ok := requested[d.NumberKey+"\x00"]; !ok {
 			fresh = append(fresh, d)
 		}
 	}
@@ -165,8 +132,15 @@ func enqueueNoFullText(
 			len(fresh), maxNoFullTextRequests, len(fresh)-maxNoFullTextRequests)
 		fresh = fresh[:maxNoFullTextRequests]
 	}
+	return insertRequests(ctx, db, fresh, types.LegalRequestSourceNoFullText, types.LegalRequestRequested, now)
+}
+
+// insertRequests adds rows nobody asked for (request_count 0).
+func insertRequests(
+	ctx context.Context, db *gorm.DB, fresh []*types.LegalDocument, source, status string, now time.Time,
+) (int, error) {
 	added := 0
-	err = db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, d := range fresh {
 			// Raw: gorm would turn the zero request_count into its default 1.
 			res := tx.Exec(`INSERT INTO legal_document_requests
@@ -174,8 +148,7 @@ func enqueueNoFullText(
 				 request_count, first_requested_at, last_requested_at, created_at, updated_at)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
 				ON CONFLICT (number_key, legal_document_id) DO NOTHING`,
-				uuid.NewString(), d.NumberKey, d.DocumentNumber, d.DocType, d.Title, d.ID,
-				types.LegalRequestSourceNoFullText, types.LegalRequestRequested, now, now, now, now)
+				uuid.NewString(), d.NumberKey, d.DocumentNumber, d.DocType, d.Title, d.ID, source, status, now, now, now, now)
 			if res.Error != nil {
 				return res.Error
 			}
@@ -187,4 +160,137 @@ func enqueueNoFullText(
 		return 0, fmt.Errorf("insert requests: %w", err)
 	}
 	return added, nil
+}
+
+// withoutPublicCopy drops the candidates a public KB holds, under their own
+// id or that of another catalogue row of the same document (catalogued is
+// the whole catalogue).
+func withoutPublicCopy(
+	ctx context.Context, db *gorm.DB, candidates, catalogued []*types.LegalDocument,
+) ([]*types.LegalDocument, error) {
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	wanted := map[string]bool{}
+	ids := make([]string, 0, len(candidates))
+	for _, d := range candidates {
+		ids = append(ids, d.ID)
+		wanted[d.NumberKey] = true
+	}
+	siblings := map[string][]*types.LegalDocument{}
+	for _, c := range catalogued {
+		if wanted[c.NumberKey] {
+			siblings[c.NumberKey] = append(siblings[c.NumberKey], c)
+			ids = append(ids, c.ID)
+		}
+	}
+	held, err := heldInPublicKB(ctx, db, ids)
+	if err != nil {
+		return nil, err
+	}
+	var out []*types.LegalDocument
+	for _, d := range candidates {
+		copyHeld := held[d.ID]
+		for _, s := range siblings[d.NumberKey] {
+			copyHeld = copyHeld || (s.ID != d.ID && held[s.ID] && sameIssue(d, s))
+		}
+		if !copyHeld {
+			out = append(out, d)
+		}
+	}
+	return out, nil
+}
+
+// requestRow is what the import needs to know of an existing request.
+type requestRow struct {
+	ID              string
+	NumberKey       string
+	LegalDocumentID string
+	Source          string
+	Status          string
+	ClaimedBy       string
+	ClaimedAt       *time.Time
+	Detail          types.JSON
+}
+
+// loadRequests returns the requests of the candidates' numbers, keyed by
+// number key + NUL + catalogue id.
+func loadRequests(ctx context.Context, db *gorm.DB, candidates []*types.LegalDocument) (map[string]requestRow, error) {
+	keys := make([]string, 0, len(candidates))
+	for _, d := range candidates {
+		keys = append(keys, d.NumberKey)
+	}
+	out := map[string]requestRow{}
+	err := inChunks(keys, func(part []string) error {
+		var rows []requestRow
+		if err := db.WithContext(ctx).Model(&types.LegalDocumentRequest{}).
+			Select("id", "number_key", "legal_document_id", "source", "status", "claimed_by", "claimed_at", "detail").
+			Where("number_key IN ?", part).Scan(&rows).Error; err != nil {
+			return fmt.Errorf("existing requests: %w", err)
+		}
+		for _, r := range rows {
+			out[r.NumberKey+"\x00"+r.LegalDocumentID] = r
+		}
+		return nil
+	})
+	return out, err
+}
+
+// autoIngestSkipped reports whether the worker gave up on a request.
+func autoIngestSkipped(detail types.JSON) bool {
+	var d map[string]json.RawMessage
+	if len(detail) == 0 || json.Unmarshal(detail, &d) != nil {
+		return false
+	}
+	v := d[types.LegalRequestDetailAutoIngestSkip]
+	return len(v) > 0 && string(v) != "null"
+}
+
+// queueAutoIngest hands the imported documents vbpl.vn has the full text of,
+// and no public KB holds, to the backend's auto-ingest worker: a new row, or
+// a waiting request of that document (nobody working on it, not given up on).
+// Returns the rows added and the requests moved.
+func queueAutoIngest(
+	ctx context.Context, db *gorm.DB, docs, catalogued []*types.LegalDocument, hasHTML map[string]bool, now time.Time,
+) (added, moved int, err error) {
+	candidates, err := withoutPublicCopy(ctx, db, noFullTextCandidates(docs, hasHTML), catalogued)
+	if err != nil {
+		return 0, 0, err
+	}
+	requests, err := loadRequests(ctx, db, candidates)
+	if err != nil {
+		return 0, 0, err
+	}
+	var fresh []*types.LegalDocument
+	for _, d := range candidates {
+		r, ok := requests[d.NumberKey+"\x00"+d.ID]
+		if !ok {
+			if _, unknownID := requests[d.NumberKey+"\x00"]; !unknownID {
+				fresh = append(fresh, d)
+			}
+			continue
+		}
+		held := r.ClaimedBy != "" && r.ClaimedAt != nil && now.Sub(*r.ClaimedAt) < types.LegalRequestClaimLease
+		if r.Status != types.LegalRequestRequested || held || autoIngestSkipped(r.Detail) {
+			continue
+		}
+		source := r.Source
+		if source == types.LegalRequestSourceNoFullText {
+			source = types.LegalRequestSourceHTML
+		}
+		res := db.WithContext(ctx).Model(&types.LegalDocumentRequest{}).
+			Where("id = ? AND status = ?", r.ID, types.LegalRequestRequested).
+			Where("claimed_by = '' OR claimed_at IS NULL OR claimed_at < ?", now.Add(-types.LegalRequestClaimLease)).
+			Updates(map[string]any{"status": types.LegalRequestAutoIngest, "source": source, "updated_at": now})
+		if res.Error != nil {
+			return added, moved, fmt.Errorf("move request %s: %w", r.ID, res.Error)
+		}
+		moved += int(res.RowsAffected)
+	}
+	if len(fresh) > maxNoFullTextRequests {
+		log.Printf("%d documents to ingest are over the limit of %d a night: the rest wait", len(fresh), maxNoFullTextRequests)
+		fresh = fresh[:maxNoFullTextRequests]
+	}
+	added, err = insertRequests(ctx, db, fresh, types.LegalRequestSourceHTML, types.LegalRequestAutoIngest, now)
+	return added, moved, err
 }

@@ -10,6 +10,8 @@ Container chạy `sync.sh` theo lịch (`VBPL_SYNC_CRON`, mặc định 02:30 gi
    văn bản chưa hết hiệu lực toàn bộ mà vbpl.vn không có toàn văn và kho công khai
    chưa có bản nào được đưa vào hàng chờ đề nghị bổ sung (`source=vbpl_no_text`,
    tối đa 500 văn bản mỗi đêm) để lấy từ thuvienphapluat.vn bằng extension;
+   văn bản có HTML mà kho chưa có thì backend tự nạp (`status=auto_ingest`);
+   hiệu lực trong danh mục và trên văn bản đã nạp luôn theo vbpl.vn;
 4. `mc mirror` thư mục làm việc lên MinIO (`$VBPL_S3_BUCKET/$VBPL_S3_PREFIX`).
 
 Dữ liệu nằm ở bucket riêng `werag-vbpl` (prefix `vbpl/`) trên MinIO dùng chung

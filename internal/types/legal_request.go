@@ -65,11 +65,17 @@ const (
 	LegalRequestReviewing = "reviewing"
 	LegalRequestAdded     = "added"
 	LegalRequestRejected  = "rejected"
+	// LegalRequestAutoIngest: vbpl.vn publishes the HTML full text, the
+	// backend worker (service.LegalAutoIngest) adds it to its public KB.
+	// Operators do not see these rows.
+	LegalRequestAutoIngest = "auto_ingest"
 )
 
 // LegalRequestOpenStatuses are the states a request is still waiting in:
 // asking again bumps it, any ingest of its document closes it.
-var LegalRequestOpenStatuses = []string{LegalRequestRequested, LegalRequestFetched, LegalRequestReviewing}
+var LegalRequestOpenStatuses = []string{
+	LegalRequestRequested, LegalRequestFetched, LegalRequestReviewing, LegalRequestAutoIngest,
+}
 
 // IsLegalRequestOpen reports whether status is one of LegalRequestOpenStatuses.
 func IsLegalRequestOpen(status string) bool {
@@ -134,6 +140,18 @@ type LegalRequestDecision struct {
 // import queued a document in force that vbpl.vn publishes no full text for.
 // Its RequestCount stays 0 until a user really asks.
 const LegalRequestSourceNoFullText = "vbpl_no_text"
+
+// LegalRequestSourceHTML marks a request the nightly import queued for the
+// auto-ingest worker: vbpl.vn has the full text, no public KB holds it.
+const LegalRequestSourceHTML = "vbpl_html"
+
+// LegalRequestDetailAutoIngestSkip is the Detail key the worker sets when it
+// will not retry a document (no KB for its type, the portal refused): the
+// reason. LegalRequestDetailAutoIngestError holds the last transient failure.
+const (
+	LegalRequestDetailAutoIngestSkip  = "auto_ingest_skip"
+	LegalRequestDetailAutoIngestError = "auto_ingest_error"
+)
 
 // LegalRequestDetailTVPLNotFound is the Detail key an operator sets when the
 // document is not on thuvienphapluat.vn either: {at, by, note}.

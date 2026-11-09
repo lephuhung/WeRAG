@@ -173,6 +173,12 @@ type LegalRequestRepository interface {
 	// user; it returns nil when another operator holds it. Releasing only
 	// clears the caller's own lease. A claim never changes the status.
 	Claim(ctx context.Context, id, userID string, claim bool) (*types.LegalDocumentRequest, error)
+	// NextAutoIngest returns the rows waiting for the auto-ingest worker,
+	// least recently touched first.
+	NextAutoIngest(ctx context.Context, limit int) ([]*types.LegalDocumentRequest, error)
+	// ReturnToOperators gives an auto-ingest row back to the operators:
+	// status requested with this source, lease cleared.
+	ReturnToOperators(ctx context.Context, id, source string) error
 	// UpdateDetail merges the top-level keys of detail into the request's
 	// Detail JSON (other keys are kept) and returns the stored row, nil
 	// when the request is absent.

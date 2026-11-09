@@ -83,7 +83,7 @@ func (r *legalRequestRepository) Record(
 		bump["doc_type"] = row.DocType
 	}
 	switch existing.Status {
-	case types.LegalRequestRequested, types.LegalRequestFetched, types.LegalRequestReviewing:
+	case types.LegalRequestRequested, types.LegalRequestFetched, types.LegalRequestReviewing, types.LegalRequestAutoIngest:
 		if existing.RequestCount == 0 {
 			// Queued by the import, nobody had asked: the first real request
 			// counts, also from a caller without a session (a legal feed).
@@ -208,6 +208,22 @@ func (r *legalRequestRepository) Claim(
 	return r.Get(ctx, id)
 }
 
+func (r *legalRequestRepository) NextAutoIngest(ctx context.Context, limit int) ([]*types.LegalDocumentRequest, error) {
+	var rows []*types.LegalDocumentRequest
+	err := r.db.WithContext(ctx).Where("status = ?", types.LegalRequestAutoIngest).
+		Order("updated_at").Order("id").Limit(limit).Find(&rows).Error
+	return rows, err
+}
+
+func (r *legalRequestRepository) ReturnToOperators(ctx context.Context, id, source string) error {
+	return r.db.WithContext(ctx).Model(&types.LegalDocumentRequest{}).
+		Where("id = ? AND status = ?", id, types.LegalRequestAutoIngest).
+		Updates(map[string]any{
+			"status": types.LegalRequestRequested, "source": source,
+			"claimed_by": "", "claimed_at": nil, "updated_at": time.Now(),
+		}).Error
+}
+
 func (r *legalRequestRepository) UpdateDetail(
 	ctx context.Context, id string, detail map[string]any,
 ) (*types.LegalDocumentRequest, error) {
@@ -306,7 +322,7 @@ func (r *legalRequestRepository) CountByStatus(ctx context.Context) (map[string]
 		Select("status, COUNT(*) AS n").Group("status").Scan(&rows).Error
 	out := map[string]int64{
 		types.LegalRequestRequested: 0, types.LegalRequestFetched: 0, types.LegalRequestReviewing: 0,
-		types.LegalRequestAdded: 0, types.LegalRequestRejected: 0,
+		types.LegalRequestAdded: 0, types.LegalRequestRejected: 0, types.LegalRequestAutoIngest: 0,
 	}
 	for _, row := range rows {
 		out[row.Status] = row.N

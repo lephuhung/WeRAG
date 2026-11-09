@@ -160,3 +160,43 @@ func TestEnqueueNoFullTextCapsANightKeepingTheNewest(t *testing.T) {
 		t.Error("the oldest document should wait for a later night")
 	}
 }
+
+func TestQueueAutoIngest(t *testing.T) {
+	db := queueTestDB(t)
+	ctx := context.Background()
+	now := time.Now()
+	for _, r := range []types.LegalDocumentRequest{
+		{ID: "wait", NumberKey: "waiting", LegalDocumentID: "20", Source: types.LegalRequestSourceNoFullText, Status: types.LegalRequestRequested, FirstRequestedAt: now, LastRequestedAt: now},
+		{ID: "busy", NumberKey: "claimed", LegalDocumentID: "30", Status: types.LegalRequestRequested, ClaimedBy: "u1", ClaimedAt: &now, FirstRequestedAt: now, LastRequestedAt: now},
+		{ID: "gave", NumberKey: "skipped", LegalDocumentID: "40", Status: types.LegalRequestRequested, Detail: types.JSON(`{"auto_ingest_skip":"x"}`), FirstRequestedAt: now, LastRequestedAt: now},
+		{ID: "no", NumberKey: "rejected", LegalDocumentID: "50", Status: types.LegalRequestRejected, FirstRequestedAt: now, LastRequestedAt: now},
+	} {
+		r := r
+		if err := db.Create(&r).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	docs := []*types.LegalDocument{queueDoc("10", "new"), queueDoc("20", "waiting"), queueDoc("30", "claimed"), queueDoc("40", "skipped"), queueDoc("50", "rejected")}
+	html := map[string]bool{"10": true, "20": true, "30": true, "40": true, "50": true}
+	added, moved, err := queueAutoIngest(ctx, db, docs, nil, html, now)
+	if err != nil || added != 1 || moved != 1 {
+		t.Fatalf("added = %d, moved = %d, err = %v", added, moved, err)
+	}
+	var waiting types.LegalDocumentRequest
+	db.Take(&waiting, "id = ?", "wait")
+	if waiting.Status != types.LegalRequestAutoIngest || waiting.Source != types.LegalRequestSourceHTML {
+		t.Errorf("waiting = %+v", waiting)
+	}
+	var fresh types.LegalDocumentRequest
+	db.Take(&fresh, "legal_document_id = ?", "10")
+	if fresh.Status != types.LegalRequestAutoIngest || fresh.RequestCount != 0 {
+		t.Errorf("fresh = %+v", fresh)
+	}
+	for _, id := range []string{"busy", "gave"} {
+		var r types.LegalDocumentRequest
+		db.Take(&r, "id = ?", id)
+		if r.Status != types.LegalRequestRequested {
+			t.Errorf("%s = %s", id, r.Status)
+		}
+	}
+}

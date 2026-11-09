@@ -634,6 +634,15 @@ MCP mục 6.
 
 ---
 
+## 8bis. vbpl.vn là chuẩn: đồng bộ không cần duyệt (2026-11-09)
+
+Lượt đồng bộ đêm (`deploy/vbpl-sync`) áp dụng thẳng dữ liệu vbpl.vn, không qua SuperAdmin:
+
+- Dòng danh mục vbpl đã duyệt nhận giá trị cổng; giá trị cũ ghi vào `legal_feed_log` (action `portal_overwrite`). Trường cổng để trống giữ nguyên.
+- Dòng chỉ có metadata cập nhật hiệu lực (tình trạng, ngày có/hết hiệu lực); `knowledges.metadata.eff_status` của văn bản trong kho công khai theo danh mục.
+- Văn bản có HTML, chưa có bản trong kho công khai: `status=auto_ingest`, `source=vbpl_html`; worker backend nạp 5 văn bản mỗi 3 phút vào kho theo loại. Cổng thực ra không có HTML thì trả về hàng chờ; từ chối khác (đã hết hiệu lực, kho khác đã có) đóng dòng kèm lý do; loại chưa có kho chờ đến khi có kho.
+- Văn bản không có toàn văn: `status=requested`, `source=vbpl_no_text`, `request_count=0`, lấy từ thuvienphapluat.vn bằng extension (`not_on_tvpl` / `tvpl_recheck` để đánh dấu).
+
 ## 9. Nạp văn bản từ nguồn ngoài vbpl kèm liên kết Điều/khoản (2026-11-02)
 
 Mục 1–8 chỉ áp dụng cho HTML của vbpl.vn. Mục này đặt chuẩn để một nguồn

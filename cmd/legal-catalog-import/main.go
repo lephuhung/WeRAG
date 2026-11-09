@@ -73,6 +73,8 @@ func main() {
 		"Partial import: replace only the relations touching these documents, keep the rest of the catalogue")
 	enqueueNoText := flag.Bool("enqueue-no-fulltext", false,
 		"Queue documents in force the portal publishes no full text for, so an operator can add them from another source")
+	autoIngest := flag.Bool("auto-ingest-html", false,
+		"Queue documents with a portal full text and no public KB copy for the backend's auto-ingest worker")
 	flag.Parse()
 	if *docsPath == "" || *relsPath == "" || *snapshot == "" {
 		flag.Usage()
@@ -96,7 +98,7 @@ func main() {
 	var docs []*types.LegalDocument
 	ids := map[string]bool{}
 	listOnly := map[string]bool{}
-	noFullText := map[string]bool{}
+	noFullText, hasHTML := map[string]bool{}, map[string]bool{}
 	if err := readJSONL(*docsPath, func(raw []byte) error {
 		var d vbplDocument
 		if err := json.Unmarshal(raw, &d); err != nil {
@@ -108,8 +110,12 @@ func main() {
 		ids[d.ID] = true
 		if d.MetadataOnly {
 			listOnly[d.ID] = true
-		} else if d.HasHTML != nil && !*d.HasHTML {
-			noFullText[d.ID] = true
+		} else if d.HasHTML != nil {
+			if *d.HasHTML {
+				hasHTML[d.ID] = true
+			} else {
+				noFullText[d.ID] = true
+			}
 		}
 		docs = append(docs, &types.LegalDocument{
 			ID:              d.ID,
@@ -136,14 +142,17 @@ func main() {
 	// A list-only row never replaces a row already in the catalogue: that
 	// one came from a full detail (an earlier snapshot or crawl) and the
 	// list lacks signer and field. The document stays known for relations.
+	var listRows []*types.LegalDocument
 	if len(listOnly) > 0 {
 		keep, err := existingIDs(ctx, db, listOnly)
 		if err != nil {
 			log.Fatalf("load existing documents: %v", err)
 		}
-		kept := docs[:0]
+		kept := make([]*types.LegalDocument, 0, len(docs))
 		for _, d := range docs {
-			if !keep[d.ID] {
+			if keep[d.ID] {
+				listRows = append(listRows, d) // its validity still follows the portal
+			} else {
 				kept = append(kept, d)
 			}
 		}
@@ -158,7 +167,8 @@ func main() {
 	// them (-report lists them).
 	var catalogued []*types.LegalDocument
 	if err := db.WithContext(ctx).Model(&types.LegalDocument{}).
-		Select("id", "source", "document_number", "number_key", "doc_type", "title", "issuer", "issued_on", "status", "reviewed_at").Order("id").
+		Select("id", "source", "document_number", "number_key", "doc_type", "title", "issuer", "issued_on",
+			"effective_on", "expired_on", "status", "reviewed_at").Order("id").
 		Find(&catalogued).Error; err != nil {
 		log.Fatalf("load catalogue keys: %v", err)
 	}
@@ -277,6 +287,16 @@ func main() {
 			log.Fatalf("replace relations: %v", err)
 		}
 	}
+	if n, err := updateListOnlyValidity(ctx, db, listRows, catalogued); err != nil {
+		log.Printf("update validity of list-only documents: %v", err)
+	} else {
+		log.Printf("%d list-only documents took the portal's validity", n)
+	}
+	if n, err := syncKnowledgeValidity(ctx, db); err != nil {
+		log.Printf("copy validity to knowledge documents: %v", err)
+	} else {
+		log.Printf("%d knowledge documents took the catalogue's status", n)
+	}
 	if n, err := linkPortalKnowledge(ctx, db); err != nil {
 		log.Printf("link portal documents: %v", err)
 	} else {
@@ -289,6 +309,13 @@ func main() {
 			log.Printf("queue documents without full text: %v", err)
 		} else {
 			log.Printf("%d documents without full text added to the request queue", n)
+		}
+	}
+	if *autoIngest {
+		if added, moved, err := queueAutoIngest(ctx, db, docs, catalogued, hasHTML, time.Now()); err != nil {
+			log.Printf("queue documents for auto-ingest: %v", err)
+		} else {
+			log.Printf("%d new documents and %d waiting requests queued for auto-ingest", added, moved)
 		}
 	}
 	log.Printf("imported %d documents and %d relations (snapshot %s)", len(docs), len(rels), *snapshot)

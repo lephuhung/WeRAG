@@ -61,9 +61,9 @@ func (s *legalRequestService) List(
 	case "all":
 		status = ""
 	case "", types.LegalRequestRequested, types.LegalRequestFetched, types.LegalRequestReviewing,
-		types.LegalRequestAdded, types.LegalRequestRejected:
+		types.LegalRequestAdded, types.LegalRequestRejected, types.LegalRequestAutoIngest:
 	default:
-		return nil, 0, nil, apperrors.NewBadRequestError("status must be requested, fetched, reviewing, added, rejected or all")
+		return nil, 0, nil, apperrors.NewBadRequestError("status must be requested, fetched, reviewing, added, rejected, auto_ingest or all")
 	}
 	rows, total, err := s.requests.List(ctx, status, offset, limit)
 	if err != nil {
