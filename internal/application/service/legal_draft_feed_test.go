@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -154,4 +155,51 @@ func TestAllowNoArticles(t *testing.T) {
 	if r.Ready || r.Blocking != 1 {
 		t.Fatalf("other errors still block: %+v", r)
 	}
+}
+
+// A row created for a scan goes again when no draft could be stored; the
+// vbpl.vn fetch refuses a feed's document instead of discarding its draft.
+func TestLegalFeedDraftLeavesNoRowAndVbplFetchRefuses(t *testing.T) {
+	svc, db, _, _, _, _, _ := newDraftTestService(t)
+	ctx := superAdminCtx()
+	if err := db.Exec(`ALTER TABLE knowledges ADD COLUMN created_at DATETIME`).Error; err != nil {
+		t.Fatal(err)
+	}
+	svc.kbs = draftNamedKBs{}
+	svc.Push = NewLegalPushService(db, svc.feed, svc.kbs, repository.NewLegalRequestRepository(db), nil)
+	svc.files = failingFiles{}
+	in := LegalFeedDraftInput{PDF: []byte("%PDF-1.4\nscan"), FileName: "a.pdf", Metadata: legalPartyMeta()}
+	res, err := svc.PushFeedDraft(ctx, in, LegalFeedActor{})
+	if err != nil || res.Draft.Status != types.LegalDraftFailed {
+		t.Fatalf("store failure: %+v %v", res, err)
+	}
+	var n int64
+	db.Model(&types.LegalDocument{}).Where("id = ?", "dangcongsan-tulieu-9001").Count(&n)
+	if n != 1 {
+		t.Fatalf("a failed draft keeps its row (it carries the reason): %d", n)
+	}
+	if _, err := svc.FetchDocument(ctx, "dangcongsan-tulieu-9001", "u"); httpStatus(err) != http.StatusBadRequest ||
+		!strings.Contains(err.Error(), "push-scan") {
+		t.Fatalf("vbpl fetch of a feed document: %v", err)
+	}
+	if d, _ := svc.drafts.GetByDocumentID(ctx, "dangcongsan-tulieu-9001"); d == nil || d.Status != types.LegalDraftFailed {
+		t.Fatalf("the failed draft is kept: %+v", d)
+	}
+
+	// refused before any draft (expired): no row is created
+	m := legalPartyMeta()
+	m["source_doc_id"], m["eff_status"], m["doc_number"] = "tulieu-9002", "Hết hiệu lực", "115-KL/TW"
+	if _, err := svc.PushFeedDraft(ctx, LegalFeedDraftInput{PDF: in.PDF, Metadata: m}, LegalFeedActor{}); httpStatus(err) != http.StatusBadRequest {
+		t.Fatalf("expired: %v", err)
+	}
+	db.Model(&types.LegalDocument{}).Where("id = ?", "dangcongsan-tulieu-9002").Count(&n)
+	if n != 0 {
+		t.Fatalf("expired scan left a row")
+	}
+}
+
+type failingFiles struct{ interfaces.FileService }
+
+func (failingFiles) SaveBytes(context.Context, []byte, uint64, string, bool) (string, error) {
+	return "", errors.New("disk full")
 }

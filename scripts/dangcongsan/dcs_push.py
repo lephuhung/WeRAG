@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""Push the Party documents planned by dcs_build.py to WeRAG.
+
+Per ``plan.jsonl`` case:
+
+* ``text``      → ``POST /system/legal-documents/push`` (mode full) with the
+                  built v1 HTML: catalogue row + full text in the KB
+                  "Văn bản của Đảng" (unreviewed feed row, review link pending);
+* ``ocr``       → ``POST /system/legal-documents/push-scan`` with the PDF
+                  parts merged in order (main document, then appendices): a
+                  catalogue row and an OCR draft the SuperAdmin reviews at
+                  /platform/admin/legal-drafts/{id};
+* ``catalogue`` → ``POST /system/legal-documents/push`` mode catalogue: the
+                  row only;
+* ``skip``      → nothing.
+
+One request at a time. A scan of ≤ 20 pages is OCRed while the request
+waits, so the queue paces itself; after a longer one the script sleeps
+--sec-per-page × pages. ``<out>/push-results.jsonl`` records every answer;
+a document already pushed with success is skipped on the next run.
+
+Authentication: WERAG_API_KEY (X-API-Key of a key created in platform
+organization 10000 with ingest) or WERAG_TOKEN (SuperAdmin JWT).
+WERAG_API defaults to http://localhost:18080/api/v1.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import sys
+import time
+import urllib.error
+import urllib.request
+import uuid
+
+import pymupdf
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # siblings, also under python -I
+import dcs_build  # noqa: E402
+
+SYNC_OCR_PAGES = 20
+
+
+def multipart(fields: dict, file_field: str | None, filename: str, content: bytes | None, ctype: str) -> tuple[bytes, str]:
+    boundary = uuid.uuid4().hex
+    parts = []
+    for k, v in fields.items():
+        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode())
+    if file_field and content is not None:
+        safe = re.sub(r'["\r\n]', "_", filename)
+        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{file_field}"; '
+                     f'filename="{safe}"\r\nContent-Type: {ctype}\r\n\r\n'.encode())
+        parts.append(content)
+        parts.append(b"\r\n")
+    parts.append(f"--{boundary}--\r\n".encode())
+    return b"".join(parts), f"multipart/form-data; boundary={boundary}"
+
+
+def post(api: str, path: str, headers: dict, fields: dict, filename: str = "", content: bytes | None = None,
+         ctype: str = "application/octet-stream", timeout: int = 1800) -> tuple[int, dict]:
+    body, mp = multipart(fields, "file" if content is not None else None, filename, content, ctype)
+    req = urllib.request.Request(api.rstrip("/") + path, data=body, method="POST", headers={**headers, "Content-Type": mp})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode("utf-8", "replace")
+        try:
+            return e.code, json.loads(raw)
+        except ValueError:
+            return e.code, {"raw": raw[:500]}
+
+
+def merged_pdf(parts: list[dict]) -> tuple[bytes, int, list[str]]:
+    """The PDF parts in order as one PDF; the parts left out (no PDF)."""
+    out = pymupdf.open()
+    left = []
+    for p in parts:
+        if not p.get("path") or not os.path.exists(p["path"]):
+            left.append(p["name"])
+            continue
+        with open(p["path"], "rb") as f:
+            data = f.read()
+        if p.get("member"):
+            data = dcs_build.archive_member(data, p["member"])
+        if not data.lstrip()[:5].startswith(b"%PDF"):
+            left.append(p["name"])
+            continue
+        src = pymupdf.open(stream=data, filetype="pdf")
+        out.insert_pdf(src)
+    pages = out.page_count
+    return (out.tobytes(garbage=3, deflate=True) if pages else b""), pages, left
+
+
+def load_done(path: str) -> set[str]:
+    done = set()
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                r = json.loads(line)
+                if r.get("ok"):
+                    done.add(r["source_doc_id"])
+    return done
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("plan_dir", help="dcs_build.py --out-dir")
+    ap.add_argument("--case", action="append", choices=["text", "ocr", "catalogue"],
+                    help="only these cases (repeatable; default all)")
+    ap.add_argument("--limit", type=int, default=0, help="stop after N pushes")
+    ap.add_argument("--only", action="append", default=[], help="only this số hiệu or source_doc_id (repeatable)")
+    ap.add_argument("--sec-per-page", type=float, default=6.0, help="pause after a background OCR (default 6 s/page)")
+    ap.add_argument("--dry-run", action="store_true", help="print what would be pushed")
+    a = ap.parse_args(argv)
+
+    api = os.environ.get("WERAG_API", "http://localhost:18080/api/v1")
+    headers = {}
+    if os.environ.get("WERAG_API_KEY"):
+        headers["X-API-Key"] = os.environ["WERAG_API_KEY"]
+    elif os.environ.get("WERAG_TOKEN"):
+        headers["Authorization"] = "Bearer " + os.environ["WERAG_TOKEN"]
+    elif not a.dry_run:
+        print("WERAG_API_KEY or WERAG_TOKEN is required", file=sys.stderr)
+        return 2
+    cases = set(a.case or ["text", "ocr", "catalogue"])
+    results_path = os.path.join(a.plan_dir, "push-results.jsonl")
+    done = load_done(results_path)
+    n = 0
+    with open(os.path.join(a.plan_dir, "plan.jsonl"), encoding="utf-8") as fin, \
+            open(results_path, "a", encoding="utf-8") as fres:
+        for line in fin:
+            e = json.loads(line)
+            md = e["metadata"]
+            sid = md["source_doc_id"]
+            if e["case"] not in cases or sid in done:
+                continue
+            if a.only and md["doc_number"] not in a.only and sid not in a.only:
+                continue
+            if a.limit and n >= a.limit:
+                break
+            res = {"source_doc_id": sid, "doc_number": md["doc_number"], "case": e["case"]}
+            meta_json = json.dumps(md, ensure_ascii=False)
+            if e["case"] == "text":
+                with open(os.path.join(a.plan_dir, e["html"]), "rb") as f:
+                    html = f.read()
+                if a.dry_run:
+                    print(f"text  {md['doc_number']:<20} {len(html):>8} B  {md['title'][:70]}")
+                    continue
+                code, body = post(api, "/system/legal-documents/push", headers, {"metadata": meta_json, "mode": "full"},
+                                  os.path.basename(e["html"]), html, "text/html; charset=utf-8")
+            elif e["case"] == "ocr":
+                pdf, pages, left = merged_pdf([p for p in e["parts"]])
+                res["pages"], res["left_out"] = pages, left
+                if not pdf:
+                    res.update(ok=False, status=0, error="no PDF part")
+                    fres.write(json.dumps(res, ensure_ascii=False) + "\n")
+                    continue
+                if a.dry_run:
+                    print(f"ocr   {md['doc_number']:<20} {pages:>4} pages {len(pdf) >> 10:>6} KB  left out {left}")
+                    continue
+                name = re.sub(r"[^\w.\-]+", "_", md["doc_number"]) + ".pdf"
+                code, body = post(api, "/system/legal-documents/push-scan", headers, {"metadata": meta_json}, name, pdf,
+                                  "application/pdf")
+            else:
+                if a.dry_run:
+                    print(f"cat   {md['doc_number']:<20} {e['why'][:80]}")
+                    continue
+                code, body = post(api, "/system/legal-documents/push", headers, {"metadata": meta_json, "mode": "catalogue"})
+            data = body.get("data") or {}
+            res.update(status=code, ok=200 <= code < 300 or code == 409, answer=data or body)
+            if code == 409:
+                res["note"] = "đã có toàn văn"
+            fres.write(json.dumps(res, ensure_ascii=False) + "\n")
+            fres.flush()
+            n += 1
+            draft = data.get("draft") or {}
+            print(f"{code} {e['case']:<9} {md['doc_number']:<20} "
+                  f"{data.get('ingest') or draft.get('status') or ''} {(body.get('error') or {}).get('message', '') if isinstance(body.get('error'), dict) else ''}",
+                  flush=True)
+            if e["case"] == "ocr" and code == 200 and res.get("pages", 0) > SYNC_OCR_PAGES and not data.get("existing"):
+                time.sleep(a.sec_per_page * res["pages"])
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

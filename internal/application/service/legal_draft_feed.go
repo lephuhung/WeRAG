@@ -130,11 +130,22 @@ func (s *LegalDraftService) PushFeedDraft(ctx context.Context, in LegalFeedDraft
 		return nil, err
 	}
 	res := &LegalFeedDraftResult{LegalDocumentID: row.ID, CatalogueCreated: created}
+	// a row created for this scan goes again when no draft could be made
+	// of it, so a refused push leaves nothing behind (as push mode full)
+	ok := false
+	if created {
+		defer func() {
+			if !ok {
+				s.Push.dropFeedRow(ctx, row)
+			}
+		}()
+	}
 	defer s.lockDocument(row.ID)()
-	if existing, err := s.reuseDraft(ctx, row.ID, ""); err != nil {
+	requestID := s.openRequestFor(ctx, row.ID)
+	if existing, err := s.reuseDraft(ctx, row.ID, requestID); err != nil {
 		return nil, err
 	} else if existing != nil {
-		res.Draft, res.Existing = existing, true
+		res.Draft, res.Existing, ok = existing, true, true
 		return res, nil
 	}
 	fileName := strings.TrimSpace(in.FileName)
@@ -147,22 +158,29 @@ func (s *LegalDraftService) PushFeedDraft(ctx context.Context, in LegalFeedDraft
 		by = legalCap(actor.EndpointID, 36)
 	}
 	draft := &types.LegalDocumentDraft{
-		LegalDocumentID: row.ID, DocumentNumber: row.DocumentNumber, DocType: row.DocType, Title: row.Title,
+		RequestID: requestID, LegalDocumentID: row.ID, DocumentNumber: row.DocumentNumber, DocType: row.DocType, Title: row.Title,
 		PDFFileName: fileName, Status: types.LegalDraftFetching, CreatedBy: by, SourceMeta: types.JSON(src),
 	}
 	if again, err := s.createDraft(ctx, draft); err != nil {
 		return nil, err
 	} else if again != nil {
-		res.Draft, res.Existing = again, true
+		res.Draft, res.Existing, ok = again, true, true
 		return res, nil
 	}
+	s.moveRequests(ctx, row.ID, []string{types.LegalRequestRequested}, types.LegalRequestFetched)
 	WriteLegalFeedLog(ctx, s.feed.db, actor, LegalFeedEntry{
 		Action: "push_draft", VBPLID: row.ID, DocumentNumber: row.DocumentNumber, Reason: meta.feed + " " + meta.feedDocID,
 		Detail: map[string]any{"feed": meta.feed, "feed_doc_id": meta.feedDocID, "feed_url": meta.feedURL, "draft_id": draft.ID,
 			"pdf_bytes": len(in.PDF), "catalogue_created": created},
 	})
 	res.Draft, err = s.storeAndOCR(ctx, draft, in.PDF, "legal_draft_"+row.ID+".pdf")
-	return res, err
+	if err != nil {
+		return nil, err
+	}
+	// a draft exists (ready, OCR running, or failed with its reason): the
+	// row stays with it; a failed one is pushed again
+	ok = true
+	return res, nil
 }
 
 // catalogueRow is the draft's catalogue row (nil when there is none).

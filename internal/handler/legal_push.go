@@ -81,6 +81,7 @@ func (h *LegalPushHandler) PushLegalDocument(c *gin.Context) {
 		c.Error(err)
 		return
 	}
+	limitUploadBody(c, service.LegalPushMaxBytes)
 	mode := c.PostForm("mode")
 	var content []byte
 	fileName := ""
@@ -158,6 +159,7 @@ func (h *LegalPushHandler) PushLegalScan(c *gin.Context) {
 		c.Error(errors.NewServiceUnavailableError("legal drafts are not available"))
 		return
 	}
+	limitUploadBody(c, service.LegalFeedDraftMaxBytes)
 	fh, err := c.FormFile("file")
 	if err != nil {
 		c.Error(errors.NewBadRequestError("file is required"))

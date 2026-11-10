@@ -149,19 +149,23 @@ func (s *LegalDraftService) FetchDocument(ctx context.Context, vbplID, by string
 	if vbplID == "" {
 		return nil, apperrors.NewBadRequestError("vbpl_id is required")
 	}
-	requestID := ""
-	if s.requests != nil {
-		// link the draft to the request users are waiting on, when any
-		if rows, _, err := s.requests.List(ctx, types.LegalRequestRequested, 0, 500); err == nil {
-			for _, r := range rows {
-				if r.LegalDocumentID == vbplID {
-					requestID = r.ID
-					break
-				}
+	return s.fetch(ctx, vbplID, s.openRequestFor(ctx, vbplID), by)
+}
+
+// openRequestFor is the open request users wait on for the document, ""
+// when none: the draft is linked to it.
+func (s *LegalDraftService) openRequestFor(ctx context.Context, docID string) string {
+	if s.requests == nil {
+		return ""
+	}
+	if rows, _, err := s.requests.List(ctx, types.LegalRequestRequested, 0, 500); err == nil {
+		for _, r := range rows {
+			if r.LegalDocumentID == docID {
+				return r.ID
 			}
 		}
 	}
-	return s.fetch(ctx, vbplID, requestID, by)
+	return ""
 }
 
 func (s *LegalDraftService) fetch(ctx context.Context, vbplID, requestID, by string) (*types.LegalDocumentDraft, error) {
@@ -169,6 +173,12 @@ func (s *LegalDraftService) fetch(ctx context.Context, vbplID, requestID, by str
 		return nil, apperrors.NewServiceUnavailableError("legal drafts are not available")
 	}
 	defer s.lockDocument(vbplID)()
+	if row := s.catalogueRow(ctx, &types.LegalDocumentDraft{LegalDocumentID: vbplID}); row != nil && row.IsFeedRow() {
+		// a feed's document has no vbpl.vn PDF: its scan comes from the feed
+		// (push-scan); its failed draft must not be thrown away here
+		return nil, apperrors.NewBadRequestError(fmt.Sprintf("văn bản %s lấy từ nguồn %s, không có trên vbpl.vn: bản scan do nguồn đẩy lên (push-scan)",
+			row.DocumentNumber, types.LegalSourceLabel(row.Source)))
+	}
 	if existing, err := s.reuseDraft(ctx, vbplID, requestID); err != nil || existing != nil {
 		return existing, err
 	}
