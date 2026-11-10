@@ -7,7 +7,7 @@ import { BrandLockup } from "@/components/brand-logo";
 import styles from "./auth-shell.module.css";
 import { WordAddinInstall } from "./word-addin-install";
 
-export type AuthMode = "login" | "register" | "word";
+export type AuthMode = "login" | "register" | "word" | "extension";
 
 /**
  * The frame of every public authentication screen: the marketing column
@@ -21,7 +21,7 @@ export function AuthShell({
 }: {
   children: ReactNode;
   mode: AuthMode;
-  /** Hide the marketing column (the Word add-in approval screen). */
+  /** Hide the marketing column (the client approval screens). */
   showcase?: boolean;
 }) {
   const { t } = useT();
@@ -31,7 +31,9 @@ export function AuthShell({
       ? t("auth.formAriaLogin")
       : mode === "register"
         ? t("auth.formAriaRegister")
-        : t("auth.formAriaWord");
+        : mode === "extension"
+          ? t("auth.formAriaExtension")
+          : t("auth.formAriaWord");
 
   return (
     <main className={`${styles.shell} ${showcase ? "" : styles.shellSolo}`}>
@@ -148,7 +150,7 @@ export function AuthShell({
           </Link>
         )}
         <div className={styles.topLink}>
-          {mode === "word" ? (
+          {mode === "word" || mode === "extension" ? (
             <Link href="/">{t("auth.wordHome")}</Link>
           ) : mode === "login" ? (
             <>
