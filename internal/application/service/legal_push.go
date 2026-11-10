@@ -32,13 +32,23 @@ type LegalPushService struct {
 	feed     *LegalFeedService
 	kbs      interfaces.KnowledgeBaseService
 	requests interfaces.LegalRequestRepository
+	settings interface {
+		GetBool(ctx context.Context, key string, envName string, def bool) bool
+	}
 }
+
+// LegalFeedAutoApproveSetting: a pushed mark matched at both ends (A's
+// provision and B's) is approved at once instead of waiting for a SuperAdmin.
+const LegalFeedAutoApproveSetting = "legal.feed.auto_approve_matched"
+
+// legalFeedAutoApproveDefault is the setting's value when unset.
+const legalFeedAutoApproveDefault = true
 
 // NewLegalPushService creates the push service.
 func NewLegalPushService(db *gorm.DB, feed *LegalFeedService, kbs interfaces.KnowledgeBaseService,
-	requests interfaces.LegalRequestRepository,
+	requests interfaces.LegalRequestRepository, settings interfaces.SystemSettingService,
 ) *LegalPushService {
-	return &LegalPushService{db: db, feed: feed, kbs: kbs, requests: requests}
+	return &LegalPushService{db: db, feed: feed, kbs: kbs, requests: requests, settings: settings}
 }
 
 // Push modes.
@@ -103,6 +113,8 @@ type LegalPushResult struct {
 	Links map[string]int `json:"links"`
 	// Pending is how many candidates wait for review.
 	Pending int `json:"pending"`
+	// AutoApproved counts the matched marks approved without a person.
+	AutoApproved int `json:"auto_approved"`
 	// KeptDecisions counts marks a SuperAdmin already approved or rejected.
 	KeptDecisions int                `json:"kept_decisions"`
 	Problems      []LegalPushProblem `json:"problems"`
@@ -507,15 +519,18 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 			continue
 		}
 		res.Links[c.MatchStatus]++
-		if c.ReviewStatus == types.LegalLinkReviewPending {
+		switch c.ReviewStatus {
+		case types.LegalLinkReviewPending:
 			res.Pending++
+		case types.LegalLinkReviewApproved:
+			res.AutoApproved++
 		}
 	}
 	WriteLegalFeedLog(ctx, s.db, actor, LegalFeedEntry{
 		Action: "push_" + mode, VBPLID: a.ID, KnowledgeID: res.KnowledgeID, KnowledgeBaseID: res.KnowledgeBaseID,
 		DocumentNumber: a.DocumentNumber, Reason: meta.feed + " " + meta.feedDocID,
 		Detail: map[string]any{"feed": meta.feed, "feed_doc_id": meta.feedDocID, "feed_url": meta.feedURL,
-			"links": res.Links, "pending": res.Pending, "kept_decisions": kept, "problems": len(res.Problems), "ingest": res.Ingest,
+			"links": res.Links, "pending": res.Pending, "auto_approved": res.AutoApproved, "kept_decisions": kept, "problems": len(res.Problems), "ingest": res.Ingest,
 			"catalogue_created": res.CatalogueCreated},
 	})
 	return res, nil
@@ -835,6 +850,7 @@ func legalMarkKey(c *types.LegalProvisionLinkCandidate) string {
 // SuperAdmin already decided is not stored again (counted as kept).
 func (s *LegalPushService) store(ctx context.Context, meta *legalPushMeta, aID string, list []*types.LegalProvisionLinkCandidate) (int, error) {
 	kept := 0
+	auto := s.settings != nil && s.settings.GetBool(ctx, LegalFeedAutoApproveSetting, "", legalFeedAutoApproveDefault)
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Where("feed = ? AND feed_doc_id = ? AND review_status IN ?", meta.feed, meta.feedDocID,
 			[]string{types.LegalLinkReviewPending, types.LegalLinkReviewAuto}).
@@ -846,8 +862,20 @@ func (s *LegalPushService) store(ctx context.Context, meta *legalPushMeta, aID s
 			[]string{types.LegalLinkReviewApproved, types.LegalLinkReviewRejected}).Find(&decided).Error; err != nil {
 			return err
 		}
+		pushed := make(map[string]bool, len(list))
+		for _, c := range list {
+			pushed[legalCandidateKey(c)] = true
+		}
 		done := map[string]bool{}
 		for _, d := range decided {
+			// A link nobody reviewed lasts as long as the source says it: the
+			// mark is gone from the document, so the link goes too.
+			if d.ReviewedBy == types.LegalLinkAutoReviewer && !pushed[legalMarkKey(d)] {
+				if err := revokeAutoApproved(tx, d, meta.feed); err != nil {
+					return err
+				}
+				continue
+			}
 			done[legalMarkKey(d)] = true
 		}
 		seen := map[string]bool{}
@@ -867,7 +895,21 @@ func (s *LegalPushService) store(ctx context.Context, meta *legalPushMeta, aID s
 		if len(fresh) == 0 {
 			return nil
 		}
-		return tx.CreateInBatches(fresh, 200).Error
+		if err := tx.CreateInBatches(fresh, 200).Error; err != nil {
+			return err
+		}
+		if !auto {
+			return nil
+		}
+		now := time.Now()
+		for _, c := range fresh {
+			if legalCandidateAutoApprovable(c) {
+				if err := approveCandidateTx(tx, c, types.LegalLinkAutoReviewer, now); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		return 0, fmt.Errorf("store candidates of %s: %w", aID, err)

@@ -95,6 +95,10 @@ const (
 
 // Review states of a pushed link (LegalProvisionLinkCandidate.ReviewStatus).
 const (
+	// LegalLinkAutoReviewer is the reviewed_by of a matched candidate approved
+	// without a person (service.LegalFeedAutoApproveSetting).
+	LegalLinkAutoReviewer = "auto:matched"
+
 	LegalLinkReviewPending  = "pending"
 	LegalLinkReviewApproved = "approved"
 	LegalLinkReviewRejected = "rejected"

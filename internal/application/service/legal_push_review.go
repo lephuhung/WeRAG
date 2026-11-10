@@ -199,6 +199,28 @@ func (s *LegalPushService) DecideCandidate(ctx context.Context, id int64, d Lega
 	if _, ok := legalPathRef(c.TargetPath); !ok && !strings.HasPrefix(c.TargetPath, "phuluc/") {
 		return nil, apperrors.NewBadRequestError("target_path phải có dạng dieu:N/khoan:K/diem:D")
 	}
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return approveCandidateTx(tx, &c, by, now)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("approve candidate %d: %w", id, err)
+	}
+	return s.one(ctx, &c)
+}
+
+// legalCandidateAutoApprovable reports whether a candidate may be approved
+// without a person: both ends resolved and the provision named.
+func legalCandidateAutoApprovable(c *types.LegalProvisionLinkCandidate) bool {
+	if c.MatchStatus != types.LegalLinkMatched || c.ReviewStatus != types.LegalLinkReviewPending || c.AmenderDocID == "" {
+		return false
+	}
+	_, ok := legalPathRef(c.TargetPath)
+	return ok || strings.HasPrefix(c.TargetPath, "phuluc/")
+}
+
+// approveCandidateTx copies a candidate into legal_provision_links under the
+// feed's name and marks it approved by by.
+func approveCandidateTx(tx *gorm.DB, c *types.LegalProvisionLinkCandidate, by string, now time.Time) error {
 	link := types.LegalProvisionLink{
 		TargetDocID: c.TargetDocID, TargetProvisionID: c.TargetProvisionID, TargetLevel: c.TargetLevel, TargetPath: c.TargetPath,
 		RelationCode: c.RelationCode, Op: c.Op, TagAttr: "feed", SourceDocID: c.AmenderDocID, SourceDocFrom: "feed",
@@ -207,28 +229,33 @@ func (s *LegalPushService) DecideCandidate(ctx context.Context, id int64, d Lega
 	if c.EffFrom != nil {
 		link.EffFromSource = "feed"
 	}
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&link).Error; err != nil {
+	if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&link).Error; err != nil {
+		return err
+	}
+	if link.ID == 0 { // the same edge was already held
+		var have types.LegalProvisionLink
+		if err := tx.Where("target_provision_id = ? AND relation_code = ? AND source_provision_id = ?",
+			link.TargetProvisionID, link.RelationCode, link.SourceProvisionID).Limit(1).Find(&have).Error; err != nil {
 			return err
 		}
-		if link.ID == 0 { // the same edge was already held
-			var have types.LegalProvisionLink
-			if err := tx.Where("target_provision_id = ? AND relation_code = ? AND source_provision_id = ?",
-				link.TargetProvisionID, link.RelationCode, link.SourceProvisionID).Limit(1).Find(&have).Error; err != nil {
-				return err
-			}
-			link.ID = have.ID
-		}
-		c.ReviewStatus, c.ReviewedBy, c.ReviewedAt = types.LegalLinkReviewApproved, by, &now
-		if link.ID != 0 {
-			c.LinkID = &link.ID
-		}
-		return tx.Save(&c).Error
-	})
-	if err != nil {
-		return nil, fmt.Errorf("approve candidate %d: %w", id, err)
+		link.ID = have.ID
 	}
-	return s.one(ctx, &c)
+	c.ReviewStatus, c.ReviewedBy, c.ReviewedAt = types.LegalLinkReviewApproved, by, &now
+	if link.ID != 0 {
+		c.LinkID = &link.ID
+	}
+	return tx.Save(c).Error
+}
+
+// revokeAutoApproved removes an auto-approved candidate and its link. A link
+// shared with another source keeps its row (only the feed's own is deleted).
+func revokeAutoApproved(tx *gorm.DB, c *types.LegalProvisionLinkCandidate, feed string) error {
+	if c.LinkID != nil {
+		if err := tx.Where("id = ? AND source = ?", *c.LinkID, feed).Delete(&types.LegalProvisionLink{}).Error; err != nil {
+			return err
+		}
+	}
+	return tx.Delete(c).Error
 }
 
 // correct applies the SuperAdmin's corrections, looks the provisions up

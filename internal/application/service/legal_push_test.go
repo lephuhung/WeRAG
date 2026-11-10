@@ -33,7 +33,7 @@ const nd68Push = `<html><body>
 func legalPushTestService(t *testing.T) (*LegalPushService, func() int64) {
 	db := legalEditorTestDB(t)
 	require.NoError(t, db.AutoMigrate(&types.LegalProvisionLinkCandidate{}, &types.LegalDocumentRequest{}))
-	svc := NewLegalPushService(db, nil, nil, repository.NewLegalRequestRepository(db))
+	svc := NewLegalPushService(db, nil, nil, repository.NewLegalRequestRepository(db), nil)
 	count := func() int64 {
 		var n int64
 		require.NoError(t, db.Model(&types.LegalProvisionLinkCandidate{}).Count(&n).Error)
@@ -233,4 +233,87 @@ func TestLegalHeldProvisionsDiemUnderDieu(t *testing.T) {
 	require.Equal(t, "item", legalPathLevel("dieu:5/khoan:2/diem:a"))
 	require.Equal(t, "clause", legalPathLevel("dieu:5/khoan:2"))
 	require.Equal(t, "article", legalPathLevel("dieu:5"))
+}
+
+type legalPushSettings struct{ on bool }
+
+func (s legalPushSettings) GetBool(context.Context, string, string, bool) bool { return s.on }
+
+// TestLegalPushAutoApprovesOnlyMatched: a mark matched at both ends goes
+// straight to legal_provision_links; every other status still waits, and a
+// second push neither repeats the link nor counts it as new.
+func TestLegalPushAutoApprovesOnlyMatched(t *testing.T) {
+	svc, _ := legalPushTestService(t)
+	svc.settings = legalPushSettings{on: true}
+	ctx := context.Background()
+	caller := types.Caller{TenantID: types.PlatformTenantID}
+	push := func() *LegalPushResult {
+		t.Helper()
+		res, err := svc.Push(ctx, LegalPushInput{Content: []byte(nd68Push), Metadata: legalPushMetaFor("68/2026/NĐ-CP")}, caller, LegalFeedActor{})
+		require.NoError(t, err)
+		return res
+	}
+	res := push()
+	require.Equal(t, 1, res.AutoApproved)
+	require.Equal(t, 3, res.Pending, "doc_only, unresolved and target_missing still wait")
+
+	items, _, _, err := svc.ListCandidates(ctx, LegalLinkCandidateFilter{MatchStatus: "matched", ReviewStatus: types.LegalLinkReviewApproved}, 0, 50)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	m := items[0]
+	require.Equal(t, types.LegalLinkReviewApproved, m.ReviewStatus)
+	require.Equal(t, types.LegalLinkAutoReviewer, m.ReviewedBy)
+	require.NotNil(t, m.LinkID)
+	var link types.LegalProvisionLink
+	require.NoError(t, svc.db.First(&link, *m.LinkID).Error)
+	require.Equal(t, "tvpl", link.Source)
+	require.Equal(t, "p141-2", link.SourceProvisionID)
+
+	again := push()
+	require.Equal(t, 0, again.AutoApproved)
+	require.Equal(t, 1, again.KeptDecisions)
+	var links int64
+	require.NoError(t, svc.db.Model(&types.LegalProvisionLink{}).Where("source = ?", "tvpl").Count(&links).Error)
+	require.EqualValues(t, 1, links)
+}
+
+func TestLegalPushAutoApproveCanBeTurnedOff(t *testing.T) {
+	svc, _ := legalPushTestService(t)
+	svc.settings = legalPushSettings{on: false}
+	res, err := svc.Push(context.Background(), LegalPushInput{Content: []byte(nd68Push), Metadata: legalPushMetaFor("68/2026/NĐ-CP")},
+		types.Caller{TenantID: types.PlatformTenantID}, LegalFeedActor{})
+	require.NoError(t, err)
+	require.Equal(t, 0, res.AutoApproved)
+	require.Equal(t, 4, res.Pending)
+}
+
+// TestLegalPushRevokesAnAutoApprovedLinkTheSourceDropped: a push without the
+// mark removes the link nobody reviewed; a person's approval stays.
+func TestLegalPushRevokesAnAutoApprovedLinkTheSourceDropped(t *testing.T) {
+	svc, _ := legalPushTestService(t)
+	svc.settings = legalPushSettings{on: true}
+	ctx := context.Background()
+	caller := types.Caller{TenantID: types.PlatformTenantID}
+	_, err := svc.Push(ctx, LegalPushInput{Content: []byte(nd68Push), Metadata: legalPushMetaFor("68/2026/NĐ-CP")}, caller, LegalFeedActor{})
+	require.NoError(t, err)
+	countLinks := func() (n int64) {
+		require.NoError(t, svc.db.Model(&types.LegalProvisionLink{}).Where("source = ?", "tvpl").Count(&n).Error)
+		return n
+	}
+	require.EqualValues(t, 1, countLinks())
+
+	without := strings.Replace(nd68Push, `"issue_date":"2026-04-29","path":"dieu:1/khoan:2",`, `"issue_date":"2026-04-29",`, 1)
+	require.NotEqual(t, nd68Push, without, "the fixture holds the matched mark")
+	_, err = svc.Push(ctx, LegalPushInput{Content: []byte(without), Metadata: legalPushMetaFor("68/2026/NĐ-CP")}, caller, LegalFeedActor{})
+	require.NoError(t, err)
+	require.EqualValues(t, 0, countLinks())
+
+	// a person's approval is not machine state
+	_, err = svc.Push(ctx, LegalPushInput{Content: []byte(nd68Push), Metadata: legalPushMetaFor("68/2026/NĐ-CP")}, caller, LegalFeedActor{})
+	require.NoError(t, err)
+	require.NoError(t, svc.db.Model(&types.LegalProvisionLinkCandidate{}).Where("reviewed_by = ?", types.LegalLinkAutoReviewer).
+		Update("reviewed_by", "u-super").Error)
+	_, err = svc.Push(ctx, LegalPushInput{Content: []byte(without), Metadata: legalPushMetaFor("68/2026/NĐ-CP")}, caller, LegalFeedActor{})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, countLinks())
 }

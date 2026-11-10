@@ -619,6 +619,10 @@ var registry = map[string]settingSpec{
 	// legal.current_wording.feed_source adds the provision links pushed by
 	// other feeds and approved by a SuperAdmin (legal_provision_links with
 	// a feed source). Only read while the resolver is on. Read live.
+	LegalFeedAutoApproveSetting: {
+		Type: "bool", EnvName: "", Default: legalFeedAutoApproveDefault, Category: "legal",
+		Description: "Tự duyệt liên kết điều khoản từ nguồn ngoài vbpl khi khớp được cả hai đầu; tắt thì các liên kết này chờ SuperAdmin duyệt.",
+	},
 	LegalFeedSourceSetting: {
 		Type:     "bool",
 		EnvName:  "",
