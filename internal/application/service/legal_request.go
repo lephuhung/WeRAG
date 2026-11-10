@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	stderrors "errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -36,6 +37,30 @@ func LegalTypeTargets(kbs []types.LegalPublicKB) map[string]types.LegalPublicKB 
 		}
 	}
 	return out
+}
+
+// LegalPartyKBName is the public KB of the Party's documents ("57-NQ/TW"):
+// their type names (Nghị quyết, Quyết định, Chỉ thị…) are the State's too,
+// so a pushed Party document goes there by its số hiệu, not by
+// LegalTypeTargets.
+const LegalPartyKBName = "Văn bản của Đảng"
+
+// legalPushTarget is the public KB a pushed document's full text goes to.
+func legalPushTarget(kbs []types.LegalPublicKB, number, docType string) (types.LegalPublicKB, error) {
+	if vietnamese_legal.IsPartyDocumentNumber(number) {
+		for _, kb := range kbs {
+			if strings.TrimSpace(kb.Name) == LegalPartyKBName {
+				return kb, nil
+			}
+		}
+		return types.LegalPublicKB{}, legalUnprocessable(fmt.Sprintf("văn bản của Đảng (%s) cần kho công khai tên %q, chưa có kho này",
+			number, LegalPartyKBName), nil)
+	}
+	kb, ok := LegalTypeTargets(kbs)[strings.TrimSpace(docType)]
+	if !ok {
+		return types.LegalPublicKB{}, legalUnprocessable(fmt.Sprintf("không kho công khai nào nhận loại văn bản %q", docType), nil)
+	}
+	return kb, nil
 }
 
 type legalRequestService struct {

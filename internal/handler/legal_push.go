@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -56,7 +57,10 @@ func legalPushAllowed(ctx context.Context) error {
 // @Description  prov-* classes, an id per Điều/khoản/điểm, data-amend marks),
 // @Description  metadata (JSON string → string: source, source_url,
 // @Description  source_doc_id, format, legal_document_id or doc_number +
-// @Description  issue_date/issuer, doc_type), mode (auto | links | full).
+// @Description  issue_date/issuer, doc_type; optional signer, field), mode
+// @Description  (auto | links | full | catalogue). A file without Điều (no
+// @Description  prov-* markup, no marks) is taken as full text only.
+// @Description  catalogue adds the catalogue row only and needs no file.
 // @Description  Resolves the document in the legal catalogue, adds the full
 // @Description  text when no public KB holds it (full), and stores every
 // @Description  data-amend mark as a provision link candidate for SuperAdmin
@@ -65,9 +69,9 @@ func legalPushAllowed(ctx context.Context) error {
 // @Tags         Rà soát pháp lý
 // @Accept       multipart/form-data
 // @Produce      json
-// @Param        file     formData file   true  "HTML file"
+// @Param        file     formData file   false "HTML file (not needed in mode catalogue)"
 // @Param        metadata formData string true  "JSON metadata"
-// @Param        mode     formData string false "auto (default), links or full"
+// @Param        mode     formData string false "auto (default), links, full or catalogue"
 // @Success      200 {object} map[string]interface{} "Push result"
 // @Router       /system/legal-documents/push [post]
 func (h *LegalPushHandler) PushLegalDocument(c *gin.Context) {
@@ -76,25 +80,32 @@ func (h *LegalPushHandler) PushLegalDocument(c *gin.Context) {
 		c.Error(err)
 		return
 	}
+	mode := c.PostForm("mode")
+	var content []byte
+	fileName := ""
 	fh, err := c.FormFile("file")
-	if err != nil {
+	switch {
+	case err != nil && strings.EqualFold(strings.TrimSpace(mode), service.LegalPushCatalogue):
+		// a catalogue row needs no file
+	case err != nil:
 		c.Error(errors.NewBadRequestError("file is required"))
 		return
-	}
-	if fh.Size > service.LegalPushMaxBytes {
+	case fh.Size > service.LegalPushMaxBytes:
 		c.Error(errors.NewBadRequestError("file is too large"))
 		return
-	}
-	f, err := fh.Open()
-	if err != nil {
-		c.Error(errors.NewBadRequestError("cannot read file"))
-		return
-	}
-	content, err := io.ReadAll(io.LimitReader(f, service.LegalPushMaxBytes+1))
-	f.Close()
-	if err != nil {
-		c.Error(errors.NewBadRequestError("cannot read file"))
-		return
+	default:
+		f, err := fh.Open()
+		if err != nil {
+			c.Error(errors.NewBadRequestError("cannot read file"))
+			return
+		}
+		content, err = io.ReadAll(io.LimitReader(f, service.LegalPushMaxBytes+1))
+		f.Close()
+		if err != nil {
+			c.Error(errors.NewBadRequestError("cannot read file"))
+			return
+		}
+		fileName = fh.Filename
 	}
 	meta := map[string]string{}
 	if raw := c.PostForm("metadata"); raw != "" {
@@ -109,7 +120,7 @@ func (h *LegalPushHandler) PushLegalDocument(c *gin.Context) {
 		actor.EndpointID, actor.UserID = "apikey:"+strconv.FormatUint(scope.KeyID, 10), ""
 	}
 	res, err := h.svc.Push(ctx, service.LegalPushInput{
-		Content: content, FileName: fh.Filename, Metadata: meta, Mode: c.PostForm("mode"),
+		Content: content, FileName: fileName, Metadata: meta, Mode: mode,
 	}, caller, actor)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)

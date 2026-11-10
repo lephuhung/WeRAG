@@ -134,7 +134,10 @@ func legalFeedRow(meta *legalPushMeta, content []byte, now time.Time) (*types.Le
 		ID: legalFeedRowID(meta.feed, meta.feedDocID), Source: meta.feed,
 		DocumentNumber: legalCap(number, 128), NumberKey: legalCap(key, 128),
 		Title: title, DocType: legalCap(strings.TrimSpace(meta.ref.DocType), 64),
-		Issuer:   legalCap(strings.TrimSpace(meta.ref.Issuer), 255),
+		Issuer: legalCap(strings.TrimSpace(meta.ref.Issuer), 255),
+		// optional: who signed, and the source's lĩnh vực
+		Signer:   legalCap(strings.Join(strings.Fields(meta.raw["signer"]), " "), 255),
+		Field:    strings.Join(strings.Fields(meta.raw["field"]), " "),
 		IssuedOn: issued, EffectiveOn: eff, Status: legalCap(status, 64), SourceUpdatedAt: &snap,
 	}, nil
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	stderrors "errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -231,4 +232,85 @@ func TestLegalPushNewDocumentRollsBackOnIngestFailure(t *testing.T) {
 	require.Contains(t, err.Error(), "hết hiệu lực toàn bộ")
 	require.NoError(t, svc.db.Model(&types.LegalDocument{}).Where("id = ?", "tvpl-777").Count(&n).Error)
 	require.Zero(t, n)
+}
+
+// kl114Push is a Party Kết luận: numbered paragraphs, no Điều.
+var kl114Push = `<html><head><title>Kết luận số 114-KL/TW</title></head><body>
+<p>BAN CHẤP HÀNH TRUNG ƯƠNG</p><p>KẾT LUẬN của Bộ Chính trị về tiếp tục hoàn thiện bộ máy quản lý nhà nước về an toàn thực phẩm</p>
+<p>1. Thống nhất một đầu mối quản lý nhà nước về an toàn thực phẩm từ Trung ương đến địa phương, bảo đảm hiệu lực, hiệu quả.</p>
+<p>2. Giao Đảng uỷ Chính phủ chỉ đạo rà soát, sửa đổi các quy định pháp luật có liên quan, hoàn thành trong năm 2027.</p>
+<p>3. Các cấp uỷ, tổ chức đảng tổ chức quán triệt, triển khai thực hiện Kết luận này.</p></body></html>`
+
+func legalPartyMeta() map[string]string {
+	return map[string]string{"source": "dangcongsan", "source_doc_id": "tulieu-9001", "source_url": "https://tulieuvankien.dangcongsan.vn/x-9001",
+		"format": vbpl.LegalHTMLFormatV1, "doc_number": "114-KL/TW", "doc_type": "Kết luận",
+		"issuer": "Bộ Chính trị", "issue_date": "2026-11-03", "signer": "Trần Cẩm Tú", "field": "Xây dựng Đảng",
+		"title": "Kết luận của Bộ Chính trị về tiếp tục hoàn thiện bộ máy quản lý nhà nước về an toàn thực phẩm"}
+}
+
+// A document without Điều is taken as full text and, being numbered the
+// Party's way, goes to the Party KB, never to a type KB of the State.
+func TestLegalPushUnstructuredPartyDocument(t *testing.T) {
+	svc, count := legalPushTestService(t)
+	typeKB := &types.KnowledgeBase{ID: "kb-qd", Name: LegalKBNamePrefix + "Quyết định, Chỉ thị, Kết luận"}
+	require.NoError(t, svc.db.Create(typeKB).Error)
+	svc.kbs = legalPushKBs{kb: typeKB}
+	svc.feed = &LegalFeedService{db: svc.db}
+	caller := types.Caller{TenantID: types.PlatformTenantID, UserID: "sa-user"}
+	ctx := context.WithValue(types.WithCaller(context.Background(), caller), types.SystemAdminContextKey, true)
+	push := func(content string) error {
+		_, err := svc.Push(ctx, LegalPushInput{Content: []byte(content), Metadata: legalPartyMeta()}, caller, LegalFeedActor{})
+		return err
+	}
+
+	err := push(kl114Push)
+	var app *apperrors.AppError
+	require.True(t, stderrors.As(err, &app), "%v", err)
+	require.Equal(t, http.StatusUnprocessableEntity, app.HTTPCode)
+	require.Contains(t, app.Message, LegalPartyKBName, "no Party KB yet: refused, not sent to the type KB")
+
+	partyKB := &types.KnowledgeBase{ID: "kb-dang", Name: LegalPartyKBName}
+	require.NoError(t, svc.db.Create(partyKB).Error)
+	svc.kbs = legalPushKBs{kb: partyKB}
+	err = push(kl114Push)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "knowledge service is not available", "past the structure check and the routing")
+
+	// an unmarked "Điều 1." is refused: the Điều must be marked
+	err = push(strings.Replace(kl114Push, "<p>1. Thống nhất", "<p>Điều 1. Thống nhất", 1))
+	require.True(t, stderrors.As(err, &app), "%v", err)
+	require.Contains(t, app.Message, "prov-article")
+	// a near-empty page is no document
+	err = push(`<html><body><p>Kết luận số 114-KL/TW</p></body></html>`)
+	require.True(t, stderrors.As(err, &app), "%v", err)
+	require.Contains(t, app.Message, "không có chữ")
+	require.EqualValues(t, 0, count())
+}
+
+// Mode catalogue: the row of a document listed without a full text.
+func TestLegalPushCatalogueRow(t *testing.T) {
+	svc, _ := legalPushTestService(t)
+	ctx := context.Background()
+	res, err := svc.Push(ctx, LegalPushInput{Metadata: legalPartyMeta(), Mode: LegalPushCatalogue}, types.Caller{}, LegalFeedActor{})
+	require.NoError(t, err)
+	require.True(t, res.CatalogueCreated)
+	require.Equal(t, "dangcongsan-tulieu-9001", res.LegalDocumentID)
+	var row types.LegalDocument
+	require.NoError(t, svc.db.First(&row, "id = ?", res.LegalDocumentID).Error)
+	require.Equal(t, "Kết luận", row.DocType)
+	require.Equal(t, "Trần Cẩm Tú", row.Signer)
+	require.Equal(t, "Xây dựng Đảng", row.Field)
+	require.Equal(t, legalFeedStatusUnknown, row.Status)
+	require.True(t, row.Unverified())
+	require.Contains(t, types.LegalUnverifiedNote(&row), "dangcongsan.vn")
+
+	res, err = svc.Push(ctx, LegalPushInput{Metadata: legalPartyMeta(), Mode: LegalPushCatalogue}, types.Caller{}, LegalFeedActor{})
+	require.NoError(t, err)
+	require.False(t, res.CatalogueCreated, "pushed again: the row is found")
+	require.Equal(t, row.ID, res.LegalDocumentID)
+
+	// without a file the other modes still refuse
+	_, err = svc.Push(ctx, LegalPushInput{Metadata: legalPartyMeta(), Mode: LegalPushFull}, types.Caller{}, LegalFeedActor{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "file is empty")
 }

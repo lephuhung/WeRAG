@@ -198,6 +198,17 @@ func NormalizeOwnDocumentNumber(s string) string {
 	return s
 }
 
+// partyNumberRe is the shape of a Party document's số hiệu: type first,
+// the issuing body after the slash, no year ("57-NQ/TW", "19-HD/BTGTW",
+// "03-QĐi/TW").
+var partyNumberRe = regexp.MustCompile(`^\d{1,5}[a-zA-Z]?-\p{L}+/\p{L}[\p{L}\p{N}\-]*$`)
+
+// IsPartyDocumentNumber reports whether s is numbered the way the Party's
+// documents are (HD 36-HD/VPTW), not the State's ("45/KH-UBND").
+func IsPartyDocumentNumber(s string) bool {
+	return partyNumberRe.MatchString(stripWS(strings.TrimSpace(s)))
+}
+
 // numberSymbolRe / partyNumberSymbolRe split a số hiệu around its type
 // ký hiệu: "361/2025/" + "ND" + "-CP", "57-" + "NQ" + "/TW".
 var (

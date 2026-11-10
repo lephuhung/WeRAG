@@ -66,11 +66,14 @@ func (d *LegalDocument) IsFeedRow() bool {
 func (d *LegalDocument) Unverified() bool { return d.IsFeedRow() && d.ReviewedAt == nil }
 
 // LegalSourceLabel names a catalogue source for a reader ("tvpl" →
-// "thuvienphapluat.vn"; "vbpl" and other names as they are).
+// "thuvienphapluat.vn", "dangcongsan" → "dangcongsan.vn"; "vbpl" and
+// other names as they are).
 func LegalSourceLabel(source string) string {
 	switch source {
 	case "tvpl":
 		return "thuvienphapluat.vn"
+	case "dangcongsan":
+		return "dangcongsan.vn"
 	case "":
 		return "nguồn"
 	}

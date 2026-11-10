@@ -246,3 +246,16 @@ func TestBuildLegalDocContextRestoresSymbol(t *testing.T) {
 		t.Fatalf("got number=%q root=%q", ctx.DocumentNumber, ctx.RootName)
 	}
 }
+
+func TestIsPartyDocumentNumber(t *testing.T) {
+	for _, s := range []string{"57-NQ/TW", "19-HD/BTGTW", "228-QĐ/TW", "03-QĐi/TW", " 9 - TB/VPTW", "08-HD/BTCTW"} {
+		if !IsPartyDocumentNumber(s) {
+			t.Errorf("%q should read as a Party number", s)
+		}
+	}
+	for _, s := range []string{"45/KH-UBND", "53/2022/NĐ-CP", "279/NQ-UBTVQH16", "/01/2025", "", "NQ/TW"} {
+		if IsPartyDocumentNumber(s) {
+			t.Errorf("%q is not a Party number", s)
+		}
+	}
+}

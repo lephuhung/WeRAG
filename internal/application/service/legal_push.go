@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"regexp"
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"gorm.io/gorm"
 
@@ -56,6 +58,9 @@ const (
 	LegalPushAuto  = "auto"
 	LegalPushLinks = "links"
 	LegalPushFull  = "full"
+	// LegalPushCatalogue adds the catalogue row only: for a document the
+	// source lists without a full text (the file may be empty).
+	LegalPushCatalogue = "catalogue"
 )
 
 // legalProvisionIDMax is the length of legal_provision_links.target_provision_id
@@ -64,6 +69,29 @@ const legalProvisionIDMax = 64
 
 // LegalPushMaxBytes bounds a pushed file.
 const LegalPushMaxBytes = 20 << 20
+
+// legalPushMinTextRunes is the least text a pushed file without Điều must
+// hold: less is a placeholder page, not a document.
+const legalPushMinTextRunes = 200
+
+var (
+	// legalUnmarkedArticleRe: a paragraph starting "Điều 1." / "Điều 1:"
+	legalUnmarkedArticleRe = regexp.MustCompile(`>\s*Điều\s+1\s*[.:]`)
+	legalHTMLDropRe = regexp.MustCompile(`(?is)<(script|style|head)[^>]*>.*?</(script|style|head)>`)
+	legalHTMLTagRe  = regexp.MustCompile(`(?s)<[^>]+>`)
+)
+
+// legalHTMLTextRunes counts the letters and digits of an HTML file's text.
+func legalHTMLTextRunes(content []byte) int {
+	text := legalHTMLTagRe.ReplaceAllString(legalHTMLDropRe.ReplaceAllString(string(content), " "), " ")
+	n := 0
+	for _, r := range html.UnescapeString(text) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			n++
+		}
+	}
+	return n
+}
 
 // legalPushFeedRe: a feed name is a short lower-case token.
 var legalPushFeedRe = regexp.MustCompile(`^[a-z][a-z0-9_-]{1,31}$`)
@@ -387,7 +415,14 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 	if s == nil || s.db == nil {
 		return nil, apperrors.NewServiceUnavailableError("legal push is not available")
 	}
-	if len(in.Content) == 0 {
+	mode := strings.ToLower(strings.TrimSpace(in.Mode))
+	if mode == "" {
+		mode = LegalPushAuto
+	}
+	if mode != LegalPushAuto && mode != LegalPushLinks && mode != LegalPushFull && mode != LegalPushCatalogue {
+		return nil, apperrors.NewBadRequestError("mode must be auto, links, full or catalogue")
+	}
+	if len(in.Content) == 0 && mode != LegalPushCatalogue {
 		return nil, apperrors.NewBadRequestError("file is empty")
 	}
 	if len(in.Content) > LegalPushMaxBytes {
@@ -396,13 +431,6 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 	meta, err := readLegalPushMeta(in.Metadata)
 	if err != nil {
 		return nil, err
-	}
-	mode := strings.ToLower(strings.TrimSpace(in.Mode))
-	if mode == "" {
-		mode = LegalPushAuto
-	}
-	if mode != LegalPushAuto && mode != LegalPushLinks && mode != LegalPushFull {
-		return nil, apperrors.NewBadRequestError("mode must be auto, links or full")
 	}
 
 	// 1. A in the catalogue; the số hiệu is the key shared with vbpl.vn,
@@ -423,16 +451,31 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 			a = feedRow
 		}
 	}
-
-	// 2. structure and marks of the pushed file
-	doc, err := vbpl.ConvertBytes(in.Content)
-	if err != nil || doc == nil || !doc.Structured || !vbpl.LooksLikeVBPL(in.Content) {
-		return nil, legalUnprocessable("tệp không có cấu trúc Điều/khoản dùng được (lớp prov-* của chuẩn v1)", nil)
+	if mode == LegalPushCatalogue {
+		return s.pushCatalogueRow(ctx, a, feedRow, meta, actor)
 	}
-	places := vbpl.ProvisionPlaces(doc)
+
+	// 2. structure and marks of the pushed file. A document without Điều
+	// (Kết luận, Thông báo, Hướng dẫn…) carries no marks: only its full text
+	// is taken, read by the regular parser.
 	markup, err := vbpl.ReadAmendMarkup(in.Content)
 	if err != nil {
 		return nil, legalUnprocessable("không đọc được HTML: "+err.Error(), nil)
+	}
+	doc, err := vbpl.ConvertBytes(in.Content)
+	structured := err == nil && doc != nil && doc.Structured && vbpl.LooksLikeVBPL(in.Content)
+	places := map[string]vbpl.ProvisionPlace{}
+	switch {
+	case structured:
+		places = vbpl.ProvisionPlaces(doc)
+	case vbpl.LooksLikeVBPL(in.Content) || len(markup.Provisions) > 0:
+		return nil, legalUnprocessable("tệp không có cấu trúc Điều/khoản dùng được (lớp prov-* của chuẩn v1)", nil)
+	case legalUnmarkedArticleRe.Match(in.Content):
+		// one chunk per Điều needs the markup: an unmarked "Điều 1." is the
+		// pusher's mistake, not a document without Điều
+		return nil, legalUnprocessable("tệp có \"Điều 1.\" nhưng không đánh dấu prov-article: văn bản có Điều phải theo cấu trúc của chuẩn v1", nil)
+	case legalHTMLTextRunes(in.Content) < legalPushMinTextRunes:
+		return nil, legalUnprocessable(fmt.Sprintf("tệp gần như không có chữ (dưới %d ký tự)", legalPushMinTextRunes), nil)
 	}
 
 	res := &LegalPushResult{LegalDocumentID: a.ID, DocumentNumber: a.DocumentNumber, Links: map[string]int{}, Problems: []LegalPushProblem{}}
@@ -536,6 +579,35 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 	return res, nil
 }
 
+// pushCatalogueRow is mode catalogue: the row of a document the source
+// lists without a full text. A row the catalogue already holds is left as
+// it is (its values are vbpl.vn's or a reviewer's).
+func (s *LegalPushService) pushCatalogueRow(ctx context.Context, a, feedRow *types.LegalDocument, meta *legalPushMeta,
+	actor LegalFeedActor,
+) (*LegalPushResult, error) {
+	res := &LegalPushResult{LegalDocumentID: a.ID, DocumentNumber: a.DocumentNumber, Mode: LegalPushCatalogue,
+		Links: map[string]int{}, Problems: []LegalPushProblem{}}
+	if feedRow != nil {
+		created, err := s.insertFeedRow(ctx, feedRow)
+		if err != nil {
+			return nil, err
+		}
+		res.CatalogueCreated = created
+	}
+	if held, err := s.heldDoc(ctx, a.ID); err != nil {
+		return nil, fmt.Errorf("held document lookup: %w", err)
+	} else if held != nil {
+		res.KnowledgeID, res.KnowledgeBaseID = held.KnowledgeID, held.KnowledgeBaseID
+	}
+	WriteLegalFeedLog(ctx, s.db, actor, LegalFeedEntry{
+		Action: "push_" + LegalPushCatalogue, VBPLID: a.ID, DocumentNumber: a.DocumentNumber,
+		Reason: meta.feed + " " + meta.feedDocID,
+		Detail: map[string]any{"feed": meta.feed, "feed_doc_id": meta.feedDocID, "feed_url": meta.feedURL,
+			"catalogue_created": res.CatalogueCreated},
+	})
+	return res, nil
+}
+
 // ingest adds A's pushed full text to the public KB of its type. With
 // create, a is a feed row the catalogue does not hold yet: it is inserted
 // once every check passed and removed again when the ingest fails, so a
@@ -558,9 +630,9 @@ func (s *LegalPushService) ingest(ctx context.Context, a *types.LegalDocument, c
 	if err != nil {
 		return nil, false, fmt.Errorf("public knowledge bases: %w", err)
 	}
-	kbRef, ok := LegalTypeTargets(kbs)[strings.TrimSpace(a.DocType)]
-	if !ok {
-		return nil, false, legalUnprocessable(fmt.Sprintf("không kho công khai nào nhận loại văn bản %q", a.DocType), nil)
+	kbRef, err := legalPushTarget(kbs, a.DocumentNumber, a.DocType)
+	if err != nil {
+		return nil, false, err
 	}
 	if scope, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey && !scope.AllowsKnowledgeBase(kbRef.ID) {
 		return nil, false, apperrors.NewForbiddenError("API key không được ghi vào kho " + kbRef.ID)
