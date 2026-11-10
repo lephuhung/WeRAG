@@ -473,7 +473,7 @@ function ReviewCells({ item, alerts }: { item: LegalReviewItem; alerts: boolean 
       </td>
       <td className="px-5 py-3.5 align-middle">
         {doc?.status ? (
-          <span className={`badge-pill inline-block whitespace-normal text-[10px] leading-snug ${statusTone(doc.status)}`}>
+          <span className={`badge-pill text-[10px] ${statusTone(doc.status)}`}>
             {doc.status}
           </span>
         ) : (

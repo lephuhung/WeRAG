@@ -542,7 +542,7 @@ function CatalogueStatus({ doc }: { doc: DomainPackDocumentView }) {
       {doc.lookup === "ambiguous" && <div className="caption text-warning">{t("dpk.doc.ambiguous")}</div>}
       {rows.map((r) => (
         <div key={r.id}>
-          <span className={`badge-pill inline-block whitespace-normal text-[10.5px] leading-snug ${statusTone(r.status)}`}>
+          <span className={`badge-pill text-[10.5px] ${statusTone(r.status)}`}>
             {r.status || "—"}
           </span>
           {(r.effective_on || r.expired_on) && (
