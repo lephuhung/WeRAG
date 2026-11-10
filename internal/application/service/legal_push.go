@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -82,6 +81,8 @@ var (
 	legalHTMLDropRe  = regexp.MustCompile(`(?is)<(script|style|head)[^>]*>.*?</(script|style|head)>`)
 	legalHTMLBlockRe = regexp.MustCompile(`(?i)</?(p|div|br|li|tr|td|th|h[1-6]|table|section|article)\b[^>]*>`)
 	legalHTMLTagRe   = regexp.MustCompile(`(?s)<[^>]+>`)
+	// legalAppendixOpenRe: the element opening the appendices
+	legalAppendixOpenRe = regexp.MustCompile(`<[a-zA-Z]+[^>]*\sclass="[^"]*\bdoc-region-appendix\b[^"]*"`)
 	// legalArticleLineRe: a line starting "Điều 5." / "Điều 5:"
 	legalArticleLineRe = regexp.MustCompile(`(?m)^[\s\p{Zs}]*(?:Điều|ĐIỀU)[\s\p{Zs}]+\d+[a-zđ]?[\s\p{Zs}]*[.:]`)
 )
@@ -97,10 +98,8 @@ func legalHTMLText(content []byte) string {
 // Điều; the appendices (doc-region-appendix, at the end) are left out: a
 // biểu mẫu there holds a sample decision with its own "Điều 1.".
 func legalUnmarkedArticles(content []byte) int {
-	if i := bytes.Index(content, []byte("doc-region-appendix")); i >= 0 {
-		if j := bytes.LastIndexByte(content[:i], '<'); j >= 0 {
-			content = content[:j]
-		}
+	if loc := legalAppendixOpenRe.FindIndex(content); loc != nil {
+		content = content[:loc[0]]
 	}
 	return len(legalArticleLineRe.FindAllStringIndex(legalHTMLText(content), -1))
 }
@@ -219,6 +218,12 @@ func readLegalPushMeta(m map[string]string) (*legalPushMeta, error) {
 	out.title, out.effFrom, out.effStatus = get("title"), get("eff_from"), get("eff_status")
 	if out.ref.ID == "" && out.ref.Number == "" {
 		return nil, apperrors.NewBadRequestError("metadata.legal_document_id or metadata.doc_number is required")
+	}
+	// the Party numbers its documents again every term: its số hiệu names a
+	// document only together with the day
+	if out.ref.ID == "" && out.ref.IssueDate == "" && vietnamese_legal.IsPartyDocumentNumber(out.ref.Number) {
+		return nil, apperrors.NewBadRequestError("metadata.issue_date is required for a Party document (" + out.ref.Number +
+			"): its number is reused every term")
 	}
 	return out, nil
 }

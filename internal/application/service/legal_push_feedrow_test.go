@@ -385,3 +385,16 @@ func TestLegalUnmarkedArticlesSkipAppendix(t *testing.T) {
 	require.Zero(t, legalUnmarkedArticles([]byte(body)))
 	require.Equal(t, 2, legalUnmarkedArticles([]byte(strings.ReplaceAll(body, `<div class="doc-region-appendix">`, `<div>`))))
 }
+
+func TestLegalPushPartyNeedsIssueDate(t *testing.T) {
+	m := legalPartyMeta()
+	delete(m, "issue_date")
+	_, err := readLegalPushMeta(m)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "issue_date")
+	m["legal_document_id"] = "dangcongsan-tulieu-9001"
+	_, err = readLegalPushMeta(m)
+	require.NoError(t, err, "an id names one row")
+	require.Equal(t, 2, legalUnmarkedArticles([]byte(`<style>.doc-region-appendix{}</style><p>Điều 1. A</p><p>Điều 2. B</p>`)),
+		"a class name in a style rule does not cut the body")
+}
