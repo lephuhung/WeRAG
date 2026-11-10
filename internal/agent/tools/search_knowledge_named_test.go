@@ -243,3 +243,74 @@ func TestSearchKnowledgeNamedNoteOnlyWhenTheSearchCoversWholeBases(t *testing.T)
 		t.Fatalf("note = %q", note)
 	}
 }
+
+func TestNamedLegalArticlesBindToTheirDocument(t *testing.T) {
+	k15 := vietnamese_legal.CatalogNumberKey("15/2026/NĐ-CP")
+	k101 := vietnamese_legal.CatalogNumberKey("101/2026/NĐ-CP")
+	k31 := vietnamese_legal.CatalogNumberKey("31/2024/QH15")
+	cases := []struct {
+		text string
+		want map[string]string
+	}{
+		{"Điều 1 và Điều 10 của Nghị định 15/2026/NĐ-CP hiện còn hiệu lực không?", map[string]string{k15: "1,10"}},
+		{"Nghị định 15/2026/NĐ-CP Điều 1 Điều 10", map[string]string{k15: "1,10"}},
+		{"Nghị định 15/2026/NĐ-CP, Điều 1", map[string]string{k15: "1"}},
+		// the article belongs to the document right after it
+		{"Nghị định 101/2026/NĐ-CP bãi bỏ Điều 1 Nghị định 15/2026/NĐ-CP", map[string]string{k15: "1"}},
+		// passive: ambiguous between the two, bound to none
+		{"Nghị định 15/2026/NĐ-CP bị Nghị định 101/2026/NĐ-CP bãi bỏ Điều 1", map[string]string{}},
+		// a law named without a number takes the article, not the decree
+		{"Điều 10 Bộ luật Lao động so với Nghị định 15/2026/NĐ-CP", map[string]string{}},
+		{"Điều 5 của Nghị định này và Nghị định 15/2026/NĐ-CP", map[string]string{}},
+		{"Điều 5 Luật Đất đai số 31/2024/QH15", map[string]string{k31: "5"}},
+		// a unit after a number ends the list
+		{"Điều 10, 15 ngày theo Nghị định 15/2026/NĐ-CP", map[string]string{k15: "10"}},
+		{"Điều 10, 15 của Nghị định 101/2026/NĐ-CP", map[string]string{k101: "10,15"}},
+		// one document acting on an article of another it leaves out
+		{"Nghị định 101/2026/NĐ-CP bãi bỏ Điều 1", map[string]string{}},
+		// a law in lower case is not a citation, but still owns its article
+		{"điều 10 bộ luật lao động so với Nghị định 15/2026/NĐ-CP", map[string]string{}},
+		// "đồng thời" is not a unit
+		{"Điều 3, 4 đồng thời Nghị định 15/2026/NĐ-CP", map[string]string{k15: "3,4"}},
+	}
+	for _, c := range cases {
+		got := namedLegalArticles(c.text)
+		if len(got) != len(c.want) {
+			t.Errorf("%q: got %v, want %v", c.text, got, c.want)
+			continue
+		}
+		for k, v := range c.want {
+			if strings.Join(got[k], ",") != v {
+				t.Errorf("%q: %s = %v, want %s", c.text, k, got[k], v)
+			}
+		}
+	}
+}
+
+// TestSearchKnowledgeShowsTheAmendersBestChunkNotTheUsersArticles: the
+// round-2 search of the live failure names the amender too; it must not get
+// the user's Điều 1 / Điều 10.
+func TestSearchKnowledgeShowsTheAmendersBestChunkNotTheUsersArticles(t *testing.T) {
+	d15 := namedDoc("tvpl-15", "15/2026/NĐ-CP", "Nghị định", "Còn hiệu lực")
+	d101 := namedDoc("d101", "101/2026/NĐ-CP", "Nghị định", "Còn hiệu lực")
+	catalog := &fakeLegalCatalog{
+		named: []types.LegalNamedCopy{{Document: d15, KnowledgeID: "k15", KnowledgeBaseID: "kb-1"},
+			{Document: d101, KnowledgeID: "k101", KnowledgeBaseID: "kb-1"}},
+		articleChunks: map[string]string{"k15\x001": "c15-d1", "k101\x001": "c101-d1"},
+	}
+	tool, _ := namedSearchTool(catalog, namedWholeKB)
+	ctx := types.WithUserQuery(context.Background(), "Điều 1 của Nghị định 15/2026/NĐ-CP còn hiệu lực không?")
+	res, err := tool.Execute(ctx, json.RawMessage(`{"query":"Nghị định 101/2026/NĐ-CP bãi bỏ Điều 1 Nghị định 15/2026/NĐ-CP"}`))
+	if err != nil || !res.Success {
+		t.Fatalf("execute: %+v %v", res, err)
+	}
+	ids := resultIDs(t, res)
+	for _, id := range ids {
+		if id == "c101-d1" {
+			t.Fatalf("101/2026 got the user's Điều 1: %v", ids)
+		}
+	}
+	if !containsString(ids, "c15-d1") || !containsString(ids, "c-k101") {
+		t.Fatalf("results = %v, want 15/2026 Điều 1 and 101/2026's best chunk", ids)
+	}
+}

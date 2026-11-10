@@ -8,6 +8,7 @@ import (
 	"errors"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 // SectionRef is a parsed section reference. Labels are lower-cased to match
@@ -223,14 +224,58 @@ var articleListRe = regexp.MustCompile(`(?i)(?:^|[^\p{L}])điều\s+(\d+[a-zđ]?
 
 var articleNumberRe = regexp.MustCompile(`\d+[a-zđ]?`)
 
+// articleUnitRe is a unit word after a number: "Điều 10, 15 ngày" names
+// Điều 10 and a duration, not Điều 15.
+var articleUnitRe = regexp.MustCompile(`(?i)^\s*(?:%|(?:ngày|tháng|năm|triệu|tỷ|đồng|lần|người)(?:[^\p{L}]|$))`)
+
+// isArticleUnit reports whether rest, the text after a number in a Điều
+// list, starts with a unit word ("15 ngày"), not "đồng thời"/"lần lượt".
+func isArticleUnit(rest string) bool {
+	if !articleUnitRe.MatchString(rest) {
+		return false
+	}
+	lower := strings.ToLower(strings.TrimSpace(rest))
+	return !strings.HasPrefix(lower, "đồng thời") && !strings.HasPrefix(lower, "lần lượt")
+}
+
+// ArticleList is one written list of Điều ("Điều 1 và Điều 10"): its
+// numbers, lower-cased, and its rune offsets in the text.
+type ArticleList struct {
+	Start, End int
+	Numbers    []string
+}
+
+// FindArticleLists returns the Điều lists text writes, in order.
+func FindArticleLists(text string) []ArticleList {
+	var out []ArticleList
+	for _, m := range articleListRe.FindAllStringSubmatchIndex(text, -1) {
+		body := text[m[2]:m[3]]
+		end := m[3]
+		var nums []string
+		for i, loc := range articleNumberRe.FindAllStringIndex(body, -1) {
+			if i > 0 && isArticleUnit(text[m[2]+loc[1]:]) {
+				break
+			}
+			nums = append(nums, strings.ToLower(body[loc[0]:loc[1]]))
+			end = m[2] + loc[1]
+		}
+		start := m[0]
+		if i := strings.Index(strings.ToLower(text[m[0]:m[2]]), "điều"); i >= 0 {
+			start = m[0] + i
+		}
+		out = append(out, ArticleList{Start: utf8.RuneCountInString(text[:start]),
+			End: utf8.RuneCountInString(text[:end]), Numbers: nums})
+	}
+	return out
+}
+
 // FindArticleNumbers returns the Điều numbers text names, in order, each
 // once, lower-cased ("Điều 1 và Điều 10" → 1, 10).
 func FindArticleNumbers(text string) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, m := range articleListRe.FindAllStringSubmatch(text, -1) {
-		for _, n := range articleNumberRe.FindAllString(m[1], -1) {
-			n = strings.ToLower(n)
+	for _, l := range FindArticleLists(text) {
+		for _, n := range l.Numbers {
 			if !seen[n] {
 				seen[n] = true
 				out = append(out, n)

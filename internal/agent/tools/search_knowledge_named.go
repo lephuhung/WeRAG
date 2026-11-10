@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -36,6 +37,7 @@ const (
 // namedLegalDoc is a named document whose copy the search covers.
 type namedLegalDoc struct {
 	number          string
+	key             string
 	knowledgeID     string
 	knowledgeBaseID string
 }
@@ -47,8 +49,9 @@ type namedLegalMissing struct {
 
 // namedLegalPlan is what the named numbers resolved to.
 type namedLegalPlan struct {
-	docs     []namedLegalDoc
-	articles []string
+	docs []namedLegalDoc
+	// articles are the Điều written for each number (by number key)
+	articles map[string][]string
 	targets  types.SearchTargets
 	// notes always reach the model (an ambiguous number); missing ones only
 	// when the search covered whole bases and no row holds that number.
@@ -180,14 +183,17 @@ func (t *SearchKnowledgeTool) planNamedLegal(
 					legalDocLabel(d), legalOr(d.Status, "chưa rõ tình trạng"), reason)})
 				continue
 			}
-			plan.docs = append(plan.docs, namedLegalDoc{number: d.DocumentNumber, knowledgeID: c.KnowledgeID,
+			plan.docs = append(plan.docs, namedLegalDoc{number: d.DocumentNumber, key: key, knowledgeID: c.KnowledgeID,
 				knowledgeBaseID: c.KnowledgeBaseID})
 		}
 	}
+	plan.articles = map[string][]string{}
 	for _, text := range texts {
-		for _, a := range vietnamese_legal.FindArticleNumbers(text) {
-			if len(plan.articles) < namedLegalMaxArticles && !containsString(plan.articles, a) {
-				plan.articles = append(plan.articles, a)
+		for key, list := range namedLegalArticles(text) {
+			for _, a := range list {
+				if len(plan.articles[key]) < namedLegalMaxArticles && !containsString(plan.articles[key], a) {
+					plan.articles[key] = append(plan.articles[key], a)
+				}
 			}
 		}
 	}
@@ -248,7 +254,7 @@ func (p *namedLegalPlan) capCandidates(rows []*searchResultWithMeta) []*searchRe
 // document asked about".
 func (t *SearchKnowledgeTool) pinNamedLegal(
 	ctx context.Context, p *namedLegalPlan, candidates, final []*searchResultWithMeta, limit int,
-	shownBefore map[string]bool,
+	shownBefore map[string]bool, rerankScores map[string]float64,
 ) ([]*searchResultWithMeta, []string) {
 	if p == nil || len(p.docs) == 0 {
 		return final, nil
@@ -267,17 +273,18 @@ func (t *SearchKnowledgeTool) pinNamedLegal(
 	}
 	perDoc := map[string][]*searchResultWithMeta{}
 	if len(p.articles) > 0 && t.chunkService != nil && t.knowledgeService != nil {
-		ids := make([]string, 0, len(p.docs))
-		for _, d := range p.docs {
-			ids = append(ids, d.knowledgeID)
-		}
-		found, err := t.legalCatalog.ArticleChunkIDs(ctx, ids, p.articles, 1)
-		if err != nil {
-			logger.Warnf(ctx, "[Tool][SearchKnowledge] Named article chunks: %v", err)
-		}
 		var chunkIDs []string
 		for _, d := range p.docs {
-			for _, a := range p.articles {
+			articles := p.articles[d.key]
+			if len(articles) == 0 {
+				continue
+			}
+			found, err := t.legalCatalog.ArticleChunkIDs(ctx, []string{d.knowledgeID}, articles, 1)
+			if err != nil {
+				logger.Warnf(ctx, "[Tool][SearchKnowledge] Named article chunks: %v", err)
+				continue
+			}
+			for _, a := range articles {
 				chunkIDs = append(chunkIDs, found[d.knowledgeID+"\x00"+a]...)
 			}
 		}
@@ -317,14 +324,31 @@ func (t *SearchKnowledgeTool) pinNamedLegal(
 			}
 		}
 	}
-	// no article chunk: the document's best retrieved row
+	// no article chunk: the document's best row for the query, by the
+	// relevance model when it scored the row (also below its threshold),
+	// else by retrieval score
+	rank := func(r *searchResultWithMeta) (bool, float64) {
+		if s, ok := rerankScores[r.ID]; ok {
+			return true, s
+		}
+		return false, r.Score
+	}
 	for _, d := range p.docs {
 		if len(perDoc[d.knowledgeID]) > 0 {
 			continue
 		}
 		var best *searchResultWithMeta
 		for _, r := range candidates {
-			if r != nil && r.SearchResult != nil && r.KnowledgeID == d.knowledgeID && (best == nil || r.Score > best.Score) {
+			if r == nil || r.SearchResult == nil || r.KnowledgeID != d.knowledgeID || shownBefore[r.ID] {
+				continue
+			}
+			if best == nil {
+				best = r
+				continue
+			}
+			rs, rv := rank(r)
+			bs, bv := rank(best)
+			if (rs && !bs) || (rs == bs && rv > bv) {
 				best = r
 			}
 		}
@@ -375,7 +399,7 @@ func (t *SearchKnowledgeTool) pinNamedLegal(
 		}
 		out = append(out, r)
 	}
-	logger.Infof(ctx, "[Tool][SearchKnowledge] Kept %d chunk(s) of %d named document(s) (articles %v)",
+	logger.Infof(ctx, "[Tool][SearchKnowledge] Kept %d chunk(s) of %d named document(s) (articles by number %v)",
 		len(pinned), len(p.docs), p.articles)
 	return out, ids
 }
@@ -420,4 +444,98 @@ func namedLegalNote(p *namedLegalPlan, rows []*searchResultWithMeta) string {
 		return ""
 	}
 	return "Văn bản câu hỏi nêu đích danh nhưng không có trong kết quả:\n" + strings.Join(lines, "\n")
+}
+
+// namedSelfRefRe is "của Nghị định này": the document the text is about,
+// which a question never names by number.
+var namedSelfRefRe = regexp.MustCompile(`(?i)^[\s,]*(?:của\s+)?(?:bộ luật|luật|pháp lệnh|nghị định|nghị quyết|thông tư|quyết định|chỉ thị|văn bản)\s+này`)
+
+// namedArticleGapRe is what may stand between a Điều list and the number
+// of the citation it belongs to: "Điều 1 và Điều 10 của Nghị định số
+// 15/2026/NĐ-CP" (the citation's name, "Luật Đất đai", is cut off first).
+var namedArticleGapRe = regexp.MustCompile(`(?i)^[\s,]*(?:(?:của|tại|thuộc)\s+)?` +
+	`(?:(?:hiến pháp|bộ luật|luật|pháp lệnh|lệnh|nghị định|nghị quyết liên tịch|nghị quyết|thông tư liên tịch|thông tư|quyết định|chỉ thị)\s*)?` +
+	`(?:số\s*)?$`)
+
+// namedTypeAfterRe is a document type right after a Điều list that leads to
+// no citation of the text.
+var namedTypeAfterRe = regexp.MustCompile(`(?i)^[\s,]*(?:của\s+)?(?:hiến pháp|bộ luật|luật|pháp lệnh|nghị định|nghị quyết|thông tư|quyết định|chỉ thị)(?:[^\p{L}]|$)`)
+
+// namedAmendVerbRe is an amending verb between a document and a Điều list.
+var namedAmendVerbRe = regexp.MustCompile(`(?i)bãi bỏ|sửa đổi|bổ sung|thay thế|hết hiệu lực|đình chỉ|ngưng hiệu lực`)
+
+// namedArticleGapRunes bounds that gap, the citation's name excluded.
+const namedArticleGapRunes = 32
+
+// namedArticleGap reports whether gap, the text between a Điều list and a
+// citation's start, joins them.
+func namedArticleGap(gap string, c vietnamese_legal.Citation) bool {
+	g := strings.TrimSpace(strings.ToLower(gap))
+	if name := strings.ToLower(strings.TrimSpace(c.Name)); name != "" {
+		g = strings.TrimSpace(strings.TrimSuffix(strings.TrimSuffix(g, "số"), " "))
+		if i := strings.LastIndex(g, name); i >= 0 && strings.TrimSpace(g[i+len(name):]) == "" {
+			g = g[:i]
+		}
+	}
+	return len([]rune(g)) <= namedArticleGapRunes && namedArticleGapRe.MatchString(g)
+}
+
+// namedLegalArticles binds the Điều lists of text to the numbered citation
+// they belong to, by number key: the citation right after the list ("Điều 10
+// Nghị định 15/2026/NĐ-CP"), else the only citation of a text that cites one
+// document ("Nghị định 15/2026/NĐ-CP, Điều 1"). A list binding to a law
+// named without a number, to "… này", or ambiguous between several
+// documents ("15/2026 bị 101/2026 bãi bỏ Điều 1") binds to none: the named
+// document then shows its best chunk for the query.
+func namedLegalArticles(text string) map[string][]string {
+	lists := vietnamese_legal.FindArticleLists(text)
+	if len(lists) == 0 {
+		return nil
+	}
+	cites := vietnamese_legal.FindCitations(text)
+	runes := []rune(text)
+	numbered := func(c vietnamese_legal.Citation) bool {
+		return c.Key != "" && vietnamese_legal.IsNormativeDocumentNumber(c.Number)
+	}
+	out := map[string][]string{}
+	for _, l := range lists {
+		key := ""
+		bound := false
+		for _, c := range cites {
+			if c.Start < l.End {
+				continue
+			}
+			if c.Start <= len(runes) && namedArticleGap(string(runes[l.End:c.Start]), c) {
+				bound = true
+				if numbered(c) {
+					key = c.Key
+				}
+			}
+			break
+		}
+		if !bound {
+			after := ""
+			if l.End <= len(runes) {
+				after = string(runes[l.End:])
+			}
+			// "của Nghị định này"; "điều 10 bộ luật lao động" (a law in
+			// lower case is not a citation): the list belongs to that one
+			if namedSelfRefRe.MatchString(after) || namedTypeAfterRe.MatchString(after) {
+				continue
+			}
+			if len(cites) == 1 && numbered(cites[0]) {
+				c := cites[0]
+				// "Nghị định 101/2026 bãi bỏ Điều 1": the article is the
+				// amended document's, which the text leaves out
+				if c.End <= l.Start && namedAmendVerbRe.MatchString(string(runes[c.End:l.Start])) {
+					continue
+				}
+				key = c.Key
+			}
+		}
+		if key != "" {
+			out[key] = append(out[key], l.Numbers...)
+		}
+	}
+	return out
 }

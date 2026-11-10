@@ -359,8 +359,9 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 
 	ranked := deduplicated
 	rerankRejected := 0
+	rerankScores := map[string]float64{}
 	if t.rerankModel != nil && len(deduplicated) > 0 {
-		reranked, err := t.rerankResults(ctx, query, deduplicated)
+		reranked, err := t.rerankResultsScored(ctx, query, deduplicated, rerankScores)
 		if err != nil {
 			logger.Warnf(ctx, "[Tool][SearchKnowledge] Rerank failed, using retrieval order: %v", err)
 		} else {
@@ -405,7 +406,7 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 	if inTurn {
 		shownBefore = t.history.pinnedBefore(turnMessageID)
 	}
-	final, pinnedIDs := t.pinNamedLegal(ctx, named, allResults, final, limit, shownBefore)
+	final, pinnedIDs := t.pinNamedLegal(ctx, named, allResults, final, limit, shownBefore, rerankScores)
 	if inTurn && len(pinnedIDs) > 0 {
 		t.history.markPinned(turnMessageID, pinnedIDs)
 	}
@@ -792,6 +793,18 @@ func (t *SearchKnowledgeTool) rerankResults(
 	query string,
 	results []*searchResultWithMeta,
 ) ([]*searchResultWithMeta, error) {
+	return t.rerankResultsScored(ctx, query, results, nil)
+}
+
+// rerankResultsScored is rerankResults that also records the relevance
+// model's raw score of every candidate it scored, by chunk id, in scores
+// (nil: not recorded), including those below the threshold.
+func (t *SearchKnowledgeTool) rerankResultsScored(
+	ctx context.Context,
+	query string,
+	results []*searchResultWithMeta,
+	scores map[string]float64,
+) ([]*searchResultWithMeta, error) {
 	if len(results) == 0 || t.rerankModel == nil {
 		return results, nil
 	}
@@ -811,6 +824,13 @@ func (t *SearchKnowledgeTool) rerankResults(
 	)
 	logger.Infof(ctx, "[Tool][SearchKnowledge] Reranked %d/%d results above threshold %.2f",
 		len(reranked), len(results), threshold)
+	if scores != nil {
+		for _, r := range rankResults {
+			if r.Index >= 0 && r.Index < len(results) && results[r.Index].SearchResult != nil {
+				scores[results[r.Index].ID] = r.RelevanceScore
+			}
+		}
+	}
 	return reranked, nil
 }
 
