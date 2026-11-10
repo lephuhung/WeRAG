@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/google/uuid"
 	"golang.org/x/text/unicode/norm"
 	"gorm.io/gorm"
 
@@ -174,6 +175,9 @@ type LegalPushResult struct {
 	// created a provisional feed row (source = feed, waiting for a SuperAdmin;
 	// a later vbpl.vn import of the same document replaces it).
 	CatalogueCreated bool `json:"catalogue_created,omitempty"`
+	// FullTextRequested: mode catalogue with request_full_text queued the
+	// document in the legal request queue (the TVPL extension's work list).
+	FullTextRequested bool `json:"full_text_requested,omitempty"`
 }
 
 // legalPushMeta is the pushed metadata, read and checked.
@@ -631,18 +635,57 @@ func (s *LegalPushService) pushCatalogueRow(ctx context.Context, a, feedRow *typ
 		}
 		res.CatalogueCreated = created
 	}
-	if held, err := s.heldDoc(ctx, a.ID); err != nil {
+	held, err := s.heldDoc(ctx, a.ID)
+	if err != nil {
 		return nil, fmt.Errorf("held document lookup: %w", err)
-	} else if held != nil {
+	}
+	if held != nil {
 		res.KnowledgeID, res.KnowledgeBaseID = held.KnowledgeID, held.KnowledgeBaseID
+	} else if strings.EqualFold(strings.TrimSpace(meta.raw["request_full_text"]), "true") {
+		if res.FullTextRequested, err = s.requestFullText(ctx, a, meta.feed); err != nil {
+			return nil, err
+		}
 	}
 	WriteLegalFeedLog(ctx, s.db, actor, LegalFeedEntry{
 		Action: "push_" + LegalPushCatalogue, VBPLID: a.ID, DocumentNumber: a.DocumentNumber,
 		Reason: meta.feed + " " + meta.feedDocID,
 		Detail: map[string]any{"feed": meta.feed, "feed_doc_id": meta.feedDocID, "feed_url": meta.feedURL,
-			"catalogue_created": res.CatalogueCreated},
+			"catalogue_created": res.CatalogueCreated, "full_text_requested": res.FullTextRequested},
 	})
 	return res, nil
+}
+
+// legalFeedNoTextSource is the source of a request a feed queued for a
+// document it lists without a usable full text ("dangcongsan_no_text").
+func legalFeedNoTextSource(feed string) string { return legalCap(feed, 24) + "_no_text" }
+
+// requestFullText queues a document no KB holds in the legal request queue,
+// like the nightly import's vbpl_no_text rows (request_count 0: nobody
+// asked yet), unless an open request of its number already waits for it.
+func (s *LegalPushService) requestFullText(ctx context.Context, a *types.LegalDocument, feed string) (bool, error) {
+	db := s.db.WithContext(ctx)
+	var open int64
+	if err := db.Model(&types.LegalDocumentRequest{}).
+		Where("number_key = ? AND legal_document_id IN ? AND status IN ?", a.NumberKey, []string{a.ID, ""}, types.LegalRequestOpenStatuses).
+		Count(&open).Error; err != nil {
+		return false, fmt.Errorf("open requests: %w", err)
+	}
+	if open > 0 {
+		return false, nil
+	}
+	now := time.Now()
+	// Raw: gorm would turn the zero request_count into its default 1.
+	res := db.Exec(`INSERT INTO legal_document_requests
+		(id, number_key, document_number, doc_type, title, legal_document_id, knowledge_base_id, source, status,
+		 request_count, first_requested_at, last_requested_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, '', ?, ?, 0, ?, ?, ?, ?)
+		ON CONFLICT (number_key, legal_document_id) DO NOTHING`,
+		uuid.NewString(), a.NumberKey, a.DocumentNumber, a.DocType, a.Title, a.ID, legalFeedNoTextSource(feed),
+		types.LegalRequestRequested, now, now, now, now)
+	if res.Error != nil {
+		return false, fmt.Errorf("queue request: %w", res.Error)
+	}
+	return res.RowsAffected > 0, nil
 }
 
 // ingest adds A's pushed full text to the public KB of its type. With

@@ -26,8 +26,8 @@ Mỗi văn bản có đúng một **case**:
 | case | Khi nào | Đẩy thế nào |
 |---|---|---|
 | `text` | mọi phần đều có chữ thật: Word, hoặc PDF sinh từ máy (Aspose…) | `POST /system/legal-documents/push`, mode `full`: dòng danh mục (chưa xác minh) và toàn văn vào kho **"Văn bản của Đảng"** |
-| `ocr` | có phần là bản scan: không có lớp chữ, hoặc có lớp OCR của máy scan (PaperPort, OmniPage…; lớp này **không bao giờ** được dùng vì toàn lỗi kiểu "QUYET D!NH chfrc näng") | `POST /system/legal-documents/push-scan` với các PDF ghép theo thứ tự (văn bản chính rồi phụ lục): dòng danh mục và một **bản nháp OCR** để SuperAdmin duyệt tại `/platform/admin/legal-drafts/{id}`; văn bản không có Điều vẫn duyệt được |
-| `catalogue` | không có file, link hỏng (404 ở nguồn), file không dùng được | `push` mode `catalogue`: chỉ dòng danh mục |
+| `ocr` | có phần là bản scan: không có lớp chữ, hoặc có lớp OCR của máy scan (PaperPort, OmniPage…; lớp này **không bao giờ** được dùng vì toàn lỗi kiểu "QUYET D!NH chfrc näng") | mặc định: `push` mode `catalogue` + `request_full_text`: dòng danh mục và một **đề nghị trong hàng chờ** (nguồn `dangcongsan_no_text`) để **extension TVPL** lấy chữ gõ sẵn trên TVPL, không OCR, không phải duyệt từng bản nháp. `--ocr`: `POST /system/legal-documents/push-scan` (PDF ghép theo thứ tự → bản nháp OCR SuperAdmin duyệt) — chỉ dùng cho văn bản extension đánh dấu "không có trên TVPL" |
+| `catalogue` | không có file, link hỏng (404 ở nguồn), file không dùng được | như `ocr` mặc định: dòng danh mục + đề nghị trong hàng chờ cho extension |
 | `skip` | văn bản Nhà nước lọt vào danh sách (`1225/QĐ-TTg`, `35/2021/QH15`), văn bản không số | không đẩy |
 
 Quy tắc chọn phần:

@@ -398,3 +398,38 @@ func TestLegalPushPartyNeedsIssueDate(t *testing.T) {
 	require.Equal(t, 2, legalUnmarkedArticles([]byte(`<style>.doc-region-appendix{}</style><p>Điều 1. A</p><p>Điều 2. B</p>`)),
 		"a class name in a style rule does not cut the body")
 }
+
+// Mode catalogue with request_full_text queues the document for the TVPL
+// extension once; an open request of the number already waiting counts.
+func TestLegalPushCatalogueRequestsFullText(t *testing.T) {
+	svc, _ := legalPushTestService(t)
+	ctx := context.Background()
+	m := legalPartyMeta()
+	m["request_full_text"] = "true"
+	res, err := svc.Push(ctx, LegalPushInput{Metadata: m, Mode: LegalPushCatalogue}, types.Caller{}, LegalFeedActor{})
+	require.NoError(t, err)
+	require.True(t, res.FullTextRequested)
+	var rows []types.LegalDocumentRequest
+	require.NoError(t, svc.db.Find(&rows).Error)
+	require.Len(t, rows, 1)
+	require.Equal(t, res.LegalDocumentID, rows[0].LegalDocumentID)
+	require.Equal(t, "dangcongsan_no_text", rows[0].Source)
+	require.Equal(t, types.LegalRequestRequested, rows[0].Status)
+	require.Zero(t, rows[0].RequestCount, "nobody asked yet")
+
+	again, err := svc.Push(ctx, LegalPushInput{Metadata: m, Mode: LegalPushCatalogue}, types.Caller{}, LegalFeedActor{})
+	require.NoError(t, err)
+	require.False(t, again.FullTextRequested)
+	var n int64
+	svc.db.Model(&types.LegalDocumentRequest{}).Count(&n)
+	require.EqualValues(t, 1, n)
+
+	// without the flag nothing is queued
+	m2 := legalPartyMeta()
+	m2["source_doc_id"], m2["doc_number"] = "tulieu-9003", "116-KL/TW"
+	res, err = svc.Push(ctx, LegalPushInput{Metadata: m2, Mode: LegalPushCatalogue}, types.Caller{}, LegalFeedActor{})
+	require.NoError(t, err)
+	require.False(t, res.FullTextRequested)
+	svc.db.Model(&types.LegalDocumentRequest{}).Count(&n)
+	require.EqualValues(t, 1, n)
+}

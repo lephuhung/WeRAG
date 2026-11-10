@@ -6,13 +6,18 @@ Per ``plan.jsonl`` case:
 * ``text``      → ``POST /system/legal-documents/push`` (mode full) with the
                   built v1 HTML: catalogue row + full text in the KB
                   "Văn bản của Đảng" (unreviewed feed row, review link pending);
-* ``ocr``       → ``POST /system/legal-documents/push-scan`` with the PDF
-                  parts merged in order (main document, then appendices): a
-                  catalogue row and an OCR draft the SuperAdmin reviews at
-                  /platform/admin/legal-drafts/{id};
-* ``catalogue`` → ``POST /system/legal-documents/push`` mode catalogue: the
-                  row only;
+* ``ocr``, ``catalogue`` → ``push`` mode catalogue with request_full_text:
+                  the catalogue row and a request in the legal request queue
+                  (source dangcongsan_no_text), which the TVPL extension works
+                  through: TVPL's typed text, no OCR. With ``--ocr`` a scan
+                  goes to ``POST /system/legal-documents/push-scan`` instead
+                  (PDF parts merged in order → an OCR draft the SuperAdmin
+                  reviews at /platform/admin/legal-drafts/{id}): the fallback
+                  for documents the extension marked "không có trên TVPL";
 * ``skip``      → nothing.
+
+A document already sent for OCR is not queued (its draft would race the
+TVPL text).
 
 One request at a time. A scan of ≤ 20 pages is OCRed while the request
 waits, so the queue paces itself; after a longer one the script sleeps
@@ -94,15 +99,30 @@ def merged_pdf(parts: list[dict]) -> tuple[bytes, int, list[str]]:
     return (out.tobytes(garbage=3, deflate=True) if pages else b""), pages, left
 
 
-def load_done(path: str) -> set[str]:
+ACTION_OF_CASE = {"text": "full", "ocr": "scan", "catalogue": "catalogue"}
+
+
+def load_done(path: str) -> set[tuple[str, str]]:
+    """(source_doc_id, action) pushed with success; older lines without an
+    action name it by their case."""
     done = set()
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:
             for line in f:
                 r = json.loads(line)
                 if r.get("ok"):
-                    done.add(r["source_doc_id"])
+                    done.add((r["source_doc_id"], r.get("action") or ACTION_OF_CASE.get(r.get("case"), "")))
     return done
+
+
+def action_for(case: str, ocr: bool) -> str:
+    """full (text pushed), scan (OCR draft), queue (catalogue row + a request
+    in the legal request queue for the TVPL extension)."""
+    if case == "text":
+        return "full"
+    if case == "ocr" and ocr:
+        return "scan"
+    return "queue"
 
 
 def main(argv=None) -> int:
@@ -113,6 +133,8 @@ def main(argv=None) -> int:
     ap.add_argument("--limit", type=int, default=0, help="stop after N pushes")
     ap.add_argument("--only", action="append", default=[], help="only this số hiệu or source_doc_id (repeatable)")
     ap.add_argument("--sec-per-page", type=float, default=6.0, help="pause after a background OCR (default 6 s/page)")
+    ap.add_argument("--ocr", action="store_true",
+                    help="push scans for OCR drafts (push-scan) instead of queueing them for the TVPL extension")
     ap.add_argument("--dry-run", action="store_true", help="print what would be pushed")
     a = ap.parse_args(argv)
 
@@ -135,13 +157,16 @@ def main(argv=None) -> int:
             e = json.loads(line)
             md = e["metadata"]
             sid = md["source_doc_id"]
-            if e["case"] not in cases or sid in done:
+            act = action_for(e["case"], a.ocr)
+            if e["case"] not in cases or (sid, act) in done:
                 continue
+            if act == "queue" and (sid, "scan") in done:
+                continue  # an OCR draft waits for review: TVPL text must not race it
             if a.only and md["doc_number"] not in a.only and sid not in a.only:
                 continue
             if a.limit and n >= a.limit:
                 break
-            res = {"source_doc_id": sid, "doc_number": md["doc_number"], "case": e["case"]}
+            res = {"source_doc_id": sid, "doc_number": md["doc_number"], "case": e["case"], "action": act}
             meta_json = json.dumps(md, ensure_ascii=False)
             if e["case"] == "text":
                 with open(os.path.join(a.plan_dir, e["html"]), "rb") as f:
@@ -151,7 +176,7 @@ def main(argv=None) -> int:
                     continue
                 code, body = post(api, "/system/legal-documents/push", headers, {"metadata": meta_json, "mode": "full"},
                                   os.path.basename(e["html"]), html, "text/html; charset=utf-8")
-            elif e["case"] == "ocr":
+            elif act == "scan":
                 pdf, pages, left = merged_pdf([p for p in e["parts"]])
                 res["pages"], res["left_out"] = pages, left
                 if not pdf:
@@ -166,8 +191,9 @@ def main(argv=None) -> int:
                                   "application/pdf")
             else:
                 if a.dry_run:
-                    print(f"cat   {md['doc_number']:<20} {e['why'][:80]}")
+                    print(f"queue {md['doc_number']:<20} {e['case']:<9} {e['why'][:70]}")
                     continue
+                meta_json = json.dumps({**md, "request_full_text": "true"}, ensure_ascii=False)
                 code, body = post(api, "/system/legal-documents/push", headers, {"metadata": meta_json, "mode": "catalogue"})
             data = body.get("data") or {}
             res.update(status=code, ok=200 <= code < 300 or code == 409, answer=data or body)
@@ -177,10 +203,10 @@ def main(argv=None) -> int:
             fres.flush()
             n += 1
             draft = data.get("draft") or {}
-            print(f"{code} {e['case']:<9} {md['doc_number']:<20} "
-                  f"{data.get('ingest') or draft.get('status') or ''} {(body.get('error') or {}).get('message', '') if isinstance(body.get('error'), dict) else ''}",
+            print(f"{code} {act:<9} {md['doc_number']:<20} "
+                  f"{data.get('ingest') or draft.get('status') or ('queued' if data.get('full_text_requested') else '')} {(body.get('error') or {}).get('message', '') if isinstance(body.get('error'), dict) else ''}",
                   flush=True)
-            if e["case"] == "ocr" and code == 200 and res.get("pages", 0) > SYNC_OCR_PAGES and not data.get("existing"):
+            if act == "scan" and code == 200 and res.get("pages", 0) > SYNC_OCR_PAGES and not data.get("existing"):
                 time.sleep(a.sec_per_page * res["pages"])
     return 0
 
