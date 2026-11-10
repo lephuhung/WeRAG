@@ -38,6 +38,10 @@
      icon buttons at 36px wide, so a phone keeps the mode name, tools and
      send button on one row. The send button (.btn) stays 44px square. */
   [data-composer-toolbar] button[aria-label]:not([role="switch"]):not([role="tab"]):not(.btn) { min-width: 36px; }
+  /* A sidebar chat row's delete button fills the row's height and the
+     negative margin cancels the row's padding, so the button cannot make
+     the row taller than the rows around it. */
+  button[data-chat-row-delete][aria-label]:not([role="switch"]):not([role="tab"]) { min-height: 34px; min-width: 36px; margin-block: -7px; }
 }
 
 input::placeholder, textarea::placeholder { color: var(--color-muted); opacity: 1; }

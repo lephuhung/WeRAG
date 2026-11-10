@@ -52,6 +52,11 @@ const COMPOSER_NARROW_PX = 400;
 /* useLayoutEffect warns when the component is rendered on the server. */
 const useIsomorphicLayoutEffect = typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
+function fitComposerHeight(el: HTMLTextAreaElement) {
+  el.style.height = "auto";
+  el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT)}px`;
+}
+
 export type ComposerSend = {
   query: string;
   modelId: string;
@@ -165,15 +170,22 @@ export function Composer({
     if (autoFocus) textareaRef.current?.focus();
   }, [autoFocus]);
 
-  /* The composer grows with the text: a wrapped paragraph must not scroll
-   * inside a one-row field. The height is measured (scrollHeight) and
-   * capped; the field shrinks again when the text is deleted. */
+  /* The same text wraps differently at another width, so a height measured
+   * in a narrower layout goes stale when the field widens (SplitPane starts
+   * side by side and switches to the phone layout right after).
+   * Only width counts here: the observer also fires on our own height. */
   useIsomorphicLayoutEffect(() => {
     const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT)}px`;
-  }, [value, compact]);
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let width = el.clientWidth;
+    const ro = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      fitComposerHeight(el);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const closePopups = () => {
     setMentionOpen(false);
@@ -303,6 +315,14 @@ export function Composer({
         : websearchOn
           ? t("composer.askAnyWeb")
           : t("composer.askAny");
+
+  /* The composer grows with the text: a wrapped paragraph must not scroll
+   * inside a one-row field. The height is measured (scrollHeight) and
+   * capped; the field shrinks again when the text is deleted. An empty
+   * field is measured by its placeholder, which changes with the agent. */
+  useIsomorphicLayoutEffect(() => {
+    if (textareaRef.current) fitComposerHeight(textareaRef.current);
+  }, [value, compact, placeholder]);
 
   const [sendBlockMsg, setSendBlockMsg] = useState("");
   useEffect(() => setSendBlockMsg(""), [attachments, value]);

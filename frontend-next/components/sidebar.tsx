@@ -371,6 +371,7 @@ export function Sidebar() {
                 )}
                 <button
                   type="button"
+                  data-chat-row-delete
                   title={t("sidebar.deleteChat")}
                   aria-label={t("sidebar.deleteChat")}
                   // Hiện khi hover (chuột) hoặc khi hàng được focus (bàn phím), và
