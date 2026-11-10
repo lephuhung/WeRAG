@@ -32,7 +32,7 @@ const nd68Push = `<html><body>
 
 func legalPushTestService(t *testing.T) (*LegalPushService, func() int64) {
 	db := legalEditorTestDB(t)
-	require.NoError(t, db.AutoMigrate(&types.LegalProvisionLinkCandidate{}, &types.LegalDocumentRequest{}))
+	require.NoError(t, db.AutoMigrate(&types.LegalProvisionLinkCandidate{}, &types.LegalDocumentRequest{}, &types.LegalDocumentDraft{}))
 	svc := NewLegalPushService(db, nil, nil, repository.NewLegalRequestRepository(db), nil)
 	count := func() int64 {
 		var n int64

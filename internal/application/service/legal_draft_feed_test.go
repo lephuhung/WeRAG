@@ -203,3 +203,32 @@ type failingFiles struct{ interfaces.FileService }
 func (failingFiles) SaveBytes(context.Context, []byte, uint64, string, bool) (string, error) {
 	return "", errors.New("disk full")
 }
+
+// A request naming a document is not closed with another document's copy.
+func TestLegalRequestAddedNeedsTheRequestedDocument(t *testing.T) {
+	_, db, _, _, _, _, _ := newDraftTestService(t)
+	ctx := superAdminCtx()
+	requests := repository.NewLegalRequestRepository(db)
+	feed := NewLegalFeedService(db, &feedKnowledge{}, requests)
+	svc := NewLegalRequestService(requests, nil, draftKBs{}, feed, repository.NewLegalDraftRepository(db))
+	req, err := requests.Record(ctx, &types.LegalDocumentRequest{NumberKey: "11-CT/TW", DocumentNumber: "11-CT/TW",
+		LegalDocumentID: "dangcongsan-tulieu-1", LastSessionID: "s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`INSERT INTO knowledges (id, knowledge_base_id, metadata) VALUES ('k-other', 'kb', '{"external_id":"tvpl-99"}')`,
+		`INSERT INTO knowledges (id, knowledge_base_id, metadata) VALUES ('k-mine', 'kb', '{"external_id":"dangcongsan-tulieu-1"}')`,
+	} {
+		if err := db.Exec(q).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := svc.Decide(ctx, req.ID, &types.LegalRequestDecision{Action: "added", KnowledgeID: "k-other"}); httpStatus(err) != http.StatusBadRequest {
+		t.Fatalf("closed with another document: %v", err)
+	}
+	item, err := svc.Decide(ctx, req.ID, &types.LegalRequestDecision{Action: "added", KnowledgeID: "k-mine"})
+	if err != nil || item.Status != types.LegalRequestAdded {
+		t.Fatalf("added: %+v %v", item, err)
+	}
+}

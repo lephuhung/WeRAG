@@ -433,3 +433,42 @@ func TestLegalPushCatalogueRequestsFullText(t *testing.T) {
 	svc.db.Model(&types.LegalDocumentRequest{}).Count(&n)
 	require.EqualValues(t, 1, n)
 }
+
+// No request while an OCR draft of the document is under way, or when the
+// number was asked (and decided) before without a document.
+func TestLegalPushRequestFullTextSkips(t *testing.T) {
+	svc, _ := legalPushTestService(t)
+	ctx := context.Background()
+	m := legalPartyMeta()
+	m["request_full_text"] = "true"
+	require.NoError(t, svc.db.Create(&types.LegalDocumentDraft{ID: "d1", LegalDocumentID: "dangcongsan-tulieu-9001",
+		Status: types.LegalDraftReady}).Error)
+	res, err := svc.Push(ctx, LegalPushInput{Metadata: m, Mode: LegalPushCatalogue}, types.Caller{}, LegalFeedActor{})
+	require.NoError(t, err)
+	require.False(t, res.FullTextRequested, "a draft under review")
+
+	m2 := legalPartyMeta()
+	m2["request_full_text"], m2["source_doc_id"], m2["doc_number"] = "true", "tulieu-9004", "117-KL/TW"
+	now := time.Now()
+	require.NoError(t, svc.db.Create(&types.LegalDocumentRequest{NumberKey: vietnamese_legal.CatalogNumberKey("117-KL/TW"),
+		DocumentNumber: "117-KL/TW", Status: types.LegalRequestRejected, FirstRequestedAt: now, LastRequestedAt: now}).Error)
+	res, err = svc.Push(ctx, LegalPushInput{Metadata: m2, Mode: LegalPushCatalogue}, types.Caller{}, LegalFeedActor{})
+	require.NoError(t, err)
+	require.False(t, res.FullTextRequested, "the number was decided before")
+}
+
+// An id sent together with another document's số hiệu is refused.
+func TestLegalPushIDMustMatchNumber(t *testing.T) {
+	svc, _ := legalPushTestService(t)
+	ctx := context.Background()
+	res, err := svc.Push(ctx, LegalPushInput{Metadata: legalPartyMeta(), Mode: LegalPushCatalogue}, types.Caller{}, LegalFeedActor{})
+	require.NoError(t, err)
+	m := legalPartyMeta()
+	m["legal_document_id"], m["doc_number"] = res.LegalDocumentID, "115-KL/TW"
+	_, err = svc.Push(ctx, LegalPushInput{Metadata: m, Mode: LegalPushCatalogue}, types.Caller{}, LegalFeedActor{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "không phải 115-KL/TW")
+	m["doc_number"] = "114 - KL/TW"
+	_, err = svc.Push(ctx, LegalPushInput{Metadata: m, Mode: LegalPushCatalogue}, types.Caller{}, LegalFeedActor{})
+	require.NoError(t, err, "the same number written another way")
+}

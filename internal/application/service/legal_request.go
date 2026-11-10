@@ -167,6 +167,9 @@ func (s *legalRequestService) items(ctx context.Context, rows []*types.LegalDocu
 				ID: d.ID, DocumentNumber: d.DocumentNumber, Title: d.Title, DocType: d.DocType,
 				Issuer: d.Issuer, Status: d.Status, URL: vietnamese_legal.VBPLDocumentURL + d.ID,
 			}
+			if d.IsFeedRow() {
+				item.Document.URL = "" // a feed's document has no vbpl.vn page
+			}
 			if d.IssuedOn != nil {
 				item.Document.IssuedOn = d.IssuedOn.Format("2006-01-02")
 			}
@@ -190,6 +193,26 @@ func (s *legalRequestService) item(ctx context.Context, row *types.LegalDocument
 	return items[0], nil
 }
 
+// knowledgeIsRequested refuses to close a request that names a catalogue
+// document with a knowledge ingested for another one: a pushed copy that
+// resolved to another row (a reused Party number, another day) must leave
+// the request open.
+func (s *legalRequestService) knowledgeIsRequested(ctx context.Context, row *types.LegalDocumentRequest, knowledgeID string) error {
+	if row.LegalDocumentID == "" || knowledgeID == "" || s.feed == nil || s.feed.db == nil {
+		return nil
+	}
+	var ext []string
+	if err := s.feed.db.WithContext(ctx).Raw(`SELECT COALESCE(metadata->>'external_id', '') FROM knowledges
+		WHERE id = ? AND deleted_at IS NULL`, knowledgeID).Scan(&ext).Error; err != nil {
+		return fmt.Errorf("knowledge lookup: %w", err)
+	}
+	if len(ext) == 1 && ext[0] != "" && ext[0] != row.LegalDocumentID {
+		return apperrors.NewBadRequestError(fmt.Sprintf("tài liệu %s là văn bản %s, không phải văn bản %s của đề nghị: đề nghị vẫn mở",
+			knowledgeID, ext[0], row.LegalDocumentID))
+	}
+	return nil
+}
+
 func (s *legalRequestService) Decide(
 	ctx context.Context, id string, d *types.LegalRequestDecision,
 ) (*types.LegalRequestItem, error) {
@@ -210,6 +233,9 @@ func (s *legalRequestService) Decide(
 	case types.LegalRequestActionReject:
 		decided, err = s.requests.Decide(ctx, id, types.LegalRequestRejected, caller.UserID, note, "", "")
 	case types.LegalRequestActionAdded:
+		if err := s.knowledgeIsRequested(ctx, row, strings.TrimSpace(d.KnowledgeID)); err != nil {
+			return nil, err
+		}
 		decided, err = s.requests.Decide(ctx, id, types.LegalRequestAdded, caller.UserID, note,
 			strings.TrimSpace(d.KnowledgeID), strings.TrimSpace(d.KnowledgeBaseID))
 	case types.LegalRequestActionIngest:

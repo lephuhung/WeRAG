@@ -277,6 +277,11 @@ func (s *LegalPushService) resolveDoc(ctx context.Context, ref legalDocRef) (*ty
 		if d.ID == "" {
 			return nil, nil, "id " + ref.ID + " không có trong danh mục", nil
 		}
+		// an id sent with a số hiệu must be that document's (the TVPL
+		// extension sends its request's row with the number of the page it read)
+		if ref.Number != "" && vietnamese_legal.CatalogNumberKey(ref.Number) != d.NumberKey {
+			return nil, nil, fmt.Sprintf("id %s là văn bản %s, không phải %s", ref.ID, d.DocumentNumber, ref.Number), nil
+		}
 		return &d, nil, "", nil
 	}
 	key := vietnamese_legal.CatalogNumberKey(ref.Number)
@@ -663,14 +668,28 @@ func legalFeedNoTextSource(feed string) string { return legalCap(feed, 24) + "_n
 // like the nightly import's vbpl_no_text rows (request_count 0: nobody
 // asked yet), unless an open request of its number already waits for it.
 func (s *LegalPushService) requestFullText(ctx context.Context, a *types.LegalDocument, feed string) (bool, error) {
-	db := s.db.WithContext(ctx)
-	var open int64
-	if err := db.Model(&types.LegalDocumentRequest{}).
-		Where("number_key = ? AND legal_document_id IN ? AND status IN ?", a.NumberKey, []string{a.ID, ""}, types.LegalRequestOpenStatuses).
-		Count(&open).Error; err != nil {
-		return false, fmt.Errorf("open requests: %w", err)
+	if strings.HasPrefix(strings.TrimSpace(a.Status), LegalExpiredStatusPrefix) {
+		return false, nil // a fully expired document never gets a full text
 	}
-	if open > 0 {
+	db := s.db.WithContext(ctx)
+	// any request of the number naming no document (open or decided, as the
+	// nightly import), or one of this document (ON CONFLICT below)
+	var asked int64
+	if err := db.Model(&types.LegalDocumentRequest{}).
+		Where("number_key = ? AND legal_document_id = ''", a.NumberKey).Count(&asked).Error; err != nil {
+		return false, fmt.Errorf("requests of the number: %w", err)
+	}
+	if asked > 0 {
+		return false, nil
+	}
+	// an OCR draft of the document in progress or under review: a TVPL copy
+	// would race it
+	var drafts int64
+	if err := db.Model(&types.LegalDocumentDraft{}).
+		Where("legal_document_id = ? AND status <> ?", a.ID, types.LegalDraftFailed).Count(&drafts).Error; err != nil {
+		return false, fmt.Errorf("drafts of the document: %w", err)
+	}
+	if drafts > 0 {
 		return false, nil
 	}
 	now := time.Now()
