@@ -248,12 +248,14 @@ func TestBuildLegalDocContextRestoresSymbol(t *testing.T) {
 }
 
 func TestIsPartyDocumentNumber(t *testing.T) {
-	for _, s := range []string{"57-NQ/TW", "19-HD/BTGTW", "228-QĐ/TW", "03-QĐi/TW", " 9 - TB/VPTW", "08-HD/BTCTW"} {
+	for _, s := range []string{"57-NQ/TW", "19-HD/BTGTW", "228-QĐ/TW", "03-QĐi/TW", " 9 - TB/VPTW", "08-HD/BTCTW",
+		"342-QÐ/BTCTW", "62-QĐ/TGV", "12-QĐ/BCĐTW", "1232-CV/BTCTW", "47-CTr/TW"} {
 		if !IsPartyDocumentNumber(s) {
 			t.Errorf("%q should read as a Party number", s)
 		}
 	}
-	for _, s := range []string{"45/KH-UBND", "53/2022/NĐ-CP", "279/NQ-UBTVQH16", "/01/2025", "", "NQ/TW"} {
+	for _, s := range []string{"45/KH-UBND", "53/2022/NĐ-CP", "279/NQ-UBTVQH16", "/01/2025", "", "NQ/TW",
+		"46-TC/CĐKT", "220-TC/KBNN", "3-TT/LB", "73-TTLB/GTXD", "12 - TC / TTCT", "12-QĐ/LB", "5-NQ/TVQH", "7-CT/NH"} {
 		if IsPartyDocumentNumber(s) {
 			t.Errorf("%q is not a Party number", s)
 		}

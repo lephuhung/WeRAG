@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode"
 
+	"golang.org/x/text/unicode/norm"
 	"gorm.io/gorm"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
@@ -74,18 +75,32 @@ const LegalPushMaxBytes = 20 << 20
 // hold: less is a placeholder page, not a document.
 const legalPushMinTextRunes = 200
 
+const legalNoStructureMsg = "tệp không có cấu trúc Điều/khoản dùng được (lớp prov-* của chuẩn v1)"
+
 var (
-	// legalUnmarkedArticleRe: a paragraph starting "Điều 1." / "Điều 1:"
-	legalUnmarkedArticleRe = regexp.MustCompile(`>\s*Điều\s+1\s*[.:]`)
-	legalHTMLDropRe = regexp.MustCompile(`(?is)<(script|style|head)[^>]*>.*?</(script|style|head)>`)
-	legalHTMLTagRe  = regexp.MustCompile(`(?s)<[^>]+>`)
+	legalHTMLDropRe  = regexp.MustCompile(`(?is)<(script|style|head)[^>]*>.*?</(script|style|head)>`)
+	legalHTMLBlockRe = regexp.MustCompile(`(?i)</?(p|div|br|li|tr|td|th|h[1-6]|table|section|article)\b[^>]*>`)
+	legalHTMLTagRe   = regexp.MustCompile(`(?s)<[^>]+>`)
+	// legalArticleLineRe: a line starting "Điều 5." / "Điều 5:"
+	legalArticleLineRe = regexp.MustCompile(`(?m)^[\s\p{Zs}]*(?:Điều|ĐIỀU)[\s\p{Zs}]+\d+[a-zđ]?[\s\p{Zs}]*[.:]`)
 )
+
+// legalHTMLText is an HTML file's text, one line per block element.
+func legalHTMLText(content []byte) string {
+	s := legalHTMLDropRe.ReplaceAllString(string(content), " ")
+	s = legalHTMLBlockRe.ReplaceAllString(s, "\n")
+	return norm.NFC.String(html.UnescapeString(legalHTMLTagRe.ReplaceAllString(s, "")))
+}
+
+// legalUnmarkedArticles counts the lines of a file that start a Điều.
+func legalUnmarkedArticles(content []byte) int {
+	return len(legalArticleLineRe.FindAllStringIndex(legalHTMLText(content), -1))
+}
 
 // legalHTMLTextRunes counts the letters and digits of an HTML file's text.
 func legalHTMLTextRunes(content []byte) int {
-	text := legalHTMLTagRe.ReplaceAllString(legalHTMLDropRe.ReplaceAllString(string(content), " "), " ")
 	n := 0
-	for _, r := range html.UnescapeString(text) {
+	for _, r := range legalHTMLText(content) {
 		if unicode.IsLetter(r) || unicode.IsDigit(r) {
 			n++
 		}
@@ -469,11 +484,11 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 	case structured:
 		places = vbpl.ProvisionPlaces(doc)
 	case vbpl.LooksLikeVBPL(in.Content) || len(markup.Provisions) > 0:
-		return nil, legalUnprocessable("tệp không có cấu trúc Điều/khoản dùng được (lớp prov-* của chuẩn v1)", nil)
-	case legalUnmarkedArticleRe.Match(in.Content):
-		// one chunk per Điều needs the markup: an unmarked "Điều 1." is the
-		// pusher's mistake, not a document without Điều
-		return nil, legalUnprocessable("tệp có \"Điều 1.\" nhưng không đánh dấu prov-article: văn bản có Điều phải theo cấu trúc của chuẩn v1", nil)
+		return nil, legalUnprocessable(legalNoStructureMsg, nil)
+	case legalUnmarkedArticles(in.Content) >= 2:
+		// one chunk per Điều needs the markup: unmarked "Điều 1." lines are
+		// the pusher's mistake, not a document without Điều
+		return nil, legalUnprocessable("tệp có các dòng \"Điều N.\" nhưng không đánh dấu prov-article: văn bản có Điều phải theo cấu trúc của chuẩn v1", nil)
 	case legalHTMLTextRunes(in.Content) < legalPushMinTextRunes:
 		return nil, legalUnprocessable(fmt.Sprintf("tệp gần như không có chữ (dưới %d ký tự)", legalPushMinTextRunes), nil)
 	}
@@ -498,6 +513,11 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 	case mode == LegalPushFull && held != nil:
 		return nil, apperrors.NewConflictError(fmt.Sprintf("văn bản %s (%s) đã có toàn văn trong kho %s (%s); chỉ nạp liên kết (mode links)",
 			a.ID, a.DocumentNumber, held.KnowledgeBaseID, held.KnowledgeID))
+	}
+	if !structured && mode != LegalPushFull {
+		// a file without structure only brings a full text: as links it
+		// would replace the source's earlier marks of the document with none
+		return nil, legalUnprocessable(legalNoStructureMsg+"; tệp không có Điều/khoản chỉ được nạp toàn văn khi chưa kho nào giữ văn bản", nil)
 	}
 	res.Mode = mode
 
@@ -588,6 +608,10 @@ func (s *LegalPushService) pushCatalogueRow(ctx context.Context, a, feedRow *typ
 	res := &LegalPushResult{LegalDocumentID: a.ID, DocumentNumber: a.DocumentNumber, Mode: LegalPushCatalogue,
 		Links: map[string]int{}, Problems: []LegalPushProblem{}}
 	if feedRow != nil {
+		if strings.HasPrefix(strings.TrimSpace(feedRow.Status), LegalExpiredStatusPrefix) {
+			return nil, apperrors.NewBadRequestError(fmt.Sprintf("văn bản %s \"%s\" theo nguồn %s: văn bản hết hiệu lực toàn bộ "+
+				"không tạo dòng danh mục mới", feedRow.DocumentNumber, feedRow.Status, feedRow.Source))
+		}
 		created, err := s.insertFeedRow(ctx, feedRow)
 		if err != nil {
 			return nil, err
@@ -630,7 +654,7 @@ func (s *LegalPushService) ingest(ctx context.Context, a *types.LegalDocument, c
 	if err != nil {
 		return nil, false, fmt.Errorf("public knowledge bases: %w", err)
 	}
-	kbRef, err := legalPushTarget(kbs, a.DocumentNumber, a.DocType)
+	kbRef, err := legalPushTarget(kbs, meta.feed, a.DocumentNumber, a.DocType)
 	if err != nil {
 		return nil, false, err
 	}

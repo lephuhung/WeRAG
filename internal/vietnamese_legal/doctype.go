@@ -200,13 +200,31 @@ func NormalizeOwnDocumentNumber(s string) string {
 
 // partyNumberRe is the shape of a Party document's số hiệu: type first,
 // the issuing body after the slash, no year ("57-NQ/TW", "19-HD/BTGTW",
-// "03-QĐi/TW").
-var partyNumberRe = regexp.MustCompile(`^\d{1,5}[a-zA-Z]?-\p{L}+/\p{L}[\p{L}\p{N}\-]*$`)
+// "03-QĐi/TW"). Old State numbers share the shape ("46-TC/CĐKT",
+// "12-QĐ/LB", "5-NQ/TVQH"), so the type and the body are checked too.
+var partyNumberRe = regexp.MustCompile(`^\d{1,5}[a-zA-Z]?-(\p{L}+)/(\p{L}[\p{L}\p{N}\-]*)$`)
+
+// partyTypeSymbols are the type codes of HD 36-HD/VPTW.
+var partyTypeSymbols = map[string]bool{
+	"NQ": true, "QĐ": true, "QĐI": true, "CT": true, "KL": true, "QC": true, "HD": true, "TB": true,
+	"KH": true, "CTR": true, "CV": true, "BC": true, "TTR": true, "ĐA": true, "CĐ": true,
+}
+
+// partyBodies are Party bodies that do not end in "TW" (the central ones
+// all do: TW, VPTW, BTGTW, BTCTW, UBKTTW, BCĐTW…).
+var partyBodies = map[string]bool{"TU": true, "HU": true, "QU": true, "ĐU": true, "ĐUK": true, "BCĐ": true,
+	"TGV": true, "CQTTBCĐ": true, "BTGDV": true}
 
 // IsPartyDocumentNumber reports whether s is numbered the way the Party's
-// documents are (HD 36-HD/VPTW), not the State's ("45/KH-UBND").
+// documents are (HD 36-HD/VPTW), not the State's ("45/KH-UBND",
+// "46-TC/CĐKT").
 func IsPartyDocumentNumber(s string) bool {
-	return partyNumberRe.MatchString(stripWS(strings.TrimSpace(s)))
+	m := partyNumberRe.FindStringSubmatch(stripWS(strings.TrimSpace(strings.ReplaceAll(s, "Ð", "Đ"))))
+	if m == nil || !partyTypeSymbols[strings.ToUpper(m[1])] {
+		return false
+	}
+	body := strings.ToUpper(m[2])
+	return strings.HasSuffix(body, "TW") || partyBodies[body]
 }
 
 // numberSymbolRe / partyNumberSymbolRe split a số hiệu around its type

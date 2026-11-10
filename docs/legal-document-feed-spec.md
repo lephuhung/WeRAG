@@ -785,6 +785,21 @@ KB, duyệt liên kết hay cấu hình. Bật/tắt bằng
 | `auto` (mặc định) | A đã có toàn văn trong KB công khai → `links`; chưa có → `full` |
 | `links` | chỉ tạo liên kết chờ duyệt; không đụng KB. A chưa có toàn văn ở KB công khai nào → vị trí điều khoản lấy theo tệp đẩy lên (id tổng hợp, ghi rõ trong `match_reason`) |
 | `full` | nạp toàn văn A vào KB theo `doc_type` của dòng danh mục (tên KB "VBPL – <loại>") **và** tạo liên kết; A đã có toàn văn ở một KB công khai → `409`; A "Hết hiệu lực toàn bộ" → `400` (mục 2.3). Tài liệu nạp có `external_id` = id danh mục A, `source` = tên nguồn; liên kết định danh được ghi sẵn với `reviewed_by = "feed:<nguồn>"` |
+| `catalogue` | chỉ tạo dòng danh mục tạm (văn bản nguồn chỉ có metadata, không có toàn văn); **không cần `file`**. Dòng đã có (vbpl, người duyệt, lần đẩy trước) → giữ nguyên. `eff_status` "Hết hiệu lực" → `400`, không tạo dòng |
+
+Văn bản **không có Điều** (Kết luận, Thông báo, Hướng dẫn…; 2026-11-10): tệp
+không có lớp `prov-*` và không có `data-amend` được nhận **chỉ để nạp toàn văn**
+(chế độ cuối cùng là `full`); ở `links`, hoặc `auto` khi A đã có toàn văn → `422`
+(không thay các dấu nguồn đã đẩy trước bằng "không có gì"). Từ chối khi tệp có
+≥ 2 dòng "Điều N." chưa đánh dấu (văn bản có Điều phải theo chuẩn v1) hoặc dưới
+200 chữ/số. Toàn văn này đi qua bộ phân tích thường của KB (không chunk theo Điều).
+
+**Văn bản của Đảng** (nguồn `dangcongsan`, hoặc số hiệu kiểu Đảng
+`vietnamese_legal.IsPartyDocumentNumber`: `57-NQ/TW`, `19-HD/BTGTW`; ký hiệu loại
+theo HD 36-HD/VPTW và cơ quan kết thúc "TW" hoặc TU/HU/QU/ĐU/BCĐ…, nên số hiệu Nhà
+nước kiểu cũ `46-TC/CĐKT`, `12-QĐ/LB` không khớp) vào KB công khai tên đúng
+**"Văn bản của Đảng"**, không vào KB "VBPL – <loại>"; chưa có KB này → `422`.
+Metadata thêm tuỳ chọn `signer` (người ký) và `field` (lĩnh vực) cho dòng tạm.
 
 Xử lý phía server:
 

@@ -45,9 +45,14 @@ func LegalTypeTargets(kbs []types.LegalPublicKB) map[string]types.LegalPublicKB 
 // LegalTypeTargets.
 const LegalPartyKBName = "Văn bản của Đảng"
 
-// legalPushTarget is the public KB a pushed document's full text goes to.
-func legalPushTarget(kbs []types.LegalPublicKB, number, docType string) (types.LegalPublicKB, error) {
-	if vietnamese_legal.IsPartyDocumentNumber(number) {
+// LegalPartyFeeds are the legal feeds whose documents are all the Party's.
+var LegalPartyFeeds = map[string]bool{"dangcongsan": true}
+
+// legalPushTarget is the public KB a pushed document's full text goes to:
+// a Party feed's documents and Party-numbered ones to LegalPartyKBName,
+// the others by type.
+func legalPushTarget(kbs []types.LegalPublicKB, feed, number, docType string) (types.LegalPublicKB, error) {
+	if LegalPartyFeeds[feed] || vietnamese_legal.IsPartyDocumentNumber(number) {
 		for _, kb := range kbs {
 			if strings.TrimSpace(kb.Name) == LegalPartyKBName {
 				return kb, nil

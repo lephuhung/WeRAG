@@ -276,8 +276,10 @@ func TestLegalPushUnstructuredPartyDocument(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "knowledge service is not available", "past the structure check and the routing")
 
-	// an unmarked "Điều 1." is refused: the Điều must be marked
-	err = push(strings.Replace(kl114Push, "<p>1. Thống nhất", "<p>Điều 1. Thống nhất", 1))
+	// unmarked "Điều N." lines are refused: the Điều must be marked
+	unmarked := strings.Replace(kl114Push, "<p>1. Thống nhất", "<p><b>Điều&nbsp;1.</b> Thống nhất", 1)
+	unmarked = strings.Replace(unmarked, "<p>2. Giao", "<p>Điều 2: Giao", 1)
+	err = push(unmarked)
 	require.True(t, stderrors.As(err, &app), "%v", err)
 	require.Contains(t, app.Message, "prov-article")
 	// a near-empty page is no document
@@ -313,4 +315,49 @@ func TestLegalPushCatalogueRow(t *testing.T) {
 	_, err = svc.Push(ctx, LegalPushInput{Metadata: legalPartyMeta(), Mode: LegalPushFull}, types.Caller{}, LegalFeedActor{})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "file is empty")
+}
+
+// A file without structure only brings a full text: on a document a KB
+// already holds (mode links) it is refused, so the source's earlier marks
+// are not replaced by none.
+func TestLegalPushUnstructuredNeverAsLinks(t *testing.T) {
+	svc, count := legalPushTestService(t)
+	ctx := context.Background()
+	meta := legalPushMetaFor("68/2026/NĐ-CP")
+	for _, mode := range []string{"", LegalPushLinks} {
+		_, err := svc.Push(ctx, LegalPushInput{Content: []byte(kl114Push), Metadata: meta, Mode: mode}, types.Caller{}, LegalFeedActor{})
+		var app *apperrors.AppError
+		require.True(t, stderrors.As(err, &app), "%v", err)
+		require.Equal(t, http.StatusUnprocessableEntity, app.HTTPCode, "mode %q", mode)
+		require.Contains(t, app.Message, "chỉ được nạp toàn văn")
+	}
+	require.EqualValues(t, 0, count())
+}
+
+func TestLegalPushCatalogueRefusesExpired(t *testing.T) {
+	svc, _ := legalPushTestService(t)
+	m := legalPartyMeta()
+	m["eff_status"] = "Hết hiệu lực"
+	_, err := svc.Push(context.Background(), LegalPushInput{Metadata: m, Mode: LegalPushCatalogue}, types.Caller{}, LegalFeedActor{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "hết hiệu lực toàn bộ")
+	var n int64
+	require.NoError(t, svc.db.Model(&types.LegalDocument{}).Where("id = ?", "dangcongsan-tulieu-9001").Count(&n).Error)
+	require.Zero(t, n)
+}
+
+func TestLegalPushTarget(t *testing.T) {
+	kbs := []types.LegalPublicKB{{ID: "kb-tt", Name: LegalKBNamePrefix + "Thông tư"}, {ID: "kb-nq", Name: LegalKBNamePrefix + "Nghị quyết"},
+		{ID: "kb-dang", Name: LegalPartyKBName}}
+	for _, c := range []struct{ feed, number, docType, want string }{
+		{"dangcongsan", "57-NQ/TW", "Nghị quyết", "kb-dang"},
+		{"tvpl", "57-NQ/TW", "Nghị quyết", "kb-dang"},
+		{"dangcongsan", "1232-CV/BTCTW", "Công văn", "kb-dang"},
+		{"tvpl", "46-TC/CĐKT", "Thông tư", "kb-tt"}, // old State numbering
+		{"tvpl", "5-NQ/TVQH", "Nghị quyết", "kb-nq"},
+	} {
+		kb, err := legalPushTarget(kbs, c.feed, c.number, c.docType)
+		require.NoError(t, err, c.number)
+		require.Equal(t, c.want, kb.ID, c.number)
+	}
 }
