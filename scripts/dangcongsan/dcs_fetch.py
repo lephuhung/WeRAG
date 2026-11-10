@@ -186,7 +186,9 @@ def source_doc_id(site: str, path: str) -> str:
     """Stable id of a detail page: the CMS id at the end of the slug when
     there is one (tulieu "...-192"), else a hash of the path."""
     path = urllib.parse.urlsplit(path).path
-    m = re.search(r"-(\d+)(?:\.html)?$", path)
+    # old pages end in the CMS id ("…-192"); new ones in ".html", where a
+    # trailing number is part of the title ("…-nam-2026.html"), not an id
+    m = re.search(r"-(\d+)$", path)
     if m and site == "tulieu":
         return f"tulieu-{m.group(1)}"
     return f"{site}-" + hashlib.sha1(path.encode()).hexdigest()[:16]

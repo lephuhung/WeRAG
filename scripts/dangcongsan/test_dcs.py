@@ -76,6 +76,12 @@ class Fetch(unittest.TestCase):
         self.assertEqual(f.quote_url("https://h/upload/QĐ 1.pdf"), "https://h/upload/Q%C4%90%201.pdf")
         self.assertEqual(f.quote_url("https://h/a%20b.pdf"), "https://h/a%20b.pdf")
 
+    def test_source_doc_id(self):
+        self.assertEqual(f.source_doc_id("tulieu", "/he-thong-van-ban/van-ban-cua-dang/nghi-quyet-so-37-nqtw-192"), "tulieu-192")
+        a = f.source_doc_id("tulieu", "/he-thong-van-ban/van-ban-cua-dang/chi-thi-ve-viec-to-chuc-tet-binh-ngo-nam-2026.html")
+        b = f.source_doc_id("tulieu", "/he-thong-van-ban/van-ban-cua-dang/ket-luan-phuong-huong-quy-ii-2026.html")
+        self.assertTrue(a.startswith("tulieu-") and len(a) > 20 and a != b)
+
     def test_sniff(self):
         self.assertEqual(c.sniff(b"%PDF-1.4"), "pdf")
         self.assertEqual(c.sniff(b"<!DOCTYPE html><html>"), "html")
