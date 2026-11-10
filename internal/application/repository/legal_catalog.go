@@ -203,3 +203,96 @@ func (r *legalCatalogRepository) SetSourcePending(ctx context.Context, id string
 	return r.db.WithContext(ctx).Model(&types.LegalDocument{}).
 		Where("id = ?", id).UpdateColumn("source_pending", value).Error
 }
+
+func (r *legalCatalogRepository) NamedCopies(
+	ctx context.Context, keys, kbIDs []string, limit int,
+) ([]types.LegalNamedCopy, error) {
+	if len(keys) == 0 {
+		return nil, nil
+	}
+	// per key: a number shared by many provinces must not crowd out another
+	var docs []*types.LegalDocument
+	for _, k := range keys {
+		var part []*types.LegalDocument
+		if err := r.db.WithContext(ctx).Where("number_key = ?", k).Order("issued_on DESC NULLS LAST, id").
+			Limit(limit).Find(&part).Error; err != nil {
+			return nil, err
+		}
+		docs = append(docs, part...)
+	}
+	if len(docs) == 0 {
+		return nil, nil
+	}
+	ids := make([]string, 0, len(docs))
+	for _, d := range docs {
+		ids = append(ids, d.ID)
+	}
+	type copyRow struct {
+		ID              string
+		KnowledgeBaseID string
+		ExternalID      string
+	}
+	var copies []copyRow
+	if len(kbIDs) > 0 {
+		ext := "metadata->>'external_id'"
+		if r.db.Dialector.Name() != "postgres" {
+			ext = "json_extract(metadata, '$.external_id')"
+		}
+		// knowledge_base_id first: the partial index on (kb, external_id)
+		if err := r.db.WithContext(ctx).Table("knowledges").
+			Select("id, knowledge_base_id, "+ext+" AS external_id").
+			Where("knowledge_base_id IN ? AND deleted_at IS NULL AND "+ext+" IN ?", kbIDs, ids).
+			Where("parse_status IN ?", []string{types.ParseStatusCompleted, types.ParseStatusFinalizing}).
+			Order("created_at, id").Scan(&copies).Error; err != nil {
+			return nil, err
+		}
+	}
+	byDoc := map[string][]copyRow{}
+	for _, c := range copies {
+		byDoc[c.ExternalID] = append(byDoc[c.ExternalID], c)
+	}
+	var out []types.LegalNamedCopy
+	for _, d := range docs {
+		if len(byDoc[d.ID]) == 0 {
+			out = append(out, types.LegalNamedCopy{Document: d})
+			continue
+		}
+		for _, c := range byDoc[d.ID] {
+			out = append(out, types.LegalNamedCopy{Document: d, KnowledgeID: c.ID, KnowledgeBaseID: c.KnowledgeBaseID})
+		}
+	}
+	return out, nil
+}
+
+func (r *legalCatalogRepository) ArticleChunkIDs(
+	ctx context.Context, knowledgeIDs, articles []string, perArticle int,
+) (map[string][]string, error) {
+	out := map[string][]string{}
+	if len(knowledgeIDs) == 0 || len(articles) == 0 {
+		return out, nil
+	}
+	has := "jsonb_exists(metadata->'legal'->'article_nos', ?)"
+	if r.db.Dialector.Name() != "postgres" {
+		has = "EXISTS (SELECT 1 FROM json_each(metadata, '$.legal.article_nos') WHERE value = ?)"
+	}
+	for _, a := range articles {
+		var rows []struct {
+			ID          string
+			KnowledgeID string
+		}
+		if err := r.db.WithContext(ctx).Table("chunks").Select("id, knowledge_id").
+			Where("knowledge_id IN ? AND deleted_at IS NULL AND is_enabled AND chunk_type = ?", knowledgeIDs, types.ChunkTypeText).
+			// an edit whose index is not synchronized yet is not shown (isSearchableChunk)
+			Where("(index_status IS NULL OR index_status NOT IN ?)", []string{"processing", "failed"}).
+			Where(has, a).Order("knowledge_id, chunk_index").Scan(&rows).Error; err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			k := row.KnowledgeID + "\x00" + a
+			if len(out[k]) < perArticle {
+				out[k] = append(out[k], row.ID)
+			}
+		}
+	}
+	return out, nil
+}

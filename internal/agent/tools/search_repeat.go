@@ -56,6 +56,39 @@ type searchHistory struct {
 	mu        sync.Mutex
 	messageID string
 	entries   []searchHistoryEntry
+	// pinned are the chunk ids kept for a named document this turn: a later
+	// search of the turn does not show them again.
+	pinned map[string]bool
+}
+
+// pinnedBefore reports which of ids an earlier call of this turn pinned.
+func (h *searchHistory) pinnedBefore(messageID string) map[string]bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := map[string]bool{}
+	if h.messageID == messageID {
+		for id := range h.pinned {
+			out[id] = true
+		}
+	}
+	return out
+}
+
+// markPinned records the chunks a call pinned; a new message id starts over.
+func (h *searchHistory) markPinned(messageID string, ids []string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.messageID != messageID {
+		h.messageID = messageID
+		h.entries = nil
+		h.pinned = nil
+	}
+	if h.pinned == nil {
+		h.pinned = map[string]bool{}
+	}
+	for _, id := range ids {
+		h.pinned[id] = true
+	}
 }
 
 // normalizeSearchQuery lower-cases the query, turns punctuation and symbols
@@ -129,6 +162,7 @@ func (h *searchHistory) record(messageID string, round int, key, query string, c
 	if h.messageID != messageID {
 		h.messageID = messageID
 		h.entries = nil
+		h.pinned = nil
 	}
 	h.entries = append(h.entries, searchHistoryEntry{
 		key: key, tokens: repeatQueryTokens(query), round: round, count: count,

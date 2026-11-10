@@ -34,6 +34,9 @@ const legalFeedTitleMinLetters = 10
 
 var legalHTMLTitleRe = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
 
+// legalFeedTitleSuffixRe is the "mới nhất" a source's page title ends with.
+var legalFeedTitleSuffixRe = regexp.MustCompile(`(?i)\s*[-–|]?\s*mới nhất\s*$`)
+
 // resolveByNumber goes on where resolveDoc found no single row for the
 // pushed document: the số hiệu is the key shared with vbpl.vn, and among
 // the rows of that number (cands) the one that is the same document
@@ -94,6 +97,7 @@ func legalFeedRow(meta *legalPushMeta, content []byte, now time.Time) (*types.Le
 			title = strings.Join(strings.Fields(html.UnescapeString(string(m[1]))), " ")
 		}
 	}
+	title = strings.TrimSpace(legalFeedTitleSuffixRe.ReplaceAllString(title, ""))
 	var missing []string
 	key := vietnamese_legal.CatalogNumberKey(number)
 	if key == "" {

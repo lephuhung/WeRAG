@@ -121,3 +121,23 @@ func (s *legalCatalogService) Lookup(
 func (s *legalCatalogService) SearchTitles(ctx context.Context, words []string, limit int) ([]*types.LegalDocument, error) {
 	return s.repo.SearchByTitle(ctx, words, limit)
 }
+
+// legalNamedScan bounds the catalogue rows read for the numbers a question
+// names (a QĐ-UBND number is shared by every province).
+const legalNamedScan = 60
+
+func (s *legalCatalogService) NamedCopies(ctx context.Context, numbers, kbIDs []string) ([]types.LegalNamedCopy, error) {
+	keys := make([]string, 0, len(numbers))
+	for _, n := range numbers {
+		if k := vietnamese_legal.CatalogNumberKey(n); k != "" {
+			keys = append(keys, k)
+		}
+	}
+	return s.repo.NamedCopies(ctx, keys, kbIDs, legalNamedScan)
+}
+
+func (s *legalCatalogService) ArticleChunkIDs(
+	ctx context.Context, knowledgeIDs, articles []string, perArticle int,
+) (map[string][]string, error) {
+	return s.repo.ArticleChunkIDs(ctx, knowledgeIDs, articles, perArticle)
+}

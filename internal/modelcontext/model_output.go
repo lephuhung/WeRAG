@@ -56,6 +56,10 @@ func (r *sourceRegistry) ModelOutput(result *types.ToolResult) string {
 		if note := stringValue(result.Data, "legal_related_note"); note != "" {
 			output += "\n\n" + r.CompactKnownText(note)
 		}
+		// Documents the question names by số hiệu that are not among the rows.
+		if note := stringValue(result.Data, "legal_named_note"); note != "" {
+			output += "\n\n" + r.CompactKnownText(note)
+		}
 		return r.annotateModeFallbacks(output, result.Data)
 	case "knowledge_chunks_list":
 		return r.modelKnowledgeChunksOutput(result.Data, result.Output)

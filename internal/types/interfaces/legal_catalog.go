@@ -8,6 +8,14 @@ import (
 
 // LegalCatalogRepository persists the platform-wide legal catalogue.
 type LegalCatalogRepository interface {
+	// NamedCopies returns the catalogue documents of the number keys (at
+	// most limit) and, for each, its copies in the given knowledge bases
+	// (one row per copy; a document without one has an empty KnowledgeID).
+	NamedCopies(ctx context.Context, keys, kbIDs []string, limit int) ([]types.LegalNamedCopy, error)
+	// ArticleChunkIDs returns, per knowledge id and article number, the ids
+	// of the text chunks whose legal metadata lists that article, in
+	// document order, at most perArticle each; key knowledgeID+"\x00"+article.
+	ArticleChunkIDs(ctx context.Context, knowledgeIDs, articles []string, perArticle int) (map[string][]string, error)
 	// UpsertDocuments inserts or refreshes documents by ID.
 	UpsertDocuments(ctx context.Context, docs []*types.LegalDocument) error
 	// ReplaceRelations swaps the whole relation table for rels in one
@@ -121,6 +129,12 @@ type LegalCatalogService interface {
 	// 53/…), newest first, of the given doc type when docType is set: the
 	// newest limit of them and how many there are in all.
 	Candidates(ctx context.Context, documentNumber, docType string, limit int) ([]*types.LegalDocument, int, error)
+	// NamedCopies resolves full số hiệu to their catalogue documents and the
+	// copies the given knowledge bases hold (see LegalCatalogRepository).
+	NamedCopies(ctx context.Context, numbers, kbIDs []string) ([]types.LegalNamedCopy, error)
+	// ArticleChunkIDs finds the chunks of the given knowledge holding the
+	// named articles (see LegalCatalogRepository).
+	ArticleChunkIDs(ctx context.Context, knowledgeIDs, articles []string, perArticle int) (map[string][]string, error)
 	// SearchTitles lists the newest limit documents whose title holds
 	// every word (the broad-question gate measures a topic with it).
 	SearchTitles(ctx context.Context, words []string, limit int) ([]*types.LegalDocument, error)
