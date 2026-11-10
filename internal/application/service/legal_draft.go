@@ -85,6 +85,10 @@ type LegalDraftService struct {
 	// (nil: the file service, or the SSRF-safe client for a URL).
 	StorageImage LegalDraftStorageImage
 
+	// Push resolves the catalogue row of a scan a legal feed pushes
+	// (PushFeedDraft); nil: feed drafts are not available.
+	Push *LegalPushService
+
 	// fetching serializes fetches of one document within this process
 	fetching sync.Map
 }
@@ -164,33 +168,9 @@ func (s *LegalDraftService) fetch(ctx context.Context, vbplID, requestID, by str
 	if s.drafts == nil || s.files == nil {
 		return nil, apperrors.NewServiceUnavailableError("legal drafts are not available")
 	}
-	// one fetch of a document at a time in this process; the unique index
-	// on legal_document_id guards the others
-	lock, _ := s.fetching.LoadOrStore(vbplID, &sync.Mutex{})
-	mu := lock.(*sync.Mutex)
-	mu.Lock()
-	defer mu.Unlock()
-
-	existing, err := s.drafts.GetByDocumentID(ctx, vbplID)
-	if err != nil {
-		return nil, err
-	}
-	if existing != nil {
-		stale := (existing.Status == types.LegalDraftOCR || existing.Status == types.LegalDraftFetching) &&
-			time.Since(existing.UpdatedAt) > legalDraftStaleAfter
-		if existing.Status != types.LegalDraftFailed && !stale {
-			if existing.RequestID == "" && requestID != "" {
-				if err := s.drafts.Update(ctx, existing.ID, map[string]any{"request_id": requestID}); err == nil {
-					existing.RequestID = requestID
-				}
-			}
-			existing.OCRMarkdown = ""
-			return existing, nil
-		}
-		// a failed (or abandoned) draft is fetched again from scratch
-		if err := s.drafts.Delete(ctx, existing.ID); err != nil {
-			return nil, err
-		}
+	defer s.lockDocument(vbplID)()
+	if existing, err := s.reuseDraft(ctx, vbplID, requestID); err != nil || existing != nil {
+		return existing, err
 	}
 
 	detail, err := s.feed.fetchDetail(ctx, vbplID)
@@ -216,14 +196,8 @@ func (s *LegalDraftService) fetch(ctx context.Context, vbplID, requestID, by str
 		DocType: strings.TrimSpace(detail.DocType.Name), Title: strings.Join(strings.Fields(detail.Title), " "),
 		PDFFileName: portal.PDFFile, Status: types.LegalDraftFetching, CreatedBy: by,
 	}
-	if err := s.drafts.Create(ctx, draft); err != nil {
-		if isUniqueViolation(err) {
-			if again, gerr := s.drafts.GetByDocumentID(ctx, vbplID); gerr == nil && again != nil {
-				again.OCRMarkdown = ""
-				return again, nil
-			}
-		}
-		return nil, err
+	if again, err := s.createDraft(ctx, draft); err != nil || again != nil {
+		return again, err
 	}
 	s.moveRequests(ctx, vbplID, []string{types.LegalRequestRequested}, types.LegalRequestFetched)
 
@@ -231,7 +205,59 @@ func (s *LegalDraftService) fetch(ctx context.Context, vbplID, requestID, by str
 	if err != nil {
 		return s.failDraft(ctx, draft, "Không tải được bản PDF từ vbpl.vn: "+err.Error()), nil
 	}
-	ref, err := s.files.SaveBytes(ctx, pdf, types.PlatformTenantID, "legal_draft_"+vbplID+".pdf", false)
+	return s.storeAndOCR(ctx, draft, pdf, "legal_draft_"+vbplID+".pdf")
+}
+
+// lockDocument serializes the fetches of one document within this process
+// (the unique index on legal_document_id guards the others); call the
+// returned function to unlock.
+func (s *LegalDraftService) lockDocument(docID string) func() {
+	lock, _ := s.fetching.LoadOrStore(docID, &sync.Mutex{})
+	mu := lock.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
+// reuseDraft returns the document's draft when one is in progress or done;
+// a failed (or abandoned) draft is deleted so the caller starts again.
+func (s *LegalDraftService) reuseDraft(ctx context.Context, docID, requestID string) (*types.LegalDocumentDraft, error) {
+	existing, err := s.drafts.GetByDocumentID(ctx, docID)
+	if err != nil || existing == nil {
+		return nil, err
+	}
+	stale := (existing.Status == types.LegalDraftOCR || existing.Status == types.LegalDraftFetching) &&
+		time.Since(existing.UpdatedAt) > legalDraftStaleAfter
+	if existing.Status != types.LegalDraftFailed && !stale {
+		if existing.RequestID == "" && requestID != "" {
+			if err := s.drafts.Update(ctx, existing.ID, map[string]any{"request_id": requestID}); err == nil {
+				existing.RequestID = requestID
+			}
+		}
+		existing.OCRMarkdown = ""
+		return existing, nil
+	}
+	return nil, s.drafts.Delete(ctx, existing.ID)
+}
+
+// createDraft inserts draft; a concurrent fetch that inserted the
+// document's draft first wins and is returned as again.
+func (s *LegalDraftService) createDraft(ctx context.Context, draft *types.LegalDocumentDraft) (again *types.LegalDocumentDraft, err error) {
+	if err := s.drafts.Create(ctx, draft); err != nil {
+		if isUniqueViolation(err) {
+			if again, gerr := s.drafts.GetByDocumentID(ctx, draft.LegalDocumentID); gerr == nil && again != nil {
+				again.OCRMarkdown = ""
+				return again, nil
+			}
+		}
+		return nil, err
+	}
+	return nil, nil
+}
+
+// storeAndOCR stores the draft's PDF in the platform organization and OCRs
+// it: while the caller waits for a short scan, in the background otherwise.
+func (s *LegalDraftService) storeAndOCR(ctx context.Context, draft *types.LegalDocumentDraft, pdf []byte, storeName string) (*types.LegalDocumentDraft, error) {
+	ref, err := s.files.SaveBytes(ctx, pdf, types.PlatformTenantID, storeName, false)
 	if err != nil {
 		return s.failDraft(ctx, draft, "Không lưu được bản PDF: "+err.Error()), nil
 	}
@@ -248,8 +274,8 @@ func (s *LegalDraftService) fetch(ctx context.Context, vbplID, requestID, by str
 	}); err != nil {
 		return nil, err
 	}
-	logger.Infof(ctx, "[LegalDraft] draft %s of %s (%s): PDF %s, %d bytes, %d pages", draft.ID, vbplID,
-		draft.DocumentNumber, portal.PDFFile, len(pdf), pages)
+	logger.Infof(ctx, "[LegalDraft] draft %s of %s (%s): PDF %s, %d bytes, %d pages", draft.ID, draft.LegalDocumentID,
+		draft.DocumentNumber, draft.PDFFileName, len(pdf), pages)
 
 	// OCR outlives the request: a detached context with its own deadline
 	ocrCtx := context.WithoutCancel(ctx)
@@ -712,6 +738,9 @@ func (s *LegalDraftService) Structure(ctx context.Context, id string) (*types.Le
 		return nil, apperrors.NewConflictError("the draft document cannot be read: " + err.Error())
 	}
 	report := AnalyzeLegalDraft(paras)
+	if row := s.catalogueRow(ctx, d); isFeedDraft(d, row) {
+		allowNoArticles(report, draftDocType(d, row))
+	}
 	report.Revision = ws.Revision
 	s.storeStructure(ctx, d.ID, report)
 	return report, nil
@@ -762,48 +791,66 @@ func (s *LegalDraftService) Approve(ctx context.Context, id, kbID string) (*type
 		return nil, apperrors.NewConflictError("the draft document cannot be read: " + err.Error())
 	}
 	report := AnalyzeLegalDraft(paras)
+	row := s.catalogueRow(ctx, d)
+	feedDraft := isFeedDraft(d, row)
+	if feedDraft {
+		allowNoArticles(report, draftDocType(d, row))
+	}
 	s.storeStructure(ctx, d.ID, report)
 	if !report.Ready {
 		return nil, apperrors.NewBadRequestError("the draft is not ready to approve: " + blockingMessages(report)).
 			WithDetails(report)
 	}
-	html := BuildLegalDraftHTML(paras)
-	converted, err := vbpl.ConvertBytes(html)
-	if err != nil {
-		return nil, fmt.Errorf("convert the draft HTML: %w", err)
-	}
-	if !converted.Structured || converted.Stats.Articles != len(report.Articles) {
-		msg := fmt.Sprintf("the HTML built from the draft reads as %d article(s), the structure check found %d",
-			converted.Stats.Articles, len(report.Articles))
-		if len(converted.Warnings) > 0 {
-			msg += ": " + strings.Join(converted.Warnings, "; ")
+	var html []byte
+	if feedDraft && len(report.Articles) == 0 {
+		html = BuildLegalDraftPlainHTML(firstNonEmpty(d.Title, d.DocumentNumber), paras)
+	} else {
+		html = BuildLegalDraftHTML(paras)
+		converted, err := vbpl.ConvertBytes(html)
+		if err != nil {
+			return nil, fmt.Errorf("convert the draft HTML: %w", err)
 		}
-		return nil, apperrors.NewBadRequestError(msg).WithDetails(map[string]any{
-			"converter_warnings": converted.Warnings, "converter_stats": converted.Stats,
-		})
+		if !converted.Structured || converted.Stats.Articles != len(report.Articles) {
+			msg := fmt.Sprintf("the HTML built from the draft reads as %d article(s), the structure check found %d",
+				converted.Stats.Articles, len(report.Articles))
+			if len(converted.Warnings) > 0 {
+				msg += ": " + strings.Join(converted.Warnings, "; ")
+			}
+			return nil, apperrors.NewBadRequestError(msg).WithDetails(map[string]any{
+				"converter_warnings": converted.Warnings, "converter_stats": converted.Stats,
+			})
+		}
 	}
 
-	// the portal's metadata (dates, status, appendices) as of now
-	detail, err := s.feed.fetchDetail(ctx, d.LegalDocumentID)
-	if err != nil {
-		return nil, legalDraftError(ctx, "approve", d.LegalDocumentID, err)
-	}
 	now := time.Now()
-	meta := vbpl.Metadata(detail)
-	meta["source_format"] = LegalSourcePDFReviewed
-	meta["source_file"] = d.PDFFileName
-	meta["reviewed_by"] = caller.UserID
-	meta["reviewed_at"] = now.Format(time.RFC3339)
-	meta["draft_id"] = d.ID
-	res, err := s.feed.IngestHTML(grantCtx, LegalIngestDocument{
-		VBPLID: d.LegalDocumentID, DocumentNumber: detail.DocNum, DocType: detail.DocType.Name,
-		Status: strings.TrimSpace(detail.EffStatus.Name), FileName: vbpl.FileName(detail), Metadata: meta,
-		SourceFormat: LegalSourcePDFReviewed, ReviewedBy: caller.UserID,
-		LogDetail: map[string]any{"source_file": d.PDFFileName, "draft_id": d.ID, "articles": len(report.Articles)},
-	}, html, kb, LegalFeedActor{TenantID: caller.TenantID, UserID: caller.UserID, Channel: types.ChannelWeb},
-		"Bản nháp OCR đã duyệt "+d.ID+" ("+d.DocumentNumber+")")
-	if err != nil {
-		return nil, legalDraftError(ctx, "ingest", d.LegalDocumentID, err)
+	var res *LegalIngestResult
+	if feedDraft {
+		res, err = s.approveFeedDraft(ctx, d, row, kb, grantCtx, html, len(report.Articles), caller)
+		if err != nil {
+			return nil, legalDraftError(ctx, "ingest", d.LegalDocumentID, err)
+		}
+	} else {
+		// the portal's metadata (dates, status, appendices) as of now
+		detail, err := s.feed.fetchDetail(ctx, d.LegalDocumentID)
+		if err != nil {
+			return nil, legalDraftError(ctx, "approve", d.LegalDocumentID, err)
+		}
+		meta := vbpl.Metadata(detail)
+		meta["source_format"] = LegalSourcePDFReviewed
+		meta["source_file"] = d.PDFFileName
+		meta["reviewed_by"] = caller.UserID
+		meta["reviewed_at"] = now.Format(time.RFC3339)
+		meta["draft_id"] = d.ID
+		res, err = s.feed.IngestHTML(grantCtx, LegalIngestDocument{
+			VBPLID: d.LegalDocumentID, DocumentNumber: detail.DocNum, DocType: detail.DocType.Name,
+			Status: strings.TrimSpace(detail.EffStatus.Name), FileName: vbpl.FileName(detail), Metadata: meta,
+			SourceFormat: LegalSourcePDFReviewed, ReviewedBy: caller.UserID,
+			LogDetail: map[string]any{"source_file": d.PDFFileName, "draft_id": d.ID, "articles": len(report.Articles)},
+		}, html, kb, LegalFeedActor{TenantID: caller.TenantID, UserID: caller.UserID, Channel: types.ChannelWeb},
+			"Bản nháp OCR đã duyệt "+d.ID+" ("+d.DocumentNumber+")")
+		if err != nil {
+			return nil, legalDraftError(ctx, "ingest", d.LegalDocumentID, err)
+		}
 	}
 
 	d.Status, d.ApprovedBy, d.ApprovedAt = types.LegalDraftApproved, caller.UserID, &now
@@ -829,6 +876,14 @@ func (s *LegalDraftService) Approve(ctx context.Context, id, kbID string) (*type
 	d.OCRMarkdown = ""
 	out.Draft = d
 	return out, nil
+}
+
+// draftDocType is the type of a draft's document, the catalogue's first.
+func draftDocType(d *types.LegalDocumentDraft, row *types.LegalDocument) string {
+	if row != nil && strings.TrimSpace(row.DocType) != "" {
+		return row.DocType
+	}
+	return d.DocType
 }
 
 func blockingMessages(report *types.LegalDraftStructure) string {

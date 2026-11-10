@@ -5,11 +5,28 @@
 /** The knowledge base to approve into: the given one when listed, else the
  * public KB named for the document type ("VBPL – Nghị định"), else the
  * first. Mirrors the server's suggestion for requests. */
+/** The public KB of the Party's documents (server: LegalPartyKBName). */
+export const PARTY_KB_NAME = "Văn bản của Đảng";
+
+const PARTY_NUMBER_RE = /^\d{1,5}[a-zA-Z]?-(NQ|QĐ|QĐi|CT|KL|QC|HD|TB|KH|CTr|CV|BC|TTr|ĐA|CĐ)\/([\p{L}\d-]*TW|TU|HU|QU|ĐU|ĐUK|BCĐ|TGV|CQTTBCĐ|BTGDV)$/iu;
+
+/** A draft of a Party document: pushed by the dangcongsan feed, or numbered
+ * the Party's way ("57-NQ/TW"); the server only accepts the Party KB for it. */
+export function isPartyDraft(d: { document_number: string; source_meta?: { source?: string } | null }): boolean {
+  if (d.source_meta?.source === "dangcongsan") return true;
+  return PARTY_NUMBER_RE.test(d.document_number.replace(/\s+/g, "").replace(/Ð/g, "Đ"));
+}
+
 export function pickDraftKnowledgeBase(
   kbs: readonly { id: string; name: string }[],
   docType: string,
   preferred?: string | null,
+  party = false,
 ): string {
+  if (party) {
+    const kb = kbs.find((k) => k.name.trim() === PARTY_KB_NAME);
+    if (kb) return kb.id;
+  }
   if (preferred && kbs.some((k) => k.id === preferred)) return preferred;
   const type = docType.trim().toLowerCase();
   if (type) {

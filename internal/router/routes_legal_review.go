@@ -88,6 +88,7 @@ func RegisterLegalPushRoutes(r *gin.RouterGroup, h *handler.LegalPushHandler, g 
 		return
 	}
 	g.apiKeyRoute(r, http.MethodPost, "/system/legal-documents/push", apiKeyIngest(apiKeyFullAccess()), h.PushLegalDocument)
+	g.apiKeyRoute(r, http.MethodPost, "/system/legal-documents/push-scan", apiKeyIngest(apiKeyFullAccess()), h.PushLegalScan)
 	cands := r.Group("/system/legal-link-candidates", g.PlatformSuperAdmin())
 	{
 		cands.GET("", h.ListLegalLinkCandidates)

@@ -33,6 +33,7 @@ import {
   legalDraftStructure,
   locateParagraph,
   openLegalDraft,
+  isPartyDraft,
   pickDraftKnowledgeBase,
   type LegalDraft,
   type LegalDraftOpenResult,
@@ -587,6 +588,7 @@ function ApproveDialog({
   const { t } = useT();
   const [kbs, setKbs] = useState<{ id: string; name: string }[] | null>(null);
   const [kbId, setKbId] = useState("");
+  const party = isPartyDraft(draft);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -598,7 +600,7 @@ function ApproveDialog({
         if (!alive) return;
         const list = res.data ?? [];
         setKbs(list);
-        setKbId(pickDraftKnowledgeBase(list, draft.doc_type, preferredKb));
+        setKbId(pickDraftKnowledgeBase(list, draft.doc_type, preferredKb, party));
       } catch (e) {
         if (alive) {
           setKbs([]);
@@ -609,9 +611,12 @@ function ApproveDialog({
     return () => {
       alive = false;
     };
-  }, [draft.doc_type, preferredKb, t]);
+  }, [draft.doc_type, preferredKb, party, t]);
 
-  const suggested = useMemo(() => (kbs ? pickDraftKnowledgeBase(kbs, draft.doc_type, preferredKb) : ""), [kbs, draft.doc_type, preferredKb]);
+  const suggested = useMemo(
+    () => (kbs ? pickDraftKnowledgeBase(kbs, draft.doc_type, preferredKb, party) : ""),
+    [kbs, draft.doc_type, preferredKb, party],
+  );
 
   const submit = async () => {
     if (!kbId || saving) return;

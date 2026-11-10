@@ -45,6 +45,11 @@ type LegalDocumentDraft struct {
 	AttachmentID string `json:"attachment_id" gorm:"type:varchar(36);not null;default:''"`
 	WorkspaceID  string `json:"workspace_id"  gorm:"type:varchar(36);not null;default:''"`
 
+	// SourceMeta is the legal feed's word on a scan it pushed (source,
+	// source_url, source_doc_id…; LegalFeedDraftMeta); NULL for a vbpl.vn
+	// document, whose metadata is read from the portal on approval.
+	SourceMeta JSON `json:"source_meta,omitempty" gorm:"type:jsonb"`
+
 	// Structure is the last LegalDraftStructure report.
 	Structure JSON `json:"structure,omitempty" gorm:"type:jsonb"`
 

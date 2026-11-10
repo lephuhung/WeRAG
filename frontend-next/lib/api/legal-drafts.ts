@@ -30,6 +30,8 @@ export interface LegalDraft {
   session_id: string;
   attachment_id: string;
   workspace_id: string;
+  /** What a legal feed said about a scan it pushed (null for vbpl.vn). */
+  source_meta?: { source?: string; source_url?: string; source_doc_id?: string; file_name?: string } | null;
   /** The last structure report, when one was made. */
   structure?: LegalDraftStructure | null;
   approved_knowledge_id: string;
@@ -214,4 +216,4 @@ export function legalDraftHref(id: string, kb?: string): string {
   return kb ? `${path}?kb=${encodeURIComponent(kb)}` : path;
 }
 
-export { headingLead, locateParagraph, pickDraftKnowledgeBase } from "@/lib/legal-draft-nav";
+export { headingLead, isPartyDraft, locateParagraph, pickDraftKnowledgeBase } from "@/lib/legal-draft-nav";

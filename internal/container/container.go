@@ -717,8 +717,10 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// request; the MCP feed lists the queue and closes it when it ingests
 	must(container.Invoke(func(sessions interfaces.SessionService, requests interfaces.LegalRequestRepository,
 		reviews interfaces.LegalReviewRepository, feed *service.LegalFeedService, mcpServer *mcpserver.Server,
-		drafts interfaces.LegalDraftService,
+		drafts interfaces.LegalDraftService, draftSvc *service.LegalDraftService, push *service.LegalPushService,
 	) {
+		// scans a legal feed pushes resolve their catalogue row like a push
+		draftSvc.Push = push
 		type legalRequestUser interface {
 			SetLegalRequests(interfaces.LegalRequestRepository, interfaces.LegalReviewRepository)
 		}

@@ -21,12 +21,13 @@ import (
 // vbpl.vn (docs/legal-document-feed-spec.md §9) and serves the SuperAdmin
 // review of the provision links they carry.
 type LegalPushHandler struct {
-	svc *service.LegalPushService
+	svc    *service.LegalPushService
+	drafts *service.LegalDraftService
 }
 
 // NewLegalPushHandler creates the handler.
-func NewLegalPushHandler(svc *service.LegalPushService) *LegalPushHandler {
-	return &LegalPushHandler{svc: svc}
+func NewLegalPushHandler(svc *service.LegalPushService, drafts *service.LegalDraftService) *LegalPushHandler {
+	return &LegalPushHandler{svc: svc, drafts: drafts}
 }
 
 // legalPushAllowed: an API key of the platform tenant (the route's API-key
@@ -122,6 +123,74 @@ func (h *LegalPushHandler) PushLegalDocument(c *gin.Context) {
 	res, err := h.svc.Push(ctx, service.LegalPushInput{
 		Content: content, FileName: fileName, Metadata: meta, Mode: mode,
 	}, caller, actor)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": res})
+}
+
+// PushLegalScan godoc
+// @Summary      Push a scanned legal document from another source for OCR review
+// @Description  Multipart: file (PDF: the document and its appendices in one
+// @Description  file, ≤ 60 MB), metadata (JSON string → string, the push keys:
+// @Description  source, source_url, source_doc_id, doc_number, doc_type, issuer,
+// @Description  issue_date, title; optional eff_from, eff_status, signer, field).
+// @Description  Resolves (or creates as a feed row) the catalogue document like
+// @Description  a push in mode full and OCRs the PDF into a draft the SuperAdmin
+// @Description  reviews at /platform/admin/legal-drafts/{id}; a document a KB
+// @Description  holds is refused (409), an existing draft is returned as is.
+// @Tags         Rà soát pháp lý
+// @Accept       multipart/form-data
+// @Produce      json
+// @Param        file     formData file   true "PDF file"
+// @Param        metadata formData string true "JSON metadata"
+// @Success      200 {object} map[string]interface{} "Draft, catalogue id"
+// @Router       /system/legal-documents/push-scan [post]
+func (h *LegalPushHandler) PushLegalScan(c *gin.Context) {
+	ctx := c.Request.Context()
+	if err := legalPushAllowed(ctx); err != nil {
+		c.Error(err)
+		return
+	}
+	if h.drafts == nil {
+		c.Error(errors.NewServiceUnavailableError("legal drafts are not available"))
+		return
+	}
+	fh, err := c.FormFile("file")
+	if err != nil {
+		c.Error(errors.NewBadRequestError("file is required"))
+		return
+	}
+	if fh.Size > service.LegalFeedDraftMaxBytes {
+		c.Error(errors.NewBadRequestError("file is too large"))
+		return
+	}
+	f, err := fh.Open()
+	if err != nil {
+		c.Error(errors.NewBadRequestError("cannot read file"))
+		return
+	}
+	content, err := io.ReadAll(io.LimitReader(f, service.LegalFeedDraftMaxBytes+1))
+	f.Close()
+	if err != nil {
+		c.Error(errors.NewBadRequestError("cannot read file"))
+		return
+	}
+	meta := map[string]string{}
+	if raw := c.PostForm("metadata"); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &meta); err != nil {
+			c.Error(errors.NewBadRequestError("metadata must be a JSON object of strings").WithDetails(err.Error()))
+			return
+		}
+	}
+	caller := types.CallerFromContext(ctx)
+	actor := service.LegalFeedActor{TenantID: caller.TenantID, UserID: caller.UserID, Channel: types.ChannelAPI}
+	if scope, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey {
+		actor.EndpointID, actor.UserID = "apikey:"+strconv.FormatUint(scope.KeyID, 10), ""
+	}
+	res, err := h.drafts.PushFeedDraft(ctx, service.LegalFeedDraftInput{PDF: content, FileName: fh.Filename, Metadata: meta}, actor)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(err)

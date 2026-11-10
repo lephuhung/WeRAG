@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { headingLead, locateParagraph, pickDraftKnowledgeBase } from "./legal-draft-nav.ts";
+import { headingLead, isPartyDraft, locateParagraph, pickDraftKnowledgeBase } from "./legal-draft-nav.ts";
 
 describe("pickDraftKnowledgeBase", () => {
   const kbs = [
@@ -36,4 +36,22 @@ describe("locateParagraph", () => {
     assert.equal(locateParagraph(texts, 2), null);
   });
   it("not found", () => assert.equal(locateParagraph(texts, -1, "Điều 9"), null));
+});
+
+describe("Party drafts", () => {
+  const kbs = [
+    { id: "kb-qd", name: "VBPL – Quyết định, Chỉ thị" },
+    { id: "kb-dang", name: "Văn bản của Đảng" },
+  ];
+  it("recognises Party documents, not old State numbers", () => {
+    assert.equal(isPartyDraft({ document_number: "114-KL/TW" }), true);
+    assert.equal(isPartyDraft({ document_number: "19 - HD/BTGTW" }), true);
+    assert.equal(isPartyDraft({ document_number: "46-TC/CĐKT" }), false);
+    assert.equal(isPartyDraft({ document_number: "3/2021/TT-BTC" }), false);
+    assert.equal(isPartyDraft({ document_number: "x", source_meta: { source: "dangcongsan" } }), true);
+  });
+  it("picks the Party KB for a Party draft", () => {
+    assert.equal(pickDraftKnowledgeBase(kbs, "Chỉ thị", null, true), "kb-dang");
+    assert.equal(pickDraftKnowledgeBase(kbs, "Chỉ thị", null, false), "kb-qd");
+  });
 });
