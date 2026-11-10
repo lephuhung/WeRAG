@@ -17,6 +17,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/legalcatalog"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/vbpl"
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 )
 
@@ -102,6 +103,12 @@ func legalFeedRow(meta *legalPushMeta, content []byte, now time.Time) (*types.Le
 		}
 	}
 	title = strings.TrimSpace(legalFeedTitleSuffixRe.ReplaceAllString(title, ""))
+	// vbpl.vn is the standard: the title is written its way, from the
+	// document's own enacting clause, not the source's shortened page title.
+	official := false
+	if t := vbpl.OfficialTitle(content, meta.ref.DocType, number); t != "" {
+		title, official = t, true // agrees with the document's heading: usable however short ("Luật Đầu tư số …")
+	}
 	var missing []string
 	key := vietnamese_legal.CatalogNumberKey(number)
 	if key == "" {
@@ -117,7 +124,7 @@ func legalFeedRow(meta *legalPushMeta, content []byte, now time.Time) (*types.Le
 	if issued == nil {
 		missing = append(missing, "issue_date (YYYY-MM-DD)")
 	}
-	if !legalFeedTitleUsable(title, number, meta.ref.DocType) {
+	if !official && !legalFeedTitleUsable(title, number, meta.ref.DocType) {
 		missing = append(missing, "title (tên đầy đủ của văn bản)")
 	}
 	if len(missing) > 0 {

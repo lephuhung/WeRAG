@@ -55,7 +55,7 @@ def file_name(detail):
     name = f"{num} - {title}" if num and num not in title else (title or num or detail["id"])
     name = name.replace("/", "-")  # số hiệu 112/2025/QH15 → 112-2025-QH15
     name = re.sub(r'[\\:*?"<>|]+', " ", name)
-    name = " ".join(name.split())[:180]
+    name = " ".join(name.split())[:180].strip()  # as vbpl.FileNameOf: no "… vô .html"
     return name + ".html"
 
 
