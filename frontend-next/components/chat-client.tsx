@@ -1,12 +1,14 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { listMessages, stopSession, forkSession, createSession, deleteSession, getSession, type SessionRow, type ChatMessage, type ArtifactMeta, autoCorrectionsOf } from "@/lib/api/chat";
 import { streamChat, continueStream, type StreamChunk } from "@/lib/api/stream";
 import { uploadTemporaryAttachment } from "@/lib/api/attachments";
 import { withArtifactIndexes } from "@/lib/artifact-images";
 import { BUILTIN_DOCUMENT_ASSISTANT_ID, ChatProvider, useChatContext, type MentionRequestItem } from "@/lib/chat-context";
+import { SHELL_HEADER_SLOT_ID } from "@/components/shell-breakpoints";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { dayStarts } from "@/lib/message-time";
 import { chatErrorKey, chatErrorText, isSessionLimitError, type ChatErrorAction, type ChatErrorKey } from "@/lib/api/chat-errors";
@@ -364,6 +366,8 @@ function ChatBody({ id }: { id: string }) {
 
   const [session, setSession] = useState<SessionRow | null>(null);
   const [sessionTitle, setSessionTitle] = useState<string | null>(null);
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => setHeaderSlot(document.getElementById(SHELL_HEADER_SLOT_ID)), []);
   const [messages, setMessages] = useState<UiMessage[]>([]);
   // The latest message list, for the callbacks that run outside a state
   // updater (the stream handlers need to know whether the turn has a
@@ -2340,28 +2344,21 @@ function ChatBody({ id }: { id: string }) {
     <div className={`flex flex-1 flex-col overflow-hidden ${compact ? "chat-compact" : ""}`}>
       <div ref={scrollRef} onScroll={handleMessagesScroll} className="flex-1 overflow-y-auto">
         <div className={compact ? "w-full px-[17px] py-4" : "mx-auto w-full max-w-[768px] px-4 py-5 sm:px-6 sm:py-8"}>
-          {/* The conversation's own title. It used to be a second 56px bar
-              under the platform header (112px of chrome); it now rides with
-              the messages — the platform header is the only header bar. */}
-          <div className="sticky top-0 z-10 mb-3 flex items-center gap-2 bg-canvas py-1">
-            <h1 className="min-w-0 truncate text-[15px] font-medium text-ink">{title}</h1>
-            {isDocumentAssistant && id !== "new" && <SubChatSwitcher sessionId={id} chats={subChats} disabled={busy} />}
-            {isDocumentAssistant && id !== "new" && (
-              <FormatCheckReportModal
-                open={formatReportOpen}
-                sessionId={id}
-                document={formatCheckDoc}
-                fixDisabled={busy}
-                onClose={() => setFormatReportOpen(false)}
-                onFix={() => askAboutFormatCheck(tr("docws.fcAskFix"))}
-                onAskInChat={() => askAboutFormatCheck(tr("docws.fcAskView"))}
-                onMark={markFormatFindings}
-                onLocateFinding={locateFinding}
-                onApplyFinding={applyFinding}
-                onVerifyFinding={checkFinding}
-              />
-            )}
-          </div>
+          {isDocumentAssistant && id !== "new" && (
+            <FormatCheckReportModal
+              open={formatReportOpen}
+              sessionId={id}
+              document={formatCheckDoc}
+              fixDisabled={busy}
+              onClose={() => setFormatReportOpen(false)}
+              onFix={() => askAboutFormatCheck(tr("docws.fcAskFix"))}
+              onAskInChat={() => askAboutFormatCheck(tr("docws.fcAskView"))}
+              onMark={markFormatFindings}
+              onLocateFinding={locateFinding}
+              onApplyFinding={applyFinding}
+              onVerifyFinding={checkFinding}
+            />
+          )}
           {isDocumentAssistant && docTemplate.showPicker && messages.length === 0 && templatePicker}
           {messages.map((m, index) => (
             <Fragment key={m.id}>
@@ -2627,9 +2624,25 @@ function ChatBody({ id }: { id: string }) {
     docPaneBusyRef.current = b;
   }, []);
 
+  // The conversation's title lives in the platform header, the only header
+  // bar. The switcher sits at its right end: its menu opens leftwards.
+  const headerTitle = headerSlot && createPortal(
+    <>
+      <h1 className="min-w-0 truncate text-[15px] font-medium text-ink" title={title}>{title}</h1>
+      {isDocumentAssistant && id !== "new" && (
+        <div className="ml-auto shrink-0">
+          <SubChatSwitcher sessionId={id} chats={subChats} disabled={busy || ctx.documentReadOnly} />
+        </div>
+      )}
+    </>,
+    headerSlot,
+  );
+
   // Always rendered through SplitPane so the chat column keeps its React
   // identity when the agent (hydrated after getSession) flips the editor on.
   return (
+    <>
+    {headerTitle}
     <SplitPane
       documentMode={isDocumentAssistant || ctx.documentReadOnly}
       left={
@@ -2663,18 +2676,11 @@ function ChatBody({ id }: { id: string }) {
         </div>
       ) : (
         <>
-          {/* The phone layout swaps the agent for the reasoning assistant
-              (lib/mobile-chat-policy.ts) — say so instead of changing the
-              conversation silently. */}
-          {ctx.mobileAgentFallback ? (
-            <p role="status" className="border-b border-hairline bg-surface-card px-4 py-2.5 text-[13px] leading-relaxed text-body">
-              {tr("chat.mobileAgentFallback")}
-            </p>
-          ) : null}
           {chatColumn}
         </>
       )}
     />
+    </>
   );
 }
 

@@ -13,6 +13,7 @@ import { IconChevronDown, IconLock } from "@/components/icons";
 import Link from "next/link";
 import { useDialogFocus } from "@/components/use-dialog-focus";
 import { ClickAwayLayer } from "@/components/click-away-layer";
+import { useToast } from "@/components/toast";
 
 /* Ports AgentSelector.vue: builtin quick-answer / smart-reasoning + custom
  * agents. Selecting writes selectedAgentId into the chat context, mirroring
@@ -86,11 +87,16 @@ export function AgentLockNotice({
 export function AgentSelector({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { agents, settings, selectAgent, isMobile } = useChatContext();
   const { t } = useT();
+  const toast = useToast();
   const panelRef = useRef<HTMLDivElement>(null);
   useDialogFocus({ open, containerRef: panelRef, onClose });
 
   if (!open) return null;
-  const builtins = agents.filter((a) => a.is_builtin && (!isMobile || a.id === BUILTIN_SMART_REASONING_ID));
+  // The document assistant stays listed on a phone so that picking it can
+  // explain why it is unavailable there (lib/mobile-chat-policy.ts).
+  const builtins = agents.filter(
+    (a) => a.is_builtin && (!isMobile || a.id === BUILTIN_SMART_REASONING_ID || a.id === BUILTIN_DOCUMENT_ASSISTANT_ID),
+  );
   const customs = agents.filter((a) => !a.is_builtin && !isMobile);
   const quick = builtins.find((a) => a.id === BUILTIN_QUICK_ANSWER_ID);
   const smart = builtins.find((a) => a.id === BUILTIN_SMART_REASONING_ID);
@@ -108,7 +114,8 @@ export function AgentSelector({ open, onClose }: { open: boolean; onClose: () =>
     a.description || (a.id === BUILTIN_DOCUMENT_ASSISTANT_ID ? t("docws.agentDesc") : undefined);
 
   const pick = (id: string) => {
-    selectAgent(id);
+    if (isMobile && id === BUILTIN_DOCUMENT_ASSISTANT_ID) toast.info(t("chat.mobileAgentFallback"));
+    else selectAgent(id);
     onClose();
   };
   const current = (id: string) => settings.selectedAgentId === id;

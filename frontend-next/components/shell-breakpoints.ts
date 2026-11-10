@@ -32,6 +32,9 @@ export const SIDEBAR_WIDTH_PX = 264;
  * header bar share it, so the logo sits on the header's baseline. */
 export const SHELL_HEADER_HEIGHT_PX = 56;
 
+/* The element in the shell's header a page portals its own title into. */
+export const SHELL_HEADER_SLOT_ID = "shell-header-slot";
+
 function subscribeToDesktop(onChange: () => void) {
   const media = window.matchMedia(SHELL_DESKTOP_QUERY);
   media.addEventListener("change", onChange);

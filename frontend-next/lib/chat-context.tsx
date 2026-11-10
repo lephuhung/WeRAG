@@ -168,11 +168,6 @@ type Ctx = {
   isGuest: boolean;
   isMobile: boolean;
   documentReadOnly: boolean;
-  /** On a phone the requested agent is swapped for the reasoning assistant
-   * (see lib/mobile-chat-policy.ts). This flag tells the UI that the
-   * effective agent differs from the one the user picked, so it can say so
-   * instead of silently changing the conversation. */
-  mobileAgentFallback: boolean;
   // True once settings have been hydrated from localStorage. Anything that
   // fires on mount (the ?q= auto-send) must wait for it — child effects run
   // before this provider's hydration effect, so they otherwise send the
@@ -226,8 +221,6 @@ export function ChatProvider({ children, newChat = false, sessionId = "" }: { ch
   const sessionAgentId = sessionMode?.sessionId === sessionId ? sessionMode.agentId : null;
   const mode = resolveChatMode(storedSettings.selectedAgentId, isMobile, newChat, sessionAgentId);
   const documentReadOnly = !isGuest && mode.readOnly;
-  const mobileAgentFallback =
-    !isGuest && isMobile && mode.agentId !== storedSettings.selectedAgentId;
   const settings = useMemo<ChatSettings>(() => {
     // A guest's turn carries the public-lookup agent and nothing else,
     // whatever a member left in this browser's stored settings.
@@ -617,7 +610,6 @@ export function ChatProvider({ children, newChat = false, sessionId = "" }: { ch
       isGuest,
       isMobile,
       documentReadOnly,
-      mobileAgentFallback,
       hydrated,
       update,
       addKnowledgeBase,
@@ -653,7 +645,6 @@ export function ChatProvider({ children, newChat = false, sessionId = "" }: { ch
       isGuest,
       isMobile,
       documentReadOnly,
-      mobileAgentFallback,
       hydrated,
       update,
       addKnowledgeBase,

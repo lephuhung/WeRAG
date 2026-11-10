@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useT, type LocaleKey } from "@/lib/i18n";
-import { SHELL_HEADER_HEIGHT_PX } from "@/components/shell-breakpoints";
+import { SHELL_HEADER_HEIGHT_PX, SHELL_HEADER_SLOT_ID } from "@/components/shell-breakpoints";
 
 const SECTION_KEYS: [RegExp, LocaleKey][] = [
   [/^\/platform\/chat/, "nav.chat"],
@@ -20,6 +20,7 @@ export function Header() {
   const pathname = usePathname();
   const { t } = useT();
   const inAdmin = pathname === "/platform/admin" || pathname.startsWith("/platform/admin/");
+  const inConversation = pathname.startsWith("/platform/chat/");
 
   const sectionLabel =
     SECTION_KEYS.find(([re]) => re.test(pathname))?.[1] ?? "hdr.workspace";
@@ -39,7 +40,10 @@ export function Header() {
           <path d="M4 7h16M4 12h16M4 17h16" />
         </svg>
       </button>
-      <span className="caption truncate text-muted">{t(sectionLabel)}</span>
+      {/* A conversation shows its own title here (ChatClient portals it into
+          the slot) instead of the section name. */}
+      {!inConversation && <span className="caption truncate text-muted">{t(sectionLabel)}</span>}
+      <div id={SHELL_HEADER_SLOT_ID} className="flex min-w-0 flex-1 items-center gap-2" />
     </header>
   );
 }
