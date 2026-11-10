@@ -294,3 +294,12 @@ type LegalSpellcheckFinding struct {
 	Correct string `json:"correct"`
 	Reason  string `json:"reason"`
 }
+
+// LegalNamedCopy is a catalogue document a question names by its số hiệu
+// and, when one of the searched knowledge bases holds its text, that copy
+// (empty KnowledgeID: none in scope).
+type LegalNamedCopy struct {
+	Document        *LegalDocument
+	KnowledgeID     string
+	KnowledgeBaseID string
+}

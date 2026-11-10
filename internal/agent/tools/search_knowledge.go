@@ -339,8 +339,21 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 		"[Tool][SearchKnowledge] query=%q mode=%s limit=%d top_k=%d targets=%d kbs=%d",
 		query, mode, limit, topK, len(searchTargets), len(kbIDs))
 
-	allResults := t.concurrentSearchByTargets(ctx, query, mode, kbModes, searchTargets, kbList,
+	// A document the question names by its số hiệu is searched within its own
+	// copy too (one call, so the query is embedded once) and kept below.
+	var named *namedLegalPlan
+	if t.legalCatalog != nil && t.patternFilter == nil {
+		// the model's own query first: its articles fill the cap before the
+		// user's, which an earlier round of the turn may have covered
+		named = t.planNamedLegal(ctx, []string{query, originalQuery, types.UserQueryFromContext(ctx)}, searchTargets)
+	}
+	searchFor := searchTargets
+	if named != nil && len(named.targets) > 0 {
+		searchFor = append(append(types.SearchTargets{}, searchTargets...), named.targets...)
+	}
+	allResults := t.concurrentSearchByTargets(ctx, query, mode, kbModes, searchFor, kbList,
 		topK, vectorThreshold, keywordThreshold, kbTypeMap)
+	allResults = named.capCandidates(allResults)
 
 	deduplicated := t.deduplicateResults(allResults)
 
@@ -388,6 +401,15 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 		final = final[:limit]
 	}
 
+	var shownBefore map[string]bool
+	if inTurn {
+		shownBefore = t.history.pinnedBefore(turnMessageID)
+	}
+	final, pinnedIDs := t.pinNamedLegal(ctx, named, allResults, final, limit, shownBefore)
+	if inTurn && len(pinnedIDs) > 0 {
+		t.history.markPinned(turnMessageID, pinnedIDs)
+	}
+
 	final, legalNote := t.expandLegalRelations(ctx, query, mode, kbModes, kbList, kbTypeMap,
 		searchTargets, final, topK, vectorThreshold, keywordThreshold)
 
@@ -414,6 +436,13 @@ func (t *SearchKnowledgeTool) Execute(ctx context.Context, args json.RawMessage)
 	}
 	if len(final) == 0 {
 		result.Output = emptySearchStatement(query, result.Data, len(kbIDs))
+	}
+	if rerankRejected > 0 && len(final) > 0 {
+		delete(result.Data, "rerank_rejected") // the named document's rows are there
+	}
+	if note := namedLegalNote(named, final); note != "" {
+		result.Data["legal_named_note"] = note
+		result.Output += "\n" + note
 	}
 	if legalNote != "" {
 		// The model reads Data, not Output: the renderer appends this note.

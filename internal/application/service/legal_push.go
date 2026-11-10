@@ -592,14 +592,9 @@ func (s *LegalPushService) ingest(ctx context.Context, a *types.LegalDocument, c
 	if a.EffectiveOn != nil {
 		md["eff_from"] = a.EffectiveOn.Format("2006-01-02")
 	}
-	name := in.FileName
-	if name == "" || !strings.HasSuffix(strings.ToLower(name), ".html") {
-		name = strings.ReplaceAll(a.DocumentNumber+" - "+a.Title, "/", "-")
-		if r := []rune(name); len(r) > 180 {
-			name = string(r[:180])
-		}
-		name += ".html"
-	}
+	// Named like a vbpl copy: the title prefixes every chunk in the keyword
+	// index, so a bare "15-2026-NĐ-CP.html" left the copy hard to find.
+	name := vbpl.FileNameOf(a.DocumentNumber, a.Title, a.ID)
 	res, err = s.feed.IngestHTML(grantCtx, LegalIngestDocument{
 		VBPLID: a.ID, DocumentNumber: a.DocumentNumber, DocType: a.DocType, Status: a.Status, FileName: name,
 		Metadata: md, SourceFormat: LegalSourceHTML, ReviewedBy: LegalFeedReviewerPrefix + meta.feed,

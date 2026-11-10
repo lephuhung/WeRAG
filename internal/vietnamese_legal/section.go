@@ -215,3 +215,27 @@ func isLetterOrDigit(r rune) bool {
 	return (r >= '0' && r <= '9') || strings.ContainsRune("abcdefghijklmnopqrstuvwxyz", r) ||
 		(r > 127 && strings.ToLower(string(r)) != strings.ToUpper(string(r)))
 }
+
+// articleListRe reads "Điều 1", "Điều 1, 2 và 10", "các Điều 3, 4": the
+// keyword, then numbers joined by commas, "và" or "hoặc" (each may repeat
+// the keyword).
+var articleListRe = regexp.MustCompile(`(?i)(?:^|[^\p{L}])điều\s+(\d+[a-zđ]?(?:\s*(?:,|và|hoặc)\s*(?:điều\s+)?\d+[a-zđ]?)*)`)
+
+var articleNumberRe = regexp.MustCompile(`\d+[a-zđ]?`)
+
+// FindArticleNumbers returns the Điều numbers text names, in order, each
+// once, lower-cased ("Điều 1 và Điều 10" → 1, 10).
+func FindArticleNumbers(text string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, m := range articleListRe.FindAllStringSubmatch(text, -1) {
+		for _, n := range articleNumberRe.FindAllString(m[1], -1) {
+			n = strings.ToLower(n)
+			if !seen[n] {
+				seen[n] = true
+				out = append(out, n)
+			}
+		}
+	}
+	return out
+}

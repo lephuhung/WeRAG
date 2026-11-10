@@ -228,14 +228,20 @@ var idPattern = regexp.MustCompile(`^[0-9A-Za-z-]{1,64}$`)
 // FileName mirrors file_name() of scripts/legal_catalog/ingest_vbpl.py so
 // a document uploaded by either path gets the same title.
 func FileName(d *Detail) string {
-	num := strings.TrimSpace(d.DocNum)
-	title := strings.Join(strings.Fields(d.Title), " ")
+	return FileNameOf(d.DocNum, d.Title, d.ID)
+}
+
+// FileNameOf is FileName from the parts: "<số hiệu> - <title>.html" (the
+// number left out when the title holds it), id when both are empty.
+func FileNameOf(number, title, id string) string {
+	num := strings.TrimSpace(number)
+	title = strings.Join(strings.Fields(title), " ")
 	name := title
 	if num != "" && !strings.Contains(title, num) {
 		name = num + " - " + title
 	}
 	if name == "" {
-		name = d.ID
+		name = id
 	}
 	name = strings.ReplaceAll(name, "/", "-")
 	name = badFileChars.ReplaceAllString(name, " ")

@@ -11,12 +11,15 @@ import (
 )
 
 type fakeLegalCatalog struct {
-	reports    []*types.LegalStatusReport
-	related    []*types.LegalRelatedReport
-	expansions []types.LegalExpansion
-	gotHits    []string
-	gotNum     string
-	gotMode    types.LegalRelatedMode
+	named         []types.LegalNamedCopy
+	namedCalls    [][]string
+	articleChunks map[string]string
+	reports       []*types.LegalStatusReport
+	related       []*types.LegalRelatedReport
+	expansions    []types.LegalExpansion
+	gotHits       []string
+	gotNum        string
+	gotMode       types.LegalRelatedMode
 }
 
 func (f *fakeLegalCatalog) ExpandRelated(_ context.Context, ids []string) ([]types.LegalExpansion, error) {
@@ -81,6 +84,32 @@ func TestCheckLegalStatusTool(t *testing.T) {
 
 func (f *fakeLegalCatalog) SearchTitles(context.Context, []string, int) ([]*types.LegalDocument, error) {
 	return nil, nil
+}
+
+func (f *fakeLegalCatalog) NamedCopies(_ context.Context, numbers, kbIDs []string) ([]types.LegalNamedCopy, error) {
+	f.namedCalls = append(f.namedCalls, numbers)
+	var out []types.LegalNamedCopy
+	for _, c := range f.named {
+		for _, kb := range append([]string{""}, kbIDs...) {
+			if c.KnowledgeBaseID == kb {
+				out = append(out, c)
+				break
+			}
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeLegalCatalog) ArticleChunkIDs(_ context.Context, knowledgeIDs, articles []string, _ int) (map[string][]string, error) {
+	out := map[string][]string{}
+	for _, k := range knowledgeIDs {
+		for _, a := range articles {
+			if id := f.articleChunks[k+"\x00"+a]; id != "" {
+				out[k+"\x00"+a] = []string{id}
+			}
+		}
+	}
+	return out, nil
 }
 
 func (f *fakeLegalCatalog) Candidates(context.Context, string, string, int) ([]*types.LegalDocument, int, error) {

@@ -107,3 +107,11 @@ func TestBuildLegalCandidates(t *testing.T) {
 		t.Fatal("one document needs no card")
 	}
 }
+
+func (*fakeCatalog) NamedCopies(context.Context, []string, []string) ([]types.LegalNamedCopy, error) {
+	return nil, nil
+}
+
+func (*fakeCatalog) ArticleChunkIDs(context.Context, []string, []string, int) (map[string][]string, error) {
+	return nil, nil
+}
