@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -92,8 +93,15 @@ func legalHTMLText(content []byte) string {
 	return norm.NFC.String(html.UnescapeString(legalHTMLTagRe.ReplaceAllString(s, "")))
 }
 
-// legalUnmarkedArticles counts the lines of a file that start a Điều.
+// legalUnmarkedArticles counts the lines of a file's body that start a
+// Điều; the appendices (doc-region-appendix, at the end) are left out: a
+// biểu mẫu there holds a sample decision with its own "Điều 1.".
 func legalUnmarkedArticles(content []byte) int {
+	if i := bytes.Index(content, []byte("doc-region-appendix")); i >= 0 {
+		if j := bytes.LastIndexByte(content[:i], '<'); j >= 0 {
+			content = content[:j]
+		}
+	}
 	return len(legalArticleLineRe.FindAllStringIndex(legalHTMLText(content), -1))
 }
 

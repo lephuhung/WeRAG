@@ -58,6 +58,10 @@ func (s *LegalPushService) resolveByNumber(meta *legalPushMeta, content []byte, 
 	}
 	var same []*types.LegalDocument
 	near := false
+	// the Party numbers its documents again every term, and its yearly
+	// documents share titles ("11-CT/TW … tổ chức Tết" in 2016 and 2021):
+	// for a Party number another day is another document, not a date typo
+	party := vietnamese_legal.IsPartyDocumentNumber(proposed.DocumentNumber)
 	for _, c := range cands {
 		if legalcatalog.SameDocument(c, proposed) {
 			same = append(same, c)
@@ -66,7 +70,7 @@ func (s *LegalPushService) resolveByNumber(meta *legalPushMeta, content []byte, 
 		sameType := vietnamese_legal.DocTypeClass(c.DocType) == vietnamese_legal.DocTypeClass(proposed.DocType)
 		// same day and type, or the same title and issuer on another day
 		// (a date typo on either side): not clearly another document
-		if sameDay && sameType || sameType && legalcatalog.IssuersAgree(c.Issuer, proposed.Issuer) &&
+		if sameDay && sameType || !party && sameType && legalcatalog.IssuersAgree(c.Issuer, proposed.Issuer) &&
 			legalcatalog.TitleMatch(c.Title, c.DocumentNumber, proposed.Title, proposed.DocumentNumber) {
 			near = true
 		}

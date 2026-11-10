@@ -361,3 +361,27 @@ func TestLegalPushTarget(t *testing.T) {
 		require.Equal(t, c.want, kb.ID, c.number)
 	}
 }
+
+// Party numbers restart every term: the same number, type, issuer and a
+// near title on another day is another document, given its own row.
+func TestLegalPushPartyNumberReusedOnAnotherDay(t *testing.T) {
+	svc, _ := legalPushTestService(t)
+	ctx := context.Background()
+	m := legalPartyMeta()
+	m["doc_number"], m["doc_type"], m["issuer"], m["issue_date"] = "11-CT/TW", "Chỉ thị", "Ban Bí thư", "2016-12-20"
+	m["title"] = "Chỉ thị số 11-CT/TW của Ban Bí thư về việc tổ chức Tết năm 2017"
+	first, err := svc.Push(ctx, LegalPushInput{Metadata: m, Mode: LegalPushCatalogue}, types.Caller{}, LegalFeedActor{})
+	require.NoError(t, err)
+	m["source_doc_id"], m["issue_date"] = "tulieu-8021", "2021-12-08"
+	m["title"] = "Chỉ thị số 11-CT/TW của Ban Bí thư về việc tổ chức Tết Nhâm Dần năm 2022"
+	second, err := svc.Push(ctx, LegalPushInput{Metadata: m, Mode: LegalPushCatalogue}, types.Caller{}, LegalFeedActor{})
+	require.NoError(t, err)
+	require.True(t, second.CatalogueCreated)
+	require.NotEqual(t, first.LegalDocumentID, second.LegalDocumentID)
+}
+
+func TestLegalUnmarkedArticlesSkipAppendix(t *testing.T) {
+	body := `<html><body><p>1. Nội dung.</p><div class="doc-region-appendix"><p>Điều 1. Tặng</p><p>Điều 2. Cấp</p></div></body></html>`
+	require.Zero(t, legalUnmarkedArticles([]byte(body)))
+	require.Equal(t, 2, legalUnmarkedArticles([]byte(strings.ReplaceAll(body, `<div class="doc-region-appendix">`, `<div>`))))
+}
