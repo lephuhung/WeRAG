@@ -472,3 +472,68 @@ func TestLegalPushIDMustMatchNumber(t *testing.T) {
 	_, err = svc.Push(ctx, LegalPushInput{Metadata: m, Mode: LegalPushCatalogue}, types.Caller{}, LegalFeedActor{})
 	require.NoError(t, err, "the same number written another way")
 }
+
+// nd777Official carries the enacting clause, whose trích yếu becomes the
+// vbpl-style title instead of the source's shortened page title.
+var nd777Official = strings.Replace(nd777Push, `<p class="prov-article"`,
+	`<p class="prov-content">NGHỊ ĐỊNH</p><p class="prov-content">QUY ĐỊNH CHI TIẾT VỀ THUẾ ĐỐI VỚI HỘ KINH DOANH</p>`+
+		`<p class="prov-content">Căn cứ Luật Quản lý thuế số 108/2025/QH15;</p>`+
+		`<p class="prov-content">Chính phủ ban hành Nghị định quy định chi tiết về thuế đối với hộ kinh doanh.</p><p class="prov-article"`, 1)
+
+func TestLegalFeedRowTakesTheVBPLStyleTitle(t *testing.T) {
+	now := time.Date(2026, 11, 8, 10, 0, 0, 0, time.Local)
+	m := legalNewDocMeta()
+	m["title"] = "Nghị định 777/2026/NĐ-CP thuế hộ kinh doanh mới nhất"
+	row, missing := legalFeedRow(legalTestMeta(t, m), []byte(nd777Official), now)
+	require.Empty(t, missing)
+	require.Equal(t, "Nghị định số 777/2026/NĐ-CP Quy định chi tiết về thuế đối với hộ kinh doanh", row.Title)
+
+	// no enacting clause: the source's title, without "mới nhất"
+	row, _ = legalFeedRow(legalTestMeta(t, m), []byte(nd777Push), now)
+	require.Equal(t, "Nghị định 777/2026/NĐ-CP thuế hộ kinh doanh", row.Title)
+
+	// a law's short name is enough once it agrees with the heading
+	law := map[string]string{"source": "tvpl", "source_doc_id": "888", "source_url": "https://example.test/888",
+		"format": vbpl.LegalHTMLFormatV1, "doc_number": "143/2025/QH15", "doc_type": "Luật",
+		"issuer": "Quốc hội", "issue_date": "2025-12-11", "title": "Luật 143/2025/QH15"}
+	lawHTML := `<html><body><p class="prov-content">LUẬT</p><p class="prov-content">ĐẦU TƯ</p>` +
+		`<p class="prov-content">Quốc hội ban hành Luật Đầu tư.</p><p class="prov-article" id="a1">Điều 1. Phạm vi</p></body></html>`
+	row, missing = legalFeedRow(legalTestMeta(t, law), []byte(lawHTML), now)
+	require.Empty(t, missing)
+	require.Equal(t, "Luật Đầu tư số 143/2025/QH15", row.Title)
+	// without the clause the bare title is still refused
+	_, missing = legalFeedRow(legalTestMeta(t, law), []byte(nd777Push), now)
+	require.Contains(t, strings.Join(missing, ","), "title")
+}
+
+func TestLegalRetitleFeedRowLeavesVBPLRows(t *testing.T) {
+	svc, _ := legalPushTestService(t)
+	ctx := context.Background()
+	feed := &types.LegalDocument{ID: "tvpl-777", Source: "tvpl", DocumentNumber: "777/2026/NĐ-CP",
+		NumberKey: vietnamese_legal.CatalogNumberKey("777/2026/NĐ-CP"), Title: "Nghị định 777/2026/NĐ-CP thuế hộ", DocType: "Nghị định"}
+	require.NoError(t, svc.db.Create(feed).Error)
+	svc.retitleFeedRow(ctx, feed, "Nghị định số 777/2026/NĐ-CP Quy định chi tiết")
+	var got types.LegalDocument
+	require.NoError(t, svc.db.First(&got, "id = ?", "tvpl-777").Error)
+	require.Equal(t, "Nghị định số 777/2026/NĐ-CP Quy định chi tiết", got.Title)
+	require.Equal(t, got.Title, feed.Title)
+
+	// a SuperAdmin reviewed the row by hand: its title stays
+	require.NoError(t, svc.db.Model(&types.LegalDocument{}).Where("id = ?", "tvpl-777").Update("reviewed_by", "sa-user").Error)
+	svc.retitleFeedRow(ctx, feed, "Nghị định số 777/2026/NĐ-CP khác")
+	require.NoError(t, svc.db.First(&got, "id = ?", "tvpl-777").Error)
+	require.Equal(t, "Nghị định số 777/2026/NĐ-CP Quy định chi tiết", got.Title)
+	// the push's own reviewer mark does not count as a hand review
+	require.NoError(t, svc.db.Model(&types.LegalDocument{}).Where("id = ?", "tvpl-777").
+		Update("reviewed_by", LegalFeedReviewerPrefix+"tvpl").Error)
+	svc.retitleFeedRow(ctx, feed, "Nghị định số 777/2026/NĐ-CP Quy định chi tiết mới")
+	require.NoError(t, svc.db.First(&got, "id = ?", "tvpl-777").Error)
+	require.Equal(t, "Nghị định số 777/2026/NĐ-CP Quy định chi tiết mới", got.Title)
+
+	// the row became vbpl.vn's meanwhile: its title stays vbpl's
+	require.NoError(t, svc.db.Model(&types.LegalDocument{}).Where("id = ?", "tvpl-777").
+		Updates(map[string]any{"source": types.LegalDocumentSourceVBPL, "title": "Nghị định số 777/2026/NĐ-CP của vbpl"}).Error)
+	svc.retitleFeedRow(ctx, feed, "Nghị định số 777/2026/NĐ-CP khác")
+	require.NoError(t, svc.db.First(&got, "id = ?", "tvpl-777").Error)
+	require.Equal(t, "Nghị định số 777/2026/NĐ-CP của vbpl", got.Title)
+}

@@ -247,7 +247,7 @@ func FileNameOf(number, title, id string) string {
 	name = badFileChars.ReplaceAllString(name, " ")
 	name = strings.Join(strings.Fields(name), " ")
 	if r := []rune(name); len(r) > 180 {
-		name = string(r[:180])
+		name = strings.TrimSpace(string(r[:180])) // no "… vô .html"
 	}
 	return name + ".html"
 }

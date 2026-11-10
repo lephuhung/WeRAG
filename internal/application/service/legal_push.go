@@ -764,14 +764,30 @@ func (s *LegalPushService) ingest(ctx context.Context, a *types.LegalDocument, c
 		md["eff_from"] = a.EffectiveOn.Format("2006-01-02")
 	}
 	// Named like a vbpl copy: the title prefixes every chunk in the keyword
-	// index, so a bare "15-2026-NĐ-CP.html" left the copy hard to find.
-	name := vbpl.FileNameOf(a.DocumentNumber, a.Title, a.ID)
+	// index, so a bare "15-2026-NĐ-CP.html" left the copy hard to find. A
+	// vbpl row keeps vbpl's title; a feed row takes the vbpl-style title
+	// written from the document's enacting clause (vbpl.OfficialTitle), and
+	// once the copy is in, the row takes it too (unless a SuperAdmin
+	// reviewed the row by hand: its title stays, the copy is still named
+	// from the document). Only a row without a copy
+	// gets here (mode full); copies made before this keep their names until
+	// renamed and re-indexed by hand.
+	title := a.Title
+	if a.IsFeedRow() {
+		if t := vbpl.OfficialTitle(in.Content, a.DocType, a.DocumentNumber); t != "" {
+			title = t
+		}
+	}
+	name := vbpl.FileNameOf(a.DocumentNumber, title, a.ID)
 	res, err = s.feed.IngestHTML(grantCtx, LegalIngestDocument{
 		VBPLID: a.ID, DocumentNumber: a.DocumentNumber, DocType: a.DocType, Status: a.Status, FileName: name,
 		Metadata: md, SourceFormat: LegalSourceHTML, ReviewedBy: LegalFeedReviewerPrefix + meta.feed,
 		LogDetail: map[string]any{"feed": meta.feed, "feed_doc_id": meta.feedDocID, "feed_url": meta.feedURL,
 			"catalogue_created": created},
 	}, in.Content, kb, actor, "push "+meta.feed+" "+meta.feedDocID)
+	if err == nil && title != a.Title {
+		s.retitleFeedRow(ctx, a, title)
+	}
 	return res, created, err
 }
 
@@ -1081,4 +1097,23 @@ func (s *LegalPushService) store(ctx context.Context, meta *legalPushMeta, aID s
 		return 0, fmt.Errorf("store candidates of %s: %w", aID, err)
 	}
 	return kept, nil
+}
+
+// retitleFeedRow gives a feed row its vbpl-style title (vbpl.OfficialTitle)
+// when a push of it brings the enacting clause. Rows of vbpl.vn and feed
+// rows a SuperAdmin reviewed by hand are never touched. A failure only
+// leaves the old title.
+func (s *LegalPushService) retitleFeedRow(ctx context.Context, a *types.LegalDocument, title string) {
+	res := s.db.WithContext(ctx).Model(&types.LegalDocument{}).
+		Where("id = ? AND source = ?", a.ID, a.Source).
+		Where("reviewed_by IS NULL OR reviewed_by = '' OR reviewed_by LIKE ?", LegalFeedReviewerPrefix+"%").
+		Update("title", title)
+	if res.Error != nil {
+		logger.Warnf(ctx, "[LegalPush] retitle %s: %v", a.ID, res.Error)
+		return
+	}
+	if res.RowsAffected > 0 {
+		logger.Infof(ctx, "[LegalPush] %s (%s) retitled %q → %q", a.ID, a.DocumentNumber, a.Title, title)
+		a.Title = title
+	}
 }
