@@ -137,6 +137,17 @@ func RegisterSessionRoutes(
 	}
 }
 
+// RegisterAnswerExportRoutes registers the .docx download of one answer.
+// It reads a message of the caller's own session, like
+// GET /messages/:session_id/load, so it takes the same guards: a Guest in
+// the public portal (their own sessions only, middleware.IsGuestChatAPI)
+// and API keys with the chat capability.
+func RegisterAnswerExportRoutes(r *gin.RouterGroup, h *session.AnswerExportHandler, g *rbacGuards) {
+	sessions := g.apiKeyGroup(r.Group("/sessions", g.GuestChat()), apiKeyChat(apiKeyFullAccess()))
+	// :id, not :session_id: the GET tree binds /sessions/:id (GetSession)
+	sessions.GET("/:id/messages/:message_id/export.docx", h.ExportAnswerDocx)
+}
+
 // RegisterDocumentWorkspaceRoutes registers the document-assistant
 // workspaces of a session (the .docx files open in the embedded ONLYOFFICE
 // editor, one tab each).
