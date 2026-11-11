@@ -239,6 +239,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewEmailNotificationRepository))
 	must(container.Provide(service.NewEmailNotifier))
 	must(container.Decorate(service.NewBillingEmailNotifications))
+	// in-app notifications of the signed-in person (user_notifications)
+	must(container.Provide(repository.NewUserNotificationRepository))
 	// Platform-wide aggregate stats for the SystemAdmin overview dashboard.
 	must(container.Provide(service.NewStatsService))
 	// People lookup against the external MongoDB store. Always constructed;
@@ -585,6 +587,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	}))
 	must(container.Provide(handler.NewMeEnvVarHandler))
 	must(container.Provide(handler.NewMeUsageHandler))
+	must(container.Provide(handler.NewUserNotificationHandler))
 	must(container.Provide(handler.NewUsageAdminHandler))
 	must(container.Provide(handler.NewTenantUsageHandler))
 	must(container.Provide(handler.NewUsageBillingHandler))

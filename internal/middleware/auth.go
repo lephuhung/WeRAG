@@ -126,6 +126,9 @@ var tenantOptionalRoutes = []tenantOptionalRoute{
 	{scope: routeScopeIdentity, path: "/api/v1/auth/switch-tenant", methods: []string{http.MethodPost}},
 	{scope: routeScopeIdentity, path: "/api/v1/auth/2fa/", prefix: true},
 	{scope: routeScopeIdentity, path: "/api/v1/me/invitations", prefix: true},
+	// The person's own in-app notifications (a Guest too).
+	{scope: routeScopeIdentity, path: "/api/v1/notifications", methods: []string{http.MethodGet}},
+	{scope: routeScopeIdentity, path: "/api/v1/notifications/", prefix: true, methods: []string{http.MethodGet, http.MethodPost}},
 	{scope: routeScopeIdentity, path: "/api/v1/tenants", methods: []string{http.MethodPost}},
 	// Unit directory: a tenantless SuperAdmin picks units to manage.
 	{scope: routeScopeIdentity, path: "/api/v1/tenants/directory", methods: []string{http.MethodGet}},
