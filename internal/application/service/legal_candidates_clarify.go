@@ -54,6 +54,15 @@ func (s *sessionService) legalCandidatesClarification(ctx context.Context, req *
 // answer, and the completion carrying the step so the card renders from
 // history. Same shape as EmitDocumentScopeClarification.
 func emitPipelineCard(ctx context.Context, bus *event.EventBus, req *types.QARequest, toolName, idPrefix, answer string, data map[string]interface{}) error {
+	return emitPipelineCardMarked(ctx, bus, req, toolName, idPrefix, answer, data, nil)
+}
+
+// emitPipelineCardMarked is emitPipelineCard with the ungrounded marker the
+// completion carries to the assistant message (nil for none).
+func emitPipelineCardMarked(
+	ctx context.Context, bus *event.EventBus, req *types.QARequest, toolName, idPrefix, answer string,
+	data map[string]interface{}, ungrounded *types.UngroundedMarker,
+) error {
 	sessionID := req.Session.ID
 	data = withFinalMessage(data, answer)
 	callID := types.PipelineToolCallIDPrefix + idPrefix + req.AssistantMessageID
@@ -72,7 +81,7 @@ func emitPipelineCard(ctx context.Context, bus *event.EventBus, req *types.QAReq
 	}}}
 	return bus.Emit(ctx, event.Event{Type: event.EventAgentComplete, SessionID: sessionID,
 		Data: event.AgentCompleteData{SessionID: sessionID, MessageID: req.AssistantMessageID,
-			FinalAnswer: answer, AgentSteps: []types.AgentStep{step}, TotalSteps: 1}})
+			FinalAnswer: answer, AgentSteps: []types.AgentStep{step}, TotalSteps: 1, Ungrounded: ungrounded}})
 }
 
 // withFinalMessage returns a copy of a pipeline card's data carrying the

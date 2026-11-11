@@ -543,6 +543,11 @@ type MessageExecutionContext struct {
 	// answer (TurnFailure* codes, see turn_failure.go); "" for a normal turn.
 	// Stored here, not in a column of its own, so it needs no migration.
 	TurnFailure string `json:"turn_failure,omitempty"`
+	// Ungrounded marks an assistant turn a gate answered for lack of
+	// evidence (see answer_quality.go); nil for a normal or failed turn.
+	// Read by the admins' ungrounded-questions list; like TurnFailure it
+	// needs no column of its own.
+	Ungrounded *UngroundedMarker `json:"ungrounded,omitempty"`
 }
 
 func (c MessageExecutionContext) Value() (driver.Value, error) {

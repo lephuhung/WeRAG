@@ -613,7 +613,7 @@ func (e *AgentEngine) executeLoop(
 			return
 		}
 		completionEmitted = true
-		e.emitCompletionEvent(context.WithoutCancel(ctx), state, sessionID, messageID, startTime)
+		e.emitCompletionEvent(context.WithoutCancel(ctx), state, query, sessionID, messageID, startTime)
 	}
 	defer emitCompletion()
 

@@ -2249,6 +2249,12 @@ func (h *Handler) completeQuickAnswerTurn(
 	if streamCtx == nil || streamCtx.assistantMessage == nil {
 		return
 	}
+	// retrieval found nothing and the fallback answered: the question goes
+	// to the admins' ungrounded-questions list
+	var ungrounded *types.UngroundedMarker
+	if streamCtx.assistantMessage.IsFallback && !streamCtx.assistantMessage.TurnFailed() {
+		ungrounded = types.NewUngroundedMarker(types.UngroundedNoEvidence, query, "")
+	}
 	if streamCtx.eventBus != nil {
 		// MessageID is what handleComplete keys on. Leave FinalAnswer empty:
 		// KnowledgeQA already accumulated the answer on the message, and
@@ -2257,9 +2263,12 @@ func (h *Handler) completeQuickAnswerTurn(
 			Type:      event.EventAgentComplete,
 			SessionID: streamCtx.assistantMessage.SessionID,
 			Data: event.AgentCompleteData{
-				MessageID: streamCtx.assistantMessage.ID,
+				MessageID:  streamCtx.assistantMessage.ID,
+				Ungrounded: ungrounded,
 			},
 		})
+	} else if ungrounded != nil {
+		streamCtx.assistantMessage.ExecutionContext.Ungrounded = ungrounded
 	}
 	h.completeAssistantMessage(ctx, streamCtx.assistantMessage, query, userMessageID)
 }
@@ -2285,6 +2294,23 @@ func (h *Handler) sessionTenantInfoContext(ctx context.Context) (context.Context
 	return context.WithValue(ctx, types.TenantInfoContextKey, tenant), true
 }
 
+// finishUngroundedMarker settles the ungrounded marker before the message is
+// stored: a failed turn carries none (the failure may be recorded after the
+// gate fired), and a marker without the question gets the turn's query.
+func finishUngroundedMarker(m *types.Message, userQuery string) {
+	marker := m.ExecutionContext.Ungrounded
+	if marker == nil {
+		return
+	}
+	if m.TurnFailed() {
+		m.ExecutionContext.Ungrounded = nil
+		return
+	}
+	if marker.Query == "" && strings.TrimSpace(userQuery) != "" {
+		m.ExecutionContext.Ungrounded = types.NewUngroundedMarker(marker.Reason, userQuery, marker.LegalRequest)
+	}
+}
+
 // completeAssistantMessage marks an assistant message as complete, updates it,
 // and asynchronously indexes the Q&A pair into the chat history knowledge base.
 func (h *Handler) completeAssistantMessage(
@@ -2292,6 +2318,7 @@ func (h *Handler) completeAssistantMessage(
 ) {
 	assistantMessage.UpdatedAt = time.Now()
 	assistantMessage.IsCompleted = true
+	finishUngroundedMarker(assistantMessage, userQuery)
 	_ = h.messageService.UpdateMessage(ctx, assistantMessage)
 
 	// A turn the model failed to answer is stored (with its failure mark)

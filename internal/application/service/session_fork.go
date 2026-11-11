@@ -487,6 +487,9 @@ func copyMessagesInto(newSessionID string, history []*types.Message) []*types.Me
 		// Feedback judged the parent's turn and is tied to its trace; a copy
 		// carrying it would count the same vote twice in training exports.
 		clone.Feedback, clone.FeedbackComment, clone.FeedbackAt = 0, "", nil
+		// Likewise the ungrounded mark: the admins' list would count the
+		// parent's question twice.
+		clone.ExecutionContext.Ungrounded = nil
 		if src.RequestID != "" {
 			mapped, ok := requestIDs[src.RequestID]
 			if !ok {

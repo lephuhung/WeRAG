@@ -403,7 +403,7 @@ func dataInt(data map[string]interface{}, key string) int {
 
 // emitCompletionEvent emits the EventAgentComplete event with execution summary.
 func (e *AgentEngine) emitCompletionEvent(
-	ctx context.Context, state *types.AgentState, sessionID, messageID string, startTime time.Time,
+	ctx context.Context, state *types.AgentState, query, sessionID, messageID string, startTime time.Time,
 ) {
 	steps := state.RoundSteps
 	if len(state.PendingSteerMessages) > 0 {
@@ -431,6 +431,7 @@ func (e *AgentEngine) emitCompletionEvent(
 			TotalSteps:      len(state.RoundSteps),
 			TotalDurationMs: time.Since(startTime).Milliseconds(),
 			MessageID:       messageID, // Include message ID for proper message update
+			Ungrounded:      e.ungroundedMarker(ctx, state, query),
 		},
 	})
 
