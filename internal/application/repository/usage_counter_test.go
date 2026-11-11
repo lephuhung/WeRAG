@@ -124,3 +124,47 @@ func TestUsageCounterGetMany(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, rows)
 }
+
+// An organization's member rows are read by their "<tenant id>:" prefix:
+// tenant 1 never picks up tenant 10's or 11's rows, nor another month's.
+func TestUsageCounterListMemberCountersStaysInTheOrganization(t *testing.T) {
+	repo, _ := newUsageCounterTestRepo(t)
+	ctx := context.Background()
+	inc := func(id, period string, d int64) types.UsageIncrement {
+		return types.UsageIncrement{ScopeType: types.UsageScopeMember, ScopeID: id,
+			Metric: types.UsageMetricTokens, PeriodKey: period, Delta: d}
+	}
+	require.NoError(t, repo.Add(ctx, []types.UsageIncrement{
+		inc(types.UsageMemberScopeID(1, "u-a"), "2026-11", 10),
+		inc(types.UsageMemberScopeID(1, "u-b"), "2026-11", 20),
+		inc(types.UsageMemberScopeID(1, "u-a"), "2026-10", 5),
+		inc(types.UsageMemberScopeID(10, "u-a"), "2026-11", 300),
+		inc(types.UsageMemberScopeID(11, "u-c"), "2026-11", 400),
+		{ScopeType: types.UsageScopeUser, ScopeID: "1:u-x", Metric: types.UsageMetricTokens, PeriodKey: "2026-11", Delta: 9},
+	}))
+	rows, err := repo.ListMemberCounters(ctx, 1, "2026-11")
+	require.NoError(t, err)
+	got := map[string]int64{}
+	for _, r := range rows {
+		got[types.UsageMemberIDFromScope(1, r.ScopeID)] += r.Value
+	}
+	require.Equal(t, map[string]int64{"u-a": 10, "u-b": 20}, got)
+
+	rows, err = repo.ListMemberCounters(ctx, 10, "2026-11")
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, int64(300), rows[0].Value)
+}
+
+func TestUsageMemberScopeIDBounds(t *testing.T) {
+	require.Equal(t, "10003:u-1", types.UsageMemberScopeID(10003, "u-1"))
+	require.Empty(t, types.UsageMemberScopeID(0, "u-1"))
+	require.Empty(t, types.UsageMemberScopeID(10003, ""))
+	long := make([]byte, 60)
+	for i := range long {
+		long[i] = 'a'
+	}
+	require.Empty(t, types.UsageMemberScopeID(10003, string(long)), "must fit usage_counters.scope_id")
+	require.Equal(t, "u-1", types.UsageMemberIDFromScope(10003, "10003:u-1"))
+	require.Empty(t, types.UsageMemberIDFromScope(1000, "10003:u-1"))
+}

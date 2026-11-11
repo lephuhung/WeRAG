@@ -97,6 +97,29 @@ func (r *usagePlanRepository) GetSubscription(ctx context.Context, id string) (*
 	return &sub, nil
 }
 
+// usageScopeIDBatch bounds one IN list of ListActiveSubscriptions.
+const usageScopeIDBatch = 500
+
+func (r *usagePlanRepository) ListActiveSubscriptions(
+	ctx context.Context, scopeType string, scopeIDs []string,
+) (map[string]*types.UsageSubscription, error) {
+	out := make(map[string]*types.UsageSubscription, len(scopeIDs))
+	for start := 0; start < len(scopeIDs); start += usageScopeIDBatch {
+		end := min(start+usageScopeIDBatch, len(scopeIDs))
+		var subs []*types.UsageSubscription
+		err := r.conn(ctx).Preload("Plan").
+			Where("scope_type = ? AND scope_id IN ? AND status = ?", scopeType, scopeIDs[start:end], types.UsageSubscriptionActive).
+			Find(&subs).Error
+		if err != nil {
+			return nil, err
+		}
+		for _, sub := range subs {
+			out[sub.ScopeID] = sub
+		}
+	}
+	return out, nil
+}
+
 func (r *usagePlanRepository) GetActiveSubscription(
 	ctx context.Context, scopeType, scopeID string,
 ) (*types.UsageSubscription, error) {

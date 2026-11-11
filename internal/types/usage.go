@@ -9,7 +9,9 @@ import (
 //
 // Every chat turn is counted twice: once for the organization that owns the
 // session (scope "tenant") and once for the person who asked (scope
-// "user"). Counters are bucketed by Vietnam calendar day and month so a
+// "user"), and a real person's turn a third time as a member of that
+// organization (scope "member", month rows only, see usage_member.go).
+// Counters are bucketed by Vietnam calendar day and month so a
 // package can later say "N questions per day" or "M tokens per month"
 // without re-aggregating the messages table. Rows only ever grow; the
 // day rows are the ground truth and the month rows a convenience.
@@ -150,8 +152,25 @@ type UsagePeriodTotals struct {
 	CacheMissTokens int64 `json:"cache_miss_tokens"`
 	// CostMicroVND is what these calls cost, in millionths of a đồng. Only
 	// a SuperAdmin report shows it: it is the operator's spend, not the
-	// tenant's consumption.
-	CostMicroVND int64 `json:"cost_micro_vnd"`
+	// tenant's consumption. Every response to anyone else goes through
+	// WithoutCost, and omitempty keeps the zero off the wire.
+	CostMicroVND int64 `json:"cost_micro_vnd,omitempty"`
+}
+
+// WithoutCost returns t with the operator's cost removed, for any caller
+// who is not an explicit human SuperAdmin.
+func (t UsagePeriodTotals) WithoutCost() UsagePeriodTotals {
+	t.CostMicroVND = 0
+	return t
+}
+
+// WithoutCost strips the operator's cost from both periods (nil-safe).
+func (s *UsageScopeSummary) WithoutCost() {
+	if s == nil {
+		return
+	}
+	s.Today = s.Today.WithoutCost()
+	s.Month = s.Month.WithoutCost()
 }
 
 // AddMetric folds one counter row into the totals.

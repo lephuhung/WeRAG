@@ -6,10 +6,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/models/vlm"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/stretchr/testify/require"
 )
 
 // fakeVLM is a minimal VLM stub that records calls and returns a fixed response.
@@ -358,5 +360,36 @@ func TestUnderstandImagesWithVLMHonoursOCROnlyModel(t *testing.T) {
 	}
 	if fv2.lastOCRPrompt != vlmOCRPrompt {
 		t.Fatal("built-in OCR prompt must stay for a general VLM")
+	}
+}
+
+// portalTenantService serves the public portal and a shared agent's source
+// workspace.
+type portalTenantService struct{ interfaces.TenantService }
+
+func (portalTenantService) GetTenantByID(_ context.Context, id uint64) (*types.Tenant, error) {
+	if id == testPortalID {
+		return &types.Tenant{ID: id, Kind: types.TenantKindPublicPortal}, nil
+	}
+	return &types.Tenant{ID: id}, nil
+}
+
+// A portal Guest's upload parsed with a shared agent's source workspace
+// (the tenant info of the parse) is still metered as the portal's Guest:
+// guest counters, no user or member rows.
+func TestCountOCRUsageMetersPortalGuestUnderGuestScope(t *testing.T) {
+	repo := &fakeUsageCounterRepo{}
+	meter := &usageMeter{repo: repo, now: time.Now}
+	svc := &temporaryDocumentService{usageMeter: meter, tenantService: portalTenantService{}}
+	sink := &types.VLMUsageSink{}
+	sink.Report(types.VLMUsage{PromptTokens: 90, CompletionTokens: 10, TotalTokens: 100})
+	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "guest-1")
+	ctx = context.WithValue(ctx, types.TenantInfoContextKey, &types.Tenant{ID: 10003}) // the source workspace
+	payload := types.TemporaryDocumentTaskPayload{TenantID: testPortalID, DocumentID: "d1"}
+	svc.countOCRUsage(ctx, payload, &types.TemporaryDocument{ID: "d1", TenantID: testPortalID}, sink, nil)
+	require.NotEmpty(t, repo.added)
+	for _, inc := range repo.added {
+		require.NotEqual(t, types.UsageScopeMember, inc.ScopeType, "%+v", inc)
+		require.NotEqual(t, types.UsageScopeUser, inc.ScopeType, "%+v", inc)
 	}
 }
