@@ -16,11 +16,21 @@ import (
 // LegalLookupAccess refuses anonymous and API-key callers and rate-limits
 // a Guest per IP, a member per account. No API-key policy is declared, so
 // the API-key gate denies it to keys.
-func RegisterLegalLookupRoutes(r *gin.RouterGroup, h *handler.LegalLookupHandler, redisClient *redis.Client) {
+//
+// The SuperAdmin list of lookups that found nothing (catalogue gaps) is
+// human SuperAdmin only.
+func RegisterLegalLookupRoutes(
+	r *gin.RouterGroup, h *handler.LegalLookupHandler, redisClient *redis.Client, g *rbacGuards,
+) {
 	if h == nil {
 		return
 	}
 	r.GET("/legal-lookup", middleware.LegalLookupAccess(redisClient), h.LookupLegalValidity)
+	misses := r.Group("/system/legal-lookup-misses", g.PlatformSuperAdmin())
+	{
+		misses.GET("", h.ListLegalLookupMisses)
+		misses.DELETE("/:id", h.DeleteLegalLookupMiss)
+	}
 }
 
 // RegisterLegalReviewRoutes wires the SuperAdmin review of the legal

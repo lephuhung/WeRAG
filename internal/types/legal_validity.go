@@ -130,6 +130,11 @@ type LegalValidityLookup struct {
 	// By is how the query matched: "number", "title" or "" (nothing).
 	By      string               `json:"by"`
 	Matches []LegalValidityMatch `json:"matches"`
+	// More reports that more documents match than Matches lists.
+	More bool `json:"more"`
+	// NumberMissing is the số hiệu the query named when the catalogue has
+	// no such document: Matches then only mention it in their title.
+	NumberMissing string `json:"number_missing,omitempty"`
 	// CatalogSnapshotDate is the date (YYYY-MM-DD) of the newest vbpl.vn
 	// snapshot the catalogue holds, empty when unknown.
 	CatalogSnapshotDate string `json:"catalog_snapshot_date"`
@@ -198,3 +203,47 @@ func LegalDateString(t *time.Time) string {
 	}
 	return t.Format("2006-01-02")
 }
+
+// LegalCatalogFilter narrows a catalogue search; every set field must hold.
+// Number keys come from vietnamese_legal.CatalogNumberKey. DocTypes match
+// case-insensitively. IssuedYear holds when the document was issued that
+// year or its number names it ("…/2024/…").
+type LegalCatalogFilter struct {
+	NumberKey    string
+	NumberPrefix string // number_key starts with NumberPrefix + "/"
+	TitleWords   []string
+	DocTypes     []string
+	IssuedYear   int
+	Limit        int
+}
+
+// LegalLookupMiss is a validity lookup that found nothing (or found only
+// documents mentioning a số hiệu the catalogue lacks), counted per
+// normalized query so a SuperAdmin sees the catalogue's gaps.
+type LegalLookupMiss struct {
+	ID uint64 `json:"id" gorm:"primaryKey;autoIncrement"`
+	// Query is the normalized query (lower-case, single spaces), unique.
+	Query string `json:"query" gorm:"type:varchar(200);not null;uniqueIndex"`
+	// Sample is one raw query as typed.
+	Sample string `json:"sample" gorm:"type:varchar(200);not null;default:''"`
+	// Number is the số hiệu the query named, if any.
+	Number string `json:"number" gorm:"type:varchar(128);not null;default:''"`
+	// Reason is LegalLookupMissNoMatch or LegalLookupMissNumber.
+	Reason       string    `json:"reason" gorm:"type:varchar(16);not null;default:''"`
+	Count        int64     `json:"count" gorm:"not null;default:1"`
+	FirstAt      time.Time `json:"first_at"`
+	LastAt       time.Time `json:"last_at"`
+	LastTenantID uint64    `json:"last_tenant_id" gorm:"not null;default:0"`
+	LastUserID   string    `json:"last_user_id" gorm:"type:varchar(36);not null;default:''"`
+}
+
+// TableName returns the table name for LegalLookupMiss.
+func (LegalLookupMiss) TableName() string { return "legal_lookup_misses" }
+
+const (
+	// LegalLookupMissNoMatch: nothing in the catalogue matched.
+	LegalLookupMissNoMatch = "no_match"
+	// LegalLookupMissNumber: the số hiệu is not in the catalogue; only
+	// documents mentioning it in their title were found.
+	LegalLookupMissNumber = "number_missing"
+)

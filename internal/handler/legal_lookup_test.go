@@ -47,7 +47,7 @@ func serveLegalLookup(f *fakeLegalLookup, rawQuery string) *httptest.ResponseRec
 			}
 		}
 	})
-	r.GET("/legal-lookup", NewLegalLookupHandler(f).LookupLegalValidity)
+	r.GET("/legal-lookup", NewLegalLookupHandler(f, nil).LookupLegalValidity)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/legal-lookup?"+rawQuery, nil))
 	return w
@@ -96,5 +96,63 @@ func TestLookupLegalValidityRejectsBadQueries(t *testing.T) {
 	f.err = errors.New("db down")
 	if w := serveLegalLookup(f, "q=53"); w.Code != http.StatusInternalServerError {
 		t.Fatalf("service error = %d, want 500", w.Code)
+	}
+}
+
+type fakeLookupMisses struct {
+	byCount       bool
+	offset, limit int
+	deleted       uint64
+}
+
+func (f *fakeLookupMisses) ListMisses(_ context.Context, byCount bool, offset, limit int) ([]*types.LegalLookupMiss, int64, error) {
+	f.byCount, f.offset, f.limit = byCount, offset, limit
+	return []*types.LegalLookupMiss{{ID: 3, Query: "777/2099/nđ-cp", Count: 2, Reason: types.LegalLookupMissNumber}}, 1, nil
+}
+
+func (f *fakeLookupMisses) DeleteMiss(_ context.Context, id uint64) error {
+	f.deleted = id
+	return nil
+}
+
+func TestLegalLookupMissEndpoints(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	m := &fakeLookupMisses{}
+	h := NewLegalLookupHandler(&fakeLegalLookup{}, m)
+	r := gin.New()
+	r.Use(func(c *gin.Context) {
+		c.Next()
+		if len(c.Errors) > 0 {
+			if e, ok := c.Errors.Last().Err.(*apperrors.AppError); ok {
+				c.AbortWithStatus(e.HTTPCode)
+			}
+		}
+	})
+	r.GET("/misses", h.ListLegalLookupMisses)
+	r.DELETE("/misses/:id", h.DeleteLegalLookupMiss)
+
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/misses?page=2&page_size=5&sort=recent", nil))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"total":1`) ||
+		!strings.Contains(w.Body.String(), `"reason":"number_missing"`) {
+		t.Fatalf("list = %d %s", w.Code, w.Body.String())
+	}
+	if m.byCount || m.offset != 5 || m.limit != 5 {
+		t.Fatalf("list args = %+v", m)
+	}
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/misses?page_size=1000", nil))
+	if !m.byCount || m.limit != 20 {
+		t.Fatalf("default sort/size = %+v", m)
+	}
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/misses/3", nil))
+	if w.Code != http.StatusOK || m.deleted != 3 {
+		t.Fatalf("delete = %d, deleted %d", w.Code, m.deleted)
+	}
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodDelete, "/misses/x", nil))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("bad id = %d", w.Code)
 	}
 }

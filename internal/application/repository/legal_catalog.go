@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -181,6 +182,106 @@ func (r *legalCatalogRepository) ListEdges(
 	}
 	err := r.db.WithContext(ctx).Where(col+" IN ? AND relation IN ?", ids, rels).Find(&rows).Error
 	return rows, err
+}
+
+func (r *legalCatalogRepository) FilterDocuments(
+	ctx context.Context, f types.LegalCatalogFilter,
+) ([]*types.LegalDocument, error) {
+	var docs []*types.LegalDocument
+	pg := r.db.Dialector.Name() == "postgres"
+	q := r.db.WithContext(ctx).Model(&types.LegalDocument{})
+	n := 0
+	if k := strings.TrimSpace(f.NumberKey); k != "" {
+		q = q.Where("number_key = ?", k)
+		n++
+	}
+	if k := strings.TrimSpace(f.NumberPrefix); k != "" {
+		q = q.Where("number_key LIKE ? ESCAPE ?", escapeLikeKeyword(k)+"/%", likeEscapeChar)
+		n++
+	}
+	for _, w := range f.TitleWords {
+		if w = strings.TrimSpace(w); w == "" {
+			continue
+		}
+		like := "%" + escapeLikeKeyword(w) + "%"
+		if pg {
+			q = q.Where("title ILIKE ? ESCAPE ?", like, likeEscapeChar)
+		} else {
+			q = q.Where("lower(title) LIKE lower(?) ESCAPE ?", like, likeEscapeChar)
+		}
+		n++
+	}
+	if len(f.DocTypes) > 0 {
+		// SQLite's lower() folds ASCII only: match the spellings instead
+		var lowered, spellings []string
+		for _, t := range f.DocTypes {
+			t = strings.Join(strings.Fields(t), " ")
+			if t == "" {
+				continue
+			}
+			l := strings.ToLower(t)
+			lowered = append(lowered, l)
+			r := []rune(l)
+			spellings = append(spellings, l, strings.ToUpper(string(r[:1]))+string(r[1:]))
+		}
+		if pg {
+			q = q.Where("lower(doc_type) IN ?", lowered)
+		} else {
+			q = q.Where("doc_type IN ?", spellings)
+		}
+	}
+	if f.IssuedYear > 0 {
+		year := fmt.Sprintf("%04d", f.IssuedYear)
+		yearExpr := "strftime('%Y', issued_on) = ?"
+		if pg {
+			yearExpr = "to_char(issued_on, 'YYYY') = ?"
+		}
+		q = q.Where("("+yearExpr+" OR number_key LIKE ? ESCAPE ?)", year, "%/"+year+"/%", likeEscapeChar)
+	}
+	if n == 0 && f.IssuedYear == 0 {
+		return docs, nil // a type alone would list the whole catalogue
+	}
+	limit := f.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	err := q.Order("issued_on DESC NULLS LAST").Order("id").Limit(limit).Find(&docs).Error
+	return docs, err
+}
+
+func (r *legalCatalogRepository) ExternalCopies(
+	ctx context.Context, documentIDs, kbIDs []string,
+) (map[string][]types.LegalKnowledgeRef, error) {
+	out := map[string][]types.LegalKnowledgeRef{}
+	if len(documentIDs) == 0 || len(kbIDs) == 0 {
+		return out, nil
+	}
+	ext := "k.metadata->>'external_id'"
+	if r.db.Dialector.Name() != "postgres" {
+		ext = "json_extract(k.metadata, '$.external_id')"
+	}
+	var rows []struct {
+		ExternalID        string
+		KnowledgeID       string
+		KnowledgeBaseID   string
+		KnowledgeBaseName string
+		Title             string
+	}
+	err := r.db.WithContext(ctx).Table("knowledges AS k").
+		Select(ext+" AS external_id, k.id AS knowledge_id, k.knowledge_base_id, kb.name AS knowledge_base_name, k.title").
+		Joins("JOIN knowledge_bases kb ON kb.id = k.knowledge_base_id AND kb.deleted_at IS NULL").
+		Joins("LEFT JOIN legal_document_links l ON l.knowledge_id = k.id").
+		Where("k.knowledge_base_id IN ? AND k.deleted_at IS NULL AND "+ext+" IN ?", kbIDs, documentIDs).
+		Where("k.parse_status IN ?", []string{types.ParseStatusCompleted, types.ParseStatusFinalizing}).
+		Where("(l.knowledge_id IS NULL OR l.review_status = ?)", types.LegalReviewApproved).
+		Order("k.created_at").Order("k.id").Scan(&rows).Error
+	for _, row := range rows {
+		out[row.ExternalID] = append(out[row.ExternalID], types.LegalKnowledgeRef{
+			KnowledgeID: row.KnowledgeID, KnowledgeBaseID: row.KnowledgeBaseID,
+			KnowledgeBaseName: row.KnowledgeBaseName, Title: row.Title,
+		})
+	}
+	return out, err
 }
 
 func (r *legalCatalogRepository) LatestSnapshot(ctx context.Context) (*time.Time, error) {

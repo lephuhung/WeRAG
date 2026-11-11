@@ -3,10 +3,13 @@ package service
 import (
 	"context"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
+
+	"golang.org/x/sync/singleflight"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -21,12 +24,17 @@ const (
 	// legalLookupMaxPerGroup caps the documents listed per relation group
 	// (a Luật can be amended by dozens).
 	legalLookupMaxPerGroup = 8
-	// legalLookupBareScan bounds the rows a bare number ("53") is matched
-	// against before the doc-type / title filter.
-	legalLookupBareScan = 200
+	// legalLookupContentScan bounds the rows of a number and type that the
+	// content words of the query are then matched against.
+	legalLookupContentScan = 200
 	// legalLookupSnapshotTTL is how long the catalogue's snapshot date is
-	// cached (it changes once a night).
-	legalLookupSnapshotTTL = 10 * time.Minute
+	// cached (it changes once a night); a failed read is retried sooner.
+	legalLookupSnapshotTTL      = 10 * time.Minute
+	legalLookupSnapshotErrorTTL = 30 * time.Second
+	// legalLookupMissMaxLen caps the stored query of a miss.
+	legalLookupMissMaxLen = 200
+	// legalLookupMissTimeout bounds the write of a miss.
+	legalLookupMissTimeout = 3 * time.Second
 )
 
 // legalLookupIncoming are the relations that bear on a match's validity:
@@ -37,15 +45,23 @@ var legalLookupIncoming = []types.LegalRelation{
 	types.LegalRelationAmends, types.LegalRelationCorrects,
 }
 
+// legalLookupEnding are the incoming relations a related document's own
+// status is reconciled with (types.LegalDerivedExpiry).
+var legalLookupEnding = []types.LegalRelation{types.LegalRelationReplaces, types.LegalRelationExpires}
+
 type legalValidityLookupService struct {
 	repo    interfaces.LegalCatalogRepository
 	reviews interfaces.LegalReviewRepository
 	kbs     interfaces.KnowledgeBaseRepository
+	misses  interfaces.LegalLookupMissRepository
 	now     func() time.Time
+	// recordMiss writes a miss off the request path (tests run it inline).
+	recordMiss func(m *types.LegalLookupMiss)
 
-	mu         sync.Mutex
-	snapshot   string
-	snapshotAt time.Time
+	snapshotGroup singleflight.Group
+	mu            sync.Mutex
+	snapshot      string
+	snapshotUntil time.Time
 }
 
 // NewLegalValidityLookupService creates the validity lookup service.
@@ -53,8 +69,11 @@ func NewLegalValidityLookupService(
 	repo interfaces.LegalCatalogRepository,
 	reviews interfaces.LegalReviewRepository,
 	kbs interfaces.KnowledgeBaseRepository,
+	misses interfaces.LegalLookupMissRepository,
 ) interfaces.LegalValidityLookupService {
-	return &legalValidityLookupService{repo: repo, reviews: reviews, kbs: kbs, now: time.Now}
+	s := &legalValidityLookupService{repo: repo, reviews: reviews, kbs: kbs, misses: misses, now: time.Now}
+	s.recordMiss = func(m *types.LegalLookupMiss) { go s.writeMiss(m) }
+	return s
 }
 
 func (s *legalValidityLookupService) LookupValidity(
@@ -68,20 +87,36 @@ func (s *legalValidityLookupService) LookupValidity(
 	if query == "" {
 		return out, nil
 	}
-	docs, by, err := s.find(ctx, query, limit)
+	pq := parseLegalLookupQuery(query)
+	docs, by, more, err := s.find(ctx, pq, limit)
 	if err != nil {
 		return nil, err
 	}
-	out.By = by
+	out.By, out.More = by, more
+	if pq.slashNumber && by != "number" {
+		out.NumberMissing = pq.number
+	}
+	if len(docs) == 0 || out.NumberMissing != "" {
+		reason := types.LegalLookupMissNoMatch
+		if out.NumberMissing != "" {
+			reason = types.LegalLookupMissNumber
+		}
+		s.noteMiss(ctx, query, pq, reason)
+	}
 	knowledge := s.readableCopies(ctx, docs)
 	now := s.now()
+	reports := make([]*types.LegalStatusReport, 0, len(docs))
 	for _, doc := range docs {
 		links, err := s.repo.ListLinks(ctx, doc.ID, nil, legalLookupIncoming)
 		if err != nil {
 			return nil, err
 		}
-		m := legalValidityMatch(&types.LegalStatusReport{Document: doc, Links: links}, now)
-		m.Knowledge = knowledge[doc.ID]
+		reports = append(reports, &types.LegalStatusReport{Document: doc, Links: links})
+	}
+	related := s.relatedStatus(ctx, reports, now)
+	for _, rep := range reports {
+		m := legalValidityMatch(rep, now, related)
+		m.Knowledge = knowledge[rep.Document.ID]
 		if m.Knowledge == nil {
 			m.Knowledge = []types.LegalKnowledgeRef{}
 		}
@@ -91,211 +126,507 @@ func (s *legalValidityLookupService) LookupValidity(
 	return out, nil
 }
 
-// find resolves the query: a token holding a số hiệu ("30/2020/NĐ-CP",
-// with or without the words around it) by number key — every catalogue
-// row of that number, since số hiệu is not unique; a bare number ("53",
-// "Nghị định 53") by number prefix, narrowed by the words around it; else
-// title words. by says which matched.
-func (s *legalValidityLookupService) find(
-	ctx context.Context, query string, limit int,
-) ([]*types.LegalDocument, string, error) {
-	if num, rest := legalLookupNumberToken(query); num != "" {
-		key := vietnamese_legal.CatalogNumberKey(num)
-		var docs []*types.LegalDocument
-		var err error
-		if strings.Contains(num, "/") {
-			docs, err = s.repo.FindByNumberKey(ctx, key, limit)
-		} else {
-			docs, err = s.bareNumber(ctx, key, rest, limit)
-		}
-		if err != nil {
-			return nil, "", err
-		}
-		if len(docs) > 0 {
-			return docs, "number", nil
-		}
-	}
-	docs, err := s.repo.SearchByTitle(ctx, strings.Fields(query), limit)
-	if err != nil || len(docs) == 0 {
-		return docs, "", err
-	}
-	return docs, "title", nil
+// legalLookupQuery is a query split into what the catalogue can match.
+type legalLookupQuery struct {
+	// number is the token naming a document number; slashNumber when it
+	// is a số hiệu ("30/2020/NĐ-CP", "53/QĐ-UBND") or number/year
+	// ("30/2020"), bare when only digits ("53").
+	number      string
+	slashNumber bool
+	bare        bool
+	// typeWords are the doc type phrase the query starts with ("Nghị
+	// định"), docTypes the catalogue spellings of its class.
+	typeWords []string
+	docTypes  []string
+	// content are the remaining words, stop words dropped; year a four-
+	// digit year among them (taken out of content).
+	content []string
+	year    int
+	// words are every token, punctuation trimmed (the last-resort title
+	// search).
+	words []string
 }
 
-// bareNumber lists the documents a number without year or suffix fits —
-// the document numbered exactly so (a local one) and every key/… — kept to
-// those whose type or title fits the other words of the query, if any.
-func (s *legalValidityLookupService) bareNumber(
-	ctx context.Context, key string, rest []string, limit int,
-) ([]*types.LegalDocument, error) {
-	docs, err := s.repo.FindByNumberPrefix(ctx, key, legalLookupBareScan)
-	if err != nil {
-		return nil, err
-	}
-	exact, err := s.repo.FindByNumberKey(ctx, key, limit)
-	if err != nil {
-		return nil, err
-	}
-	seen := map[string]bool{}
-	var all []*types.LegalDocument
-	for _, d := range append(exact, docs...) {
-		if d == nil || seen[d.ID] {
-			continue
-		}
-		if d.NumberKey != key && !strings.HasPrefix(d.NumberKey, key+"/") {
-			continue // the prefix fallback of FindByNumberKey
-		}
-		seen[d.ID] = true
-		if legalLookupFits(d, rest) {
-			all = append(all, d)
-		}
-	}
-	sort.SliceStable(all, func(i, j int) bool { return legalDateAfter(all[i].IssuedOn, all[j].IssuedOn) })
-	if len(all) > limit {
-		all = all[:limit]
-	}
-	return all, nil
+// legalLookupDocTypes are the doc type phrases a query may start with,
+// longest first so "nghị quyết liên tịch" wins over "nghị quyết".
+var legalLookupDocTypes = []string{
+	"thông tư liên tịch", "nghị quyết liên tịch", "văn bản hợp nhất",
+	"bộ luật", "pháp lệnh", "nghị định", "nghị quyết", "thông tư", "quyết định", "chỉ thị",
+	"hiến pháp", "công văn", "kế hoạch", "thông báo", "sắc lệnh", "sắc luật", "luật", "lệnh",
 }
 
-// legalLookupFits reports whether the words around a bare number fit doc:
-// they name its type ("Nghị định"), or its title holds each of them.
-func legalLookupFits(doc *types.LegalDocument, rest []string) bool {
-	if len(rest) == 0 {
-		return true
-	}
-	words := strings.Join(rest, " ")
-	if vietnamese_legal.DocTypeClass(words) == vietnamese_legal.DocTypeClass(doc.DocType) {
-		return true
-	}
-	title := strings.ToLower(doc.Title + " " + doc.DocType)
-	for _, w := range rest {
-		if !strings.Contains(title, strings.ToLower(w)) {
-			return false
-		}
-	}
-	return true
+// legalLookupDocTypeSpellings lists the catalogue doc types of a class
+// (vietnamese_legal.DocTypeClass folds "bộ luật" into "luật", …).
+var legalLookupDocTypeSpellings = map[string][]string{
+	"luật":       {"luật", "bộ luật"},
+	"thông tư":   {"thông tư", "thông tư liên tịch"},
+	"nghị quyết": {"nghị quyết", "nghị quyết liên tịch"},
 }
 
-// legalLookupNumberToken picks the token of query that holds a number:
-// the first with a digit and a slash, else — when there is no such token —
-// the first with a digit. rest are the other tokens, "số" dropped.
-// Punctuation around a token is trimmed ("(30/2020/NĐ-CP),").
-func legalLookupNumberToken(query string) (string, []string) {
-	trim := func(s string) string {
-		return strings.TrimFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+// legalLookupStopWords carry no topic: a title need not hold them.
+var legalLookupStopWords = map[string]bool{
+	"về": true, "việc": true, "của": true, "và": true, "các": true, "những": true, "cho": true,
+	"với": true, "theo": true, "trong": true, "tại": true, "số": true, "năm": true, "ngày": true,
+	"là": true, "được": true, "một": true, "này": true, "đó": true, "đối": true,
+}
+
+// legalLookupStopPairs are two-word stop phrases.
+var legalLookupStopPairs = map[string]bool{"quy định": true, "ban hành": true, "hướng dẫn": true}
+
+func trimLookupToken(s string) string {
+	return strings.TrimFunc(s, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+}
+
+// lookupNumberShape classifies a token: 2 = a số hiệu (letters after the
+// last slash, "30/2020/NĐ-CP"), 1 = number/year ("30/2020"), 0 = neither
+// (a date "5/3/2020", a word).
+func lookupNumberShape(tok string) int {
+	i := strings.LastIndex(tok, "/")
+	if i <= 0 || !hasDigit(tok[:i]) {
+		return 0
 	}
-	fields := strings.Fields(query)
-	pick := -1
-	for i, f := range fields {
-		if hasDigit(f) && strings.Contains(f, "/") {
-			pick = i
-			break
-		}
+	if tail := tok[i+1:]; strings.IndexFunc(tail, unicode.IsLetter) >= 0 {
+		return 2
 	}
-	if pick < 0 {
-		for i, f := range fields {
-			if hasDigit(f) {
-				pick = i
-				break
-			}
-		}
+	parts := strings.Split(tok, "/")
+	if len(parts) == 2 && isDigits(parts[0]) && len(parts[1]) == 4 && isDigits(parts[1]) {
+		return 1
 	}
-	if pick < 0 {
-		return "", nil
-	}
-	var rest []string
-	for i, f := range fields {
-		if i == pick {
-			continue
-		}
-		if t := trim(f); t != "" && !strings.EqualFold(t, "số") {
-			rest = append(rest, t)
-		}
-	}
-	return trim(fields[pick]), rest
+	return 0
+}
+
+func isDigits(s string) bool {
+	return s != "" && strings.IndexFunc(s, func(r rune) bool { return !unicode.IsDigit(r) }) < 0
 }
 
 func hasDigit(s string) bool {
 	return strings.IndexFunc(s, unicode.IsDigit) >= 0
 }
 
-// readableCopies returns, per catalogue document, its copies in knowledge
-// bases every signed-in person may read (platform public or published to
-// all), which the lookup page links to. Errors only drop the links.
+// parseLegalLookupQuery splits query: the number token (a số hiệu
+// preferred over number/year, then digits; a date is never one), a
+// leading doc type phrase, and the content words.
+func parseLegalLookupQuery(query string) legalLookupQuery {
+	var pq legalLookupQuery
+	var toks []string
+	for _, f := range strings.Fields(query) {
+		if t := trimLookupToken(f); t != "" {
+			toks = append(toks, t)
+		}
+	}
+	pq.words = toks
+	pick, best := -1, 0
+	for i, t := range toks {
+		if shape := lookupNumberShape(t); shape > best {
+			pick, best = i, shape
+		}
+	}
+	if pick >= 0 {
+		pq.number, pq.slashNumber = toks[pick], true
+	}
+	rest := make([]string, 0, len(toks))
+	for i, t := range toks {
+		if i != pick {
+			rest = append(rest, t)
+		}
+	}
+	// leading doc type phrase ("Nghị định", "số" before or after it)
+	lower := make([]string, len(rest))
+	for i, w := range rest {
+		lower[i] = strings.ToLower(w)
+	}
+	start := 0
+	for start < len(lower) && lower[start] == "số" {
+		start++
+	}
+	for _, dt := range legalLookupDocTypes {
+		n := len(strings.Fields(dt))
+		if start+n <= len(lower) && strings.Join(lower[start:start+n], " ") == dt {
+			pq.typeWords = rest[start : start+n]
+			class := vietnamese_legal.DocTypeClass(dt)
+			if sp, ok := legalLookupDocTypeSpellings[class]; ok {
+				pq.docTypes = sp
+			} else {
+				pq.docTypes = []string{class}
+			}
+			start += n
+			break
+		}
+	}
+	rest, lower = rest[start:], lower[start:]
+	// a bare number: digits, when no số hiệu was found
+	if pick < 0 {
+		for i, w := range rest {
+			if isDigits(w) {
+				pq.number, pq.bare = w, true
+				rest = append(append([]string{}, rest[:i]...), rest[i+1:]...)
+				lower = append(append([]string{}, lower[:i]...), lower[i+1:]...)
+				break
+			}
+		}
+	}
+	for i := 0; i < len(rest); i++ {
+		if i+1 < len(lower) && legalLookupStopPairs[lower[i]+" "+lower[i+1]] {
+			i++
+			continue
+		}
+		if legalLookupStopWords[lower[i]] {
+			continue
+		}
+		if y, err := strconv.Atoi(rest[i]); err == nil && len(rest[i]) == 4 && y >= 1945 && y <= 2100 && pq.year == 0 {
+			pq.year = y
+			continue
+		}
+		pq.content = append(pq.content, rest[i])
+	}
+	// a bare number with words that are no doc type ("chương trình 135",
+	// "Luật Đất đai 2024" keeps the type) is part of a title
+	if pq.bare && len(pq.typeWords) == 0 && len(pq.content) > 0 {
+		if y, _ := strconv.Atoi(pq.number); len(pq.number) == 4 && y >= 1945 && y <= 2100 && pq.year == 0 {
+			pq.year = y
+		} else {
+			pq.content = append(pq.content, pq.number)
+		}
+		pq.number, pq.bare = "", false
+	}
+	// "Luật Đất đai 2024": the digits were a year, not a number
+	if pq.bare && len(pq.content) > 0 && pq.year == 0 {
+		if y, _ := strconv.Atoi(pq.number); len(pq.number) == 4 && y >= 1945 && y <= 2100 {
+			pq.year = y
+		}
+	}
+	return pq
+}
+
+// find resolves the query to at most limit documents, newest first:
+//   - a số hiệu or number/year by number key — every catalogue row of it,
+//     since số hiệu is not unique;
+//   - a bare number ("53", "Nghị định 53", "Nghị định 100 về xử phạt giao
+//     thông") by number prefix, of the doc type when one leads the query,
+//     kept to titles holding most content words when there are any;
+//   - otherwise, or when that finds nothing, by title: the content words
+//     (stop words dropped), of the doc type and year when given; last, every
+//     word of the query in the title.
+//
+// by says which matched ("number", "title", ""); more that there are
+// further matches.
+func (s *legalValidityLookupService) find(
+	ctx context.Context, pq legalLookupQuery, limit int,
+) ([]*types.LegalDocument, string, bool, error) {
+	if pq.number != "" {
+		docs, more, err := s.byNumber(ctx, pq, limit)
+		if err != nil {
+			return nil, "", false, err
+		}
+		if len(docs) > 0 {
+			return docs, "number", more, nil
+		}
+	}
+	for _, f := range s.titleFilters(pq) {
+		f.Limit = limit + 1
+		docs, err := s.repo.FilterDocuments(ctx, f)
+		if err != nil {
+			return nil, "", false, err
+		}
+		if len(docs) > 0 {
+			rankTitleMatches(docs, pq)
+			docs, more := cutLookup(docs, limit)
+			return docs, "title", more, nil
+		}
+	}
+	return nil, "", false, nil
+}
+
+// rankTitleMatches moves first, keeping the newest-first order otherwise,
+// the documents whose title is (or starts with) what the query names —
+// "Luật Đất đai 2024" puts the Luật Đất đai before the laws amending it.
+func rankTitleMatches(docs []*types.LegalDocument, pq legalLookupQuery) {
+	phrase := strings.ToLower(strings.Join(append(append([]string{}, pq.typeWords...), pq.content...), " "))
+	if phrase == "" {
+		return
+	}
+	sort.SliceStable(docs, func(i, j int) bool {
+		return titleNames(docs[i].Title, phrase) && !titleNames(docs[j].Title, phrase)
+	})
+}
+
+func titleNames(title, phrase string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.Join(strings.Fields(title), " ")), phrase)
+}
+
+// titleFilters are the title searches tried in turn.
+func (s *legalValidityLookupService) titleFilters(pq legalLookupQuery) []types.LegalCatalogFilter {
+	var out []types.LegalCatalogFilter
+	words := append([]string{}, pq.content...)
+	if pq.slashNumber {
+		// documents mentioning the number the catalogue lacks
+		words = append(words, pq.number)
+	}
+	if len(words) > 0 || pq.year > 0 {
+		out = append(out, types.LegalCatalogFilter{TitleWords: words, DocTypes: pq.docTypes, IssuedYear: pq.year})
+	}
+	if len(pq.words) > 0 {
+		out = append(out, types.LegalCatalogFilter{TitleWords: pq.words})
+	}
+	return out
+}
+
+// byNumber looks a number token up (see find).
+func (s *legalValidityLookupService) byNumber(
+	ctx context.Context, pq legalLookupQuery, limit int,
+) ([]*types.LegalDocument, bool, error) {
+	key := vietnamese_legal.CatalogNumberKey(pq.number)
+	if key == "" {
+		return nil, false, nil
+	}
+	if pq.slashNumber {
+		docs, err := s.repo.FindByNumberKey(ctx, key, limit+1)
+		if err != nil {
+			return nil, false, err
+		}
+		docs, more := cutLookup(docs, limit)
+		return docs, more, nil
+	}
+	scan := limit + 1
+	if len(pq.content) > 0 {
+		scan = legalLookupContentScan
+	}
+	prefixed, err := s.repo.FilterDocuments(ctx, types.LegalCatalogFilter{
+		NumberPrefix: key, DocTypes: pq.docTypes, Limit: scan,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	exact, err := s.repo.FilterDocuments(ctx, types.LegalCatalogFilter{
+		NumberKey: key, DocTypes: pq.docTypes, Limit: scan,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	seen := map[string]bool{}
+	var all []*types.LegalDocument
+	for _, d := range append(exact, prefixed...) {
+		if d == nil || seen[d.ID] {
+			continue
+		}
+		seen[d.ID] = true
+		if legalLookupTitleFits(d, pq.content) {
+			all = append(all, d)
+		}
+	}
+	sort.SliceStable(all, func(i, j int) bool { return legalDateAfter(all[i].IssuedOn, all[j].IssuedOn) })
+	docs, more := cutLookup(all, limit)
+	return docs, more || len(prefixed) == scan || len(exact) == scan, nil
+}
+
+// legalLookupTitleFits reports whether doc's title holds most (at least
+// half, rounded up) of the content words; true without any.
+func legalLookupTitleFits(doc *types.LegalDocument, content []string) bool {
+	if len(content) == 0 {
+		return true
+	}
+	title := strings.ToLower(doc.Title)
+	hits := 0
+	for _, w := range content {
+		if strings.Contains(title, strings.ToLower(w)) {
+			hits++
+		}
+	}
+	return hits*2 >= len(content)
+}
+
+func cutLookup(docs []*types.LegalDocument, limit int) ([]*types.LegalDocument, bool) {
+	if len(docs) > limit {
+		return docs[:limit], true
+	}
+	return docs, false
+}
+
+// noteMiss records a lookup that found nothing (or only documents
+// mentioning a missing số hiệu). Never fails the lookup.
+func (s *legalValidityLookupService) noteMiss(ctx context.Context, query string, pq legalLookupQuery, reason string) {
+	if s.misses == nil || s.recordMiss == nil {
+		return
+	}
+	norm := capRunes(strings.ToLower(query), legalLookupMissMaxLen)
+	if norm == "" {
+		return
+	}
+	caller := types.CallerFromContext(ctx)
+	now := s.now()
+	number := ""
+	if pq.slashNumber {
+		number = capRunes(pq.number, 128)
+	}
+	s.recordMiss(&types.LegalLookupMiss{
+		Query: norm, Sample: capRunes(query, legalLookupMissMaxLen), Number: number, Reason: reason,
+		Count: 1, FirstAt: now, LastAt: now, LastTenantID: caller.TenantID, LastUserID: capRunes(caller.UserID, 36),
+	})
+}
+
+func (s *legalValidityLookupService) writeMiss(m *types.LegalLookupMiss) {
+	ctx, cancel := context.WithTimeout(context.Background(), legalLookupMissTimeout)
+	defer cancel()
+	if err := s.misses.Record(ctx, m); err != nil {
+		logger.Warnf(ctx, "[LegalLookup] miss %q not recorded: %v", m.Query, err)
+	}
+}
+
+// readableCopies returns, per catalogue document, the copies the caller
+// may open: approved public-KB links and imported copies (external_id) in
+// the knowledge bases the caller may read (the same listing and rule as
+// the knowledge base list and default retrieval scope:
+// ListReadableKnowledgeBases + access.InDefaultRetrievalScope). A guest
+// reads public and published KBs only; a member also their organization's
+// KBs (restricted ones only with a grant). Errors only drop the links.
 func (s *legalValidityLookupService) readableCopies(
 	ctx context.Context, docs []*types.LegalDocument,
 ) map[string][]types.LegalKnowledgeRef {
-	if s.reviews == nil || len(docs) == 0 {
-		return nil
+	out := map[string][]types.LegalKnowledgeRef{}
+	if len(docs) == 0 || s.kbs == nil {
+		return out
+	}
+	caller := types.CallerFromContext(ctx)
+	kbs, err := s.kbs.ListReadableKnowledgeBases(ctx, access.KBReaderFor(ctx, caller))
+	if err != nil {
+		logger.Warnf(ctx, "[LegalLookup] readable knowledge bases unavailable: %v", err)
+		return out
+	}
+	readable := map[string]bool{}
+	var kbIDs []string
+	for _, kb := range kbs {
+		if kb != nil && access.InDefaultRetrievalScope(caller, kb) && !readable[kb.ID] {
+			readable[kb.ID] = true
+			kbIDs = append(kbIDs, kb.ID)
+		}
+	}
+	if len(kbIDs) == 0 {
+		return out
 	}
 	ids := make([]string, 0, len(docs))
 	for _, d := range docs {
 		ids = append(ids, d.ID)
 	}
-	copies, err := s.reviews.KnowledgeForDocuments(ctx, ids)
-	if err != nil {
-		logger.Warnf(ctx, "[LegalLookup] knowledge copies unavailable: %v", err)
-		return nil
-	}
-	var kbIDs []string
 	seen := map[string]bool{}
-	for _, refs := range copies {
-		for _, r := range refs {
-			if !seen[r.KnowledgeBaseID] {
-				seen[r.KnowledgeBaseID] = true
-				kbIDs = append(kbIDs, r.KnowledgeBaseID)
+	add := func(docID string, r types.LegalKnowledgeRef) {
+		if readable[r.KnowledgeBaseID] && !seen[docID+"\x00"+r.KnowledgeID] {
+			seen[docID+"\x00"+r.KnowledgeID] = true
+			out[docID] = append(out[docID], r)
+		}
+	}
+	if s.reviews != nil {
+		if linked, err := s.reviews.KnowledgeForDocuments(ctx, ids); err != nil {
+			logger.Warnf(ctx, "[LegalLookup] linked copies unavailable: %v", err)
+		} else {
+			for docID, refs := range linked {
+				for _, r := range refs {
+					add(docID, r)
+				}
 			}
 		}
 	}
-	if len(kbIDs) == 0 || s.kbs == nil {
-		return nil
-	}
-	kbs, err := s.kbs.GetKnowledgeBaseByIDs(ctx, kbIDs)
-	if err != nil {
-		logger.Warnf(ctx, "[LegalLookup] knowledge bases unavailable: %v", err)
-		return nil
-	}
-	readable := map[string]bool{}
-	for _, kb := range kbs {
-		if kb != nil && kb.DeletedAt.Time.IsZero() && (access.IsPlatformPublicKB(kb) || kb.IsTenantPublished()) {
-			readable[kb.ID] = true
-		}
-	}
-	out := map[string][]types.LegalKnowledgeRef{}
-	for docID, refs := range copies {
-		for _, r := range refs {
-			if readable[r.KnowledgeBaseID] {
-				out[docID] = append(out[docID], r)
+	if imported, err := s.repo.ExternalCopies(ctx, ids, kbIDs); err != nil {
+		logger.Warnf(ctx, "[LegalLookup] imported copies unavailable: %v", err)
+	} else {
+		for docID, refs := range imported {
+			for _, r := range refs {
+				add(docID, r)
 			}
 		}
 	}
 	return out
 }
 
+// relatedStatus reconciles the status of the documents acting on the
+// matches as the matches' own (types.LegalDerivedExpiry), in two queries:
+// returns the kind to show per related document ID, for those it changes.
+func (s *legalValidityLookupService) relatedStatus(
+	ctx context.Context, reports []*types.LegalStatusReport, now time.Time,
+) map[string]types.LegalStatusKind {
+	others := map[string]*types.LegalDocument{}
+	var ids []string
+	for _, rep := range reports {
+		for _, l := range rep.Links {
+			o := l.Other
+			if o == nil || others[o.ID] != nil || o.ExpiredOn != nil || !types.LegalDerivableStatus(o.Status) {
+				continue
+			}
+			others[o.ID] = o
+			ids = append(ids, o.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	edges, err := s.repo.ListEdges(ctx, ids, legalLookupEnding, true)
+	if err != nil || len(edges) == 0 {
+		return nil
+	}
+	var fromIDs []string
+	for _, e := range edges {
+		fromIDs = append(fromIDs, e.FromID)
+	}
+	enders, err := s.repo.GetByIDs(ctx, fromIDs)
+	if err != nil {
+		return nil
+	}
+	byID := map[string]*types.LegalDocument{}
+	for _, d := range enders {
+		byID[d.ID] = d
+	}
+	links := map[string][]types.LegalRelationLink{}
+	for _, e := range edges {
+		if d := byID[e.FromID]; d != nil {
+			links[e.ToID] = append(links[e.ToID], types.LegalRelationLink{Relation: e.Relation, Incoming: true, Other: d})
+		}
+	}
+	out := map[string]types.LegalStatusKind{}
+	for id, ls := range links {
+		o := others[id]
+		if by, _ := types.LegalDerivedExpiry(&types.LegalStatusReport{Document: o, Links: ls}, now); by != nil && !types.LegalPartlyExpired(o) {
+			out[id] = types.LegalStatusKindExpired
+		}
+	}
+	return out
+}
+
 // snapshotDate is the date of the catalogue's newest vbpl.vn snapshot,
-// cached for a few minutes; "" when unknown.
+// cached for a few minutes (a failure for less, keeping the last value);
+// concurrent misses share one query. "" when unknown.
 func (s *legalValidityLookupService) snapshotDate(ctx context.Context) string {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if !s.snapshotAt.IsZero() && s.now().Sub(s.snapshotAt) < legalLookupSnapshotTTL {
-		return s.snapshot
+	if s.now().Before(s.snapshotUntil) {
+		v := s.snapshot
+		s.mu.Unlock()
+		return v
 	}
-	latest, err := s.repo.LatestSnapshot(ctx)
-	if err != nil {
-		logger.Warnf(ctx, "[LegalLookup] snapshot date unavailable: %v", err)
-		return s.snapshot
-	}
-	s.snapshot = types.LegalDateString(latest)
-	s.snapshotAt = s.now()
-	return s.snapshot
+	s.mu.Unlock()
+	v, _, _ := s.snapshotGroup.Do("snapshot", func() (interface{}, error) {
+		latest, err := s.repo.LatestSnapshot(ctx)
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if err != nil {
+			logger.Warnf(ctx, "[LegalLookup] snapshot date unavailable: %v", err)
+			s.snapshotUntil = s.now().Add(legalLookupSnapshotErrorTTL)
+			return s.snapshot, nil
+		}
+		s.snapshot = types.LegalDateString(latest)
+		s.snapshotUntil = s.now().Add(legalLookupSnapshotTTL)
+		return s.snapshot, nil
+	})
+	str, _ := v.(string)
+	return str
 }
 
 // legalValidityMatch renders one report for the lookup page; the status is
-// reconciled with the links as the chat tool does (types.LegalDerivedExpiry).
-func legalValidityMatch(rep *types.LegalStatusReport, now time.Time) types.LegalValidityMatch {
+// reconciled with the links as the chat tool does (types.LegalDerivedExpiry),
+// and related documents get the kinds relatedStatus derived.
+func legalValidityMatch(
+	rep *types.LegalStatusReport, now time.Time, related map[string]types.LegalStatusKind,
+) types.LegalValidityMatch {
 	doc := rep.Document
 	m := types.LegalValidityMatch{
-		LegalValidityRef: legalValidityRef(doc, ""),
+		LegalValidityRef: legalValidityRef(doc, "", nil),
 		Issuer:           doc.Issuer,
 		StatusText:       doc.Status,
 		ExpiredOn:        types.LegalDateString(doc.ExpiredOn),
@@ -316,7 +647,7 @@ func legalValidityMatch(rep *types.LegalStatusReport, now time.Time) types.Legal
 			StatusText: types.LegalDerivedStatusText(doc),
 			ExpiredOn:  types.LegalDateString(on),
 			Relation:   rel,
-			By:         legalValidityRef(by, rel),
+			By:         legalValidityRef(by, rel, related),
 		}
 		if !types.LegalPartlyExpired(doc) {
 			m.Status = types.LegalStatusKindExpired
@@ -334,7 +665,7 @@ func legalValidityMatch(rep *types.LegalStatusReport, now time.Time) types.Legal
 	add := func(list *[]types.LegalValidityRef, total *int, l types.LegalRelationLink) {
 		*total++
 		if len(*list) < legalLookupMaxPerGroup {
-			*list = append(*list, legalValidityRef(l.Other, l.Relation))
+			*list = append(*list, legalValidityRef(l.Other, l.Relation, related))
 		}
 	}
 	for _, l := range links {
@@ -351,7 +682,13 @@ func legalValidityMatch(rep *types.LegalStatusReport, now time.Time) types.Legal
 	return m
 }
 
-func legalValidityRef(doc *types.LegalDocument, rel types.LegalRelation) types.LegalValidityRef {
+func legalValidityRef(
+	doc *types.LegalDocument, rel types.LegalRelation, related map[string]types.LegalStatusKind,
+) types.LegalValidityRef {
+	status := types.ClassifyLegalStatus(doc.Status)
+	if k, ok := related[doc.ID]; ok {
+		status = k
+	}
 	return types.LegalValidityRef{
 		ID:             doc.ID,
 		DocumentNumber: doc.DocumentNumber,
@@ -359,7 +696,7 @@ func legalValidityRef(doc *types.LegalDocument, rel types.LegalRelation) types.L
 		DocType:        doc.DocType,
 		IssuedOn:       types.LegalDateString(doc.IssuedOn),
 		EffectiveOn:    types.LegalDateString(doc.EffectiveOn),
-		Status:         types.ClassifyLegalStatus(doc.Status),
+		Status:         status,
 		Relation:       rel,
 	}
 }
@@ -369,4 +706,29 @@ func legalDateAfter(a, b *time.Time) bool {
 		return false
 	}
 	return b == nil || a.After(*b)
+}
+
+type legalLookupMissService struct {
+	repo interfaces.LegalLookupMissRepository
+}
+
+// NewLegalLookupMissService creates the SuperAdmin service of lookup misses.
+func NewLegalLookupMissService(repo interfaces.LegalLookupMissRepository) interfaces.LegalLookupMissService {
+	return &legalLookupMissService{repo: repo}
+}
+
+func (s *legalLookupMissService) ListMisses(
+	ctx context.Context, byCount bool, offset, limit int,
+) ([]*types.LegalLookupMiss, int64, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return s.repo.List(ctx, byCount, offset, limit)
+}
+
+func (s *legalLookupMissService) DeleteMiss(ctx context.Context, id uint64) error {
+	return s.repo.Delete(ctx, id)
 }

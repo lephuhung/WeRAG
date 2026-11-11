@@ -44,6 +44,14 @@ type LegalCatalogRepository interface {
 	// otherwise edges starting from one. One hop of a graph walk.
 	ListEdges(ctx context.Context, ids []string, rels []types.LegalRelation, incoming bool) ([]types.LegalDocumentRelation, error)
 
+	// FilterDocuments returns the documents matching every set field of f,
+	// newest first, at most f.Limit.
+	FilterDocuments(ctx context.Context, f types.LegalCatalogFilter) ([]*types.LegalDocument, error)
+	// ExternalCopies returns, per catalogue document ID, the live parsed
+	// knowledge of the given knowledge bases imported as that document
+	// (knowledges.metadata.external_id), leaving out knowledge whose legal
+	// link a reviewer did not approve.
+	ExternalCopies(ctx context.Context, documentIDs, kbIDs []string) (map[string][]types.LegalKnowledgeRef, error)
 	// LatestSnapshot returns the newest source snapshot time of the rows
 	// imported from vbpl.vn (nil when there is none): how fresh the
 	// catalogue is.
@@ -333,4 +341,21 @@ type LegalValidityLookupService interface {
 	// a bare number, or title words), at most limit, newest first, each
 	// with its status and the documents replacing, ending or amending it.
 	LookupValidity(ctx context.Context, query string, limit int) (*types.LegalValidityLookup, error)
+}
+
+// LegalLookupMissRepository counts validity lookups that found nothing.
+type LegalLookupMissRepository interface {
+	// Record inserts a miss or, for a known query, bumps its count and
+	// last-seen fields.
+	Record(ctx context.Context, miss *types.LegalLookupMiss) error
+	// List pages misses, most frequent first (byCount) or most recent first.
+	List(ctx context.Context, byCount bool, offset, limit int) ([]*types.LegalLookupMiss, int64, error)
+	// Delete removes one miss (the SuperAdmin settled it).
+	Delete(ctx context.Context, id uint64) error
+}
+
+// LegalLookupMissService serves the SuperAdmin list of catalogue gaps.
+type LegalLookupMissService interface {
+	ListMisses(ctx context.Context, byCount bool, offset, limit int) ([]*types.LegalLookupMiss, int64, error)
+	DeleteMiss(ctx context.Context, id uint64) error
 }
