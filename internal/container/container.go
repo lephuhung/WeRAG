@@ -518,7 +518,6 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(startEmailExpiryReminders))
 	must(container.Invoke(startLegalRequestNotices))
 	must(container.Invoke(registerAbbreviationNoticeCleanup))
-	must(container.Invoke(startSuperAdminQueueNotices))
 
 	// Chat pipeline components for processing chat requests
 	logger.Debugf(ctx, "[Container] Registering chat pipeline plugins...")
@@ -739,6 +738,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		mcpServer.SetLegalFeed(feed, requests)
 		mcpServer.SetLegalDrafts(drafts)
 	}))
+	// the SuperAdmins' review-queue digests; needs SessionService, so after
+	// the chat pipeline block like the legal wiring above
+	must(container.Invoke(startSuperAdminQueueNotices))
 	// users' verdicts on the format check reports
 	must(container.Invoke(func(precheck *service.DocumentFormatPrecheck, feedback interfaces.DocumentFormatFeedbackRepository) {
 		precheck.SetFormatFeedback(feedback)
