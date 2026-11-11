@@ -5,6 +5,7 @@
  * secret of the payment checker that confirms them automatically. */
 
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Modal } from "@/components/modal";
 import { IconCopy, IconEdit, IconPlus, IconRefresh } from "@/components/icons";
 import { SystemSection } from "@/components/settings/system-section";
@@ -67,6 +68,9 @@ const emptyBank: BankForm = {
  * "need attention" count counts) or "invoices" (the paid orders whose VAT
  * invoice is still to issue). */
 type OrderFilter = UsageOrderStatus | "" | "awaiting" | "invoices";
+const ORDER_FILTERS: OrderFilter[] = ["", "awaiting", "pending", "paid", "cancelled", "expired", "invoices"];
+/* The filter a link names (?status=pending from a notification), all else. */
+const orderFilterOf = (v: string | null): OrderFilter => ORDER_FILTERS.find((f) => f === v) ?? "";
 const needsInvoice = (o: UsageOrder) => o.status === "paid" && invoiceState(o) === "requested";
 
 type InvoiceForm = { no: string; series: string; date: string };
@@ -143,7 +147,12 @@ export default function AdminBilling() {
   const [plans, setPlans] = useState<UsagePlan[]>([]);
   const [promos, setPromos] = useState<UsagePromoCode[]>([]);
   const [orders, setOrders] = useState<UsageOrder[]>([]);
-  const [filter, setFilter] = useState<OrderFilter>("");
+  const statusParam = useSearchParams().get("status");
+  const [filter, setFilter] = useState<OrderFilter>(() => orderFilterOf(statusParam));
+  // a link naming a status (a notification) picks it, also on an open page
+  useEffect(() => {
+    if (statusParam) setFilter(orderFilterOf(statusParam));
+  }, [statusParam]);
   const [activeTab, setActiveTab] = useState<"orders" | "promos">("orders");
   const [promoOpen, setPromoOpen] = useState(false);
   const [promoEditing, setPromoEditing] = useState<UsagePromoCode | null>(null);

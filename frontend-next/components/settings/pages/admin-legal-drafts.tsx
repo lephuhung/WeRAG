@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { IconRefresh } from "@/components/icons";
 import { useConfirm } from "@/components/confirm-dialog";
 import { useToast } from "@/components/toast";
@@ -42,6 +43,11 @@ const FILTERS: { key: LegalDraftFilter; labelKey: LocaleKey }[] = [
   { key: "failed", labelKey: "ldraft.status.failed" },
 ];
 
+/* The filter a link names (?status=ready from a notification), "all" else. */
+function draftFilterOf(v: string | null): LegalDraftFilter {
+  return FILTERS.find((f) => f.key === v)?.key ?? "all";
+}
+
 export function draftStatusTone(status: string): string {
   switch (status) {
     case "approved":
@@ -67,7 +73,8 @@ export default function LegalDraftsSection({ onDenied }: { onDenied?: () => void
   const { t, locale } = useT();
   const confirm = useConfirm();
   const toast = useToast();
-  const [filter, setFilter] = useState<LegalDraftFilter>("all");
+  const statusParam = useSearchParams().get("status");
+  const [filter, setFilter] = useState<LegalDraftFilter>(() => draftFilterOf(statusParam));
   const [items, setItems] = useState<LegalDraftItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -75,6 +82,13 @@ export default function LegalDraftsSection({ onDenied }: { onDenied?: () => void
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
+
+  // a link naming a status (a notification) picks it, also on an open page
+  useEffect(() => {
+    if (!statusParam) return;
+    setFilter(draftFilterOf(statusParam));
+    setPage(1);
+  }, [statusParam]);
 
   const load = useCallback(
     async (quiet = false) => {

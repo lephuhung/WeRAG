@@ -14,6 +14,14 @@ import {
   wordFileTarget,
   ABBREVIATION_REVIEW_PATH,
   KIND_ABBREVIATION_PENDING,
+  KIND_LEGAL_DRAFT_READY,
+  KIND_LEGAL_IDENTITY_PENDING,
+  KIND_LEGAL_LINK_PENDING,
+  KIND_LEGAL_REQUEST_PENDING,
+  KIND_PAYMENT_ORDER_PENDING,
+  QUEUE_KINDS,
+  isReviewDigest,
+  type QueueKind,
   mergeFresh,
   toastKey,
   type NotificationLike,
@@ -44,6 +52,18 @@ const texts = {
   abbreviationPendingTitle: (count: number) => `${count} new ${count === 1 ? "abbreviation" : "abbreviations"} waiting for review`,
   abbreviationProperName: (short: string) => `${short} (proper name)`,
   abbreviationPendingMore: (count: number) => `and ${count} more`,
+  queueTitle: (kind: QueueKind, count: number) =>
+    ({
+      payment_order_pending: `${count} new payment order(s) awaiting confirmation`,
+      legal_request_pending: `${count} new legal document request(s)`,
+      legal_draft_ready: `${count} new OCR draft(s) ready for review`,
+      legal_link_pending: `${count} new amendment link(s) awaiting review`,
+      legal_identity_pending: `${count} new document(s) awaiting identity review`,
+    })[kind],
+  queueMore: (kind: QueueKind, count: number) => (kind === "payment_order_pending" ? `and ${count} more orders` : `and ${count} more`),
+  queueRequestCount: (count: number) => `${count} requests`,
+  queueLinkCount: (count: number) => `${count} links`,
+  money: (vnd: number) => `${vnd.toLocaleString("en-US")} VND`,
 };
 
 // the vi dictionary's wording (lib/i18n.tsx notif.abbrevPending.*)
@@ -52,6 +72,19 @@ const textsVi = {
   abbreviationPendingTitle: (count: number) => `Có ${count} từ viết tắt mới chờ duyệt`,
   abbreviationProperName: (short: string) => `${short} (tên riêng)`,
   abbreviationPendingMore: (count: number) => `và ${count} từ khác`,
+  queueTitle: (kind: QueueKind, count: number) =>
+    ({
+      payment_order_pending: `Có ${count} đơn hàng mới chờ xác nhận thanh toán`,
+      legal_request_pending: `Có ${count} văn bản mới được đề nghị bổ sung`,
+      legal_draft_ready: `Có ${count} bản nháp OCR mới chờ duyệt`,
+      legal_link_pending: `Có ${count} liên kết sửa đổi mới chờ duyệt`,
+      legal_identity_pending: `Có ${count} văn bản mới chờ duyệt định danh`,
+    })[kind],
+  queueMore: (kind: QueueKind, count: number) =>
+    kind === "payment_order_pending" ? `và ${count} đơn khác` : kind === "legal_draft_ready" ? `và ${count} bản nháp khác` : `và ${count} văn bản khác`,
+  queueRequestCount: (count: number) => `${count} lượt đề nghị`,
+  queueLinkCount: (count: number) => `${count} liên kết`,
+  money: (vnd: number) => `${String(vnd).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} đ`,
 };
 
 const digest = (over: Partial<NotificationLike> = {}): NotificationLike => ({
@@ -220,5 +253,79 @@ describe("notifications", () => {
     assert.deepEqual(merged?.map((x) => x.id), ["d", "new", "a"]);
     assert.equal(notificationText(merged![0], texts).title, "3 new abbreviations waiting for review");
     assert.equal(mergeFresh(null, [v2]), null, "a list never fetched stays unfetched");
+  });
+
+  it("words the SuperAdmin review-queue digests from their payload, en and vi", () => {
+    const q = (kind: string, payload: Record<string, unknown> | null): NotificationLike =>
+      n("q", { kind, title: "stored title", body: "stored body", link: "/platform/admin?section=billing&status=pending", payload });
+    const order = q(KIND_PAYMENT_ORDER_PENDING, {
+      count: 3,
+      items: [
+        { ref: "DH42", plan: "Gói Go", amount_vnd: 1250000, org: "Sở Tư pháp" },
+        { ref: "DH41", plan: "Cơ bản", amount_vnd: 0 },
+      ],
+    });
+    assert.deepEqual(notificationText(order, texts), {
+      title: "3 new payment order(s) awaiting confirmation",
+      body: "DH42 · Gói Go · 1,250,000 VND · Sở Tư pháp, DH41 · Cơ bản, and 1 more orders",
+    });
+    assert.deepEqual(notificationText(order, textsVi), {
+      title: "Có 3 đơn hàng mới chờ xác nhận thanh toán",
+      body: "DH42 · Gói Go · 1.250.000 đ · Sở Tư pháp, DH41 · Cơ bản, và 1 đơn khác",
+    });
+
+    const request = q(KIND_LEGAL_REQUEST_PENDING, {
+      count: 2,
+      items: [
+        { ref: "53/2022/NĐ-CP", title: "Quy định chi tiết Luật An ninh mạng", count: 3 },
+        { ref: "05/2023/TT-BNV", count: 1 },
+      ],
+    });
+    assert.deepEqual(notificationText(request, texts), {
+      title: "2 new legal document request(s)",
+      body: "53/2022/NĐ-CP – Quy định chi tiết Luật An ninh mạng (3 requests), 05/2023/TT-BNV",
+    });
+    assert.equal(notificationText(request, textsVi).body, "53/2022/NĐ-CP – Quy định chi tiết Luật An ninh mạng (3 lượt đề nghị), 05/2023/TT-BNV");
+
+    const draft = q(KIND_LEGAL_DRAFT_READY, { count: 4, items: [{ ref: "12/2025/NĐ-CP", title: "12/2025/NĐ-CP" }] });
+    assert.deepEqual(notificationText(draft, texts), { title: "4 new OCR draft(s) ready for review", body: "12/2025/NĐ-CP, and 3 more" });
+    assert.deepEqual(notificationText(draft, textsVi), { title: "Có 4 bản nháp OCR mới chờ duyệt", body: "12/2025/NĐ-CP, và 3 bản nháp khác" });
+
+    // links count links, the items name documents: no "and N more"
+    const links = q(KIND_LEGAL_LINK_PENDING, { count: 15, items: [{ ref: "68/2026/NĐ-CP", count: 12 }, { ref: "5/2026/NĐ-CP", count: 3 }] });
+    assert.deepEqual(notificationText(links, texts), {
+      title: "15 new amendment link(s) awaiting review",
+      body: "68/2026/NĐ-CP (12 links), 5/2026/NĐ-CP (3 links)",
+    });
+    assert.equal(notificationText(links, textsVi).body, "68/2026/NĐ-CP (12 liên kết), 5/2026/NĐ-CP (3 liên kết)");
+
+    const identity = q(KIND_LEGAL_IDENTITY_PENDING, { count: 2, items: [{ ref: "29/2018/QH14" }, { ref: "cong-van.pdf" }] });
+    assert.deepEqual(notificationText(identity, texts), {
+      title: "2 new document(s) awaiting identity review",
+      body: "29/2018/QH14, cong-van.pdf",
+    });
+    assert.equal(notificationText(identity, textsVi).title, "Có 2 văn bản mới chờ duyệt định danh");
+
+    // a payload without what it needs keeps the stored text
+    for (const kind of QUEUE_KINDS) {
+      for (const payload of [null, {}, { count: 2 }, { count: 2, items: "x" }, { count: 2, items: [{ title: "x" }] }]) {
+        assert.deepEqual(notificationText(q(kind, payload), texts), { title: "stored title", body: "stored body" }, kind);
+      }
+      assert.equal(isReviewDigest(kind), true);
+    }
+    assert.equal(isReviewDigest(KIND_ABBREVIATION_PENDING), true);
+    assert.equal(isReviewDigest("legal_request_added"), false);
+
+    // the admin console opens whatever organization is current
+    const ctx = { origin: ORIGIN, currentTenantId: 7, memberships: [], isGuest: false };
+    for (const link of [
+      "/platform/admin?section=billing&status=pending",
+      "/platform/admin?section=legal-documents&view=requests",
+      "/platform/admin?section=legal-documents&view=drafts&status=ready",
+      "/platform/admin?section=legal-documents&view=links",
+      "/platform/admin?section=legal-documents&view=review",
+    ]) {
+      assert.equal(resolveTarget({ ...identity, link }, ctx).path, link);
+    }
   });
 });
