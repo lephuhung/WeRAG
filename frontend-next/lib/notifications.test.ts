@@ -21,6 +21,7 @@ import {
   KIND_PAYMENT_ORDER_PENDING,
   QUEUE_KINDS,
   isReviewDigest,
+  linkParam,
   type QueueKind,
   mergeFresh,
   toastKey,
@@ -60,10 +61,12 @@ const texts = {
       legal_link_pending: `${count} new amendment link(s) awaiting review`,
       legal_identity_pending: `${count} new document(s) awaiting identity review`,
     })[kind],
-  queueMore: (kind: QueueKind, count: number) => (kind === "payment_order_pending" ? `and ${count} more orders` : `and ${count} more`),
+  queueMore: (kind: Exclude<QueueKind, "legal_link_pending">, count: number) =>
+    kind === "payment_order_pending" ? `and ${count} more orders` : `and ${count} more`,
   queueRequestCount: (count: number) => `${count} requests`,
   queueLinkCount: (count: number) => `${count} links`,
   money: (vnd: number) => `${vnd.toLocaleString("en-US")} VND`,
+  queueUntitled: "untitled document",
 };
 
 // the vi dictionary's wording (lib/i18n.tsx notif.abbrevPending.*)
@@ -80,11 +83,12 @@ const textsVi = {
       legal_link_pending: `Có ${count} liên kết sửa đổi mới chờ duyệt`,
       legal_identity_pending: `Có ${count} văn bản mới chờ duyệt định danh`,
     })[kind],
-  queueMore: (kind: QueueKind, count: number) =>
+  queueMore: (kind: Exclude<QueueKind, "legal_link_pending">, count: number) =>
     kind === "payment_order_pending" ? `và ${count} đơn khác` : kind === "legal_draft_ready" ? `và ${count} bản nháp khác` : `và ${count} văn bản khác`,
   queueRequestCount: (count: number) => `${count} lượt đề nghị`,
   queueLinkCount: (count: number) => `${count} liên kết`,
   money: (vnd: number) => `${String(vnd).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} đ`,
+  queueUntitled: "văn bản không số",
 };
 
 const digest = (over: Partial<NotificationLike> = {}): NotificationLike => ({
@@ -306,9 +310,26 @@ describe("notifications", () => {
     });
     assert.equal(notificationText(identity, textsVi).title, "Có 2 văn bản mới chờ duyệt định danh");
 
-    // a payload without what it needs keeps the stored text
+    // an item with neither số hiệu nor title is named in the reader's language
+    const untitled = q(KIND_LEGAL_IDENTITY_PENDING, { count: 3, items: [{ untitled: true }, { ref: "29/2018/QH14" }] });
+    assert.deepEqual(notificationText(untitled, texts), {
+      title: "3 new document(s) awaiting identity review",
+      body: "untitled document, 29/2018/QH14, and 1 more",
+    });
+    assert.equal(notificationText(untitled, textsVi).body, "văn bản không số, 29/2018/QH14, và 1 văn bản khác");
+    const untitledDraft = q(KIND_LEGAL_DRAFT_READY, { count: 1, items: [{ ref: "", untitled: true }] });
+    assert.equal(notificationText(untitledDraft, texts).body, "untitled document");
+
     for (const kind of QUEUE_KINDS) {
-      for (const payload of [null, {}, { count: 2 }, { count: 2, items: "x" }, { count: 2, items: [{ title: "x" }] }]) {
+      // a count without named items: the title in the reader's language, not
+      // the stored Vietnamese
+      for (const payload of [{ count: 2 }, { count: 2, items: "x" }, { count: 2, items: [{ title: "x" }, { ref: "", untitled: false }] }]) {
+        const t = notificationText(q(kind, payload), texts);
+        assert.equal(t.body, "", kind);
+        assert.notEqual(t.title, "stored title", kind);
+      }
+      // nothing to count keeps the stored text
+      for (const payload of [null, {}, { count: 0 }, { items: [{ ref: "x" }] }]) {
         assert.deepEqual(notificationText(q(kind, payload), texts), { title: "stored title", body: "stored body" }, kind);
       }
       assert.equal(isReviewDigest(kind), true);
@@ -318,6 +339,9 @@ describe("notifications", () => {
 
     // the admin console opens whatever organization is current
     const ctx = { origin: ORIGIN, currentTenantId: 7, memberships: [], isGuest: false };
+    assert.equal(linkParam("/platform/admin?section=legal-documents&view=drafts&status=ready#x", "status"), "ready");
+    assert.equal(linkParam("/platform/admin?section=billing", "status"), "");
+    assert.equal(linkParam("/platform/chat/s1", "view"), "");
     for (const link of [
       "/platform/admin?section=billing&status=pending",
       "/platform/admin?section=legal-documents&view=requests",

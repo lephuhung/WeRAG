@@ -16,6 +16,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 )
 
 // countingNotices counts the digest writes, to check one write per
@@ -121,7 +122,13 @@ type queueBilling struct {
 func (b *queueBilling) CreateOrder(_ context.Context, req types.UsageQuoteRequest, scopeID, createdBy string) (*types.UsageOrderView, error) {
 	o := &types.UsageOrder{ID: uuid.NewString(), OrderCode: "DH" + scopeID, ScopeType: "tenant", ScopeID: scopeID,
 		PlanName: "Gói Go", TotalVND: 1250000, Status: types.UsageOrderPending, CreatedBy: createdBy}
-	if scopeID == "free" {
+	switch scopeID {
+	case "zero":
+		// 0 đồng: never confirmed by a transfer, waits for a SuperAdmin
+		o.TotalVND = 0
+	case "credit":
+		// a plan change the credit of the replaced subscription pays: paid
+		// at once
 		o.TotalVND, o.Status = 0, types.UsageOrderPaid
 	}
 	if err := b.db.Create(o).Error; err != nil {
@@ -173,23 +180,37 @@ func TestQueueNoticePaymentOrders(t *testing.T) {
 	require.Equal(t, "DHb", p.Items[0].Ref)
 	require.Equal(t, "Có 2 đơn hàng mới chờ xác nhận thanh toán", e.unread(t, "sa2", kind).Title)
 
-	// an order paid at once (0 đ) waits for nobody
-	_, err = billing.CreateOrder(ctx, types.UsageQuoteRequest{}, "free", "member")
+	// an order paid at once waits for nobody
+	_, err = billing.CreateOrder(ctx, types.UsageQuoteRequest{}, "credit", "member")
 	require.NoError(t, err)
 	require.Equal(t, 2, e.payload(t, "sa2", kind).Count)
+
+	// a 0-đồng order waits for a SuperAdmin most: told, and never expires
+	zero, err := billing.CreateOrder(ctx, types.UsageQuoteRequest{}, "zero", "member")
+	require.NoError(t, err)
+	p = e.payload(t, "sa2", kind)
+	require.Equal(t, 3, p.Count)
+	require.Equal(t, types.UserNotificationQueueItem{Ref: "DHzero", Plan: "Gói Go", Org: "Sở Tư pháp zero"}, p.Items[0])
+	require.Equal(t, "DHzero · Gói Go · Sở Tư pháp zero", e.unread(t, "sa2", kind).Body[:len("DHzero · Gói Go · Sở Tư pháp zero")])
+	longAgo := time.Now().Add(-72 * time.Hour)
+	require.NoError(t, e.db.Model(&types.UsageOrder{}).Where("id = ?", zero.ID).Update("expires_at", longAgo).Error)
 
 	// an order paid before the notice was written is no news
 	c, err := inner.CreateOrder(ctx, types.UsageQuoteRequest{}, "c", "member")
 	require.NoError(t, err)
 	require.NoError(t, inner.setStatus(c.ID, types.UsageOrderPaid))
 	e.notifier.OrderPending(ctx, c, "member")
-	require.Equal(t, 2, e.payload(t, "sa2", kind).Count)
+	require.Equal(t, 3, e.payload(t, "sa2", kind).Count)
 
-	// confirming one of two keeps the digest; cancelling the last closes it
+	// confirming / cancelling keeps the digest while an order still waits
 	_, err = billing.ConfirmOrder(ctx, a.ID, "sa1")
 	require.NoError(t, err)
 	require.NotNil(t, e.unread(t, "sa2", kind))
 	_, err = billing.CancelOrder(ctx, b.ID, false)
+	require.NoError(t, err)
+	e.notifier.Wait()
+	require.NotNil(t, e.unread(t, "sa2", kind), "the 0-đồng order past its deadline still waits")
+	_, err = billing.ConfirmOrder(ctx, zero.ID, "sa1")
 	require.NoError(t, err)
 	e.closed(t, kind)
 
@@ -216,7 +237,9 @@ func TestQueueNoticeLegalRequests(t *testing.T) {
 	tt05 := &types.LegalDocument{ID: "160001", DocumentNumber: "05/2023/TT-BNV", DocType: "Thông tư",
 		Title: "Hướng dẫn công tác văn thư", Status: "Còn hiệu lực"}
 	catalog := &gateCatalog{reports: map[string][]*types.LegalStatusReport{
-		"53/2022/ND-CP": {{Document: nd53}}, "05/2023/TT-BNV": {{Document: tt05}}}}
+		"53/2022/ND-CP": {{Document: nd53}}, "05/2023/TT-BNV": {{Document: tt05}},
+		"12/2025/ND-CP": {{Document: &types.LegalDocument{ID: "170000", DocumentNumber: "12/2025/NĐ-CP", DocType: "Nghị định",
+			Status: "Còn hiệu lực"}}}}}
 	s := &sessionService{legalCatalog: catalog}
 	s.SetLegalRequests(requests, &gateReviews{approved: map[string]bool{}})
 	s.SetQueueNotices(e.notifier)
@@ -260,10 +283,10 @@ func TestQueueNoticeLegalRequests(t *testing.T) {
 
 	// a feed / import / no-text queue row (Record without a person) notifies
 	// nobody and does not keep the digests open
-	feedRow, err := requests.Record(ctx, &types.LegalDocumentRequest{NumberKey: "12/2025/ND-CP", DocumentNumber: "12/2025/NĐ-CP",
-		LegalDocumentID: "170000", Source: types.LegalRequestSourceNoFullText})
+	feedRow, err := requests.Record(ctx, &types.LegalDocumentRequest{NumberKey: vietnamese_legal.CatalogNumberKey("12/2025/NĐ-CP"),
+		DocumentNumber: "12/2025/NĐ-CP", LegalDocumentID: "170000", Source: types.LegalRequestSourceNoFullText})
 	require.NoError(t, err)
-	require.True(t, feedRow.Opened)
+	require.Equal(t, 1, feedRow.RequestCount)
 	require.Equal(t, 2, e.payload(t, "sa2", kind).Count)
 
 	// a request handled before the notice was written is no news
@@ -274,11 +297,26 @@ func TestQueueNoticeLegalRequests(t *testing.T) {
 		_, err := requests.Decide(ctx, r.ID, types.LegalRequestAdded, "sa1", "", "k-"+r.ID, "kb-pub")
 		require.NoError(t, err)
 	}
+	before = e.notices.upserts.Load()
 	e.notifier.LegalRequestsOpened(ctx, "member", []string{rows[0].ID})
 	e.notifier.Wait()
-	require.Equal(t, 2, e.payload(t, "sa2", kind).Count)
+	require.Equal(t, before, e.notices.upserts.Load(), "nothing written")
+	// both added: only the feed's row is left, nobody waits on it, and the
+	// batch's own check closed the digests
+	e.closed(t, kind)
 
-	// both added: only the feed's row is left, nobody waits on it
+	// a person's first ask on the feed's open row: now someone waits on it
+	ask("member", "s6", "Nghị định 12/2025/NĐ-CP quy định gì?")
+	p = e.payload(t, "sa2", kind)
+	require.Equal(t, 1, p.Count)
+	require.Equal(t, "12/2025/NĐ-CP", p.Items[0].Ref)
+	require.Equal(t, 2, p.Items[0].Count, "the feed's request and the person's")
+	// the same person asking again while waiting is no news
+	before = e.notices.upserts.Load()
+	ask("member", "s7", "Nghị định 12/2025/NĐ-CP quy định gì?")
+	require.Equal(t, before, e.notices.upserts.Load())
+	_, err = requests.Decide(ctx, feedRow.ID, types.LegalRequestRejected, "sa1", "", "", "")
+	require.NoError(t, err)
 	e.notifier.LegalRequestsChanged(ctx)
 	e.closed(t, kind)
 
@@ -339,6 +377,72 @@ func TestQueueNoticeLegalDrafts(t *testing.T) {
 	require.NotNil(t, e.unread(t, "sa2", kind))
 	require.NoError(t, svc.Discard(ctx, "d2"))
 	e.closed(t, kind)
+
+	// a feed run of three scans is one write per SuperAdmin; a draft with
+	// neither số hiệu nor title is named by its catalogue id
+	before := e.notices.upserts.Load()
+	svc.runOCR(ctx, draft("d4", "14/2025/NĐ-CP", "mcp:feed"), []byte("%PDF"))
+	svc.runOCR(ctx, draft("d5", "15/2025/NĐ-CP", "mcp:feed"), []byte("%PDF"))
+	bare := &types.LegalDocumentDraft{ID: "d6", LegalDocumentID: "tvpl-77", Status: types.LegalDraftOCR, CreatedBy: "mcp:feed"}
+	require.NoError(t, drafts.Create(ctx, bare))
+	svc.runOCR(ctx, bare, []byte("%PDF"))
+	p = e.payload(t, "sa2", kind)
+	require.EqualValues(t, 2, e.notices.upserts.Load()-before, "one write each for sa1 and sa2")
+	require.Equal(t, 3, p.Count)
+	require.Equal(t, []string{"tvpl-77", "15/2025/NĐ-CP", "14/2025/NĐ-CP"}, []string{p.Items[0].Ref, p.Items[1].Ref, p.Items[2].Ref})
+
+	// a draft opened for review and left alone for a day waits again: the
+	// digest stays open when the ready ones are gone
+	for _, id := range []string{"d4", "d5", "d6"} {
+		require.NoError(t, svc.Discard(ctx, id))
+	}
+	require.NoError(t, e.db.Model(&types.LegalDocumentDraft{}).Where("id = ?", "d3").
+		Update("updated_at", time.Now().Add(-25*time.Hour)).Error)
+	e.notifier.LegalDraftsChanged(ctx)
+	e.notifier.Wait()
+	require.NotNil(t, e.unread(t, "sa2", kind))
+	require.NoError(t, svc.Discard(ctx, "d3"))
+	e.closed(t, kind)
+}
+
+// Batches are written on their own once the queue is quiet, and on
+// shutdown at once.
+func TestQueueNoticeCoalescingTimers(t *testing.T) {
+	e := newQueueNoticeEnv(t, nil)
+	ctx := context.Background()
+	kind := types.UserNotificationLegalDraftReady
+	drafts := repository.NewLegalDraftRepository(e.db)
+	mk := func(id string) *types.LegalDocumentDraft {
+		d := &types.LegalDocumentDraft{ID: id, LegalDocumentID: "doc-" + id, DocumentNumber: id + "/2025/NĐ-CP",
+			Status: types.LegalDraftReady, CreatedBy: "mcp:feed"}
+		require.NoError(t, drafts.Create(ctx, d))
+		return d
+	}
+	unread := func(user string) *types.UserNotification {
+		rows, err := e.notices.List(ctx, user, true, nil, 10)
+		require.NoError(t, err)
+		for _, n := range rows {
+			if n.Kind == kind {
+				return n
+			}
+		}
+		return nil
+	}
+
+	e.notifier.quiet, e.notifier.maxWait = 30*time.Millisecond, time.Second
+	e.notifier.LegalDraftReady(ctx, mk("1"))
+	e.notifier.LegalDraftReady(ctx, mk("2"))
+	require.Nil(t, unread("sa1"), "not before the queue is quiet")
+	require.Eventually(t, func() bool { return unread("sa1") != nil }, 2*time.Second, 10*time.Millisecond)
+	require.EqualValues(t, 2, e.notices.upserts.Load(), "both events in one write per SuperAdmin")
+
+	// shutdown writes what still waits
+	e.notifier.quiet, e.notifier.maxWait = time.Hour, time.Hour
+	e.notifier.LegalDraftReady(ctx, mk("3"))
+	require.True(t, e.notifier.WaitTimeout(5*time.Second))
+	var p types.UserNotificationQueuePayload
+	require.NoError(t, json.Unmarshal(unread("sa2").Payload, &p))
+	require.Equal(t, 3, p.Count)
 }
 
 // ---------------------------------------------------------------------------
@@ -378,6 +482,16 @@ func TestQueueNoticeLegalLinks(t *testing.T) {
 	require.Equal(t, []types.UserNotificationQueueItem{{Ref: "68/2026/NĐ-CP", Count: res.Pending}}, p.Items)
 	require.Equal(t, LegalLinkReviewLink, n.Link)
 	e.nobodyElse(t)
+
+	// a re-push of the unchanged document adds nothing
+	before := e.notices.upserts.Load()
+	res2, err := svc.Push(ctx, LegalPushInput{Content: []byte(nd68Push), Metadata: legalPushMetaFor("68/2026/NĐ-CP")},
+		caller, LegalFeedActor{UserID: "sa1"})
+	require.NoError(t, err)
+	require.Equal(t, res.Pending, res2.Pending)
+	e.notifier.Wait()
+	require.Equal(t, before, e.notices.upserts.Load())
+	require.Equal(t, res.Pending, e.payload(t, "sa2", kind).Count)
 
 	// deciding every pending link closes the digests
 	var ids []int64
@@ -426,7 +540,7 @@ func TestQueueNoticeLegalIdentities(t *testing.T) {
 	meta, _ := json.Marshal(map[string]string{"external_id": "vb-1"})
 	for i, k := range []types.Knowledge{
 		{ID: "k1", KnowledgeBaseID: "kb-pub", Title: "29.2018QH14.pdf", ParseStatus: types.ParseStatusCompleted},
-		{ID: "k2", KnowledgeBaseID: "kb-pub", Title: "cong-van.pdf", ParseStatus: types.ParseStatusCompleted},
+		{ID: "k2", KnowledgeBaseID: "kb-pub", Title: "", ParseStatus: types.ParseStatusCompleted},
 		{ID: "k3", KnowledgeBaseID: "kb-pub", Title: "luat-1.pdf", ParseStatus: types.ParseStatusCompleted, Metadata: meta},
 	} {
 		k := k
@@ -450,7 +564,8 @@ func TestQueueNoticeLegalIdentities(t *testing.T) {
 	require.Equal(t, LegalIdentityReviewLink, n.Link)
 	p := e.payload(t, "sa2", kind)
 	require.Equal(t, 2, p.Count)
-	require.ElementsMatch(t, []types.UserNotificationQueueItem{{Ref: "29/2018/QH14"}, {Ref: "cong-van.pdf"}}, p.Items)
+	require.ElementsMatch(t, []types.UserNotificationQueueItem{{Ref: "29/2018/QH14"}, {Untitled: true}}, p.Items)
+	require.Contains(t, n.Body, "văn bản không số", "a document with neither số hiệu nor title is still named")
 	e.nobodyElse(t)
 
 	// a link reviewed before the notice was written is no news

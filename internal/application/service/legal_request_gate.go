@@ -52,24 +52,16 @@ func (s *sessionService) SetLegalRequests(requests interfaces.LegalRequestReposi
 func (s *sessionService) SetQueueNotices(n *SuperAdminQueueNotifier) { s.queueNotices = n }
 
 // noticeOpenedRequests tells the SuperAdmins (but the asker) about the
-// requests this turn opened: a new request, or one reopened after it was
-// added. A request asked for again while open, a rejected one, or a turn
-// with no person behind it (an API key, an embed) notifies nobody.
-func (s *sessionService) noticeOpenedRequests(ctx context.Context, req *types.QARequest, rows []*types.LegalDocumentRequest) {
-	if s.queueNotices == nil || req == nil || req.Session == nil {
+// requests ids a person now waits on: this turn made them their first
+// waiting requester (a new request, one reopened after it was added, or
+// one a feed / reconcile / API caller queued). Someone asking again while
+// others wait, or a turn with no person behind it (an API key, an embed:
+// no requester is recorded), notifies nobody.
+func (s *sessionService) noticeOpenedRequests(ctx context.Context, req *types.QARequest, ids []string) {
+	if s.queueNotices == nil || req == nil || len(ids) == 0 {
 		return
 	}
-	userID := legalRequestUserID(ctx, req)
-	if userID == "" || types.IsAPISessionOwnerID(userID) || strings.HasPrefix(userID, types.PrincipalEmbedSession+":") {
-		return
-	}
-	var ids []string
-	for _, r := range rows {
-		if r != nil && r.Opened && r.Status == types.LegalRequestRequested {
-			ids = append(ids, r.ID)
-		}
-	}
-	s.queueNotices.LegalRequestsOpened(ctx, userID, ids)
+	s.queueNotices.LegalRequestsOpened(ctx, legalRequestUserID(ctx, req), ids)
 }
 
 // legalMissingDocumentGate answers a turn whose question names a full số
@@ -139,8 +131,9 @@ func (s *sessionService) legalMissingDocumentGate(
 			logger.Warnf(ctx, "legal request gate: recording %s: %v", number, err)
 			return ctx, false, nil
 		}
-		s.recordLegalRequester(ctx, req, row, kbIDs)
-		s.noticeOpenedRequests(ctx, req, []*types.LegalDocumentRequest{row})
+		if s.recordLegalRequester(ctx, req, row, kbIDs) && row.Status == types.LegalRequestRequested {
+			s.noticeOpenedRequests(ctx, req, []string{row.ID})
+		}
 		logger.Infof(ctx, "Legal document %s is not in the catalogue: request %s recorded (count %d), the turn runs on",
 			number, row.ID, row.RequestCount)
 		if row.Status == types.LegalRequestRequested {
@@ -188,7 +181,7 @@ func (s *sessionService) legalMissingDocumentGate(
 	}
 
 	var rejected *types.LegalDocumentRequest
-	var recorded []*types.LegalDocumentRequest
+	var waitedOn []string
 	open := 0
 	for _, r := range reports {
 		d := r.Document
@@ -206,8 +199,9 @@ func (s *sessionService) legalMissingDocumentGate(
 			logger.Warnf(ctx, "legal request gate: recording %s (%s): %v", number, d.ID, err)
 			return ctx, false, nil
 		}
-		s.recordLegalRequester(ctx, req, row, kbIDs)
-		recorded = append(recorded, row)
+		if s.recordLegalRequester(ctx, req, row, kbIDs) && row.Status == types.LegalRequestRequested {
+			waitedOn = append(waitedOn, row.ID)
+		}
 		if row.Status == types.LegalRequestRejected {
 			if rejected == nil {
 				rejected = row
@@ -220,7 +214,7 @@ func (s *sessionService) legalMissingDocumentGate(
 		}
 	}
 	// one digest update for the rows of this số hiệu
-	s.noticeOpenedRequests(ctx, req, recorded)
+	s.noticeOpenedRequests(ctx, req, waitedOn)
 	if textAction {
 		// drafting or checking text that cites it: recorded, no card
 		logger.Infof(ctx, "Legal document %s has no full text; a text request cites it: recorded, the turn runs on", number)
@@ -352,15 +346,18 @@ func legalRequestUserID(ctx context.Context, req *types.QARequest) string {
 // read records the asker as out of scope: this closing tells them nothing
 // (the simplest correct choice: their scope is only known now, not when
 // the notice is written).
+//
+// true: the person became the request's first requester waiting to be told
+// (AddRequester's FirstWaiting).
 func (s *sessionService) recordLegalRequester(
 	ctx context.Context, req *types.QARequest, row *types.LegalDocumentRequest, kbIDs []string,
-) {
+) bool {
 	if row == nil || req == nil || req.Session == nil {
-		return
+		return false
 	}
 	userID := legalRequestUserID(ctx, req)
 	if userID == "" || types.IsAPISessionOwnerID(userID) || strings.HasPrefix(userID, types.PrincipalEmbedSession+":") {
-		return
+		return false
 	}
 	r := &types.LegalRequestRequester{
 		RequestID: row.ID, TenantID: req.Session.TenantID, UserID: userID,
@@ -374,7 +371,9 @@ func (s *sessionService) recordLegalRequester(
 	}
 	if err := s.legalRequests.AddRequester(ctx, r); err != nil {
 		logger.Warnf(ctx, "legal request gate: requester of %s: %v", row.ID, err)
+		return false
 	}
+	return r.FirstWaiting
 }
 
 // legalRequesterChannel is where the turn came from: the public portal

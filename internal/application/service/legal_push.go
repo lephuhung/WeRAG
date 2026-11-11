@@ -597,6 +597,7 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 
 	// 5. store: pending candidates of this document are replaced; decided
 	// ones stay and the same mark is not asked again
+	wasPending := s.pendingCandidateKeys(ctx, meta)
 	kept, err := s.store(ctx, meta, a.ID, out)
 	if err != nil {
 		return nil, err
@@ -611,16 +612,23 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 		switch c.ReviewStatus {
 		case types.LegalLinkReviewPending:
 			res.Pending++
-			pendingIDs = append(pendingIDs, c.ID)
+			if !wasPending[legalCandidateKey(c)+"|"+c.TargetElementID] {
+				pendingIDs = append(pendingIDs, c.ID)
+			}
 		case types.LegalLinkReviewApproved:
 			res.AutoApproved++
 		}
 	}
-	// one digest update per push, for the links left to a person (the
-	// auto-approved ones need nobody); the replaced pending candidates may
-	// have emptied the queue
+	// the links newly left to a person (not auto-approved, not pending
+	// already before this push: a re-push of an unchanged document adds
+	// none) go to the SuperAdmins' digest; the replaced pending candidates
+	// may have emptied the queue
 	if len(pendingIDs) > 0 {
-		s.Notices.LegalLinksPending(ctx, actor.UserID, a.DocumentNumber, pendingIDs)
+		ref := strings.TrimSpace(a.DocumentNumber)
+		if ref == "" {
+			ref = a.ID
+		}
+		s.Notices.LegalLinksPending(ctx, actor.UserID, ref, pendingIDs)
 	} else {
 		s.Notices.LegalLinksChanged(ctx)
 	}
@@ -1039,6 +1047,23 @@ func legalMarkKey(c *types.LegalProvisionLinkCandidate) string {
 		return d.MarkKey
 	}
 	return legalCandidateKey(c)
+}
+
+// pendingCandidateKeys are the keys (candidate key + element) of the
+// pushed document's candidates waiting for review before this push; none
+// when they cannot be read (the push then counts all its pending links).
+func (s *LegalPushService) pendingCandidateKeys(ctx context.Context, meta *legalPushMeta) map[string]bool {
+	var rows []*types.LegalProvisionLinkCandidate
+	if err := s.db.WithContext(ctx).Where("feed = ? AND feed_doc_id = ? AND review_status = ?", meta.feed, meta.feedDocID,
+		types.LegalLinkReviewPending).Find(&rows).Error; err != nil {
+		logger.Warnf(ctx, "[LegalPush] pending candidates of %s %s: %v", meta.feed, meta.feedDocID, err)
+		return nil
+	}
+	keys := make(map[string]bool, len(rows))
+	for _, c := range rows {
+		keys[legalCandidateKey(c)+"|"+c.TargetElementID] = true
+	}
+	return keys
 }
 
 // store replaces the pending candidates of the pushed document; a mark a

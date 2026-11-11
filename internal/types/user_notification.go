@@ -91,6 +91,9 @@ type UserNotificationQueueItem struct {
 	Plan      string `json:"plan,omitempty"`
 	AmountVND int64  `json:"amount_vnd,omitempty"`
 	Org       string `json:"org,omitempty"`
+	// Untitled: an item without số hiệu or title (Ref empty); clients name
+	// it "untitled document" in the reader's language.
+	Untitled bool `json:"untitled,omitempty"`
 }
 
 // UserNotificationAbbreviationPendingMaxItems caps the newest suggestions an

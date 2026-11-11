@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -18,17 +19,33 @@ import (
 // of their review queues: payment orders waiting for confirmation, legal
 // documents people asked for in chat, OCR drafts ready for review, legal
 // feed links and public-KB identities waiting for review. One unread
-// digest per SuperAdmin and queue, updated by each batch (count + newest
-// items), closed for everyone once the queue is empty: by the action that
-// emptied it, or by the periodic sweep (orders expire on their own, and a
-// few rarer paths change the queues without telling the notifier).
+// digest per SuperAdmin and queue, closed for everyone once the queue is
+// empty: by the action that emptied it, or by the periodic sweep (orders
+// expire on their own, and a few rarer paths change the queues without
+// telling the notifier).
 //
-// Every method returns at once; the work runs in the background, re-reads
-// what is still pending before writing, and only logs failures.
+// Events are coalesced per queue: a batch is written once no event came
+// for the quiet period (at most maxWait after its first event), so a feed
+// run of N documents is one digest update (one toast) per SuperAdmin.
+// Close checks wait closeDelay, so a run of decisions checks once. Every
+// method returns at once; the writes run in the background, re-read what
+// is still pending, and only log failures. Shutdown (WaitTimeout) writes
+// the batches still waiting.
 
-// SuperAdminQueueSweepInterval is how often the sweep closes the digests
-// of empty queues.
-const SuperAdminQueueSweepInterval = 10 * time.Minute
+const (
+	// SuperAdminQueueSweepInterval is how often the sweep closes the
+	// digests of empty queues.
+	SuperAdminQueueSweepInterval = 10 * time.Minute
+	superAdminQueueQuiet         = 45 * time.Second
+	superAdminQueueMaxWait       = 2 * time.Minute
+	superAdminQueueCloseDelay    = 2 * time.Second
+	// superAdminQueueFlushTimeout bounds one write of a batch (all events,
+	// all recipients).
+	superAdminQueueFlushTimeout = time.Minute
+	// superAdminReviewingStale: a draft opened for review and left alone
+	// this long waits for a reviewer again.
+	superAdminReviewingStale = 24 * time.Hour
+)
 
 // Links of the review queues (SystemAdmin console, filtered to the
 // pending items).
@@ -42,10 +59,12 @@ const (
 	superAdminQueueBodyRunes = 300
 	// superAdminQueueIDChunk bounds the ids of one IN (...) re-read.
 	superAdminQueueIDChunk = 500
+	// superAdminQueueUntitled names an item without số hiệu or title.
+	superAdminQueueUntitled = "văn bản không số"
 )
 
 // reviewQueue is one SuperAdmin review queue: its digest kind, page, the
-// stored (Vietnamese) wording and the count of its pending items.
+// stored (Vietnamese) wording and whether any item is pending.
 type reviewQueue struct {
 	kind  string
 	link  string
@@ -54,7 +73,23 @@ type reviewQueue struct {
 	// more words the items the digest does not name; nil when the items
 	// carry their own counts (links: count links, items name documents)
 	more    func(n int) string
-	pending func(ctx context.Context, db *gorm.DB, now time.Time) (int64, error)
+	pending func(ctx context.Context, db *gorm.DB, now time.Time) (bool, error)
+}
+
+// queueCollect re-reads one event in the background: how many of its items
+// are still pending and the items to name (newest first); 0 = handled.
+type queueCollect func(ctx context.Context, db *gorm.DB) (int, []types.UserNotificationQueueItem, error)
+
+type queueEvent struct {
+	ctx     context.Context
+	actor   string
+	collect queueCollect
+}
+
+type queueBatch struct {
+	events []queueEvent
+	first  time.Time
+	timer  *time.Timer
 }
 
 // SuperAdminQueueNotifier writes the review-queue digests.
@@ -62,6 +97,15 @@ type SuperAdminQueueNotifier struct {
 	digests *reviewDigests
 	db      *gorm.DB
 	queues  map[string]*reviewQueue
+	// quiet, maxWait and closeDelay: see the coalescing above (tests
+	// shorten them)
+	quiet, maxWait, closeDelay time.Duration
+
+	mu      sync.Mutex
+	batches map[string]*queueBatch
+	closing map[string]*time.Timer
+	stopped bool
+	wg      sync.WaitGroup
 }
 
 // NewSuperAdminQueueNotifier creates the notifier.
@@ -69,19 +113,26 @@ func NewSuperAdminQueueNotifier(
 	users interfaces.UserRepository, notifications interfaces.UserNotificationRepository, db *gorm.DB,
 ) *SuperAdminQueueNotifier {
 	n := &SuperAdminQueueNotifier{digests: newReviewDigests("QueueNotice", users, notifications), db: db,
-		queues: map[string]*reviewQueue{}}
+		queues: map[string]*reviewQueue{}, quiet: superAdminQueueQuiet, maxWait: superAdminQueueMaxWait,
+		closeDelay: superAdminQueueCloseDelay, batches: map[string]*queueBatch{}, closing: map[string]*time.Timer{}}
 	for _, q := range superAdminQueues() {
 		n.queues[q.kind] = q
 	}
 	return n
 }
 
+// queueHasRows reports whether q (a filtered model query) matches a row:
+// SELECT EXISTS, not a count.
+func queueHasRows(ctx context.Context, db, q *gorm.DB) (bool, error) {
+	var found bool
+	err := db.WithContext(ctx).Raw("SELECT EXISTS (?)", q.Select("1")).Scan(&found).Error
+	return found, err
+}
+
 func superAdminQueues() []*reviewQueue {
-	countWhere := func(model any, query string, args ...any) func(context.Context, *gorm.DB, time.Time) (int64, error) {
-		return func(ctx context.Context, db *gorm.DB, _ time.Time) (int64, error) {
-			var n int64
-			err := db.WithContext(ctx).Model(model).Where(query, args...).Limit(1).Count(&n).Error
-			return n, err
+	where := func(model any, query string, args ...any) func(context.Context, *gorm.DB, time.Time) (bool, error) {
+		return func(ctx context.Context, db *gorm.DB, _ time.Time) (bool, error) {
+			return queueHasRows(ctx, db, db.Model(model).Where(query, args...))
 		}
 	}
 	return []*reviewQueue{
@@ -101,8 +152,10 @@ func superAdminQueues() []*reviewQueue {
 				}
 				return strings.Join(parts, " · ")
 			},
-			more:    func(n int) string { return fmt.Sprintf("và %d đơn khác", n) },
-			pending: pendingOrders,
+			more: func(n int) string { return fmt.Sprintf("và %d đơn khác", n) },
+			pending: func(ctx context.Context, db *gorm.DB, now time.Time) (bool, error) {
+				return queueHasRows(ctx, db, pendingOrders(db, now))
+			},
 		},
 		{
 			kind: types.UserNotificationLegalRequestPending, link: LegalRequestReviewLink,
@@ -115,14 +168,19 @@ func superAdminQueues() []*reviewQueue {
 				return s
 			},
 			more:    func(n int) string { return fmt.Sprintf("và %d văn bản khác", n) },
-			pending: pendingPersonRequests,
+			pending: where(&types.LegalDocumentRequest{}, personRequestsSQL, types.LegalRequestRequested),
 		},
 		{
 			kind: types.UserNotificationLegalDraftReady, link: LegalDraftReviewLink,
-			title:   func(n int) string { return fmt.Sprintf("Có %d bản nháp OCR mới chờ duyệt", n) },
-			item:    queueRefTitle,
-			more:    func(n int) string { return fmt.Sprintf("và %d bản nháp khác", n) },
-			pending: countWhere(&types.LegalDocumentDraft{}, "status = ?", types.LegalDraftReady),
+			title: func(n int) string { return fmt.Sprintf("Có %d bản nháp OCR mới chờ duyệt", n) },
+			item:  queueRefTitle,
+			more:  func(n int) string { return fmt.Sprintf("và %d bản nháp khác", n) },
+			// ready, or opened for review and left alone for a day
+			pending: func(ctx context.Context, db *gorm.DB, now time.Time) (bool, error) {
+				return queueHasRows(ctx, db, db.Model(&types.LegalDocumentDraft{}).
+					Where("status = ? OR (status = ? AND updated_at < ?)", types.LegalDraftReady,
+						types.LegalDraftReviewing, now.Add(-superAdminReviewingStale)))
+			},
 		},
 		{
 			kind: types.UserNotificationLegalLinkPending, link: LegalLinkReviewLink,
@@ -133,29 +191,30 @@ func superAdminQueues() []*reviewQueue {
 				}
 				return it.Ref
 			},
-			pending: countWhere(&types.LegalProvisionLinkCandidate{}, "review_status = ?", types.LegalLinkReviewPending),
+			pending: where(&types.LegalProvisionLinkCandidate{}, "review_status = ?", types.LegalLinkReviewPending),
 		},
 		{
 			kind: types.UserNotificationLegalIdentityPending, link: LegalIdentityReviewLink,
 			title: func(n int) string { return fmt.Sprintf("Có %d văn bản mới chờ duyệt định danh", n) },
 			item: func(it types.UserNotificationQueueItem) string {
+				if it.Untitled || it.Ref == "" {
+					return superAdminQueueUntitled
+				}
 				return queueEllipsis(it.Ref, superAdminQueueItemRunes)
 			},
 			more:    func(n int) string { return fmt.Sprintf("và %d văn bản khác", n) },
-			pending: countWhere(&types.LegalDocumentLink{}, "review_status = ?", types.LegalReviewPending),
+			pending: where(&types.LegalDocumentLink{}, "review_status = ?", types.LegalReviewPending),
 		},
 	}
 }
 
-// pendingOrders counts the orders still waiting for their money: pending
-// and not past their deadline (expiry is applied lazily on reads, so a
-// pending row past it is already expired).
-func pendingOrders(ctx context.Context, db *gorm.DB, now time.Time) (int64, error) {
-	var n int64
-	err := db.WithContext(ctx).Model(&types.UsageOrder{}).
-		Where("status = ? AND (expires_at IS NULL OR expires_at > ?)", types.UsageOrderPending, now).
-		Limit(1).Count(&n).Error
-	return n, err
+// pendingOrders filters the orders still waiting: pending and not past
+// their deadline (expiry is applied lazily on reads, so a pending row past
+// it is already expired). A 0-đồng order never expires
+// (ExpirePendingOrders): it waits for a SuperAdmin.
+func pendingOrders(db *gorm.DB, now time.Time) *gorm.DB {
+	return db.Model(&types.UsageOrder{}).
+		Where("status = ? AND (total_vnd <= 0 OR expires_at IS NULL OR expires_at >= ?)", types.UsageOrderPending, now)
 }
 
 // personRequestsSQL keeps the open requests a person waits on: requested,
@@ -164,76 +223,250 @@ func pendingOrders(ctx context.Context, db *gorm.DB, now time.Time) (int64, erro
 const personRequestsSQL = "status = ? AND EXISTS (SELECT 1 FROM legal_request_requesters q " +
 	"WHERE q.request_id = legal_document_requests.id AND q.notified_at IS NULL)"
 
-func pendingPersonRequests(ctx context.Context, db *gorm.DB, _ time.Time) (int64, error) {
-	var n int64
-	err := db.WithContext(ctx).Model(&types.LegalDocumentRequest{}).
-		Where(personRequestsSQL, types.LegalRequestRequested).Limit(1).Count(&n).Error
-	return n, err
-}
-
-// Wait blocks until the background runs started so far are done (tests).
+// Wait writes the batches and runs the close checks waiting now, and
+// blocks until every write started so far is done (tests).
 func (n *SuperAdminQueueNotifier) Wait() {
 	if n != nil {
-		n.digests.wait()
+		n.flushAll()
+		n.wg.Wait()
 	}
 }
 
-// WaitTimeout waits like Wait, at most d (shutdown).
+// WaitTimeout writes the waiting batches and waits like Wait, at most d
+// (shutdown); false when writes were still going.
 func (n *SuperAdminQueueNotifier) WaitTimeout(d time.Duration) bool {
 	if n == nil {
 		return true
 	}
-	return n.digests.waitTimeout(d)
+	n.mu.Lock()
+	n.stopped = true // later events are written at once
+	n.mu.Unlock()
+	n.flushAll()
+	done := make(chan struct{})
+	go func() {
+		n.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(d):
+		return false
+	}
 }
 
-// notify adds one batch to the digests of kind for every SuperAdmin but
-// actor. collect runs in the background and re-reads the batch: how many
-// of its items are still pending and the items to name; 0 writes nothing
-// (handled meanwhile).
-func (n *SuperAdminQueueNotifier) notify(ctx context.Context, kind, actor string,
-	collect func(ctx context.Context, db *gorm.DB) (int, []types.UserNotificationQueueItem, error),
-) {
+// notify adds one event to the batch of kind; actor (whose action queued
+// the items) is not told.
+func (n *SuperAdminQueueNotifier) notify(ctx context.Context, kind, actor string, collect queueCollect) {
 	if n == nil || n.db == nil {
 		return
 	}
+	now := n.digests.now()
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	b := n.batches[kind]
+	if b == nil {
+		b = &queueBatch{first: now}
+		n.batches[kind] = b
+	}
+	b.events = append(b.events, queueEvent{ctx: context.WithoutCancel(ctx), actor: actor, collect: collect})
+	delay := min(n.quiet, b.first.Add(n.maxWait).Sub(now))
+	if n.stopped || delay < 0 {
+		delay = 0
+	}
+	if b.timer != nil {
+		// a timer that already fired takes this event with the batch (it
+		// waits for the lock held here); the new one then finds none
+		b.timer.Stop()
+	}
+	b.timer = time.AfterFunc(delay, func() { n.flushKind(kind) })
+}
+
+// takeBatch removes the batch of kind (nil when none), counting its write.
+func (n *SuperAdminQueueNotifier) takeBatch(kind string) *queueBatch {
+	b := n.batches[kind]
+	if b == nil {
+		return nil
+	}
+	delete(n.batches, kind)
+	if b.timer != nil {
+		b.timer.Stop()
+	}
+	n.wg.Add(1)
+	return b
+}
+
+func (n *SuperAdminQueueNotifier) flushKind(kind string) {
+	n.mu.Lock()
+	b := n.takeBatch(kind)
+	n.mu.Unlock()
+	if b != nil {
+		n.write(kind, b.events)
+	}
+}
+
+// flushAll starts the writes of every waiting batch and close check now
+// (each counted in wg).
+func (n *SuperAdminQueueNotifier) flushAll() {
+	n.mu.Lock()
+	var kinds []string
+	batches := map[string]*queueBatch{}
+	for kind := range n.batches {
+		batches[kind] = n.takeBatch(kind)
+	}
+	for kind, t := range n.closing {
+		t.Stop()
+		delete(n.closing, kind)
+		kinds = append(kinds, kind)
+		n.wg.Add(1)
+	}
+	n.mu.Unlock()
+	// one after another: a shutdown or a sweep is a handful of queries
+	go func() {
+		for kind, b := range batches {
+			n.write(kind, b.events)
+		}
+		for _, kind := range kinds {
+			n.runClose(kind)
+		}
+	}()
+}
+
+// write adds the events still pending to every SuperAdmin's digest of
+// kind, but not an event to its actor's; then closes the digests if the
+// queue emptied meanwhile. Called with the batch counted in wg.
+func (n *SuperAdminQueueNotifier) write(kind string, events []queueEvent) {
+	defer n.wg.Done()
 	q := n.queues[kind]
-	n.digests.background(ctx, "notifying "+kind, func(ctx context.Context) error {
-		delta, items, err := collect(ctx, n.db)
+	ctx, cancel := context.WithTimeout(events[0].ctx, superAdminQueueFlushTimeout)
+	defer cancel()
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Errorf(ctx, "[QueueNotice] writing %s panicked: %v", kind, r)
+		}
+	}()
+	type found struct {
+		actor string
+		delta int
+		items []types.UserNotificationQueueItem
+	}
+	var news []found
+	for _, ev := range events {
+		delta, items, err := ev.collect(ctx, n.db)
 		if err != nil {
-			return fmt.Errorf("re-reading the batch: %w", err)
+			logger.Warnf(ctx, "[QueueNotice] re-reading a %s event: %v", kind, err)
+			continue
 		}
-		if delta <= 0 {
-			return nil
+		if delta > 0 {
+			news = append(news, found{actor: ev.actor, delta: delta, items: items})
 		}
-		if len(items) > types.UserNotificationQueueMaxItems {
-			items = items[:types.UserNotificationQueueMaxItems]
+	}
+	if len(news) > 0 {
+		recipients, err := n.digests.reviewers(ctx, "")
+		if err != nil {
+			logger.Warnf(ctx, "[QueueNotice] %s: listing SuperAdmins: %v", kind, err)
 		}
-		first := types.UserNotificationQueuePayload{Count: delta, Items: items}
-		writeErr := n.digests.write(ctx, actor, func(userID string, at time.Time) *types.UserNotification {
-			return q.notification(userID, first, at)
-		}, q.merge(delta, items))
-		// the queue may have emptied while the digests were written
-		closeErr := n.closeIfEmpty(ctx, q)
-		if writeErr != nil {
-			return writeErr
+		var failed []string
+		for _, userID := range recipients {
+			if ctx.Err() != nil {
+				failed = append(failed, ctx.Err().Error())
+				break
+			}
+			delta := 0
+			var items []types.UserNotificationQueueItem
+			for i := len(news) - 1; i >= 0; i-- { // the newest event first
+				if news[i].actor == userID {
+					continue
+				}
+				delta += news[i].delta
+				items = prependQueueItems(items, news[i].items)
+			}
+			if delta == 0 {
+				continue
+			}
+			// items so far are newest first: keep that order when merging
+			first := types.UserNotificationQueuePayload{Count: delta, Items: items}
+			if _, err := n.digests.notifications.UpsertOpenDigest(ctx, q.notification(userID, first, n.digests.now()),
+				q.merge(delta, items)); err != nil {
+				failed = append(failed, fmt.Sprintf("%s: %v", userID, err))
+			}
 		}
-		return closeErr
-	})
+		if len(failed) > 0 {
+			logger.Warnf(ctx, "[QueueNotice] %s digest not written: %s", kind, strings.Join(failed, "; "))
+		}
+	}
+	// the queue may have emptied while the digests were written
+	if err := n.closeIfEmpty(ctx, q); err != nil {
+		logger.Warnf(ctx, "[QueueNotice] %v", err)
+	}
+}
+
+// prependQueueItems appends older after items (newest first), skipping an
+// item of a Ref items already names; at most UserNotificationQueueMaxItems.
+func prependQueueItems(items, older []types.UserNotificationQueueItem) []types.UserNotificationQueueItem {
+	out := append([]types.UserNotificationQueueItem(nil), items...)
+	for _, it := range older {
+		if len(out) >= types.UserNotificationQueueMaxItems {
+			break
+		}
+		dup := false
+		for _, have := range out {
+			if !it.Untitled && !have.Untitled && strings.EqualFold(have.Ref, it.Ref) {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			out = append(out, it)
+		}
+	}
+	if len(out) > types.UserNotificationQueueMaxItems {
+		out = out[:types.UserNotificationQueueMaxItems]
+	}
+	return out
 }
 
 // changed closes the digests of kind once its queue is empty (called after
-// an action that may have emptied it).
-func (n *SuperAdminQueueNotifier) changed(ctx context.Context, kind string) {
+// an action that may have emptied it); checks within closeDelay are one.
+func (n *SuperAdminQueueNotifier) changed(_ context.Context, kind string) {
 	if n == nil || n.db == nil {
 		return
 	}
-	q := n.queues[kind]
-	n.digests.background(ctx, "closing "+kind, func(ctx context.Context) error { return n.closeIfEmpty(ctx, q) })
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if _, ok := n.closing[kind]; ok {
+		return
+	}
+	n.closing[kind] = time.AfterFunc(n.closeDelay, func() {
+		n.mu.Lock()
+		if _, ok := n.closing[kind]; !ok { // run by flushAll meanwhile
+			n.mu.Unlock()
+			return
+		}
+		delete(n.closing, kind)
+		n.wg.Add(1)
+		n.mu.Unlock()
+		n.runClose(kind)
+	})
+}
+
+// runClose runs one close check (counted in wg by the caller).
+func (n *SuperAdminQueueNotifier) runClose(kind string) {
+	defer n.wg.Done()
+	ctx, cancel := context.WithTimeout(context.Background(), superAdminQueueFlushTimeout)
+	defer cancel()
+	if err := n.closeIfEmpty(ctx, n.queues[kind]); err != nil {
+		logger.Warnf(ctx, "[QueueNotice] %v", err)
+	}
 }
 
 func (n *SuperAdminQueueNotifier) closeIfEmpty(ctx context.Context, q *reviewQueue) error {
 	return n.digests.closeIfEmpty(ctx, q.kind, func(ctx context.Context) (int64, error) {
-		return q.pending(ctx, n.db, n.digests.now())
+		found, err := q.pending(ctx, n.db, n.digests.now())
+		if found {
+			return 1, err
+		}
+		return 0, err
 	})
 }
 
@@ -277,7 +510,8 @@ func (n *SuperAdminQueueNotifier) Start(interval time.Duration) (stop func()) {
 // Payment orders
 
 // OrderPending: order v was created (or reopened) by actor and waits for
-// its transfer. Anything but a pending order notifies nobody.
+// its transfer, or (0 đồng) for a SuperAdmin's confirmation. An order paid
+// at once notifies nobody.
 func (n *SuperAdminQueueNotifier) OrderPending(ctx context.Context, v *types.UsageOrderView, actor string) {
 	if v == nil || v.UsageOrder == nil || v.Status != types.UsageOrderPending {
 		return
@@ -287,8 +521,8 @@ func (n *SuperAdminQueueNotifier) OrderPending(ctx context.Context, v *types.Usa
 		Org: strings.TrimSpace(v.ScopeName)}
 	n.notify(ctx, types.UserNotificationPaymentOrderPending, actor,
 		func(ctx context.Context, db *gorm.DB) (int, []types.UserNotificationQueueItem, error) {
-			c, err := pendingOrders(ctx, db.Where("id = ?", id), n.digests.now())
-			if err != nil || c == 0 {
+			found, err := queueHasRows(ctx, db, pendingOrders(db, n.digests.now()).Where("id = ?", id))
+			if err != nil || !found {
 				return 0, nil, err
 			}
 			return 1, []types.UserNotificationQueueItem{item}, nil
@@ -354,15 +588,22 @@ func (n *SuperAdminQueueNotifier) LegalDraftReady(ctx context.Context, d *types.
 		return
 	}
 	id := d.ID
+	// named by số hiệu, else title, else its catalogue id
 	item := types.UserNotificationQueueItem{Ref: strings.TrimSpace(d.DocumentNumber), Title: strings.TrimSpace(d.Title)}
 	if item.Ref == "" {
 		item.Ref, item.Title = item.Title, ""
 	}
+	if item.Ref == "" {
+		item.Ref = strings.TrimSpace(d.LegalDocumentID)
+	}
+	if item.Ref == "" {
+		item.Untitled = true
+	}
 	n.notify(ctx, types.UserNotificationLegalDraftReady, d.CreatedBy,
 		func(ctx context.Context, db *gorm.DB) (int, []types.UserNotificationQueueItem, error) {
-			var c int64
-			if err := db.WithContext(ctx).Model(&types.LegalDocumentDraft{}).
-				Where("id = ? AND status = ?", id, types.LegalDraftReady).Count(&c).Error; err != nil || c == 0 {
+			found, err := queueHasRows(ctx, db, db.Model(&types.LegalDocumentDraft{}).
+				Where("id = ? AND status = ?", id, types.LegalDraftReady))
+			if err != nil || !found {
 				return 0, nil, err
 			}
 			return 1, []types.UserNotificationQueueItem{item}, nil
@@ -461,9 +702,9 @@ func (n *SuperAdminQueueNotifier) LegalIdentitiesPending(ctx context.Context, ac
 			}
 			var items []types.UserNotificationQueueItem
 			for i := len(named) - 1; i >= 0; i-- {
-				if ref := strings.TrimSpace(names[named[i]]); ref != "" {
-					items = append(items, types.UserNotificationQueueItem{Ref: ref})
-				}
+				// neither số hiệu nor title: still named, as untitled
+				ref := strings.TrimSpace(names[named[i]])
+				items = append(items, types.UserNotificationQueueItem{Ref: ref, Untitled: ref == ""})
 			}
 			return len(still), items, nil
 		})
@@ -490,22 +731,7 @@ func (q *reviewQueue) merge(delta int, items []types.UserNotificationQueueItem) 
 		if count < len(old.Items) {
 			count = len(old.Items)
 		}
-		merged := types.UserNotificationQueuePayload{Count: count + delta, Items: append([]types.UserNotificationQueueItem(nil), items...)}
-		for _, it := range old.Items {
-			if len(merged.Items) >= types.UserNotificationQueueMaxItems {
-				break
-			}
-			dup := false
-			for _, n := range items {
-				if strings.EqualFold(n.Ref, it.Ref) {
-					dup = true
-					break
-				}
-			}
-			if !dup {
-				merged.Items = append(merged.Items, it)
-			}
-		}
+		merged := types.UserNotificationQueuePayload{Count: count + delta, Items: prependQueueItems(items, old.Items)}
 		*next = *q.notification(next.UserID, merged, next.CreatedAt)
 	}
 }
@@ -541,6 +767,9 @@ func (q *reviewQueue) body(p types.UserNotificationQueuePayload) string {
 
 // queueRefTitle: "53/2022/NĐ-CP – Quy định chi tiết…".
 func queueRefTitle(it types.UserNotificationQueueItem) string {
+	if it.Untitled || it.Ref == "" {
+		return superAdminQueueUntitled
+	}
 	if it.Title == "" || strings.EqualFold(it.Title, it.Ref) {
 		return queueEllipsis(it.Ref, superAdminQueueItemRunes)
 	}

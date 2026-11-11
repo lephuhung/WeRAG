@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { NOTIFICATION_OPENED_EVENT, linkParam } from "@/lib/notifications";
 import { IconRefresh } from "@/components/icons";
 import { useConfirm } from "@/components/confirm-dialog";
 import { useToast } from "@/components/toast";
@@ -89,6 +90,18 @@ export default function LegalDraftsSection({ onDenied }: { onDenied?: () => void
     setFilter(draftFilterOf(statusParam));
     setPage(1);
   }, [statusParam]);
+  // the same notification opened again (the URL does not change)
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const path = String((e as CustomEvent<string>).detail ?? "");
+      const status = linkParam(path, "status");
+      if (linkParam(path, "section") !== "legal-documents" || linkParam(path, "view") !== "drafts" || !status) return;
+      setFilter(draftFilterOf(status));
+      setPage(1);
+    };
+    window.addEventListener(NOTIFICATION_OPENED_EVENT, onOpen);
+    return () => window.removeEventListener(NOTIFICATION_OPENED_EVENT, onOpen);
+  }, []);
 
   const load = useCallback(
     async (quiet = false) => {

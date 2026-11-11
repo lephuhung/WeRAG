@@ -247,6 +247,8 @@ type LegalRequestRepository interface {
 	// ask time), so a person who still misses the document is told again
 	// when it is added again. A new row given NotifyStatus
 	// types.LegalRequesterNotifyOutOfScope is stored as already closed.
+	// r.FirstWaiting reports whether the person became the request's first
+	// requester waiting to be told (the SuperAdmins' request digest).
 	AddRequester(ctx context.Context, r *types.LegalRequestRequester) error
 	// CountRequesters returns how many people asked for each request id.
 	CountRequesters(ctx context.Context, requestIDs []string) (map[string]int, error)

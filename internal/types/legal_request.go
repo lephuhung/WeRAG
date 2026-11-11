@@ -50,11 +50,6 @@ type LegalDocumentRequest struct {
 	Detail    JSON      `json:"detail"     gorm:"type:jsonb"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-
-	// Opened (not stored) is set by LegalRequestRepository.Record when the
-	// call opened the request: created it, reopened it after it was added,
-	// or was the first real request of a row queued with nobody asking.
-	Opened bool `json:"-" gorm:"-"`
 }
 
 // TableName returns the table name for LegalDocumentRequest.
@@ -253,6 +248,12 @@ type LegalRequestRequester struct {
 	NotifyAttempts int       `json:"notify_attempts" gorm:"not null;default:0"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
+
+	// FirstWaiting (not stored) is set by LegalRequestRepository.AddRequester
+	// when this call made the person the request's first requester waiting
+	// to be told (nobody else waited, and they were not waiting already):
+	// a request a person now waits on, whoever created the row.
+	FirstWaiting bool `json:"-" gorm:"-"`
 }
 
 // TableName returns the table name for LegalRequestRequester.

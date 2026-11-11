@@ -10,6 +10,17 @@ export const NOTIFICATION_MIN_GAP_MS = 10_000;
 export const NOTIFICATION_MAX_TOASTS = 3;
 /** Every notification link is a page of the app. */
 export const NOTIFICATION_LINK_PREFIX = "/platform/";
+/** Window event (detail: the path) the web bell dispatches when it opens a
+ * notification's link: a page already showing that link re-applies its
+ * query (the same URL pushed again changes nothing in the router). */
+export const NOTIFICATION_OPENED_EVENT = "weknora:notification-opened";
+
+/** linkParam reads the query parameter name of an app path ("" if none). */
+export function linkParam(path: string, name: string): string {
+  const i = path.indexOf("?");
+  if (i < 0) return "";
+  return new URLSearchParams(path.slice(i + 1).split("#")[0]).get(name) ?? "";
+}
 
 export const KIND_LEGAL_REQUEST_ADDED = "legal_request_added";
 /** SuperAdmins: new abbreviation suggestions wait for review (a digest). */
@@ -177,17 +188,20 @@ export interface NotificationTexts {
   abbreviationPendingMore: (count: number) => string;
   /** a review-queue digest: "{n} new payment orders awaiting confirmation" */
   queueTitle: (kind: QueueKind, count: number) => string;
-  /** the items a review-queue digest does not name: "and {n} more orders" */
-  queueMore: (kind: QueueKind, count: number) => string;
+  /** the items a review-queue digest does not name: "and {n} more orders"
+   * (never for links: their items carry the link counts) */
+  queueMore: (kind: Exclude<QueueKind, typeof KIND_LEGAL_LINK_PENDING>, count: number) => string;
   /** how often a legal document was requested: "3 requests" */
   queueRequestCount: (count: number) => string;
   /** the pending links of a pushed document: "12 links" */
   queueLinkCount: (count: number) => string;
   /** an amount in đồng: "1,250,000 VND" / "1.250.000 đ" */
   money: (vnd: number) => string;
+  /** an item with neither số hiệu nor title: "untitled document" */
+  queueUntitled: string;
 }
 
-type QueueItem = { ref: string; title: string; count: number; plan: string; amount: number; org: string };
+type QueueItem = { ref: string; title: string; count: number; plan: string; amount: number; org: string; untitled: boolean };
 
 /** The items a review-queue digest names, newest first. */
 function queueItems(n: Pick<NotificationLike, "payload">): QueueItem[] {
@@ -199,14 +213,16 @@ function queueItems(n: Pick<NotificationLike, "payload">): QueueItem[] {
     if (!it || typeof it !== "object") return [];
     const o = it as Record<string, unknown>;
     const ref = str(o, "ref");
-    return ref
-      ? [{ ref, title: str(o, "title"), count: num(o, "count"), plan: str(o, "plan"), amount: num(o, "amount_vnd"), org: str(o, "org") }]
+    const untitled = o.untitled === true && !ref;
+    return ref || untitled
+      ? [{ ref, title: str(o, "title"), count: num(o, "count"), plan: str(o, "plan"), amount: num(o, "amount_vnd"), org: str(o, "org"), untitled }]
       : [];
   });
 }
 
 /** "53/2022/NĐ-CP – Quy định chi tiết…" */
-function refTitle(it: QueueItem): string {
+function refTitle(it: QueueItem, texts: NotificationTexts): string {
+  if (it.untitled) return texts.queueUntitled;
   return it.title && it.title.toLowerCase() !== it.ref.toLowerCase()
     ? `${it.ref} – ${cut(it.title, QUEUE_TEXT_MAX)}`
     : cut(it.ref, QUEUE_TEXT_MAX);
@@ -219,13 +235,13 @@ function queueItemText(kind: QueueKind, it: QueueItem, texts: NotificationTexts)
         .filter(Boolean)
         .join(" · ");
     case KIND_LEGAL_REQUEST_PENDING:
-      return it.count > 1 ? `${refTitle(it)} (${texts.queueRequestCount(it.count)})` : refTitle(it);
+      return it.count > 1 ? `${refTitle(it, texts)} (${texts.queueRequestCount(it.count)})` : refTitle(it, texts);
     case KIND_LEGAL_LINK_PENDING:
       return it.count > 0 ? `${it.ref} (${texts.queueLinkCount(it.count)})` : it.ref;
     case KIND_LEGAL_DRAFT_READY:
-      return refTitle(it);
+      return refTitle(it, texts);
     default:
-      return cut(it.ref, QUEUE_TEXT_MAX);
+      return it.untitled ? texts.queueUntitled : cut(it.ref, QUEUE_TEXT_MAX);
   }
 }
 
@@ -276,10 +292,11 @@ export function notificationText(
   if (isQueueKind(n.kind)) {
     const items = queueItems(n);
     const count = typeof n.payload?.count === "number" ? Math.max(n.payload.count, items.length) : 0;
-    if (count > 0 && items.length > 0) {
+    // the title alone when no item is named: never the stored Vietnamese
+    if (count > 0) {
       const parts = items.map((it) => queueItemText(n.kind as QueueKind, it, texts));
       // links count links while the items name documents: no "and N more"
-      if (n.kind !== KIND_LEGAL_LINK_PENDING && count > items.length) parts.push(texts.queueMore(n.kind, count - items.length));
+      if (n.kind !== KIND_LEGAL_LINK_PENDING && items.length > 0 && count > items.length) parts.push(texts.queueMore(n.kind, count - items.length));
       return { title: texts.queueTitle(n.kind, count), body: parts.join(", ") };
     }
   }

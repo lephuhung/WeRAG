@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { NOTIFICATION_OPENED_EVENT, linkParam } from "@/lib/notifications";
 import { Modal } from "@/components/modal";
 import { IconCopy, IconEdit, IconPlus, IconRefresh } from "@/components/icons";
 import { SystemSection } from "@/components/settings/system-section";
@@ -153,6 +154,16 @@ export default function AdminBilling() {
   useEffect(() => {
     if (statusParam) setFilter(orderFilterOf(statusParam));
   }, [statusParam]);
+  // the same notification opened again (the URL does not change)
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const path = String((e as CustomEvent<string>).detail ?? "");
+      const status = linkParam(path, "status");
+      if (linkParam(path, "section") === "billing" && status) setFilter(orderFilterOf(status));
+    };
+    window.addEventListener(NOTIFICATION_OPENED_EVENT, onOpen);
+    return () => window.removeEventListener(NOTIFICATION_OPENED_EVENT, onOpen);
+  }, []);
   const [activeTab, setActiveTab] = useState<"orders" | "promos">("orders");
   const [promoOpen, setPromoOpen] = useState(false);
   const [promoEditing, setPromoEditing] = useState<UsagePromoCode | null>(null);

@@ -16,6 +16,7 @@ import {
   type UserNotification,
 } from "@/lib/api/notifications";
 import {
+  NOTIFICATION_OPENED_EVENT,
   NOTIFICATION_POLL_MS,
   badgeLabel,
   mergeFresh,
@@ -66,6 +67,7 @@ export function NotificationBell() {
       queueRequestCount: (n) => t("notif.queue.requestCount", { n }),
       queueLinkCount: (n) => t("notif.queue.linkCount", { n }),
       money: (vnd) => (locale === "vi" ? `${vnd.toLocaleString("vi-VN")} đ` : `${vnd.toLocaleString("en-US")} VND`),
+      queueUntitled: t("notif.queue.untitled"),
     }),
     [t, locale],
   );
@@ -92,7 +94,11 @@ export function NotificationBell() {
       }
       setOpen(false);
       const target = targetOf(n);
-      if (target.path) router.push(target.path);
+      if (target.path) {
+        router.push(target.path);
+        // a page already showing this link re-applies its query
+        window.dispatchEvent(new CustomEvent(NOTIFICATION_OPENED_EVENT, { detail: target.path }));
+      }
     },
     [router, targetOf],
   );
