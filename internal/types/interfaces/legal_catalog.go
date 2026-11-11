@@ -189,7 +189,9 @@ type LegalRequestRepository interface {
 	// and the last_* fields — only when the asking session differs from
 	// the last one, so one session asking twice counts once. A row marked
 	// "added" whose document is asked for again (it is missing after all)
-	// is reopened. A "rejected" row is left as it is. Returns the stored row.
+	// is reopened, unless its requesters still wait for the "added" notice
+	// (closed within types.LegalRequestNoticeWindow, knowledge not deleted
+	// or failed): then it is only bumped. A "rejected" row is left as it is. Returns the stored row.
 	Record(ctx context.Context, req *types.LegalDocumentRequest) (*types.LegalDocumentRequest, error)
 	// Get returns one request, or nil when absent.
 	Get(ctx context.Context, id string) (*types.LegalDocumentRequest, error)
@@ -246,11 +248,13 @@ type LegalRequestRepository interface {
 	// CountRequesters returns how many people asked for each request id.
 	CountRequesters(ctx context.Context, requestIDs []string) (map[string]int, error)
 	// PendingAddedNotices lists the requesters not told yet of requests
-	// closed as added at or after decidedSince, oldest closing first.
+	// closed as added at or after decidedSince whose document is usable (no
+	// linked knowledge, or one that finished parsing), oldest closing first.
 	PendingAddedNotices(ctx context.Context, decidedSince time.Time, limit int) ([]*types.LegalRequestAddedNotice, error)
-	// MarkRequesterNotified sets notified_at and notify_status of a
-	// requester not told yet; false when it was already (or is gone).
-	MarkRequesterNotified(ctx context.Context, requesterID, status string, at time.Time) (bool, error)
+	// DeliverAddedNotice inserts the requester's notification (nothing when
+	// its dedupe key exists) and marks the requester notified, in one
+	// transaction; false when the requester was already notified.
+	DeliverAddedNotice(ctx context.Context, requesterID string, n *types.UserNotification) (bool, error)
 }
 
 // LegalRequestService drives the SuperAdmin queue of legal document requests.

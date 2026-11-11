@@ -3,9 +3,9 @@
 -- be told when it is added (legal_document_requests keeps only the last
 -- asker in last_*). One row per (request_id, user_id): the same person
 -- asking again moves the row to the latest conversation and makes it
--- pending again. notified_at is set once the person was told (by mail when
--- the account has an address), notify_status says how ('sent', 'no_email',
--- 'inactive', 'no_user').
+-- pending again (updated_at moves only then). notified_at is set once the
+-- person was told (an in-app notification, user_notifications of migration
+-- 000195), notify_status says how ('in_app').
 DO $$ BEGIN RAISE NOTICE '[Migration 000194] Creating legal_request_requesters'; END $$;
 
 CREATE TABLE IF NOT EXISTS legal_request_requesters (
@@ -37,4 +37,5 @@ SELECT gen_random_uuid()::text, r.id, r.last_tenant_id, r.last_user_id, r.last_s
    AND r.request_count > 0
    AND r.last_user_id <> ''
    AND r.last_session_id <> ''
+   AND EXISTS (SELECT 1 FROM users u WHERE u.id = r.last_user_id)
 ON CONFLICT (request_id, user_id) DO NOTHING;

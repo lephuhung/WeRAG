@@ -239,8 +239,11 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(repository.NewEmailNotificationRepository))
 	must(container.Provide(service.NewEmailNotifier))
 	must(container.Decorate(service.NewBillingEmailNotifications))
-	// in-app notifications of the signed-in person (user_notifications)
+	// in-app notifications; people who asked for a legal document are
+	// notified once it is added
 	must(container.Provide(repository.NewUserNotificationRepository))
+	must(container.Provide(service.NewLegalRequestNotifier))
+	must(container.Decorate(service.NewLegalRequestAddedNotifications))
 	// Platform-wide aggregate stats for the SystemAdmin overview dashboard.
 	must(container.Provide(service.NewStatsService))
 	// People lookup against the external MongoDB store. Always constructed;
@@ -511,6 +514,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(func(rdb *redis.Client) { handler.UseDeviceLoginRedis(rdb) }))
 	must(container.Invoke(startTemporaryDocumentCleanup))
 	must(container.Invoke(startEmailExpiryReminders))
+	must(container.Invoke(startLegalRequestNotices))
 
 	// Chat pipeline components for processing chat requests
 	logger.Debugf(ctx, "[Container] Registering chat pipeline plugins...")
@@ -1682,6 +1686,21 @@ const emailExpiryReminderInterval = time.Hour
 func startEmailExpiryReminders(n *service.EmailNotifier, cleaner interfaces.ResourceCleaner) {
 	stop := n.StartExpiryReminders(emailExpiryReminderInterval)
 	cleaner.RegisterWithName("EmailExpiryReminders", func() error {
+		stop()
+		n.Wait()
+		return nil
+	})
+}
+
+// startLegalRequestNotices runs the sweep that notifies (in-app) the people
+// who asked for a legal document once it is added, and lets every vbpl.vn /
+// feed ingest trigger it at once.
+func startLegalRequestNotices(n *service.LegalRequestNotifier, feed *service.LegalFeedService,
+	cleaner interfaces.ResourceCleaner,
+) {
+	feed.RequestsAdded = n.Trigger
+	stop := n.Start(service.LegalRequestNoticeInterval)
+	cleaner.RegisterWithName("LegalRequestNotices", func() error {
 		stop()
 		n.Wait()
 		return nil

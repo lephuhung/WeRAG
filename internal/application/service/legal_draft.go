@@ -876,6 +876,8 @@ func (s *LegalDraftService) Approve(ctx context.Context, id, kbID string) (*type
 		if _, err := s.requests.Decide(ctx, d.RequestID, types.LegalRequestAdded, caller.UserID, LegalDraftApprovedNote,
 			res.KnowledgeID, kb.ID); err != nil {
 			logger.Warnf(ctx, "[LegalDraft] closing request %s: %v", d.RequestID, err)
+		} else {
+			s.feed.NotifyRequestsAdded(ctx)
 		}
 		if s.requestSvc != nil {
 			out.Request, _ = s.requestSvc.Get(ctx, d.RequestID)

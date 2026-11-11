@@ -37,6 +37,17 @@ type LegalFeedService struct {
 	// document (its identity is the vbpl.vn id it was fetched by), so the
 	// review scan never has to pick it up; nil skips it.
 	Reviews interfaces.LegalReviewRepository
+	// RequestsAdded is told whenever requests may have been closed as added
+	// (LegalRequestNotifier.Trigger); nil: the periodic sweep only.
+	RequestsAdded func(ctx context.Context)
+}
+
+// NotifyRequestsAdded tells RequestsAdded that requests may have been
+// closed as added (an ingest, an approved draft).
+func (s *LegalFeedService) NotifyRequestsAdded(ctx context.Context) {
+	if s != nil && s.RequestsAdded != nil {
+		s.RequestsAdded(ctx)
+	}
 }
 
 // NewLegalFeedService creates the feed service.
@@ -450,6 +461,7 @@ func (s *LegalFeedService) markRequestsAdded(ctx context.Context, res *LegalInge
 		logger.Warnf(ctx, "[LegalFeed] marking requests of %s added: %v", res.VBPLID, err)
 	} else if n > 0 {
 		logger.Infof(ctx, "[LegalFeed] %d request(s) for %s marked added", n, res.VBPLID)
+		s.NotifyRequestsAdded(ctx)
 	}
 }
 

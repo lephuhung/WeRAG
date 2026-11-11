@@ -228,8 +228,9 @@ func LegalRequestRecordedFromContext(ctx context.Context) string {
 // nightly import, a feed push) have no requester.
 //
 // NotifiedAt is set once the person was told the document is available
-// (service.LegalRequestNotifier), NotifyStatus says how
-// (LegalRequesterNotify*).
+// (service.LegalRequestNotifier, an in-app notification), NotifyStatus says
+// how (LegalRequesterNotifyInApp). UpdatedAt moves only when the person asks
+// (again): it keys the notification to the ask.
 type LegalRequestRequester struct {
 	ID        string  `json:"id"         gorm:"type:varchar(36);primaryKey"`
 	RequestID string  `json:"request_id" gorm:"type:varchar(36);not null;uniqueIndex:ux_legal_request_requesters_user,priority:1"`
@@ -257,34 +258,32 @@ const (
 	LegalRequesterChannelPortal = "portal"
 )
 
-// LegalRequestRequester.NotifyStatus values: mailed, or why not (the row
-// is still closed so it is not retried; in-app notices may use these).
-const (
-	LegalRequesterNotifySent = "sent"
-	// LegalRequesterNotifyNoEmail: the account has no usable address.
-	LegalRequesterNotifyNoEmail = "no_email"
-	// LegalRequesterNotifyInactive: the account is disabled.
-	LegalRequesterNotifyInactive = "inactive"
-	// LegalRequesterNotifyNoUser: the account is gone (or the asker was
-	// not a user account: an API or embed principal).
-	LegalRequesterNotifyNoUser = "no_user"
-)
+// LegalRequesterNotifyInApp is LegalRequestRequester.NotifyStatus once the
+// in-app notification was written (types.UserNotification).
+const LegalRequesterNotifyInApp = "in_app"
 
-// LegalRequestAddedNotice is a requester due the "document added" mail:
-// the requester row with what the mail names of its request.
+// LegalRequestAddedNotice is a requester due the "document added" notice:
+// the requester row with what the notice names of its request.
 type LegalRequestAddedNotice struct {
-	RequesterID    string
-	RequestID      string
-	TenantID       uint64
-	UserID         string
-	SessionID      string
-	Channel        string
+	RequesterID string
+	RequestID   string
+	TenantID    uint64
+	UserID      string
+	SessionID   string
+	Channel     string
+	// AskedAt is the requester row's updated_at: asking again moves it, so
+	// it keys the notice to the ask, not to the closing.
+	AskedAt        time.Time
 	DocumentNumber string
 	Title          string
 	DecidedAt      time.Time
+	// SessionLive: the conversation still exists (not deleted).
+	SessionLive bool
+	// WordFileID is the Word file the conversation is bound to, "" when none.
+	WordFileID string
 }
 
 // LegalRequestNoticeWindow bounds how long after a request was closed as
-// added its requesters are still mailed: SMTP switched on later must not
-// mail about documents added weeks ago.
+// added its requesters are still notified: a document added weeks ago (or
+// whose parsing finished much later) is no news any more.
 const LegalRequestNoticeWindow = 7 * 24 * time.Hour
