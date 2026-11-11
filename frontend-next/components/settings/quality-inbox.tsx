@@ -154,6 +154,7 @@ export function QualityInbox({ scope, onDenied }: { scope: QualityScope; onDenie
           </PillGroup>
         </div>
       </div>
+      <p className="caption text-muted">{t(tab === "disliked" ? "qinbox.help.disliked" : "qinbox.help.ungrounded")}</p>
       <div role="tabpanel" id={`tabpanel-${tab}`} aria-labelledby={`tab-${tab}`}>
         {tab === "disliked" ? (
           <DislikedList scope={scope} filter={filter} agentId={agentId} onAgent={setAgentId} onDenied={onDenied} />
@@ -194,6 +195,24 @@ function RefreshButton({ loading, onClick }: { loading: boolean; onClick: () => 
   );
 }
 
+/* usePageFor keeps the page of one filter: a new filter starts at page 1
+ * in the same render (no reset effect, so no second request). */
+function usePageFor(key: string): [number, (page: number) => void] {
+  const [state, setState] = useState({ key, page: 1 });
+  const page = state.key === key ? state.page : 1;
+  const setPage = useCallback((p: number) => setState({ key, page: p }), [key]);
+  return [page, setPage];
+}
+
+/* useLatest keeps a callback out of effect dependencies. */
+function useLatest<T>(value: T) {
+  const ref = useRef(value);
+  useEffect(() => {
+    ref.current = value;
+  }, [value]);
+  return ref;
+}
+
 /* usePagedList loads one page of a list for the filter. */
 function usePagedList(
   load: (f: QualityFilter) => Promise<{ items: QualityRow[]; total: number; agents: QualityAgent[] }>,
@@ -204,40 +223,53 @@ function usePagedList(
   const [rows, setRows] = useState<QualityRow[]>([]);
   const [agents, setAgents] = useState<QualityAgent[]>([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const key = JSON.stringify(filter);
-  // only the latest request may set the state (a filter change reloads twice)
+  const [page, setPage] = usePageFor(key);
+  const denied = useLatest(onDenied);
+  // only the latest request may set the state
   const seq = useRef(0);
-
-  useEffect(() => setPage(1), [key]);
 
   const reload = useCallback(async () => {
     const mine = ++seq.current;
     setLoading(true);
     setError("");
     try {
-      const res = await load({ ...filter, page, pageSize: PAGE_SIZE });
+      const res = await load({ ...(JSON.parse(key) as QualityFilter), page, pageSize: PAGE_SIZE });
       if (mine !== seq.current) return;
       setRows(res.items ?? []);
       setTotal(res.total ?? 0);
       setAgents(res.agents ?? []);
     } catch (e) {
       if (mine !== seq.current) return;
-      if (e instanceof ApiError && e.status === 403) onDenied?.();
+      if (e instanceof ApiError && e.status === 403) denied.current?.();
       setError(t("qinbox.loadFailed"));
     } finally {
       if (mine === seq.current) setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, page, load, t, onDenied]);
+  }, [key, page, load, t, denied]);
 
   useEffect(() => {
     void reload();
   }, [reload]);
 
-  return { rows, setRows, agents, total, page, setPage, loading, error, reload };
+  /* applyReview puts a saved review on its row; under a reviewed / not
+   * reviewed filter a row that no longer matches leaves the list at once. */
+  const applyReview = useCallback(
+    (messageId: string, review: NonNullable<QualityRow["review"]>) => {
+      const f = JSON.parse(key) as QualityFilter;
+      if (f.reviewed !== undefined && review.reviewed !== f.reviewed) {
+        setRows((rows) => rows.filter((x) => x.message_id !== messageId));
+        setTotal((n) => Math.max(0, n - 1));
+        return;
+      }
+      setRows((rows) => rows.map((x) => (x.message_id === messageId ? { ...x, review } : x)));
+    },
+    [key],
+  );
+
+  return { rows, agents, total, page, setPage, loading, error, reload, applyReview };
 }
 
 function DislikedList({
@@ -301,7 +333,7 @@ function DislikedList({
               )}
             </td>
             <td className="px-5 py-3.5 align-top">
-              <ReviewCell scope={scope} kind="disliked" row={r} onSaved={(rv) => list.setRows((rows) => rows.map((x) => (x.message_id === r.message_id ? { ...x, review: rv } : x)))} />
+              <ReviewCell scope={scope} kind="disliked" row={r} onSaved={(rv) => list.applyReview(r.message_id, rv)} />
             </td>
           </>
         )}
@@ -389,7 +421,7 @@ function UngroundedList({
                   <ReasonCell reason={r.reason} legalRequest={r.legal_request} />
                 </td>
                 <td className="px-5 py-3.5 align-top">
-                  <ReviewCell scope={scope} kind="ungrounded" row={r} onSaved={(rv) => list.setRows((rows) => rows.map((x) => (x.message_id === r.message_id ? { ...x, review: rv } : x)))} />
+                  <ReviewCell scope={scope} kind="ungrounded" row={r} onSaved={(rv) => list.applyReview(r.message_id, rv)} />
                 </td>
               </>
             )}
@@ -411,20 +443,19 @@ function UngroundedGroups({ scope, filter, onDenied }: { scope: QualityScope; fi
   const [total, setTotal] = useState(0);
   const [rows, setRows] = useState(0);
   const [truncated, setTruncated] = useState(false);
-  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const key = JSON.stringify(filter);
+  const [page, setPage] = usePageFor(key);
+  const denied = useLatest(onDenied);
   const seq = useRef(0);
-
-  useEffect(() => setPage(1), [key]);
 
   const reload = useCallback(async () => {
     const mine = ++seq.current;
     setLoading(true);
     setError("");
     try {
-      const res = await groupUngroundedQuestions(scope, { ...filter, page, pageSize: PAGE_SIZE });
+      const res = await groupUngroundedQuestions(scope, { ...(JSON.parse(key) as QualityFilter), page, pageSize: PAGE_SIZE });
       if (mine !== seq.current) return;
       setItems(res.items ?? []);
       setTotal(res.total ?? 0);
@@ -432,13 +463,12 @@ function UngroundedGroups({ scope, filter, onDenied }: { scope: QualityScope; fi
       setTruncated(!!res.truncated);
     } catch (e) {
       if (mine !== seq.current) return;
-      if (e instanceof ApiError && e.status === 403) onDenied?.();
+      if (e instanceof ApiError && e.status === 403) denied.current?.();
       setError(t("qinbox.loadFailed"));
     } finally {
       if (mine === seq.current) setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key, page, scope, t, onDenied]);
+  }, [key, page, scope, t, denied]);
 
   useEffect(() => {
     void reload();
@@ -564,19 +594,20 @@ function ReviewCell({
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const review = row.review;
+  const [note, setNote] = useState(review?.note ?? "");
   const causes = kind === "disliked" ? DISLIKED_CAUSES : UNGROUNDED_CAUSES;
   const options: SelectOption[] = [
     { value: "", label: t("qinbox.noCause") },
     ...causes.map((c) => ({ value: c, label: t(CAUSE_KEYS[c]) })),
   ];
 
-  const save = async (patch: { cause?: QualityCause | ""; reviewed?: boolean }) => {
+  const save = async (patch: { cause?: QualityCause | ""; reviewed?: boolean; note?: string }) => {
     setBusy(true);
     try {
       await saveQualityReview(scope, row.message_id, { kind, ...patch });
       const next = {
         cause: patch.cause ?? review?.cause ?? "",
-        note: review?.note ?? "",
+        note: patch.note ?? review?.note ?? "",
         reviewed: patch.reviewed ?? review?.reviewed ?? false,
         reviewed_by: review?.reviewed_by ?? "",
         reviewer_name: patch.reviewed === undefined ? review?.reviewer_name ?? "" : patch.reviewed ? t("qinbox.you") : "",
@@ -604,6 +635,18 @@ function ReviewCell({
         <input type="checkbox" checked={!!review?.reviewed} disabled={busy} onChange={(e) => void save({ reviewed: e.target.checked })} />
         {t("qinbox.markReviewed")}
       </label>
+      <textarea
+        className="input min-h-[52px] w-full resize-y py-1.5 text-[12.5px]"
+        value={note}
+        maxLength={2000}
+        placeholder={t("qinbox.notePlaceholder")}
+        aria-label={t("qinbox.note")}
+        disabled={busy}
+        onChange={(e) => setNote(e.target.value)}
+        onBlur={() => {
+          if (note.trim() !== (review?.note ?? "")) void save({ note: note.trim() });
+        }}
+      />
       {review?.reviewed && (
         <div className="caption text-muted">
           {t("qinbox.reviewedBy", { name: review.reviewer_name || "—", at: formatDateTime(review.reviewed_at, locale) })}
