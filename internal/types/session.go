@@ -264,6 +264,10 @@ type SessionListQuery struct {
 	AgentID  string
 	Page     int
 	PageSize int
+	// ExcludeOwnerlessIM drops IM sessions nobody owns (they are created
+	// without an owner, so the legacy user_id '' allowance would list them
+	// to every member). Set for callers who are not organization admins.
+	ExcludeOwnerlessIM bool
 }
 
 // SessionListItem is a session row enriched with its IM origin (when any).
