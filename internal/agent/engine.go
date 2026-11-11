@@ -1088,6 +1088,21 @@ func (e *AgentEngine) runReActIteration(
 		state.IsComplete = true
 		return iterOutcomeBreak, nil
 	}
+	// a legal basis check that failed is answered with why, in code: the
+	// model would answer from memory, the grounding gate with "no evidence"
+	// (see legal_basis_intent.go)
+	if msg := legalBasisFailureMessage(ctx, step); msg != "" {
+		logger.Infof(ctx, "[Agent][Round-%d] The legal basis check failed: fixed answer", round)
+		answerID := generateEventID("answer")
+		_ = e.eventBus.Emit(ctx, event.Event{
+			ID: answerID, Type: event.EventAgentFinalAnswer, SessionID: sessionID,
+			Data: event.AgentFinalAnswerData{Content: msg, Done: false},
+		})
+		e.closeAnswerStream(ctx, sessionID, answerID)
+		state.FinalAnswer = msg
+		state.IsComplete = true
+		return iterOutcomeBreak, nil
+	}
 	common.PipelineInfo(ctx, "Agent", "round_end", map[string]interface{}{
 		"iteration":   state.CurrentRound,
 		"round":       round,

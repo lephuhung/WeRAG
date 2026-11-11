@@ -46,8 +46,6 @@ var readerEvidenceTools = map[string]bool{
 	agenttools.ToolSearchDocumentSection: true,
 	agenttools.ToolQueryKnowledgeGraph:   true,
 	agenttools.ToolWebFetch:              true,
-	// the legal catalogue's statuses of the cited documents
-	agenttools.ToolCheckDocumentLegalBasis: true,
 }
 
 type ungroundedKey struct{}
@@ -61,6 +59,12 @@ func markUngrounded(ctx context.Context, steps []types.AgentStep) context.Contex
 	// a format check of the open document is answered from its tool's
 	// report, not from the knowledge base (see format_intent.go)
 	if isFormatCheckRequest(types.UserQueryFromContext(ctx)) {
+		return ctx
+	}
+	// so is a legal basis check, once its tool ran, when the check is all
+	// the request asks (see legal_basis_intent.go); a request asking more
+	// still needs a search
+	if legalBasisChecked(steps) && legalBasisIntent(ctx).Pure {
 		return ctx
 	}
 	return context.WithValue(ctx, ungroundedKey{}, true)

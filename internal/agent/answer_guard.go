@@ -2,7 +2,9 @@ package agent
 
 import (
 	"context"
+	"regexp"
 	"strings"
+	"unicode"
 
 	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -46,16 +48,53 @@ var buttonRules = []buttonRule{
 	// the button's exact label: "tôi sẽ áp dụng các sửa thể thức" is a
 	// sentence about the next step, not a button
 	{"áp dụng các sửa thể thức này", "format-fix plan", func(b turnButtons) bool { return b.fixPlan }},
-	// not a button but the same failure: after a legal basis check the
-	// model said the citations "đã được gạch chân" while nothing was (the
-	// card underlines on request)
-	{"đã được gạch chân", "underlines", underlinedThisTurn},
-	{"đã gạch chân", "underlines", underlinedThisTurn},
 }
 
-// underlinedThisTurn: a sentence saying text was underlined stands unless
-// the turn ran the legal basis check without any tool sending underlines.
-func underlinedThisTurn(b turnButtons) bool { return !b.legalBasis || b.marks }
+// Not a button but the same failure: after a legal basis check the model
+// said the citations "đã được gạch chân" while nothing was (its card
+// underlines on request). In such a turn — no tool sent underlines — the
+// clause claiming it is dropped, the rest of the sentence stays.
+var underlineClaimRe = regexp.MustCompile(`đã (?:được )?(?:gạch chân|đánh dấu|tô|highlight)(?:[^\p{L}]|$)`)
+
+// clauseSepRe splits a sentence into clauses (the separator stays with the
+// clause after it).
+var clauseSepRe = regexp.MustCompile(`[,;]\s*`)
+
+// stripUnderlineClaim drops the clauses of unit claiming text was
+// underlined or marked when the turn ran the legal basis check and no tool
+// sent underlines; "" when nothing else is left. changed reports a drop.
+func stripUnderlineClaim(unit string, b turnButtons) (out string, changed bool) {
+	if !b.legalBasis || b.marks || !underlineClaimRe.MatchString(strings.ToLower(unit)) {
+		return unit, false
+	}
+	body := strings.TrimRight(unit, " \n")
+	tail := unit[len(body):]
+	end := ""
+	if n := len(body); n > 0 && strings.ContainsRune(".!?", rune(body[n-1])) {
+		body, end = body[:n-1], body[n-1:]
+	}
+	var kept []string
+	last := 0
+	cuts := clauseSepRe.FindAllStringIndex(body, -1)
+	for i := 0; i <= len(cuts); i++ {
+		stop := len(body)
+		if i < len(cuts) {
+			stop = cuts[i][0]
+		}
+		clause := body[last:stop]
+		if i < len(cuts) {
+			last = cuts[i][0]
+		}
+		if !underlineClaimRe.MatchString(strings.ToLower(clause)) {
+			kept = append(kept, clause)
+		}
+	}
+	rest := strings.TrimLeft(strings.Join(kept, ""), ",; ")
+	if !strings.ContainsFunc(rest, unicode.IsLetter) {
+		return "", true
+	}
+	return rest + end + tail, true
+}
 
 // collectTurnButtons scans the tool results of the turn for the cards.
 func collectTurnButtons(steps []types.AgentStep) turnButtons {
@@ -164,6 +203,17 @@ func cleanAnswer(ctx context.Context, text string, b turnButtons) (string, int) 
 	var out strings.Builder
 	dropped := 0
 	for _, u := range units {
+		if c, changed := stripUnderlineClaim(u, b); changed {
+			dropped++
+			logger.Infof(ctx, "[Agent][AnswerGuard] dropped an underline claim: nothing was underlined this turn: %q", strings.TrimSpace(u))
+			if c == "" {
+				if strings.HasSuffix(u, "\n") && out.Len() > 0 && !strings.HasSuffix(out.String(), "\n") {
+					out.WriteString("\n")
+				}
+				continue
+			}
+			u = c
+		}
 		if r := phantomButton(u, b); r != nil {
 			dropped++
 			logger.Infof(ctx, "[Agent][AnswerGuard] dropped a sentence inviting %q: no %s this turn: %q",
@@ -238,6 +288,17 @@ func (g *answerGuard) Flush() {
 }
 
 func (g *answerGuard) emitUnit(u string) {
+	if c, changed := stripUnderlineClaim(u, g.buttons); changed {
+		g.dropped++
+		logger.Infof(g.ctx, "[Agent][AnswerGuard] dropped a streamed underline claim: nothing was underlined this turn: %q", strings.TrimSpace(u))
+		if c == "" {
+			if strings.HasSuffix(u, "\n") {
+				g.emit("\n")
+			}
+			return
+		}
+		u = c
+	}
 	if r := phantomButton(u, g.buttons); r != nil {
 		g.dropped++
 		logger.Infof(g.ctx, "[Agent][AnswerGuard] dropped a streamed sentence inviting %q: no %s this turn: %q",

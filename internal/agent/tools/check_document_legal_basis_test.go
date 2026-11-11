@@ -138,7 +138,8 @@ func TestCheckDocumentLegalBasisToolRefusals(t *testing.T) {
 		return nil, apperrors.NewBadRequestError("only an open working document can be checked")
 	}
 	res, _ = NewCheckDocumentLegalBasisTool(newFakeWorkspace(nil), failing, "s-1").Execute(lbToolCtx(), nil)
-	if res.Success || !strings.Contains(res.Error, "Không rà soát được căn cứ pháp lý") {
+	if res.Success || !strings.Contains(res.Error, "Không rà soát được căn cứ pháp lý") ||
+		!strings.Contains(res.Error, "chỉ rà soát được văn bản làm việc đang mở") || strings.Contains(res.Error, "only an open") {
 		t.Errorf("service error: %+v", res)
 	}
 	// a cancelled turn stops the run

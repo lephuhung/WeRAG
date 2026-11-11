@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -84,7 +85,7 @@ func (t *CheckDocumentLegalBasisTool) Execute(ctx context.Context, args json.Raw
 		if errors.Is(err, context.Canceled) {
 			return nil, err
 		}
-		return &types.ToolResult{Success: false, Error: "Không rà soát được căn cứ pháp lý của " + DocumentLabel(target) + ": " + err.Error()}, nil
+		return &types.ToolResult{Success: false, Error: "Không rà soát được căn cứ pháp lý của " + DocumentLabel(target) + ": " + legalBasisFailureReason(err) + "."}, nil
 	}
 	sel := types.DocumentSelectionFromContext(ctx)
 	if !selectionIn(sel, target) {
@@ -102,6 +103,25 @@ func (t *CheckDocumentLegalBasisTool) Execute(ctx context.Context, args json.Raw
 			"summary_line":      summary,
 		},
 	}, nil
+}
+
+// legalBasisFailureReason words why the check failed for the user (the
+// service's errors are in English).
+func legalBasisFailureReason(err error) string {
+	var app *apperrors.AppError
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "tra danh mục văn bản pháp luật quá thời gian, vui lòng thử lại"
+	case errors.As(err, &app) && app.Code == apperrors.ErrServiceUnavailable:
+		return "danh mục văn bản pháp luật tạm thời không khả dụng"
+	case errors.As(err, &app) && app.Code == apperrors.ErrBadRequest:
+		return "chỉ rà soát được văn bản làm việc đang mở trong trình soạn thảo"
+	case errors.As(err, &app) && app.Code == apperrors.ErrNotFound:
+		return "không tìm thấy văn bản trong cuộc hội thoại này"
+	case strings.Contains(err.Error(), "documents are disabled"):
+		return "tính năng soạn thảo văn bản đang tắt"
+	}
+	return "lỗi hệ thống khi đọc văn bản hoặc danh mục, vui lòng thử lại"
 }
 
 // legalBasisStatusLabels name the statuses in the model's summary, in the
