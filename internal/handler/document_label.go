@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -179,6 +180,10 @@ func (h *DocumentLabelHandler) ListDocumentLabels(c *gin.Context) {
 	}
 	q.Offset, q.Limit = (page.GetPage()-1)*size, size
 	items, total, err := h.repo.List(ctx, q)
+	if stderrors.Is(err, interfaces.ErrDocumentLabelPageTooDeep) {
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, nil)
 		c.Error(errors.NewInternalServerError("could not list labels"))
@@ -220,7 +225,8 @@ func (h *DocumentLabelHandler) DocumentLabelFacets(c *gin.Context) {
 // @Description  line: id, kind, organization_id, created_at, paragraph,
 // @Description  span_start, span_end (rune offsets, end exclusive), flagged_text,
 // @Description  suggestion, verdict, source, check_id, model and the format
-// @Description  finding's details. Same scope and filters as the list.
+// @Description  finding's details. Same scope and filters as the list. The
+// @Description  last line of a complete file is {"_end":true,"rows":n}.
 // @Tags         Nhãn tài liệu
 // @Produce      application/x-ndjson
 // @Router       /document-labels/export [get]
@@ -253,8 +259,12 @@ func (h *DocumentLabelHandler) ExportDocumentLabels(c *gin.Context) {
 		}
 		return ctx.Err()
 	})
-	c.Writer.Flush()
 	uid, _ := types.UserIDFromContext(ctx)
+	if err == nil {
+		// a complete file ends with this line; a cut-off one does not
+		err = enc.Encode(map[string]any{"_end": true, "rows": n})
+	}
+	c.Writer.Flush()
 	if err != nil {
 		// the status line is gone: the file just ends early
 		logger.Errorf(ctx, "document labels export by %s (organization %d) stopped after %d rows: %v", uid, q.TenantID, n, err)

@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"sort"
+	"strconv"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -11,7 +13,7 @@ import (
 
 const (
 	documentLabelMaxPage   = 200
-	documentLabelMaxDepth  = 10000 // offset+limit a list page may reach
+	documentLabelMaxDepth  = 2000 // offset+limit a list page may reach (the export has no cap)
 	documentLabelBatchSize = 500
 )
 
@@ -56,6 +58,33 @@ func (r *documentLabelRepository) filtered(ctx context.Context, model any, q *ty
 	return db
 }
 
+// labelKey is one row's place in the merged, newest-first order.
+type labelKey struct {
+	kind      string
+	id        uint64
+	createdAt time.Time
+}
+
+func (r *documentLabelRepository) keys(ctx context.Context, model any, kind string, q *types.DocumentLabelQuery, want int) ([]labelKey, int64, error) {
+	var n int64
+	if err := r.filtered(ctx, model, q, kind == types.DocumentLabelSpelling).Count(&n).Error; err != nil {
+		return nil, 0, err
+	}
+	var rows []struct {
+		ID        uint64
+		CreatedAt time.Time
+	}
+	if err := r.filtered(ctx, model, q, kind == types.DocumentLabelSpelling).Select("id", "created_at").
+		Order("created_at DESC, id DESC").Limit(want).Find(&rows).Error; err != nil {
+		return nil, 0, err
+	}
+	out := make([]labelKey, len(rows))
+	for i, row := range rows {
+		out[i] = labelKey{kind: kind, id: row.ID, createdAt: row.CreatedAt}
+	}
+	return out, n, nil
+}
+
 func (r *documentLabelRepository) List(ctx context.Context, q *types.DocumentLabelQuery) ([]types.DocumentLabel, int64, error) {
 	limit := q.Limit
 	if limit <= 0 || limit > documentLabelMaxPage {
@@ -63,54 +92,79 @@ func (r *documentLabelRepository) List(ctx context.Context, q *types.DocumentLab
 	}
 	offset := max(q.Offset, 0)
 	if offset+limit > documentLabelMaxDepth {
-		return []types.DocumentLabel{}, 0, nil
+		return nil, 0, interfaces.ErrDocumentLabelPageTooDeep
 	}
-	// Both tables are read up to offset+limit rows and merged: the review
-	// table pages a few hundred rows deep at most.
+	// Both tables' (id, created_at) are read up to offset+limit rows and
+	// merged; only the page's rows (with their reports) are then loaded.
 	want := offset + limit
 	spelling, format := labelKinds(q)
-	var out []types.DocumentLabel
+	var keys []labelKey
 	var total int64
 	if spelling {
-		var n int64
-		if err := r.filtered(ctx, &types.DocumentSpellingFeedback{}, q, true).Count(&n).Error; err != nil {
+		k, n, err := r.keys(ctx, &types.DocumentSpellingFeedback{}, types.DocumentLabelSpelling, q, want)
+		if err != nil {
 			return nil, 0, err
 		}
-		total += n
-		var rows []types.DocumentSpellingFeedback
-		if err := r.filtered(ctx, &types.DocumentSpellingFeedback{}, q, true).
-			Order("created_at DESC, id DESC").Limit(want).Find(&rows).Error; err != nil {
-			return nil, 0, err
-		}
-		for i := range rows {
-			out = append(out, types.SpellingLabel(&rows[i]))
-		}
+		keys, total = append(keys, k...), total+n
 	}
 	if format {
-		var n int64
-		if err := r.filtered(ctx, &types.DocumentFormatFeedback{}, q, false).Count(&n).Error; err != nil {
+		k, n, err := r.keys(ctx, &types.DocumentFormatFeedback{}, types.DocumentLabelFormat, q, want)
+		if err != nil {
 			return nil, 0, err
 		}
-		total += n
-		var rows []types.DocumentFormatFeedback
-		if err := r.filtered(ctx, &types.DocumentFormatFeedback{}, q, false).
-			Order("created_at DESC, id DESC").Limit(want).Find(&rows).Error; err != nil {
+		keys, total = append(keys, k...), total+n
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		a, b := keys[i], keys[j]
+		if !a.createdAt.Equal(b.createdAt) {
+			return a.createdAt.After(b.createdAt)
+		}
+		if a.kind != b.kind {
+			return a.kind > b.kind // spelling before format
+		}
+		return a.id > b.id
+	})
+	if offset >= len(keys) {
+		return []types.DocumentLabel{}, total, nil
+	}
+	keys = keys[offset:min(len(keys), offset+limit)]
+
+	var spellingIDs, formatIDs []uint64
+	for _, k := range keys {
+		if k.kind == types.DocumentLabelSpelling {
+			spellingIDs = append(spellingIDs, k.id)
+		} else {
+			formatIDs = append(formatIDs, k.id)
+		}
+	}
+	labels := make(map[string]types.DocumentLabel, len(keys))
+	if len(spellingIDs) > 0 {
+		var rows []types.DocumentSpellingFeedback
+		if err := r.db.WithContext(ctx).Where("id IN ?", spellingIDs).Find(&rows).Error; err != nil {
 			return nil, 0, err
 		}
 		for i := range rows {
-			out = append(out, types.FormatLabel(&rows[i]))
+			l := types.SpellingLabel(&rows[i])
+			labels[l.ID] = l
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if !out[i].CreatedAt.Equal(out[j].CreatedAt) {
-			return out[i].CreatedAt.After(out[j].CreatedAt)
+	if len(formatIDs) > 0 {
+		var rows []types.DocumentFormatFeedback
+		if err := r.db.WithContext(ctx).Where("id IN ?", formatIDs).Find(&rows).Error; err != nil {
+			return nil, 0, err
 		}
-		return out[i].ID > out[j].ID
-	})
-	if offset >= len(out) {
-		return []types.DocumentLabel{}, total, nil
+		for i := range rows {
+			l := types.FormatLabel(&rows[i])
+			labels[l.ID] = l
+		}
 	}
-	return out[offset:min(len(out), offset+limit)], total, nil
+	out := make([]types.DocumentLabel, 0, len(keys))
+	for _, k := range keys {
+		if l, ok := labels[k.kind+":"+strconv.FormatUint(k.id, 10)]; ok {
+			out = append(out, l)
+		}
+	}
+	return out, total, nil
 }
 
 func (r *documentLabelRepository) Each(ctx context.Context, q *types.DocumentLabelQuery, fn func(*types.DocumentLabel) error) error {

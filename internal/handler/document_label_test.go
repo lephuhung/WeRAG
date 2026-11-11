@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -174,6 +175,8 @@ func TestDocumentLabelsTenantAdminSeesOwnOrganization(t *testing.T) {
 	require.Len(t, labelItems(t, body), 1)
 	_, body = labelGet(t, r, "/api/v1/document-labels?page=2&page_size=3")
 	require.Len(t, labelItems(t, body), 1)
+	code, _ = labelGet(t, r, "/api/v1/document-labels?page=41&page_size=50")
+	require.Equal(t, http.StatusBadRequest, code, "past 2,000 rows: narrow the filters or export")
 	code, _ = labelGet(t, r, "/api/v1/document-labels?kind=other")
 	require.Equal(t, http.StatusBadRequest, code)
 	code, _ = labelGet(t, r, "/api/v1/document-labels?from=03/11/2026")
@@ -233,7 +236,9 @@ func TestDocumentLabelsExportJSONL(t *testing.T) {
 		require.NoError(t, json.Unmarshal(sc.Bytes(), &rec), sc.Text())
 		lines = append(lines, rec)
 	}
-	require.Len(t, lines, 4, "one line per label of the organization")
+	require.Len(t, lines, 5, "one line per label of the organization, then the trailer")
+	require.Equal(t, map[string]any{"_end": true, "rows": float64(4)}, lines[4], "a complete file ends with the trailer")
+	lines = lines[:4]
 	for _, rec := range lines {
 		for _, key := range []string{"id", "kind", "organization_id", "created_at", "paragraph", "span_start", "span_end",
 			"flagged_text", "suggestion", "verdict", "source", "check_id", "model"} {
@@ -254,5 +259,27 @@ func TestDocumentLabelsExportJSONL(t *testing.T) {
 	// filters apply to the export too
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/document-labels/export?kind=format", nil))
-	require.Equal(t, 2, strings.Count(w.Body.String(), "\n"))
+	require.Equal(t, 3, strings.Count(w.Body.String(), "\n"), "2 labels + trailer")
+}
+
+// Labels at the same instant keep a stable order: spelling before format,
+// then the higher (numeric) id first, so pages never overlap.
+func TestDocumentLabelsTieOrder(t *testing.T) {
+	r, db, who := newLabelRouter(t)
+	who.tenantID, who.role = 1, types.TenantRoleAdmin
+	at := time.Date(2026, 11, 2, 8, 0, 0, 0, time.Local)
+	for i := 0; i < 11; i++ {
+		require.NoError(t, db.Create(&types.DocumentSpellingFeedback{TenantID: 1, Paragraph: "p", ParagraphHash: "h",
+			Wrong: "p", Verdict: types.SpellingVerdictNotError, Source: types.SpellingFeedbackSourceUser, CreatedAt: at}).Error)
+	}
+	require.NoError(t, db.Create(&types.DocumentFormatFeedback{TenantID: 1, ReportID: "r", Verdict: types.FormatVerdictOther, CreatedAt: at}).Error)
+	var ids []string
+	for page := 1; page <= 3; page++ {
+		_, body := labelGet(t, r, "/api/v1/document-labels?page_size=5&page="+strconv.Itoa(page))
+		for _, it := range labelItems(t, body) {
+			ids = append(ids, it["id"].(string))
+		}
+	}
+	require.Equal(t, []string{"spelling:11", "spelling:10", "spelling:9", "spelling:8", "spelling:7", "spelling:6",
+		"spelling:5", "spelling:4", "spelling:3", "spelling:2", "spelling:1", "format:1"}, ids)
 }
