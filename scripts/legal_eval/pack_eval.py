@@ -708,9 +708,23 @@ def tools_of(turn) -> list:
         out.append({"name": t.name, "ok": t.success, "output": t.output,
                     "final_message": fm if isinstance(fm, str) else "",
                     "evidence": evidence, "evidence_chars": len(evidence),
-                    "args": {k: v for k, v in (t.arguments or {}).items()
-                             if k in ("query", "queries", "document_number", "title", "path",
-                                      "doanh_thu", "loi_nhuan", "ty_le_doanh_thu", "thue_suat")}})
+                    "args": report_args(t.arguments)})
+    return out
+
+
+# A recorded string argument is cut at this many characters.
+ARG_MAX_CHARS = 300
+
+
+def report_args(args) -> dict:
+    """Every argument of the call (long strings cut): the 2026-11-08 report kept
+    only a few keys, so read_document(id/offset) pages and search_document_section
+    calls for different Điều looked like repeated calls."""
+    out = {}
+    for k, v in (args or {}).items():
+        if isinstance(v, str) and len(v) > ARG_MAX_CHARS:
+            v = v[:ARG_MAX_CHARS] + "…"
+        out[k] = v
     return out
 
 

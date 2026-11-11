@@ -96,6 +96,8 @@ type ReadDocumentTool struct {
 	searchTargets    types.SearchTargets
 	// currentWording returns legal chunks with in-place amendments applied.
 	currentWording CurrentWordingFunc
+	// queries holds the turn's in-document queries for the repeat guard.
+	queries *readQueryHistory
 }
 
 // WithCurrentWording sets the current-wording lookup: the model reads a
@@ -117,6 +119,7 @@ func NewReadDocumentTool(
 		knowledgeService: knowledgeService,
 		chunkService:     chunkService,
 		searchTargets:    searchTargets,
+		queries:          &readQueryHistory{},
 	}
 }
 
@@ -193,7 +196,29 @@ func (t *ReadDocumentTool) Execute(ctx context.Context, args json.RawMessage) (*
 	var result *types.ToolResult
 	switch {
 	case len(matchers) > 0:
+		// The same words on the same document return the same chunks; only
+		// inside an agent turn (MCP calls carry no round).
+		turnMessageID, turnRound, inTurn := searchTurnPosition(ctx)
+		if inTurn {
+			if prev, repeat := t.queries.find(turnMessageID, turnRound, knowledge.ID, input.Regex, query); repeat {
+				logger.Infof(ctx, "[Tool][ReadDocument] query=%q on %s repeats round %d; not run",
+					query, knowledge.ID, prev.round)
+				return &types.ToolResult{
+					Success: true,
+					Output:  readRepeatOutput(query, prev),
+					Data: map[string]interface{}{
+						"repeat_of_round": prev.round,
+						"query":           query,
+						"knowledge_id":    knowledge.ID,
+					},
+				}, nil
+			}
+		}
 		result, err = t.readByQuery(ctx, knowledge, query, matchers, !input.Regex && len(matchers) >= 2)
+		if inTurn && err == nil && result != nil && result.Success {
+			matches, _ := result.Data["match_count"].(int)
+			t.queries.record(turnMessageID, turnRound, knowledge.ID, input.Regex, query, matches)
+		}
 	case chunk != nil:
 		result, err = t.readAroundChunk(ctx, knowledge, chunk, contextChunks)
 	default:

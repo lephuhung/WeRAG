@@ -197,6 +197,11 @@ func (r *sourceRegistry) modelDocumentInfoOutput(data map[string]interface{}, fa
 		b.WriteString("  </document>\n")
 		count++
 	}
+	// A tool's instruction about the list (search_document_section: the
+	// number fits several documents, retry with one of them).
+	if note := stringValue(data, "model_note"); note != "" {
+		b.WriteString("  <note>" + escapeText(r.CompactKnownText(note)) + "</note>\n")
+	}
 	b.WriteString("</documents>")
 	if count == 0 {
 		return r.CompactKnownText(fallback)
@@ -376,9 +381,15 @@ func (r *sourceRegistry) modelKnowledgeChunksOutput(data map[string]interface{},
 		writeDocumentInfo(&b, info)
 		if query := stringValue(data, "query"); query != "" {
 			fmt.Fprintf(&b, "    <matches query=\"%s\" count=\"0\" />\n", escapeAttr(query))
-			b.WriteString("    <hint>No chunk contains every word of the query. Retry with fewer or different " +
-				"words (the document's own language and terms), or read a chunk from search_knowledge " +
-				"results with id=cN and context.</hint>\n")
+			// A tool that explains the miss itself (search_document_section:
+			// section not found, nearby Điều) replaces the word-match hint.
+			if note := stringValue(data, "model_note"); note != "" {
+				b.WriteString("    <note>" + escapeText(r.CompactKnownText(note)) + "</note>\n")
+			} else {
+				b.WriteString("    <hint>No chunk contains every word of the query. Retry with fewer or different " +
+					"words (the document's own language and terms), or read a chunk from search_knowledge " +
+					"results with id=cN and context.</hint>\n")
+			}
 		}
 		b.WriteString("  </document>\n</retrieval>")
 		return b.String()

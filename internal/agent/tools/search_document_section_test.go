@@ -368,3 +368,199 @@ func TestSectionAndReadDocumentApplyCurrentWording(t *testing.T) {
 		t.Fatal("the UI output keeps the stored text")
 	}
 }
+
+// Several sections of one document come back from one call, each in its
+// own block, sharing one result; a repeated citation is read once.
+func TestSearchDocumentSectionReadsSeveralSections(t *testing.T) {
+	tool, _ := newSectionFixture(t)
+	res, err := tool.Execute(context.Background(), json.RawMessage(
+		`{"sections":["Điều 3","khoản 2 Điều 17","điều 3"],"knowledge_id":"doc-53"}`))
+	if err != nil || !res.Success {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if ids := sectionChunkIDs(t, res); len(ids) != 2 || ids[0] != "c53-1" || ids[1] != "c53-2" {
+		t.Fatalf("chunks = %v", ids)
+	}
+	if res.Data["query"] != "Điều 3; Khoản 2 Điều 17" || res.Data["match_count"] != 2 {
+		t.Fatalf("data = %+v", res.Data)
+	}
+	if secs, _ := res.Data["sections"].([]map[string]interface{}); len(secs) != 2 {
+		t.Fatalf("sections = %#v", res.Data["sections"])
+	}
+	if strings.Count(res.Output, "<sections ref=") != 2 {
+		t.Fatalf("output = %s", res.Output)
+	}
+
+	// section and sections combine; a chunk shown for one is not repeated
+	res, _ = tool.Execute(context.Background(), json.RawMessage(
+		`{"section":"Điều 17","sections":["khoản 3 Điều 17"],"knowledge_id":"doc-53"}`))
+	if ids := sectionChunkIDs(t, res); len(ids) != 2 || ids[0] != "c53-2" || ids[1] != "c53-3" {
+		t.Fatalf("chunks = %v", ids)
+	}
+	if note, _ := res.Data["model_note"].(string); !strings.Contains(note, "Khoản 3 Điều 17 is in the chunk(s) already shown above for Điều 17") {
+		t.Fatalf("model_note = %q", note)
+	}
+}
+
+func TestSearchDocumentSectionCapsTheSectionList(t *testing.T) {
+	tool, _ := newSectionFixture(t)
+	res, err := tool.Execute(context.Background(), json.RawMessage(
+		`{"sections":["Điều 1","Điều 2","Điều 3","Điều 4","Điều 5","Điều 6","Điều 17"],"knowledge_id":"doc-53"}`))
+	if err != nil || !res.Success {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if ids := sectionChunkIDs(t, res); len(ids) != 1 || ids[0] != "c53-1" {
+		t.Fatalf("only the first six sections are read: %v", ids)
+	}
+	if note, _ := res.Data["model_note"].(string); !strings.Contains(note, "not read: Điều 17") {
+		t.Fatalf("model_note = %q", note)
+	}
+
+	// one string naming two parts still points at the list
+	res, err = tool.Execute(context.Background(), json.RawMessage(`{"section":"khoản 2 và khoản 3 Điều 17","knowledge_id":"doc-53"}`))
+	if err == nil || res.Success || !strings.Contains(res.Error, "entry of sections") {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+}
+
+// The result names the neighbouring Điều of the document by title, so the
+// next one is picked by title rather than probed by number; quoted
+// amending text of another document is not listed.
+func TestSearchDocumentSectionListsNearbyArticles(t *testing.T) {
+	tool, _ := newSectionFixture(t)
+	res, err := tool.Execute(context.Background(), json.RawMessage(`{"section":"Điều 17","knowledge_id":"doc-53"}`))
+	if err != nil || !res.Success {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	note, _ := res.Data["model_note"].(string)
+	if !strings.Contains(note, "Nearby Điều of this document (it has 3)") ||
+		!strings.Contains(note, "Điều 3. Giải thích từ ngữ") || !strings.Contains(note, "Điều 30. Hiệu lực thi hành") ||
+		strings.Contains(note, "Điều 17.") {
+		t.Fatalf("model_note = %q", note)
+	}
+	// the model reads the note with the chunks
+	if !strings.Contains(res.Output, "<note>Nearby Điều") {
+		t.Fatalf("output = %s", res.Output)
+	}
+
+	// an absent Điều says so where the model reads it, with its neighbours
+	res, _ = tool.Execute(context.Background(), json.RawMessage(`{"section":"Điều 18","knowledge_id":"doc-53"}`))
+	note, _ = res.Data["model_note"].(string)
+	if !strings.Contains(note, "Điều 18 was not found in") || !strings.Contains(note, "Điều 17. Trách nhiệm") {
+		t.Fatalf("model_note = %q", note)
+	}
+
+	// the amending document lists its own Điều only, never the quoted Điều 9
+	arts := documentArticles(func() []*types.Chunk {
+		_, repo := newSectionFixture(t)
+		var out []*types.Chunk
+		for _, c := range repo.ordered {
+			if c.KnowledgeID == "doc-53b" {
+				out = append(out, c)
+			}
+		}
+		return out
+	}())
+	if len(arts) != 1 || arts[0].no != "17" {
+		t.Fatalf("articles of doc-53b = %+v", arts)
+	}
+
+	// a scan over several documents has no single neighbour list
+	res, _ = tool.Execute(context.Background(), json.RawMessage(`{"section":"Điều 17"}`))
+	if note, _ := res.Data["model_note"].(string); strings.Contains(note, "Nearby") {
+		t.Fatalf("model_note = %q", note)
+	}
+}
+
+func TestNearbySectionsNoteWindow(t *testing.T) {
+	var chunks []*types.Chunk
+	for i := 1; i <= 30; i++ {
+		chunks = append(chunks, legalChunk(t, fmt.Sprintf("c%d", i), "doc", i, "x", &vietnamese_legal.LegalMetadata{
+			HeadingPath: []string{"Chương I", fmt.Sprintf("Điều %d. Tiêu đề %d", i, i)},
+			ArticleNos:  []string{fmt.Sprint(i)},
+		}))
+	}
+	refs := []vietnamese_legal.SectionRef{{Article: "12"}, {Article: "14"}}
+	note := nearbySectionsNote(chunks, refs)
+	for _, want := range []string{"Điều 7.", "Điều 13.", "Điều 19."} {
+		if !strings.Contains(note, want) {
+			t.Errorf("missing %s in %q", want, note)
+		}
+	}
+	for _, not := range []string{"Điều 6.", "Điều 12.", "Điều 14.", "Điều 20."} {
+		if strings.Contains(note, not) {
+			t.Errorf("unexpected %s in %q", not, note)
+		}
+	}
+	// a number past the end sits at the end
+	if note := nearbySectionsNote(chunks, []vietnamese_legal.SectionRef{{Article: "40"}}); !strings.Contains(note, "Điều 25.") ||
+		!strings.Contains(note, "Điều 30.") || strings.Contains(note, "Điều 24.") {
+		t.Errorf("past the end: %q", note)
+	}
+	if nearbySectionsNote(chunks, []vietnamese_legal.SectionRef{{Heading: "chương i"}}) != "" {
+		t.Error("a heading lookup lists no neighbours")
+	}
+}
+
+// A section cut by the output budget says how much of it was shown; a later
+// section is named as not shown unless an earlier one already showed it.
+func TestSearchDocumentSectionTruncationAcrossSections(t *testing.T) {
+	tool, _ := newSectionFixture(t)
+	ctx := WithOutputBudget(context.Background(), 10)
+	res, err := tool.Execute(ctx, json.RawMessage(
+		`{"sections":["Điều 17","khoản 2 Điều 17","Điều 3"],"knowledge_id":"doc-53"}`))
+	if err != nil || !res.Success {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if ids := sectionChunkIDs(t, res); len(ids) != 1 || ids[0] != "c53-2" {
+		t.Fatalf("chunks = %v", ids)
+	}
+	note, _ := res.Data["model_note"].(string)
+	if !strings.Contains(note, "Điều 17: 1 chunk(s) not shown") ||
+		!strings.Contains(note, "Điều 3 was not shown") || strings.Contains(note, "Khoản 2 Điều 17 was not shown") {
+		t.Fatalf("model_note = %q", note)
+	}
+	if res.Data["truncated"] != true {
+		t.Fatalf("data = %+v", res.Data)
+	}
+}
+
+func TestSearchDocumentSectionAmbiguousKeepsEverySection(t *testing.T) {
+	tool, _ := newSectionFixture(t)
+	res, err := tool.Execute(context.Background(), json.RawMessage(
+		`{"sections":["Điều 17","Điều 3"],"document_number":"Nghị định 53"}`))
+	if err != nil || !res.Success || res.Data["ambiguous"] != true {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+	if note, _ := res.Data["model_note"].(string); !strings.Contains(note, `sections=["Điều 17", "Điều 3"]`) ||
+		!strings.Contains(res.Output, "sections=[&quot;Điều 17&quot;, &quot;Điều 3&quot;]") {
+		t.Fatalf("model_note = %q output = %s", note, res.Output)
+	}
+	if secs, _ := res.Data["sections"].([]map[string]interface{}); len(secs) != 2 {
+		t.Fatalf("sections = %#v", res.Data["sections"])
+	}
+}
+
+// Far-apart sections get a window each, never everything between them.
+func TestNearbySectionsNoteFarApart(t *testing.T) {
+	var chunks []*types.Chunk
+	for i := 1; i <= 200; i++ {
+		chunks = append(chunks, legalChunk(t, fmt.Sprintf("c%d", i), "doc", i, "x", &vietnamese_legal.LegalMetadata{
+			HeadingPath: []string{fmt.Sprintf("Điều %d. Tiêu đề %d", i, i)},
+			ArticleNos:  []string{fmt.Sprint(i)},
+		}))
+	}
+	note := nearbySectionsNote(chunks, []vietnamese_legal.SectionRef{{Article: "3"}, {Article: "190"}})
+	lines := strings.Split(note, "\n")
+	if len(lines) > sectionNearbyMaxLines+2 {
+		t.Fatalf("%d lines: %q", len(lines), note)
+	}
+	for _, want := range []string{"Điều 8.", "Điều 185.", "Điều 195.", "\n…\n"} {
+		if !strings.Contains(note, want) {
+			t.Errorf("missing %q in %q", want, note)
+		}
+	}
+	if strings.Contains(note, "Điều 100.") || strings.Contains(note, "Điều 9.") {
+		t.Errorf("window leaked: %q", note)
+	}
+}
