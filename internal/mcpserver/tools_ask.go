@@ -273,7 +273,7 @@ func (s *Server) runQA(
 			assistantMsg.Usage = data.Usage
 		}
 		// quick answer: retrieval found nothing, the fallback answered
-		if data.IsFallback {
+		if data.IsFallback && !turnFailed {
 			assistantMsg.ApplyUngroundedMarker(types.QuickAnswerUngroundedMarker(question))
 		}
 		mu.Unlock()
@@ -385,9 +385,15 @@ func (s *Server) runQA(
 			timer.Stop()
 		}
 	case <-ctx.Done():
+		// the event handlers may still write the message: change and copy
+		// it under mu; a cancelled turn is no ungrounded question
+		mu.Lock()
 		assistantMsg.Content = "The answer was interrupted before completion."
 		assistantMsg.IsCompleted = true
-		if updateErr := s.messageService.UpdateMessage(context.WithoutCancel(ctx), assistantMsg); updateErr != nil {
+		assistantMsg.ExecutionContext.Ungrounded = nil
+		interrupted := *assistantMsg
+		mu.Unlock()
+		if updateErr := s.messageService.UpdateMessage(context.WithoutCancel(ctx), &interrupted); updateErr != nil {
 			logger.Warnf(ctx, "[mcpserver] failed to finalize interrupted message: %v", updateErr)
 		}
 		return "", nil, fmt.Errorf("answer timed out: %w", ctx.Err())

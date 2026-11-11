@@ -13,11 +13,17 @@ import (
 type scriptedSessionService struct {
 	interfaces.SessionService
 	events []event.Event
+	// after runs once the events are out (a cancellation, say)
+	after func()
 }
 
 func (s *scriptedSessionService) emit(ctx context.Context, bus *event.EventBus) error {
 	for _, evt := range s.events {
 		_ = bus.Emit(ctx, evt)
+	}
+	if s.after != nil {
+		s.after()
+		<-ctx.Done()
 	}
 	return nil
 }
@@ -99,5 +105,23 @@ func TestAskStoresUngroundedMarker(t *testing.T) {
 		event.Event{Type: event.EventAgentComplete, Data: event.AgentCompleteData{Ungrounded: gate}},
 	); got != nil {
 		t.Fatalf("a failed turn got a marker: %+v", got)
+	}
+}
+
+// A cancelled ask whose fallback answer had started is not listed.
+func TestAskCancelledTurnHasNoUngroundedMarker(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	messages := &lastMessageService{}
+	s := &Server{messageService: messages, sessionService: &scriptedSessionService{
+		events: []event.Event{{Type: event.EventAgentFinalAnswer, Data: event.AgentFinalAnswerData{Content: "Xin lỗi", IsFallback: true}}},
+		after:  cancel,
+	}}
+	if _, _, err := s.runQA(ctx, &types.Session{ID: "s1", TenantID: 1}, &types.CustomAgent{}, "q", nil); err == nil {
+		t.Fatal("a cancelled ask must fail")
+	}
+	messages.mu.Lock()
+	defer messages.mu.Unlock()
+	if messages.last == nil || messages.last.ExecutionContext.Ungrounded != nil {
+		t.Fatalf("cancelled turn stored %+v", messages.last)
 	}
 }

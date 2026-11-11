@@ -3073,6 +3073,11 @@ loop:
 	}
 	answer := resolvedAnswer
 	finalErr := qaErr
+	// a stopped or cancelled turn is no ungrounded question, even when its
+	// fallback answer had started
+	if qaCtx.Err() != nil && assistantMsg != nil {
+		assistantMsg.ExecutionContext.Ungrounded = nil
+	}
 	noVisibleContent := !streamedAny && strings.TrimSpace(resolvedAnswer) == ""
 	authServices := append([]imMCPAuthService(nil), mcpAuthServices...)
 	bufMu.Unlock()
@@ -3326,8 +3331,12 @@ func (s *Service) runQA(ctx context.Context, session *types.Session, query strin
 		}
 	case <-ctx.Done():
 		// Mark assistant message as completed to avoid dangling incomplete records
+		answerMu.Lock()
 		assistantMsg.Content = imCancelledFallback
 		assistantMsg.IsCompleted = true
+		// a cancelled turn is no ungrounded question
+		assistantMsg.ExecutionContext.Ungrounded = nil
+		answerMu.Unlock()
 		// Use a fresh context since the original is cancelled
 		if updateErr := s.messageService.UpdateMessage(context.WithoutCancel(ctx), assistantMsg); updateErr != nil {
 			logger.Warnf(ctx, "[IM] Failed to update cancelled assistant message: %v", updateErr)

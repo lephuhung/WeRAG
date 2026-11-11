@@ -135,3 +135,33 @@ func TestApplyIMCompleteDataStoresMarkerUnlessFailed(t *testing.T) {
 		t.Fatalf("a failed turn got a marker")
 	}
 }
+
+// A stopped stream turn whose fallback answer had started is not listed.
+func TestIMStreamCancelledTurnHasNoUngroundedMarker(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		messages := &markerMessageService{}
+		service := &Service{
+			sessionService: &exitSessionService{run: func(runCtx context.Context, bus *event.EventBus) error {
+				_ = bus.Emit(runCtx, event.Event{Type: event.EventAgentFinalAnswer,
+					Data: event.AgentFinalAnswerData{Content: "Xin lỗi", IsFallback: true}})
+				cancel()
+				return nil
+			}},
+			messageService: messages,
+			streamManager:  &fullOutputStreamManager{},
+		}
+		_ = service.handleMessageStream(ctx,
+			&IncomingMessage{Platform: PlatformTelegram, UserID: "user", Content: "q"},
+			&types.Session{ID: "session"}, nil, nil, nil, nil, &recordingStreamSender{}, nil, "user", nil)
+		messages.mu.Lock()
+		stored := messages.last != nil
+		messages.mu.Unlock()
+		if !stored {
+			t.Fatal("the cancelled turn was not stored")
+		}
+		if got := messages.marker(); got != nil {
+			t.Fatalf("cancelled turn stored %+v", got)
+		}
+	})
+}

@@ -127,7 +127,7 @@ func TestDomainFooterSkipsCodeWrittenAnswers(t *testing.T) {
 		engine := newTestEngine(t, &mockChat{})
 		withDomainFooter(engine)
 		content := collectAnswer(t, engine)
-		state := &types.AgentState{FinalAnswer: ungroundedAnswer}
+		state := &types.AgentState{FinalAnswer: ungroundedAnswer, Ungrounded: true}
 		engine.appendDomainFooter(context.Background(), state, "sess", "answer-1")
 		assert.Equal(t, ungroundedAnswer, state.FinalAnswer)
 		assert.Empty(t, *content)

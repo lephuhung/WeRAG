@@ -33,6 +33,9 @@ type answerQualityService struct {
 	// review clears it.
 	groupsMu sync.Mutex
 	groups   map[string]*ungroundedGroupsEntry
+	// groupsGen moves on every clear: a grouping read while a review was
+	// saved does not store its (stale) result.
+	groupsGen uint64
 }
 
 type ungroundedGroupsEntry struct {
@@ -46,7 +49,7 @@ const (
 	ungroundedGroupsTTL = 60 * time.Second
 	// ungroundedGroupsMaxEntries bounds the cache; expired entries go first,
 	// then everything (a burst of distinct filters only costs a re-read).
-	ungroundedGroupsMaxEntries = 256
+	ungroundedGroupsMaxEntries = 32
 )
 
 // NewAnswerQualityService creates the service.
@@ -54,27 +57,55 @@ func NewAnswerQualityService(repo interfaces.AnswerQualityRepository) interfaces
 	return &answerQualityService{repo: repo, now: time.Now, groups: map[string]*ungroundedGroupsEntry{}}
 }
 
+// wholeDays widens the grouping's period to whole days (Vietnam time, the
+// process's time.Local): the console sends dates, and an RFC 3339 bound
+// would make every request a new cache entry.
+func wholeDays(f types.AnswerQualityFilter) types.AnswerQualityFilter {
+	dayStart := func(t time.Time) time.Time {
+		t = t.In(time.Local)
+		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.Local)
+	}
+	if f.From != nil {
+		from := dayStart(*f.From)
+		f.From = &from
+	}
+	if f.To != nil {
+		to := dayStart(*f.To)
+		if to.Before(*f.To) {
+			to = to.AddDate(0, 0, 1)
+		}
+		f.To = &to
+	}
+	return f
+}
+
 // groupsKey is the cache key of a scoped filter: the organization scope and
-// every filter but the page.
+// every filter but the page (the period already in whole days).
 func groupsKey(f types.AnswerQualityFilter) string {
 	f.Offset, f.Limit = 0, 0
 	b, _ := json.Marshal(f)
 	return string(b)
 }
 
-func (s *answerQualityService) cachedGroups(key string) *ungroundedGroupsEntry {
+// cachedGroups returns the live entry of key (nil when none) and the
+// generation a fresh read must be stored under.
+func (s *answerQualityService) cachedGroups(key string) (*ungroundedGroupsEntry, uint64) {
 	s.groupsMu.Lock()
 	defer s.groupsMu.Unlock()
 	e := s.groups[key]
 	if e == nil || s.now().Sub(e.at) >= ungroundedGroupsTTL {
-		return nil
+		return nil, s.groupsGen
 	}
-	return e
+	return e, s.groupsGen
 }
 
-func (s *answerQualityService) storeGroups(key string, e *ungroundedGroupsEntry) {
+// storeGroups keeps e unless the cache was cleared since gen was read.
+func (s *answerQualityService) storeGroups(key string, e *ungroundedGroupsEntry, gen uint64) {
 	s.groupsMu.Lock()
 	defer s.groupsMu.Unlock()
+	if gen != s.groupsGen {
+		return
+	}
 	if s.groups == nil {
 		s.groups = map[string]*ungroundedGroupsEntry{}
 	}
@@ -95,6 +126,7 @@ func (s *answerQualityService) storeGroups(key string, e *ungroundedGroupsEntry)
 func (s *answerQualityService) clearGroups() {
 	s.groupsMu.Lock()
 	s.groups = map[string]*ungroundedGroupsEntry{}
+	s.groupsGen++
 	s.groupsMu.Unlock()
 }
 
@@ -194,8 +226,9 @@ func (s *answerQualityService) GroupUngrounded(
 		return nil, err
 	}
 	f.HasComment = false
+	f = wholeDays(f)
 	key := groupsKey(f)
-	entry := s.cachedGroups(key)
+	entry, gen := s.cachedGroups(key)
 	if entry == nil {
 		rows, err := s.repo.UngroundedMarkers(ctx, f, types.UngroundedGroupScanMax+1)
 		if err != nil {
@@ -207,7 +240,7 @@ func (s *answerQualityService) GroupUngrounded(
 		}
 		entry.rows = len(rows)
 		entry.groups = GroupUngroundedQuestions(rows)
-		s.storeGroups(key, entry)
+		s.storeGroups(key, entry, gen)
 	}
 	groups := entry.groups
 	out := &types.UngroundedGroupPage{Rows: entry.rows, Truncated: entry.truncated, Total: len(groups)}

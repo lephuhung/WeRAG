@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	stderrors "errors"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -280,4 +281,38 @@ func TestGroupUngroundedIsCached(t *testing.T) {
 	_, err = svc.GroupUngrounded(admin1, false, types.AnswerQualityFilter{Limit: 10})
 	require.NoError(t, err)
 	require.Equal(t, 5, repo.markerCalls, "a review clears the cache")
+}
+
+// A review saved while a grouping is read: the stale read is not cached.
+// Bounds inside one day share an entry; the cache holds at most 32.
+func TestGroupUngroundedCacheGenerationAndKey(t *testing.T) {
+	f := newAQFixture(t)
+	repo := &countingAQRepo{AnswerQualityRepository: repository.NewAnswerQualityRepository(f.db)}
+	svc := NewAnswerQualityService(repo).(*answerQualityService)
+	admin1 := aqCtx(1, "admin-1", types.TenantRoleAdmin, false)
+
+	_, gen := svc.cachedGroups("k")
+	svc.clearGroups() // a review lands while "k" is read
+	svc.storeGroups("k", &ungroundedGroupsEntry{at: time.Now()}, gen)
+	e, _ := svc.cachedGroups("k")
+	require.Nil(t, e, "a read from before the clear is not stored")
+
+	day := time.Date(2026, 11, 1, 0, 0, 0, 0, time.Local)
+	t1, t2 := day.Add(3*time.Hour), day.Add(20*time.Hour)
+	end1, end2 := day.Add(5*24*time.Hour+time.Hour), day.Add(5*24*time.Hour+9*time.Hour)
+	_, err := svc.GroupUngrounded(admin1, false, types.AnswerQualityFilter{From: &t1, To: &end1})
+	require.NoError(t, err)
+	_, err = svc.GroupUngrounded(admin1, false, types.AnswerQualityFilter{From: &t2, To: &end2})
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.markerCalls, "bounds inside the same days share the entry")
+	wd := wholeDays(types.AnswerQualityFilter{From: &t1, To: &end1})
+	require.Equal(t, day, *wd.From)
+	require.Equal(t, day.AddDate(0, 0, 6), *wd.To)
+	exact := day.AddDate(0, 0, 3)
+	require.Equal(t, exact, *wholeDays(types.AnswerQualityFilter{To: &exact}).To, "a day boundary stays")
+
+	for i := 0; i < 40; i++ {
+		svc.storeGroups(fmt.Sprintf("k%d", i), &ungroundedGroupsEntry{at: time.Now()}, svc.groupsGen)
+	}
+	require.LessOrEqual(t, len(svc.groups), ungroundedGroupsMaxEntries)
 }

@@ -67,7 +67,7 @@ func TestToolAnswerBlockSkips(t *testing.T) {
 	engine := newTestEngine(t, &mockChat{})
 	content := collectAnswer(t, engine)
 	for name, state := range map[string]*types.AgentState{
-		"no evidence":   {FinalAnswer: ungroundedAnswer, RoundSteps: taxSteps()},
+		"no evidence":   {FinalAnswer: ungroundedAnswer, Ungrounded: true, RoundSteps: taxSteps()},
 		"already there": {FinalAnswer: "x" + wantTaxBlock, RoundSteps: taxSteps()},
 		"no tool":       {FinalAnswer: "x"},
 		"failed only":   {FinalAnswer: "x", RoundSteps: []types.AgentStep{{ToolCalls: []types.ToolCall{taxCall(false, "b")}}}},

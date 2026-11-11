@@ -27,7 +27,7 @@ func (e *AgentEngine) SetDraftNotice(fn DraftNoticeFunc) {
 // Code-written answers ("no evidence") get none.
 func (e *AgentEngine) appendDraftNotice(ctx context.Context, state *types.AgentState, sessionID, answerID, modelText string) {
 	if e.draftNotice == nil || e.eventBus == nil || answerID == "" || state == nil ||
-		strings.TrimSpace(modelText) == "" || strings.HasPrefix(modelText, ungroundedAnswer) {
+		strings.TrimSpace(modelText) == "" || state.Ungrounded {
 		return
 	}
 	block := e.draftNotice(ctx, modelText)
@@ -60,7 +60,7 @@ func (e *AgentEngine) SetScopeNotice(fn ScopeNoticeFunc) {
 // none.
 func (e *AgentEngine) appendScopeNotice(ctx context.Context, state *types.AgentState, sessionID, answerID, question string) {
 	if e.scopeNotice == nil || e.eventBus == nil || answerID == "" || state == nil ||
-		strings.TrimSpace(state.FinalAnswer) == "" || strings.HasPrefix(state.FinalAnswer, ungroundedAnswer) {
+		strings.TrimSpace(state.FinalAnswer) == "" || state.Ungrounded {
 		return
 	}
 	block := e.scopeNotice(ctx, question)

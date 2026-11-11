@@ -592,9 +592,18 @@ function ReviewCell({
 }) {
   const { t, locale } = useT();
   const toast = useToast();
+  // busy: a cause / reviewed save; a note save only holds the note field
   const [busy, setBusy] = useState(false);
+  const [noteBusy, setNoteBusy] = useState(false);
   const review = row.review;
-  const [note, setNote] = useState(review?.note ?? "");
+  const savedNote = review?.note ?? "";
+  const [note, setNote] = useState(savedNote);
+  const noteFocused = useRef(false);
+  // the stored note changed (a reload, another admin): show it unless the
+  // admin is typing
+  useEffect(() => {
+    if (!noteFocused.current) setNote(savedNote);
+  }, [savedNote]);
   const causes = kind === "disliked" ? DISLIKED_CAUSES : UNGROUNDED_CAUSES;
   const options: SelectOption[] = [
     { value: "", label: t("qinbox.noCause") },
@@ -602,7 +611,9 @@ function ReviewCell({
   ];
 
   const save = async (patch: { cause?: QualityCause | ""; reviewed?: boolean; note?: string }) => {
-    setBusy(true);
+    const noteOnly = patch.note !== undefined && patch.cause === undefined && patch.reviewed === undefined;
+    const setWorking = noteOnly ? setNoteBusy : setBusy;
+    setWorking(true);
     try {
       await saveQualityReview(scope, row.message_id, { kind, ...patch });
       const next = {
@@ -617,7 +628,7 @@ function ReviewCell({
     } catch {
       toast.error(t("qinbox.saveFailed"));
     } finally {
-      setBusy(false);
+      setWorking(false);
     }
   };
 
@@ -641,10 +652,14 @@ function ReviewCell({
         maxLength={2000}
         placeholder={t("qinbox.notePlaceholder")}
         aria-label={t("qinbox.note")}
-        disabled={busy}
+        disabled={noteBusy}
+        onFocus={() => {
+          noteFocused.current = true;
+        }}
         onChange={(e) => setNote(e.target.value)}
         onBlur={() => {
-          if (note.trim() !== (review?.note ?? "")) void save({ note: note.trim() });
+          noteFocused.current = false;
+          if (note.trim() !== savedNote) void save({ note: note.trim() });
         }}
       />
       {review?.reviewed && (
