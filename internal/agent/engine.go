@@ -53,6 +53,7 @@ type AgentEngine struct {
 	numberCatalog             NumberCatalogFunc     // answer number check (optional, answer_numbers.go)
 	numbers                   *numberCheck          // this turn's number decisions
 	scopeNotice               ScopeNoticeFunc       // domain-pack exclusions / refusals (optional)
+	scopeBrief                ScopeNoticeFunc       // per-turn model brief for those questions (optional, scope_brief.go)
 	domainPackPrompts         []DomainPackPrompt    // domain pack bodies rendered in the system prompt
 	appConfig                 *appconfig.Config     // Application config for prompt template resolution (optional)
 	imageDescriber            ImageDescriberFunc    // VLM function for describing images in tool results (optional)
@@ -99,8 +100,11 @@ type AgentEngine struct {
 	// stopReason is the cap that ended the loop before a natural finish
 	// (event.TurnLimitTurnBudget), "" for the iteration limit.
 	stopReason string
-	// wrapUpNudged records that this turn already got wrapUpNudgeText.
+	// wrapUpNudged records that this turn already got the wrap-up nudge.
 	wrapUpNudged bool
+	// wrapUpRound overrides wrapUpNudgeRound for this turn, 0 when not
+	// (a scope-briefed turn is nudged earlier, scope_brief.go).
+	wrapUpRound int
 	// failureGuard disables a tool after identicalFailureLimit identical
 	// failures in the turn (failure_guard.go).
 	failureGuard toolFailureGuard
@@ -421,6 +425,7 @@ func (e *AgentEngine) Execute(
 	e.compactKnowledgeDirectory = compactKnowledgeDirectory(ctx)
 	messages := e.buildMessagesWithLLMContext(systemPrompt,
 		e.abbreviationModelQuery(ctx, query), sessionID, llmContext, imgs)
+	e.applyScopeBrief(ctx, query, messages)
 	if e.toolRegistry != nil {
 		e.toolRegistry.RememberMCPHistory(messages)
 		e.toolRegistry.RefreshMCPTools(ctx)
