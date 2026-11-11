@@ -801,6 +801,15 @@ func firstRoundToolChoice(ctx context.Context, iteration int, tools []chat.Tool)
 		return forced
 	}
 	forced := types.FirstToolChoiceFromContext(ctx)
+	// a legal basis check of the open document starts with its tool,
+	// instead of the search the knowledge-lookup classifier asked for (a
+	// highlighted passage's rewrite or spelling request keeps its tool;
+	// see legal_basis_intent.go)
+	if forced == "" || forced == agenttools.ToolSearchKnowledge {
+		if lb := legalBasisFirstTool(ctx, tools); lb != "" {
+			return lb
+		}
+	}
 	if forced == "" || !hasChatTool(tools, forced) {
 		return ""
 	}

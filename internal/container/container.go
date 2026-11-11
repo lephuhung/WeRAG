@@ -754,6 +754,17 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(func(precheck *service.DocumentFormatPrecheck, catalog interfaces.LegalCatalogRepository, db *gorm.DB) {
 		precheck.SetLegalBasis(catalog, db)
 	}))
+	// and the document assistant runs it from the chat
+	must(container.Invoke(func(precheck *service.DocumentFormatPrecheck, agents interfaces.AgentService) error {
+		u, ok := agents.(interface {
+			SetDocumentLegalBasis(*service.DocumentFormatPrecheck)
+		})
+		if !ok {
+			return fmt.Errorf("%T cannot run the legal basis check", agents)
+		}
+		u.SetDocumentLegalBasis(precheck)
+		return nil
+	}))
 	// the document assistant's spellcheck asks the auxiliary model again
 	// about findings on real words and skips what users said is no mistake
 	must(container.Invoke(func(settings interfaces.SystemSettingService, agents interfaces.AgentService,

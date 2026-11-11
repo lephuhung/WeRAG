@@ -9,7 +9,7 @@ import type { ChoiceList } from "@/lib/choice-list";
 import type { LegalRequestCard } from "@/lib/legal-request-card";
 import type { SavedMemory } from "@/components/chat/saved-memory-notice";
 import type { PeopleRecord } from "@/components/chat/people-card";
-import type { DocumentSelection } from "@/lib/api/document-workspace";
+import type { ChatLegalBasis, DocumentSelection } from "@/lib/api/document-workspace";
 import type { ScopeClarification } from "@/lib/document-scope";
 import type { Illustration, RewriteProposal } from "@/lib/api/document-ops";
 
@@ -47,6 +47,8 @@ export type UiMessage = {
   rewriteProposals?: UiRewriteProposal[];
   /** Document assistant: diagrams / pictures proposed this turn. */
   illustrations?: UiIllustration[];
+  /** Document assistant: legal basis checks run this turn (a card each). */
+  legalBasisReports?: ChatLegalBasis[];
   peopleData?: PeopleRecord[];
   attachments?: UiAttachment[];
   /** User turn: editor passage sent with it (document assistant). */

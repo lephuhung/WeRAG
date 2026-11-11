@@ -686,13 +686,15 @@ export async function markDocumentFormatFindings(sessionId: string, documentId: 
   }
 }
 
-/** Status of a document a draft cites (the legal basis check). */
+/** Status of a document a draft cites (the legal basis check). The server
+ * named "not yet in force" `not_yet_effective` before 2026-11-11; reports
+ * are read through normalizeLegalBasisReport, which maps it. */
 export type LegalBasisStatus =
   | "expired"
   | "suspended"
   | "partly_expired"
   | "needs_review"
-  | "not_yet_effective"
+  | "not_yet_in_force"
   | "ambiguous"
   | "amended"
   | "unknown"
@@ -705,7 +707,7 @@ export const LEGAL_BASIS_STATUS_ORDER: LegalBasisStatus[] = [
   "suspended",
   "partly_expired",
   "needs_review",
-  "not_yet_effective",
+  "not_yet_in_force",
   "ambiguous",
   "amended",
   "unknown",
@@ -721,7 +723,7 @@ export const LEGAL_BASIS_MARKED_BY_DEFAULT: ReadonlySet<LegalBasisStatus> = new 
   "suspended",
   "partly_expired",
   "needs_review",
-  "not_yet_effective",
+  "not_yet_in_force",
 ]);
 
 /** The most underlines one legal basis report applies (the server's cap). */
@@ -818,20 +820,89 @@ export interface LegalBasisReport {
   unsaved?: boolean;
 }
 
+/** Status names a server sent before they were aligned with the validity
+ * lookup's (2026-11-11). */
+const LEGACY_LEGAL_BASIS_STATUS: Record<string, LegalBasisStatus> = { not_yet_effective: "not_yet_in_force" };
+
+const legalBasisStatusOf = (s: unknown): LegalBasisStatus =>
+  (typeof s === "string" && LEGACY_LEGAL_BASIS_STATUS[s]) || (s as LegalBasisStatus);
+
+function normalizeLegalBasisDocument<T extends { status: LegalBasisStatus }>(d: T): T {
+  return { ...d, status: legalBasisStatusOf(d.status) };
+}
+
+/** A legal basis report as the client uses it, or null when `raw` is not
+ * one: missing lists defaulted, legacy status names mapped. */
+export function normalizeLegalBasisReport(raw: unknown): LegalBasisReport | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as LegalBasisReport;
+  if (!Array.isArray(r.findings)) return null;
+  const summary: Partial<Record<LegalBasisStatus, number>> = {};
+  for (const [k, n] of Object.entries(r.summary ?? {})) {
+    const key = legalBasisStatusOf(k);
+    summary[key] = (summary[key] ?? 0) + (typeof n === "number" ? n : 0);
+  }
+  return {
+    ...r,
+    findings: r.findings.map((f) => ({
+      ...f,
+      status: legalBasisStatusOf(f.status),
+      document: f.document ? normalizeLegalBasisDocument(f.document) : f.document,
+      candidates: f.candidates?.map(normalizeLegalBasisDocument),
+      related: f.related?.map(normalizeLegalBasisDocument),
+      positions: Array.isArray(f.positions) ? f.positions : [],
+    })),
+    document_ops: Array.isArray(r.document_ops) ? r.document_ops : [],
+    summary,
+    skipped: r.skipped ?? { names_without_year: 0, own_number: 0, paperwork: 0 },
+  };
+}
+
+/** check_document_legal_basis: the document assistant ran the legal basis
+ * check from the chat. Its result carries the report for a card; nothing
+ * was underlined (the card's buttons do that on request). */
+export const CHECK_DOCUMENT_LEGAL_BASIS_TOOL = "check_document_legal_basis";
+
+export type ChatLegalBasis = {
+  /** The tool call's report, keyed by document and check time. */
+  key: string;
+  report: LegalBasisReport;
+  documentId: string;
+  /** "vb1 · Tờ trình.docx" */
+  document: string;
+  fileName: string;
+};
+
+/** The legal basis report a tool result carries, or null. */
+export function legalBasisFromToolData(
+  toolName: string | undefined,
+  data: Record<string, unknown> | undefined,
+): ChatLegalBasis | null {
+  const name = toolName || (typeof data?.tool_name === "string" ? data.tool_name : "");
+  if (name !== CHECK_DOCUMENT_LEGAL_BASIS_TOOL || !data) return null;
+  const report = normalizeLegalBasisReport(data.legal_basis_report);
+  const documentId = typeof data.document_id === "string" ? data.document_id.trim() : "";
+  if (!report || !documentId) return null;
+  const fileName = typeof data.file_name === "string" ? data.file_name : "";
+  const document = typeof data.document === "string" && data.document ? data.document : fileName;
+  return { key: `${documentId}@${report.checked_at}#${report.revision}`, report, documentId, document, fileName };
+}
+
+/** Adds a chat legal basis report to a message once. */
+export function withChatLegalBasis(existing: ChatLegalBasis[] | undefined, r: ChatLegalBasis): ChatLegalBasis[] {
+  if (existing?.some((x) => x.key === r.key)) return existing;
+  return [...(existing ?? []), r];
+}
+
 /** Checks the documents an open working document cites against the legal
  * catalogue (no model): each citation with its status and places, and the
  * underlines the editor shows when the user asks. Nothing is changed. */
 export async function checkDocumentLegalBasis(sessionId: string, documentId: string): Promise<LegalBasisReport> {
   try {
     const res = await apiPost<Envelope<LegalBasisReport>>(`${base(sessionId, documentId)}/legal-basis-check`, {});
-    const r = res?.data;
-    if (!r || !Array.isArray(r.findings)) throw new Error("empty legal basis report");
-    return {
-      ...r,
-      document_ops: Array.isArray(r.document_ops) ? r.document_ops : [],
-      summary: r.summary ?? {},
-      skipped: r.skipped ?? { names_without_year: 0, own_number: 0, paperwork: 0 },
-    };
+    const r = normalizeLegalBasisReport(res?.data);
+    if (!r) throw new Error("empty legal basis report");
+    return r;
   } catch (err) {
     throw toWorkspaceError(err);
   }

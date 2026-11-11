@@ -24,6 +24,16 @@ func (p *DocumentFormatPrecheck) SetLegalBasis(catalog interfaces.LegalCatalogRe
 	p.legalCatalog, p.legalDB = catalog, db
 }
 
+// SetDocumentLegalBasis lets the agents run the legal basis check from the
+// chat (check_document_legal_basis).
+func (s *agentService) SetDocumentLegalBasis(p *DocumentFormatPrecheck) {
+	if p == nil {
+		s.legalBasis = nil
+		return
+	}
+	s.legalBasis = p.LegalBasisCheck
+}
+
 // LegalBasisCheck checks the documents an open working document cites
 // against the legal catalogue (tools.CheckLegalBasis), as the user asked
 // from the editor. No model is called and nothing is stored or changed:

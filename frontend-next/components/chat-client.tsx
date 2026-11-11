@@ -38,7 +38,10 @@ import {
   markDocumentFormatFindings,
   startDocumentFormatCheck,
   checkDocumentLegalBasis,
+  legalBasisFromToolData,
+  withChatLegalBasis,
   LEGAL_BASIS_MAX_MARKS,
+  type ChatLegalBasis,
   type LegalBasisPosition,
   type LegalBasisReport,
   createDocumentWorkspace,
@@ -142,6 +145,17 @@ function illustrationsFromHistory(m: ChatMessage, applied: Record<string, string
     for (const call of step.tool_calls ?? []) {
       const ill = illustrationFromToolData(call.name, call.result?.data as Record<string, unknown> | undefined);
       if (ill) out = withIllustration(out, ill, applied);
+    }
+  }
+  return out;
+}
+
+function legalBasisFromHistory(m: ChatMessage): ChatLegalBasis[] | undefined {
+  let out: ChatLegalBasis[] | undefined;
+  for (const step of m.agent_steps ?? []) {
+    for (const call of step.tool_calls ?? []) {
+      const lb = legalBasisFromToolData(call.name, call.result?.data as Record<string, unknown> | undefined);
+      if (lb) out = withChatLegalBasis(out, lb);
     }
   }
   return out;
@@ -414,6 +428,9 @@ function ChatBody({ id }: { id: string }) {
   /** The illustration (diagram / picture) a tool result proposes. */
   const illustrationOfChunk = (c: StreamChunk): Illustration | null =>
     illustrationFromToolData(c.tool_name, c.data as Record<string, unknown> | undefined);
+  /** The legal basis report the assistant ran from the chat (a card). */
+  const legalBasisOfChunk = (c: StreamChunk): ChatLegalBasis | null =>
+    legalBasisFromToolData(c.tool_name, c.data as Record<string, unknown> | undefined);
   // The session's open document (file name), keyed by session so a stale
   // value never leaks into the next chat. A session holding a document stays
   // with the document assistant: switching mode would drop the editor.
@@ -685,7 +702,8 @@ function ChatBody({ id }: { id: string }) {
   // "Rà soát căn cứ pháp lý": the visible document's citations checked
   // against the legal catalogue (no model, a few seconds); the report opens
   // in a modal, its places are selected or underlined only on request.
-  const [legalBasis, setLegalBasis] = useState<{ report: LegalBasisReport; doc: SessionDocument } | null>(null);
+  // doc: the checked tab (the editor button's, or the one a chat card names)
+  const [legalBasis, setLegalBasis] = useState<LegalBasisTarget | null>(null);
   const [legalBasisBusy, setLegalBasisBusy] = useState(false);
   const [legalBasisOpen, setLegalBasisOpen] = useState(false);
   // the stored document moved past the checked revision: "changed", or
@@ -707,8 +725,9 @@ function ChatBody({ id }: { id: string }) {
       })?.ops.slice(0, LEGAL_BASIS_MAX_MARKS) ?? [],
     [legalBasis],
   );
-  const runLegalBasisCheck = async () => {
-    const doc = formatCheckDoc;
+  // the visible tab's, or (recheck) the tab of the report shown
+  const runLegalBasisCheck = async (docOverride?: SessionDocument) => {
+    const doc = docOverride ?? formatCheckDoc;
     if (id === "new" || !doc || legalBasisBusy) return;
     setLegalBasisBusy(true);
     setLegalBasisOpen(true);
@@ -725,11 +744,12 @@ function ChatBody({ id }: { id: string }) {
     }
   };
   // flags the report when the stored document moved past its revision
-  const checkLegalBasisStale = async () => {
-    if (!legalBasis || id === "new") return;
+  // (only the report the modal shows carries the flag)
+  const checkLegalBasisStale = async (target: LegalBasisTarget | null = legalBasis) => {
+    if (!target || id === "new") return;
     try {
-      const view = await getDocumentWorkspace(id, legalBasis.doc.id);
-      if (view && view.revision !== legalBasis.report.revision) {
+      const view = await getDocumentWorkspace(id, target.doc.id);
+      if (view && view.revision !== target.report.revision && target.report === legalBasis?.report) {
         setLegalBasisStale(legalBasisMarkedRef.current ? "maybe" : "changed");
       }
     } catch {
@@ -739,15 +759,21 @@ function ChatBody({ id }: { id: string }) {
   // Underlines in the editor of the checked document: run there when it is
   // the visible tab (the editor answers how many landed), else sent to its
   // tab. At most LEGAL_BASIS_MAX_MARKS, the server's cap.
-  const applyLegalBasisMarks = async (ops: DocumentOp[]) => {
-    const doc = legalBasis?.doc;
+  const applyLegalBasisMarks = (ops: DocumentOp[]) => applyLegalBasisMarksFor(legalBasis, ops);
+  const applyLegalBasisMarksFor = async (target: LegalBasisTarget | null, ops: DocumentOp[]) => {
+    const doc = target?.doc;
     if (id === "new" || !doc) return;
+    // a chat card may name a tab closed since
+    if (!openDocs.some((d) => d.id === doc.id && d.role !== "source")) {
+      toast.error(tr("docws.lbCard.closed"));
+      return;
+    }
     if (ops.length === 0) {
       toast.info(tr("docws.lbMarkNone"));
       return;
     }
     // checked before our underlines make the editor save
-    await checkLegalBasisStale();
+    await checkLegalBasisStale(target);
     const capped = ops.slice(0, LEGAL_BASIS_MAX_MARKS);
     legalBasisMarkedRef.current = true;
     const editor = editorActionsRef.current;
@@ -788,6 +814,23 @@ function ChatBody({ id }: { id: string }) {
     );
   // "Gạch chân tất cả": the report's own underlines (document_ops)
   const markAllLegalBasis = () => applyLegalBasisMarks(legalBasisBulkOps);
+  // A legal basis check the assistant ran from the chat: its card opens the
+  // report in the same modal, or underlines its marks (on the user's click,
+  // never on arrival).
+  const chatLegalBasisTarget = (item: ChatLegalBasis): LegalBasisTarget => ({
+    report: item.report,
+    doc: { id: item.documentId, file_name: openDocs.find((d) => d.id === item.documentId)?.file_name ?? item.fileName },
+  });
+  const openChatLegalBasis = (item: ChatLegalBasis) => {
+    if (legalBasis?.report !== item.report) {
+      setLegalBasis(chatLegalBasisTarget(item));
+      setLegalBasisStale(null);
+      legalBasisMarkedRef.current = false;
+    }
+    setLegalBasisOpen(true);
+  };
+  const markAllChatLegalBasis = (item: ChatLegalBasis, ops: DocumentOp[]) =>
+    applyLegalBasisMarksFor(chatLegalBasisTarget(item), ops);
   const locateLegalBasis = async (p: LegalBasisPosition) => {
     const editor = editorActionsRef.current;
     if (!editor || !legalBasis || editor.documentId !== legalBasis.doc.id) throw new Error(tr("docws.lbOtherDoc"));
@@ -1124,6 +1167,7 @@ function ChatBody({ id }: { id: string }) {
                       legalRequestCard: legalRequestCard ?? undefined,
                       rewriteProposals: rewriteProposalsFromHistory(m, appliedProposals),
                       illustrations: illustrationsFromHistory(m, appliedProposals),
+                      legalBasisReports: legalBasisFromHistory(m),
                     };
                   })()
                 : {}),
@@ -1259,6 +1303,16 @@ function ChatBody({ id }: { id: string }) {
                   m.map((msg) =>
                     msg.assistantMessageId === inflightId
                       ? { ...msg, illustrations: withIllustration(msg.illustrations, ill, applied) }
+                      : msg,
+                  ),
+                );
+              }
+              const lbReport = legalBasisOfChunk(c);
+              if (lbReport) {
+                setMessages((m) =>
+                  m.map((msg) =>
+                    msg.assistantMessageId === inflightId
+                      ? { ...msg, legalBasisReports: withChatLegalBasis(msg.legalBasisReports, lbReport) }
                       : msg,
                   ),
                 );
@@ -1923,6 +1977,14 @@ function ChatBody({ id }: { id: string }) {
               ),
             );
           }
+          const lbReport = legalBasisOfChunk(c);
+          if (lbReport) {
+            setMessages((m) =>
+              m.map((msg) =>
+                matchAssistant(msg) ? { ...msg, legalBasisReports: withChatLegalBasis(msg.legalBasisReports, lbReport) } : msg,
+              ),
+            );
+          }
         }
         const abbrCandidates = extractAbbreviationCandidates(c.data);
         const peopleRecs =
@@ -2511,7 +2573,9 @@ function ChatBody({ id }: { id: string }) {
               stale={legalBasisStale}
               bulkCount={legalBasisBulkOps.length}
               onClose={() => setLegalBasisOpen(false)}
-              onRecheck={() => void runLegalBasisCheck()}
+              onRecheck={() =>
+                void runLegalBasisCheck(openDocs.find((d) => d.id === legalBasis?.doc.id && d.role !== "source"))
+              }
               onMarkAll={markAllLegalBasis}
               onMark={markLegalBasis}
               onLocate={locateLegalBasis}
@@ -2555,6 +2619,8 @@ function ChatBody({ id }: { id: string }) {
                   insertableDocIds={insertableDocIds}
                   onIllustrationInsert={insertIllustration}
                   onIllustrationInserted={markIllustrationInserted}
+                  onLegalBasisOpen={isDocumentAssistant && id !== "new" ? openChatLegalBasis : undefined}
+                  onLegalBasisMarkAll={isDocumentAssistant && id !== "new" ? markAllChatLegalBasis : undefined}
                   compact={compact}
                   guest={guest}
                 />
@@ -3061,6 +3127,10 @@ function SelectionChip({
     </div>
   );
 }
+
+/** A legal basis report and the tab it checked (the modal's and the chat
+ * cards' underlines go there). */
+type LegalBasisTarget = { report: LegalBasisReport; doc: { id: string; file_name: string } };
 
 export function ChatClient({ id }: { id: string }) {
   return (

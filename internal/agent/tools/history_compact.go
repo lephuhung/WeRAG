@@ -45,6 +45,10 @@ var documentToolHistoryRules = map[string]historyCompactRule{
 	ToolRewriteParagraphs:   compactRewriteHistory,
 	ToolInsertParagraphs:    compactInsertHistory,
 	ToolMarkPassages:        compactMarkHistory,
+	ToolCheckDocumentLegalBasis: func(data map[string]interface{}, _ map[string]interface{}, _ string) string {
+		s, _ := data["summary_line"].(string)
+		return s
+	},
 }
 
 // HistoryToolOutput is the tool message a past turn replays: the stored

@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Modal } from "@/components/modal";
 import { DocMentionIcon } from "@/components/doc-mention";
 import { useT } from "@/lib/i18n";
 import { formatDate, formatDateTime } from "@/lib/datetime";
+import { opsBatchFromToolData, type DocumentOp } from "@/lib/api/document-ops";
 import {
   LEGAL_BASIS_MARKED_BY_DEFAULT,
+  LEGAL_BASIS_MAX_MARKS,
   LEGAL_BASIS_STATUS_ORDER,
+  type ChatLegalBasis,
   type LegalBasisDocument,
   type LegalBasisFinding,
   type LegalBasisPosition,
@@ -27,7 +30,7 @@ const STATUS_TONE: Record<LegalBasisStatus, string> = {
   suspended: "bg-error/10 text-error",
   partly_expired: "bg-warning/15 text-warning",
   needs_review: "bg-warning/15 text-warning",
-  not_yet_effective: "bg-warning/15 text-warning",
+  not_yet_in_force: "bg-warning/15 text-warning",
   ambiguous: "bg-warning/15 text-warning",
   amended: "bg-surface-strong text-ink",
   unknown: "bg-surface-strong text-muted",
@@ -441,5 +444,113 @@ function StatusDetail({ finding: f }: { finding: LegalBasisFinding }) {
         </p>
       ))}
     </>
+  );
+}
+
+/** How many findings needing attention the chat card lists. */
+const CARD_MAX_FINDINGS = 4;
+
+/** The legal basis check the assistant ran from the chat
+ * (check_document_legal_basis): counts by status and the citations needing
+ * attention, with the full report and "underline all" one click away.
+ * Nothing is underlined until the user presses it. */
+export function LegalBasisChatCard({
+  item,
+  canMark,
+  disabled,
+  onOpen,
+  onMarkAll,
+}: {
+  item: ChatLegalBasis;
+  /** The checked document is open in an editor tab. */
+  canMark: boolean;
+  disabled: boolean;
+  onOpen: (item: ChatLegalBasis) => void;
+  /** Underlines the report's own marks (validated, capped). */
+  onMarkAll: (item: ChatLegalBasis, ops: DocumentOp[]) => Promise<void>;
+}) {
+  const { t, locale } = useT();
+  const [marking, setMarking] = useState(false);
+  const { report } = item;
+  const ops = useMemo(
+    () =>
+      opsBatchFromToolData("legal_basis_check", { document_ops: report.document_ops, ops_batch_id: "lb-card" })?.ops.slice(
+        0,
+        LEGAL_BASIS_MAX_MARKS,
+      ) ?? [],
+    [report],
+  );
+  const counts = LEGAL_BASIS_STATUS_ORDER.map((status) => ({
+    status,
+    n: report.findings.filter((f) => f.status === status).length,
+  })).filter((c) => c.n > 0);
+  const attention = report.findings.filter((f) => LEGAL_BASIS_MARKED_BY_DEFAULT.has(f.status) || f.status === "ambiguous");
+  const shown = attention.slice(0, CARD_MAX_FINDINGS);
+  const markAll = async () => {
+    setMarking(true);
+    try {
+      await onMarkAll(item, ops);
+    } finally {
+      setMarking(false);
+    }
+  };
+  return (
+    <div className="mt-3 rounded-[12px] border border-hairline bg-surface-card px-3.5 py-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <svg className="h-4 w-4 shrink-0 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 3v18M7 21h10M5 7h14M12 5l-7 2M12 5l7 2" />
+          <path d="m5 7-3 6a3 3 0 0 0 6 0L5 7ZM19 7l-3 6a3 3 0 0 0 6 0l-3-6Z" />
+        </svg>
+        <span className="truncate text-[13.5px] font-semibold text-ink">{t("docws.lbCard.title", { doc: item.document })}</span>
+      </div>
+      {report.findings.length === 0 ? (
+        <p className="caption mt-1.5 text-muted">{t("docws.lbNone")}</p>
+      ) : (
+        <>
+          <p className="caption mt-1 text-muted">{t("docws.lbCard.cited", { n: report.findings.length })}</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {counts.map((c) => (
+              <span key={c.status} className={`caption rounded-full px-2 py-0.5 ${STATUS_TONE[c.status]}`}>
+                {t(`docws.lbStatus.${c.status}`)}: {c.n}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+      {shown.length > 0 && (
+        <ul className="mt-2.5 flex flex-col gap-1.5">
+          {shown.map((f) => (
+            <li key={f.key} className="text-[12.5px] leading-snug text-ink">
+              <span className="font-medium">{f.citation}</span>
+              <span className={`caption ml-1.5 whitespace-nowrap rounded-full px-1.5 ${STATUS_TONE[f.status]}`}>
+                {f.status === "ambiguous" && f.ambiguity ? t(`docws.lbAmb.${f.ambiguity}`) : t(`docws.lbStatus.${f.status}`)}
+              </span>
+              {locale === "vi" && f.note && <span className="block text-muted">{f.note}</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      {attention.length > shown.length && (
+        <p className="caption mt-1.5 text-muted">{t("docws.lbCard.more", { n: attention.length - shown.length })}</p>
+      )}
+      {report.unsaved && <p className="caption mt-2 text-warning">{t("docws.lbUnsaved")}</p>}
+      <p className="caption mt-2 text-muted">{canMark ? t("docws.lbCard.hint") : t("docws.lbCard.closed")}</p>
+      <div className="mt-2.5 flex flex-wrap items-center justify-end gap-2">
+        <button type="button" className="btn btn-outline btn-sm" onClick={() => onOpen(item)}>
+          {t("docws.lbCard.open")}
+        </button>
+        {ops.length > 0 && (
+          <button
+            type="button"
+            className="btn btn-primary btn-sm disabled:opacity-50"
+            disabled={!canMark || disabled || marking}
+            title={t("docws.lbMarkHint")}
+            onClick={() => void markAll()}
+          >
+            {t("docws.lbMarkAll", { n: ops.length })}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

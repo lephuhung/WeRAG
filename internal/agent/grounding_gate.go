@@ -46,6 +46,8 @@ var readerEvidenceTools = map[string]bool{
 	agenttools.ToolSearchDocumentSection: true,
 	agenttools.ToolQueryKnowledgeGraph:   true,
 	agenttools.ToolWebFetch:              true,
+	// the legal catalogue's statuses of the cited documents
+	agenttools.ToolCheckDocumentLegalBasis: true,
 }
 
 type ungroundedKey struct{}

@@ -15,6 +15,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/agent/skills"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
+	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/browserskill"
 	"github.com/Tencent/WeKnora/internal/config"
@@ -137,6 +138,9 @@ type agentService struct {
 	// legalNumbers is where the answer number check looks numbers up
 	// (SetLegalNumberLookup); nil leaves the check off.
 	legalNumbers interfaces.LegalCatalogRepository
+	// legalBasis runs the legal basis check of an open working document
+	// (check_document_legal_basis, SetDocumentLegalBasis); nil: not offered
+	legalBasis tools.LegalBasisRunner
 	// legalSettings holds the switch of the legal amendment resolver
 	// (SetLegalWordingSettings); nil leaves it at its default (off).
 	legalSettings interfaces.SystemSettingService
@@ -1202,6 +1206,8 @@ func (s *agentService) registerTools(
 	allowedTools = withoutString(allowedTools, tools.ToolResolveAbbreviation)
 	allowedTools = withoutString(allowedTools, tools.ToolCheckLegalStatus)
 	allowedTools = withoutString(allowedTools, tools.ToolFindRelatedLegalDocuments)
+	// check_document_legal_basis rides on the editable document (below)
+	allowedTools = withoutString(allowedTools, tools.ToolCheckDocumentLegalBasis)
 	allowedTools = withoutString(allowedTools, tools.ToolPeopleLookup)
 	// search_document_section is a companion of read_document (registered
 	// below whenever that reader is), not an allowlist entry of its own.
@@ -1472,6 +1478,13 @@ func (s *agentService) registerTools(
 		registry.RegisterTool(checked)
 	case s.temporaryDocuments != nil && sessionID != "" && s.sessionHasDocx(ctx, sessionID):
 		registry.RegisterTool(tools.NewCheckDocumentFormatTool(s.temporaryDocuments, formatModel, sessionID))
+	}
+	// check_document_legal_basis rides on the editable document as the
+	// format check does: no model, the legal catalogue only. Not for an
+	// agent that may only read the document (its card underlines).
+	if docWorkspace != nil && !config.ReadOnlyDocuments && s.legalBasis != nil &&
+		!access.IsPublicPortalGuest(ctx, types.CallerFromContext(ctx)) {
+		registry.RegisterTool(tools.NewCheckDocumentLegalBasisTool(s.documentWorkspaces, s.legalBasis, sessionID))
 	}
 
 	logger.Infof(ctx, "Registered %d tools", len(registry.ListTools()))

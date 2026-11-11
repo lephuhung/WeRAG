@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -24,6 +25,11 @@ type turnButtons struct {
 	proposal     bool
 	illustration bool
 	fixPlan      bool
+	// legalBasis: the turn ran check_document_legal_basis, whose card
+	// underlines only when the user presses "Gạch chân"; marks: a tool of
+	// the turn did send underlines to the editor
+	legalBasis bool
+	marks      bool
 }
 
 // buttonRule maps a button phrase (lower case, with diacritics) to the card
@@ -40,7 +46,16 @@ var buttonRules = []buttonRule{
 	// the button's exact label: "tôi sẽ áp dụng các sửa thể thức" is a
 	// sentence about the next step, not a button
 	{"áp dụng các sửa thể thức này", "format-fix plan", func(b turnButtons) bool { return b.fixPlan }},
+	// not a button but the same failure: after a legal basis check the
+	// model said the citations "đã được gạch chân" while nothing was (the
+	// card underlines on request)
+	{"đã được gạch chân", "underlines", underlinedThisTurn},
+	{"đã gạch chân", "underlines", underlinedThisTurn},
 }
+
+// underlinedThisTurn: a sentence saying text was underlined stands unless
+// the turn ran the legal basis check without any tool sending underlines.
+func underlinedThisTurn(b turnButtons) bool { return !b.legalBasis || b.marks }
 
 // collectTurnButtons scans the tool results of the turn for the cards.
 func collectTurnButtons(steps []types.AgentStep) turnButtons {
@@ -56,6 +71,12 @@ func collectTurnButtons(steps []types.AgentStep) turnButtons {
 			}
 			if r.Data["illustration"] != nil {
 				b.illustration = true
+			}
+			if tc.ExecutionName() == agenttools.ToolCheckDocumentLegalBasis {
+				b.legalBasis = true
+			}
+			if len(dataList(r.Data["document_ops"])) > 0 {
+				b.marks = true
 			}
 			if tc.ExecutionName() == "apply_format_fixes" {
 				review, _ := r.Data["review"].(bool)
