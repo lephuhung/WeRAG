@@ -290,6 +290,19 @@ func (c *AbbreviationTurnCoordinator) continueTurn(ctx context.Context, in Abbre
 func (c *AbbreviationTurnCoordinator) finishReady(ctx context.Context, in AbbreviationPrepareInput, row *types.AbbreviationTurnState) (types.AbbreviationResolution, error) {
 	r := row.Payload.Resolution
 	if r.Status == types.AbbreviationStatusBlockedError && r.ErrorCode == types.AbbreviationErrorSelectionRequired {
+		// a meaning the user picked earlier in this conversation is used
+		// again without asking; only the terms still open are asked about
+		if remembered := c.rememberedSelections(ctx, in); len(remembered) != 0 {
+			reused := abbreviation.ApplyRememberedSelections(r, remembered, askAgainKeys(in.AskWords))
+			if len(reused.RememberedSelections) != len(r.RememberedSelections) {
+				if err := c.advance(ctx, in.Binding.Owner, row, row.State, reused); err != nil {
+					return types.AbbreviationResolution{}, err
+				}
+				r = row.Payload.Resolution
+			}
+		}
+	}
+	if r.Status == types.AbbreviationStatusBlockedError && r.ErrorCode == types.AbbreviationErrorSelectionRequired {
 		// nothing in the conversation says which meaning is meant: the
 		// user picks from the choices rather than the model guessing
 		if len(in.RelevantHistory) == 0 {
@@ -324,6 +337,59 @@ func (c *AbbreviationTurnCoordinator) finishReady(ctx context.Context, in Abbrev
 		return types.AbbreviationResolution{}, err
 	}
 	return row.Payload.Resolution, nil
+}
+
+// rememberedTurns bounds how many earlier answered turns of the session are
+// read for the meanings the user picked.
+const rememberedTurns = 50
+
+// answeredTurnReader is the turn store's view of the session's earlier
+// answered turns (abbreviationTurnRepository.RecentAnswered).
+type answeredTurnReader interface {
+	RecentAnswered(ctx context.Context, owner types.AbbreviationOwner, limit int) ([]*types.AbbreviationTurnState, error)
+}
+
+// rememberedSelections returns the meanings picked among several in the
+// session's earlier answered turns, the newest pick per term: term key →
+// meaning ID. Empty when the store cannot tell or a read fails: the user
+// is then asked, as before.
+func (c *AbbreviationTurnCoordinator) rememberedSelections(ctx context.Context, in AbbreviationPrepareInput) map[string]string {
+	reader, ok := c.store.(answeredTurnReader)
+	if !ok {
+		return nil
+	}
+	rows, err := reader.RecentAnswered(ctx, in.Binding.Owner, rememberedTurns)
+	if err != nil {
+		logger.Warnf(ctx, "abbreviation: earlier choices unavailable: %v", err)
+		return nil
+	}
+	out := map[string]string{}
+	for _, row := range rows {
+		// a stopped or failed answer still followed a resolved question; a
+		// turn cancelled while waiting for the user chose nothing
+		if row == nil || row.RootUserMessageID == in.Binding.UserMessageID ||
+			row.Payload.Resolution.Status != types.AbbreviationStatusReady {
+			continue
+		}
+		for key, id := range abbreviation.SelectionsOf(row.Payload.Resolution) {
+			if _, seen := out[key]; !seen {
+				out[key] = id
+			}
+		}
+	}
+	return out
+}
+
+// askAgainKeys are the term keys of the words the user asked to be asked
+// about again ("Không phải?" under a reused meaning).
+func askAgainKeys(words []string) map[string]bool {
+	out := make(map[string]bool, len(words))
+	for _, w := range words {
+		if k := strings.ToLower(strings.TrimSpace(w)); k != "" {
+			out[k] = true
+		}
+	}
+	return out
 }
 
 // askSelection hands the choice of meaning to the user: the ambiguous

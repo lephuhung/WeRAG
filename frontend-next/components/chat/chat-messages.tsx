@@ -201,7 +201,12 @@ const UserMessageBubble = memo(function UserMessageBubble({
       {(message.autoCorrections?.length ?? 0) > 0 && (
         <div className="mt-1 max-w-[80%] pr-1 text-right text-[12px] text-muted-soft">
           {message.autoCorrections!
-            .map((tc) => t("chat.typoUnderstoodAs", { wrong: tc.wrong, correct: tc.correct }))
+            .map((tc) =>
+              t(tc.remembered ? "chat.rememberedMeaningAs" : "chat.typoUnderstoodAs", {
+                wrong: tc.wrong,
+                correct: tc.correct,
+              }),
+            )
             .join(" · ")}
           {onRejectReading && (
             <>

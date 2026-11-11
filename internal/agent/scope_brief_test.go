@@ -48,13 +48,22 @@ func TestApplyScopeBrief(t *testing.T) {
 	assert.Equal(t, "turn content\n\nBRIEF", m[0].Content)
 	assert.Equal(t, []string{"https://x/img.png"}, m[0].Images)
 
-	// a multi-part user message is left alone
+	// a multi-part user message gets it in its text part
 	other := newTestEngine(t, &mockChat{}, withMaxIterations(20))
 	other.SetScopeBrief(brief)
-	m = []chat.Message{{Role: "user", MultiContent: []chat.MessageContentPart{{Type: "text", Text: "x"}}}}
+	m = []chat.Message{{Role: "user", MultiContent: []chat.MessageContentPart{{Type: "text", Text: "x"}, {Type: "image_url"}}}}
 	other.applyScopeBrief(context.Background(), "phá sản?", m)
 	assert.Empty(t, m[0].Content)
-	assert.Equal(t, wrapUpNudgeRound, other.wrapUpAfter())
+	assert.Equal(t, "x\n\nBRIEF", m[0].MultiContent[0].Text)
+	assert.Equal(t, scopeWrapUpRound, other.wrapUpAfter())
+
+	// the last message not the user's: nothing
+	none := newTestEngine(t, &mockChat{}, withMaxIterations(20))
+	none.SetScopeBrief(brief)
+	m = []chat.Message{{Role: "user", Content: "q"}, {Role: "assistant", Content: "a"}}
+	none.applyScopeBrief(context.Background(), "phá sản?", m)
+	assert.Equal(t, "q", m[0].Content)
+	assert.Equal(t, wrapUpNudgeRound, none.wrapUpAfter())
 }
 
 // A scope-briefed turn is nudged after scopeWrapUpRound rounds, with the

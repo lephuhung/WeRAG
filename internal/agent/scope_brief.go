@@ -27,18 +27,13 @@ func (e *AgentEngine) SetScopeBrief(fn ScopeNoticeFunc) {
 // the question alone, and the system prompt and tool list are untouched,
 // so the cached prompt prefix of the turn is too.
 func (e *AgentEngine) applyScopeBrief(ctx context.Context, question string, messages []chat.Message) {
-	if e.scopeBrief == nil || len(messages) == 0 {
-		return
-	}
-	last := &messages[len(messages)-1]
-	if last.Role != "user" || len(last.MultiContent) > 0 {
+	if e.scopeBrief == nil || len(messages) == 0 || messages[len(messages)-1].Role != "user" {
 		return
 	}
 	brief := e.scopeBrief(ctx, question)
-	if brief == "" {
+	if brief == "" || !appendTurnNote(messages, brief) {
 		return
 	}
-	last.Content += "\n\n" + brief
 	e.wrapUpRound = scopeWrapUpRound
 	logger.Infof(ctx, "[Agent] Scope brief added (%d chars); wrap-up after %d rounds", len(brief), scopeWrapUpRound)
 }

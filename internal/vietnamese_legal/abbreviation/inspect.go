@@ -660,5 +660,6 @@ func cloneResolution(r types.AbbreviationResolution) types.AbbreviationResolutio
 	out.TypoSuggestions = append([]types.AbbreviationTypo(nil), r.TypoSuggestions...)
 	out.TypoCorrections = append([]types.AbbreviationTypo(nil), r.TypoCorrections...)
 	out.AutoCorrections = append([]types.AbbreviationTypo(nil), r.AutoCorrections...)
+	out.RememberedSelections = append([]types.AbbreviationTypo(nil), r.RememberedSelections...)
 	return out
 }
