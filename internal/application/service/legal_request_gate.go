@@ -113,6 +113,7 @@ func (s *sessionService) legalMissingDocumentGate(
 			logger.Warnf(ctx, "legal request gate: recording %s: %v", number, err)
 			return ctx, false, nil
 		}
+		s.recordLegalRequester(ctx, req, row)
 		logger.Infof(ctx, "Legal document %s is not in the catalogue: request %s recorded (count %d), the turn runs on",
 			number, row.ID, row.RequestCount)
 		if row.Status == types.LegalRequestRequested {
@@ -177,6 +178,7 @@ func (s *sessionService) legalMissingDocumentGate(
 			logger.Warnf(ctx, "legal request gate: recording %s (%s): %v", number, d.ID, err)
 			return ctx, false, nil
 		}
+		s.recordLegalRequester(ctx, req, row)
 		if row.Status == types.LegalRequestRejected {
 			if rejected == nil {
 				rejected = row
@@ -307,4 +309,47 @@ func legalRequestUserID(ctx context.Context, req *types.QARequest) string {
 		id = id[:36]
 	}
 	return id
+}
+
+// recordLegalRequester keeps who asked for row's document, so they are told
+// when it is added (LegalRequestNotifier). A turn without a user account
+// (API or embed principal) records nobody; a failure is logged only, the
+// request itself is recorded.
+func (s *sessionService) recordLegalRequester(ctx context.Context, req *types.QARequest, row *types.LegalDocumentRequest) {
+	if row == nil || req == nil || req.Session == nil {
+		return
+	}
+	userID := legalRequestUserID(ctx, req)
+	if userID == "" || types.IsAPISessionOwnerID(userID) || strings.HasPrefix(userID, types.PrincipalEmbedSession+":") {
+		return
+	}
+	r := &types.LegalRequestRequester{
+		RequestID: row.ID, TenantID: req.Session.TenantID, UserID: userID,
+		SessionID: req.Session.ID, Channel: legalRequesterChannel(ctx, req),
+	}
+	if id := strings.TrimSpace(req.UserMessageID); id != "" && len(id) <= 36 {
+		r.MessageID = &id
+	}
+	if err := s.legalRequests.AddRequester(ctx, r); err != nil {
+		logger.Warnf(ctx, "legal request gate: requester of %s: %v", row.ID, err)
+	}
+}
+
+// legalRequesterChannel is where the turn came from: the public portal
+// (a Guest), the Word add-in, the web chat, or the client's channel as sent.
+func legalRequesterChannel(ctx context.Context, req *types.QARequest) string {
+	if types.InPublicPortal(ctx) {
+		return types.LegalRequesterChannelPortal
+	}
+	ch := strings.ToLower(strings.TrimSpace(req.Channel))
+	switch ch {
+	case "":
+		return ""
+	case types.LegalRequesterChannelWordAddin, types.LegalRequesterChannelWeb:
+		return ch
+	}
+	if len(ch) > 32 {
+		ch = ch[:32]
+	}
+	return ch
 }
