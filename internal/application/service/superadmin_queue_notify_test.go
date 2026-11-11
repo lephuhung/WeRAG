@@ -516,7 +516,7 @@ func TestQueueNoticeLegalLinks(t *testing.T) {
 	require.NotEmpty(t, approved)
 	var approvedKeys []string
 	for _, c := range approved {
-		approvedKeys = append(approvedKeys, LegalCandidateKey(c))
+		approvedKeys = append(approvedKeys, LegalLinkNoticeKey(c))
 	}
 	e.notifier.LegalLinksPending(ctx, "", "68/2026/NĐ-CP", "tvpl", "68", approvedKeys)
 	e.notifier.Wait()
@@ -548,6 +548,10 @@ func TestQueueNoticeLegalLinksRepushInBatch(t *testing.T) {
 		Pluck("id", &ids2).Error)
 	require.Equal(t, first.Pending, second.Pending)
 	require.NotEqual(t, ids1, ids2, "the re-push recreated the rows")
+	// an adoption before the batch is written moves the amender to its
+	// adopting row (adoptCandidates rewrites amender_doc_id)
+	require.NoError(t, svc.db.Model(&types.LegalProvisionLinkCandidate{}).Where("review_status = ?", types.LegalLinkReviewPending).
+		Update("amender_doc_id", "adopted-row").Error)
 	e.notifier.Wait()
 	require.EqualValues(t, 1, e.notices.upserts.Load(), "one write (sa2)")
 	require.Equal(t, first.Pending, e.payload(t, "sa2", kind).Count)
@@ -636,8 +640,13 @@ func TestReviewQueueDigestBody(t *testing.T) {
 	var p types.UserNotificationQueuePayload
 	require.NoError(t, json.Unmarshal(next.Payload, &p))
 	require.Equal(t, 10, p.Count)
-	require.Equal(t, []types.UserNotificationQueueItem{{Ref: "C", Count: 4}, {Ref: "a", Count: 1}, {Ref: "b", Count: 1},
-		{Ref: "d", Count: 1}, {Ref: "e", Count: 2}}, p.Items)
+	require.Equal(t, []types.UserNotificationQueueItem{{Ref: "C", Count: 5}, {Ref: "a", Count: 1}, {Ref: "b", Count: 1},
+		{Ref: "d", Count: 1}, {Ref: "e", Count: 2}}, p.Items, "links of one document add up")
+
+	// other queues keep the newest item of a Ref as it is (a request's count
+	// is its total)
+	require.Equal(t, []types.UserNotificationQueueItem{{Ref: "x", Count: 3}},
+		prependQueueItems([]types.UserNotificationQueueItem{{Ref: "x", Count: 3}}, []types.UserNotificationQueueItem{{Ref: "X", Count: 2}}, req.sumCounts()))
 }
 
 // A document a legal feed pushed waits in the identity review: the ingest

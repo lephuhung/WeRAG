@@ -7,7 +7,6 @@ import (
 	"html"
 	"net/http"
 	"regexp"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -613,7 +612,7 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 		switch c.ReviewStatus {
 		case types.LegalLinkReviewPending:
 			res.Pending++
-			if k := LegalCandidateKey(c); !wasPending[k] && !slices.Contains(newKeys, k) {
+			if k := LegalLinkNoticeKey(c); !wasPending[k] {
 				newKeys = append(newKeys, k)
 			}
 		case types.LegalLinkReviewApproved:
@@ -1039,11 +1038,13 @@ func legalCandidateKey(c *types.LegalProvisionLinkCandidate) string {
 		c.AmenderDocID, c.SourcePath}, "|")
 }
 
-// LegalCandidateKey names one pending link of a pushed document across
-// pushes (the rows are recreated with new ids on every push): its mark key
-// and the element it is on.
-func LegalCandidateKey(c *types.LegalProvisionLinkCandidate) string {
-	return legalCandidateKey(c) + "|" + c.TargetElementID
+// LegalLinkNoticeKey names one pending link of a pushed document for the
+// SuperAdmins' digest across pushes (the rows are recreated with new ids on
+// every push) and adoptions (which rewrite amender_doc_id): the element and
+// path it is on, the relation, the amending số hiệu and its provision.
+func LegalLinkNoticeKey(c *types.LegalProvisionLinkCandidate) string {
+	return strings.Join([]string{c.TargetElementID, c.TargetPath, fmt.Sprint(c.RelationCode),
+		vietnamese_legal.CatalogNumberKey(c.AmenderDocNumber), c.SourcePath}, "|")
 }
 
 // legalMarkKey is the key of the mark a candidate was pushed as.
@@ -1069,7 +1070,7 @@ func (s *LegalPushService) pendingCandidateKeys(ctx context.Context, meta *legal
 	}
 	keys := make(map[string]bool, len(rows))
 	for _, c := range rows {
-		keys[LegalCandidateKey(c)] = true
+		keys[LegalLinkNoticeKey(c)] = true
 	}
 	return keys
 }

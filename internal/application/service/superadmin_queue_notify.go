@@ -245,7 +245,7 @@ func (n *SuperAdminQueueNotifier) WaitTimeout(d time.Duration) bool {
 		return true
 	}
 	n.mu.Lock()
-	n.stopped = true // later events are written at once
+	n.stopped = true // events arriving after this are dropped
 	n.mu.Unlock()
 	n.flushAll()
 	done := make(chan struct{})
@@ -394,7 +394,7 @@ func (n *SuperAdminQueueNotifier) write(kind string, events []queueEvent) {
 				for _, k := range news[i].keys {
 					keys[k] = true
 				}
-				items = prependQueueItems(items, news[i].items)
+				items = prependQueueItems(items, news[i].items, q.sumCounts())
 			}
 			delta := len(keys)
 			if delta == 0 {
@@ -417,22 +417,24 @@ func (n *SuperAdminQueueNotifier) write(kind string, events []queueEvent) {
 	}
 }
 
-// prependQueueItems appends older after items (newest first), skipping an
-// item of a Ref items already names; at most UserNotificationQueueMaxItems.
-func prependQueueItems(items, older []types.UserNotificationQueueItem) []types.UserNotificationQueueItem {
+// prependQueueItems appends older after items (newest first), merging an
+// item of a Ref items already names into it: dropped, or with sumCounts
+// (links: each item counts the links its batch added) its Count added; at
+// most UserNotificationQueueMaxItems.
+func prependQueueItems(items, older []types.UserNotificationQueueItem, sumCounts bool) []types.UserNotificationQueueItem {
 	out := append([]types.UserNotificationQueueItem(nil), items...)
 	for _, it := range older {
-		if len(out) >= types.UserNotificationQueueMaxItems {
-			break
-		}
 		dup := false
-		for _, have := range out {
-			if !it.Untitled && !have.Untitled && strings.EqualFold(have.Ref, it.Ref) {
+		for i := range out {
+			if !it.Untitled && !out[i].Untitled && strings.EqualFold(out[i].Ref, it.Ref) {
 				dup = true
+				if sumCounts {
+					out[i].Count += it.Count
+				}
 				break
 			}
 		}
-		if !dup {
+		if !dup && len(out) < types.UserNotificationQueueMaxItems {
 			out = append(out, it)
 		}
 	}
@@ -645,7 +647,7 @@ func (n *SuperAdminQueueNotifier) LegalDraftsChanged(ctx context.Context) {
 // Legal feed links
 
 // LegalLinksPending: one push of document ref (feed, feedDocID) left the
-// links keys (LegalCandidateKey) newly waiting for review (auto-approved
+// links keys (LegalLinkNoticeKey) newly waiting for review (auto-approved
 // ones are not among them). The links are re-read by key, not by row id:
 // a re-push within the batch recreates the rows with new ids.
 func (n *SuperAdminQueueNotifier) LegalLinksPending(ctx context.Context, actor, ref, feed, feedDocID string, keys []string) {
@@ -667,7 +669,7 @@ func (n *SuperAdminQueueNotifier) LegalLinksPending(ctx context.Context, actor, 
 			var still []string
 			seen := map[string]bool{}
 			for _, c := range rows {
-				if k := LegalCandidateKey(c); want[k] && !seen[k] {
+				if k := LegalLinkNoticeKey(c); want[k] && !seen[k] {
 					seen[k] = true
 					still = append(still, feed+"|"+feedDocID+"|"+k)
 				}
@@ -764,10 +766,14 @@ func (q *reviewQueue) merge(delta int, items []types.UserNotificationQueueItem) 
 		if count < len(old.Items) {
 			count = len(old.Items)
 		}
-		merged := types.UserNotificationQueuePayload{Count: count + delta, Items: prependQueueItems(items, old.Items)}
+		merged := types.UserNotificationQueuePayload{Count: count + delta, Items: prependQueueItems(items, old.Items, q.sumCounts())}
 		*next = *q.notification(next.UserID, merged, next.CreatedAt)
 	}
 }
+
+// sumCounts: the items of this queue count what their batch added (links),
+// so two items of one document add up.
+func (q *reviewQueue) sumCounts() bool { return q.kind == types.UserNotificationLegalLinkPending }
 
 // notification builds the digest of userID. Title and body are the stored
 // (Vietnamese) text; the clients word it from the payload in the reader's
