@@ -3302,6 +3302,10 @@ func (s *installSessionService) DeleteAllSessions(context.Context) error {
 	return nil
 }
 
+func (s *installSessionService) SearchSessionContent(context.Context, string, string, int, int) ([]*types.SessionContentHit, bool, error) {
+	return nil, false, nil
+}
+
 func (s *installSessionService) ListSessions(context.Context, *types.SessionListQuery) (*types.PageResult, error) {
 	return nil, nil
 }

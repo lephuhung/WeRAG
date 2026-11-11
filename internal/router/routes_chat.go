@@ -58,6 +58,8 @@ func RegisterSessionRoutes(
 		guestSessions.POST("", handler.CreateSession)
 		guestSessions.GET("/:id", handler.GetSession)
 		guestSessions.GET("", handler.GetSessionsByTenant)
+		// content search: the static path wins over /:id; a Guest searches their own
+		guestSessions.GET("/search", handler.SearchSessionContent)
 		guestSessions.PUT("/:id", handler.UpdateSession)
 		guestSessions.DELETE("/:id", handler.DeleteSession)
 		guestSessions.GET("/:id/context-usage", handler.GetContextUsage)

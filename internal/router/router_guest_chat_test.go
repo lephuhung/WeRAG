@@ -61,6 +61,7 @@ var guestChatCases = []struct{ method, path string }{
 	{http.MethodPost, "/api/v1/sessions"},
 	{http.MethodGet, "/api/v1/sessions"},
 	{http.MethodGet, "/api/v1/sessions/s1"},
+	{http.MethodGet, "/api/v1/sessions/search"},
 	{http.MethodPut, "/api/v1/sessions/s1"},
 	{http.MethodDelete, "/api/v1/sessions/s1"},
 	{http.MethodGet, "/api/v1/sessions/s1/context-usage"},

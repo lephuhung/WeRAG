@@ -39,10 +39,35 @@ type SessionListResponse = {
   total?: number;
 };
 
-export function listSessions(page = 1, pageSize = 30, source?: string) {
+export function listSessions(page = 1, pageSize = 30, source?: string, keyword?: string) {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
   if (source) params.set("source", source);
+  if (keyword) params.set("keyword", keyword);
   return apiGet<SessionListResponse>(`/api/v1/sessions?${params.toString()}`);
+}
+
+/** A session whose messages contain the searched text: its newest matching
+ * message as a snippet (before / match / after, "…" where cut). */
+export type SessionContentHit = {
+  session_id: string;
+  title: string;
+  chat_root_id?: string;
+  message_id: string;
+  role: "user" | "assistant" | string;
+  matched_at: string;
+  match_count: number;
+  snippet: { before: string; match: string; after: string };
+};
+
+/** Search the text of the caller's own conversations (same scope as the
+ * session list: Word add-in chats hidden on the web). Case-insensitive,
+ * accent-sensitive; 2–200 characters. */
+export function searchSessionContent(q: string, page = 1, pageSize = 8, source?: string) {
+  const params = new URLSearchParams({ q, page: String(page), page_size: String(pageSize) });
+  if (source) params.set("source", source);
+  return apiGet<{ success: boolean; data?: SessionContentHit[]; has_more?: boolean }>(
+    `/api/v1/sessions/search?${params.toString()}`,
+  );
 }
 
 export function createSession(data: Record<string, unknown> = {}) {
@@ -459,29 +484,6 @@ export interface ChatHistoryKBStats {
   has_indexed_messages: boolean;
 }
 
-export interface MessageSearchRequest {
-  query: string;
-  mode?: "keyword" | "vector" | "hybrid";
-  limit?: number;
-  session_ids?: string[];
-}
-
-export interface MessageSearchGroupItem {
-  request_id: string;
-  session_id: string;
-  session_title: string;
-  query_content: string;
-  answer_content: string;
-  score: number;
-  match_type: string;
-  created_at: string;
-}
-
-export interface MessageSearchResult {
-  items: MessageSearchGroupItem[];
-  total: number;
-}
-
 export function getTenantChatHistoryConfig() {
   return apiGet("/api/v1/tenants/kv/chat-history-config");
 }
@@ -494,7 +496,3 @@ export function getChatHistoryKBStats() {
   return apiGet("/api/v1/messages/chat-history-stats");
 }
 
-/** Search messages across all sessions (keyword + vector hybrid search). */
-export function searchMessages(data: MessageSearchRequest) {
-  return apiPost("/api/v1/messages/search", data);
-}

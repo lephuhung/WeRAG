@@ -55,6 +55,10 @@ type SessionService interface {
 	// ListSessions returns a page of sessions for the current tenant/user with
 	// search/source filters and pin-aware ordering. User scope is pulled from ctx.
 	ListSessions(ctx context.Context, query *types.SessionListQuery) (*types.PageResult, error)
+	// SearchSessionContent finds the caller's sessions (the ones ListSessions
+	// shows them, source "" or "word") whose messages contain query, with a
+	// snippet of the newest matching message, newest first.
+	SearchSessionContent(ctx context.Context, query, source string, page, pageSize int) ([]*types.SessionContentHit, bool, error)
 	// CountSessionsBySource returns the total for a source filter without the
 	// Admin+ gate applied by ListSessions (for aggregate stats endpoints).
 	CountSessionsBySource(ctx context.Context, query *types.SessionListQuery) (int64, error)
@@ -102,6 +106,10 @@ type SessionRepository interface {
 	GetPagedByTenantID(ctx context.Context, tenantID uint64, userID string, page *types.Pagination) ([]*types.Session, int64, error)
 	// QueryPaged lists sessions with filters, user-scoped ownership and pin-aware ordering.
 	QueryPaged(ctx context.Context, q *types.SessionListQuery) ([]*types.SessionListItem, int64, error)
+	// SearchContent finds the sessions the list would show whose messages
+	// contain q.Query: one hit per session (its newest matching message),
+	// newest match first; more reports a further page.
+	SearchContent(ctx context.Context, q *types.SessionContentSearchQuery) (hits []*types.SessionContentHit, more bool, err error)
 	// Update updates a session visible to the tenant/user scope.
 	Update(ctx context.Context, session *types.Session, userID string) (int64, error)
 	// SetOwnerID assigns sessions.user_id for a tenant-scoped row.

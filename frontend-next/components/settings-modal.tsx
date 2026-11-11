@@ -44,6 +44,7 @@ import { MemoryHub } from "@/components/settings/memory-hub";
 import { TenantInfo } from "@/components/settings/tenant-info";
 import { AgencyProfileSettings } from "@/components/settings/agency-profile";
 import { TenantMembers } from "@/components/settings/tenant-members";
+import { DocumentLabels } from "@/components/settings/document-labels";
 import { TenantUsage } from "@/components/settings/tenant-usage";
 import { BillingPage } from "@/components/settings/billing";
 import { ApiKeysSection } from "@/components/settings/api-keys";
@@ -77,7 +78,8 @@ import {
   IconStorageEngine,
   IconUser,
   IconIdCard,
-  IconCreditCard
+  IconCreditCard,
+  IconDocReader,
 } from "@/components/icons";
 
 /* Heavy sections are lazy so the sidebar chunk doesn't pull every admin page
@@ -145,6 +147,7 @@ const GROUPS: SettingsGroup[] = [
     items: [
       { key: "tenant", labelKey: "settingsNav.tenant", fallback: "Organization info", icon: IconInfoCircle, render: () => <TenantInfo />, route: `${W}/tenant` },
       { key: "members", labelKey: "settingsNav.members", fallback: "Members", icon: IconOrg, minRole: "admin", render: () => <TenantMembers />, route: `${W}/members` },
+      { key: "labels", labelKey: "settingsNav.labels", fallback: "Spelling & format labels", icon: IconDocReader, minRole: "admin", render: () => <DocumentLabels />, route: `${W}/labels` },
       { key: "agency", labelKey: "settingsNav.agencyProfile", fallback: "Agency profile", icon: IconInfoCircle, render: () => <AgencyProfileSettings />, route: `${W}/agency` },
       { key: "api-keys", labelKey: "settingsNav.apiKeys", fallback: "API keys", icon: IconKey, minRole: "system", render: () => <ApiKeysSection />, route: `${W}/api-keys` },
       { key: "memory", labelKey: "settingsNav.memory", fallback: "Memory", icon: IconBulb, minRole: "system", render: () => <MemoryHub />, route: `${W}/memory` },

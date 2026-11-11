@@ -310,6 +310,11 @@ func (r *messageRepository) SearchMessagesByKeyword(
 	if limit <= 0 {
 		limit = 20
 	}
+	// Conversations are searched for their owner only; no owner, no search
+	// (fail closed rather than widen to the whole organization).
+	if ownerID == "" {
+		return nil, nil
+	}
 
 	// ILIKE is Postgres-only; SQLite (Lite build) and MySQL lack the keyword,
 	// so mirror the session-list search with LOWER() on both sides. ESCAPE ?
@@ -330,11 +335,11 @@ func (r *messageRepository) SearchMessagesByKeyword(
 		Where("messages.deleted_at IS NULL").
 		Where(contentLikeExpr, "%"+escapeLikeKeyword(keyword)+"%", likeEscapeChar)
 
-	// Matches the scoping used when listing sessions, including the legacy
-	// allowance for tenant-level sessions created before per-user ownership.
-	if ownerID != "" {
-		query = query.Where("(sessions.user_id = ? OR sessions.user_id IS NULL OR sessions.user_id = '')", ownerID)
-	}
+	// Strictly the caller's own sessions. Ownerless rows (legacy API rows and
+	// IM sessions, which are created without an owner) belong to nobody in
+	// particular: searching them handed any member snippets of other
+	// people's Telegram chats.
+	query = query.Where("sessions.user_id = ?", ownerID)
 
 	if len(sessionIDs) > 0 {
 		query = query.Where("messages.session_id IN ?", sessionIDs)
@@ -362,7 +367,8 @@ func (r *messageRepository) OwnedSessionIDs(
 	ctx context.Context, tenantID uint64, ownerID string, sessionIDs []string,
 ) (map[string]bool, error) {
 	owned := make(map[string]bool, len(sessionIDs))
-	if len(sessionIDs) == 0 {
+	// fail closed: without an owner nothing is owned
+	if len(sessionIDs) == 0 || ownerID == "" {
 		return owned, nil
 	}
 	var ids []string
@@ -371,10 +377,8 @@ func (r *messageRepository) OwnedSessionIDs(
 		Select("id").
 		Where("tenant_id = ?", tenantID).
 		Where("deleted_at IS NULL").
-		Where("id IN ?", sessionIDs)
-	if ownerID != "" {
-		query = query.Where("(user_id = ? OR user_id IS NULL OR user_id = '')", ownerID)
-	}
+		Where("id IN ?", sessionIDs).
+		Where("user_id = ?", ownerID) // strictly own sessions (see SearchMessagesByKeyword)
 	if err := query.Pluck("id", &ids).Error; err != nil {
 		return nil, err
 	}

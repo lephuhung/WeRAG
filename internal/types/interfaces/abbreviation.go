@@ -2,6 +2,7 @@ package interfaces
 
 import (
 	"context"
+	"errors"
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -102,3 +103,20 @@ type DocumentSpellingFeedbackRepository interface {
 type DocumentFormatFeedbackRepository interface {
 	Record(ctx context.Context, row *types.DocumentFormatFeedback) error
 }
+
+// DocumentLabelRepository reads both feedback tables back as labels for
+// the Tenant Admin / SuperAdmin review table and the JSONL training export.
+type DocumentLabelRepository interface {
+	// List returns a page of labels, newest first, and how many match;
+	// ErrDocumentLabelPageTooDeep past the first 2,000 rows (use the export).
+	List(ctx context.Context, q *types.DocumentLabelQuery) ([]types.DocumentLabel, int64, error)
+	// Each calls fn for every matching label (spelling first, then format,
+	// each oldest first), reading rows in batches; q.Offset/Limit are ignored.
+	Each(ctx context.Context, q *types.DocumentLabelQuery, fn func(*types.DocumentLabel) error) error
+	// Models lists the model names stored on the labels in scope.
+	Models(ctx context.Context, tenantID uint64) ([]string, error)
+}
+
+// ErrDocumentLabelPageTooDeep: a label list page beyond the depth the
+// review table pages to; the JSONL export has every row.
+var ErrDocumentLabelPageTooDeep = errors.New("label page too deep: narrow the filters or use the export")
