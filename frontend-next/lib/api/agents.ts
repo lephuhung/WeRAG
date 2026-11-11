@@ -344,21 +344,11 @@ export interface IMChannel {
   id: string;
   tenant_id?: number;
   agent_id: string;
-  // 'lark' is Feishu's international edition; shares Feishu's credentials/modes.
-  platform:
-    | "wecom"
-    | "feishu"
-    | "lark"
-    | "slack"
-    | "telegram"
-    | "dingtalk"
-    | "mattermost"
-    | "wechat"
-    | "qqbot"
-    | "yunzhijia";
+  // Telegram is the only IM platform WeRAG offers.
+  platform: "telegram";
   name: string;
   enabled: boolean;
-  mode: "webhook" | "websocket" | "longpoll";
+  mode: "webhook" | "websocket";
   output_mode: "stream" | "full";
   session_mode?: "user" | "thread";
   knowledge_base_id?: string;
@@ -438,29 +428,4 @@ export function getSuggestedQuestions(
   return apiGet<{ data: { questions: SuggestedQuestion[] } }>(
     `/api/v1/agents/${agentId}/suggested-questions${qs ? "?" + qs : ""}`,
   );
-}
-
-// ===== WeChat QR code login =====
-
-export interface WeChatQRCodeResult {
-  qrcode_url: string;
-  qrcode: string;
-}
-
-export interface WeChatQRCodeStatus {
-  status: "wait" | "scaned" | "confirmed" | "expired";
-  credentials?: {
-    bot_token: string;
-    ilink_bot_id: string;
-    ilink_user_id: string;
-  };
-  baseurl?: string;
-}
-
-export function getWeChatQRCode() {
-  return apiPost<{ data: WeChatQRCodeResult }>("/api/v1/wechat/qrcode", {});
-}
-
-export function pollWeChatQRCodeStatus(qrcode: string) {
-  return apiPost<{ data: WeChatQRCodeStatus }>("/api/v1/wechat/qrcode/status", { qrcode });
 }

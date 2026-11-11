@@ -294,29 +294,6 @@ handler: `GetSuggestedQuestions` · `custom_agent.go`
 { success: true, data: {questions} }
 ```
 ---
-### `getWeChatQRCode` — `POST /wechat/qrcode`
-
-handler: `WeChatGetQRCode` · `wechat_qrcode.go`
-
-**Response**:
-```json
-{ data: {qrcode_url, qrcode} }
-```
----
-### `pollWeChatQRCodeStatus` — `POST /wechat/qrcode/status`
-
-handler: `WeChatPollQRCodeStatus` · `wechat_qrcode.go`
-
-**Body** (inline struct):
-| field | type | req | notes |
-|---|---|---|---|
-| `qrcode` | string | yes |  |
-
-**Response**:
-```json
-{ data: resp }
-```
----
 
 ## Referenced types
 

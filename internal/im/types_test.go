@@ -1,8 +1,6 @@
 package im
 
 import (
-	"crypto/sha256"
-	"fmt"
 	"testing"
 
 	"gorm.io/gorm"
@@ -58,7 +56,7 @@ func TestIMChannelBeforeCreate_SessionModeDefault(t *testing.T) {
 			ch := &IMChannel{
 				TenantID:    1,
 				AgentID:     "agent-1",
-				Platform:    "slack",
+				Platform:    "telegram",
 				SessionMode: tt.inputMode,
 				Credentials: []byte("{}"),
 			}
@@ -77,7 +75,7 @@ func TestIMChannelBeforeCreate_InvalidSessionMode(t *testing.T) {
 	ch := &IMChannel{
 		TenantID:    1,
 		AgentID:     "agent-1",
-		Platform:    "slack",
+		Platform:    "telegram",
 		SessionMode: "invalid",
 		Credentials: []byte("{}"),
 	}
@@ -132,77 +130,28 @@ func TestSessionModeConstants(t *testing.T) {
 	}
 }
 
-// BotIdentity carries a unique index, so Feishu and Lark channels must never
-// derive the same identity — otherwise a Lark bot would be rejected as a
-// duplicate of an unrelated Feishu bot that happens to share an app_id.
-func TestComputeBotIdentity_FeishuAndLarkAreDistinct(t *testing.T) {
-	const creds = `{"app_id":"cli_a1b2c3","app_secret":"s"}`
-
-	feishu := &IMChannel{Platform: "feishu", Credentials: []byte(creds)}
-	lark := &IMChannel{Platform: "lark", Credentials: []byte(creds)}
-
-	feishuID := feishu.computeBotIdentity()
-	larkID := lark.computeBotIdentity()
-
-	if feishuID != "feishu:cli_a1b2c3" {
-		t.Errorf("feishu identity = %q, want %q", feishuID, "feishu:cli_a1b2c3")
+func TestComputeBotIdentity_Telegram(t *testing.T) {
+	ch := &IMChannel{Platform: "telegram", Credentials: []byte(`{"bot_token":"123456:ABC-secret"}`)}
+	if got := ch.computeBotIdentity(); got != "telegram:123456" {
+		t.Errorf("identity = %q, want %q", got, "telegram:123456")
 	}
-	if larkID != "lark:cli_a1b2c3" {
-		t.Errorf("lark identity = %q, want %q", larkID, "lark:cli_a1b2c3")
-	}
-	if feishuID == larkID {
-		t.Errorf("feishu and lark share identity %q", feishuID)
-	}
-}
-
-func TestComputeBotIdentity_LarkWithoutAppID(t *testing.T) {
-	ch := &IMChannel{Platform: "lark", Credentials: []byte(`{"app_secret":"s"}`)}
+	ch = &IMChannel{Platform: "telegram", Credentials: []byte(`{}`)}
 	if got := ch.computeBotIdentity(); got != "" {
-		t.Errorf("identity = %q, want empty when app_id is missing", got)
+		t.Errorf("identity = %q, want empty when bot_token is missing", got)
 	}
 }
 
-func TestIMChannelComputeBotIdentity_YunzhijiaUsesYZJToken(t *testing.T) {
-	makeChannel := func(sendMsgURL string) *IMChannel {
-		return &IMChannel{
-			Platform: "yunzhijia",
-			Credentials: []byte(fmt.Sprintf(
-				`{"send_msg_url":%q}`,
-				sendMsgURL,
-			)),
-		}
-	}
-
-	first := makeChannel("https://open.yunzhijia.com/gateway/robot/webhook/send?yzjtoken=token-a&foo=1")
-	second := makeChannel("https://open.yunzhijia.com/gateway/robot/webhook/send?yzjtoken=token-b&foo=1")
-	firstWant := fmt.Sprintf("yunzhijia:%x", sha256.Sum256([]byte("token-a")))
-	secondWant := fmt.Sprintf("yunzhijia:%x", sha256.Sum256([]byte("token-b")))
-	if first.computeBotIdentity() != firstWant {
-		t.Errorf("first identity = %q, want %q", first.computeBotIdentity(), firstWant)
-	}
-	if second.computeBotIdentity() != secondWant {
-		t.Errorf("second identity = %q, want %q", second.computeBotIdentity(), secondWant)
-	}
-	if first.computeBotIdentity() == second.computeBotIdentity() {
-		t.Error("different yzjtoken values must produce different Yunzhijia bot identities")
-	}
-
-	sameTokenDifferentQuery := makeChannel(
-		"https://open.yunzhijia.com/gateway/robot/webhook/send?foo=2&yzjtoken=token-a",
-	)
-	if sameTokenDifferentQuery.computeBotIdentity() != first.computeBotIdentity() {
-		t.Error("same yzjtoken must produce the same Yunzhijia bot identity")
-	}
-
-	missingToken := makeChannel("https://open.yunzhijia.com/gateway/robot/webhook/send?foo=1")
-	if missingToken.computeBotIdentity() != "" {
-		t.Errorf("missing yzjtoken identity = %q, want empty", missingToken.computeBotIdentity())
+// A row left over from a removed platform derives no identity.
+func TestComputeBotIdentity_UnsupportedPlatform(t *testing.T) {
+	ch := &IMChannel{Platform: "feishu", Credentials: []byte(`{"app_id":"cli_a1b2c3"}`)}
+	if got := ch.computeBotIdentity(); got != "" {
+		t.Errorf("identity = %q, want empty", got)
 	}
 }
 
 func TestChannelSessionThreadIDField(t *testing.T) {
 	cs := ChannelSession{
-		Platform: "slack",
+		Platform: "telegram",
 		UserID:   "U123",
 		ChatID:   "C456",
 		ThreadID: "1234567890.123456",
@@ -213,7 +162,7 @@ func TestChannelSessionThreadIDField(t *testing.T) {
 
 	// empty ThreadID for user-mode sessions
 	csUser := ChannelSession{
-		Platform: "slack",
+		Platform: "telegram",
 		UserID:   "U123",
 		ChatID:   "C456",
 	}

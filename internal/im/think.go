@@ -187,13 +187,7 @@ type ThinkBlockStyle struct {
 }
 
 // MarkdownThinkStyle renders think blocks as markdown blockquotes.
-// Used by DingTalk and Feishu/Lark.
-//
-// Known limitation: the headers below are Chinese for every platform, including
-// ones whose users are typically not Chinese speakers (Lark, Slack, Telegram,
-// Mattermost). Localizing them means threading a locale into
-// FormatIMDisplayContent, which is called from the shared streaming path with no
-// platform context — a cross-platform change rather than a per-platform patch.
+// Used by the shared IM display path (FormatIMDisplayContent).
 var MarkdownThinkStyle = ThinkBlockStyle{
 	ThinkingHeader: "> 💭 **Đang suy nghĩ...**\n",
 	ThoughtHeader:  "> 💭 **Quá trình suy nghĩ**\n",

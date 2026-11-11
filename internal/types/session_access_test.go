@@ -14,8 +14,7 @@ func TestSessionListSourceRequiresAdmin(t *testing.T) {
 		{"api", true},
 		{"embed", true},
 		{"embed:ch-1", true},
-		{"feishu", true},
-		{"qqbot", true},
+		{"telegram", true},
 	}
 	for _, tt := range tests {
 		if got := SessionListSourceRequiresAdmin(tt.source); got != tt.want {
@@ -45,7 +44,7 @@ func TestSessionRequiresAdminConsoleRead(t *testing.T) {
 	}
 
 	im := &Session{Title: "hello"}
-	if !SessionRequiresAdminConsoleRead(im, "feishu") {
+	if !SessionRequiresAdminConsoleRead(im, "telegram") {
 		t.Fatal("IM-mapped session should require admin")
 	}
 

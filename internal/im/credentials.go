@@ -1,9 +1,6 @@
 package im
 
-import (
-	"encoding/json"
-	"strings"
-)
+import "encoding/json"
 
 // ParseCredentials parses the JSONB credentials field into a map.
 func ParseCredentials(data []byte) (map[string]any, error) {
@@ -25,25 +22,4 @@ func GetString(creds map[string]any, key string) string {
 		}
 	}
 	return ""
-}
-
-// GetBool reads a boolean from JSON credentials (bool, string "true"/"1", or non-zero number).
-func GetBool(creds map[string]any, key string) bool {
-	v, ok := creds[key]
-	if !ok {
-		return false
-	}
-	switch x := v.(type) {
-	case bool:
-		return x
-	case string:
-		s := strings.TrimSpace(strings.ToLower(x))
-		return s == "true" || s == "1" || s == "yes"
-	case float64:
-		return x != 0
-	case int:
-		return x != 0
-	default:
-		return false
-	}
 }

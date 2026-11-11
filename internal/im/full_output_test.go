@@ -178,7 +178,7 @@ func newFullOutputHarness(answer string) (*Service, *fullOutputAdapter, *fullOut
 
 func TestHandleMessageFullOutputShowsPlaceholderWithoutIntermediateUpdates(t *testing.T) {
 	service, adapter, _, order := newFullOutputHarness("Câu trả lời cuối cùng")
-	msg := &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "Câu hỏi"}
+	msg := &IncomingMessage{Platform: PlatformTelegram, UserID: "user-1", Content: "Câu hỏi"}
 	session := &types.Session{ID: "session-1"}
 
 	err := service.handleMessageFullOutput(
@@ -207,7 +207,7 @@ func TestHandleMessageFullOutputReplacesPlaceholderAfterCancel(t *testing.T) {
 	service, adapter, sessionSvc, order := newFullOutputHarness("")
 	sessionSvc.hangUntilCancel = true
 	sessionSvc.started = make(chan struct{})
-	msg := &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "Câu hỏi"}
+	msg := &IncomingMessage{Platform: PlatformTelegram, UserID: "user-1", Content: "Câu hỏi"}
 	session := &types.Session{ID: "session-1"}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -249,7 +249,7 @@ func TestHandleMessageFullOutputReplacesPlaceholderAfterCancel(t *testing.T) {
 func TestHandleMessageFullOutputStartStreamErrorFallsBackToPlainReply(t *testing.T) {
 	service, adapter, _, order := newFullOutputHarness("Câu trả lời cuối cùng")
 	adapter.startErr = errors.New("create card failed")
-	msg := &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "Câu hỏi"}
+	msg := &IncomingMessage{Platform: PlatformTelegram, UserID: "user-1", Content: "Câu hỏi"}
 	session := &types.Session{ID: "session-1"}
 
 	err := service.handleMessageFullOutput(
@@ -277,7 +277,7 @@ func TestHandleMessageFullOutputStartStreamErrorFallsBackToPlainReply(t *testing
 func TestHandleMessageFullOutputFinalizeFailureSendsPlainReply(t *testing.T) {
 	service, adapter, _, order := newFullOutputHarness("Câu trả lời cuối cùng")
 	adapter.finalizeErr = errors.New("card update failed")
-	msg := &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "Câu hỏi"}
+	msg := &IncomingMessage{Platform: PlatformTelegram, UserID: "user-1", Content: "Câu hỏi"}
 	session := &types.Session{ID: "session-1"}
 
 	err := service.handleMessageFullOutput(
@@ -301,7 +301,7 @@ func TestHandleMessageFullOutputFinalizeFailureSendsPlainReply(t *testing.T) {
 
 func TestHandleMessageFullOutputThinkOnlyReplacesWithNoAnswerFallback(t *testing.T) {
 	service, adapter, _, _ := newFullOutputHarness("<think>only reasoning</think>")
-	msg := &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "Câu hỏi"}
+	msg := &IncomingMessage{Platform: PlatformTelegram, UserID: "user-1", Content: "Câu hỏi"}
 	session := &types.Session{ID: "session-1"}
 
 	err := service.handleMessageFullOutput(
@@ -321,7 +321,7 @@ func TestExecuteQARequestFullOutputDispatchesToProgressSender(t *testing.T) {
 	service.executeQARequest(&qaRequest{
 		ctx:     ctx,
 		cancel:  cancel,
-		msg:     &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "Câu hỏi"},
+		msg:     &IncomingMessage{Platform: PlatformTelegram, UserID: "user-1", Content: "Câu hỏi"},
 		session: &types.Session{ID: "session-1"},
 		adapter: adapter,
 		channel: &IMChannel{OutputMode: "full"},
@@ -344,7 +344,7 @@ func TestExecuteQARequestFullOutputSkipsProgressWhenNotSupported(t *testing.T) {
 	service.executeQARequest(&qaRequest{
 		ctx:     ctx,
 		cancel:  cancel,
-		msg:     &IncomingMessage{Platform: PlatformFeishu, UserID: "user-1", Content: "Câu hỏi"},
+		msg:     &IncomingMessage{Platform: PlatformTelegram, UserID: "user-1", Content: "Câu hỏi"},
 		session: &types.Session{ID: "session-1"},
 		adapter: adapter,
 		channel: &IMChannel{OutputMode: "full"},

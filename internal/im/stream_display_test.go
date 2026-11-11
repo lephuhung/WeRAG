@@ -61,7 +61,7 @@ func TestStreamDisplayPipeline_agentScenario_redGreen(t *testing.T) {
 
 	rec := &recordingStreamSender{}
 	ctx := context.Background()
-	incoming := &IncomingMessage{Platform: PlatformWeCom, UserID: "u1"}
+	incoming := &IncomingMessage{Platform: PlatformTelegram, UserID: "u1"}
 
 	streamID, err := rec.StartStream(ctx, incoming)
 	if err != nil {

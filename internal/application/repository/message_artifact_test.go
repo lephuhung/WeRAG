@@ -179,16 +179,16 @@ func TestListArtifactLibraryScopesAndGroupsVersions(t *testing.T) {
 	// IM sessions are created without an owner, so they look like legacy
 	// tenant-level rows; only the IM mapping tells them apart. A cleared chat
 	// keeps its soft-deleted mapping and must stay out as well.
-	imChat := createSession(t, db, &types.Session{TenantID: 7, Title: "Feishu: chat riêng của Nguyễn Văn A"})
-	clearedIMChat := createSession(t, db, &types.Session{TenantID: 7, Title: "WeCom: đã xoá"})
+	imChat := createSession(t, db, &types.Session{TenantID: 7, Title: "Telegram: chat riêng của Nguyễn Văn A"})
+	clearedIMChat := createSession(t, db, &types.Session{TenantID: 7, Title: "Telegram: đã xoá"})
 	embedChat := createSession(t, db, &types.Session{
 		TenantID: 7, Title: "Tiện ích web", Description: types.EmbedSessionMarkerPrefix + "ch-1",
 	})
 	require.NoError(t, db.Create(&testIMChannelSession{
-		ID: "ics-1", SessionID: imChat, Platform: "feishu", TenantID: 7,
+		ID: "ics-1", SessionID: imChat, Platform: "telegram", TenantID: 7,
 	}).Error)
 	require.NoError(t, db.Create(&testIMChannelSession{
-		ID: "ics-2", SessionID: clearedIMChat, Platform: "wecom", TenantID: 7,
+		ID: "ics-2", SessionID: clearedIMChat, Platform: "telegram", TenantID: 7,
 	}).Error)
 	require.NoError(t, db.Delete(&testIMChannelSession{ID: "ics-2"}).Error)
 

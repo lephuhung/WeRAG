@@ -59,7 +59,7 @@ var noAuthAPI = map[string][]string{
 	// Word add-in browser sign-in: the add-in has no token yet.
 	"/api/v1/auth/device/start": {"POST"},
 	"/api/v1/auth/device/poll":  {"POST"},
-	// IM platforms (Feishu, Slack, etc.) commonly issue a HEAD request
+	// IM platforms commonly issue a HEAD request
 	// before GET to validate Content-Type / Content-Length when rendering
 	// image previews — both verbs must be allowed for image links to work.
 	"/api/v1/files/presigned": {"GET", "HEAD"},
