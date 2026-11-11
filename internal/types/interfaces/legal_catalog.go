@@ -355,7 +355,7 @@ type LegalLookupMissRepository interface {
 	// Delete removes one miss (the SuperAdmin settled it).
 	Delete(ctx context.Context, id uint64) error
 	// Prune deletes misses seen once and last before staleBefore, then
-	// all but the keep most recent ones.
+	// all but keep rows: repeated misses first, then the most recent.
 	Prune(ctx context.Context, staleBefore time.Time, keep int) error
 }
 

@@ -20,3 +20,8 @@ CREATE TABLE IF NOT EXISTS legal_lookup_misses (
 CREATE UNIQUE INDEX IF NOT EXISTS ux_legal_lookup_misses_query ON legal_lookup_misses (query);
 CREATE INDEX IF NOT EXISTS ix_legal_lookup_misses_last ON legal_lookup_misses (last_at DESC);
 CREATE INDEX IF NOT EXISTS ix_legal_lookup_misses_count ON legal_lookup_misses (count DESC);
+
+-- Number-prefix lookups (number_key LIKE '53/%') of the validity lookup and
+-- the legal-basis check: the database collation is not C, so the plain
+-- btree ix_legal_documents_number_key (000129) cannot serve LIKE.
+CREATE INDEX IF NOT EXISTS ix_legal_documents_number_key_pattern ON legal_documents (number_key text_pattern_ops);

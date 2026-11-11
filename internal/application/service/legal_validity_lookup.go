@@ -111,7 +111,11 @@ func (s *legalValidityLookupService) LookupValidity(
 		out.NumberMissing = pq.number
 	case pq.bare && len(pq.content) == 0 && by != "number":
 		// "Nghị định 9999": named by number alone, and no such document
-		out.NumberMissing = strings.Join(append(append([]string{}, pq.typeWords...), pq.number), " ")
+		parts := append(append([]string{}, pq.typeWords...), pq.number)
+		if pq.year > 0 {
+			parts = append(parts, "năm", strconv.Itoa(pq.year))
+		}
+		out.NumberMissing = strings.Join(parts, " ")
 	}
 	switch {
 	case len(docs) == 0:
@@ -508,9 +512,9 @@ func (s *legalValidityLookupService) writeMiss(m *types.LegalLookupMiss) {
 // and rule as the knowledge base list and default retrieval scope:
 // ListReadableKnowledgeBases + access.InDefaultRetrievalScope): copies with
 // an approved legal link in any of them, and vbpl.vn imports (metadata
-// source + external_id, which an uploader can set) only in the caller's own
-// organization's KBs. A guest therefore sees approved copies only. Errors
-// only drop the links.
+// source + external_id, not reviewed) in platform public KBs and the
+// caller's own organization's KBs — never in another organization's
+// published or granted KB. Errors only drop the links.
 func (s *legalValidityLookupService) readableCopies(
 	ctx context.Context, docs []*types.LegalDocument,
 ) map[string][]types.LegalKnowledgeRef {
@@ -525,16 +529,18 @@ func (s *legalValidityLookupService) readableCopies(
 		return out
 	}
 	readable := map[string]bool{}
-	var ownKBIDs []string
+	var vouchedKBIDs []string
 	for _, kb := range kbs {
 		if kb == nil || !access.InDefaultRetrievalScope(caller, kb) || readable[kb.ID] {
 			continue
 		}
 		readable[kb.ID] = true
-		// upload metadata (external_id) is nobody's review: trusted only in
-		// the caller's own organization; elsewhere an approved link is needed
-		if caller.TenantID != 0 && kb.OwnerTenantID == caller.TenantID {
-			ownKBIDs = append(ownKBIDs, kb.ID)
+		// the import metadata (source + external_id) is trusted in platform
+		// public KBs (only a SuperAdmin or the platform API key can write it
+		// there) and in the caller's own organization; another
+		// organization's published or granted KB needs an approved link
+		if access.IsPlatformPublicKB(kb) || (caller.TenantID != 0 && kb.OwnerTenantID == caller.TenantID) {
+			vouchedKBIDs = append(vouchedKBIDs, kb.ID)
 		}
 	}
 	if len(readable) == 0 {
@@ -562,7 +568,7 @@ func (s *legalValidityLookupService) readableCopies(
 			}
 		}
 	}
-	if imported, err := s.repo.ExternalCopies(ctx, ids, ownKBIDs); err != nil {
+	if imported, err := s.repo.ExternalCopies(ctx, ids, vouchedKBIDs); err != nil {
 		logger.Warnf(ctx, "[LegalLookup] imported copies unavailable: %v", err)
 	} else {
 		for docID, refs := range imported {

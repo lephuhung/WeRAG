@@ -67,13 +67,7 @@ func (r *legalLookupMissRepository) Prune(ctx context.Context, staleBefore time.
 	if keep <= 0 {
 		return nil
 	}
-	// the keep-th most recent row is the cut-off; older rows go
-	var cut []types.LegalLookupMiss
-	if err := db.Select("id", "last_at").Order("last_at DESC").Order("id DESC").
-		Offset(keep - 1).Limit(1).Find(&cut).Error; err != nil || len(cut) == 0 {
-		return err
-	}
-	c := cut[0]
-	return db.Where("last_at < ? OR (last_at = ? AND id < ?)", c.LastAt, c.LastAt, c.ID).
-		Delete(&types.LegalLookupMiss{}).Error
+	// keep the repeated misses first, then the most recent single ones
+	return db.Exec(`DELETE FROM legal_lookup_misses WHERE id NOT IN (
+		SELECT id FROM legal_lookup_misses ORDER BY (count > 1) DESC, last_at DESC, id DESC LIMIT ?)`, keep).Error
 }

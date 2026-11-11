@@ -111,6 +111,7 @@ func newLegalLookupFixture(t *testing.T) *legalLookupFixture {
 			LegalDocumentID: docID, ReviewStatus: status}).Error)
 	}
 	// copies of the 2024 law
+	knowledge("k-pub-fresh", "kb-pub", "law") // a vbpl import nobody has scanned yet: no link row
 	knowledge("k-pub", "kb-pub", "law")
 	link("k-pub", "kb-pub", "law", types.LegalReviewApproved)
 	knowledge("k-pub-pending", "kb-pub", "law")
@@ -226,18 +227,19 @@ func TestLegalValidityLookupByNumber(t *testing.T) {
 func TestLegalValidityLookupCopies(t *testing.T) {
 	f := newLegalLookupFixture(t)
 
-	// a guest: approved copies only (public KB, and B's published KB) —
-	// never B's own unreviewed upload naming the law, nor a pending link
+	// a guest: platform public copies (the unscanned vbpl import too, its
+	// metadata is written only by SuperAdmin importers) and B's approved
+	// published copy — never B's own unreviewed upload, nor a pending link
 	got, err := f.svc.LookupValidity(guestCtx(), "31/2024/QH15", 0)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"k-pub", "k-b-published-ok"}, knowledgeIDs(got.Matches[0]))
+	require.ElementsMatch(t, []string{"k-pub-fresh", "k-pub", "k-b-published-ok"}, knowledgeIDs(got.Matches[0]))
 
 	// a member of A also sees A's own vbpl import — not the restricted KB's
 	// (no grant), the rejected or deleted one, the deleted KB's, B's, nor
 	// A's uploads whose metadata lacks the importer's source
 	got, err = f.svc.LookupValidity(lookupCtx("member-a", lookupTenantA, types.TenantRoleMember), "31/2024/QH15", 0)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"k-pub", "k-b-published-ok", "k-a"}, knowledgeIDs(got.Matches[0]))
+	require.ElementsMatch(t, []string{"k-pub-fresh", "k-pub", "k-b-published-ok", "k-a"}, knowledgeIDs(got.Matches[0]))
 	require.Equal(t, "KB kb-a", func() string {
 		for _, k := range got.Matches[0].Knowledge {
 			if k.KnowledgeID == "k-a" {
@@ -250,7 +252,7 @@ func TestLegalValidityLookupCopies(t *testing.T) {
 	// a member of B sees B's copy, not A's
 	got, err = f.svc.LookupValidity(lookupCtx("member-b", lookupTenantB, types.TenantRoleMember), "31/2024/QH15", 0)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"k-pub", "k-b-published-ok", "k-b", "k-b-published"}, knowledgeIDs(got.Matches[0]))
+	require.ElementsMatch(t, []string{"k-pub-fresh", "k-pub", "k-b-published-ok", "k-b", "k-b-published"}, knowledgeIDs(got.Matches[0]))
 
 	// an admin of A reads the restricted KB of A too (the KB list's rule)
 	got, err = f.svc.LookupValidity(lookupCtx("admin-a", lookupTenantA, types.TenantRoleAdmin), "31/2024/QH15", 0)
@@ -267,7 +269,7 @@ func TestLegalValidityLookupCopies(t *testing.T) {
 	super := context.WithValue(lookupCtx("super", 0, ""), types.SystemAdminContextKey, true)
 	got, err = f.svc.LookupValidity(super, "31/2024/QH15", 0)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"k-pub"}, knowledgeIDs(got.Matches[0]))
+	require.ElementsMatch(t, []string{"k-pub-fresh", "k-pub"}, knowledgeIDs(got.Matches[0]))
 }
 
 func TestLegalValidityLookupBareNumber(t *testing.T) {
@@ -316,6 +318,13 @@ func TestLegalValidityLookupBareNumber(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, got.Matches)
 	require.Equal(t, "Nghị định 9999", got.NumberMissing)
+	got, err = f.svc.LookupValidity(ctx, "Nghị định 13 2099", 0)
+	require.NoError(t, err)
+	require.Empty(t, got.Matches)
+	require.Equal(t, "Nghị định 13 năm 2099", got.NumberMissing, "the year stays in the message")
+	got, err = f.svc.LookupValidity(ctx, "Nghị định 13/2099", 0)
+	require.NoError(t, err)
+	require.Equal(t, "13/2099", got.NumberMissing)
 	got, err = f.svc.LookupValidity(ctx, "Nghị định 135", 0) // "Chương trình 135" is in a title
 	require.NoError(t, err)
 	require.Empty(t, got.Matches)
@@ -523,11 +532,12 @@ func TestLegalLookupMissPrune(t *testing.T) {
 	add("new once a", 1, now.Add(-2*time.Hour))
 	add("new once b", 1, now.Add(-1*time.Hour))
 	add("newest", 1, now)
+	add("repeated", 3, now.Add(-3*time.Hour))
 	require.NoError(t, f.misses.Prune(ctx, now.Add(-legalLookupMissStale), 3))
 	var left []string
 	require.NoError(t, f.db.Model(&types.LegalLookupMiss{}).Order("last_at DESC").Pluck("query", &left).Error)
-	require.Equal(t, []string{"newest", "new once b", "new once a"}, left,
-		"stale single misses dropped, then only the 3 most recent kept")
+	require.Equal(t, []string{"newest", "repeated", "old often"}, left,
+		"stale single misses dropped; the cap keeps repeated misses first, then the newest single ones")
 
 	// a write prunes when the dice say so
 	f.svc.prune = func() bool { return true }
@@ -536,5 +546,6 @@ func TestLegalLookupMissPrune(t *testing.T) {
 	require.NoError(t, err)
 	left = nil
 	require.NoError(t, f.db.Model(&types.LegalLookupMiss{}).Pluck("query", &left).Error)
-	require.Equal(t, []string{"chưa có gì"}, left)
+	require.ElementsMatch(t, []string{"chưa có gì", "repeated", "old often"}, left,
+		"40 days on, the single misses are stale; repeated ones stay")
 }
