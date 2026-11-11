@@ -43,7 +43,58 @@ const (
 	// has at most one unread notice of this kind, updated by every new
 	// suggestion (UserNotificationOpenKey).
 	UserNotificationAbbreviationPending = "abbreviation_pending"
+
+	// SuperAdmin review-queue digests (payload:
+	// UserNotificationQueuePayload), one open digest per SuperAdmin and
+	// kind like abbreviation_pending, closed for everyone once the queue
+	// is empty.
+
+	// UserNotificationPaymentOrderPending: new payment orders wait for
+	// their transfer / a SuperAdmin's confirmation (items: order code,
+	// plan, amount, organization).
+	UserNotificationPaymentOrderPending = "payment_order_pending"
+	// UserNotificationLegalRequestPending: people asked in chat for legal
+	// documents the system lacks (items: số hiệu, title, request count).
+	UserNotificationLegalRequestPending = "legal_request_pending"
+	// UserNotificationLegalDraftReady: OCR drafts of scanned legal
+	// documents are ready for review (items: số hiệu, title).
+	UserNotificationLegalDraftReady = "legal_draft_ready"
+	// UserNotificationLegalLinkPending: amendment links a legal feed pushed
+	// wait for review (items: the pushed document, its pending links).
+	UserNotificationLegalLinkPending = "legal_link_pending"
+	// UserNotificationLegalIdentityPending: documents of the public legal
+	// KBs wait for their identity review (items: số hiệu or file title).
+	UserNotificationLegalIdentityPending = "legal_identity_pending"
 )
+
+// UserNotificationQueueMaxItems caps the newest items a review-queue
+// digest names; Count says how many arrived.
+const UserNotificationQueueMaxItems = 5
+
+// UserNotificationQueuePayload is the payload of a review-queue digest:
+// how many items arrived since the person last read it, and the newest of
+// them first.
+type UserNotificationQueuePayload struct {
+	Count int                         `json:"count"`
+	Items []UserNotificationQueueItem `json:"items"`
+}
+
+// UserNotificationQueueItem is one item a review-queue digest names. Ref
+// is the order code or the số hiệu (a file title when none is known); the
+// other fields are set by the queues that have them.
+type UserNotificationQueueItem struct {
+	Ref   string `json:"ref"`
+	Title string `json:"title,omitempty"`
+	// Count: the requests of a legal document request, the pending links
+	// of a pushed document.
+	Count     int    `json:"count,omitempty"`
+	Plan      string `json:"plan,omitempty"`
+	AmountVND int64  `json:"amount_vnd,omitempty"`
+	Org       string `json:"org,omitempty"`
+	// Untitled: an item without số hiệu or title (Ref empty); clients name
+	// it "untitled document" in the reader's language.
+	Untitled bool `json:"untitled,omitempty"`
+}
 
 // UserNotificationAbbreviationPendingMaxItems caps the newest suggestions an
 // abbreviation_pending digest names; Count says how many there are.

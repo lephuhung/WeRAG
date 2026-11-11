@@ -437,6 +437,7 @@ func (r *legalRequestRepository) AddRequester(ctx context.Context, req *types.Le
 	if req == nil || strings.TrimSpace(req.RequestID) == "" || strings.TrimSpace(req.UserID) == "" {
 		return errors.New("legal request requester: request and user are required")
 	}
+	req.FirstWaiting = false
 	now := time.Now()
 	row := *req
 	if row.ID == "" {
@@ -458,6 +459,15 @@ func (r *legalRequestRepository) AddRequester(ctx context.Context, req *types.Le
 	if err := db.Model(&types.LegalDocumentRequest{}).Select("status").Where("id = ?", row.RequestID).
 		Scan(&status).Error; err != nil {
 		return err
+	}
+	// nobody waiting yet (this person included): they are the first
+	if row.NotifiedAt == nil && status != types.LegalRequestAdded {
+		var waiting bool
+		if err := db.Raw("SELECT EXISTS (?)", db.Model(&types.LegalRequestRequester{}).Select("1").
+			Where("request_id = ? AND notified_at IS NULL", row.RequestID)).Scan(&waiting).Error; err != nil {
+			return err
+		}
+		req.FirstWaiting = !waiting
 	}
 	updates := map[string]any{
 		"tenant_id": row.TenantID, "session_id": row.SessionID, "message_id": row.MessageID,

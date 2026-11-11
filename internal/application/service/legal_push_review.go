@@ -185,6 +185,7 @@ func (s *LegalPushService) DecideCandidate(ctx context.Context, id int64, d Lega
 		if err := s.db.WithContext(ctx).Save(&c).Error; err != nil {
 			return nil, err
 		}
+		s.Notices.LegalLinksChanged(ctx)
 		return s.one(ctx, &c)
 	}
 	if err := s.correct(ctx, &c, d); err != nil {
@@ -205,6 +206,7 @@ func (s *LegalPushService) DecideCandidate(ctx context.Context, id int64, d Lega
 	if err != nil {
 		return nil, fmt.Errorf("approve candidate %d: %w", id, err)
 	}
+	s.Notices.LegalLinksChanged(ctx)
 	return s.one(ctx, &c)
 }
 

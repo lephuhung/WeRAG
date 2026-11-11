@@ -10,6 +10,17 @@ export const NOTIFICATION_MIN_GAP_MS = 10_000;
 export const NOTIFICATION_MAX_TOASTS = 3;
 /** Every notification link is a page of the app. */
 export const NOTIFICATION_LINK_PREFIX = "/platform/";
+/** Window event (detail: the path) the web bell dispatches when it opens a
+ * notification's link: a page already showing that link re-applies its
+ * query (the same URL pushed again changes nothing in the router). */
+export const NOTIFICATION_OPENED_EVENT = "weknora:notification-opened";
+
+/** linkParam reads the query parameter name of an app path ("" if none). */
+export function linkParam(path: string, name: string): string {
+  const i = path.indexOf("?");
+  if (i < 0) return "";
+  return new URLSearchParams(path.slice(i + 1).split("#")[0]).get(name) ?? "";
+}
 
 export const KIND_LEGAL_REQUEST_ADDED = "legal_request_added";
 /** SuperAdmins: new abbreviation suggestions wait for review (a digest). */
@@ -18,6 +29,40 @@ export const KIND_ABBREVIATION_PENDING = "abbreviation_pending";
 export const ABBREVIATION_REVIEW_PATH = "/platform/system/extensions/abbreviations?status=pending";
 /** A full form longer than this is cut with "…" in the digest body. */
 const ABBREVIATION_FULL_FORM_MAX = 40;
+
+/* SuperAdmin review-queue digests (payload: { count, items: [{ ref, title?,
+ * count?, plan?, amount_vnd?, org? }] }), one unread per SuperAdmin and
+ * kind, like abbreviation_pending. */
+/** Payment orders waiting for their transfer / confirmation. */
+export const KIND_PAYMENT_ORDER_PENDING = "payment_order_pending";
+/** Legal documents people asked for in chat. */
+export const KIND_LEGAL_REQUEST_PENDING = "legal_request_pending";
+/** OCR drafts of scanned legal documents ready for review. */
+export const KIND_LEGAL_DRAFT_READY = "legal_draft_ready";
+/** Amendment links a legal feed pushed, waiting for review. */
+export const KIND_LEGAL_LINK_PENDING = "legal_link_pending";
+/** Public-KB documents waiting for their identity review. */
+export const KIND_LEGAL_IDENTITY_PENDING = "legal_identity_pending";
+export const QUEUE_KINDS = [
+  KIND_PAYMENT_ORDER_PENDING,
+  KIND_LEGAL_REQUEST_PENDING,
+  KIND_LEGAL_DRAFT_READY,
+  KIND_LEGAL_LINK_PENDING,
+  KIND_LEGAL_IDENTITY_PENDING,
+] as const;
+export type QueueKind = (typeof QUEUE_KINDS)[number];
+/** A plan, organization or title longer than this is cut in the body. */
+const QUEUE_TEXT_MAX = 60;
+
+export function isQueueKind(kind: string): kind is QueueKind {
+  return (QUEUE_KINDS as readonly string[]).includes(kind);
+}
+
+/** isReviewDigest: a SuperAdmin review digest, whose page is in the web
+ * app's admin console (the Word add-in only says where). */
+export function isReviewDigest(kind: string): boolean {
+  return kind === KIND_ABBREVIATION_PENDING || isQueueKind(kind);
+}
 
 /** The fields these helpers read (lib/api/notifications UserNotification). */
 export interface NotificationLike {
@@ -141,6 +186,63 @@ export interface NotificationTexts {
   abbreviationProperName: (short: string) => string;
   /** the suggestions the digest does not name: "and {n} more" */
   abbreviationPendingMore: (count: number) => string;
+  /** a review-queue digest: "{n} new payment orders awaiting confirmation" */
+  queueTitle: (kind: QueueKind, count: number) => string;
+  /** the items a review-queue digest does not name: "and {n} more orders"
+   * (never for links: their items carry the link counts) */
+  queueMore: (kind: Exclude<QueueKind, typeof KIND_LEGAL_LINK_PENDING>, count: number) => string;
+  /** how often a legal document was requested: "3 requests" */
+  queueRequestCount: (count: number) => string;
+  /** the pending links of a pushed document: "12 links" */
+  queueLinkCount: (count: number) => string;
+  /** an amount in đồng: "1,250,000 VND" / "1.250.000 đ" */
+  money: (vnd: number) => string;
+  /** an item with neither số hiệu nor title: "untitled document" */
+  queueUntitled: string;
+}
+
+type QueueItem = { ref: string; title: string; count: number; plan: string; amount: number; org: string; untitled: boolean };
+
+/** The items a review-queue digest names, newest first. */
+function queueItems(n: Pick<NotificationLike, "payload">): QueueItem[] {
+  const raw = n.payload?.items;
+  if (!Array.isArray(raw)) return [];
+  const str = (o: Record<string, unknown>, k: string) => (typeof o[k] === "string" ? (o[k] as string).trim() : "");
+  const num = (o: Record<string, unknown>, k: string) => (typeof o[k] === "number" && Number.isFinite(o[k]) ? (o[k] as number) : 0);
+  return raw.flatMap((it) => {
+    if (!it || typeof it !== "object") return [];
+    const o = it as Record<string, unknown>;
+    const ref = str(o, "ref");
+    const untitled = o.untitled === true && !ref;
+    return ref || untitled
+      ? [{ ref, title: str(o, "title"), count: num(o, "count"), plan: str(o, "plan"), amount: num(o, "amount_vnd"), org: str(o, "org"), untitled }]
+      : [];
+  });
+}
+
+/** "53/2022/NĐ-CP – Quy định chi tiết…" */
+function refTitle(it: QueueItem, texts: NotificationTexts): string {
+  if (it.untitled) return texts.queueUntitled;
+  return it.title && it.title.toLowerCase() !== it.ref.toLowerCase()
+    ? `${it.ref} – ${cut(it.title, QUEUE_TEXT_MAX)}`
+    : cut(it.ref, QUEUE_TEXT_MAX);
+}
+
+function queueItemText(kind: QueueKind, it: QueueItem, texts: NotificationTexts): string {
+  switch (kind) {
+    case KIND_PAYMENT_ORDER_PENDING:
+      return [it.ref, cut(it.plan, QUEUE_TEXT_MAX), it.amount > 0 ? texts.money(it.amount) : "", cut(it.org, QUEUE_TEXT_MAX)]
+        .filter(Boolean)
+        .join(" · ");
+    case KIND_LEGAL_REQUEST_PENDING:
+      return it.count > 1 ? `${refTitle(it, texts)} (${texts.queueRequestCount(it.count)})` : refTitle(it, texts);
+    case KIND_LEGAL_LINK_PENDING:
+      return it.count > 0 ? `${it.ref} (${texts.queueLinkCount(it.count)})` : it.ref;
+    case KIND_LEGAL_DRAFT_READY:
+      return refTitle(it, texts);
+    default:
+      return it.untitled ? texts.queueUntitled : cut(it.ref, QUEUE_TEXT_MAX);
+  }
 }
 
 /** The suggestions an abbreviation_pending digest names, newest first. */
@@ -185,6 +287,17 @@ export function notificationText(
       );
       if (count > items.length) parts.push(texts.abbreviationPendingMore(count - items.length));
       return { title: texts.abbreviationPendingTitle(count), body: parts.join(", ") };
+    }
+  }
+  if (isQueueKind(n.kind)) {
+    const items = queueItems(n);
+    const count = typeof n.payload?.count === "number" ? Math.max(n.payload.count, items.length) : 0;
+    // the title alone when no item is named: never the stored Vietnamese
+    if (count > 0) {
+      const parts = items.map((it) => queueItemText(n.kind as QueueKind, it, texts));
+      // links count links while the items name documents: no "and N more"
+      if (n.kind !== KIND_LEGAL_LINK_PENDING && items.length > 0 && count > items.length) parts.push(texts.queueMore(n.kind, count - items.length));
+      return { title: texts.queueTitle(n.kind, count), body: parts.join(", ") };
     }
   }
   if (n.kind === KIND_LEGAL_REQUEST_ADDED) {

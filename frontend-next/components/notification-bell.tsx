@@ -6,7 +6,7 @@ import { ClickAwayLayer } from "@/components/click-away-layer";
 import { useToast } from "@/components/toast";
 import { useAuth, useTenantRole } from "@/lib/auth";
 import { formatDateTime } from "@/lib/datetime";
-import { useT } from "@/lib/i18n";
+import { useT, type LocaleKey } from "@/lib/i18n";
 import {
   getUnreadNotificationCount,
   listNotifications,
@@ -16,6 +16,7 @@ import {
   type UserNotification,
 } from "@/lib/api/notifications";
 import {
+  NOTIFICATION_OPENED_EVENT,
   NOTIFICATION_POLL_MS,
   badgeLabel,
   mergeFresh,
@@ -61,8 +62,14 @@ export function NotificationBell() {
       abbreviationPendingTitle: (n) => t("notif.abbrevPending.title", { n }),
       abbreviationProperName: (short) => t("notif.abbrevPending.properName", { short }),
       abbreviationPendingMore: (n) => t("notif.abbrevPending.more", { n }),
+      queueTitle: (kind, n) => t(`notif.queue.${kind}.title` as LocaleKey, { n }),
+      queueMore: (kind, n) => t(`notif.queue.${kind}.more` as LocaleKey, { n }),
+      queueRequestCount: (n) => t("notif.queue.requestCount", { n }),
+      queueLinkCount: (n) => t("notif.queue.linkCount", { n }),
+      money: (vnd) => (locale === "vi" ? `${vnd.toLocaleString("vi-VN")} đ` : `${vnd.toLocaleString("en-US")} VND`),
+      queueUntitled: t("notif.queue.untitled"),
     }),
-    [t],
+    [t, locale],
   );
 
   // where a click on n goes: never into another organization (the web app
@@ -87,7 +94,11 @@ export function NotificationBell() {
       }
       setOpen(false);
       const target = targetOf(n);
-      if (target.path) router.push(target.path);
+      if (target.path) {
+        router.push(target.path);
+        // a page already showing this link re-applies its query
+        window.dispatchEvent(new CustomEvent(NOTIFICATION_OPENED_EVENT, { detail: target.path }));
+      }
     },
     [router, targetOf],
   );

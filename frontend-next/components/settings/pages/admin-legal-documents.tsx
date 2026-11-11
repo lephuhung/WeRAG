@@ -35,6 +35,7 @@ import {
 } from "@/lib/api/legal-review";
 import { LegalContentTab, LegalDisplayTab } from "@/components/settings/pages/legal-review-edit";
 import { useSearchParams } from "next/navigation";
+import { NOTIFICATION_OPENED_EVENT, linkParam } from "@/lib/notifications";
 import LegalRequestsSection from "@/components/settings/pages/admin-legal-requests";
 import LegalDraftsSection from "@/components/settings/pages/admin-legal-drafts";
 import LegalLinksSection from "@/components/settings/pages/admin-legal-links";
@@ -197,7 +198,22 @@ export default function AdminLegalDocuments() {
   const [scanning, setScanning] = useState(false);
   const [editing, setEditing] = useState<LegalReviewItem | null>(null);
   const searchParams = useSearchParams();
-  const [view, setView] = useState<PageView>(() => pageViewOf(searchParams.get("view")));
+  const viewParam = searchParams.get("view");
+  const [view, setView] = useState<PageView>(() => pageViewOf(viewParam));
+  // a link naming a view (a notification) opens it, also on an open page
+  useEffect(() => {
+    if (viewParam) setView(pageViewOf(viewParam));
+  }, [viewParam]);
+  // the same notification opened again (the URL does not change)
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const path = String((e as CustomEvent<string>).detail ?? "");
+      const v = linkParam(path, "view");
+      if (linkParam(path, "section") === "legal-documents" && v) setView(pageViewOf(v));
+    };
+    window.addEventListener(NOTIFICATION_OPENED_EVENT, onOpen);
+    return () => window.removeEventListener(NOTIFICATION_OPENED_EVENT, onOpen);
+  }, []);
   const [requestCounts, setRequestCounts] = useState<LegalRequestCounts | null>(null);
   const denyRequests = useCallback(() => setAllowed(false), []);
 

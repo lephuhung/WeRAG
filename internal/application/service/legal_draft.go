@@ -89,6 +89,10 @@ type LegalDraftService struct {
 	// (PushFeedDraft); nil: feed drafts are not available.
 	Push *LegalPushService
 
+	// Notices tells the SuperAdmins about drafts ready for review (nil:
+	// nobody is told).
+	Notices *SuperAdminQueueNotifier
+
 	// fetching serializes fetches of one document within this process
 	fetching sync.Map
 }
@@ -344,6 +348,7 @@ func (s *LegalDraftService) runOCR(ctx context.Context, draft *types.LegalDocume
 	}
 	logger.Infof(ctx, "[LegalDraft] draft %s OCRed: %d pages, %d chars, engine %s, %s", draft.ID, pages,
 		len([]rune(markdown)), engine, time.Since(started).Round(time.Second))
+	s.Notices.LegalDraftReady(ctx, draft)
 }
 
 // failDraft records a failure; the draft's requests go back to the queue.
@@ -369,6 +374,8 @@ func (s *LegalDraftService) moveRequests(ctx context.Context, vbplID string, fro
 	if _, err := s.requests.SetStatusByDocument(ctx, vbplID, from, to); err != nil {
 		logger.Warnf(ctx, "[LegalDraft] requests of %s → %s: %v", vbplID, to, err)
 	}
+	// a request leaving "requested" may empty the request queue
+	s.Notices.LegalRequestsChanged(ctx)
 }
 
 // ocrPDF reads a PDF with the platform organization's pdf parser (the
@@ -527,6 +534,7 @@ func (s *LegalDraftService) Discard(ctx context.Context, id string) error {
 	s.moveRequests(ctx, d.LegalDocumentID, []string{types.LegalRequestFetched, types.LegalRequestReviewing},
 		types.LegalRequestRequested)
 	logger.Infof(ctx, "[LegalDraft] draft %s of %s discarded by %s", d.ID, d.LegalDocumentID, types.CallerFromContext(ctx).UserID)
+	s.Notices.LegalDraftsChanged(ctx)
 	return nil
 }
 
@@ -611,6 +619,7 @@ func (s *LegalDraftService) Open(ctx context.Context, id string, viewer types.Le
 	if err := s.drafts.Update(ctx, d.ID, fields); err != nil {
 		return nil, err
 	}
+	s.Notices.LegalDraftsChanged(ctx)
 
 	viewCtx := WithDocumentEditorOrigin(ctx, viewer.Origin)
 	view, err := s.workspaces.View(viewCtx, ws, userID, viewer.UserName, viewer.Lang)

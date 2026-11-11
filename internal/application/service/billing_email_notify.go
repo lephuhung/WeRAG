@@ -17,7 +17,8 @@ type billingEmailNotify struct {
 	notifier interfaces.BillingNotifier
 }
 
-// NewBillingEmailNotifications wraps the billing service (dig.Decorate).
+// NewBillingEmailNotifications wraps the billing service with the order
+// emails (composed by NewBillingNotifications).
 func NewBillingEmailNotifications(
 	inner interfaces.UsageBillingService, notifier *EmailNotifier,
 ) interfaces.UsageBillingService {

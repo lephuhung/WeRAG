@@ -275,8 +275,8 @@ type legalRequestAddedNotify struct {
 	notifier *LegalRequestNotifier
 }
 
-// NewLegalRequestAddedNotifications wraps the legal request service
-// (dig.Decorate).
+// NewLegalRequestAddedNotifications wraps the legal request service with
+// the "document added" notices (composed by NewLegalRequestNotifications).
 func NewLegalRequestAddedNotifications(
 	inner interfaces.LegalRequestService, notifier *LegalRequestNotifier,
 ) interfaces.LegalRequestService {

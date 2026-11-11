@@ -39,6 +39,9 @@ type LegalPushService struct {
 	settings interface {
 		GetBool(ctx context.Context, key string, envName string, def bool) bool
 	}
+	// Notices tells the SuperAdmins about the links a push leaves pending
+	// (nil: nobody is told).
+	Notices *SuperAdminQueueNotifier
 }
 
 // LegalFeedAutoApproveSetting: a pushed mark matched at both ends (A's
@@ -594,11 +597,13 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 
 	// 5. store: pending candidates of this document are replaced; decided
 	// ones stay and the same mark is not asked again
+	wasPending := s.pendingCandidateKeys(ctx, meta)
 	kept, err := s.store(ctx, meta, a.ID, out)
 	if err != nil {
 		return nil, err
 	}
 	res.KeptDecisions = kept
+	var newKeys []string
 	for _, c := range out {
 		if c.ID == 0 {
 			continue
@@ -607,9 +612,25 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 		switch c.ReviewStatus {
 		case types.LegalLinkReviewPending:
 			res.Pending++
+			if k := LegalLinkNoticeKey(c); !wasPending[k] {
+				newKeys = append(newKeys, k)
+			}
 		case types.LegalLinkReviewApproved:
 			res.AutoApproved++
 		}
+	}
+	// the links newly left to a person (not auto-approved, not pending
+	// already before this push: a re-push of an unchanged document adds
+	// none) go to the SuperAdmins' digest; the replaced pending candidates
+	// may have emptied the queue
+	if len(newKeys) > 0 {
+		ref := strings.TrimSpace(a.DocumentNumber)
+		if ref == "" {
+			ref = a.ID
+		}
+		s.Notices.LegalLinksPending(ctx, actor.UserID, ref, meta.feed, meta.feedDocID, newKeys)
+	} else {
+		s.Notices.LegalLinksChanged(ctx)
 	}
 	WriteLegalFeedLog(ctx, s.db, actor, LegalFeedEntry{
 		Action: "push_" + mode, VBPLID: a.ID, KnowledgeID: res.KnowledgeID, KnowledgeBaseID: res.KnowledgeBaseID,
@@ -1017,6 +1038,15 @@ func legalCandidateKey(c *types.LegalProvisionLinkCandidate) string {
 		c.AmenderDocID, c.SourcePath}, "|")
 }
 
+// LegalLinkNoticeKey names one pending link of a pushed document for the
+// SuperAdmins' digest across pushes (the rows are recreated with new ids on
+// every push) and adoptions (which rewrite amender_doc_id): the element and
+// path it is on, the relation, the amending số hiệu and its provision.
+func LegalLinkNoticeKey(c *types.LegalProvisionLinkCandidate) string {
+	return strings.Join([]string{c.TargetElementID, c.TargetPath, fmt.Sprint(c.RelationCode),
+		vietnamese_legal.CatalogNumberKey(c.AmenderDocNumber), c.SourcePath}, "|")
+}
+
 // legalMarkKey is the key of the mark a candidate was pushed as.
 func legalMarkKey(c *types.LegalProvisionLinkCandidate) string {
 	var d struct {
@@ -1026,6 +1056,23 @@ func legalMarkKey(c *types.LegalProvisionLinkCandidate) string {
 		return d.MarkKey
 	}
 	return legalCandidateKey(c)
+}
+
+// pendingCandidateKeys are the keys (candidate key + element) of the
+// pushed document's candidates waiting for review before this push; none
+// when they cannot be read (the push then counts all its pending links).
+func (s *LegalPushService) pendingCandidateKeys(ctx context.Context, meta *legalPushMeta) map[string]bool {
+	var rows []*types.LegalProvisionLinkCandidate
+	if err := s.db.WithContext(ctx).Where("feed = ? AND feed_doc_id = ? AND review_status = ?", meta.feed, meta.feedDocID,
+		types.LegalLinkReviewPending).Find(&rows).Error; err != nil {
+		logger.Warnf(ctx, "[LegalPush] pending candidates of %s %s: %v", meta.feed, meta.feedDocID, err)
+		return nil
+	}
+	keys := make(map[string]bool, len(rows))
+	for _, c := range rows {
+		keys[LegalLinkNoticeKey(c)] = true
+	}
+	return keys
 }
 
 // store replaces the pending candidates of the pushed document; a mark a
