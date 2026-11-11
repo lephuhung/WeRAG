@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -180,6 +181,19 @@ func (r *legalCatalogRepository) ListEdges(
 	}
 	err := r.db.WithContext(ctx).Where(col+" IN ? AND relation IN ?", ids, rels).Find(&rows).Error
 	return rows, err
+}
+
+func (r *legalCatalogRepository) LatestSnapshot(ctx context.Context) (*time.Time, error) {
+	// ORDER BY … LIMIT 1 rather than MAX(): SQLite (unit tests) loses the
+	// column type on an aggregate and returns text.
+	var docs []types.LegalDocument
+	err := r.db.WithContext(ctx).Select("source_updated_at").
+		Where("source = ? AND source_updated_at IS NOT NULL", types.LegalDocumentSourceVBPL).
+		Order("source_updated_at DESC").Limit(1).Find(&docs).Error
+	if err != nil || len(docs) == 0 {
+		return nil, err
+	}
+	return docs[0].SourceUpdatedAt, nil
 }
 
 func (r *legalCatalogRepository) GetByIDs(ctx context.Context, ids []string) ([]*types.LegalDocument, error) {

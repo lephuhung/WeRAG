@@ -2,6 +2,7 @@ package interfaces
 
 import (
 	"context"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -42,6 +43,11 @@ type LegalCatalogRepository interface {
 	// with incoming, edges ending at an id (another document acts on it),
 	// otherwise edges starting from one. One hop of a graph walk.
 	ListEdges(ctx context.Context, ids []string, rels []types.LegalRelation, incoming bool) ([]types.LegalDocumentRelation, error)
+
+	// LatestSnapshot returns the newest source snapshot time of the rows
+	// imported from vbpl.vn (nil when there is none): how fresh the
+	// catalogue is.
+	LatestSnapshot(ctx context.Context) (*time.Time, error)
 
 	// GetByIDs returns the documents with the given IDs (any order).
 	GetByIDs(ctx context.Context, ids []string) ([]*types.LegalDocument, error)
@@ -317,4 +323,14 @@ type LegalGraphFocusService interface {
 	// held-document candidates of the picker; without q the best-
 	// connected ones come only with an empty docID (the first load).
 	KBFocus(ctx context.Context, kbID, docID, q string) (*types.LegalGraphFocus, error)
+}
+
+// LegalValidityLookupService answers the validity lookup page: members and
+// guests look a document up by số hiệu or title without the chat (no LLM,
+// no usage quota).
+type LegalValidityLookupService interface {
+	// LookupValidity finds the catalogue documents query names (a số hiệu,
+	// a bare number, or title words), at most limit, newest first, each
+	// with its status and the documents replacing, ending or amending it.
+	LookupValidity(ctx context.Context, query string, limit int) (*types.LegalValidityLookup, error)
 }
