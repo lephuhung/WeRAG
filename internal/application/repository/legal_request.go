@@ -376,3 +376,72 @@ func (r *legalRequestRepository) PublicKnowledgeBases(ctx context.Context) ([]ty
 		Where("owner_tenant_id = 0 AND deleted_at IS NULL").Order("name").Scan(&kbs).Error
 	return kbs, err
 }
+
+func (r *legalRequestRepository) AddRequester(ctx context.Context, req *types.LegalRequestRequester) error {
+	if req == nil || strings.TrimSpace(req.RequestID) == "" || strings.TrimSpace(req.UserID) == "" {
+		return errors.New("legal request requester: request and user are required")
+	}
+	now := time.Now()
+	row := *req
+	if row.ID == "" {
+		row.ID = uuid.NewString()
+	}
+	if row.MessageID != nil && strings.TrimSpace(*row.MessageID) == "" {
+		row.MessageID = nil
+	}
+	row.NotifiedAt, row.NotifyStatus = nil, ""
+	row.CreatedAt, row.UpdatedAt = now, now
+	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "request_id"}, {Name: "user_id"}},
+		// asking again: the latest conversation is where the person waits,
+		// and they are told again (they still miss the document)
+		DoUpdates: clause.Assignments(map[string]any{
+			"tenant_id": row.TenantID, "session_id": row.SessionID, "message_id": row.MessageID,
+			"channel": row.Channel, "notified_at": nil, "notify_status": "", "updated_at": now,
+		}),
+	}).Create(&row).Error
+}
+
+func (r *legalRequestRepository) CountRequesters(ctx context.Context, requestIDs []string) (map[string]int, error) {
+	out := map[string]int{}
+	if len(requestIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		RequestID string
+		N         int
+	}
+	err := r.db.WithContext(ctx).Model(&types.LegalRequestRequester{}).
+		Select("request_id, COUNT(*) AS n").Where("request_id IN ?", requestIDs).
+		Group("request_id").Scan(&rows).Error
+	for _, row := range rows {
+		out[row.RequestID] = row.N
+	}
+	return out, err
+}
+
+func (r *legalRequestRepository) PendingAddedNotices(
+	ctx context.Context, decidedSince time.Time, limit int,
+) ([]*types.LegalRequestAddedNotice, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var rows []*types.LegalRequestAddedNotice
+	err := r.db.WithContext(ctx).Table("legal_request_requesters AS q").
+		Select(`q.id AS requester_id, q.request_id, q.tenant_id, q.user_id, q.session_id, q.channel,
+			r.document_number, r.title, r.decided_at`).
+		Joins("JOIN legal_document_requests r ON r.id = q.request_id").
+		Where("q.notified_at IS NULL AND r.status = ? AND r.decided_at IS NOT NULL AND r.decided_at >= ?",
+			types.LegalRequestAdded, decidedSince).
+		Order("r.decided_at").Order("q.id").Limit(limit).Scan(&rows).Error
+	return rows, err
+}
+
+func (r *legalRequestRepository) MarkRequesterNotified(
+	ctx context.Context, requesterID, status string, at time.Time,
+) (bool, error) {
+	res := r.db.WithContext(ctx).Model(&types.LegalRequestRequester{}).
+		Where("id = ? AND notified_at IS NULL", requesterID).
+		Updates(map[string]any{"notified_at": at, "notify_status": status, "updated_at": at})
+	return res.RowsAffected == 1, res.Error
+}

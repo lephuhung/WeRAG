@@ -112,6 +112,9 @@ type LegalRequestItem struct {
 	// Draft is the OCR draft of the document's scanned PDF, nil when none
 	// was fetched.
 	Draft *LegalDraftSummary `json:"draft"`
+	// RequesterCount is how many people asked (legal_request_requesters);
+	// who they are is not shown.
+	RequesterCount int `json:"requester_count"`
 }
 
 // LegalRequestDocument is the catalogue view of a requested document.
@@ -215,3 +218,73 @@ func LegalRequestRecordedFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(legalRequestRecordedKey{}).(string)
 	return v
 }
+
+// LegalRequestRequester is one person who asked for a request's document
+// (migration 000194): the request itself keeps only the last asker
+// (Last*), so the earlier ones would be lost. One row per (RequestID,
+// UserID): the same person asking again moves the row to the latest
+// conversation and, when they were already told, makes them pending again
+// (they ask because they still miss it). Requests nobody asked for (the
+// nightly import, a feed push) have no requester.
+//
+// NotifiedAt is set once the person was told the document is available
+// (service.LegalRequestNotifier), NotifyStatus says how
+// (LegalRequesterNotify*).
+type LegalRequestRequester struct {
+	ID        string  `json:"id"         gorm:"type:varchar(36);primaryKey"`
+	RequestID string  `json:"request_id" gorm:"type:varchar(36);not null;uniqueIndex:ux_legal_request_requesters_user,priority:1"`
+	TenantID  uint64  `json:"tenant_id"  gorm:"not null;default:0"`
+	UserID    string  `json:"user_id"    gorm:"type:varchar(36);not null;uniqueIndex:ux_legal_request_requesters_user,priority:2"`
+	SessionID string  `json:"session_id" gorm:"type:varchar(36);not null;default:''"`
+	MessageID *string `json:"message_id" gorm:"type:varchar(36)"`
+	// Channel is where the person asked (LegalRequesterChannel*, or the
+	// chat request's channel as sent).
+	Channel      string     `json:"channel"       gorm:"type:varchar(32);not null;default:''"`
+	NotifiedAt   *time.Time `json:"notified_at"`
+	NotifyStatus string     `json:"notify_status" gorm:"type:varchar(16);not null;default:''"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+// TableName returns the table name for LegalRequestRequester.
+func (LegalRequestRequester) TableName() string { return "legal_request_requesters" }
+
+// Where a requester asked.
+const (
+	LegalRequesterChannelWeb       = "web"
+	LegalRequesterChannelWordAddin = "word_addin"
+	// LegalRequesterChannelPortal: a Guest in the public portal.
+	LegalRequesterChannelPortal = "portal"
+)
+
+// LegalRequestRequester.NotifyStatus values: mailed, or why not (the row
+// is still closed so it is not retried; in-app notices may use these).
+const (
+	LegalRequesterNotifySent = "sent"
+	// LegalRequesterNotifyNoEmail: the account has no usable address.
+	LegalRequesterNotifyNoEmail = "no_email"
+	// LegalRequesterNotifyInactive: the account is disabled.
+	LegalRequesterNotifyInactive = "inactive"
+	// LegalRequesterNotifyNoUser: the account is gone (or the asker was
+	// not a user account: an API or embed principal).
+	LegalRequesterNotifyNoUser = "no_user"
+)
+
+// LegalRequestAddedNotice is a requester due the "document added" mail:
+// the requester row with what the mail names of its request.
+type LegalRequestAddedNotice struct {
+	RequesterID    string
+	RequestID      string
+	TenantID       uint64
+	UserID         string
+	SessionID      string
+	Channel        string
+	DocumentNumber string
+	Title          string
+	DecidedAt      time.Time
+}
+
+// LegalRequestNoticeWindow bounds how long after a request was closed as
+// added its requesters are still mailed: SMTP switched on later must not
+// mail about documents added weeks ago.
+const LegalRequestNoticeWindow = 7 * 24 * time.Hour

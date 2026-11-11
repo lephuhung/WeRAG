@@ -237,6 +237,20 @@ type LegalRequestRepository interface {
 	// PublicKnowledgeBases lists the platform public KBs (no owner
 	// organization), by name.
 	PublicKnowledgeBases(ctx context.Context) ([]types.LegalPublicKB, error)
+	// AddRequester records who asked for a request's document, one row per
+	// (RequestID, UserID). Asking again moves the row to the latest
+	// tenant, session, message and channel and clears NotifiedAt /
+	// NotifyStatus, so a person who still misses the document is told
+	// again when it is added again.
+	AddRequester(ctx context.Context, r *types.LegalRequestRequester) error
+	// CountRequesters returns how many people asked for each request id.
+	CountRequesters(ctx context.Context, requestIDs []string) (map[string]int, error)
+	// PendingAddedNotices lists the requesters not told yet of requests
+	// closed as added at or after decidedSince, oldest closing first.
+	PendingAddedNotices(ctx context.Context, decidedSince time.Time, limit int) ([]*types.LegalRequestAddedNotice, error)
+	// MarkRequesterNotified sets notified_at and notify_status of a
+	// requester not told yet; false when it was already (or is gone).
+	MarkRequesterNotified(ctx context.Context, requesterID, status string, at time.Time) (bool, error)
 }
 
 // LegalRequestService drives the SuperAdmin queue of legal document requests.
