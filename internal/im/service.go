@@ -904,6 +904,24 @@ func applyIMCompleteDataToMessage(msg *types.Message, data event.AgentCompleteDa
 	if steps := sanitizeIMAgentSteps(data.AgentSteps); len(steps) > 0 {
 		msg.AgentSteps = steps
 	}
+	// a gate answered for lack of evidence: the admins' ungrounded list
+	msg.ApplyUngroundedMarker(data.Ungrounded)
+}
+
+// applyIMFallbackAnswer marks a quick-answer turn whose retrieval found
+// nothing (the fallback answered) for the admins' ungrounded list.
+func applyIMFallbackAnswer(msg *types.Message, data event.AgentFinalAnswerData, query string) {
+	if data.IsFallback {
+		msg.ApplyUngroundedMarker(types.QuickAnswerUngroundedMarker(query))
+	}
+}
+
+// dropIMUngroundedOnFailure: a turn the model failed to answer is no
+// ungrounded question (types.TurnFailure* codes on the error event).
+func dropIMUngroundedOnFailure(msg *types.Message, data event.ErrorData) {
+	if msg != nil && types.IsTurnFailure(data.ErrorCode) {
+		msg.ExecutionContext.Ungrounded = nil
+	}
 }
 
 // waitForIMAgentComplete blocks until EventAgentComplete, ctx cancellation, or timeout.
@@ -2764,6 +2782,9 @@ func (s *Service) handleMessageStream(ctx context.Context, msg *IncomingMessage,
 			// Quick-answer turns report usage on their terminal answer event.
 			assistantMsg.Usage = data.Usage
 		}
+		if assistantMsg != nil {
+			applyIMFallbackAnswer(assistantMsg, data, msg.Content)
+		}
 		bufMu.Unlock()
 
 		if data.Done {
@@ -2780,6 +2801,7 @@ func (s *Service) handleMessageStream(ctx context.Context, msg *IncomingMessage,
 		logger.Errorf(ctx, "[IM] QA stream error: %s", data.Error)
 		bufMu.Lock()
 		qaErr = fmt.Errorf("QA pipeline error: %s", data.Error)
+		dropIMUngroundedOnFailure(assistantMsg, data)
 		bufMu.Unlock()
 		closeDone()
 		closeComplete()
@@ -3139,6 +3161,8 @@ func (s *Service) runQA(ctx context.Context, session *types.Session, query strin
 	var answerBuilder strings.Builder
 	var qaErr error
 	var quickUsage *types.TokenUsage // quick-answer turns report usage on the terminal answer event
+	var quickFallback bool           // quick answer: retrieval found nothing, the fallback answered
+	var turnFailed bool              // the model failed to answer (types.TurnFailure* error code)
 	var mcpAuthServices []imMCPAuthService
 	mcpAuthSeen := make(map[string]bool)
 	done := make(chan struct{})
@@ -3158,6 +3182,9 @@ func (s *Service) runQA(ctx context.Context, session *types.Session, query strin
 		if data.Usage != nil {
 			quickUsage = data.Usage
 		}
+		if data.IsFallback {
+			quickFallback = true
+		}
 		answerMu.Unlock()
 		if data.Done {
 			closeDone()
@@ -3173,6 +3200,9 @@ func (s *Service) runQA(ctx context.Context, session *types.Session, query strin
 		logger.Errorf(ctx, "[IM] QA error: %s", data.Error)
 		answerMu.Lock()
 		qaErr = fmt.Errorf("QA pipeline error: %s", data.Error)
+		if types.IsTurnFailure(data.ErrorCode) {
+			turnFailed = true
+		}
 		answerMu.Unlock()
 		closeDone()
 		closeComplete()
@@ -3311,6 +3341,12 @@ func (s *Service) runQA(ctx context.Context, session *types.Session, query strin
 	authServices := append([]imMCPAuthService(nil), mcpAuthServices...)
 	if quickUsage != nil && assistantMsg.Usage == nil {
 		assistantMsg.Usage = quickUsage
+	}
+	if quickFallback {
+		assistantMsg.ApplyUngroundedMarker(types.QuickAnswerUngroundedMarker(query))
+	}
+	if turnFailed {
+		assistantMsg.ExecutionContext.Ungrounded = nil
 	}
 	answerMu.Unlock()
 

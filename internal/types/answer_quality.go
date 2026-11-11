@@ -236,3 +236,25 @@ type AnswerQualityReviewInput struct {
 	Note     *string `json:"note"`
 	Reviewed *bool   `json:"reviewed"`
 }
+
+// ApplyUngroundedMarker stores marker on an assistant message unless the
+// turn failed (TurnFailure): the one rule every chat surface applies to a
+// completion's marker (web stream handler, IM channels, MCP ask). A nil
+// marker leaves the message alone.
+func (m *Message) ApplyUngroundedMarker(marker *UngroundedMarker) {
+	if m == nil || marker == nil {
+		return
+	}
+	if m.TurnFailed() {
+		m.ExecutionContext.Ungrounded = nil
+		return
+	}
+	m.ExecutionContext.Ungrounded = marker
+}
+
+// QuickAnswerUngroundedMarker is the marker of a quick-answer turn whose
+// retrieval found nothing and the fallback answered
+// (AgentFinalAnswerData.IsFallback).
+func QuickAnswerUngroundedMarker(query string) *UngroundedMarker {
+	return NewUngroundedMarker(UngroundedNoEvidence, query, "")
+}

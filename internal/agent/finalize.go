@@ -51,6 +51,7 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 			})
 		}
 		state.FinalAnswer = answer
+		state.Ungrounded = true
 		return nil
 	}
 
@@ -164,6 +165,7 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	// the saved answer drops the lead-in the stream dropped
 	content, _ := cleanFinalAnswer(ctx, checkQuery, agenttools.StripThinkBlocks(llmResult.Content))
 	state.FinalAnswer = cleanAnswerNumbers(ctx, cleanAnswerInContext(ctx, content))
+	state.Ungrounded = false
 	if kind := lead.Kind(); kind != answerOK {
 		// nothing of it was shown; what was gathered answers instead
 		logger.Warnf(ctx, "[Agent][FinalAnswer] Synthesis held back (%s)", kind)
@@ -261,6 +263,7 @@ func (e *AgentEngine) handleMaxIterations(
 			e.endTurnOnModelFailure(ctx, state, sessionID, err)
 		} else {
 			state.FinalAnswer = e.synthesisFallback(state)
+			state.Ungrounded = false
 		}
 	}
 	state.IsComplete = true

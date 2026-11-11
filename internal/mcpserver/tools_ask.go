@@ -246,15 +246,17 @@ func (s *Server) runQA(
 	}
 
 	var (
-		mu       sync.Mutex
-		answer   strings.Builder
-		final    string
-		refs     []*types.SearchResult
-		qaErr    error
-		done     = make(chan struct{})
-		complete = make(chan struct{})
-		doneOnce sync.Once
-		compOnce sync.Once
+		mu     sync.Mutex
+		answer strings.Builder
+		final  string
+		refs   []*types.SearchResult
+		qaErr  error
+		// turnFailed: the error event carried a types.TurnFailure* code
+		turnFailed bool
+		done       = make(chan struct{})
+		complete   = make(chan struct{})
+		doneOnce   sync.Once
+		compOnce   sync.Once
 	)
 	closeDone := func() { doneOnce.Do(func() { close(done) }) }
 	closeComplete := func() { compOnce.Do(func() { close(complete) }) }
@@ -269,6 +271,10 @@ func (s *Server) runQA(
 		answer.WriteString(data.Content)
 		if data.Usage != nil {
 			assistantMsg.Usage = data.Usage
+		}
+		// quick answer: retrieval found nothing, the fallback answered
+		if data.IsFallback {
+			assistantMsg.ApplyUngroundedMarker(types.QuickAnswerUngroundedMarker(question))
 		}
 		mu.Unlock()
 		if data.Done {
@@ -298,6 +304,10 @@ func (s *Server) runQA(
 		if usage, ok := data.Usage.(*types.TokenUsage); ok && usage != nil {
 			assistantMsg.Usage = usage
 		}
+		// a gate answered for lack of evidence: the admins' ungrounded list
+		if !turnFailed {
+			assistantMsg.ApplyUngroundedMarker(data.Ungrounded)
+		}
 		if len(data.KnowledgeRefs) > 0 {
 			var completeRefs []*types.SearchResult
 			collectReferences(&completeRefs, data.KnowledgeRefs)
@@ -316,6 +326,11 @@ func (s *Server) runQA(
 		}
 		mu.Lock()
 		qaErr = fmt.Errorf("%s", data.Error)
+		// a turn the model failed to answer is no ungrounded question
+		if types.IsTurnFailure(data.ErrorCode) {
+			turnFailed = true
+			assistantMsg.ExecutionContext.Ungrounded = nil
+		}
 		mu.Unlock()
 		closeDone()
 		closeComplete()

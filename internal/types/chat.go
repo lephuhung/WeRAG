@@ -233,6 +233,9 @@ type ChatResponse struct {
 	// was not shown ("echo", "blank", "english"; see the agent's
 	// degenerate_answer.go), "" when it was. Transient.
 	AnswerHeldBack string `json:"-"`
+	// Ungrounded: the content is the grounding gate's fixed answer, put in
+	// place of an answer no tool evidence backed (agent.ungroundedRound).
+	Ungrounded bool `json:"-"`
 }
 
 // Response type

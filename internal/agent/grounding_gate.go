@@ -123,6 +123,7 @@ func (e *AgentEngine) ungroundedRound(
 	logger.Warnf(ctx, "[Agent][Grounding] Round %d answered without evidence (%d chars); replaced",
 		iteration+1, len(resp.Content))
 	resp.Content = ungroundedAnswerFor(ctx)
+	resp.Ungrounded = true
 	resp.ReasoningContent = ""
 	resp.AnswerStreamed = false
 	resp.AnswerEventID = ""
@@ -130,13 +131,12 @@ func (e *AgentEngine) ungroundedRound(
 }
 
 // ungroundedMarker is the marker stored on the assistant message when the
-// turn ended on the gate's fixed answer (ungroundedAnswer, from a round or
-// the synthesis), nil otherwise or for a failed turn. The question is the
-// user's own text when the turn carries it (types.WithUserQuery), else the
-// loop's query.
+// turn ended on the gate's fixed answer (state.Ungrounded, set by a round or
+// the synthesis gate), nil otherwise or for a failed turn. The question is
+// the user's own text when the turn carries it (types.WithUserQuery), else
+// the loop's query.
 func (e *AgentEngine) ungroundedMarker(ctx context.Context, state *types.AgentState, query string) *types.UngroundedMarker {
-	if state == nil || e.turnFailure != "" ||
-		!strings.HasPrefix(strings.TrimSpace(state.FinalAnswer), ungroundedAnswer) {
+	if state == nil || !state.Ungrounded || e.turnFailure != "" {
 		return nil
 	}
 	if q := types.UserQueryFromContext(ctx); strings.TrimSpace(q) != "" {

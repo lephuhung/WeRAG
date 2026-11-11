@@ -905,6 +905,7 @@ func (e *AgentEngine) runReActIteration(
 			// to append it to. A model stuck repeating itself is not pack
 			// advice either.
 			state.FinalAnswer = response.Content
+			state.Ungrounded = response.Ungrounded
 			state.IsComplete = true
 			return iterOutcomeBreak, nil
 		}
@@ -972,6 +973,7 @@ func (e *AgentEngine) runReActIteration(
 		e.emitFixedAnswer(ctx, sessionID, fallback)
 		step.Thought = fallback
 		state.FinalAnswer = fallback
+		state.Ungrounded = false
 		state.IsComplete = true
 		state.RoundSteps = append(state.RoundSteps, step)
 		return iterOutcomeBreak, nil
@@ -1036,6 +1038,7 @@ func (e *AgentEngine) runReActIteration(
 			}
 		}
 		state.FinalAnswer = verdict.finalAnswer
+		state.Ungrounded = response.Ungrounded
 		state.IsComplete = true
 		state.RoundSteps = append(state.RoundSteps, verdict.step)
 		modelText := state.FinalAnswer
@@ -1081,6 +1084,7 @@ func (e *AgentEngine) runReActIteration(
 		})
 		e.closeAnswerStream(ctx, sessionID, answerID)
 		state.FinalAnswer = msg
+		state.Ungrounded = false
 		state.IsComplete = true
 		return iterOutcomeBreak, nil
 	}

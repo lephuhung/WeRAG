@@ -2253,7 +2253,7 @@ func (h *Handler) completeQuickAnswerTurn(
 	// to the admins' ungrounded-questions list
 	var ungrounded *types.UngroundedMarker
 	if streamCtx.assistantMessage.IsFallback && !streamCtx.assistantMessage.TurnFailed() {
-		ungrounded = types.NewUngroundedMarker(types.UngroundedNoEvidence, query, "")
+		ungrounded = types.QuickAnswerUngroundedMarker(query)
 	}
 	if streamCtx.eventBus != nil {
 		// MessageID is what handleComplete keys on. Leave FinalAnswer empty:
@@ -2267,8 +2267,8 @@ func (h *Handler) completeQuickAnswerTurn(
 				Ungrounded: ungrounded,
 			},
 		})
-	} else if ungrounded != nil {
-		streamCtx.assistantMessage.ExecutionContext.Ungrounded = ungrounded
+	} else {
+		streamCtx.assistantMessage.ApplyUngroundedMarker(ungrounded)
 	}
 	h.completeAssistantMessage(ctx, streamCtx.assistantMessage, query, userMessageID)
 }
