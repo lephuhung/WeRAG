@@ -23,6 +23,7 @@ import { useT } from "@/lib/i18n";
 import { SplitPane } from "@/components/doc-workspace/split-pane";
 import { DocWorkspace } from "@/components/doc-workspace/doc-workspace";
 import { GuestChatNote } from "@/components/chat/guest-chat-note";
+import { LegalLookupBox } from "@/components/legal-lookup/legal-lookup-box";
 import { chatErrorKey, chatErrorTextKey } from "@/lib/api/chat-errors";
 import { shouldRefreshAccount } from "@/lib/guest-chat";
 import { useAuth } from "@/lib/auth";
@@ -275,6 +276,9 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
           autoFocus
         />
         {error && <p className="body-sm mt-4 text-center text-error">{error}</p>}
+
+        {/* A guest checks validity here without spending a daily question. */}
+        {ctx.isGuest && <LegalLookupBox className="mx-auto mt-6 max-w-[560px]" />}
 
         {/* Generic suggestions do not apply to the document assistant. */}
         {!isDocumentAssistant && !ctx.isGuest && (

@@ -117,6 +117,9 @@ var tenantOptionalRoutes = []tenantOptionalRoute{
 	{scope: routeScopeIdentity, path: "/api/v1/auth/me/preferences", methods: []string{http.MethodPut}},
 	// Province choices of the profile form: public facts a Guest needs too.
 	{scope: routeScopeIdentity, path: "/api/v1/auth/provinces", methods: []string{http.MethodGet}},
+	// Validity lookup in the platform legal catalogue: public law, the same
+	// for everyone, so a Guest looks it up too (LegalLookupAccess limits it).
+	{scope: routeScopeIdentity, path: "/api/v1/legal-lookup", methods: []string{http.MethodGet}},
 	{scope: routeScopeIdentity, path: "/api/v1/auth/logout", methods: []string{http.MethodPost}},
 	{scope: routeScopeIdentity, path: "/api/v1/auth/change-password", methods: []string{http.MethodPost}},
 	{scope: routeScopeIdentity, path: "/api/v1/auth/validate", methods: []string{http.MethodGet}},

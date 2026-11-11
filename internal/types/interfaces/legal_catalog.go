@@ -2,6 +2,7 @@ package interfaces
 
 import (
 	"context"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -42,6 +43,21 @@ type LegalCatalogRepository interface {
 	// with incoming, edges ending at an id (another document acts on it),
 	// otherwise edges starting from one. One hop of a graph walk.
 	ListEdges(ctx context.Context, ids []string, rels []types.LegalRelation, incoming bool) ([]types.LegalDocumentRelation, error)
+
+	// FilterDocuments returns the documents matching every set field of f,
+	// newest first, at most f.Limit.
+	FilterDocuments(ctx context.Context, f types.LegalCatalogFilter) ([]*types.LegalDocument, error)
+	// ExternalCopies returns, per catalogue document ID, the live parsed
+	// knowledge of the given knowledge bases imported from vbpl.vn as that
+	// document (knowledges.metadata source "vbpl" + external_id), leaving
+	// out knowledge whose legal link a reviewer did not approve. The
+	// metadata is not reviewed: pass only knowledge bases whose copies the
+	// caller's own organization vouches for.
+	ExternalCopies(ctx context.Context, documentIDs, kbIDs []string) (map[string][]types.LegalKnowledgeRef, error)
+	// LatestSnapshot returns the newest source snapshot time of the rows
+	// imported from vbpl.vn (nil when there is none): how fresh the
+	// catalogue is.
+	LatestSnapshot(ctx context.Context) (*time.Time, error)
 
 	// GetByIDs returns the documents with the given IDs (any order).
 	GetByIDs(ctx context.Context, ids []string) ([]*types.LegalDocument, error)
@@ -317,4 +333,34 @@ type LegalGraphFocusService interface {
 	// held-document candidates of the picker; without q the best-
 	// connected ones come only with an empty docID (the first load).
 	KBFocus(ctx context.Context, kbID, docID, q string) (*types.LegalGraphFocus, error)
+}
+
+// LegalValidityLookupService answers the validity lookup page: members and
+// guests look a document up by số hiệu or title without the chat (no LLM,
+// no usage quota).
+type LegalValidityLookupService interface {
+	// LookupValidity finds the catalogue documents query names (a số hiệu,
+	// a bare number, or title words), at most limit, newest first, each
+	// with its status and the documents replacing, ending or amending it.
+	LookupValidity(ctx context.Context, query string, limit int) (*types.LegalValidityLookup, error)
+}
+
+// LegalLookupMissRepository counts validity lookups that found nothing.
+type LegalLookupMissRepository interface {
+	// Record inserts a miss or, for a known query, bumps its count and
+	// last-seen fields.
+	Record(ctx context.Context, miss *types.LegalLookupMiss) error
+	// List pages misses, most frequent first (byCount) or most recent first.
+	List(ctx context.Context, byCount bool, offset, limit int) ([]*types.LegalLookupMiss, int64, error)
+	// Delete removes one miss (the SuperAdmin settled it).
+	Delete(ctx context.Context, id uint64) error
+	// Prune deletes misses seen once and last before staleBefore, then
+	// all but keep rows: repeated misses first, then the most recent.
+	Prune(ctx context.Context, staleBefore time.Time, keep int) error
+}
+
+// LegalLookupMissService serves the SuperAdmin list of catalogue gaps.
+type LegalLookupMissService interface {
+	ListMisses(ctx context.Context, byCount bool, offset, limit int) ([]*types.LegalLookupMiss, int64, error)
+	DeleteMiss(ctx context.Context, id uint64) error
 }

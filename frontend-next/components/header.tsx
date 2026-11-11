@@ -9,6 +9,7 @@ const SECTION_KEYS: [RegExp, LocaleKey][] = [
   [/^\/platform\/creatChat/, "nav.newChat"],
   [/^\/platform\/knowledge-bases/, "nav.knowledgeBases"],
   [/^\/platform\/artifacts/, "nav.artifacts"],
+  [/^\/platform\/legal-lookup/, "nav.legalLookup"],
   [/^\/platform\/agents/, "nav.agents"],
   [/^\/platform\/system/, "nav.settings"],
   [/^\/platform\/settings/, "nav.settings"],

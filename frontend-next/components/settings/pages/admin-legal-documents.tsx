@@ -38,7 +38,9 @@ import { useSearchParams } from "next/navigation";
 import LegalRequestsSection from "@/components/settings/pages/admin-legal-requests";
 import LegalDraftsSection from "@/components/settings/pages/admin-legal-drafts";
 import LegalLinksSection from "@/components/settings/pages/admin-legal-links";
+import LegalLookupMissesSection from "@/components/settings/pages/admin-legal-lookup-misses";
 import { listLegalRequests, type LegalRequestCounts } from "@/lib/api/legal-requests";
+import { legalStatusTextBadgeClass } from "@/lib/legal-status";
 
 const PAGE_SIZE = 50;
 
@@ -46,17 +48,18 @@ const PAGE_SIZE = 50;
  * documents no knowledge base holds, and the OCR drafts of documents
  * vbpl.vn has only as a scanned PDF. ?view= opens one directly (the draft
  * review page links back with view=requests / view=drafts). */
-type PageView = "review" | "requests" | "drafts" | "links";
+type PageView = "review" | "requests" | "drafts" | "links" | "misses";
 
 const VIEWS: { key: PageView; labelKey: LocaleKey }[] = [
   { key: "review", labelKey: "lreq.view.review" },
   { key: "requests", labelKey: "lreq.view.requests" },
   { key: "drafts", labelKey: "lreq.view.drafts" },
   { key: "links", labelKey: "lreq.view.links" },
+  { key: "misses", labelKey: "lreq.view.misses" },
 ];
 
 function pageViewOf(v: string | null): PageView {
-  return v === "requests" || v === "drafts" || v === "links" ? v : "review";
+  return v === "requests" || v === "drafts" || v === "links" || v === "misses" ? v : "review";
 }
 
 type DialogTab = "identity" | "content" | "display";
@@ -129,12 +132,7 @@ function showDay(day: string): string {
   return `${d}/${m}/${y}`;
 }
 
-function statusTone(status: string): string {
-  if (status.startsWith("Còn hiệu lực")) return "badge-success";
-  if (status === "Hết hiệu lực toàn bộ" || status.startsWith("Ngưng")) return "badge-error";
-  if (status.startsWith("Hết hiệu lực")) return "badge-warning";
-  return "badge-neutral";
-}
+const statusTone = legalStatusTextBadgeClass;
 
 function docLabel(d: LegalDocument): string {
   const num = d.document_number.trim();
@@ -305,6 +303,8 @@ export default function AdminLegalDocuments() {
           <LegalDraftsSection onDenied={denyRequests} />
         ) : view === "links" ? (
           <LegalLinksSection onDenied={denyRequests} />
+        ) : view === "misses" ? (
+          <LegalLookupMissesSection onDenied={denyRequests} />
         ) : (
           <>
             <div className="mb-5 flex flex-wrap items-center gap-3">

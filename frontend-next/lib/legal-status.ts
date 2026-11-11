@@ -1,0 +1,93 @@
+/* Validity status of a legal catalogue document as the UI shows it: the
+ * server reduces the source wording to a kind (types.ClassifyLegalStatus);
+ * here the kind picks a badge tone and a label. Shared by the validity
+ * lookup page; no React, so node --test runs it. */
+
+export type LegalStatusKind =
+  | "in_force"
+  | "expired"
+  | "partly_expired"
+  | "not_yet_in_force"
+  | "suspended"
+  | "unknown";
+
+/** The kind of a catalogue status wording ("Còn hiệu lực", "Hết hiệu lực
+ * toàn bộ", …), as the server's types.ClassifyLegalStatus decides it: for
+ * screens that show the wording itself (the SuperAdmin legal pages). */
+export function legalStatusKindFromText(status: string | null | undefined): LegalStatusKind {
+  const s = (status ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  if (s.startsWith("còn hiệu lực")) return "in_force";
+  if (s.startsWith("hết hiệu lực một phần")) return "partly_expired";
+  if (s.startsWith("hết hiệu lực")) return "expired";
+  if (s.startsWith("chưa có hiệu lực")) return "not_yet_in_force";
+  if (s.startsWith("ngưng") || s.startsWith("tạm ngưng") || s.startsWith("đình chỉ")) return "suspended";
+  return "unknown";
+}
+
+/** Badge class of a status kind (globals.css badge-*): in force green,
+ * expired or suspended red, partly expired amber, the rest neutral. */
+export function legalStatusBadgeClass(kind: string | null | undefined): string {
+  switch (kind) {
+    case "in_force":
+      return "badge-success";
+    case "expired":
+    case "suspended":
+      return "badge-error";
+    case "partly_expired":
+      return "badge-warning";
+    default:
+      return "badge-neutral";
+  }
+}
+
+/** Badge class of a status wording (legalStatusKindFromText + the tones above). */
+export function legalStatusTextBadgeClass(status: string | null | undefined): string {
+  return legalStatusBadgeClass(legalStatusKindFromText(status));
+}
+
+/** i18n key of a status kind's label; unknown kinds read "chưa rõ". */
+export function legalStatusLabelKey(
+  kind: string | null | undefined,
+):
+  | "llookup.status.in_force"
+  | "llookup.status.expired"
+  | "llookup.status.partly_expired"
+  | "llookup.status.not_yet_in_force"
+  | "llookup.status.suspended"
+  | "llookup.status.unknown" {
+  switch (kind) {
+    case "in_force":
+    case "expired":
+    case "partly_expired":
+    case "not_yet_in_force":
+    case "suspended":
+      return `llookup.status.${kind}`;
+    default:
+      return "llookup.status.unknown";
+  }
+}
+
+/** A catalogue date (YYYY-MM-DD, a calendar day with no zone) as
+ * dd/mm/yyyy; "" for none or a malformed value. */
+export function formatLegalDate(value: string | null | undefined): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value ?? "");
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
+}
+
+/** Path of the lookup page, with the query filled in when given. */
+export function legalLookupHref(q?: string | null): string {
+  const query = (q ?? "").trim();
+  return query ? `/platform/legal-lookup?q=${encodeURIComponent(query)}` : "/platform/legal-lookup";
+}
+
+/** Path of a knowledge base document page (deep link opens the document). */
+export function knowledgeDocHref(kbId: string, knowledgeId: string): string {
+  return `/platform/knowledge-bases/${encodeURIComponent(kbId)}?knowledge_id=${encodeURIComponent(knowledgeId)}`;
+}
+
+/** A document's short name: "Nghị định 30/2020/NĐ-CP", or the title. */
+export function legalDocShortLabel(d: { doc_type: string; document_number: string; title: string }): string {
+  const num = d.document_number.trim();
+  if (num) return [d.doc_type.trim(), num].filter(Boolean).join(" ");
+  return d.title.trim();
+}
