@@ -24,9 +24,10 @@ import (
 // answer saying why (legalBasisFailureMessage), never with "no evidence"
 // nor with the model's memory.
 
-// legalBasisIntent reads the turn's request.
+// legalBasisIntent reads the turn's request; only the documents the user
+// named with @ count as pointing at one (not attachments).
 func legalBasisIntent(ctx context.Context) agenttools.LegalBasisIntent {
-	return agenttools.ClassifyLegalBasisRequest(types.UserQueryFromContext(ctx), len(types.MentionedDocumentsFromContext(ctx)))
+	return agenttools.ClassifyLegalBasisRequest(types.UserQueryFromContext(ctx), agenttools.ExplicitMentionsFromContext(ctx))
 }
 
 // legalBasisFirstTool is check_document_legal_basis when the turn's request
@@ -38,42 +39,49 @@ func legalBasisFirstTool(ctx context.Context, tools []chat.Tool) string {
 	return agenttools.ToolCheckDocumentLegalBasis
 }
 
-// legalBasisChecked reports whether the steps ran check_document_legal_basis
-// successfully.
-func legalBasisChecked(steps []types.AgentStep) bool {
+// legalBasisSuccess is the first successful check_document_legal_basis
+// result of the steps, nil when none.
+func legalBasisSuccess(steps []types.AgentStep) *types.ToolResult {
 	for _, s := range steps {
 		for _, tc := range s.ToolCalls {
 			if tc.ExecutionName() == agenttools.ToolCheckDocumentLegalBasis && tc.Result != nil && tc.Result.Success {
-				return true
+				return tc.Result
 			}
 		}
 	}
-	return false
+	return nil
 }
+
+// legalBasisChecked reports whether the steps ran check_document_legal_basis
+// successfully.
+func legalBasisChecked(steps []types.AgentStep) bool { return legalBasisSuccess(steps) != nil }
 
 // legalBasisFailurePrefix opens the fixed answer of a failed check.
 const legalBasisFailurePrefix = "Không rà soát được căn cứ pháp lý"
 
 // legalBasisFailureMessage is the fixed answer of a pure legal basis check
-// whose call in this round failed and none succeeded: "Không rà soát được
-// căn cứ pháp lý: <lý do>". "" otherwise.
-func legalBasisFailureMessage(ctx context.Context, step types.AgentStep) string {
+// whose check failed in the last round (a runner failure: the catalogue,
+// a timeout, a closed document, an internal error) while none succeeded
+// this turn: "Không rà soát được căn cứ pháp lý: <lý do>". "" otherwise —
+// a refused call, a wrong argument or document reference is the model's
+// to retry, and when one document was checked the model answers.
+func legalBasisFailureMessage(ctx context.Context, steps []types.AgentStep) string {
+	if len(steps) == 0 || legalBasisChecked(steps) {
+		return ""
+	}
 	reason := ""
-	for _, tc := range step.ToolCalls {
-		if tc.ExecutionName() != agenttools.ToolCheckDocumentLegalBasis || tc.Result == nil {
+	for _, tc := range steps[len(steps)-1].ToolCalls {
+		r := tc.Result
+		if tc.ExecutionName() != agenttools.ToolCheckDocumentLegalBasis || r == nil || r.Refused {
 			continue
 		}
-		if tc.Result.Success {
-			return ""
-		}
-		if reason == "" {
-			reason = strings.TrimSpace(tc.Result.Error)
+		if failed, _ := r.Data[agenttools.LegalBasisRunnerFailedKey].(bool); failed && reason == "" {
+			reason = strings.TrimSpace(r.Error)
 		}
 	}
 	if reason == "" || !legalBasisIntent(ctx).Pure {
 		return ""
 	}
-	// a guard's refusal carries its stop note for the model: not for the user
 	if i := strings.Index(reason, "\n\n["); i > 0 {
 		reason = strings.TrimSpace(reason[:i])
 	}
@@ -81,4 +89,30 @@ func legalBasisFailureMessage(ctx context.Context, step types.AgentStep) string 
 		return reason
 	}
 	return legalBasisFailurePrefix + ": " + reason
+}
+
+// legalBasisRestNote follows the check's summary when the rest of the
+// request found no evidence.
+const legalBasisRestNote = "Phần còn lại của câu hỏi chưa tìm được căn cứ trong kho."
+
+type legalBasisSummaryKey struct{}
+
+// withLegalBasisSummary keeps the summary line of the turn's successful
+// check for ungroundedAnswerFor: a turn that checked the document but
+// found nothing for the rest answers with what it has.
+func withLegalBasisSummary(ctx context.Context, steps []types.AgentStep) context.Context {
+	r := legalBasisSuccess(steps)
+	if r == nil {
+		return ctx
+	}
+	line, _ := r.Data["summary_line"].(string)
+	if strings.TrimSpace(line) == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, legalBasisSummaryKey{}, strings.TrimSpace(line))
+}
+
+func legalBasisSummaryFromContext(ctx context.Context) string {
+	s, _ := ctx.Value(legalBasisSummaryKey{}).(string)
+	return s
 }

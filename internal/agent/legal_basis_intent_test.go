@@ -40,9 +40,14 @@ func TestFirstRoundToolChoiceLegalBasis(t *testing.T) {
 		t.Fatalf("one law: %q", got)
 	}
 	// an @-mentioned document counts as "văn bản này"
-	ctx = types.WithMentionedDocuments(ask("@Tờ trình.docx còn hiệu lực không"), []string{"ws-2"})
+	ctx = agenttools.WithExplicitMentions(ask("@Tờ trình.docx còn hiệu lực không"), 1)
 	if got := firstRoundToolChoice(ctx, 0, offered); got != agenttools.ToolCheckDocumentLegalBasis {
 		t.Fatalf("mentioned document: %q", got)
+	}
+	// an attachment naming a tab is no @: it does not point at the document
+	ctx = types.WithMentionedDocuments(ask("Tờ trình còn hiệu lực không"), []string{"ws-2"})
+	if got := firstRoundToolChoice(ctx, 0, offered); got != "" {
+		t.Fatalf("attachment counted as a mention: %q", got)
 	}
 	// not offered (no open document): nothing forced
 	if got := firstRoundToolChoice(ask("Rà soát căn cứ pháp lý"), 0, offered[:2]); got != "" {
@@ -50,10 +55,14 @@ func TestFirstRoundToolChoiceLegalBasis(t *testing.T) {
 	}
 }
 
-func legalBasisStep(success bool, errText string) types.AgentStep {
+func legalBasisStep(success bool, errText string, runnerFailed bool) types.AgentStep {
 	r := &types.ToolResult{Success: success, Error: errText}
 	if success {
 		r.Output = "Đã rà soát căn cứ pháp lý của vb1: 3 văn bản được viện dẫn"
+		r.Data = map[string]interface{}{"summary_line": "Đã rà soát căn cứ pháp lý của vb1: 3 văn bản được viện dẫn — hết hiệu lực 1; còn hiệu lực 2."}
+	}
+	if runnerFailed {
+		r.Data = map[string]interface{}{agenttools.LegalBasisRunnerFailedKey: true}
 	}
 	return types.AgentStep{ToolCalls: []types.ToolCall{{Name: agenttools.ToolCheckDocumentLegalBasis, Result: r}}}
 }
@@ -64,46 +73,68 @@ func TestGroundingGateLegalBasis(t *testing.T) {
 	gate := func(q string) context.Context {
 		return types.WithGroundingRequired(types.WithUserQuery(context.Background(), q))
 	}
-	ok := []types.AgentStep{legalBasisStep(true, "")}
+	ok := []types.AgentStep{legalBasisStep(true, "", false)}
 	if isUngrounded(markUngrounded(gate("Các văn bản viện dẫn còn hiệu lực không?"), ok)) {
 		t.Fatal("pure check with its report: still gated")
 	}
 	if !isUngrounded(markUngrounded(gate("Các văn bản viện dẫn còn hiệu lực không?"), nil)) {
 		t.Fatal("before the check runs the gate holds")
 	}
-	mixed := gate("rà soát căn cứ pháp lý của văn bản này và cho biết mức phạt nồng độ cồn")
-	if !isUngrounded(markUngrounded(mixed, ok)) {
+	mixed := markUngrounded(gate("rà soát căn cứ pháp lý của văn bản này và cho biết mức phạt nồng độ cồn"), ok)
+	if !isUngrounded(mixed) {
 		t.Fatal("mixed request: the report alone must not open the gate")
 	}
-	if !isUngrounded(markUngrounded(gate("mức phạt nồng độ cồn là bao nhiêu"), ok)) {
-		t.Fatal("the report is no evidence for another question")
+	// the safety net: the turn ends with the check's summary, not "no evidence"
+	if got := ungroundedAnswerFor(mixed); got != "Đã rà soát căn cứ pháp lý của vb1: 3 văn bản được viện dẫn — hết hiệu lực 1; còn hiệu lực 2. "+legalBasisRestNote {
+		t.Fatalf("safety net: %q", got)
+	}
+	plain := markUngrounded(gate("mức phạt nồng độ cồn là bao nhiêu"), nil)
+	if !isUngrounded(plain) || ungroundedAnswerFor(plain) != ungroundedAnswer {
+		t.Fatal("without a check the usual answer")
 	}
 	if hasEvidence(ok) {
 		t.Fatal("the report is not generic evidence")
 	}
 }
 
-// A failed pure check ends the turn with why, written in code.
+// A runner failure of a pure check ends the turn with why, written in code.
 func TestLegalBasisFailureMessage(t *testing.T) {
 	ask := func(q string) context.Context { return types.WithUserQuery(context.Background(), q) }
 	pure := ask("Rà soát căn cứ pháp lý")
-	failed := legalBasisStep(false, "Không rà soát được căn cứ pháp lý của vb1: danh mục văn bản pháp luật tạm thời không khả dụng.")
-	if got := legalBasisFailureMessage(pure, failed); got != "Không rà soát được căn cứ pháp lý của vb1: danh mục văn bản pháp luật tạm thời không khả dụng." {
-		t.Fatalf("service failure: %q", got)
+	const why = "Không rà soát được căn cứ pháp lý của vb1: danh mục văn bản pháp luật tạm thời không khả dụng."
+	failed := legalBasisStep(false, why, true)
+	if got := legalBasisFailureMessage(pure, []types.AgentStep{failed}); got != why {
+		t.Fatalf("runner failure: %q", got)
 	}
-	noDoc := legalBasisStep(false, "Cuộc hội thoại này chưa mở tài liệu nào trong trình soạn thảo.\n\n[Công cụ … ĐỪNG gọi lại]")
-	if got := legalBasisFailureMessage(pure, noDoc); got != "Không rà soát được căn cứ pháp lý: Cuộc hội thoại này chưa mở tài liệu nào trong trình soạn thảo." {
-		t.Fatalf("no document: %q", got)
+	// a resolve or argument error is the model's to retry
+	if got := legalBasisFailureMessage(pure, []types.AgentStep{legalBasisStep(false, "không có văn bản vb3; hãy truyền tham số document", false)}); got != "" {
+		t.Fatalf("resolve error: %q", got)
 	}
-	if got := legalBasisFailureMessage(pure, legalBasisStep(true, "")); got != "" {
-		t.Fatalf("success: %q", got)
+	if got := legalBasisFailureMessage(pure, []types.AgentStep{legalBasisStep(false, "invalid arguments: unexpected end of JSON input", false)}); got != "" {
+		t.Fatalf("argument error: %q", got)
 	}
-	if got := legalBasisFailureMessage(ask("rà soát căn cứ pháp lý của văn bản này và cho biết mức phạt nồng độ cồn"), failed); got != "" {
-		t.Fatalf("mixed request keeps going (the search part): %q", got)
+	// a call the 2-call cap refused
+	refused := legalBasisStep(false, why, true)
+	refused.ToolCalls[0].Result.Refused = true
+	if got := legalBasisFailureMessage(pure, []types.AgentStep{refused}); got != "" {
+		t.Fatalf("refused call: %q", got)
 	}
-	both := types.AgentStep{ToolCalls: append(legalBasisStep(true, "").ToolCalls, failed.ToolCalls...)}
-	if got := legalBasisFailureMessage(pure, both); got != "" {
-		t.Fatalf("one check succeeded: %q", got)
+	// vb1 checked in an earlier round, vb2 failed now: the model answers
+	if got := legalBasisFailureMessage(pure, []types.AgentStep{legalBasisStep(true, "", false), failed}); got != "" {
+		t.Fatalf("earlier success: %q", got)
+	}
+	both := types.AgentStep{ToolCalls: append(legalBasisStep(true, "", false).ToolCalls, failed.ToolCalls...)}
+	if got := legalBasisFailureMessage(pure, []types.AgentStep{both}); got != "" {
+		t.Fatalf("same-round success: %q", got)
+	}
+	// an impure request carries on (the search part)
+	if got := legalBasisFailureMessage(ask("rà soát căn cứ pháp lý của văn bản này và cho biết mức phạt nồng độ cồn"), []types.AgentStep{failed}); got != "" {
+		t.Fatalf("impure request: %q", got)
+	}
+	// a stop note for the model is not shown
+	noted := legalBasisStep(false, "Không rà soát được căn cứ pháp lý của vb1: lỗi hệ thống.\n\n[Công cụ … ĐỪNG gọi lại]", true)
+	if got := legalBasisFailureMessage(pure, []types.AgentStep{noted}); got != "Không rà soát được căn cứ pháp lý của vb1: lỗi hệ thống." {
+		t.Fatalf("stop note: %q", got)
 	}
 }
 
@@ -117,12 +148,23 @@ func TestAnswerGuardDropsUnderlineClaimAfterLegalBasis(t *testing.T) {
 	if dropped != 1 || out != "Có 2 văn bản hết hiệu lực. Bạn có thể bấm Gạch chân ở thẻ kết quả.\n" {
 		t.Fatalf("dropped=%d out=%q", dropped, out)
 	}
-	// only the clause goes; other wordings too
 	for in, want := range map[string]string{
+		// a subordinate clause goes, the sentence stays
 		"Luật 29/2018/QH14 đã hết hiệu lực, tôi đã đánh dấu chỗ viện dẫn. ": "Luật 29/2018/QH14 đã hết hiệu lực. ",
-		"Các chỗ cần xem đã tô vàng; hãy kiểm tra Điều 5.\n":                "hãy kiểm tra Điều 5.\n",
-		"Tôi đã highlight 3 chỗ, còn 1 viện dẫn chưa rõ hiệu lực. ":         "còn 1 viện dẫn chưa rõ hiệu lực. ",
-		"Tôi đã tổng hợp kết quả, gồm 5 văn bản. ":                          "Tôi đã tổng hợp kết quả, gồm 5 văn bản. ",
+		"Có 2 văn bản hết hiệu lực, đã được gạch chân trong văn bản. ":      "Có 2 văn bản hết hiệu lực. ",
+		// the claim is the main clause: the sentence goes
+		"Các chỗ cần xem đã tô vàng; hãy kiểm tra Điều 5.\n":        "",
+		"Tôi đã highlight 3 chỗ, còn 1 viện dẫn chưa rõ hiệu lực. ": "",
+		"Luật A, Luật B, đã được gạch chân. ":                       "",
+		// not claims
+		"Tôi đã tổng hợp kết quả, gồm 5 văn bản. ":                                    "Tôi đã tổng hợp kết quả, gồm 5 văn bản. ",
+		"Tôi đã tô màu bảng theo yêu cầu. ":                                           "Tôi đã tô màu bảng theo yêu cầu. ",
+		"NĐ 100 đã được đánh dấu hết hiệu lực trong danh mục, nên thay bằng NĐ 168. ": "NĐ 100 đã được đánh dấu hết hiệu lực trong danh mục, nên thay bằng NĐ 168. ",
+		// a list item keeps its text
+		"- Luật Đất đai 2013: hết hiệu lực (đã gạch chân)\n":     "- Luật Đất đai 2013: hết hiệu lực\n",
+		"- Luật Đất đai 2013: hết hiệu lực, đã được gạch chân\n": "- Luật Đất đai 2013: hết hiệu lực\n",
+		// a table row keeps its cells
+		"| 29/2018/QH14 | Hết hiệu lực (đã gạch chân) | Luật 117/2025 |\n": "| 29/2018/QH14 | Hết hiệu lực | Luật 117/2025 |\n",
 	} {
 		if got, _ := cleanAnswer(ctx, in, b); got != want {
 			t.Errorf("%q → %q, want %q", in, got, want)
@@ -130,14 +172,28 @@ func TestAnswerGuardDropsUnderlineClaimAfterLegalBasis(t *testing.T) {
 	}
 	// streamed the same way
 	sctx := withTurnButtons(types.WithAnswerButtonGuard(ctx), []types.AgentStep{{ToolCalls: []types.ToolCall{legal}}})
-	var got strings.Builder
-	g := newAnswerGuard(sctx, func(s string) { got.WriteString(s) })
-	for _, chunk := range []string{"Có 2 văn bản hết hiệu lực. Các viện dẫn này đã được ", "gạch chân trong văn bản. Bạn có thể bấm Gạch chân ở thẻ kết quả.\n"} {
-		g.Write(chunk)
+	stream := func(chunks ...string) string {
+		var got strings.Builder
+		g := newAnswerGuard(sctx, func(s string) { got.WriteString(s) })
+		for _, c := range chunks {
+			g.Write(c)
+		}
+		g.Flush()
+		return got.String()
 	}
-	g.Flush()
-	if got.String() != out {
-		t.Fatalf("stream %q, whole %q", got.String(), out)
+	if got := stream("Có 2 văn bản hết hiệu lực. Các viện dẫn này đã được ", "gạch chân trong văn bản. Bạn có thể bấm Gạch chân ở thẻ kết quả.\n"); got != out {
+		t.Fatalf("stream %q, whole %q", got, out)
+	}
+	// a dropped line keeps its break exactly as cleanAnswer does
+	for _, text := range []string{
+		"Tôi đã highlight 3 chỗ viện dẫn.\nCòn 1 viện dẫn chưa rõ.\n",
+		"Kết quả:\nTôi đã highlight 3 chỗ viện dẫn.\nCòn 1 viện dẫn chưa rõ.\n",
+		"Kết quả: 2 văn bản. Tôi đã highlight 3 chỗ viện dẫn.\nCòn 1.\n",
+	} {
+		whole, _ := cleanAnswer(ctx, text, b)
+		if got := stream(text); got != whole {
+			t.Errorf("stream %q, whole %q", got, whole)
+		}
 	}
 	// a format check in the same turn did underline: the sentence stands
 	marks := types.ToolCall{Name: agenttools.ToolCheckDocumentFormat, Result: &types.ToolResult{Success: true,

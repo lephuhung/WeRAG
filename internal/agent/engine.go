@@ -1091,7 +1091,7 @@ func (e *AgentEngine) runReActIteration(
 	// a legal basis check that failed is answered with why, in code: the
 	// model would answer from memory, the grounding gate with "no evidence"
 	// (see legal_basis_intent.go)
-	if msg := legalBasisFailureMessage(ctx, step); msg != "" {
+	if msg := legalBasisFailureMessage(ctx, state.RoundSteps); msg != "" {
 		logger.Infof(ctx, "[Agent][Round-%d] The legal basis check failed: fixed answer", round)
 		answerID := generateEventID("answer")
 		_ = e.eventBus.Emit(ctx, event.Event{

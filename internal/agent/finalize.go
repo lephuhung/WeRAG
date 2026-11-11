@@ -42,9 +42,9 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 
 	// a turn that must rest on evidence and got none is not synthesized
 	// from the model's memory either (see grounding_gate.go)
-	if isUngrounded(markUngrounded(ctx, state.RoundSteps)) {
+	if gated := markUngrounded(ctx, state.RoundSteps); isUngrounded(gated) {
 		answerID := generateEventID("answer")
-		answer := ungroundedAnswerFor(ctx)
+		answer := ungroundedAnswerFor(gated)
 		for _, d := range []event.AgentFinalAnswerData{{Content: answer}, {Done: true}} {
 			e.eventBus.Emit(ctx, event.Event{
 				ID: answerID, Type: event.EventAgentFinalAnswer, SessionID: sessionID, Data: d,

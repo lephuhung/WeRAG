@@ -142,6 +142,29 @@ func TestCheckDocumentLegalBasisToolRefusals(t *testing.T) {
 		!strings.Contains(res.Error, "chỉ rà soát được văn bản làm việc đang mở") || strings.Contains(res.Error, "only an open") {
 		t.Errorf("service error: %+v", res)
 	}
+	if v, _ := res.Data[LegalBasisRunnerFailedKey].(bool); !v {
+		t.Errorf("a runner failure is not flagged: %#v", res.Data)
+	}
+	// resolve errors are not runner failures (the model retries them)
+	res, _ = NewCheckDocumentLegalBasisTool(src, report, "s-1").Execute(lbToolCtx(), nil)
+	if v, _ := res.Data[LegalBasisRunnerFailedKey].(bool); v {
+		t.Errorf("a resolve error flagged as a runner failure")
+	}
+	res, _ = NewCheckDocumentLegalBasisTool(newFakeWorkspace(nil), report, "s-1").Execute(lbToolCtx(), []byte(`{"document":`))
+	if res.Success || res.Data[LegalBasisRunnerFailedKey] != nil {
+		t.Errorf("invalid JSON: %+v", res)
+	}
+	res, _ = NewCheckDocumentLegalBasisTool(newFakeWorkspace(nil), report, "s-1").Execute(lbToolCtx(), []byte(`{"document":"vb9"}`))
+	if res.Success || res.Data[LegalBasisRunnerFailedKey] != nil {
+		t.Errorf("unknown document: %+v", res)
+	}
+	timeout := func(context.Context, uint64, string, string) (*LegalBasisReport, error) {
+		return nil, context.DeadlineExceeded
+	}
+	res, _ = NewCheckDocumentLegalBasisTool(newFakeWorkspace(nil), timeout, "s-1").Execute(lbToolCtx(), nil)
+	if v, _ := res.Data[LegalBasisRunnerFailedKey].(bool); !v || !strings.Contains(res.Error, "quá thời gian") {
+		t.Errorf("timeout: %+v", res)
+	}
 	// a cancelled turn stops the run
 	cancelled := func(context.Context, uint64, string, string) (*LegalBasisReport, error) { return nil, context.Canceled }
 	if _, err := NewCheckDocumentLegalBasisTool(newFakeWorkspace(nil), cancelled, "s-1").Execute(lbToolCtx(), nil); !errors.Is(err, context.Canceled) {

@@ -24,6 +24,10 @@ const ToolCheckDocumentLegalBasis = "check_document_legal_basis"
 // LegalBasisReportKey is the Data key of the full report.
 const LegalBasisReportKey = "legal_basis_report"
 
+// LegalBasisRunnerFailedKey flags (Data, true) a call whose check itself
+// failed, not its arguments or document reference.
+const LegalBasisRunnerFailedKey = "runner_failed"
+
 // LegalBasisRunner checks one open working document of a session (the
 // service's DocumentFormatPrecheck.LegalBasisCheck: it saves the editor
 // first and refuses anything but an open target).
@@ -85,7 +89,13 @@ func (t *CheckDocumentLegalBasisTool) Execute(ctx context.Context, args json.Raw
 		if errors.Is(err, context.Canceled) {
 			return nil, err
 		}
-		return &types.ToolResult{Success: false, Error: "Không rà soát được căn cứ pháp lý của " + DocumentLabel(target) + ": " + legalBasisFailureReason(err) + "."}, nil
+		// the check itself failed (catalogue, timeout, closed document, an
+		// internal error): flagged so a pure check ends with why
+		// (agent.legalBasisFailureMessage); resolve and argument errors
+		// above are left to the model to retry
+		return &types.ToolResult{Success: false,
+			Error: "Không rà soát được căn cứ pháp lý của " + DocumentLabel(target) + ": " + legalBasisFailureReason(err) + ".",
+			Data:  map[string]interface{}{LegalBasisRunnerFailedKey: true}}, nil
 	}
 	sel := types.DocumentSelectionFromContext(ctx)
 	if !selectionIn(sel, target) {

@@ -28,6 +28,11 @@ const ungroundedAnswer = "Tôi không tìm thấy căn cứ cho câu hỏi này 
 // recorded a request to add the document it names
 // (types.WithLegalRequestRecorded).
 func ungroundedAnswerFor(ctx context.Context) string {
+	// the open document's legal basis was checked: answer with that, and
+	// say the rest found nothing (see legal_basis_intent.go)
+	if line := legalBasisSummaryFromContext(ctx); line != "" {
+		return line + " " + legalBasisRestNote
+	}
 	if number := types.LegalRequestRecordedFromContext(ctx); number != "" {
 		return ungroundedAnswer + " Đã ghi nhận đề nghị bổ sung văn bản " + number + " tới quản trị viên."
 	}
@@ -67,7 +72,7 @@ func markUngrounded(ctx context.Context, steps []types.AgentStep) context.Contex
 	if legalBasisChecked(steps) && legalBasisIntent(ctx).Pure {
 		return ctx
 	}
-	return context.WithValue(ctx, ungroundedKey{}, true)
+	return context.WithValue(withLegalBasisSummary(ctx, steps), ungroundedKey{}, true)
 }
 
 func isUngrounded(ctx context.Context) bool {
