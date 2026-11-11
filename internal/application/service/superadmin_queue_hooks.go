@@ -20,7 +20,17 @@ type billingQueueNotify struct {
 	notices *SuperAdminQueueNotifier
 }
 
-// NewBillingQueueNotifications wraps the billing service (dig.Decorate).
+// NewBillingNotifications is the one decorator of the billing service
+// (dig takes one per type): the order emails inside, the SuperAdmins'
+// order digests outside.
+func NewBillingNotifications(
+	inner interfaces.UsageBillingService, email *EmailNotifier, notices *SuperAdminQueueNotifier,
+) interfaces.UsageBillingService {
+	return NewBillingQueueNotifications(NewBillingEmailNotifications(inner, email), notices)
+}
+
+// NewBillingQueueNotifications wraps the billing service with the order
+// digests (composed by NewBillingNotifications).
 func NewBillingQueueNotifications(
 	inner interfaces.UsageBillingService, notices *SuperAdminQueueNotifier,
 ) interfaces.UsageBillingService {
@@ -89,8 +99,17 @@ type legalRequestQueueNotify struct {
 	notices *SuperAdminQueueNotifier
 }
 
-// NewLegalRequestQueueNotifications wraps the legal request service
-// (dig.Decorate).
+// NewLegalRequestNotifications is the one decorator of the legal request
+// service (dig takes one per type): the "document added" notices to the
+// people who asked inside, the SuperAdmins' request digests outside.
+func NewLegalRequestNotifications(
+	inner interfaces.LegalRequestService, added *LegalRequestNotifier, notices *SuperAdminQueueNotifier,
+) interfaces.LegalRequestService {
+	return NewLegalRequestQueueNotifications(NewLegalRequestAddedNotifications(inner, added), notices)
+}
+
+// NewLegalRequestQueueNotifications wraps the legal request service with
+// the request digests (composed by NewLegalRequestNotifications).
 func NewLegalRequestQueueNotifications(
 	inner interfaces.LegalRequestService, notices *SuperAdminQueueNotifier,
 ) interfaces.LegalRequestService {

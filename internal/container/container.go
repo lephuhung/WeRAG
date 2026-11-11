@@ -238,18 +238,15 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// orders are mailed by a decorator, expiry reminders by a ticker
 	must(container.Provide(repository.NewEmailNotificationRepository))
 	must(container.Provide(service.NewEmailNotifier))
-	must(container.Decorate(service.NewBillingEmailNotifications))
 	// in-app notifications; people who asked for a legal document are
 	// notified once it is added
 	must(container.Provide(repository.NewUserNotificationRepository))
 	must(container.Provide(service.NewLegalRequestNotifier))
 	must(container.Provide(service.NewAbbreviationReviewNotifier))
-	must(container.Decorate(service.NewLegalRequestAddedNotifications))
 	// SuperAdmins' review-queue digests (orders, legal requests, drafts,
-	// links, identities); the order email above stays
+	// links, identities); the order email stays
 	must(container.Provide(service.NewSuperAdminQueueNotifier))
-	must(container.Decorate(service.NewBillingQueueNotifications))
-	must(container.Decorate(service.NewLegalRequestQueueNotifications))
+	decorate(container, notificationDecorators)
 	// Platform-wide aggregate stats for the SystemAdmin overview dashboard.
 	must(container.Provide(service.NewStatsService))
 	// People lookup against the external MongoDB store. Always constructed;
@@ -511,8 +508,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// Document Server bridge (disabled unless ONLYOFFICE_* is configured).
 	must(container.Provide(service.NewDocumentWorkspaceService))
 	// sub-chats ("chat nhỏ") work on their root chat's documents and uploads
-	must(container.Decorate(service.NewSubChatUploads))
-	must(container.Decorate(service.NewSubChatWorkspaces))
+	decorate(container, subChatDecorators)
 	must(container.Provide(service.NewDocumentFormatPrecheck))
 	// background format-check results and states outlive a restart in Redis
 	must(container.Invoke(func(rdb *redis.Client) { tools.UseFormatCheckRedis(rdb) }))
@@ -879,6 +875,29 @@ func registerChatLocalImageResolver(
 			return nil, false
 		}
 		return data, true
+	}
+}
+
+// Decorators of the container. dig takes one decorator per type and scope
+// (a second one panics at startup), so every Decorate goes through
+// decorate with one of these lists, and a type that needs several wrappers
+// gets one composing decorator (container_decorators_test.go checks both).
+var (
+	// notificationDecorators: the billing service mails new and paid orders
+	// and writes the SuperAdmins' order digests; the legal request service
+	// tells the people who asked once a document is added and closes the
+	// SuperAdmins' request digests
+	notificationDecorators = []any{service.NewBillingNotifications, service.NewLegalRequestNotifications}
+	// subChatDecorators: sub-chats ("chat nhỏ") work on their root chat's
+	// documents and uploads
+	subChatDecorators = []any{service.NewSubChatUploads, service.NewSubChatWorkspaces}
+	allDecorators     = [][]any{notificationDecorators, subChatDecorators}
+)
+
+// decorate registers the decorators of list.
+func decorate(c *dig.Container, list []any) {
+	for _, d := range list {
+		must(c.Decorate(d))
 	}
 }
 
