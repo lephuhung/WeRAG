@@ -70,6 +70,8 @@ func newLegalLookupFixture(t *testing.T) *legalLookupFixture {
 		doc("tt53", "53/2022/TT-BTC", "Thông tư", "Thông tư về phí", "Hết hiệu lực một phần", "2022-08-20", ""),
 		doc("qd135", "551/QĐ-TTg", "Quyết định", "Phê duyệt Chương trình 135 giai đoạn III", "Còn hiệu lực", "2013-04-04", ""),
 		doc("ubnd2024", "2024/QĐ-UBND", "Quyết định", "Quyết định về đất đai ở xã", "Còn hiệu lực", "2020-05-05", ""),
+		doc("nd13-2023", "13/2023/NĐ-CP", "Nghị định", "Về bảo vệ dữ liệu cá nhân", "Còn hiệu lực", "2023-04-17", "2023-07-01"),
+		doc("nd13-2020", "13/2020/NĐ-CP", "Nghị định", "Hướng dẫn chi tiết chính sách hỗ trợ", "Còn hiệu lực", "2020-01-21", ""),
 		doc("mention", "7/2099/TT-BNV", "Thông tư", "Thông tư hướng dẫn Nghị định 30/2099/NĐ-CP", "Còn hiệu lực", "2026-01-01", ""),
 		// số hiệu is not unique: two provinces' decisions share one
 		doc("qd-a", "12/2025/QĐ-UBND", "Quyết định", "Quyết định tỉnh A", "Còn hiệu lực", "2025-02-01", ""),
@@ -95,8 +97,12 @@ func newLegalLookupFixture(t *testing.T) *legalLookupFixture {
 	kb("kb-b-published", lookupTenantB, types.KBVisibilityPublished)
 	require.NoError(t, db.Delete(&types.KnowledgeBase{}, "id = ?", "kb-a-gone").Error)
 
+	knowledgeMeta := func(id, kbID, meta string) {
+		require.NoError(t, db.Create(&types.Knowledge{ID: id, KnowledgeBaseID: kbID, Title: id + ".html",
+			Metadata: types.JSON(meta), CustomMetadata: types.JSON(`{}`), ParseStatus: types.ParseStatusCompleted}).Error)
+	}
 	knowledge := func(id, kbID, docID string) {
-		meta := types.JSON(`{"external_id":"` + docID + `"}`)
+		meta := types.JSON(`{"external_id":"` + docID + `","source":"vbpl"}`)
 		require.NoError(t, db.Create(&types.Knowledge{ID: id, KnowledgeBaseID: kbID, Title: id + ".html",
 			Metadata: meta, CustomMetadata: types.JSON(`{}`), ParseStatus: types.ParseStatusCompleted}).Error)
 	}
@@ -117,7 +123,12 @@ func newLegalLookupFixture(t *testing.T) *legalLookupFixture {
 	knowledge("k-a-restricted", "kb-a-restricted", "law")
 	knowledge("k-a-gone", "kb-a-gone", "law")
 	knowledge("k-b", "kb-b", "law")
-	knowledge("k-b-published", "kb-b-published", "law")
+	knowledge("k-b-published", "kb-b-published", "law") // B's own upload: unreviewed for anyone else
+	knowledge("k-b-published-ok", "kb-b-published", "law")
+	link("k-b-published-ok", "kb-b-published", "law", types.LegalReviewApproved)
+	// spoofs: a member's upload naming the law without the importer's source
+	knowledgeMeta("k-a-nosource", "kb-a", `{"external_id":"law"}`)
+	knowledgeMeta("k-a-othersource", "kb-a", `{"external_id":"law","source":"tvpl"}`)
 	// the old law: only in tenant A
 	knowledge("k-a-old", "kb-a", "law-old")
 
@@ -215,16 +226,18 @@ func TestLegalValidityLookupByNumber(t *testing.T) {
 func TestLegalValidityLookupCopies(t *testing.T) {
 	f := newLegalLookupFixture(t)
 
-	// a guest: the approved public copy and the published KB's copy only
+	// a guest: approved copies only (public KB, and B's published KB) —
+	// never B's own unreviewed upload naming the law, nor a pending link
 	got, err := f.svc.LookupValidity(guestCtx(), "31/2024/QH15", 0)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"k-pub", "k-b-published"}, knowledgeIDs(got.Matches[0]))
+	require.ElementsMatch(t, []string{"k-pub", "k-b-published-ok"}, knowledgeIDs(got.Matches[0]))
 
-	// a member of A also sees A's own copy — not the restricted KB's
-	// (no grant), the rejected or deleted one, the deleted KB's, nor B's
+	// a member of A also sees A's own vbpl import — not the restricted KB's
+	// (no grant), the rejected or deleted one, the deleted KB's, B's, nor
+	// A's uploads whose metadata lacks the importer's source
 	got, err = f.svc.LookupValidity(lookupCtx("member-a", lookupTenantA, types.TenantRoleMember), "31/2024/QH15", 0)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"k-pub", "k-b-published", "k-a"}, knowledgeIDs(got.Matches[0]))
+	require.ElementsMatch(t, []string{"k-pub", "k-b-published-ok", "k-a"}, knowledgeIDs(got.Matches[0]))
 	require.Equal(t, "KB kb-a", func() string {
 		for _, k := range got.Matches[0].Knowledge {
 			if k.KnowledgeID == "k-a" {
@@ -237,7 +250,7 @@ func TestLegalValidityLookupCopies(t *testing.T) {
 	// a member of B sees B's copy, not A's
 	got, err = f.svc.LookupValidity(lookupCtx("member-b", lookupTenantB, types.TenantRoleMember), "31/2024/QH15", 0)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"k-pub", "k-b-published", "k-b"}, knowledgeIDs(got.Matches[0]))
+	require.ElementsMatch(t, []string{"k-pub", "k-b-published-ok", "k-b", "k-b-published"}, knowledgeIDs(got.Matches[0]))
 
 	// an admin of A reads the restricted KB of A too (the KB list's rule)
 	got, err = f.svc.LookupValidity(lookupCtx("admin-a", lookupTenantA, types.TenantRoleAdmin), "31/2024/QH15", 0)
@@ -247,6 +260,14 @@ func TestLegalValidityLookupCopies(t *testing.T) {
 	got, err = f.svc.LookupValidity(lookupCtx("member-a", lookupTenantA, types.TenantRoleMember), "45/2013/QH13", 0)
 	require.NoError(t, err)
 	require.Equal(t, []string{"k-a-old"}, knowledgeIDs(got.Matches[0]))
+
+	// a SuperAdmin outside any organization may view every KB, but the
+	// links follow the default scope (platform public KBs) and unreviewed
+	// imports count only inside one's own organization
+	super := context.WithValue(lookupCtx("super", 0, ""), types.SystemAdminContextKey, true)
+	got, err = f.svc.LookupValidity(super, "31/2024/QH15", 0)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"k-pub"}, knowledgeIDs(got.Matches[0]))
 }
 
 func TestLegalValidityLookupBareNumber(t *testing.T) {
@@ -277,6 +298,27 @@ func TestLegalValidityLookupBareNumber(t *testing.T) {
 	got, err = f.svc.LookupValidity(ctx, "Bộ luật 100", 0)
 	require.NoError(t, err)
 	require.Equal(t, []string{"blhs"}, lookupIDs(got))
+
+	// a year narrows a bare number (L-new-5); number/year is a key prefix
+	got, err = f.svc.LookupValidity(ctx, "Nghị định 13 2023", 0)
+	require.NoError(t, err)
+	require.Equal(t, []string{"nd13-2023"}, lookupIDs(got))
+	got, err = f.svc.LookupValidity(ctx, "Nghị định 13", 0)
+	require.NoError(t, err)
+	require.Equal(t, []string{"nd13-2023", "nd13-2020"}, lookupIDs(got))
+	got, err = f.svc.LookupValidity(ctx, "Nghị định 13/2023", 0)
+	require.NoError(t, err)
+	require.Equal(t, []string{"nd13-2023"}, lookupIDs(got))
+
+	// a number alone with no such document: nothing, never titles that
+	// merely hold the digits (M4 residual)
+	got, err = f.svc.LookupValidity(ctx, "Nghị định 9999", 0)
+	require.NoError(t, err)
+	require.Empty(t, got.Matches)
+	require.Equal(t, "Nghị định 9999", got.NumberMissing)
+	got, err = f.svc.LookupValidity(ctx, "Nghị định 135", 0) // "Chương trình 135" is in a title
+	require.NoError(t, err)
+	require.Empty(t, got.Matches)
 
 	// limit and the "more" signal
 	got, err = f.svc.LookupValidity(ctx, "53", 2)
@@ -340,6 +382,13 @@ func TestLegalValidityLookupMissingNumber(t *testing.T) {
 	_, err = f.svc.LookupValidity(ctx, "31/2024/QH15", 0) // a hit is no miss
 	require.NoError(t, err)
 
+	// a SuperAdmin re-checking a gap is not counted
+	super := context.WithValue(lookupCtx("super", 0, ""), types.SystemAdminContextKey, true)
+	_, err = f.svc.LookupValidity(super, "777/2099/NĐ-CP", 0)
+	require.NoError(t, err)
+	_, err = f.svc.LookupValidity(super, "chỉ SuperAdmin tra", 0)
+	require.NoError(t, err)
+
 	rows, total, err := f.misses.List(context.Background(), true, 0, 10)
 	require.NoError(t, err)
 	require.EqualValues(t, 3, total)
@@ -349,12 +398,12 @@ func TestLegalValidityLookupMissingNumber(t *testing.T) {
 	}
 	require.Equal(t, "777/2099/nđ-cp", rows[0].Query, "most frequent first")
 	require.EqualValues(t, 2, rows[0].Count)
-	require.Equal(t, types.LegalLookupMissNumber, rows[0].Reason)
+	require.Equal(t, types.LegalLookupMissNotFound, rows[0].Reason, "a missing number with no match at all")
 	require.Equal(t, "777/2099/nđ-cp", rows[0].Number)
 	require.Equal(t, lookupTenantA, rows[0].LastTenantID)
 	require.Equal(t, "member-a", rows[0].LastUserID)
 	require.Equal(t, types.LegalLookupMissNumber, byQuery["nghị định 30/2099/nđ-cp"].Reason)
-	require.Equal(t, types.LegalLookupMissNoMatch, byQuery["không có văn bản này"].Reason)
+	require.Equal(t, types.LegalLookupMissNotFound, byQuery["không có văn bản này"].Reason)
 	require.Equal(t, "", byQuery["không có văn bản này"].Number)
 }
 
@@ -386,7 +435,7 @@ func TestLegalValidityLookupOddInputs(t *testing.T) {
 
 	var n int64
 	require.NoError(t, f.db.Model(&types.LegalDocument{}).Count(&n).Error)
-	require.EqualValues(t, 16, n)
+	require.EqualValues(t, 18, n)
 }
 
 // snapshotFailingCatalog fails LatestSnapshot and counts the calls.
@@ -460,4 +509,32 @@ func TestParseLegalLookupQuery(t *testing.T) {
 		require.Equal(t, c.content, pq.content, c.in)
 		require.Equal(t, c.year, pq.year, c.in)
 	}
+}
+
+func TestLegalLookupMissPrune(t *testing.T) {
+	f := newLegalLookupFixture(t)
+	ctx := context.Background()
+	now := *lookupDay("2026-11-11")
+	add := func(q string, count int64, last time.Time) {
+		require.NoError(t, f.db.Create(&types.LegalLookupMiss{Query: q, Count: count, FirstAt: last, LastAt: last}).Error)
+	}
+	add("old once", 1, now.Add(-40*24*time.Hour))
+	add("old often", 5, now.Add(-40*24*time.Hour))
+	add("new once a", 1, now.Add(-2*time.Hour))
+	add("new once b", 1, now.Add(-1*time.Hour))
+	add("newest", 1, now)
+	require.NoError(t, f.misses.Prune(ctx, now.Add(-legalLookupMissStale), 3))
+	var left []string
+	require.NoError(t, f.db.Model(&types.LegalLookupMiss{}).Order("last_at DESC").Pluck("query", &left).Error)
+	require.Equal(t, []string{"newest", "new once b", "new once a"}, left,
+		"stale single misses dropped, then only the 3 most recent kept")
+
+	// a write prunes when the dice say so
+	f.svc.prune = func() bool { return true }
+	f.svc.now = func() time.Time { return now.Add(40 * 24 * time.Hour) }
+	_, err := f.svc.LookupValidity(guestCtx(), "chưa có gì", 0)
+	require.NoError(t, err)
+	left = nil
+	require.NoError(t, f.db.Model(&types.LegalLookupMiss{}).Pluck("query", &left).Error)
+	require.Equal(t, []string{"chưa có gì"}, left)
 }

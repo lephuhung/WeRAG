@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -56,4 +57,23 @@ func (r *legalLookupMissRepository) List(
 
 func (r *legalLookupMissRepository) Delete(ctx context.Context, id uint64) error {
 	return r.db.WithContext(ctx).Delete(&types.LegalLookupMiss{}, id).Error
+}
+
+func (r *legalLookupMissRepository) Prune(ctx context.Context, staleBefore time.Time, keep int) error {
+	db := r.db.WithContext(ctx)
+	if err := db.Where("count <= 1 AND last_at < ?", staleBefore).Delete(&types.LegalLookupMiss{}).Error; err != nil {
+		return err
+	}
+	if keep <= 0 {
+		return nil
+	}
+	// the keep-th most recent row is the cut-off; older rows go
+	var cut []types.LegalLookupMiss
+	if err := db.Select("id", "last_at").Order("last_at DESC").Order("id DESC").
+		Offset(keep - 1).Limit(1).Find(&cut).Error; err != nil || len(cut) == 0 {
+		return err
+	}
+	c := cut[0]
+	return db.Where("last_at < ? OR (last_at = ? AND id < ?)", c.LastAt, c.LastAt, c.ID).
+		Delete(&types.LegalLookupMiss{}).Error
 }

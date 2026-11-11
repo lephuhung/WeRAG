@@ -203,11 +203,13 @@ func (r *legalCatalogRepository) FilterDocuments(
 		if w = strings.TrimSpace(w); w == "" {
 			continue
 		}
-		like := "%" + escapeLikeKeyword(w) + "%"
+		// Postgres: lower(title) LIKE <pattern lower-cased in Go>, so an
+		// index on lower(title) (trigram) can serve it. SQLite (unit tests)
+		// folds ASCII only, so both sides go through its lower().
 		if pg {
-			q = q.Where("title ILIKE ? ESCAPE ?", like, likeEscapeChar)
+			q = q.Where("lower(title) LIKE ? ESCAPE ?", "%"+escapeLikeKeyword(strings.ToLower(w))+"%", likeEscapeChar)
 		} else {
-			q = q.Where("lower(title) LIKE lower(?) ESCAPE ?", like, likeEscapeChar)
+			q = q.Where("lower(title) LIKE lower(?) ESCAPE ?", "%"+escapeLikeKeyword(w)+"%", likeEscapeChar)
 		}
 		n++
 	}
@@ -231,12 +233,12 @@ func (r *legalCatalogRepository) FilterDocuments(
 		}
 	}
 	if f.IssuedYear > 0 {
-		year := fmt.Sprintf("%04d", f.IssuedYear)
-		yearExpr := "strftime('%Y', issued_on) = ?"
-		if pg {
-			yearExpr = "to_char(issued_on, 'YYYY') = ?"
-		}
-		q = q.Where("("+yearExpr+" OR number_key LIKE ? ESCAPE ?)", year, "%/"+year+"/%", likeEscapeChar)
+		// a date range keeps an index on issued_on usable; the bounds are
+		// date strings, so no time zone shifts a 1 January document
+		from := fmt.Sprintf("%04d-01-01", f.IssuedYear)
+		to := fmt.Sprintf("%04d-01-01", f.IssuedYear+1)
+		q = q.Where("((issued_on >= ? AND issued_on < ?) OR number_key LIKE ? ESCAPE ?)",
+			from, to, fmt.Sprintf("%%/%04d/%%", f.IssuedYear), likeEscapeChar)
 	}
 	if n == 0 && f.IssuedYear == 0 {
 		return docs, nil // a type alone would list the whole catalogue
@@ -256,9 +258,9 @@ func (r *legalCatalogRepository) ExternalCopies(
 	if len(documentIDs) == 0 || len(kbIDs) == 0 {
 		return out, nil
 	}
-	ext := "k.metadata->>'external_id'"
+	ext, src := "k.metadata->>'external_id'", "k.metadata->>'source'"
 	if r.db.Dialector.Name() != "postgres" {
-		ext = "json_extract(k.metadata, '$.external_id')"
+		ext, src = "json_extract(k.metadata, '$.external_id')", "json_extract(k.metadata, '$.source')"
 	}
 	var rows []struct {
 		ExternalID        string
@@ -272,6 +274,7 @@ func (r *legalCatalogRepository) ExternalCopies(
 		Joins("JOIN knowledge_bases kb ON kb.id = k.knowledge_base_id AND kb.deleted_at IS NULL").
 		Joins("LEFT JOIN legal_document_links l ON l.knowledge_id = k.id").
 		Where("k.knowledge_base_id IN ? AND k.deleted_at IS NULL AND "+ext+" IN ?", kbIDs, documentIDs).
+		Where(src+" = ?", types.LegalDocumentSourceVBPL).
 		Where("k.parse_status IN ?", []string{types.ParseStatusCompleted, types.ParseStatusFinalizing}).
 		Where("(l.knowledge_id IS NULL OR l.review_status = ?)", types.LegalReviewApproved).
 		Order("k.created_at").Order("k.id").Scan(&rows).Error

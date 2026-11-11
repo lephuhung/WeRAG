@@ -48,9 +48,11 @@ type LegalCatalogRepository interface {
 	// newest first, at most f.Limit.
 	FilterDocuments(ctx context.Context, f types.LegalCatalogFilter) ([]*types.LegalDocument, error)
 	// ExternalCopies returns, per catalogue document ID, the live parsed
-	// knowledge of the given knowledge bases imported as that document
-	// (knowledges.metadata.external_id), leaving out knowledge whose legal
-	// link a reviewer did not approve.
+	// knowledge of the given knowledge bases imported from vbpl.vn as that
+	// document (knowledges.metadata source "vbpl" + external_id), leaving
+	// out knowledge whose legal link a reviewer did not approve. The
+	// metadata is not reviewed: pass only knowledge bases whose copies the
+	// caller's own organization vouches for.
 	ExternalCopies(ctx context.Context, documentIDs, kbIDs []string) (map[string][]types.LegalKnowledgeRef, error)
 	// LatestSnapshot returns the newest source snapshot time of the rows
 	// imported from vbpl.vn (nil when there is none): how fresh the
@@ -352,6 +354,9 @@ type LegalLookupMissRepository interface {
 	List(ctx context.Context, byCount bool, offset, limit int) ([]*types.LegalLookupMiss, int64, error)
 	// Delete removes one miss (the SuperAdmin settled it).
 	Delete(ctx context.Context, id uint64) error
+	// Prune deletes misses seen once and last before staleBefore, then
+	// all but the keep most recent ones.
+	Prune(ctx context.Context, staleBefore time.Time, keep int) error
 }
 
 // LegalLookupMissService serves the SuperAdmin list of catalogue gaps.

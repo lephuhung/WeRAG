@@ -228,22 +228,24 @@ type LegalLookupMiss struct {
 	Sample string `json:"sample" gorm:"type:varchar(200);not null;default:''"`
 	// Number is the số hiệu the query named, if any.
 	Number string `json:"number" gorm:"type:varchar(128);not null;default:''"`
-	// Reason is LegalLookupMissNoMatch or LegalLookupMissNumber.
-	Reason       string    `json:"reason" gorm:"type:varchar(16);not null;default:''"`
-	Count        int64     `json:"count" gorm:"not null;default:1"`
-	FirstAt      time.Time `json:"first_at"`
-	LastAt       time.Time `json:"last_at"`
-	LastTenantID uint64    `json:"last_tenant_id" gorm:"not null;default:0"`
-	LastUserID   string    `json:"last_user_id" gorm:"type:varchar(36);not null;default:''"`
+	// Reason is LegalLookupMissNotFound or LegalLookupMissNumber.
+	Reason  string    `json:"reason" gorm:"type:varchar(16);not null;default:''"`
+	Count   int64     `json:"count" gorm:"not null;default:1"`
+	FirstAt time.Time `json:"first_at"`
+	LastAt  time.Time `json:"last_at"`
+	// LastTenantID / LastUserID stay in the database for support; the
+	// SuperAdmin list does not show them.
+	LastTenantID uint64 `json:"-" gorm:"not null;default:0"`
+	LastUserID   string `json:"-" gorm:"type:varchar(36);not null;default:''"`
 }
 
 // TableName returns the table name for LegalLookupMiss.
 func (LegalLookupMiss) TableName() string { return "legal_lookup_misses" }
 
 const (
-	// LegalLookupMissNoMatch: nothing in the catalogue matched.
-	LegalLookupMissNoMatch = "no_match"
-	// LegalLookupMissNumber: the số hiệu is not in the catalogue; only
+	// LegalLookupMissNotFound: nothing in the catalogue matched.
+	LegalLookupMissNotFound = "not_found"
+	// LegalLookupMissNumber: the số hiệu is not in the catalogue, but
 	// documents mentioning it in their title were found.
 	LegalLookupMissNumber = "number_missing"
 )

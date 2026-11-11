@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"math/rand/v2"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,6 +36,15 @@ const (
 	legalLookupMissMaxLen = 200
 	// legalLookupMissTimeout bounds the write of a miss.
 	legalLookupMissTimeout = 3 * time.Second
+	// Misses seen once are dropped after legalLookupMissStale; at most
+	// legalLookupMissKeep rows are kept. The pruning runs on about one
+	// write in legalLookupMissPruneEvery.
+	legalLookupMissStale      = 30 * 24 * time.Hour
+	legalLookupMissKeep       = 10000
+	legalLookupMissPruneEvery = 100
+	// legalLookupSnapshotTimeout bounds the snapshot query, which runs
+	// detached from the request that started it (others wait on it).
+	legalLookupSnapshotTimeout = 5 * time.Second
 )
 
 // legalLookupIncoming are the relations that bear on a match's validity:
@@ -57,6 +67,8 @@ type legalValidityLookupService struct {
 	now     func() time.Time
 	// recordMiss writes a miss off the request path (tests run it inline).
 	recordMiss func(m *types.LegalLookupMiss)
+	// prune reports whether this write also prunes the table.
+	prune func() bool
 
 	snapshotGroup singleflight.Group
 	mu            sync.Mutex
@@ -73,6 +85,7 @@ func NewLegalValidityLookupService(
 ) interfaces.LegalValidityLookupService {
 	s := &legalValidityLookupService{repo: repo, reviews: reviews, kbs: kbs, misses: misses, now: time.Now}
 	s.recordMiss = func(m *types.LegalLookupMiss) { go s.writeMiss(m) }
+	s.prune = func() bool { return rand.IntN(legalLookupMissPruneEvery) == 0 }
 	return s
 }
 
@@ -93,15 +106,18 @@ func (s *legalValidityLookupService) LookupValidity(
 		return nil, err
 	}
 	out.By, out.More = by, more
-	if pq.slashNumber && by != "number" {
+	switch {
+	case pq.slashNumber && by != "number":
 		out.NumberMissing = pq.number
+	case pq.bare && len(pq.content) == 0 && by != "number":
+		// "Nghị định 9999": named by number alone, and no such document
+		out.NumberMissing = strings.Join(append(append([]string{}, pq.typeWords...), pq.number), " ")
 	}
-	if len(docs) == 0 || out.NumberMissing != "" {
-		reason := types.LegalLookupMissNoMatch
-		if out.NumberMissing != "" {
-			reason = types.LegalLookupMissNumber
-		}
-		s.noteMiss(ctx, query, pq, reason)
+	switch {
+	case len(docs) == 0:
+		s.noteMiss(ctx, query, pq, types.LegalLookupMissNotFound)
+	case out.NumberMissing != "":
+		s.noteMiss(ctx, query, pq, types.LegalLookupMissNumber)
 	}
 	knowledge := s.readableCopies(ctx, docs)
 	now := s.now()
@@ -321,6 +337,11 @@ func (s *legalValidityLookupService) find(
 		if len(docs) > 0 {
 			return docs, "number", more, nil
 		}
+		if pq.bare && len(pq.content) == 0 {
+			// a number alone names one document: titles that merely hold
+			// the digits would be unrelated
+			return nil, "", false, nil
+		}
 	}
 	for _, f := range s.titleFilters(pq) {
 		f.Limit = limit + 1
@@ -391,14 +412,15 @@ func (s *legalValidityLookupService) byNumber(
 	if len(pq.content) > 0 {
 		scan = legalLookupContentScan
 	}
+	// "Nghị định 13 2023": the year narrows the number
 	prefixed, err := s.repo.FilterDocuments(ctx, types.LegalCatalogFilter{
-		NumberPrefix: key, DocTypes: pq.docTypes, Limit: scan,
+		NumberPrefix: key, DocTypes: pq.docTypes, IssuedYear: pq.year, Limit: scan,
 	})
 	if err != nil {
 		return nil, false, err
 	}
 	exact, err := s.repo.FilterDocuments(ctx, types.LegalCatalogFilter{
-		NumberKey: key, DocTypes: pq.docTypes, Limit: scan,
+		NumberKey: key, DocTypes: pq.docTypes, IssuedYear: pq.year, Limit: scan,
 	})
 	if err != nil {
 		return nil, false, err
@@ -453,6 +475,9 @@ func (s *legalValidityLookupService) noteMiss(ctx context.Context, query string,
 		return
 	}
 	caller := types.CallerFromContext(ctx)
+	if access.IsExplicitHumanSuperAdmin(ctx, caller) {
+		return // re-checking a gap ("Tra lại") must not count as a user's miss
+	}
 	now := s.now()
 	number := ""
 	if pq.slashNumber {
@@ -469,16 +494,23 @@ func (s *legalValidityLookupService) writeMiss(m *types.LegalLookupMiss) {
 	defer cancel()
 	if err := s.misses.Record(ctx, m); err != nil {
 		logger.Warnf(ctx, "[LegalLookup] miss %q not recorded: %v", m.Query, err)
+		return
+	}
+	if s.prune != nil && s.prune() {
+		if err := s.misses.Prune(ctx, s.now().Add(-legalLookupMissStale), legalLookupMissKeep); err != nil {
+			logger.Warnf(ctx, "[LegalLookup] misses not pruned: %v", err)
+		}
 	}
 }
 
 // readableCopies returns, per catalogue document, the copies the caller
-// may open: approved public-KB links and imported copies (external_id) in
-// the knowledge bases the caller may read (the same listing and rule as
-// the knowledge base list and default retrieval scope:
-// ListReadableKnowledgeBases + access.InDefaultRetrievalScope). A guest
-// reads public and published KBs only; a member also their organization's
-// KBs (restricted ones only with a grant). Errors only drop the links.
+// may open, in the knowledge bases the caller may read (the same listing
+// and rule as the knowledge base list and default retrieval scope:
+// ListReadableKnowledgeBases + access.InDefaultRetrievalScope): copies with
+// an approved legal link in any of them, and vbpl.vn imports (metadata
+// source + external_id, which an uploader can set) only in the caller's own
+// organization's KBs. A guest therefore sees approved copies only. Errors
+// only drop the links.
 func (s *legalValidityLookupService) readableCopies(
 	ctx context.Context, docs []*types.LegalDocument,
 ) map[string][]types.LegalKnowledgeRef {
@@ -493,14 +525,19 @@ func (s *legalValidityLookupService) readableCopies(
 		return out
 	}
 	readable := map[string]bool{}
-	var kbIDs []string
+	var ownKBIDs []string
 	for _, kb := range kbs {
-		if kb != nil && access.InDefaultRetrievalScope(caller, kb) && !readable[kb.ID] {
-			readable[kb.ID] = true
-			kbIDs = append(kbIDs, kb.ID)
+		if kb == nil || !access.InDefaultRetrievalScope(caller, kb) || readable[kb.ID] {
+			continue
+		}
+		readable[kb.ID] = true
+		// upload metadata (external_id) is nobody's review: trusted only in
+		// the caller's own organization; elsewhere an approved link is needed
+		if caller.TenantID != 0 && kb.OwnerTenantID == caller.TenantID {
+			ownKBIDs = append(ownKBIDs, kb.ID)
 		}
 	}
-	if len(kbIDs) == 0 {
+	if len(readable) == 0 {
 		return out
 	}
 	ids := make([]string, 0, len(docs))
@@ -525,7 +562,7 @@ func (s *legalValidityLookupService) readableCopies(
 			}
 		}
 	}
-	if imported, err := s.repo.ExternalCopies(ctx, ids, kbIDs); err != nil {
+	if imported, err := s.repo.ExternalCopies(ctx, ids, ownKBIDs); err != nil {
 		logger.Warnf(ctx, "[LegalLookup] imported copies unavailable: %v", err)
 	} else {
 		for docID, refs := range imported {
@@ -602,7 +639,11 @@ func (s *legalValidityLookupService) snapshotDate(ctx context.Context) string {
 	}
 	s.mu.Unlock()
 	v, _, _ := s.snapshotGroup.Do("snapshot", func() (interface{}, error) {
-		latest, err := s.repo.LatestSnapshot(ctx)
+		// not the first caller's ctx: its cancellation must not fail the
+		// others waiting on this query
+		qctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), legalLookupSnapshotTimeout)
+		defer cancel()
+		latest, err := s.repo.LatestSnapshot(qctx)
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		if err != nil {
