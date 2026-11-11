@@ -2293,7 +2293,8 @@ function ChatBody({ id }: { id: string }) {
   // words it had read on its own
   const rejectReading = useCallback((m: UiMessage) => {
     const blank = { attachments: [], imageFiles: [], mentionedItems: [], modelId: "" };
-    const words = (m.autoCorrections ?? []).map((tc) => tc.wrong);
+    // reused choices first: the server keeps only the first few words
+    const words = [...(m.autoCorrections ?? [])].sort((a, b) => Number(!!b.remembered) - Number(!!a.remembered)).map((tc) => tc.wrong);
     if (words.length > 0) void sendRef.current({ query: m.content, ...blank, abbreviationAskWords: words });
   }, []);
   // only the latest question can be asked again this way

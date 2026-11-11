@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Tencent/WeKnora/internal/agent/tools"
+	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -155,4 +156,113 @@ func TestRememberedLegalPickFollowsTheConversation(t *testing.T) {
 	pin = s.rememberedLegalPick(context.Background(), ask, now)
 	require.NotNil(t, pin)
 	require.Equal(t, "53/2022/NĐ-CP", pin.DocumentNumber)
+}
+
+// A reused pick is noted on the running turn's state (history) and sent to
+// the chat as an abbreviation_resolution event (live); asking again is
+// recognised whatever the spacing or case.
+func TestNoteRememberedChoice(t *testing.T) {
+	_, store, dict, owner := newTurnCoordinatorFixture(t)
+	svc := &sessionService{
+		sessionRepo:          &abbreviationSessionRepo{},
+		messageRepo:          newAbbreviationMessageRepo(),
+		abbreviationPreparer: NewAbbreviationTurnCoordinator(store, dict, nil),
+		abbreviationStore:    store,
+	}
+	svc.messageRepo.(*abbreviationMessageRepo).messages["u1"].Content = "xin chào"
+	ctx := abbreviationTestContext()
+	req := abbreviationTestRequest("xin chào")
+	bus := event.NewEventBus()
+	bound, _, err := svc.PrepareAbbreviationTurn(ctx, req, bus)
+	require.NoError(t, err)
+	require.NoError(t, svc.claimAbbreviationExecution(bound, req))
+
+	var seen []types.AbbreviationTypo
+	bus.On(event.EventAbbreviationResolution, func(_ context.Context, evt event.Event) error {
+		seen = evt.Data.(event.AbbreviationResolutionData).RememberedSelections
+		return nil
+	})
+	choice := types.AbbreviationTypo{Wrong: "Nghị định 53", Correct: "Nghị định 53/2022/NĐ-CP"}
+	svc.noteRememberedChoice(bound, req, bus, choice)
+	svc.noteRememberedChoice(bound, req, bus, choice) // once only
+
+	row, err := store.Get(ctx, owner, mustResolutionRequestID(t, bound))
+	require.NoError(t, err)
+	require.Equal(t, types.AbbreviationTurnRunning, row.State)
+	require.Equal(t, []types.AbbreviationTypo{choice}, row.Payload.Resolution.RememberedSelections)
+	require.Equal(t, []types.AbbreviationTypo{choice}, seen)
+
+	// the completion watcher still finishes the turn after the extra write
+	svc.watchAbbreviationCompletion(bound, req, bus)
+	require.NoError(t, bus.Emit(ctx, event.Event{Type: event.EventAgentFinalAnswer, SessionID: "s",
+		Data: event.AgentFinalAnswerData{Content: "done", Done: true}}))
+	row, err = store.Get(ctx, owner, row.ID)
+	require.NoError(t, err)
+	require.Equal(t, types.AbbreviationTurnCompleted, row.State)
+	require.Equal(t, []types.AbbreviationTypo{choice}, row.Payload.Resolution.RememberedSelections)
+
+	// without a gate turn in the context nothing happens
+	svc.noteRememberedChoice(ctx, req, bus, types.AbbreviationTypo{Wrong: "x", Correct: "y"})
+
+	require.True(t, askedAgain(&types.QARequest{AbbreviationAskWords: []string{" nghị  định 53 "}}, "Nghị định 53"))
+	require.False(t, askedAgain(&types.QARequest{AbbreviationAskWords: []string{"ATTT"}}, "Nghị định 53"))
+}
+
+// A card shown again after the pick ("Không phải?") and left unanswered
+// drops the pick: the next bare reference shows the card again.
+func TestRememberedLegalPickDroppedWhenCardShownAgain(t *testing.T) {
+	first := decreeCard(t, "Nghị định 53 quy định gì?")
+	now := decreeCard(t, "Nghị định 53 còn hiệu lực không?")
+	s := &sessionService{messageRepo: &recentMessagesRepo{messages: []*types.Message{
+		cardMessage(t, "a1", first),
+		{ID: "u2", Role: "user", Content: first.Resend(first.Candidates[0])},
+		{ID: "a2", Role: "assistant", Content: "…"},
+		{ID: "u3", Role: "user", Content: "Nghị định 53 quy định gì?"},
+		cardMessage(t, "a3", first),
+		{ID: "u4", Role: "user", Content: "thôi, hỏi việc khác"},
+	}}}
+	require.Nil(t, s.rememberedLegalPick(context.Background(), pickRequest("Nghị định 53 còn hiệu lực không?"), now))
+}
+
+type candidatesCatalog struct {
+	interfaces.LegalCatalogService
+	docs []*types.LegalDocument
+}
+
+func (c *candidatesCatalog) Candidates(context.Context, string, string, int) ([]*types.LegalDocument, int, error) {
+	return c.docs, len(c.docs), nil
+}
+
+// Through the gate: a remembered pick lets the turn run with the pin; after
+// "Không phải?" (the reference in recheck_words) the card is shown again.
+func TestLegalCandidatesGateReusesPickUnlessAskedAgain(t *testing.T) {
+	first := decreeCard(t, "Nghị định 53 quy định gì?")
+	s := &sessionService{
+		legalCatalog: &candidatesCatalog{docs: first.Candidates},
+		messageRepo: &recentMessagesRepo{messages: []*types.Message{
+			cardMessage(t, "a1", first),
+			{ID: "u2", Role: "user", Content: first.Resend(first.Candidates[0])},
+		}},
+	}
+	req := pickRequest("Nghị định 53 còn hiệu lực không?")
+	req.CustomAgent = &types.CustomAgent{ID: types.BuiltinDocumentAssistantID}
+	req.AssistantMessageID = "a-now"
+
+	bus := event.NewEventBus()
+	cards := 0
+	bus.On(event.EventAgentToolResult, func(context.Context, event.Event) error { cards++; return nil })
+	ctx, asked, err := s.legalCandidatesClarification(context.Background(), req, bus)
+	require.NoError(t, err)
+	require.False(t, asked)
+	require.Zero(t, cards)
+	pins := types.LegalReferencePinsFromContext(ctx)
+	require.Len(t, pins, 1)
+	require.Equal(t, "53/2022/NĐ-CP", pins[0].DocumentNumber)
+
+	req.AbbreviationAskWords = []string{"nghị định 53"}
+	ctx, asked, err = s.legalCandidatesClarification(context.Background(), req, bus)
+	require.NoError(t, err)
+	require.True(t, asked)
+	require.Equal(t, 1, cards)
+	require.Empty(t, types.LegalReferencePinsFromContext(ctx))
 }

@@ -182,10 +182,12 @@ type AbbreviationResolution struct {
 	// Rewrite is the question with its typing fixed by the chat model,
 	// offered as "did you mean …" while words are unclear.
 	Rewrite string `json:"rewrite,omitempty"`
-	// RememberedSelections are the ambiguous short forms resolved without
-	// asking because the user picked their meaning earlier in the same
-	// conversation (Wrong = short form, Correct = full form), shown to the
-	// user with a way to be asked again.
+	// RememberedSelections are choices reused without asking because the
+	// user made them earlier in the same conversation, shown to the user
+	// with a way to be asked again: ambiguous short forms (Wrong = short
+	// form, Correct = full form) and bare legal references (Wrong =
+	// "Nghị định 53", Correct = the picked số hiệu). Display only: the
+	// effective query never reads them.
 	RememberedSelections []AbbreviationTypo `json:"remembered_selections,omitempty"`
 }
 

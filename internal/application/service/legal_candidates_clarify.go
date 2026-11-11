@@ -37,8 +37,12 @@ func (s *sessionService) legalCandidatesClarification(ctx context.Context, req *
 	if card == nil {
 		return ctx, false, nil
 	}
-	if pin := s.rememberedLegalPick(ctx, req, card); pin != nil {
+	if askedAgain(req, card.Reference.Text) {
+		logger.Infof(ctx, "Legal reference %q: the user asked to choose again", card.Reference.Text)
+	} else if pin := s.rememberedLegalPick(ctx, req, card); pin != nil {
 		logger.Infof(ctx, "Legal reference %q: reusing the earlier pick %s", card.Reference.Text, pin.DocumentNumber)
+		s.noteRememberedChoice(ctx, req, bus, types.AbbreviationTypo{Wrong: pin.Reference,
+			Correct: strings.TrimSpace(pin.DocType + " " + pin.DocumentNumber)})
 		return types.WithLegalReferencePins(ctx, []types.LegalReferencePin{*pin}), false, nil
 	}
 	logger.Infof(ctx, "Legal reference %q fits %d documents: answering with the candidates card", card.Reference.Text, card.Total)

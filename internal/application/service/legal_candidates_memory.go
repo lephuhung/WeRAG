@@ -12,9 +12,11 @@ import (
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/Tencent/WeKnora/internal/agent/tools"
+	"github.com/Tencent/WeKnora/internal/event"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal/abbreviation"
 )
 
 // legalPickHistory bounds how many recent messages of the session are read
@@ -25,8 +27,10 @@ const legalPickHistory = 60
 // bare reference (same type and number) earlier in this conversation: after
 // a candidates card for it, the newest user message that re-sends one of
 // its choices, answers with a choice's ordinal right after the card, or
-// names exactly one of its candidates' số hiệu. The pick is used only while
-// it is still among the current card's candidates: "Nghị định 53 về thuế"
+// names exactly one of its candidates' số hiệu. A card shown again for the
+// reference drops the earlier pick until the user picks again. The pick is
+// used only while it is still among the current card's candidates: "Nghị
+// định 53 về thuế"
 // after picking the cyber-security decree shows the narrowed card. nil when
 // there is none or the history cannot be read (the card is shown as
 // before).
@@ -53,6 +57,11 @@ func (s *sessionService) rememberedLegalPick(ctx context.Context, req *types.QAR
 			cands := legalCardCandidates(m, card.Reference)
 			known = append(known, cands...)
 			lastCard = cands
+			if len(cands) > 0 {
+				// the card was shown again ("Không phải?", or the pick no
+				// longer fitted): the earlier pick stands only if re-made
+				pick = nil
+			}
 		case "user":
 			if len(known) > 0 {
 				if c := pickedCandidate(known, lastCard, m.Content); c != nil {
@@ -202,4 +211,62 @@ func stringOf(v interface{}) string {
 		return s
 	}
 	return ""
+}
+
+// noteRememberedChoice shows under the user's question that a choice made
+// earlier in the conversation was reused ("Nghị định 53" → its picked số
+// hiệu): it is added to the turn's abbreviation state, which already
+// carries the reused abbreviation meanings to the chat (live event and
+// history) with a "Không phải?" button that re-sends the question with the
+// reference to ask about again. Best effort: without a gate turn (IM
+// channels) or on a store error the turn just runs on.
+func (s *sessionService) noteRememberedChoice(ctx context.Context, req *types.QARequest, bus *event.EventBus, choice types.AbbreviationTypo) {
+	if s.abbreviationStore == nil || req == nil || req.Session == nil {
+		return
+	}
+	r, ok := abbreviation.ResolutionFromContext(ctx)
+	if !ok || r.RequestID == "" {
+		return
+	}
+	owner, err := s.abbreviationOwner(ctx, req)
+	if err != nil {
+		return
+	}
+	row, err := s.abbreviationStore.Get(ctx, owner, r.RequestID)
+	if err != nil || row.State != types.AbbreviationTurnRunning || row.ExecutingMessageID != req.AssistantMessageID {
+		return
+	}
+	for _, c := range row.Payload.Resolution.RememberedSelections {
+		if c.Wrong == choice.Wrong {
+			return
+		}
+	}
+	row.Payload.Resolution.RememberedSelections = append(row.Payload.Resolution.RememberedSelections, choice)
+	swapped, err := s.abbreviationStore.CompareAndSwap(ctx, owner, row.Version, row)
+	if err != nil || !swapped {
+		logger.Warnf(ctx, "legal candidates: reused pick not noted: %v", err)
+		return
+	}
+	row.Version++
+	if bus == nil {
+		return
+	}
+	public := row.Payload.Resolution.PublicState()
+	public.RequestID, public.RootUserMessageID, public.Version, public.ExpiresAt =
+		row.ID, row.RootUserMessageID, row.Version, row.ExpiresAt
+	public.Status = row.State
+	_ = bus.Emit(ctx, event.Event{Type: event.EventAbbreviationResolution, SessionID: req.Session.ID,
+		Data: event.AbbreviationResolutionData{AbbreviationPublicState: public, Origin: "runtime"}})
+}
+
+// askedAgain reports whether the user asked to choose again for reference
+// ("Không phải?" under a reused pick re-sends the question with it).
+func askedAgain(req *types.QARequest, reference string) bool {
+	want := strings.ToLower(norm.NFC.String(strings.Join(strings.Fields(reference), " ")))
+	for _, w := range req.AbbreviationAskWords {
+		if strings.ToLower(norm.NFC.String(strings.Join(strings.Fields(w), " "))) == want {
+			return true
+		}
+	}
+	return false
 }
