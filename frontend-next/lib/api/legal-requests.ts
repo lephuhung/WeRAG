@@ -76,6 +76,8 @@ export interface LegalRequestItem {
   knowledge_parse_status?: LegalKnowledgeParseStatus;
   /** The OCR draft of the document's scanned PDF, null when none was fetched. */
   draft?: LegalDraftSummary | null;
+  /** How many people asked (each is mailed once the document is added). */
+  requester_count?: number;
 }
 
 export interface LegalRequestCounts {

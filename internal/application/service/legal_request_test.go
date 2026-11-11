@@ -18,8 +18,9 @@ import (
 
 type queueRepo struct {
 	interfaces.LegalRequestRepository
-	rows    map[string]*types.LegalDocumentRequest
-	decided []string
+	rows       map[string]*types.LegalDocumentRequest
+	decided    []string
+	requesters map[string]int
 }
 
 func (r *queueRepo) Get(_ context.Context, id string) (*types.LegalDocumentRequest, error) {
@@ -34,6 +35,16 @@ func (r *queueRepo) List(_ context.Context, status string, _, _ int) ([]*types.L
 		}
 	}
 	return out, int64(len(out)), nil
+}
+
+func (r *queueRepo) CountRequesters(_ context.Context, ids []string) (map[string]int, error) {
+	out := map[string]int{}
+	for _, id := range ids {
+		if n := r.requesters[id]; n > 0 {
+			out[id] = n
+		}
+	}
+	return out, nil
 }
 
 func (r *queueRepo) CountByStatus(context.Context) (map[string]int64, error) {

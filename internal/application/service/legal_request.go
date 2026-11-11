@@ -155,9 +155,18 @@ func (s *legalRequestService) items(ctx context.Context, rows []*types.LegalDocu
 			}
 		}
 	}
+	requestIDs := make([]string, 0, len(rows))
+	for _, r := range rows {
+		requestIDs = append(requestIDs, r.ID)
+	}
+	requesters, err := s.requests.CountRequesters(ctx, requestIDs)
+	if err != nil {
+		logger.Warnf(ctx, "[LegalRequests] requester counts: %v", err)
+	}
 	items := make([]*types.LegalRequestItem, 0, len(rows))
 	for _, r := range rows {
-		item := &types.LegalRequestItem{LegalDocumentRequest: r, KnowledgeParseStatus: parse[r.KnowledgeID]}
+		item := &types.LegalRequestItem{LegalDocumentRequest: r, KnowledgeParseStatus: parse[r.KnowledgeID],
+			RequesterCount: requesters[r.ID]}
 		if r.LegalDocumentID != "" {
 			item.Draft = drafts[r.LegalDocumentID]
 		}

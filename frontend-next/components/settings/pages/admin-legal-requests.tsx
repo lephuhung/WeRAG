@@ -362,6 +362,11 @@ function RequestCells({
       </td>
       <td className="px-5 py-3.5 align-middle">
         <span className="text-[13px] tabular-nums text-ink">{item.request_count}</span>
+        {(item.requester_count ?? 0) > 0 && (
+          <div className="caption whitespace-nowrap text-muted" title={t("lreq.requestersHint")}>
+            {t("lreq.requesters", { n: item.requester_count ?? 0 })}
+          </div>
+        )}
       </td>
       <td className="px-5 py-3.5 align-middle">
         <span className="caption tabular-nums text-body">{formatDateTime(item.last_requested_at, locale) || "—"}</span>
