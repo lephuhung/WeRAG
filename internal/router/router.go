@@ -52,6 +52,8 @@ type RouterParams struct {
 	TenantInvitationHandler *handler.TenantInvitationHandler
 	// UserNotificationHandler serves the caller's in-app notifications.
 	UserNotificationHandler *handler.UserNotificationHandler `optional:"true"`
+	// AnswerQualityHandler serves the admins' answer-quality inbox.
+	AnswerQualityHandler *handler.AnswerQualityHandler `optional:"true"`
 
 	AuditLogHandler             *handler.AuditLogHandler
 	AuditLogService             interfaces.AuditLogService
@@ -290,6 +292,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterBillingRoutes(v1, params.UsageBillingHandler, rbacGuards)
 		RegisterMyInvitationRoutes(v1, params.TenantInvitationHandler)
 		RegisterUserNotificationRoutes(v1, params.UserNotificationHandler)
+		RegisterAnswerQualityRoutes(v1, params.AnswerQualityHandler, rbacGuards)
 		RegisterKnowledgeBaseRoutes(v1, params.KBHandler, rbacGuards)
 		RegisterKnowledgeBaseActivityRoutes(v1, params.AuditLogHandler, rbacGuards)
 		RegisterKnowledgeGraphViewRoutes(v1, params.KnowledgeGraphViewHandler, rbacGuards)

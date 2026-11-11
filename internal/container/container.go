@@ -188,6 +188,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	logger.Debugf(ctx, "[Container] Registering business services...")
 	must(container.Provide(service.NewTenantService))
 	must(container.Provide(service.NewTenantAPIKeyService))
+	must(container.Provide(service.NewAnswerQualityService))
 	must(container.Provide(service.NewTenantMemberService))
 	must(container.Provide(service.NewTenantInvitationService))
 	must(container.Provide(service.NewAuditLogService))
@@ -241,6 +242,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// in-app notifications; people who asked for a legal document are
 	// notified once it is added
 	must(container.Provide(repository.NewUserNotificationRepository))
+	must(container.Provide(repository.NewAnswerQualityRepository))
 	must(container.Provide(service.NewLegalRequestNotifier))
 	must(container.Provide(service.NewAbbreviationReviewNotifier))
 	// SuperAdmins' review-queue digests (orders, legal requests, drafts,
@@ -596,6 +598,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewMeEnvVarHandler))
 	must(container.Provide(handler.NewMeUsageHandler))
 	must(container.Provide(handler.NewUserNotificationHandler))
+	must(container.Provide(handler.NewAnswerQualityHandler))
 	must(container.Provide(handler.NewUsageAdminHandler))
 	must(container.Provide(handler.NewTenantUsageHandler))
 	must(container.Provide(handler.NewDocumentLabelHandler))
