@@ -519,11 +519,16 @@ func (g *rbacGuards) PlatformSuperAdmin() gin.HandlerFunc {
 	return middleware.RequireExplicitHumanSuperAdmin(g.cfg)
 }
 
-// LegalUploader gates the external-source legal-document feed
-// (docs/legal-document-feed-spec.md §9): pushing a document from another
-// source, reading the queue of legal-document requests, and closing a
-// request as "added". It admits an explicit human SuperAdmin or a human
-// account flagged users.can_upload_legal_documents — never an API key.
+// LegalUploader gates the human side of the external-source legal-document
+// feed (docs/legal-document-feed-spec.md §9): reading the queue of
+// legal-document requests and closing a request as "added". It admits an
+// explicit human SuperAdmin or a human account flagged
+// users.can_upload_legal_documents — never an API key.
+//
+// The push itself (/system/legal-documents/push, push-scan) is NOT behind
+// this guard: it is an apiKeyRoute so the feed's platform API key can call
+// it, and the handler's legalPushAllowed admits the same two human callers
+// plus that key. Keep the two in step when changing who may push.
 func (g *rbacGuards) LegalUploader() gin.HandlerFunc {
 	return middleware.RequireLegalUploader(g.cfg)
 }

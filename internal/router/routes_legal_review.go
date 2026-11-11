@@ -81,8 +81,9 @@ func RegisterDomainPackReconcileRoutes(r *gin.RouterGroup, h *handler.DomainPack
 // RegisterLegalPushRoutes wires the push of legal documents from sources
 // other than vbpl.vn (docs/legal-document-feed-spec.md §9) and the
 // SuperAdmin review of the provision links they carry. The push takes an
-// API key of the platform organization with ingest (re-checked in the
-// handler) or a human SuperAdmin; the review is human SuperAdmin only.
+// API key of the platform organization with ingest, a human SuperAdmin, or
+// a human account flagged users.can_upload_legal_documents (all re-checked
+// in the handler, legalPushAllowed); the review is human SuperAdmin only.
 func RegisterLegalPushRoutes(r *gin.RouterGroup, h *handler.LegalPushHandler, g *rbacGuards) {
 	if h == nil {
 		return

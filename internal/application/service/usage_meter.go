@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -16,11 +18,20 @@ import (
 type usageMeter struct {
 	repo interfaces.UsageCounterRepository
 	now  func() time.Time
+	// retryDelays are the waits before each further attempt of a counter
+	// write that failed; nil means one attempt (tests).
+	retryDelays []time.Duration
 }
+
+// usageAddRetryDelays: a question or OCR count has no later save that would
+// count it again (message token usage does, see RecordMessageUsage), so a
+// failed write is retried before it is given up. The write is one atomic
+// upsert statement, so a retry cannot count twice.
+var usageAddRetryDelays = []time.Duration{200 * time.Millisecond, time.Second}
 
 // NewUsageMeter creates the meter.
 func NewUsageMeter(repo interfaces.UsageCounterRepository) interfaces.UsageMeter {
-	return &usageMeter{repo: repo, now: time.Now}
+	return &usageMeter{repo: repo, now: time.Now, retryDelays: usageAddRetryDelays}
 }
 
 // usageScopes lists the counters a turn belongs to: always the workspace,
@@ -84,9 +95,32 @@ func (m *usageMeter) add(ctx context.Context, increments []types.UsageIncrement)
 		return
 	}
 	// The turn is over or persisting; a client disconnect must not lose the count.
-	if err := m.repo.Add(context.WithoutCancel(ctx), increments); err != nil {
-		logger.Warnf(ctx, "usage meter: failed to add %d counters: %v", len(increments), err)
+	writeCtx := context.WithoutCancel(ctx)
+	err := m.repo.Add(writeCtx, increments)
+	for attempt := 0; err != nil && attempt < len(m.retryDelays); attempt++ {
+		logger.Warnf(ctx, "usage meter: adding %d counters failed (attempt %d), retrying: %v",
+			len(increments), attempt+1, err)
+		time.Sleep(m.retryDelays[attempt])
+		err = m.repo.Add(writeCtx, increments)
 	}
+	if err != nil {
+		// Lost from the quota: log every counter so an operator can add it back.
+		logger.Errorf(ctx, "usage meter: LOST %d counters after %d attempts: %v; counters=%s",
+			len(increments), len(m.retryDelays)+1, err, describeUsageIncrements(increments))
+	}
+}
+
+// describeUsageIncrements renders counters as scope/id/metric/period+delta
+// for the lost-count log line.
+func describeUsageIncrements(increments []types.UsageIncrement) string {
+	var b strings.Builder
+	for i, inc := range increments {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "%s/%s/%s/%s+%d", inc.ScopeType, inc.ScopeID, inc.Metric, inc.PeriodKey, inc.Delta)
+	}
+	return b.String()
 }
 
 func (m *usageMeter) RecordQuestion(ctx context.Context, tenantID uint64, userID, sessionID string) {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -12,9 +13,17 @@ import (
 type fakeUsageCounterRepo struct {
 	added   []types.UsageIncrement
 	claimed map[string]bool
+	// failAdds makes the next Add calls fail
+	failAdds int
+	addCalls int
 }
 
 func (f *fakeUsageCounterRepo) Add(_ context.Context, incs []types.UsageIncrement) error {
+	f.addCalls++
+	if f.failAdds > 0 {
+		f.failAdds--
+		return errors.New("db down")
+	}
 	f.added = append(f.added, incs...)
 	return nil
 }
@@ -245,4 +254,26 @@ func TestUsagePeriodTotalsFoldCacheAndCost(t *testing.T) {
 	require.Equal(t, int64(750), totals.CacheReadTokens)
 	require.Equal(t, int64(250), totals.CacheMissTokens)
 	require.Equal(t, int64(2_500_000), totals.CostMicroVND)
+}
+
+// A failed question count is retried: the first write fails, the second
+// lands, nothing is counted twice.
+func TestUsageMeterRetriesFailedCounterWrite(t *testing.T) {
+	repo := &fakeUsageCounterRepo{failAdds: 1}
+	m := &usageMeter{repo: repo, now: time.Now, retryDelays: []time.Duration{0, 0}}
+
+	m.RecordQuestion(context.Background(), 10003, "", "")
+	require.Equal(t, 2, repo.addCalls)
+	require.Len(t, repo.added, 2, "tenant day + month, once")
+}
+
+// Every attempt fails: the meter gives up after the configured retries and
+// does not panic or block forever.
+func TestUsageMeterGivesUpAfterRetries(t *testing.T) {
+	repo := &fakeUsageCounterRepo{failAdds: 10}
+	m := &usageMeter{repo: repo, now: time.Now, retryDelays: []time.Duration{0, 0}}
+
+	m.RecordQuestion(context.Background(), 10003, "", "")
+	require.Equal(t, 3, repo.addCalls)
+	require.Empty(t, repo.added)
 }
