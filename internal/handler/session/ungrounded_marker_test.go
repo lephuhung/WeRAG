@@ -22,7 +22,8 @@ func (s *contextCapturingMessageService) UpdateMessage(_ context.Context, m *typ
 	return nil
 }
 
-func (s *contextCapturingMessageService) IndexMessageToKB(context.Context, string, string, string, string) {}
+func (s *contextCapturingMessageService) IndexMessageToKB(context.Context, string, string, string, string) {
+}
 
 func (s *contextCapturingMessageService) last() types.MessageExecutionContext {
 	return s.updates[len(s.updates)-1]
