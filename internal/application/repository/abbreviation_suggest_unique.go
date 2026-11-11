@@ -14,18 +14,29 @@ import (
 )
 
 func (r *abbreviationRepository) SuggestUnique(ctx context.Context, row *types.Abbreviation) (*types.Abbreviation, error) {
+	result, _, err := r.SuggestUniqueCreated(ctx, row)
+	return result, err
+}
+
+// SuggestUniqueCreated is SuggestUnique also reporting whether it inserted
+// the row (false: an existing row of the pair was returned).
+func (r *abbreviationRepository) SuggestUniqueCreated(
+	ctx context.Context, row *types.Abbreviation,
+) (*types.Abbreviation, bool, error) {
 	if row == nil || strings.TrimSpace(row.ShortForm) == "" || strings.TrimSpace(row.FullForm) == "" {
-		return nil, types.ErrAbbreviationBadSelection
+		return nil, false, types.ErrAbbreviationBadSelection
 	}
 	short := strings.ToLower(strings.TrimSpace(row.ShortForm))
 	full := strings.ToLower(strings.TrimSpace(row.FullForm))
 	key := fmt.Sprintf("%x", sha256.Sum256([]byte(short+"\x00"+full)))
 	var result *types.Abbreviation
+	var created bool
 	for attempt := 0; attempt < 5; attempt++ {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		result = nil
+		created = false
 		err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 			if err := tx.Exec(`INSERT INTO abbreviation_suggestion_locks ("key") VALUES (?) ON CONFLICT DO NOTHING`, key).Error; err != nil {
 				return err
@@ -57,17 +68,18 @@ func (r *abbreviationRepository) SuggestUnique(ctx context.Context, row *types.A
 				return err
 			}
 			result = &candidate
+			created = true
 			return nil
 		})
 		if err == nil {
-			return result, nil
+			return result, created, nil
 		}
 		var sqliteErr sqlite3.Error
 		if r.db.Dialector.Name() != "sqlite" || !errors.As(err, &sqliteErr) ||
 			(sqliteErr.Code != sqlite3.ErrBusy && sqliteErr.Code != sqlite3.ErrLocked) || attempt == 4 {
-			return nil, err
+			return nil, false, err
 		}
 		time.Sleep(time.Duration(attempt+1) * 10 * time.Millisecond)
 	}
-	return nil, types.ErrAbbreviationConflict
+	return nil, false, types.ErrAbbreviationConflict
 }

@@ -11,7 +11,13 @@ import (
 type AbbreviationRepository interface {
 	// Create inserts a new abbreviation row.
 	Create(ctx context.Context, abbr *types.Abbreviation) error
+	// SuggestUnique returns the row of the same short/full pair (case- and
+	// space-insensitive, an active one first) or inserts abbr as an
+	// inactive suggestion.
 	SuggestUnique(ctx context.Context, abbr *types.Abbreviation) (*types.Abbreviation, error)
+	// SuggestUniqueCreated is SuggestUnique also reporting whether the row
+	// was inserted by this call.
+	SuggestUniqueCreated(ctx context.Context, abbr *types.Abbreviation) (*types.Abbreviation, bool, error)
 
 	// GetByID retrieves one row. Returns nil, nil when absent.
 	GetByID(ctx context.Context, id string) (*types.Abbreviation, error)

@@ -12,8 +12,7 @@ import { formatTokens, getMyUsage, type UsageSummary } from "@/lib/api/usage";
 import { useAuth, useTenantRole } from "@/lib/auth";
 import { useAvatarUrl } from "@/lib/avatar";
 import { useT, type Locale } from "@/lib/i18n";
-import { consumeSettingsRedirect } from "@/lib/settings-deep-link";
-import { useToast } from "@/components/toast";
+import { SETTINGS_REDIRECTED_EVENT, consumeSettingsRedirect } from "@/lib/settings-deep-link";
 import { SettingsModal } from "@/components/settings-modal";
 import { Modal } from "@/components/modal";
 import { WordAddinInstall } from "@/components/auth/word-addin-install";
@@ -35,31 +34,6 @@ const LOCALES: { id: Locale; label: string }[] = [
 ];
 
 const PENDING_POLL_MS = 20_000;
-/* Pending ids are fetched newest first; a page this size covers any
- * realistic backlog between two polls. */
-const PENDING_PAGE_SIZE = 100;
-/* Kept per browser session, so a reload or a second tab does not repeat the
- * toast for the same backlog. */
-const NOTIFIED_KEY = "werag_abbrev_notified_at";
-
-/* Newest created_at already announced. Pending rows are listed newest first,
- * so only a row created after this mark is a new suggestion; approving one
- * just slides an older row into the polled window and must stay quiet. */
-function loadNotified(): string {
-  try {
-    return sessionStorage.getItem(NOTIFIED_KEY) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function saveNotified(mark: string) {
-  try {
-    sessionStorage.setItem(NOTIFIED_KEY, mark);
-  } catch {
-    /* storage disabled — at worst the toast repeats after reload */
-  }
-}
 
 export function AccountMenu() {
   const router = useRouter();
@@ -74,35 +48,14 @@ export function AccountMenu() {
   const [pending, setPending] = useState(0);
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const toast = useToast();
-  const toastRef = useRef(toast);
-  toastRef.current = toast;
-  const tLatest = useRef(t);
-  tLatest.current = t;
 
-  /* Suggestions are mostly created server-side (the agent's abbreviation
-   * tools), so the browser only learns about them by polling. A pending row
-   * newer than the last announced one raises one toast — including a backlog
-   * already waiting at sign-in — and an approval landing in the same
-   * interval cannot mask it. */
+  /* The pending count behind the badge. New suggestions are announced by
+   * the in-app notification (an abbreviation_pending digest in the bell),
+   * so this only counts, it never toasts. */
   const refreshPending = useCallback(async () => {
     try {
-      const res = await listAbbreviations({ isActive: false, page: 1, pageSize: PENDING_PAGE_SIZE });
-      const total = res.total ?? 0;
-      setPending(total);
-      const times = (res.data ?? []).map((a) => new Date(a.created_at).getTime()).filter((n) => !Number.isNaN(n));
-      const newest = times.length ? Math.max(...times) : 0;
-      const mark = Number(loadNotified()) || 0;
-      if (newest > mark) saveNotified(String(newest));
-      if (newest > mark) {
-        // Longer dwell (20s): admin may be away from the screen when a new
-        // suggestion lands, and 5s was easy to miss.
-        toastRef.current.info(
-          tLatest.current("acct.abbrevPendingToast", { count: total }),
-          () => window.dispatchEvent(new CustomEvent("weknora:open-settings", { detail: "abbreviations" })),
-          20_000,
-        );
-      }
+      const res = await listAbbreviations({ isActive: false, page: 1, pageSize: 1 });
+      setPending(res.total ?? 0);
     } catch {
       /* non-fatal — badge just stays stale */
     }
@@ -134,6 +87,9 @@ export function AccountMenu() {
     if (!section) return;
     setSettingsSection(section);
     setSettingsOpen(true);
+    // a section already open reads the link's query now (one not mounted
+    // yet reads it when it mounts)
+    window.dispatchEvent(new CustomEvent(SETTINGS_REDIRECTED_EVENT, { detail: section }));
   }, [pathname]);
 
   /* Own usage counters, refreshed each time the menu opens: cheap (two
@@ -153,8 +109,8 @@ export function AccountMenu() {
     };
   }, [open]);
 
-  /* Toast notifications (e.g. new pending abbreviation) open the settings
-   * modal by dispatching weknora:open-settings with the section as detail. */
+  /* Other components (e.g. the plan banner) open the settings modal by
+   * dispatching weknora:open-settings with the section as detail. */
   useEffect(() => {
     const onOpen = (e: Event) => {
       setSettingsSection((e as CustomEvent<string>).detail || "general");

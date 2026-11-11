@@ -423,7 +423,7 @@ func formatToolGuidanceForMode(names []string, skillInstallMode bool) string {
 		b.WriteString("An abbreviation the runtime cannot resolve needs the user's definition: " +
 			"resolve_abbreviation action=suggest accepts only the exact meaning the user supplied for " +
 			"this request, which then applies locally while the shared dictionary keeps it pending until " +
-			"an organization Owner or SuperAdmin approves it. Never invent a full form.\n")
+			"a SuperAdmin (platform administrator) approves it. Never invent a full form.\n")
 	}
 
 	return b.String()

@@ -3,7 +3,8 @@
  * catch-all keeps old deep links working: platform configuration and
  * administration paths go to /platform/admin?section=…, everything else
  * bounces to /platform and opens the modal at the matching section
- * (SECTION_ROUTES maps a path → section key). */
+ * (SECTION_ROUTES maps a path → section key), handing it the link's query
+ * (e.g. ?status=pending on the abbreviations section). */
 "use client";
 
 import { useEffect } from "react";
@@ -23,7 +24,7 @@ export default function SystemRedirect() {
       router.replace(adminSectionHref(adminKey));
       return;
     }
-    queueSettingsRedirect(window.sessionStorage, SECTION_ROUTES[pathname] ?? "general");
+    queueSettingsRedirect(window.sessionStorage, SECTION_ROUTES[pathname] ?? "general", window.location.search);
     router.replace("/platform/creatChat");
   }, [pathname, router]);
 

@@ -5,9 +5,37 @@ interface SettingsRedirectStorage {
 }
 
 const SETTINGS_REDIRECT_KEY = "weknora:settings-redirect";
+const SETTINGS_PARAMS_KEY = "weknora:settings-redirect-params";
 
-export function queueSettingsRedirect(storage: SettingsRedirectStorage, section: string) {
+/* Window event dispatched once a redirect's section was opened (detail: the
+ * section key): a section already on screen reads its deep-link query then,
+ * as its mount-time read does not run again. */
+export const SETTINGS_REDIRECTED_EVENT = "weknora:settings-redirected";
+
+/* section: the settings section to open; search: the deep link's query
+ * ("?status=pending"), which the section reads once (consumeSettingsParam). */
+export function queueSettingsRedirect(storage: SettingsRedirectStorage, section: string, search = "") {
   storage.setItem(SETTINGS_REDIRECT_KEY, section);
+  if (search && search !== "?") storage.setItem(SETTINGS_PARAMS_KEY, JSON.stringify({ section, search }));
+  else storage.removeItem(SETTINGS_PARAMS_KEY);
+}
+
+/* consumeSettingsParam: the query parameter `name` of the deep link that
+ * opened `section`, once ("" when none). Another section's parameters are
+ * left alone. */
+export function consumeSettingsParam(storage: SettingsRedirectStorage, section: string, name: string): string {
+  const raw = storage.getItem(SETTINGS_PARAMS_KEY);
+  if (!raw) return "";
+  let parsed: { section?: unknown; search?: unknown };
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    storage.removeItem(SETTINGS_PARAMS_KEY);
+    return "";
+  }
+  if (parsed.section !== section) return "";
+  storage.removeItem(SETTINGS_PARAMS_KEY);
+  return typeof parsed.search === "string" ? (new URLSearchParams(parsed.search).get(name) ?? "") : "";
 }
 
 export function consumeSettingsRedirect(storage: SettingsRedirectStorage): string | null {

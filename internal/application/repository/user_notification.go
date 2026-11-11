@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mattn/go-sqlite3"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -102,6 +104,10 @@ func (r *userNotificationRepository) MarkRead(ctx context.Context, userID, id st
 	if n.SeenAt == nil {
 		updates["seen_at"] = at
 	}
+	if n.ReadAt == nil {
+		// an open digest's key is freed for the next one
+		updates["dedupe_key"] = gorm.Expr(types.UserNotificationRotateOpenKeySQL)
+	}
 	if len(updates) == 0 {
 		return true, nil
 	}
@@ -115,8 +121,133 @@ func (r *userNotificationRepository) MarkAllRead(ctx context.Context, userID str
 		Where("user_id = ? AND read_at IS NULL AND seen_at IS NULL", userID).Update("seen_at", at).Error; err != nil {
 		return 0, err
 	}
-	res := db.Model(&types.UserNotification{}).Where("user_id = ? AND read_at IS NULL", userID).Update("read_at", at)
+	res := db.Model(&types.UserNotification{}).Where("user_id = ? AND read_at IS NULL", userID).
+		Updates(map[string]any{"read_at": at, "dedupe_key": gorm.Expr(types.UserNotificationRotateOpenKeySQL)})
 	return res.RowsAffected, res.Error
+}
+
+// errOpenDigestMoved: the open digest was read (its key rotated) between
+// the insert attempt and the lock; the upsert starts over.
+var errOpenDigestMoved = errors.New("user notification: open digest moved")
+
+// upsertOpenDigestAttempts bounds the retries of UpsertOpenDigest after a
+// digest was read meanwhile; upsertOpenDigestLockRetries those after
+// SQLite's table lock (unit tests only: Postgres waits on the lock).
+const (
+	upsertOpenDigestAttempts    = 5
+	upsertOpenDigestLockRetries = 50
+)
+
+func (r *userNotificationRepository) UpsertOpenDigest(
+	ctx context.Context, n *types.UserNotification, merge func(prev, next *types.UserNotification),
+) (bool, error) {
+	if n == nil || !types.IsUserNotificationOpenKey(n.DedupeKey) {
+		return false, errors.New("user notification: an open digest key is required")
+	}
+	if merge == nil {
+		return false, errors.New("user notification: merge is required")
+	}
+	if n.CreatedAt.IsZero() {
+		n.CreatedAt = time.Now()
+	}
+	draft := *n
+	var lastErr error
+	for attempt, locked := 0, 0; attempt < upsertOpenDigestAttempts && locked < upsertOpenDigestLockRetries; {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		next := draft
+		created := false
+		err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			// the unique key makes a concurrent insert wait for this one
+			// (Postgres) and then find the row below
+			ok, err := createUserNotification(tx, &next)
+			if err != nil || ok {
+				created = ok
+				return err
+			}
+			q := tx
+			if tx.Dialector.Name() == "postgres" {
+				q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+			}
+			var prev types.UserNotification
+			err = q.Where("dedupe_key = ? AND read_at IS NULL", draft.DedupeKey).Take(&prev).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				// read in between (the key moved with it), or a read row
+				// still holds the key: freed below, outside this rollback
+				return errOpenDigestMoved
+			}
+			if err != nil {
+				return err
+			}
+			if prev.UserID != draft.UserID || prev.Kind != draft.Kind {
+				return fmt.Errorf("user notification: open key %q held by another user or kind", draft.DedupeKey)
+			}
+			next = draft
+			merge(&prev, &next)
+			if !types.ValidUserNotificationLink(next.Link) {
+				return fmt.Errorf("user notification: link %q is not an app path under %s", next.Link, types.UserNotificationLinkPrefix)
+			}
+			next.ID = prev.ID
+			// on top of the list again, and toasted again
+			return tx.Model(&types.UserNotification{}).Where("id = ?", prev.ID).Updates(map[string]any{
+				"tenant_id":  next.TenantID,
+				"title":      next.Title,
+				"body":       next.Body,
+				"link":       next.Link,
+				"payload":    next.Payload,
+				"created_at": next.CreatedAt,
+				"seen_at":    nil,
+			}).Error
+		})
+		if err == nil {
+			*n = next
+			return created, nil
+		}
+		lastErr = err
+		switch {
+		case errors.Is(err, errOpenDigestMoved):
+			attempt++
+			// a read row holding the open key (written before reads rotated
+			// keys, or by hand) would block every insert: free the key in a
+			// committed step of its own
+			if ferr := r.db.WithContext(ctx).Model(&types.UserNotification{}).
+				Where("dedupe_key = ? AND read_at IS NOT NULL", draft.DedupeKey).
+				Update("dedupe_key", gorm.Expr(types.UserNotificationRotateOpenKeySQL)).Error; ferr != nil {
+				if !isSQLiteLockError(ferr) {
+					return false, ferr
+				}
+				locked++
+			}
+		case isSQLiteLockError(err):
+			locked++
+			time.Sleep(time.Duration(1+rand.IntN(10)) * time.Millisecond)
+		default:
+			return false, err
+		}
+	}
+	return false, lastErr
+}
+
+func (r *userNotificationRepository) CloseOpenDigests(ctx context.Context, kind string, before, at time.Time) (int64, error) {
+	if kind == "" {
+		return 0, errors.New("user notification: kind is required")
+	}
+	res := r.db.WithContext(ctx).Model(&types.UserNotification{}).
+		Where("kind = ? AND read_at IS NULL AND created_at < ? AND dedupe_key LIKE ?", kind, before, "%:open").
+		Updates(map[string]any{
+			"read_at":    at,
+			"seen_at":    gorm.Expr("COALESCE(seen_at, ?)", at),
+			"dedupe_key": gorm.Expr(types.UserNotificationRotateOpenKeySQL),
+		})
+	return res.RowsAffected, res.Error
+}
+
+// isSQLiteLockError: the in-memory SQLite of the unit tests refused a
+// concurrent write (shared-cache table lock or busy); worth a retry.
+func isSQLiteLockError(err error) bool {
+	var sqliteErr sqlite3.Error
+	return errors.As(err, &sqliteErr) && (sqliteErr.Code == sqlite3.ErrBusy || sqliteErr.Code == sqlite3.ErrLocked)
 }
 
 func (r *userNotificationRepository) PurgeRead(ctx context.Context, readBefore time.Time, batch int) (int64, error) {

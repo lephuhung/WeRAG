@@ -28,19 +28,24 @@ func (r *fakeAbbreviationRepo) Create(_ context.Context, abbr *types.Abbreviatio
 }
 
 func (r *fakeAbbreviationRepo) SuggestUnique(ctx context.Context, abbr *types.Abbreviation) (*types.Abbreviation, error) {
+	row, _, err := r.SuggestUniqueCreated(ctx, abbr)
+	return row, err
+}
+
+func (r *fakeAbbreviationRepo) SuggestUniqueCreated(ctx context.Context, abbr *types.Abbreviation) (*types.Abbreviation, bool, error) {
 	rows, err := r.ListByShortForm(ctx, abbr.ShortForm)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	for _, row := range rows {
 		if strings.EqualFold(strings.TrimSpace(row.FullForm), abbr.FullForm) {
-			return row, nil
+			return row, false, nil
 		}
 	}
 	if err := r.Create(ctx, abbr); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return abbr, nil
+	return abbr, true, nil
 }
 
 func (r *fakeAbbreviationRepo) ListByShortForm(_ context.Context, short string) ([]*types.Abbreviation, error) {
@@ -59,7 +64,7 @@ func (r *fakeAbbreviationRepo) ListByShortForm(_ context.Context, short string) 
 
 func TestAbbreviationSuggestCreatesPendingWithAttribution(t *testing.T) {
 	repo := &fakeAbbreviationRepo{}
-	svc := NewAbbreviationService(repo, nil)
+	svc := NewAbbreviationService(repo, nil, nil)
 	ctx := context.WithValue(context.Background(), types.UserIDContextKey, "user-1")
 
 	row, err := svc.Suggest(ctx, &types.AbbreviationCreateRequest{
@@ -86,7 +91,7 @@ func TestAbbreviationSuggestIdempotentForIdenticalMeaning(t *testing.T) {
 	repo := &fakeAbbreviationRepo{rows: []*types.Abbreviation{
 		{ID: "existing", ShortForm: "UBND", FullForm: "Ủy Ban Nhân Dân", IsActive: false},
 	}}
-	svc := NewAbbreviationService(repo, nil)
+	svc := NewAbbreviationService(repo, nil, nil)
 
 	row, err := svc.Suggest(context.Background(), &types.AbbreviationCreateRequest{
 		ShortForm: "ubnd", FullForm: " ủy ban nhân dân ",
@@ -106,7 +111,7 @@ func TestAbbreviationSuggestAllowsDifferentMeaning(t *testing.T) {
 	repo := &fakeAbbreviationRepo{rows: []*types.Abbreviation{
 		{ID: "existing", ShortForm: "BCH", FullForm: "Ban chấp hành"},
 	}}
-	svc := NewAbbreviationService(repo, nil)
+	svc := NewAbbreviationService(repo, nil, nil)
 
 	row, err := svc.Suggest(context.Background(), &types.AbbreviationCreateRequest{
 		ShortForm: "BCH", FullForm: "Bệnh viện C Hòa",
@@ -120,7 +125,7 @@ func TestAbbreviationSuggestAllowsDifferentMeaning(t *testing.T) {
 }
 
 func TestAbbreviationSuggestValidatesRequest(t *testing.T) {
-	svc := NewAbbreviationService(&fakeAbbreviationRepo{}, nil)
+	svc := NewAbbreviationService(&fakeAbbreviationRepo{}, nil, nil)
 	for _, req := range []*types.AbbreviationCreateRequest{
 		nil,
 		{ShortForm: "  ", FullForm: "x"},
@@ -141,7 +146,7 @@ func TestAbbreviationSuggestValidatesRequest(t *testing.T) {
 
 func TestAbbreviationCreateValidatesRequest(t *testing.T) {
 	repo := &fakeAbbreviationRepo{}
-	svc := NewAbbreviationService(repo, nil)
+	svc := NewAbbreviationService(repo, nil, nil)
 	if _, err := svc.Create(context.Background(), &types.AbbreviationCreateRequest{
 		ShortForm: "ABC", FullForm: " ",
 	}, true); err == nil {

@@ -37,7 +37,56 @@ const (
 	// UserNotificationLegalRequestAdded: a legal document the person asked
 	// for was added (payload: UserNotificationLegalRequestPayload).
 	UserNotificationLegalRequestAdded = "legal_request_added"
+	// UserNotificationAbbreviationPending: new abbreviation suggestions wait
+	// for a SuperAdmin's review (payload:
+	// UserNotificationAbbreviationPendingPayload). A digest: each SuperAdmin
+	// has at most one unread notice of this kind, updated by every new
+	// suggestion (UserNotificationOpenKey).
+	UserNotificationAbbreviationPending = "abbreviation_pending"
 )
+
+// UserNotificationAbbreviationPendingMaxItems caps the newest suggestions an
+// abbreviation_pending digest names; Count says how many there are.
+const UserNotificationAbbreviationPendingMaxItems = 5
+
+// UserNotificationAbbreviationPendingPayload is the payload of a
+// UserNotificationAbbreviationPending digest: how many suggestions arrived
+// since the person last read it, and the newest of them first.
+type UserNotificationAbbreviationPendingPayload struct {
+	Count int                                `json:"count"`
+	Items []UserNotificationAbbreviationItem `json:"items"`
+}
+
+// UserNotificationAbbreviationItem is one suggestion named by the digest.
+type UserNotificationAbbreviationItem struct {
+	ShortForm  string `json:"short_form"`
+	FullForm   string `json:"full_form"`
+	ProperName bool   `json:"proper_name,omitempty"`
+}
+
+// userNotificationOpenSuffix ends the dedupe key of an open digest: the one
+// unread notice of a kind a producer keeps updating for a person. Reading
+// it (or the producer closing it) rotates the key to
+// "<key>:read:<id>", freeing it for the next digest; the unique index on
+// dedupe_key thus allows one open digest per key without a partial index.
+const userNotificationOpenSuffix = ":open"
+
+// UserNotificationOpenKey is the dedupe key of the open digest of kind for
+// userID.
+func UserNotificationOpenKey(kind, userID string) string {
+	return kind + ":" + userID + userNotificationOpenSuffix
+}
+
+// IsUserNotificationOpenKey reports whether key is an open digest key.
+func IsUserNotificationOpenKey(key string) bool {
+	return strings.HasSuffix(key, userNotificationOpenSuffix)
+}
+
+// UserNotificationRotateOpenKeySQL is the SQL value of dedupe_key once a
+// row is read: an open digest key becomes "<key>:read:<id>" (unique, as the
+// id is), any other key is kept. Portable to Postgres and SQLite.
+const UserNotificationRotateOpenKeySQL = "CASE WHEN dedupe_key LIKE '%" + userNotificationOpenSuffix +
+	"' THEN dedupe_key || ':read:' || id ELSE dedupe_key END"
 
 // UserNotificationLegalRequestPayload is the payload of a
 // UserNotificationLegalRequestAdded notice. WordFileID is the Word file the
