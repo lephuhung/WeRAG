@@ -120,12 +120,9 @@ func classifyLegal(rep *types.LegalStatusReport, now time.Time) legalClassificat
 		}
 		c.staleNotYet = true
 	}
-	if status == "không còn phù hợp" {
-		c.status, c.unsuitable = LegalBasisNeedsReview, true
-		return c
-	}
+	unsuitable := status == "không còn phù hợp"
 	inForce := status == "còn hiệu lực" || c.staleNotYet
-	if !inForce && status != "" && status != "chưa xác định" {
+	if !inForce && !unsuitable && status != "" && status != "chưa xác định" {
 		c.status = LegalBasisUnknown
 		return c
 	}
@@ -141,6 +138,9 @@ func classifyLegal(rep *types.LegalStatusReport, now time.Time) legalClassificat
 		}
 	}
 	switch {
+	case unsuitable:
+		// the portal's flag; repealing documents are still named
+		c.status, c.unsuitable = LegalBasisNeedsReview, true
 	case len(c.reviewBy) > 0:
 		c.status = LegalBasisNeedsReview
 	case !inForce:

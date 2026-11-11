@@ -390,3 +390,62 @@ func (c *countingLinks) ListLinks(ctx context.Context, id string, out, in []type
 	c.byID[id]++
 	return c.fakeLegalBasisCatalog.ListLinks(ctx, id, out, in)
 }
+
+// Round 3: a lead that shows another date, a year written with an undated
+// mention, and repealing documents of a "Không còn phù hợp" row.
+func TestLegalBasisRound3(t *testing.T) {
+	for _, rest := range []string{
+		" của Bộ trưởng Bộ Tài chính có hiệu lực từ ngày 1/1/2024",
+		" của Chủ tịch UBND tỉnh, hết hiệu lực ngày 1/1/2024",
+		" của Thủ tướng, và căn cứ biên bản họp ngày 1/1/2024",
+		" của Sở Nội vụ về việc tổ chức ngày 1/1/2024",
+		" của Bộ đến ngày 1/1/2024",
+	} {
+		if got := issueDateAfter(rest); got != "" {
+			t.Errorf("issueDateAfter(%q) = %q, want none", rest, got)
+		}
+	}
+
+	cat := newLegalBasisFixture()
+	qd23 := lbDoc("qd23", "15/QĐ-UBND", "Quyết định", "Còn hiệu lực", "2023-03-01")
+	qd24 := lbDoc("qd24", "15/QĐ-UBND", "Quyết định", "Còn hiệu lực", "2024-01-05")
+	cat.docs = append(cat.docs, qd23, qd24)
+	// a year that is not the sole date's year does not join it
+	r := lbCheck(t, cat, nil,
+		"Căn cứ Quyết định 15/QĐ-UBND năm 2023 của UBND tỉnh;",
+		"Căn cứ Quyết định 15/QĐ-UBND ngày 05/01/2024.")
+	if len(r.Findings) != 2 {
+		t.Fatalf("findings %+v", r.Findings)
+	}
+	y := findingFor(t, r, "15/QĐ-UBND năm 2023")
+	if y.Status != LegalBasisAmbiguous || y.Ambiguity != LegalBasisAmbiguityMissingDate || len(y.Candidates) != 1 || y.Candidates[0].ID != "qd23" {
+		t.Errorf("year 2023: %+v", y)
+	}
+	if d := findingFor(t, r, "15/QĐ-UBND ngày 05/01/2024"); d.Status != LegalBasisInForce || d.Document.ID != "qd24" || len(d.Positions) != 1 {
+		t.Errorf("dated: %+v", d)
+	}
+	// the matching year joins
+	r = lbCheck(t, cat, nil, "Quyết định 15/QĐ-UBND năm 2024;", "Quyết định 15/QĐ-UBND ngày 05/01/2024.")
+	if len(r.Findings) != 1 || len(r.Findings[0].Positions) != 2 {
+		t.Errorf("same year: %+v", r.Findings)
+	}
+	// a rejected date never becomes the number's sole date
+	r = lbCheck(t, cat, nil,
+		"Quyết định 15/QĐ-UBND của Chủ tịch UBND tỉnh, hết hiệu lực ngày 05/01/2024;",
+		"Thực hiện Quyết định 15/QĐ-UBND.")
+	if len(r.Findings) != 1 || r.Findings[0].Ambiguity != LegalBasisAmbiguityMissingDate || len(r.Findings[0].Positions) != 2 {
+		t.Errorf("rejected date: %+v", r.Findings)
+	}
+
+	// "Không còn phù hợp" still names a repealing document in force
+	repealer := lbDoc("rper", "6/2020/NĐ-CP", "Nghị định", "Còn hiệu lực", "2020-01-01")
+	repealer.EffectiveOn = lbDay("2020-02-01")
+	ks := lbDoc("ks", "16/2012/NĐ-CP", "Nghị định", "Không còn phù hợp", "2012-01-01")
+	cat.docs = append(cat.docs, repealer, ks)
+	cat.links["ks"] = []types.LegalRelationLink{{Relation: types.LegalRelationRepeals, Incoming: true, Other: repealer}}
+	r = lbCheck(t, cat, nil, "Nghị định 16/2012/NĐ-CP.")
+	if f := r.Findings[0]; f.Status != LegalBasisNeedsReview || !f.Unsuitable || len(f.ReviewBy) != 1 ||
+		!strings.Contains(f.Note, "Nghị định 6/2020/NĐ-CP") {
+		t.Errorf("unsuitable + repeal: %+v", f)
+	}
+}

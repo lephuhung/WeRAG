@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/docformat/docxedit"
@@ -312,16 +313,51 @@ const issueDateWindow = 60
 
 var (
 	issueDateRe = regexp.MustCompile(`(?i)ngày[\s\p{Zs}]+(?:(\d{1,2})[\s\p{Zs}]*[/.\-][\s\p{Zs}]*(\d{1,2})[\s\p{Zs}]*[/.\-][\s\p{Zs}]*((?:19|20)\d\d)|(\d{1,2})[\s\p{Zs}]+tháng[\s\p{Zs}]+(\d{1,2})[\s\p{Zs}]+năm[\s\p{Zs}]+((?:19|20)\d\d))`)
-	// what may stand between the number and "ngày"
-	issueDateLeadRe = regexp.MustCompile(`(?i)^[\s\p{Zs},(]*(?:(?:được[\s\p{Zs}]+)?(?:ký|ban[\s\p{Zs}]+hành)[\s\p{Zs}]+|của[\s\p{Zs}]+[^;.()\n]{1,50}?[\s\p{Zs},]+)?$`)
+	// what may stand between the number and "ngày": nothing, "(", "ký" /
+	// "ban hành", or "của <cơ quan>" — an agency phrase without a comma or
+	// semicolon inside (one may end it)
+	issueDateLeadRe = regexp.MustCompile(`(?i)^[\s\p{Zs},(]*(?:(?:được[\s\p{Zs}]+)?(?:ký|ban[\s\p{Zs}]+hành)[\s\p{Zs}]+|của[\s\p{Zs}]+[^,;.()\n]{1,50}?[\s\p{Zs}]*,?[\s\p{Zs}]+)?$`)
+	// a year written right after an undated number: "năm 2023", "(2023)"
+	undatedYearAfterRe = regexp.MustCompile(`(?i)^[\s\p{Zs},(]*(?:năm[\s\p{Zs}]+)?((?:19|20)\d\d)(?:[^\p{N}]|$)`)
 )
+
+// issueDateLeadWords are words that, in the text between a number and a
+// date, show the date is not its issue date ("có hiệu lực từ ngày …",
+// "hết hiệu lực ngày …", "biên bản họp ngày …", "căn cứ … ngày …").
+var issueDateLeadWords = []string{"hiệu lực", "từ", "họp", "về", "đến", "biên bản", "căn cứ"}
+
+// issueDateLeadOK reports whether lead (the text from the number to
+// "ngày") introduces the number's issue date.
+func issueDateLeadOK(lead string) bool {
+	if !issueDateLeadRe.MatchString(lead) {
+		return false
+	}
+	words := " " + strings.Join(strings.FieldsFunc(strings.ToLower(lead), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	}), " ") + " "
+	for _, w := range issueDateLeadWords {
+		if strings.Contains(words, " "+w+" ") {
+			return false
+		}
+	}
+	return true
+}
+
+// yearAfter is a year written right after an undated year-less number
+// ("15/QĐ-UBND năm 2023"), "" when none.
+func yearAfter(rest string) string {
+	if m := undatedYearAfterRe.FindStringSubmatch(rest); m != nil {
+		return m[1]
+	}
+	return ""
+}
 
 // issueDateAfter is the issue date (YYYY-MM-DD) written after a citation
 // in rest (the text from the citation's end to the next citation), ""
 // when none (or not a real date).
 func issueDateAfter(rest string) string {
 	loc := issueDateRe.FindStringSubmatchIndex(rest)
-	if loc == nil || utf8.RuneCountInString(rest[:loc[0]]) > issueDateWindow || !issueDateLeadRe.MatchString(rest[:loc[0]]) {
+	if loc == nil || utf8.RuneCountInString(rest[:loc[0]]) > issueDateWindow || !issueDateLeadOK(rest[:loc[0]]) {
 		return ""
 	}
 	group := func(i int) string {
@@ -355,6 +391,7 @@ type legalBasisGroup struct {
 	key       string
 	cit       vietnamese_legal.Citation
 	issued    string // issue date after a year-less number
+	year      string // or only a year after it ("năm 2023")
 	positions []LegalBasisPosition
 }
 
@@ -382,6 +419,7 @@ func CheckLegalBasis(ctx context.Context, paras []string, catalog LegalBasisCata
 	type mention struct {
 		key    string
 		issued string
+		year   string // a year written right after an undated number
 		cit    vietnamese_legal.Citation
 		pos    LegalBasisPosition
 	}
@@ -418,11 +456,14 @@ func CheckLegalBasis(ctx context.Context, paras []string, catalog LegalBasisCata
 				if ci+1 < len(cits) {
 					next = cits[ci+1].Start
 				}
-				if m.issued = issueDateAfter(string(runes[c.End:max(c.End, next)])); m.issued != "" {
+				rest := string(runes[c.End:max(c.End, next)])
+				if m.issued = issueDateAfter(rest); m.issued != "" {
 					if dates[key] == nil {
 						dates[key] = map[string]bool{}
 					}
 					dates[key][m.issued] = true
+				} else {
+					m.year = yearAfter(rest)
 				}
 			}
 			mentions = append(mentions, m)
@@ -437,11 +478,19 @@ func CheckLegalBasis(ctx context.Context, paras []string, catalog LegalBasisCata
 		key, issued := m.key, m.issued
 		if yearlessKind(m.cit.Kind) && issued == "" && len(dates[key]) == 1 {
 			for d := range dates[key] {
-				issued = d
+				// a year written with the mention must be the date's
+				if m.year == "" || strings.HasPrefix(d, m.year+"-") {
+					issued = d
+				}
 			}
 		}
-		if issued != "" {
+		year := ""
+		switch {
+		case issued != "":
 			key += "|" + issued
+		case m.year != "":
+			year = m.year
+			key += "|year:" + year
 		}
 		g := byKey[key]
 		if g == nil {
@@ -449,7 +498,7 @@ func CheckLegalBasis(ctx context.Context, paras []string, catalog LegalBasisCata
 				report.Truncated = true
 				continue
 			}
-			g = &legalBasisGroup{key: key, cit: m.cit, issued: issued}
+			g = &legalBasisGroup{key: key, cit: m.cit, issued: issued, year: year}
 			byKey[key] = g
 			groups = append(groups, g)
 		}
@@ -611,7 +660,7 @@ func (c *legalBasisChecker) finding(ctx context.Context, g *legalBasisGroup) (*L
 		return nil, nil
 	}
 	if yearlessKind(cit.Kind) {
-		return f, c.yearless(ctx, f, g.issued, exact)
+		return f, c.yearless(ctx, f, g.issued, g.year, exact)
 	}
 	if len(exact) == 1 {
 		return f, c.resolve(ctx, f, exact[0])
@@ -621,16 +670,30 @@ func (c *legalBasisChecker) finding(ctx context.Context, g *legalBasisGroup) (*L
 }
 
 // yearless resolves a number without a year by the issue date written
+// after it (year: only a year was written, which narrows the candidates)
 // after it, the exact day of the catalogue's issued_on: a number like
 // "1461/QĐ-TTg" restarts every year, so a lone catalogue row of that
 // number is not the cited document unless the dates agree. Without a
 // date, or with one no row has, the citation stays ambiguous (the year
 // alone is not taken: two rows of a number in one year happen, and a
 // wrong day more likely names a document the catalogue lacks).
-func (c *legalBasisChecker) yearless(ctx context.Context, f *LegalBasisFinding, issued string, docs []*types.LegalDocument) error {
+func (c *legalBasisChecker) yearless(ctx context.Context, f *LegalBasisFinding, issued, year string, docs []*types.LegalDocument) error {
 	if issued == "" {
 		f.Incomplete = true
 		f.Ambiguity = LegalBasisAmbiguityMissingDate
+		if year != "" {
+			// a written year narrows the candidates, never picks one
+			f.Citation += " năm " + year
+			var same []*types.LegalDocument
+			for _, d := range docs {
+				if d.IssuedOn != nil && d.IssuedOn.Format("2006") == year {
+					same = append(same, d)
+				}
+			}
+			if len(same) > 0 {
+				docs = same
+			}
+		}
 		return c.candidates(ctx, f, docs)
 	}
 	f.IssuedOn = issued
@@ -934,7 +997,11 @@ func legalBasisNote(f *LegalBasisFinding, now time.Time) string {
 	case LegalBasisNeedsReview:
 		switch {
 		case f.Unsuitable:
-			b.WriteString(label + " được vbpl.vn ghi \"Không còn phù hợp\"; cần kiểm tra trước khi viện dẫn.")
+			b.WriteString(label + " được vbpl.vn ghi \"Không còn phù hợp\"")
+			if len(f.ReviewBy) > 0 {
+				b.WriteString("; có văn bản bãi bỏ toàn bộ hoặc một phần: " + strings.Join(f.ReviewBy, ", "))
+			}
+			b.WriteString("; cần kiểm tra trước khi viện dẫn.")
 		case f.PartialSuspension:
 			b.WriteString(label + " bị ngưng hiệu lực một phần")
 			if s := names(related(LegalBasisSuspendedBy)); s != "" {
