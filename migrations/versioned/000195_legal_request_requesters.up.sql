@@ -5,7 +5,9 @@
 -- asking again moves the row to the latest conversation and makes it
 -- pending again (updated_at moves only then). notified_at is set once the
 -- person was told (an in-app notification, user_notifications of migration
--- 000196), notify_status says how ('in_app').
+-- 000196), notify_status says how ('in_app'), or why not ('out_of_scope':
+-- asked while the added copy was outside their agent's knowledge bases;
+-- 'failed': notify_attempts reached the cap).
 DO $$ BEGIN RAISE NOTICE '[Migration 000195] Creating legal_request_requesters'; END $$;
 
 CREATE TABLE IF NOT EXISTS legal_request_requesters (
@@ -18,6 +20,7 @@ CREATE TABLE IF NOT EXISTS legal_request_requesters (
     channel       VARCHAR(32)  NOT NULL DEFAULT '',
     notified_at   TIMESTAMP WITH TIME ZONE NULL,
     notify_status VARCHAR(16)  NOT NULL DEFAULT '',
+    notify_attempts INT        NOT NULL DEFAULT 0,
     created_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

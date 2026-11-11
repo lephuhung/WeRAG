@@ -40,7 +40,7 @@ Cần người dùng quyết, không tự làm: đẩy 23 commit của dev lên 
 - Giao diện: ô tra cứu (command palette, trang cổng guest).
 
 ### F3. Báo cho người hỏi khi văn bản đề nghị đã được bổ sung (S–M)
-- Migration 000194: bảng người đề nghị (request_id, user_id, tenant_id, session_id, message_id, created_at). Ghi tại chỗ tạo hoặc tăng đề nghị.
+- Migration 000195: bảng người đề nghị (request_id, user_id, tenant_id, session_id, message_id, created_at). Ghi tại chỗ tạo hoặc tăng đề nghị. Migration 000196: bảng thông báo trong ứng dụng `user_notifications`.
 - Hook khi đóng đề nghị là "added": gửi thư (loại mới trong `EmailNotification`) kèm đường dẫn về hội thoại. Guest không có email thì bỏ qua cho đến khi có thông báo trong ứng dụng (F12).
 
 ## Giai đoạn 2: dữ liệu đang chỉ ghi vào, công sức S

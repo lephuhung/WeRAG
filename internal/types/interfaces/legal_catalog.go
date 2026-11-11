@@ -191,8 +191,8 @@ type LegalRequestRepository interface {
 	// "added" whose document is asked for again (it is missing after all)
 	// is reopened, unless its requesters still wait for the "added" notice
 	// and its copy is still coming (closed within types.LegalRequestNoticeWindow,
-	// in one of req.AskerKnowledgeBaseIDs, knowledge parsed or still parsing
-	// and not stale): then it is only bumped. A "rejected" row is left as it is. Returns the stored row.
+	// knowledge parsed or still parsing and not stale, someone who asked
+	// before the closing not told yet): then it is only bumped. A "rejected" row is left as it is. Returns the stored row.
 	Record(ctx context.Context, req *types.LegalDocumentRequest) (*types.LegalDocumentRequest, error)
 	// Get returns one request, or nil when absent.
 	Get(ctx context.Context, id string) (*types.LegalDocumentRequest, error)
@@ -245,7 +245,8 @@ type LegalRequestRepository interface {
 	// tenant, session, message and channel and, unless the request is
 	// still added, clears NotifiedAt / NotifyStatus and moves UpdatedAt (the
 	// ask time), so a person who still misses the document is told again
-	// when it is added again.
+	// when it is added again. A new row given NotifyStatus
+	// types.LegalRequesterNotifyOutOfScope is stored as already closed.
 	AddRequester(ctx context.Context, r *types.LegalRequestRequester) error
 	// CountRequesters returns how many people asked for each request id.
 	CountRequesters(ctx context.Context, requestIDs []string) (map[string]int, error)
@@ -257,6 +258,9 @@ type LegalRequestRepository interface {
 	// its dedupe key exists) and marks the requester notified, in one
 	// transaction; false when the requester was already notified.
 	DeliverAddedNotice(ctx context.Context, requesterID string, n *types.UserNotification) (bool, error)
+	// RecordNoticeFailure counts a failed delivery; at maxAttempts the
+	// requester is closed as types.LegalRequesterNotifyFailed (true).
+	RecordNoticeFailure(ctx context.Context, requesterID string, maxAttempts int) (bool, error)
 }
 
 // LegalRequestService drives the SuperAdmin queue of legal document requests.

@@ -50,12 +50,6 @@ type LegalDocumentRequest struct {
 	Detail    JSON      `json:"detail"     gorm:"type:jsonb"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-
-	// AskerKnowledgeBaseIDs are the knowledge bases the asking agent reads
-	// (not stored): Record only keeps an added request added for a new ask
-	// when its copy is in one of them. nil = unknown (a caller without a
-	// chat scope).
-	AskerKnowledgeBaseIDs []string `json:"-" gorm:"-"`
 }
 
 // TableName returns the table name for LegalDocumentRequest.
@@ -249,8 +243,11 @@ type LegalRequestRequester struct {
 	Channel      string     `json:"channel"       gorm:"type:varchar(32);not null;default:''"`
 	NotifiedAt   *time.Time `json:"notified_at"`
 	NotifyStatus string     `json:"notify_status" gorm:"type:varchar(16);not null;default:''"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
+	// NotifyAttempts counts the sweeps that failed to write the notice; at
+	// LegalRequesterMaxNotifyAttempts the row is closed as failed.
+	NotifyAttempts int       `json:"notify_attempts" gorm:"not null;default:0"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // TableName returns the table name for LegalRequestRequester.
@@ -264,9 +261,23 @@ const (
 	LegalRequesterChannelPortal = "portal"
 )
 
-// LegalRequesterNotifyInApp is LegalRequestRequester.NotifyStatus once the
-// in-app notification was written (types.UserNotification).
-const LegalRequesterNotifyInApp = "in_app"
+// LegalRequestRequester.NotifyStatus values (NotifiedAt is set with each).
+const (
+	// LegalRequesterNotifyInApp: the in-app notification was written
+	// (types.UserNotification).
+	LegalRequesterNotifyInApp = "in_app"
+	// LegalRequesterNotifyOutOfScope: the person asked while the request was
+	// added with a copy their agent does not read; this closing tells them
+	// nothing (they are told when asking again reopens the request and a
+	// copy is added again).
+	LegalRequesterNotifyOutOfScope = "out_of_scope"
+	// LegalRequesterNotifyFailed: writing the notice failed
+	// LegalRequesterMaxNotifyAttempts times; not retried.
+	LegalRequesterNotifyFailed = "failed"
+)
+
+// LegalRequesterMaxNotifyAttempts caps the sweeps that try one notice.
+const LegalRequesterMaxNotifyAttempts = 20
 
 // LegalRequestAddedNotice is a requester due the "document added" notice:
 // the requester row with what the notice names of its request.

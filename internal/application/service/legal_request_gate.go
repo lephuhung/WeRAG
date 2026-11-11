@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"regexp"
+	"slices"
 	"strings"
 
 	"golang.org/x/text/unicode/norm"
@@ -98,7 +99,6 @@ func (s *sessionService) legalMissingDocumentGate(
 		NumberKey: key, DocumentNumber: number, DocType: docType,
 		LastTenantID: req.Session.TenantID, LastUserID: legalRequestUserID(ctx, req),
 		LastSessionID: req.Session.ID, LastQuery: strings.TrimSpace(req.Query),
-		AskerKnowledgeBaseIDs: append([]string{}, kbIDs...),
 	}
 
 	textAction := legalTextActionRe.MatchString(query)
@@ -114,7 +114,7 @@ func (s *sessionService) legalMissingDocumentGate(
 			logger.Warnf(ctx, "legal request gate: recording %s: %v", number, err)
 			return ctx, false, nil
 		}
-		s.recordLegalRequester(ctx, req, row)
+		s.recordLegalRequester(ctx, req, row, kbIDs)
 		logger.Infof(ctx, "Legal document %s is not in the catalogue: request %s recorded (count %d), the turn runs on",
 			number, row.ID, row.RequestCount)
 		if row.Status == types.LegalRequestRequested {
@@ -179,7 +179,7 @@ func (s *sessionService) legalMissingDocumentGate(
 			logger.Warnf(ctx, "legal request gate: recording %s (%s): %v", number, d.ID, err)
 			return ctx, false, nil
 		}
-		s.recordLegalRequester(ctx, req, row)
+		s.recordLegalRequester(ctx, req, row, kbIDs)
 		if row.Status == types.LegalRequestRejected {
 			if rejected == nil {
 				rejected = row
@@ -316,7 +316,15 @@ func legalRequestUserID(ctx context.Context, req *types.QARequest) string {
 // when it is added (LegalRequestNotifier). A turn without a user account
 // (API or embed principal) records nobody; a failure is logged only, the
 // request itself is recorded.
-func (s *sessionService) recordLegalRequester(ctx context.Context, req *types.QARequest, row *types.LegalDocumentRequest) {
+//
+// A request that stays added (its copy is still coming for the people who
+// asked before) while the copy is in a knowledge base this agent does not
+// read records the asker as out of scope: this closing tells them nothing
+// (the simplest correct choice: their scope is only known now, not when
+// the notice is written).
+func (s *sessionService) recordLegalRequester(
+	ctx context.Context, req *types.QARequest, row *types.LegalDocumentRequest, kbIDs []string,
+) {
 	if row == nil || req == nil || req.Session == nil {
 		return
 	}
@@ -327,6 +335,9 @@ func (s *sessionService) recordLegalRequester(ctx context.Context, req *types.QA
 	r := &types.LegalRequestRequester{
 		RequestID: row.ID, TenantID: req.Session.TenantID, UserID: userID,
 		SessionID: req.Session.ID, Channel: legalRequesterChannel(ctx, req),
+	}
+	if row.Status == types.LegalRequestAdded && row.KnowledgeBaseID != "" && !slices.Contains(kbIDs, row.KnowledgeBaseID) {
+		r.NotifyStatus = types.LegalRequesterNotifyOutOfScope
 	}
 	if id := strings.TrimSpace(req.UserMessageID); id != "" && len(id) <= 36 {
 		r.MessageID = &id

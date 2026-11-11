@@ -35,9 +35,6 @@ func TestLegalMissingDocumentGateRecordsRequester(t *testing.T) {
 	if len(reqs.requesters) != 1 {
 		t.Fatalf("requesters = %+v", reqs.requesters)
 	}
-	if len(reqs.recorded) != 1 || len(reqs.recorded[0].AskerKnowledgeBaseIDs) != 1 || reqs.recorded[0].AskerKnowledgeBaseIDs[0] != "kb-own" {
-		t.Fatalf("the asker's knowledge bases go with the request: %+v", reqs.recorded)
-	}
 	got := reqs.requesters[0]
 	if got.RequestID != "r155366" || got.UserID != "u1" || got.TenantID != 10003 || got.SessionID != "s1" ||
 		got.Channel != types.LegalRequesterChannelWordAddin || got.MessageID == nil || *got.MessageID != "msg-1" {
@@ -61,5 +58,38 @@ func TestLegalMissingDocumentGateRecordsRequester(t *testing.T) {
 	if reqs := runIn(portal, &types.Session{ID: "s5", TenantID: 10012, UserID: "guest"}, "web", ""); len(reqs.requesters) != 1 ||
 		reqs.requesters[0].Channel != types.LegalRequesterChannelPortal {
 		t.Fatalf("portal requester: %+v", reqs.requesters)
+	}
+}
+
+// An asker who joins a request that stays added, while its copy is in a
+// knowledge base their agent does not read, is recorded out of scope: this
+// closing tells them nothing, the earlier askers still get theirs.
+func TestLegalMissingDocumentGateOutOfScopeRequester(t *testing.T) {
+	nd53 := &types.LegalDocument{ID: "155366", DocumentNumber: "53/2022/NĐ-CP", DocType: "Nghị định",
+		Title: "Quy định chi tiết", Status: "Còn hiệu lực"}
+	catalog := &gateCatalog{reports: map[string][]*types.LegalStatusReport{"53/2022/ND-CP": {{Document: nd53}}}}
+	run := func(copyKB string) *types.LegalRequestRequester {
+		t.Helper()
+		reqs := &gateRequests{stored: map[string]*types.LegalDocumentRequest{
+			"53/2022/ND-CP|155366": {ID: "r1", NumberKey: "53/2022/ND-CP", LegalDocumentID: "155366",
+				Status: types.LegalRequestAdded, KnowledgeBaseID: copyKB, RequestCount: 1},
+		}}
+		s := &sessionService{legalCatalog: catalog}
+		s.SetLegalRequests(reqs, &gateReviews{approved: map[string]bool{}})
+		req := &types.QARequest{Query: "Nghị định 53/2022/NĐ-CP quy định gì?", Session: &types.Session{ID: "s9", TenantID: 7, UserID: "u9"},
+			CustomAgent: &types.CustomAgent{ID: types.BuiltinSmartReasoningID}}
+		if _, _, err := s.legalMissingDocumentGate(context.Background(), req, event.NewEventBus(), []string{"kb-own"}); err != nil {
+			t.Fatal(err)
+		}
+		if len(reqs.requesters) != 1 {
+			t.Fatalf("requesters = %+v", reqs.requesters)
+		}
+		return reqs.requesters[0]
+	}
+	if got := run("kb-public"); got.NotifyStatus != types.LegalRequesterNotifyOutOfScope {
+		t.Fatalf("copy outside the agent's knowledge bases: %+v", got)
+	}
+	if got := run("kb-own"); got.NotifyStatus != "" {
+		t.Fatalf("copy the agent reads: %+v", got)
 	}
 }

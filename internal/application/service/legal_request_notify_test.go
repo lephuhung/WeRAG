@@ -283,3 +283,27 @@ func TestLegalRequestNotifierPurgesDaily(t *testing.T) {
 	f.notifier.purgeDaily(ctx)
 	require.Len(t, f.notifications(t, "an"), 1, "once a day")
 }
+
+// flakyPurge fails its first purge.
+type flakyPurge struct {
+	interfaces.UserNotificationRepository
+	calls int
+}
+
+func (f *flakyPurge) PurgeRead(context.Context, time.Time, int) (int64, error) {
+	f.calls++
+	if f.calls == 1 {
+		return 0, errors.New("timeout")
+	}
+	return 0, nil
+}
+
+// A failed purge is tried again at the next sweep, not a day later.
+func TestLegalRequestNotifierPurgeRetriesAfterFailure(t *testing.T) {
+	purge := &flakyPurge{}
+	l := NewLegalRequestNotifier(nil, purge)
+	l.purgeDaily(context.Background())
+	l.purgeDaily(context.Background())
+	l.purgeDaily(context.Background())
+	require.Equal(t, 2, purge.calls, "failed, retried, then once a day")
+}

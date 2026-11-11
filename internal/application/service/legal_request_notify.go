@@ -34,8 +34,9 @@ const (
 	legalNoticeRunTimeout = 2 * time.Minute
 	// userNotificationPurgeEvery / Batch: the read-notification purge runs
 	// once a day, deleting this many rows per statement.
-	userNotificationPurgeEvery = 24 * time.Hour
-	userNotificationPurgeBatch = 1000
+	userNotificationPurgeEvery   = 24 * time.Hour
+	userNotificationPurgeBatch   = 1000
+	userNotificationPurgeTimeout = 5 * time.Minute
 )
 
 // legalChatPath is the conversation page of frontend-next
@@ -200,6 +201,12 @@ func (l *LegalRequestNotifier) Run(ctx context.Context) (int, error) {
 		if err != nil {
 			logger.Warnf(ctx, "[LegalNotice] requester %s of %s: %v", n.RequesterID, n.RequestID, err)
 			errs = append(errs, fmt.Errorf("requester %s of %s: %w", n.RequesterID, n.RequestID, err))
+			if gaveUp, ferr := l.requests.RecordNoticeFailure(ctx, n.RequesterID, types.LegalRequesterMaxNotifyAttempts); ferr != nil {
+				errs = append(errs, ferr)
+			} else if gaveUp {
+				logger.Warnf(ctx, "[LegalNotice] requester %s of %s: %d failed attempts, closed as failed",
+					n.RequesterID, n.RequestID, types.LegalRequesterMaxNotifyAttempts)
+			}
 			continue
 		}
 		if ok {
@@ -210,7 +217,8 @@ func (l *LegalRequestNotifier) Run(ctx context.Context) (int, error) {
 }
 
 // purgeDaily deletes the read notifications past the retention, at most
-// once a day.
+// once a day after a purge that succeeded (a failed one is tried again at
+// the next sweep), under its own timeout.
 func (l *LegalRequestNotifier) purgeDaily(ctx context.Context) {
 	if l.notifications == nil {
 		return
@@ -219,11 +227,15 @@ func (l *LegalRequestNotifier) purgeDaily(ctx context.Context) {
 	if !l.lastPurge.IsZero() && now.Sub(l.lastPurge) < userNotificationPurgeEvery {
 		return
 	}
-	l.lastPurge = now
-	n, err := l.notifications.PurgeRead(ctx, now.Add(-types.UserNotificationRetention), userNotificationPurgeBatch)
+	pctx, cancel := context.WithTimeout(ctx, userNotificationPurgeTimeout)
+	defer cancel()
+	n, err := l.notifications.PurgeRead(pctx, now.Add(-types.UserNotificationRetention), userNotificationPurgeBatch)
 	if err != nil {
-		logger.Warnf(ctx, "[Notifications] purging read notifications: %v", err)
-	} else if n > 0 {
+		logger.Warnf(ctx, "[Notifications] purging read notifications (%d deleted): %v", n, err)
+		return
+	}
+	l.lastPurge = now
+	if n > 0 {
 		logger.Infof(ctx, "[Notifications] %d read notification(s) older than %s purged", n, types.UserNotificationRetention)
 	}
 }
@@ -246,8 +258,8 @@ func (l *LegalRequestNotifier) Start(interval time.Duration) (stop func()) {
 			}
 			ctx, cancel := context.WithTimeout(l.base, legalNoticeRunTimeout)
 			l.runLogged(ctx)
-			l.purgeDaily(ctx)
 			cancel()
+			l.purgeDaily(l.base)
 			timer.Reset(interval)
 		}
 	}()

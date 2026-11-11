@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -99,7 +98,7 @@ func (r *legalRequestRepository) Record(
 			Updates(bump).Error
 	case types.LegalRequestAdded:
 		var waiting bool
-		if waiting, err = r.noticesPending(ctx, existing, req.AskerKnowledgeBaseIDs); err != nil {
+		if waiting, err = r.noticesPending(ctx, existing); err != nil {
 			break
 		}
 		if waiting {
@@ -134,29 +133,26 @@ var legalKnowledgeParsingStatuses = []string{
 	types.ParseStatusPending, types.ParseStatusProcessing, types.ParseStatusFinalizing,
 }
 
-// noticesPending reports whether an added request still owes its
-// requesters the "document added" notice and its copy is usable or still
-// coming: closed within the notice window, someone not told yet, the
-// asker's knowledge bases can read the copy, and its knowledge (if any)
-// not deleted and either parsed (the sweep delivers the waiting notices
-// within minutes) or still parsing (pending / processing / finalizing,
-// touched in the last legalKnowledgeStaleAfter). A copy that was cancelled,
-// deleted, failed or got stuck does not hold the request: the asker still
-// misses it, so it is reopened.
-func (r *legalRequestRepository) noticesPending(
-	ctx context.Context, row *types.LegalDocumentRequest, askerKBIDs []string,
-) (bool, error) {
+// noticesPending reports whether an added request still owes the people
+// who asked before it was closed the "document added" notice, and its copy
+// is usable or still coming: closed within the notice window, someone who
+// asked before the closing not told yet (a later asker, or a row closed as
+// failed, does not count), and its knowledge (if any) not deleted and
+// either parsed (the sweep delivers the waiting notices within minutes) or
+// still parsing (pending / processing / finalizing, touched in the last
+// legalKnowledgeStaleAfter). A copy that was cancelled, deleted, failed or
+// got stuck does not hold the request: it is reopened. Whether the new
+// asker can read the copy does not matter here: the gate records an asker
+// who cannot as out of scope.
+func (r *legalRequestRepository) noticesPending(ctx context.Context, row *types.LegalDocumentRequest) (bool, error) {
 	if row.DecidedAt == nil || time.Since(*row.DecidedAt) > types.LegalRequestNoticeWindow {
-		return false, nil
-	}
-	if askerKBIDs != nil && row.KnowledgeBaseID != "" && !slices.Contains(askerKBIDs, row.KnowledgeBaseID) {
-		// the copy is in a knowledge base the asker's agent does not read
 		return false, nil
 	}
 	db := r.db.WithContext(ctx)
 	var n int64
 	if err := db.Model(&types.LegalRequestRequester{}).
-		Where("request_id = ? AND notified_at IS NULL", row.ID).Limit(1).Count(&n).Error; err != nil || n == 0 {
+		Where("request_id = ? AND notified_at IS NULL AND updated_at <= ?", row.ID, *row.DecidedAt).
+		Limit(1).Count(&n).Error; err != nil || n == 0 {
 		return false, err
 	}
 	if row.KnowledgeID == "" {
@@ -449,7 +445,13 @@ func (r *legalRequestRepository) AddRequester(ctx context.Context, req *types.Le
 	if row.MessageID != nil && strings.TrimSpace(*row.MessageID) == "" {
 		row.MessageID = nil
 	}
-	row.NotifiedAt, row.NotifyStatus = nil, ""
+	row.NotifiedAt, row.NotifyAttempts = nil, 0
+	if row.NotifyStatus == types.LegalRequesterNotifyOutOfScope {
+		// a new asker the added copy is not readable for: nothing to tell
+		row.NotifiedAt = &now
+	} else {
+		row.NotifyStatus = ""
+	}
 	row.CreatedAt, row.UpdatedAt = now, now
 	db := r.db.WithContext(ctx)
 	var status string
@@ -459,7 +461,7 @@ func (r *legalRequestRepository) AddRequester(ctx context.Context, req *types.Le
 	}
 	updates := map[string]any{
 		"tenant_id": row.TenantID, "session_id": row.SessionID, "message_id": row.MessageID,
-		"channel": row.Channel, "notified_at": nil, "notify_status": "", "updated_at": now,
+		"channel": row.Channel, "notified_at": nil, "notify_status": "", "notify_attempts": 0, "updated_at": now,
 	}
 	if status == types.LegalRequestAdded {
 		// the request stays added (its copy is still coming): someone told
@@ -467,6 +469,7 @@ func (r *legalRequestRepository) AddRequester(ctx context.Context, req *types.Le
 		// yet keeps the ask time the pending notice is keyed to
 		delete(updates, "notified_at")
 		delete(updates, "notify_status")
+		delete(updates, "notify_attempts")
 		delete(updates, "updated_at")
 	}
 	return db.Clauses(clause.OnConflict{
@@ -549,4 +552,16 @@ func (r *legalRequestRepository) DeliverAddedNotice(
 		return nil
 	})
 	return delivered, err
+}
+
+func (r *legalRequestRepository) RecordNoticeFailure(ctx context.Context, requesterID string, maxAttempts int) (bool, error) {
+	db := r.db.WithContext(ctx)
+	if err := db.Model(&types.LegalRequestRequester{}).Where("id = ? AND notified_at IS NULL", requesterID).
+		UpdateColumn("notify_attempts", gorm.Expr("notify_attempts + 1")).Error; err != nil {
+		return false, err
+	}
+	res := db.Model(&types.LegalRequestRequester{}).
+		Where("id = ? AND notified_at IS NULL AND notify_attempts >= ?", requesterID, maxAttempts).
+		UpdateColumns(map[string]any{"notified_at": time.Now(), "notify_status": types.LegalRequesterNotifyFailed})
+	return res.RowsAffected == 1, res.Error
 }

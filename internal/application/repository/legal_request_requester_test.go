@@ -183,17 +183,17 @@ func TestLegalRequestDeliverAddedNoticeIsAtomic(t *testing.T) {
 	require.Nil(t, q.NotifiedAt, "the requester mark is rolled back with the failed insert")
 }
 
-// An added request whose requesters still wait for the notice, and whose
-// copy is usable or still coming for the asker, is not reopened by a new
-// ask: the asker joins them. Anything else reopens it as before.
+// An added request whose earlier askers still wait for the notice, and
+// whose copy is usable or still coming, is not reopened by a new ask: the
+// asker joins them. Anything else reopens it as before.
 func TestLegalRequestRecordKeepsAddedWhileNoticesPending(t *testing.T) {
 	ctx := context.Background()
 	type setup struct {
-		knowledgeSQL string   // inserts knowledge 'k1' ('' = none linked)
-		kbID         string   // knowledge base of the copy
-		askerKBs     []string // the asking agent's knowledge bases
+		knowledgeSQL string // inserts knowledge 'k1' ('' = none linked)
 		decidedAgo   time.Duration
-		notifiedAll  bool
+		// after the closing: "all" = everyone told, "failed" = the waiting
+		// row closed as failed, "late" = the only waiting row asked after it
+		after string
 	}
 	run := func(t *testing.T, c setup) *types.LegalDocumentRequest {
 		t.Helper()
@@ -201,7 +201,7 @@ func TestLegalRequestRecordKeepsAddedWhileNoticesPending(t *testing.T) {
 		ask := func(session string) *types.LegalDocumentRequest {
 			t.Helper()
 			row, err := repo.Record(ctx, &types.LegalDocumentRequest{NumberKey: "53/2022/ND-CP", DocumentNumber: "53/2022/NĐ-CP",
-				LegalDocumentID: "155366", LastSessionID: session, AskerKnowledgeBaseIDs: c.askerKBs})
+				LegalDocumentID: "155366", LastSessionID: session})
 			require.NoError(t, err)
 			return row
 		}
@@ -212,49 +212,101 @@ func TestLegalRequestRecordKeepsAddedWhileNoticesPending(t *testing.T) {
 			require.NoError(t, repo.db.Exec(c.knowledgeSQL).Error)
 			knowledgeID = "k1"
 		}
-		_, err := repo.Decide(ctx, row.ID, types.LegalRequestAdded, "sa", "", knowledgeID, c.kbID)
+		time.Sleep(2 * time.Millisecond)
+		_, err := repo.Decide(ctx, row.ID, types.LegalRequestAdded, "sa", "", knowledgeID, "kb-public")
 		require.NoError(t, err)
 		if c.decidedAgo > 0 {
 			require.NoError(t, repo.db.Model(&types.LegalDocumentRequest{}).Where("id = ?", row.ID).
 				Update("decided_at", time.Now().Add(-c.decidedAgo)).Error)
 		}
-		if c.notifiedAll {
+		switch c.after {
+		case "all":
 			require.NoError(t, repo.db.Model(&types.LegalRequestRequester{}).Where("request_id = ?", row.ID).
 				Update("notified_at", time.Now()).Error)
+		case "failed":
+			for i := 0; i < types.LegalRequesterMaxNotifyAttempts; i++ {
+				var q types.LegalRequestRequester
+				require.NoError(t, repo.db.Where("request_id = ?", row.ID).Take(&q).Error)
+				_, err := repo.RecordNoticeFailure(ctx, q.ID, types.LegalRequesterMaxNotifyAttempts)
+				require.NoError(t, err)
+			}
+		case "late":
+			require.NoError(t, repo.db.Model(&types.LegalRequestRequester{}).Where("request_id = ?", row.ID).
+				Update("updated_at", time.Now().Add(time.Minute)).Error)
 		}
 		return ask("s2")
 	}
 	parsing := `INSERT INTO knowledges (id, parse_status, updated_at) VALUES ('k1', 'processing', CURRENT_TIMESTAMP)`
-	kbs := []string{"kb-public"}
 
-	held := run(t, setup{knowledgeSQL: parsing, kbID: "kb-public", askerKBs: kbs})
+	held := run(t, setup{knowledgeSQL: parsing})
 	require.Equal(t, types.LegalRequestAdded, held.Status, "kept added: u1 still waits, the copy is parsing")
 	require.Equal(t, 2, held.RequestCount)
 	require.Equal(t, "k1", held.KnowledgeID)
-	require.Equal(t, types.LegalRequestAdded,
-		run(t, setup{kbID: "", askerKBs: kbs}).Status, "added by hand, no copy: kept")
+	require.Equal(t, types.LegalRequestAdded, run(t, setup{}).Status, "added by hand, no copy: kept")
 	require.Equal(t, types.LegalRequestAdded, run(t, setup{
 		knowledgeSQL: `INSERT INTO knowledges (id, parse_status, updated_at) VALUES ('k1', 'completed', datetime('now', '-7 hours'))`,
-		kbID:         "kb-public", askerKBs: kbs,
-	}).Status, "parsed and readable: kept, the sweep delivers the waiting notices")
-	require.Equal(t, types.LegalRequestRequested, run(t, setup{
-		knowledgeSQL: `INSERT INTO knowledges (id, parse_status, updated_at) VALUES ('k1', 'completed', CURRENT_TIMESTAMP)`,
-		kbID:         "kb-other", askerKBs: kbs,
-	}).Status, "parsed but the asker cannot read it: reopened")
+	}).Status, "parsed: kept, the sweep delivers the waiting notices")
 
 	for name, c := range map[string]setup{
-		"failed":           {knowledgeSQL: `INSERT INTO knowledges (id, parse_status, updated_at) VALUES ('k1', 'failed', CURRENT_TIMESTAMP)`, kbID: "kb-public", askerKBs: kbs},
-		"cancelled":        {knowledgeSQL: `INSERT INTO knowledges (id, parse_status, updated_at) VALUES ('k1', 'cancelled', CURRENT_TIMESTAMP)`, kbID: "kb-public", askerKBs: kbs},
-		"deleted":          {knowledgeSQL: `INSERT INTO knowledges (id, parse_status, updated_at, deleted_at) VALUES ('k1', 'processing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, kbID: "kb-public", askerKBs: kbs},
-		"stale parse":      {knowledgeSQL: `INSERT INTO knowledges (id, parse_status, updated_at) VALUES ('k1', 'processing', datetime('now', '-7 hours'))`, kbID: "kb-public", askerKBs: kbs},
-		"window expired":   {knowledgeSQL: parsing, kbID: "kb-public", askerKBs: kbs, decidedAgo: types.LegalRequestNoticeWindow + time.Hour},
-		"everyone told":    {knowledgeSQL: parsing, kbID: "kb-public", askerKBs: kbs, notifiedAll: true},
-		"asker can't read": {knowledgeSQL: parsing, kbID: "kb-other", askerKBs: kbs},
+		"failed parse":           {knowledgeSQL: `INSERT INTO knowledges (id, parse_status, updated_at) VALUES ('k1', 'failed', CURRENT_TIMESTAMP)`},
+		"cancelled":              {knowledgeSQL: `INSERT INTO knowledges (id, parse_status, updated_at) VALUES ('k1', 'cancelled', CURRENT_TIMESTAMP)`},
+		"deleted":                {knowledgeSQL: `INSERT INTO knowledges (id, parse_status, updated_at, deleted_at) VALUES ('k1', 'processing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`},
+		"stale parse":            {knowledgeSQL: `INSERT INTO knowledges (id, parse_status, updated_at) VALUES ('k1', 'processing', datetime('now', '-7 hours'))`},
+		"window expired":         {knowledgeSQL: parsing, decidedAgo: types.LegalRequestNoticeWindow + time.Hour},
+		"everyone told":          {knowledgeSQL: parsing, after: "all"},
+		"delivery gave up":       {knowledgeSQL: parsing, after: "failed"},
+		"only later askers wait": {knowledgeSQL: parsing, after: "late"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			require.Equal(t, types.LegalRequestRequested, run(t, c).Status, "reopened")
 		})
 	}
+}
+
+// A delivery that keeps failing is closed as failed after the cap.
+func TestLegalRequestRecordNoticeFailureCap(t *testing.T) {
+	repo := newRequesterRepo(t)
+	ctx := context.Background()
+	row, err := repo.Record(ctx, &types.LegalDocumentRequest{NumberKey: "A", DocumentNumber: "A", LastSessionID: "s"})
+	require.NoError(t, err)
+	require.NoError(t, repo.AddRequester(ctx, &types.LegalRequestRequester{RequestID: row.ID, UserID: "u", SessionID: "s"}))
+	var q types.LegalRequestRequester
+	require.NoError(t, repo.db.Take(&q).Error)
+	for i := 1; i <= 3; i++ {
+		gaveUp, err := repo.RecordNoticeFailure(ctx, q.ID, 3)
+		require.NoError(t, err)
+		require.Equal(t, i == 3, gaveUp)
+	}
+	require.NoError(t, repo.db.Take(&q).Error)
+	require.Equal(t, 3, q.NotifyAttempts)
+	require.NotNil(t, q.NotifiedAt)
+	require.Equal(t, types.LegalRequesterNotifyFailed, q.NotifyStatus)
+}
+
+// A new asker recorded out of scope is stored as already closed; an
+// existing row keeps its state.
+func TestLegalRequestAddRequesterOutOfScope(t *testing.T) {
+	repo := newRequesterRepo(t)
+	ctx := context.Background()
+	row, err := repo.Record(ctx, &types.LegalDocumentRequest{NumberKey: "A", DocumentNumber: "A", LastSessionID: "s"})
+	require.NoError(t, err)
+	require.NoError(t, repo.AddRequester(ctx, &types.LegalRequestRequester{RequestID: row.ID, UserID: "waiting", SessionID: "s"}))
+	_, err = repo.Decide(ctx, row.ID, types.LegalRequestAdded, "sa", "", "", "kb")
+	require.NoError(t, err)
+	for _, u := range []string{"stranger", "waiting"} {
+		require.NoError(t, repo.AddRequester(ctx, &types.LegalRequestRequester{RequestID: row.ID, UserID: u, SessionID: "s2",
+			NotifyStatus: types.LegalRequesterNotifyOutOfScope}))
+	}
+	var stranger, waiting types.LegalRequestRequester
+	require.NoError(t, repo.db.Where("user_id = ?", "stranger").Take(&stranger).Error)
+	require.NoError(t, repo.db.Where("user_id = ?", "waiting").Take(&waiting).Error)
+	require.NotNil(t, stranger.NotifiedAt)
+	require.Equal(t, types.LegalRequesterNotifyOutOfScope, stranger.NotifyStatus)
+	require.Nil(t, waiting.NotifiedAt, "an earlier asker keeps their pending notice")
+	notices, err := repo.PendingAddedNotices(ctx, time.Now().Add(-time.Hour), 10)
+	require.NoError(t, err)
+	require.Len(t, notices, 1)
+	require.Equal(t, "waiting", notices[0].UserID)
 }
 
 // A person already told who asks again while the request stays added is
