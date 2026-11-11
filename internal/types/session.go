@@ -206,6 +206,41 @@ func SessionListSourceRequiresAdmin(source string) bool {
 	return true
 }
 
+// IM sessions are created (internal/im) with these descriptions, and a
+// continuation copies its session's description. The description is on the
+// row from its first write, before the im_channel_sessions mapping exists,
+// so it marks an IM session the moment it is created.
+const (
+	imSessionDescriptionPrefix       = "Auto-created from "
+	imSessionDescriptionSuffix       = " IM integration"
+	imThreadSessionDescriptionPrefix = "Thread-based session from "
+	imThreadSessionDescriptionSuffix = " IM"
+)
+
+// IMSessionDescription is the description internal/im gives a chat session
+// of platform (thread=false) or a thread session (thread=true).
+func IMSessionDescription(platform string, thread bool) string {
+	if thread {
+		return imThreadSessionDescriptionPrefix + platform + imThreadSessionDescriptionSuffix
+	}
+	return imSessionDescriptionPrefix + platform + imSessionDescriptionSuffix
+}
+
+// IsIMSessionDescription reports a description IMSessionDescription made.
+func IsIMSessionDescription(d string) bool {
+	return (strings.HasPrefix(d, imSessionDescriptionPrefix) && strings.HasSuffix(d, imSessionDescriptionSuffix)) ||
+		(strings.HasPrefix(d, imThreadSessionDescriptionPrefix) && strings.HasSuffix(d, imThreadSessionDescriptionSuffix))
+}
+
+// IMSessionDescriptionLikePatterns are SQL LIKE patterns matching the IM
+// session descriptions (for list filters).
+func IMSessionDescriptionLikePatterns() []string {
+	return []string{
+		imSessionDescriptionPrefix + "%" + imSessionDescriptionSuffix,
+		imThreadSessionDescriptionPrefix + "%" + imThreadSessionDescriptionSuffix,
+	}
+}
+
 // SessionRequiresAdminConsoleRead reports whether a session row is channel-
 // managed traffic that non-admin web users must not open from the console.
 func SessionRequiresAdminConsoleRead(s *Session, imPlatform string) bool {
@@ -225,7 +260,7 @@ func SessionRequiresAdminConsoleRead(s *Session, imPlatform string) bool {
 	if IsSkillMaintenanceDescription(s.Description) {
 		return true
 	}
-	return strings.TrimSpace(imPlatform) != ""
+	return strings.TrimSpace(imPlatform) != "" || IsIMSessionDescription(s.Description)
 }
 
 // IsSkillMaintenanceDescription reports whether description is the reserved
@@ -234,15 +269,24 @@ func IsSkillMaintenanceDescription(description string) bool {
 	return strings.HasPrefix(description, SkillMaintenanceSessionMarker)
 }
 
-// SanitizeClientSessionDescription keeps the skill-maintenance marker off
-// client-writable descriptions. A row that is already a maintenance session
-// keeps its stored description so a PUT cannot un-hide it; any other row
-// drops a planted marker rather than accepting it.
+// IsReservedSessionDescription reports a description that marks a session
+// for the server (skill maintenance, IM chat, embed channel): clients may
+// neither set nor remove it.
+func IsReservedSessionDescription(d string) bool {
+	return IsSkillMaintenanceDescription(d) || IsIMSessionDescription(d) ||
+		strings.HasPrefix(d, EmbedSessionMarkerPrefix)
+}
+
+// SanitizeClientSessionDescription keeps the server's markers (skill
+// maintenance, IM, embed: IsReservedSessionDescription) off client-writable
+// descriptions. A row that already carries one keeps its stored description,
+// so a PUT (with or without a description) cannot un-hide or unlock it; any
+// other row drops a planted marker rather than accepting it.
 func SanitizeClientSessionDescription(incoming, existing string) string {
-	if IsSkillMaintenanceDescription(existing) {
+	if IsReservedSessionDescription(existing) {
 		return existing
 	}
-	if IsSkillMaintenanceDescription(incoming) {
+	if IsReservedSessionDescription(incoming) {
 		return ""
 	}
 	return incoming
@@ -264,6 +308,12 @@ type SessionListQuery struct {
 	AgentID  string
 	Page     int
 	PageSize int
+	// ExcludeOwnerlessChannel drops channel sessions nobody owns: IM
+	// sessions (mapped, or still carrying the IM description before their
+	// mapping is written) and legacy embed rows. They are created without an
+	// owner, so the legacy user_id '' allowance would list them to every
+	// member. Set for callers who are not organization admins.
+	ExcludeOwnerlessChannel bool
 }
 
 // SessionListItem is a session row enriched with its IM origin (when any).

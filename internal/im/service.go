@@ -2502,7 +2502,7 @@ func (s *Service) resolveUserSession(ctx context.Context, msg *IncomingMessage, 
 	newSession := &types.Session{
 		TenantID:    tenantID,
 		Title:       title,
-		Description: fmt.Sprintf("Auto-created from %s IM integration", msg.Platform),
+		Description: types.IMSessionDescription(string(msg.Platform), false),
 	}
 
 	createdSession, err := s.sessionService.CreateSession(ctx, newSession)
@@ -2575,7 +2575,7 @@ func (s *Service) resolveThreadSession(ctx context.Context, msg *IncomingMessage
 	newSession := &types.Session{
 		TenantID:    tenantID,
 		Title:       title,
-		Description: fmt.Sprintf("Thread-based session from %s IM", msg.Platform),
+		Description: types.IMSessionDescription(string(msg.Platform), true),
 	}
 
 	createdSession, err := s.sessionService.CreateSession(ctx, newSession)

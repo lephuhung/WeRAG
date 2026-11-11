@@ -45,7 +45,9 @@ func newTestSessionService(t *testing.T) (*sessionService, *gorm.DB) {
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&types.Session{}))
+	// im_channel_sessions too: reading an ownerless row looks its IM
+	// mapping up, and a failed lookup refuses (fails closed)
+	require.NoError(t, db.AutoMigrate(&types.Session{}, &imScopeChannelSession{}))
 
 	return &sessionService{
 		sessionRepo: repository.NewSessionRepository(db),

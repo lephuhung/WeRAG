@@ -45,7 +45,8 @@ func runtimeMayBypassAdminConsoleRead(
 
 	switch principal.Type {
 	case types.PrincipalIMUser:
-		return strings.TrimSpace(imPlatform) != ""
+		// the IM description marks its sessions before the mapping row exists
+		return strings.TrimSpace(imPlatform) != "" || types.IsIMSessionDescription(session.Description)
 	case types.PrincipalAPITenant, types.PrincipalAPIExternalUser:
 		ownerID := types.SessionOwnerIDFromContext(ctx)
 		return types.IsAPISessionOwnerID(session.UserID) && session.UserID == ownerID
@@ -85,7 +86,13 @@ func loadSessionForRead(
 
 	session, err := repo.Get(ctx, tenantID, ownerID, sessionID)
 	if err == nil {
-		imPlatform, _ := repo.GetIMPlatform(ctx, tenantID, sessionID)
+		imPlatform, pErr := repo.GetIMPlatform(ctx, tenantID, sessionID)
+		ownSession := session != nil && session.UserID != "" && session.UserID == types.SessionOwnerIDFromContext(ctx)
+		if pErr != nil && !ownSession && !isAdmin && !internalSessionWork(ctx) {
+			// not the caller's own and cannot tell whether it is an IM chat: fail closed
+			logger.Warnf(ctx, "IM platform lookup for session %s failed, refusing: %v", sessionID, pErr)
+			return nil, apperrors.ErrSessionNotFound
+		}
 		if types.SessionRequiresAdminConsoleRead(session, imPlatform) &&
 			!isAdmin &&
 			!runtimeMayBypassAdminConsoleRead(ctx, session, imPlatform) {
@@ -114,6 +121,100 @@ func loadSessionForRead(
 		s.IMPlatform = imPlatform
 	}
 	return s, nil
+}
+
+// channelSessionLocked reports a channel-managed session (an IM chat, a
+// legacy embed row: types.SessionRequiresAdminConsoleRead) the caller must
+// not read or change. IM and legacy embed sessions are created without an
+// owner, so the owner scope of repo.Get (user_id is the caller or empty)
+// matches them for every member. Allowed: a session the caller owns,
+// internal work (internalSessionWork), an organization admin or SuperAdmin
+// (including a full-access tenant API key, whose auth role is admin; a
+// scoped key stays a member and is locked out), the IM runtime on IM chats
+// only, the embed runtime on its own row (its owner id, or its channel's
+// legacy marker) and an API principal on its own API session.
+// A failed IM lookup fails closed.
+func channelSessionLocked(ctx context.Context, repo interfaces.SessionRepository, tenantID uint64, session *types.Session) bool {
+	if session == nil {
+		return false
+	}
+	if session.UserID != "" && session.UserID == types.SessionOwnerIDFromContext(ctx) {
+		return false
+	}
+	if internalSessionWork(ctx) || callerIsTenantAdminOrSuperAdmin(ctx) {
+		return false
+	}
+	p, _ := types.PrincipalFromContext(ctx)
+	switch p.Type {
+	case types.PrincipalIMUser:
+		// the IM runtime keeps IM chats (mapped, or marked by the IM
+		// description before the mapping exists), nothing else
+		if types.IsIMSessionDescription(session.Description) {
+			return false
+		}
+		platform, err := repo.GetIMPlatform(ctx, tenantID, session.ID)
+		if err != nil {
+			logger.Warnf(ctx, "IM platform lookup for session %s failed, refusing: %v", session.ID, err)
+			return true
+		}
+		return strings.TrimSpace(platform) == "" && types.SessionRequiresAdminConsoleRead(session, "")
+	case types.PrincipalEmbedSession:
+		// the embed runtime keeps its own row: owned by this visitor's
+		// principal, or a legacy row of this principal's channel
+		if session.UserID == p.StorageID() {
+			return false
+		}
+		if ch := embedPrincipalChannel(p); ch != "" && session.Description == types.EmbedSessionMarkerPrefix+ch {
+			return false
+		}
+	}
+	if types.SessionRequiresAdminConsoleRead(session, "") {
+		return !runtimeMayBypassAdminConsoleRead(ctx, session, "")
+	}
+	platform, err := repo.GetIMPlatform(ctx, tenantID, session.ID)
+	if err != nil {
+		logger.Warnf(ctx, "IM platform lookup for session %s failed, refusing: %v", session.ID, err)
+		return true
+	}
+	return strings.TrimSpace(platform) != "" && !runtimeMayBypassAdminConsoleRead(ctx, session, platform)
+}
+
+// embedPrincipalChannel is the channel id of an embed session principal
+// ("<tenant>:<channel>:<session>", types.EmbedSessionPrincipal).
+func embedPrincipalChannel(p types.Principal) string {
+	parts := strings.SplitN(p.ID, ":", 3)
+	if len(parts) != 3 {
+		return ""
+	}
+	return parts[1]
+}
+
+// internalSessionWork is work no request principal stands behind: no
+// principal set by auth or the IM layer, and no user or only a synthetic
+// one ("system-<tenant>", as background jobs use). Requests always carry
+// an explicit principal (applyAuthSession, withIMIdentity).
+func internalSessionWork(ctx context.Context) bool {
+	if p, ok := ctx.Value(types.PrincipalContextKey).(types.Principal); ok && p.Valid() {
+		return false
+	}
+	uid, _ := types.UserIDFromContext(ctx)
+	return strings.TrimSpace(uid) == "" || types.IsSyntheticUserID(uid)
+}
+
+// getSessionForWrite is repo.Get (the caller's owner scope) that also
+// refuses a channel-managed session to a caller who may not touch it
+// (channelSessionLocked), as not found.
+func getSessionForWrite(
+	ctx context.Context, repo interfaces.SessionRepository, tenantID uint64, ownerID, sessionID string,
+) (*types.Session, error) {
+	session, err := repo.Get(ctx, tenantID, ownerID, sessionID)
+	if err != nil {
+		return session, err
+	}
+	if channelSessionLocked(ctx, repo, tenantID, session) {
+		return nil, apperrors.ErrSessionNotFound
+	}
+	return session, nil
 }
 
 // generateEventID generates a unique event ID with type suffix for better traceability
@@ -322,7 +423,7 @@ func (s *sessionService) GetOwnedSession(ctx context.Context, id string) (*types
 	}
 	tenantID := types.MustTenantIDFromContext(ctx)
 	userID := sessionUserIDFromContext(ctx)
-	return s.sessionRepo.Get(ctx, tenantID, userID, id)
+	return getSessionForWrite(ctx, s.sessionRepo, tenantID, userID, id)
 }
 
 // GetSessionByID loads a session by tenant and id without user scoping.
@@ -414,8 +515,13 @@ func (s *sessionService) ListSessions(
 			)
 		}
 		query.UserID = ""
-	} else if uid := types.SessionOwnerIDFromContext(ctx); uid != "" {
-		query.UserID = uid
+	} else {
+		if uid := types.SessionOwnerIDFromContext(ctx); uid != "" {
+			query.UserID = uid
+		}
+		// ownerless channel sessions (IM, legacy embed) are an admin's view
+		// only (their buckets, and as today in their own list)
+		query.ExcludeOwnerlessChannel = !callerIsTenantAdminOrSuperAdmin(ctx)
 	}
 
 	items, total, err := s.sessionRepo.QueryPaged(ctx, query)
@@ -505,8 +611,11 @@ func (s *sessionService) CountSessionsBySource(
 	query.TenantID = types.MustTenantIDFromContext(ctx)
 	if types.SessionListSourceRequiresAdmin(query.Source) {
 		query.UserID = ""
-	} else if uid := types.SessionOwnerIDFromContext(ctx); uid != "" {
-		query.UserID = uid
+	} else {
+		if uid := types.SessionOwnerIDFromContext(ctx); uid != "" {
+			query.UserID = uid
+		}
+		query.ExcludeOwnerlessChannel = !callerIsTenantAdminOrSuperAdmin(ctx)
 	}
 	_, total, err := s.sessionRepo.QueryPaged(ctx, query)
 	if err != nil {
@@ -531,6 +640,12 @@ func (s *sessionService) SetSessionPinned(
 	}
 	tenantID := types.MustTenantIDFromContext(ctx)
 	userID := sessionUserIDFromContext(ctx)
+	if _, err := getSessionForWrite(ctx, s.sessionRepo, tenantID, userID, sessionID); err != nil {
+		if stderrors.Is(err, apperrors.ErrSessionNotFound) {
+			return 0, nil // the handler answers 404
+		}
+		return 0, err
+	}
 	return s.sessionRepo.SetPinned(ctx, tenantID, userID, sessionID, pinned)
 }
 
@@ -544,7 +659,7 @@ func (s *sessionService) UpdateSession(ctx context.Context, session *types.Sessi
 
 	// Update session in repository
 	userID := sessionUserIDFromContext(ctx)
-	existing, err := s.sessionRepo.Get(ctx, session.TenantID, userID, session.ID)
+	existing, err := getSessionForWrite(ctx, s.sessionRepo, session.TenantID, userID, session.ID)
 	if err != nil {
 		return err
 	}
@@ -579,6 +694,10 @@ func (s *sessionService) UpdateSessionLastRequestState(
 	}
 	tenantID := types.MustTenantIDFromContext(ctx)
 	userID := sessionUserIDFromContext(ctx)
+	if _, err := getSessionForWrite(ctx, s.sessionRepo, tenantID, userID, sessionID); err != nil {
+		logger.Warnf(ctx, "UpdateSessionLastRequestState: session %s not writable: %v", sessionID, err)
+		return nil
+	}
 	affected, err := s.sessionRepo.UpdateLastRequestState(ctx, tenantID, userID, sessionID, state)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
@@ -605,7 +724,7 @@ func (s *sessionService) DeleteSession(ctx context.Context, id string) error {
 	tenantID := types.MustTenantIDFromContext(ctx)
 	userID := sessionUserIDFromContext(ctx)
 
-	session, err := s.sessionRepo.Get(ctx, tenantID, userID, id)
+	session, err := getSessionForWrite(ctx, s.sessionRepo, tenantID, userID, id)
 	if err != nil {
 		return err
 	}
@@ -699,7 +818,7 @@ func (s *sessionService) BatchDeleteSessions(ctx context.Context, ids []string) 
 	visible := make([]*types.Session, 0, len(ids))
 	visibleIDs := make([]string, 0, len(ids))
 	for _, id := range ids {
-		session, err := s.sessionRepo.Get(ctx, tenantID, userID, id)
+		session, err := getSessionForWrite(ctx, s.sessionRepo, tenantID, userID, id)
 		if err == nil {
 			visible = append(visible, session)
 			visibleIDs = append(visibleIDs, id)
@@ -772,6 +891,24 @@ func (s *sessionService) DeleteAllSessions(ctx context.Context) error {
 	logger.Infof(ctx, "Deleting all sessions for tenant %d", tenantID)
 
 	sessions, err := s.sessionRepo.GetByTenantID(ctx, tenantID, userID)
+	// A caller who is not an admin (nor internal work) deletes by id what
+	// the listing gives them minus the channel sessions they may not touch
+	// (ownerless IM / embed rows match the owner scope too): never the
+	// blanket owner scope. Without the listing, nothing is deleted.
+	byID := !internalSessionWork(ctx) && !callerIsTenantAdminOrSuperAdmin(ctx)
+	if byID {
+		if err != nil {
+			logger.Warnf(ctx, "Failed to list sessions to delete: %v", err)
+			return err
+		}
+		kept := sessions[:0:0]
+		for _, sess := range sessions {
+			if !channelSessionLocked(ctx, s.sessionRepo, tenantID, sess) {
+				kept = append(kept, sess)
+			}
+		}
+		sessions = kept
+	}
 	if err != nil {
 		logger.Warnf(ctx, "Failed to list sessions for cleanup: %v", err)
 	} else {
@@ -806,7 +943,18 @@ func (s *sessionService) DeleteAllSessions(ctx context.Context) error {
 		}
 	}
 
-	if _, err := s.sessionRepo.DeleteAllByTenantID(ctx, tenantID, userID); err != nil {
+	if byID {
+		ids := make([]string, 0, len(sessions))
+		for _, sess := range sessions {
+			ids = append(ids, sess.ID)
+		}
+		if len(ids) > 0 {
+			if _, err := s.sessionRepo.BatchDelete(ctx, tenantID, userID, ids); err != nil {
+				logger.ErrorWithFields(ctx, err, map[string]interface{}{"tenant_id": tenantID})
+				return err
+			}
+		}
+	} else if _, err := s.sessionRepo.DeleteAllByTenantID(ctx, tenantID, userID); err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{
 			"tenant_id": tenantID,
 		})

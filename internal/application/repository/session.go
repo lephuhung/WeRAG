@@ -204,6 +204,12 @@ func (r *sessionRepository) QueryPaged(
 		// Sub-chats ("chat nhỏ") are listed inside their document chat, not
 		// as rows of their own (SessionService.ListSubChats).
 		db = db.Where("s.chat_root_id = ''")
+		if q.ExcludeOwnerlessChannel {
+			im := types.IMSessionDescriptionLikePatterns()
+			db = db.Where("NOT ((s.user_id IS NULL OR s.user_id = '') AND (ics.id IS NOT NULL OR "+
+				"s.description LIKE ? OR s.description LIKE ? OR s.description LIKE ?))",
+				im[0], im[1], types.EmbedSessionMarkerPrefix+"%")
+		}
 		if kw := strings.TrimSpace(q.Keyword); kw != "" {
 			db = db.Where(titleLikeExpr, "%"+escapeLikeKeyword(kw)+"%")
 		}
