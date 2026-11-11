@@ -37,6 +37,9 @@ import {
   type SourceQuestionChip,
   markDocumentFormatFindings,
   startDocumentFormatCheck,
+  checkDocumentLegalBasis,
+  type LegalBasisPosition,
+  type LegalBasisReport,
   createDocumentWorkspace,
 } from "@/lib/api/document-workspace";
 import type { DocumentTemplateId } from "@/lib/document-templates";
@@ -79,6 +82,7 @@ import { FormatCheckRing } from "@/components/doc-workspace/format-check-ring";
 import { FormatCheckButton, SpellingRing } from "@/components/doc-workspace/spelling-ring";
 import { goToResult, type GoToResult, type LiveSpellingStatus, type SpellingActions } from "@/lib/live-spelling";
 import { FormatCheckReportModal } from "@/components/doc-workspace/format-check-report";
+import { LegalBasisButton, LegalBasisReportModal } from "@/components/doc-workspace/legal-basis-report";
 import type { EditorActions, EditorOpsResult } from "@/components/doc-workspace/use-live-spelling";
 import { useDocumentTemplate } from "@/components/doc-workspace/use-document-template";
 import { DocumentTemplateBar, DocumentTemplatePicker } from "@/components/doc-workspace/document-template-picker";
@@ -675,6 +679,65 @@ function ChatBody({ id }: { id: string }) {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     }
+  };
+  // "Rà soát căn cứ pháp lý": the visible document's citations checked
+  // against the legal catalogue (no model, a few seconds); the report opens
+  // in a modal, its places are selected or underlined only on request.
+  const [legalBasis, setLegalBasis] = useState<{ report: LegalBasisReport; doc: SessionDocument } | null>(null);
+  const [legalBasisBusy, setLegalBasisBusy] = useState(false);
+  const [legalBasisOpen, setLegalBasisOpen] = useState(false);
+  useEffect(() => {
+    setLegalBasis(null);
+    setLegalBasisOpen(false);
+  }, [id]);
+  const runLegalBasisCheck = async () => {
+    const doc = formatCheckDoc;
+    if (id === "new" || !doc || legalBasisBusy) return;
+    setLegalBasisBusy(true);
+    setLegalBasisOpen(true);
+    if (legalBasis?.doc.id !== doc.id) setLegalBasis(null);
+    try {
+      setLegalBasis({ report: await checkDocumentLegalBasis(id, doc.id), doc });
+    } catch (e) {
+      setLegalBasisOpen(false);
+      toast.error(tr("docws.lbFailed", { error: e instanceof Error ? e.message : String(e) }));
+    } finally {
+      setLegalBasisBusy(false);
+    }
+  };
+  const markLegalBasis = async (positions: LegalBasisPosition[]) => {
+    const doc = legalBasis?.doc;
+    if (id === "new" || !doc) return;
+    const batch = opsBatchFromToolData("legal_basis_check", {
+      document_ops: positions.map((p) => ({
+        op: "mark",
+        anchor: p.anchor,
+        text: p.text,
+        ...(p.text_occurrence > 1 ? { textOccurrence: p.text_occurrence } : {}),
+        style: "underline",
+      })),
+      ops_batch_id: `lb-marks-${Date.now().toString(36)}`,
+      document_id: doc.id,
+    });
+    if (!batch || batch.ops.length === 0) {
+      toast.info(tr("docws.lbMarkNone"));
+      return;
+    }
+    setDocOpsBatches((prev) => [...prev, batch]);
+    toast.success(tr("docws.lbMarkDone", { n: batch.ops.length }));
+  };
+  const locateLegalBasis = async (p: LegalBasisPosition) => {
+    const editor = editorActionsRef.current;
+    if (!editor || !legalBasis || editor.documentId !== legalBasis.doc.id) throw new Error(tr("docws.lbOtherDoc"));
+    const o = await editor.runOps([
+      {
+        op: "select",
+        anchor: { text: p.anchor.text, ...(p.anchor.occurrence ? { occurrence: p.anchor.occurrence } : {}) },
+        text: p.text,
+        ...(p.text_occurrence > 1 ? { textOccurrence: p.text_occurrence } : {}),
+      },
+    ]);
+    if (!o || o.applied < 1) throw new Error(editorProblem(o));
   };
   // The report's per-finding review, run in the visible editor: it must
   // show the checked document (another tab → open it first).
@@ -2335,6 +2398,8 @@ function ChatBody({ id }: { id: string }) {
   const formatCheckTrigger =
     isDocumentAssistant && !formatCheck && id !== "new" &&
     (spellingStatus?.phase === "done" || spellingStatus?.phase === "failed");
+  // the legal basis check needs a working document open in a tab
+  const legalBasisTrigger = isDocumentAssistant && id !== "new" && !guest && !!formatCheckDoc;
 
   const templatePicker = (
     <DocumentTemplatePicker
@@ -2369,6 +2434,18 @@ function ChatBody({ id }: { id: string }) {
               onLocateFinding={locateFinding}
               onApplyFinding={applyFinding}
               onVerifyFinding={checkFinding}
+            />
+          )}
+          {isDocumentAssistant && id !== "new" && (
+            <LegalBasisReportModal
+              open={legalBasisOpen}
+              report={legalBasis?.report ?? null}
+              document={legalBasis?.doc ?? formatCheckDoc}
+              busy={legalBasisBusy}
+              onClose={() => setLegalBasisOpen(false)}
+              onRecheck={() => void runLegalBasisCheck()}
+              onMark={markLegalBasis}
+              onLocate={locateLegalBasis}
             />
           )}
           {isDocumentAssistant && docTemplate.showPicker && messages.length === 0 && templatePicker}
@@ -2577,6 +2654,9 @@ function ChatBody({ id }: { id: string }) {
               <>
                 {formatCheckTrigger && (
                   <FormatCheckButton iconOnly busy={false} onClick={() => void startFormatCheck()} />
+                )}
+                {legalBasisTrigger && (
+                  <LegalBasisButton busy={legalBasisBusy} onClick={() => void runLegalBasisCheck()} />
                 )}
                 {isDocumentAssistant && formatCheck && (
                   <FormatCheckRing

@@ -17,6 +17,8 @@ export const DOCUMENT_OPS_TOOLS = new Set([
   "mark_passages",
   "apply_format_fixes",
   "check_spelling",
+  // the legal basis check's underlines (page-built from its report)
+  "legal_basis_check",
 ]);
 
 export type ParagraphAnchor = { text: string; occurrence?: number };
