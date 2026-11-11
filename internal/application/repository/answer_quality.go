@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -64,9 +65,10 @@ func (r *answerQualityRepository) where(kind string, f types.AnswerQualityFilter
 	timeCol := "m.created_at"
 	switch kind {
 	case types.AnswerQualityKindDisliked:
-		timeCol = "m.feedback_at"
-		conds = append(conds, "m.feedback = ?")
-		args = append(args, types.MessageFeedbackDown)
+		timeCol = dislikedTimeSQL
+		// a literal, not a bound parameter: the planner then matches the
+		// partial index idx_messages_feedback_down (WHERE feedback = -1)
+		conds = append(conds, fmt.Sprintf("m.feedback = %d", types.MessageFeedbackDown))
 		if f.HasComment {
 			conds = append(conds, "TRIM(m.feedback_comment) <> ''")
 		}
@@ -105,6 +107,24 @@ func (r *answerQualityRepository) where(kind string, f types.AnswerQualityFilter
 	}
 	return strings.Join(conds, " AND "), args
 }
+
+// dislikedTimeSQL is when an answer was disliked: the vote's time, or the
+// answer's for rows voted before feedback_at existed. The date range and
+// the order of the disliked list use it (idx_messages_feedback_down).
+const dislikedTimeSQL = "COALESCE(m.feedback_at, m.created_at)"
+
+// questionSQL is the question an answer replies to: the user message of the
+// same request (user and assistant messages share request_id), else the
+// latest user message before the answer.
+const questionSQL = `COALESCE(
+  (SELECT q.content FROM messages q
+    WHERE q.session_id = m.session_id AND q.role = 'user' AND q.deleted_at IS NULL
+      AND m.request_id <> '' AND q.request_id = m.request_id
+    ORDER BY q.created_at DESC LIMIT 1),
+  (SELECT q.content FROM messages q
+    WHERE q.session_id = m.session_id AND q.role = 'user' AND q.deleted_at IS NULL
+      AND q.created_at <= m.created_at
+    ORDER BY q.created_at DESC LIMIT 1))`
 
 // from is the join every list reads: the session (organization, owner;
 // a deleted conversation is gone from the lists too) and the review of the
@@ -155,7 +175,7 @@ func (r *answerQualityRepository) list(
 	}
 	order := "m.created_at DESC, m.id"
 	if kind == types.AnswerQualityKindDisliked {
-		order = "m.feedback_at DESC, m.id"
+		order = dislikedTimeSQL + " DESC, m.id"
 	}
 	limit, offset := f.Limit, f.Offset
 	if limit <= 0 || limit > types.AnswerQualityListMax {
@@ -169,10 +189,7 @@ func (r *answerQualityRepository) list(
   m.agent_id, m.agent_tenant_id, ca.name AS agent_name,
   m.content AS answer, ` + r.referencesSQL() + ` AS refs,
   m.feedback, m.feedback_comment AS comment, m.feedback_at, m.execution_context,
-  (SELECT q.content FROM messages q
-    WHERE q.session_id = m.session_id AND q.role = 'user' AND q.deleted_at IS NULL
-      AND q.created_at <= m.created_at
-    ORDER BY q.created_at DESC LIMIT 1) AS question,
+  ` + questionSQL + ` AS question,
   rv.cause AS rv_cause, rv.note AS rv_note, rv.reviewed AS rv_reviewed,
   rv.reviewed_by AS rv_reviewed_by, rv.reviewed_at AS rv_reviewed_at, ru.username AS reviewer_name` +
 		answerQualityFrom + `
@@ -210,6 +227,10 @@ func (s *answerQualityScan) row() *types.AnswerQualityRow {
 		Comment:    s.Comment,
 		FeedbackAt: s.FeedbackAt,
 	}
+	// users have no display name column: the account name is shown, the
+	// e-mail only when it is empty. Both are within the privacy decision
+	// (a Tenant Admin reads their own organization's people; a SuperAdmin
+	// everyone's); API-key and embed sessions have no user row and show "".
 	if row.UserName == "" {
 		row.UserName = deref(s.UserEmail)
 	}
@@ -299,6 +320,20 @@ WHERE `+where+` AND m.agent_id <> '' LIMIT 500`, append([]interface{}{kind}, arg
 	return out, nil
 }
 
+// markerFieldsSQL selects the marker's fields only (the grouping reads up
+// to UngroundedGroupScanMax rows: the rest of execution_context stays out).
+func (r *answerQualityRepository) markerFieldsSQL() string {
+	if r.postgres() {
+		return "m.execution_context -> 'ungrounded' ->> 'query' AS query," +
+			" m.execution_context -> 'ungrounded' ->> 'reason' AS reason," +
+			" m.execution_context -> 'ungrounded' ->> 'legal_request' AS legal_request"
+	}
+	ec := "CAST(m.execution_context AS TEXT)"
+	return "json_extract(" + ec + ", '$.ungrounded.query') AS query," +
+		" json_extract(" + ec + ", '$.ungrounded.reason') AS reason," +
+		" json_extract(" + ec + ", '$.ungrounded.legal_request') AS legal_request"
+}
+
 func (r *answerQualityRepository) UngroundedMarkers(
 	ctx context.Context, f types.AnswerQualityFilter, limit int,
 ) ([]*types.AnswerQualityRow, error) {
@@ -307,12 +342,14 @@ func (r *answerQualityRepository) UngroundedMarkers(
 		limit = types.UngroundedGroupScanMax
 	}
 	var scans []struct {
-		MessageID        string
-		CreatedAt        time.Time
-		TenantID         uint64
-		ExecutionContext types.MessageExecutionContext
+		MessageID    string
+		CreatedAt    time.Time
+		TenantID     uint64
+		Query        *string
+		Reason       *string
+		LegalRequest *string
 	}
-	err := r.db.WithContext(ctx).Raw(`SELECT m.id AS message_id, m.created_at, s.tenant_id, m.execution_context`+
+	err := r.db.WithContext(ctx).Raw(`SELECT m.id AS message_id, m.created_at, s.tenant_id, `+r.markerFieldsSQL()+
 		answerQualityFrom+` WHERE `+where+` ORDER BY m.created_at DESC, m.id LIMIT ?`,
 		append(append([]interface{}{types.AnswerQualityKindUngrounded}, args...), limit)...).Scan(&scans).Error
 	if err != nil {
@@ -320,11 +357,10 @@ func (r *answerQualityRepository) UngroundedMarkers(
 	}
 	out := make([]*types.AnswerQualityRow, 0, len(scans))
 	for _, s := range scans {
-		row := &types.AnswerQualityRow{MessageID: s.MessageID, CreatedAt: s.CreatedAt, TenantID: s.TenantID}
-		if mk := s.ExecutionContext.Ungrounded; mk != nil {
-			row.Question, row.Reason, row.LegalRequest = mk.Query, mk.Reason, mk.LegalRequest
-		}
-		out = append(out, row)
+		out = append(out, &types.AnswerQualityRow{
+			MessageID: s.MessageID, CreatedAt: s.CreatedAt, TenantID: s.TenantID,
+			Question: deref(s.Query), Reason: deref(s.Reason), LegalRequest: deref(s.LegalRequest),
+		})
 	}
 	return out, nil
 }

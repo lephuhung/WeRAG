@@ -15,6 +15,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 type aqFixture struct {
@@ -231,4 +232,52 @@ func TestForkedCopiesDoNotInheritUngroundedMarker(t *testing.T) {
 	require.Nil(t, copies[0].ExecutionContext.Ungrounded)
 	require.Equal(t, "vi-VN", copies[0].ExecutionContext.Locale)
 	require.NotNil(t, src.ExecutionContext.Ungrounded, "the parent keeps its mark")
+}
+
+type countingAQRepo struct {
+	interfaces.AnswerQualityRepository
+	markerCalls int
+}
+
+func (r *countingAQRepo) UngroundedMarkers(ctx context.Context, f types.AnswerQualityFilter, limit int) ([]*types.AnswerQualityRow, error) {
+	r.markerCalls++
+	return r.AnswerQualityRepository.UngroundedMarkers(ctx, f, limit)
+}
+
+// The grouping is cached per organization and filter for a minute; paging
+// reuses it, another organization or filter does not, a review clears it.
+func TestGroupUngroundedIsCached(t *testing.T) {
+	f := newAQFixture(t)
+	repo := &countingAQRepo{AnswerQualityRepository: repository.NewAnswerQualityRepository(f.db)}
+	now := time.Now()
+	svc := NewAnswerQualityService(repo).(*answerQualityService)
+	svc.now = func() time.Time { return now }
+	admin1 := aqCtx(1, "admin-1", types.TenantRoleAdmin, false)
+	admin2 := aqCtx(2, "admin-2", types.TenantRoleAdmin, false)
+
+	_, err := svc.GroupUngrounded(admin1, false, types.AnswerQualityFilter{Limit: 10})
+	require.NoError(t, err)
+	_, err = svc.GroupUngrounded(admin1, false, types.AnswerQualityFilter{Limit: 10, Offset: 10})
+	require.NoError(t, err)
+	require.Equal(t, 1, repo.markerCalls, "paging reuses the grouping")
+
+	page, err := svc.GroupUngrounded(admin2, false, types.AnswerQualityFilter{Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, 2, repo.markerCalls, "another organization is grouped on its own")
+	require.Equal(t, 1, page.Items[0].Count)
+	_, err = svc.GroupUngrounded(admin1, false, types.AnswerQualityFilter{Limit: 10, Reason: types.UngroundedLegalDocumentMissing})
+	require.NoError(t, err)
+	require.Equal(t, 3, repo.markerCalls, "another filter is grouped on its own")
+
+	now = now.Add(61 * time.Second)
+	_, err = svc.GroupUngrounded(admin1, false, types.AnswerQualityFilter{Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, 4, repo.markerCalls, "expired after a minute")
+
+	yes := true
+	_, err = svc.Review(admin1, false, f.ungrounded[1], types.AnswerQualityReviewInput{Kind: types.AnswerQualityKindUngrounded, Reviewed: &yes})
+	require.NoError(t, err)
+	_, err = svc.GroupUngrounded(admin1, false, types.AnswerQualityFilter{Limit: 10})
+	require.NoError(t, err)
+	require.Equal(t, 5, repo.markerCalls, "a review clears the cache")
 }

@@ -249,3 +249,36 @@ func checkAnswerQualityUngrounded(t *testing.T, f *answerQualityFixture) {
 	require.NoError(t, err)
 	require.Nil(t, missing)
 }
+
+// The question is the user message of the answer's request; a message the
+// user sent while the answer ran (steer) does not take its place. A vote
+// without feedback_at is ordered by the answer's time.
+func TestAnswerQualityQuestionPairingAndOrder(t *testing.T) {
+	checkAnswerQualityPairing(t, newAnswerQualityFixture(t))
+}
+
+func checkAnswerQualityPairing(t *testing.T, f *answerQualityFixture) {
+	ctx := context.Background()
+	s := f.org(t, 1, "A", "u-a", "nguyenvana")
+	at := f.base
+	add := func(m *types.Message) {
+		t.Helper()
+		m.ID, m.SessionID = uuid.NewString(), s
+		require.NoError(t, f.db.Create(m).Error)
+	}
+	add(&types.Message{Role: "user", Content: "Câu hỏi gốc", RequestID: "r1", CreatedAt: at})
+	add(&types.Message{Role: "user", Content: "Câu chen vào", RequestID: "r2", CreatedAt: at.Add(time.Second)})
+	voted := at.Add(time.Hour)
+	add(&types.Message{Role: "assistant", Content: "Trả lời", RequestID: "r1", CreatedAt: at.Add(2 * time.Second),
+		Feedback: types.MessageFeedbackDown, FeedbackAt: &voted})
+	// an older-style vote with no feedback_at, answer later than the vote above
+	add(&types.Message{Role: "user", Content: "Câu cũ", CreatedAt: at.Add(2 * time.Hour)})
+	add(&types.Message{Role: "assistant", Content: "Trả lời cũ", CreatedAt: at.Add(2*time.Hour + time.Second),
+		Feedback: types.MessageFeedbackDown})
+
+	rows, total, err := f.repo.ListDisliked(ctx, types.AnswerQualityFilter{TenantID: 1, Limit: 10})
+	require.NoError(t, err)
+	require.EqualValues(t, 2, total)
+	require.Equal(t, "Câu cũ", rows[0].Question, "no feedback_at: ordered by the answer's time, paired by time")
+	require.Equal(t, "Câu hỏi gốc", rows[1].Question, "paired by request_id, not the later steer message")
+}

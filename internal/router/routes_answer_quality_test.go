@@ -9,8 +9,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/config"
 	"github.com/Tencent/WeKnora/internal/handler"
+	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -48,6 +50,10 @@ var answerQualityPlatformRoutes = []struct{ method, path string }{
 // answerQualityEngine mounts the routes behind the API-key gate, with the
 // RBAC rollout flag off (TenantAdmin must deny Members anyway).
 func answerQualityEngine(setCtx func(context.Context) context.Context) *gin.Engine {
+	return answerQualityEngineWith(setCtx, handler.NewAnswerQualityHandler(stubAnswerQuality{}))
+}
+
+func answerQualityEngineWith(setCtx func(context.Context) context.Context, h *handler.AnswerQualityHandler) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	off := false
 	cfg := &config.Config{Tenant: &config.TenantConfig{EnableRBAC: &off}}
@@ -58,7 +64,8 @@ func answerQualityEngine(setCtx func(context.Context) context.Context) *gin.Engi
 		c.Next()
 	})
 	v1 := engine.Group("/api/v1", g.ensureAPIKeyAuthorizer().Middleware())
-	RegisterAnswerQualityRoutes(v1, handler.NewAnswerQualityHandler(stubAnswerQuality{}), g)
+	v1.Use(middleware.ErrorHandler())
+	RegisterAnswerQualityRoutes(v1, h, g)
 	return engine
 }
 
@@ -106,6 +113,32 @@ func TestAnswerQualityRoutesAuth(t *testing.T) {
 			for _, r := range answerQualityPlatformRoutes {
 				if got := serveAnswerQuality(engine, r.method, r.path); got != tc.platform {
 					t.Errorf("%s %s = %d, want %d", r.method, r.path, got, tc.platform)
+				}
+			}
+		})
+	}
+}
+
+// An admin of organization A who is only a member of organization B: in B's
+// context the guard refuses them; a caller whose admin role belongs to A
+// while the request runs in B passes the guard but the service refuses
+// (the real service, its repository is never reached).
+func TestAnswerQualityAdminOfAMemberOfB(t *testing.T) {
+	real := handler.NewAnswerQualityHandler(service.NewAnswerQualityService(nil))
+	memberOfB := human(2, "u-admin-a", types.TenantRoleMember, false)
+	adminOfAInB := func(ctx context.Context) context.Context {
+		ctx = human(2, "u-admin-a", types.TenantRoleAdmin, false)(ctx)
+		return types.WithCaller(ctx, types.Caller{TenantID: 1, UserID: "u-admin-a", Role: types.TenantRoleAdmin})
+	}
+	for name, setCtx := range map[string]func(context.Context) context.Context{
+		"member of B":          memberOfB,
+		"admin role of A in B": adminOfAInB,
+	} {
+		t.Run(name, func(t *testing.T) {
+			engine := answerQualityEngineWith(setCtx, real)
+			for _, r := range append(answerQualityTenantRoutes, answerQualityPlatformRoutes...) {
+				if got := serveAnswerQuality(engine, r.method, r.path); got != http.StatusForbidden {
+					t.Errorf("%s %s = %d, want 403", r.method, r.path, got)
 				}
 			}
 		})

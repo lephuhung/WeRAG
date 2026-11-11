@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -24,11 +26,76 @@ import (
 type answerQualityService struct {
 	repo interfaces.AnswerQualityRepository
 	now  func() time.Time
+
+	// groups caches GroupUngrounded per scoped filter (paging aside) for
+	// ungroundedGroupsTTL: one grouping reads up to UngroundedGroupScanMax
+	// rows, and paging or switching views asks again within seconds. A
+	// review clears it.
+	groupsMu sync.Mutex
+	groups   map[string]*ungroundedGroupsEntry
 }
+
+type ungroundedGroupsEntry struct {
+	at        time.Time
+	groups    []*types.UngroundedQuestionGroup
+	rows      int
+	truncated bool
+}
+
+const (
+	ungroundedGroupsTTL = 60 * time.Second
+	// ungroundedGroupsMaxEntries bounds the cache; expired entries go first,
+	// then everything (a burst of distinct filters only costs a re-read).
+	ungroundedGroupsMaxEntries = 256
+)
 
 // NewAnswerQualityService creates the service.
 func NewAnswerQualityService(repo interfaces.AnswerQualityRepository) interfaces.AnswerQualityService {
-	return &answerQualityService{repo: repo, now: time.Now}
+	return &answerQualityService{repo: repo, now: time.Now, groups: map[string]*ungroundedGroupsEntry{}}
+}
+
+// groupsKey is the cache key of a scoped filter: the organization scope and
+// every filter but the page.
+func groupsKey(f types.AnswerQualityFilter) string {
+	f.Offset, f.Limit = 0, 0
+	b, _ := json.Marshal(f)
+	return string(b)
+}
+
+func (s *answerQualityService) cachedGroups(key string) *ungroundedGroupsEntry {
+	s.groupsMu.Lock()
+	defer s.groupsMu.Unlock()
+	e := s.groups[key]
+	if e == nil || s.now().Sub(e.at) >= ungroundedGroupsTTL {
+		return nil
+	}
+	return e
+}
+
+func (s *answerQualityService) storeGroups(key string, e *ungroundedGroupsEntry) {
+	s.groupsMu.Lock()
+	defer s.groupsMu.Unlock()
+	if s.groups == nil {
+		s.groups = map[string]*ungroundedGroupsEntry{}
+	}
+	if len(s.groups) >= ungroundedGroupsMaxEntries {
+		now := s.now()
+		for k, old := range s.groups {
+			if now.Sub(old.at) >= ungroundedGroupsTTL {
+				delete(s.groups, k)
+			}
+		}
+		if len(s.groups) >= ungroundedGroupsMaxEntries {
+			s.groups = map[string]*ungroundedGroupsEntry{}
+		}
+	}
+	s.groups[key] = e
+}
+
+func (s *answerQualityService) clearGroups() {
+	s.groupsMu.Lock()
+	s.groups = map[string]*ungroundedGroupsEntry{}
+	s.groupsMu.Unlock()
 }
 
 // answerQualityCaller is who asks and the organization they may read
@@ -127,17 +194,23 @@ func (s *answerQualityService) GroupUngrounded(
 		return nil, err
 	}
 	f.HasComment = false
-	rows, err := s.repo.UngroundedMarkers(ctx, f, types.UngroundedGroupScanMax+1)
-	if err != nil {
-		return nil, err
+	key := groupsKey(f)
+	entry := s.cachedGroups(key)
+	if entry == nil {
+		rows, err := s.repo.UngroundedMarkers(ctx, f, types.UngroundedGroupScanMax+1)
+		if err != nil {
+			return nil, err
+		}
+		entry = &ungroundedGroupsEntry{at: s.now()}
+		if len(rows) > types.UngroundedGroupScanMax {
+			rows, entry.truncated = rows[:types.UngroundedGroupScanMax], true
+		}
+		entry.rows = len(rows)
+		entry.groups = GroupUngroundedQuestions(rows)
+		s.storeGroups(key, entry)
 	}
-	out := &types.UngroundedGroupPage{}
-	if len(rows) > types.UngroundedGroupScanMax {
-		rows, out.Truncated = rows[:types.UngroundedGroupScanMax], true
-	}
-	out.Rows = len(rows)
-	groups := GroupUngroundedQuestions(rows)
-	out.Total = len(groups)
+	groups := entry.groups
+	out := &types.UngroundedGroupPage{Rows: entry.rows, Truncated: entry.truncated, Total: len(groups)}
 	start := min(f.Offset, len(groups))
 	end := min(start+f.Limit, len(groups))
 	out.Items = groups[start:end]
@@ -279,5 +352,7 @@ func (s *answerQualityService) Review(
 	if err := s.repo.SaveReview(ctx, rv); err != nil {
 		return nil, err
 	}
+	// the "reviewed" filter of a cached grouping no longer holds
+	s.clearGroups()
 	return rv, nil
 }

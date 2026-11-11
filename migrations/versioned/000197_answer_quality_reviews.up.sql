@@ -26,8 +26,9 @@ CREATE INDEX IF NOT EXISTS idx_answer_quality_reviews_tenant
     ON answer_quality_reviews (tenant_id, kind);
 
 -- The two lists read only a sliver of messages, newest first.
+-- (the disliked list filters and orders by COALESCE(feedback_at, created_at))
 CREATE INDEX IF NOT EXISTS idx_messages_feedback_down
-    ON messages (feedback_at DESC)
+    ON messages ((COALESCE(feedback_at, created_at)) DESC)
     WHERE feedback = -1 AND deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_messages_ungrounded
     ON messages (created_at DESC)
