@@ -39,10 +39,35 @@ type SessionListResponse = {
   total?: number;
 };
 
-export function listSessions(page = 1, pageSize = 30, source?: string) {
+export function listSessions(page = 1, pageSize = 30, source?: string, keyword?: string) {
   const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
   if (source) params.set("source", source);
+  if (keyword) params.set("keyword", keyword);
   return apiGet<SessionListResponse>(`/api/v1/sessions?${params.toString()}`);
+}
+
+/** A session whose messages contain the searched text: its newest matching
+ * message as a snippet (before / match / after, "…" where cut). */
+export type SessionContentHit = {
+  session_id: string;
+  title: string;
+  chat_root_id?: string;
+  message_id: string;
+  role: "user" | "assistant" | string;
+  matched_at: string;
+  match_count: number;
+  snippet: { before: string; match: string; after: string };
+};
+
+/** Search the text of the caller's own conversations (same scope as the
+ * session list: Word add-in chats hidden on the web). Case-insensitive,
+ * accent-sensitive; 2–200 characters. */
+export function searchSessionContent(q: string, page = 1, pageSize = 8, source?: string) {
+  const params = new URLSearchParams({ q, page: String(page), page_size: String(pageSize) });
+  if (source) params.set("source", source);
+  return apiGet<{ success: boolean; data?: SessionContentHit[]; has_more?: boolean }>(
+    `/api/v1/sessions/search?${params.toString()}`,
+  );
 }
 
 export function createSession(data: Record<string, unknown> = {}) {

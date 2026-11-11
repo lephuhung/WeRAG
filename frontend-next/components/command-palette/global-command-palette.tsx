@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useDialogFocus } from "@/components/use-dialog-focus";
 import { useRouter } from "next/navigation";
@@ -23,20 +23,27 @@ import {
   type KnowledgeBaseRow,
   type KnowledgeSemanticSearchResult,
 } from "@/lib/api/knowledge";
-import { searchMessages, type MessageSearchGroupItem } from "@/lib/api/chat";
+import { listSessions, searchSessionContent, type SessionContentHit, type SessionRow } from "@/lib/api/chat";
 import { listAgents, type AgentRow } from "@/lib/api/agents";
-import { useAuth, useTenantRole } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 import { canSeeSection } from "@/components/settings/nav-config";
 import { SYSTEM_TABS } from "@/components/system/system-nav";
 import { adminSectionHref } from "@/components/admin/admin-routes";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { legalLookupHref } from "@/lib/legal-status";
+import { formatDateTime } from "@/lib/datetime";
+
+/* Conversations found by title, and content matches per page. */
+const CONTENT_TITLE_LIMIT = 5;
+const CONTENT_PAGE_SIZE = 8;
 
 interface CommandItem {
   id: string;
-  category: "quick" | "kbs" | "agents" | "chunks" | "messages" | "ask" | "legal" | "settings";
+  category: "quick" | "kbs" | "agents" | "chunks" | "sessions" | "messages" | "ask" | "legal" | "settings";
   title: string;
   subtitle?: string;
+  /* Rich subtitle (a snippet with the match marked); wins over subtitle. */
+  subtitleNode?: React.ReactNode;
   badge?: string;
   icon?: React.ReactNode;
   onSelect: () => void;
@@ -48,11 +55,9 @@ const optionId = (index: number) => `cmdk-option-${index}`;
 export function GlobalCommandPalette() {
   const { isOpen, close } = useCommandPalette();
   const router = useRouter();
-  const { t } = useT();
+  const { t, locale } = useT();
   const { user, memberships, selectedTenantId, tenant } = useAuth();
   const isSystemAdmin = user?.is_system_admin === true;
-  // message search needs an organization; a guest's would only answer 409
-  const { isGuest } = useTenantRole();
   const currentRole =
     memberships.find(
       (m) => String(m.tenant_id) === String(selectedTenantId ?? tenant?.id ?? ""),
@@ -66,7 +71,12 @@ export function GlobalCommandPalette() {
   const [allAgents, setAllAgents] = useState<AgentRow[]>([]);
 
   const [chunks, setChunks] = useState<KnowledgeSemanticSearchResult[]>([]);
-  const [messages, setMessages] = useState<MessageSearchGroupItem[]>([]);
+  /* Conversations: title matches first, then content matches (paged). */
+  const [titleHits, setTitleHits] = useState<SessionRow[]>([]);
+  const [contentHits, setContentHits] = useState<SessionContentHit[]>([]);
+  const [contentPage, setContentPage] = useState(1);
+  const [contentMore, setContentMore] = useState(false);
+  const [contentLoading, setContentLoading] = useState(false);
 
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus({ open: isOpen, containerRef: dialogRef, onClose: close });
@@ -79,7 +89,9 @@ export function GlobalCommandPalette() {
       setQuery("");
       setSelectedIndex(0);
       setChunks([]);
-      setMessages([]);
+      setTitleHits([]);
+      setContentHits([]);
+      setContentMore(false);
       setTimeout(() => inputRef.current?.focus(), 50);
 
       listKnowledgeBases()
@@ -100,7 +112,9 @@ export function GlobalCommandPalette() {
     const q = query.trim();
     if (!q) {
       setChunks([]);
-      setMessages([]);
+      setTitleHits([]);
+      setContentHits([]);
+      setContentMore(false);
       setLoading(false);
       return;
     }
@@ -108,9 +122,11 @@ export function GlobalCommandPalette() {
     setLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const [chunkRes, msgRes] = await Promise.allSettled([
+        // conversations: a Guest searches their own too (portal session routes)
+        const [chunkRes, titleRes, contentRes] = await Promise.allSettled([
           knowledgeSemanticSearch({ query: q }),
-          isGuest ? Promise.resolve(null) : searchMessages({ query: q, mode: "hybrid", limit: 6 }),
+          listSessions(1, CONTENT_TITLE_LIMIT, undefined, q),
+          Array.from(q).length >= 2 ? searchSessionContent(q, 1, CONTENT_PAGE_SIZE) : Promise.resolve(null),
         ]);
 
         if (chunkRes.status === "fulfilled" && chunkRes.value?.data) {
@@ -119,29 +135,39 @@ export function GlobalCommandPalette() {
           setChunks([]);
         }
 
-        if (msgRes.status === "fulfilled") {
-          // The search endpoint answers with an unknown shape: narrow it.
-          const body = msgRes.value;
-          const data = body && typeof body === "object" && "data" in body ? body.data : undefined;
-          const rawItems =
-            data && typeof data === "object" && "items" in data && Array.isArray(data.items)
-              ? data.items
-              : [];
-          setMessages(
-            rawItems
-              .filter((x): x is MessageSearchGroupItem => !!x && typeof x === "object")
-              .slice(0, 5),
-          );
+        setTitleHits(titleRes.status === "fulfilled" ? (titleRes.value?.data ?? []).slice(0, CONTENT_TITLE_LIMIT) : []);
+        if (contentRes.status === "fulfilled" && contentRes.value) {
+          setContentHits(contentRes.value.data ?? []);
+          setContentMore(contentRes.value.has_more === true);
         } else {
-          setMessages([]);
+          setContentHits([]);
+          setContentMore(false);
         }
+        setContentPage(1);
       } finally {
         setLoading(false);
       }
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [query, isGuest]);
+  }, [query]);
+
+  const loadMoreContent = async () => {
+    const term = query.trim();
+    if (!term || contentLoading) return;
+    setContentLoading(true);
+    try {
+      const next = contentPage + 1;
+      const res = await searchSessionContent(term, next, CONTENT_PAGE_SIZE);
+      setContentHits((prev) => [...prev, ...(res.data ?? []).filter((h) => !prev.some((p) => p.session_id === h.session_id))]);
+      setContentMore(res.has_more === true);
+      setContentPage(next);
+    } catch {
+      setContentMore(false);
+    } finally {
+      setContentLoading(false);
+    }
+  };
 
   // Build items list
   const q = query.trim().toLowerCase();
@@ -285,18 +311,52 @@ export function GlobalCommandPalette() {
     },
   }));
 
-  const messageItems: CommandItem[] = messages.map((m) => ({
-    id: `msg-${m.request_id}`,
-    category: "messages",
-    title: m.session_title || t("cmdk.chatSession"),
-    subtitle: (m.query_content || m.answer_content || "").slice(0, 120),
+  const sessionItems: CommandItem[] = titleHits.map((sess) => ({
+    id: `session-${sess.id}`,
+    category: "sessions",
+    title: sess.title || t("cmdk.chatSession"),
+    subtitle: sess.updated_at ? formatDateTime(sess.updated_at, locale) : undefined,
     badge: t("cmdk.badgeChat"),
     icon: <IconChat className="h-4 w-4" />,
     onSelect: () => {
       close();
-      router.push(`/platform/chat/${m.session_id}`);
+      router.push(`/platform/chat/${sess.id}`);
     },
   }));
+
+  // a conversation already found by its title is not repeated below
+  const titled = new Set(titleHits.map((sess) => sess.id));
+  const messageItems: CommandItem[] = contentHits
+    .filter((h) => !titled.has(h.session_id))
+    .map((h) => ({
+      id: `content-${h.session_id}`,
+      category: "messages",
+      title: h.title || t("cmdk.chatSession"),
+      subtitleNode: (
+        <>
+          {h.snippet.before}
+          {h.snippet.match && (
+            <mark className="rounded bg-amber-200/70 px-0.5 text-ink dark:bg-amber-400/30">{h.snippet.match}</mark>
+          )}
+          {h.snippet.after}
+        </>
+      ),
+      badge: h.chat_root_id ? t("cmdk.subChat") : h.match_count > 1 ? t("cmdk.matchCount", { n: h.match_count }) : undefined,
+      icon: <IconChat className="h-4 w-4" />,
+      onSelect: () => {
+        close();
+        router.push(`/platform/chat/${h.session_id}`);
+      },
+    }));
+  if (contentMore) {
+    messageItems.push({
+      id: "content-more",
+      category: "messages",
+      title: contentLoading ? t("common.loading") : t("cmdk.moreContent"),
+      icon: <IconSearch className="h-4 w-4" />,
+      onSelect: () => void loadMoreContent(),
+    });
+  }
 
   /* Every /platform/system sub-page is a real route — index them all so any
    * settings surface is one ⌘K search away, gated by the same role rules as
@@ -374,8 +434,9 @@ export function GlobalCommandPalette() {
     ...legalLookupItem,
     ...matchedKbs,
     ...matchedAgents,
-    ...chunkItems,
+    ...sessionItems,
     ...messageItems,
+    ...chunkItems,
     ...settingItems,
     ...filteredQuick,
   ];
@@ -491,9 +552,19 @@ export function GlobalCommandPalette() {
           ) : (
             items.map((item, idx) => {
               const isSelected = idx === selectedIndex;
+              const heading =
+                (item.category === "sessions" || item.category === "messages") &&
+                items[idx - 1]?.category !== item.category
+                  ? t(item.category === "sessions" ? "cmdk.titleMatches" : "cmdk.contentMatches")
+                  : "";
               return (
+                <Fragment key={item.id}>
+                {heading && (
+                  <div className="caption-uppercase px-3.5 pb-1 pt-2.5 text-[11px] text-muted-soft" aria-hidden="true">
+                    {heading}
+                  </div>
+                )}
                 <div
-                  key={item.id}
                   id={optionId(idx)}
                   data-index={idx}
                   role="option"
@@ -526,11 +597,15 @@ export function GlobalCommandPalette() {
                         </span>
                       )}
                     </div>
-                    {item.subtitle && (
+                    {item.subtitleNode ? (
+                      <p className="caption mt-0.5 line-clamp-2 break-words text-muted">
+                        {item.subtitleNode}
+                      </p>
+                    ) : item.subtitle ? (
                       <p className="caption mt-0.5 truncate text-muted">
                         {item.subtitle}
                       </p>
-                    )}
+                    ) : null}
                   </div>
                   {isSelected && (
                     <kbd className="caption shrink-0 rounded border border-hairline px-1.5 py-0.5 text-[11px] text-muted">
@@ -538,6 +613,7 @@ export function GlobalCommandPalette() {
                     </kbd>
                   )}
                 </div>
+                </Fragment>
               );
             })
           )}
