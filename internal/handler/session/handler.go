@@ -333,6 +333,47 @@ func (h *Handler) GetSessionsByTenant(c *gin.Context) {
 	})
 }
 
+// SearchSessionContent godoc
+// @Summary      Tìm trong nội dung cuộc trò chuyện cũ
+// @Description  Tìm các cuộc trò chuyện của chính người dùng (cùng phạm vi với danh sách: ẩn cuộc trò chuyện Word add-in trên web, khách chỉ thấy của mình) có tin nhắn chứa q (không phân biệt hoa thường, có phân biệt dấu). Mỗi cuộc trò chuyện một kết quả với đoạn trích quanh chỗ khớp của tin nhắn khớp mới nhất, mới nhất trước.
+// @Tags         Cuộc trò chuyện
+// @Produce      json
+// @Param        q          query     string  true   "Nội dung cần tìm (2–200 ký tự)"
+// @Param        source     query     string  false  "Để trống (web) hoặc word (Word add-in)"
+// @Param        page       query     int     false  "Số trang"
+// @Param        page_size  query     int     false  "Số mục mỗi trang (tối đa 50)"
+// @Success      200        {object}  map[string]interface{}  "Kết quả và has_more"
+// @Failure      400        {object}  errors.AppError         "Tham số không hợp lệ"
+// @Security     Bearer
+// @Router       /sessions/search [get]
+func (h *Handler) SearchSessionContent(c *gin.Context) {
+	ctx := c.Request.Context()
+	var pagination types.Pagination
+	if err := c.ShouldBindQuery(&pagination); err != nil {
+		c.Error(errors.NewBadRequestError(err.Error()))
+		return
+	}
+	size := pagination.PageSize
+	if size < 1 || size > 50 {
+		size = 20
+	}
+	hits, more, err := h.sessionService.SearchSessionContent(ctx, c.Query("q"), c.Query("source"), pagination.GetPage(), size)
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	if hits == nil {
+		hits = []*types.SessionContentHit{}
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success":   true,
+		"data":      hits,
+		"has_more":  more,
+		"page":      pagination.GetPage(),
+		"page_size": size,
+	})
+}
+
 // UpdateSession godoc
 // @Summary      Cập nhật cuộc trò chuyện
 // @Description  Cập nhật thuộc tính cuộc trò chuyện

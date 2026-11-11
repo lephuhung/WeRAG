@@ -306,6 +306,66 @@ func (r *sessionRepository) QueryPaged(
 	return items, total, nil
 }
 
+// SearchContent finds the sessions QueryPaged would list for q.TenantID /
+// q.UserID (source "" or "word") whose user or assistant messages contain
+// q.Query, case-insensitively. Sub-chats are searched too (they are opened
+// from their document chat), judged by their root's Word documents. One
+// hit per session: its newest matching message and the number of matches.
+func (r *sessionRepository) SearchContent(
+	ctx context.Context, q *types.SessionContentSearchQuery,
+) ([]*types.SessionContentHit, bool, error) {
+	contentLike := "LOWER(m.content) LIKE LOWER(?) ESCAPE ?"
+	if r.db.Dialector.Name() == "postgres" {
+		contentLike = "m.content ILIKE ? ESCAPE ?"
+	}
+	// a sub-chat's documents live on its root session
+	rootWord := "EXISTS (SELECT 1 FROM document_workspaces dw WHERE dw.session_id = " +
+		"(CASE WHEN s.chat_root_id = '' THEN s.id ELSE s.chat_root_id END) AND dw.editor_kind = ?)"
+
+	inner := r.db.WithContext(ctx).Table("messages AS m").
+		Joins("INNER JOIN sessions s ON s.id = m.session_id").
+		Joins("LEFT JOIN im_channel_sessions ics ON ics.session_id = s.id").
+		Where("s.tenant_id = ? AND s.deleted_at IS NULL AND NOT s.is_temporary", q.TenantID).
+		Where("m.deleted_at IS NULL AND m.role IN ?", []string{"user", "assistant"}).
+		Where(
+			"(s.description IS NULL OR (s.description NOT LIKE ? AND s.description NOT LIKE ?))",
+			types.SkillMaintenanceSessionMarker+"%", types.LegalDraftSessionMarker+"%",
+		).
+		Where(contentLike, "%"+escapeLikeKeyword(q.Query)+"%", likeEscapeChar)
+	if q.UserID != "" {
+		inner = inner.Where("(s.user_id = ? OR s.user_id IS NULL OR s.user_id = '')", q.UserID)
+	}
+	if q.Source == types.SessionSourceWord {
+		inner = inner.Where("ics.id IS NULL").Where(rootWord, types.DocumentEditorKindWordAddin)
+	} else {
+		inner = inner.Where("NOT "+rootWord, types.DocumentEditorKindWordAddin)
+	}
+	inner = inner.Select(`m.session_id AS session_id, s.title AS title, s.chat_root_id AS chat_root_id,
+		m.id AS message_id, m.role AS role, m.content AS content, m.created_at AS matched_at,
+		ROW_NUMBER() OVER (PARTITION BY m.session_id ORDER BY m.created_at DESC, m.id DESC) AS rn,
+		COUNT(*) OVER (PARTITION BY m.session_id) AS match_count`)
+
+	limit := q.Limit
+	if limit <= 0 {
+		limit = 20
+	}
+	var hits []*types.SessionContentHit
+	err := r.db.WithContext(ctx).Table("(?) AS hits", inner).
+		Select("session_id, title, chat_root_id, message_id, role, content, matched_at, match_count").
+		Where("rn = 1").
+		Order("matched_at DESC, session_id DESC").
+		Offset(max(q.Offset, 0)).Limit(limit + 1).
+		Find(&hits).Error
+	if err != nil {
+		return nil, false, err
+	}
+	more := len(hits) > limit
+	if more {
+		hits = hits[:limit]
+	}
+	return hits, more, nil
+}
+
 // SetPinned toggles is_pinned/pinned_at for a single session.
 // Scope: must match tenant, and user_id (when provided) to prevent pinning
 // other users' sessions. Legacy rows with user_id NULL/” remain mutable

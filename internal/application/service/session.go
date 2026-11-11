@@ -5,6 +5,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/application/access"
@@ -20,6 +21,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal/people"
 	"github.com/google/uuid"
+	"golang.org/x/text/unicode/norm"
 )
 
 func sessionUserIDFromContext(ctx context.Context) string {
@@ -428,6 +430,51 @@ func (s *sessionService) ListSessions(
 
 	pagination := &types.Pagination{Page: query.Page, PageSize: query.PageSize}
 	return types.NewPageResult(total, pagination, items), nil
+}
+
+// sessionSearchMaxRunes bounds the text a content search looks for.
+const sessionSearchMaxRunes = 200
+
+// SearchSessionContent finds the caller's sessions whose messages contain
+// query: the sessions ListSessions shows them for source "" (web, Word
+// add-in sessions hidden) or "word", the same owner scope (a Guest's own in
+// the portal), plus their sub-chats. Matching is ILIKE like the
+// search_conversations tool: case-insensitive, accent-sensitive.
+func (s *sessionService) SearchSessionContent(
+	ctx context.Context, query, source string, page, pageSize int,
+) ([]*types.SessionContentHit, bool, error) {
+	query = norm.NFC.String(strings.TrimSpace(query))
+	if n := utf8.RuneCountInString(query); n < 2 || n > sessionSearchMaxRunes {
+		return nil, false, apperrors.NewBadRequestError("query must be 2 to 200 characters")
+	}
+	source = strings.ToLower(strings.TrimSpace(source))
+	if source != "" && source != types.SessionSourceWord {
+		return nil, false, apperrors.NewBadRequestError("source must be empty or word")
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 50 {
+		pageSize = 20
+	}
+	q := &types.SessionContentSearchQuery{
+		TenantID: types.MustTenantIDFromContext(ctx),
+		UserID:   types.SessionOwnerIDFromContext(ctx),
+		Query:    query,
+		Source:   source,
+		Offset:   (page - 1) * pageSize,
+		Limit:    pageSize,
+	}
+	hits, more, err := s.sessionRepo.SearchContent(ctx, q)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, map[string]interface{}{"tenant_id": q.TenantID, "user_id": q.UserID})
+		return nil, false, err
+	}
+	for _, h := range hits {
+		h.Snippet = types.MakeSnippet(h.Content, query)
+		h.Content = ""
+	}
+	return hits, more, nil
 }
 
 // CountSessionsBySource returns the total session count for a source filter
