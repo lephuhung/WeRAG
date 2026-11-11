@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,13 +15,15 @@ import (
 
 // legalLookupCaller is the identity the test's fake auth attaches.
 type legalLookupCaller struct {
-	userID string
-	role   types.TenantRole
-	apiKey bool
+	userID     string
+	role       types.TenantRole
+	apiKey     bool
+	superAdmin bool
+	tenantID   uint64
 }
 
 // legalLookupTestRouter mounts the lookup guard (in-memory limiter, guest
-// 3/IP, member 5/account) behind a fake auth step that reads the caller
+// 3/IP and 4/account, member 5/account) behind a fake auth step that reads the caller
 // from the test, and a minimal error renderer.
 func legalLookupTestRouter(who func() legalLookupCaller) *gin.Engine {
 	gin.SetMode(gin.TestMode)
@@ -43,13 +46,17 @@ func legalLookupTestRouter(who func() legalLookupCaller) *gin.Engine {
 				ctx = types.WithTenantAPIKeyScope(ctx, types.TenantAPIKeyScope{KeyID: 1, FullAccess: true})
 			}
 			ctx = types.WithPrincipal(ctx, principal)
-			ctx = types.WithCaller(ctx, types.Caller{TenantID: 7, UserID: w.userID, Role: w.role})
+			ctx = types.WithCaller(ctx, types.Caller{TenantID: w.tenantID, UserID: w.userID, Role: w.role})
+			if w.superAdmin {
+				ctx = context.WithValue(ctx, types.SystemAdminContextKey, true)
+			}
 		}
 		c.Request = c.Request.WithContext(ctx)
 		c.Next()
 	})
 	limiter := ratelimit.New(nil, "test:", legalLookupRateWindow, "test")
-	r.GET("/legal-lookup", legalLookupAccess(limiter, 3, 5), func(c *gin.Context) { c.Status(http.StatusOK) })
+	r.GET("/legal-lookup", legalLookupAccess(limiter, legalLookupLimits{guestPerIP: 3, guestPerUser: 4, memberPerUser: 5}),
+		func(c *gin.Context) { c.Status(http.StatusOK) })
 	return r
 }
 
@@ -86,7 +93,7 @@ func TestLegalLookupGuestLimitedPerIP(t *testing.T) {
 func TestLegalLookupMemberLimitedPerAccount(t *testing.T) {
 	user := "member-1"
 	r := legalLookupTestRouter(func() legalLookupCaller {
-		return legalLookupCaller{userID: user, role: types.TenantRoleMember}
+		return legalLookupCaller{userID: user, role: types.TenantRoleMember, tenantID: 7}
 	})
 	// a member is not held to the guest budget, and an IP change does not help
 	for i := 0; i < 5; i++ {
@@ -152,7 +159,7 @@ func TestLegalLookupThroughAuth(t *testing.T) {
 			}
 		})
 		limiter := ratelimit.New(nil, "test:", legalLookupRateWindow, "test")
-		r.GET("/api/v1/legal-lookup", legalLookupAccess(limiter, 2, 4), func(c *gin.Context) {
+		r.GET("/api/v1/legal-lookup", legalLookupAccess(limiter, legalLookupLimits{guestPerIP: 2, guestPerUser: 2, memberPerUser: 4}), func(c *gin.Context) {
 			tid, _ := types.TenantIDFromContext(c.Request.Context())
 			if tid != 0 && tid != 7 {
 				t.Errorf("served in tenant %d", tid)
@@ -180,5 +187,34 @@ func TestLegalLookupThroughAuth(t *testing.T) {
 		if code := get(member); code != want {
 			t.Fatalf("member request %d = %d, want %d", i, code, want)
 		}
+	}
+}
+
+// A guest's own account is bounded too, whatever IP it presents (a NAT, or a
+// spoofed X-Forwarded-For on a directly exposed port).
+func TestLegalLookupGuestLimitedPerAccount(t *testing.T) {
+	r := legalLookupTestRouter(func() legalLookupCaller { return legalLookupCaller{userID: "guest-1"} })
+	ips := []string{"203.0.113.1", "203.0.113.2", "203.0.113.3", "203.0.113.4"}
+	for i, ip := range ips {
+		if code := getLookup(r, ip); code != http.StatusOK {
+			t.Fatalf("request %d = %d, want 200", i, code)
+		}
+	}
+	if code := getLookup(r, "203.0.113.5"); code != http.StatusTooManyRequests {
+		t.Fatalf("5th request from a fresh IP = %d, want 429 (account budget 4)", code)
+	}
+}
+
+// A SuperAdmin without an organization (no tenant role) is held to the
+// account budget, not the guest IP budget.
+func TestLegalLookupTenantlessSuperAdminPerAccount(t *testing.T) {
+	r := legalLookupTestRouter(func() legalLookupCaller { return legalLookupCaller{userID: "super", superAdmin: true} })
+	for i := 0; i < 5; i++ {
+		if code := getLookup(r, "203.0.113.7"); code != http.StatusOK {
+			t.Fatalf("request %d = %d, want 200 (member budget 5, not guest 3)", i, code)
+		}
+	}
+	if code := getLookup(r, "203.0.113.7"); code != http.StatusTooManyRequests {
+		t.Fatalf("6th request = %d, want 429", code)
 	}
 }

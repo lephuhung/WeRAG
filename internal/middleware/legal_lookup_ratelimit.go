@@ -16,8 +16,11 @@ import (
 // signed-in person, member or Guest, never an API key or anonymous caller.
 // The lookup reads the catalogue only (no LLM, no usage quota), so the
 // limits only keep scripted scraping off the database:
-//   - a Guest (no tenant role) per client IP: the public portal is open to
-//     anyone who registers, so a new account must not mean a new budget;
+//   - a Guest (no tenant role) per client IP — the public portal is open to
+//     anyone who registers, so a new account must not mean a new budget —
+//     and per account too, so one account is bounded even when many share
+//     an IP (an office NAT) or the IP is not the real client's (a spoofed
+//     X-Forwarded-For reaching a directly exposed port);
 //   - a member or SuperAdmin per account, more generously.
 //
 // Redis-backed (shared by every backend instance) with the in-memory
@@ -25,6 +28,7 @@ import (
 const (
 	legalLookupRateWindow    = time.Minute
 	legalLookupGuestPerIP    = 30
+	legalLookupGuestPerUser  = 60
 	legalLookupMemberPerUser = 120
 	legalLookupRateKeyPrefix = "legal_lookup:ratelimit:"
 )
@@ -33,10 +37,16 @@ const (
 func LegalLookupAccess(redisClient *redis.Client) gin.HandlerFunc {
 	limiter := ratelimit.New(redisClient, legalLookupRateKeyPrefix, legalLookupRateWindow, "")
 	go limiter.StartCleanup(make(chan struct{}))
-	return legalLookupAccess(limiter, legalLookupGuestPerIP, legalLookupMemberPerUser)
+	return legalLookupAccess(limiter, legalLookupLimits{
+		guestPerIP: legalLookupGuestPerIP, guestPerUser: legalLookupGuestPerUser, memberPerUser: legalLookupMemberPerUser,
+	})
 }
 
-func legalLookupAccess(limiter *ratelimit.Limiter, guestPerIP, memberPerUser int) gin.HandlerFunc {
+type legalLookupLimits struct {
+	guestPerIP, guestPerUser, memberPerUser int
+}
+
+func legalLookupAccess(limiter *ratelimit.Limiter, limits legalLookupLimits) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := c.Request.Context()
 		caller := types.CallerFromContext(ctx)
@@ -44,11 +54,16 @@ func legalLookupAccess(limiter *ratelimit.Limiter, guestPerIP, memberPerUser int
 			abortWith(c, apperrors.NewForbiddenError("the legal lookup is open to signed-in people only"))
 			return
 		}
-		key, max := "ip:"+c.ClientIP(), guestPerIP
+		var allowed bool
 		if caller.HasTenantRole() || access.IsExplicitHumanSuperAdmin(ctx, caller) {
-			key, max = "user:"+caller.UserID, memberPerUser
+			allowed = limiter.Allow(ctx, "user:"+caller.UserID, limits.memberPerUser)
+		} else {
+			// both buckets count every request, so neither can be dodged
+			byIP := limiter.Allow(ctx, "ip:"+c.ClientIP(), limits.guestPerIP)
+			byUser := limiter.Allow(ctx, "guest:"+caller.UserID, limits.guestPerUser)
+			allowed = byIP && byUser
 		}
-		if !limiter.Allow(ctx, key, max) {
+		if !allowed {
 			tooManyRequests(c, legalLookupRateWindow, "too many lookups; please retry in a minute")
 			return
 		}
