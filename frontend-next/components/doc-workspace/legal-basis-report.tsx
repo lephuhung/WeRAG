@@ -88,6 +88,7 @@ export function LegalBasisReportModal({
   document,
   busy,
   stale,
+  bulkCount,
   onClose,
   onRecheck,
   onMarkAll,
@@ -100,8 +101,11 @@ export function LegalBasisReportModal({
   document: { id: string; file_name: string } | null;
   /** A check is running. */
   busy: boolean;
-  /** The document was saved in another version since the check. */
-  stale: boolean;
+  /** The stored document moved past the checked revision ("maybe": our
+   * own underlines may be why). */
+  stale: "changed" | "maybe" | null;
+  /** How many underlines "underline all" applies (validated ops). */
+  bulkCount: number;
   onClose: () => void;
   onRecheck: () => void;
   /** Applies the report's own underlines (document_ops). */
@@ -120,7 +124,6 @@ export function LegalBasisReportModal({
     status,
     items: findings.filter((f) => f.status === status),
   })).filter((g) => g.items.length > 0);
-  const bulkCount = report?.document_ops.length ?? 0;
   const skipped = report?.skipped;
   const skippedParts = [
     skipped?.names_without_year ? t("docws.lbSkippedNames", { n: skipped.names_without_year }) : "",
@@ -162,7 +165,7 @@ export function LegalBasisReportModal({
       {report && (
         <>
           <p className="caption mb-3 rounded-[10px] bg-surface-strong px-3 py-2 text-ink">{t("docws.lbIntro")}</p>
-          {stale && <p className="caption mb-3 text-warning">{t("docws.lbStale")}</p>}
+          {stale && <p className="caption mb-3 text-warning">{t(stale === "maybe" ? "docws.lbStaleMaybe" : "docws.lbStale")}</p>}
           {report.unsaved && <p className="caption mb-3 text-warning">{t("docws.lbUnsaved")}</p>}
           {report.truncated && <p className="caption mb-3 text-warning">{t("docws.lbTruncated")}</p>}
 
@@ -418,7 +421,8 @@ function StatusDetail({ finding: f }: { finding: LegalBasisFinding }) {
     );
   }
   if (f.status === "needs_review") {
-    if (f.partial_suspension) lines.push(t("docws.lbPartialSuspension"));
+    if (f.unsuitable) lines.push(t("docws.lbUnsuitable"));
+    else if (f.partial_suspension) lines.push(t("docws.lbPartialSuspension"));
     else if (f.review_by?.length) lines.push(t("docws.lbReviewBy", { docs: f.review_by.join(", ") }));
     else lines.push(t("docws.lbPartlyHint"));
   }

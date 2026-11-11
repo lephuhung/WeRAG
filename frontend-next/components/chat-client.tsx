@@ -688,13 +688,25 @@ function ChatBody({ id }: { id: string }) {
   const [legalBasis, setLegalBasis] = useState<{ report: LegalBasisReport; doc: SessionDocument } | null>(null);
   const [legalBasisBusy, setLegalBasisBusy] = useState(false);
   const [legalBasisOpen, setLegalBasisOpen] = useState(false);
-  // the document was saved in another version since the check
-  const [legalBasisStale, setLegalBasisStale] = useState(false);
+  // the stored document moved past the checked revision: "changed", or
+  // "maybe" once our own underlines may have caused the save
+  const [legalBasisStale, setLegalBasisStale] = useState<"changed" | "maybe" | null>(null);
+  // underlines of this report were applied (they make the editor save)
+  const legalBasisMarkedRef = useRef(false);
   useEffect(() => {
     setLegalBasis(null);
     setLegalBasisOpen(false);
-    setLegalBasisStale(false);
+    setLegalBasisStale(null);
   }, [id]);
+  // the report's own underlines, validated as the editor will take them
+  const legalBasisBulkOps = useMemo(
+    () =>
+      opsBatchFromToolData("legal_basis_check", {
+        document_ops: legalBasis?.report.document_ops ?? [],
+        ops_batch_id: "lb-validate",
+      })?.ops.slice(0, LEGAL_BASIS_MAX_MARKS) ?? [],
+    [legalBasis],
+  );
   const runLegalBasisCheck = async () => {
     const doc = formatCheckDoc;
     if (id === "new" || !doc || legalBasisBusy) return;
@@ -703,7 +715,8 @@ function ChatBody({ id }: { id: string }) {
     if (legalBasis?.doc.id !== doc.id) setLegalBasis(null);
     try {
       setLegalBasis({ report: await checkDocumentLegalBasis(id, doc.id), doc });
-      setLegalBasisStale(false);
+      setLegalBasisStale(null);
+      legalBasisMarkedRef.current = false;
     } catch (e) {
       if (legalBasis?.doc.id !== doc.id) setLegalBasisOpen(false);
       toast.error(tr("docws.lbFailed", { error: e instanceof Error ? e.message : String(e) }));
@@ -716,7 +729,9 @@ function ChatBody({ id }: { id: string }) {
     if (!legalBasis || id === "new") return;
     try {
       const view = await getDocumentWorkspace(id, legalBasis.doc.id);
-      if (view && view.revision !== legalBasis.report.revision) setLegalBasisStale(true);
+      if (view && view.revision !== legalBasis.report.revision) {
+        setLegalBasisStale(legalBasisMarkedRef.current ? "maybe" : "changed");
+      }
     } catch {
       /* the marks still find their text or fail safely */
     }
@@ -731,8 +746,10 @@ function ChatBody({ id }: { id: string }) {
       toast.info(tr("docws.lbMarkNone"));
       return;
     }
-    void checkLegalBasisStale();
+    // checked before our underlines make the editor save
+    await checkLegalBasisStale();
     const capped = ops.slice(0, LEGAL_BASIS_MAX_MARKS);
+    legalBasisMarkedRef.current = true;
     const editor = editorActionsRef.current;
     if (editor && editor.documentId === doc.id) {
       const o = await editor.runOps(capped);
@@ -770,15 +787,7 @@ function ChatBody({ id }: { id: string }) {
       ),
     );
   // "Gạch chân tất cả": the report's own underlines (document_ops)
-  const markAllLegalBasis = () => {
-    const report = legalBasis?.report;
-    if (!report) return Promise.resolve();
-    const batch = opsBatchFromToolData("legal_basis_check", {
-      document_ops: report.document_ops,
-      ops_batch_id: "lb-validate",
-    });
-    return applyLegalBasisMarks(batch?.ops ?? []);
-  };
+  const markAllLegalBasis = () => applyLegalBasisMarks(legalBasisBulkOps);
   const locateLegalBasis = async (p: LegalBasisPosition) => {
     const editor = editorActionsRef.current;
     if (!editor || !legalBasis || editor.documentId !== legalBasis.doc.id) throw new Error(tr("docws.lbOtherDoc"));
@@ -2499,6 +2508,7 @@ function ChatBody({ id }: { id: string }) {
               document={legalBasis?.doc ?? formatCheckDoc}
               busy={legalBasisBusy}
               stale={legalBasisStale}
+              bulkCount={legalBasisBulkOps.length}
               onClose={() => setLegalBasisOpen(false)}
               onRecheck={() => void runLegalBasisCheck()}
               onMarkAll={markAllLegalBasis}

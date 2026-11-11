@@ -792,6 +792,8 @@ export interface LegalBasisFinding {
    * catalogue holds in force (status needs_review). */
   review_by?: string[];
   partial_suspension?: boolean;
+  /** The portal flags the document "Không còn phù hợp" (status needs_review). */
+  unsuitable?: boolean;
   /** The catalogue says "Chưa có hiệu lực" although the effective date has passed. */
   stale_status?: boolean;
   incomplete?: boolean;
