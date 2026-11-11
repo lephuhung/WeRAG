@@ -135,13 +135,14 @@ var legalKnowledgeParsingStatuses = []string{
 }
 
 // noticesPending reports whether an added request still owes its
-// requesters the "document added" notice and the copy is still coming:
-// closed within the notice window, someone not told yet, the asker's
-// knowledge bases can read the copy, and its knowledge (if any) not
-// deleted and still parsing (pending / processing / finalizing, touched in
-// the last legalKnowledgeStaleAfter). A copy that is usable already, was
-// cancelled, deleted, failed or got stuck does not hold the request: the
-// asker still misses it, so it is reopened.
+// requesters the "document added" notice and its copy is usable or still
+// coming: closed within the notice window, someone not told yet, the
+// asker's knowledge bases can read the copy, and its knowledge (if any)
+// not deleted and either parsed (the sweep delivers the waiting notices
+// within minutes) or still parsing (pending / processing / finalizing,
+// touched in the last legalKnowledgeStaleAfter). A copy that was cancelled,
+// deleted, failed or got stuck does not hold the request: the asker still
+// misses it, so it is reopened.
 func (r *legalRequestRepository) noticesPending(
 	ctx context.Context, row *types.LegalDocumentRequest, askerKBIDs []string,
 ) (bool, error) {
@@ -163,8 +164,9 @@ func (r *legalRequestRepository) noticesPending(
 	}
 	n = 0
 	err := db.Table("knowledges").
-		Where("id = ? AND deleted_at IS NULL AND parse_status IN ? AND updated_at >= ?",
-			row.KnowledgeID, legalKnowledgeParsingStatuses, time.Now().Add(-legalKnowledgeStaleAfter)).
+		Where("id = ? AND deleted_at IS NULL", row.KnowledgeID).
+		Where("parse_status = ? OR (parse_status IN ? AND updated_at >= ?)", types.ParseStatusCompleted,
+			legalKnowledgeParsingStatuses, time.Now().Add(-legalKnowledgeStaleAfter)).
 		Limit(1).Count(&n).Error
 	return n > 0, err
 }

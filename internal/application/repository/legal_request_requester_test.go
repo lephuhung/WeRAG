@@ -184,8 +184,8 @@ func TestLegalRequestDeliverAddedNoticeIsAtomic(t *testing.T) {
 }
 
 // An added request whose requesters still wait for the notice, and whose
-// copy is still coming for the asker, is not reopened by a new ask: the
-// asker joins them. Anything else reopens it as before.
+// copy is usable or still coming for the asker, is not reopened by a new
+// ask: the asker joins them. Anything else reopens it as before.
 func TestLegalRequestRecordKeepsAddedWhileNoticesPending(t *testing.T) {
 	ctx := context.Background()
 	type setup struct {
@@ -233,13 +233,20 @@ func TestLegalRequestRecordKeepsAddedWhileNoticesPending(t *testing.T) {
 	require.Equal(t, "k1", held.KnowledgeID)
 	require.Equal(t, types.LegalRequestAdded,
 		run(t, setup{kbID: "", askerKBs: kbs}).Status, "added by hand, no copy: kept")
+	require.Equal(t, types.LegalRequestAdded, run(t, setup{
+		knowledgeSQL: `INSERT INTO knowledges (id, parse_status, updated_at) VALUES ('k1', 'completed', datetime('now', '-7 hours'))`,
+		kbID:         "kb-public", askerKBs: kbs,
+	}).Status, "parsed and readable: kept, the sweep delivers the waiting notices")
+	require.Equal(t, types.LegalRequestRequested, run(t, setup{
+		knowledgeSQL: `INSERT INTO knowledges (id, parse_status, updated_at) VALUES ('k1', 'completed', CURRENT_TIMESTAMP)`,
+		kbID:         "kb-other", askerKBs: kbs,
+	}).Status, "parsed but the asker cannot read it: reopened")
 
 	for name, c := range map[string]setup{
 		"failed":           {knowledgeSQL: `INSERT INTO knowledges (id, parse_status, updated_at) VALUES ('k1', 'failed', CURRENT_TIMESTAMP)`, kbID: "kb-public", askerKBs: kbs},
 		"cancelled":        {knowledgeSQL: `INSERT INTO knowledges (id, parse_status, updated_at) VALUES ('k1', 'cancelled', CURRENT_TIMESTAMP)`, kbID: "kb-public", askerKBs: kbs},
 		"deleted":          {knowledgeSQL: `INSERT INTO knowledges (id, parse_status, updated_at, deleted_at) VALUES ('k1', 'processing', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, kbID: "kb-public", askerKBs: kbs},
 		"stale parse":      {knowledgeSQL: `INSERT INTO knowledges (id, parse_status, updated_at) VALUES ('k1', 'processing', datetime('now', '-7 hours'))`, kbID: "kb-public", askerKBs: kbs},
-		"usable already":   {knowledgeSQL: `INSERT INTO knowledges (id, parse_status, updated_at) VALUES ('k1', 'completed', CURRENT_TIMESTAMP)`, kbID: "kb-public", askerKBs: kbs},
 		"window expired":   {knowledgeSQL: parsing, kbID: "kb-public", askerKBs: kbs, decidedAgo: types.LegalRequestNoticeWindow + time.Hour},
 		"everyone told":    {knowledgeSQL: parsing, kbID: "kb-public", askerKBs: kbs, notifiedAll: true},
 		"asker can't read": {knowledgeSQL: parsing, kbID: "kb-other", askerKBs: kbs},

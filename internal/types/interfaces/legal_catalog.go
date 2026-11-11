@@ -191,8 +191,8 @@ type LegalRequestRepository interface {
 	// "added" whose document is asked for again (it is missing after all)
 	// is reopened, unless its requesters still wait for the "added" notice
 	// and its copy is still coming (closed within types.LegalRequestNoticeWindow,
-	// in one of req.AskerKnowledgeBaseIDs, knowledge still parsing and not
-	// stale): then it is only bumped. A "rejected" row is left as it is. Returns the stored row.
+	// in one of req.AskerKnowledgeBaseIDs, knowledge parsed or still parsing
+	// and not stale): then it is only bumped. A "rejected" row is left as it is. Returns the stored row.
 	Record(ctx context.Context, req *types.LegalDocumentRequest) (*types.LegalDocumentRequest, error)
 	// Get returns one request, or nil when absent.
 	Get(ctx context.Context, id string) (*types.LegalDocumentRequest, error)
