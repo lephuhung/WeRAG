@@ -38,6 +38,7 @@ import {
   markDocumentFormatFindings,
   startDocumentFormatCheck,
   checkDocumentLegalBasis,
+  LEGAL_BASIS_MAX_MARKS,
   type LegalBasisPosition,
   type LegalBasisReport,
   createDocumentWorkspace,
@@ -66,6 +67,7 @@ import {
   readAppliedProposals,
   rememberAppliedProposal,
   rewriteProposalFromToolData,
+  type DocumentOp,
   type Illustration,
   type OpsBatch,
   type OpsFailure,
@@ -686,9 +688,12 @@ function ChatBody({ id }: { id: string }) {
   const [legalBasis, setLegalBasis] = useState<{ report: LegalBasisReport; doc: SessionDocument } | null>(null);
   const [legalBasisBusy, setLegalBasisBusy] = useState(false);
   const [legalBasisOpen, setLegalBasisOpen] = useState(false);
+  // the document was saved in another version since the check
+  const [legalBasisStale, setLegalBasisStale] = useState(false);
   useEffect(() => {
     setLegalBasis(null);
     setLegalBasisOpen(false);
+    setLegalBasisStale(false);
   }, [id]);
   const runLegalBasisCheck = async () => {
     const doc = formatCheckDoc;
@@ -698,24 +703,50 @@ function ChatBody({ id }: { id: string }) {
     if (legalBasis?.doc.id !== doc.id) setLegalBasis(null);
     try {
       setLegalBasis({ report: await checkDocumentLegalBasis(id, doc.id), doc });
+      setLegalBasisStale(false);
     } catch (e) {
-      setLegalBasisOpen(false);
+      if (legalBasis?.doc.id !== doc.id) setLegalBasisOpen(false);
       toast.error(tr("docws.lbFailed", { error: e instanceof Error ? e.message : String(e) }));
     } finally {
       setLegalBasisBusy(false);
     }
   };
-  const markLegalBasis = async (positions: LegalBasisPosition[]) => {
+  // flags the report when the stored document moved past its revision
+  const checkLegalBasisStale = async () => {
+    if (!legalBasis || id === "new") return;
+    try {
+      const view = await getDocumentWorkspace(id, legalBasis.doc.id);
+      if (view && view.revision !== legalBasis.report.revision) setLegalBasisStale(true);
+    } catch {
+      /* the marks still find their text or fail safely */
+    }
+  };
+  // Underlines in the editor of the checked document: run there when it is
+  // the visible tab (the editor answers how many landed), else sent to its
+  // tab. At most LEGAL_BASIS_MAX_MARKS, the server's cap.
+  const applyLegalBasisMarks = async (ops: DocumentOp[]) => {
     const doc = legalBasis?.doc;
     if (id === "new" || !doc) return;
+    if (ops.length === 0) {
+      toast.info(tr("docws.lbMarkNone"));
+      return;
+    }
+    void checkLegalBasisStale();
+    const capped = ops.slice(0, LEGAL_BASIS_MAX_MARKS);
+    const editor = editorActionsRef.current;
+    if (editor && editor.documentId === doc.id) {
+      const o = await editor.runOps(capped);
+      if (!o) {
+        toast.error(tr("docws.lbMarkNoAnswer"));
+      } else if (o.failed.length > 0) {
+        toast.info(tr("docws.lbMarkMissed", { n: o.applied, total: capped.length, missed: o.failed.length }), undefined, 10_000);
+      } else {
+        toast.success(tr("docws.lbMarkApplied", { n: o.applied, total: capped.length }));
+      }
+      return;
+    }
     const batch = opsBatchFromToolData("legal_basis_check", {
-      document_ops: positions.map((p) => ({
-        op: "mark",
-        anchor: p.anchor,
-        text: p.text,
-        ...(p.text_occurrence > 1 ? { textOccurrence: p.text_occurrence } : {}),
-        style: "underline",
-      })),
+      document_ops: capped,
       ops_batch_id: `lb-marks-${Date.now().toString(36)}`,
       document_id: doc.id,
     });
@@ -724,7 +755,29 @@ function ChatBody({ id }: { id: string }) {
       return;
     }
     setDocOpsBatches((prev) => [...prev, batch]);
-    toast.success(tr("docws.lbMarkDone", { n: batch.ops.length }));
+    toast.success(tr("docws.lbMarkSent", { n: batch.ops.length }));
+  };
+  const markLegalBasis = (positions: LegalBasisPosition[]) =>
+    applyLegalBasisMarks(
+      positions.map(
+        (p): DocumentOp => ({
+          op: "mark",
+          anchor: { text: p.anchor.text, ...(p.anchor.occurrence ? { occurrence: p.anchor.occurrence } : {}) },
+          text: p.text,
+          ...(p.text_occurrence > 1 ? { textOccurrence: p.text_occurrence } : {}),
+          style: "underline",
+        }),
+      ),
+    );
+  // "Gạch chân tất cả": the report's own underlines (document_ops)
+  const markAllLegalBasis = () => {
+    const report = legalBasis?.report;
+    if (!report) return Promise.resolve();
+    const batch = opsBatchFromToolData("legal_basis_check", {
+      document_ops: report.document_ops,
+      ops_batch_id: "lb-validate",
+    });
+    return applyLegalBasisMarks(batch?.ops ?? []);
   };
   const locateLegalBasis = async (p: LegalBasisPosition) => {
     const editor = editorActionsRef.current;
@@ -737,7 +790,10 @@ function ChatBody({ id }: { id: string }) {
         ...(p.text_occurrence > 1 ? { textOccurrence: p.text_occurrence } : {}),
       },
     ]);
-    if (!o || o.applied < 1) throw new Error(editorProblem(o));
+    if (!o || o.applied < 1) {
+      void checkLegalBasisStale();
+      throw new Error(editorProblem(o));
+    }
   };
   // The report's per-finding review, run in the visible editor: it must
   // show the checked document (another tab → open it first).
@@ -2442,8 +2498,10 @@ function ChatBody({ id }: { id: string }) {
               report={legalBasis?.report ?? null}
               document={legalBasis?.doc ?? formatCheckDoc}
               busy={legalBasisBusy}
+              stale={legalBasisStale}
               onClose={() => setLegalBasisOpen(false)}
               onRecheck={() => void runLegalBasisCheck()}
+              onMarkAll={markAllLegalBasis}
               onMark={markLegalBasis}
               onLocate={locateLegalBasis}
             />

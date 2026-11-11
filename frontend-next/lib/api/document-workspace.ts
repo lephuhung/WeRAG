@@ -691,6 +691,7 @@ export type LegalBasisStatus =
   | "expired"
   | "suspended"
   | "partly_expired"
+  | "needs_review"
   | "not_yet_effective"
   | "ambiguous"
   | "amended"
@@ -703,6 +704,7 @@ export const LEGAL_BASIS_STATUS_ORDER: LegalBasisStatus[] = [
   "expired",
   "suspended",
   "partly_expired",
+  "needs_review",
   "not_yet_effective",
   "ambiguous",
   "amended",
@@ -710,6 +712,29 @@ export const LEGAL_BASIS_STATUS_ORDER: LegalBasisStatus[] = [
   "not_found",
   "in_force",
 ];
+
+/** The statuses the report's own underlines (document_ops) cover: the
+ * citations whose validity is in question. The others are underlined one
+ * finding at a time, on request. */
+export const LEGAL_BASIS_MARKED_BY_DEFAULT: ReadonlySet<LegalBasisStatus> = new Set([
+  "expired",
+  "suspended",
+  "partly_expired",
+  "needs_review",
+  "not_yet_effective",
+]);
+
+/** The most underlines one legal basis report applies (the server's cap). */
+export const LEGAL_BASIS_MAX_MARKS = 200;
+
+/** Why a citation is ambiguous. */
+export type LegalBasisAmbiguity =
+  | "shared_number"
+  | "incomplete_number"
+  | "missing_date"
+  | "date_mismatch"
+  | "shared_name"
+  | "name_guess";
 
 export interface LegalBasisDocument {
   id: string;
@@ -751,13 +776,24 @@ export interface LegalBasisFinding {
   kind: string;
   doc_type?: string;
   status: LegalBasisStatus;
+  /** The issue date written after a year-less number (YYYY-MM-DD). */
+  issued_on?: string;
   document?: LegalBasisDocument | null;
+  ambiguity?: LegalBasisAmbiguity;
   candidates?: LegalBasisDocument[];
   candidates_total?: number;
+  /** The catalogue holds more candidates than were counted. */
+  candidates_more?: boolean;
   related?: Array<LegalBasisDocument & { relation: LegalBasisRelation }>;
   derived_from?: string;
   derived_expired_on?: string;
   maybe_expired?: boolean;
+  /** Documents in force repealing or partly ending a document the
+   * catalogue holds in force (status needs_review). */
+  review_by?: string[];
+  partial_suspension?: boolean;
+  /** The catalogue says "Chưa có hiệu lực" although the effective date has passed. */
+  stale_status?: boolean;
   incomplete?: boolean;
   /** One Vietnamese sentence (for text clients such as the Word add-in). */
   note: string;
@@ -770,8 +806,10 @@ export interface LegalBasisReport {
   checked_at: string;
   findings: LegalBasisFinding[];
   summary: Partial<Record<LegalBasisStatus, number>>;
-  /** Underlines of every place of the findings that need a look. */
+  /** Underlines of every place of the findings whose validity is in
+   * question (LEGAL_BASIS_MARKED_BY_DEFAULT), at most 200. */
   document_ops: unknown[];
+  marks_truncated?: boolean;
   skipped: { names_without_year: number; own_number: number; paperwork: number };
   truncated?: boolean;
   /** The editor's latest changes could not be saved first. */

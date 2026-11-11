@@ -6,6 +6,7 @@ import { DocMentionIcon } from "@/components/doc-mention";
 import { useT } from "@/lib/i18n";
 import { formatDate, formatDateTime } from "@/lib/datetime";
 import {
+  LEGAL_BASIS_MARKED_BY_DEFAULT,
   LEGAL_BASIS_STATUS_ORDER,
   type LegalBasisDocument,
   type LegalBasisFinding,
@@ -25,6 +26,7 @@ const STATUS_TONE: Record<LegalBasisStatus, string> = {
   expired: "bg-error/10 text-error",
   suspended: "bg-error/10 text-error",
   partly_expired: "bg-warning/15 text-warning",
+  needs_review: "bg-warning/15 text-warning",
   not_yet_effective: "bg-warning/15 text-warning",
   ambiguous: "bg-warning/15 text-warning",
   amended: "bg-surface-strong text-ink",
@@ -59,10 +61,7 @@ export function LegalBasisButton({ busy, onClick }: { busy: boolean; onClick: ()
       className="word-tip flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted hover:bg-surface-strong hover:text-ink disabled:cursor-wait disabled:opacity-60"
     >
       {busy ? (
-        <svg className="h-4 w-4 animate-spin motion-reduce:animate-none" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2.5" />
-          <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-        </svg>
+        <Spinner className="h-4 w-4" />
       ) : (
         /* scales of justice */
         <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -74,13 +73,24 @@ export function LegalBasisButton({ busy, onClick }: { busy: boolean; onClick: ()
   );
 }
 
+function Spinner({ className }: { className: string }) {
+  return (
+    <svg className={`${className} animate-spin motion-reduce:animate-none`} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2.5" />
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function LegalBasisReportModal({
   open,
   report,
   document,
   busy,
+  stale,
   onClose,
   onRecheck,
+  onMarkAll,
   onMark,
   onLocate,
 }: {
@@ -90,8 +100,12 @@ export function LegalBasisReportModal({
   document: { id: string; file_name: string } | null;
   /** A check is running. */
   busy: boolean;
+  /** The document was saved in another version since the check. */
+  stale: boolean;
   onClose: () => void;
   onRecheck: () => void;
+  /** Applies the report's own underlines (document_ops). */
+  onMarkAll: () => Promise<void>;
   /** Underlines the given places in the editor (nothing else changes). */
   onMark: (positions: LegalBasisPosition[]) => Promise<void>;
   /** Selects one place in the editor (it scrolls there); throws a message
@@ -106,7 +120,7 @@ export function LegalBasisReportModal({
     status,
     items: findings.filter((f) => f.status === status),
   })).filter((g) => g.items.length > 0);
-  const attention = findings.filter((f) => f.status !== "in_force").flatMap((f) => f.positions);
+  const bulkCount = report?.document_ops.length ?? 0;
   const skipped = report?.skipped;
   const skippedParts = [
     skipped?.names_without_year ? t("docws.lbSkippedNames", { n: skipped.names_without_year }) : "",
@@ -114,10 +128,10 @@ export function LegalBasisReportModal({
     skipped?.paperwork ? t("docws.lbSkippedPaperwork", { n: skipped.paperwork }) : "",
   ].filter(Boolean);
 
-  const mark = async (positions: LegalBasisPosition[]) => {
+  const withMarking = async (run: () => Promise<void>) => {
     setMarking(true);
     try {
-      await onMark(positions);
+      await run();
     } finally {
       setMarking(false);
     }
@@ -134,6 +148,12 @@ export function LegalBasisReportModal({
           {checkedAt && !Number.isNaN(checkedAt.getTime()) && (
             <span className="caption">{t("docws.lbCheckedAt", { time: formatDateTime(checkedAt, locale) })}</span>
           )}
+          {busy && report && (
+            <span className="caption flex items-center gap-1 text-ink">
+              <Spinner className="h-3.5 w-3.5" />
+              {t("docws.lbRechecking")}
+            </span>
+          )}
         </div>
       )}
 
@@ -142,6 +162,7 @@ export function LegalBasisReportModal({
       {report && (
         <>
           <p className="caption mb-3 rounded-[10px] bg-surface-strong px-3 py-2 text-ink">{t("docws.lbIntro")}</p>
+          {stale && <p className="caption mb-3 text-warning">{t("docws.lbStale")}</p>}
           {report.unsaved && <p className="caption mb-3 text-warning">{t("docws.lbUnsaved")}</p>}
           {report.truncated && <p className="caption mb-3 text-warning">{t("docws.lbTruncated")}</p>}
 
@@ -165,7 +186,13 @@ export function LegalBasisReportModal({
                 </h3>
                 <ul className="flex flex-col gap-2">
                   {g.items.map((f) => (
-                    <FindingItem key={f.key} finding={f} marking={marking} onMark={mark} onLocate={onLocate} />
+                    <FindingItem
+                      key={f.key}
+                      finding={f}
+                      marking={marking}
+                      onMark={(positions) => withMarking(() => onMark(positions))}
+                      onLocate={onLocate}
+                    />
                   ))}
                 </ul>
               </section>
@@ -177,21 +204,32 @@ export function LegalBasisReportModal({
           )}
           <p className="caption mt-2 text-muted">{t("docws.lbManual")}</p>
 
-          <div className="mt-4 flex flex-wrap justify-end gap-2">
+          <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+            {bulkCount > 0 && (
+              <span className="caption mr-auto text-muted">
+                {t(report.marks_truncated ? "docws.lbMarkAllScopeCapped" : "docws.lbMarkAllScope", { n: bulkCount })}
+              </span>
+            )}
             <button type="button" className="btn btn-outline btn-sm" onClick={onClose}>
               {t("docws.fcReportClose")}
             </button>
-            <button type="button" className="btn btn-outline btn-sm disabled:opacity-50" disabled={busy} onClick={onRecheck}>
-              {t("docws.lbRecheck")}
+            <button
+              type="button"
+              className="btn btn-outline btn-sm flex items-center gap-1.5 disabled:opacity-60"
+              disabled={busy}
+              onClick={onRecheck}
+            >
+              {busy && <Spinner className="h-3.5 w-3.5" />}
+              {busy ? t("docws.lbRechecking") : t("docws.lbRecheck")}
             </button>
             <button
               type="button"
               className="btn btn-primary btn-sm disabled:opacity-50"
-              disabled={marking || attention.length === 0}
+              disabled={marking || busy || bulkCount === 0}
               title={t("docws.lbMarkHint")}
-              onClick={() => void mark(attention)}
+              onClick={() => void withMarking(onMarkAll)}
             >
-              {t("docws.lbMarkAll", { n: attention.length })}
+              {t("docws.lbMarkAll", { n: bulkCount })}
             </button>
           </div>
         </>
@@ -226,15 +264,14 @@ function FindingItem({
       setLocating(null);
     }
   };
+  const statusLabel = f.status === "ambiguous" && f.ambiguity ? t(`docws.lbAmb.${f.ambiguity}`) : t(`docws.lbStatus.${f.status}`);
 
   return (
     <li className="rounded-[10px] border border-hairline px-3 py-2.5">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="text-[14px] font-semibold text-ink">{f.citation}</span>
         {f.doc_type && !f.citation.startsWith(f.doc_type) && <span className="caption text-muted">{f.doc_type}</span>}
-        <span className={`caption whitespace-nowrap rounded-full px-2 py-0.5 ${STATUS_TONE[f.status]}`}>
-          {t(`docws.lbStatus.${f.status}`)}
-        </span>
+        <span className={`caption whitespace-nowrap rounded-full px-2 py-0.5 ${STATUS_TONE[f.status]}`}>{statusLabel}</span>
         {d?.unverified && <span className="caption text-warning">{t("docws.lbUnverified")}</span>}
       </div>
       {d && <DocLine doc={d} />}
@@ -242,10 +279,7 @@ function FindingItem({
 
       {f.candidates && f.candidates.length > 0 && (
         <div className="mt-1.5">
-          <p className="caption text-muted">
-            {t(f.incomplete ? "docws.lbCandidatesIncomplete" : "docws.lbCandidates", { n: f.candidates_total ?? f.candidates.length })}
-          </p>
-          <ul className="mt-1 flex flex-col gap-1 border-l-2 border-hairline pl-2.5">
+          <ul className="flex flex-col gap-1 border-l-2 border-hairline pl-2.5">
             {f.candidates.map((c) => (
               <li key={c.id} className="text-[12.5px] leading-snug text-ink">
                 <span className="font-medium">{label(c)}</span>
@@ -273,7 +307,11 @@ function FindingItem({
                     <span className="font-medium" title={r.title}>
                       {label(r)}
                     </span>
-                    <span className="text-muted"> ({t(`docws.lbStatus.${r.status}`).toLowerCase()})</span>
+                    <span className="text-muted">
+                      {" "}
+                      ({t(`docws.lbStatus.${r.status}`).toLowerCase()}
+                      {r.effective_on ? `, ${t("docws.lbEffective", { date: formatDate(r.effective_on) })}` : ""})
+                    </span>
                   </span>
                 ))}
               </p>
@@ -302,7 +340,7 @@ function FindingItem({
             type="button"
             disabled={marking}
             onClick={() => void onMark(f.positions)}
-            title={t("docws.lbMarkHint")}
+            title={LEGAL_BASIS_MARKED_BY_DEFAULT.has(f.status) ? t("docws.lbMarkHint") : t("docws.lbMarkOneHint")}
             className="caption ml-auto rounded-[6px] px-1.5 py-0.5 text-muted underline hover:text-ink disabled:opacity-50"
           >
             {t("docws.lbMarkOne")}
@@ -343,19 +381,50 @@ function DocLine({ doc, compact = false }: { doc: LegalBasisDocument; compact?: 
 }
 
 /** What the status rests on, when the list of related documents does not
- * say it: a status inferred from a replacement, a not-found citation. */
+ * say it. */
 function StatusDetail({ finding: f }: { finding: LegalBasisFinding }) {
   const { t } = useT();
   const lines: string[] = [];
-  if (f.derived_from) {
+  const n = f.candidates_more ? t("docws.lbMoreThan", { n: f.candidates_total ?? 0 }) : String(f.candidates_total ?? 0);
+  if (f.status === "ambiguous") {
+    switch (f.ambiguity) {
+      case "missing_date":
+        lines.push(t("docws.lbAmbHint.missing_date", { n }));
+        break;
+      case "date_mismatch":
+        lines.push(t("docws.lbAmbHint.date_mismatch", { date: f.issued_on ? formatDate(f.issued_on) : "—", n }));
+        break;
+      case "incomplete_number":
+        lines.push(t("docws.lbAmbHint.incomplete_number", { n }));
+        break;
+      case "name_guess":
+        lines.push(t("docws.lbAmbHint.name_guess"));
+        break;
+      case "shared_name":
+        lines.push(t("docws.lbAmbHint.shared_name", { n }));
+        break;
+      default:
+        lines.push(t("docws.lbAmbHint.shared_number", { n }));
+    }
+  }
+  if (f.derived_from && f.status === "expired") {
     lines.push(
-      t("docws.lbDerived", {
-        number: f.derived_from,
-        date: f.derived_expired_on ? formatDate(f.derived_expired_on) : "—",
-      }),
+      t("docws.lbDerived", { number: f.derived_from, date: f.derived_expired_on ? formatDate(f.derived_expired_on) : "—" }),
     );
   }
-  if (f.maybe_expired) lines.push(t("docws.lbMaybeExpired"));
+  if (f.maybe_expired) {
+    lines.push(
+      t("docws.lbMaybeExpired", { number: f.derived_from ?? "", date: f.derived_expired_on ? formatDate(f.derived_expired_on) : "—" }),
+    );
+  }
+  if (f.status === "needs_review") {
+    if (f.partial_suspension) lines.push(t("docws.lbPartialSuspension"));
+    else if (f.review_by?.length) lines.push(t("docws.lbReviewBy", { docs: f.review_by.join(", ") }));
+    else lines.push(t("docws.lbPartlyHint"));
+  }
+  if (f.stale_status && f.document?.effective_on) {
+    lines.push(t("docws.lbStaleStatus", { date: formatDate(f.document.effective_on) }));
+  }
   if (f.status === "not_found") lines.push(t("docws.lbNotFoundHint"));
   if (f.status === "unknown") lines.push(t("docws.lbUnknownHint"));
   if (f.status === "partly_expired") lines.push(t("docws.lbPartlyHint"));
