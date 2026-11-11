@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   badgeLabel,
   notificationText,
+  paneHint,
   resolveTarget,
   safeAppLink,
   shouldPoll,
@@ -33,7 +34,9 @@ const texts = {
   legalAddedTitle: (doc: string) => `${doc} was added`,
   legalAddedChat: "Ask again in the conversation.",
   legalAddedWord: "Reopen the file in Word.",
+  legalAddedWeb: "Open the conversation on the web.",
   legalAddedLookup: "Look it up now.",
+  legalAddedOtherOrg: (org: string) => (org ? `It belongs to ${org}; look it up now.` : "It belongs to another organization."),
 };
 
 describe("notifications", () => {
@@ -96,19 +99,32 @@ describe("notifications", () => {
     assert.deepEqual(notificationText(n("e", { payload: {} }), texts), { title: n("e").title, body: n("e").body });
   });
 
-  it("switches organization before opening a conversation of another one", () => {
-    const ctx = { origin: ORIGIN, currentTenantId: 7, memberTenantIds: [7, 9], isGuest: false };
-    assert.deepEqual(resolveTarget(n("a"), ctx), { path: "/platform/chat/s1", switchTenantId: null });
-    assert.deepEqual(resolveTarget(n("a", { tenant_id: 9 }), ctx), { path: "/platform/chat/s1", switchTenantId: 9 });
-    assert.deepEqual(resolveTarget(n("a", { tenant_id: 11 }), ctx), {
-      path: "/platform/legal-lookup?q=53%2F2022%2FN%C4%90-CP",
-      switchTenantId: null,
-    });
+  it("never switches organization: another one's conversation opens the lookup", () => {
+    const memberships = [{ tenant_id: 7, tenant_name: "Sở Tư pháp" }, { tenant_id: 9, tenant_name: "UBND tỉnh" }];
+    const ctx = { origin: ORIGIN, currentTenantId: 7, memberships, isGuest: false };
+    assert.deepEqual(resolveTarget(n("a"), ctx), { path: "/platform/chat/s1", hint: "chat", orgName: "" });
+    const lookup = "/platform/legal-lookup?q=53%2F2022%2FN%C4%90-CP";
+    assert.deepEqual(resolveTarget(n("a", { tenant_id: 9 }), ctx), { path: lookup, hint: "otherOrg", orgName: "UBND tỉnh" });
+    assert.deepEqual(resolveTarget(n("a", { tenant_id: 11 }), ctx), { path: lookup, hint: "otherOrg", orgName: "" });
     assert.deepEqual(resolveTarget(n("a", { tenant_id: 10012 }), { ...ctx, isGuest: true }), {
       path: "/platform/chat/s1",
-      switchTenantId: null,
+      hint: "chat",
+      orgName: "",
     });
-    assert.deepEqual(resolveTarget(n("a", { link: "/\t/evil.example" }), ctx), { path: "", switchTenantId: null });
+    assert.equal(resolveTarget(n("a", { link: "/\t/evil.example" }), ctx).path, "");
+    // the hint follows the click
+    const target = resolveTarget(n("a", { tenant_id: 9 }), ctx);
+    assert.equal(notificationText(n("a", { tenant_id: 9 }), texts, target).body, "Quy định chi tiết. It belongs to UBND tỉnh; look it up now.");
+  });
+
+  it("words the pane's hint after what a click there does", () => {
+    const ctx = { openable: false, currentTenantId: 7, memberships: [], isGuest: false };
+    assert.deepEqual(paneHint(n("a"), { ...ctx, openable: true }), { hint: "chat", orgName: "" });
+    assert.deepEqual(paneHint(n("a"), ctx), { hint: "web", orgName: "" });
+    const word = n("w", { payload: { document_number: "X", session_id: "s1", word_file_id: "f9" } });
+    assert.deepEqual(paneHint(word, ctx), { hint: "word", orgName: "" });
+    assert.deepEqual(paneHint(n("o", { tenant_id: 9 }), ctx), { hint: "otherOrg", orgName: "" });
+    assert.deepEqual(paneHint(n("l", { link: "/platform/legal-lookup?q=x" }), ctx), { hint: "lookup", orgName: "" });
   });
 
   it("opens a conversation in Word only from its own file and organization", () => {

@@ -35,7 +35,7 @@ import {
  * Known kinds are worded from their payload in the reader's language. */
 export function NotificationBell() {
   const { t, locale } = useT();
-  const { isLoggedIn, tenant, selectedTenantId, memberships, setSelectedTenant, refreshMe } = useAuth();
+  const { isLoggedIn, tenant, selectedTenantId, memberships } = useAuth();
   const { isGuest } = useTenantRole();
   const toast = useToast();
   const router = useRouter();
@@ -52,35 +52,38 @@ export function NotificationBell() {
       legalAddedTitle: (doc) => t("notif.legalAdded.title", { doc }),
       legalAddedChat: t("notif.legalAdded.chat"),
       legalAddedWord: t("notif.legalAdded.word"),
+      legalAddedWeb: t("notif.legalAdded.web"),
       legalAddedLookup: t("notif.legalAdded.lookup"),
+      legalAddedOtherOrg: (org) => (org ? t("notif.legalAdded.otherOrg", { org }) : t("notif.legalAdded.otherOrgUnknown")),
     }),
     [t],
   );
 
+  // where a click on n goes: never into another organization (the web app
+  // has no organization switcher), the legal lookup instead
+  const targetOf = useCallback(
+    (n: UserNotification) =>
+      resolveTarget(n, {
+        origin: window.location.origin,
+        currentTenantId: Number(selectedTenantId ?? tenant?.id ?? 0) || null,
+        memberships,
+        isGuest,
+      }),
+    [isGuest, memberships, selectedTenantId, tenant?.id],
+  );
+
   const go = useCallback(
-    async (n: UserNotification) => {
+    (n: UserNotification) => {
       if (!n.read_at) {
         void markNotificationRead(n.id).catch(() => {});
         setItems((prev) => prev?.map((x) => (x.id === n.id ? { ...x, read_at: new Date().toISOString() } : x)) ?? prev);
         setUnread((u) => Math.max(0, u - 1));
       }
       setOpen(false);
-      const current = Number(selectedTenantId ?? tenant?.id ?? 0) || null;
-      const target = resolveTarget(n, {
-        origin: window.location.origin,
-        currentTenantId: current,
-        memberTenantIds: memberships.map((m) => m.tenant_id),
-        isGuest,
-      });
-      if (!target.path) return;
-      if (target.switchTenantId != null) {
-        // the conversation lives in another of the person's organizations
-        setSelectedTenant(String(target.switchTenantId));
-        await refreshMe().catch(() => {});
-      }
-      router.push(target.path);
+      const target = targetOf(n);
+      if (target.path) router.push(target.path);
     },
-    [isGuest, memberships, refreshMe, router, selectedTenantId, setSelectedTenant, tenant?.id],
+    [router, targetOf],
   );
 
   const openList = useCallback(async () => {
@@ -108,8 +111,8 @@ export function NotificationBell() {
     const { show, more } = toastPlan(toastable(list, toasted.current));
     for (const n of show) {
       toasted.current.add(n.id);
-      const { title, body } = notificationText(n, texts);
-      toast.info(body ? `${title} — ${body}` : title, () => void go(n), 8000);
+      const { title, body } = notificationText(n, texts, targetOf(n));
+      toast.info(body ? `${title} — ${body}` : title, () => go(n), 8000);
     }
     if (more > 0) {
       toastable(list, toasted.current).forEach((n) => toasted.current.add(n.id));
@@ -118,7 +121,7 @@ export function NotificationBell() {
     // every unseen one fetched, so a seen call that failed before is retried
     const unseen = unseenIds(list);
     if (unseen.length > 0) await markNotificationsSeen(unseen);
-  }, [go, openList, t, texts, toast]);
+  }, [go, openList, t, targetOf, texts, toast]);
 
   const poll = useCallback(
     async (fromTimer: boolean) => {
@@ -219,12 +222,12 @@ export function NotificationBell() {
               ) : (
                 <ul>
                   {items.map((n) => {
-                    const text = notificationText(n, texts);
+                    const text = notificationText(n, texts, targetOf(n));
                     return (
                     <li key={n.id}>
                       <button
                         type="button"
-                        onClick={() => void go(n)}
+                        onClick={() => go(n)}
                         className={`flex w-full items-start gap-2.5 border-b border-hairline px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-surface-strong ${
                           n.read_at ? "" : "bg-surface"
                         }`}

@@ -89,52 +89,90 @@ export function legalLookupPath(doc: string): string {
   return `/platform/legal-lookup?q=${encodeURIComponent(doc)}`;
 }
 
+/** Where a click on a notification goes, which its hint names. */
+export type NotificationHint =
+  | "chat" // the conversation it was asked in opens
+  | "word" // asked in the Word add-in, from another file: reopen that file
+  | "web" // (add-in) a web conversation: open it on the web
+  | "lookup" // the conversation is gone: the legal lookup page
+  | "otherOrg"; // the conversation belongs to another organization
+
 /** The words a notification is shown with, in the reader's language. */
 export interface NotificationTexts {
   legalAddedTitle: (doc: string) => string;
-  /** "you can ask again in the conversation" */
   legalAddedChat: string;
-  /** "you asked in Word: reopen the file there" */
   legalAddedWord: string;
-  /** "look it up now" (the conversation is gone) */
+  legalAddedWeb: string;
   legalAddedLookup: string;
+  /** org "" = its name is not known */
+  legalAddedOtherOrg: (org: string) => string;
+}
+
+/** The hint of n when nothing else is known: from its link and channel. */
+export function defaultHint(n: Pick<NotificationLike, "link" | "payload">): NotificationHint {
+  if (!n.link.startsWith("/platform/chat/")) return "lookup";
+  return payloadString(n, "channel") === "word_addin" ? "word" : "chat";
 }
 
 /** notificationText renders a known kind from its payload in the reader's
- * language; an unknown kind (or a payload without what it needs) keeps the
+ * language, its hint matching where a click goes (dest; the link's when
+ * absent); an unknown kind (or a payload without what it needs) keeps the
  * stored (Vietnamese) title and body. */
-export function notificationText(n: NotificationLike, texts: NotificationTexts): { title: string; body: string } {
+export function notificationText(
+  n: NotificationLike,
+  texts: NotificationTexts,
+  dest?: { hint: NotificationHint; orgName?: string },
+): { title: string; body: string } {
   if (n.kind === KIND_LEGAL_REQUEST_ADDED) {
     const number = payloadString(n, "document_number").trim();
     const docTitle = payloadString(n, "title").trim();
     const doc = number || docTitle;
     if (doc) {
-      let hint = texts.legalAddedLookup;
-      if (n.link.startsWith("/platform/chat/")) {
-        hint = payloadString(n, "channel") === "word_addin" ? texts.legalAddedWord : texts.legalAddedChat;
-      }
+      const hintKind = dest?.hint ?? defaultHint(n);
+      const hint = {
+        chat: texts.legalAddedChat,
+        word: texts.legalAddedWord,
+        web: texts.legalAddedWeb,
+        lookup: texts.legalAddedLookup,
+        otherOrg: texts.legalAddedOtherOrg(dest?.orgName ?? ""),
+      }[hintKind];
       return { title: texts.legalAddedTitle(doc), body: docTitle && docTitle !== doc ? `${docTitle}. ${hint}` : hint };
     }
   }
   return { title: n.title, body: n.body };
 }
 
-/** Where a click on n goes in the web app: its link, after switching to the
- * organization it happened in when that is another one the person belongs
- * to; the legal lookup page when that organization is out of reach. */
+export type MembershipLike = { tenant_id: number; tenant_name?: string };
+
+/** The organization of n when it is not the one the person works in now
+ * (a Guest, or an unknown current organization, never differs). */
+function otherOrg(
+  n: Pick<NotificationLike, "tenant_id">,
+  currentTenantId: number | null,
+  memberships: MembershipLike[],
+  isGuest: boolean,
+): { differs: boolean; orgName: string } {
+  const tenant = n.tenant_id ?? 0;
+  if (isGuest || !tenant || currentTenantId == null || tenant === currentTenantId) return { differs: false, orgName: "" };
+  return { differs: true, orgName: memberships.find((m) => m.tenant_id === tenant)?.tenant_name ?? "" };
+}
+
+/** Where a click on n goes in the web app, and the hint to show: its link;
+ * the legal lookup page when the conversation belongs to another
+ * organization (the web app has no organization switcher, so it never
+ * switches on its own). */
 export function resolveTarget(
   n: NotificationLike,
-  ctx: { origin: string; currentTenantId: number | null; memberTenantIds: number[]; isGuest: boolean },
-): { path: string; switchTenantId: number | null } {
+  ctx: { origin: string; currentTenantId: number | null; memberships: MembershipLike[]; isGuest: boolean },
+): { path: string; hint: NotificationHint; orgName: string } {
   const path = safeAppLink(n.link, ctx.origin);
-  if (!path) return { path: "", switchTenantId: null };
-  const tenant = n.tenant_id ?? 0;
-  if (!path.startsWith("/platform/chat/") || ctx.isGuest || !tenant || ctx.currentTenantId == null || tenant === ctx.currentTenantId) {
-    return { path, switchTenantId: null };
-  }
-  if (ctx.memberTenantIds.includes(tenant)) return { path, switchTenantId: tenant };
+  const hint = defaultHint(n);
+  if (!path) return { path: "", hint, orgName: "" };
+  if (!path.startsWith("/platform/chat/")) return { path, hint, orgName: "" };
+  const other = otherOrg(n, ctx.currentTenantId, ctx.memberships, ctx.isGuest);
+  if (!other.differs) return { path, hint, orgName: "" };
   const doc = payloadString(n, "document_number") || payloadString(n, "title");
-  return { path: doc ? legalLookupPath(doc) : "", switchTenantId: null };
+  return { path: doc ? legalLookupPath(doc) : "", hint: "otherOrg", orgName: other.orgName };
 }
 
 /** wordFileTarget: the conversation the Word add-in may open for n, when
@@ -151,4 +189,16 @@ export function wordFileTarget(
   if (!session || !file || !openWordFileId || file !== openWordFileId) return "";
   if (currentTenantId != null && n.tenant_id && n.tenant_id !== currentTenantId) return "";
   return session;
+}
+
+/** The hint of n in the Word add-in pane: what a click there does. */
+export function paneHint(
+  n: NotificationLike,
+  ctx: { openable: boolean; currentTenantId: number | null; memberships: MembershipLike[]; isGuest: boolean },
+): { hint: NotificationHint; orgName: string } {
+  if (ctx.openable) return { hint: "chat", orgName: "" };
+  if (!n.link.startsWith("/platform/chat/")) return { hint: "lookup", orgName: "" };
+  const other = otherOrg(n, ctx.currentTenantId, ctx.memberships, ctx.isGuest);
+  if (other.differs) return { hint: "otherOrg", orgName: other.orgName };
+  return { hint: payloadString(n, "word_file_id") ? "word" : "web", orgName: "" };
 }
