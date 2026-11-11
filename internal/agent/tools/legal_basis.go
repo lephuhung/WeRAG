@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/docformat/docxedit"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -207,6 +208,9 @@ type LegalBasisFinding struct {
 	ReviewBy []string `json:"review_by,omitempty"`
 	// PartialSuspension: the catalogue says "Ngưng hiệu lực một phần".
 	PartialSuspension bool `json:"partial_suspension,omitempty"`
+	// Unsuitable: the portal flags the document "Không còn phù hợp" (no
+	// longer suitable): needs review, not expired.
+	Unsuitable bool `json:"unsuitable,omitempty"`
 	// StaleStatus: the catalogue says "Chưa có hiệu lực" although the
 	// effective date has passed; the date was trusted.
 	StaleStatus bool `json:"stale_status,omitempty"`
@@ -299,21 +303,36 @@ func ReadLegalBasisParagraphs(ctx context.Context, src DocumentWorkspaceSource, 
 // ownNumberRe is the "Số:" a document writes its own number after.
 var ownNumberRe = regexp.MustCompile(`(?i)^\s*số\s*[:.]?\s*$`)
 
-// issueDateAfterRe reads the issue date written right after a number:
-// "ngày 20/11/2023", "ngày 20-11-2023", "ngày 20 tháng 11 năm 2023", also
-// after ", ban hành".
-var issueDateAfterRe = regexp.MustCompile(`(?i)^[\s,]*(?:ban\s+hành\s+)?ngày\s+(?:(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*((?:19|20)\d\d)|(\d{1,2})\s+tháng\s+(\d{1,2})\s+năm\s+((?:19|20)\d\d))`)
+// The issue date written after a year-less number: "ngày 20/11/2023",
+// "ngày 20-11-2023", "ngày 20 tháng 11 năm 2023", optionally introduced by
+// "(", "ký" / "ban hành" or "của <cơ quan>" — within issueDateWindow runes
+// of the number and before the next citation. Spaces include the no-break
+// space Word writes. A date before the number is not read.
+const issueDateWindow = 60
 
-// issueDateAfter is the issue date (YYYY-MM-DD) written right after a
-// citation, "" when none (or not a real date).
+var (
+	issueDateRe = regexp.MustCompile(`(?i)ngày[\s\p{Zs}]+(?:(\d{1,2})[\s\p{Zs}]*[/.\-][\s\p{Zs}]*(\d{1,2})[\s\p{Zs}]*[/.\-][\s\p{Zs}]*((?:19|20)\d\d)|(\d{1,2})[\s\p{Zs}]+tháng[\s\p{Zs}]+(\d{1,2})[\s\p{Zs}]+năm[\s\p{Zs}]+((?:19|20)\d\d))`)
+	// what may stand between the number and "ngày"
+	issueDateLeadRe = regexp.MustCompile(`(?i)^[\s\p{Zs},(]*(?:(?:được[\s\p{Zs}]+)?(?:ký|ban[\s\p{Zs}]+hành)[\s\p{Zs}]+|của[\s\p{Zs}]+[^;.()\n]{1,50}?[\s\p{Zs},]+)?$`)
+)
+
+// issueDateAfter is the issue date (YYYY-MM-DD) written after a citation
+// in rest (the text from the citation's end to the next citation), ""
+// when none (or not a real date).
 func issueDateAfter(rest string) string {
-	m := issueDateAfterRe.FindStringSubmatch(rest)
-	if m == nil {
+	loc := issueDateRe.FindStringSubmatchIndex(rest)
+	if loc == nil || utf8.RuneCountInString(rest[:loc[0]]) > issueDateWindow || !issueDateLeadRe.MatchString(rest[:loc[0]]) {
 		return ""
 	}
-	d, mo, y := m[1], m[2], m[3]
+	group := func(i int) string {
+		if loc[2*i] < 0 {
+			return ""
+		}
+		return rest[loc[2*i]:loc[2*i+1]]
+	}
+	d, mo, y := group(1), group(2), group(3)
 	if d == "" {
-		d, mo, y = m[4], m[5], m[6]
+		d, mo, y = group(4), group(5), group(6)
 	}
 	day, _ := strconv.Atoi(d)
 	month, _ := strconv.Atoi(mo)
@@ -358,17 +377,23 @@ func paragraphAnchors(paras []string) []*OpAnchor {
 func CheckLegalBasis(ctx context.Context, paras []string, catalog LegalBasisCatalog, names LegalNameResolver, now time.Time) (*LegalBasisReport, error) {
 	report := &LegalBasisReport{CheckedAt: now, Summary: map[LegalBasisStatus]int{}}
 	anchors := paragraphAnchors(paras)
-	var groups []*legalBasisGroup
-	byKey := map[string]*legalBasisGroup{}
-	// the last dated group of a year-less number: a later mention without
-	// its date means the same document
-	lastDated := map[string]*legalBasisGroup{}
+	// first pass: every citation to check, with the issue date written
+	// after a year-less number
+	type mention struct {
+		key    string
+		issued string
+		cit    vietnamese_legal.Citation
+		pos    LegalBasisPosition
+	}
+	var mentions []mention
+	dates := map[string]map[string]bool{} // year-less key → distinct dates
 	for pi, text := range paras {
 		if strings.TrimSpace(text) == "" {
 			continue
 		}
 		runes := []rune(text)
-		for _, c := range vietnamese_legal.FindCitations(text) {
+		cits := vietnamese_legal.FindCitations(text)
+		for ci, c := range cits {
 			if c.Kind == vietnamese_legal.CitationName && names == nil {
 				continue
 			}
@@ -384,37 +409,51 @@ func CheckLegalBasis(ctx context.Context, paras []string, catalog LegalBasisCata
 			case "drop":
 				continue
 			}
-			pos := LegalBasisPosition{
+			m := mention{key: key, cit: c, pos: LegalBasisPosition{
 				Paragraph: pi, Start: c.Start, End: c.End, Text: c.Raw, Anchor: anchors[pi],
 				TextOccurrence: 1 + strings.Count(string(runes[:c.Start]), c.Raw),
-			}
-			var g *legalBasisGroup
-			issued := ""
+			}}
 			if yearlessKind(c.Kind) {
-				issued = issueDateAfter(string(runes[c.End:min(len(runes), c.End+80)]))
-				if issued == "" {
-					g = lastDated[key]
-				} else {
-					key += "|" + issued
+				next := len(runes)
+				if ci+1 < len(cits) {
+					next = cits[ci+1].Start
+				}
+				if m.issued = issueDateAfter(string(runes[c.End:max(c.End, next)])); m.issued != "" {
+					if dates[key] == nil {
+						dates[key] = map[string]bool{}
+					}
+					dates[key][m.issued] = true
 				}
 			}
-			if g == nil {
-				g = byKey[key]
-			}
-			if g == nil {
-				if len(groups) >= legalBasisMaxFindings {
-					report.Truncated = true
-					continue
-				}
-				g = &legalBasisGroup{key: key, cit: c, issued: issued}
-				byKey[key] = g
-				groups = append(groups, g)
-			}
-			if issued != "" {
-				lastDated[strings.TrimSuffix(key, "|"+issued)] = g
-			}
-			g.positions = append(g.positions, pos)
+			mentions = append(mentions, m)
 		}
+	}
+	// second pass: group. An undated year-less mention is the dated one
+	// only when the draft dates that number once; with several dates it
+	// stays its own (missing date) finding.
+	var groups []*legalBasisGroup
+	byKey := map[string]*legalBasisGroup{}
+	for _, m := range mentions {
+		key, issued := m.key, m.issued
+		if yearlessKind(m.cit.Kind) && issued == "" && len(dates[key]) == 1 {
+			for d := range dates[key] {
+				issued = d
+			}
+		}
+		if issued != "" {
+			key += "|" + issued
+		}
+		g := byKey[key]
+		if g == nil {
+			if len(groups) >= legalBasisMaxFindings {
+				report.Truncated = true
+				continue
+			}
+			g = &legalBasisGroup{key: key, cit: m.cit, issued: issued}
+			byKey[key] = g
+			groups = append(groups, g)
+		}
+		g.positions = append(g.positions, m.pos)
 	}
 	c := &legalBasisChecker{catalog: catalog, names: names, now: now, docs: map[string]*legalClassified{}}
 	var findings []LegalBasisFinding
@@ -571,7 +610,7 @@ func (c *legalBasisChecker) finding(ctx context.Context, g *legalBasisGroup) (*L
 	if len(exact) == 0 && !legalBasisNormative(cit) {
 		return nil, nil
 	}
-	if yearlessKind(cit.Kind) && len(exact) > 0 {
+	if yearlessKind(cit.Kind) {
 		return f, c.yearless(ctx, f, g.issued, exact)
 	}
 	if len(exact) == 1 {
@@ -667,7 +706,7 @@ func legalDistinctNumbers(docs []*types.LegalDocument) int {
 // candidates fills an ambiguous (or, with none, not found) finding.
 func (c *legalBasisChecker) candidates(ctx context.Context, f *LegalBasisFinding, docs []*types.LegalDocument) error {
 	if len(docs) == 0 {
-		f.Status, f.Ambiguity, f.CandidatesMore = LegalBasisNotFound, "", false
+		f.Status, f.Ambiguity, f.CandidatesMore, f.Incomplete = LegalBasisNotFound, "", false, false
 		f.Note = legalBasisNote(f, c.now)
 		return nil
 	}
@@ -710,7 +749,7 @@ func (c *legalBasisChecker) resolve(ctx context.Context, f *LegalBasisFinding, d
 	for _, o := range cl.class.reviewBy {
 		f.ReviewBy = append(f.ReviewBy, legalShortLabel(o))
 	}
-	f.PartialSuspension, f.StaleStatus = cl.class.partialSuspension, cl.class.staleNotYet
+	f.PartialSuspension, f.StaleStatus, f.Unsuitable = cl.class.partialSuspension, cl.class.staleNotYet, cl.class.unsuitable
 	if f.DocType == "" {
 		f.DocType = d.DocType
 	}
@@ -833,7 +872,8 @@ func legalBasisNote(f *LegalBasisFinding, now time.Time) string {
 	switch f.Status {
 	case LegalBasisNotFound:
 		if f.IssuedOn != "" {
-			return "Chưa có trong danh mục văn bản pháp luật (không có văn bản số này): chưa rõ hiệu lực, cần tự kiểm tra."
+			return "Chưa có trong danh mục văn bản pháp luật (không có văn bản số này ban hành ngày " + legalBasisDay(f.IssuedOn) +
+				"): chưa rõ hiệu lực, cần tự kiểm tra."
 		}
 		return "Chưa có trong danh mục văn bản pháp luật: chưa rõ hiệu lực, cần tự kiểm tra."
 	case LegalBasisAmbiguous:
@@ -893,6 +933,8 @@ func legalBasisNote(f *LegalBasisFinding, now time.Time) string {
 		b.WriteString("; cần kiểm tra điều, khoản được viện dẫn.")
 	case LegalBasisNeedsReview:
 		switch {
+		case f.Unsuitable:
+			b.WriteString(label + " được vbpl.vn ghi \"Không còn phù hợp\"; cần kiểm tra trước khi viện dẫn.")
 		case f.PartialSuspension:
 			b.WriteString(label + " bị ngưng hiệu lực một phần")
 			if s := names(related(LegalBasisSuspendedBy)); s != "" {

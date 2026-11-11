@@ -25,6 +25,8 @@ type legalClassification struct {
 	reviewBy []*types.LegalDocument
 	// partialSuspension: the catalogue says "Ngưng hiệu lực một phần".
 	partialSuspension bool
+	// unsuitable: the portal says "Không còn phù hợp".
+	unsuitable bool
 	// staleNotYet: the catalogue says "Chưa có hiệu lực" but its effective
 	// date has passed; the date is trusted.
 	staleNotYet bool
@@ -64,7 +66,8 @@ func ClassifyLegalDocument(rep *types.LegalStatusReport, now time.Time) LegalBas
 //     phần" → partly expired (expired_on is then the date of the partial
 //     expiry); "Ngưng hiệu lực một phần" or any other "… một phần" →
 //     needs review;
-//   - expired: "Hết hiệu lực toàn bộ", or the expiry date has passed;
+//   - expired: "Hết hiệu lực toàn bộ" (any "Hết hiệu lực…" left after the
+//     partial branch), or the expiry date has passed;
 //   - suspended: "Ngưng hiệu lực" / "Tạm ngưng hiệu lực" (whole);
 //   - expired by derivation: a document already in force replaces or ends
 //     it while the catalogue holds it in force or states nothing
@@ -72,9 +75,12 @@ func ClassifyLegalDocument(rep *types.LegalStatusReport, now time.Time) LegalBas
 //   - not yet effective: "Chưa có hiệu lực" with no effective date or one
 //     ahead, or any status with an effective date ahead; a stale "Chưa có
 //     hiệu lực" whose effective date has passed is read as in force;
-//   - needs review: in force (or no status) while a document in force
-//     repeals it or ends it in part — a repeal alone is never an expiry;
-//   - amended: in force with an amending document; in force; unknown.
+//   - needs review: "Không còn phù hợp" (the portal's flag, not an
+//     expiry); in force (or no status) while a document in force repeals
+//     it or ends it in part — a repeal alone is never an expiry;
+//   - amended: in force with an amending document; in force; unknown
+//     ("Chưa xác định", "" or any other wording, when nothing above
+//     decides).
 func classifyLegal(rep *types.LegalStatusReport, now time.Time) legalClassification {
 	d := rep.Document
 	status := strings.ToLower(strings.Join(strings.Fields(d.Status), " "))
@@ -89,7 +95,7 @@ func classifyLegal(rep *types.LegalStatusReport, now time.Time) legalClassificat
 		c.partialSuspension = strings.Contains(status, "ngưng") || strings.Contains(status, "đình chỉ")
 		return c
 	}
-	if strings.HasPrefix(status, "hết hiệu lực toàn bộ") ||
+	if strings.HasPrefix(status, "hết hiệu lực") ||
 		d.ExpiredOn != nil && !d.ExpiredOn.IsZero() && !legalDayAfter(*d.ExpiredOn, now) {
 		c.status = LegalBasisExpired
 		return c
@@ -113,6 +119,10 @@ func classifyLegal(rep *types.LegalStatusReport, now time.Time) legalClassificat
 			return c
 		}
 		c.staleNotYet = true
+	}
+	if status == "không còn phù hợp" {
+		c.status, c.unsuitable = LegalBasisNeedsReview, true
+		return c
 	}
 	inForce := status == "còn hiệu lực" || c.staleNotYet
 	if !inForce && status != "" && status != "chưa xác định" {

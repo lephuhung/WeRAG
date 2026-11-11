@@ -81,15 +81,69 @@ func TestLegalBasisYearlessNumbersNeedTheirIssueDate(t *testing.T) {
 	if f.Kind != "party" || f.Status != LegalBasisInForce || len(f.Positions) != 2 || f.Document.ID != "nq18" {
 		t.Errorf("party: %+v", f)
 	}
-	// an undated mention before any dated one stays apart (ambiguous)
+	// the draft dates the number once: an earlier undated mention is it too
 	r = lbCheck(t, cat, nil, "Nghị quyết 18-NQ/TW.", "Nghị quyết số 18-NQ/TW ngày 16/6/2022.")
-	if len(r.Findings) != 2 || r.Summary[LegalBasisAmbiguous] != 1 || r.Summary[LegalBasisInForce] != 1 {
+	if len(r.Findings) != 1 || r.Summary[LegalBasisInForce] != 1 || len(r.Findings[0].Positions) != 2 {
 		t.Errorf("undated first: %+v", r.Summary)
 	}
-	// a Party document the catalogue lacks: "chưa có trong danh mục"
+	// two dates for one number: an undated mention is neither
+	qd2 := lbDoc("qd1461b", "1461/QĐ-TTg", "Quyết định", "Còn hiệu lực", "2023-11-20")
+	cat.docs = append(cat.docs, qd2)
+	r = lbCheck(t, cat, nil,
+		"Căn cứ Quyết định số 1461/QĐ-TTg ngày 01/8/2015 và Quyết định số 1461/QĐ-TTg ngày 20/11/2023;",
+		"Thực hiện Quyết định 1461/QĐ-TTg.")
+	if len(r.Findings) != 3 || r.Summary[LegalBasisExpired] != 1 || r.Summary[LegalBasisInForce] != 1 || r.Summary[LegalBasisAmbiguous] != 1 {
+		t.Fatalf("two dates: %+v", r.Summary)
+	}
+	for _, f := range r.Findings {
+		if f.Status == LegalBasisAmbiguous && (f.Ambiguity != LegalBasisAmbiguityMissingDate || f.Positions[0].Paragraph != 1 || f.CandidatesTotal != 2) {
+			t.Errorf("undated with two dates: %+v", f)
+		}
+	}
+	cat.docs = cat.docs[:len(cat.docs)-1]
+	// a Party document the catalogue lacks: "chưa có trong danh mục", with
+	// the date it was cited with
 	r = lbCheck(t, cat, nil, "Kết luận 21-KL/TW ngày 25/10/2021.")
-	if len(r.Findings) != 1 || r.Findings[0].Status != LegalBasisNotFound {
+	if len(r.Findings) != 1 || r.Findings[0].Status != LegalBasisNotFound || r.Findings[0].Incomplete ||
+		!strings.Contains(r.Findings[0].Note, "ngày 25/10/2021") || r.Findings[0].Citation != "21-KL/TW ngày 25/10/2021" {
 		t.Errorf("party not found: %+v", r.Findings)
+	}
+}
+
+// The issue date after a year-less number: introducers, no-break spaces,
+// a short window, never across another citation nor before the number.
+func TestLegalBasisIssueDateAfter(t *testing.T) {
+	cases := map[string]string{
+		" ngày 20/11/2023 của Thủ tướng":                           "2023-11-20",
+		"\u00a0ngày\u00a020\u00a0tháng\u00a011\u00a0năm\u00a02023": "2023-11-20",
+		" (ngày 20/11/2023)":                                       "2023-11-20",
+		" ký ngày 20-11-2023":                                      "2023-11-20",
+		", được ban hành ngày 1.8.2015":                            "2015-08-01",
+		" của Thủ tướng Chính phủ ngày 20/11/2023":                 "2023-11-20",
+		" của Ủy ban nhân dân tỉnh Quảng Ninh, ngày 5/1/2024":      "2024-01-05",
+		" về việc phê duyệt đề án, ngày 20/11/2023":                "", // not an introducer
+		" của Thủ tướng; ngày 20/11/2023":                          "", // sentence moved on
+		" ngày 31/02/2023":                                         "", // not a date
+		" của " + strings.Repeat("Bộ ", 25) + "ngày 20/11/2023":    "", // beyond the window
+		"": "",
+	}
+	for rest, want := range cases {
+		if got := issueDateAfter(rest); got != want {
+			t.Errorf("issueDateAfter(%q) = %q, want %q", rest, got, want)
+		}
+	}
+	cat := newLegalBasisFixture()
+	cat.docs = append(cat.docs, lbDoc("qd1461", "1461/QĐ-TTg", "Quyết định", "Hết hiệu lực toàn bộ", "2015-08-01"))
+	// a date before the number, or after another citation, is not its date
+	for _, para := range []string{
+		"Ngày 01/8/2015, Thủ tướng ban hành Quyết định 1461/QĐ-TTg.",
+		"Quyết định 1461/QĐ-TTg và Nghị định 30/2020/NĐ-CP ngày 01/8/2015.",
+	} {
+		r := lbCheck(t, cat, nil, para)
+		f := findingFor(t, r, "1461/QĐ-TTg")
+		if f.Status != LegalBasisAmbiguous || f.Ambiguity != LegalBasisAmbiguityMissingDate {
+			t.Errorf("%q: %s %s", para, f.Status, f.Ambiguity)
+		}
 	}
 }
 
@@ -182,6 +236,32 @@ func TestLegalBasisClassifierReviewCases(t *testing.T) {
 				}
 			}
 		}
+	}
+
+	// the dev catalogue's wordings, mapped on purpose
+	for status, want := range map[string]LegalBasisStatus{
+		"Còn hiệu lực":            LegalBasisInForce,
+		"Hết hiệu lực toàn bộ":    LegalBasisExpired,
+		"Hết hiệu lực":            LegalBasisExpired,
+		"Chưa xác định":           LegalBasisUnknown,
+		"Hết hiệu lực một phần":   LegalBasisPartlyExpired,
+		"":                        LegalBasisUnknown,
+		"Ngưng hiệu lực":          LegalBasisSuspended,
+		"Chưa có hiệu lực":        LegalBasisNotYetEffective,
+		"Không còn phù hợp":       LegalBasisNeedsReview,
+		"Ngưng hiệu lực một phần": LegalBasisNeedsReview,
+		"Trạng thái lạ":           LegalBasisUnknown,
+	} {
+		d := lbDoc("w", "2/2020/NĐ-CP", "Nghị định", status, "2020-01-01")
+		if got := ClassifyLegalDocument(&types.LegalStatusReport{Document: d}, lbNow); got != want {
+			t.Errorf("%q: %s, want %s", status, got, want)
+		}
+	}
+	unsuitable := lbDoc("ks", "15/2012/NĐ-CP", "Nghị định", "Không còn phù hợp", "2012-01-01")
+	cat.docs = append(cat.docs, unsuitable)
+	r = lbCheck(t, cat, nil, "Nghị định 15/2012/NĐ-CP.")
+	if f := r.Findings[0]; !f.Unsuitable || !strings.Contains(f.Note, "Không còn phù hợp") || strings.Contains(f.Note, "hết hiệu lực") {
+		t.Errorf("unsuitable: %+v", f)
 	}
 
 	// "Chưa có hiệu lực" without a date stays not yet effective
