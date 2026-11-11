@@ -245,6 +245,11 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewLegalRequestNotifier))
 	must(container.Provide(service.NewAbbreviationReviewNotifier))
 	must(container.Decorate(service.NewLegalRequestAddedNotifications))
+	// SuperAdmins' review-queue digests (orders, legal requests, drafts,
+	// links, identities); the order email above stays
+	must(container.Provide(service.NewSuperAdminQueueNotifier))
+	must(container.Decorate(service.NewBillingQueueNotifications))
+	must(container.Decorate(service.NewLegalRequestQueueNotifications))
 	// Platform-wide aggregate stats for the SystemAdmin overview dashboard.
 	must(container.Provide(service.NewStatsService))
 	// People lookup against the external MongoDB store. Always constructed;
@@ -517,6 +522,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(startEmailExpiryReminders))
 	must(container.Invoke(startLegalRequestNotices))
 	must(container.Invoke(registerAbbreviationNoticeCleanup))
+	must(container.Invoke(startSuperAdminQueueNotices))
 
 	// Chat pipeline components for processing chat requests
 	logger.Debugf(ctx, "[Container] Registering chat pipeline plugins...")
@@ -1715,6 +1721,33 @@ func registerAbbreviationNoticeCleanup(n *service.AbbreviationReviewNotifier, cl
 	cleaner.RegisterWithName("AbbreviationReviewNotices", func() error {
 		if !n.WaitTimeout(10 * time.Second) {
 			logger.Warnf(context.Background(), "[AbbrNotice] shutdown: notices still being written after 10s")
+		}
+		return nil
+	})
+}
+
+// startSuperAdminQueueNotices hands the review-queue notifier to the
+// services that fill or empty the queues, runs its sweep (closing the
+// digests of queues emptied without a hook, e.g. expired orders) and lets
+// the notices being written finish on shutdown (bounded).
+func startSuperAdminQueueNotices(n *service.SuperAdminQueueNotifier, sessions interfaces.SessionService,
+	reviews interfaces.LegalReviewService, feed *service.LegalFeedService, drafts *service.LegalDraftService,
+	push *service.LegalPushService, cleaner interfaces.ResourceCleaner,
+) {
+	type queueNoticeUser interface {
+		SetQueueNotices(*service.SuperAdminQueueNotifier)
+	}
+	for _, svc := range []any{sessions, reviews} {
+		if u, ok := svc.(queueNoticeUser); ok {
+			u.SetQueueNotices(n)
+		}
+	}
+	feed.Notices, drafts.Notices, push.Notices = n, n, n
+	stop := n.Start(service.SuperAdminQueueSweepInterval)
+	cleaner.RegisterWithName("SuperAdminQueueNotices", func() error {
+		stop()
+		if !n.WaitTimeout(10 * time.Second) {
+			logger.Warnf(context.Background(), "[QueueNotice] shutdown: notices still being written after 10s")
 		}
 		return nil
 	})

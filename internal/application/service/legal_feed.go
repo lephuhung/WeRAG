@@ -40,6 +40,10 @@ type LegalFeedService struct {
 	// RequestsAdded is told whenever requests may have been closed as added
 	// (LegalRequestNotifier.Trigger); nil: the periodic sweep only.
 	RequestsAdded func(ctx context.Context)
+	// Notices tells the SuperAdmins about the identity reviews a feed's
+	// ingest leaves pending, and closes their request digests once the
+	// requests are added (nil: nobody is told).
+	Notices *SuperAdminQueueNotifier
 }
 
 // NotifyRequestsAdded tells RequestsAdded that requests may have been
@@ -47,6 +51,9 @@ type LegalFeedService struct {
 func (s *LegalFeedService) NotifyRequestsAdded(ctx context.Context) {
 	if s != nil && s.RequestsAdded != nil {
 		s.RequestsAdded(ctx)
+	}
+	if s != nil {
+		s.Notices.LegalRequestsChanged(ctx)
 	}
 }
 
@@ -445,6 +452,11 @@ func (s *LegalFeedService) saveReviewLink(ctx context.Context, doc LegalIngestDo
 	}
 	if err := s.Reviews.SaveLink(ctx, link); err != nil {
 		logger.Warnf(ctx, "[LegalFeed] review link of %s (%s): %v", knowledgeID, doc.VBPLID, err)
+	} else if link.ReviewStatus == types.LegalReviewPending &&
+		(doc.priorLink == nil || doc.priorLink.ReviewStatus != types.LegalReviewPending) {
+		// the feed's word for its document waits for a reviewer
+		ref := strings.TrimSpace(doc.DocumentNumber)
+		s.Notices.LegalIdentitiesPending(ctx, "", []string{knowledgeID}, map[string]string{knowledgeID: ref})
 	}
 }
 

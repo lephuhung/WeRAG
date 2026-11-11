@@ -47,6 +47,31 @@ func (s *sessionService) SetLegalRequests(requests interfaces.LegalRequestReposi
 	s.legalRequests, s.legalReviews = requests, reviews
 }
 
+// SetQueueNotices lets the gate tell the SuperAdmins about the legal
+// document requests people open in chat.
+func (s *sessionService) SetQueueNotices(n *SuperAdminQueueNotifier) { s.queueNotices = n }
+
+// noticeOpenedRequests tells the SuperAdmins (but the asker) about the
+// requests this turn opened: a new request, or one reopened after it was
+// added. A request asked for again while open, a rejected one, or a turn
+// with no person behind it (an API key, an embed) notifies nobody.
+func (s *sessionService) noticeOpenedRequests(ctx context.Context, req *types.QARequest, rows []*types.LegalDocumentRequest) {
+	if s.queueNotices == nil || req == nil || req.Session == nil {
+		return
+	}
+	userID := legalRequestUserID(ctx, req)
+	if userID == "" || types.IsAPISessionOwnerID(userID) || strings.HasPrefix(userID, types.PrincipalEmbedSession+":") {
+		return
+	}
+	var ids []string
+	for _, r := range rows {
+		if r != nil && r.Opened && r.Status == types.LegalRequestRequested {
+			ids = append(ids, r.ID)
+		}
+	}
+	s.queueNotices.LegalRequestsOpened(ctx, userID, ids)
+}
+
 // legalMissingDocumentGate answers a turn whose question names a full số
 // hiệu that neither a public KB (approved legal link) nor the agent's own
 // KBs (a document titled with the number) hold:
@@ -115,6 +140,7 @@ func (s *sessionService) legalMissingDocumentGate(
 			return ctx, false, nil
 		}
 		s.recordLegalRequester(ctx, req, row, kbIDs)
+		s.noticeOpenedRequests(ctx, req, []*types.LegalDocumentRequest{row})
 		logger.Infof(ctx, "Legal document %s is not in the catalogue: request %s recorded (count %d), the turn runs on",
 			number, row.ID, row.RequestCount)
 		if row.Status == types.LegalRequestRequested {
@@ -162,6 +188,7 @@ func (s *sessionService) legalMissingDocumentGate(
 	}
 
 	var rejected *types.LegalDocumentRequest
+	var recorded []*types.LegalDocumentRequest
 	open := 0
 	for _, r := range reports {
 		d := r.Document
@@ -180,6 +207,7 @@ func (s *sessionService) legalMissingDocumentGate(
 			return ctx, false, nil
 		}
 		s.recordLegalRequester(ctx, req, row, kbIDs)
+		recorded = append(recorded, row)
 		if row.Status == types.LegalRequestRejected {
 			if rejected == nil {
 				rejected = row
@@ -191,6 +219,8 @@ func (s *sessionService) legalMissingDocumentGate(
 			card.RequestCount = row.RequestCount
 		}
 	}
+	// one digest update for the rows of this số hiệu
+	s.noticeOpenedRequests(ctx, req, recorded)
 	if textAction {
 		// drafting or checking text that cites it: recorded, no card
 		logger.Infof(ctx, "Legal document %s has no full text; a text request cites it: recorded, the turn runs on", number)

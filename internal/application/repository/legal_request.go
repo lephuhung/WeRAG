@@ -57,6 +57,7 @@ func (r *legalRequestRepository) Record(
 		return nil, res.Error
 	}
 	if res.RowsAffected == 1 {
+		row.Opened = true
 		return &row, nil
 	}
 	existing, err := r.find(ctx, row.NumberKey, row.LegalDocumentID)
@@ -82,13 +83,15 @@ func (r *legalRequestRepository) Record(
 	if existing.DocType == "" && row.DocType != "" {
 		bump["doc_type"] = row.DocType
 	}
+	opened := false
 	switch existing.Status {
 	case types.LegalRequestRequested, types.LegalRequestFetched, types.LegalRequestReviewing, types.LegalRequestAutoIngest:
 		if existing.RequestCount == 0 {
 			// Queued by the import, nobody had asked: the first real request
 			// counts, also from a caller without a session (a legal feed).
-			err = db.Model(&types.LegalDocumentRequest{}).
-				Where("id = ? AND status = ?", existing.ID, existing.Status).Updates(bump).Error
+			res := db.Model(&types.LegalDocumentRequest{}).
+				Where("id = ? AND status = ?", existing.ID, existing.Status).Updates(bump)
+			err, opened = res.Error, res.RowsAffected == 1
 			break
 		}
 		// still open (a draft of its PDF may be under review): the same
@@ -114,13 +117,18 @@ func (r *legalRequestRepository) Record(
 		bump["status"] = types.LegalRequestRequested
 		bump["knowledge_id"], bump["knowledge_base_id"] = "", ""
 		bump["decided_by"], bump["decided_at"], bump["decision_note"] = "", nil, ""
-		err = db.Model(&types.LegalDocumentRequest{}).
-			Where("id = ? AND status = ?", existing.ID, types.LegalRequestAdded).Updates(bump).Error
+		res := db.Model(&types.LegalDocumentRequest{}).
+			Where("id = ? AND status = ?", existing.ID, types.LegalRequestAdded).Updates(bump)
+		err, opened = res.Error, res.RowsAffected == 1
 	}
 	if err != nil {
 		return nil, err
 	}
-	return r.Get(ctx, existing.ID)
+	got, err := r.Get(ctx, existing.ID)
+	if got != nil {
+		got.Opened = opened
+	}
+	return got, err
 }
 
 // legalKnowledgeStaleAfter bounds how long a knowledge may stay in a

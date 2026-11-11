@@ -39,6 +39,9 @@ type LegalPushService struct {
 	settings interface {
 		GetBool(ctx context.Context, key string, envName string, def bool) bool
 	}
+	// Notices tells the SuperAdmins about the links a push leaves pending
+	// (nil: nobody is told).
+	Notices *SuperAdminQueueNotifier
 }
 
 // LegalFeedAutoApproveSetting: a pushed mark matched at both ends (A's
@@ -599,6 +602,7 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 		return nil, err
 	}
 	res.KeptDecisions = kept
+	var pendingIDs []int64
 	for _, c := range out {
 		if c.ID == 0 {
 			continue
@@ -607,9 +611,18 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 		switch c.ReviewStatus {
 		case types.LegalLinkReviewPending:
 			res.Pending++
+			pendingIDs = append(pendingIDs, c.ID)
 		case types.LegalLinkReviewApproved:
 			res.AutoApproved++
 		}
+	}
+	// one digest update per push, for the links left to a person (the
+	// auto-approved ones need nobody); the replaced pending candidates may
+	// have emptied the queue
+	if len(pendingIDs) > 0 {
+		s.Notices.LegalLinksPending(ctx, actor.UserID, a.DocumentNumber, pendingIDs)
+	} else {
+		s.Notices.LegalLinksChanged(ctx)
 	}
 	WriteLegalFeedLog(ctx, s.db, actor, LegalFeedEntry{
 		Action: "push_" + mode, VBPLID: a.ID, KnowledgeID: res.KnowledgeID, KnowledgeBaseID: res.KnowledgeBaseID,

@@ -5,11 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
-	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -24,17 +22,9 @@ import (
 // digests are read for everyone, so no stale "3 từ chờ duyệt" stays.
 
 const (
-	// abbreviationNoticeTimeout bounds one background run (all recipients).
-	abbreviationNoticeTimeout = 30 * time.Second
-	// abbreviationNoticeConcurrency bounds the runs at once; the others
-	// wait (within their timeout).
-	abbreviationNoticeConcurrency = 2
 	// abbreviationNoticeFullFormRunes / BodyRunes cap the stored text.
 	abbreviationNoticeFullFormRunes = 40
 	abbreviationNoticeBodyRunes     = 300
-	// abbreviationNoticeMaxRecipients: SuperAdmins read per run (a handful
-	// in practice).
-	abbreviationNoticeMaxRecipients = 200
 )
 
 // AbbreviationReviewLink is the abbreviation page of the settings (the
@@ -43,15 +33,12 @@ const (
 const AbbreviationReviewLink = "/platform/system/extensions/abbreviations?status=pending"
 
 // AbbreviationReviewNotifier writes the SuperAdmins' abbreviation_pending
-// digests. Every method returns at once; the work runs in the background
-// and only logs failures, so a suggestion or a review never waits for it.
+// digests (reviewDigests). Every method returns at once; the work runs in
+// the background and only logs failures, so a suggestion or a review never
+// waits for it.
 type AbbreviationReviewNotifier struct {
-	users         interfaces.UserRepository
-	notifications interfaces.UserNotificationRepository
+	digests       *reviewDigests
 	abbreviations interfaces.AbbreviationRepository
-	now           func() time.Time
-	slots         chan struct{}
-	wg            sync.WaitGroup
 }
 
 // NewAbbreviationReviewNotifier creates the notifier.
@@ -60,16 +47,13 @@ func NewAbbreviationReviewNotifier(
 	notifications interfaces.UserNotificationRepository,
 	abbreviations interfaces.AbbreviationRepository,
 ) *AbbreviationReviewNotifier {
-	return &AbbreviationReviewNotifier{
-		users: users, notifications: notifications, abbreviations: abbreviations,
-		now: time.Now, slots: make(chan struct{}, abbreviationNoticeConcurrency),
-	}
+	return &AbbreviationReviewNotifier{digests: newReviewDigests("AbbrNotice", users, notifications), abbreviations: abbreviations}
 }
 
 // Wait blocks until the background runs started so far are done (tests).
 func (a *AbbreviationReviewNotifier) Wait() {
 	if a != nil {
-		a.wg.Wait()
+		a.digests.wait()
 	}
 }
 
@@ -79,43 +63,7 @@ func (a *AbbreviationReviewNotifier) WaitTimeout(d time.Duration) bool {
 	if a == nil {
 		return true
 	}
-	done := make(chan struct{})
-	go func() {
-		a.wg.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-		return true
-	case <-time.After(d):
-		return false
-	}
-}
-
-// background runs fn with the request's values but not its cancellation,
-// under the notifier's timeout and concurrency bound.
-func (a *AbbreviationReviewNotifier) background(ctx context.Context, what string, fn func(context.Context) error) {
-	a.wg.Add(1)
-	go func() {
-		defer a.wg.Done()
-		run, cancel := context.WithTimeout(context.WithoutCancel(ctx), abbreviationNoticeTimeout)
-		defer cancel()
-		defer func() {
-			if r := recover(); r != nil {
-				logger.Errorf(run, "[AbbrNotice] %s panicked: %v", what, r)
-			}
-		}()
-		select {
-		case a.slots <- struct{}{}:
-			defer func() { <-a.slots }()
-		case <-run.Done():
-			logger.Warnf(run, "[AbbrNotice] %s skipped: %v", what, run.Err())
-			return
-		}
-		if err := fn(run); err != nil {
-			logger.Warnf(run, "[AbbrNotice] %s: %v", what, err)
-		}
-	}()
+	return a.digests.waitTimeout(d)
 }
 
 // SuggestionCreated tells every SuperAdmin but the suggester about row, a
@@ -129,7 +77,7 @@ func (a *AbbreviationReviewNotifier) SuggestionCreated(ctx context.Context, row 
 		ShortForm: strings.TrimSpace(row.ShortForm), FullForm: strings.TrimSpace(row.FullForm), ProperName: row.IsProperName,
 	}
 	id, suggester := row.ID, row.SuggestedBy
-	a.background(ctx, "notifying a new suggestion", func(ctx context.Context) error {
+	a.digests.background(ctx, "notifying a new suggestion", func(ctx context.Context) error {
 		return a.notifySuggestion(ctx, id, item, suggester)
 	})
 }
@@ -140,25 +88,7 @@ func (a *AbbreviationReviewNotifier) QueueChanged(ctx context.Context) {
 	if a == nil {
 		return
 	}
-	a.background(ctx, "closing digests", a.closeIfEmpty)
-}
-
-// reviewers are the SuperAdmins to notify: explicit human accounts
-// (is_system_admin, not a synthetic principal) that are not disabled or
-// deleted, minus except (the suggester).
-func (a *AbbreviationReviewNotifier) reviewers(ctx context.Context, except string) ([]string, error) {
-	admins, _, err := a.users.ListSystemAdmins(ctx, 0, abbreviationNoticeMaxRecipients)
-	if err != nil {
-		return nil, err
-	}
-	var ids []string
-	for _, u := range admins {
-		if u == nil || !u.IsActive || !u.IsSystemAdmin || u.ID == "" || types.IsSyntheticUserID(u.ID) || u.ID == except {
-			continue
-		}
-		ids = append(ids, u.ID)
-	}
-	return ids, nil
+	a.digests.background(ctx, "closing digests", a.closeIfEmpty)
 }
 
 func (a *AbbreviationReviewNotifier) notifySuggestion(
@@ -173,50 +103,25 @@ func (a *AbbreviationReviewNotifier) notifySuggestion(
 	if row == nil || row.IsActive {
 		return nil
 	}
-	recipients, err := a.reviewers(ctx, suggester)
-	if err != nil {
-		return fmt.Errorf("listing SuperAdmins: %w", err)
-	}
 	first := types.UserNotificationAbbreviationPendingPayload{Count: 1, Items: []types.UserNotificationAbbreviationItem{item}}
-	var failed []string
-	for _, userID := range recipients {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		n := abbreviationPendingNotification(userID, first, a.now())
-		if _, err := a.notifications.UpsertOpenDigest(ctx, n, mergeAbbreviationDigest(item)); err != nil {
-			failed = append(failed, fmt.Sprintf("%s: %v", userID, err))
-		}
-	}
+	writeErr := a.digests.write(ctx, suggester, func(userID string, at time.Time) *types.UserNotification {
+		return abbreviationPendingNotification(userID, first, at)
+	}, mergeAbbreviationDigest(item))
 	// the queue may have emptied while the digests were written, after the
 	// review's own check ran: close them again then
 	closeErr := a.closeIfEmpty(ctx)
-	if len(failed) > 0 {
-		return fmt.Errorf("digest of %d SuperAdmin(s) not written: %s", len(failed), strings.Join(failed, "; "))
+	if writeErr != nil {
+		return writeErr
 	}
 	return closeErr
 }
 
 func (a *AbbreviationReviewNotifier) closeIfEmpty(ctx context.Context) error {
-	// a digest updated after this instant reports a suggestion the count
-	// below may not see yet: it stays open
-	before := a.now()
-	pending := false
-	_, total, err := a.abbreviations.List(ctx, "", &pending, 0, 1)
-	if err != nil {
-		return fmt.Errorf("counting pending suggestions: %w", err)
-	}
-	if total > 0 {
-		return nil
-	}
-	n, err := a.notifications.CloseOpenDigests(ctx, types.UserNotificationAbbreviationPending, before, a.now())
-	if err != nil {
-		return err
-	}
-	if n > 0 {
-		logger.Infof(ctx, "[AbbrNotice] queue empty: %d open digest(s) read", n)
-	}
-	return nil
+	return a.digests.closeIfEmpty(ctx, types.UserNotificationAbbreviationPending, func(ctx context.Context) (int64, error) {
+		pending := false
+		_, total, err := a.abbreviations.List(ctx, "", &pending, 0, 1)
+		return total, err
+	})
 }
 
 // mergeAbbreviationDigest adds item to the unread digest prev: one more

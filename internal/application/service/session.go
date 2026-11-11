@@ -172,6 +172,8 @@ type sessionService struct {
 	// (SetLegalRequests); nil turns it off.
 	legalRequests interfaces.LegalRequestRepository
 	legalReviews  interfaces.LegalReviewRepository
+	// queueNotices tells the SuperAdmins about requests people open in chat
+	queueNotices *SuperAdminQueueNotifier
 	// domainPacks are the packs shipped in this build (SetDomainPacks); an
 	// agent's pack names are resolved against them once per turn.
 	domainPacks *domainpacks.Registry

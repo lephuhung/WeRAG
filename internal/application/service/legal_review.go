@@ -40,7 +40,14 @@ type legalReviewService struct {
 	// kbRepo and models serve Spellcheck only.
 	kbRepo interfaces.KnowledgeBaseRepository
 	models interfaces.ModelService
+	// notices tells the SuperAdmins about the identities a scan leaves
+	// pending (nil: nobody is told)
+	notices *SuperAdminQueueNotifier
 }
+
+// SetQueueNotices lets the scan tell the SuperAdmins about new pending
+// identities.
+func (s *legalReviewService) SetQueueNotices(n *SuperAdminQueueNotifier) { s.notices = n }
 
 // NewLegalReviewService creates the legal review service.
 func NewLegalReviewService(
@@ -52,6 +59,16 @@ func NewLegalReviewService(
 
 func (s *legalReviewService) Scan(ctx context.Context) (int, error) {
 	created := 0
+	// the links left to a reviewer (a vbpl.vn import is approved at once):
+	// one digest update for the whole scan, also when it stops on an error
+	var pending []string
+	refs := map[string]string{}
+	defer func() {
+		if len(pending) > 0 {
+			actor, _ := types.UserIDFromContext(ctx)
+			s.notices.LegalIdentitiesPending(ctx, actor, pending, refs)
+		}
+	}()
 	for created < legalReviewScanMax {
 		batch, err := s.reviews.UnlinkedPublicKnowledge(ctx, legalReviewScanBatch)
 		if err != nil {
@@ -69,6 +86,13 @@ func (s *legalReviewService) Scan(ctx context.Context) (int, error) {
 				return created, err
 			}
 			created++
+			if link.ReviewStatus == types.LegalReviewPending {
+				pending = append(pending, link.KnowledgeID)
+				var sug types.LegalIdentitySuggestion
+				if json.Unmarshal(link.Suggestion, &sug) == nil && strings.TrimSpace(sug.DocumentNumber) != "" {
+					refs[link.KnowledgeID] = strings.TrimSpace(sug.DocumentNumber)
+				}
+			}
 		}
 	}
 	logger.Infof(ctx, "Legal review scan created %d suggestions", created)
@@ -306,6 +330,7 @@ func (s *legalReviewService) Decide(
 	if err := s.reviews.SaveLink(ctx, link); err != nil {
 		return nil, err
 	}
+	s.notices.LegalIdentitiesChanged(ctx)
 	return s.buildItem(ctx, interfaces.LegalLinkRow{Link: link})
 }
 

@@ -50,6 +50,11 @@ type LegalDocumentRequest struct {
 	Detail    JSON      `json:"detail"     gorm:"type:jsonb"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+
+	// Opened (not stored) is set by LegalRequestRepository.Record when the
+	// call opened the request: created it, reopened it after it was added,
+	// or was the first real request of a row queued with nobody asking.
+	Opened bool `json:"-" gorm:"-"`
 }
 
 // TableName returns the table name for LegalDocumentRequest.
