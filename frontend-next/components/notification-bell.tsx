@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ClickAwayLayer } from "@/components/click-away-layer";
 import { useToast } from "@/components/toast";
-import { useAuth } from "@/lib/auth";
+import { useAuth, useTenantRole } from "@/lib/auth";
 import { formatDateTime } from "@/lib/datetime";
 import { useT } from "@/lib/i18n";
 import {
@@ -15,15 +15,28 @@ import {
   markNotificationsSeen,
   type UserNotification,
 } from "@/lib/api/notifications";
-import { NOTIFICATION_POLL_MS, badgeLabel, safeAppLink, toastable } from "@/lib/notifications";
+import {
+  NOTIFICATION_POLL_MS,
+  badgeLabel,
+  notificationText,
+  resolveTarget,
+  shouldPoll,
+  toastPlan,
+  toastable,
+  unseenIds,
+  type NotificationTexts,
+} from "@/lib/notifications";
 
 /* The header bell: unread badge, a dropdown of the person's notifications
- * (newest first) and a toast once for each new one while the app is open.
- * Polls the unread count every minute and when the window comes back into
- * view; a Guest in the public portal shares the same shell and sees it too. */
+ * (newest first) and a toast once for each new one while the app is open
+ * (at most three, the rest summed up). Polls the unread count every minute
+ * and when the window comes back into view (not within 10 s of the last
+ * poll); a Guest in the public portal shares the same shell and sees it too.
+ * Known kinds are worded from their payload in the reader's language. */
 export function NotificationBell() {
   const { t, locale } = useT();
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, tenant, selectedTenantId, memberships, setSelectedTenant, refreshMe } = useAuth();
+  const { isGuest } = useTenantRole();
   const toast = useToast();
   const router = useRouter();
   const [unread, setUnread] = useState(0);
@@ -32,54 +45,108 @@ export function NotificationBell() {
   const [loading, setLoading] = useState(false);
   const toasted = useRef<Set<string>>(new Set());
   const polling = useRef(false);
+  const lastPoll = useRef(0);
+
+  const texts = useMemo<NotificationTexts>(
+    () => ({
+      legalAddedTitle: (doc) => t("notif.legalAdded.title", { doc }),
+      legalAddedChat: t("notif.legalAdded.chat"),
+      legalAddedWord: t("notif.legalAdded.word"),
+      legalAddedLookup: t("notif.legalAdded.lookup"),
+    }),
+    [t],
+  );
 
   const go = useCallback(
-    (n: UserNotification) => {
+    async (n: UserNotification) => {
       if (!n.read_at) {
         void markNotificationRead(n.id).catch(() => {});
         setItems((prev) => prev?.map((x) => (x.id === n.id ? { ...x, read_at: new Date().toISOString() } : x)) ?? prev);
         setUnread((u) => Math.max(0, u - 1));
       }
       setOpen(false);
-      const link = safeAppLink(n.link);
-      if (link) router.push(link);
+      const current = Number(selectedTenantId ?? tenant?.id ?? 0) || null;
+      const target = resolveTarget(n, {
+        origin: window.location.origin,
+        currentTenantId: current,
+        memberTenantIds: memberships.map((m) => m.tenant_id),
+        isGuest,
+      });
+      if (!target.path) return;
+      if (target.switchTenantId != null) {
+        // the conversation lives in another of the person's organizations
+        setSelectedTenant(String(target.switchTenantId));
+        await refreshMe().catch(() => {});
+      }
+      router.push(target.path);
     },
-    [router],
+    [isGuest, memberships, refreshMe, router, selectedTenantId, setSelectedTenant, tenant?.id],
   );
+
+  const openList = useCallback(async () => {
+    setOpen(true);
+    setLoading(true);
+    try {
+      const res = await listNotifications({ limit: 30 });
+      const list = res.data?.items ?? [];
+      setItems(list);
+      const unseen = unseenIds(list);
+      if (unseen.length > 0) {
+        unseen.forEach((id) => toasted.current.add(id));
+        void markNotificationsSeen(unseen).catch(() => {});
+      }
+    } catch {
+      setItems((prev) => prev ?? []);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   const showToasts = useCallback(async () => {
     const res = await listNotifications({ unread: true, limit: 20 });
-    const fresh = toastable(res.data?.items ?? [], toasted.current);
-    if (fresh.length === 0) return;
-    for (const n of fresh) {
+    const list = res.data?.items ?? [];
+    const { show, more } = toastPlan(toastable(list, toasted.current));
+    for (const n of show) {
       toasted.current.add(n.id);
-      toast.info(n.title, () => go(n), 8000);
+      const { title, body } = notificationText(n, texts);
+      toast.info(body ? `${title} — ${body}` : title, () => void go(n), 8000);
     }
-    await markNotificationsSeen(fresh.map((n) => n.id));
-  }, [go, toast]);
+    if (more > 0) {
+      toastable(list, toasted.current).forEach((n) => toasted.current.add(n.id));
+      toast.info(t("notif.more", { n: more }), () => void openList(), 8000);
+    }
+    // every unseen one fetched, so a seen call that failed before is retried
+    const unseen = unseenIds(list);
+    if (unseen.length > 0) await markNotificationsSeen(unseen);
+  }, [go, openList, t, texts, toast]);
 
-  const poll = useCallback(async () => {
-    if (polling.current || document.visibilityState === "hidden") return;
-    polling.current = true;
-    try {
-      const res = await getUnreadNotificationCount();
-      const data = res.data;
-      if (!data) return;
-      setUnread(data.unread);
-      if (data.unseen > 0) await showToasts();
-    } catch {
-      /* offline or signed out: the next poll tries again */
-    } finally {
-      polling.current = false;
-    }
-  }, [showToasts]);
+  const poll = useCallback(
+    async (fromTimer: boolean) => {
+      if (polling.current || document.visibilityState === "hidden") return;
+      if (!shouldPoll(lastPoll.current, Date.now(), fromTimer)) return;
+      polling.current = true;
+      lastPoll.current = Date.now();
+      try {
+        const res = await getUnreadNotificationCount();
+        const data = res.data;
+        if (!data) return;
+        setUnread(data.unread);
+        if (data.unseen > 0) await showToasts();
+      } catch {
+        /* offline or signed out: the next poll tries again */
+      } finally {
+        polling.current = false;
+      }
+    },
+    [showToasts],
+  );
 
   useEffect(() => {
     if (!isLoggedIn) return;
-    void poll();
-    const timer = window.setInterval(() => void poll(), NOTIFICATION_POLL_MS);
+    void poll(true);
+    const timer = window.setInterval(() => void poll(true), NOTIFICATION_POLL_MS);
     const onVisible = () => {
-      if (document.visibilityState === "visible") void poll();
+      if (document.visibilityState === "visible") void poll(false);
     };
     window.addEventListener("focus", onVisible);
     document.addEventListener("visibilitychange", onVisible);
@@ -91,25 +158,12 @@ export function NotificationBell() {
   }, [isLoggedIn, poll]);
 
   const toggle = useCallback(async () => {
-    const next = !open;
-    setOpen(next);
-    if (!next) return;
-    setLoading(true);
-    try {
-      const res = await listNotifications({ limit: 30 });
-      const list = res.data?.items ?? [];
-      setItems(list);
-      const unseen = list.filter((n) => !n.seen_at).map((n) => n.id);
-      if (unseen.length > 0) {
-        unseen.forEach((id) => toasted.current.add(id));
-        void markNotificationsSeen(unseen).catch(() => {});
-      }
-    } catch {
-      setItems((prev) => prev ?? []);
-    } finally {
-      setLoading(false);
+    if (open) {
+      setOpen(false);
+      return;
     }
-  }, [open]);
+    await openList();
+  }, [open, openList]);
 
   const readAll = useCallback(async () => {
     try {
@@ -164,11 +218,13 @@ export function NotificationBell() {
                 <p className="caption px-4 py-6 text-center text-muted">{t("notif.empty")}</p>
               ) : (
                 <ul>
-                  {items.map((n) => (
+                  {items.map((n) => {
+                    const text = notificationText(n, texts);
+                    return (
                     <li key={n.id}>
                       <button
                         type="button"
-                        onClick={() => go(n)}
+                        onClick={() => void go(n)}
                         className={`flex w-full items-start gap-2.5 border-b border-hairline px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-surface-strong ${
                           n.read_at ? "" : "bg-surface"
                         }`}
@@ -179,14 +235,15 @@ export function NotificationBell() {
                         />
                         <span className="min-w-0 flex-1">
                           <span className={`block text-[13px] leading-snug ${n.read_at ? "text-body" : "font-semibold text-ink"}`}>
-                            {n.title}
+                            {text.title}
                           </span>
-                          {n.body && <span className="caption mt-0.5 block line-clamp-3 text-muted">{n.body}</span>}
+                          {text.body && <span className="caption mt-0.5 block line-clamp-3 text-muted">{text.body}</span>}
                           <span className="caption mt-1 block text-muted-soft">{formatDateTime(n.created_at, locale)}</span>
                         </span>
                       </button>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               )}
             </div>
