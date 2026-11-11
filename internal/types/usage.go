@@ -152,8 +152,25 @@ type UsagePeriodTotals struct {
 	CacheMissTokens int64 `json:"cache_miss_tokens"`
 	// CostMicroVND is what these calls cost, in millionths of a đồng. Only
 	// a SuperAdmin report shows it: it is the operator's spend, not the
-	// tenant's consumption.
-	CostMicroVND int64 `json:"cost_micro_vnd"`
+	// tenant's consumption. Every response to anyone else goes through
+	// WithoutCost, and omitempty keeps the zero off the wire.
+	CostMicroVND int64 `json:"cost_micro_vnd,omitempty"`
+}
+
+// WithoutCost returns t with the operator's cost removed, for any caller
+// who is not an explicit human SuperAdmin.
+func (t UsagePeriodTotals) WithoutCost() UsagePeriodTotals {
+	t.CostMicroVND = 0
+	return t
+}
+
+// WithoutCost strips the operator's cost from both periods (nil-safe).
+func (s *UsageScopeSummary) WithoutCost() {
+	if s == nil {
+		return
+	}
+	s.Today = s.Today.WithoutCost()
+	s.Month = s.Month.WithoutCost()
 }
 
 // AddMetric folds one counter row into the totals.

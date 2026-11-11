@@ -14,8 +14,9 @@ import (
 // alone, so a member of several Tổ chức (or one who also chats in a
 // personal workspace) adds every workspace into one row, and seat caps read
 // that row as it is. The meter therefore also counts each turn of a real
-// person under scope "member" with scope_id "<tenant id>:<user id>", month
-// rows only. Nothing enforces a limit on these rows; only the report reads
+// person under scope "member" with scope_id "<tenant id>:<user id>", day
+// and month rows (the day rows tell the report from which day of the
+// deploy month the member figures are complete). Nothing enforces a limit on these rows; only the report reads
 // them, so they change no quota.
 const (
 	UsageScopeMember = "member"
@@ -81,10 +82,15 @@ type UsageMemberUsage struct {
 	Username string `json:"username"`
 	Email    string `json:"email"`
 	// Role is the member's role today; empty for someone who used the
-	// organization this month but is no longer (or never was) a member,
-	// e.g. a removed member or a SuperAdmin working in it.
+	// organization this month but is not a member now (a removed member,
+	// a SuperAdmin working in it).
 	Role   TenantRole `json:"role,omitempty"`
 	Member bool       `json:"member"`
+	// Outside marks the one line that sums everyone with usage who is not
+	// a member now, shown to a Tenant Admin without names (a SuperAdmin
+	// sees those people one by one, with Member=false). UserID, Username
+	// and Email are empty on it.
+	Outside bool `json:"outside,omitempty"`
 	// HasSeat is set only when the organization's package is in seat mode.
 	HasSeat *bool `json:"has_seat,omitempty"`
 	// PersonalPlan names the member's own package, if any.
@@ -98,8 +104,13 @@ type UsageMemberReport struct {
 	Month    string `json:"month"`
 	Timezone string `json:"timezone"`
 	Source   string `json:"source"`
+	// Partial: member counting began during this month (the deploy month).
+	// CountedSince is the first Vietnam day it covers (YYYY-MM-DD); what
+	// members used before that day is only in Unattributed.
+	Partial      bool   `json:"partial,omitempty"`
+	CountedSince string `json:"counted_since,omitempty"`
 	// CostVisible: cost_micro_vnd is filled in (SuperAdmin only, it is the
-	// operator's spend); otherwise every cost field is zero.
+	// operator's spend); otherwise every cost field is zero (and omitted).
 	CostVisible bool `json:"cost_visible"`
 	// Subscription is the organization's current package with this
 	// month's consumption against its limits (quota context); nil when it
@@ -111,7 +122,7 @@ type UsageMemberReport struct {
 	// IM/API turns (machine principals) and anything counted before the
 	// member counters existed.
 	Total UsagePeriodTotals `json:"total"`
-	// MembersTotal sums Members.
+	// MembersTotal sums every line of Members (the outside line included).
 	MembersTotal UsagePeriodTotals `json:"members_total"`
 	// Unattributed is Total minus MembersTotal (never negative): usage no
 	// person can be named for.

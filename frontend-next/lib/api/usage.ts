@@ -484,6 +484,9 @@ export interface UsageMemberUsage {
   /** Role today; absent for someone who used the organization but is no longer a member. */
   role?: string;
   member: boolean;
+  /** The one nameless line summing everyone outside the organization with
+   * usage (Tenant Admin view); a SuperAdmin sees them one by one instead. */
+  outside?: boolean;
   /** Only when the organization's package is in seat mode. */
   has_seat?: boolean;
   personal_plan?: string;
@@ -499,6 +502,10 @@ export interface UsageMemberReport {
   /** "counters": exact; "messages": month before per-member counting, summed
    * from chat history (questions and chat tokens only, no OCR, no cost). */
   source: "counters" | "messages";
+  /** Member counting began during this month: figures cover counted_since
+   * (YYYY-MM-DD) on; earlier usage is in `unattributed`. */
+  partial?: boolean;
+  counted_since?: string;
   /** cost_micro_vnd is filled in (SuperAdmin only). */
   cost_visible: boolean;
   subscription?: UsageSubscriptionView | null;

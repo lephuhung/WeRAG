@@ -36,6 +36,9 @@ type UsageMemberReportRepository interface {
 	// ListMemberCounters returns every "member" counter row of tenantID
 	// (types.UsageScopeMember) for one month key.
 	ListMemberCounters(ctx context.Context, tenantID uint64, monthKey string) ([]*types.UsageCounter, error)
+	// FirstMemberDay is the earliest Vietnam day (YYYY-MM-DD) of monthKey
+	// with a "member" day row of tenantID, "" when there is none.
+	FirstMemberDay(ctx context.Context, tenantID uint64, monthKey string) (string, error)
 	// SumMessageUsageByUser sums the chat history of tenantID's sessions
 	// (deleted ones included: the usage was spent) in [from, to) per
 	// session owner: questions = user messages, tokens from the assistant
@@ -83,6 +86,9 @@ type UsagePlanRepository interface {
 	// GetActiveSubscription returns the active subscription of one scope
 	// with its plan loaded, or nil when there is none.
 	GetActiveSubscription(ctx context.Context, scopeType, scopeID string) (*types.UsageSubscription, error)
+	// ListActiveSubscriptions is GetActiveSubscription for many scopes of
+	// one type in one read (with the plan), keyed by scope id.
+	ListActiveSubscriptions(ctx context.Context, scopeType string, scopeIDs []string) (map[string]*types.UsageSubscription, error)
 	CreateSubscription(ctx context.Context, sub *types.UsageSubscription) error
 	UpdateSubscription(ctx context.Context, sub *types.UsageSubscription) error
 	DeleteSubscription(ctx context.Context, id string) error
@@ -218,8 +224,9 @@ type UsagePlanService interface {
 	RevokeTenantSeat(ctx context.Context, tenantID uint64, userID string) error
 	// TenantMemberUsage is the member usage report of one organization for
 	// one month ("YYYY-MM", "" = this month, Vietnam calendar). withCost
-	// fills the operator's cost (SuperAdmin callers only).
-	TenantMemberUsage(ctx context.Context, tenantID uint64, month string, withCost bool) (*types.UsageMemberReport, error)
+	// operator is an explicit human SuperAdmin: they see the operator's cost
+	// and, by name, the people with usage who are not members.
+	TenantMemberUsage(ctx context.Context, tenantID uint64, month string, operator bool) (*types.UsageMemberReport, error)
 }
 
 // UsageBillingRepository stores promo codes and orders.

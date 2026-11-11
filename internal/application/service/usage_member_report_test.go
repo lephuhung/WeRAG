@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -95,12 +96,14 @@ func reportRow(t *testing.T, r *types.UsageMemberReport, userID string) *types.U
 // The report names each member of the organization with what they used in
 // it alone: a member of two organizations shows only this one's turns, the
 // IM/API principal has no line (its turns stay unattributed), a member who
-// asked nothing is listed at zero, and someone removed keeps their line.
-// The month follows the Vietnam calendar.
+// asked nothing is listed at zero. People who are not members now (a
+// removed member, a SuperAdmin who worked in it) are summed into one
+// nameless line for a Tenant Admin and named only for a SuperAdmin. The
+// month follows the Vietnam calendar.
 func TestTenantMemberUsageCountsEachMemberInThisOrganization(t *testing.T) {
 	f := newMemberReportFixture(t)
 	ctx := context.Background()
-	for id, name := range map[string]string{"u-alice": "alice", "u-bob": "bob", "u-carol": "carol", "u-dave": "dave", "u-eve": "eve"} {
+	for id, name := range map[string]string{"u-alice": "alice", "u-bob": "bob", "u-carol": "carol", "u-dave": "dave", "u-eve": "eve", "u-super": "superadmin"} {
 		f.user(t, id, name)
 	}
 	f.member(t, 10001, "u-alice", types.TenantRoleAdmin)
@@ -123,6 +126,7 @@ func TestTenantMemberUsageCountsEachMemberInThisOrganization(t *testing.T) {
 	f.turn(t, 10002, "u-alice", nov, 7000, 1_000_000) // the other organization
 	f.turn(t, 10001, "system-10001", nov, 400, 1_000_000)
 	f.turn(t, 10001, "u-eve", nov, 200, 0)
+	f.turn(t, 10001, "u-super", nov, 50, 0) // a SuperAdmin working in the organization
 	require.NoError(t, f.members.SoftDelete(ctx, "u-eve", 10001))
 	// 2026-10-31 17:30 UTC is already 1 November in Vietnam ...
 	f.turn(t, 10001, "u-bob", time.Date(2026, 10, 31, 17, 30, 0, 0, time.UTC), 100, 0)
@@ -139,7 +143,7 @@ func TestTenantMemberUsageCountsEachMemberInThisOrganization(t *testing.T) {
 	for _, m := range r.Members {
 		ids = append(ids, m.UserID)
 	}
-	require.Equal(t, []string{"u-bob", "u-alice", "u-eve", "u-carol"}, ids, "tokens desc; no synthetic user, no other org's member")
+	require.Equal(t, []string{"u-bob", "u-alice", "", "u-carol"}, ids, "tokens desc; no synthetic user, no other org's member")
 
 	alice := reportRow(t, r, "u-alice")
 	require.Equal(t, int64(2), alice.Usage.Questions)
@@ -162,12 +166,23 @@ func TestTenantMemberUsageCountsEachMemberInThisOrganization(t *testing.T) {
 	require.Zero(t, carol.Usage.Tokens)
 	require.True(t, carol.Member)
 
-	eve := reportRow(t, r, "u-eve")
-	require.False(t, eve.Member, "removed this month, still accounted for")
-	require.Empty(t, eve.Role)
+	outside := reportRow(t, r, "")
+	require.True(t, outside.Outside)
+	require.False(t, outside.Member)
+	require.Empty(t, outside.Username)
+	require.Empty(t, outside.Email)
+	require.Equal(t, int64(250), outside.Usage.Tokens, "the removed member and the SuperAdmin, unnamed")
+	require.Equal(t, int64(2), outside.Usage.Questions)
 
-	require.Equal(t, int64(1500+3100+200+400), r.Total.Tokens)
-	require.Equal(t, int64(1500+3100+200), r.MembersTotal.Tokens)
+	// on the wire: no cost field, no trace of who is outside
+	raw, err := json.Marshal(r)
+	require.NoError(t, err)
+	for _, leak := range []string{"cost_micro_vnd", "u-super", "superadmin", "u-eve", "eve@"} {
+		require.NotContains(t, string(raw), leak)
+	}
+
+	require.Equal(t, int64(1500+3100+250+400), r.Total.Tokens)
+	require.Equal(t, int64(1500+3100+250), r.MembersTotal.Tokens)
 	require.Equal(t, int64(400), r.Unattributed.Tokens, "the IM/API principal")
 	require.Equal(t, int64(1), r.Unattributed.Questions)
 	require.Zero(t, r.Total.CostMicroVND)
@@ -176,12 +191,21 @@ func TestTenantMemberUsageCountsEachMemberInThisOrganization(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, int64(50), reportRow(t, oct, "u-bob").Usage.Tokens)
 
-	// a SuperAdmin sees the cost
+	// a SuperAdmin sees the cost, and the people outside by name
 	r, err = f.service.TenantMemberUsage(ctx, 10001, "2026-11", true)
 	require.NoError(t, err)
 	require.True(t, r.CostVisible)
 	require.Equal(t, int64(7_000_000), reportRow(t, r, "u-alice").Usage.CostMicroVND)
 	require.Equal(t, int64(17_000_000), r.Total.CostMicroVND)
+	eve := reportRow(t, r, "u-eve")
+	require.False(t, eve.Member, "removed this month, still accounted for")
+	require.False(t, eve.Outside)
+	require.Empty(t, eve.Role)
+	require.Equal(t, "eve", eve.Username)
+	require.Equal(t, int64(50), reportRow(t, r, "u-super").Usage.Tokens)
+	raw, err = json.Marshal(r)
+	require.NoError(t, err)
+	require.Contains(t, string(raw), `"cost_micro_vnd":7000000`)
 
 	// the other organization sees alice's 7000 tokens there and never bob
 	other, err := f.service.TenantMemberUsage(ctx, 10002, "2026-11", false)
@@ -285,4 +309,49 @@ func TestMemberCountersLeaveUserCountersAlone(t *testing.T) {
 	}
 	require.Equal(t, int64(300), got.Tokens)
 	require.Equal(t, int64(2), got.Questions)
+}
+
+// memberTurnOn records one metered turn on `day`: the member day row of
+// that Vietnam day is the first the report sees.
+func (f *memberReportFixture) memberTurnOn(t *testing.T, tenantID uint64, userID string, day time.Time) {
+	t.Helper()
+	f.turn(t, tenantID, userID, day, 100, 0)
+}
+
+// The month member counting began: the counters start on the 12th while the
+// chat history shows members asking on the 3rd, so the report is partial
+// and says from which day; a month counted from its first day, or one whose
+// earlier history is only the IM/API principal's, is not.
+func TestTenantMemberUsageFlagsTheDeployMonth(t *testing.T) {
+	f := newMemberReportFixture(t)
+	ctx := context.Background()
+	f.user(t, "u-alice", "alice")
+	f.member(t, 10001, "u-alice", types.TenantRoleMember)
+	f.member(t, 10002, "u-alice", types.TenantRoleMember)
+
+	before := &types.Session{TenantID: 10001, UserID: "u-alice", Title: "trước"}
+	bot := &types.Session{TenantID: 10002, UserID: "system-10002", Title: "im"}
+	require.NoError(t, f.db.Create([]*types.Session{before, bot}).Error)
+	nov3 := time.Date(2026, 11, 3, 3, 0, 0, 0, time.UTC)
+	require.NoError(t, f.db.Exec(`INSERT INTO messages (id, session_id, role, created_at) VALUES ('h1', ?, 'user', ?), ('h2', ?, 'user', ?)`,
+		before.ID, nov3, bot.ID, nov3).Error)
+	// 11 Nov 17:30 UTC is 12 Nov in Vietnam
+	f.memberTurnOn(t, 10001, "u-alice", time.Date(2026, 11, 11, 17, 30, 0, 0, time.UTC))
+	f.memberTurnOn(t, 10002, "u-alice", time.Date(2026, 11, 11, 17, 30, 0, 0, time.UTC))
+
+	r, err := f.service.TenantMemberUsage(ctx, 10001, "2026-11", false)
+	require.NoError(t, err)
+	require.Equal(t, types.UsageMemberSourceCounters, r.Source)
+	require.True(t, r.Partial)
+	require.Equal(t, "2026-11-12", r.CountedSince)
+
+	other, err := f.service.TenantMemberUsage(ctx, 10002, "2026-11", false)
+	require.NoError(t, err)
+	require.False(t, other.Partial, "only the IM/API principal used it before")
+
+	f.memberTurnOn(t, 10001, "u-alice", time.Date(2026, 9, 30, 17, 30, 0, 0, time.UTC)) // 1 October in Vietnam
+	oct, err := f.service.TenantMemberUsage(ctx, 10001, "2026-10", false)
+	require.NoError(t, err)
+	require.False(t, oct.Partial)
+	require.Empty(t, oct.CountedSince)
 }

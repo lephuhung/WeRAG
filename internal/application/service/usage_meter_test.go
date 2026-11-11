@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,7 +68,7 @@ func TestUsageMeterRecordQuestionCountsTenantAndRealUserOnly(t *testing.T) {
 	m := &usageMeter{repo: repo, now: func() time.Time { return time.Date(2026, 10, 13, 3, 0, 0, 0, time.UTC) }}
 
 	m.RecordQuestion(context.Background(), 10003, "user-1", "")
-	require.Len(t, repo.added, 5) // {tenant,user} x {day,month} + member month
+	require.Len(t, repo.added, 6) // {tenant,user,member} x {day,month}
 	for _, inc := range repo.added {
 		require.Equal(t, types.UsageMetricQuestions, inc.Metric)
 		require.Equal(t, int64(1), inc.Delta)
@@ -90,7 +91,7 @@ func TestUsageMeterCountsTheSessionOnce(t *testing.T) {
 	m := &usageMeter{repo: repo, now: func() time.Time { return time.Date(2026, 10, 13, 3, 0, 0, 0, time.UTC) }}
 
 	m.RecordQuestion(context.Background(), 10003, "user-1", "sess-1")
-	require.Len(t, repo.added, 6)
+	require.Len(t, repo.added, 7)
 	var session []types.UsageIncrement
 	for _, inc := range repo.added {
 		if inc.ScopeType == types.UsageScopeSession {
@@ -125,8 +126,8 @@ func TestUsageMeterRecordMessageUsageOncePerMessage(t *testing.T) {
 
 	msg := &types.Message{ID: "m1", Role: "assistant", Usage: &types.TokenUsage{PromptTokens: 90, CompletionTokens: 10, TotalTokens: 100}}
 	m.RecordMessageUsage(ctx, msg)
-	// 3 token metrics x ({tenant,user} x {day,month} + member month)
-	require.Len(t, repo.added, 15)
+	// 3 token metrics x {tenant,user,member} x {day,month}
+	require.Len(t, repo.added, 18)
 	var tokens int64
 	for _, inc := range repo.added {
 		if inc.Metric == types.UsageMetricTokens && inc.ScopeType == types.UsageScopeTenant && len(inc.PeriodKey) == 7 {
@@ -136,13 +137,13 @@ func TestUsageMeterRecordMessageUsageOncePerMessage(t *testing.T) {
 	require.Equal(t, int64(100), tokens)
 
 	m.RecordMessageUsage(ctx, msg) // saved again (artifacts, checkpoint...)
-	require.Len(t, repo.added, 15, "second save must not re-count")
+	require.Len(t, repo.added, 18, "second save must not re-count")
 
 	// Nothing to count: no usage, user role, or zero tokens.
 	m.RecordMessageUsage(ctx, &types.Message{ID: "m2", Role: "assistant"})
 	m.RecordMessageUsage(ctx, &types.Message{ID: "m3", Role: "user", Usage: &types.TokenUsage{TotalTokens: 5}})
 	m.RecordMessageUsage(ctx, &types.Message{ID: "m4", Role: "assistant", Usage: &types.TokenUsage{}})
-	require.Len(t, repo.added, 15)
+	require.Len(t, repo.added, 18)
 	require.False(t, repo.claimed["m2"])
 }
 
@@ -161,8 +162,8 @@ func TestUsageMeterRecordOCRUsageJoinsTokenQuota(t *testing.T) {
 	require.Equal(t, int64(1920), sum[types.UsageMetricOCRTokens])
 	require.Equal(t, int64(1800), sum[types.UsageMetricPromptTokens])
 	require.Equal(t, int64(2), sum[types.UsageMetricOCRPages])
-	// {tenant,user} x {day,month} + member month + session, for 5 metrics
-	require.Len(t, repo.added, 5*6)
+	// {tenant,user,member} x {day,month} + session, for 5 metrics
+	require.Len(t, repo.added, 5*7)
 
 	repo.added = nil
 	m.RecordOCRUsage(context.Background(), 10003, "user-1", "", 0, types.VLMUsage{})
@@ -307,6 +308,9 @@ func TestUsageMeterCountsTheMemberInsideTheOrganization(t *testing.T) {
 	m.RecordQuestion(context.Background(), 10003, "user-1", "sess-1")
 	require.Equal(t, []types.UsageIncrement{{
 		ScopeType: types.UsageScopeMember, ScopeID: "10003:user-1", Metric: types.UsageMetricQuestions,
+		PeriodKey: "2026-11-01", Delta: 1,
+	}, {
+		ScopeType: types.UsageScopeMember, ScopeID: "10003:user-1", Metric: types.UsageMetricQuestions,
 		PeriodKey: "2026-11", Delta: 1,
 	}}, member())
 
@@ -317,4 +321,12 @@ func TestUsageMeterCountsTheMemberInsideTheOrganization(t *testing.T) {
 	repo.added = nil
 	m.RecordQuestion(portalCtx(), testPortalID, "user-1", "")
 	require.Empty(t, member(), "a portal Guest is no member")
+
+	// a user id too long for usage_counters.scope_id loses only its member
+	// rows; the organization and person rows are still written
+	repo.added = nil
+	long := strings.Repeat("u", 60)
+	m.RecordQuestion(context.Background(), 10003, long, "")
+	require.Empty(t, member())
+	require.Len(t, repo.added, 4)
 }

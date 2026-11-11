@@ -166,6 +166,24 @@ func (r *usageCounterRepository) ListMemberCounters(
 	return rows, err
 }
 
+// FirstMemberDay implements interfaces.UsageMemberReportRepository. Day
+// keys sort as text; the month rows ("YYYY-MM") do not match "YYYY-MM-%".
+func (r *usageCounterRepository) FirstMemberDay(ctx context.Context, tenantID uint64, monthKey string) (string, error) {
+	if tenantID == 0 || monthKey == "" {
+		return "", nil
+	}
+	var first *string
+	err := r.db.WithContext(ctx).Model(&types.UsageCounter{}).
+		Select("MIN(period_key)").
+		Where("scope_type = ? AND scope_id LIKE ? AND period_key LIKE ?",
+			types.UsageScopeMember, types.UsageMemberScopePrefix(tenantID)+"%", monthKey+"-%").
+		Scan(&first).Error
+	if err != nil || first == nil {
+		return "", err
+	}
+	return *first, nil
+}
+
 // memberMessageUsageRow is one session owner's sums in SumMessageUsageByUser.
 type memberMessageUsageRow struct {
 	UserID           string

@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -50,6 +51,11 @@ func (h *MeUsageHandler) Get(c *gin.Context) {
 			return
 		}
 		summary.Entitlement = ent
+	}
+	// what the calls cost is the operator's spend, never the caller's to see
+	if !middleware.IsPlatformSuperAdmin(ctx) {
+		summary.User.WithoutCost()
+		summary.Tenant.WithoutCost()
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": summary})
 }

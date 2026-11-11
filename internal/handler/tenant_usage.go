@@ -61,9 +61,9 @@ func (h *TenantUsageHandler) Members(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	// the cost is the operator's spend, never the organization's to see
-	withCost := middleware.IsPlatformSuperAdmin(ctx)
-	out, err := h.plans.TenantMemberUsage(ctx, tenantID, strings.TrimSpace(c.Query("month")), withCost)
+	// the cost and who outside the organization used it are the operator's to see
+	operator := middleware.IsPlatformSuperAdmin(ctx)
+	out, err := h.plans.TenantMemberUsage(ctx, tenantID, strings.TrimSpace(c.Query("month")), operator)
 	if err != nil {
 		usageAdminFail(c, err)
 		return

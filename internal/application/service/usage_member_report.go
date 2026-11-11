@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -24,13 +25,19 @@ import (
 // summed from the organization's chat history instead (Source "messages":
 // questions and chat tokens, no OCR, no cost).
 //
+// In the month member counting began (the deploy month) the counters miss
+// the days before it: the report is then Partial, with the first counted
+// day, when the chat history shows member usage before that day.
+//
 // Everyone who holds an active membership is listed, with zero usage when
-// they asked nothing; someone with usage who is no longer a member (or a
-// SuperAdmin who worked in the organization) is listed with Member=false.
-// Machine principals (IM, API keys) have no line: their turns stay in
-// Unattributed. withCost fills cost_micro_vnd (SuperAdmin only).
+// they asked nothing. People with usage who are not members now (a removed
+// member, a SuperAdmin who worked in the organization) are listed by name
+// with Member=false for an operator (explicit human SuperAdmin) only; a
+// Tenant Admin gets one nameless "outside" line summing them. Machine
+// principals (IM, API keys) have no line: their turns stay in Unattributed.
+// The operator's cost is filled in for an operator only.
 func (s *usagePlanService) TenantMemberUsage(
-	ctx context.Context, tenantID uint64, month string, withCost bool,
+	ctx context.Context, tenantID uint64, month string, operator bool,
 ) (*types.UsageMemberReport, error) {
 	current := types.UsagePeriodKeysAt(s.now()).Month
 	if month == "" {
@@ -60,7 +67,7 @@ func (s *usagePlanService) TenantMemberUsage(
 
 	out := &types.UsageMemberReport{
 		TenantID: tenantID, Month: month, Timezone: types.UsageTimezone,
-		Source: types.UsageMemberSourceCounters, CostVisible: withCost,
+		Source: types.UsageMemberSourceCounters, CostVisible: operator,
 		Members:      []*types.UsageMemberUsage{},
 		Total:        types.UsagePeriodTotals{PeriodKey: month},
 		MembersTotal: types.UsagePeriodTotals{PeriodKey: month},
@@ -91,7 +98,11 @@ func (s *usagePlanService) TenantMemberUsage(
 			at(uid).AddMetric(r.Metric, r.Value)
 		}
 	}
-	if len(memberRows) == 0 {
+	if len(memberRows) > 0 {
+		if err := s.markPartialMonth(ctx, reader, out, start); err != nil {
+			return nil, err
+		}
+	} else {
 		sums, err := reader.SumMessageUsageByUser(ctx, tenantID, start, end)
 		if err != nil {
 			return nil, err
@@ -112,30 +123,41 @@ func (s *usagePlanService) TenantMemberUsage(
 		}
 	}
 	roles := make(map[string]types.TenantRole, len(members))
-	ids := make([]string, 0, len(members)+len(usage))
+	memberIDs := make([]string, 0, len(members))
 	for _, m := range members {
 		if m.Status != types.TenantMemberStatusActive || types.IsSyntheticUserID(m.UserID) {
 			continue
 		}
 		if _, seen := roles[m.UserID]; !seen {
-			ids = append(ids, m.UserID)
+			memberIDs = append(memberIDs, m.UserID)
 		}
 		roles[m.UserID] = m.Role
 	}
+	var outsiders []string
 	for uid := range usage {
 		if _, member := roles[uid]; !member {
-			ids = append(ids, uid)
+			outsiders = append(outsiders, uid)
 		}
 	}
+	sort.Strings(outsiders)
 
+	// names: the members, and the people outside only for an operator
+	named := memberIDs
+	if operator {
+		named = append(append([]string{}, memberIDs...), outsiders...)
+	}
 	users := map[string]*types.User{}
-	if s.users != nil && len(ids) > 0 {
-		if found, err := s.users.GetUsersByIDs(ctx, ids); err == nil {
+	if s.users != nil && len(named) > 0 {
+		if found, err := s.users.GetUsersByIDs(ctx, named); err == nil {
 			users = found
 		} else {
 			// names are a convenience: the figures still stand without them
 			logger.Warnf(ctx, "member usage report: user lookup failed: tenant=%d err=%v", tenantID, err)
 		}
+	}
+	plans, err := s.repo.ListActiveSubscriptions(ctx, types.UsageScopeUser, memberIDs)
+	if err != nil {
+		return nil, err
 	}
 
 	var seats map[string]bool
@@ -161,9 +183,21 @@ func (s *usagePlanService) TenantMemberUsage(
 		}
 	}
 
-	for _, uid := range ids {
-		role, member := roles[uid]
-		row := &types.UsageMemberUsage{UserID: uid, Role: role, Member: member}
+	usageOf := func(uid string) types.UsagePeriodTotals {
+		if u := usage[uid]; u != nil {
+			return *u
+		}
+		return types.UsagePeriodTotals{PeriodKey: month}
+	}
+	add := func(row *types.UsageMemberUsage) {
+		if !operator {
+			row.Usage = row.Usage.WithoutCost()
+		}
+		out.MembersTotal.Add(row.Usage)
+		out.Members = append(out.Members, row)
+	}
+	for _, uid := range memberIDs {
+		row := &types.UsageMemberUsage{UserID: uid, Role: roles[uid], Member: true, Usage: usageOf(uid)}
 		if u := users[uid]; u != nil {
 			row.Username, row.Email = u.Username, u.Email
 		}
@@ -171,28 +205,29 @@ func (s *usagePlanService) TenantMemberUsage(
 			has := seats[uid]
 			row.HasSeat = &has
 		}
-		if member {
-			own, err := s.repo.GetActiveSubscription(ctx, types.UsageScopeUser, uid)
-			if err != nil {
-				return nil, err
-			}
-			if own != nil && own.Plan != nil {
-				row.PersonalPlan = own.Plan.Name
-			}
+		if own := plans[uid]; own != nil && own.Plan != nil {
+			row.PersonalPlan = own.Plan.Name
 		}
-		if u := usage[uid]; u != nil {
-			row.Usage = *u
-		} else {
-			row.Usage = types.UsagePeriodTotals{PeriodKey: month}
-		}
-		if !withCost {
-			row.Usage.CostMicroVND = 0
-		}
-		out.MembersTotal.Add(row.Usage)
-		out.Members = append(out.Members, row)
+		add(row)
 	}
-	if !withCost {
-		out.Total.CostMicroVND = 0
+	if operator {
+		for _, uid := range outsiders {
+			row := &types.UsageMemberUsage{UserID: uid, Usage: usageOf(uid)}
+			if u := users[uid]; u != nil {
+				row.Username, row.Email = u.Username, u.Email
+			}
+			add(row)
+		}
+	} else if len(outsiders) > 0 {
+		// who they are (a SuperAdmin among them) is not the Tổ chức's to see
+		row := &types.UsageMemberUsage{Outside: true, Usage: types.UsagePeriodTotals{PeriodKey: month}}
+		for _, uid := range outsiders {
+			row.Usage.Add(usageOf(uid))
+		}
+		add(row)
+	}
+	if !operator {
+		out.Total = out.Total.WithoutCost()
 	}
 	out.Unattributed = out.Total.MinusFloor(out.MembersTotal)
 
@@ -210,6 +245,33 @@ func (s *usagePlanService) TenantMemberUsage(
 		return memberLabel(a) < memberLabel(b)
 	})
 	return out, nil
+}
+
+// markPartialMonth flags a month whose member counters began after its
+// first day while the chat history shows member usage before that day:
+// the deploy month of member counting.
+func (s *usagePlanService) markPartialMonth(
+	ctx context.Context, reader interfaces.UsageMemberReportRepository, out *types.UsageMemberReport, start time.Time,
+) error {
+	first, err := reader.FirstMemberDay(ctx, out.TenantID, out.Month)
+	if err != nil || first == "" || first == start.Format("2006-01-02") {
+		return err
+	}
+	since, err := time.ParseInLocation("2006-01-02", first, types.UsageLocation())
+	if err != nil {
+		return nil
+	}
+	earlier, err := reader.SumMessageUsageByUser(ctx, out.TenantID, start, since)
+	if err != nil {
+		return err
+	}
+	for uid, t := range earlier {
+		if !types.IsSyntheticUserID(uid) && (t.Questions > 0 || t.Tokens > 0) {
+			out.Partial, out.CountedSince = true, first
+			return nil
+		}
+	}
+	return nil
 }
 
 // memberLabel is the name a report line is shown and ordered by.

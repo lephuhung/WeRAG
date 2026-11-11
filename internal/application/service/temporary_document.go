@@ -715,6 +715,26 @@ func ocrUsageOfParse(sink *types.VLMUsageSink, metadata map[string]string) (page
 	return pages, usage
 }
 
+// meterContext is ctx carrying the uploader's own workspace as the tenant
+// info, the one the usage meter tells the public portal by: the parse runs
+// with a shared agent's source workspace there, so a portal Guest's OCR
+// would otherwise count as a member's turn of the portal (user and member
+// counters) instead of under the guest scope.
+func (s *temporaryDocumentService) meterContext(ctx context.Context, tenantID uint64) context.Context {
+	if t, ok := types.TenantInfoFromContext(ctx); ok && t != nil && t.ID == tenantID {
+		return ctx
+	}
+	if s.tenantService == nil || tenantID == 0 {
+		return ctx
+	}
+	t, err := s.tenantService.GetTenantByID(ctx, tenantID)
+	if err != nil || t == nil {
+		logger.Warnf(ctx, "temporary document OCR: workspace %d not loaded for metering: %v", tenantID, err)
+		return ctx
+	}
+	return context.WithValue(ctx, types.TenantInfoContextKey, t)
+}
+
 // countOCRUsage bills the OCR of one upload to the uploader: their
 // workspace (the attachment's owner, not a shared agent's source workspace),
 // themselves and the session. Returns what it counted for the metadata.
@@ -727,7 +747,7 @@ func (s *temporaryDocumentService) countOCRUsage(
 		return pages, usage
 	}
 	userID, _ := types.UserIDFromContext(ctx)
-	s.usageMeter.RecordOCRUsage(ctx, payload.TenantID, userID, document.SessionID, pages, usage)
+	s.usageMeter.RecordOCRUsage(s.meterContext(ctx, payload.TenantID), payload.TenantID, userID, document.SessionID, pages, usage)
 	logger.Infof(ctx, "temporary document %s OCR counted: pages=%d tokens=%d (prompt=%d completion=%d)",
 		document.ID, pages, usage.Total(), usage.PromptTokens, usage.CompletionTokens)
 	return pages, usage

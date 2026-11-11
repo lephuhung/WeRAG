@@ -72,17 +72,17 @@ func personCounterScope(ctx context.Context, tenantID uint64) string {
 }
 
 // buildUsageIncrements expands metric deltas over every scope and period.
-// A real person's turn also counts toward their month row inside the
-// organization (scope "member", see usageMemberScopeID). A turn of a known session also counts toward that session's lifetime
-// counters (scope "session", period "all"), which only the per-session caps
-// read.
+// A real person's turn also counts toward their rows inside the
+// organization (scope "member", see usageMemberScopeID). A turn of a known
+// session also counts toward that session's lifetime counters (scope
+// "session", period "all"), which only the per-session caps read.
 func buildUsageIncrements(
 	ctx context.Context, tenantID uint64, userID, sessionID string, at time.Time, deltas map[string]int64,
 ) []types.UsageIncrement {
 	keys := types.UsagePeriodKeysAt(at)
 	scopes := usageScopes(ctx, tenantID, userID)
 	memberID := usageMemberScopeID(ctx, tenantID, userID)
-	out := make([]types.UsageIncrement, 0, (len(scopes)*2+2)*len(deltas))
+	out := make([]types.UsageIncrement, 0, (len(scopes)*2+3)*len(deltas))
 	for metric, delta := range deltas {
 		if delta <= 0 {
 			continue
@@ -95,10 +95,12 @@ func buildUsageIncrements(
 			}
 		}
 		if memberID != "" {
-			out = append(out, types.UsageIncrement{
-				ScopeType: types.UsageScopeMember, ScopeID: memberID, Metric: metric,
-				PeriodKey: keys.Month, Delta: delta,
-			})
+			for _, period := range []string{keys.Day, keys.Month} {
+				out = append(out, types.UsageIncrement{
+					ScopeType: types.UsageScopeMember, ScopeID: memberID, Metric: metric,
+					PeriodKey: period, Delta: delta,
+				})
+			}
 		}
 		if sessionID != "" {
 			out = append(out, types.UsageIncrement{
@@ -111,8 +113,8 @@ func buildUsageIncrements(
 }
 
 // usageMemberScopeID is the "member" counter a turn also lands in: the
-// person inside this organization (types.UsageScopeMember), month rows only,
-// read by the member report alone. Machine principals have none (they stay
+// person inside this organization (types.UsageScopeMember), day and month
+// rows, read by the member report alone. Machine principals have none (they stay
 // in the organization total), and neither do the public portal's Guests,
 // who are no members of it.
 func usageMemberScopeID(ctx context.Context, tenantID uint64, userID string) string {
