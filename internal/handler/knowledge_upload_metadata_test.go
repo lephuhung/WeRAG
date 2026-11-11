@@ -2,15 +2,16 @@ package handler
 
 import (
 	"context"
+	"net/http"
 	"testing"
 
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
-func TestStripReservedUploadMetadata(t *testing.T) {
-	meta := func() map[string]string {
-		return map[string]string{"external_id": "law", "source": "vbpl", "doc_number": "31/2024/QH15"}
-	}
+func TestCheckReservedUploadMetadata(t *testing.T) {
+	reserved := map[string]string{"external_id": "law", "source": "vbpl", "doc_number": "31/2024/QH15"}
+	plain := map[string]string{"doc_number": "31/2024/QH15"}
 	human := func(tenant uint64, role types.TenantRole) context.Context {
 		ctx := types.WithPrincipal(context.Background(), types.Principal{Type: types.PrincipalWebUser, ID: "u"})
 		return types.WithCaller(ctx, types.Caller{TenantID: tenant, UserID: "u", Role: role})
@@ -27,27 +28,27 @@ func TestStripReservedUploadMetadata(t *testing.T) {
 		"tenant API key":    key(7),
 		"guest (no tenant)": human(0, ""),
 	} {
-		got := stripReservedUploadMetadata(ctx, meta())
-		if _, ok := got["external_id"]; ok {
-			t.Errorf("%s kept external_id", name)
+		err := checkReservedUploadMetadata(ctx, reserved)
+		appErr, ok := err.(*apperrors.AppError)
+		if !ok || appErr.HTTPCode != http.StatusForbidden {
+			t.Errorf("%s: err = %v, want 403", name, err)
 		}
-		if _, ok := got["source"]; ok {
-			t.Errorf("%s kept source", name)
+		if err := checkReservedUploadMetadata(ctx, map[string]string{"source": "x"}); err == nil {
+			t.Errorf("%s: source alone must be refused too", name)
 		}
-		if got["doc_number"] != "31/2024/QH15" {
-			t.Errorf("%s lost an ordinary key", name)
+		if err := checkReservedUploadMetadata(ctx, plain); err != nil {
+			t.Errorf("%s: ordinary metadata refused: %v", name, err)
+		}
+		if err := checkReservedUploadMetadata(ctx, nil); err != nil {
+			t.Errorf("%s: no metadata refused: %v", name, err)
 		}
 	}
 	for name, ctx := range map[string]context.Context{
 		"SuperAdmin":              superAdmin,
 		"platform-tenant API key": key(types.PlatformTenantID),
 	} {
-		got := stripReservedUploadMetadata(ctx, meta())
-		if got["external_id"] != "law" || got["source"] != "vbpl" {
-			t.Errorf("%s (the vbpl importer) lost the reserved keys: %v", name, got)
+		if err := checkReservedUploadMetadata(ctx, reserved); err != nil {
+			t.Errorf("%s (the vbpl importer) refused: %v", name, err)
 		}
-	}
-	if stripReservedUploadMetadata(human(7, types.TenantRoleMember), nil) != nil {
-		t.Error("nil metadata stays nil")
 	}
 }

@@ -395,7 +395,10 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 			return
 		}
 		logger.Infof(ctx, "Received file metadata: %s", secutils.SanitizeForLog(fmt.Sprintf("%v", metadata)))
-		metadata = stripReservedUploadMetadata(ctx, metadata)
+		if err := checkReservedUploadMetadata(ctx, metadata); err != nil {
+			c.Error(err)
+			return
+		}
 	}
 
 	enableMultimodelForm := c.PostForm("enable_multimodel")
@@ -2789,27 +2792,31 @@ func platformProcessOverrides(
 // may set them.
 var reservedUploadMetadataKeys = []string{"external_id", "source"}
 
-// stripReservedUploadMetadata drops the reserved keys from upload metadata
-// unless the caller is an explicit human SuperAdmin or an API key of the
-// platform organization (scripts/legal_catalog/ingest_vbpl.py uploads with
-// one of those). The in-process importers (legal feed, drafts, push) call
-// the knowledge service directly and never pass through here.
-func stripReservedUploadMetadata(ctx context.Context, metadata map[string]string) map[string]string {
-	if len(metadata) == 0 {
-		return metadata
+// checkReservedUploadMetadata refuses upload metadata carrying a reserved
+// key unless the caller is an explicit human SuperAdmin or an API key of
+// the platform organization (scripts/legal_catalog/ingest_vbpl.py uploads
+// with one of those). A refusal rather than a silent drop, so a script sees
+// it. The in-process importers (legal feed, drafts, push) call the
+// knowledge service directly and never pass through here; the web app and
+// the Word add-in send no upload metadata.
+func checkReservedUploadMetadata(ctx context.Context, metadata map[string]string) error {
+	var found []string
+	for _, k := range reservedUploadMetadataKeys {
+		if _, ok := metadata[k]; ok {
+			found = append(found, k)
+		}
+	}
+	if len(found) == 0 {
+		return nil
 	}
 	caller := types.CallerFromContext(ctx)
 	if access.IsExplicitHumanSuperAdmin(ctx, caller) {
-		return metadata
+		return nil
 	}
 	if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey && caller.TenantID == types.PlatformTenantID {
-		return metadata
+		return nil
 	}
-	for _, k := range reservedUploadMetadataKeys {
-		if _, ok := metadata[k]; ok {
-			logger.Infof(ctx, "Dropped reserved upload metadata key %q", k)
-			delete(metadata, k)
-		}
-	}
-	return metadata
+	return errors.NewForbiddenError(fmt.Sprintf(
+		"metadata keys %s are reserved for legal catalogue imports (SuperAdmin or a platform organization API key)",
+		strings.Join(found, ", ")))
 }
