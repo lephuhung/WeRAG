@@ -122,6 +122,11 @@ func (m *usageMeter) add(ctx context.Context, increments []types.UsageIncrement)
 	// the answer stream opens); the retries must not delay the question.
 	retry := func() {
 		var err error
+		defer func() {
+			if r := recover(); r != nil {
+				m.logLost(writeCtx, increments, 0, fmt.Errorf("retry panicked: %v", r))
+			}
+		}()
 		for _, delay := range m.retryDelays {
 			time.Sleep(delay)
 			if err = m.addOnce(writeCtx, increments); err == nil {

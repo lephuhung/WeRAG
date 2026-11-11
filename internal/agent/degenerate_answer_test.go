@@ -226,13 +226,34 @@ func TestSynthesisEnglishPlanIsHeldBack(t *testing.T) {
 	state := &types.AgentState{RoundSteps: []types.AgentStep{{ToolCalls: []types.ToolCall{{
 		Name: "counting_tool", Result: &types.ToolResult{Success: true, Output: "kết quả"}}}}}}
 
-	ctx := withAnswerCheckQuery(viCtx(), "Thể thức văn bản?")
-	engine.handleMaxIterations(ctx, "Thể thức văn bản?", state, "sess-1", emptyMessages())
+	// the loop ctx carries no withAnswerCheckQuery: the question comes as
+	// the parameter, as in production
+	engine.handleMaxIterations(viCtx(), "Thể thức văn bản?", state, "sess-1", emptyMessages())
 
 	assert.NotContains(t, state.FinalAnswer, "Let me compile")
 	assert.NotEmpty(t, state.FinalAnswer)
 	_, content := recorder.snapshot()
 	assert.NotContains(t, content, "Let me compile", "the plan never reached the client")
+}
+
+// An English question on a Vietnamese UI: the English synthesis at the cap is
+// the answer, not a plan to hold back.
+func TestSynthesisInEnglishForAnEnglishQuestionIsKept(t *testing.T) {
+	answer := "The decree requires administrative documents to follow the format set out in Appendix I."
+	mock := &mockChat{responses: []mockResponse{
+		{chunks: []types.StreamResponse{{Content: answer, Done: true}}},
+	}}
+	engine := newTestEngine(t, mock)
+	recorder := &terminalAnswerRecorder{}
+	recorder.attach(engine.eventBus)
+	state := &types.AgentState{RoundSteps: []types.AgentStep{{ToolCalls: []types.ToolCall{{
+		Name: "counting_tool", Result: &types.ToolResult{Success: true, Output: "kết quả"}}}}}}
+
+	engine.handleMaxIterations(viCtx(), "What format must administrative documents follow?", state, "sess-1", emptyMessages())
+
+	assert.True(t, strings.HasPrefix(state.FinalAnswer, answer), state.FinalAnswer)
+	_, content := recorder.snapshot()
+	assert.Contains(t, content, answer)
 }
 
 func TestExecuteLoop_EnglishLeadInIsDroppedFromTheSavedAnswer(t *testing.T) {

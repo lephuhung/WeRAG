@@ -122,7 +122,7 @@ var transientErrorMarkers = []string{
 	"deadline exceeded", "stalled",
 	// A stream cut off before any answer text reached the screen (the lead
 	// check still held it) is safe to repeat.
-	"eof", "reset by peer",
+	"unexpected eof", "reset by peer",
 }
 
 // isTransientError checks whether an error is likely transient and worth retrying.

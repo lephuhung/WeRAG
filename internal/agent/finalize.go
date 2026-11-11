@@ -96,7 +96,13 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	}
 	// lead check → button guard: the synthesis gets the same echo / blank /
 	// English-plan check as a round (degenerate_answer.go)
-	lead := newLeadGuard(ctx, answerCheckQuery(ctx), toGuard)
+	// the turn's question comes as a parameter: only a round's own ctx
+	// carries withAnswerCheckQuery, not the loop ctx handleMaxIterations gets
+	checkQuery := query
+	if checkQuery == "" {
+		checkQuery = answerCheckQuery(ctx)
+	}
+	lead := newLeadGuard(ctx, checkQuery, toGuard)
 
 	budget := e.clampCompletionBudgetToContext(e.tokenEstimator.EstimateMessages(messages))
 	noThinking := false
@@ -156,7 +162,7 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 
 	// Safety net: strip any residual <think> blocks that may have leaked through;
 	// the saved answer drops the lead-in the stream dropped
-	content, _ := cleanFinalAnswer(ctx, answerCheckQuery(ctx), agenttools.StripThinkBlocks(llmResult.Content))
+	content, _ := cleanFinalAnswer(ctx, checkQuery, agenttools.StripThinkBlocks(llmResult.Content))
 	state.FinalAnswer = cleanAnswerNumbers(ctx, cleanAnswerInContext(ctx, content))
 	if kind := lead.Kind(); kind != answerOK {
 		// nothing of it was shown; what was gathered answers instead
@@ -168,7 +174,9 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 		// never end a turn on an empty answer: say what was gathered
 		logger.Warnf(ctx, "[Agent][FinalAnswer] Synthesis returned no usable text; emitting the fallback")
 		state.FinalAnswer = e.synthesisFallback(state)
-		emitChunk(state.FinalAnswer)
+		// code-built text, and the guards were already flushed: straight to
+		// the bus so the shown text is the saved one
+		emitBus(state.FinalAnswer)
 	}
 	modelText := state.FinalAnswer
 	e.appendLegalHistory(ctx, state, sessionID, answerID)

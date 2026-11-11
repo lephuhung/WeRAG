@@ -276,9 +276,13 @@ func TestUsageMeterRetriesFailedCounterWrite(t *testing.T) {
 // does not panic or block forever.
 func TestUsageMeterGivesUpAfterRetries(t *testing.T) {
 	repo := &fakeUsageCounterRepo{failAdds: 10}
-	m := &usageMeter{repo: repo, now: time.Now, retryDelays: []time.Duration{0, 0}}
+	var async []func()
+	m := &usageMeter{repo: repo, now: time.Now, retryDelays: []time.Duration{0, 0},
+		goAsync: func(f func()) { async = append(async, f) }}
 
 	m.RecordQuestion(context.Background(), 10003, "", "")
+	require.Len(t, async, 1)
+	async[0]()
 	require.Equal(t, 3, repo.addCalls)
 	require.Empty(t, repo.added)
 }
