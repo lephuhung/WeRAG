@@ -39,4 +39,20 @@ func TestLegalBasisCheckOnCatalogue(t *testing.T) {
 	require.Equal(t, tools.LegalBasisAmendedBy, got["Luật Đấu thầu 2013"].Related[0].Relation)
 	require.Equal(t, tools.LegalBasisNotFound, got["Luật Hư cấu 2020"].Status)
 	require.Equal(t, 1, r.Skipped.NamesWithoutYear, "Luật Giáo dục: the law in force, nothing to check")
+
+	// a name read only through a shorter title is a guess, never the answer
+	res, err := legalBasisNames(db, now)(context.Background(), "Luật Đất đai cho phép", "2024")
+	require.NoError(t, err)
+	require.Nil(t, res.Chosen)
+	require.True(t, res.Guess)
+	require.Len(t, res.Candidates, 1)
+
+	// the type filter of a bare number runs in SQL
+	cat := repository.NewLegalCatalogRepository(db)
+	laws, err := cat.FindByNumberPrefixTypes(context.Background(), "43/2013", []string{"Luật", "Bộ luật"}, 10)
+	require.NoError(t, err)
+	require.Len(t, laws, 1)
+	none, err := cat.FindByNumberPrefixTypes(context.Background(), "43/2013", []string{"Nghị định"}, 10)
+	require.NoError(t, err)
+	require.Empty(t, none)
 }

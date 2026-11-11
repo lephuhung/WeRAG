@@ -27,6 +27,7 @@ type legalBasisWorkspaces struct {
 	content   []byte
 	snapshots []string
 	saveErr   error
+	notSaved  bool
 }
 
 func (f *legalBasisWorkspaces) OpenCurrent(ctx context.Context, tenantID uint64, sessionID, documentID string) (io.ReadCloser, *types.DocumentWorkspace, error) {
@@ -40,6 +41,13 @@ func (f *legalBasisWorkspaces) OpenCurrent(ctx context.Context, tenantID uint64,
 func (f *legalBasisWorkspaces) Snapshot(_ context.Context, _ uint64, _, _, label, source string, _ time.Duration) (*types.DocumentRevision, error) {
 	f.snapshots = append(f.snapshots, source+"|"+label)
 	return &types.DocumentRevision{Seq: 1}, f.saveErr
+}
+
+// SnapshotSaved is the real service's variant that reports whether the
+// editor's save landed (a failed or timed-out force-save is no error).
+func (f *legalBasisWorkspaces) SnapshotSaved(ctx context.Context, tenantID uint64, sessionID, documentID, label, source string, wait time.Duration) (*types.DocumentRevision, bool, error) {
+	rev, err := f.Snapshot(ctx, tenantID, sessionID, documentID, label, source, wait)
+	return rev, err == nil && !f.notSaved, err
 }
 
 // legalBasisCatalog answers number lookups from rows; the rest of the
@@ -143,18 +151,37 @@ func TestCheckDocumentLegalBasisRoute(t *testing.T) {
 	require.Equal(t, 1, p.TextOccurrence)
 	require.True(t, strings.HasPrefix(p.Anchor.Text, "Căn cứ Thông tư"))
 	require.Equal(t, map[string]int{"expired": 1, "not_found": 1}, got.Data.Summary)
-	require.Len(t, got.Data.DocumentOps, 2)
 	for _, op := range got.Data.DocumentOps {
 		require.Equal(t, "mark", op["op"])
 		require.Equal(t, "underline", op["style"])
 	}
 
-	// a failed save still checks the stored version, and says so
+	// only the questioned statuses are underlined by default: the expired
+	// one, not the one missing from the catalogue
+	require.Len(t, got.Data.DocumentOps, 1)
+
+	// a save that did not land (force-save failed or timed out, no error)
+	// checks the stored version and says so
+	ws.notSaved = true
+	rec = doJSON(r, http.MethodPost, "/sessions/mine/documents/ws-mine/legal-basis-check", "", nil)
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	got.Data.Unsaved = false
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
+	require.True(t, got.Data.Unsaved)
+	ws.notSaved = false
 	ws.saveErr = errors.New("document server down")
 	rec = doJSON(r, http.MethodPost, "/sessions/mine/documents/ws-mine/legal-basis-check", "", nil)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	got.Data.Unsaved = false
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &got))
 	require.True(t, got.Data.Unsaved)
+
+	// a closed editor is not checked (the format check's rule)
+	ws.saveErr = nil
+	ws.bySess["mine"].Status = types.DocumentWorkspaceStatusClosed
+	rec = doJSON(r, http.MethodPost, "/sessions/mine/documents/ws-mine/legal-basis-check", "", nil)
+	require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+	ws.bySess["mine"].Status = types.DocumentWorkspaceStatusOpen
 
 	// a source document is not checked
 	ws.bySess["mine"].Role = types.DocumentWorkspaceRoleSource

@@ -613,11 +613,25 @@ func (s *documentWorkspaceService) PrepareExternalWrite(
 func (s *documentWorkspaceService) flushEditor(
 	ctx context.Context, ws *types.DocumentWorkspace, snapshotTag string, wait time.Duration,
 ) (*types.DocumentWorkspace, error) {
+	ws, _, err := s.flushEditorSaved(ctx, ws, snapshotTag, wait)
+	return ws, err
+}
+
+// flushEditorSaved is flushEditor that also reports whether the stored
+// file is known to hold the editor's state: false when the force-save
+// command failed, the Document Server reported an error in its callback,
+// or the callback did not arrive in time. Nothing to save (or no editor
+// to ask) counts as saved. A Word add-in target always reports true: the
+// taskpane uploads on its own schedule.
+func (s *documentWorkspaceService) flushEditorSaved(
+	ctx context.Context, ws *types.DocumentWorkspace, snapshotTag string, wait time.Duration,
+) (*types.DocumentWorkspace, bool, error) {
 	if ws.IsWordAddin() {
-		return s.awaitClientSave(ctx, ws, wait)
+		fresh, err := s.awaitClientSave(ctx, ws, wait)
+		return fresh, err == nil, err
 	}
 	if !s.Enabled() {
-		return ws, nil
+		return ws, true, nil
 	}
 	// Register before asking: the callback may land before the command
 	// response does.
@@ -627,33 +641,36 @@ func (s *documentWorkspaceService) flushEditor(
 	case fsErr != nil:
 		s.dropWaiter(ws.ID, waiter)
 		logger.Warnf(ctx, "[DocumentWorkspace] force-save failed, proceeding: workspace=%s err=%v", ws.ID, fsErr)
-		return ws, nil
+		return ws, false, nil
 	case !willCallback:
 		s.dropWaiter(ws.ID, waiter)
-		return ws, nil
+		return ws, true, nil
 	}
 	if wait <= 0 {
 		wait = s.cfg.SaveWait()
 	}
+	saved := true
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
 	select {
 	case <-waiter.ch:
 		if waiter.err != nil {
+			saved = false
 			logger.Warnf(ctx, "[DocumentWorkspace] force-save reported an error, proceeding: workspace=%s err=%v", ws.ID, waiter.err)
 		}
 	case <-timer.C:
+		saved = false
 		s.dropWaiter(ws.ID, waiter)
 		logger.Warnf(ctx, "[DocumentWorkspace] force-save callback did not arrive within %s, proceeding: workspace=%s", wait, ws.ID)
 	case <-ctx.Done():
 		s.dropWaiter(ws.ID, waiter)
-		return nil, ctx.Err()
+		return nil, false, ctx.Err()
 	}
 	// The callback replaced CurrentRef; read the row again.
 	if fresh, err := s.repo.GetByID(ctx, ws.ID); err == nil && fresh != nil {
-		return fresh, nil
+		return fresh, saved, nil
 	}
-	return ws, nil
+	return ws, saved, nil
 }
 
 func (s *documentWorkspaceService) CommitExternalWrite(

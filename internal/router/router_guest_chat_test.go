@@ -92,6 +92,8 @@ var memberOnlyChatCases = []struct{ method, path string }{
 	{http.MethodGet, "/api/v1/sessions/s1/documents"},
 	{http.MethodPost, "/api/v1/sessions/s1/documents/d1/content"},
 	{http.MethodPost, "/api/v1/sessions/s1/documents/d1/word-file"},
+	{http.MethodPost, "/api/v1/sessions/s1/documents/d1/format-check"},
+	{http.MethodPost, "/api/v1/sessions/s1/documents/d1/legal-basis-check"},
 	{http.MethodPost, "/api/v1/knowledge-search"},
 	// the quick-answer pipeline ignores the forced public-lookup agent
 	{http.MethodPost, "/api/v1/knowledge-chat/s1"},

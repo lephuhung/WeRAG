@@ -91,14 +91,24 @@ func defaultRevisionLabel(source string) string {
 func (s *documentWorkspaceService) Snapshot(
 	ctx context.Context, tenantID uint64, sessionID, documentID, label, source string, wait time.Duration,
 ) (*types.DocumentRevision, error) {
+	rev, _, err := s.SnapshotSaved(ctx, tenantID, sessionID, documentID, label, source, wait)
+	return rev, err
+}
+
+// SnapshotSaved is Snapshot that also reports whether the editor's save
+// landed before the revision was recorded (flushEditorSaved); when it did
+// not, the revision holds the last stored version.
+func (s *documentWorkspaceService) SnapshotSaved(
+	ctx context.Context, tenantID uint64, sessionID, documentID, label, source string, wait time.Duration,
+) (*types.DocumentRevision, bool, error) {
 	if s.revisions == nil {
-		return nil, apperrors.NewServiceUnavailableError("document revisions are not configured")
+		return nil, false, apperrors.NewServiceUnavailableError("document revisions are not configured")
 	}
 	if source == "" {
 		source = types.DocumentRevisionSourceManual
 	}
 	if !types.IsValidDocumentRevisionSource(source) {
-		return nil, apperrors.NewBadRequestError("invalid revision source")
+		return nil, false, apperrors.NewBadRequestError("invalid revision source")
 	}
 	label = capRunes(label, documentRevisionLabelMaxRunes)
 	if label == "" {
@@ -106,11 +116,11 @@ func (s *documentWorkspaceService) Snapshot(
 	}
 	ws, err := s.getTarget(ctx, tenantID, sessionID, documentID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	ws, err = s.flushEditor(ctx, ws, encodeSnapshotTag(label, source), wait)
+	ws, saved, err := s.flushEditorSaved(ctx, ws, encodeSnapshotTag(label, source), wait)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	// When the save landed, the callback has already recorded this snapshot
 	// and recordRevision returns that row.
@@ -120,7 +130,7 @@ func (s *documentWorkspaceService) Snapshot(
 		// for the taskpane to upload the result
 		s.client.expect(ws.ID)
 	}
-	return rev, err
+	return rev, saved, err
 }
 
 func (s *documentWorkspaceService) ListRevisions(

@@ -14,8 +14,16 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
-// legalBasisTimeout bounds one legal basis check (catalogue lookups only).
+// legalBasisTimeout bounds the catalogue lookups of one legal basis check;
+// the editor save before it has its own wait (formatCheckSaveWait).
 const legalBasisTimeout = 30 * time.Second
+
+// legalBasisSnapshotter is the workspace service's snapshot that says
+// whether the editor's save landed.
+type legalBasisSnapshotter interface {
+	SnapshotSaved(ctx context.Context, tenantID uint64, sessionID, documentID, label, source string,
+		wait time.Duration) (*types.DocumentRevision, bool, error)
+}
 
 // SetLegalBasis wires the legal catalogue the legal basis check reads; db
 // resolves laws named by title (ResolveLegalDocumentName).
@@ -40,19 +48,33 @@ func (p *DocumentFormatPrecheck) LegalBasisCheck(ctx context.Context, tenantID u
 	if err != nil {
 		return nil, err
 	}
-	if !ws.IsTarget() {
-		return nil, apperrors.NewBadRequestError("only a working document can be checked")
+	// the format check's rule: an open working document only
+	if !ws.IsTarget() || ws.Status != types.DocumentWorkspaceStatusOpen {
+		return nil, apperrors.NewBadRequestError("only an open working document can be checked")
 	}
-	ctx, cancel := context.WithTimeout(context.WithValue(ctx, types.TenantIDContextKey, tenantID), legalBasisTimeout)
-	defer cancel()
+	ctx = context.WithValue(ctx, types.TenantIDContextKey, tenantID)
 	unsaved := false
-	if !ws.IsWordAddin() && ws.Status == types.DocumentWorkspaceStatusOpen {
-		if _, err := p.workspaces.Snapshot(ctx, tenantID, sessionID, ws.ID,
-			"ai: rà soát căn cứ pháp lý", types.DocumentRevisionSourceAI, formatCheckSaveWait); err != nil {
-			logger.Warnf(ctx, "[LegalBasis] save before the check failed, the stored version is checked: %v", err)
-			unsaved = true
+	if !ws.IsWordAddin() {
+		const label = "ai: rà soát căn cứ pháp lý"
+		var saved bool
+		var err error
+		if snap, ok := p.workspaces.(legalBasisSnapshotter); ok {
+			_, saved, err = snap.SnapshotSaved(ctx, tenantID, sessionID, ws.ID, label, types.DocumentRevisionSourceAI, formatCheckSaveWait)
+		} else {
+			_, err = p.workspaces.Snapshot(ctx, tenantID, sessionID, ws.ID, label, types.DocumentRevisionSourceAI, formatCheckSaveWait)
+			saved = err == nil
 		}
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			logger.Warnf(ctx, "[LegalBasis] save before the check failed, the stored version is checked: %v", err)
+		}
+		unsaved = err != nil || !saved
 	}
+	// the lookups get their own budget, after the save
+	ctx, cancel := context.WithTimeout(ctx, legalBasisTimeout)
+	defer cancel()
 	paras, read, err := tools.ReadLegalBasisParagraphs(ctx, p.workspaces, sessionID, ws.ID)
 	if err != nil {
 		return nil, err
@@ -82,7 +104,7 @@ func legalBasisNames(db *gorm.DB, now time.Time) tools.LegalNameResolver {
 		case m.Resolution == LegalNameUnique && m.Chosen != nil && !m.Trimmed:
 			return tools.LegalNameResolution{Chosen: m.Chosen}, nil
 		case m.Resolution == LegalNameUnique && m.Chosen != nil:
-			return tools.LegalNameResolution{Candidates: []*types.LegalDocument{m.Chosen}}, nil
+			return tools.LegalNameResolution{Candidates: []*types.LegalDocument{m.Chosen}, Guess: true}, nil
 		}
 		var out tools.LegalNameResolution
 		for _, c := range m.Candidates {
