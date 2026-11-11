@@ -112,6 +112,9 @@ type LegalRequestItem struct {
 	// Draft is the OCR draft of the document's scanned PDF, nil when none
 	// was fetched.
 	Draft *LegalDraftSummary `json:"draft"`
+	// RequesterCount is how many people asked (legal_request_requesters);
+	// who they are is not shown.
+	RequesterCount int `json:"requester_count"`
 }
 
 // LegalRequestDocument is the catalogue view of a requested document.
@@ -215,3 +218,89 @@ func LegalRequestRecordedFromContext(ctx context.Context) string {
 	v, _ := ctx.Value(legalRequestRecordedKey{}).(string)
 	return v
 }
+
+// LegalRequestRequester is one person who asked for a request's document
+// (migration 000195): the request itself keeps only the last asker
+// (Last*), so the earlier ones would be lost. One row per (RequestID,
+// UserID): the same person asking again moves the row to the latest
+// conversation and, when they were already told, makes them pending again
+// (they ask because they still miss it). Requests nobody asked for (the
+// nightly import, a feed push) have no requester.
+//
+// NotifiedAt is set once the person was told the document is available
+// (service.LegalRequestNotifier, an in-app notification), NotifyStatus says
+// how (LegalRequesterNotifyInApp). UpdatedAt moves only when the person asks
+// (again): it keys the notification to the ask.
+type LegalRequestRequester struct {
+	ID        string  `json:"id"         gorm:"type:varchar(36);primaryKey"`
+	RequestID string  `json:"request_id" gorm:"type:varchar(36);not null;uniqueIndex:ux_legal_request_requesters_user,priority:1"`
+	TenantID  uint64  `json:"tenant_id"  gorm:"not null;default:0"`
+	UserID    string  `json:"user_id"    gorm:"type:varchar(36);not null;uniqueIndex:ux_legal_request_requesters_user,priority:2"`
+	SessionID string  `json:"session_id" gorm:"type:varchar(36);not null;default:''"`
+	MessageID *string `json:"message_id" gorm:"type:varchar(36)"`
+	// Channel is where the person asked (LegalRequesterChannel*, or the
+	// chat request's channel as sent).
+	Channel      string     `json:"channel"       gorm:"type:varchar(32);not null;default:''"`
+	NotifiedAt   *time.Time `json:"notified_at"`
+	NotifyStatus string     `json:"notify_status" gorm:"type:varchar(16);not null;default:''"`
+	// NotifyAttempts counts the sweeps that failed to write the notice; at
+	// LegalRequesterMaxNotifyAttempts the row is closed as failed.
+	NotifyAttempts int       `json:"notify_attempts" gorm:"not null;default:0"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// TableName returns the table name for LegalRequestRequester.
+func (LegalRequestRequester) TableName() string { return "legal_request_requesters" }
+
+// Where a requester asked.
+const (
+	LegalRequesterChannelWeb       = "web"
+	LegalRequesterChannelWordAddin = "word_addin"
+	// LegalRequesterChannelPortal: a Guest in the public portal.
+	LegalRequesterChannelPortal = "portal"
+)
+
+// LegalRequestRequester.NotifyStatus values (NotifiedAt is set with each).
+const (
+	// LegalRequesterNotifyInApp: the in-app notification was written
+	// (types.UserNotification).
+	LegalRequesterNotifyInApp = "in_app"
+	// LegalRequesterNotifyOutOfScope: the person asked while the request was
+	// added with a copy their agent does not read; this closing tells them
+	// nothing (they are told when asking again reopens the request and a
+	// copy is added again).
+	LegalRequesterNotifyOutOfScope = "out_of_scope"
+	// LegalRequesterNotifyFailed: writing the notice failed
+	// LegalRequesterMaxNotifyAttempts times; not retried.
+	LegalRequesterNotifyFailed = "failed"
+)
+
+// LegalRequesterMaxNotifyAttempts caps the sweeps that try one notice.
+const LegalRequesterMaxNotifyAttempts = 20
+
+// LegalRequestAddedNotice is a requester due the "document added" notice:
+// the requester row with what the notice names of its request.
+type LegalRequestAddedNotice struct {
+	RequesterID string
+	RequestID   string
+	TenantID    uint64
+	UserID      string
+	SessionID   string
+	Channel     string
+	// AskedAt is the requester row's updated_at: asking again moves it, so
+	// it keys the notice to the ask, not to the closing.
+	AskedAt        time.Time
+	DocumentNumber string
+	Title          string
+	DecidedAt      time.Time
+	// SessionLive: the conversation still exists (not deleted).
+	SessionLive bool
+	// WordFileID is the Word file the conversation is bound to, "" when none.
+	WordFileID string
+}
+
+// LegalRequestNoticeWindow bounds how long after a request was closed as
+// added its requesters are still notified: a document added weeks ago (or
+// whose parsing finished much later) is no news any more.
+const LegalRequestNoticeWindow = 7 * 24 * time.Hour

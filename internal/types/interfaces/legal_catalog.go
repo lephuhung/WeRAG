@@ -189,7 +189,10 @@ type LegalRequestRepository interface {
 	// and the last_* fields — only when the asking session differs from
 	// the last one, so one session asking twice counts once. A row marked
 	// "added" whose document is asked for again (it is missing after all)
-	// is reopened. A "rejected" row is left as it is. Returns the stored row.
+	// is reopened, unless its requesters still wait for the "added" notice
+	// and its copy is still coming (closed within types.LegalRequestNoticeWindow,
+	// knowledge parsed or still parsing and not stale, someone who asked
+	// before the closing not told yet): then it is only bumped. A "rejected" row is left as it is. Returns the stored row.
 	Record(ctx context.Context, req *types.LegalDocumentRequest) (*types.LegalDocumentRequest, error)
 	// Get returns one request, or nil when absent.
 	Get(ctx context.Context, id string) (*types.LegalDocumentRequest, error)
@@ -237,6 +240,27 @@ type LegalRequestRepository interface {
 	// PublicKnowledgeBases lists the platform public KBs (no owner
 	// organization), by name.
 	PublicKnowledgeBases(ctx context.Context) ([]types.LegalPublicKB, error)
+	// AddRequester records who asked for a request's document, one row per
+	// (RequestID, UserID). Asking again moves the row to the latest
+	// tenant, session, message and channel and, unless the request is
+	// still added, clears NotifiedAt / NotifyStatus and moves UpdatedAt (the
+	// ask time), so a person who still misses the document is told again
+	// when it is added again. A new row given NotifyStatus
+	// types.LegalRequesterNotifyOutOfScope is stored as already closed.
+	AddRequester(ctx context.Context, r *types.LegalRequestRequester) error
+	// CountRequesters returns how many people asked for each request id.
+	CountRequesters(ctx context.Context, requestIDs []string) (map[string]int, error)
+	// PendingAddedNotices lists the requesters not told yet of requests
+	// closed as added at or after decidedSince whose document is usable (no
+	// linked knowledge, or one that finished parsing), oldest closing first.
+	PendingAddedNotices(ctx context.Context, decidedSince time.Time, limit int) ([]*types.LegalRequestAddedNotice, error)
+	// DeliverAddedNotice inserts the requester's notification (nothing when
+	// its dedupe key exists) and marks the requester notified, in one
+	// transaction; false when the requester was already notified.
+	DeliverAddedNotice(ctx context.Context, requesterID string, n *types.UserNotification) (bool, error)
+	// RecordNoticeFailure counts a failed delivery; at maxAttempts the
+	// requester is closed as types.LegalRequesterNotifyFailed (true).
+	RecordNoticeFailure(ctx context.Context, requesterID string, maxAttempts int) (bool, error)
 }
 
 // LegalRequestService drives the SuperAdmin queue of legal document requests.

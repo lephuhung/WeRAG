@@ -19,7 +19,7 @@ func newLegalRequestRepo(t *testing.T) (*legalRequestRepository, *gorm.DB) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&types.LegalDocumentRequest{}); err != nil {
+	if err := db.AutoMigrate(&types.LegalDocumentRequest{}, &types.LegalRequestRequester{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	if err := db.Exec(`CREATE TABLE knowledges (id TEXT, knowledge_base_id TEXT, title TEXT, file_name TEXT, deleted_at DATETIME, metadata TEXT)`).Error; err != nil {

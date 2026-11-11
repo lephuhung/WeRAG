@@ -433,3 +433,23 @@ func RegisterSystemAdminRoutes(
 		}
 	}
 }
+
+// RegisterUserNotificationRoutes wires the signed-in person's in-app
+// notifications under /notifications. Like /me/invitations there is no role
+// gate: the handler reads whose rows from the context only. The paths are
+// tenant-optional identity routes (middleware.isTenantOptionalAPI), so a
+// Guest with no organization reaches them too. They are not declared to the
+// API-key gate, which therefore refuses every API key.
+func RegisterUserNotificationRoutes(r *gin.RouterGroup, h *handler.UserNotificationHandler) {
+	if h == nil {
+		return
+	}
+	n := r.Group("/notifications")
+	{
+		n.GET("", h.List)
+		n.GET("/unread-count", h.UnreadCount)
+		n.POST("/seen", h.Seen)
+		n.POST("/read-all", h.ReadAll)
+		n.POST("/:id/read", h.Read)
+	}
+}

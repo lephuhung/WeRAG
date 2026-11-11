@@ -26,11 +26,17 @@ func (c *gateCatalog) Lookup(_ context.Context, number, _ string, _ int) ([]*typ
 // gateRequests keeps requests in memory; held answers KnowledgeNamed.
 type gateRequests struct {
 	interfaces.LegalRequestRepository
-	held     bool
-	ingested map[string]bool
-	needles  []string
-	recorded []*types.LegalDocumentRequest
-	stored   map[string]*types.LegalDocumentRequest
+	held       bool
+	ingested   map[string]bool
+	needles    []string
+	recorded   []*types.LegalDocumentRequest
+	stored     map[string]*types.LegalDocumentRequest
+	requesters []*types.LegalRequestRequester
+}
+
+func (r *gateRequests) AddRequester(_ context.Context, q *types.LegalRequestRequester) error {
+	r.requesters = append(r.requesters, q)
+	return nil
 }
 
 func (r *gateRequests) KnowledgeNamed(_ context.Context, _ []string, needles []string) (bool, error) {

@@ -13,7 +13,8 @@
     "test:legal-status": "node --experimental-strip-types --test lib/legal-status.test.ts",
     "test:doc-layout": "node --experimental-strip-types --test components/doc-workspace/document-layout-policy.test.ts",
     "test:large-view": "node --experimental-strip-types --test lib/large-view-policy.test.ts",
-    "test:model-presets": "node --experimental-strip-types --test lib/model-presets.test.ts"
+    "test:model-presets": "node --experimental-strip-types --test lib/model-presets.test.ts",
+    "test:notifications": "node --experimental-strip-types --test lib/notifications.test.ts"
   },
   "dependencies": {
     "d3-force": "^3.0.0",

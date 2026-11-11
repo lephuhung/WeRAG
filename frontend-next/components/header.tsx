@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { SHELL_HEADER_HEIGHT_PX, SHELL_HEADER_SLOT_ID } from "@/components/shell-breakpoints";
+import { NotificationBell } from "@/components/notification-bell";
 
 const SECTION_KEYS: [RegExp, LocaleKey][] = [
   [/^\/platform\/chat/, "nav.chat"],
@@ -16,7 +17,8 @@ const SECTION_KEYS: [RegExp, LocaleKey][] = [
 ];
 
 /* Account/settings/sign-out live in the sidebar's AccountMenu popover — the
- * header only carries the mobile nav toggle and the section breadcrumb. */
+ * header carries the mobile nav toggle, the section breadcrumb and the
+ * notification bell. */
 export function Header() {
   const pathname = usePathname();
   const { t } = useT();
@@ -45,6 +47,7 @@ export function Header() {
           the slot) instead of the section name. */}
       {!inConversation && <span className="caption truncate text-muted">{t(sectionLabel)}</span>}
       <div id={SHELL_HEADER_SLOT_ID} className="flex min-w-0 flex-1 items-center gap-2" />
+      <NotificationBell />
     </header>
   );
 }

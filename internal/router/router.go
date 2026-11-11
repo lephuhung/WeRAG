@@ -50,6 +50,8 @@ type RouterParams struct {
 	TenantMemberService     interfaces.TenantMemberService
 	TenantMemberHandler     *handler.TenantMemberHandler
 	TenantInvitationHandler *handler.TenantInvitationHandler
+	// UserNotificationHandler serves the caller's in-app notifications.
+	UserNotificationHandler *handler.UserNotificationHandler `optional:"true"`
 
 	AuditLogHandler             *handler.AuditLogHandler
 	AuditLogService             interfaces.AuditLogService
@@ -285,6 +287,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterTenantUsageRoutes(v1, params.TenantUsageHandler, rbacGuards)
 		RegisterBillingRoutes(v1, params.UsageBillingHandler, rbacGuards)
 		RegisterMyInvitationRoutes(v1, params.TenantInvitationHandler)
+		RegisterUserNotificationRoutes(v1, params.UserNotificationHandler)
 		RegisterKnowledgeBaseRoutes(v1, params.KBHandler, rbacGuards)
 		RegisterKnowledgeBaseActivityRoutes(v1, params.AuditLogHandler, rbacGuards)
 		RegisterKnowledgeGraphViewRoutes(v1, params.KnowledgeGraphViewHandler, rbacGuards)

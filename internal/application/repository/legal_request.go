@@ -97,6 +97,18 @@ func (r *legalRequestRepository) Record(
 			Where("id = ? AND status = ? AND last_session_id <> ?", existing.ID, existing.Status, row.LastSessionID).
 			Updates(bump).Error
 	case types.LegalRequestAdded:
+		var waiting bool
+		if waiting, err = r.noticesPending(ctx, existing); err != nil {
+			break
+		}
+		if waiting {
+			// just added, its requesters not told yet (the document may
+			// still be parsing): the asker joins them instead of reopening
+			// the request, which would drop their notices
+			err = db.Model(&types.LegalDocumentRequest{}).
+				Where("id = ? AND status = ?", existing.ID, types.LegalRequestAdded).Updates(bump).Error
+			break
+		}
 		// asked for again: the added copy is not where this user looks
 		// (deleted since, or in another organization's KB)
 		bump["status"] = types.LegalRequestRequested
@@ -109,6 +121,50 @@ func (r *legalRequestRepository) Record(
 		return nil, err
 	}
 	return r.Get(ctx, existing.ID)
+}
+
+// legalKnowledgeStaleAfter bounds how long a knowledge may stay in a
+// parsing state and still count as coming: a parse stuck longer is dead.
+const legalKnowledgeStaleAfter = 6 * time.Hour
+
+// legalKnowledgeParsingStatuses are the parse states of a knowledge still
+// on its way to usable.
+var legalKnowledgeParsingStatuses = []string{
+	types.ParseStatusPending, types.ParseStatusProcessing, types.ParseStatusFinalizing,
+}
+
+// noticesPending reports whether an added request still owes the people
+// who asked before it was closed the "document added" notice, and its copy
+// is usable or still coming: closed within the notice window, someone who
+// asked before the closing not told yet (a later asker, or a row closed as
+// failed, does not count), and its knowledge (if any) not deleted and
+// either parsed (the sweep delivers the waiting notices within minutes) or
+// still parsing (pending / processing / finalizing, touched in the last
+// legalKnowledgeStaleAfter). A copy that was cancelled, deleted, failed or
+// got stuck does not hold the request: it is reopened. Whether the new
+// asker can read the copy does not matter here: the gate records an asker
+// who cannot as out of scope.
+func (r *legalRequestRepository) noticesPending(ctx context.Context, row *types.LegalDocumentRequest) (bool, error) {
+	if row.DecidedAt == nil || time.Since(*row.DecidedAt) > types.LegalRequestNoticeWindow {
+		return false, nil
+	}
+	db := r.db.WithContext(ctx)
+	var n int64
+	if err := db.Model(&types.LegalRequestRequester{}).
+		Where("request_id = ? AND notified_at IS NULL AND updated_at <= ?", row.ID, *row.DecidedAt).
+		Limit(1).Count(&n).Error; err != nil || n == 0 {
+		return false, err
+	}
+	if row.KnowledgeID == "" {
+		return true, nil
+	}
+	n = 0
+	err := db.Table("knowledges").
+		Where("id = ? AND deleted_at IS NULL", row.KnowledgeID).
+		Where("parse_status = ? OR (parse_status IN ? AND updated_at >= ?)", types.ParseStatusCompleted,
+			legalKnowledgeParsingStatuses, time.Now().Add(-legalKnowledgeStaleAfter)).
+		Limit(1).Count(&n).Error
+	return n > 0, err
 }
 
 func (r *legalRequestRepository) Get(ctx context.Context, id string) (*types.LegalDocumentRequest, error) {
@@ -375,4 +431,137 @@ func (r *legalRequestRepository) PublicKnowledgeBases(ctx context.Context) ([]ty
 	err := r.db.WithContext(ctx).Table("knowledge_bases").Select("id, name").
 		Where("owner_tenant_id = 0 AND deleted_at IS NULL").Order("name").Scan(&kbs).Error
 	return kbs, err
+}
+
+func (r *legalRequestRepository) AddRequester(ctx context.Context, req *types.LegalRequestRequester) error {
+	if req == nil || strings.TrimSpace(req.RequestID) == "" || strings.TrimSpace(req.UserID) == "" {
+		return errors.New("legal request requester: request and user are required")
+	}
+	now := time.Now()
+	row := *req
+	if row.ID == "" {
+		row.ID = uuid.NewString()
+	}
+	if row.MessageID != nil && strings.TrimSpace(*row.MessageID) == "" {
+		row.MessageID = nil
+	}
+	row.NotifiedAt, row.NotifyAttempts = nil, 0
+	if row.NotifyStatus == types.LegalRequesterNotifyOutOfScope {
+		// a new asker the added copy is not readable for: nothing to tell
+		row.NotifiedAt = &now
+	} else {
+		row.NotifyStatus = ""
+	}
+	row.CreatedAt, row.UpdatedAt = now, now
+	db := r.db.WithContext(ctx)
+	var status string
+	if err := db.Model(&types.LegalDocumentRequest{}).Select("status").Where("id = ?", row.RequestID).
+		Scan(&status).Error; err != nil {
+		return err
+	}
+	updates := map[string]any{
+		"tenant_id": row.TenantID, "session_id": row.SessionID, "message_id": row.MessageID,
+		"channel": row.Channel, "notified_at": nil, "notify_status": "", "notify_attempts": 0, "updated_at": now,
+	}
+	if status == types.LegalRequestAdded {
+		// the request stays added (its copy is still coming): someone told
+		// already learns nothing new from a second notice, and one not told
+		// yet keeps the ask time the pending notice is keyed to
+		delete(updates, "notified_at")
+		delete(updates, "notify_status")
+		delete(updates, "notify_attempts")
+		delete(updates, "updated_at")
+	}
+	return db.Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "request_id"}, {Name: "user_id"}},
+		// asking again: the latest conversation is where the person waits,
+		// and (the request reopened) they are told again
+		DoUpdates: clause.Assignments(updates),
+	}).Create(&row).Error
+}
+
+func (r *legalRequestRepository) CountRequesters(ctx context.Context, requestIDs []string) (map[string]int, error) {
+	out := map[string]int{}
+	if len(requestIDs) == 0 {
+		return out, nil
+	}
+	var rows []struct {
+		RequestID string
+		N         int
+	}
+	err := r.db.WithContext(ctx).Model(&types.LegalRequestRequester{}).
+		Select("request_id, COUNT(*) AS n").Where("request_id IN ?", requestIDs).
+		Group("request_id").Scan(&rows).Error
+	for _, row := range rows {
+		out[row.RequestID] = row.N
+	}
+	return out, err
+}
+
+func (r *legalRequestRepository) PendingAddedNotices(
+	ctx context.Context, decidedSince time.Time, limit int,
+) ([]*types.LegalRequestAddedNotice, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	var rows []*types.LegalRequestAddedNotice
+	// A document is only news once it is usable: a linked knowledge must
+	// have finished parsing (an OCRed scan takes a while); a request marked
+	// added by hand without a knowledge is eligible at once.
+	err := r.db.WithContext(ctx).Table("legal_request_requesters AS q").
+		Select(`q.id AS requester_id, q.request_id, q.tenant_id, q.user_id, q.session_id, q.channel,
+			q.updated_at AS asked_at, r.document_number, r.title, r.decided_at,
+			s.id IS NOT NULL AS session_live,
+			COALESCE((SELECT w.word_file_id FROM document_workspaces w
+				WHERE w.session_id = q.session_id AND w.word_file_id <> '' AND w.deleted_at IS NULL
+				ORDER BY w.updated_at DESC LIMIT 1), '') AS word_file_id`).
+		Joins("JOIN legal_document_requests r ON r.id = q.request_id").
+		Joins("LEFT JOIN sessions s ON s.id = q.session_id AND q.session_id <> '' AND s.deleted_at IS NULL").
+		Joins("LEFT JOIN knowledges k ON k.id = r.knowledge_id AND k.deleted_at IS NULL").
+		Where("q.notified_at IS NULL AND r.status = ? AND r.decided_at IS NOT NULL AND r.decided_at >= ?",
+			types.LegalRequestAdded, decidedSince).
+		Where("(r.knowledge_id = '' OR k.parse_status = ?)", types.ParseStatusCompleted).
+		Order("r.decided_at").Order("q.id").Limit(limit).Scan(&rows).Error
+	return rows, err
+}
+
+// DeliverAddedNotice writes the in-app notification of a requester and
+// marks the requester notified in one transaction, so a requester is never
+// notified twice nor marked without a notification. A notification whose
+// dedupe key exists (the same ask) still marks the requester. False when
+// another run marked the requester first (nothing is written).
+func (r *legalRequestRepository) DeliverAddedNotice(
+	ctx context.Context, requesterID string, n *types.UserNotification,
+) (bool, error) {
+	delivered := false
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		// updated_at is the ask time (the notice key): left as it is
+		res := tx.Model(&types.LegalRequestRequester{}).Where("id = ? AND notified_at IS NULL", requesterID).
+			UpdateColumns(map[string]any{"notified_at": now, "notify_status": types.LegalRequesterNotifyInApp})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return nil
+		}
+		if _, err := createUserNotification(tx, n); err != nil {
+			return err
+		}
+		delivered = true
+		return nil
+	})
+	return delivered, err
+}
+
+func (r *legalRequestRepository) RecordNoticeFailure(ctx context.Context, requesterID string, maxAttempts int) (bool, error) {
+	db := r.db.WithContext(ctx)
+	if err := db.Model(&types.LegalRequestRequester{}).Where("id = ? AND notified_at IS NULL", requesterID).
+		UpdateColumn("notify_attempts", gorm.Expr("notify_attempts + 1")).Error; err != nil {
+		return false, err
+	}
+	res := db.Model(&types.LegalRequestRequester{}).
+		Where("id = ? AND notified_at IS NULL AND notify_attempts >= ?", requesterID, maxAttempts).
+		UpdateColumns(map[string]any{"notified_at": time.Now(), "notify_status": types.LegalRequesterNotifyFailed})
+	return res.RowsAffected == 1, res.Error
 }
