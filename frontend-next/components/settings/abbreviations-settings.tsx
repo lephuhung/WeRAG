@@ -24,9 +24,16 @@ import { SectionHeader } from "@/components/settings/section-header";
 import { Pager } from "@/components/settings/pager";
 import { FieldLabel } from "@/components/settings/field";
 import { useToast } from "@/components/toast";
+import { consumeSettingsParam } from "@/lib/settings-deep-link";
 
 const PAGE_SIZE = 20;
 type StatusFilter = "all" | "active" | "pending";
+
+function initialStatusFilter(): StatusFilter {
+  if (typeof window === "undefined") return "all";
+  const status = consumeSettingsParam(window.sessionStorage, "abbreviations", "status");
+  return status === "pending" || status === "active" ? status : "all";
+}
 
 /* Lets the account-menu pending badge refresh after any mutation here. */
 function notifyAbbreviationsChanged() {
@@ -64,7 +71,9 @@ export function AbbreviationsSettings() {
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  /* A deep link (the review notification) may open the pending list:
+   * /platform/system/extensions/abbreviations?status=pending */
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => initialStatusFilter());
 
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Abbreviation | null>(null);

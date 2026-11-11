@@ -59,3 +59,17 @@ func TestAbbreviationSuggestUniqueConcurrent(t *testing.T) {
 	require.NoError(t, db.Model(&types.Abbreviation{}).Count(&total).Error)
 	require.Equal(t, int64(1), total)
 }
+
+func TestAbbreviationSuggestUniqueCreatedReportsInsert(t *testing.T) {
+	db, repo := newAbbrevRepo(t)
+	require.NoError(t, db.Exec(`CREATE TABLE abbreviation_suggestion_locks ("key" VARCHAR(64) PRIMARY KEY)`).Error)
+	ctx := context.Background()
+	row, created, err := repo.SuggestUniqueCreated(ctx, &types.Abbreviation{ShortForm: "VP", FullForm: "Văn phòng"})
+	require.NoError(t, err)
+	require.True(t, created)
+	require.False(t, row.IsActive)
+	again, created, err := repo.SuggestUniqueCreated(ctx, &types.Abbreviation{ShortForm: " vp ", FullForm: "VĂN PHÒNG"})
+	require.NoError(t, err)
+	require.False(t, created, "the existing row is returned")
+	require.Equal(t, row.ID, again.ID)
+}

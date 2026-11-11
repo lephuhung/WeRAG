@@ -12,6 +12,12 @@ export const NOTIFICATION_MAX_TOASTS = 3;
 export const NOTIFICATION_LINK_PREFIX = "/platform/";
 
 export const KIND_LEGAL_REQUEST_ADDED = "legal_request_added";
+/** SuperAdmins: new abbreviation suggestions wait for review (a digest). */
+export const KIND_ABBREVIATION_PENDING = "abbreviation_pending";
+/** The page listing the suggestions waiting for review. */
+export const ABBREVIATION_REVIEW_PATH = "/platform/system/extensions/abbreviations?status=pending";
+/** A full form longer than this is cut with "…" in the digest body. */
+const ABBREVIATION_FULL_FORM_MAX = 40;
 
 /** The fields these helpers read (lib/api/notifications UserNotification). */
 export interface NotificationLike {
@@ -106,6 +112,30 @@ export interface NotificationTexts {
   legalAddedLookup: string;
   /** org "" = its name is not known */
   legalAddedOtherOrg: (org: string) => string;
+  /** "{n} new abbreviations waiting for review" */
+  abbreviationPendingTitle: (count: number) => string;
+  /** a proper name kept as typed: "PV01 (proper name)" */
+  abbreviationProperName: (short: string) => string;
+  /** the suggestions the digest does not name: "and {n} more" */
+  abbreviationPendingMore: (count: number) => string;
+}
+
+/** The suggestions an abbreviation_pending digest names, newest first. */
+function abbreviationItems(n: Pick<NotificationLike, "payload">): { short: string; full: string; proper: boolean }[] {
+  const raw = n.payload?.items;
+  if (!Array.isArray(raw)) return [];
+  return raw.flatMap((it) => {
+    if (!it || typeof it !== "object") return [];
+    const o = it as Record<string, unknown>;
+    const short = typeof o.short_form === "string" ? o.short_form.trim() : "";
+    const full = typeof o.full_form === "string" ? o.full_form.trim() : "";
+    return short ? [{ short, full, proper: o.proper_name === true }] : [];
+  });
+}
+
+function cut(s: string, max: number): string {
+  const chars = Array.from(s);
+  return chars.length <= max ? s : `${chars.slice(0, max - 1).join("").trim()}…`;
 }
 
 /** The hint of n when nothing else is known: from its link and channel. */
@@ -123,6 +153,17 @@ export function notificationText(
   texts: NotificationTexts,
   dest?: { hint: NotificationHint; orgName?: string },
 ): { title: string; body: string } {
+  if (n.kind === KIND_ABBREVIATION_PENDING) {
+    const items = abbreviationItems(n);
+    const count = typeof n.payload?.count === "number" ? Math.max(n.payload.count, items.length) : 0;
+    if (count > 0 && items.length > 0) {
+      const parts = items.map((it) =>
+        it.proper || !it.full ? texts.abbreviationProperName(it.short) : `${it.short} → ${cut(it.full, ABBREVIATION_FULL_FORM_MAX)}`,
+      );
+      if (count > items.length) parts.push(texts.abbreviationPendingMore(count - items.length));
+      return { title: texts.abbreviationPendingTitle(count), body: parts.join(", ") };
+    }
+  }
   if (n.kind === KIND_LEGAL_REQUEST_ADDED) {
     const number = payloadString(n, "document_number").trim();
     const docTitle = payloadString(n, "title").trim();

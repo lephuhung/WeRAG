@@ -23,12 +23,17 @@ const abbreviationDetectTimeout = 5 * time.Second
 type abbreviationService struct {
 	repo   interfaces.AbbreviationRepository
 	models interfaces.ModelService
+	// notices tells the SuperAdmins about new suggestions (nil: nobody)
+	notices *AbbreviationReviewNotifier
 }
 
 // NewAbbreviationService creates the abbreviation service. models may be
-// nil; candidate detection then always uses the heuristic.
-func NewAbbreviationService(repo interfaces.AbbreviationRepository, models interfaces.ModelService) interfaces.AbbreviationService {
-	return &abbreviationService{repo: repo, models: models}
+// nil; candidate detection then always uses the heuristic. notices may be
+// nil; then no review notification is written.
+func NewAbbreviationService(
+	repo interfaces.AbbreviationRepository, models interfaces.ModelService, notices *AbbreviationReviewNotifier,
+) interfaces.AbbreviationService {
+	return &abbreviationService{repo: repo, models: models, notices: notices}
 }
 
 // abbreviationSpellcheckModelID is the spell-check model that guesses which
@@ -142,7 +147,9 @@ func (s *abbreviationService) RewriteQuestion(ctx context.Context, modelID, text
 }
 
 // Suggest creates an inactive abbreviation suggestion attributed to the
-// caller in ctx. Activation is an admin-only step done through Update.
+// caller in ctx. Activation is an admin-only step done through Update. A
+// newly created suggestion notifies the SuperAdmins in the background; an
+// existing row of the pair returned instead notifies nobody.
 func (s *abbreviationService) Suggest(
 	ctx context.Context, req *types.AbbreviationCreateRequest,
 ) (*types.Abbreviation, error) {
@@ -151,10 +158,17 @@ func (s *abbreviationService) Suggest(
 		return nil, err
 	}
 	userID, _ := types.UserIDFromContext(ctx)
-	return s.repo.SuggestUnique(ctx, &types.Abbreviation{
+	row, created, err := s.repo.SuggestUniqueCreated(ctx, &types.Abbreviation{
 		ShortForm: short, FullForm: full, Description: req.Description, SuggestedBy: userID,
 		IsProperName: req.IsProperName,
 	})
+	if err != nil {
+		return nil, err
+	}
+	if created && !row.IsActive {
+		s.notices.SuggestionCreated(ctx, row)
+	}
+	return row, nil
 }
 
 // Create inserts a row with an explicit active flag.
@@ -258,6 +272,8 @@ func (s *abbreviationService) Update(
 	if err := s.repo.Update(ctx, abbr); err != nil {
 		return nil, err
 	}
+	// an approval may have emptied the review queue
+	s.notices.QueueChanged(ctx)
 	return abbr, nil
 }
 
@@ -289,6 +305,8 @@ func (s *abbreviationService) RememberProperName(ctx context.Context, word strin
 			if err := s.repo.Update(ctx, r); err != nil {
 				return nil, err
 			}
+			// it was a pending suggestion: the queue may be empty now
+			s.notices.QueueChanged(ctx)
 			return r, nil
 		}
 	}
@@ -308,7 +326,12 @@ func (s *abbreviationService) RememberProperName(ctx context.Context, word strin
 }
 
 func (s *abbreviationService) Delete(ctx context.Context, id string) error {
-	return s.repo.Delete(ctx, id)
+	if err := s.repo.Delete(ctx, id); err != nil {
+		return err
+	}
+	// rejecting the last suggestion empties the review queue
+	s.notices.QueueChanged(ctx)
+	return nil
 }
 
 func (s *abbreviationService) ListActive(ctx context.Context) ([]*types.Abbreviation, error) {

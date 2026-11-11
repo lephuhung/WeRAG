@@ -243,6 +243,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// notified once it is added
 	must(container.Provide(repository.NewUserNotificationRepository))
 	must(container.Provide(service.NewLegalRequestNotifier))
+	must(container.Provide(service.NewAbbreviationReviewNotifier))
 	must(container.Decorate(service.NewLegalRequestAddedNotifications))
 	// Platform-wide aggregate stats for the SystemAdmin overview dashboard.
 	must(container.Provide(service.NewStatsService))

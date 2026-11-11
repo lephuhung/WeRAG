@@ -25,9 +25,23 @@ type UserNotificationRepository interface {
 	MarkSeen(ctx context.Context, userID string, ids []string, at time.Time) (int64, error)
 	// MarkRead sets read_at (and seen_at when unset) on one of the user's
 	// notifications; false when it is not the user's or does not exist.
+	// Reading an open digest frees its key (MarkAllRead too).
 	MarkRead(ctx context.Context, userID, id string, at time.Time) (bool, error)
 	// MarkAllRead reads every unread notification of the user.
 	MarkAllRead(ctx context.Context, userID string, at time.Time) (int64, error)
+	// UpsertOpenDigest keeps one unread digest per n.DedupeKey, which must be
+	// an open key (types.UserNotificationOpenKey): it inserts n when no
+	// unread row holds the key; otherwise it locks that row, calls
+	// merge(prev, next) with next a copy of n to fill in next's title, body,
+	// link and payload from both, and saves them into the row, moving it to
+	// the top (created_at = next.CreatedAt) and clearing seen_at so it is
+	// toasted again. Safe under concurrency: two calls never leave two unread
+	// rows. n gets the row's id; true = inserted.
+	UpsertOpenDigest(ctx context.Context, n *types.UserNotification, merge func(prev, next *types.UserNotification)) (bool, error)
+	// CloseOpenDigests reads every user's open digest of kind last updated
+	// before `before` (a digest updated later reports something newer);
+	// returns how many.
+	CloseOpenDigests(ctx context.Context, kind string, before, at time.Time) (int64, error)
 	// PurgeRead deletes the notifications read before readBefore, batch
 	// rows at a time; returns how many.
 	PurgeRead(ctx context.Context, readBefore time.Time, batch int) (int64, error)

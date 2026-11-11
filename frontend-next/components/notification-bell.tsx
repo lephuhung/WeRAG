@@ -55,6 +55,9 @@ export function NotificationBell() {
       legalAddedWeb: t("notif.legalAdded.web"),
       legalAddedLookup: t("notif.legalAdded.lookup"),
       legalAddedOtherOrg: (org) => (org ? t("notif.legalAdded.otherOrg", { org }) : t("notif.legalAdded.otherOrgUnknown")),
+      abbreviationPendingTitle: (n) => t("notif.abbrevPending.title", { n }),
+      abbreviationProperName: (short) => t("notif.abbrevPending.properName", { short }),
+      abbreviationPendingMore: (n) => t("notif.abbrevPending.more", { n }),
     }),
     [t],
   );
