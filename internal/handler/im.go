@@ -15,9 +15,7 @@ import (
 )
 
 // validIMPlatforms is the set of IM platforms a channel can be created for.
-// This deployment offers Telegram only; the other adapters are being removed
-// so new channels for them are refused here
-// even while their code is still compiled in.
+// WeRAG offers Telegram only; it is also the only adapter factory registered.
 var validIMPlatforms = map[string]bool{
 	"telegram": true,
 }
@@ -106,21 +104,11 @@ func (h *IMHandler) CreateIMChannel(c *gin.Context) {
 	if req.Enabled != nil {
 		channel.Enabled = *req.Enabled
 	}
-	// WeChat uses long-polling mode and full output only
-	if req.Platform == "wechat" {
-		channel.Mode = "longpoll"
-		channel.OutputMode = "full"
-	} else {
-		if channel.Mode == "" {
-			if channel.Platform == "mattermost" || channel.Platform == "yunzhijia" {
-				channel.Mode = "webhook"
-			} else {
-				channel.Mode = "websocket"
-			}
-		}
-		if channel.OutputMode == "" {
-			channel.OutputMode = "stream"
-		}
+	if channel.Mode == "" {
+		channel.Mode = "websocket"
+	}
+	if channel.OutputMode == "" {
+		channel.OutputMode = "stream"
 	}
 	if channel.Credentials == nil {
 		channel.Credentials = types.JSON("{}")
@@ -351,18 +339,7 @@ func (h *IMHandler) ToggleIMChannel(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": channel})
 }
 
-func writeIMCallbackACK(c *gin.Context, platform string) {
-	if platform == "yunzhijia" {
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"data": gin.H{
-				"type":    2,
-				"content": "",
-			},
-		})
-		return
-	}
-
+func writeIMCallbackACK(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
@@ -397,6 +374,11 @@ func (h *IMHandler) IMCallback(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "channel not found"})
 			return
 		}
+		if errors.Is(err, im.ErrUnsupportedPlatform) {
+			logger.Warnf(ctx, "[IM] Callback for channel %s on an unsupported platform: %v", channelID, err)
+			c.JSON(http.StatusNotFound, gin.H{"error": "IM platform not supported"})
+			return
+		}
 		if errors.Is(err, im.ErrChannelDisabled) {
 			logger.Errorf(ctx, "[IM] Channel disabled for callback: %s", channelID)
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "channel is disabled"})
@@ -407,12 +389,7 @@ func (h *IMHandler) IMCallback(c *gin.Context) {
 		return
 	}
 
-	defaultMode := "websocket"
-	if channel.Platform == "mattermost" || channel.Platform == "yunzhijia" {
-		defaultMode = "webhook"
-	}
-	if im.ResolveMode(channel, defaultMode) != "webhook" ||
-		channel.Platform == "qqbot" || channel.Platform == "wechat" || channel.Platform == "dingtalk" {
+	if im.ResolveMode(channel, "websocket") != "webhook" {
 		c.JSON(http.StatusForbidden, gin.H{"error": "HTTP callbacks are disabled for this channel"})
 		return
 	}
@@ -441,17 +418,13 @@ func (h *IMHandler) IMCallback(c *gin.Context) {
 
 	// If nil, it's a non-message event - just acknowledge
 	if msg == nil {
-		if channel.Platform == "mattermost" {
-			logger.Infof(ctx, "[IM] Mattermost callback ignored (no message): path_channel_id=%s — check: (1) trigger word must be the *first word* of the post; (2) if channel+trigger are both set, post must be in that channel; (3) bot_user_id must not match the sender", channelID)
-		} else {
-			logger.Infof(ctx, "[IM] Callback parsed no message to process platform=%s path_channel_id=%s", channel.Platform, channelID)
-		}
-		writeIMCallbackACK(c, channel.Platform)
+		logger.Infof(ctx, "[IM] Callback parsed no message to process platform=%s path_channel_id=%s", channel.Platform, channelID)
+		writeIMCallbackACK(c)
 		return
 	}
 
 	// Respond immediately to avoid platform timeout
-	writeIMCallbackACK(c, channel.Platform)
+	writeIMCallbackACK(c)
 
 	// Detach from gin request context
 	asyncCtx := context.WithoutCancel(ctx)

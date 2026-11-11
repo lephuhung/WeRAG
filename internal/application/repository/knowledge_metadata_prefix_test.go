@@ -35,7 +35,7 @@ func TestFindByMetadataKeyPrefix(t *testing.T) {
 		require.NoError(t, db.Exec(`
 			INSERT INTO knowledges
 			  (id, tenant_id, knowledge_base_id, type, title, source, parse_status, metadata)
-			VALUES (?, ?, ?, 'document', ?, 'feishu', 'completed', ?)
+			VALUES (?, ?, ?, 'document', ?, 'im', 'completed', ?)
 		`, id, tid, kb, extID, metadata).Error)
 		return id
 	}
@@ -67,7 +67,7 @@ func TestFindByMetadataKeyPrefix_DeletedRowsExcluded(t *testing.T) {
 	require.NoError(t, db.Exec(`
 		INSERT INTO knowledges
 		  (id, tenant_id, knowledge_base_id, type, title, source, parse_status, metadata, deleted_at)
-		VALUES (?, ?, ?, 'document', 'deleted-child', 'feishu', 'completed', ?, '2026-01-01 00:00:00')
+		VALUES (?, ?, ?, 'document', 'deleted-child', 'im', 'completed', ?, '2026-01-01 00:00:00')
 	`, id, tenantID, kbID, metadata).Error)
 
 	results, err := repo.FindByMetadataKeyPrefix(ctx, tenantID, kbID, "external_id", "nodeC#")
@@ -93,7 +93,7 @@ func TestFindByMetadataKeyPrefix_UnderscoreIsLiteral(t *testing.T) {
 		require.NoError(t, db.Exec(`
 			INSERT INTO knowledges
 			  (id, tenant_id, knowledge_base_id, type, title, source, parse_status, metadata)
-			VALUES (?, ?, ?, 'document', ?, 'feishu', 'completed', ?)
+			VALUES (?, ?, ?, 'document', ?, 'im', 'completed', ?)
 		`, id, tenantID, kbID, extID, metadata).Error)
 		return id
 	}

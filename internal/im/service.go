@@ -164,7 +164,7 @@ func formatIMOutboundAnswerOrFallback(
 }
 
 // imOutboundContext keeps values from ctx but drops cancellation. /stop cancels
-// the QA request; Feishu CardKit calls honor that deadline and would otherwise
+// the QA request; platform API calls honor that deadline and would otherwise
 // leave the thinking placeholder on screen.
 func imOutboundContext(ctx context.Context) context.Context {
 	return context.WithoutCancel(ctx)
@@ -252,6 +252,11 @@ const (
 // ErrChannelDisabled reports that a channel row exists but is disabled, so
 // callers can tell it apart from a missing channel or a transient failure.
 var ErrChannelDisabled = errors.New("channel is disabled")
+
+// ErrUnsupportedPlatform reports that a channel row names a platform with no
+// registered adapter factory (WeRAG offers Telegram only), so callers can
+// answer with a client error instead of treating it as a transient failure.
+var ErrUnsupportedPlatform = errors.New("unsupported IM platform")
 
 // channelState holds runtime state for a running IM channel.
 type channelState struct {
@@ -1247,9 +1252,6 @@ func (s *Service) reloadChannelFromDB(channelID, reason string) {
 // the leader lock and opens the connection; other instances periodically
 // retry so they can take over if the leader dies.
 func (s *Service) StartChannel(channel *IMChannel) error {
-	if err := validateChannelTransport(channel); err != nil {
-		return err
-	}
 	if s.stopped.Load() {
 		return fmt.Errorf("im service is stopped")
 	}
@@ -1259,7 +1261,7 @@ func (s *Service) StartChannel(channel *IMChannel) error {
 	factory, ok := s.adapterFactories[channel.Platform]
 	if !ok {
 		s.mu.Unlock()
-		return fmt.Errorf("no adapter factory for platform: %s", channel.Platform)
+		return fmt.Errorf("%w: %s", ErrUnsupportedPlatform, channel.Platform)
 	}
 	// Stop existing channel if running
 	if existing, ok := s.channels[channel.ID]; ok {
@@ -1267,10 +1269,10 @@ func (s *Service) StartChannel(channel *IMChannel) error {
 	}
 	s.mu.Unlock()
 
-	// For WebSocket / long-poll channels, try leader election to avoid
-	// duplicate connections. Only one instance should actively poll or
+	// For WebSocket (Telegram long polling) channels, try leader election to
+	// avoid duplicate connections. Only one instance should actively poll or
 	// maintain a persistent connection for each channel.
-	if (channel.Mode == "websocket" || channel.Mode == "longpoll") && s.redis != nil {
+	if channel.Mode == "websocket" && s.redis != nil {
 		acquired := s.tryAcquireWSLeader(channel.ID)
 		if !acquired {
 			logger.Infof(context.Background(),
@@ -1297,9 +1299,9 @@ func (s *Service) startChannelInternal(channel *IMChannel, factory AdapterFactor
 		return fmt.Errorf("create adapter: %w", err)
 	}
 
-	// Start leader renewal goroutine for WebSocket / long-poll channels.
+	// Start leader renewal goroutine for WebSocket (long polling) channels.
 	var leaderCancel context.CancelFunc
-	if (channel.Mode == "websocket" || channel.Mode == "longpoll") && s.redis != nil {
+	if channel.Mode == "websocket" && s.redis != nil {
 		leaderCtx, lCancel := context.WithCancel(context.Background())
 		leaderCancel = lCancel
 		go s.wsLeaderRenewLoop(leaderCtx, channel.ID)
@@ -1364,18 +1366,8 @@ func (s *Service) stopChannelLocked(channelID string, cs *channelState) {
 		cs.Cancel()
 	}
 	delete(s.channels, channelID)
-	// For long-poll channels, do NOT release the leader lock immediately.
-	// Let it expire naturally via TTL so the old poll goroutine has time to
-	// fully drain before another instance takes over. This prevents a brief
-	// dual-writer window where both old and new instances process messages.
-	// For websocket channels, the connection closes synchronously, so
-	// immediate release is safe.
-	if cs.Channel != nil && cs.Channel.Mode == "longpoll" {
-		logger.Infof(context.Background(), "[IM] Stopped longpoll channel: id=%s (leader lock will expire via TTL)", channelID)
-	} else {
-		s.releaseWSLeader(channelID)
-		logger.Infof(context.Background(), "[IM] Stopped channel: id=%s", channelID)
-	}
+	s.releaseWSLeader(channelID)
+	logger.Infof(context.Background(), "[IM] Stopped channel: id=%s", channelID)
 }
 
 // ── WebSocket leader election ───────────────────────────────────────────────
@@ -2411,7 +2403,7 @@ func (s *Service) resolveSession(ctx context.Context, msg *IncomingMessage, tena
 // IM session. Platform adapters only surface ChatID, not a readable chat name,
 // so we fall back to short ID suffixes to keep group/DM sessions visually distinct.
 // Platform prefix is intentionally omitted — the UI renders a platform icon badge
-// alongside the title, so the `[feishu]` prefix would be redundant clutter.
+// alongside the title, so a `[telegram]` prefix would be redundant clutter.
 func buildUserSessionTitle(msg *IncomingMessage) string {
 	var b strings.Builder
 	if msg.UserName != "" {
@@ -2658,7 +2650,7 @@ func briefToolSummary(output string) string {
 // in real-time via the StreamSender interface. Chunks are batched at streamFlushInterval
 // to avoid API rate-limiting.
 func (s *Service) handleMessageStream(ctx context.Context, msg *IncomingMessage, session *types.Session, customAgent *types.CustomAgent, kbIDs []string, attachments types.MessageAttachments, imageURLs []string, streamer StreamSender, adapter Adapter, userKey string, tenant *types.Tenant) error {
-	// Start the stream on the IM platform (e.g., create Feishu streaming card)
+	// Start the stream on the IM platform (e.g., send the placeholder message)
 	streamID, err := streamer.StartStream(ctx, msg)
 	if err != nil {
 		logger.Warnf(ctx, "[IM] StartStream failed, falling back to non-streaming: %v", err)
@@ -3419,9 +3411,6 @@ func relocalizeBuiltinChannelAgentNames(ctx context.Context, rows []ChannelWithA
 // CreateChannel creates a new IM channel and optionally starts it.
 // Returns a duplicate_bot error if the bot identity is already used by another channel.
 func (s *Service) CreateChannel(channel *IMChannel) error {
-	if err := validateChannelTransport(channel); err != nil {
-		return err
-	}
 	if err := s.checkDuplicateBot(channel, ""); err != nil {
 		return err
 	}
@@ -3488,9 +3477,6 @@ func (s *Service) SetChannelKnowledgeBaseID(ctx context.Context, channel *IMChan
 // UpdateChannel updates a channel and restarts it if needed.
 // Returns a duplicate_bot error if the bot identity is already used by another channel.
 func (s *Service) UpdateChannel(channel *IMChannel) error {
-	if err := validateChannelTransport(channel); err != nil {
-		return err
-	}
 	if err := s.checkDuplicateBot(channel, channel.ID); err != nil {
 		return err
 	}
@@ -3650,7 +3636,7 @@ func (s *Service) processDownloadedFileToKnowledgeBase(ctx context.Context, chan
 	fh := newInMemoryFileHeader(fileName, file.content)
 
 	// Create knowledge entry via the knowledge service
-	knowledge, err := s.knowledgeService.CreateKnowledgeFromFile(kbCtx, kbID, fh, nil, nil, "", nil, imPlatformToChannel(channel.Platform), nil)
+	knowledge, err := s.knowledgeService.CreateKnowledgeFromFile(kbCtx, kbID, fh, nil, nil, "", nil, types.ChannelIM, nil)
 	if err != nil {
 		errMsg := err.Error()
 		// Check for duplicate file
@@ -3672,24 +3658,6 @@ func fileExtension(filename string) string {
 		return ""
 	}
 	return strings.ToLower(parts[len(parts)-1])
-}
-
-// imPlatformToChannel maps an IM platform identifier to a Knowledge.Channel constant.
-func imPlatformToChannel(platform string) string {
-	switch strings.ToLower(platform) {
-	case "wechat":
-		return types.ChannelWechat
-	case "wecom", "wxwork":
-		return types.ChannelWecom
-	case "feishu", "lark":
-		return types.ChannelFeishu
-	case "dingtalk":
-		return types.ChannelDingtalk
-	case "slack":
-		return types.ChannelSlack
-	default:
-		return types.ChannelIM
-	}
 }
 
 // newInMemoryFileHeader wraps in-memory file content as a *multipart.FileHeader

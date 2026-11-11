@@ -48,7 +48,7 @@ func startQAExitHandler(
 		if stream {
 			sender := &recordingStreamSender{}
 			err := service.handleMessageStream(ctx,
-				&IncomingMessage{Platform: PlatformFeishu, UserID: "user", Content: "question"},
+				&IncomingMessage{Platform: PlatformTelegram, UserID: "user", Content: "question"},
 				session, customAgent, nil, nil, nil, sender, nil, "user", nil)
 			_, final, ended := sender.snapshot()
 			if err == nil && !ended {

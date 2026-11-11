@@ -44,15 +44,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/handler"
 	"github.com/Tencent/WeKnora/internal/handler/session"
 	imPkg "github.com/Tencent/WeKnora/internal/im"
-	"github.com/Tencent/WeKnora/internal/im/dingtalk"
-	"github.com/Tencent/WeKnora/internal/im/feishu"
-	"github.com/Tencent/WeKnora/internal/im/mattermost"
-	"github.com/Tencent/WeKnora/internal/im/qqbot"
-	"github.com/Tencent/WeKnora/internal/im/slack"
 	"github.com/Tencent/WeKnora/internal/im/telegram"
-	"github.com/Tencent/WeKnora/internal/im/wechat"
-	"github.com/Tencent/WeKnora/internal/im/wecom"
-	"github.com/Tencent/WeKnora/internal/im/yunzhijia"
 	"github.com/Tencent/WeKnora/internal/infrastructure/docparser"
 	infra_web_search "github.com/Tencent/WeKnora/internal/infrastructure/web_search"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -1588,20 +1580,10 @@ func registerWebSearchProviders(registry *infra_web_search.Registry) {
 }
 
 // registerIMService registers adapter factories, loads enabled channels, and
-// wires the process-lifetime shutdown hook. Each platform's factory lives in
-// its own subpackage to keep this file focused on wiring.
+// wires the process-lifetime shutdown hook. Telegram is the only IM platform
+// WeRAG offers; its factory lives in internal/im/telegram.
 func registerIMService(imService *imPkg.Service, cleaner interfaces.ResourceCleaner) {
-	imService.RegisterAdapterFactory("wecom", wecom.NewFactory())
-	imService.RegisterAdapterFactory("feishu", feishu.NewFactory(feishu.RegionFeishu))
-	// Lark is Feishu's international cloud: same adapter, different host/tenant.
-	imService.RegisterAdapterFactory("lark", feishu.NewFactory(feishu.RegionLark))
-	imService.RegisterAdapterFactory("slack", slack.NewFactory())
 	imService.RegisterAdapterFactory("telegram", telegram.NewFactory())
-	imService.RegisterAdapterFactory("dingtalk", dingtalk.NewFactory())
-	imService.RegisterAdapterFactory("mattermost", mattermost.NewFactory())
-	imService.RegisterAdapterFactory("wechat", wechat.NewFactory())
-	imService.RegisterAdapterFactory("qqbot", qqbot.NewFactory())
-	imService.RegisterAdapterFactory("yunzhijia", yunzhijia.NewFactory())
 
 	// Load and start all enabled channels from database
 	if err := imService.LoadAndStartChannels(); err != nil {

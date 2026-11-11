@@ -2,6 +2,7 @@ package im
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -429,5 +430,25 @@ func TestLeadershipLossStopsAdapterAndSchedulesRecovery(t *testing.T) {
 	svc.mu.RUnlock()
 	if retryCount != 1 {
 		t.Fatalf("leader retry goroutines after duplicate loss = %d, want one", retryCount)
+	}
+}
+
+// A channel row left over from a removed platform (no registered factory)
+// must fail with ErrUnsupportedPlatform so the callback handler can answer
+// with a client error instead of a 5xx or a panic.
+func TestEnsureChannelAdapterRejectsUnsupportedPlatform(t *testing.T) {
+	db := newLifecycleTestDB(t)
+	channel := createLifecycleChannel(t, db, "channel-removed-platform", "agent")
+	if err := db.Model(channel).Update("platform", "feishu").Error; err != nil {
+		t.Fatalf("update platform: %v", err)
+	}
+	svc := newLifecycleTestService(db, nil, "instance-one")
+
+	adapter, _, err := svc.EnsureChannelAdapter(channel.ID)
+	if !errors.Is(err, ErrUnsupportedPlatform) {
+		t.Fatalf("err = %v, want ErrUnsupportedPlatform", err)
+	}
+	if adapter != nil {
+		t.Fatalf("adapter = %v, want nil", adapter)
 	}
 }

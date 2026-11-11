@@ -21,7 +21,7 @@ func runStreamExitHandler(
 	ctx context.Context, service *Service, sender StreamSender, agent *types.CustomAgent,
 ) error {
 	return service.handleMessageStream(
-		ctx, &IncomingMessage{Platform: PlatformFeishu, UserID: "user", Content: "question"},
+		ctx, &IncomingMessage{Platform: PlatformTelegram, UserID: "user", Content: "question"},
 		&types.Session{ID: "session"}, agent, nil, nil, nil, sender, nil, "user", nil,
 	)
 }

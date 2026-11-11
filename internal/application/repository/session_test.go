@@ -200,10 +200,10 @@ func TestSessionRepositoryQueryPagedKeepsClearedIMSessionsOutOfWeb(t *testing.T)
 	cleared := createSessionForTest(t, db, 1, "alice") // IM mapping soft-deleted by /clear
 
 	require.NoError(t, db.Create(&testIMChannelSession{
-		ID: "m-active", SessionID: active.ID, Platform: "wecom", TenantID: 1,
+		ID: "m-active", SessionID: active.ID, Platform: "telegram", TenantID: 1,
 	}).Error)
 	clearedMapping := &testIMChannelSession{
-		ID: "m-cleared", SessionID: cleared.ID, Platform: "wecom", TenantID: 1,
+		ID: "m-cleared", SessionID: cleared.ID, Platform: "telegram", TenantID: 1,
 	}
 	require.NoError(t, db.Create(clearedMapping).Error)
 	require.NoError(t, db.Delete(clearedMapping).Error) // soft-delete, as /clear does
@@ -215,12 +215,12 @@ func TestSessionRepositoryQueryPagedKeepsClearedIMSessionsOutOfWeb(t *testing.T)
 	require.Equal(t, []string{web.ID}, listItemIDsForTest(webItems),
 		"web must exclude sessions that ever had an IM mapping, including cleared ones")
 
-	wecomItems, _, err := repo.QueryPaged(ctx, &types.SessionListQuery{
-		TenantID: 1, UserID: "alice", Source: "wecom", Page: 1, PageSize: 50,
+	imItems, _, err := repo.QueryPaged(ctx, &types.SessionListQuery{
+		TenantID: 1, UserID: "alice", Source: "telegram", Page: 1, PageSize: 50,
 	})
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{active.ID, cleared.ID}, listItemIDsForTest(wecomItems),
-		"wecom must include both the active and the cleared IM session")
+	require.ElementsMatch(t, []string{active.ID, cleared.ID}, listItemIDsForTest(imItems),
+		"telegram must include both the active and the cleared IM session")
 }
 
 func TestSessionRepositoryQueryPagedSplitsWebAndEmbedSessions(t *testing.T) {
@@ -309,13 +309,13 @@ func TestSessionRepositoryGetIMPlatform(t *testing.T) {
 
 	imSession := createSessionForTest(t, db, 1, "alice")
 	require.NoError(t, db.Create(&testIMChannelSession{
-		ID: "ics-1", SessionID: imSession.ID, Platform: "feishu",
+		ID: "ics-1", SessionID: imSession.ID, Platform: "telegram",
 	}).Error)
 	webSession := createSessionForTest(t, db, 1, "alice")
 
 	platform, err := repo.GetIMPlatform(ctx, 1, imSession.ID)
 	require.NoError(t, err)
-	require.Equal(t, "feishu", platform)
+	require.Equal(t, "telegram", platform)
 
 	platform, err = repo.GetIMPlatform(ctx, 1, webSession.ID)
 	require.NoError(t, err)

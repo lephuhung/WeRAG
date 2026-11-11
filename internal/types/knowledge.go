@@ -24,13 +24,8 @@ const (
 	ChannelWeb              = "web"               // Web UI (default)
 	ChannelAPI              = "api"               // External API call
 	ChannelBrowserExtension = "browser_extension" // Browser extension / plugin
-	ChannelWechat           = "wechat"            // WeChat
-	ChannelWecom            = "wecom"             // WeCom
-	ChannelFeishu           = "feishu"            // Feishu / Lark
 	ChannelFeishuDrive      = "feishu_drive"      // Feishu Drive
 	ChannelLarkDrive        = "lark_drive"        // Lark Drive (international)
-	ChannelDingtalk         = "dingtalk"          // DingTalk
-	ChannelSlack            = "slack"             // Slack
 	ChannelIM               = "im"                // Generic IM channel
 	ChannelNotion           = "notion"            // Notion
 	ChannelConfluence       = "confluence"        // Atlassian Confluence

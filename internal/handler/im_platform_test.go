@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// This deployment offers Telegram only: channel creation must accept it and
-// refuse every other platform, including ones whose adapter is still compiled in.
+// WeRAG offers Telegram only: channel creation must accept it and refuse every
+// other platform, including the ones inherited from upstream and since removed.
 func TestValidIMPlatforms_TelegramOnly(t *testing.T) {
 	if !validIMPlatforms["telegram"] {
 		t.Error("telegram is not accepted")

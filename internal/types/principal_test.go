@@ -26,9 +26,9 @@ func TestWithPrincipalRejectsBlankValues(t *testing.T) {
 }
 
 func TestPrincipalStorageID(t *testing.T) {
-	p := Principal{Type: PrincipalIMUser, ID: "wecom:ch1:u1"}
+	p := Principal{Type: PrincipalIMUser, ID: "telegram:ch1:u1"}
 
-	if got := p.StorageID(); got != "im_user:wecom:ch1:u1" {
+	if got := p.StorageID(); got != "im_user:telegram:ch1:u1" {
 		t.Fatalf("StorageID() = %q", got)
 	}
 }

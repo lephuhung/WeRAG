@@ -184,11 +184,11 @@ func TestResolverDoesNotCrossIMAndWebPrincipals(t *testing.T) {
 	reader := &fakeUserEnvReader{tenantID: testEnvTenantID}
 	reader.put(webPrincipal("system-7"), testEnvConfigID, "sk-1",
 		map[string]string{"TAVILY_API_KEY": "web-key"})
-	reader.put(imPrincipal("wecom:ch1:alice"), testEnvConfigID, "sk-1",
+	reader.put(imPrincipal("telegram:ch1:alice"), testEnvConfigID, "sk-1",
 		map[string]string{"TAVILY_API_KEY": "im-key"})
 	resolver := newTestResolver(reader, searchSkillRow())
 
-	imCtx := types.WithPrincipal(context.Background(), imPrincipal("wecom:ch1:alice"))
+	imCtx := types.WithPrincipal(context.Background(), imPrincipal("telegram:ch1:alice"))
 	imCtx = context.WithValue(imCtx, types.UserIDContextKey, "system-7")
 	imEnv, _, err := resolver.ResolveEnv(imCtx, "web-search")
 	require.NoError(t, err)

@@ -31,7 +31,7 @@ func TestBuildUserSessionTitle(t *testing.T) {
 		{
 			name: "group with username",
 			msg: &IncomingMessage{
-				Platform: "feishu",
+				Platform: "telegram",
 				UserName: "Nguyễn Văn B",
 				ChatType: ChatTypeGroup,
 				ChatID:   "oc_aaaaaaaaaaaaaaaa",
@@ -41,7 +41,7 @@ func TestBuildUserSessionTitle(t *testing.T) {
 		{
 			name: "direct message with username",
 			msg: &IncomingMessage{
-				Platform: "feishu",
+				Platform: "telegram",
 				UserName: "Nguyễn Văn B",
 				ChatType: ChatTypeDirect,
 			},
@@ -50,7 +50,7 @@ func TestBuildUserSessionTitle(t *testing.T) {
 		{
 			name: "group without username falls back to user id",
 			msg: &IncomingMessage{
-				Platform: "wecom",
+				Platform: "telegram",
 				UserID:   "WeCom_ZhangSan",
 				ChatType: ChatTypeGroup,
 				ChatID:   "wc_group_1234",
@@ -60,7 +60,7 @@ func TestBuildUserSessionTitle(t *testing.T) {
 		{
 			name: "no user identity at all",
 			msg: &IncomingMessage{
-				Platform: "slack",
+				Platform: "telegram",
 				ChatType: ChatTypeDirect,
 			},
 			want: "user · dm",
@@ -84,7 +84,7 @@ func TestBuildThreadSessionTitle(t *testing.T) {
 		{
 			name: "chat + thread",
 			msg: &IncomingMessage{
-				Platform: "slack",
+				Platform: "telegram",
 				ChatID:   "C0123456789",
 				ThreadID: "1700000000.111000",
 			},
@@ -93,7 +93,7 @@ func TestBuildThreadSessionTitle(t *testing.T) {
 		{
 			name: "thread without chat id",
 			msg: &IncomingMessage{
-				Platform: "feishu",
+				Platform: "telegram",
 				ThreadID: "om_thread_abcdefgh",
 			},
 			want: "thread abcdefgh",
@@ -117,7 +117,7 @@ func TestIMInitialSessionTitle(t *testing.T) {
 		{
 			name: "text message starts untitled so it gets a content-based title later",
 			msg: &IncomingMessage{
-				Platform: "feishu",
+				Platform: "telegram",
 				UserName: "Nguyễn Văn B",
 				ChatType: ChatTypeDirect,
 				Content:  "Cấu hình đăng nhập một lần như thế nào?",
@@ -127,7 +127,7 @@ func TestIMInitialSessionTitle(t *testing.T) {
 		{
 			name: "whitespace-only content falls back to the identity title",
 			msg: &IncomingMessage{
-				Platform: "feishu",
+				Platform: "telegram",
 				UserName: "Nguyễn Văn B",
 				ChatType: ChatTypeDirect,
 				Content:  "   ",
@@ -137,7 +137,7 @@ func TestIMInitialSessionTitle(t *testing.T) {
 		{
 			name: "non-text message (no content) falls back to the identity title",
 			msg: &IncomingMessage{
-				Platform: "wecom",
+				Platform: "telegram",
 				UserID:   "WeCom_ZhangSan",
 				ChatType: ChatTypeGroup,
 				ChatID:   "wc_group_1234",

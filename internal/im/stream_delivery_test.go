@@ -45,7 +45,7 @@ func TestHandleMessageStreamFinalDelivery(t *testing.T) {
 			service.messageService = messages
 			adapter.finalizeErr, adapter.sendErr, adapter.endErr = tt.finalizeErr, tt.sendErr, tt.endErr
 			err := service.handleMessageStream(context.Background(),
-				&IncomingMessage{Platform: PlatformFeishu, UserID: "test-user", Content: "question"},
+				&IncomingMessage{Platform: PlatformTelegram, UserID: "test-user", Content: "question"},
 				&types.Session{ID: "test-session"}, nil, nil, nil, nil, adapter, adapter, "test-key", nil)
 			if !errors.Is(err, tt.wantErr) {
 				t.Fatalf("delivery error = %v, want %v", err, tt.wantErr)

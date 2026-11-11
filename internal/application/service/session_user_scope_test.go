@@ -315,21 +315,21 @@ func TestListSessionsIMSourceRequiresOwner(t *testing.T) {
 	svc, db := newTestSessionService(t)
 	require.NoError(t, db.AutoMigrate(&testListSessionsIMChannelSession{}))
 
-	imSession := &types.Session{TenantID: 1, Title: "feishu chat"}
+	imSession := &types.Session{TenantID: 1, Title: "telegram chat"}
 	require.NoError(t, db.Create(imSession).Error)
 	require.NoError(t, db.Create(&testListSessionsIMChannelSession{
-		SessionID: imSession.ID, Platform: "feishu",
+		SessionID: imSession.ID, Platform: "telegram",
 	}).Error)
 
 	viewerCtx := testSessionScopeContext(1, "alice")
-	_, err := svc.ListSessions(viewerCtx, &types.SessionListQuery{Source: "feishu"})
+	_, err := svc.ListSessions(viewerCtx, &types.SessionListQuery{Source: "telegram"})
 	require.Error(t, err)
 	var appErr *apperrors.AppError
 	require.ErrorAs(t, err, &appErr)
 	require.Equal(t, apperrors.ErrForbidden, appErr.Code)
 
 	ownerCtx := context.WithValue(testSessionScopeContext(1, "alice"), types.TenantRoleContextKey, types.TenantRoleOwner)
-	result, err := svc.ListSessions(ownerCtx, &types.SessionListQuery{Source: "feishu"})
+	result, err := svc.ListSessions(ownerCtx, &types.SessionListQuery{Source: "telegram"})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, result.Total)
 }
@@ -363,10 +363,10 @@ func TestGetSessionDeniesViewerOnIMSession(t *testing.T) {
 	svc, db := newTestSessionService(t)
 	require.NoError(t, db.AutoMigrate(&testListSessionsIMChannelSession{}))
 
-	imSession := &types.Session{TenantID: 1, Title: "feishu chat"}
+	imSession := &types.Session{TenantID: 1, Title: "telegram chat"}
 	require.NoError(t, db.Create(imSession).Error)
 	require.NoError(t, db.Create(&testListSessionsIMChannelSession{
-		SessionID: imSession.ID, Platform: "feishu",
+		SessionID: imSession.ID, Platform: "telegram",
 	}).Error)
 
 	viewerCtx := testSessionScopeContext(1, "alice")
@@ -377,7 +377,7 @@ func TestGetSessionDeniesViewerOnIMSession(t *testing.T) {
 	got, err := svc.GetSession(ownerCtx, imSession.ID)
 	require.NoError(t, err)
 	require.Equal(t, imSession.ID, got.ID)
-	require.Equal(t, "feishu", got.IMPlatform)
+	require.Equal(t, "telegram", got.IMPlatform)
 }
 
 func TestGetSessionAllowsAPITenantRuntimeToReadOwnAPIKeySession(t *testing.T) {
@@ -399,10 +399,10 @@ func TestGetSessionDeniesAPITenantRuntimeFromReadingIMSession(t *testing.T) {
 	svc, db := newTestSessionService(t)
 	require.NoError(t, db.AutoMigrate(&testListSessionsIMChannelSession{}))
 
-	imSession := &types.Session{TenantID: 1, Title: "feishu chat"}
+	imSession := &types.Session{TenantID: 1, Title: "telegram chat"}
 	require.NoError(t, db.Create(imSession).Error)
 	require.NoError(t, db.Create(&testListSessionsIMChannelSession{
-		SessionID: imSession.ID, Platform: "feishu",
+		SessionID: imSession.ID, Platform: "telegram",
 	}).Error)
 
 	_, err := svc.GetSession(testAPITenantKeyScopeContext(1, 10), imSession.ID)
@@ -413,10 +413,10 @@ func TestGetSessionDeniesAPIExternalUserRuntimeFromReadingIMSession(t *testing.T
 	svc, db := newTestSessionService(t)
 	require.NoError(t, db.AutoMigrate(&testListSessionsIMChannelSession{}))
 
-	imSession := &types.Session{TenantID: 1, Title: "feishu chat"}
+	imSession := &types.Session{TenantID: 1, Title: "telegram chat"}
 	require.NoError(t, db.Create(imSession).Error)
 	require.NoError(t, db.Create(&testListSessionsIMChannelSession{
-		SessionID: imSession.ID, Platform: "feishu",
+		SessionID: imSession.ID, Platform: "telegram",
 	}).Error)
 
 	_, err := svc.GetSession(testAPISessionScopeContext(1, "1:alice"), imSession.ID)
@@ -427,11 +427,11 @@ func TestGetSessionAllowsIMRuntimeToReadIMSession(t *testing.T) {
 	svc, db := newTestSessionService(t)
 	require.NoError(t, db.AutoMigrate(&testListSessionsIMChannelSession{}))
 
-	imSession := &types.Session{TenantID: 1, Title: "feishu chat"}
+	imSession := &types.Session{TenantID: 1, Title: "telegram chat"}
 	require.NoError(t, db.Create(imSession).Error)
 	require.NoError(t, db.Create(&testListSessionsIMChannelSession{
 		SessionID: imSession.ID,
-		Platform:  "feishu",
+		Platform:  "telegram",
 	}).Error)
 
 	ctx := context.WithValue(
@@ -441,13 +441,13 @@ func TestGetSessionAllowsIMRuntimeToReadIMSession(t *testing.T) {
 	)
 	ctx = types.WithPrincipal(ctx, types.Principal{
 		Type: types.PrincipalIMUser,
-		ID:   "1:channel-1:feishu:open-id-1",
+		ID:   "1:channel-1:telegram:open-id-1",
 	})
 
 	got, err := svc.GetSession(ctx, imSession.ID)
 	require.NoError(t, err)
 	require.Equal(t, imSession.ID, got.ID)
-	require.Equal(t, "feishu", got.IMPlatform)
+	require.Equal(t, "telegram", got.IMPlatform)
 }
 
 func TestGetSessionAllowsEmbedRuntimeToReadOwnEmbedSession(t *testing.T) {

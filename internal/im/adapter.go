@@ -11,18 +11,7 @@ import (
 type Platform string
 
 const (
-	PlatformWeCom  Platform = "wecom"
-	PlatformFeishu Platform = "feishu"
-	// PlatformLark is Feishu's international edition (open.larksuite.com).
-	// It shares the Feishu adapter; only the API host and tenant differ.
-	PlatformLark       Platform = "lark"
-	PlatformSlack      Platform = "slack"
-	PlatformTelegram   Platform = "telegram"
-	PlatformDingtalk   Platform = "dingtalk"
-	PlatformMattermost Platform = "mattermost"
-	PlatformWeChat     Platform = "wechat"
-	PlatformQQBot      Platform = "qqbot"
-	PlatformYunzhijia  Platform = "yunzhijia"
+	PlatformTelegram Platform = "telegram"
 )
 
 // SessionMode determines how IM sessions are resolved.
@@ -69,23 +58,19 @@ type IncomingMessage struct {
 	// FileSize is the file size in bytes (for file messages, optional).
 	FileSize int64
 	// ThreadID is the platform-specific thread identifier.
-	// - Slack: thread_ts (top-level message uses its own timestamp)
-	// - Mattermost: root_id, or post_id if top-level
-	// - Feishu/Lark: root_id, or message_id if top-level
-	// - Telegram: message_thread_id (Forum Topics only)
-	// Empty for platforms without thread support (WeCom, DingTalk).
+	// - Telegram: message_thread_id (Forum Topics only); empty otherwise.
 	// In thread mode, top-level messages use their own ID as ThreadID,
 	// effectively creating a new session per top-level message.
 	ThreadID string
 	// Quote is the quoted/replied message, if any.
 	// Populated by adapters on platforms that support quote-reply.
 	Quote *QuotedMessage
-	// Extra holds platform-specific fields (e.g., WeCom stream ID).
+	// Extra holds platform-specific fields.
 	Extra map[string]string
 }
 
 // QuotedMessage holds the content and metadata of a quoted/replied message.
-// Populated by platform adapters that support quote-reply (e.g. WeCom long-connection).
+// Populated by platform adapters that support quote-reply.
 type QuotedMessage struct {
 	// MessageID is the platform message ID of the quoted message.
 	MessageID string
@@ -153,7 +138,7 @@ type StreamSender interface {
 	StartStream(ctx context.Context, incoming *IncomingMessage) (string, error)
 
 	// UpdateStreamContent replaces the user-visible stream text with fullContent so far.
-	// Platforms with replace semantics (WeCom, Telegram edit, etc.) show this as the entire message.
+	// Platforms with replace semantics (e.g. Telegram message edit) show this as the entire message.
 	UpdateStreamContent(ctx context.Context, incoming *IncomingMessage, streamID string, fullContent string) error
 
 	// FinalizeStream performs the final replace with answer-only content (thinking/tools stripped).

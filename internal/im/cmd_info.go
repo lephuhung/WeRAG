@@ -28,9 +28,8 @@ func (c *InfoCommand) Description() string {
 func (c *InfoCommand) Execute(ctx context.Context, cmdCtx *CommandContext, _ []string) (*CommandResult, error) {
 	var sb strings.Builder
 
-	// Note: Feishu card markdown only renders **bold** when it occupies the
-	// entire inline segment. "**label：**value" on the same line will show
-	// raw asterisks. Always keep bold text self-contained on its own line.
+	// Keep bold text self-contained on its own line: some markdown renderers
+	// show raw asterisks for "**label：**value" on the same line.
 
 	// ── Header ──
 	name := cmdCtx.AgentName
