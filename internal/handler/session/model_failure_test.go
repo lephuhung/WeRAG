@@ -105,7 +105,7 @@ func TestAgentTurnModelFailureReachesStreamBeforeComplete(t *testing.T) {
 // and the turn is marked interrupted.
 func TestAgentTurnMidStreamFailureKeepsPartialAndNote(t *testing.T) {
 	model := &scriptedModel{steps: []streamStep{{chunks: []types.StreamResponse{
-		{ResponseType: types.ResponseTypeAnswer, Content: "Điều 5 quy định về người sử dụng đất. "},
+		{ResponseType: types.ResponseTypeAnswer, Content: "Điều 5 quy định về người sử dụng đất.\n\n"},
 		{ResponseType: types.ResponseTypeError, Content: "unexpected EOF", Done: true},
 	}}}}
 	events, msg := runFailingTurn(t, model)
@@ -119,7 +119,7 @@ func TestAgentTurnMidStreamFailureKeepsPartialAndNote(t *testing.T) {
 			streamed += e.Content
 		}
 	}
-	require.Equal(t, "Điều 5 quy định về người sử dụng đất. "+types.ModelInterruptedNote, streamed)
+	require.Equal(t, "Điều 5 quy định về người sử dụng đất.\n\n"+types.ModelInterruptedNote, streamed)
 	require.Equal(t, streamed, msg.Content, "reload shows what the stream showed")
 	require.Equal(t, types.TurnFailureModelInterrupted, msg.ExecutionContext.TurnFailure)
 }

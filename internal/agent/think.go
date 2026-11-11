@@ -300,6 +300,13 @@ func (e *AgentEngine) streamThinkingToEventBus(
 			return resp, nil
 		}
 	}
+	// the round after a held-back answer runs with thinking on
+	// (degenerate_answer.go)
+	if e.roundThinking {
+		thinking := true
+		opts.Thinking = &thinking
+		logger.Infof(ctx, "[Agent][Thinking] Iteration-%d reruns with thinking on after a held-back answer", iteration+1)
+	}
 	// a turn that must rest on evidence and has none yet is not streamed
 	// (see grounding_gate.go)
 	if isUngrounded(ctx) {
@@ -347,6 +354,16 @@ func (e *AgentEngine) streamThinkingToEventBus(
 		emitAnswerRaw(s)
 	}
 	guard = newAnswerGuard(ctx, toNumbers)
+	toGuard := func(s string) {
+		if guard != nil {
+			guard.Write(s)
+			return
+		}
+		toNumbers(s)
+	}
+	// lead check → button guard: an echoed question, a blank answer or an
+	// English plan never reaches the client (degenerate_answer.go)
+	lead := newLeadGuard(ctx, answerCheckQuery(ctx), toGuard)
 
 	emitThought := func(content string, done bool) {
 		if content == "" && !done {
@@ -377,11 +394,7 @@ func (e *AgentEngine) streamThinkingToEventBus(
 		if content == "" {
 			return
 		}
-		if guard != nil {
-			guard.Write(content)
-			return
-		}
-		toNumbers(content)
+		lead.Write(content)
 	}
 	emitAnswerRaw = func(content string) {
 		// Suppress whitespace-only content emitted before the real answer has
@@ -420,6 +433,9 @@ func (e *AgentEngine) streamThinkingToEventBus(
 				args, _ := chunk.Data["arguments"].(map[string]any)
 
 				if toolCallID != "" && toolName != "" && !pendingToolCalls[toolCallID] {
+					// text before a tool call is a preamble: sent ahead of
+					// the call, as without the lead check
+					lead.Release()
 					pendingToolCalls[toolCallID] = true
 					emittedEventTypes["tool_call_pending"]++
 					e.eventBus.Emit(ctx, event.Event{
@@ -507,6 +523,11 @@ func (e *AgentEngine) streamThinkingToEventBus(
 					emitThought(thinkPart, false)
 				}
 				emitAnswer(answerPart)
+				if len(pendingToolCalls) > 0 {
+					lead.Release()
+				} else {
+					lead.Flush()
+				}
 				if guard != nil {
 					guard.Flush()
 				}
@@ -532,13 +553,26 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	logger.Infof(ctx, "[Agent][Thinking] Iteration-%d completed: content=%d chars, tool_calls=%d, emitted_events=%v",
 		iteration+1, len(llmResult.Content), len(llmResult.ToolCalls), emittedEventTypes)
 
+	// a stream that ended without its Done chunk
+	if len(llmResult.ToolCalls) > 0 || len(pendingToolCalls) > 0 {
+		lead.Release()
+	} else {
+		lead.Flush()
+	}
 	if guard != nil {
 		guard.Flush()
 	}
 	if numbers != nil {
 		numbers.Flush()
 	}
-	fullContent := cleanAnswerNumbers(ctx, cleanAnswerInContext(ctx, agenttools.StripThinkBlocks(llmResult.Content)))
+	content := agenttools.StripThinkBlocks(llmResult.Content)
+	heldBack := answerOK
+	if len(llmResult.ToolCalls) == 0 && !lead.Preamble() {
+		// the saved answer drops the lead-in the stream dropped
+		content, _ = cleanFinalAnswer(ctx, answerCheckQuery(ctx), content)
+		heldBack = lead.Kind()
+	}
+	fullContent := cleanAnswerNumbers(ctx, cleanAnswerInContext(ctx, content))
 
 	// Use actual finish_reason from LLM stream instead of hardcoding "stop".
 	// Fallback to "stop" when the stream did not report a finish_reason
@@ -557,6 +591,9 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	}
 	if answerStreamed {
 		resp.AnswerEventID = answerID
+	}
+	if heldBack != answerOK {
+		resp.AnswerHeldBack = heldBack.String()
 	}
 	if llmResult.Usage != nil {
 		resp.Usage = *llmResult.Usage

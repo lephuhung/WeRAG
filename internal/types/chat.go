@@ -229,6 +229,10 @@ type ChatResponse struct {
 	// chunks were streamed, so the natural-stop branch can close the same
 	// stream with a Done marker. Empty when AnswerStreamed is false.
 	AnswerEventID string `json:"-"`
+	// AnswerHeldBack names why the answer of a round without tool calls
+	// was not shown ("echo", "blank", "english"; see the agent's
+	// degenerate_answer.go), "" when it was. Transient.
+	AnswerHeldBack string `json:"-"`
 }
 
 // Response type

@@ -252,10 +252,11 @@ func TestModelFailure_SynthesisMidStream(t *testing.T) {
 }
 
 // Mid-stream in round 1: the shown text is kept, the note follows on the
-// same stream, no retry repeats the text, and the turn is marked.
+// same stream, no retry repeats the text, and the turn is marked. The first
+// paragraph ends, so the lead check (degenerate_answer.go) has passed it on.
 func TestModelFailure_MidStreamKeepsPartialWithoutRetry(t *testing.T) {
 	model := &failingChat{steps: []scriptStep{{chunks: []types.StreamResponse{
-		{ResponseType: types.ResponseTypeAnswer, Content: "Điều 5 quy định về người sử dụng đất. "},
+		{ResponseType: types.ResponseTypeAnswer, Content: "Điều 5 quy định về người sử dụng đất.\n\n"},
 		{ResponseType: types.ResponseTypeAnswer, Content: "Cụ thể gồm "},
 		// transient wording: still not retried, text was shown
 		{ResponseType: types.ResponseTypeError, Content: "read: connection reset by peer", Done: true},
@@ -274,6 +275,31 @@ func TestModelFailure_MidStreamKeepsPartialWithoutRetry(t *testing.T) {
 	assert.Equal(t, 1, strings.Count(shown, "Điều 5 quy định"), "nothing duplicated")
 	assert.Equal(t, shown, state.FinalAnswer, "the saved answer equals the streamed one")
 	assert.Equal(t, shown, log.final.FinalAnswer)
+}
+
+// The stream breaks while the lead check still holds the opening text:
+// nothing reached the screen, so the round is retried like a failed start
+// and the held text is never shown.
+func TestModelFailure_BreakWhileLeadHeldRetries(t *testing.T) {
+	model := &failingChat{steps: []scriptStep{
+		{chunks: []types.StreamResponse{
+			{ResponseType: types.ResponseTypeAnswer, Content: "Điều 5 quy định "},
+			{ResponseType: types.ResponseTypeError, Content: "read: connection reset by peer", Done: true},
+		}},
+		{chunks: []types.StreamResponse{
+			{ResponseType: types.ResponseTypeAnswer, Content: "Điều 5 quy định về người sử dụng đất."},
+			{ResponseType: types.ResponseTypeAnswer, Done: true, FinishReason: "stop"},
+		}},
+	}}
+	engine, log := failureEngine(t, model)
+
+	state, err := execute(t, engine)
+	require.NoError(t, err)
+	assert.Equal(t, 2, model.callCount(), "held text was never shown, so the round is retried")
+	assert.Empty(t, log.errs)
+	shown := log.answer.String()
+	assert.Equal(t, 1, strings.Count(shown, "Điều 5 quy định"), shown)
+	assert.Equal(t, "Điều 5 quy định về người sử dụng đất.", state.FinalAnswer)
 }
 
 // A transient refusal, then a healthy call: the retry answers, the text

@@ -124,4 +124,5 @@ func TestExecuteLoop_AllEmptyResponses_EndAsModelFailure(t *testing.T) {
 	assert.Equal(t, 0, done, "no answer stream was opened, none is closed")
 	assert.Empty(t, content, "no invented answer text")
 	assert.Equal(t, types.TurnFailureModelUnavailable, engine.turnFailure)
+	assert.Equal(t, 1+maxEmptyResponseRetries, mock.callCount, "an empty answer keeps its nudge retries")
 }
