@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	agenttools "github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -24,6 +25,11 @@ type turnButtons struct {
 	proposal     bool
 	illustration bool
 	fixPlan      bool
+	// legalBasis: the turn ran check_document_legal_basis, whose card
+	// underlines only when the user presses "Gạch chân"; marks: a tool of
+	// the turn did send underlines to the editor
+	legalBasis bool
+	marks      bool
 }
 
 // buttonRule maps a button phrase (lower case, with diacritics) to the card
@@ -56,6 +62,12 @@ func collectTurnButtons(steps []types.AgentStep) turnButtons {
 			}
 			if r.Data["illustration"] != nil {
 				b.illustration = true
+			}
+			if tc.ExecutionName() == agenttools.ToolCheckDocumentLegalBasis {
+				b.legalBasis = true
+			}
+			if len(dataList(r.Data["document_ops"])) > 0 {
+				b.marks = true
 			}
 			if tc.ExecutionName() == "apply_format_fixes" {
 				review, _ := r.Data["review"].(bool)
@@ -140,9 +152,21 @@ func splitUnits(text string) (units []string, incomplete bool) {
 // card for; dropped is how many.
 func cleanAnswer(ctx context.Context, text string, b turnButtons) (string, int) {
 	units, _ := splitUnits(text)
+	units = joinListMarkers(units)
 	var out strings.Builder
 	dropped := 0
 	for _, u := range units {
+		if c, changed := stripUnderlineClaim(u, b); changed {
+			dropped++
+			logger.Infof(ctx, "[Agent][AnswerGuard] dropped an underline claim: nothing was underlined this turn: %q", strings.TrimSpace(u))
+			if c == "" {
+				if strings.HasSuffix(u, "\n") && out.Len() > 0 && !strings.HasSuffix(out.String(), "\n") {
+					out.WriteString("\n")
+				}
+				continue
+			}
+			u = c
+		}
 		if r := phantomButton(u, b); r != nil {
 			dropped++
 			logger.Infof(ctx, "[Agent][AnswerGuard] dropped a sentence inviting %q: no %s this turn: %q",
@@ -156,6 +180,25 @@ func cleanAnswer(ctx context.Context, text string, b turnButtons) (string, int) 
 		out.WriteString(u)
 	}
 	return out.String(), dropped
+}
+
+// joinListMarkers joins a bare list marker unit ("1. ", cut off by
+// splitUnits) to the unit after it, so a dropped item leaves no marker.
+func joinListMarkers(units []string) []string {
+	out := units[:0:0]
+	marker := ""
+	for _, u := range units {
+		if listMarkerRe.MatchString(u) && !strings.HasSuffix(u, "\n") {
+			marker += u
+			continue
+		}
+		out = append(out, marker+u)
+		marker = ""
+	}
+	if marker != "" {
+		out = append(out, marker)
+	}
+	return out
 }
 
 // cleanAnswerInContext applies cleanAnswer when the guard is on.
@@ -176,6 +219,28 @@ type answerGuard struct {
 	emit    func(string)
 	pending string
 	dropped int
+	// what was emitted so far: any text, and whether it ends a line
+	// (a dropped line adds its break only as cleanAnswer does)
+	emitted bool
+	lineEnd bool
+	// marker is a bare list marker held for the unit after it
+	marker string
+}
+
+// out emits text and notes how the output ends.
+func (g *answerGuard) out(text string) {
+	if text == "" {
+		return
+	}
+	g.emit(text)
+	g.emitted, g.lineEnd = true, strings.HasSuffix(text, "\n")
+}
+
+// keepBreak emits the line break of a dropped unit when cleanAnswer would.
+func (g *answerGuard) keepBreak(u string) {
+	if strings.HasSuffix(u, "\n") && g.emitted && !g.lineEnd {
+		g.out("\n")
+	}
 }
 
 // newAnswerGuard returns a guard writing to emit, or nil when the guard is
@@ -202,29 +267,41 @@ func (g *answerGuard) Write(text string) {
 		g.pending = ""
 	}
 	for _, u := range units {
+		if listMarkerRe.MatchString(u) && !strings.HasSuffix(u, "\n") {
+			g.marker += u
+			continue
+		}
+		u, g.marker = g.marker+u, ""
 		g.emitUnit(u)
 	}
 }
 
 // Flush emits what is still held back (end of the stream).
 func (g *answerGuard) Flush() {
-	if g.pending == "" {
+	if g.pending == "" && g.marker == "" {
 		return
 	}
-	u := g.pending
-	g.pending = ""
+	u := g.marker + g.pending
+	g.pending, g.marker = "", ""
 	g.emitUnit(u)
 }
 
 func (g *answerGuard) emitUnit(u string) {
+	if c, changed := stripUnderlineClaim(u, g.buttons); changed {
+		g.dropped++
+		logger.Infof(g.ctx, "[Agent][AnswerGuard] dropped a streamed underline claim: nothing was underlined this turn: %q", strings.TrimSpace(u))
+		if c == "" {
+			g.keepBreak(u)
+			return
+		}
+		u = c
+	}
 	if r := phantomButton(u, g.buttons); r != nil {
 		g.dropped++
 		logger.Infof(g.ctx, "[Agent][AnswerGuard] dropped a streamed sentence inviting %q: no %s this turn: %q",
 			r.phrase, r.card, strings.TrimSpace(u))
-		if strings.HasSuffix(u, "\n") {
-			g.emit("\n")
-		}
+		g.keepBreak(u)
 		return
 	}
-	g.emit(u)
+	g.out(u)
 }

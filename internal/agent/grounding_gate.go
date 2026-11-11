@@ -28,10 +28,20 @@ const ungroundedAnswer = "Tôi không tìm thấy căn cứ cho câu hỏi này 
 // recorded a request to add the document it names
 // (types.WithLegalRequestRecorded).
 func ungroundedAnswerFor(ctx context.Context) string {
-	if number := types.LegalRequestRecordedFromContext(ctx); number != "" {
-		return ungroundedAnswer + " Đã ghi nhận đề nghị bổ sung văn bản " + number + " tới quản trị viên."
+	// the open document's legal basis was checked: answer with that, and
+	// say the rest found nothing (see legal_basis_intent.go)
+	if line := legalBasisSummaryFromContext(ctx); line != "" {
+		return line + " " + legalBasisRestNote
 	}
-	return ungroundedAnswer
+	answer := ungroundedAnswer
+	if number := types.LegalRequestRecordedFromContext(ctx); number != "" {
+		answer += " Đã ghi nhận đề nghị bổ sung văn bản " + number + " tới quản trị viên."
+	}
+	// the check failed and the rest found nothing: say both
+	if why := legalBasisFailureFromContext(ctx); why != "" {
+		return why + " " + answer
+	}
+	return answer
 }
 
 // countedEvidenceTools report their hits in Data["count"].
@@ -61,7 +71,13 @@ func markUngrounded(ctx context.Context, steps []types.AgentStep) context.Contex
 	if isFormatCheckRequest(types.UserQueryFromContext(ctx)) {
 		return ctx
 	}
-	return context.WithValue(ctx, ungroundedKey{}, true)
+	// so is a legal basis check, once its tool ran, when the check is all
+	// the request asks (see legal_basis_intent.go); a request asking more
+	// still needs a search
+	if legalBasisChecked(steps) && legalBasisIntent(ctx).Pure {
+		return ctx
+	}
+	return context.WithValue(withLegalBasisSummary(ctx, steps), ungroundedKey{}, true)
 }
 
 func isUngrounded(ctx context.Context) bool {

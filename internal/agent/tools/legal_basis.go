@@ -29,12 +29,15 @@ import (
 type LegalBasisStatus string
 
 const (
-	LegalBasisInForce         LegalBasisStatus = "in_force"
-	LegalBasisAmended         LegalBasisStatus = "amended" // in force, amended by later documents
-	LegalBasisPartlyExpired   LegalBasisStatus = "partly_expired"
-	LegalBasisExpired         LegalBasisStatus = "expired"
-	LegalBasisSuspended       LegalBasisStatus = "suspended"
-	LegalBasisNotYetEffective LegalBasisStatus = "not_yet_effective"
+	LegalBasisInForce       LegalBasisStatus = "in_force"
+	LegalBasisAmended       LegalBasisStatus = "amended" // in force, amended by later documents
+	LegalBasisPartlyExpired LegalBasisStatus = "partly_expired"
+	LegalBasisExpired       LegalBasisStatus = "expired"
+	LegalBasisSuspended     LegalBasisStatus = "suspended"
+	// LegalBasisNotYetInForce: the shared validity kind's name
+	// (types.LegalStatusKindNotYetInForce); "not_yet_effective" before
+	// 2026-11-11.
+	LegalBasisNotYetInForce LegalBasisStatus = "not_yet_in_force"
 	// LegalBasisNeedsReview: held in force (or partly suspended) while a
 	// document in force repeals it or ends it in part: which provisions
 	// still apply must be checked by hand.
@@ -50,7 +53,7 @@ const (
 // first.
 var legalBasisOrder = map[LegalBasisStatus]int{
 	LegalBasisExpired: 0, LegalBasisSuspended: 1, LegalBasisPartlyExpired: 2, LegalBasisNeedsReview: 3,
-	LegalBasisNotYetEffective: 4, LegalBasisAmbiguous: 5, LegalBasisAmended: 6, LegalBasisUnknown: 7,
+	LegalBasisNotYetInForce: 4, LegalBasisAmbiguous: 5, LegalBasisAmended: 6, LegalBasisUnknown: 7,
 	LegalBasisNotFound: 8, LegalBasisInForce: 9,
 }
 
@@ -60,7 +63,7 @@ var legalBasisOrder = map[LegalBasisStatus]int{
 // not-found citations are underlined one finding at a time, on request.
 func LegalBasisMarkedByDefault(s LegalBasisStatus) bool {
 	switch s {
-	case LegalBasisExpired, LegalBasisSuspended, LegalBasisPartlyExpired, LegalBasisNeedsReview, LegalBasisNotYetEffective:
+	case LegalBasisExpired, LegalBasisSuspended, LegalBasisPartlyExpired, LegalBasisNeedsReview, LegalBasisNotYetInForce:
 		return true
 	}
 	return false
@@ -1018,7 +1021,7 @@ func legalBasisNote(f *LegalBasisFinding, now time.Time) string {
 		default:
 			b.WriteString(label + " có tình trạng hiệu lực một phần (" + d.CatalogStatus + "); cần kiểm tra điều, khoản được viện dẫn.")
 		}
-	case LegalBasisNotYetEffective:
+	case LegalBasisNotYetInForce:
 		b.WriteString(label + " chưa có hiệu lực")
 		if d.EffectiveOn != "" {
 			b.WriteString(", có hiệu lực từ ngày " + legalBasisDay(d.EffectiveOn))
@@ -1045,7 +1048,7 @@ func legalBasisNote(f *LegalBasisFinding, now time.Time) string {
 			switch {
 			case err != nil:
 				pending = append(pending, legalBasisLabel(&r.LegalBasisDocument)+" (chưa rõ ngày hiệu lực)")
-			case legalDayAfter(on, now):
+			case types.LegalDateAhead(&on, now):
 				pending = append(pending, legalBasisLabel(&r.LegalBasisDocument)+" (có hiệu lực từ ngày "+legalBasisDay(r.EffectiveOn)+")")
 			default:
 				inForce = append(inForce, legalBasisLabel(&r.LegalBasisDocument)+" (đã có hiệu lực từ ngày "+legalBasisDay(r.EffectiveOn)+")")

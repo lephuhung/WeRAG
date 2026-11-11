@@ -626,8 +626,8 @@ func (s *legalValidityLookupService) relatedStatus(
 	out := map[string]types.LegalStatusKind{}
 	for id, ls := range links {
 		o := others[id]
-		if by, _ := types.LegalDerivedExpiry(&types.LegalStatusReport{Document: o, Links: ls}, now); by != nil && !types.LegalPartlyExpired(o) {
-			out[id] = types.LegalStatusKindExpired
+		if v := types.ClassifyLegalValidity(&types.LegalStatusReport{Document: o, Links: ls}, now); v.DerivedBy != nil {
+			out[id] = v.Kind
 		}
 	}
 	return out
@@ -666,7 +666,7 @@ func (s *legalValidityLookupService) snapshotDate(ctx context.Context) string {
 }
 
 // legalValidityMatch renders one report for the lookup page; the status is
-// reconciled with the links as the chat tool does (types.LegalDerivedExpiry),
+// reconciled with the links as the chat tools do (types.ClassifyLegalValidity),
 // and related documents get the kinds relatedStatus derived.
 func legalValidityMatch(
 	rep *types.LegalStatusReport, now time.Time, related map[string]types.LegalStatusKind,
@@ -688,16 +688,15 @@ func legalValidityMatch(
 	if m.Unverified {
 		m.UnverifiedNote = types.LegalUnverifiedNote(doc)
 	}
-	if by, on := types.LegalDerivedExpiry(rep, now); by != nil {
-		rel := types.LegalDerivedExpiryRelation(rep, by)
+	v := types.ClassifyLegalValidity(rep, now)
+	m.Status = v.Kind
+	if v.DerivedBy != nil {
+		rel := types.LegalDerivedExpiryRelation(rep, v.DerivedBy)
 		m.Derived = &types.LegalDerivedValidity{
 			StatusText: types.LegalDerivedStatusText(doc),
-			ExpiredOn:  types.LegalDateString(on),
+			ExpiredOn:  types.LegalDateString(v.DerivedOn),
 			Relation:   rel,
-			By:         legalValidityRef(by, rel, related),
-		}
-		if !types.LegalPartlyExpired(doc) {
-			m.Status = types.LegalStatusKindExpired
+			By:         legalValidityRef(v.DerivedBy, rel, related),
 		}
 	}
 	var links []types.LegalRelationLink

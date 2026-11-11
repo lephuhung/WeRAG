@@ -26,6 +26,7 @@ import { ChoiceListView } from "@/components/chat/choice-list";
 import { LegalRequestCardView } from "@/components/chat/legal-request-card";
 import { RewriteProposalCard, type ProposalOutcome } from "@/components/chat/rewrite-proposal-card";
 import { IllustrationCard } from "@/components/chat/illustration-card";
+import { LegalBasisChatCard } from "@/components/doc-workspace/legal-basis-report";
 import { AbbreviationSuggestionCard } from "@/components/chat/abbreviation-suggestion-card";
 import { FollowUpSuggestions } from "@/components/chat/follow-up-suggestions";
 import { ErrorNote } from "@/components/chat/error-note";
@@ -33,7 +34,8 @@ import { openBilling } from "@/lib/billing-intent";
 import { ReferenceChip } from "@/components/chat/reference-chip";
 import type { KnowledgeReferenceItem } from "@/components/chat/references-drawer";
 import type { ChoiceOption } from "@/lib/choice-list";
-import type { Illustration, RewriteProposal, RewriteVariant } from "@/lib/api/document-ops";
+import type { DocumentOp, Illustration, RewriteProposal, RewriteVariant } from "@/lib/api/document-ops";
+import type { ChatLegalBasis } from "@/lib/api/document-workspace";
 import type { RasterImage } from "@/lib/illustration-render";
 import type { UiMessage } from "@/components/chat/chat-types";
 
@@ -562,6 +564,8 @@ const AssistantMessage = memo(function AssistantMessage({
   insertableDocIds = "",
   onIllustrationInsert,
   onIllustrationInserted,
+  onLegalBasisOpen,
+  onLegalBasisMarkAll,
   compact = false,
   guest = false,
 }: {
@@ -586,6 +590,10 @@ const AssistantMessage = memo(function AssistantMessage({
   insertableDocIds?: string;
   onIllustrationInsert?: (ill: Illustration, picture: RasterImage) => Promise<void>;
   onIllustrationInserted?: (ill: Illustration) => void;
+  /** Opens a legal basis report the assistant ran (the report modal). */
+  onLegalBasisOpen?: (item: ChatLegalBasis) => void;
+  /** Underlines a legal basis report's marks, on the user's click. */
+  onLegalBasisMarkAll?: (item: ChatLegalBasis, ops: DocumentOp[]) => Promise<void>;
   /** Document-assistant split view: no avatar, smaller type, tighter spacing. */
   compact?: boolean;
   sessionId: string;
@@ -700,6 +708,19 @@ const AssistantMessage = memo(function AssistantMessage({
               outcomeFor={proposalOutcomeFor}
               onInsert={onIllustrationInsert}
               onInserted={onIllustrationInserted}
+            />
+          ))}
+        {!m.streaming &&
+          onLegalBasisOpen &&
+          onLegalBasisMarkAll &&
+          m.legalBasisReports?.map((lb) => (
+            <LegalBasisChatCard
+              key={lb.key}
+              item={lb}
+              canMark={insertableDocIds.split(",").includes(lb.documentId)}
+              disabled={proposalsDisabled}
+              onOpen={onLegalBasisOpen}
+              onMarkAll={onLegalBasisMarkAll}
             />
           ))}
         {!guest && !m.streaming && (m.abbreviationCandidates?.length ?? 0) > 0 && (

@@ -4,6 +4,9 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  legalBasisFromToolData,
+  normalizeLegalBasisReport,
+  withChatLegalBasis,
   DocumentWorkspaceError,
   latestRevisionOf,
   revisionsNewestFirst,
@@ -341,5 +344,52 @@ describe("document profile helpers", () => {
     assert.equal(chips[0].handle, "vb2");
     assert.equal(sourceQuestionChips(docs, new Set(["s1", "s3"]), 3, 2).length, 2, "capped in all");
     assert.deepEqual(sourceQuestionChips(docs, new Set()), []);
+  });
+});
+
+describe("legal basis reports", () => {
+  const legacy = {
+    document_id: "ws-1",
+    revision: 4,
+    checked_at: "2026-11-11T02:00:00Z",
+    findings: [
+      {
+        key: "a",
+        citation: "09/2026/NQ-CP",
+        kind: "full",
+        status: "not_yet_effective",
+        document: { id: "d", document_number: "09/2026/NQ-CP", doc_type: "Nghị quyết", title: "", catalog_status: "Chưa có hiệu lực", status: "not_yet_effective" },
+        related: [{ id: "r", document_number: "1/2027/NQ-CP", doc_type: "Nghị quyết", title: "", catalog_status: "", status: "not_yet_effective", relation: "replaced_by" }],
+        note: "",
+        positions: [],
+      },
+    ],
+    summary: { not_yet_effective: 1 },
+    skipped: { names_without_year: 0, own_number: 0, paperwork: 0 },
+  };
+  it("maps the status name servers sent before 2026-11-11", () => {
+    const r = normalizeLegalBasisReport(legacy);
+    assert.ok(r);
+    assert.equal(r.findings[0].status, "not_yet_in_force");
+    assert.equal(r.findings[0].document?.status, "not_yet_in_force");
+    assert.equal(r.findings[0].related?.[0].status, "not_yet_in_force");
+    assert.deepEqual(r.summary, { not_yet_in_force: 1 });
+    assert.deepEqual(r.document_ops, []);
+  });
+  it("rejects what is not a report", () => {
+    assert.equal(normalizeLegalBasisReport(null), null);
+    assert.equal(normalizeLegalBasisReport({ findings: "x" }), null);
+  });
+  it("reads the chat tool's report once per check", () => {
+    const data = { legal_basis_report: legacy, document_id: "ws-1", document: "vb1 · To trinh.docx", file_name: "To trinh.docx" };
+    const lb = legalBasisFromToolData("check_document_legal_basis", data);
+    assert.ok(lb);
+    assert.equal(lb.documentId, "ws-1");
+    assert.equal(lb.document, "vb1 · To trinh.docx");
+    assert.equal(lb.report.findings[0].status, "not_yet_in_force");
+    assert.equal(legalBasisFromToolData("check_document_format", data), null);
+    assert.equal(legalBasisFromToolData("check_document_legal_basis", { ...data, document_id: "" }), null);
+    const once = withChatLegalBasis(undefined, lb);
+    assert.equal(withChatLegalBasis(once, legalBasisFromToolData("check_document_legal_basis", data)!), once);
   });
 });

@@ -108,6 +108,21 @@ describe("opsBatchFromToolData", () => {
     assert.equal(opsBatchFromToolData("mark_passages", { ops_batch_id: "b", document_ops: [] }), null);
     assert.equal(opsBatchFromToolData(undefined, { tool_name: "mark_passages", document_ops: [{}] }), null);
   });
+  it("never applies the chat legal basis check's underlines on arrival", () => {
+    const mark = { op: "mark", anchor: { text: "Căn cứ Luật 29/2018/QH14" }, text: "29/2018/QH14", style: "underline" };
+    // its result nests the marks in the report; even ops at the top level
+    // of its data are not an edit plan (the card applies them on a click)
+    assert.equal(
+      opsBatchFromToolData("check_document_legal_basis", {
+        legal_basis_report: { findings: [], document_ops: [mark] },
+        document_id: "ws-1",
+      }),
+      null,
+    );
+    assert.equal(opsBatchFromToolData("check_document_legal_basis", { ops_batch_id: "b", document_ops: [mark] }), null);
+    // the page-built batch of a click does apply
+    assert.equal(opsBatchFromToolData("legal_basis_check", { ops_batch_id: "lb-1", document_ops: [mark] })?.ops.length, 1);
+  });
 
   it("carries the target document and accepts check_spelling marks", () => {
     const b = opsBatchFromToolData("check_spelling", {

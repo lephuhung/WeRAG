@@ -42,6 +42,9 @@ var maxToolCallsPerTurn = map[string]int{
 	agenttools.ToolReadDocument:          8,
 	agenttools.ToolReadDocumentOutline:   6,
 	agenttools.ToolSearchKnowledge:       6,
+	// a check saves the editor and reads the catalogue: two calls a turn
+	// at most (say, two of the open documents); later ones are refused
+	agenttools.ToolCheckDocumentLegalBasis: 2,
 }
 
 // toolCapNote ends the result of the call that reached its tool's cap.

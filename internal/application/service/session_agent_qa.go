@@ -234,6 +234,8 @@ func (s *sessionService) AgentQA(
 	// attaching a file that is open as a tab names that tab, like an @:
 	// its text then comes from BuildOpenDocumentPrompt and the editing
 	// tools accept it as a target
+	// the legal basis route counts the user's own @ only, not attachments
+	ctx = tools.WithExplicitMentions(ctx, len(req.MentionedDocumentIDs))
 	req.MentionedDocumentIDs = mergeDocumentIDs(req.MentionedDocumentIDs, attachedDocs)
 	// a source attached now keeps its attachment text for this turn only;
 	// the document index says so instead of pointing at the outline tool
