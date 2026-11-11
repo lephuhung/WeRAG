@@ -45,6 +45,7 @@ import {
   type LegalDraftSummary,
 } from "@/lib/api/legal-drafts";
 import { packOriginName } from "@/lib/domain-pack-view";
+import { legalStatusKindFromText } from "@/lib/legal-status";
 
 const PAGE_SIZE = 50;
 
@@ -59,9 +60,10 @@ const FILTERS: { key: LegalRequestFilter; labelKey: LocaleKey }[] = [
 
 type Action = "ingest" | "reject" | "added";
 
+/* The request queue only marks documents in force; other statuses stay
+ * neutral (an expired document is still worth adding for history). */
 function statusTone(status: string): string {
-  if (status.startsWith("Còn hiệu lực")) return "badge-success";
-  return "badge-neutral";
+  return legalStatusKindFromText(status) === "in_force" ? "badge-success" : "badge-neutral";
 }
 
 function errorText(e: unknown, fallback: string): string {

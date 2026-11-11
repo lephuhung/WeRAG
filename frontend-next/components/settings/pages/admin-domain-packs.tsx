@@ -23,6 +23,7 @@ import { DataTable } from "@/components/settings/data-table";
 import { TabStrip } from "@/components/settings/tab-strip";
 import { Pill, PillGroup } from "@/components/settings/pill";
 import { useT, type LocaleKey } from "@/lib/i18n";
+import { legalStatusTextBadgeClass } from "@/lib/legal-status";
 import { ApiError } from "@/lib/api-client";
 import { getCurrentUser } from "@/lib/api/auth";
 import { formatDate, formatDateTime } from "@/lib/datetime";
@@ -69,12 +70,7 @@ const BADGE_OK = "badge-success";
 const BADGE_BAD = "badge-error";
 const BADGE_NEUTRAL = "badge-neutral";
 
-function statusTone(status: string): string {
-  if (status.startsWith("Còn hiệu lực")) return BADGE_OK;
-  if (status === "Hết hiệu lực toàn bộ" || status.startsWith("Ngưng")) return BADGE_BAD;
-  if (status.startsWith("Hết hiệu lực")) return BADGE_WARN;
-  return BADGE_NEUTRAL;
-}
+const statusTone = legalStatusTextBadgeClass;
 
 function errorText(e: unknown, fallback: string): string {
   if (e instanceof ApiError || e instanceof Error) return e.message || fallback;

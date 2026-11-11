@@ -1,7 +1,7 @@
 /* Validity lookup of legal documents without the chat (GET /legal-lookup):
  * open to members and guests, reads the platform legal catalogue only — no
  * AI, no question or token quota. Guests are rate-limited per IP. */
-import { apiGet } from "@/lib/api-client";
+import { apiDel, apiGet } from "@/lib/api-client";
 import type { LegalStatusKind } from "@/lib/legal-status";
 
 export interface LegalValidityRef {
@@ -55,6 +55,11 @@ export interface LegalValidityLookup {
   query: string;
   by: "number" | "title" | "";
   matches: LegalValidityMatch[];
+  /* More documents match than `matches` lists. */
+  more: boolean;
+  /* The số hiệu asked for when the catalogue lacks it: `matches` then only
+   * mention it in their title. */
+  number_missing?: string;
   /* Date (YYYY-MM-DD) of the newest vbpl.vn snapshot, "" when unknown. */
   catalog_snapshot_date: string;
 }
@@ -70,4 +75,32 @@ export async function lookupLegalValidity(
     { skipTenant: opts.isGuest === true, signal: opts.signal },
   );
   return res.data;
+}
+
+/* A lookup that found nothing (or only documents mentioning a missing số
+ * hiệu), per normalized query — the SuperAdmin list of catalogue gaps. */
+export interface LegalLookupMiss {
+  id: number;
+  query: string;
+  sample: string;
+  number: string;
+  reason: "no_match" | "number_missing";
+  count: number;
+  first_at: string;
+  last_at: string;
+  last_tenant_id: number;
+  last_user_id: string;
+}
+
+export function listLegalLookupMisses(params: {
+  sort: "count" | "recent";
+  page: number;
+  pageSize: number;
+}): Promise<{ success: boolean; data: LegalLookupMiss[]; total: number }> {
+  const q = new URLSearchParams({ sort: params.sort, page: String(params.page), page_size: String(params.pageSize) });
+  return apiGet(`/api/v1/system/legal-lookup-misses?${q.toString()}`);
+}
+
+export function deleteLegalLookupMiss(id: number): Promise<{ success: boolean }> {
+  return apiDel(`/api/v1/system/legal-lookup-misses/${id}`);
 }

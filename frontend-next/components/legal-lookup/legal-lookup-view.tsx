@@ -58,13 +58,8 @@ export function LegalLookupView() {
       .catch((e: unknown) => {
         if (ctrl.signal.aborted) return;
         setResult(null);
-        setError(
-          e instanceof ApiError && e.status === 429
-            ? t("llookup.err.tooMany")
-            : e instanceof Error && e.message
-              ? e.message
-              : t("llookup.err.failed"),
-        );
+        // server text is not localized: only the rate limit gets its own words
+        setError(e instanceof ApiError && e.status === 429 ? t("llookup.err.tooMany") : t("llookup.err.failed"));
       })
       .finally(() => {
         if (!ctrl.signal.aborted) setLoading(false);
@@ -112,7 +107,7 @@ export function LegalLookupView() {
           </button>
         </form>
 
-        {loading && (
+        {(loading || (q && !ready)) && (
           <p role="status" className="caption text-muted">
             {t("llookup.loading")}
           </p>
@@ -123,16 +118,25 @@ export function LegalLookupView() {
           </p>
         )}
 
-        {!loading && !error && result && (
+        {!loading && ready && !error && result && (
           <>
             <p className="caption mb-4 text-muted" role="status" aria-live="polite">
               {result.matches.length === 0
-                ? t("llookup.none", { q: result.query })
-                : t("llookup.count", { n: result.matches.length })}
+                ? result.number_missing
+                  ? t("llookup.noneShort")
+                  : t("llookup.none", { q: result.query })
+                : t(result.more ? "llookup.countMore" : "llookup.count", { n: result.matches.length })}
               {result.catalog_snapshot_date && (
                 <> · {t("llookup.snapshot", { date: formatLegalDate(result.catalog_snapshot_date) })}</>
               )}
             </p>
+            {result.number_missing && (
+              <p role="note" className="mb-4 rounded-[12px] border border-hairline bg-surface-strong px-4 py-3 text-[14px]">
+                {t(result.matches.length > 0 ? "llookup.numberMissingMentions" : "llookup.numberMissing", {
+                  number: result.number_missing,
+                })}
+              </p>
+            )}
             {result.matches.length === 0 && (
               <p className="mb-4 text-body text-muted">{t("llookup.noneHint")}</p>
             )}
@@ -148,6 +152,7 @@ export function LegalLookupView() {
                 </li>
               ))}
             </ul>
+            {result.more && <p className="caption mt-4 text-muted">{t("llookup.moreMatches", { n: result.matches.length })}</p>}
           </>
         )}
 

@@ -11,7 +11,21 @@ export type LegalStatusKind =
   | "suspended"
   | "unknown";
 
-/** Badge class of a status kind (globals.css badge-*). */
+/** The kind of a catalogue status wording ("Còn hiệu lực", "Hết hiệu lực
+ * toàn bộ", …), as the server's types.ClassifyLegalStatus decides it: for
+ * screens that show the wording itself (the SuperAdmin legal pages). */
+export function legalStatusKindFromText(status: string | null | undefined): LegalStatusKind {
+  const s = (status ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  if (s.startsWith("còn hiệu lực")) return "in_force";
+  if (s.startsWith("hết hiệu lực một phần")) return "partly_expired";
+  if (s.startsWith("hết hiệu lực")) return "expired";
+  if (s.startsWith("chưa có hiệu lực")) return "not_yet_in_force";
+  if (s.startsWith("ngưng") || s.startsWith("tạm ngưng") || s.startsWith("đình chỉ")) return "suspended";
+  return "unknown";
+}
+
+/** Badge class of a status kind (globals.css badge-*): in force green,
+ * expired or suspended red, partly expired amber, the rest neutral. */
 export function legalStatusBadgeClass(kind: string | null | undefined): string {
   switch (kind) {
     case "in_force":
@@ -20,11 +34,15 @@ export function legalStatusBadgeClass(kind: string | null | undefined): string {
     case "suspended":
       return "badge-error";
     case "partly_expired":
-    case "not_yet_in_force":
       return "badge-warning";
     default:
       return "badge-neutral";
   }
+}
+
+/** Badge class of a status wording (legalStatusKindFromText + the tones above). */
+export function legalStatusTextBadgeClass(status: string | null | undefined): string {
+  return legalStatusBadgeClass(legalStatusKindFromText(status));
 }
 
 /** i18n key of a status kind's label; unknown kinds read "chưa rõ". */
