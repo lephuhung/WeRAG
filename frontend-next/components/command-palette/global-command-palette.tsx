@@ -32,6 +32,7 @@ import { adminSectionHref } from "@/components/admin/admin-routes";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { legalLookupHref } from "@/lib/legal-status";
 import { formatDateTime } from "@/lib/datetime";
+import { ApiError } from "@/lib/api-client";
 
 /* Conversations found by title, and content matches per page. */
 const CONTENT_TITLE_LIMIT = 5;
@@ -77,6 +78,7 @@ export function GlobalCommandPalette() {
   const [contentPage, setContentPage] = useState(1);
   const [contentMore, setContentMore] = useState(false);
   const [contentLoading, setContentLoading] = useState(false);
+  const [contentTimedOut, setContentTimedOut] = useState(false);
 
   /* Bumped on every new search term: a response for an older term (or an
    * older "show more") is dropped instead of overwriting newer results. */
@@ -114,7 +116,11 @@ export function GlobalCommandPalette() {
   useEffect(() => {
     const q = query.trim();
     const seq = ++searchSeq.current;
+    // results of the previous term never stay under the new one
     setContentLoading(false);
+    setContentHits([]);
+    setContentMore(false);
+    setContentTimedOut(false);
     if (!q) {
       setChunks([]);
       setTitleHits([]);
@@ -148,6 +154,7 @@ export function GlobalCommandPalette() {
         } else {
           setContentHits([]);
           setContentMore(false);
+          setContentTimedOut(contentRes.status === "rejected" && contentRes.reason instanceof ApiError && contentRes.reason.status === 504);
         }
         setContentPage(1);
       } finally {
@@ -170,8 +177,11 @@ export function GlobalCommandPalette() {
       setContentHits((prev) => [...prev, ...(res.data ?? []).filter((h) => !prev.some((p) => p.session_id === h.session_id))]);
       setContentMore(res.has_more === true);
       setContentPage(next);
-    } catch {
-      if (seq === searchSeq.current) setContentMore(false);
+    } catch (e) {
+      if (seq === searchSeq.current) {
+        setContentMore(false);
+        setContentTimedOut(e instanceof ApiError && e.status === 504);
+      }
     } finally {
       if (seq === searchSeq.current) setContentLoading(false);
     }
@@ -362,7 +372,18 @@ export function GlobalCommandPalette() {
       category: "messages",
       title: contentLoading ? t("common.loading") : t("cmdk.moreContent"),
       icon: <IconSearch className="h-4 w-4" />,
-      onSelect: () => void loadMoreContent(),
+      onSelect: () => {
+        if (!contentLoading) void loadMoreContent();
+      },
+    });
+  }
+  if (contentTimedOut) {
+    messageItems.push({
+      id: "content-timeout",
+      category: "messages",
+      title: t("cmdk.searchTooSlow"),
+      icon: <IconSearch className="h-4 w-4" />,
+      onSelect: () => inputRef.current?.focus(),
     });
   }
 

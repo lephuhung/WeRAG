@@ -26,6 +26,8 @@ import {
 } from "@/lib/api/document-labels";
 
 const PAGE_SIZE = 50;
+/* The list pages through the first 2,000 rows (server cap); the export has all. */
+const MAX_ROWS = 2000;
 /* Code points of a long paragraph shown around the flagged span. */
 const PARAGRAPH_WINDOW = 160;
 
@@ -96,10 +98,10 @@ export function DocumentLabels() {
       const res = await listDocumentLabels(filters, page, PAGE_SIZE);
       setItems(res.data?.items ?? []);
       setTotal(res.data?.total ?? 0);
-    } catch (e) {
+    } catch {
+      // keep the last total so the export button and pager stay meaningful
       setItems([]);
-      setTotal(0);
-      setError(e instanceof Error ? e.message : t("labels.loadFailed"));
+      setError(t("labels.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -126,6 +128,15 @@ export function DocumentLabels() {
     setExporting(true);
     try {
       const blob = await exportDocumentLabels(filters);
+      // a complete file ends with {"_end":true,...}; warn when it was cut off
+      const tail = (await blob.slice(Math.max(0, blob.size - 512)).text()).trimEnd();
+      let complete = false;
+      try {
+        complete = JSON.parse(tail.slice(tail.lastIndexOf("\n") + 1))?._end === true;
+      } catch {
+        complete = false;
+      }
+      if (!complete) toast.error(t("labels.exportIncomplete"));
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       const d = new Date();
@@ -147,7 +158,7 @@ export function DocumentLabels() {
     return [{ value: "", label: t("labels.allVerdicts") }, ...keys.map((k) => ({ value: k, label: t(VERDICTS[k]) }))];
   }, [filters.kind, t]);
 
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(Math.min(total, MAX_ROWS) / PAGE_SIZE));
   const columns = [
     { key: "time", header: t("labels.col.time"), className: "w-[150px]" },
     ...(isSystemAdmin ? [{ key: "org", header: t("labels.col.organization"), className: "w-[160px]" }] : []),
@@ -291,6 +302,9 @@ export function DocumentLabels() {
         )}
       />
       <Pager page={page} pageCount={pageCount} onPage={setPage} loading={loading} />
+      {total > MAX_ROWS && page >= pageCount && (
+        <p className="caption -mt-2 text-center text-muted">{t("labels.moreInExport", { n: MAX_ROWS })}</p>
+      )}
     </div>
   );
 }

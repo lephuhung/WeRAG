@@ -4,6 +4,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -475,6 +476,12 @@ func (s *sessionService) SearchSessionContent(
 	searchCtx, cancel := context.WithTimeout(ctx, sessionSearchTimeout)
 	defer cancel()
 	hits, more, err := s.sessionRepo.SearchContent(searchCtx, q)
+	if err != nil && (stderrors.Is(err, context.DeadlineExceeded) || stderrors.Is(searchCtx.Err(), context.DeadlineExceeded)) {
+		logger.Warnf(ctx, "session content search timed out: tenant=%d user=%s", q.TenantID, q.UserID)
+		return nil, false, &apperrors.AppError{
+			Code: apperrors.ErrTimeout, Message: "tìm kiếm quá lâu, hãy thu hẹp từ khoá", HTTPCode: http.StatusGatewayTimeout,
+		}
+	}
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{"tenant_id": q.TenantID, "user_id": q.UserID})
 		return nil, false, err

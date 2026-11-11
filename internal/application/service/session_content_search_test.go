@@ -2,7 +2,11 @@ package service
 
 import (
 	"context"
+	"net/http"
 	"testing"
+	"time"
+
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
 
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -63,4 +67,24 @@ func TestSearchSessionContentWithoutOwnerFindsNothing(t *testing.T) {
 	require.False(t, more)
 	require.Empty(t, hits)
 	require.Nil(t, repo.got, "the repository is not asked")
+}
+
+type slowSearchRepo struct{ interfaces.SessionRepository }
+
+func (slowSearchRepo) SearchContent(ctx context.Context, _ *types.SessionContentSearchQuery) ([]*types.SessionContentHit, bool, error) {
+	<-ctx.Done()
+	return nil, false, ctx.Err()
+}
+
+// A search past its deadline answers 504 with a hint to narrow the query.
+func TestSearchSessionContentTimeoutIs504(t *testing.T) {
+	svc := &sessionService{sessionRepo: slowSearchRepo{}}
+	parent, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	ctx := context.WithValue(parent, types.TenantIDContextKey, uint64(7))
+	ctx = context.WithValue(ctx, types.UserIDContextKey, "alice")
+	_, _, err := svc.SearchSessionContent(ctx, "điều 5", "", 1, 10)
+	var appErr *apperrors.AppError
+	require.ErrorAs(t, err, &appErr)
+	require.Equal(t, http.StatusGatewayTimeout, appErr.HTTPCode)
 }
