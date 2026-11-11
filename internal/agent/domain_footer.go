@@ -30,7 +30,7 @@ func (e *AgentEngine) SetDomainFooter(fn DomainFooterFunc) {
 // not advice from the pack.
 func (e *AgentEngine) appendDomainFooter(ctx context.Context, state *types.AgentState, sessionID, answerID string) {
 	if e.domainFooter == nil || e.eventBus == nil || answerID == "" || state == nil ||
-		strings.TrimSpace(state.FinalAnswer) == "" || strings.HasPrefix(state.FinalAnswer, ungroundedAnswer) {
+		strings.TrimSpace(state.FinalAnswer) == "" || state.Ungrounded {
 		return
 	}
 	block := e.domainFooter(ctx, state.FinalAnswer)

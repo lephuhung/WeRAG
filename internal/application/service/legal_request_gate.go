@@ -223,15 +223,20 @@ func (s *sessionService) legalMissingDocumentGate(
 		}
 		return ctx, false, nil
 	}
+	// the question goes to the admins' ungrounded-questions list, with the
+	// request when one is still open
+	recorded := ""
 	if open == 0 && rejected != nil {
 		card.Mode = tools.LegalRequestModeRejected
 		card.DecisionNote = rejected.DecisionNote
 	} else {
 		card.Mode = tools.LegalRequestModeRequested
+		recorded = number
 	}
 	logger.Infof(ctx, "Legal document %s has no full text: answering with the %s card (count %d)",
 		number, card.Mode, card.RequestCount)
-	return ctx, true, emitPipelineCard(ctx, bus, req, tools.LegalRequestType, "legalreq-", card.Message(), card.Data())
+	marker := types.NewUngroundedMarker(types.UngroundedLegalDocumentMissing, req.Query, recorded)
+	return ctx, true, emitPipelineCardMarked(ctx, bus, req, tools.LegalRequestType, "legalreq-", card.Message(), card.Data(), marker)
 }
 
 // legalExactReports keeps the catalogue rows whose number is the asked one

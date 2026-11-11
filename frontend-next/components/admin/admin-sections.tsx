@@ -18,6 +18,7 @@ import {
   IconOrg,
   IconPulse,
   IconSend,
+  IconThumbDown,
   IconUser,
 } from "@/components/icons";
 
@@ -30,6 +31,7 @@ const AdminDomainPacksPage = lazy(() => import("@/components/settings/pages/admi
 const AdminUsagePage = lazy(() => import("@/components/settings/pages/admin-usage"));
 const AdminBillingPage = lazy(() => import("@/components/settings/pages/admin-billing"));
 const AdminEmailPage = lazy(() => import("@/components/settings/pages/admin-email"));
+const AdminQualityPage = lazy(() => import("@/components/settings/pages/admin-quality"));
 const RuntimeQueuesPage = lazy(() => import("@/components/settings/pages/runtime-queues"));
 
 export interface AdminSection {
@@ -63,6 +65,7 @@ export const ADMIN_GROUPS: AdminSectionGroup[] = [
     items: [
       { key: "tenants", labelKey: "systemNav.tenants", fallback: "Organizations", icon: IconOrg, render: () => <AdminTenantsPage />, route: `${SYS}/admin/tenants` },
       { key: "users", labelKey: "systemNav.users", fallback: "Users", icon: IconUser, render: () => <AdminUsersPage />, route: `${SYS}/admin/users` },
+      { key: "quality", labelKey: "systemNav.quality", fallback: "Answer quality", icon: IconThumbDown, render: () => <AdminQualityPage />, route: `${SYS}/admin/quality` },
       { key: "logs", labelKey: "systemNav.logs", fallback: "Audit logs", icon: IconDocReader, render: () => <AdminLogsPage />, route: `${SYS}/admin/logs` },
       { key: "legal-documents", labelKey: "systemNav.legalDocuments", fallback: "Legal documents", icon: IconFileSearch, render: () => <AdminLegalDocumentsPage />, route: `${SYS}/admin/legal-documents` },
       { key: "domain-packs", labelKey: "systemNav.domainPacks", fallback: "Skill sets", icon: IconBook, render: () => <AdminDomainPacksPage />, route: `${SYS}/admin/domain-packs` },

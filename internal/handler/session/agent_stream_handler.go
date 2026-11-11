@@ -860,6 +860,11 @@ func (h *AgentStreamHandler) handleComplete(ctx context.Context, evt event.Event
 
 		h.assistantMessage.Content += data.FinalAnswer
 
+		// A gate answered for lack of evidence: mark the turn for the
+		// admins' ungrounded-questions list. A failed turn is no answer and
+		// stays unmarked.
+		h.assistantMessage.ApplyUngroundedMarker(data.Ungrounded)
+
 		// Update agent steps if provided
 		if data.AgentSteps != nil {
 			if steps, ok := data.AgentSteps.([]types.AgentStep); ok {

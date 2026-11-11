@@ -107,6 +107,7 @@ func (e *AgentEngine) endTurnOnModelFailure(
 	}
 	e.turnFailure = code
 	e.turnFailureCause = cause
+	state.Ungrounded = false
 
 	logger.Errorf(ctx, "[Agent] Model failure ends the turn (%s) after %d rounds: %v",
 		code, state.CurrentRound, cause)

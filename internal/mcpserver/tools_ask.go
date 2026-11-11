@@ -246,15 +246,17 @@ func (s *Server) runQA(
 	}
 
 	var (
-		mu       sync.Mutex
-		answer   strings.Builder
-		final    string
-		refs     []*types.SearchResult
-		qaErr    error
-		done     = make(chan struct{})
-		complete = make(chan struct{})
-		doneOnce sync.Once
-		compOnce sync.Once
+		mu     sync.Mutex
+		answer strings.Builder
+		final  string
+		refs   []*types.SearchResult
+		qaErr  error
+		// turnFailed: the error event carried a types.TurnFailure* code
+		turnFailed bool
+		done       = make(chan struct{})
+		complete   = make(chan struct{})
+		doneOnce   sync.Once
+		compOnce   sync.Once
 	)
 	closeDone := func() { doneOnce.Do(func() { close(done) }) }
 	closeComplete := func() { compOnce.Do(func() { close(complete) }) }
@@ -269,6 +271,10 @@ func (s *Server) runQA(
 		answer.WriteString(data.Content)
 		if data.Usage != nil {
 			assistantMsg.Usage = data.Usage
+		}
+		// quick answer: retrieval found nothing, the fallback answered
+		if data.IsFallback && !turnFailed {
+			assistantMsg.ApplyUngroundedMarker(types.QuickAnswerUngroundedMarker(question))
 		}
 		mu.Unlock()
 		if data.Done {
@@ -298,6 +304,10 @@ func (s *Server) runQA(
 		if usage, ok := data.Usage.(*types.TokenUsage); ok && usage != nil {
 			assistantMsg.Usage = usage
 		}
+		// a gate answered for lack of evidence: the admins' ungrounded list
+		if !turnFailed {
+			assistantMsg.ApplyUngroundedMarker(data.Ungrounded)
+		}
 		if len(data.KnowledgeRefs) > 0 {
 			var completeRefs []*types.SearchResult
 			collectReferences(&completeRefs, data.KnowledgeRefs)
@@ -316,6 +326,11 @@ func (s *Server) runQA(
 		}
 		mu.Lock()
 		qaErr = fmt.Errorf("%s", data.Error)
+		// a turn the model failed to answer is no ungrounded question
+		if types.IsTurnFailure(data.ErrorCode) {
+			turnFailed = true
+			assistantMsg.ExecutionContext.Ungrounded = nil
+		}
 		mu.Unlock()
 		closeDone()
 		closeComplete()
@@ -370,9 +385,15 @@ func (s *Server) runQA(
 			timer.Stop()
 		}
 	case <-ctx.Done():
+		// the event handlers may still write the message: change and copy
+		// it under mu; a cancelled turn is no ungrounded question
+		mu.Lock()
 		assistantMsg.Content = "The answer was interrupted before completion."
 		assistantMsg.IsCompleted = true
-		if updateErr := s.messageService.UpdateMessage(context.WithoutCancel(ctx), assistantMsg); updateErr != nil {
+		assistantMsg.ExecutionContext.Ungrounded = nil
+		interrupted := *assistantMsg
+		mu.Unlock()
+		if updateErr := s.messageService.UpdateMessage(context.WithoutCancel(ctx), &interrupted); updateErr != nil {
 			logger.Warnf(ctx, "[mcpserver] failed to finalize interrupted message: %v", updateErr)
 		}
 		return "", nil, fmt.Errorf("answer timed out: %w", ctx.Err())

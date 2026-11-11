@@ -150,6 +150,10 @@ type AgentCompleteData struct {
 	MessageID       string                 `json:"message_id,omitempty"` // Assistant message ID
 	RequestID       string                 `json:"request_id,omitempty"`
 	Extra           map[string]interface{} `json:"extra,omitempty"`
+	// Ungrounded is set when a gate answered the turn for lack of evidence;
+	// the stream handler stores it on the assistant message
+	// (MessageExecutionContext.Ungrounded).
+	Ungrounded *types.UngroundedMarker `json:"ungrounded,omitempty"`
 }
 
 // === Streaming Event Data Structures ===

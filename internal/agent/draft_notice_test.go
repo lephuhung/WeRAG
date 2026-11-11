@@ -74,7 +74,7 @@ func TestDraftNoticeSkips(t *testing.T) {
 		var seen string
 		withDraftNotice(engine, &seen)
 		text := ungroundedAnswer + " doanh nghiệp một người"
-		state := &types.AgentState{FinalAnswer: text}
+		state := &types.AgentState{FinalAnswer: text, Ungrounded: true}
 		engine.appendDraftNotice(context.Background(), state, "sess", "a1", text)
 		assert.Equal(t, text, state.FinalAnswer)
 		assert.Empty(t, seen)
@@ -139,7 +139,7 @@ func TestScopeNoticeOnBothPathsInOrder(t *testing.T) {
 		engine := newTestEngine(t, &mockChat{})
 		var seenQ string
 		withScopeNotice(engine, &seenQ)
-		state := &types.AgentState{FinalAnswer: ungroundedAnswer}
+		state := &types.AgentState{FinalAnswer: ungroundedAnswer, Ungrounded: true}
 		engine.appendScopeNotice(context.Background(), state, "sess", "a1", "trốn nợ")
 		assert.Equal(t, ungroundedAnswer, state.FinalAnswer)
 	})

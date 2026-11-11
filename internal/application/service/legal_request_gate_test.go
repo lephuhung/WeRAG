@@ -93,6 +93,8 @@ type gateOutcome struct {
 	ctx     context.Context
 	answer  string
 	data    map[string]interface{}
+	// marker is the completion's ungrounded marker (admins' list)
+	marker *types.UngroundedMarker
 }
 
 func runGate(t *testing.T, s *sessionService, query, session string) gateOutcome {
@@ -108,6 +110,12 @@ func runGate(t *testing.T, s *sessionService, query, session string) gateOutcome
 	bus.On(event.EventAgentToolResult, func(_ context.Context, e event.Event) error {
 		if d, ok := e.Data.(event.AgentToolResultData); ok {
 			out.data = d.Data
+		}
+		return nil
+	})
+	bus.On(event.EventAgentComplete, func(_ context.Context, e event.Event) error {
+		if d, ok := e.Data.(event.AgentCompleteData); ok {
+			out.marker = d.Ungrounded
 		}
 		return nil
 	})
@@ -151,6 +159,10 @@ func TestLegalMissingDocumentGate(t *testing.T) {
 		out := runGate(t, s, "Nghị định 53/2022/NĐ-CP quy định những gì về lưu trữ dữ liệu?", "s1")
 		if !out.handled || out.data["display_type"] != tools.LegalRequestType || out.data["mode"] != tools.LegalRequestModeRequested {
 			t.Fatalf("outcome = %+v", out)
+		}
+		if want := (&types.UngroundedMarker{Reason: types.UngroundedLegalDocumentMissing,
+			Query: "Nghị định 53/2022/NĐ-CP quy định những gì về lưu trữ dữ liệu?", LegalRequest: "53/2022/NĐ-CP"}); *out.marker != *want {
+			t.Fatalf("marker = %+v", out.marker)
 		}
 		if len(reqs.recorded) != 1 || reqs.recorded[0].LegalDocumentID != "155366" || reqs.recorded[0].Source != types.LegalRequestSourceCatalogue ||
 			reqs.recorded[0].LastTenantID != 10003 || reqs.recorded[0].DocType != "Nghị định" {
@@ -260,6 +272,9 @@ func TestLegalMissingDocumentGate(t *testing.T) {
 			t.Fatalf("outcome = %+v recorded %v", out, reqs.recorded)
 		}
 		repl, _ := out.data["replacement"].(map[string]interface{})
+		if out.marker != nil {
+			t.Fatalf("the expired card is an answer, not an ungrounded question: %+v", out.marker)
+		}
 		if repl["document_number"] != "98/2023/NĐ-CP" || !strings.Contains(out.answer, "98/2023/NĐ-CP") ||
 			!strings.Contains(out.answer, "từ ngày 01/01/2023") {
 			t.Fatalf("answer = %q replacement %v", out.answer, repl)
@@ -287,6 +302,9 @@ func TestLegalMissingDocumentGate(t *testing.T) {
 		if !out.handled || out.data["mode"] != tools.LegalRequestModeRejected || out.data["decision_note"] != "Văn bản mật, không công bố" ||
 			!strings.Contains(out.answer, "Văn bản mật, không công bố.") || reqs.stored["01/2024/TT-BCA|3003"].RequestCount != 4 {
 			t.Fatalf("outcome = %+v", out)
+		}
+		if out.marker == nil || out.marker.Reason != types.UngroundedLegalDocumentMissing || out.marker.LegalRequest != "" {
+			t.Fatalf("rejected marker = %+v", out.marker)
 		}
 	})
 

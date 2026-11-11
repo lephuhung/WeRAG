@@ -505,6 +505,11 @@ type AgentState struct {
 	FinalAnswer          string          `json:"final_answer"`   // The final answer to the query
 	KnowledgeRefs        []*SearchResult `json:"knowledge_refs"` // Collected knowledge references
 	TurnUsage            TokenUsage      `json:"turn_usage"`     // LLM usage accumulated across this turn
+	// Ungrounded: FinalAnswer is the grounding gate's fixed answer (no
+	// evidence). Set where the gate's answer becomes the final answer and
+	// cleared wherever FinalAnswer is replaced; read for the message's
+	// ungrounded marker (admins' list), never from the answer text.
+	Ungrounded bool `json:"-"`
 }
 
 // FunctionDefinition represents a function definition for LLM function calling

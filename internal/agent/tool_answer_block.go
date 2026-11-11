@@ -20,7 +20,7 @@ import (
 // was appended.
 func (e *AgentEngine) appendToolAnswerBlocks(ctx context.Context, state *types.AgentState, sessionID, answerID string) bool {
 	if e.eventBus == nil || answerID == "" || state == nil ||
-		strings.TrimSpace(state.FinalAnswer) == "" || strings.HasPrefix(state.FinalAnswer, ungroundedAnswer) ||
+		strings.TrimSpace(state.FinalAnswer) == "" || state.Ungrounded ||
 		strings.Contains(state.FinalAnswer, types.ToolAnswerBlockMarker) {
 		return false
 	}

@@ -51,6 +51,7 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 			})
 		}
 		state.FinalAnswer = answer
+		state.Ungrounded = true
 		return nil
 	}
 
@@ -164,6 +165,7 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	// the saved answer drops the lead-in the stream dropped
 	content, _ := cleanFinalAnswer(ctx, checkQuery, agenttools.StripThinkBlocks(llmResult.Content))
 	state.FinalAnswer = cleanAnswerNumbers(ctx, cleanAnswerInContext(ctx, content))
+	state.Ungrounded = false
 	if kind := lead.Kind(); kind != answerOK {
 		// nothing of it was shown; what was gathered answers instead
 		logger.Warnf(ctx, "[Agent][FinalAnswer] Synthesis held back (%s)", kind)
@@ -261,6 +263,7 @@ func (e *AgentEngine) handleMaxIterations(
 			e.endTurnOnModelFailure(ctx, state, sessionID, err)
 		} else {
 			state.FinalAnswer = e.synthesisFallback(state)
+			state.Ungrounded = false
 		}
 	}
 	state.IsComplete = true
@@ -403,7 +406,7 @@ func dataInt(data map[string]interface{}, key string) int {
 
 // emitCompletionEvent emits the EventAgentComplete event with execution summary.
 func (e *AgentEngine) emitCompletionEvent(
-	ctx context.Context, state *types.AgentState, sessionID, messageID string, startTime time.Time,
+	ctx context.Context, state *types.AgentState, query, sessionID, messageID string, startTime time.Time,
 ) {
 	steps := state.RoundSteps
 	if len(state.PendingSteerMessages) > 0 {
@@ -431,6 +434,7 @@ func (e *AgentEngine) emitCompletionEvent(
 			TotalSteps:      len(state.RoundSteps),
 			TotalDurationMs: time.Since(startTime).Milliseconds(),
 			MessageID:       messageID, // Include message ID for proper message update
+			Ungrounded:      e.ungroundedMarker(ctx, state, query),
 		},
 	})
 
