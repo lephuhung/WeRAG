@@ -206,6 +206,41 @@ func SessionListSourceRequiresAdmin(source string) bool {
 	return true
 }
 
+// IM sessions are created (internal/im) with these descriptions, and a
+// continuation copies its session's description. The description is on the
+// row from its first write, before the im_channel_sessions mapping exists,
+// so it marks an IM session the moment it is created.
+const (
+	imSessionDescriptionPrefix       = "Auto-created from "
+	imSessionDescriptionSuffix       = " IM integration"
+	imThreadSessionDescriptionPrefix = "Thread-based session from "
+	imThreadSessionDescriptionSuffix = " IM"
+)
+
+// IMSessionDescription is the description internal/im gives a chat session
+// of platform (thread=false) or a thread session (thread=true).
+func IMSessionDescription(platform string, thread bool) string {
+	if thread {
+		return imThreadSessionDescriptionPrefix + platform + imThreadSessionDescriptionSuffix
+	}
+	return imSessionDescriptionPrefix + platform + imSessionDescriptionSuffix
+}
+
+// IsIMSessionDescription reports a description IMSessionDescription made.
+func IsIMSessionDescription(d string) bool {
+	return (strings.HasPrefix(d, imSessionDescriptionPrefix) && strings.HasSuffix(d, imSessionDescriptionSuffix)) ||
+		(strings.HasPrefix(d, imThreadSessionDescriptionPrefix) && strings.HasSuffix(d, imThreadSessionDescriptionSuffix))
+}
+
+// IMSessionDescriptionLikePatterns are SQL LIKE patterns matching the IM
+// session descriptions (for list filters).
+func IMSessionDescriptionLikePatterns() []string {
+	return []string{
+		imSessionDescriptionPrefix + "%" + imSessionDescriptionSuffix,
+		imThreadSessionDescriptionPrefix + "%" + imThreadSessionDescriptionSuffix,
+	}
+}
+
 // SessionRequiresAdminConsoleRead reports whether a session row is channel-
 // managed traffic that non-admin web users must not open from the console.
 func SessionRequiresAdminConsoleRead(s *Session, imPlatform string) bool {
@@ -225,7 +260,7 @@ func SessionRequiresAdminConsoleRead(s *Session, imPlatform string) bool {
 	if IsSkillMaintenanceDescription(s.Description) {
 		return true
 	}
-	return strings.TrimSpace(imPlatform) != ""
+	return strings.TrimSpace(imPlatform) != "" || IsIMSessionDescription(s.Description)
 }
 
 // IsSkillMaintenanceDescription reports whether description is the reserved
@@ -264,10 +299,12 @@ type SessionListQuery struct {
 	AgentID  string
 	Page     int
 	PageSize int
-	// ExcludeOwnerlessIM drops IM sessions nobody owns (they are created
-	// without an owner, so the legacy user_id '' allowance would list them
-	// to every member). Set for callers who are not organization admins.
-	ExcludeOwnerlessIM bool
+	// ExcludeOwnerlessChannel drops channel sessions nobody owns: IM
+	// sessions (mapped, or still carrying the IM description before their
+	// mapping is written) and legacy embed rows. They are created without an
+	// owner, so the legacy user_id '' allowance would list them to every
+	// member. Set for callers who are not organization admins.
+	ExcludeOwnerlessChannel bool
 }
 
 // SessionListItem is a session row enriched with its IM origin (when any).

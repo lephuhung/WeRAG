@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
@@ -36,6 +38,16 @@ type imScopeMessageRepo struct {
 }
 
 func (r *imScopeMessageRepo) GetKnowledgeIDsBySessionID(context.Context, string) ([]string, error) {
+	return nil, nil
+}
+
+func (r *imScopeMessageRepo) GetLatestContextCheckpoint(context.Context, string) (*types.Message, error) {
+	return nil, nil
+}
+
+func (r *imScopeMessageRepo) ListMessagesBySessionBeforeCursor(
+	context.Context, string, time.Time, string, int,
+) ([]*types.Message, error) {
 	return nil, nil
 }
 
@@ -202,4 +214,152 @@ func TestDeleteAllSessionsSparesIMSessionsForMembers(t *testing.T) {
 	g := newIMScopeFixture(t)
 	require.NoError(t, g.sessions.DeleteAllSessions(imScopeCtx(types.TenantRoleAdmin)))
 	require.False(t, g.exists(t, g.telegram))
+}
+
+// failingScopeRepo makes the IM lookup or the session listing fail.
+type failingScopeRepo struct {
+	interfaces.SessionRepository
+	platformErr, listErr error
+}
+
+func (r failingScopeRepo) GetIMPlatform(ctx context.Context, tenantID uint64, id string) (string, error) {
+	if r.platformErr != nil {
+		return "", r.platformErr
+	}
+	return r.SessionRepository.GetIMPlatform(ctx, tenantID, id)
+}
+
+func (r failingScopeRepo) GetByTenantID(ctx context.Context, tenantID uint64, userID string) ([]*types.Session, error) {
+	if r.listErr != nil {
+		return nil, r.listErr
+	}
+	return r.SessionRepository.GetByTenantID(ctx, tenantID, userID)
+}
+
+func TestChannelGateCrossTenantAdmin(t *testing.T) {
+	f := newIMScopeFixture(t)
+	other := context.WithValue(imScopeCtx(types.TenantRoleAdmin), types.TenantIDContextKey, uint64(2))
+	_, err := f.sessions.GetOwnedSession(other, f.telegram)
+	require.ErrorIs(t, err, apperrors.ErrSessionNotFound, "an admin of another organization never reaches it")
+	require.Empty(t, listIDs(t, f.sessions, other, ""))
+}
+
+func TestChannelGateFailsClosedOnLookupError(t *testing.T) {
+	f := newIMScopeFixture(t)
+	broken := failingScopeRepo{SessionRepository: f.sessions.sessionRepo, platformErr: errors.New("db down")}
+	f.sessions.sessionRepo, f.messages.sessionRepo = broken, broken
+	member, admin := imScopeCtx(types.TenantRoleMember), imScopeCtx(types.TenantRoleAdmin)
+
+	_, err := f.sessions.GetOwnedSession(member, f.legacy)
+	require.ErrorIs(t, err, apperrors.ErrSessionNotFound, "write path: cannot tell, refuse")
+	_, err = f.sessions.GetSession(member, f.legacy)
+	require.ErrorIs(t, err, apperrors.ErrSessionNotFound, "read path: cannot tell, refuse")
+	_, err = f.sessions.GetOwnedSession(member, f.own)
+	require.NoError(t, err, "the caller's own session needs no lookup")
+	_, err = f.sessions.GetSession(admin, f.legacy)
+	require.NoError(t, err)
+}
+
+func TestChannelGateSoftDeletedMappingOnWritePath(t *testing.T) {
+	f := newIMScopeFixture(t)
+	require.NoError(t, f.db.Delete(&imScopeChannelSession{ID: "m1"}).Error) // /clear retires the mapping
+	member := imScopeCtx(types.TenantRoleMember)
+	_, err := f.sessions.GetOwnedSession(member, f.telegram)
+	require.ErrorIs(t, err, apperrors.ErrSessionNotFound)
+	require.ErrorIs(t, f.messages.ClearSessionMessages(member, f.telegram), apperrors.ErrSessionNotFound)
+}
+
+func TestChannelGateWorkerContextWithRealUser(t *testing.T) {
+	f := newIMScopeFixture(t)
+	// a user id but no principal (a worker rebuilding a request context)
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+	ctx = context.WithValue(ctx, types.UserIDContextKey, "alice")
+	_, err := f.sessions.GetOwnedSession(ctx, f.telegram)
+	require.ErrorIs(t, err, apperrors.ErrSessionNotFound)
+}
+
+func TestChannelGateAPIKeys(t *testing.T) {
+	f := newIMScopeFixture(t)
+	key := func(full bool) context.Context {
+		role := types.TenantRoleMember
+		if full {
+			role = types.TenantRoleAdmin // what auth gives a full-access tenant key
+		}
+		ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+		ctx = context.WithValue(ctx, types.UserIDContextKey, "system-1")
+		ctx = context.WithValue(ctx, types.TenantRoleContextKey, role)
+		ctx = types.WithTenantAPIKeyScope(ctx, types.TenantAPIKeyScope{KeyID: 9, FullAccess: full})
+		return types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalAPITenant, ID: "9"})
+	}
+	_, err := f.sessions.GetOwnedSession(key(true), f.telegram)
+	require.NoError(t, err, "a full-access key counts as admin")
+	_, err = f.sessions.GetOwnedSession(key(false), f.telegram)
+	require.ErrorIs(t, err, apperrors.ErrSessionNotFound, "a scoped key does not")
+}
+
+func TestDeleteAllSessionsListingErrorDeletesNothingForMembers(t *testing.T) {
+	f := newIMScopeFixture(t)
+	f.sessions.sessionRepo = failingScopeRepo{SessionRepository: f.sessions.sessionRepo, listErr: errors.New("db down")}
+	require.Error(t, f.sessions.DeleteAllSessions(imScopeCtx(types.TenantRoleMember)))
+	for _, id := range []string{f.own, f.legacy, f.telegram} {
+		require.True(t, f.exists(t, id))
+	}
+}
+
+// Legacy embed rows have no owner either: members neither list nor change
+// them; the embed runtime keeps them.
+func TestChannelGateLegacyEmbedRows(t *testing.T) {
+	f := newIMScopeFixture(t)
+	embed := &types.Session{TenantID: 1, Title: "widget", Description: types.EmbedSessionMarkerPrefix + "ch-1"}
+	require.NoError(t, f.db.Create(embed).Error)
+	member := imScopeCtx(types.TenantRoleMember)
+	require.NotContains(t, listIDs(t, f.sessions, member, ""), embed.ID)
+	_, err := f.sessions.GetOwnedSession(member, embed.ID)
+	require.ErrorIs(t, err, apperrors.ErrSessionNotFound)
+
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+	ctx = types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalEmbedSession, ID: "ch-1:visitor"})
+	_, err = f.sessions.GetOwnedSession(ctx, embed.ID)
+	require.NoError(t, err, "the embed runtime keeps its rows")
+	_, err = f.sessions.GetOwnedSession(ctx, f.telegram)
+	require.ErrorIs(t, err, apperrors.ErrSessionNotFound, "but never an IM chat")
+}
+
+// A capped IM chat is rotated with ContinueSession before its new mapping
+// row is written: the continuation carries the IM description, so members
+// cannot list or touch it in that window, and the IM runtime can.
+func TestIMRotationContinuationIsLockedBeforeItsMapping(t *testing.T) {
+	f := newIMScopeFixture(t)
+	require.NoError(t, f.db.Model(&types.Session{}).Where("id = ?", f.telegram).
+		Update("description", types.IMSessionDescription("telegram", false)).Error)
+	var old types.Session
+	require.NoError(t, f.db.First(&old, "id = ?", f.telegram).Error)
+
+	imCtx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+	imCtx = context.WithValue(imCtx, types.UserIDContextKey, "system-1")
+	imCtx = types.WithPrincipal(imCtx, types.Principal{Type: types.PrincipalIMUser, ID: "1:ch:telegram:42"})
+	next, err := f.sessions.ContinueSession(imCtx, &old)
+	require.NoError(t, err)
+	require.Empty(t, next.UserID)
+	require.True(t, types.IsIMSessionDescription(next.Description))
+
+	member := imScopeCtx(types.TenantRoleMember)
+	require.NotContains(t, listIDs(t, f.sessions, member, ""), next.ID)
+	_, err = f.sessions.GetOwnedSession(member, next.ID)
+	require.ErrorIs(t, err, apperrors.ErrSessionNotFound)
+	_, err = f.sessions.GetSession(member, next.ID)
+	require.ErrorIs(t, err, apperrors.ErrSessionNotFound)
+
+	_, err = f.sessions.GetSession(imCtx, next.ID)
+	require.NoError(t, err, "the IM runtime reads it before the mapping exists")
+	require.NoError(t, f.messages.ClearSessionMessages(imCtx, next.ID))
+	require.Contains(t, listIDs(t, f.sessions, imScopeCtx(types.TenantRoleAdmin), ""), next.ID)
+}
+
+func TestIMSessionDescription(t *testing.T) {
+	require.Equal(t, "Auto-created from telegram IM integration", types.IMSessionDescription("telegram", false))
+	require.Equal(t, "Thread-based session from slack IM", types.IMSessionDescription("slack", true))
+	require.True(t, types.IsIMSessionDescription("Thread-based session from slack IM"))
+	require.False(t, types.IsIMSessionDescription("Auto-created from"))
+	require.False(t, types.IsIMSessionDescription("ghi chú của tôi"))
 }

@@ -45,7 +45,8 @@ func runtimeMayBypassAdminConsoleRead(
 
 	switch principal.Type {
 	case types.PrincipalIMUser:
-		return strings.TrimSpace(imPlatform) != ""
+		// the IM description marks its sessions before the mapping row exists
+		return strings.TrimSpace(imPlatform) != "" || types.IsIMSessionDescription(session.Description)
 	case types.PrincipalAPITenant, types.PrincipalAPIExternalUser:
 		ownerID := types.SessionOwnerIDFromContext(ctx)
 		return types.IsAPISessionOwnerID(session.UserID) && session.UserID == ownerID
@@ -85,7 +86,13 @@ func loadSessionForRead(
 
 	session, err := repo.Get(ctx, tenantID, ownerID, sessionID)
 	if err == nil {
-		imPlatform, _ := repo.GetIMPlatform(ctx, tenantID, sessionID)
+		imPlatform, pErr := repo.GetIMPlatform(ctx, tenantID, sessionID)
+		ownSession := session != nil && session.UserID != "" && session.UserID == types.SessionOwnerIDFromContext(ctx)
+		if pErr != nil && !ownSession && !isAdmin && !internalSessionWork(ctx) {
+			// not the caller's own and cannot tell whether it is an IM chat: fail closed
+			logger.Warnf(ctx, "IM platform lookup for session %s failed, refusing: %v", sessionID, pErr)
+			return nil, apperrors.ErrSessionNotFound
+		}
 		if types.SessionRequiresAdminConsoleRead(session, imPlatform) &&
 			!isAdmin &&
 			!runtimeMayBypassAdminConsoleRead(ctx, session, imPlatform) {
@@ -116,28 +123,44 @@ func loadSessionForRead(
 	return s, nil
 }
 
-// imSessionLocked reports an IM session that the caller must not read or
-// change: IM sessions are created without an owner, so the owner scope of
-// repo.Get (user_id is the caller or empty) matches them for every member. Only an
-// organization admin, a SuperAdmin and the IM runtime itself may touch
-// them. Internal work (internalSessionWork) is not gated, and a session
-// someone owns is theirs. A failed lookup fails closed.
-func imSessionLocked(ctx context.Context, repo interfaces.SessionRepository, tenantID uint64, session *types.Session) bool {
-	if session == nil || session.UserID != "" {
+// channelSessionLocked reports a channel-managed session (an IM chat, a
+// legacy embed row: types.SessionRequiresAdminConsoleRead) the caller must
+// not read or change. IM and legacy embed sessions are created without an
+// owner, so the owner scope of repo.Get (user_id is the caller or empty)
+// matches them for every member. Allowed: a session the caller owns,
+// internal work (internalSessionWork), an organization admin or SuperAdmin
+// (including a full-access tenant API key, whose auth role is admin; a
+// scoped key stays a member and is locked out), the IM runtime, the embed
+// runtime on embed rows (not IM chats) and an API principal on its own API
+// session.
+// A failed IM lookup fails closed.
+func channelSessionLocked(ctx context.Context, repo interfaces.SessionRepository, tenantID uint64, session *types.Session) bool {
+	if session == nil {
+		return false
+	}
+	if session.UserID != "" && session.UserID == types.SessionOwnerIDFromContext(ctx) {
 		return false
 	}
 	if internalSessionWork(ctx) || callerIsTenantAdminOrSuperAdmin(ctx) {
 		return false
 	}
-	if principal, ok := types.PrincipalFromContext(ctx); ok && principal.Type == types.PrincipalIMUser {
+	p, _ := types.PrincipalFromContext(ctx)
+	if p.Type == types.PrincipalIMUser {
 		return false
+	}
+	if types.SessionRequiresAdminConsoleRead(session, "") {
+		// the embed runtime keeps its embed rows, never an IM chat
+		if p.Type == types.PrincipalEmbedSession && !types.IsIMSessionDescription(session.Description) {
+			return false
+		}
+		return !runtimeMayBypassAdminConsoleRead(ctx, session, "")
 	}
 	platform, err := repo.GetIMPlatform(ctx, tenantID, session.ID)
 	if err != nil {
 		logger.Warnf(ctx, "IM platform lookup for session %s failed, refusing: %v", session.ID, err)
 		return true
 	}
-	return strings.TrimSpace(platform) != ""
+	return strings.TrimSpace(platform) != "" && !runtimeMayBypassAdminConsoleRead(ctx, session, platform)
 }
 
 // internalSessionWork is work no request principal stands behind: no
@@ -153,8 +176,8 @@ func internalSessionWork(ctx context.Context) bool {
 }
 
 // getSessionForWrite is repo.Get (the caller's owner scope) that also
-// refuses an ownerless IM session to a caller who may not touch it
-// (imSessionLocked), as not found.
+// refuses a channel-managed session to a caller who may not touch it
+// (channelSessionLocked), as not found.
 func getSessionForWrite(
 	ctx context.Context, repo interfaces.SessionRepository, tenantID uint64, ownerID, sessionID string,
 ) (*types.Session, error) {
@@ -162,7 +185,7 @@ func getSessionForWrite(
 	if err != nil {
 		return session, err
 	}
-	if imSessionLocked(ctx, repo, tenantID, session) {
+	if channelSessionLocked(ctx, repo, tenantID, session) {
 		return nil, apperrors.ErrSessionNotFound
 	}
 	return session, nil
@@ -470,9 +493,9 @@ func (s *sessionService) ListSessions(
 		if uid := types.SessionOwnerIDFromContext(ctx); uid != "" {
 			query.UserID = uid
 		}
-		// IM sessions have no owner: only an organization admin sees them
-		// (in the IM buckets, and as today in their own list)
-		query.ExcludeOwnerlessIM = !callerIsTenantAdminOrSuperAdmin(ctx)
+		// ownerless channel sessions (IM, legacy embed) are an admin's view
+		// only (their buckets, and as today in their own list)
+		query.ExcludeOwnerlessChannel = !callerIsTenantAdminOrSuperAdmin(ctx)
 	}
 
 	items, total, err := s.sessionRepo.QueryPaged(ctx, query)
@@ -562,8 +585,11 @@ func (s *sessionService) CountSessionsBySource(
 	query.TenantID = types.MustTenantIDFromContext(ctx)
 	if types.SessionListSourceRequiresAdmin(query.Source) {
 		query.UserID = ""
-	} else if uid := types.SessionOwnerIDFromContext(ctx); uid != "" {
-		query.UserID = uid
+	} else {
+		if uid := types.SessionOwnerIDFromContext(ctx); uid != "" {
+			query.UserID = uid
+		}
+		query.ExcludeOwnerlessChannel = !callerIsTenantAdminOrSuperAdmin(ctx)
 	}
 	_, total, err := s.sessionRepo.QueryPaged(ctx, query)
 	if err != nil {
@@ -839,23 +865,23 @@ func (s *sessionService) DeleteAllSessions(ctx context.Context) error {
 	logger.Infof(ctx, "Deleting all sessions for tenant %d", tenantID)
 
 	sessions, err := s.sessionRepo.GetByTenantID(ctx, tenantID, userID)
-	// Ownerless IM sessions match the owner scope too; a caller who may not
-	// touch them deletes only the rest (by id), never "everything in scope".
-	partial := false
-	if err == nil {
+	// A caller who is not an admin (nor internal work) deletes by id what
+	// the listing gives them minus the channel sessions they may not touch
+	// (ownerless IM / embed rows match the owner scope too): never the
+	// blanket owner scope. Without the listing, nothing is deleted.
+	byID := !internalSessionWork(ctx) && !callerIsTenantAdminOrSuperAdmin(ctx)
+	if byID {
+		if err != nil {
+			logger.Warnf(ctx, "Failed to list sessions to delete: %v", err)
+			return err
+		}
 		kept := sessions[:0:0]
 		for _, sess := range sessions {
-			if imSessionLocked(ctx, s.sessionRepo, tenantID, sess) {
-				partial = true
-				continue
+			if !channelSessionLocked(ctx, s.sessionRepo, tenantID, sess) {
+				kept = append(kept, sess)
 			}
-			kept = append(kept, sess)
 		}
 		sessions = kept
-	} else if !callerIsTenantAdminOrSuperAdmin(ctx) {
-		if _, isPrincipal := types.PrincipalFromContext(ctx); isPrincipal {
-			return err // cannot tell the IM sessions apart: delete nothing
-		}
 	}
 	if err != nil {
 		logger.Warnf(ctx, "Failed to list sessions for cleanup: %v", err)
@@ -891,7 +917,7 @@ func (s *sessionService) DeleteAllSessions(ctx context.Context) error {
 		}
 	}
 
-	if partial {
+	if byID {
 		ids := make([]string, 0, len(sessions))
 		for _, sess := range sessions {
 			ids = append(ids, sess.ID)
