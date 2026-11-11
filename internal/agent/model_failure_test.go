@@ -236,7 +236,7 @@ func TestModelFailure_DuringSynthesis(t *testing.T) {
 // the note is appended to the same answer stream.
 func TestModelFailure_SynthesisMidStream(t *testing.T) {
 	model := &failingChat{steps: []scriptStep{{chunks: []types.StreamResponse{
-		{ResponseType: types.ResponseTypeAnswer, Content: "Theo kết quả tra cứu, "},
+		{ResponseType: types.ResponseTypeAnswer, Content: "Theo kết quả tra cứu:\n\n"},
 		{ResponseType: types.ResponseTypeError, Content: "unexpected EOF", Done: true},
 	}}}}
 	engine, log := failureEngine(t, model)
@@ -249,6 +249,24 @@ func TestModelFailure_SynthesisMidStream(t *testing.T) {
 	assert.True(t, strings.HasSuffix(state.FinalAnswer, types.ModelInterruptedNote), state.FinalAnswer)
 	assert.Equal(t, log.answer.String(), state.FinalAnswer, "the saved answer is what was streamed")
 	assert.Equal(t, 1, model.callCount())
+}
+
+// The synthesis breaks off while the lead check still holds its opening:
+// nothing was shown, so the turn ends as unavailable, with no partial text.
+func TestModelFailure_SynthesisBreakWhileLeadHeld(t *testing.T) {
+	model := &failingChat{steps: []scriptStep{{chunks: []types.StreamResponse{
+		{ResponseType: types.ResponseTypeAnswer, Content: "Theo kết quả "},
+		{ResponseType: types.ResponseTypeError, Content: "unexpected EOF", Done: true},
+	}}}}
+	engine, log := failureEngine(t, model)
+	state := &types.AgentState{RoundSteps: []types.AgentStep{{ToolCalls: []types.ToolCall{{
+		Name: "counting_tool", Result: &types.ToolResult{Success: true, Output: "kết quả"}}}}}}
+
+	engine.handleMaxIterations(context.Background(), "q", state, "sess-1", emptyMessages())
+	require.Len(t, log.errs, 1)
+	assert.Equal(t, types.TurnFailureModelUnavailableAfterSearch, log.errs[0].ErrorCode)
+	assert.Empty(t, state.FinalAnswer)
+	assert.Empty(t, log.answer.String(), "the held opening never reached the client")
 }
 
 // Mid-stream in round 1: the shown text is kept, the note follows on the

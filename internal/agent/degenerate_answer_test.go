@@ -191,6 +191,50 @@ func TestExecuteLoop_SecondEchoGetsTheFixedSentence(t *testing.T) {
 	assert.Equal(t, state.FinalAnswer, content)
 }
 
+// A blank answer twice is no answer: it ends as a model failure, like an
+// empty one, instead of a fixed sentence kept in history.
+func TestExecuteLoop_SecondBlankEndsAsModelFailure(t *testing.T) {
+	mock := &mockChat{responses: []mockResponse{
+		{chunks: []types.StreamResponse{{Content: "...", Done: true}}},
+		{chunks: []types.StreamResponse{{Content: "  ...", Done: true}}},
+	}}
+	engine := newTestEngine(t, mock)
+	recorder := &terminalAnswerRecorder{}
+	recorder.attach(engine.eventBus)
+
+	state := &types.AgentState{}
+	_, err := engine.executeLoop(viCtx(), state, "Thủ tục hành chính?", emptyMessages(), emptyTools(), "sess-1", "msg-1")
+	require.NoError(t, err)
+
+	assert.True(t, state.IsComplete)
+	assert.Empty(t, state.FinalAnswer)
+	assert.Equal(t, types.TurnFailureModelUnavailable, engine.turnFailure)
+	assert.Equal(t, 2, mock.callCount, "one rerun only")
+	_, content := recorder.snapshot()
+	assert.Empty(t, content, "nothing blank reached the client")
+}
+
+// The synthesis gets the lead check too: an English plan is never shown or
+// saved; the code-built summary of what was gathered answers instead.
+func TestSynthesisEnglishPlanIsHeldBack(t *testing.T) {
+	mock := &mockChat{responses: []mockResponse{
+		{chunks: []types.StreamResponse{{Content: leadIn, Done: true}}},
+	}}
+	engine := newTestEngine(t, mock)
+	recorder := &terminalAnswerRecorder{}
+	recorder.attach(engine.eventBus)
+	state := &types.AgentState{RoundSteps: []types.AgentStep{{ToolCalls: []types.ToolCall{{
+		Name: "counting_tool", Result: &types.ToolResult{Success: true, Output: "kết quả"}}}}}}
+
+	ctx := withAnswerCheckQuery(viCtx(), "Thể thức văn bản?")
+	engine.handleMaxIterations(ctx, "Thể thức văn bản?", state, "sess-1", emptyMessages())
+
+	assert.NotContains(t, state.FinalAnswer, "Let me compile")
+	assert.NotEmpty(t, state.FinalAnswer)
+	_, content := recorder.snapshot()
+	assert.NotContains(t, content, "Let me compile", "the plan never reached the client")
+}
+
 func TestExecuteLoop_EnglishLeadInIsDroppedFromTheSavedAnswer(t *testing.T) {
 	mock := &mockChat{responses: []mockResponse{
 		{chunks: []types.StreamResponse{{Content: leadIn + "\n\n---\n\n"}, {Content: viAnswer, Done: true}}},

@@ -10,7 +10,7 @@ import "errors"
 // same notice and the next turn's history leaves the failed turn out.
 //
 // A user stop is not a failure, nor is any fixed answer (grounding gate,
-// upstream outage, quota messages, clarification cards).
+// quota messages, clarification cards).
 
 // Values of MessageExecutionContext.TurnFailure, also sent as
 // event.ErrorData.ErrorCode ("error_code" in the SSE error event).

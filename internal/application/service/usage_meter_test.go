@@ -260,9 +260,14 @@ func TestUsagePeriodTotalsFoldCacheAndCost(t *testing.T) {
 // lands, nothing is counted twice.
 func TestUsageMeterRetriesFailedCounterWrite(t *testing.T) {
 	repo := &fakeUsageCounterRepo{failAdds: 1}
-	m := &usageMeter{repo: repo, now: time.Now, retryDelays: []time.Duration{0, 0}}
+	var async []func()
+	m := &usageMeter{repo: repo, now: time.Now, retryDelays: []time.Duration{0, 0},
+		goAsync: func(f func()) { async = append(async, f) }}
 
 	m.RecordQuestion(context.Background(), 10003, "", "")
+	require.Equal(t, 1, repo.addCalls, "only the first attempt runs on the caller's path")
+	require.Len(t, async, 1)
+	async[0]()
 	require.Equal(t, 2, repo.addCalls)
 	require.Len(t, repo.added, 2, "tenant day + month, once")
 }

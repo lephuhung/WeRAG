@@ -90,6 +90,13 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 		emitChunk = numbers.Write
 	}
 	guard := newAnswerGuard(ctx, emitChunk)
+	toGuard := emitChunk
+	if guard != nil {
+		toGuard = guard.Write
+	}
+	// lead check → button guard: the synthesis gets the same echo / blank /
+	// English-plan check as a round (degenerate_answer.go)
+	lead := newLeadGuard(ctx, answerCheckQuery(ctx), toGuard)
 
 	budget := e.clampCompletionBudgetToContext(e.tokenEstimator.EstimateMessages(messages))
 	noThinking := false
@@ -114,11 +121,10 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 			// The terminal event waits for the amendment history below.
 			if chunk.Content != "" {
 				logger.Debugf(ctx, "[Agent][FinalAnswer] Emitting answer chunk: %d chars", len(chunk.Content))
-				if guard != nil {
-					guard.Write(chunk.Content)
-				} else {
-					emitChunk(chunk.Content)
-				}
+				lead.Write(chunk.Content)
+			}
+			if chunk.Done {
+				lead.Flush()
 			}
 			if chunk.Done && guard != nil {
 				guard.Flush()
@@ -128,6 +134,11 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 			}
 		},
 	)
+	if err == nil {
+		// a stream that broke keeps held text back: it never reached the
+		// screen, so it is not part of the partial answer
+		lead.Flush()
+	}
 	if guard != nil {
 		guard.Flush()
 	}
@@ -143,12 +154,19 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 		return withPartialAnswer(err, answerID, streamed.String())
 	}
 
-	// Safety net: strip any residual <think> blocks that may have leaked through
-	state.FinalAnswer = cleanAnswerNumbers(ctx, cleanAnswerInContext(ctx, agenttools.StripThinkBlocks(llmResult.Content)))
+	// Safety net: strip any residual <think> blocks that may have leaked through;
+	// the saved answer drops the lead-in the stream dropped
+	content, _ := cleanFinalAnswer(ctx, answerCheckQuery(ctx), agenttools.StripThinkBlocks(llmResult.Content))
+	state.FinalAnswer = cleanAnswerNumbers(ctx, cleanAnswerInContext(ctx, content))
+	if kind := lead.Kind(); kind != answerOK {
+		// nothing of it was shown; what was gathered answers instead
+		logger.Warnf(ctx, "[Agent][FinalAnswer] Synthesis held back (%s)", kind)
+		state.FinalAnswer = ""
+	}
 	synthesized := strings.TrimSpace(state.FinalAnswer) != ""
 	if !synthesized {
 		// never end a turn on an empty answer: say what was gathered
-		logger.Warnf(ctx, "[Agent][FinalAnswer] Synthesis returned no text; emitting the fallback")
+		logger.Warnf(ctx, "[Agent][FinalAnswer] Synthesis returned no usable text; emitting the fallback")
 		state.FinalAnswer = e.synthesisFallback(state)
 		emitChunk(state.FinalAnswer)
 	}

@@ -21,17 +21,29 @@ type usageMeter struct {
 	// retryDelays are the waits before each further attempt of a counter
 	// write that failed; nil means one attempt (tests).
 	retryDelays []time.Duration
+	// goAsync runs the retries off the request path; nil runs them inline
+	// (tests).
+	goAsync func(func())
 }
 
 // usageAddRetryDelays: a question or OCR count has no later save that would
 // count it again (message token usage does, see RecordMessageUsage), so a
-// failed write is retried before it is given up. The write is one atomic
-// upsert statement, so a retry cannot count twice.
+// failed write is retried before it is given up. The write is one upsert
+// statement: an attempt that failed cleanly added nothing. Only a connection
+// lost after Postgres applied it but before the reply could count twice,
+// which is accepted over losing the count.
 var usageAddRetryDelays = []time.Duration{200 * time.Millisecond, time.Second}
+
+// usageAddAttemptTimeout bounds each counter write, so a hung connection
+// cannot hold the question that is being counted.
+const usageAddAttemptTimeout = 5 * time.Second
 
 // NewUsageMeter creates the meter.
 func NewUsageMeter(repo interfaces.UsageCounterRepository) interfaces.UsageMeter {
-	return &usageMeter{repo: repo, now: time.Now, retryDelays: usageAddRetryDelays}
+	return &usageMeter{
+		repo: repo, now: time.Now, retryDelays: usageAddRetryDelays,
+		goAsync: func(f func()) { go f() },
+	}
 }
 
 // usageScopes lists the counters a turn belongs to: always the workspace,
@@ -96,18 +108,46 @@ func (m *usageMeter) add(ctx context.Context, increments []types.UsageIncrement)
 	}
 	// The turn is over or persisting; a client disconnect must not lose the count.
 	writeCtx := context.WithoutCancel(ctx)
-	err := m.repo.Add(writeCtx, increments)
-	for attempt := 0; err != nil && attempt < len(m.retryDelays); attempt++ {
-		logger.Warnf(ctx, "usage meter: adding %d counters failed (attempt %d), retrying: %v",
-			len(increments), attempt+1, err)
-		time.Sleep(m.retryDelays[attempt])
-		err = m.repo.Add(writeCtx, increments)
+	err := m.addOnce(writeCtx, increments)
+	if err == nil {
+		return
 	}
-	if err != nil {
-		// Lost from the quota: log every counter so an operator can add it back.
-		logger.Errorf(ctx, "usage meter: LOST %d counters after %d attempts: %v; counters=%s",
-			len(increments), len(m.retryDelays)+1, err, describeUsageIncrements(increments))
+	if len(m.retryDelays) == 0 {
+		m.logLost(ctx, increments, 1, err)
+		return
 	}
+	logger.Warnf(ctx, "usage meter: adding %d counters failed, retrying in the background: %v",
+		len(increments), err)
+	// The first attempt runs on the caller's path (RecordQuestion sits before
+	// the answer stream opens); the retries must not delay the question.
+	retry := func() {
+		var err error
+		for _, delay := range m.retryDelays {
+			time.Sleep(delay)
+			if err = m.addOnce(writeCtx, increments); err == nil {
+				return
+			}
+		}
+		m.logLost(writeCtx, increments, len(m.retryDelays)+1, err)
+	}
+	if m.goAsync != nil {
+		m.goAsync(retry)
+		return
+	}
+	retry()
+}
+
+func (m *usageMeter) addOnce(ctx context.Context, increments []types.UsageIncrement) error {
+	attemptCtx, cancel := context.WithTimeout(ctx, usageAddAttemptTimeout)
+	defer cancel()
+	return m.repo.Add(attemptCtx, increments)
+}
+
+// logLost reports counters lost from the quota, each one listed so an
+// operator can add it back.
+func (m *usageMeter) logLost(ctx context.Context, increments []types.UsageIncrement, attempts int, err error) {
+	logger.Errorf(ctx, "usage meter: LOST %d counters after %d attempts: %v; counters=%s",
+		len(increments), attempts, err, describeUsageIncrements(increments))
 }
 
 // describeUsageIncrements renders counters as scope/id/metric/period+delta

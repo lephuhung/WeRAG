@@ -120,6 +120,9 @@ var transientErrorMarkers = []string{
 	// no usable turn, and the alternative is ending the conversation on a
 	// partial response.
 	"deadline exceeded", "stalled",
+	// A stream cut off before any answer text reached the screen (the lead
+	// check still held it) is safe to repeat.
+	"eof", "reset by peer",
 }
 
 // isTransientError checks whether an error is likely transient and worth retrying.

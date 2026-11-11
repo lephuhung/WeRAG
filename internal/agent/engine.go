@@ -951,6 +951,15 @@ func (e *AgentEngine) runReActIteration(
 				round, response.AnswerHeldBack)
 			return iterOutcomeContinue, nil
 		}
+		if heldBackKind(response.AnswerHeldBack) == answerBlank {
+			// a blank answer twice is no answer: the same model failure as
+			// an empty one (retries exhausted below)
+			state.RoundSteps = append(state.RoundSteps, step)
+			e.endTurnOnModelFailure(ctx, state, sessionID, types.NewModelCallError(fmt.Errorf(
+				"model answered blank twice (finish=%s)", response.FinishReason)))
+			state.IsComplete = true
+			return iterOutcomeBreak, nil
+		}
 		fallback := degenerateFallback(query, heldBackKind(response.AnswerHeldBack))
 		logger.Warnf(ctx, "[Agent][Round-%d] %s answer held back again: answering with the fixed sentence",
 			round, response.AnswerHeldBack)

@@ -65,8 +65,9 @@ func legalPushAllowed(ctx context.Context) error {
 // @Description  Resolves the document in the legal catalogue, adds the full
 // @Description  text when no public KB holds it (full), and stores every
 // @Description  data-amend mark as a provision link candidate for SuperAdmin
-// @Description  review. API key of the platform organization (ingest) or a
-// @Description  human SuperAdmin.
+// @Description  review. API key of the platform organization (ingest), a
+// @Description  human SuperAdmin, or a human account allowed to upload legal
+// @Description  documents.
 // @Tags         Rà soát pháp lý
 // @Accept       multipart/form-data
 // @Produce      json
