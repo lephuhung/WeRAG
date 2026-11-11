@@ -107,6 +107,7 @@ type RouterParams struct {
 	AgencyProfileHandler        *handler.AgencyProfileHandler
 	TemplateStyleHandler        *handler.TemplateStyleHandler
 	LegalReviewHandler          *handler.LegalReviewHandler
+	LegalLookupHandler          *handler.LegalLookupHandler
 	LegalRequestHandler         *handler.LegalRequestHandler
 	LegalPushHandler            *handler.LegalPushHandler
 	LegalDraftHandler           *handler.LegalDraftHandler
@@ -361,6 +362,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterAgencyProfileRoutes(v1, params.AgencyProfileHandler, rbacGuards)
 		RegisterTemplateStyleRoutes(v1, params.TemplateStyleHandler, rbacGuards)
 		RegisterLegalReviewRoutes(v1, params.LegalReviewHandler, rbacGuards)
+		RegisterLegalLookupRoutes(v1, params.LegalLookupHandler, params.RedisClient)
 		RegisterLegalRequestRoutes(v1, params.LegalRequestHandler, rbacGuards)
 		RegisterLegalPushRoutes(v1, params.LegalPushHandler, rbacGuards)
 		RegisterLegalDraftRoutes(v1, params.LegalDraftHandler, rbacGuards)

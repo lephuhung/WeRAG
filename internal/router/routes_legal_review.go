@@ -4,9 +4,24 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/Tencent/WeKnora/internal/handler"
+	"github.com/Tencent/WeKnora/internal/middleware"
 )
+
+// RegisterLegalLookupRoutes wires the validity lookup page. One route
+// serves members and Guests: auth admits it tenantless
+// (tenantOptionalRoutes), so a Guest reaches it with no organization, and
+// LegalLookupAccess refuses anonymous and API-key callers and rate-limits
+// a Guest per IP, a member per account. No API-key policy is declared, so
+// the API-key gate denies it to keys.
+func RegisterLegalLookupRoutes(r *gin.RouterGroup, h *handler.LegalLookupHandler, redisClient *redis.Client) {
+	if h == nil {
+		return
+	}
+	r.GET("/legal-lookup", middleware.LegalLookupAccess(redisClient), h.LookupLegalValidity)
+}
 
 // RegisterLegalReviewRoutes wires the SuperAdmin review of the legal
 // identity of public-KB documents. Public KBs are platform-owned, so every
