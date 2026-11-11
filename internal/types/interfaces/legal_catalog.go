@@ -190,8 +190,9 @@ type LegalRequestRepository interface {
 	// the last one, so one session asking twice counts once. A row marked
 	// "added" whose document is asked for again (it is missing after all)
 	// is reopened, unless its requesters still wait for the "added" notice
-	// (closed within types.LegalRequestNoticeWindow, knowledge not deleted
-	// or failed): then it is only bumped. A "rejected" row is left as it is. Returns the stored row.
+	// and its copy is still coming (closed within types.LegalRequestNoticeWindow,
+	// in one of req.AskerKnowledgeBaseIDs, knowledge still parsing and not
+	// stale): then it is only bumped. A "rejected" row is left as it is. Returns the stored row.
 	Record(ctx context.Context, req *types.LegalDocumentRequest) (*types.LegalDocumentRequest, error)
 	// Get returns one request, or nil when absent.
 	Get(ctx context.Context, id string) (*types.LegalDocumentRequest, error)
@@ -241,9 +242,10 @@ type LegalRequestRepository interface {
 	PublicKnowledgeBases(ctx context.Context) ([]types.LegalPublicKB, error)
 	// AddRequester records who asked for a request's document, one row per
 	// (RequestID, UserID). Asking again moves the row to the latest
-	// tenant, session, message and channel and clears NotifiedAt /
-	// NotifyStatus, so a person who still misses the document is told
-	// again when it is added again.
+	// tenant, session, message and channel and, unless the request is
+	// still added, clears NotifiedAt / NotifyStatus and moves UpdatedAt (the
+	// ask time), so a person who still misses the document is told again
+	// when it is added again.
 	AddRequester(ctx context.Context, r *types.LegalRequestRequester) error
 	// CountRequesters returns how many people asked for each request id.
 	CountRequesters(ctx context.Context, requestIDs []string) (map[string]int, error)

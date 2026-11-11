@@ -35,6 +35,9 @@ func TestLegalMissingDocumentGateRecordsRequester(t *testing.T) {
 	if len(reqs.requesters) != 1 {
 		t.Fatalf("requesters = %+v", reqs.requesters)
 	}
+	if len(reqs.recorded) != 1 || len(reqs.recorded[0].AskerKnowledgeBaseIDs) != 1 || reqs.recorded[0].AskerKnowledgeBaseIDs[0] != "kb-own" {
+		t.Fatalf("the asker's knowledge bases go with the request: %+v", reqs.recorded)
+	}
 	got := reqs.requesters[0]
 	if got.RequestID != "r155366" || got.UserID != "u1" || got.TenantID != 10003 || got.SessionID != "s1" ||
 		got.Channel != types.LegalRequesterChannelWordAddin || got.MessageID == nil || *got.MessageID != "msg-1" {

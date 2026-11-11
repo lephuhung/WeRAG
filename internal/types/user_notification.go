@@ -1,8 +1,11 @@
 package types
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
-// UserNotification is an in-app notice for one person (migration 000195),
+// UserNotification is an in-app notice for one person (migration 000196),
 // shown by the web app and the Word add-in while the person is online:
 // a toast once (SeenAt), then in the bell list until read (ReadAt).
 //
@@ -51,3 +54,28 @@ type UserNotificationLegalRequestPayload struct {
 
 // UserNotificationListMax caps one page of the notification list.
 const UserNotificationListMax = 100
+
+// UserNotificationLinkPrefix starts every notification link: a page of the
+// app (frontend-next /platform/…), never another site.
+const UserNotificationLinkPrefix = "/platform/"
+
+// UserNotificationRetention: read notifications older than this are purged.
+const UserNotificationRetention = 90 * 24 * time.Hour
+
+// ValidUserNotificationLink reports whether link is "" or an app-relative
+// path under UserNotificationLinkPrefix with no control characters, no
+// "//" and no backslash (which browsers may read as another host).
+func ValidUserNotificationLink(link string) bool {
+	if link == "" {
+		return true
+	}
+	if !strings.HasPrefix(link, UserNotificationLinkPrefix) || strings.Contains(link, "//") || strings.Contains(link, "\\") {
+		return false
+	}
+	for _, r := range link {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
+}

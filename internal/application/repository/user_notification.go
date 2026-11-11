@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -28,6 +29,9 @@ func NewUserNotificationRepository(db *gorm.DB) interfaces.UserNotificationRepos
 func createUserNotification(db *gorm.DB, n *types.UserNotification) (bool, error) {
 	if n == nil || strings.TrimSpace(n.UserID) == "" || strings.TrimSpace(n.DedupeKey) == "" || n.Kind == "" {
 		return false, errors.New("user notification: user, kind and dedupe key are required")
+	}
+	if !types.ValidUserNotificationLink(n.Link) {
+		return false, fmt.Errorf("user notification: link %q is not an app path under %s", n.Link, types.UserNotificationLinkPrefix)
 	}
 	if n.ID == "" {
 		n.ID = uuid.NewString()
@@ -113,4 +117,23 @@ func (r *userNotificationRepository) MarkAllRead(ctx context.Context, userID str
 	}
 	res := db.Model(&types.UserNotification{}).Where("user_id = ? AND read_at IS NULL", userID).Update("read_at", at)
 	return res.RowsAffected, res.Error
+}
+
+func (r *userNotificationRepository) PurgeRead(ctx context.Context, readBefore time.Time, batch int) (int64, error) {
+	if batch <= 0 {
+		batch = 1000
+	}
+	var total int64
+	for {
+		// DELETE … LIMIT is not portable: delete a batch of ids at a time
+		res := r.db.WithContext(ctx).Exec(`DELETE FROM user_notifications WHERE id IN (
+			SELECT id FROM user_notifications WHERE read_at IS NOT NULL AND read_at < ? LIMIT ?)`, readBefore, batch)
+		if res.Error != nil {
+			return total, res.Error
+		}
+		total += res.RowsAffected
+		if res.RowsAffected < int64(batch) || ctx.Err() != nil {
+			return total, ctx.Err()
+		}
+	}
 }

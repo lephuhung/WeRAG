@@ -50,6 +50,12 @@ type LegalDocumentRequest struct {
 	Detail    JSON      `json:"detail"     gorm:"type:jsonb"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+
+	// AskerKnowledgeBaseIDs are the knowledge bases the asking agent reads
+	// (not stored): Record only keeps an added request added for a new ask
+	// when its copy is in one of them. nil = unknown (a caller without a
+	// chat scope).
+	AskerKnowledgeBaseIDs []string `json:"-" gorm:"-"`
 }
 
 // TableName returns the table name for LegalDocumentRequest.
@@ -220,7 +226,7 @@ func LegalRequestRecordedFromContext(ctx context.Context) string {
 }
 
 // LegalRequestRequester is one person who asked for a request's document
-// (migration 000194): the request itself keeps only the last asker
+// (migration 000195): the request itself keeps only the last asker
 // (Last*), so the earlier ones would be lost. One row per (RequestID,
 // UserID): the same person asking again moves the row to the latest
 // conversation and, when they were already told, makes them pending again

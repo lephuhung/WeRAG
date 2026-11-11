@@ -28,4 +28,7 @@ type UserNotificationRepository interface {
 	MarkRead(ctx context.Context, userID, id string, at time.Time) (bool, error)
 	// MarkAllRead reads every unread notification of the user.
 	MarkAllRead(ctx context.Context, userID string, at time.Time) (int64, error)
+	// PurgeRead deletes the notifications read before readBefore, batch
+	// rows at a time; returns how many.
+	PurgeRead(ctx context.Context, readBefore time.Time, batch int) (int64, error)
 }

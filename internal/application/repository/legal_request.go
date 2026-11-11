@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -98,7 +99,7 @@ func (r *legalRequestRepository) Record(
 			Updates(bump).Error
 	case types.LegalRequestAdded:
 		var waiting bool
-		if waiting, err = r.noticesPending(ctx, existing); err != nil {
+		if waiting, err = r.noticesPending(ctx, existing, req.AskerKnowledgeBaseIDs); err != nil {
 			break
 		}
 		if waiting {
@@ -123,11 +124,32 @@ func (r *legalRequestRepository) Record(
 	return r.Get(ctx, existing.ID)
 }
 
+// legalKnowledgeStaleAfter bounds how long a knowledge may stay in a
+// parsing state and still count as coming: a parse stuck longer is dead.
+const legalKnowledgeStaleAfter = 6 * time.Hour
+
+// legalKnowledgeParsingStatuses are the parse states of a knowledge still
+// on its way to usable.
+var legalKnowledgeParsingStatuses = []string{
+	types.ParseStatusPending, types.ParseStatusProcessing, types.ParseStatusFinalizing,
+}
+
 // noticesPending reports whether an added request still owes its
-// requesters the "document added" notice: closed within the notice window,
-// someone not told yet, and its knowledge (if any) not deleted nor failed.
-func (r *legalRequestRepository) noticesPending(ctx context.Context, row *types.LegalDocumentRequest) (bool, error) {
+// requesters the "document added" notice and the copy is still coming:
+// closed within the notice window, someone not told yet, the asker's
+// knowledge bases can read the copy, and its knowledge (if any) not
+// deleted and still parsing (pending / processing / finalizing, touched in
+// the last legalKnowledgeStaleAfter). A copy that is usable already, was
+// cancelled, deleted, failed or got stuck does not hold the request: the
+// asker still misses it, so it is reopened.
+func (r *legalRequestRepository) noticesPending(
+	ctx context.Context, row *types.LegalDocumentRequest, askerKBIDs []string,
+) (bool, error) {
 	if row.DecidedAt == nil || time.Since(*row.DecidedAt) > types.LegalRequestNoticeWindow {
+		return false, nil
+	}
+	if askerKBIDs != nil && row.KnowledgeBaseID != "" && !slices.Contains(askerKBIDs, row.KnowledgeBaseID) {
+		// the copy is in a knowledge base the asker's agent does not read
 		return false, nil
 	}
 	db := r.db.WithContext(ctx)
@@ -140,8 +162,10 @@ func (r *legalRequestRepository) noticesPending(ctx context.Context, row *types.
 		return true, nil
 	}
 	n = 0
-	err := db.Table("knowledges").Where("id = ? AND deleted_at IS NULL AND parse_status <> ?",
-		row.KnowledgeID, types.ParseStatusFailed).Limit(1).Count(&n).Error
+	err := db.Table("knowledges").
+		Where("id = ? AND deleted_at IS NULL AND parse_status IN ? AND updated_at >= ?",
+			row.KnowledgeID, legalKnowledgeParsingStatuses, time.Now().Add(-legalKnowledgeStaleAfter)).
+		Limit(1).Count(&n).Error
 	return n > 0, err
 }
 
@@ -425,14 +449,29 @@ func (r *legalRequestRepository) AddRequester(ctx context.Context, req *types.Le
 	}
 	row.NotifiedAt, row.NotifyStatus = nil, ""
 	row.CreatedAt, row.UpdatedAt = now, now
-	return r.db.WithContext(ctx).Clauses(clause.OnConflict{
+	db := r.db.WithContext(ctx)
+	var status string
+	if err := db.Model(&types.LegalDocumentRequest{}).Select("status").Where("id = ?", row.RequestID).
+		Scan(&status).Error; err != nil {
+		return err
+	}
+	updates := map[string]any{
+		"tenant_id": row.TenantID, "session_id": row.SessionID, "message_id": row.MessageID,
+		"channel": row.Channel, "notified_at": nil, "notify_status": "", "updated_at": now,
+	}
+	if status == types.LegalRequestAdded {
+		// the request stays added (its copy is still coming): someone told
+		// already learns nothing new from a second notice, and one not told
+		// yet keeps the ask time the pending notice is keyed to
+		delete(updates, "notified_at")
+		delete(updates, "notify_status")
+		delete(updates, "updated_at")
+	}
+	return db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "request_id"}, {Name: "user_id"}},
 		// asking again: the latest conversation is where the person waits,
-		// and they are told again (they still miss the document)
-		DoUpdates: clause.Assignments(map[string]any{
-			"tenant_id": row.TenantID, "session_id": row.SessionID, "message_id": row.MessageID,
-			"channel": row.Channel, "notified_at": nil, "notify_status": "", "updated_at": now,
-		}),
+		// and (the request reopened) they are told again
+		DoUpdates: clause.Assignments(updates),
 	}).Create(&row).Error
 }
 

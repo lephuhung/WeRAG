@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -31,6 +32,10 @@ const (
 	legalNoticeBatch = 500
 	// legalNoticeRunTimeout bounds one sweep.
 	legalNoticeRunTimeout = 2 * time.Minute
+	// userNotificationPurgeEvery / Batch: the read-notification purge runs
+	// once a day, deleting this many rows per statement.
+	userNotificationPurgeEvery = 24 * time.Hour
+	userNotificationPurgeBatch = 1000
 )
 
 // legalChatPath is the conversation page of frontend-next
@@ -89,43 +94,78 @@ func legalRequestAddedNotification(n *types.LegalRequestAddedNotice) *types.User
 }
 
 // LegalRequestNotifier writes the in-app notices of the requesters of the
-// legal document requests closed as added.
+// legal document requests closed as added. It also purges the read
+// notifications older than types.UserNotificationRetention once a day.
 type LegalRequestNotifier struct {
-	requests interfaces.LegalRequestRepository
-	now      func() time.Time
+	requests      interfaces.LegalRequestRepository
+	notifications interfaces.UserNotificationRepository
+	now           func() time.Time
 	// running keeps one sweep at a time per backend (the transactional
 	// write keeps several backends apart)
 	running sync.Mutex
-	wg      sync.WaitGroup
+
+	// mu guards closed and the WaitGroup's Add: no sweep starts once Stop
+	// began, so Stop's Wait never races an Add.
+	mu        sync.Mutex
+	closed    bool
+	base      context.Context
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+	lastPurge time.Time
 }
 
 // NewLegalRequestNotifier creates the notifier.
-func NewLegalRequestNotifier(requests interfaces.LegalRequestRepository) *LegalRequestNotifier {
-	return &LegalRequestNotifier{requests: requests, now: time.Now}
+func NewLegalRequestNotifier(
+	requests interfaces.LegalRequestRepository, notifications interfaces.UserNotificationRepository,
+) *LegalRequestNotifier {
+	base, cancel := context.WithCancel(context.Background())
+	return &LegalRequestNotifier{requests: requests, notifications: notifications, now: time.Now, base: base, cancel: cancel}
+}
+
+// begin registers a background run; false once Stop began.
+func (l *LegalRequestNotifier) begin() bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed {
+		return false
+	}
+	l.wg.Add(1)
+	return true
 }
 
 // Trigger runs a sweep in the background (after a request was closed as
-// added); it returns at once.
+// added); it returns at once and does nothing once Stop began.
 func (l *LegalRequestNotifier) Trigger(ctx context.Context) {
-	if l == nil {
+	if l == nil || !l.begin() {
 		return
 	}
-	bg := context.WithoutCancel(ctx)
-	l.wg.Add(1)
 	go func() {
 		defer l.wg.Done()
-		ctx, cancel := context.WithTimeout(bg, legalNoticeRunTimeout)
+		// the request's values (logging) but the notifier's lifetime
+		run, cancel := context.WithTimeout(context.WithoutCancel(ctx), legalNoticeRunTimeout)
 		defer cancel()
+		stop := context.AfterFunc(l.base, cancel)
+		defer stop()
 		defer func() {
 			if r := recover(); r != nil {
-				logger.Errorf(ctx, "[LegalNotice] sweep panicked: %v", r)
+				logger.Errorf(run, "[LegalNotice] sweep panicked: %v", r)
 			}
 		}()
-		l.runLogged(ctx)
+		l.runLogged(run)
 	}()
 }
 
-// Wait blocks until the triggered sweeps are done (tests and shutdown).
+// Stop ends the periodic loop, cancels running sweeps, refuses new ones
+// and waits for them.
+func (l *LegalRequestNotifier) Stop() {
+	l.mu.Lock()
+	l.closed = true
+	l.mu.Unlock()
+	l.cancel()
+	l.wg.Wait()
+}
+
+// Wait blocks until the background runs started so far are done (tests).
 func (l *LegalRequestNotifier) Wait() { l.wg.Wait() }
 
 func (l *LegalRequestNotifier) runLogged(ctx context.Context) {
@@ -140,7 +180,8 @@ func (l *LegalRequestNotifier) runLogged(ctx context.Context) {
 // the last types.LegalRequestNoticeWindow whose document is usable, and
 // returns how many were notified. Each notice and its requester's
 // notified_at are written in one transaction, so a requester is selected
-// again only until it is notified.
+// again only until it is notified. A requester that fails is logged and
+// skipped (the next sweep retries it); the errors are returned joined.
 func (l *LegalRequestNotifier) Run(ctx context.Context) (int, error) {
 	l.running.Lock()
 	defer l.running.Unlock()
@@ -149,39 +190,69 @@ func (l *LegalRequestNotifier) Run(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	sent := 0
+	var errs []error
 	for _, n := range notices {
+		if ctx.Err() != nil {
+			errs = append(errs, ctx.Err())
+			break
+		}
 		ok, err := l.requests.DeliverAddedNotice(ctx, n.RequesterID, legalRequestAddedNotification(n))
 		if err != nil {
-			return sent, fmt.Errorf("requester %s of %s: %w", n.RequesterID, n.RequestID, err)
+			logger.Warnf(ctx, "[LegalNotice] requester %s of %s: %v", n.RequesterID, n.RequestID, err)
+			errs = append(errs, fmt.Errorf("requester %s of %s: %w", n.RequesterID, n.RequestID, err))
+			continue
 		}
 		if ok {
 			sent++
 		}
 	}
-	return sent, nil
+	return sent, errors.Join(errs...)
 }
 
-// Start runs Run every interval (first run after a minute); stop ends the
-// loop.
+// purgeDaily deletes the read notifications past the retention, at most
+// once a day.
+func (l *LegalRequestNotifier) purgeDaily(ctx context.Context) {
+	if l.notifications == nil {
+		return
+	}
+	now := l.now()
+	if !l.lastPurge.IsZero() && now.Sub(l.lastPurge) < userNotificationPurgeEvery {
+		return
+	}
+	l.lastPurge = now
+	n, err := l.notifications.PurgeRead(ctx, now.Add(-types.UserNotificationRetention), userNotificationPurgeBatch)
+	if err != nil {
+		logger.Warnf(ctx, "[Notifications] purging read notifications: %v", err)
+	} else if n > 0 {
+		logger.Infof(ctx, "[Notifications] %d read notification(s) older than %s purged", n, types.UserNotificationRetention)
+	}
+}
+
+// Start runs Run (and the daily purge) every interval, the first run after
+// a minute, until Stop; it returns Stop.
 func (l *LegalRequestNotifier) Start(interval time.Duration) (stop func()) {
-	done := make(chan struct{})
+	if !l.begin() {
+		return func() {}
+	}
 	go func() {
+		defer l.wg.Done()
 		timer := time.NewTimer(time.Minute)
 		defer timer.Stop()
 		for {
 			select {
-			case <-done:
+			case <-l.base.Done():
 				return
 			case <-timer.C:
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), legalNoticeRunTimeout)
+			ctx, cancel := context.WithTimeout(l.base, legalNoticeRunTimeout)
 			l.runLogged(ctx)
+			l.purgeDaily(ctx)
 			cancel()
 			timer.Reset(interval)
 		}
 	}()
 	var once sync.Once
-	return func() { once.Do(func() { close(done) }) }
+	return func() { once.Do(l.Stop) }
 }
 
 // legalRequestAddedNotify decorates the SuperAdmin queue: a decision that

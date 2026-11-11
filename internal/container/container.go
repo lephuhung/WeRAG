@@ -1693,16 +1693,15 @@ func startEmailExpiryReminders(n *service.EmailNotifier, cleaner interfaces.Reso
 }
 
 // startLegalRequestNotices runs the sweep that notifies (in-app) the people
-// who asked for a legal document once it is added, and lets every vbpl.vn /
-// feed ingest trigger it at once.
+// who asked for a legal document once it is added (and purges old read
+// notifications daily), and lets every vbpl.vn / feed ingest trigger it.
 func startLegalRequestNotices(n *service.LegalRequestNotifier, feed *service.LegalFeedService,
 	cleaner interfaces.ResourceCleaner,
 ) {
 	feed.RequestsAdded = n.Trigger
 	stop := n.Start(service.LegalRequestNoticeInterval)
 	cleaner.RegisterWithName("LegalRequestNotices", func() error {
-		stop()
-		n.Wait()
+		stop() // cancels the loop and running sweeps, waits for them
 		return nil
 	})
 }

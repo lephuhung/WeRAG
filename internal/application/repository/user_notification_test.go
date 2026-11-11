@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -86,4 +87,38 @@ func TestUserNotificationsOwnRowsOnly(t *testing.T) {
 	require.Zero(t, unread)
 	bUnread, _, _ := repo.CountUnread(ctx, "b")
 	require.EqualValues(t, 1, bUnread)
+}
+
+func TestUserNotificationLinkValidated(t *testing.T) {
+	repo := newUserNotificationRepo(t)
+	ctx := context.Background()
+	for _, link := range []string{"https://evil.example", "//evil.example", "/platform//evil.example", "/platform/\\evil",
+		"/platform/\tx", "/platform/a\nb", "/platform/a\x7fb", "/other/page", "platform/chat/x"} {
+		_, err := repo.Create(ctx, &types.UserNotification{UserID: "a", Kind: "k", DedupeKey: link, Link: link})
+		require.Error(t, err, link)
+	}
+	for _, link := range []string{"", "/platform/chat/s1", "/platform/legal-lookup?q=53%2F2022%2FN%C4%90-CP"} {
+		_, err := repo.Create(ctx, &types.UserNotification{UserID: "a", Kind: "k", DedupeKey: "ok" + link, Link: link})
+		require.NoError(t, err, link)
+	}
+}
+
+func TestUserNotificationPurgeRead(t *testing.T) {
+	repo := newUserNotificationRepo(t)
+	ctx := context.Background()
+	old := time.Now().Add(-types.UserNotificationRetention - time.Hour)
+	recent := time.Now().Add(-time.Hour)
+	for i := 0; i < 5; i++ {
+		require.NoError(t, repo.db.Create(&types.UserNotification{ID: fmt.Sprintf("old%d", i), UserID: "a", Kind: "k",
+			DedupeKey: fmt.Sprintf("old%d", i), ReadAt: &old}).Error)
+	}
+	require.NoError(t, repo.db.Create(&types.UserNotification{ID: "recent", UserID: "a", Kind: "k", DedupeKey: "recent", ReadAt: &recent}).Error)
+	require.NoError(t, repo.db.Create(&types.UserNotification{ID: "unread", UserID: "a", Kind: "k", DedupeKey: "unread",
+		CreatedAt: old}).Error)
+	n, err := repo.PurgeRead(ctx, time.Now().Add(-types.UserNotificationRetention), 2)
+	require.NoError(t, err)
+	require.EqualValues(t, 5, n, "deleted in batches of 2")
+	var left []string
+	require.NoError(t, repo.db.Model(&types.UserNotification{}).Order("id").Pluck("id", &left).Error)
+	require.Equal(t, []string{"recent", "unread"}, left, "unread ones are never purged")
 }

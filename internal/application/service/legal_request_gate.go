@@ -98,6 +98,7 @@ func (s *sessionService) legalMissingDocumentGate(
 		NumberKey: key, DocumentNumber: number, DocType: docType,
 		LastTenantID: req.Session.TenantID, LastUserID: legalRequestUserID(ctx, req),
 		LastSessionID: req.Session.ID, LastQuery: strings.TrimSpace(req.Query),
+		AskerKnowledgeBaseIDs: append([]string{}, kbIDs...),
 	}
 
 	textAction := legalTextActionRe.MatchString(query)

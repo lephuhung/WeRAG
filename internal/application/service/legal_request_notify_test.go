@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -36,7 +37,8 @@ func newNoticeFixture(t *testing.T) *noticeFixture {
 		require.NoError(t, db.Exec(ddl).Error)
 	}
 	requests := repository.NewLegalRequestRepository(db)
-	return &noticeFixture{db: db, requests: requests, notifier: NewLegalRequestNotifier(requests)}
+	return &noticeFixture{db: db, requests: requests,
+		notifier: NewLegalRequestNotifier(requests, repository.NewUserNotificationRepository(db))}
 }
 
 // ask records a request for number and its requesters (user → session,
@@ -220,4 +222,64 @@ func TestLegalFeedMarkRequestsAddedTriggers(t *testing.T) {
 	require.Equal(t, 1, calls)
 	require.Len(t, reqs.marked, 1)
 	(*LegalFeedService)(nil).NotifyRequestsAdded(context.Background()) // nil-safe
+}
+
+// failingDelivery fails the delivery of one requester.
+type failingDelivery struct {
+	interfaces.LegalRequestRepository
+	failUser string
+}
+
+func (f *failingDelivery) DeliverAddedNotice(ctx context.Context, requesterID string, n *types.UserNotification) (bool, error) {
+	if n.UserID == f.failUser {
+		return false, errors.New("disk full")
+	}
+	return f.LegalRequestRepository.DeliverAddedNotice(ctx, requesterID, n)
+}
+
+// A requester that fails does not keep the others from being notified; the
+// error is reported and the next sweep retries it.
+func TestLegalRequestNoticesFailingRequesterDoesNotBlock(t *testing.T) {
+	f := newNoticeFixture(t)
+	ctx := context.Background()
+	row := f.ask(t, "53/2022/NĐ-CP", "155366", "web", map[string]string{"an": "s1", "binh": "s2", "chi": "s3"})
+	_, err := f.requests.Decide(ctx, row.ID, types.LegalRequestAdded, "sa", "", "", "")
+	require.NoError(t, err)
+	notifier := NewLegalRequestNotifier(&failingDelivery{LegalRequestRepository: f.requests, failUser: "an"}, nil)
+	n, err := notifier.Run(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "disk full")
+	require.Equal(t, 2, n)
+	require.Empty(t, f.notifications(t, "an"))
+	n, err = f.notifier.Run(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, n, "retried by the next sweep")
+}
+
+// Stop ends the loop and waits; a Trigger afterwards does nothing.
+func TestLegalRequestNotifierStop(t *testing.T) {
+	f := newNoticeFixture(t)
+	ctx := context.Background()
+	row := f.ask(t, "53/2022/NĐ-CP", "155366", "web", map[string]string{"an": "s1"})
+	_, err := f.requests.Decide(ctx, row.ID, types.LegalRequestAdded, "sa", "", "", "")
+	require.NoError(t, err)
+	stop := f.notifier.Start(time.Hour)
+	stop()
+	stop() // idempotent
+	f.notifier.Trigger(ctx)
+	f.notifier.Wait()
+	require.Empty(t, f.notifications(t, ""), "no sweep after Stop")
+}
+
+// The sweep purges read notifications past the retention once a day.
+func TestLegalRequestNotifierPurgesDaily(t *testing.T) {
+	f := newNoticeFixture(t)
+	ctx := context.Background()
+	old := time.Now().Add(-types.UserNotificationRetention - time.Hour)
+	require.NoError(t, f.db.Create(&types.UserNotification{ID: "x", UserID: "an", Kind: "k", DedupeKey: "x", ReadAt: &old}).Error)
+	f.notifier.purgeDaily(ctx)
+	require.Empty(t, f.notifications(t, "an"))
+	require.NoError(t, f.db.Create(&types.UserNotification{ID: "y", UserID: "an", Kind: "k", DedupeKey: "y", ReadAt: &old}).Error)
+	f.notifier.purgeDaily(ctx)
+	require.Len(t, f.notifications(t, "an"), 1, "once a day")
 }
