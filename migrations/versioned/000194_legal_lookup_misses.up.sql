@@ -2,7 +2,7 @@
 -- documents mentioning a số hiệu the catalogue lacks, counted per
 -- normalized query so a SuperAdmin sees the catalogue's gaps. One row per
 -- query (upserted); the lookup never fails because of this table.
-DO $$ BEGIN RAISE NOTICE '[Migration 000196] Creating legal_lookup_misses'; END $$;
+DO $$ BEGIN RAISE NOTICE '[Migration 000194] Creating legal_lookup_misses'; END $$;
 
 CREATE TABLE IF NOT EXISTS legal_lookup_misses (
     id             BIGSERIAL    PRIMARY KEY,
