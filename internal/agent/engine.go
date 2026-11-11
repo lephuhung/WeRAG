@@ -438,6 +438,7 @@ func (e *AgentEngine) Execute(
 	messages := e.buildMessagesWithLLMContext(systemPrompt,
 		e.abbreviationModelQuery(ctx, query), sessionID, llmContext, imgs)
 	e.applyScopeBrief(ctx, query, messages)
+	e.applyLegalPins(ctx, messages)
 	if e.toolRegistry != nil {
 		e.toolRegistry.RememberMCPHistory(messages)
 		e.toolRegistry.RefreshMCPTools(ctx)

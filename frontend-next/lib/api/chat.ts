@@ -173,15 +173,22 @@ export type ChatMessageAttachment = {
   file_size?: number;
 };
 
-export type TypoCorrection = { wrong: string; correct: string };
+/** A word read without asking: a typo fixed (cascc → các) or, with
+ * remembered, an abbreviation meaning the user picked earlier in the chat. */
+export type TypoCorrection = { wrong: string; correct: string; remembered?: boolean };
 
-/** The automatic word readings of an abbreviation_resolution payload. */
+function readingsOf(list: unknown, remembered: boolean): TypoCorrection[] {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((x): x is TypoCorrection => !!x && typeof x.wrong === "string" && typeof x.correct === "string")
+    .map((x) => (remembered ? { wrong: x.wrong, correct: x.correct, remembered: true } : { wrong: x.wrong, correct: x.correct }));
+}
+
+/** The words an abbreviation_resolution payload read without asking: typo
+ * fixes and meanings reused from an earlier pick in the conversation. */
 export function autoCorrectionsOf(abbreviation: unknown): TypoCorrection[] | undefined {
-  const list = (abbreviation as { auto_corrections?: unknown } | null | undefined)?.auto_corrections;
-  if (!Array.isArray(list)) return undefined;
-  const out = list.filter(
-    (x): x is TypoCorrection => !!x && typeof x.wrong === "string" && typeof x.correct === "string",
-  );
+  const a = abbreviation as { auto_corrections?: unknown; remembered_selections?: unknown } | null | undefined;
+  const out = [...readingsOf(a?.auto_corrections, false), ...readingsOf(a?.remembered_selections, true)];
   return out.length > 0 ? out : undefined;
 }
 
@@ -203,8 +210,9 @@ export type ChatMessage = {
   /** @-mentions sent with a user turn (type "document" = an open document). */
   mentioned_items?: { id?: string; name?: string; type?: string }[];
   /** Abbreviation gate state of the turn: auto_corrections are the words
-   * read without asking (cascc → các). */
-  abbreviation?: { auto_corrections?: TypoCorrection[] };
+   * read without asking (cascc → các), remembered_selections the meanings
+   * reused from an earlier pick in the chat. */
+  abbreviation?: { auto_corrections?: TypoCorrection[]; remembered_selections?: TypoCorrection[] };
   images?: { url?: string; caption?: string }[];
   /** Skill/tool-generated files of this turn — images render inline. */
   artifacts?: ArtifactMeta[];

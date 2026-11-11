@@ -16,24 +16,37 @@ import (
 // ("Nghị định 53") with the candidates card (tools.BuildLegalCandidates);
 // the engine never starts and true is returned. A highlighted passage
 // anchors the request elsewhere, so such turns are left alone.
-func (s *sessionService) legalCandidatesClarification(ctx context.Context, req *types.QARequest, bus *event.EventBus) (bool, error) {
+//
+// A reference the user already resolved in this conversation by picking
+// from such a card is read as the picked document instead: the returned
+// context carries the pin for the model (types.LegalReferencePin) and the
+// turn runs on.
+func (s *sessionService) legalCandidatesClarification(ctx context.Context, req *types.QARequest, bus *event.EventBus) (context.Context, bool, error) {
 	if s.legalCatalog == nil || req == nil || req.Session == nil || bus == nil ||
 		req.CustomAgent == nil || req.CustomAgent.ID != types.BuiltinDocumentAssistantID {
-		return false, nil
+		return ctx, false, nil
 	}
 	if sel := req.DocumentSelection.Normalized(); sel != nil {
-		return false, nil
+		return ctx, false, nil
 	}
 	card, err := tools.BuildLegalCandidates(ctx, s.legalCatalog, req.Query)
 	if err != nil {
 		logger.Warnf(ctx, "legal candidates: %v", err)
-		return false, nil
+		return ctx, false, nil
 	}
 	if card == nil {
-		return false, nil
+		return ctx, false, nil
+	}
+	if askedAgain(req, card.Reference.Text) {
+		logger.Infof(ctx, "Legal reference %q: the user asked to choose again", card.Reference.Text)
+	} else if pin := s.rememberedLegalPick(ctx, req, card); pin != nil {
+		logger.Infof(ctx, "Legal reference %q: reusing the earlier pick %s", card.Reference.Text, pin.DocumentNumber)
+		s.noteRememberedChoice(ctx, req, bus, types.AbbreviationTypo{Wrong: pin.Reference,
+			Correct: strings.TrimSpace(pin.DocType + " " + pin.DocumentNumber)})
+		return types.WithLegalReferencePins(ctx, []types.LegalReferencePin{*pin}), false, nil
 	}
 	logger.Infof(ctx, "Legal reference %q fits %d documents: answering with the candidates card", card.Reference.Text, card.Total)
-	return true, emitPipelineCard(ctx, bus, req, tools.LegalCandidatesType, "legalpick-", card.Message(), card.Data())
+	return ctx, true, emitPipelineCard(ctx, bus, req, tools.LegalCandidatesType, "legalpick-", card.Message(), card.Data())
 }
 
 // emitPipelineCard answers the turn with a card the pipeline made (no

@@ -401,15 +401,21 @@ func (s *sessionService) watchAbbreviationCompletion(ctx context.Context, req *t
 			if err != nil {
 				return
 			}
-			row, err := s.abbreviationStore.Get(writeCtx, scope, requestID)
-			if err != nil || row.State != types.AbbreviationTurnRunning || row.ExecutingMessageID != req.AssistantMessageID {
-				return
+			// a metadata write on the running turn (a reused choice noted
+			// under the question) may land in between: read again and retry
+			for attempt := 0; attempt < 3; attempt++ {
+				row, err := s.abbreviationStore.Get(writeCtx, scope, requestID)
+				if err != nil || row.State != types.AbbreviationTurnRunning || row.ExecutingMessageID != req.AssistantMessageID {
+					return
+				}
+				row.State = state
+				if state == types.AbbreviationTurnBlockedError {
+					row.ErrorCode = "execution_interrupted"
+				}
+				if ok, err := s.abbreviationStore.CompareAndSwap(writeCtx, scope, row.Version, row); ok || err != nil {
+					return
+				}
 			}
-			row.State = state
-			if state == types.AbbreviationTurnBlockedError {
-				row.ErrorCode = "execution_interrupted"
-			}
-			_, _ = s.abbreviationStore.CompareAndSwap(writeCtx, scope, row.Version, row)
 		})
 	}
 	bus.On(event.EventAgentFinalAnswer, func(_ context.Context, evt event.Event) error {

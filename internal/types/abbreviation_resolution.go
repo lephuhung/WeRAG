@@ -182,6 +182,13 @@ type AbbreviationResolution struct {
 	// Rewrite is the question with its typing fixed by the chat model,
 	// offered as "did you mean …" while words are unclear.
 	Rewrite string `json:"rewrite,omitempty"`
+	// RememberedSelections are choices reused without asking because the
+	// user made them earlier in the same conversation, shown to the user
+	// with a way to be asked again: ambiguous short forms (Wrong = short
+	// form, Correct = full form) and bare legal references (Wrong =
+	// "Nghị định 53", Correct = the picked số hiệu). Display only: the
+	// effective query never reads them.
+	RememberedSelections []AbbreviationTypo `json:"remembered_selections,omitempty"`
 }
 
 // Detection returns the candidate detection the resolution was built from.
@@ -215,6 +222,9 @@ type AbbreviationPublicState struct {
 	Terms             []AbbreviationPublicTerm `json:"terms"`
 	ExpiresAt         time.Time                `json:"expires_at"`
 	AutoCorrections   []AbbreviationTypo       `json:"auto_corrections,omitempty"`
+	// RememberedSelections: meanings reused from an earlier pick in the
+	// conversation (short form → full form).
+	RememberedSelections []AbbreviationTypo `json:"remembered_selections,omitempty"`
 }
 
 // Clone returns a deep copy of the resolution: every nested slice and pointer
@@ -236,6 +246,7 @@ func (r AbbreviationResolution) Clone() AbbreviationResolution {
 	out.TypoSuggestions = append([]AbbreviationTypo(nil), r.TypoSuggestions...)
 	out.TypoCorrections = append([]AbbreviationTypo(nil), r.TypoCorrections...)
 	out.AutoCorrections = append([]AbbreviationTypo(nil), r.AutoCorrections...)
+	out.RememberedSelections = append([]AbbreviationTypo(nil), r.RememberedSelections...)
 	return out
 }
 
@@ -255,13 +266,14 @@ func (r AbbreviationResolution) PublicState() AbbreviationPublicState {
 	unknown := make([]string, len(r.UnknownTerms))
 	copy(unknown, r.UnknownTerms)
 	return AbbreviationPublicState{
-		RequestID:         r.RequestID,
-		RootUserMessageID: r.RootUserMessageID,
-		Status:            r.Status,
-		Version:           r.Version,
-		UnknownTerms:      unknown,
-		Terms:             terms,
-		ExpiresAt:         r.ExpiresAt,
-		AutoCorrections:   append([]AbbreviationTypo(nil), r.AutoCorrections...),
+		RequestID:            r.RequestID,
+		RootUserMessageID:    r.RootUserMessageID,
+		Status:               r.Status,
+		Version:              r.Version,
+		UnknownTerms:         unknown,
+		Terms:                terms,
+		ExpiresAt:            r.ExpiresAt,
+		AutoCorrections:      append([]AbbreviationTypo(nil), r.AutoCorrections...),
+		RememberedSelections: append([]AbbreviationTypo(nil), r.RememberedSelections...),
 	}
 }

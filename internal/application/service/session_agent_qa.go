@@ -260,7 +260,10 @@ func (s *sessionService) AgentQA(
 	}
 	// a legal document named by a bare number the catalogue holds several
 	// of is answered with a card of candidates to click; no model runs
-	if asked, err := s.legalCandidatesClarification(ctx, req, eventBus); asked || err != nil {
+	// (a reference already resolved by a pick earlier in the conversation
+	// is read as that document instead)
+	var asked bool
+	if ctx, asked, err = s.legalCandidatesClarification(ctx, req, eventBus); asked || err != nil {
 		return err
 	}
 	// a full số hiệu the system holds no full text of is answered with a

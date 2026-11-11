@@ -538,6 +538,56 @@ func (r *abbreviationTurnRepository) Awaiting(ctx context.Context, owner types.A
 	return &row, nil
 }
 
+// RecentAnswered returns up to limit of the session's turns that got past
+// the gate (ready, running, completed, or stopped/failed afterwards:
+// cancelled, blocked_error — the caller keeps those whose resolution is
+// ready), newest question first, whose root question is still live: the
+// conversation's earlier choices of meaning. A missing or foreign session
+// reads as no turns; infrastructure failures propagate.
+func (r *abbreviationTurnRepository) RecentAnswered(ctx context.Context, owner types.AbbreviationOwner, limit int) ([]*types.AbbreviationTurnState, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	if err := r.requireSessionOwnership(ctx, r.db, owner); err != nil {
+		if isDomainAbsence(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var rows []*types.AbbreviationTurnState
+	if err := ownerScope(r.db.WithContext(ctx), owner).
+		Where("state IN ?", []string{types.AbbreviationTurnReady, types.AbbreviationTurnRunning, types.AbbreviationTurnCompleted,
+			types.AbbreviationTurnCancelled, types.AbbreviationTurnBlockedError}).
+		// creation order: a completed turn's metadata may still be updated
+		Order("created_at DESC").Limit(limit).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	roots := make([]string, 0, len(rows))
+	for _, row := range rows {
+		roots = append(roots, row.RootUserMessageID)
+	}
+	var live []string
+	if err := r.db.WithContext(ctx).Table("messages").
+		Where("id IN ? AND session_id = ? AND deleted_at IS NULL", roots, owner.SessionID).
+		Pluck("id", &live).Error; err != nil {
+		return nil, err
+	}
+	isLive := make(map[string]bool, len(live))
+	for _, id := range live {
+		isLive[id] = true
+	}
+	out := rows[:0]
+	for _, row := range rows {
+		if isLive[row.RootUserMessageID] {
+			out = append(out, row)
+		}
+	}
+	return out, nil
+}
+
 // CompareAndSwap validates the transition, then swaps state, payload, error
 // code and message links for the expected version, bumping it by one. The
 // original root, owner scope, creation and expiry stamps, frozen request
