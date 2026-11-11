@@ -84,12 +84,12 @@ export interface LegalLookupMiss {
   query: string;
   sample: string;
   number: string;
-  reason: "no_match" | "number_missing";
+  /* not_found: nothing matched; number_missing: the số hiệu is missing but
+   * titles mention it. */
+  reason: "not_found" | "number_missing";
   count: number;
   first_at: string;
   last_at: string;
-  last_tenant_id: number;
-  last_user_id: string;
 }
 
 export function listLegalLookupMisses(params: {

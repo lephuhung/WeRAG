@@ -66,3 +66,20 @@ test("the admin pages keep their tones for the portal's wordings", () => {
     assert.equal(legalStatusTextBadgeClass(status), tone, status);
   }
 });
+
+test("wordings whose tone changed on purpose when the copies were shared", () => {
+  // [wording, tone before (admin copies), tone now] — now matching the
+  // server's classification (types.ClassifyLegalStatus)
+  const changed: [string, string, string][] = [
+    ["Hết hiệu lực", "badge-warning", "badge-error"],
+    ["Hết hiệu lực toàn bộ (theo vbpl)", "badge-warning", "badge-error"],
+    ["Tạm ngưng hiệu lực", "badge-neutral", "badge-error"],
+    ["Đình chỉ, tạm ngưng hiệu lực", "badge-neutral", "badge-error"],
+  ];
+  for (const [status, before, now] of changed) {
+    assert.notEqual(before, now, status);
+    assert.equal(legalStatusTextBadgeClass(status), now, status);
+  }
+  // the lookup page used amber for "not yet in force"; neutral everywhere now
+  assert.equal(legalStatusBadgeClass("not_yet_in_force"), "badge-neutral");
+});
