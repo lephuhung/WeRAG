@@ -416,11 +416,12 @@ function DownloadDocxButton({ sessionId, messageId, question }: { sessionId: str
     if (busy) return;
     setBusy(true);
     try {
-      const blob = await downloadAnswerDocx(sessionId, messageId);
+      const { blob, fileName } = await downloadAnswerDocx(sessionId, messageId);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = answerDocxFileName(question);
+      // the server's name wins; the local rule is the same, for a proxy that drops the header
+      a.download = fileName || answerDocxFileName(question);
       document.body.appendChild(a);
       a.click();
       a.remove();

@@ -476,7 +476,11 @@ export function apiDel<T>(path: string, body?: unknown, opts?: ApiRequestOptions
   );
 }
 
-async function downloadRequest(path: string, init: RequestInit, opts?: ApiRequestOptions, retry = true): Promise<Blob> {
+async function downloadRequest(path: string, init: RequestInit, opts?: ApiRequestOptions): Promise<Blob> {
+  return (await downloadResponse(path, init, opts)).blob();
+}
+
+async function downloadResponse(path: string, init: RequestInit, opts?: ApiRequestOptions, retry = true): Promise<Response> {
   const { token } = getTokens();
   /* Same opts.headers override rule as request(): explicit Authorization
    * wins (case-insensitive); Embed or other caller-managed schemes never
@@ -517,7 +521,7 @@ async function downloadRequest(path: string, init: RequestInit, opts?: ApiReques
      * interceptor covers downloads too — without this an expired access
      * token fails downloads/uploads while every JSON call self-heals. */
     const next = await refreshAccessToken();
-    return downloadRequest(
+    return downloadResponse(
       path,
       {
         ...init,
@@ -542,7 +546,34 @@ async function downloadRequest(path: string, init: RequestInit, opts?: ApiReques
     }
     throw new ApiError(res.status, message);
   }
-  return res.blob();
+  return res;
+}
+
+/* The file name a Content-Disposition header gives: the RFC 5987
+ * filename*=UTF-8''… form first, else filename="…"; null when absent. */
+export function contentDispositionFileName(header: string | null): string | null {
+  if (!header) return null;
+  const star = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header);
+  if (star) {
+    try {
+      return decodeURIComponent(star[1].trim());
+    } catch {
+      /* malformed: fall back to the plain name */
+    }
+  }
+  const plain = /filename\s*=\s*"([^"]*)"/i.exec(header) ?? /filename\s*=\s*([^;]+)/i.exec(header);
+  const name = plain?.[1].trim();
+  return name ? name : null;
+}
+
+/* apiDownload plus the server's file name (Content-Disposition), for
+ * downloads whose name the server decides. */
+export async function apiDownloadNamed(
+  path: string,
+  opts?: ApiRequestOptions,
+): Promise<{ blob: Blob; fileName: string | null }> {
+  const res = await downloadResponse(path, { method: "GET" }, opts);
+  return { blob: await res.blob(), fileName: contentDispositionFileName(res.headers.get("Content-Disposition")) };
 }
 
 export function apiDownload(path: string, opts?: ApiRequestOptions): Promise<Blob> {
