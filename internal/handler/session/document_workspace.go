@@ -339,6 +339,28 @@ func (h *DocumentWorkspaceHandler) MarkDocumentFormatFindings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"document_ops": ops}})
 }
 
+// CheckDocumentLegalBasis checks the documents an open working document
+// cites against the legal catalogue, as the user asked from the editor:
+// each citation with its status (in force, amended, expired with the
+// documents replacing it, ambiguous with its candidates, not in the
+// catalogue …), the places it is written and the underlines the editor
+// shows on request. No model is called; nothing is changed or stored.
+// POST /sessions/:session_id/documents/:doc_id/legal-basis-check
+func (h *DocumentWorkspaceHandler) CheckDocumentLegalBasis(c *gin.Context) {
+	ctx := c.Request.Context()
+	sessionID := sessionIDParam(c)
+	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
+		c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	report, err := h.precheck.LegalBasisCheck(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c))
+	if err != nil {
+		h.fail(c, err, "Failed to check the legal basis")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": report})
+}
+
 // BindWordFileRequest names the Word file opening a Word add-in target.
 type BindWordFileRequest struct {
 	WordFileID string `json:"word_file_id" binding:"required"`

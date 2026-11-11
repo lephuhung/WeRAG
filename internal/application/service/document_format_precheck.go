@@ -16,6 +16,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/models/chat"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
+	"gorm.io/gorm"
 )
 
 // DocumentFormatPrecheck serves the document assistant's work outside the
@@ -34,6 +35,9 @@ type DocumentFormatPrecheck struct {
 	spelling spellingSupport
 	// formatFeedback stores the users' verdicts on format check reports
 	formatFeedback interfaces.DocumentFormatFeedbackRepository
+	// legalCatalog and legalDB serve the legal basis check (SetLegalBasis)
+	legalCatalog interfaces.LegalCatalogRepository
+	legalDB      *gorm.DB
 }
 
 // NewDocumentFormatPrecheck wires the background format check.
