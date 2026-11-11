@@ -78,6 +78,9 @@ export function GlobalCommandPalette() {
   const [contentMore, setContentMore] = useState(false);
   const [contentLoading, setContentLoading] = useState(false);
 
+  /* Bumped on every new search term: a response for an older term (or an
+   * older "show more") is dropped instead of overwriting newer results. */
+  const searchSeq = useRef(0);
   const dialogRef = useRef<HTMLDivElement>(null);
   useDialogFocus({ open: isOpen, containerRef: dialogRef, onClose: close });
   const inputRef = useRef<HTMLInputElement>(null);
@@ -110,6 +113,8 @@ export function GlobalCommandPalette() {
   // Debounced search when query changes
   useEffect(() => {
     const q = query.trim();
+    const seq = ++searchSeq.current;
+    setContentLoading(false);
     if (!q) {
       setChunks([]);
       setTitleHits([]);
@@ -128,6 +133,7 @@ export function GlobalCommandPalette() {
           listSessions(1, CONTENT_TITLE_LIMIT, undefined, q),
           Array.from(q).length >= 2 ? searchSessionContent(q, 1, CONTENT_PAGE_SIZE) : Promise.resolve(null),
         ]);
+        if (seq !== searchSeq.current) return; // a newer term is being searched
 
         if (chunkRes.status === "fulfilled" && chunkRes.value?.data) {
           setChunks(chunkRes.value.data.slice(0, 5));
@@ -145,7 +151,7 @@ export function GlobalCommandPalette() {
         }
         setContentPage(1);
       } finally {
-        setLoading(false);
+        if (seq === searchSeq.current) setLoading(false);
       }
     }, 300);
 
@@ -155,17 +161,19 @@ export function GlobalCommandPalette() {
   const loadMoreContent = async () => {
     const term = query.trim();
     if (!term || contentLoading) return;
+    const seq = searchSeq.current;
     setContentLoading(true);
     try {
       const next = contentPage + 1;
       const res = await searchSessionContent(term, next, CONTENT_PAGE_SIZE);
+      if (seq !== searchSeq.current) return; // the term changed meanwhile
       setContentHits((prev) => [...prev, ...(res.data ?? []).filter((h) => !prev.some((p) => p.session_id === h.session_id))]);
       setContentMore(res.has_more === true);
       setContentPage(next);
     } catch {
-      setContentMore(false);
+      if (seq === searchSeq.current) setContentMore(false);
     } finally {
-      setContentLoading(false);
+      if (seq === searchSeq.current) setContentLoading(false);
     }
   };
 

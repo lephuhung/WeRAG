@@ -484,29 +484,6 @@ export interface ChatHistoryKBStats {
   has_indexed_messages: boolean;
 }
 
-export interface MessageSearchRequest {
-  query: string;
-  mode?: "keyword" | "vector" | "hybrid";
-  limit?: number;
-  session_ids?: string[];
-}
-
-export interface MessageSearchGroupItem {
-  request_id: string;
-  session_id: string;
-  session_title: string;
-  query_content: string;
-  answer_content: string;
-  score: number;
-  match_type: string;
-  created_at: string;
-}
-
-export interface MessageSearchResult {
-  items: MessageSearchGroupItem[];
-  total: number;
-}
-
 export function getTenantChatHistoryConfig() {
   return apiGet("/api/v1/tenants/kv/chat-history-config");
 }
@@ -519,7 +496,3 @@ export function getChatHistoryKBStats() {
   return apiGet("/api/v1/messages/chat-history-stats");
 }
 
-/** Search messages across all sessions (keyword + vector hybrid search). */
-export function searchMessages(data: MessageSearchRequest) {
-  return apiPost("/api/v1/messages/search", data);
-}
