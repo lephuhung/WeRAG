@@ -362,6 +362,15 @@ export function downloadArtifact(
   );
 }
 
+/* One finished answer as a Word file: the stored answer's Markdown, the
+ * question, the time and the sources, built on the server (no model call).
+ * Same ownership rule as loading the session's messages. */
+export function downloadAnswerDocx(sessionId: string, messageId: string): Promise<Blob> {
+  return apiDownload(
+    `/api/v1/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/export.docx`,
+  );
+}
+
 // ---- artifact library (cross-session) ---------------------------------------
 
 export interface ArtifactLibraryItem {

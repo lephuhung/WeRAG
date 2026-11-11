@@ -15,7 +15,8 @@
     "test:large-view": "node --experimental-strip-types --test lib/large-view-policy.test.ts",
     "test:model-presets": "node --experimental-strip-types --test lib/model-presets.test.ts",
     "test:notifications": "node --experimental-strip-types --test lib/notifications.test.ts",
-    "test:csv": "node --experimental-strip-types --test lib/csv.test.ts"
+    "test:csv": "node --experimental-strip-types --test lib/csv.test.ts",
+    "test:answer-docx": "node --experimental-strip-types --test lib/answer-docx.test.ts"
   },
   "dependencies": {
     "d3-force": "^3.0.0",

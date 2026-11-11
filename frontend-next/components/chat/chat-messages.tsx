@@ -11,12 +11,13 @@ import { selectionNeedsCollapse } from "@/lib/api/document-workspace";
 import type { DocumentSelection } from "@/lib/api/document-workspace";
 import { dayLabel, messageDateTime, messageTime } from "@/lib/message-time";
 import { useT } from "@/lib/i18n";
-import { setMessageFeedback, type MessageFeedback } from "@/lib/api/chat";
+import { downloadAnswerDocx, setMessageFeedback, type MessageFeedback } from "@/lib/api/chat";
+import { answerDocxFileName } from "@/lib/answer-docx";
 import { useToast } from "@/components/toast";
 import { copyToClipboard } from "@/lib/clipboard";
 import { Markdown } from "@/components/markdown";
 import { useSmoothText } from "@/lib/use-smooth-text";
-import { IconCopy, IconCheck, IconFork, IconEdit, IconGlobe, IconRefresh, IconThumbUp, IconThumbDown } from "@/components/icons";
+import { IconCopy, IconCheck, IconDownload, IconFork, IconEdit, IconGlobe, IconRefresh, IconThumbUp, IconThumbDown } from "@/components/icons";
 import { renderFileIconSvg } from "@/components/files/file-icon";
 import { formatFileSize } from "@/components/use-attachments";
 import { ThinkingDisplay } from "@/components/chat/thinking-display";
@@ -405,12 +406,55 @@ function AnswerFeedback({
   );
 }
 
+/** "Tải .docx": the saved answer as a Word file with its sources. */
+function DownloadDocxButton({ sessionId, messageId, question }: { sessionId: string; messageId: string; question?: string }) {
+  const { t } = useT();
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+
+  const download = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const blob = await downloadAnswerDocx(sessionId, messageId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = answerDocxFileName(question);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      const detail = e instanceof Error && e.message ? `: ${e.message}` : "";
+      toast.error(`${t("ui.msg.downloadDocxFailed")}${detail}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      onClick={download}
+      disabled={busy}
+      aria-busy={busy}
+      className={`${ACTION_BUTTON} disabled:cursor-default disabled:opacity-60`}
+      title={t("ui.msg.downloadDocx")}
+      aria-label={t("ui.msg.downloadDocx")}
+    >
+      <IconDownload className="h-3.5 w-3.5" />
+    </button>
+  );
+}
+
 function BotMessageActions({
   content,
   canFork,
   onFork,
   onRegenerate,
   feedback,
+  exportDocx,
   createdAt,
 }: {
   content: string;
@@ -420,6 +464,8 @@ function BotMessageActions({
   onRegenerate?: () => void;
   /** Present when the answer is finished and saved, so it can be rated. */
   feedback?: { sessionId: string; messageId: string; initial?: MessageFeedback; initialComment?: string };
+  /** Present when the finished, saved answer can be downloaded as .docx. */
+  exportDocx?: { sessionId: string; messageId: string; question?: string };
 }) {
   const { t } = useT();
   const [copied, setCopied] = useState(false);
@@ -447,6 +493,14 @@ function BotMessageActions({
           <IconCopy className="h-3.5 w-3.5" />
         )}
       </button>
+
+      {exportDocx && (
+        <DownloadDocxButton
+          sessionId={exportDocx.sessionId}
+          messageId={exportDocx.messageId}
+          question={exportDocx.question}
+        />
+      )}
 
       {canFork && onFork && (
         <button
@@ -568,9 +622,12 @@ const AssistantMessage = memo(function AssistantMessage({
   onLegalBasisMarkAll,
   compact = false,
   guest = false,
+  question,
 }: {
   m: UiMessage;
   index: number;
+  /** The question this turn answers (names the .docx download). */
+  question?: string;
   /** Guest chat: no fork, follow-up suggestions, abbreviation or memory
    * cards — their routes need an organization. */
   guest?: boolean;
@@ -750,6 +807,11 @@ const AssistantMessage = memo(function AssistantMessage({
                     initial: m.feedback,
                     initialComment: m.feedbackComment,
                   }
+                : undefined
+            }
+            exportDocx={
+              sessionId !== "new" && m.assistantMessageId && m.isCompleted === true && !m.isError && m.content.trim()
+                ? { sessionId, messageId: m.assistantMessageId, question }
                 : undefined
             }
           />
