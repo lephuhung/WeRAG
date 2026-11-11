@@ -102,3 +102,15 @@ type DocumentSpellingFeedbackRepository interface {
 type DocumentFormatFeedbackRepository interface {
 	Record(ctx context.Context, row *types.DocumentFormatFeedback) error
 }
+
+// DocumentLabelRepository reads both feedback tables back as labels for
+// the Tenant Admin / SuperAdmin review table and the JSONL training export.
+type DocumentLabelRepository interface {
+	// List returns a page of labels, newest first, and how many match.
+	List(ctx context.Context, q *types.DocumentLabelQuery) ([]types.DocumentLabel, int64, error)
+	// Each calls fn for every matching label (spelling first, then format,
+	// each oldest first), reading rows in batches; q.Offset/Limit are ignored.
+	Each(ctx context.Context, q *types.DocumentLabelQuery, fn func(*types.DocumentLabel) error) error
+	// Models lists the model names stored on the labels in scope.
+	Models(ctx context.Context, tenantID uint64) ([]string, error)
+}
