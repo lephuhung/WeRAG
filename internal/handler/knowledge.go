@@ -395,6 +395,7 @@ func (h *KnowledgeHandler) CreateKnowledgeFromFile(c *gin.Context) {
 			return
 		}
 		logger.Infof(ctx, "Received file metadata: %s", secutils.SanitizeForLog(fmt.Sprintf("%v", metadata)))
+		metadata = stripReservedUploadMetadata(ctx, metadata)
 	}
 
 	enableMultimodelForm := c.PostForm("enable_multimodel")
@@ -2780,4 +2781,35 @@ func platformProcessOverrides(
 	}
 	logger.Infof(ctx, "[knowledge] ignoring parse overrides from a caller who cannot configure the platform")
 	return nil
+}
+
+// reservedUploadMetadataKeys mark a knowledge as an import of a legal
+// catalogue document (the vbpl.vn importer writes them): the validity
+// lookup links the catalogue document to such a copy. Only the importers
+// may set them.
+var reservedUploadMetadataKeys = []string{"external_id", "source"}
+
+// stripReservedUploadMetadata drops the reserved keys from upload metadata
+// unless the caller is an explicit human SuperAdmin or an API key of the
+// platform organization (scripts/legal_catalog/ingest_vbpl.py uploads with
+// one of those). The in-process importers (legal feed, drafts, push) call
+// the knowledge service directly and never pass through here.
+func stripReservedUploadMetadata(ctx context.Context, metadata map[string]string) map[string]string {
+	if len(metadata) == 0 {
+		return metadata
+	}
+	caller := types.CallerFromContext(ctx)
+	if access.IsExplicitHumanSuperAdmin(ctx, caller) {
+		return metadata
+	}
+	if _, isKey := types.TenantAPIKeyScopeFromContext(ctx); isKey && caller.TenantID == types.PlatformTenantID {
+		return metadata
+	}
+	for _, k := range reservedUploadMetadataKeys {
+		if _, ok := metadata[k]; ok {
+			logger.Infof(ctx, "Dropped reserved upload metadata key %q", k)
+			delete(metadata, k)
+		}
+	}
+	return metadata
 }
