@@ -33,6 +33,9 @@ type LegalCatalogRepository interface {
 	// FindByNumberPrefix returns documents whose number key starts with
 	// key + "/" (every year and suffix of a bare number). Newest first.
 	FindByNumberPrefix(ctx context.Context, key string, limit int) ([]*types.LegalDocument, error)
+	// FindByNumberPrefixTypes is FindByNumberPrefix limited to documents
+	// whose doc_type is one of docTypes (case-insensitive). Newest first.
+	FindByNumberPrefixTypes(ctx context.Context, key string, docTypes []string, limit int) ([]*types.LegalDocument, error)
 	// SearchByTitle returns documents whose title contains every word.
 	// Newest first.
 	SearchByTitle(ctx context.Context, words []string, limit int) ([]*types.LegalDocument, error)

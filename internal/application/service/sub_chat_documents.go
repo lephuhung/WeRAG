@@ -159,6 +159,10 @@ func (w *subChatWorkspaces) Snapshot(ctx context.Context, tenantID uint64, sessi
 	return w.DocumentWorkspaceService.Snapshot(ctx, tenantID, w.root(ctx, tenantID, sessionID), documentID, label, source, wait)
 }
 
+func (w *subChatWorkspaces) SnapshotSaved(ctx context.Context, tenantID uint64, sessionID, documentID, label, source string, wait time.Duration) (*types.DocumentRevision, bool, error) {
+	return w.DocumentWorkspaceService.SnapshotSaved(ctx, tenantID, w.root(ctx, tenantID, sessionID), documentID, label, source, wait)
+}
+
 func (w *subChatWorkspaces) ListRevisions(ctx context.Context, tenantID uint64, sessionID, documentID string) ([]*types.DocumentRevision, error) {
 	return w.DocumentWorkspaceService.ListRevisions(ctx, tenantID, w.root(ctx, tenantID, sessionID), documentID)
 }

@@ -16,6 +16,7 @@
  *   GET    /api/v1/sessions/:id/documents/:doc/download   → docx bytes
  *   GET    /api/v1/sessions/:id/documents/:doc/revisions  → [{seq,label,source,created_at}]
  *   GET    /api/v1/sessions/:id/documents/:doc/format-check → {check, report}
+ *   POST   /api/v1/sessions/:id/documents/:doc/legal-basis-check → LegalBasisReport (no model, nothing stored)
  *   POST   /api/v1/sessions/:id/documents/:doc/revisions/:seq/restore → {revision, editor_key}
  *   POST   /api/v1/sessions/:id/documents/:doc/proposals/apply {batch_id, variant_id} → {snapshot_seq}
  *   POST   /api/v1/sessions/:id/documents/:doc/content?revision=N  <docx bytes> → {revision, file_size, last_saved_at}
@@ -680,6 +681,157 @@ export async function markDocumentFormatFindings(sessionId: string, documentId: 
   try {
     const res = await apiPost<Envelope<{ document_ops?: unknown[] }>>(`${base(sessionId, documentId)}/format-check/marks`, {});
     return Array.isArray(res?.data?.document_ops) ? res.data.document_ops : [];
+  } catch (err) {
+    throw toWorkspaceError(err);
+  }
+}
+
+/** Status of a document a draft cites (the legal basis check). */
+export type LegalBasisStatus =
+  | "expired"
+  | "suspended"
+  | "partly_expired"
+  | "needs_review"
+  | "not_yet_effective"
+  | "ambiguous"
+  | "amended"
+  | "unknown"
+  | "not_found"
+  | "in_force";
+
+/** The report order: what needs a look first. */
+export const LEGAL_BASIS_STATUS_ORDER: LegalBasisStatus[] = [
+  "expired",
+  "suspended",
+  "partly_expired",
+  "needs_review",
+  "not_yet_effective",
+  "ambiguous",
+  "amended",
+  "unknown",
+  "not_found",
+  "in_force",
+];
+
+/** The statuses the report's own underlines (document_ops) cover: the
+ * citations whose validity is in question. The others are underlined one
+ * finding at a time, on request. */
+export const LEGAL_BASIS_MARKED_BY_DEFAULT: ReadonlySet<LegalBasisStatus> = new Set([
+  "expired",
+  "suspended",
+  "partly_expired",
+  "needs_review",
+  "not_yet_effective",
+]);
+
+/** The most underlines one legal basis report applies (the server's cap). */
+export const LEGAL_BASIS_MAX_MARKS = 200;
+
+/** Why a citation is ambiguous. */
+export type LegalBasisAmbiguity =
+  | "shared_number"
+  | "incomplete_number"
+  | "missing_date"
+  | "date_mismatch"
+  | "shared_name"
+  | "name_guess";
+
+export interface LegalBasisDocument {
+  id: string;
+  document_number: string;
+  doc_type: string;
+  title: string;
+  issuer?: string;
+  /** YYYY-MM-DD */
+  issued_on?: string;
+  effective_on?: string;
+  expired_on?: string;
+  /** The catalogue's own wording ("Còn hiệu lực", …). */
+  catalog_status: string;
+  status: LegalBasisStatus;
+  unverified?: boolean;
+}
+
+export type LegalBasisRelation =
+  | "replaced_by"
+  | "repealed_by"
+  | "expired_by"
+  | "partly_expired_by"
+  | "suspended_by"
+  | "amended_by";
+
+export interface LegalBasisPosition {
+  paragraph: number;
+  /** code-point offsets in the paragraph text */
+  start: number;
+  end: number;
+  text: string;
+  anchor: { text: string; occurrence?: number; atStart?: boolean };
+  text_occurrence: number;
+}
+
+export interface LegalBasisFinding {
+  key: string;
+  citation: string;
+  kind: string;
+  doc_type?: string;
+  status: LegalBasisStatus;
+  /** The issue date written after a year-less number (YYYY-MM-DD). */
+  issued_on?: string;
+  document?: LegalBasisDocument | null;
+  ambiguity?: LegalBasisAmbiguity;
+  candidates?: LegalBasisDocument[];
+  candidates_total?: number;
+  /** The catalogue holds more candidates than were counted. */
+  candidates_more?: boolean;
+  related?: Array<LegalBasisDocument & { relation: LegalBasisRelation }>;
+  derived_from?: string;
+  derived_expired_on?: string;
+  maybe_expired?: boolean;
+  /** Documents in force repealing or partly ending a document the
+   * catalogue holds in force (status needs_review). */
+  review_by?: string[];
+  partial_suspension?: boolean;
+  /** The portal flags the document "Không còn phù hợp" (status needs_review). */
+  unsuitable?: boolean;
+  /** The catalogue says "Chưa có hiệu lực" although the effective date has passed. */
+  stale_status?: boolean;
+  incomplete?: boolean;
+  /** One Vietnamese sentence (for text clients such as the Word add-in). */
+  note: string;
+  positions: LegalBasisPosition[];
+}
+
+export interface LegalBasisReport {
+  document_id: string;
+  revision: number;
+  checked_at: string;
+  findings: LegalBasisFinding[];
+  summary: Partial<Record<LegalBasisStatus, number>>;
+  /** Underlines of every place of the findings whose validity is in
+   * question (LEGAL_BASIS_MARKED_BY_DEFAULT), at most 200. */
+  document_ops: unknown[];
+  marks_truncated?: boolean;
+  skipped: { names_without_year: number; own_number: number; paperwork: number };
+  truncated?: boolean;
+  /** The editor's latest changes could not be saved first. */
+  unsaved?: boolean;
+}
+
+/** Checks the documents an open working document cites against the legal
+ * catalogue (no model): each citation with its status and places, and the
+ * underlines the editor shows when the user asks. Nothing is changed. */
+export async function checkDocumentLegalBasis(sessionId: string, documentId: string): Promise<LegalBasisReport> {
+  try {
+    const res = await apiPost<Envelope<LegalBasisReport>>(`${base(sessionId, documentId)}/legal-basis-check`, {});
+    const r = res?.data;
+    if (!r || !Array.isArray(r.findings)) throw new Error("empty legal basis report");
+    return {
+      ...r,
+      document_ops: Array.isArray(r.document_ops) ? r.document_ops : [],
+      summary: r.summary ?? {},
+      skipped: r.skipped ?? { names_without_year: 0, own_number: 0, paperwork: 0 },
+    };
   } catch (err) {
     throw toWorkspaceError(err);
   }

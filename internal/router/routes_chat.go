@@ -176,6 +176,8 @@ func RegisterDocumentWorkspaceRoutes(r *gin.RouterGroup, handler *session.Docume
 		// its findings underlined in the editor, when the user asks
 		sessions.POST("/:session_id/documents/:doc_id/format-check/marks", handler.MarkDocumentFormatFindings)
 		sessions.POST("/:session_id/documents/:doc_id/format-check/feedback", handler.RecordFormatVerdict)
+		// the cited documents checked against the legal catalogue (no model)
+		sessions.POST("/:session_id/documents/:doc_id/legal-basis-check", handler.CheckDocumentLegalBasis)
 		sessions.POST("/:session_id/documents/:doc_id/word-file", handler.BindWordFile)
 		sessions.POST("/:session_id/documents/:doc_id/revisions/:seq/restore", handler.RestoreDocumentRevision)
 		sessions.POST("/:session_id/documents/:doc_id/snapshot", handler.SnapshotDocumentWorkspace)

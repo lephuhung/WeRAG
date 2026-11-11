@@ -732,6 +732,10 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(func(precheck *service.DocumentFormatPrecheck, feedback interfaces.DocumentFormatFeedbackRepository) {
 		precheck.SetFormatFeedback(feedback)
 	}))
+	// the legal basis check of an open document reads the legal catalogue
+	must(container.Invoke(func(precheck *service.DocumentFormatPrecheck, catalog interfaces.LegalCatalogRepository, db *gorm.DB) {
+		precheck.SetLegalBasis(catalog, db)
+	}))
 	// the document assistant's spellcheck asks the auxiliary model again
 	// about findings on real words and skips what users said is no mistake
 	must(container.Invoke(func(settings interfaces.SystemSettingService, agents interfaces.AgentService,

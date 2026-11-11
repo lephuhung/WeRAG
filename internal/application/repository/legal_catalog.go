@@ -88,6 +88,23 @@ func (r *legalCatalogRepository) FindByNumberPrefix(
 	return docs, err
 }
 
+func (r *legalCatalogRepository) FindByNumberPrefixTypes(
+	ctx context.Context, key string, docTypes []string, limit int,
+) ([]*types.LegalDocument, error) {
+	var docs []*types.LegalDocument
+	if strings.TrimSpace(key) == "" || len(docTypes) == 0 {
+		return docs, nil
+	}
+	lowered := make([]string, len(docTypes))
+	for i, t := range docTypes {
+		lowered[i] = strings.ToLower(strings.TrimSpace(t))
+	}
+	// lower(): the catalogue keeps the portal's spelling of the type
+	err := r.db.WithContext(ctx).Where("number_key LIKE ? ESCAPE ? AND lower(doc_type) IN ?", escapeLikeKeyword(key)+"/%", likeEscapeChar, lowered).
+		Order("issued_on DESC").Limit(limit).Find(&docs).Error
+	return docs, err
+}
+
 func (r *legalCatalogRepository) SearchByTitle(
 	ctx context.Context, words []string, limit int,
 ) ([]*types.LegalDocument, error) {

@@ -91,3 +91,70 @@ func TestLegalCatalogRepository(t *testing.T) {
 		t.Fatalf("stale relations survived: %+v", links)
 	}
 }
+
+// A bare number of one type: the prefix is escaped, the type matched
+// whatever its case, newest first, at most limit rows.
+func TestLegalCatalogFindByNumberPrefixTypes(t *testing.T) {
+	repo := newLegalCatalogRepo(t)
+	ctx := context.Background()
+	docs := []*types.LegalDocument{
+		{ID: "nd19", DocumentNumber: "68/2019/NĐ-CP", NumberKey: "68/2019/ND-CP", DocType: "Nghị định", IssuedOn: legalDay("2019-08-14")},
+		{ID: "nd26", DocumentNumber: "68/2026/NĐ-CP", NumberKey: "68/2026/ND-CP", DocType: "nghị định", IssuedOn: legalDay("2026-03-01")},
+		{ID: "tt26", DocumentNumber: "68/2026/TT-BTC", NumberKey: "68/2026/TT-BTC", DocType: "Thông tư", IssuedOn: legalDay("2026-04-01")},
+		{ID: "ttlt", DocumentNumber: "68/2010/TTLT-BTC-BNV", NumberKey: "68/2010/TTLT-BTC-BNV", DocType: "Thông tư liên tịch", IssuedOn: legalDay("2010-01-01")},
+		{ID: "x168", DocumentNumber: "168/2020/NĐ-CP", NumberKey: "168/2020/ND-CP", DocType: "Nghị định", IssuedOn: legalDay("2020-12-31")},
+		// "%" / "_" in a key must not act as wildcards
+		{ID: "pct", DocumentNumber: "6%/2020/NĐ-CP", NumberKey: "6%/2020/ND-CP", DocType: "Nghị định", IssuedOn: legalDay("2020-01-01")},
+		{ID: "u", DocumentNumber: "6_/2020/NĐ-CP", NumberKey: "6_/2020/ND-CP", DocType: "Nghị định", IssuedOn: legalDay("2020-01-01")},
+	}
+	if err := repo.UpsertDocuments(ctx, docs); err != nil {
+		t.Fatal(err)
+	}
+	ids := func(key string, docTypes []string, limit int) []string {
+		t.Helper()
+		got, err := repo.FindByNumberPrefixTypes(ctx, key, docTypes, limit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, d := range got {
+			out = append(out, d.ID)
+		}
+		return out
+	}
+	eq := func(got []string, want ...string) bool {
+		if len(got) != len(want) {
+			return false
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				return false
+			}
+		}
+		return true
+	}
+	if got := ids("68", []string{"Nghị định"}, 10); !eq(got, "nd26", "nd19") {
+		t.Errorf("Nghị định 68: %v", got)
+	}
+	if got := ids("68", []string{"nghị định"}, 10); !eq(got, "nd26", "nd19") {
+		t.Errorf("lower-case type: %v", got)
+	}
+	if got := ids("68", []string{"Thông tư", "Thông tư liên tịch"}, 10); !eq(got, "tt26", "ttlt") {
+		t.Errorf("Thông tư 68: %v", got)
+	}
+	if got := ids("68", []string{"Nghị định"}, 1); !eq(got, "nd26") {
+		t.Errorf("limit: %v", got)
+	}
+	if got := ids("68/2026", []string{"Nghị định"}, 10); !eq(got, "nd26") {
+		t.Errorf("68/2026: %v", got)
+	}
+	if got := ids("6%", []string{"Nghị định"}, 10); !eq(got, "pct") {
+		t.Errorf("escaped %%: %v", got)
+	}
+	if got := ids("6_", []string{"Nghị định"}, 10); !eq(got, "u") {
+		t.Errorf("escaped _: %v", got)
+	}
+	if got := ids("68", nil, 10); len(got) != 0 {
+		t.Errorf("no type: %v", got)
+	}
+}

@@ -161,6 +161,10 @@ type DocumentWorkspaceService interface {
 	// types.DocumentRevisionSource* values. When the latest revision already
 	// points at the same file, that revision is returned instead of a new one.
 	Snapshot(ctx context.Context, tenantID uint64, sessionID, documentID, label, source string, wait time.Duration) (*types.DocumentRevision, error)
+	// SnapshotSaved is Snapshot that also reports whether the editor's save
+	// landed before the revision was recorded (false: the force-save failed
+	// or timed out and the revision holds the last stored version).
+	SnapshotSaved(ctx context.Context, tenantID uint64, sessionID, documentID, label, source string, wait time.Duration) (*types.DocumentRevision, bool, error)
 
 	// ListRevisions returns the workspace timeline, newest first.
 	ListRevisions(ctx context.Context, tenantID uint64, sessionID, documentID string) ([]*types.DocumentRevision, error)

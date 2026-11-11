@@ -35,6 +35,13 @@ func FindDocumentNumbers(text string) []string {
 	return out
 }
 
+// ReplaceDocumentNumbers replaces every full số hiệu of text (the shape
+// FindDocumentNumbers reads, without its glued-number rule) by repl: a
+// caller blanks document numbers out before reading other numbers.
+func ReplaceDocumentNumbers(text, repl string) string {
+	return documentNumberRe.ReplaceAllLiteralString(text, repl)
+}
+
 // FindDocumentNumberIndex is FindDocumentNumbers for the first number only,
 // with its byte offsets in the NFC form of text (which callers that look
 // around the number must use too); -1, -1 when there is none.
