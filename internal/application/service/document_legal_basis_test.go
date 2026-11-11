@@ -60,7 +60,9 @@ func TestLegalBasisCheckOnCatalogue(t *testing.T) {
 }
 
 // legalBasisNoCatalog answers every lookup with nothing.
-type legalBasisNoCatalog struct{ interfaces.LegalCatalogRepository }
+type legalBasisNoCatalog struct {
+	interfaces.LegalCatalogRepository
+}
 
 func (legalBasisNoCatalog) FindByNumberKey(context.Context, string, int) ([]*types.LegalDocument, error) {
 	return nil, nil
