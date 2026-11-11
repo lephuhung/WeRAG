@@ -618,6 +618,33 @@ func TestModelOutputRendersReadDocumentHeaderAndNavigation(t *testing.T) {
 	require.Contains(t, empty, `<document id="d1" title="Engine Manual">`)
 	require.Contains(t, empty, `<matches query="absent" count="0" />`)
 	require.Contains(t, empty, "<hint>No chunk contains every word of the query.")
+
+	// a tool that explains its own miss (search_document_section) replaces the word-match hint
+	section := registry.ModelToolResultForTool("search_document_section", &types.ToolResult{Success: true, Data: map[string]any{
+		"display_type":    "knowledge_chunks_list",
+		"knowledge_id":    "doc-real",
+		"knowledge_title": "Engine Manual",
+		"query":           "Điều 18",
+		"match_count":     0,
+		"model_note":      "Điều 18 was not found in \"Engine Manual\".\nNearby Điều of this document (it has 3)",
+		"document":        map[string]any{"knowledge_id": "doc-real", "title": "Engine Manual", "chunk_count": 12},
+		"chunks":          []map[string]interface{}{},
+	}})
+	require.Contains(t, section, `<matches query="Điều 18" count="0" />`)
+	require.Contains(t, section, "<note>Điều 18 was not found in")
+	require.Contains(t, section, "Nearby Điều of this document")
+	require.NotContains(t, section, "<hint>No chunk contains every word")
+
+	// a document list carries the tool's retry instruction to the model
+	ambiguous := registry.ModelToolResultForTool("search_document_section", &types.ToolResult{Success: true, Data: map[string]any{
+		"display_type": "document_info",
+		"ambiguous":    true,
+		"model_note":   "document_number \"Nghị định 53\" fits 2 documents. Retry search_document_section(section=\"Điều 17\", knowledge_id=dN) with the intended document.",
+		"documents":    []map[string]interface{}{{"knowledge_id": "doc-a", "title": "A"}, {"knowledge_id": "doc-b", "title": "B"}},
+		"total_docs":   int64(2),
+	}})
+	require.Contains(t, ambiguous, "<note>document_number")
+	require.Contains(t, ambiguous, "knowledge_id=dN")
 }
 
 func TestModelOutputRendersDocumentListWithPagination(t *testing.T) {

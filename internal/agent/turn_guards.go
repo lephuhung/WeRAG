@@ -50,7 +50,7 @@ const toolCapNote = "\n\n[Đã gọi %s %d lần trong lượt này; công cụ 
 
 // toolCapHint is the cheaper way on to the rest of the text, per capped tool.
 var toolCapHint = map[string]string{
-	agenttools.ToolSearchDocumentSection: "; nếu cần đọc thêm, dùng read_document(id=…) theo trang thay vì từng Điều",
+	agenttools.ToolSearchDocumentSection: "; nếu cần đọc thêm, dùng read_document(id=…) theo trang. Lần sau hãy gộp nhiều Điều vào một lần gọi bằng sections=[…]",
 }
 
 // ToolResultFinalMessageKey is the Data key a tool sets to end the turn
