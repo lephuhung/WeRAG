@@ -59,6 +59,39 @@ func legalBasisChecked(steps []types.AgentStep) bool { return legalBasisSuccess(
 // legalBasisFailurePrefix opens the fixed answer of a failed check.
 const legalBasisFailurePrefix = "Không rà soát được căn cứ pháp lý"
 
+// legalBasisRunnerFailure is the user-facing reason of a check that failed
+// itself (Data.runner_failed; not a refused call) in steps, "" when none.
+// It always opens with legalBasisFailurePrefix.
+func legalBasisRunnerFailure(steps []types.AgentStep) string {
+	for _, st := range steps {
+		for _, tc := range st.ToolCalls {
+			r := tc.Result
+			if tc.ExecutionName() != agenttools.ToolCheckDocumentLegalBasis || r == nil || r.Refused {
+				continue
+			}
+			if failed, _ := r.Data[agenttools.LegalBasisRunnerFailedKey].(bool); !failed {
+				continue
+			}
+			reason := strings.TrimSpace(r.Error)
+			// a guard's stop note is for the model
+			if i := strings.Index(reason, "\n\n["); i > 0 {
+				reason = strings.TrimSpace(reason[:i])
+			}
+			if reason == "" {
+				continue
+			}
+			if !strings.HasPrefix(reason, legalBasisFailurePrefix) {
+				reason = legalBasisFailurePrefix + ": " + reason
+			}
+			if !strings.HasSuffix(reason, ".") {
+				reason += "."
+			}
+			return reason
+		}
+	}
+	return ""
+}
+
 // legalBasisFailureMessage is the fixed answer of a pure legal basis check
 // whose check failed in the last round (a runner failure: the catalogue,
 // a timeout, a closed document, an internal error) while none succeeded
@@ -66,29 +99,10 @@ const legalBasisFailurePrefix = "Không rà soát được căn cứ pháp lý"
 // a refused call, a wrong argument or document reference is the model's
 // to retry, and when one document was checked the model answers.
 func legalBasisFailureMessage(ctx context.Context, steps []types.AgentStep) string {
-	if len(steps) == 0 || legalBasisChecked(steps) {
+	if len(steps) == 0 || legalBasisChecked(steps) || !legalBasisIntent(ctx).Pure {
 		return ""
 	}
-	reason := ""
-	for _, tc := range steps[len(steps)-1].ToolCalls {
-		r := tc.Result
-		if tc.ExecutionName() != agenttools.ToolCheckDocumentLegalBasis || r == nil || r.Refused {
-			continue
-		}
-		if failed, _ := r.Data[agenttools.LegalBasisRunnerFailedKey].(bool); failed && reason == "" {
-			reason = strings.TrimSpace(r.Error)
-		}
-	}
-	if reason == "" || !legalBasisIntent(ctx).Pure {
-		return ""
-	}
-	if i := strings.Index(reason, "\n\n["); i > 0 {
-		reason = strings.TrimSpace(reason[:i])
-	}
-	if strings.HasPrefix(reason, legalBasisFailurePrefix) {
-		return reason
-	}
-	return legalBasisFailurePrefix + ": " + reason
+	return legalBasisRunnerFailure(steps[len(steps)-1:])
 }
 
 // legalBasisRestNote follows the check's summary when the rest of the
@@ -97,12 +111,18 @@ const legalBasisRestNote = "Phần còn lại của câu hỏi chưa tìm đư�
 
 type legalBasisSummaryKey struct{}
 
+type legalBasisFailureKey struct{}
+
 // withLegalBasisSummary keeps the summary line of the turn's successful
 // check for ungroundedAnswerFor: a turn that checked the document but
 // found nothing for the rest answers with what it has.
 func withLegalBasisSummary(ctx context.Context, steps []types.AgentStep) context.Context {
 	r := legalBasisSuccess(steps)
 	if r == nil {
+		// a check that failed: the answer says why before "no evidence"
+		if why := legalBasisRunnerFailure(steps); why != "" {
+			return context.WithValue(ctx, legalBasisFailureKey{}, why)
+		}
 		return ctx
 	}
 	line, _ := r.Data["summary_line"].(string)
@@ -114,5 +134,10 @@ func withLegalBasisSummary(ctx context.Context, steps []types.AgentStep) context
 
 func legalBasisSummaryFromContext(ctx context.Context) string {
 	s, _ := ctx.Value(legalBasisSummaryKey{}).(string)
+	return s
+}
+
+func legalBasisFailureFromContext(ctx context.Context) string {
+	s, _ := ctx.Value(legalBasisFailureKey{}).(string)
 	return s
 }

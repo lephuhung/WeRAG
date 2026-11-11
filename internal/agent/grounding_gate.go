@@ -33,10 +33,15 @@ func ungroundedAnswerFor(ctx context.Context) string {
 	if line := legalBasisSummaryFromContext(ctx); line != "" {
 		return line + " " + legalBasisRestNote
 	}
+	answer := ungroundedAnswer
 	if number := types.LegalRequestRecordedFromContext(ctx); number != "" {
-		return ungroundedAnswer + " Đã ghi nhận đề nghị bổ sung văn bản " + number + " tới quản trị viên."
+		answer += " Đã ghi nhận đề nghị bổ sung văn bản " + number + " tới quản trị viên."
 	}
-	return ungroundedAnswer
+	// the check failed and the rest found nothing: say both
+	if why := legalBasisFailureFromContext(ctx); why != "" {
+		return why + " " + answer
+	}
+	return answer
 }
 
 // countedEvidenceTools report their hits in Data["count"].

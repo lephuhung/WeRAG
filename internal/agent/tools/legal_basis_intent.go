@@ -47,9 +47,9 @@ var (
 	// the documents it cites: "văn bản viện dẫn", "căn cứ pháp lý được dẫn",
 	// "các văn bản được nêu"
 	legalBasisCitedRe = regexp.MustCompile(`\b(van ban|can cu|can cu phap ly)( duoc| da)? (vien dan|dan chieu|trich dan|dan|neu|neu ra|nhac den|de cap)\b|\bvien dan\b|\bdan chieu\b`)
-	// "căn cứ", "căn cứ pháp lý", "căn cứ ban hành"; what follows it must be
-	// a function word (legalBasisTermNext), else it is a "căn cứ" of
-	// something else ("căn cứ ly hôn", "căn cứ xử phạt", "căn cứ tính thuế")
+	// "căn cứ", "căn cứ pháp lý", "căn cứ ban hành" (legalBasisTermOther
+	// rejects a "căn cứ" of something else: "căn cứ ly hôn", "căn cứ tính
+	// thuế")
 	legalBasisTermRe = regexp.MustCompile(`\bcan cu( phap ly| ban hanh| phap luat)?\b`)
 	// asking for a check
 	legalBasisVerbRe = regexp.MustCompile(`\b(ra soat|soat|kiem tra|doi chieu|xem lai|xem giup|xem ho|danh gia|check)\b`)
@@ -71,13 +71,16 @@ var (
 	//   - a draft law ("dự thảo Luật Đất đai");
 	//   - a legal situation ("… thì áp dụng văn bản nào", "có vi phạm",
 	//     "bị xử phạt", "xử lý", "áp dụng");
-	//   - "hiệu lực hồi tố".
+	//   - "hiệu lực hồi tố";
+	//   - a question about citing ("có được / có nên viện dẫn", "trách
+	//     nhiệm", "tài liệu này nói gì", "làm hết hiệu lực những văn bản nào").
 	legalBasisBailRe = regexp.MustCompile(`\b(la gi|nghia la|nhu the nao|the nao|ra sao|quy dinh|cach)\b|` +
 		`\b(khi nao|ngay nao|bao gio|bao lau|thoi han|tu ngay|den ngay)\b|` +
 		`\b(dieu|khoan|diem) \d+|` +
 		`\bdu thao (luat|bo luat|nghi dinh|thong tu|quyet dinh|nghi quyet|phap lenh|chi thi)\b|` +
 		`\b(khi|neu)\b.*\bthi\b|\bthi (ap dung|xu ly|sao|phai)\b|\bco vi pham\b|\bbi xu phat\b|\bxu ly\b|\bap dung\b|` +
-		`\bhieu luc hoi to\b|\b(cua|cho) viec\b`)
+		`\bhieu luc hoi to\b|\b(cua|cho) viec\b|` +
+		`\b(co nen|co duoc|duoc khong|trach nhiem|noi gi|lam het hieu luc|co hop le|co sao khong)\b`)
 	// a spelling request bails unless a legal-basis phrase is there too
 	// ("kiểm tra căn cứ pháp lý … rồi sửa lỗi chính tả": a check, not pure)
 	legalBasisSpellingRe = regexp.MustCompile(`\bchinh ta\b`)
@@ -91,15 +94,15 @@ var (
 	legalBasisHandleRe = regexp.MustCompile(`^vb\d+$`)
 )
 
-// legalBasisTermNext are the words that may follow "căn cứ (pháp lý)" in a
-// request about the document's căn cứ ("căn cứ của văn bản này", "căn cứ
-// nào", "căn cứ còn hiệu lực"). Any other word makes it a "căn cứ" of
-// something else.
-var legalBasisTermNext = map[string]bool{
-	"cua": true, "trong": true, "nay": true, "duoc": true, "da": true, "con": true, "het": true, "co": true,
-	"nao": true, "xem": true, "va": true, "roi": true, "o": true, "tai": true, "khong": true, "chua": true,
-	"giup": true, "di": true, "nhe": true, "nha": true, "voi": true, "hien": true, "dang": true, "tren": true,
-	"ma": true, "duoi": true, "dau": true, "cac": true, "vb": true, "hay": true,
+// legalBasisTermOther are the words that, right after "căn cứ (pháp lý)"
+// in the same clause, make it a "căn cứ" of something else: grounds for a
+// divorce, a penalty, a tax ("căn cứ ly hôn", "căn cứ xử phạt", "căn cứ
+// tính thuế", "căn cứ để …"). Anything else — "cho tôi", "văn bản này", the
+// end of the clause — is the document's căn cứ.
+var legalBasisTermOther = []string{
+	"ly hon", "xu phat", "tinh", "khoi kien", "khoi to", "khang cao", "khang nghi", "mien", "ap dung",
+	"cham dut", "sa thai", "doi", "cap", "thanh lap", "khoa hoc", "thuc tien", "thuc te", "de", "vao",
+	"theo", "cho viec", "ve", "xac dinh", "ket luan", "bo tri", "tuyen", "huy", "giai quyet", "boi thuong",
 }
 
 // legalBasisFillerWords are the words a bare check is made of: the check,
@@ -116,6 +119,10 @@ var legalBasisFillerWords = map[string]bool{
 	"ra": true, "soat": true, "kiem": true, "tra": true, "doi": true, "danh": true, "gia": true, "check": true,
 	"lam": true, "on": true, "a": true, "ok": true, "phan": true, "doan": true, "tat": true, "ca": true,
 	"toan": true, "bo": true, "tung": true, "mot": true, "vui": true, "long": true,
+	// thanks, listing what the check found
+	"cam": true, "thank": true, "thanks": true, "you": true, "nhieu": true, "xin": true, "liet": true, "ke": true,
+	"bi": true, "thay": true, "the": true, "sua": true, "sung": true, "bai": true, "ngung": true,
+	"deu": true, "nua": true, "luon": true,
 }
 
 // legalBasisFold lower-cases, strips diacritics (đ → d) and turns
@@ -142,22 +149,31 @@ func legalBasisAllFiller(f string) bool {
 	return true
 }
 
-// legalBasisTermOK reports whether every "căn cứ" of f is followed by a
-// function word or ends the request.
-func legalBasisTermOK(f string) bool {
-	for _, loc := range legalBasisTermRe.FindAllStringIndex(f, -1) {
-		rest := strings.Fields(f[loc[1]:])
-		if len(rest) > 0 && !legalBasisTermNext[rest[0]] && !legalBasisHandleRe.MatchString(rest[0]) {
-			return false
+// legalBasisTermOK reports whether no "căn cứ" of the folded clause c is
+// followed, in the clause, by a word of legalBasisTermOther.
+func legalBasisTermOK(c string) bool {
+	for _, loc := range legalBasisTermRe.FindAllStringIndex(c, -1) {
+		rest := " " + strings.TrimSpace(c[loc[1]:]) + " "
+		for _, w := range legalBasisTermOther {
+			if strings.HasPrefix(rest, " "+w+" ") {
+				return false
+			}
 		}
 	}
 	return true
 }
 
-// legalBasisSecondQuestion reports a question mark with more text after it.
-func legalBasisSecondQuestion(query string) bool {
-	i := strings.Index(query, "?")
-	return i >= 0 && strings.ContainsFunc(query[i+1:], unicode.IsLetter)
+// legalBasisClauseRe cuts a request into clauses at punctuation (before
+// folding, which drops it): "Kiểm tra căn cứ pháp lý. Cảm ơn".
+var legalBasisClauseRe = regexp.MustCompile(`[.,;:!?…\n]+|\s[–—-]\s`)
+
+// legalBasisRelated reports whether a folded clause belongs to the check:
+// it carries a check word, the căn cứ, the cited documents, their validity
+// or the document.
+func legalBasisRelated(c string, mentioned int) bool {
+	return legalBasisVerbRe.MatchString(c) || legalBasisTermRe.MatchString(c) || legalBasisCitedRe.MatchString(c) ||
+		legalBasisValidityRe.MatchString(c) || legalBasisDocRe.MatchString(c) || legalBasisTypedDocRe.MatchString(c) ||
+		legalBasisSectionRe.MatchString(c) || legalBasisMarkRe.MatchString(c) || mentioned > 0 && strings.Contains(c, "@")
 }
 
 // ClassifyLegalBasisRequest reads a request: whether it asks to check the
@@ -165,14 +181,36 @@ func legalBasisSecondQuestion(query string) bool {
 // that is all it asks. mentioned is how many documents the user named with
 // @ in this turn (they point at a document as "văn bản này" does).
 func ClassifyLegalBasisRequest(query string, mentioned int) LegalBasisIntent {
-	f := legalBasisFold(query)
-	if f == "" || strings.Contains(f, "the thuc") || legalBasisBailRe.MatchString(f) || !legalBasisTermOK(f) {
-		// a format check has its own route (check_document_format)
+	all := legalBasisFold(query)
+	if all == "" || strings.Contains(all, "the thuc") || legalBasisBailRe.MatchString(all) {
+		// a format check has its own route (check_document_format); a
+		// question about the law anywhere in the request goes to the search
 		return LegalBasisIntent{}
 	}
-	if legalBasisSpellingRe.MatchString(f) && !legalBasisStrongRe.MatchString(f) {
+	if legalBasisSpellingRe.MatchString(all) && !legalBasisStrongRe.MatchString(all) {
 		return LegalBasisIntent{}
 	}
+	// the clauses of the check, and whether another clause asks something
+	// else (a clause of thanks or politeness does not)
+	var related []string
+	other := false
+	for _, raw := range legalBasisClauseRe.Split(query, -1) {
+		c := legalBasisFold(raw)
+		switch {
+		case c == "":
+		case legalBasisRelated(c, mentioned):
+			if !legalBasisTermOK(c) {
+				return LegalBasisIntent{}
+			}
+			related = append(related, c)
+		case !legalBasisAllFiller(c):
+			other = true
+		}
+	}
+	if len(related) == 0 {
+		return LegalBasisIntent{}
+	}
+	f := strings.Join(related, " ")
 	doc := legalBasisDocRe.MatchString(f) || mentioned > 0 || legalBasisSectionRe.MatchString(f)
 	// a named law with nothing pointing at the document is a lookup
 	// ("các văn bản viện dẫn trong Nghị định 15/2020/NĐ-CP …")
@@ -221,7 +259,7 @@ func ClassifyLegalBasisRequest(query string, mentioned int) LegalBasisIntent {
 	if !check {
 		return LegalBasisIntent{}
 	}
-	pure := !named && !legalBasisOtherRe.MatchString(f) && !legalBasisSecondQuestion(query)
+	pure := !named && !other && !legalBasisOtherRe.MatchString(all)
 	return LegalBasisIntent{Check: true, Pure: pure}
 }
 

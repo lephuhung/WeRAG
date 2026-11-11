@@ -21,8 +21,36 @@ import (
 var underlineClaimRe = regexp.MustCompile(`(?i)đã (?:được )?(gạch chân|highlight|đánh dấu|tô (?:vàng|màu|sáng|đỏ))`)
 
 // markStatusWords after "đã (được) đánh dấu" make it a status ("được đánh
-// dấu hết hiệu lực trong danh mục"), not something done to the document.
+// dấu **hết hiệu lực** trong danh mục"), not something done to the document;
+// a locative before them ("trong danh mục", "trên vbpl.vn") is skipped.
 var markStatusWords = map[string]bool{"là": true, "hết": true, "còn": true, "cần": true, "chưa": true}
+
+// claimLocatives open a place phrase ("trong danh mục", "trên vbpl.vn").
+var claimLocatives = map[string]bool{"trong": true, "trên": true, "tại": true, "ở": true}
+
+// markedAsStatus reports whether the words after "đánh dấu" give a status:
+// a status word next, or within a few words after a place phrase.
+func markedAsStatus(next []string) bool {
+	if len(next) == 0 {
+		return false
+	}
+	if markStatusWords[claimWord(next[0])] {
+		return true
+	}
+	if !claimLocatives[claimWord(next[0])] {
+		return false
+	}
+	for i := 1; i < len(next) && i <= 5; i++ {
+		if markStatusWords[claimWord(next[i])] {
+			return true
+		}
+	}
+	return false
+}
+
+// claimNegators before a claim in its clause make it no claim ("chưa gạch
+// chân", "không đánh dấu", "bạn đã gạch chân", "nếu đã tô vàng").
+var claimNegators = map[string]bool{"chưa": true, "không": true, "bạn": true, "nếu": true}
 
 // citationObjectRe: what a "tô màu" claim must be about.
 var citationObjectRe = regexp.MustCompile(`(?i)chỗ|viện dẫn|văn bản|căn cứ|số hiệu|vị trí|trích dẫn|điều khoản`)
@@ -30,17 +58,56 @@ var citationObjectRe = regexp.MustCompile(`(?i)chỗ|viện dẫn|văn bản|că
 // clauseSepRe splits a sentence into clauses.
 var clauseSepRe = regexp.MustCompile(`\s*[,;]\s*|\s+[–—]\s+`)
 
-// listItemRe opens a list item.
-var listItemRe = regexp.MustCompile(`^\s*(?:[-*•+]|\d+[.)])\s+`)
+// listItemRe opens a list item; listMarkerRe is a unit that is only one
+// (splitUnits cuts "1. " off its item).
+var (
+	listItemRe   = regexp.MustCompile(`^\s*(?:[-*•+]|\d+[.)])\s+`)
+	listMarkerRe = regexp.MustCompile(`^\s*\d+[.)]\s*$`)
+)
+
+// clauseSeps are the clause separators of text outside brackets.
+func clauseSeps(text string) [][]int {
+	var out [][]int
+	for _, loc := range clauseSepRe.FindAllStringIndex(text, -1) {
+		before := text[:loc[0]]
+		if strings.Count(before, "(") > strings.Count(before, ")") || strings.Count(before, "[") > strings.Count(before, "]") {
+			continue
+		}
+		out = append(out, loc)
+	}
+	return out
+}
+
+// claimWord is a word with the quotes, emphasis and punctuation around it
+// trimmed, lower-cased.
+func claimWord(w string) string {
+	return strings.ToLower(strings.Trim(w, "\"'“”‘’*_`.,;:!?()[]"))
+}
 
 // underlineClaimAt is the first claim of text as [start, end), nil when
 // none.
 func underlineClaimAt(text string) []int {
 	for _, m := range underlineClaimRe.FindAllStringSubmatchIndex(text, -1) {
 		verb := strings.ToLower(text[m[2]:m[3]])
+		// the clause before the claim
+		start := 0
+		for _, loc := range clauseSeps(text) {
+			if loc[1] <= m[0] {
+				start = loc[1]
+			}
+		}
+		negated := false
+		for _, w := range strings.Fields(text[start:m[0]]) {
+			if claimNegators[claimWord(w)] {
+				negated = true
+			}
+		}
+		if negated {
+			continue
+		}
 		switch {
 		case verb == "đánh dấu":
-			if next := strings.Fields(text[m[1]:]); len(next) > 0 && markStatusWords[strings.ToLower(strings.Trim(next[0], ".,;:!?"))] {
+			if markedAsStatus(strings.Fields(text[m[1]:])) {
 				continue
 			}
 		case strings.HasPrefix(verb, "tô"):
@@ -72,7 +139,7 @@ func cutClaim(text string) string {
 			}
 		}
 		start, end := 0, len(text)
-		for _, loc := range clauseSepRe.FindAllStringIndex(text, -1) {
+		for _, loc := range clauseSeps(text) {
 			if loc[1] <= at[0] {
 				start = loc[0]
 			} else if loc[0] >= at[1] {
@@ -130,7 +197,7 @@ func stripUnderlineClaim(unit string, b turnButtons) (out string, changed bool) 
 	if n := len(body); n > 0 && strings.ContainsRune(".!?", rune(body[n-1])) {
 		body, end = body[:n-1], body[n-1:]
 	}
-	cuts := clauseSepRe.FindAllStringIndex(body, -1)
+	cuts := clauseSeps(body)
 	var clauses []clause
 	last, sep := 0, ""
 	for _, c := range cuts {
@@ -144,7 +211,7 @@ func stripUnderlineClaim(unit string, b turnButtons) (out string, changed bool) 
 			kept = append(kept, c)
 			continue
 		}
-		if i == 0 || mainClauseClaim(c.text, clauses[:i]) {
+		if i == 0 || mainClauseClaim(c.text, clauses[:i], i == len(clauses)-1) {
 			// the claim is what the sentence says
 			return "", true
 		}
@@ -167,11 +234,13 @@ func stripUnderlineClaim(unit string, b turnButtons) (out string, changed bool) 
 type clause struct{ text, sep string }
 
 // mainClauseClaim reports a claim clause that is the predicate of the
-// clauses before it ("Luật A, Luật B, đã được gạch chân"): it opens with
-// "đã" and those are short list items. Cutting it would leave a fragment.
-func mainClauseClaim(claim string, before []clause) bool {
+// clauses before it ("Luật A, Luật B, đã được gạch chân"; "Luật A, Luật B
+// — tôi đã đánh dấu"): those are short list items and the claim opens with
+// "đã" or ends the sentence. Cutting it would leave a fragment.
+func mainClauseClaim(claim string, before []clause, last bool) bool {
 	l := strings.ToLower(strings.TrimSpace(claim))
-	if !strings.HasPrefix(l, "đã ") && !strings.HasPrefix(l, "đều đã ") && !strings.HasPrefix(l, "và đã ") && !strings.HasPrefix(l, "cũng đã ") {
+	opens := strings.HasPrefix(l, "đã ") || strings.HasPrefix(l, "đều đã ") || strings.HasPrefix(l, "và đã ") || strings.HasPrefix(l, "cũng đã ")
+	if !opens && !last {
 		return false
 	}
 	for _, c := range before {

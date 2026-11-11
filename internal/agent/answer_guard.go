@@ -152,6 +152,7 @@ func splitUnits(text string) (units []string, incomplete bool) {
 // card for; dropped is how many.
 func cleanAnswer(ctx context.Context, text string, b turnButtons) (string, int) {
 	units, _ := splitUnits(text)
+	units = joinListMarkers(units)
 	var out strings.Builder
 	dropped := 0
 	for _, u := range units {
@@ -181,6 +182,25 @@ func cleanAnswer(ctx context.Context, text string, b turnButtons) (string, int) 
 	return out.String(), dropped
 }
 
+// joinListMarkers joins a bare list marker unit ("1. ", cut off by
+// splitUnits) to the unit after it, so a dropped item leaves no marker.
+func joinListMarkers(units []string) []string {
+	out := units[:0:0]
+	marker := ""
+	for _, u := range units {
+		if listMarkerRe.MatchString(u) && !strings.HasSuffix(u, "\n") {
+			marker += u
+			continue
+		}
+		out = append(out, marker+u)
+		marker = ""
+	}
+	if marker != "" {
+		out = append(out, marker)
+	}
+	return out
+}
+
 // cleanAnswerInContext applies cleanAnswer when the guard is on.
 func cleanAnswerInContext(ctx context.Context, text string) string {
 	b := answerGuardFromContext(ctx)
@@ -203,6 +223,8 @@ type answerGuard struct {
 	// (a dropped line adds its break only as cleanAnswer does)
 	emitted bool
 	lineEnd bool
+	// marker is a bare list marker held for the unit after it
+	marker string
 }
 
 // out emits text and notes how the output ends.
@@ -245,17 +267,22 @@ func (g *answerGuard) Write(text string) {
 		g.pending = ""
 	}
 	for _, u := range units {
+		if listMarkerRe.MatchString(u) && !strings.HasSuffix(u, "\n") {
+			g.marker += u
+			continue
+		}
+		u, g.marker = g.marker+u, ""
 		g.emitUnit(u)
 	}
 }
 
 // Flush emits what is still held back (end of the stream).
 func (g *answerGuard) Flush() {
-	if g.pending == "" {
+	if g.pending == "" && g.marker == "" {
 		return
 	}
-	u := g.pending
-	g.pending = ""
+	u := g.marker + g.pending
+	g.pending, g.marker = "", ""
 	g.emitUnit(u)
 }
 

@@ -88,6 +88,12 @@ func TestGroundingGateLegalBasis(t *testing.T) {
 	if got := ungroundedAnswerFor(mixed); got != "Đã rà soát căn cứ pháp lý của vb1: 3 văn bản được viện dẫn — hết hiệu lực 1; còn hiệu lực 2. "+legalBasisRestNote {
 		t.Fatalf("safety net: %q", got)
 	}
+	// the check failed and the search found nothing: both are said
+	failedMixed := markUngrounded(gate("rà soát căn cứ pháp lý của văn bản này và cho biết mức phạt nồng độ cồn"),
+		[]types.AgentStep{legalBasisStep(false, "Không rà soát được căn cứ pháp lý của vb1: danh mục văn bản pháp luật tạm thời không khả dụng", true)})
+	if got := ungroundedAnswerFor(failedMixed); got != "Không rà soát được căn cứ pháp lý của vb1: danh mục văn bản pháp luật tạm thời không khả dụng. "+ungroundedAnswer {
+		t.Fatalf("failed check, no evidence: %q", got)
+	}
 	plain := markUngrounded(gate("mức phạt nồng độ cồn là bao nhiêu"), nil)
 	if !isUngrounded(plain) || ungroundedAnswerFor(plain) != ungroundedAnswer {
 		t.Fatal("without a check the usual answer")
@@ -163,6 +169,19 @@ func TestAnswerGuardDropsUnderlineClaimAfterLegalBasis(t *testing.T) {
 		// a list item keeps its text
 		"- Luật Đất đai 2013: hết hiệu lực (đã gạch chân)\n":     "- Luật Đất đai 2013: hết hiệu lực\n",
 		"- Luật Đất đai 2013: hết hiệu lực, đã được gạch chân\n": "- Luật Đất đai 2013: hết hiệu lực\n",
+		// review round 3: statuses with emphasis or a place, negated or
+		// hypothetical claims are no claims
+		"NĐ 100 đã được đánh dấu **hết hiệu lực** trên vbpl.vn. ":  "NĐ 100 đã được đánh dấu **hết hiệu lực** trên vbpl.vn. ",
+		"NĐ 100 đã được đánh dấu trong danh mục là hết hiệu lực. ": "NĐ 100 đã được đánh dấu trong danh mục là hết hiệu lực. ",
+		"Tôi chưa gạch chân chỗ nào, bạn bấm nút trên thẻ nhé. ":   "Tôi chưa gạch chân chỗ nào, bạn bấm nút trên thẻ nhé. ",
+		"Sau khi bạn đã gạch chân, hãy lưu văn bản. ":              "Sau khi bạn đã gạch chân, hãy lưu văn bản. ",
+		"Nếu đã tô vàng các chỗ viện dẫn, hãy xem lại. ":           "Nếu đã tô vàng các chỗ viện dẫn, hãy xem lại. ",
+		// the claim ends a sentence of short list items: it goes whole
+		"Luật 29/2018/QH14, Nghị định 100 — tôi đã đánh dấu. ": "",
+		// a separator inside brackets does not cut the clause
+		"Có 2 văn bản hết hiệu lực (Luật 29, Nghị định 100), đã được gạch chân trong văn bản. ": "Có 2 văn bản hết hiệu lực (Luật 29, Nghị định 100). ",
+		// a numbered item whose text is the claim leaves no bare marker
+		"Kết quả:\n1. Đã gạch chân các chỗ viện dẫn hết hiệu lực.\n2. Còn 1 văn bản chưa rõ.\n": "Kết quả:\n2. Còn 1 văn bản chưa rõ.\n",
 		// a table row keeps its cells
 		"| 29/2018/QH14 | Hết hiệu lực (đã gạch chân) | Luật 117/2025 |\n": "| 29/2018/QH14 | Hết hiệu lực | Luật 117/2025 |\n",
 	} {
@@ -186,6 +205,7 @@ func TestAnswerGuardDropsUnderlineClaimAfterLegalBasis(t *testing.T) {
 	}
 	// a dropped line keeps its break exactly as cleanAnswer does
 	for _, text := range []string{
+		"Kết quả:\n1. Đã gạch chân các chỗ viện dẫn hết hiệu lực.\n2. Còn 1 văn bản chưa rõ.\n",
 		"Tôi đã highlight 3 chỗ viện dẫn.\nCòn 1 viện dẫn chưa rõ.\n",
 		"Kết quả:\nTôi đã highlight 3 chỗ viện dẫn.\nCòn 1 viện dẫn chưa rõ.\n",
 		"Kết quả: 2 văn bản. Tôi đã highlight 3 chỗ viện dẫn.\nCòn 1.\n",

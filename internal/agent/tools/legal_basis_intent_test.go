@@ -42,6 +42,24 @@ func TestClassifyLegalBasisRequest(t *testing.T) {
 		"kiểm tra căn cứ pháp lý xem còn hiệu lực không, liệt kê giúp tôi",
 		"kiểm tra hiệu lực văn bản này",
 		"rà soát hiệu lực văn bản",
+		// review round 3: whatever follows "căn cứ" unless it is a căn cứ
+		// of something else; a clause of thanks keeps it pure
+		"rà soát căn cứ pháp lý cho tôi",
+		"rà soát căn cứ pháp lý hộ mình",
+		"rà soát căn cứ pháp lý ạ",
+		"rà soát căn cứ pháp lý văn bản này",
+		"rà soát căn cứ pháp lý tờ trình này",
+		"rà soát căn cứ pháp lý file này",
+		"rà soát căn cứ pháp lý dự thảo này",
+		"căn cứ pháp lý văn bản này còn hiệu lực không",
+		"kiểm tra căn cứ, viện dẫn trong văn bản này",
+		"các căn cứ pháp lý bạn kiểm tra giúp",
+		"rà soát căn cứ pháp lý toàn bộ văn bản",
+		"rà soát căn cứ pháp lý tất cả các văn bản đang mở",
+		"Kiểm tra căn cứ pháp lý: văn bản nào hết hiệu lực?",
+		"kiểm tra căn cứ pháp lý. Cảm ơn",
+		"kiểm tra căn cứ pháp lý, cảm ơn",
+		"Các văn bản viện dẫn còn hiệu lực không? Cảm ơn bạn nhiều!",
 	}
 	mixed := []string{
 		// the check runs, the rest needs a search (grounding gate stays)
@@ -50,6 +68,11 @@ func TestClassifyLegalBasisRequest(t *testing.T) {
 		"tóm tắt dự thảo và kiểm tra căn cứ",
 		"kiểm tra căn cứ pháp lý của văn bản này rồi sửa lỗi chính tả",
 		"Các văn bản viện dẫn còn hiệu lực không? Văn bản nào thay thế Luật Đất đai?",
+		// review round 3: a later clause with a task or a question
+		"rà soát căn cứ pháp lý, sau đó tóm tắt văn bản",
+		"rà soát căn cứ pháp lý, đồng thời phân tích rủi ro",
+		"rà soát căn cứ pháp lý. Thuế GTGT hiện nay là bao nhiêu?",
+		"Rà soát căn cứ pháp lý. Thông tư 80 hướng dẫn những nội dung chính nào?",
 	}
 	no := []string{
 		"",
@@ -97,6 +120,14 @@ func TestClassifyLegalBasisRequest(t *testing.T) {
 		"kiểm tra hợp đồng trong file này còn hiệu lực không",
 		"kiểm tra giấy phép trong file này còn hiệu lực không",
 		"Quyết định này còn hiệu lực không?",
+		// review round 3
+		"các văn bản hết hiệu lực có được viện dẫn không",
+		"có nên viện dẫn văn bản đã hết hiệu lực",
+		"viện dẫn sai văn bản hết hiệu lực, trách nhiệm thuộc về ai",
+		"tài liệu này nói gì về văn bản hết hiệu lực",
+		"văn bản này làm hết hiệu lực những văn bản nào",
+		"kiểm tra các căn cứ khởi kiện vụ án dân sự",
+		"rà soát căn cứ cấp giấy phép xây dựng",
 	}
 	for _, q := range pure {
 		if got := ClassifyLegalBasisRequest(q, 0); !got.Check || !got.Pure {
