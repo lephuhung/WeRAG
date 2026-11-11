@@ -80,6 +80,7 @@ import {
   IconIdCard,
   IconCreditCard,
   IconDocReader,
+  IconThumbDown,
 } from "@/components/icons";
 
 /* Heavy sections are lazy so the sidebar chunk doesn't pull every admin page
@@ -89,6 +90,7 @@ import {
 const McpServersPage = lazy(() => import("@/components/settings/pages/mcp-servers"));
 const AgentsPage = lazy(() => import("@/components/settings/pages/system-agents"));
 const IMChannelsPage = lazy(() => import("@/components/settings/pages/im-channels"));
+const TenantQualityPage = lazy(() => import("@/components/settings/tenant-quality"));
 const ModelCatalogPage = lazy(() => import("@/components/settings/pages/model-catalog"));
 const ModelOllamaPage = lazy(() => import("@/components/settings/pages/model-ollama"));
 const ModelWeknoraCloudPage = lazy(() => import("@/components/settings/pages/model-weknoracloud"));
@@ -148,6 +150,7 @@ const GROUPS: SettingsGroup[] = [
       { key: "tenant", labelKey: "settingsNav.tenant", fallback: "Organization info", icon: IconInfoCircle, render: () => <TenantInfo />, route: `${W}/tenant` },
       { key: "members", labelKey: "settingsNav.members", fallback: "Members", icon: IconOrg, minRole: "admin", render: () => <TenantMembers />, route: `${W}/members` },
       { key: "labels", labelKey: "settingsNav.labels", fallback: "Spelling & format labels", icon: IconDocReader, minRole: "admin", render: () => <DocumentLabels />, route: `${W}/labels` },
+      { key: "quality", labelKey: "settingsNav.quality", fallback: "Answer quality", icon: IconThumbDown, minRole: "admin", render: () => <TenantQualityPage />, route: `${W}/quality` },
       { key: "agency", labelKey: "settingsNav.agencyProfile", fallback: "Agency profile", icon: IconInfoCircle, render: () => <AgencyProfileSettings />, route: `${W}/agency` },
       { key: "api-keys", labelKey: "settingsNav.apiKeys", fallback: "API keys", icon: IconKey, minRole: "system", render: () => <ApiKeysSection />, route: `${W}/api-keys` },
       { key: "memory", labelKey: "settingsNav.memory", fallback: "Memory", icon: IconBulb, minRole: "system", render: () => <MemoryHub />, route: `${W}/memory` },

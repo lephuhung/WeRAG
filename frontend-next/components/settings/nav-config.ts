@@ -51,6 +51,7 @@ export const WORKSPACE_NAV_GROUPS: SettingsNavGroup[] = [
       { key: "tenant", labelKey: "settingsNav.tenant", fallbackLabel: "Organization", minRole: "member" },
       { key: "members", labelKey: "settingsNav.members", fallbackLabel: "Members", minRole: "admin" },
       { key: "labels", labelKey: "settingsNav.labels", fallbackLabel: "Spelling & format labels", minRole: "admin" },
+      { key: "quality", labelKey: "settingsNav.quality", fallbackLabel: "Answer quality", minRole: "admin" },
       { key: "agency", labelKey: "settingsNav.agencyProfile", fallbackLabel: "Agency profile", minRole: "member" },
       { key: "api-keys", labelKey: "settingsNav.apiKeys", fallbackLabel: "API keys", minRole: "system" },
       { key: "memory", labelKey: "settingsNav.memory", fallbackLabel: "Memory", minRole: "system" },
