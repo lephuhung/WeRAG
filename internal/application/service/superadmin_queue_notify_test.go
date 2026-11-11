@@ -511,13 +511,46 @@ func TestQueueNoticeLegalLinks(t *testing.T) {
 	require.Equal(t, res.Pending, e.payload(t, "sa2", kind).Count)
 
 	// links decided before the notice was written are no news
-	var approved []int64
-	require.NoError(t, svc.db.Model(&types.LegalProvisionLinkCandidate{}).
-		Where("review_status = ?", types.LegalLinkReviewApproved).Pluck("id", &approved).Error)
+	var approved []*types.LegalProvisionLinkCandidate
+	require.NoError(t, svc.db.Where("review_status = ?", types.LegalLinkReviewApproved).Find(&approved).Error)
 	require.NotEmpty(t, approved)
-	e.notifier.LegalLinksPending(ctx, "", "68/2026/NĐ-CP", approved)
+	var approvedKeys []string
+	for _, c := range approved {
+		approvedKeys = append(approvedKeys, LegalCandidateKey(c))
+	}
+	e.notifier.LegalLinksPending(ctx, "", "68/2026/NĐ-CP", "tvpl", "68", approvedKeys)
 	e.notifier.Wait()
 	require.Equal(t, res.Pending, e.payload(t, "sa2", kind).Count)
+}
+
+// A re-push within the batch recreates the pending rows with new ids: the
+// first push's links still count, once.
+func TestQueueNoticeLegalLinksRepushInBatch(t *testing.T) {
+	kind := types.UserNotificationLegalLinkPending
+	ctx := context.Background()
+	caller := types.Caller{TenantID: types.PlatformTenantID}
+	svc, _ := legalPushTestService(t)
+	e := newQueueNoticeEnv(t, svc.db)
+	svc.Notices = e.notifier
+	pushOnce := func() *LegalPushResult {
+		res, err := svc.Push(ctx, LegalPushInput{Content: []byte(nd68Push), Metadata: legalPushMetaFor("68/2026/NĐ-CP")},
+			caller, LegalFeedActor{UserID: "sa1"})
+		require.NoError(t, err)
+		return res
+	}
+	first := pushOnce()
+	var ids1 []int64
+	require.NoError(t, svc.db.Model(&types.LegalProvisionLinkCandidate{}).Where("review_status = ?", types.LegalLinkReviewPending).
+		Pluck("id", &ids1).Error)
+	second := pushOnce() // no Wait: both pushes are in one batch
+	var ids2 []int64
+	require.NoError(t, svc.db.Model(&types.LegalProvisionLinkCandidate{}).Where("review_status = ?", types.LegalLinkReviewPending).
+		Pluck("id", &ids2).Error)
+	require.Equal(t, first.Pending, second.Pending)
+	require.NotEqual(t, ids1, ids2, "the re-push recreated the rows")
+	e.notifier.Wait()
+	require.EqualValues(t, 1, e.notices.upserts.Load(), "one write (sa2)")
+	require.Equal(t, first.Pending, e.payload(t, "sa2", kind).Count)
 }
 
 // ---------------------------------------------------------------------------
@@ -621,4 +654,26 @@ func TestQueueNoticeFeedIdentity(t *testing.T) {
 		ReviewedBy: LegalFeedReviewerPrefix + "tvpl"}, "k-feed", "kb", true)
 	require.Equal(t, types.UserNotificationQueuePayload{Count: 1, Items: []types.UserNotificationQueueItem{{Ref: "12/2025/NĐ-CP"}}},
 		e.payload(t, "sa1", kind))
+}
+
+// The same item queued twice in one batch (two people asking for a new
+// request at once, a draft announced twice) counts once.
+func TestQueueNoticeBatchCountsDistinctItems(t *testing.T) {
+	e := newQueueNoticeEnv(t, nil)
+	ctx := context.Background()
+	req := &types.LegalDocumentRequest{ID: "r1", NumberKey: "53/2022/ND-CP", DocumentNumber: "53/2022/NĐ-CP",
+		Status: types.LegalRequestRequested, RequestCount: 2, FirstRequestedAt: time.Now(), LastRequestedAt: time.Now()}
+	require.NoError(t, e.db.Create(req).Error)
+	for _, u := range []string{"u1", "u2"} {
+		require.NoError(t, e.db.Create(&types.LegalRequestRequester{ID: "q-" + u, RequestID: "r1", UserID: u}).Error)
+	}
+	// both askers saw nobody waiting before them (check-then-insert race)
+	e.notifier.LegalRequestsOpened(ctx, "u1", []string{"r1"})
+	e.notifier.LegalRequestsOpened(ctx, "u2", []string{"r1"})
+	d := &types.LegalDocumentDraft{ID: "d1", LegalDocumentID: "doc-1", DocumentNumber: "12/2025/NĐ-CP", Status: types.LegalDraftReady}
+	require.NoError(t, e.db.Create(d).Error)
+	e.notifier.LegalDraftReady(ctx, d)
+	e.notifier.LegalDraftReady(ctx, d)
+	require.Equal(t, 1, e.payload(t, "sa1", types.UserNotificationLegalRequestPending).Count)
+	require.Equal(t, 1, e.payload(t, "sa1", types.UserNotificationLegalDraftReady).Count)
 }

@@ -27,10 +27,12 @@ import (
 // Events are coalesced per queue: a batch is written once no event came
 // for the quiet period (at most maxWait after its first event), so a feed
 // run of N documents is one digest update (one toast) per SuperAdmin.
-// Close checks wait closeDelay, so a run of decisions checks once. Every
-// method returns at once; the writes run in the background, re-read what
-// is still pending, and only log failures. Shutdown (WaitTimeout) writes
-// the batches still waiting.
+// A close check waits closeDelay, so the decisions made within it share
+// one check. Every method returns at once; the writes run in the
+// background, re-read what is still pending, and log failures (a failed
+// write is not retried; the next batch or the sweep catches up). Shutdown
+// (WaitTimeout) writes the batches still waiting and drops events that
+// arrive after it started.
 
 const (
 	// SuperAdminQueueSweepInterval is how often the sweep closes the
@@ -42,8 +44,9 @@ const (
 	// superAdminQueueFlushTimeout bounds one write of a batch (all events,
 	// all recipients).
 	superAdminQueueFlushTimeout = time.Minute
-	// superAdminReviewingStale: a draft opened for review and left alone
-	// this long waits for a reviewer again.
+	// superAdminReviewingStale: a draft in review whose row was not updated
+	// (opened again, structure checked) for this long waits for a reviewer
+	// again; edits in the editor do not touch the row.
 	superAdminReviewingStale = 24 * time.Hour
 )
 
@@ -76,9 +79,12 @@ type reviewQueue struct {
 	pending func(ctx context.Context, db *gorm.DB, now time.Time) (bool, error)
 }
 
-// queueCollect re-reads one event in the background: how many of its items
-// are still pending and the items to name (newest first); 0 = handled.
-type queueCollect func(ctx context.Context, db *gorm.DB) (int, []types.UserNotificationQueueItem, error)
+// queueCollect re-reads one event in the background: the keys of its items
+// still pending (order / draft / knowledge id, số hiệu key, link key) and
+// the items to name (newest first); no key = handled. A batch counts the
+// distinct keys of its events, so the same item queued twice in one batch
+// (two people asking at once, a re-push) counts once.
+type queueCollect func(ctx context.Context, db *gorm.DB) ([]string, []types.UserNotificationQueueItem, error)
 
 type queueEvent struct {
 	ctx     context.Context
@@ -264,19 +270,21 @@ func (n *SuperAdminQueueNotifier) notify(ctx context.Context, kind, actor string
 	now := n.digests.now()
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	if n.stopped {
+		// shutting down: what still waits was written by WaitTimeout
+		return
+	}
 	b := n.batches[kind]
 	if b == nil {
 		b = &queueBatch{first: now}
 		n.batches[kind] = b
 	}
 	b.events = append(b.events, queueEvent{ctx: context.WithoutCancel(ctx), actor: actor, collect: collect})
-	delay := min(n.quiet, b.first.Add(n.maxWait).Sub(now))
-	if n.stopped || delay < 0 {
-		delay = 0
-	}
+	delay := max(0, min(n.quiet, b.first.Add(n.maxWait).Sub(now)))
 	if b.timer != nil {
-		// a timer that already fired takes this event with the batch (it
-		// waits for the lock held here); the new one then finds none
+		// if it already fired, its flushKind is waiting for the lock held
+		// here and takes this event with the batch; the new timer then
+		// finds no batch
 		b.timer.Stop()
 	}
 	b.timer = time.AfterFunc(delay, func() { n.flushKind(kind) })
@@ -298,6 +306,10 @@ func (n *SuperAdminQueueNotifier) takeBatch(kind string) *queueBatch {
 
 func (n *SuperAdminQueueNotifier) flushKind(kind string) {
 	n.mu.Lock()
+	if n.stopped { // WaitTimeout took every batch
+		n.mu.Unlock()
+		return
+	}
 	b := n.takeBatch(kind)
 	n.mu.Unlock()
 	if b != nil {
@@ -347,18 +359,18 @@ func (n *SuperAdminQueueNotifier) write(kind string, events []queueEvent) {
 	}()
 	type found struct {
 		actor string
-		delta int
+		keys  []string
 		items []types.UserNotificationQueueItem
 	}
 	var news []found
 	for _, ev := range events {
-		delta, items, err := ev.collect(ctx, n.db)
+		keys, items, err := ev.collect(ctx, n.db)
 		if err != nil {
 			logger.Warnf(ctx, "[QueueNotice] re-reading a %s event: %v", kind, err)
 			continue
 		}
-		if delta > 0 {
-			news = append(news, found{actor: ev.actor, delta: delta, items: items})
+		if len(keys) > 0 {
+			news = append(news, found{actor: ev.actor, keys: keys, items: items})
 		}
 	}
 	if len(news) > 0 {
@@ -372,15 +384,19 @@ func (n *SuperAdminQueueNotifier) write(kind string, events []queueEvent) {
 				failed = append(failed, ctx.Err().Error())
 				break
 			}
-			delta := 0
+			// the distinct items of the events this person did not cause
+			keys := map[string]bool{}
 			var items []types.UserNotificationQueueItem
 			for i := len(news) - 1; i >= 0; i-- { // the newest event first
 				if news[i].actor == userID {
 					continue
 				}
-				delta += news[i].delta
+				for _, k := range news[i].keys {
+					keys[k] = true
+				}
 				items = prependQueueItems(items, news[i].items)
 			}
+			delta := len(keys)
 			if delta == 0 {
 				continue
 			}
@@ -434,12 +450,15 @@ func (n *SuperAdminQueueNotifier) changed(_ context.Context, kind string) {
 	}
 	n.mu.Lock()
 	defer n.mu.Unlock()
+	if n.stopped {
+		return
+	}
 	if _, ok := n.closing[kind]; ok {
 		return
 	}
 	n.closing[kind] = time.AfterFunc(n.closeDelay, func() {
 		n.mu.Lock()
-		if _, ok := n.closing[kind]; !ok { // run by flushAll meanwhile
+		if _, ok := n.closing[kind]; !ok || n.stopped { // run by flushAll meanwhile
 			n.mu.Unlock()
 			return
 		}
@@ -455,6 +474,11 @@ func (n *SuperAdminQueueNotifier) runClose(kind string) {
 	defer n.wg.Done()
 	ctx, cancel := context.WithTimeout(context.Background(), superAdminQueueFlushTimeout)
 	defer cancel()
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Errorf(ctx, "[QueueNotice] closing %s panicked: %v", kind, r)
+		}
+	}()
 	if err := n.closeIfEmpty(ctx, n.queues[kind]); err != nil {
 		logger.Warnf(ctx, "[QueueNotice] %v", err)
 	}
@@ -520,12 +544,12 @@ func (n *SuperAdminQueueNotifier) OrderPending(ctx context.Context, v *types.Usa
 	item := types.UserNotificationQueueItem{Ref: v.OrderCode, Plan: strings.TrimSpace(v.PlanName), AmountVND: v.TotalVND,
 		Org: strings.TrimSpace(v.ScopeName)}
 	n.notify(ctx, types.UserNotificationPaymentOrderPending, actor,
-		func(ctx context.Context, db *gorm.DB) (int, []types.UserNotificationQueueItem, error) {
+		func(ctx context.Context, db *gorm.DB) ([]string, []types.UserNotificationQueueItem, error) {
 			found, err := queueHasRows(ctx, db, pendingOrders(db, n.digests.now()).Where("id = ?", id))
 			if err != nil || !found {
-				return 0, nil, err
+				return nil, nil, err
 			}
-			return 1, []types.UserNotificationQueueItem{item}, nil
+			return []string{id}, []types.UserNotificationQueueItem{item}, nil
 		})
 }
 
@@ -545,14 +569,15 @@ func (n *SuperAdminQueueNotifier) LegalRequestsOpened(ctx context.Context, actor
 	}
 	ids = append([]string(nil), ids...)
 	n.notify(ctx, types.UserNotificationLegalRequestPending, actor,
-		func(ctx context.Context, db *gorm.DB) (int, []types.UserNotificationQueueItem, error) {
+		func(ctx context.Context, db *gorm.DB) ([]string, []types.UserNotificationQueueItem, error) {
 			var rows []*types.LegalDocumentRequest
 			if err := db.WithContext(ctx).Where("id IN ?", ids).Where(personRequestsSQL, types.LegalRequestRequested).
 				Order("request_count DESC").Find(&rows).Error; err != nil {
-				return 0, nil, err
+				return nil, nil, err
 			}
 			// the rows of one số hiệu (several catalogue matches) are one item
 			var items []types.UserNotificationQueueItem
+			var keys []string
 			seen := map[string]int{}
 			for _, r := range rows {
 				key := r.NumberKey
@@ -563,13 +588,14 @@ func (n *SuperAdminQueueNotifier) LegalRequestsOpened(ctx context.Context, actor
 					continue
 				}
 				seen[key] = len(items)
+				keys = append(keys, key)
 				ref := strings.TrimSpace(r.DocumentNumber)
 				if ref == "" {
 					ref = r.NumberKey
 				}
 				items = append(items, types.UserNotificationQueueItem{Ref: ref, Title: strings.TrimSpace(r.Title), Count: r.RequestCount})
 			}
-			return len(items), items, nil
+			return keys, items, nil
 		})
 }
 
@@ -600,13 +626,13 @@ func (n *SuperAdminQueueNotifier) LegalDraftReady(ctx context.Context, d *types.
 		item.Untitled = true
 	}
 	n.notify(ctx, types.UserNotificationLegalDraftReady, d.CreatedBy,
-		func(ctx context.Context, db *gorm.DB) (int, []types.UserNotificationQueueItem, error) {
+		func(ctx context.Context, db *gorm.DB) ([]string, []types.UserNotificationQueueItem, error) {
 			found, err := queueHasRows(ctx, db, db.Model(&types.LegalDocumentDraft{}).
 				Where("id = ? AND status = ?", id, types.LegalDraftReady))
 			if err != nil || !found {
-				return 0, nil, err
+				return nil, nil, err
 			}
-			return 1, []types.UserNotificationQueueItem{item}, nil
+			return []string{id}, []types.UserNotificationQueueItem{item}, nil
 		})
 }
 
@@ -618,31 +644,38 @@ func (n *SuperAdminQueueNotifier) LegalDraftsChanged(ctx context.Context) {
 // ---------------------------------------------------------------------------
 // Legal feed links
 
-// LegalLinksPending: one push of document ref left candidates ids waiting
-// for review (auto-approved ones are not among them).
-func (n *SuperAdminQueueNotifier) LegalLinksPending(ctx context.Context, actor, ref string, ids []int64) {
-	if len(ids) == 0 {
+// LegalLinksPending: one push of document ref (feed, feedDocID) left the
+// links keys (LegalCandidateKey) newly waiting for review (auto-approved
+// ones are not among them). The links are re-read by key, not by row id:
+// a re-push within the batch recreates the rows with new ids.
+func (n *SuperAdminQueueNotifier) LegalLinksPending(ctx context.Context, actor, ref, feed, feedDocID string, keys []string) {
+	if len(keys) == 0 {
 		return
 	}
-	ids = append([]int64(nil), ids...)
+	want := make(map[string]bool, len(keys))
+	for _, k := range keys {
+		want[k] = true
+	}
 	ref = strings.TrimSpace(ref)
 	n.notify(ctx, types.UserNotificationLegalLinkPending, actor,
-		func(ctx context.Context, db *gorm.DB) (int, []types.UserNotificationQueueItem, error) {
-			var c int64
-			for start := 0; start < len(ids); start += superAdminQueueIDChunk {
-				var part int64
-				end := min(start+superAdminQueueIDChunk, len(ids))
-				if err := db.WithContext(ctx).Model(&types.LegalProvisionLinkCandidate{}).
-					Where("id IN ? AND review_status = ?", ids[start:end], types.LegalLinkReviewPending).
-					Count(&part).Error; err != nil {
-					return 0, nil, err
+		func(ctx context.Context, db *gorm.DB) ([]string, []types.UserNotificationQueueItem, error) {
+			var rows []*types.LegalProvisionLinkCandidate
+			if err := db.WithContext(ctx).Where("feed = ? AND feed_doc_id = ? AND review_status = ?", feed, feedDocID,
+				types.LegalLinkReviewPending).Find(&rows).Error; err != nil {
+				return nil, nil, err
+			}
+			var still []string
+			seen := map[string]bool{}
+			for _, c := range rows {
+				if k := LegalCandidateKey(c); want[k] && !seen[k] {
+					seen[k] = true
+					still = append(still, feed+"|"+feedDocID+"|"+k)
 				}
-				c += part
 			}
-			if c == 0 {
-				return 0, nil, nil
+			if len(still) == 0 {
+				return nil, nil, nil
 			}
-			return int(c), []types.UserNotificationQueueItem{{Ref: ref, Count: int(c)}}, nil
+			return still, []types.UserNotificationQueueItem{{Ref: ref, Count: len(still)}}, nil
 		})
 }
 
@@ -667,7 +700,7 @@ func (n *SuperAdminQueueNotifier) LegalIdentitiesPending(ctx context.Context, ac
 		names[k] = v
 	}
 	n.notify(ctx, types.UserNotificationLegalIdentityPending, actor,
-		func(ctx context.Context, db *gorm.DB) (int, []types.UserNotificationQueueItem, error) {
+		func(ctx context.Context, db *gorm.DB) ([]string, []types.UserNotificationQueueItem, error) {
 			var still []string
 			for start := 0; start < len(ids); start += superAdminQueueIDChunk {
 				var part []string
@@ -675,12 +708,12 @@ func (n *SuperAdminQueueNotifier) LegalIdentitiesPending(ctx context.Context, ac
 				if err := db.WithContext(ctx).Model(&types.LegalDocumentLink{}).
 					Where("knowledge_id IN ? AND review_status = ?", ids[start:end], types.LegalReviewPending).
 					Pluck("knowledge_id", &part).Error; err != nil {
-					return 0, nil, err
+					return nil, nil, err
 				}
 				still = append(still, part...)
 			}
 			if len(still) == 0 {
-				return 0, nil, nil
+				return nil, nil, nil
 			}
 			// the newest named first: the last ones of the batch
 			named := still[max(0, len(still)-types.UserNotificationQueueMaxItems):]
@@ -706,7 +739,7 @@ func (n *SuperAdminQueueNotifier) LegalIdentitiesPending(ctx context.Context, ac
 				ref := strings.TrimSpace(names[named[i]])
 				items = append(items, types.UserNotificationQueueItem{Ref: ref, Untitled: ref == ""})
 			}
-			return len(still), items, nil
+			return still, items, nil
 		})
 }
 

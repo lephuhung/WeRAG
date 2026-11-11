@@ -7,6 +7,7 @@ import (
 	"html"
 	"net/http"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -603,7 +604,7 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 		return nil, err
 	}
 	res.KeptDecisions = kept
-	var pendingIDs []int64
+	var newKeys []string
 	for _, c := range out {
 		if c.ID == 0 {
 			continue
@@ -612,8 +613,8 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 		switch c.ReviewStatus {
 		case types.LegalLinkReviewPending:
 			res.Pending++
-			if !wasPending[legalCandidateKey(c)+"|"+c.TargetElementID] {
-				pendingIDs = append(pendingIDs, c.ID)
+			if k := LegalCandidateKey(c); !wasPending[k] && !slices.Contains(newKeys, k) {
+				newKeys = append(newKeys, k)
 			}
 		case types.LegalLinkReviewApproved:
 			res.AutoApproved++
@@ -623,12 +624,12 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 	// already before this push: a re-push of an unchanged document adds
 	// none) go to the SuperAdmins' digest; the replaced pending candidates
 	// may have emptied the queue
-	if len(pendingIDs) > 0 {
+	if len(newKeys) > 0 {
 		ref := strings.TrimSpace(a.DocumentNumber)
 		if ref == "" {
 			ref = a.ID
 		}
-		s.Notices.LegalLinksPending(ctx, actor.UserID, ref, pendingIDs)
+		s.Notices.LegalLinksPending(ctx, actor.UserID, ref, meta.feed, meta.feedDocID, newKeys)
 	} else {
 		s.Notices.LegalLinksChanged(ctx)
 	}
@@ -1038,6 +1039,13 @@ func legalCandidateKey(c *types.LegalProvisionLinkCandidate) string {
 		c.AmenderDocID, c.SourcePath}, "|")
 }
 
+// LegalCandidateKey names one pending link of a pushed document across
+// pushes (the rows are recreated with new ids on every push): its mark key
+// and the element it is on.
+func LegalCandidateKey(c *types.LegalProvisionLinkCandidate) string {
+	return legalCandidateKey(c) + "|" + c.TargetElementID
+}
+
 // legalMarkKey is the key of the mark a candidate was pushed as.
 func legalMarkKey(c *types.LegalProvisionLinkCandidate) string {
 	var d struct {
@@ -1061,7 +1069,7 @@ func (s *LegalPushService) pendingCandidateKeys(ctx context.Context, meta *legal
 	}
 	keys := make(map[string]bool, len(rows))
 	for _, c := range rows {
-		keys[legalCandidateKey(c)+"|"+c.TargetElementID] = true
+		keys[LegalCandidateKey(c)] = true
 	}
 	return keys
 }
