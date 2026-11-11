@@ -6,7 +6,9 @@
 package answerdocx
 
 import (
+	"context"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -49,8 +51,18 @@ const Byline = "Trả lời bởi WeRAG"
 // metaGrey is the colour of the header labels.
 const metaGrey = "595959"
 
-// Build writes the answer document.
-func Build(in Input) ([]byte, error) {
+// ConvertBudget bounds the Markdown conversion; past it the answer is
+// written as plain paragraphs.
+const ConvertBudget = 5 * time.Second
+
+// Build writes the answer document. It returns ctx's error when ctx ends
+// (the client left); when only the ConvertBudget runs out, the answer is
+// written as plain paragraphs.
+func Build(ctx context.Context, in Input) ([]byte, error) {
+	content, err := contentBlocks(ctx, in.Content, ConvertBudget)
+	if err != nil {
+		return nil, err
+	}
 	var blocks []docxwrite.Block
 	if q := strings.TrimSpace(in.Question); q != "" {
 		blocks = append(blocks, docxwrite.Paragraph{Style: docxwrite.StyleMeta, Runs: []docxwrite.Run{
@@ -66,13 +78,28 @@ func Build(in Input) ([]byte, error) {
 		docxwrite.Paragraph{Style: docxwrite.StyleMeta, Runs: []docxwrite.Run{{Text: meta, Italic: true}}},
 		docxwrite.Paragraph{Style: docxwrite.StyleRule},
 	)
-	blocks = append(blocks, MarkdownBlocks(in.Content)...)
+	blocks = append(blocks, content...)
 	if refs := referenceParagraphs(in.References); len(refs) > 0 {
 		blocks = append(blocks, docxwrite.Paragraph{Style: docxwrite.StyleHeading3, Align: "left",
 			Runs: []docxwrite.Run{{Text: ReferencesHeading}}})
 		blocks = append(blocks, refs...)
 	}
 	return docxwrite.Build(docxwrite.Document{Title: titleOf(in), Blocks: blocks})
+}
+
+// contentBlocks converts the answer within budget, falling back to plain
+// paragraphs when the budget (not ctx) runs out.
+func contentBlocks(ctx context.Context, md string, budget time.Duration) ([]docxwrite.Block, error) {
+	bctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	blocks, err := MarkdownBlocksContext(bctx, md)
+	if err == nil {
+		return blocks, nil
+	}
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	return PlainBlocks(md), nil
 }
 
 // referencesListKey is the numbering key of the sources list; the answer's
@@ -106,7 +133,7 @@ func referenceParagraphs(refs []Reference) []docxwrite.Block {
 			runs = append(runs, docxwrite.Run{Text: " — " + u})
 		}
 		out = append(out, docxwrite.Paragraph{Align: "left", Runs: runs,
-			List: &docxwrite.ListItem{Ordered: true, List: referencesListKey}})
+			List: &docxwrite.ListItem{Ordered: true, List: referencesListKey, Start: 1}})
 	}
 	return out
 }

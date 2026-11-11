@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	stderrors "errors"
 	"net/http"
 
@@ -55,6 +56,9 @@ func (h *AnswerExportHandler) ExportAnswerDocx(c *gin.Context) {
 			_ = c.Error(errors.NewNotFoundError("message not found"))
 		case service.IsAnswerExportRefusal(err):
 			_ = c.Error(errors.NewBadRequestError(err.Error()))
+		case stderrors.Is(err, context.Canceled):
+			// the client left; nobody reads the answer (nginx's 499)
+			c.AbortWithStatus(499)
 		default:
 			logger.Errorf(ctx, "answer export failed: session=%s message=%s err=%v", sessionID, messageID, err)
 			_ = c.Error(errors.NewInternalServerError("không tạo được tệp .docx"))

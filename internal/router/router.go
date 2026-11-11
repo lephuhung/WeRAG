@@ -154,7 +154,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 			// Scripted clients that must stay out of long-term memory.
 			middleware.MemoryOptOutHeader,
 		},
-		ExposeHeaders:    []string{"Content-Length", "Access-Control-Allow-Origin", "Mcp-Session-Id"},
+		ExposeHeaders:    []string{"Content-Length", "Content-Disposition", "Access-Control-Allow-Origin", "Mcp-Session-Id"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))

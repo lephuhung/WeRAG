@@ -27,8 +27,9 @@ const (
 	StylePageMarker = "PageMarker"
 	// StylePageWarning flags a page whose OCR is broken (red, bold italic).
 	StylePageWarning = "PageWarning"
-	// StyleQuote is a block quote: grey text with a rule on the left.
-	StyleQuote = "Quote"
+	// StyleQuote is a block quote: grey text with a rule on the left
+	// (named "WeRAG Quote" so it never merges with Word's built-in Quote).
+	StyleQuote = "WeRAGQuote"
 	// StyleMeta is a small grey note (who wrote the document, when).
 	StyleMeta = "Meta"
 	// StyleRule is an empty paragraph drawn as a horizontal line.
@@ -87,7 +88,8 @@ type Run struct {
 
 // ListItem places a paragraph in a bulleted or numbered list. Items with
 // the same List key share one numbering sequence, which starts at Start
-// (0 counts as 1); bulleted items ignore List and Start.
+// (clamped to 0…32767, Word's range; Markdown "0." starts at 0); bulleted
+// items ignore List and Start.
 type ListItem struct {
 	Ordered bool
 	// Level is the nesting depth, 0 for the outermost list (at most 8).
@@ -212,6 +214,13 @@ type orderedNum struct {
 	numID, level, start int
 }
 
+// maxListStart is the largest start value Word accepts.
+const maxListStart = 32767
+
+// maxIndentTwips caps the left indent (deeply nested quotes or lists) at
+// half the text width, so text never runs out of the page.
+const maxIndentTwips = textWidthTwips / 2
+
 // bulletNumID is the w:num of every bulleted item; ordered lists get ids
 // from 2 on.
 const bulletNumID = 1
@@ -225,10 +234,7 @@ func (w *bodyWriter) numID(l *ListItem) int {
 		return id
 	}
 	id := len(w.orderedOrder) + 2
-	start := l.Start
-	if start < 1 {
-		start = 1
-	}
+	start := min(max(l.Start, 0), maxListStart)
 	w.orderedNums[l.List] = id
 	w.orderedOrder = append(w.orderedOrder, orderedNum{numID: id, level: clampLevel(l.Level), start: start})
 	return id
@@ -337,9 +343,9 @@ func writeParagraph(b *strings.Builder, style string, p Paragraph, w *bodyWriter
 	if p.List != nil {
 		lvl := clampLevel(p.List.Level)
 		b.WriteString(fmt.Sprintf(`<w:numPr><w:ilvl w:val="%d"/><w:numId w:val="%d"/></w:numPr>`, lvl, w.numID(p.List)))
-		b.WriteString(fmt.Sprintf(`<w:ind w:left="%d" w:hanging="%d"/>`, listIndent(lvl)+p.IndentTwips, listHanging))
+		b.WriteString(fmt.Sprintf(`<w:ind w:left="%d" w:hanging="%d"/>`, min(listIndent(lvl)+p.IndentTwips, maxIndentTwips), listHanging))
 	} else if p.IndentTwips > 0 {
-		b.WriteString(fmt.Sprintf(`<w:ind w:left="%d"/>`, p.IndentTwips))
+		b.WriteString(fmt.Sprintf(`<w:ind w:left="%d"/>`, min(p.IndentTwips, maxIndentTwips)))
 	}
 	switch {
 	case p.Align == "left" || p.Align == "center" || p.Align == "right" || p.Align == "both":
@@ -557,7 +563,7 @@ var stylesXML = xmlHeader + `<w:styles xmlns:w="http://schemas.openxmlformats.or
 	`<w:style w:type="paragraph" w:customStyle="1" w:styleId="PageWarning"><w:name w:val="PageWarning"/>` +
 	`<w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:spacing w:before="60" w:after="120"/></w:pPr>` +
 	`<w:rPr><w:b/><w:bCs/><w:i/><w:iCs/><w:color w:val="FF0000"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style>` +
-	`<w:style w:type="paragraph" w:customStyle="1" w:styleId="Quote"><w:name w:val="Quote"/>` +
+	`<w:style w:type="paragraph" w:customStyle="1" w:styleId="WeRAGQuote"><w:name w:val="WeRAG Quote"/>` +
 	`<w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:pPr><w:pBdr><w:left w:val="single" w:sz="18" w:space="8" w:color="BFBFBF"/></w:pBdr>` +
 	`<w:ind w:left="284"/></w:pPr><w:rPr><w:color w:val="404040"/></w:rPr></w:style>` +
 	`<w:style w:type="paragraph" w:customStyle="1" w:styleId="Meta"><w:name w:val="Meta"/>` +

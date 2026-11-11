@@ -117,6 +117,7 @@ func TestMarkdownBlocks(t *testing.T) {
 		{"bullets", "- một\n- **hai**\n* ba",
 			[]para{{text: "một", list: "b0"}, {text: "**hai**", list: "b0"}, {text: "ba", list: "b0"}}},
 		{"numbered with start", "3. ba\n4. bốn", []para{{text: "ba", list: "n0:3"}, {text: "bốn", list: "n0:4"}}},
+		{"numbered from zero", "0. không\n1. một", []para{{text: "không", list: "n0:0"}, {text: "một", list: "n0:1"}}},
 		{"nested lists", "1. Hồ sơ gồm:\n   - Đơn\n   - Bản sao\n     1. công chứng\n2. Nộp",
 			[]para{{text: "Hồ sơ gồm:", list: "n0:1"}, {text: "Đơn", list: "b1"}, {text: "Bản sao", list: "b1"},
 				{text: "công chứng", list: "n2:1"}, {text: "Nộp", list: "n0:2"}}},

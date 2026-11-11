@@ -3,6 +3,7 @@ package answerdocx
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/xml"
 	"io"
 	"strings"
@@ -71,7 +72,7 @@ Xem thêm [Cổng VBPL](https://vbpl.vn/nd30).
 
 func buildSample(t *testing.T) []byte {
 	t.Helper()
-	data, err := Build(Input{
+	data, err := Build(context.Background(), Input{
 		Question:   "Hồ sơ cấp phép gồm những gì?",
 		AnsweredAt: "14h05 - 16/10/2026",
 		Content:    sampleAnswer,
@@ -112,7 +113,7 @@ func TestBuildWritesAnswerDocument(t *testing.T) {
 		`<w:tbl>`, `<w:tblHeader/>`, `<w:gridCol w:w="4677"/>`, `<w:pStyle w:val="TableText"/><w:jc w:val="right"/>`,
 		`>50.000 đồng</w:t>`,
 		// quote, escaped text
-		`<w:pStyle w:val="Quote"/>`, `&lt;số, ký hiệu&gt; &amp; ngày tháng.`,
+		`<w:pStyle w:val="WeRAGQuote"/>`, `&lt;số, ký hiệu&gt; &amp; ngày tháng.`,
 		// link as text + URL
 		`>Xem thêm Cổng VBPL (https://vbpl.vn/nd30).</w:t>`,
 		// code-generated block kept
@@ -173,7 +174,7 @@ func TestBuildWritesAnswerDocument(t *testing.T) {
 }
 
 func TestBuildWithoutQuestionOrReferences(t *testing.T) {
-	data, err := Build(Input{Content: "Chỉ một câu."})
+	data, err := Build(context.Background(), Input{Content: "Chỉ một câu."})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +202,7 @@ func TestBuildVeryLongAnswer(t *testing.T) {
 	}
 	b.WriteString(strings.Repeat("*", 5000) + strings.Repeat("_x", 5000))
 	start := time.Now()
-	data, err := Build(Input{Question: strings.Repeat("rất dài ", 100), Content: b.String()})
+	data, err := Build(context.Background(), Input{Question: strings.Repeat("rất dài ", 100), Content: b.String()})
 	if err != nil {
 		t.Fatal(err)
 	}

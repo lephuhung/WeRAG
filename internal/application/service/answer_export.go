@@ -81,7 +81,7 @@ func (s *AnswerExportService) Export(ctx context.Context, sessionID, messageID s
 	if question != nil {
 		in.Question = question.Content
 	}
-	data, err := answerdocx.Build(in)
+	data, err := answerdocx.Build(ctx, in)
 	if err != nil {
 		return nil, err
 	}

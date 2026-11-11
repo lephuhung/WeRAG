@@ -1,11 +1,10 @@
 package answerdocx
 
 import (
+	"context"
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/docformat/docxwrite"
 )
@@ -26,25 +25,97 @@ import (
 //     code is read as text (answers indent lists, not code)
 //   - thematic breaks (---, ***, ___)
 //
-// Raw HTML tags other than <br> are dropped, their text kept; <think>
-// reasoning and <people_lookup> envelopes are removed.
+// Common HTML tags (b, i, sup, span, …) are dropped, their text kept, and
+// <br> is a line break; anything else in angle brackets stays as text.
+// HTML entities in text are decoded. Closed <think>…</think> reasoning and
+// <people_lookup>…</people_lookup> envelopes outside code are removed.
+//
+// The parser is linear in the input: emphasis follows the CommonMark
+// delimiter algorithm, brackets, parentheses and code spans are matched in
+// one pass up front. Nesting of lists and quotes is capped at
+// maxNesting levels (deeper lines are read as text), and an answer longer
+// than MaxMarkdownBytes is written as plain paragraphs.
+
+// MaxMarkdownBytes is the longest answer converted as Markdown; a longer
+// one is written as plain paragraphs.
+const MaxMarkdownBytes = 300 << 10
+
+// maxNesting caps nested lists and quotes.
+const maxNesting = 8
+
+// maxTableColumns caps the columns of a table; further cells join the last.
+const maxTableColumns = 64
+
+// maxTableCells caps the cells of all tables (short rows are padded, so a
+// small input could otherwise ask for millions); rows past it are text.
+const maxTableCells = 20000
 
 // converter turns Markdown lines into docx blocks. listSeq hands out the
 // numbering keys of ordered lists so each list restarts at its own start.
 type converter struct {
 	listSeq int
+	bud     *budget
+	cells   int
+}
+
+// budget stops a conversion whose context ends: every loop calls out(),
+// which checks the context every 1024 calls.
+type budget struct {
+	ctx context.Context
+	n   int
+	err error
+}
+
+func (b *budget) out() bool {
+	if b == nil {
+		return false
+	}
+	if b.err != nil {
+		return true
+	}
+	b.n++
+	if b.n&1023 == 0 {
+		b.err = b.ctx.Err()
+	}
+	return b.err != nil
 }
 
 // MarkdownBlocks converts a chat answer's Markdown to docx blocks.
 func MarkdownBlocks(md string) []docxwrite.Block {
+	blocks, _ := MarkdownBlocksContext(context.Background(), md)
+	return blocks
+}
+
+// MarkdownBlocksContext is MarkdownBlocks that gives up with ctx's error
+// once ctx ends. An answer over MaxMarkdownBytes comes back as plain
+// paragraphs.
+func MarkdownBlocksContext(ctx context.Context, md string) ([]docxwrite.Block, error) {
+	if len(md) > MaxMarkdownBytes {
+		return PlainBlocks(md), nil
+	}
 	md = preprocess(md)
-	c := &converter{}
-	return c.blocks(splitLines(md), 0)
+	c := &converter{bud: &budget{ctx: ctx}}
+	blocks := c.blocks(splitLines(md), 0, 0)
+	if c.bud.err != nil {
+		return nil, c.bud.err
+	}
+	return blocks, nil
+}
+
+// PlainBlocks writes md as it is, one paragraph per blank-line separated
+// block: the fallback for an answer too long or too slow to convert.
+func PlainBlocks(md string) []docxwrite.Block {
+	md = strings.ReplaceAll(strings.ReplaceAll(md, "\r\n", "\n"), "\r", "\n")
+	var out []docxwrite.Block
+	for _, para := range strings.Split(md, "\n\n") {
+		if para = strings.Trim(para, "\n"); strings.TrimSpace(para) != "" {
+			out = append(out, docxwrite.Paragraph{Runs: []docxwrite.Run{{Text: para}}})
+		}
+	}
+	return out
 }
 
 var (
-	thinkRe     = regexp.MustCompile(`(?s)<think>.*?(</think>|$)`)
-	peopleRe    = regexp.MustCompile(`(?s)<people_lookup>.*?</people_lookup>`)
 	wikiLinkRe  = regexp.MustCompile(`\[\[([^\]\n]+)\]\]`)
 	headingRe   = regexp.MustCompile(`^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$`)
 	closingHash = regexp.MustCompile(`[ \t]+#+$`)
@@ -60,10 +131,8 @@ var (
 func preprocess(md string) string {
 	md = strings.ReplaceAll(md, "\r\n", "\n")
 	md = strings.ReplaceAll(md, "\r", "\n")
-	if strings.Contains(md, "<think>") {
-		md = strings.TrimSpace(thinkRe.ReplaceAllString(md, ""))
-	}
-	md = peopleRe.ReplaceAllString(md, "")
+	md = stripPairs(md, "<think>", "</think>")
+	md = stripPairs(md, "<people_lookup>", "</people_lookup>")
 	return wikiLinkRe.ReplaceAllStringFunc(md, func(m string) string {
 		inner := m[2 : len(m)-2]
 		if i := strings.Index(inner, "|"); i > 0 {
@@ -149,10 +218,14 @@ func startsBlock(l string) bool {
 }
 
 // blocks converts lines at list depth depth (the level nested list items
-// get).
-func (c *converter) blocks(lines []string, depth int) []docxwrite.Block {
+// get); nest counts the lists and quotes around them.
+func (c *converter) blocks(lines []string, depth, nest int) []docxwrite.Block {
 	var out []docxwrite.Block
+	structured := nest < maxNesting
 	for i := 0; i < len(lines); {
+		if c.bud.out() {
+			return out
+		}
 		l := lines[i]
 		if isBlank(l) {
 			i++
@@ -167,7 +240,7 @@ func (c *converter) blocks(lines []string, depth int) []docxwrite.Block {
 			if strings.Trim(text, "#") == "" {
 				text = ""
 			}
-			out = append(out, headingParagraph(len(m[1]), text))
+			out = append(out, c.heading(len(m[1]), text))
 			i++
 			continue
 		}
@@ -176,8 +249,8 @@ func (c *converter) blocks(lines []string, depth int) []docxwrite.Block {
 			i++
 			continue
 		}
-		if quoteRe.MatchString(l) {
-			i = c.quote(lines, i, depth, &out)
+		if structured && quoteRe.MatchString(l) {
+			i = c.quote(lines, i, depth, nest, &out)
 			continue
 		}
 		if i+1 < len(lines) && strings.Contains(l, "|") && tableSepRe.MatchString(lines[i+1]) &&
@@ -185,8 +258,8 @@ func (c *converter) blocks(lines []string, depth int) []docxwrite.Block {
 			i = c.table(lines, i, &out)
 			continue
 		}
-		if _, ok := parseListItem(l); ok {
-			i = c.list(lines, i, depth, &out)
+		if _, ok := parseListItem(l); ok && structured {
+			i = c.list(lines, i, depth, nest, &out)
 			continue
 		}
 		i = c.paragraph(lines, i, &out)
@@ -194,7 +267,7 @@ func (c *converter) blocks(lines []string, depth int) []docxwrite.Block {
 	return out
 }
 
-func headingParagraph(level int, text string) docxwrite.Paragraph {
+func (c *converter) heading(level int, text string) docxwrite.Paragraph {
 	style := docxwrite.StyleHeading4
 	align := "left"
 	switch level {
@@ -205,14 +278,14 @@ func headingParagraph(level int, text string) docxwrite.Paragraph {
 	case 3:
 		style = docxwrite.StyleHeading3
 	}
-	return docxwrite.Paragraph{Style: style, Align: align, Runs: inlineRuns(text)}
+	return docxwrite.Paragraph{Style: style, Align: align, Runs: c.inline(text)}
 }
 
 func (c *converter) fencedCode(lines []string, i int, m []string, out *[]docxwrite.Block) int {
 	indent, fence := len(m[1]), m[2]
 	var body []string
 	j := i + 1
-	for ; j < len(lines); j++ {
+	for ; j < len(lines) && !c.bud.out(); j++ {
 		t := strings.TrimSpace(lines[j])
 		if strings.HasPrefix(t, fence[:1]) && strings.Trim(t, fence[:1]) == "" && len(t) >= len(fence) {
 			j++
@@ -229,10 +302,10 @@ func (c *converter) fencedCode(lines []string, i int, m []string, out *[]docxwri
 	return j
 }
 
-func (c *converter) quote(lines []string, i, depth int, out *[]docxwrite.Block) int {
+func (c *converter) quote(lines []string, i, depth, nest int, out *[]docxwrite.Block) int {
 	var inner []string
 	j := i
-	for ; j < len(lines); j++ {
+	for ; j < len(lines) && !c.bud.out(); j++ {
 		l := lines[j]
 		if quoteRe.MatchString(l) {
 			l = strings.TrimLeft(l, " ")[1:]
@@ -249,7 +322,7 @@ func (c *converter) quote(lines []string, i, depth int, out *[]docxwrite.Block) 
 		}
 		break
 	}
-	for _, blk := range c.blocks(inner, depth) {
+	for _, blk := range c.blocks(inner, depth, nest+1) {
 		if p, ok := blk.(docxwrite.Paragraph); ok {
 			if p.Style == "" || p.Style == docxwrite.StyleNormal {
 				p.Style = docxwrite.StyleQuote
@@ -268,12 +341,12 @@ func (c *converter) quote(lines []string, i, depth int, out *[]docxwrite.Block) 
 
 // list reads one list (items of the same kind at the indent of lines[i])
 // and the lines nested in its items.
-func (c *converter) list(lines []string, i, depth int, out *[]docxwrite.Block) int {
+func (c *converter) list(lines []string, i, depth, nest int, out *[]docxwrite.Block) int {
 	first, _ := parseListItem(lines[i])
 	c.listSeq++
 	key := c.listSeq
 	j := i
-	for j < len(lines) {
+	for j < len(lines) && !c.bud.out() {
 		lm, ok := parseListItem(lines[j])
 		if !ok || lm.ordered != first.ordered || lm.indent > first.indent+3 || lm.indent < first.indent {
 			break
@@ -282,17 +355,18 @@ func (c *converter) list(lines []string, i, depth int, out *[]docxwrite.Block) i
 		item := []string{lm.text}
 		k := j + 1
 		childIndent := min(lm.content, lm.indent+2)
-		for k < len(lines) {
+		for k < len(lines) && !c.bud.out() {
 			l := lines[k]
 			if isBlank(l) {
-				// a blank line stays inside the item when more of it follows
+				// blank lines stay inside the item when more of it follows
 				n := k + 1
 				for n < len(lines) && isBlank(lines[n]) {
 					n++
 				}
 				if n < len(lines) && indentOf(lines[n]) >= childIndent && indentOf(lines[n]) > lm.indent {
-					item = append(item, "")
-					k++
+					for ; k < n; k++ {
+						item = append(item, "")
+					}
 					continue
 				}
 				break
@@ -315,7 +389,7 @@ func (c *converter) list(lines []string, i, depth int, out *[]docxwrite.Block) i
 			}
 			break
 		}
-		c.listItem(item, lm, key, depth, out)
+		c.listItem(item, lm, key, depth, nest, out)
 		j = k
 		// blank lines between items keep the list going
 		n := j
@@ -339,11 +413,11 @@ func safeLine(lines []string, i int) string {
 	return ""
 }
 
-func (c *converter) listItem(item []string, lm listMarker, key, depth int, out *[]docxwrite.Block) {
+func (c *converter) listItem(item []string, lm listMarker, key, depth, nest int, out *[]docxwrite.Block) {
 	marker := &docxwrite.ListItem{Ordered: lm.ordered, Level: depth, List: key, Start: lm.start}
 	var own []docxwrite.Block
 	marked := false
-	for _, blk := range c.blocks(item, depth+1) {
+	for _, blk := range c.blocks(item, depth+1, nest+1) {
 		p, ok := blk.(docxwrite.Paragraph)
 		if !ok {
 			own = append(own, blk)
@@ -367,7 +441,7 @@ func (c *converter) listItem(item []string, lm listMarker, key, depth int, out *
 func (c *converter) paragraph(lines []string, i int, out *[]docxwrite.Block) int {
 	var text []string
 	j := i
-	for ; j < len(lines); j++ {
+	for ; j < len(lines) && !c.bud.out(); j++ {
 		l := lines[j]
 		if isBlank(l) {
 			break
@@ -378,7 +452,7 @@ func (c *converter) paragraph(lines []string, i int, out *[]docxwrite.Block) int
 				if setextH2Re.MatchString(l) {
 					level = 2
 				}
-				*out = append(*out, headingParagraph(level, strings.Join(text, " ")))
+				*out = append(*out, c.heading(level, strings.Join(text, " ")))
 				return j + 1
 			}
 			if startsBlock(l) {
@@ -399,12 +473,13 @@ func (c *converter) paragraph(lines []string, i int, out *[]docxwrite.Block) int
 		}
 		text[k] = t
 	}
-	*out = append(*out, docxwrite.Paragraph{Runs: inlineRuns(strings.Join(text, "\n"))})
+	*out = append(*out, docxwrite.Paragraph{Runs: c.inline(strings.Join(text, "\n"))})
 	return j
 }
 
-// splitRow splits a table row into trimmed cells, honouring \| escapes and
-// pipes inside code spans.
+// splitRow splits a table row into trimmed cells on unescaped pipes; as in
+// the chat renderer (marked), a pipe inside a code span splits too unless
+// written \|.
 func splitRow(l string) []string {
 	l = strings.TrimSpace(l)
 	l = strings.TrimPrefix(l, "|")
@@ -413,17 +488,13 @@ func splitRow(l string) []string {
 	}
 	var cells []string
 	var cur strings.Builder
-	inCode := false
 	for i := 0; i < len(l); i++ {
 		ch := l[i]
 		switch {
 		case ch == '\\' && i+1 < len(l) && l[i+1] == '|':
 			cur.WriteByte('|')
 			i++
-		case ch == '`':
-			inCode = !inCode
-			cur.WriteByte(ch)
-		case ch == '|' && !inCode:
+		case ch == '|':
 			cells = append(cells, strings.TrimSpace(cur.String()))
 			cur.Reset()
 		default:
@@ -434,7 +505,7 @@ func splitRow(l string) []string {
 }
 
 func (c *converter) table(lines []string, i int, out *[]docxwrite.Block) int {
-	header := splitRow(lines[i])
+	header := capColumns(splitRow(lines[i]))
 	var aligns []string
 	for _, s := range splitRow(lines[i+1]) {
 		left, right := strings.HasPrefix(s, ":"), strings.HasSuffix(s, ":")
@@ -448,22 +519,28 @@ func (c *converter) table(lines []string, i int, out *[]docxwrite.Block) int {
 		}
 	}
 	cellsOf := func(cells []string) []docxwrite.TableCell {
+		cells = capColumns(cells)
 		row := make([]docxwrite.TableCell, len(header))
 		for k := range row {
 			text := ""
 			if k < len(cells) {
 				text = cells[k]
 			}
-			// <br> inside a cell is a line break (inlineRuns handles it)
+			// <br> inside a cell is a line break (inline handles it)
 			row[k] = docxwrite.TableCell{Paragraphs: []docxwrite.Paragraph{{
-				Style: docxwrite.StyleTableText, Align: aligns[min(k, len(aligns)-1)], Runs: inlineRuns(text),
+				Style: docxwrite.StyleTableText, Align: aligns[min(k, len(aligns)-1)], Runs: c.inline(text),
 			}}}
 		}
 		return row
 	}
+	if c.cells+len(header) > maxTableCells {
+		*out = append(*out, docxwrite.Paragraph{Runs: c.inline(lines[i])})
+		return i + 1
+	}
+	c.cells += len(header)
 	t := docxwrite.Table{HeaderRows: 1, Rows: [][]docxwrite.TableCell{cellsOf(header)}}
 	j := i + 2
-	for ; j < len(lines); j++ {
+	for ; j < len(lines) && !c.bud.out() && c.cells+len(header) <= maxTableCells; j++ {
 		l := lines[j]
 		if isBlank(l) || !strings.Contains(l, "|") && startsBlock(l) {
 			break
@@ -472,300 +549,91 @@ func (c *converter) table(lines []string, i int, out *[]docxwrite.Block) int {
 			break
 		}
 		t.Rows = append(t.Rows, cellsOf(splitRow(l)))
+		c.cells += len(header)
 	}
 	*out = append(*out, t)
 	return j
 }
 
-// ---- inline ----------------------------------------------------------------
-
-type inlineStyle struct {
-	bold, italic, strike bool
+// capColumns joins cells past maxTableColumns into the last one.
+func capColumns(cells []string) []string {
+	if len(cells) <= maxTableColumns {
+		return cells
+	}
+	out := append([]string{}, cells[:maxTableColumns-1]...)
+	return append(out, strings.Join(cells[maxTableColumns-1:], " | "))
 }
 
-var (
-	htmlBreakRe = regexp.MustCompile(`(?i)<br\s*/?>`)
-	htmlTagRe   = regexp.MustCompile(`</?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^<>]*)?/?>`)
-)
-
-// inlineRuns converts the inline Markdown of one paragraph to runs.
-func inlineRuns(s string) []docxwrite.Run {
-	s = htmlBreakRe.ReplaceAllString(s, "\n")
-	var runs []docxwrite.Run
-	parseInline(s, inlineStyle{}, &runs)
-	return mergeRuns(runs)
-}
-
-func mergeRuns(runs []docxwrite.Run) []docxwrite.Run {
-	var out []docxwrite.Run
-	for _, r := range runs {
-		if r.Text == "" {
+// stripPairs removes each closed open…close pair outside fenced code and
+// code spans; an open tag without its close is left alone.
+func stripPairs(md, open, close string) string {
+	if !strings.Contains(md, open) {
+		return md
+	}
+	type span struct{ start, end int }
+	var opens, closes []int
+	inFence, fenceCh, fenceLen := false, byte(0), 0
+	pos := 0
+	for _, line := range strings.SplitAfter(md, "\n") {
+		body := strings.TrimRight(line, "\n")
+		if m := fenceRe.FindStringSubmatch(body); m != nil {
+			if !inFence {
+				inFence, fenceCh, fenceLen = true, m[2][0], len(m[2])
+			} else if m[2][0] == fenceCh && len(m[2]) >= fenceLen && strings.TrimSpace(m[3]) == "" {
+				inFence = false
+			}
+			pos += len(line)
 			continue
 		}
-		if n := len(out); n > 0 {
-			last := &out[n-1]
-			if last.Bold == r.Bold && last.Italic == r.Italic && last.Strike == r.Strike && last.Code == r.Code {
-				last.Text += r.Text
-				continue
-			}
-		}
-		out = append(out, r)
-	}
-	return out
-}
-
-func emit(runs *[]docxwrite.Run, text string, st inlineStyle) {
-	if text == "" {
-		return
-	}
-	text = htmlTagRe.ReplaceAllString(text, "")
-	*runs = append(*runs, docxwrite.Run{Text: text, Bold: st.bold, Italic: st.italic, Strike: st.strike})
-}
-
-func isPunctOrSpace(r rune) bool {
-	return r == utf8.RuneError || unicode.IsSpace(r) || unicode.IsPunct(r) || unicode.IsSymbol(r)
-}
-
-func runeBefore(s string, i int) rune {
-	if i <= 0 {
-		return ' '
-	}
-	r, _ := utf8.DecodeLastRuneInString(s[:i])
-	return r
-}
-
-func runeAt(s string, i int) rune {
-	if i >= len(s) {
-		return ' '
-	}
-	r, _ := utf8.DecodeRuneInString(s[i:])
-	return r
-}
-
-// findCloser finds the delimiter run closing an emphasis opened with
-// delim just before start: a run of the same character preceded by a
-// non-space (and for "_" not followed by a letter). Code spans and escapes
-// are skipped, and a nested emphasis of another width is skipped whole, so
-// "*a **b** c*" closes at the last "*".
-func findCloser(s string, start int, delim string) int {
-	ch := delim[0]
-	for k := start; k < len(s); {
-		c := s[k]
-		switch {
-		case c == '\\':
-			k += 2
-			continue
-		case c == '`':
-			n := runLen(s, k, '`')
-			if e := strings.Index(s[k+n:], s[k:k+n]); e >= 0 {
-				k += n + e + n
-			} else {
-				k += n
-			}
-			continue
-		case c != ch:
-			k++
-			continue
-		}
-		n := runLen(s, k, ch)
-		canClose := k > start && !unicode.IsSpace(runeBefore(s, k)) && (ch != '_' || isPunctOrSpace(runeAt(s, k+n)))
-		canOpen := k+n < len(s) && !unicode.IsSpace(runeAt(s, k+n)) && (ch != '_' || isPunctOrSpace(runeBefore(s, k)))
-		if n == len(delim) && canClose {
-			return k
-		}
-		if n != len(delim) && canOpen && (!canClose || n < len(delim)) {
-			if e := findCloser(s, k+n, s[k:k+n]); e >= 0 {
-				k = e + n
-				continue
-			}
-		}
-		if n > len(delim) && canClose {
-			return k + n - len(delim)
-		}
-		k += n
-	}
-	return -1
-}
-
-func runLen(s string, i int, ch byte) int {
-	n := 0
-	for i+n < len(s) && s[i+n] == ch {
-		n++
-	}
-	return n
-}
-
-func parseInline(s string, st inlineStyle, runs *[]docxwrite.Run) {
-	var plain strings.Builder
-	flush := func() {
-		emit(runs, plain.String(), st)
-		plain.Reset()
-	}
-	for i := 0; i < len(s); {
-		ch := s[i]
-		switch {
-		case ch == '\\' && i+1 < len(s) && strings.IndexByte("\\`*_{}[]()#+-.!|~<>", s[i+1]) >= 0:
-			plain.WriteByte(s[i+1])
-			i += 2
-			continue
-		case ch == '`':
-			n := 1
-			for i+n < len(s) && s[i+n] == '`' {
-				n++
-			}
-			ticks := s[i : i+n]
-			if end := strings.Index(s[i+n:], ticks); end >= 0 {
-				code := s[i+n : i+n+end]
-				if len(code) > 1 && code[0] == ' ' && code[len(code)-1] == ' ' && strings.TrimSpace(code) != "" {
-					code = code[1 : len(code)-1]
-				}
-				flush()
-				*runs = append(*runs, docxwrite.Run{Text: strings.ReplaceAll(code, "\n", " "), Code: true,
-					Bold: st.bold, Italic: st.italic, Strike: st.strike})
-				i += n + end + n
-				continue
-			}
-			plain.WriteString(ticks)
-			i += n
-			continue
-		case ch == '!' && i+1 < len(s) && s[i+1] == '[':
-			if text, _, end, ok := parseLink(s, i+1); ok {
-				flush()
-				alt := strings.TrimSpace(text)
-				if alt == "" {
-					emit(runs, "[Hình]", st)
-				} else {
-					emit(runs, "[Hình: "+alt+"]", st)
-				}
-				i = end
-				continue
-			}
-		case ch == '[':
-			if text, url, end, ok := parseLink(s, i); ok {
-				flush()
-				parseInline(text, st, runs)
-				if url != "" && url != "#" && strings.TrimSpace(stripMarkup(text)) != url {
-					emit(runs, " ("+url+")", st)
-				}
-				i = end
-				continue
-			}
-		case ch == '<':
-			if end := strings.IndexByte(s[i:], '>'); end > 0 {
-				inner := s[i+1 : i+end]
-				if (strings.HasPrefix(inner, "http://") || strings.HasPrefix(inner, "https://") ||
-					strings.HasPrefix(inner, "mailto:")) && !strings.ContainsAny(inner, " <") {
-					plain.WriteString(strings.TrimPrefix(inner, "mailto:"))
-					i += end + 1
-					continue
-				}
-			}
-		case ch == '*' || ch == '_' || ch == '~':
-			n := 1
-			for i+n < len(s) && s[i+n] == ch {
-				n++
-			}
-			if ch == '~' && n != 2 {
-				plain.WriteString(s[i : i+n])
-				i += n
-				continue
-			}
-			if n > 3 {
-				plain.WriteString(s[i : i+n])
-				i += n
-				continue
-			}
-			delim := s[i : i+n]
-			after := runeAt(s, i+n)
-			before := runeBefore(s, i)
-			opens := !unicode.IsSpace(after) && i+n < len(s)
-			if ch == '_' && !isPunctOrSpace(before) {
-				opens = false // snake_case stays as written
-			}
-			if opens {
-				if end := findCloser(s, i+n, delim); end >= 0 {
-					inner := s[i+n : end]
-					next := st
-					switch {
-					case ch == '~':
-						next.strike = true
-					case n == 1:
-						next.italic = true
-					case n == 2:
-						next.bold = true
-					default:
-						next.bold, next.italic = true, true
+		if !inFence {
+			spans := codeSpans(body, false)
+			for i := 0; i < len(body); {
+				switch {
+				case body[i] == '`':
+					if e, ok := spans[i]; ok {
+						i = e
+					} else {
+						i += runLen(body, i, '`')
 					}
-					flush()
-					parseInline(inner, next, runs)
-					i = end + n
+					continue
+				case strings.HasPrefix(body[i:], open):
+					opens = append(opens, pos+i)
+					i += len(open)
+					continue
+				case strings.HasPrefix(body[i:], close):
+					closes = append(closes, pos+i)
+					i += len(close)
 					continue
 				}
+				i++
 			}
-			plain.WriteString(delim)
-			i += n
-			continue
 		}
-		plain.WriteByte(ch)
-		i++
+		pos += len(line)
 	}
-	flush()
-}
-
-// parseLink parses "[text](url)" at s[i] (s[i] == '['), returning the end
-// index past ")". Nested brackets in the text and parentheses in the URL
-// are balanced; an optional "title" after the URL is dropped.
-func parseLink(s string, i int) (text, url string, end int, ok bool) {
-	depth := 0
-	j := i
-	for ; j < len(s); j++ {
-		switch s[j] {
-		case '\\':
-			j++
-		case '[':
-			depth++
-		case ']':
-			depth--
+	var spans []span
+	ci := 0
+	for oi := 0; oi < len(opens); {
+		for ci < len(closes) && closes[ci] < opens[oi] {
+			ci++
 		}
-		if depth == 0 {
+		if ci == len(closes) {
 			break
 		}
-	}
-	if j >= len(s) || j+1 >= len(s) || s[j+1] != '(' {
-		return "", "", 0, false
-	}
-	text = s[i+1 : j]
-	k := j + 2
-	paren := 1
-	for ; k < len(s); k++ {
-		if s[k] == '(' {
-			paren++
-		} else if s[k] == ')' {
-			paren--
-			if paren == 0 {
-				break
-			}
-		} else if s[k] == '\n' {
-			return "", "", 0, false
+		spans = append(spans, span{opens[oi], closes[ci] + len(close)})
+		for oi < len(opens) && opens[oi] < closes[ci] {
+			oi++
 		}
+		ci++
 	}
-	if k >= len(s) {
-		return "", "", 0, false
+	if len(spans) == 0 {
+		return md
 	}
-	dest := strings.TrimSpace(s[j+2 : k])
-	if sp := strings.IndexAny(dest, " \t"); sp >= 0 {
-		dest = dest[:sp]
-	}
-	dest = strings.TrimSuffix(strings.TrimPrefix(dest, "<"), ">")
-	return text, dest, k + 1, true
-}
-
-// stripMarkup is the visible text of inline Markdown (to compare a link's
-// text with its URL).
-func stripMarkup(s string) string {
 	var b strings.Builder
-	for _, r := range inlineRuns(s) {
-		b.WriteString(r.Text)
+	last := 0
+	for _, sp := range spans {
+		b.WriteString(md[last:sp.start])
+		last = sp.end
 	}
-	return b.String()
+	b.WriteString(md[last:])
+	return strings.TrimSpace(b.String())
 }
