@@ -269,15 +269,24 @@ func IsSkillMaintenanceDescription(description string) bool {
 	return strings.HasPrefix(description, SkillMaintenanceSessionMarker)
 }
 
-// SanitizeClientSessionDescription keeps the skill-maintenance marker off
-// client-writable descriptions. A row that is already a maintenance session
-// keeps its stored description so a PUT cannot un-hide it; any other row
-// drops a planted marker rather than accepting it.
+// IsReservedSessionDescription reports a description that marks a session
+// for the server (skill maintenance, IM chat, embed channel): clients may
+// neither set nor remove it.
+func IsReservedSessionDescription(d string) bool {
+	return IsSkillMaintenanceDescription(d) || IsIMSessionDescription(d) ||
+		strings.HasPrefix(d, EmbedSessionMarkerPrefix)
+}
+
+// SanitizeClientSessionDescription keeps the server's markers (skill
+// maintenance, IM, embed: IsReservedSessionDescription) off client-writable
+// descriptions. A row that already carries one keeps its stored description,
+// so a PUT (with or without a description) cannot un-hide or unlock it; any
+// other row drops a planted marker rather than accepting it.
 func SanitizeClientSessionDescription(incoming, existing string) string {
-	if IsSkillMaintenanceDescription(existing) {
+	if IsReservedSessionDescription(existing) {
 		return existing
 	}
-	if IsSkillMaintenanceDescription(incoming) {
+	if IsReservedSessionDescription(incoming) {
 		return ""
 	}
 	return incoming

@@ -641,12 +641,6 @@ func (h *EmbedChannelHandler) ensureEmbedSession(c *gin.Context) error {
 		c.JSON(http.StatusForbidden, gin.H{"error": "session not allowed for this embed channel"})
 		return apperrors.NewForbiddenError("session not allowed")
 	}
-	ownerID := types.EmbedSessionPrincipal(ch.TenantID, ch.ID, sessionID).StorageID()
-	if strings.TrimSpace(sess.UserID) == "" {
-		if err := h.sessionService.SetSessionOwnerID(c.Request.Context(), ch.TenantID, sessionID, ownerID); err != nil {
-			logger.Warnf(c.Request.Context(), "failed to backfill embed session owner for %s: %v", sessionID, err)
-		}
-	}
 	// Require the signed handle minted at creation. This is the per-visitor
 	// authorization secret: knowing the session id alone (e.g. from a leaked
 	// access log) is insufficient without the matching signature.
@@ -654,6 +648,13 @@ func (h *EmbedChannelHandler) ensureEmbedSession(c *gin.Context) error {
 	if !service.VerifyEmbedSessionHandle(ch, sessionID, sig) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "session signature invalid"})
 		return apperrors.NewForbiddenError("session signature invalid")
+	}
+	// only a verified visitor claims a legacy ownerless row
+	ownerID := types.EmbedSessionPrincipal(ch.TenantID, ch.ID, sessionID).StorageID()
+	if strings.TrimSpace(sess.UserID) == "" {
+		if err := h.sessionService.SetSessionOwnerID(c.Request.Context(), ch.TenantID, sessionID, ownerID); err != nil {
+			logger.Warnf(c.Request.Context(), "failed to backfill embed session owner for %s: %v", sessionID, err)
+		}
 	}
 	principal := types.EmbedSessionPrincipal(ch.TenantID, ch.ID, sessionID)
 	ctx := c.Request.Context()

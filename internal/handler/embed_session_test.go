@@ -416,3 +416,29 @@ func TestEmbedStopSessionMissingMessageID(t *testing.T) {
 		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
 	}
 }
+
+// A bad signature claims nothing: the legacy ownerless row keeps no owner;
+// a verified visitor's request claims it.
+func TestEnsureEmbedSessionBackfillsOwnerOnlyAfterSignature(t *testing.T) {
+	t.Setenv("SYSTEM_SIGNING_KEY", "")
+	t.Setenv("SYSTEM_AES_KEY", "test-embed-signing-key-32-bytes!!!")
+	ch := testEmbedChannel()
+	sess := validEmbedSession(ch)
+	h := &EmbedChannelHandler{sessionService: &stubSessionServiceForEmbed{
+		sessions: map[string]*types.Session{testEmbedSessionID: sess},
+	}}
+	c, _ := newEnsureEmbedSessionCtx(ch, testEmbedSessionID, "forged")
+	if err := h.ensureEmbedSession(c); err == nil {
+		t.Fatal("a forged handle must be refused")
+	}
+	if sess.UserID != "" {
+		t.Fatalf("owner backfilled before the signature check: %q", sess.UserID)
+	}
+	c, _ = newEnsureEmbedSessionCtx(ch, testEmbedSessionID, service.SignEmbedSessionHandle(ch, testEmbedSessionID))
+	if err := h.ensureEmbedSession(c); err != nil {
+		t.Fatalf("ensureEmbedSession() = %v", err)
+	}
+	if want := types.EmbedSessionPrincipal(ch.TenantID, ch.ID, testEmbedSessionID).StorageID(); sess.UserID != want {
+		t.Fatalf("owner = %q, want %q", sess.UserID, want)
+	}
+}

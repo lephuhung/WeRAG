@@ -318,7 +318,7 @@ func TestChannelGateLegacyEmbedRows(t *testing.T) {
 	require.ErrorIs(t, err, apperrors.ErrSessionNotFound)
 
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
-	ctx = types.WithPrincipal(ctx, types.Principal{Type: types.PrincipalEmbedSession, ID: "ch-1:visitor"})
+	ctx = types.WithPrincipal(ctx, types.EmbedSessionPrincipal(1, "ch-1", embed.ID))
 	_, err = f.sessions.GetOwnedSession(ctx, embed.ID)
 	require.NoError(t, err, "the embed runtime keeps its rows")
 	_, err = f.sessions.GetOwnedSession(ctx, f.telegram)
@@ -362,4 +362,57 @@ func TestIMSessionDescription(t *testing.T) {
 	require.True(t, types.IsIMSessionDescription("Thread-based session from slack IM"))
 	require.False(t, types.IsIMSessionDescription("Auto-created from"))
 	require.False(t, types.IsIMSessionDescription("ghi chú của tôi"))
+}
+
+// An update without a description (or with a planted marker) never removes
+// or adds the IM / embed marker.
+func TestUpdateSessionKeepsChannelMarkers(t *testing.T) {
+	f := newIMScopeFixture(t)
+	imDesc := types.IMSessionDescription("telegram", false)
+	require.NoError(t, f.db.Model(&types.Session{}).Where("id = ?", f.telegram).Update("description", imDesc).Error)
+	admin, member := imScopeCtx(types.TenantRoleAdmin), imScopeCtx(types.TenantRoleMember)
+
+	require.NoError(t, f.sessions.UpdateSession(admin, &types.Session{ID: f.telegram, TenantID: 1, Title: "đổi tên"}))
+	var stored types.Session
+	require.NoError(t, f.db.First(&stored, "id = ?", f.telegram).Error)
+	require.Equal(t, imDesc, stored.Description, "the IM marker survives an update without description")
+	require.Equal(t, "đổi tên", stored.Title)
+
+	require.NoError(t, f.sessions.UpdateSession(member, &types.Session{
+		ID: f.own, TenantID: 1, Title: "của Alice", Description: types.EmbedSessionMarkerPrefix + "ch-x",
+	}))
+	var mine types.Session
+	require.NoError(t, f.db.First(&mine, "id = ?", f.own).Error)
+	require.Empty(t, mine.Description, "a client cannot plant a channel marker")
+}
+
+// The runtimes are exempt only on their own traffic: the IM runtime on IM
+// chats, an embed visitor on its own row or its channel's legacy row.
+func TestChannelGateRuntimeExemptionsAreNarrow(t *testing.T) {
+	f := newIMScopeFixture(t)
+	embedOther := &types.Session{TenantID: 1, Title: "kênh khác", Description: types.EmbedSessionMarkerPrefix + "ch-2"}
+	embedOwn := &types.Session{TenantID: 1, Title: "kênh này", Description: types.EmbedSessionMarkerPrefix + "ch-1"}
+	require.NoError(t, f.db.Create(embedOther).Error)
+	require.NoError(t, f.db.Create(embedOwn).Error)
+	base := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(1))
+
+	im := types.WithPrincipal(context.WithValue(base, types.UserIDContextKey, "system-1"),
+		types.Principal{Type: types.PrincipalIMUser, ID: "1:ch:telegram:42"})
+	_, err := f.sessions.GetOwnedSession(im, f.telegram)
+	require.NoError(t, err, "IM runtime on a mapped IM chat")
+	_, err = f.sessions.GetOwnedSession(im, embedOwn.ID)
+	require.ErrorIs(t, err, apperrors.ErrSessionNotFound, "IM runtime never on an embed row")
+	_, err = f.sessions.GetOwnedSession(im, f.legacy)
+	require.NoError(t, err, "a plain legacy web row is no channel session")
+
+	visitor := types.EmbedSessionPrincipal(1, "ch-1", embedOwn.ID)
+	embedCtx := types.WithPrincipal(base, visitor)
+	_, err = f.sessions.GetOwnedSession(embedCtx, embedOwn.ID)
+	require.NoError(t, err, "its channel's legacy row")
+	_, err = f.sessions.GetOwnedSession(embedCtx, embedOther.ID)
+	require.ErrorIs(t, err, apperrors.ErrSessionNotFound, "another channel's row")
+	owned := &types.Session{TenantID: 1, UserID: visitor.StorageID(), Title: "của khách", Description: types.EmbedSessionMarkerPrefix + "ch-1"}
+	require.NoError(t, f.db.Create(owned).Error)
+	_, err = f.sessions.GetOwnedSession(embedCtx, owned.ID)
+	require.NoError(t, err, "its own row by owner id")
 }

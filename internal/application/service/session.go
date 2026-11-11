@@ -130,9 +130,9 @@ func loadSessionForRead(
 // matches them for every member. Allowed: a session the caller owns,
 // internal work (internalSessionWork), an organization admin or SuperAdmin
 // (including a full-access tenant API key, whose auth role is admin; a
-// scoped key stays a member and is locked out), the IM runtime, the embed
-// runtime on embed rows (not IM chats) and an API principal on its own API
-// session.
+// scoped key stays a member and is locked out), the IM runtime on IM chats
+// only, the embed runtime on its own row (its owner id, or its channel's
+// legacy marker) and an API principal on its own API session.
 // A failed IM lookup fails closed.
 func channelSessionLocked(ctx context.Context, repo interfaces.SessionRepository, tenantID uint64, session *types.Session) bool {
 	if session == nil {
@@ -145,14 +145,30 @@ func channelSessionLocked(ctx context.Context, repo interfaces.SessionRepository
 		return false
 	}
 	p, _ := types.PrincipalFromContext(ctx)
-	if p.Type == types.PrincipalIMUser {
-		return false
-	}
-	if types.SessionRequiresAdminConsoleRead(session, "") {
-		// the embed runtime keeps its embed rows, never an IM chat
-		if p.Type == types.PrincipalEmbedSession && !types.IsIMSessionDescription(session.Description) {
+	switch p.Type {
+	case types.PrincipalIMUser:
+		// the IM runtime keeps IM chats (mapped, or marked by the IM
+		// description before the mapping exists), nothing else
+		if types.IsIMSessionDescription(session.Description) {
 			return false
 		}
+		platform, err := repo.GetIMPlatform(ctx, tenantID, session.ID)
+		if err != nil {
+			logger.Warnf(ctx, "IM platform lookup for session %s failed, refusing: %v", session.ID, err)
+			return true
+		}
+		return strings.TrimSpace(platform) == "" && types.SessionRequiresAdminConsoleRead(session, "")
+	case types.PrincipalEmbedSession:
+		// the embed runtime keeps its own row: owned by this visitor's
+		// principal, or a legacy row of this principal's channel
+		if session.UserID == p.StorageID() {
+			return false
+		}
+		if ch := embedPrincipalChannel(p); ch != "" && session.Description == types.EmbedSessionMarkerPrefix+ch {
+			return false
+		}
+	}
+	if types.SessionRequiresAdminConsoleRead(session, "") {
 		return !runtimeMayBypassAdminConsoleRead(ctx, session, "")
 	}
 	platform, err := repo.GetIMPlatform(ctx, tenantID, session.ID)
@@ -161,6 +177,16 @@ func channelSessionLocked(ctx context.Context, repo interfaces.SessionRepository
 		return true
 	}
 	return strings.TrimSpace(platform) != "" && !runtimeMayBypassAdminConsoleRead(ctx, session, platform)
+}
+
+// embedPrincipalChannel is the channel id of an embed session principal
+// ("<tenant>:<channel>:<session>", types.EmbedSessionPrincipal).
+func embedPrincipalChannel(p types.Principal) string {
+	parts := strings.SplitN(p.ID, ":", 3)
+	if len(parts) != 3 {
+		return ""
+	}
+	return parts[1]
 }
 
 // internalSessionWork is work no request principal stands behind: no
