@@ -25,7 +25,7 @@ Cách làm: Opus viết code, Fable review từng phần. Sửa xong các lỗi 
 
 Cần người dùng quyết, không tự làm: đẩy 23 commit của dev lên origin; gộp `feat/federation` (đánh số lại migration trước).
 
-## Giai đoạn 1: ba tính năng ưu tiên
+## Giai đoạn 1: ba tính năng ưu tiên — XONG, đã gộp vào dev 2026-11-11
 
 ### F1. Rà soát căn cứ pháp lý trong văn bản đang soạn (S–M)
 - **Bước 0**: gộp các regex số hiệu thành một bộ nhận diện dùng chung. Hiện có ít nhất 5 bản: `vietnamese_legal/entity.go`, `legal_amendment_history.go`, `document_search.go`, `document_template_facts.go`, `domainpacks/formulas.go`. Có test so sánh để không đổi hành vi.
@@ -67,3 +67,8 @@ Chờ người dùng quyết: **F14** nhà cung cấp đối soát chuyển kho�
 ## Nhật ký
 
 - 2026-11-11: lập kế hoạch; T1–T6 xong trên `chore/tech-debt-2026-11`, hai vòng Fable review (GO-with-changes, đã sửa hết MED và LOW), gộp vào dev. Còn nợ: sinh lại swagger toàn bộ (file sinh sẵn đã cũ), README còn liệt kê vector DB/storage đã gỡ.
+- 2026-11-11: giai đoạn 1 xong, mỗi tính năng ba vòng Fable review, đã gộp vào dev và thử API thật trên dev:
+  - F2 (`648e62dd`, migration 000194 `legal_lookup_misses` + index `number_key text_pattern_ops`): `GET /legal-lookup`, trang `/platform/legal-lookup`, tab "Tra cứu không thấy"; tải tệp kèm `external_id`/`source` mà không phải SuperAdmin/khoá nền tảng → 403.
+  - F1 (`2cabc1a6`): `POST …/documents/:doc_id/legal-basis-check`, nút trong trợ lý văn bản; trạng thái mới `needs_review`; số hiệu không năm chỉ chốt khi ngày ban hành khớp.
+  - F3 (`0e3b40a1`, migration 000195 `legal_request_requesters`, 000196 `user_notifications`): thông báo trong ứng dụng (web + add-in `809e8ed` trên main add-in), không email; giữ 7 ngày; thông báo đã đọc xoá sau 90 ngày.
+  - Còn lại: M6 — F1 dùng chung bộ phân loại `types.ClassifyLegalStatus` của F2; công cụ chat "rà soát căn cứ" cho trợ lý; xem UI trên trình duyệt/ONLYOFFICE/Word; nhánh federation phải đổi migration lên ≥ 000197.
