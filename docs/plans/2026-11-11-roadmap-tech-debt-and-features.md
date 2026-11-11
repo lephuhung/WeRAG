@@ -18,7 +18,7 @@ Cách làm: Opus viết code, Fable review từng phần. Sửa xong các lỗi 
 | T1 | Lấy bản sửa "LLM lỗi thành câu trả lời rỗng" (b3190204) từ `feat/federation` sang dev | Cherry-pick sạch |
 | T2 | Gộp `fix/degenerate-final-answer` (5fadb335). Xung đột ở `engine.go`: giữ cả hai nhóm trường; khi hết lượt thử vì rỗng thì kết thúc bằng thông báo lỗi mô hình, không dùng câu dự phòng. Stream đứt khi bộ kiểm tra đầu câu còn giữ chữ thì chưa có gì hiện ra, nên thử lại lượt (test mới `TestModelFailure_BreakWhileLeadHeldRetries`) | Xong, test xanh |
 | T3 | Bộ đếm sử dụng: lỗi ghi `RecordQuestion` / OCR chỉ ghi log Warn, lượt đó mất khỏi hạn mức. Thử lại 2 lần (200 ms, 1 s; câu lệnh upsert là nguyên tử nên không đếm trùng), hết lượt thử thì log Error liệt kê từng bộ đếm để cộng bù tay (`usage_meter.go`) | Xong |
-| T4 | Gỡ 8 adapter IM không còn chào bán (dingtalk, feishu, mattermost, qqbot, slack, wechat, wecom, yunzhijia). Chỉ giữ Telegram. DB dev không có kênh IM nào | Chưa làm |
+| T4 | Gỡ 8 adapter IM không còn chào bán (dingtalk, feishu, mattermost, qqbot, slack, wechat, wecom, yunzhijia) và đăng nhập QR WeChat (chỉ dùng cho kênh IM). Chỉ giữ Telegram. DB dev không có kênh IM nào | Xong |
 | T5 | Sửa chú thích `rbac.go` `LegalUploader` và `RegisterLegalPushRoutes`: đường push dùng API key và kiểm tra trong handler | Xong |
 | T6 | Xoá tài liệu gốc WeKnora đã lỗi thời: `docs/zh/`, `docs/wiki/`, `docs/ROADMAP.md`, `docs/LITE.md` (Lite đã gỡ), `IM集成开发文档.md` (chỉ còn Telegram), `使用其他向量数据库.md` (chỉ Postgres) | Xong |
 | T7 | Dịch sang tiếng Việt các tài liệu tiếng Trung còn mô tả tính năng đang chạy: `docs/api/*` (phần lớn), `QA.md`, `RBAC说明.md`, `Langfuse集成.md`, `OIDC认证调用流程.md`, `MCP功能使用说明.md`, `日志配置.md`, `开发指南.md`, `快速开发模式说明.md`, `共享空间说明.md`, `开启知识图谱功能.md`, `添加新的网络搜索引擎.md`, `agent-skills.md`, `sandbox-*.md`. Việc lớn, làm sau giai đoạn 1 | Chưa làm |
@@ -66,4 +66,4 @@ Chờ người dùng quyết: **F14** nhà cung cấp đối soát chuyển kho�
 
 ## Nhật ký
 
-- 2026-11-11: lập kế hoạch; T1, T2 xong trên `chore/tech-debt-2026-11`.
+- 2026-11-11: lập kế hoạch; T1–T6 xong trên `chore/tech-debt-2026-11`, hai vòng Fable review (GO-with-changes, đã sửa hết MED và LOW), gộp vào dev. Còn nợ: sinh lại swagger toàn bộ (file sinh sẵn đã cũ), README còn liệt kê vector DB/storage đã gỡ.
