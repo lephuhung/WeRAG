@@ -474,6 +474,47 @@ export function revokeTenantSeat(tenantId: number | string, userId: string): Pro
   return apiDel(`/api/v1/tenants/${tenantId}/usage/seats/${encodeURIComponent(userId)}`).then(() => undefined);
 }
 
+// ---- per-member report (Tenant Admin of the organization, SuperAdmin) -------
+
+/** One person's line of the member report — mirrors types.UsageMemberUsage. */
+export interface UsageMemberUsage {
+  user_id: string;
+  username: string;
+  email: string;
+  /** Role today; absent for someone who used the organization but is no longer a member. */
+  role?: string;
+  member: boolean;
+  /** Only when the organization's package is in seat mode. */
+  has_seat?: boolean;
+  personal_plan?: string;
+  usage: UsagePeriodTotals;
+}
+
+/** GET /tenants/:id/usage/members — mirrors types.UsageMemberReport. */
+export interface UsageMemberReport {
+  tenant_id: number;
+  /** YYYY-MM, Vietnam calendar. */
+  month: string;
+  timezone: string;
+  /** "counters": exact; "messages": month before per-member counting, summed
+   * from chat history (questions and chat tokens only, no OCR, no cost). */
+  source: "counters" | "messages";
+  /** cost_micro_vnd is filled in (SuperAdmin only). */
+  cost_visible: boolean;
+  subscription?: UsageSubscriptionView | null;
+  /** Sorted by tokens, descending. */
+  members: UsageMemberUsage[];
+  /** The organization counter: members + IM/API + anything before member counting. */
+  total: UsagePeriodTotals;
+  members_total: UsagePeriodTotals;
+  unattributed: UsagePeriodTotals;
+}
+
+export function getTenantMemberUsage(tenantId: number | string, month: string): Promise<UsageMemberReport> {
+  const q = month ? `?month=${encodeURIComponent(month)}` : "";
+  return apiGet<{ data: UsageMemberReport }>(`/api/v1/tenants/${tenantId}/usage/members${q}`).then((r) => r.data);
+}
+
 /** Label of one limit for lists: "500 questions/month", "∞ tokens/day". */
 export function usageLimitLabel(
   l: UsageLimit,

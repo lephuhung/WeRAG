@@ -2,14 +2,16 @@
 
 /* The workspace's usage package as its members see it: plan, mode, the
  * limits and how much is used, and in seat mode who holds a seat. The
- * Tenant Admin hands seats out to members and takes them back. Plans
- * themselves are assigned by the SuperAdmin. */
+ * Tenant Admin hands seats out to members and takes them back, and sees
+ * what each member used per month (MemberUsageReport). Plans themselves
+ * are assigned by the SuperAdmin. */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth, useTenantRole } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { IconRefresh } from "@/components/icons";
 import { LimitStatusList } from "@/components/settings/usage-limits";
+import { MemberUsageReport } from "@/components/settings/member-usage-report";
 import { fetchAllTenantMembers, type TenantMember } from "@/lib/api/tenants";
 import {
   assignTenantSeat,
@@ -362,6 +364,8 @@ function OrganizationUsage() {
           {isAdmin && data!.seats.length >= sub.seats && <p className="caption mt-2 text-muted-soft">{t("tus.allSeatsUsed")}</p>}
         </div>
       )}
+
+      {isAdmin && tenantId > 0 && data && <MemberUsageReport tenantId={tenantId} />}
     </div>
     </ConsolePage>
   );
