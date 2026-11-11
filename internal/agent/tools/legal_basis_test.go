@@ -138,7 +138,7 @@ func TestCheckLegalBasisStatuses(t *testing.T) {
 		"Căn cứ Nghị định 99/2025/NĐ-CP; Kế hoạch 45/KH-UBND; Nghị định 68; Luật Đất đai;",
 		"Theo Nghị định 30/2020/NĐ-CP và Nghị định 30/2020/NĐ-CP.",
 	}
-	now := time.Date(2026, 11, 11, 9, 0, 0, 0, time.Local)
+	now := time.Date(2026, 11, 11, 9, 0, 0, 0, lbVN)
 	r, err := CheckLegalBasis(context.Background(), paras, newLegalBasisFixture(), nil, now)
 	if err != nil {
 		t.Fatal(err)
@@ -149,7 +149,7 @@ func TestCheckLegalBasisStatuses(t *testing.T) {
 		"123/2020/NĐ-CP":  LegalBasisAmended,
 		"24/2018/QH14":    LegalBasisExpired,
 		"12/2024/QĐ-UBND": LegalBasisAmbiguous,
-		"09/2026/NQ-CP":   LegalBasisNotYetEffective,
+		"09/2026/NQ-CP":   LegalBasisNotYetInForce,
 		"15/2018/NĐ-CP":   LegalBasisPartlyExpired,
 		"07/2019/TT-BTC":  LegalBasisUnknown,
 		"99/2025/NĐ-CP":   LegalBasisNotFound,
@@ -260,7 +260,7 @@ func TestCheckLegalBasisPaperworkAndNames(t *testing.T) {
 		"Căn cứ Luật Đất đai năm 2013 và Luật Đất đai số 45/2013/QH13;",
 		"Căn cứ Luật Đất đai; Kế hoạch số 45/KH-UBND; Tờ trình 12/2025/TTr-STP; Luật Thủ đô 2024.",
 	}
-	r, err := CheckLegalBasis(context.Background(), paras, cat, names, time.Date(2026, 11, 11, 0, 0, 0, 0, time.Local))
+	r, err := CheckLegalBasis(context.Background(), paras, cat, names, time.Date(2026, 11, 11, 0, 0, 0, 0, lbVN))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +284,7 @@ func TestCheckLegalBasisPaperworkAndNames(t *testing.T) {
 }
 
 func TestClassifyLegalDocumentDates(t *testing.T) {
-	now := time.Date(2026, 11, 11, 23, 30, 0, 0, time.Local)
+	now := time.Date(2026, 11, 11, 23, 30, 0, 0, lbVN)
 	d := lbDoc("x", "1/2020/NĐ-CP", "Nghị định", "Còn hiệu lực", "2020-01-01")
 	d.ExpiredOn = lbDay("2026-11-11") // expires today: no longer in force
 	if s := ClassifyLegalDocument(&types.LegalStatusReport{Document: d}, now); s != LegalBasisExpired {

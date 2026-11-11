@@ -14,7 +14,10 @@ import (
 
 // Cases from the Fable review of F1 (2026-11-11) and its probe.
 
-var lbNow = time.Date(2026, 11, 11, 9, 0, 0, 0, time.Local)
+// lbVN is the Vietnam clock the validity rules count days in.
+var lbVN = time.FixedZone("ICT", 7*3600)
+
+var lbNow = time.Date(2026, 11, 11, 9, 0, 0, 0, lbVN)
 
 func lbCheck(t *testing.T, cat *fakeLegalBasisCatalog, names LegalNameResolver, paras ...string) *LegalBasisReport {
 	t.Helper()
@@ -247,7 +250,7 @@ func TestLegalBasisClassifierReviewCases(t *testing.T) {
 		"Hết hiệu lực một phần":   LegalBasisPartlyExpired,
 		"":                        LegalBasisUnknown,
 		"Ngưng hiệu lực":          LegalBasisSuspended,
-		"Chưa có hiệu lực":        LegalBasisNotYetEffective,
+		"Chưa có hiệu lực":        LegalBasisNotYetInForce,
 		"Không còn phù hợp":       LegalBasisNeedsReview,
 		"Ngưng hiệu lực một phần": LegalBasisNeedsReview,
 		"Trạng thái lạ":           LegalBasisUnknown,
@@ -266,7 +269,7 @@ func TestLegalBasisClassifierReviewCases(t *testing.T) {
 
 	// "Chưa có hiệu lực" without a date stays not yet effective
 	d := lbDoc("x", "1/2026/NĐ-CP", "Nghị định", "Chưa có hiệu lực", "2026-11-01")
-	if s := ClassifyLegalDocument(&types.LegalStatusReport{Document: d}, lbNow); s != LegalBasisNotYetEffective {
+	if s := ClassifyLegalDocument(&types.LegalStatusReport{Document: d}, lbNow); s != LegalBasisNotYetInForce {
 		t.Errorf("no effective date: %s", s)
 	}
 }

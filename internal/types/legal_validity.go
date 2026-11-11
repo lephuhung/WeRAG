@@ -28,10 +28,18 @@ const (
 	LegalStatusKindUnknown       LegalStatusKind = "unknown"
 )
 
+// legalStatusKey is a status wording lower-cased with single spaces, the
+// form every rule here compares.
+func legalStatusKey(status string) string {
+	return strings.ToLower(strings.Join(strings.Fields(status), " "))
+}
+
 // ClassifyLegalStatus reduces a catalogue status wording to its kind. An
-// empty or unrecognised wording is unknown — never expired.
+// empty or unrecognised wording is unknown — never expired. A partial
+// suspension ("Ngưng hiệu lực một phần") is suspended here; the legal basis
+// check refines it (tools.classifyLegal).
 func ClassifyLegalStatus(status string) LegalStatusKind {
-	s := strings.ToLower(strings.Join(strings.Fields(status), " "))
+	s := legalStatusKey(status)
 	switch {
 	case strings.HasPrefix(s, "còn hiệu lực"):
 		return LegalStatusKindInForce
@@ -52,7 +60,7 @@ func ClassifyLegalStatus(status string) LegalStatusKind {
 // softer). Any other status (expired, not yet in force, suspended) is left
 // as is.
 func LegalDerivableStatus(status string) bool {
-	switch strings.ToLower(strings.TrimSpace(status)) {
+	switch legalStatusKey(status) {
 	case "", legalStatusUnknownLowered, strings.ToLower(LegalStatusInForce), strings.ToLower(LegalStatusPartlyExpired):
 		return true
 	}
@@ -61,7 +69,7 @@ func LegalDerivableStatus(status string) bool {
 
 // LegalPartlyExpired reports whether the source holds doc partly expired.
 func LegalPartlyExpired(doc *LegalDocument) bool {
-	return doc != nil && strings.EqualFold(strings.TrimSpace(doc.Status), LegalStatusPartlyExpired)
+	return doc != nil && legalStatusKey(doc.Status) == strings.ToLower(LegalStatusPartlyExpired)
 }
 
 // LegalDerivedStatusText is the status LegalDerivedExpiry implies for doc:
@@ -86,23 +94,20 @@ var legalDerivedExpiryRelations = map[LegalRelation]bool{
 // LegalDerivedExpiry reconciles a stale portal status with the catalogue's
 // own links: the source has no expiry date and does not say the document
 // ended, but an incoming replaces/expires link points at a document already
-// in force (EffectiveOn <= now). It returns the earliest such document and
-// its effective date, the day this one ended; nil when there is none. vbpl
-// still listed 29/2018/QH14 as "Còn hiệu lực" months after 117/2025/QH15
-// replaced it (2026-10-16).
+// in force (its effective day is today or earlier, LegalDateReached). It
+// returns the earliest such document and its effective date, the day this
+// one ended; nil when there is none. vbpl still listed 29/2018/QH14 as
+// "Còn hiệu lực" months after 117/2025/QH15 replaced it (2026-10-16).
 func LegalDerivedExpiry(rep *LegalStatusReport, now time.Time) (*LegalDocument, *time.Time) {
 	if rep == nil || rep.Document == nil || rep.Document.ExpiredOn != nil || !LegalDerivableStatus(rep.Document.Status) {
 		return nil, nil
 	}
 	var by *LegalDocument
 	for _, l := range rep.Links {
-		if !l.Incoming || !legalDerivedExpiryRelations[l.Relation] || l.Other == nil || l.Other.EffectiveOn == nil {
+		if !l.Incoming || !legalDerivedExpiryRelations[l.Relation] || l.Other == nil || !LegalDateReached(l.Other.EffectiveOn, now) {
 			continue
 		}
-		if l.Other.EffectiveOn.After(now) {
-			continue
-		}
-		if by == nil || l.Other.EffectiveOn.Before(*by.EffectiveOn) {
+		if by == nil || LegalDateString(l.Other.EffectiveOn) < LegalDateString(by.EffectiveOn) {
 			by = l.Other
 		}
 	}
@@ -110,6 +115,36 @@ func LegalDerivedExpiry(rep *LegalStatusReport, now time.Time) (*LegalDocument, 
 		return nil, nil
 	}
 	return by, by.EffectiveOn
+}
+
+// LegalValidity is a catalogue document's validity on a day, the part every
+// reader shares (the validity lookup, check_legal_status's related
+// documents, the legal basis check): the kind its wording says
+// (ClassifyLegalStatus), turned expired when LegalDerivedExpiry shows the
+// wording is stale. A partly expired document stays partly expired — the
+// replacement may be partial too — and DerivedBy then only means "maybe
+// wholly expired".
+type LegalValidity struct {
+	Kind      LegalStatusKind
+	DerivedBy *LegalDocument
+	DerivedOn *time.Time
+}
+
+// ClassifyLegalValidity states rep's document's validity as of now (rep.Links
+// are its incoming links, may be empty). The legal basis check adds its own
+// layers on top (dates, amendments, documents needing a review).
+func ClassifyLegalValidity(rep *LegalStatusReport, now time.Time) LegalValidity {
+	if rep == nil || rep.Document == nil {
+		return LegalValidity{Kind: LegalStatusKindUnknown}
+	}
+	v := LegalValidity{Kind: ClassifyLegalStatus(rep.Document.Status)}
+	if by, on := LegalDerivedExpiry(rep, now); by != nil {
+		v.DerivedBy, v.DerivedOn = by, on
+		if v.Kind != LegalStatusKindPartlyExpired {
+			v.Kind = LegalStatusKindExpired
+		}
+	}
+	return v
 }
 
 // LegalDerivedExpiryRelation is the relation by which `by` (as returned by
@@ -196,12 +231,40 @@ type LegalDerivedValidity struct {
 	By         LegalValidityRef `json:"by"`
 }
 
-// LegalDateString formats a catalogue date as YYYY-MM-DD ("" for none).
+// LegalDateString formats a catalogue date as YYYY-MM-DD ("" for none). A
+// catalogue date is a calendar day (a date column, read back as midnight):
+// it is formatted as written, in its own location.
 func LegalDateString(t *time.Time) string {
 	if t == nil {
 		return ""
 	}
 	return t.Format("2006-01-02")
+}
+
+// legalDayZone is the calendar the validity rules count days in: a
+// document takes effect or ends on a Vietnam calendar day, whatever the
+// server clock's zone.
+var legalDayZone = func() *time.Location {
+	if l, err := time.LoadLocation("Asia/Ho_Chi_Minh"); err == nil {
+		return l
+	}
+	return time.FixedZone("ICT", 7*3600)
+}()
+
+// LegalToday is now's Vietnam calendar day, YYYY-MM-DD.
+func LegalToday(now time.Time) string { return now.In(legalDayZone).Format("2006-01-02") }
+
+// LegalDateReached reports whether a catalogue date is set and falls on or
+// before now's Vietnam day: a document effective "today" is in force all
+// day, one expiring today has ended.
+func LegalDateReached(d *time.Time, now time.Time) bool {
+	return d != nil && !d.IsZero() && LegalDateString(d) <= LegalToday(now)
+}
+
+// LegalDateAhead reports whether a catalogue date is set and falls after
+// now's Vietnam day.
+func LegalDateAhead(d *time.Time, now time.Time) bool {
+	return d != nil && !d.IsZero() && LegalDateString(d) > LegalToday(now)
 }
 
 // LegalCatalogFilter narrows a catalogue search; every set field must hold.

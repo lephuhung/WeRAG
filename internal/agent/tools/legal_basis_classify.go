@@ -8,8 +8,11 @@ import (
 )
 
 // The legal basis check's classifier: one catalogue document and its
-// incoming links → a status as of a day. Kept apart from the scan and the
-// lookups so it can move onto a shared validity classifier later.
+// incoming links → a status as of a day. It builds on the validity every
+// reader shares (types.ClassifyLegalValidity: the wording's kind, expired
+// when an in-force replacement shows the wording is stale) and adds the
+// check's own layers: dates, amendments, documents needing a review.
+// Days are Vietnam calendar days (types.LegalDateReached).
 
 // legalClassification is a document's status and what it rests on.
 type legalClassification struct {
@@ -32,25 +35,18 @@ type legalClassification struct {
 	staleNotYet bool
 }
 
-// legalDayAfter reports whether t falls on a later calendar day than at,
-// each read in its own location (catalogue dates are UTC midnights).
-func legalDayAfter(t, at time.Time) bool { return t.Format("2006-01-02") > at.Format("2006-01-02") }
-
 // legalInForceOn reports whether a document acting on another is in force
 // on now by its dates: effective (or, without an effective date, issued)
 // on or before now and not expired.
 func legalInForceOn(d *types.LegalDocument, now time.Time) bool {
-	if d == nil {
-		return false
-	}
-	if d.ExpiredOn != nil && !d.ExpiredOn.IsZero() && !legalDayAfter(*d.ExpiredOn, now) {
+	if d == nil || types.LegalDateReached(d.ExpiredOn, now) {
 		return false
 	}
 	switch {
 	case d.EffectiveOn != nil && !d.EffectiveOn.IsZero():
-		return !legalDayAfter(*d.EffectiveOn, now)
+		return types.LegalDateReached(d.EffectiveOn, now)
 	case d.IssuedOn != nil && !d.IssuedOn.IsZero():
-		return !legalDayAfter(*d.IssuedOn, now)
+		return types.LegalDateReached(d.IssuedOn, now)
 	}
 	return false
 }
@@ -61,67 +57,91 @@ func ClassifyLegalDocument(rep *types.LegalStatusReport, now time.Time) LegalBas
 	return classifyLegal(rep, now).status
 }
 
-// classifyLegal applies, in order:
-//   - a partial status first, whatever the dates say: "Hết hiệu lực một
-//     phần" → partly expired (expired_on is then the date of the partial
-//     expiry); "Ngưng hiệu lực một phần" or any other "… một phần" →
-//     needs review;
-//   - expired: "Hết hiệu lực toàn bộ" (any "Hết hiệu lực…" left after the
-//     partial branch), or the expiry date has passed;
-//   - suspended: "Ngưng hiệu lực" / "Tạm ngưng hiệu lực" (whole);
-//   - expired by derivation: a document already in force replaces or ends
-//     it while the catalogue holds it in force or states nothing
-//     (check_legal_status derivedExpiry);
-//   - not yet effective: "Chưa có hiệu lực" with no effective date or one
-//     ahead, or any status with an effective date ahead; a stale "Chưa có
-//     hiệu lực" whose effective date has passed is read as in force;
-//   - needs review: "Không còn phù hợp" (the portal's flag, not an
-//     expiry); in force (or no status) while a document in force repeals
-//     it or ends it in part — a repeal alone is never an expiry;
+// LegalBasisStatusOfKind is the legal basis status a shared validity kind
+// (types.LegalStatusKind) reads as before the check's own layers.
+func LegalBasisStatusOfKind(k types.LegalStatusKind) LegalBasisStatus {
+	switch k {
+	case types.LegalStatusKindInForce:
+		return LegalBasisInForce
+	case types.LegalStatusKindExpired:
+		return LegalBasisExpired
+	case types.LegalStatusKindPartlyExpired:
+		return LegalBasisPartlyExpired
+	case types.LegalStatusKindNotYetInForce:
+		return LegalBasisNotYetInForce
+	case types.LegalStatusKindSuspended:
+		return LegalBasisSuspended
+	}
+	return LegalBasisUnknown
+}
+
+// classifyLegal starts from the shared validity (types.ClassifyLegalValidity)
+// and applies, in order:
+//   - a partial wording first, whatever the dates say: partly expired stays
+//     partly expired (expired_on is then the date of the partial expiry, a
+//     derived replacement only "maybe wholly expired"); "Ngưng hiệu lực một
+//     phần" or any other "… một phần" → needs review (the shared kind says
+//     suspended);
+//   - expired: by wording, or the expiry date has passed (a date layer: the
+//     shared kind does not read dates);
+//   - suspended (whole);
+//   - expired by derivation (the shared kind);
+//   - not yet in force: the effective date is ahead, whatever the wording
+//     ("Còn hiệu lực", none), or "Chưa có hiệu lực" with no effective date;
+//     a stale "Chưa có hiệu lực" whose effective date has passed is read as
+//     in force (an in-force replacement then ends it, as derived expiry);
+//   - needs review: "Không còn phù hợp" (the portal's flag, not an expiry;
+//     the shared kind says unknown); in force (or no status) while a
+//     document in force repeals it or ends it in part — a repeal alone is
+//     never an expiry;
 //   - amended: in force with an amending document; in force; unknown
 //     ("Chưa xác định", "" or any other wording, when nothing above
 //     decides).
 func classifyLegal(rep *types.LegalStatusReport, now time.Time) legalClassification {
 	d := rep.Document
 	status := strings.ToLower(strings.Join(strings.Fields(d.Status), " "))
+	v := types.ClassifyLegalValidity(rep, now)
 	var c legalClassification
 	if strings.Contains(status, "một phần") {
-		if strings.HasPrefix(status, "hết hiệu lực một phần") {
+		if v.Kind == types.LegalStatusKindPartlyExpired {
 			c.status = LegalBasisPartlyExpired
-			c.derivedBy, c.derivedOn = derivedExpiry(rep, now)
+			c.derivedBy, c.derivedOn = v.DerivedBy, v.DerivedOn
 			return c
 		}
 		c.status = LegalBasisNeedsReview
 		c.partialSuspension = strings.Contains(status, "ngưng") || strings.Contains(status, "đình chỉ")
 		return c
 	}
-	if strings.HasPrefix(status, "hết hiệu lực") ||
-		d.ExpiredOn != nil && !d.ExpiredOn.IsZero() && !legalDayAfter(*d.ExpiredOn, now) {
+	switch {
+	case v.Kind == types.LegalStatusKindExpired && v.DerivedBy == nil, types.LegalDateReached(d.ExpiredOn, now):
 		c.status = LegalBasisExpired
 		return c
-	}
-	if strings.Contains(status, "ngưng hiệu lực") || strings.Contains(status, "đình chỉ") {
+	case v.Kind == types.LegalStatusKindSuspended:
 		c.status = LegalBasisSuspended
 		return c
-	}
-	if by, on := derivedExpiry(rep, now); by != nil {
-		c.status, c.derivedBy, c.derivedOn = LegalBasisExpired, by, on
+	case v.DerivedBy != nil:
+		c.status, c.derivedBy, c.derivedOn = LegalBasisExpired, v.DerivedBy, v.DerivedOn
 		return c
-	}
-	effectiveAhead := d.EffectiveOn != nil && !d.EffectiveOn.IsZero() && legalDayAfter(*d.EffectiveOn, now)
-	switch {
-	case effectiveAhead:
-		c.status = LegalBasisNotYetEffective
+	case types.LegalDateAhead(d.EffectiveOn, now):
+		c.status = LegalBasisNotYetInForce
 		return c
-	case status == "chưa có hiệu lực":
+	case v.Kind == types.LegalStatusKindNotYetInForce:
 		if d.EffectiveOn == nil || d.EffectiveOn.IsZero() {
-			c.status = LegalBasisNotYetEffective
+			c.status = LegalBasisNotYetInForce
 			return c
 		}
 		c.staleNotYet = true
+		// read as in force, it is ended by a replacement already in force
+		// as an in-force document would be
+		asInForce := *d
+		asInForce.Status = types.LegalStatusInForce
+		if by, on := types.LegalDerivedExpiry(&types.LegalStatusReport{Document: &asInForce, Links: rep.Links}, now); by != nil {
+			c.status, c.derivedBy, c.derivedOn = LegalBasisExpired, by, on
+			return c
+		}
 	}
 	unsuitable := status == "không còn phù hợp"
-	inForce := status == "còn hiệu lực" || c.staleNotYet
+	inForce := v.Kind == types.LegalStatusKindInForce || c.staleNotYet
 	if !inForce && !unsuitable && status != "" && status != "chưa xác định" {
 		c.status = LegalBasisUnknown
 		return c
