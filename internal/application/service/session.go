@@ -5,6 +5,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
@@ -435,6 +436,9 @@ func (s *sessionService) ListSessions(
 // sessionSearchMaxRunes bounds the text a content search looks for.
 const sessionSearchMaxRunes = 200
 
+// sessionSearchTimeout bounds one content search (a few ms on dev).
+const sessionSearchTimeout = 3 * time.Second
+
 // SearchSessionContent finds the caller's sessions whose messages contain
 // query: the sessions ListSessions shows them for source "" (web, Word
 // add-in sessions hidden) or "word", the same owner scope (a Guest's own in
@@ -465,7 +469,12 @@ func (s *sessionService) SearchSessionContent(
 		Offset:   (page - 1) * pageSize,
 		Limit:    pageSize,
 	}
-	hits, more, err := s.sessionRepo.SearchContent(ctx, q)
+	if q.UserID == "" {
+		return []*types.SessionContentHit{}, false, nil // no owner, nothing of theirs to search
+	}
+	searchCtx, cancel := context.WithTimeout(ctx, sessionSearchTimeout)
+	defer cancel()
+	hits, more, err := s.sessionRepo.SearchContent(searchCtx, q)
 	if err != nil {
 		logger.ErrorWithFields(ctx, err, map[string]interface{}{"tenant_id": q.TenantID, "user_id": q.UserID})
 		return nil, false, err

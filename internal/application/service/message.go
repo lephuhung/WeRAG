@@ -832,6 +832,11 @@ func (s *messageService) SearchMessages(ctx context.Context, params *types.Messa
 	if params.OwnerID == "" {
 		params.OwnerID = types.SessionOwnerIDFromContext(ctx)
 	}
+	// No owner means no conversations to search: fail closed rather than
+	// search the whole organization.
+	if params.OwnerID == "" {
+		return &types.MessageSearchResult{Items: []*types.MessageSearchGroupItem{}}, nil
+	}
 
 	// Set defaults
 	if params.Mode == "" {
@@ -912,8 +917,11 @@ func (s *messageService) SearchMessages(ctx context.Context, params *types.Messa
 func (s *messageService) restrictToOwnedSessions(
 	ctx context.Context, tenantID uint64, ownerID string, items []*types.MessageSearchResultItem,
 ) ([]*types.MessageSearchResultItem, error) {
-	if ownerID == "" || len(items) == 0 {
+	if len(items) == 0 {
 		return items, nil
+	}
+	if ownerID == "" {
+		return nil, nil // fail closed (SearchMessages already refuses an empty owner)
 	}
 	sessionIDs := make([]string, 0, len(items))
 	seen := make(map[string]struct{}, len(items))

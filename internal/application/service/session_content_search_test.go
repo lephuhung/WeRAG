@@ -52,3 +52,15 @@ func TestSearchSessionContentScopeAndSnippet(t *testing.T) {
 		require.Error(t, err, bad)
 	}
 }
+
+// Without an owner (no user in the context) nothing is searched.
+func TestSearchSessionContentWithoutOwnerFindsNothing(t *testing.T) {
+	repo := &contentSearchRepo{hits: []*types.SessionContentHit{{SessionID: "s1"}}}
+	svc := &sessionService{sessionRepo: repo}
+	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(7))
+	hits, more, err := svc.SearchSessionContent(ctx, "điều 5", "", 1, 10)
+	require.NoError(t, err)
+	require.False(t, more)
+	require.Empty(t, hits)
+	require.Nil(t, repo.got, "the repository is not asked")
+}

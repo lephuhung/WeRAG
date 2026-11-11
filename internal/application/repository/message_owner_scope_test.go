@@ -58,29 +58,52 @@ func TestOwnedSessionIDsExcludesOtherPeople(t *testing.T) {
 	if owned[ids["bob"]] {
 		t.Error("alice must not be able to reach bob's conversations")
 	}
-	if !owned[ids["legacy"]] {
-		t.Error("tenant-level sessions stay reachable, matching how they are listed")
+	if owned[ids["legacy"]] {
+		t.Error("ownerless sessions (legacy API rows, IM chats) are nobody's to search")
 	}
 	if owned[ids["other"]] {
 		t.Error("a workspace boundary is not something an owner check may cross")
 	}
 }
 
-func TestOwnedSessionIDsWithoutAnOwnerKeepsWorkspaceScope(t *testing.T) {
+func TestOwnedSessionIDsWithoutAnOwnerFindsNothing(t *testing.T) {
 	db, ids := newOwnerScopeDB(t, "owner-scope-noowner")
 	repo := NewMessageRepository(db)
 
-	// An empty owner means "no per-user narrowing", which is what admin-console
-	// style callers rely on. It must still not leak across workspaces.
+	// No owner means nothing is owned: the search fails closed instead of
+	// widening to the whole workspace.
 	owned, err := repo.OwnedSessionIDs(context.Background(), 7, "",
-		[]string{ids["alice"], ids["bob"], ids["other"]})
+		[]string{ids["alice"], ids["bob"], ids["legacy"], ids["other"]})
 	if err != nil {
 		t.Fatalf("owned session ids: %v", err)
 	}
-	if !owned[ids["alice"]] || !owned[ids["bob"]] {
-		t.Error("without an owner filter, every session in the workspace qualifies")
+	if len(owned) != 0 {
+		t.Errorf("without an owner nothing qualifies, got %v", owned)
 	}
-	if owned[ids["other"]] {
-		t.Error("tenant scoping is not optional")
+}
+
+// IM sessions are created without an owner; their messages must never be
+// searchable by a member, nor by a search with no owner at all.
+func TestSearchMessagesByKeywordOwnSessionsOnly(t *testing.T) {
+	db, ids := newOwnerScopeDB(t, "owner-scope-keyword")
+	repo := NewMessageRepository(db)
+	for _, label := range []string{"alice", "bob", "legacy", "other"} {
+		if err := db.Create(&types.Message{SessionID: ids[label], Role: "user", Content: "hỏi về nghị định 100"}).Error; err != nil {
+			t.Fatalf("insert message: %v", err)
+		}
+	}
+	results, err := repo.SearchMessagesByKeyword(context.Background(), 7, "web_user:alice", "nghị định", nil, 10)
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(results) != 1 || results[0].SessionID != ids["alice"] {
+		t.Fatalf("alice must find only her own session, got %d results", len(results))
+	}
+	results, err = repo.SearchMessagesByKeyword(context.Background(), 7, "", "nghị định", nil, 10)
+	if err != nil {
+		t.Fatalf("search: %v", err)
+	}
+	if len(results) != 0 {
+		t.Errorf("no owner, no results; got %d", len(results))
 	}
 }

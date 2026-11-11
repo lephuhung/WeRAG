@@ -306,14 +306,20 @@ func (r *sessionRepository) QueryPaged(
 	return items, total, nil
 }
 
-// SearchContent finds the sessions QueryPaged would list for q.TenantID /
-// q.UserID (source "" or "word") whose user or assistant messages contain
-// q.Query, case-insensitively. Sub-chats are searched too (they are opened
-// from their document chat), judged by their root's Word documents. One
-// hit per session: its newest matching message and the number of matches.
+// SearchContent finds the caller's own sessions (strictly sessions.user_id
+// = q.UserID: ownerless legacy and IM rows are nobody's to search) among
+// those QueryPaged would list for source "" or "word", whose user or
+// assistant messages contain q.Query, case-insensitively. Sub-chats are
+// searched too (they are opened from their document chat), judged by their
+// root's Word documents and skipped when the root is deleted. One hit per
+// session: its newest matching message and the number of matches. An empty
+// q.UserID finds nothing.
 func (r *sessionRepository) SearchContent(
 	ctx context.Context, q *types.SessionContentSearchQuery,
 ) ([]*types.SessionContentHit, bool, error) {
+	if q.UserID == "" || strings.TrimSpace(q.Query) == "" {
+		return nil, false, nil
+	}
 	contentLike := "LOWER(m.content) LIKE LOWER(?) ESCAPE ?"
 	if r.db.Dialector.Name() == "postgres" {
 		contentLike = "m.content ILIKE ? ESCAPE ?"
@@ -322,26 +328,26 @@ func (r *sessionRepository) SearchContent(
 	rootWord := "EXISTS (SELECT 1 FROM document_workspaces dw WHERE dw.session_id = " +
 		"(CASE WHEN s.chat_root_id = '' THEN s.id ELSE s.chat_root_id END) AND dw.editor_kind = ?)"
 
-	inner := r.db.WithContext(ctx).Table("messages AS m").
+	matches := r.db.WithContext(ctx).Table("messages AS m").
 		Joins("INNER JOIN sessions s ON s.id = m.session_id").
-		Joins("LEFT JOIN im_channel_sessions ics ON ics.session_id = s.id").
-		Where("s.tenant_id = ? AND s.deleted_at IS NULL AND NOT s.is_temporary", q.TenantID).
+		Where("s.tenant_id = ? AND s.user_id = ? AND s.deleted_at IS NULL AND NOT s.is_temporary", q.TenantID, q.UserID).
 		Where("m.deleted_at IS NULL AND m.role IN ?", []string{"user", "assistant"}).
 		Where(
 			"(s.description IS NULL OR (s.description NOT LIKE ? AND s.description NOT LIKE ?))",
 			types.SkillMaintenanceSessionMarker+"%", types.LegalDraftSessionMarker+"%",
 		).
+		Where("(s.chat_root_id = '' OR EXISTS (SELECT 1 FROM sessions r WHERE r.id = s.chat_root_id AND r.deleted_at IS NULL))").
 		Where(contentLike, "%"+escapeLikeKeyword(q.Query)+"%", likeEscapeChar)
-	if q.UserID != "" {
-		inner = inner.Where("(s.user_id = ? OR s.user_id IS NULL OR s.user_id = '')", q.UserID)
-	}
 	if q.Source == types.SessionSourceWord {
-		inner = inner.Where("ics.id IS NULL").Where(rootWord, types.DocumentEditorKindWordAddin)
+		// like QueryPaged's "word": never an IM session (cleared mappings count)
+		matches = matches.
+			Where("NOT EXISTS (SELECT 1 FROM im_channel_sessions ics WHERE ics.session_id = s.id)").
+			Where(rootWord, types.DocumentEditorKindWordAddin)
 	} else {
-		inner = inner.Where("NOT "+rootWord, types.DocumentEditorKindWordAddin)
+		matches = matches.Where("NOT "+rootWord, types.DocumentEditorKindWordAddin)
 	}
-	inner = inner.Select(`m.session_id AS session_id, s.title AS title, s.chat_root_id AS chat_root_id,
-		m.id AS message_id, m.role AS role, m.content AS content, m.created_at AS matched_at,
+	// the window carries ids only; content is read for the page rows below
+	matches = matches.Select(`m.session_id AS session_id, m.id AS message_id, m.created_at AS matched_at,
 		ROW_NUMBER() OVER (PARTITION BY m.session_id ORDER BY m.created_at DESC, m.id DESC) AS rn,
 		COUNT(*) OVER (PARTITION BY m.session_id) AS match_count`)
 
@@ -350,8 +356,8 @@ func (r *sessionRepository) SearchContent(
 		limit = 20
 	}
 	var hits []*types.SessionContentHit
-	err := r.db.WithContext(ctx).Table("(?) AS hits", inner).
-		Select("session_id, title, chat_root_id, message_id, role, content, matched_at, match_count").
+	err := r.db.WithContext(ctx).Table("(?) AS hits", matches).
+		Select("session_id, message_id, matched_at, match_count").
 		Where("rn = 1").
 		Order("matched_at DESC, session_id DESC").
 		Offset(max(q.Offset, 0)).Limit(limit + 1).
@@ -362,6 +368,49 @@ func (r *sessionRepository) SearchContent(
 	more := len(hits) > limit
 	if more {
 		hits = hits[:limit]
+	}
+	if len(hits) == 0 {
+		return hits, false, nil
+	}
+	messageIDs := make([]string, 0, len(hits))
+	sessionIDs := make([]string, 0, len(hits))
+	for _, h := range hits {
+		messageIDs = append(messageIDs, h.MessageID)
+		sessionIDs = append(sessionIDs, h.SessionID)
+	}
+	var msgs []struct {
+		ID      string
+		Role    string
+		Content string
+	}
+	if err := r.db.WithContext(ctx).Table("messages").Select("id, role, content").
+		Where("id IN ?", messageIDs).Find(&msgs).Error; err != nil {
+		return nil, false, err
+	}
+	var sess []struct {
+		ID         string
+		Title      string
+		ChatRootID string
+	}
+	if err := r.db.WithContext(ctx).Table("sessions").Select("id, title, chat_root_id").
+		Where("id IN ?", sessionIDs).Find(&sess).Error; err != nil {
+		return nil, false, err
+	}
+	byMsg := make(map[string]int, len(msgs))
+	for i, m := range msgs {
+		byMsg[m.ID] = i
+	}
+	bySess := make(map[string]int, len(sess))
+	for i, ss := range sess {
+		bySess[ss.ID] = i
+	}
+	for _, h := range hits {
+		if i, ok := byMsg[h.MessageID]; ok {
+			h.Role, h.Content = msgs[i].Role, msgs[i].Content
+		}
+		if i, ok := bySess[h.SessionID]; ok {
+			h.Title, h.ChatRootID = sess[i].Title, sess[i].ChatRootID
+		}
 	}
 	return hits, more, nil
 }

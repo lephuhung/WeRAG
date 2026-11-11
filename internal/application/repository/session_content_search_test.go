@@ -107,9 +107,28 @@ func TestSessionRepositorySearchContentScope(t *testing.T) {
 	hits, _ = search("nghi dinh", "", 0, 10)
 	require.Empty(t, hits)
 
-	// legacy tenant-level rows stay visible, as in the list
+	// Strictly own sessions: ownerless rows (legacy API rows, and IM sessions,
+	// which are created without an owner) are nobody's to search, unlike the
+	// list's legacy allowance.
 	legacy := createSessionForTest(t, db, 1, "")
 	addMessageForTest(t, db, legacy.ID, "user", "nghị định 100 cũ", base.Add(7*time.Hour))
-	hits, _ = search("nghị định 100", "", 0, 1)
-	require.Equal(t, []string{legacy.ID}, hitIDs(hits))
+	telegram := createSessionForTest(t, db, 1, "")
+	require.NoError(t, db.Create(&testIMChannelSession{ID: "m-tg", SessionID: telegram.ID, Platform: "telegram", TenantID: 1}).Error)
+	addMessageForTest(t, db, telegram.ID, "user", "nghị định 100 trên Telegram", base.Add(8*time.Hour))
+	for _, source := range []string{"", "word"} {
+		hits, _ = search("nghị định 100", source, 0, 10)
+		require.NotContains(t, hitIDs(hits), legacy.ID)
+		require.NotContains(t, hitIDs(hits), telegram.ID, "another person's IM chat never reaches a member")
+	}
+
+	// no owner, no search (fail closed)
+	hits, more, err := repo.SearchContent(ctx, &types.SessionContentSearchQuery{TenantID: 1, Query: "nghị định 100", Limit: 10})
+	require.NoError(t, err)
+	require.False(t, more)
+	require.Empty(t, hits)
+
+	// a sub-chat whose root session is deleted is skipped
+	require.NoError(t, db.Delete(&types.Session{}, "id = ?", own.ID).Error)
+	hits, _ = search("nghị định 100", "", 0, 10)
+	require.Equal(t, []string{older.ID}, hitIDs(hits))
 }
