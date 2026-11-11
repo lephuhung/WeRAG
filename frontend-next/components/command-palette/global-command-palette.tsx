@@ -12,6 +12,7 @@ import {
   IconChat,
   IconClose,
   IconDoc,
+  IconFileSearch,
   IconPulse,
   IconSearch,
   IconSettings,
@@ -29,10 +30,11 @@ import { canSeeSection } from "@/components/settings/nav-config";
 import { SYSTEM_TABS } from "@/components/system/system-nav";
 import { adminSectionHref } from "@/components/admin/admin-routes";
 import { useT, type LocaleKey } from "@/lib/i18n";
+import { legalLookupHref } from "@/lib/legal-status";
 
 interface CommandItem {
   id: string;
-  category: "quick" | "kbs" | "agents" | "chunks" | "messages" | "ask" | "settings";
+  category: "quick" | "kbs" | "agents" | "chunks" | "messages" | "ask" | "legal" | "settings";
   title: string;
   subtitle?: string;
   badge?: string;
@@ -182,6 +184,17 @@ export function GlobalCommandPalette() {
           },
         ]
       : []),
+    {
+      id: "quick-legal-lookup",
+      category: "quick",
+      title: t("cmdk.legalLookupQuick"),
+      subtitle: t("cmdk.legalLookupSub"),
+      icon: <IconFileSearch className="h-4 w-4" />,
+      onSelect: () => {
+        close();
+        router.push(legalLookupHref());
+      },
+    },
     {
       id: "quick-artifacts",
       category: "quick",
@@ -336,9 +349,29 @@ export function GlobalCommandPalette() {
       ]
     : [];
 
+  /* The validity lookup answers from the catalogue: no AI, no question
+   * used — offered next to "Ask AI" for whatever was typed. */
+  const legalLookupItem: CommandItem[] = q
+    ? [
+        {
+          id: "legal-lookup",
+          category: "legal",
+          title: t("cmdk.legalLookup", { q: query.trim() }),
+          subtitle: t("cmdk.legalLookupSub"),
+          badge: t("cmdk.badgeLegal"),
+          icon: <IconFileSearch className="h-4 w-4" />,
+          onSelect: () => {
+            close();
+            router.push(legalLookupHref(query));
+          },
+        },
+      ]
+    : [];
+
   // Grouped items
   const items: CommandItem[] = [
     ...askAiItem,
+    ...legalLookupItem,
     ...matchedKbs,
     ...matchedAgents,
     ...chunkItems,
