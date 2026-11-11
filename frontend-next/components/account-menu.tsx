@@ -12,7 +12,7 @@ import { formatTokens, getMyUsage, type UsageSummary } from "@/lib/api/usage";
 import { useAuth, useTenantRole } from "@/lib/auth";
 import { useAvatarUrl } from "@/lib/avatar";
 import { useT, type Locale } from "@/lib/i18n";
-import { consumeSettingsRedirect } from "@/lib/settings-deep-link";
+import { SETTINGS_REDIRECTED_EVENT, consumeSettingsRedirect } from "@/lib/settings-deep-link";
 import { SettingsModal } from "@/components/settings-modal";
 import { Modal } from "@/components/modal";
 import { WordAddinInstall } from "@/components/auth/word-addin-install";
@@ -87,6 +87,9 @@ export function AccountMenu() {
     if (!section) return;
     setSettingsSection(section);
     setSettingsOpen(true);
+    // a section already open reads the link's query now (one not mounted
+    // yet reads it when it mounts)
+    window.dispatchEvent(new CustomEvent(SETTINGS_REDIRECTED_EVENT, { detail: section }));
   }, [pathname]);
 
   /* Own usage counters, refreshed each time the menu opens: cheap (two

@@ -24,15 +24,20 @@ import { SectionHeader } from "@/components/settings/section-header";
 import { Pager } from "@/components/settings/pager";
 import { FieldLabel } from "@/components/settings/field";
 import { useToast } from "@/components/toast";
-import { consumeSettingsParam } from "@/lib/settings-deep-link";
+import { SETTINGS_REDIRECTED_EVENT, consumeSettingsParam } from "@/lib/settings-deep-link";
 
 const PAGE_SIZE = 20;
 type StatusFilter = "all" | "active" | "pending";
 
-function initialStatusFilter(): StatusFilter {
-  if (typeof window === "undefined") return "all";
+/* The status a deep link asked for ("" for none), read once. */
+function deepLinkStatus(): StatusFilter | "" {
+  if (typeof window === "undefined") return "";
   const status = consumeSettingsParam(window.sessionStorage, "abbreviations", "status");
-  return status === "pending" || status === "active" ? status : "all";
+  return status === "pending" || status === "active" || status === "all" ? status : "";
+}
+
+function initialStatusFilter(): StatusFilter {
+  return deepLinkStatus() || "all";
 }
 
 /* Lets the account-menu pending badge refresh after any mutation here. */
@@ -156,7 +161,22 @@ export function AbbreviationsSettings() {
     void loadPendingTotal();
   }, [loadPendingTotal, reloadTick]);
 
-  // A new page or filter starts with nothing ticked.
+  // A deep link opened while this section is already on screen (the review
+  // notification clicked with the settings open): apply its status now and
+  // consume it, so it does not linger for a later visit.
+  useEffect(() => {
+    const onRedirect = (e: Event) => {
+      if ((e as CustomEvent<string>).detail !== "abbreviations") return;
+      const status = deepLinkStatus();
+      if (!status) return;
+      setStatusFilter(status);
+      setOffset(0);
+    };
+    window.addEventListener(SETTINGS_REDIRECTED_EVENT, onRedirect);
+    return () => window.removeEventListener(SETTINGS_REDIRECTED_EVENT, onRedirect);
+  }, []);
+
+    // A new page or filter starts with nothing ticked.
   useEffect(() => {
     setSelected(new Set());
   }, [search, statusFilter, offset, reloadTick]);

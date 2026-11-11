@@ -73,6 +73,25 @@ func (a *AbbreviationReviewNotifier) Wait() {
 	}
 }
 
+// WaitTimeout waits like Wait, at most d (shutdown); false when runs were
+// still going (each ends on its own timeout).
+func (a *AbbreviationReviewNotifier) WaitTimeout(d time.Duration) bool {
+	if a == nil {
+		return true
+	}
+	done := make(chan struct{})
+	go func() {
+		a.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(d):
+		return false
+	}
+}
+
 // background runs fn with the request's values but not its cancellation,
 // under the notifier's timeout and concurrency bound.
 func (a *AbbreviationReviewNotifier) background(ctx context.Context, what string, fn func(context.Context) error) {
@@ -109,9 +128,9 @@ func (a *AbbreviationReviewNotifier) SuggestionCreated(ctx context.Context, row 
 	item := types.UserNotificationAbbreviationItem{
 		ShortForm: strings.TrimSpace(row.ShortForm), FullForm: strings.TrimSpace(row.FullForm), ProperName: row.IsProperName,
 	}
-	suggester := row.SuggestedBy
+	id, suggester := row.ID, row.SuggestedBy
 	a.background(ctx, "notifying a new suggestion", func(ctx context.Context) error {
-		return a.notifySuggestion(ctx, item, suggester)
+		return a.notifySuggestion(ctx, id, item, suggester)
 	})
 }
 
@@ -143,8 +162,17 @@ func (a *AbbreviationReviewNotifier) reviewers(ctx context.Context, except strin
 }
 
 func (a *AbbreviationReviewNotifier) notifySuggestion(
-	ctx context.Context, item types.UserNotificationAbbreviationItem, suggester string,
+	ctx context.Context, id string, item types.UserNotificationAbbreviationItem, suggester string,
 ) error {
+	// the run may have waited for a slot: a suggestion approved, kept as a
+	// proper name or deleted meanwhile is no news any more
+	row, err := a.abbreviations.GetByID(ctx, id)
+	if err != nil {
+		return fmt.Errorf("re-reading suggestion %s: %w", id, err)
+	}
+	if row == nil || row.IsActive {
+		return nil
+	}
 	recipients, err := a.reviewers(ctx, suggester)
 	if err != nil {
 		return fmt.Errorf("listing SuperAdmins: %w", err)
@@ -160,10 +188,13 @@ func (a *AbbreviationReviewNotifier) notifySuggestion(
 			failed = append(failed, fmt.Sprintf("%s: %v", userID, err))
 		}
 	}
+	// the queue may have emptied while the digests were written, after the
+	// review's own check ran: close them again then
+	closeErr := a.closeIfEmpty(ctx)
 	if len(failed) > 0 {
 		return fmt.Errorf("digest of %d SuperAdmin(s) not written: %s", len(failed), strings.Join(failed, "; "))
 	}
-	return nil
+	return closeErr
 }
 
 func (a *AbbreviationReviewNotifier) closeIfEmpty(ctx context.Context) error {

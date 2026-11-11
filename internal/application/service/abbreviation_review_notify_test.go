@@ -169,3 +169,48 @@ func TestAbbreviationPendingBody(t *testing.T) {
 	}})
 	require.Equal(t, "PV01 (tên riêng), X → Một tên đầy đủ rất dài vượt quá bốn mươ…, và 5 từ khác", body)
 }
+
+// A notice run that waited (for a slot) past the review of its suggestion
+// writes nothing: the row is re-read first.
+func TestAbbreviationReviewNoticeSkipsReviewedSuggestion(t *testing.T) {
+	e := newAbbrNoticeEnv(t)
+	ctx := context.Background()
+	abbrRepo := repository.NewAbbreviationRepository(e.db)
+	approved := &types.Abbreviation{ShortForm: "VP", FullForm: "Văn phòng", SuggestedBy: "member"}
+	deleted := &types.Abbreviation{ShortForm: "CA", FullForm: "Công an", SuggestedBy: "member"}
+	require.NoError(t, abbrRepo.Create(ctx, approved))
+	require.NoError(t, abbrRepo.Create(ctx, deleted))
+	pendingCopy := *approved
+	approved.IsActive = true
+	require.NoError(t, abbrRepo.Update(ctx, approved))
+	require.NoError(t, abbrRepo.Delete(ctx, deleted.ID))
+
+	e.notifier.SuggestionCreated(ctx, &pendingCopy)
+	e.notifier.SuggestionCreated(ctx, deleted)
+	e.notifier.Wait()
+	require.Empty(t, e.digests(t, "sa1", false))
+}
+
+// staleAbbrRepo sees the suggestion still pending when it is re-read, while
+// the queue is already empty when counted (the review landed in between).
+type staleAbbrRepo struct {
+	interfaces.AbbreviationRepository
+	row *types.Abbreviation
+}
+
+func (r staleAbbrRepo) GetByID(context.Context, string) (*types.Abbreviation, error) {
+	return r.row, nil
+}
+
+func TestAbbreviationReviewNoticeClosedWhenQueueEmptiedDuringRun(t *testing.T) {
+	e := newAbbrNoticeEnv(t)
+	ctx := context.Background()
+	row := &types.Abbreviation{ID: "gone", ShortForm: "VP", FullForm: "Văn phòng", SuggestedBy: "member"}
+	notifier := NewAbbreviationReviewNotifier(repository.NewUserRepository(e.db), e.notices,
+		staleAbbrRepo{AbbreviationRepository: repository.NewAbbreviationRepository(e.db), row: row})
+	notifier.SuggestionCreated(ctx, row)
+	notifier.Wait()
+	require.Len(t, e.digests(t, "sa1", false), 1, "written")
+	require.Empty(t, e.digests(t, "sa1", true), "and closed again: nothing is pending")
+	require.True(t, notifier.WaitTimeout(time.Second))
+}

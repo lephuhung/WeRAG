@@ -20,7 +20,7 @@ var resolveAbbreviationTool = BaseTool{
 	description: `Vietnamese abbreviation dictionary. In a Q&A turn the runtime already resolved and validated the message's abbreviations: use that mapping and never re-expand or guess a short form.
 - expand (default): rewrites "text" (the turn's validated mapping, else the active dictionary) and reports the abbreviations applied, ambiguous (ask the user which meaning) and unknown.
 - lookup: lists the meanings of "short_form" (pending ones are diagnostic only, never used to expand).
-- suggest: proposes short_form + full_form (+ description); inside a resolved turn it is accepted only when it reproduces the definition the user gave for this request. Never infer or invent a full form. An accepted suggestion applies to this request and stays pending until an Owner or SuperAdmin activates it — say so.`,
+- suggest: proposes short_form + full_form (+ description); inside a resolved turn it is accepted only when it reproduces the definition the user gave for this request. Never infer or invent a full form. An accepted suggestion applies to this request and stays pending until a SuperAdmin (platform administrator) activates it — say so.`,
 	schema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -217,8 +217,8 @@ func (t *ResolveAbbreviationTool) suggest(
 	status := "pending_review"
 	output := fmt.Sprintf(
 		"Recorded suggestion %q → %q (or it was already pending). The meaning applies to the "+
-			"current request; for the shared dictionary it stays pending until an organization "+
-			"Owner or SuperAdmin approves it — tell the user so.",
+			"current request; for the shared dictionary it stays pending until a SuperAdmin "+
+			"(platform administrator) approves it — tell the user so.",
 		row.ShortForm, row.FullForm)
 	if row.IsActive {
 		status = "active"

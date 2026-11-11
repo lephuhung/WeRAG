@@ -14,6 +14,8 @@ import {
   wordFileTarget,
   ABBREVIATION_REVIEW_PATH,
   KIND_ABBREVIATION_PENDING,
+  mergeFresh,
+  toastKey,
   type NotificationLike,
 } from "./notifications.ts";
 
@@ -76,7 +78,7 @@ describe("notifications", () => {
   it("toasts unseen unread ones once, oldest first, at most three", () => {
     const items = [n("c"), n("b", { seen_at: "x" }), n("a"), n("r", { read_at: "x" })]; // newest first
     assert.deepEqual(toastable(items, new Set()).map((x) => x.id), ["a", "c"]);
-    assert.deepEqual(toastable(items, new Set(["a"])).map((x) => x.id), ["c"]);
+    assert.deepEqual(toastable(items, new Set([toastKey(n("a"))])).map((x) => x.id), ["c"]);
     assert.deepEqual(toastPlan([1, 2, 3, 4, 5]), { show: [3, 4, 5], more: 2 });
     assert.deepEqual(toastPlan([1, 2]), { show: [1, 2], more: 0 });
   });
@@ -199,5 +201,24 @@ describe("notifications", () => {
   it("opens the review page of a digest, whatever organization is current", () => {
     const ctx = { origin: ORIGIN, currentTenantId: 7, memberships: [], isGuest: false };
     assert.deepEqual(resolveTarget(digest(), ctx), { path: ABBREVIATION_REVIEW_PATH, hint: "lookup", orgName: "" });
+  });
+
+  it("toasts an updated digest again, once per version, and shows its new count", () => {
+    const v1 = digest({ created_at: "2026-11-11T09:00:00Z", payload: { count: 1, items: [{ short_form: "VP", full_form: "Văn phòng" }] } });
+    const toasted = new Set([toastKey(v1)]);
+    assert.deepEqual(toastable([v1], toasted), [], "the same version is not toasted twice");
+    // the server updated it in place: same id, seen_at cleared, created_at moved
+    const v2 = digest({ created_at: "2026-11-11T09:05:00Z" });
+    assert.notEqual(toastKey(v2), toastKey(v1));
+    assert.deepEqual(toastable([v2], toasted).map((x) => x.id), ["d"]);
+    toasted.add(toastKey(v2));
+    assert.deepEqual(toastable([v2], toasted), []);
+
+    // the list already shown takes the new version in place, newest first
+    const older = n("a", { created_at: "2026-11-11T08:00:00Z", read_at: "x" });
+    const merged = mergeFresh([{ ...v1, seen_at: "x" }, older], [v2, n("new", { created_at: "2026-11-11T09:01:00Z" })]);
+    assert.deepEqual(merged?.map((x) => x.id), ["d", "new", "a"]);
+    assert.equal(notificationText(merged![0], texts).title, "3 new abbreviations waiting for review");
+    assert.equal(mergeFresh(null, [v2]), null, "a list never fetched stays unfetched");
   });
 });

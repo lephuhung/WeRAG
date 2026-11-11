@@ -7,6 +7,11 @@ interface SettingsRedirectStorage {
 const SETTINGS_REDIRECT_KEY = "weknora:settings-redirect";
 const SETTINGS_PARAMS_KEY = "weknora:settings-redirect-params";
 
+/* Window event dispatched once a redirect's section was opened (detail: the
+ * section key): a section already on screen reads its deep-link query then,
+ * as its mount-time read does not run again. */
+export const SETTINGS_REDIRECTED_EVENT = "weknora:settings-redirected";
+
 /* section: the settings section to open; search: the deep link's query
  * ("?status=pending"), which the section reads once (consumeSettingsParam). */
 export function queueSettingsRedirect(storage: SettingsRedirectStorage, section: string, search = "") {

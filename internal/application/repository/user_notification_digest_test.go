@@ -169,3 +169,28 @@ func TestUserNotificationOpenDigestConcurrent(t *testing.T) {
 	require.Len(t, rows, 1, "one unread digest")
 	require.Equal(t, workers, digestCount(t, rows[0]))
 }
+
+// A read row still holding an open key (written before reads rotated keys)
+// must not block the digest for good: the key is freed and a new one opens.
+func TestUserNotificationOpenDigestFreesKeyOfReadRow(t *testing.T) {
+	repo := newUserNotificationRepo(t)
+	ctx := context.Background()
+	readAt := time.Now().Add(-time.Hour)
+	stale := digestFor("a", time.Now().Add(-2*time.Hour))
+	stale.ID = "stale"
+	stale.ReadAt = &readAt
+	require.NoError(t, repo.db.Create(stale).Error)
+
+	n := digestFor("a", time.Now())
+	created, err := repo.UpsertOpenDigest(ctx, n, addOne)
+	require.NoError(t, err)
+	require.True(t, created)
+	require.NotEqual(t, "stale", n.ID)
+	var old types.UserNotification
+	require.NoError(t, repo.db.Where("id = ?", "stale").Take(&old).Error)
+	require.Equal(t, stale.DedupeKey+":read:stale", old.DedupeKey)
+	rows, err := repo.List(ctx, "a", true, nil, 10)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, 1, digestCount(t, rows[0]))
+}

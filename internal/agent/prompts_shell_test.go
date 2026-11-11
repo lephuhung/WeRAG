@@ -40,7 +40,8 @@ func TestToolGuidanceAbbreviationSequence(t *testing.T) {
 	require.Contains(t, resolverOnly, "action=suggest")
 	require.Contains(t, resolverOnly, "exact meaning the user supplied")
 	require.Contains(t, guidance, "pending")
-	require.Contains(t, guidance, "Owner or SuperAdmin")
+	require.Contains(t, guidance, "a SuperAdmin (platform administrator) approves it")
+	require.NotContains(t, guidance, "Owner or SuperAdmin")
 }
 
 func TestArtifactGuidanceUsesConfiguredOutputDirectory(t *testing.T) {

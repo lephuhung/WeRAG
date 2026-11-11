@@ -173,13 +173,8 @@ func (r *userNotificationRepository) UpsertOpenDigest(
 			var prev types.UserNotification
 			err = q.Where("dedupe_key = ? AND read_at IS NULL", draft.DedupeKey).Take(&prev).Error
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				// read in between (the key moved with it); a read row still
-				// holding the key would be an old one: free the key
-				if err := tx.Model(&types.UserNotification{}).
-					Where("dedupe_key = ? AND read_at IS NOT NULL", draft.DedupeKey).
-					Update("dedupe_key", gorm.Expr(types.UserNotificationRotateOpenKeySQL)).Error; err != nil {
-					return err
-				}
+				// read in between (the key moved with it), or a read row
+				// still holds the key: freed below, outside this rollback
 				return errOpenDigestMoved
 			}
 			if err != nil {
@@ -213,6 +208,17 @@ func (r *userNotificationRepository) UpsertOpenDigest(
 		switch {
 		case errors.Is(err, errOpenDigestMoved):
 			attempt++
+			// a read row holding the open key (written before reads rotated
+			// keys, or by hand) would block every insert: free the key in a
+			// committed step of its own
+			if ferr := r.db.WithContext(ctx).Model(&types.UserNotification{}).
+				Where("dedupe_key = ? AND read_at IS NOT NULL", draft.DedupeKey).
+				Update("dedupe_key", gorm.Expr(types.UserNotificationRotateOpenKeySQL)).Error; ferr != nil {
+				if !isSQLiteLockError(ferr) {
+					return false, ferr
+				}
+				locked++
+			}
 		case isSQLiteLockError(err):
 			locked++
 			time.Sleep(time.Duration(1+rand.IntN(10)) * time.Millisecond)

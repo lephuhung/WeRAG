@@ -28,14 +28,37 @@ export interface NotificationLike {
   link: string;
   tenant_id?: number;
   payload: Record<string, unknown> | null;
+  /** Moves forward when a digest (abbreviation_pending) is updated. */
+  created_at?: string;
   seen_at: string | null;
   read_at: string | null;
 }
 
+/** toastKey names one version of a notification: a digest updated in
+ * place keeps its id but gets a new created_at (and seen_at cleared), so
+ * it is toasted again. Tabs remember what they toasted by this key. */
+export function toastKey(n: Pick<NotificationLike, "id" | "created_at">): string {
+  return `${n.id}@${n.created_at ?? ""}`;
+}
+
 /** toastable: unread notifications no toast was shown for yet, oldest
- * first, skipping the ids this tab already toasted (a POST seen may lag). */
+ * first, skipping the versions this tab already toasted (toastKey; a POST
+ * seen may lag). */
 export function toastable<T extends NotificationLike>(items: T[], alreadyToasted: ReadonlySet<string>): T[] {
-  return items.filter((n) => !n.seen_at && !n.read_at && !alreadyToasted.has(n.id)).reverse();
+  return items.filter((n) => !n.seen_at && !n.read_at && !alreadyToasted.has(toastKey(n))).reverse();
+}
+
+/** mergeFresh puts freshly fetched notifications into a list already
+ * shown (null: none fetched yet, kept null): a known id is replaced by its
+ * new version (an updated digest), an unknown one is added; newest first. */
+export function mergeFresh<T extends NotificationLike>(shown: T[] | null, fresh: T[]): T[] | null {
+  if (!shown) return shown;
+  const byId = new Map(fresh.map((n) => [n.id, n]));
+  const merged = shown.map((n) => byId.get(n.id) ?? n);
+  const known = new Set(shown.map((n) => n.id));
+  merged.push(...fresh.filter((n) => !known.has(n.id)));
+  const at = (n: T) => Date.parse(n.created_at ?? "") || 0;
+  return merged.sort((a, b) => at(b) - at(a));
 }
 
 /** unseenIds: every fetched notification still without seen_at, so a seen

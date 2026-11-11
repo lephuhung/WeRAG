@@ -18,10 +18,12 @@ import {
 import {
   NOTIFICATION_POLL_MS,
   badgeLabel,
+  mergeFresh,
   notificationText,
   resolveTarget,
   shouldPoll,
   toastPlan,
+  toastKey,
   toastable,
   unseenIds,
   type NotificationTexts,
@@ -43,6 +45,7 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<UserNotification[] | null>(null);
   const [loading, setLoading] = useState(false);
+  /** toastKey of every version toasted in this tab */
   const toasted = useRef<Set<string>>(new Set());
   const polling = useRef(false);
   const lastPoll = useRef(0);
@@ -98,7 +101,7 @@ export function NotificationBell() {
       setItems(list);
       const unseen = unseenIds(list);
       if (unseen.length > 0) {
-        unseen.forEach((id) => toasted.current.add(id));
+        list.filter((n) => !n.seen_at).forEach((n) => toasted.current.add(toastKey(n)));
         void markNotificationsSeen(unseen).catch(() => {});
       }
     } catch {
@@ -111,14 +114,16 @@ export function NotificationBell() {
   const showToasts = useCallback(async () => {
     const res = await listNotifications({ unread: true, limit: 20 });
     const list = res.data?.items ?? [];
+    // an updated digest shows its new count in a list already fetched
+    setItems((prev) => mergeFresh(prev, list));
     const { show, more } = toastPlan(toastable(list, toasted.current));
     for (const n of show) {
-      toasted.current.add(n.id);
+      toasted.current.add(toastKey(n));
       const { title, body } = notificationText(n, texts, targetOf(n));
       toast.info(body ? `${title} — ${body}` : title, () => go(n), 8000);
     }
     if (more > 0) {
-      toastable(list, toasted.current).forEach((n) => toasted.current.add(n.id));
+      toastable(list, toasted.current).forEach((n) => toasted.current.add(toastKey(n)));
       toast.info(t("notif.more", { n: more }), () => void openList(), 8000);
     }
     // every unseen one fetched, so a seen call that failed before is retried

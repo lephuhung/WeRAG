@@ -516,6 +516,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(startTemporaryDocumentCleanup))
 	must(container.Invoke(startEmailExpiryReminders))
 	must(container.Invoke(startLegalRequestNotices))
+	must(container.Invoke(registerAbbreviationNoticeCleanup))
 
 	// Chat pipeline components for processing chat requests
 	logger.Debugf(ctx, "[Container] Registering chat pipeline plugins...")
@@ -1703,6 +1704,18 @@ func startLegalRequestNotices(n *service.LegalRequestNotifier, feed *service.Leg
 	stop := n.Start(service.LegalRequestNoticeInterval)
 	cleaner.RegisterWithName("LegalRequestNotices", func() error {
 		stop() // cancels the loop and running sweeps, waits for them
+		return nil
+	})
+}
+
+// registerAbbreviationNoticeCleanup lets the abbreviation review notices
+// still being written finish on shutdown (bounded; each run also has its
+// own timeout).
+func registerAbbreviationNoticeCleanup(n *service.AbbreviationReviewNotifier, cleaner interfaces.ResourceCleaner) {
+	cleaner.RegisterWithName("AbbreviationReviewNotices", func() error {
+		if !n.WaitTimeout(10 * time.Second) {
+			logger.Warnf(context.Background(), "[AbbrNotice] shutdown: notices still being written after 10s")
+		}
 		return nil
 	})
 }
