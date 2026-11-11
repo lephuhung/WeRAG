@@ -67,7 +67,7 @@ func TestUsageMeterRecordQuestionCountsTenantAndRealUserOnly(t *testing.T) {
 	m := &usageMeter{repo: repo, now: func() time.Time { return time.Date(2026, 10, 13, 3, 0, 0, 0, time.UTC) }}
 
 	m.RecordQuestion(context.Background(), 10003, "user-1", "")
-	require.Len(t, repo.added, 4) // {tenant,user} x {day,month}
+	require.Len(t, repo.added, 5) // {tenant,user} x {day,month} + member month
 	for _, inc := range repo.added {
 		require.Equal(t, types.UsageMetricQuestions, inc.Metric)
 		require.Equal(t, int64(1), inc.Delta)
@@ -90,7 +90,7 @@ func TestUsageMeterCountsTheSessionOnce(t *testing.T) {
 	m := &usageMeter{repo: repo, now: func() time.Time { return time.Date(2026, 10, 13, 3, 0, 0, 0, time.UTC) }}
 
 	m.RecordQuestion(context.Background(), 10003, "user-1", "sess-1")
-	require.Len(t, repo.added, 5)
+	require.Len(t, repo.added, 6)
 	var session []types.UsageIncrement
 	for _, inc := range repo.added {
 		if inc.ScopeType == types.UsageScopeSession {
@@ -125,8 +125,8 @@ func TestUsageMeterRecordMessageUsageOncePerMessage(t *testing.T) {
 
 	msg := &types.Message{ID: "m1", Role: "assistant", Usage: &types.TokenUsage{PromptTokens: 90, CompletionTokens: 10, TotalTokens: 100}}
 	m.RecordMessageUsage(ctx, msg)
-	// 3 token metrics x {tenant,user} x {day,month}
-	require.Len(t, repo.added, 12)
+	// 3 token metrics x ({tenant,user} x {day,month} + member month)
+	require.Len(t, repo.added, 15)
 	var tokens int64
 	for _, inc := range repo.added {
 		if inc.Metric == types.UsageMetricTokens && inc.ScopeType == types.UsageScopeTenant && len(inc.PeriodKey) == 7 {
@@ -136,13 +136,13 @@ func TestUsageMeterRecordMessageUsageOncePerMessage(t *testing.T) {
 	require.Equal(t, int64(100), tokens)
 
 	m.RecordMessageUsage(ctx, msg) // saved again (artifacts, checkpoint...)
-	require.Len(t, repo.added, 12, "second save must not re-count")
+	require.Len(t, repo.added, 15, "second save must not re-count")
 
 	// Nothing to count: no usage, user role, or zero tokens.
 	m.RecordMessageUsage(ctx, &types.Message{ID: "m2", Role: "assistant"})
 	m.RecordMessageUsage(ctx, &types.Message{ID: "m3", Role: "user", Usage: &types.TokenUsage{TotalTokens: 5}})
 	m.RecordMessageUsage(ctx, &types.Message{ID: "m4", Role: "assistant", Usage: &types.TokenUsage{}})
-	require.Len(t, repo.added, 12)
+	require.Len(t, repo.added, 15)
 	require.False(t, repo.claimed["m2"])
 }
 
@@ -161,8 +161,8 @@ func TestUsageMeterRecordOCRUsageJoinsTokenQuota(t *testing.T) {
 	require.Equal(t, int64(1920), sum[types.UsageMetricOCRTokens])
 	require.Equal(t, int64(1800), sum[types.UsageMetricPromptTokens])
 	require.Equal(t, int64(2), sum[types.UsageMetricOCRPages])
-	// {tenant,user} x {day,month} + session, for 5 metrics
-	require.Len(t, repo.added, 5*5)
+	// {tenant,user} x {day,month} + member month + session, for 5 metrics
+	require.Len(t, repo.added, 5*6)
 
 	repo.added = nil
 	m.RecordOCRUsage(context.Background(), 10003, "user-1", "", 0, types.VLMUsage{})
@@ -285,4 +285,36 @@ func TestUsageMeterGivesUpAfterRetries(t *testing.T) {
 	async[0]()
 	require.Equal(t, 3, repo.addCalls)
 	require.Empty(t, repo.added)
+}
+
+// A real person's turn also lands in their month row inside the
+// organization (scope "member"); the IM/API principal and a Guest of the
+// public portal get none.
+func TestUsageMeterCountsTheMemberInsideTheOrganization(t *testing.T) {
+	repo := &fakeUsageCounterRepo{}
+	// 2026-10-31 17:30 UTC is 1 November in Vietnam
+	m := &usageMeter{repo: repo, now: func() time.Time { return time.Date(2026, 10, 31, 17, 30, 0, 0, time.UTC) }}
+	member := func() []types.UsageIncrement {
+		var out []types.UsageIncrement
+		for _, inc := range repo.added {
+			if inc.ScopeType == types.UsageScopeMember {
+				out = append(out, inc)
+			}
+		}
+		return out
+	}
+
+	m.RecordQuestion(context.Background(), 10003, "user-1", "sess-1")
+	require.Equal(t, []types.UsageIncrement{{
+		ScopeType: types.UsageScopeMember, ScopeID: "10003:user-1", Metric: types.UsageMetricQuestions,
+		PeriodKey: "2026-11", Delta: 1,
+	}}, member())
+
+	repo.added = nil
+	m.RecordQuestion(context.Background(), 10003, "system-10003", "")
+	require.Empty(t, member(), "machine principals stay in the organization total")
+
+	repo.added = nil
+	m.RecordQuestion(portalCtx(), testPortalID, "user-1", "")
+	require.Empty(t, member(), "a portal Guest is no member")
 }

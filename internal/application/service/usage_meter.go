@@ -72,7 +72,8 @@ func personCounterScope(ctx context.Context, tenantID uint64) string {
 }
 
 // buildUsageIncrements expands metric deltas over every scope and period.
-// A turn of a known session also counts toward that session's lifetime
+// A real person's turn also counts toward their month row inside the
+// organization (scope "member", see usageMemberScopeID). A turn of a known session also counts toward that session's lifetime
 // counters (scope "session", period "all"), which only the per-session caps
 // read.
 func buildUsageIncrements(
@@ -80,7 +81,8 @@ func buildUsageIncrements(
 ) []types.UsageIncrement {
 	keys := types.UsagePeriodKeysAt(at)
 	scopes := usageScopes(ctx, tenantID, userID)
-	out := make([]types.UsageIncrement, 0, (len(scopes)*2+1)*len(deltas))
+	memberID := usageMemberScopeID(ctx, tenantID, userID)
+	out := make([]types.UsageIncrement, 0, (len(scopes)*2+2)*len(deltas))
 	for metric, delta := range deltas {
 		if delta <= 0 {
 			continue
@@ -92,6 +94,12 @@ func buildUsageIncrements(
 				})
 			}
 		}
+		if memberID != "" {
+			out = append(out, types.UsageIncrement{
+				ScopeType: types.UsageScopeMember, ScopeID: memberID, Metric: metric,
+				PeriodKey: keys.Month, Delta: delta,
+			})
+		}
 		if sessionID != "" {
 			out = append(out, types.UsageIncrement{
 				ScopeType: types.UsageScopeSession, ScopeID: sessionID, Metric: metric,
@@ -100,6 +108,18 @@ func buildUsageIncrements(
 		}
 	}
 	return out
+}
+
+// usageMemberScopeID is the "member" counter a turn also lands in: the
+// person inside this organization (types.UsageScopeMember), month rows only,
+// read by the member report alone. Machine principals have none (they stay
+// in the organization total), and neither do the public portal's Guests,
+// who are no members of it.
+func usageMemberScopeID(ctx context.Context, tenantID uint64, userID string) string {
+	if tenantID == 0 || userID == "" || types.IsSyntheticUserID(userID) || portalTenant(ctx, tenantID) {
+		return ""
+	}
+	return types.UsageMemberScopeID(tenantID, userID)
 }
 
 func (m *usageMeter) add(ctx context.Context, increments []types.UsageIncrement) {

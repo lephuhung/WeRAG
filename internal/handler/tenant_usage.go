@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
@@ -36,6 +37,33 @@ func (h *TenantUsageHandler) Get(c *gin.Context) {
 		return
 	}
 	out, err := h.plans.TenantUsage(c.Request.Context(), tenantID)
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": out})
+}
+
+// Members godoc
+// @Summary      Per-member usage of the organization for one month
+// @Description  Questions, tokens, OCR and (SuperAdmin only) cost of each member
+// @Description  in one Vietnam-calendar month, with the organization total and
+// @Description  its package. Tenant Admin of the organization or SuperAdmin.
+// @Tags         Tổ chức
+// @Param        id path string true "organization id"
+// @Param        month query string false "YYYY-MM (default: this month)"
+// @Success      200 {object} map[string]interface{}
+// @Security     Bearer
+// @Router       /tenants/{id}/usage/members [get]
+func (h *TenantUsageHandler) Members(c *gin.Context) {
+	tenantID, ok := parseTenantIDFromPath(c)
+	if !ok {
+		return
+	}
+	ctx := c.Request.Context()
+	// the cost is the operator's spend, never the organization's to see
+	withCost := middleware.IsPlatformSuperAdmin(ctx)
+	out, err := h.plans.TenantMemberUsage(ctx, tenantID, strings.TrimSpace(c.Query("month")), withCost)
 	if err != nil {
 		usageAdminFail(c, err)
 		return

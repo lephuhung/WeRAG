@@ -9,7 +9,9 @@ import (
 //
 // Every chat turn is counted twice: once for the organization that owns the
 // session (scope "tenant") and once for the person who asked (scope
-// "user"). Counters are bucketed by Vietnam calendar day and month so a
+// "user"), and a real person's turn a third time as a member of that
+// organization (scope "member", month rows only, see usage_member.go).
+// Counters are bucketed by Vietnam calendar day and month so a
 // package can later say "N questions per day" or "M tokens per month"
 // without re-aggregating the messages table. Rows only ever grow; the
 // day rows are the ground truth and the month rows a convenience.

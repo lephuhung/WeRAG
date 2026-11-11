@@ -146,3 +146,78 @@ func (r *usageCounterRepository) AddMessageUsage(
 	})
 	return claimed, err
 }
+
+var _ interfaces.UsageMemberReportRepository = (*usageCounterRepository)(nil)
+
+// ListMemberCounters implements interfaces.UsageMemberReportRepository.
+// The prefix is digits and a colon, so LIKE needs no escaping; the leading
+// primary-key column (scope_type) keeps the scan to member rows.
+func (r *usageCounterRepository) ListMemberCounters(
+	ctx context.Context, tenantID uint64, monthKey string,
+) ([]*types.UsageCounter, error) {
+	if tenantID == 0 || monthKey == "" {
+		return nil, nil
+	}
+	var rows []*types.UsageCounter
+	err := r.db.WithContext(ctx).
+		Where("scope_type = ? AND period_key = ? AND scope_id LIKE ?",
+			types.UsageScopeMember, monthKey, types.UsageMemberScopePrefix(tenantID)+"%").
+		Find(&rows).Error
+	return rows, err
+}
+
+// memberMessageUsageRow is one session owner's sums in SumMessageUsageByUser.
+type memberMessageUsageRow struct {
+	UserID           string
+	Questions        int64
+	PromptTokens     int64
+	CompletionTokens int64
+	Tokens           int64
+}
+
+// SumMessageUsageByUser implements interfaces.UsageMemberReportRepository.
+// The sums are cast back to BIGINT (Postgres widens SUM(bigint) to numeric).
+// Tokens follow the meter: total_tokens, or prompt + completion when the
+// provider reported no total.
+func (r *usageCounterRepository) SumMessageUsageByUser(
+	ctx context.Context, tenantID uint64, from, to time.Time,
+) (map[string]types.UsagePeriodTotals, error) {
+	pg := r.db.Dialector.Name() == "postgres"
+	field := func(name string) string {
+		if pg {
+			return "COALESCE((m.usage->>'" + name + "')::bigint, 0)"
+		}
+		return "COALESCE(CAST(json_extract(m.usage, '$." + name + "') AS INTEGER), 0)"
+	}
+	prompt, completion, total := field("prompt_tokens"), field("completion_tokens"), field("total_tokens")
+	// as migration 000136's backfill: only an object carries token figures
+	assistant := "m.role = 'assistant' AND m.usage IS NOT NULL"
+	if pg {
+		assistant += " AND jsonb_typeof(m.usage) = 'object'"
+	} else {
+		assistant += " AND json_valid(m.usage) AND json_type(m.usage) = 'object'"
+	}
+	query := "SELECT s.user_id AS user_id," +
+		" CAST(SUM(CASE WHEN m.role = 'user' THEN 1 ELSE 0 END) AS BIGINT) AS questions," +
+		" CAST(SUM(CASE WHEN " + assistant + " THEN " + prompt + " ELSE 0 END) AS BIGINT) AS prompt_tokens," +
+		" CAST(SUM(CASE WHEN " + assistant + " THEN " + completion + " ELSE 0 END) AS BIGINT) AS completion_tokens," +
+		" CAST(SUM(CASE WHEN " + assistant + " THEN (CASE WHEN " + total + " > 0 THEN " + total +
+		" ELSE " + prompt + " + " + completion + " END) ELSE 0 END) AS BIGINT) AS tokens" +
+		" FROM messages m JOIN sessions s ON s.id = m.session_id" +
+		" WHERE s.tenant_id = ? AND m.created_at >= ? AND m.created_at < ?" +
+		" AND s.user_id IS NOT NULL AND s.user_id <> ''" +
+		" GROUP BY s.user_id"
+	var rows []memberMessageUsageRow
+	// UTC instants: SQLite compares the stored text, Postgres the instant.
+	if err := r.db.WithContext(ctx).Raw(query, tenantID, from.UTC(), to.UTC()).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]types.UsagePeriodTotals, len(rows))
+	for _, row := range rows {
+		out[row.UserID] = types.UsagePeriodTotals{
+			Questions: row.Questions, Tokens: row.Tokens,
+			PromptTokens: row.PromptTokens, CompletionTokens: row.CompletionTokens,
+		}
+	}
+	return out, nil
+}

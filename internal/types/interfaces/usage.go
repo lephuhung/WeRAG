@@ -29,6 +29,20 @@ type UsageCounterRepository interface {
 	AddMessageUsage(ctx context.Context, messageID string, increments []types.UsageIncrement) (bool, error)
 }
 
+// UsageMemberReportRepository reads what the member usage report needs.
+// The usage counter repository implements it; it is kept apart from
+// UsageCounterRepository so the meter and the guard never depend on it.
+type UsageMemberReportRepository interface {
+	// ListMemberCounters returns every "member" counter row of tenantID
+	// (types.UsageScopeMember) for one month key.
+	ListMemberCounters(ctx context.Context, tenantID uint64, monthKey string) ([]*types.UsageCounter, error)
+	// SumMessageUsageByUser sums the chat history of tenantID's sessions
+	// (deleted ones included: the usage was spent) in [from, to) per
+	// session owner: questions = user messages, tokens from the assistant
+	// messages' usage. No OCR and no cost (neither is kept on messages).
+	SumMessageUsageByUser(ctx context.Context, tenantID uint64, from, to time.Time) (map[string]types.UsagePeriodTotals, error)
+}
+
 // UsageMeter records usage as it happens and answers usage queries.
 // Recording is best-effort: a metering failure is logged and never fails
 // the chat turn that triggered it.
@@ -202,6 +216,10 @@ type UsagePlanService interface {
 	AssignTenantSeat(ctx context.Context, tenantID uint64, userID, assignedBy string) error
 	// RevokeTenantSeat takes a seat of the organization's subscription back.
 	RevokeTenantSeat(ctx context.Context, tenantID uint64, userID string) error
+	// TenantMemberUsage is the member usage report of one organization for
+	// one month ("YYYY-MM", "" = this month, Vietnam calendar). withCost
+	// fills the operator's cost (SuperAdmin callers only).
+	TenantMemberUsage(ctx context.Context, tenantID uint64, month string, withCost bool) (*types.UsageMemberReport, error)
 }
 
 // UsageBillingRepository stores promo codes and orders.
