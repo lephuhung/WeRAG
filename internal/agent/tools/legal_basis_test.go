@@ -90,7 +90,7 @@ func newLegalBasisFixture() *fakeLegalBasisCatalog {
 	return &fakeLegalBasisCatalog{
 		docs: []*types.LegalDocument{nd30, tt01, nd123, nd70, l24, l116, qdA, qdB, future, partial, unknown, nd68a, nd68b},
 		links: map[string][]types.LegalRelationLink{
-			"tt01": {{Relation: types.LegalRelationReplaces, Incoming: true, Other: nd30}},
+			"tt01":  {{Relation: types.LegalRelationReplaces, Incoming: true, Other: nd30}},
 			"nd123": {{Relation: types.LegalRelationAmends, Incoming: true, Other: nd70}},
 			"l24":   {{Relation: types.LegalRelationReplaces, Incoming: true, Other: l116}},
 		},
