@@ -30,14 +30,29 @@ func (f *fakeLegalBasisCatalog) FindByNumberKey(_ context.Context, key string, l
 	if len(out) > 0 {
 		return out, nil
 	}
-	return f.FindByNumberPrefix(context.Background(), key, limit)
-}
-
-func (f *fakeLegalBasisCatalog) FindByNumberPrefix(_ context.Context, key string, _ int) ([]*types.LegalDocument, error) {
-	var out []*types.LegalDocument
+	var prefixed []*types.LegalDocument
 	for _, d := range f.docs {
 		if strings.HasPrefix(d.NumberKey, key+"/") {
-			out = append(out, d)
+			prefixed = append(prefixed, d)
+		}
+	}
+	return prefixed, nil
+}
+
+func (f *fakeLegalBasisCatalog) FindByNumberPrefixTypes(_ context.Context, key string, docTypes []string, limit int) ([]*types.LegalDocument, error) {
+	var out []*types.LegalDocument
+	for _, d := range f.docs {
+		if !strings.HasPrefix(d.NumberKey, key+"/") {
+			continue
+		}
+		for _, t := range docTypes {
+			if strings.EqualFold(t, d.DocType) {
+				out = append(out, d)
+				break
+			}
+		}
+		if len(out) == limit {
+			break
 		}
 	}
 	return out, nil
@@ -200,12 +215,16 @@ func TestCheckLegalBasisStatuses(t *testing.T) {
 		t.Errorf("offsets give %q", got)
 	}
 
-	// marks: every place of the findings that need a look, never an edit
+	// marks: every place of the findings whose validity is in question,
+	// never an edit; ambiguous / unknown / not found only on request
 	marks := 0
 	for _, f := range r.Findings {
-		if f.Status != LegalBasisInForce {
+		if LegalBasisMarkedByDefault(f.Status) {
 			marks += len(f.Positions)
 		}
+	}
+	if marks != 4 { // 01/2011, 24/2018, 09/2026, 15/2018
+		t.Errorf("%d default marks", marks)
 	}
 	if len(r.DocumentOps) != marks {
 		t.Errorf("%d ops, want %d", len(r.DocumentOps), marks)

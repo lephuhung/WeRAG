@@ -18,8 +18,10 @@ import (
 // catalogue and given a status, without a model. The assistant points out:
 // the report lists the citations, the editor may underline them, nothing in
 // the document changes. A citation the catalogue does not hold is "not
-// found" (chưa rõ), never expired; a number several catalogue documents
-// share is "ambiguous" with its candidates, never one picked for the user.
+// found" (chưa rõ), never expired; a citation that may mean several
+// catalogue documents is "ambiguous" with its candidates, never one picked
+// for the user — also when only one candidate is known but the citation
+// does not identify it (a year-less number without its issue date).
 
 // LegalBasisStatus is the status of one cited document.
 type LegalBasisStatus string
@@ -31,6 +33,10 @@ const (
 	LegalBasisExpired         LegalBasisStatus = "expired"
 	LegalBasisSuspended       LegalBasisStatus = "suspended"
 	LegalBasisNotYetEffective LegalBasisStatus = "not_yet_effective"
+	// LegalBasisNeedsReview: held in force (or partly suspended) while a
+	// document in force repeals it or ends it in part: which provisions
+	// still apply must be checked by hand.
+	LegalBasisNeedsReview LegalBasisStatus = "needs_review"
 	// LegalBasisUnknown: the catalogue holds the document but states no
 	// validity ("Chưa xác định") and nothing in its dates or links decides.
 	LegalBasisUnknown   LegalBasisStatus = "unknown"
@@ -41,9 +47,40 @@ const (
 // legalBasisOrder is the report order: what needs the drafter's attention
 // first.
 var legalBasisOrder = map[LegalBasisStatus]int{
-	LegalBasisExpired: 0, LegalBasisSuspended: 1, LegalBasisPartlyExpired: 2, LegalBasisNotYetEffective: 3,
-	LegalBasisAmbiguous: 4, LegalBasisAmended: 5, LegalBasisUnknown: 6, LegalBasisNotFound: 7, LegalBasisInForce: 8,
+	LegalBasisExpired: 0, LegalBasisSuspended: 1, LegalBasisPartlyExpired: 2, LegalBasisNeedsReview: 3,
+	LegalBasisNotYetEffective: 4, LegalBasisAmbiguous: 5, LegalBasisAmended: 6, LegalBasisUnknown: 7,
+	LegalBasisNotFound: 8, LegalBasisInForce: 9,
 }
+
+// LegalBasisMarkedByDefault reports whether the report's own underlines
+// (DocumentOps, the "underline all" of a client) cover a status: the
+// citations whose validity is in question. Ambiguous, amended, unknown and
+// not-found citations are underlined one finding at a time, on request.
+func LegalBasisMarkedByDefault(s LegalBasisStatus) bool {
+	switch s {
+	case LegalBasisExpired, LegalBasisSuspended, LegalBasisPartlyExpired, LegalBasisNeedsReview, LegalBasisNotYetEffective:
+		return true
+	}
+	return false
+}
+
+// Why a citation is ambiguous.
+const (
+	// several catalogue documents carry the number (and date, if written)
+	LegalBasisAmbiguitySharedNumber = "shared_number"
+	// a type and a bare number, maybe a year: "Nghị định 68", "NĐ 68/2026"
+	LegalBasisAmbiguityIncompleteNumber = "incomplete_number"
+	// a year-less number ("1461/QĐ-TTg", "18-NQ/TW") with no issue date
+	// written after it: such numbers restart every year
+	LegalBasisAmbiguityMissingDate = "missing_date"
+	// a year-less number whose written issue date no catalogue document of
+	// that number has
+	LegalBasisAmbiguityDateMismatch = "date_mismatch"
+	// a law named with a year that several catalogue documents fit
+	LegalBasisAmbiguitySharedName = "shared_name"
+	// a law name the catalogue only matches by a shorter title: a guess
+	LegalBasisAmbiguityNameGuess = "name_guess"
+)
 
 // Relations of a related document, seen from the cited one.
 const (
@@ -81,12 +118,12 @@ const (
 	// legalBasisMaxCandidates bounds the candidates listed for an
 	// ambiguous citation (Total says how many there are).
 	legalBasisMaxCandidates = 5
-	// legalBasisPrefixScan is how many rows a partial number is matched
-	// against (Candidates of the catalogue service reads as many).
+	// legalBasisPrefixScan is how many rows of one type a partial number is
+	// matched against; more sets CandidatesMore.
 	legalBasisPrefixScan = 200
 	// legalBasisMaxRelated bounds the related documents of one relation.
 	legalBasisMaxRelated = 5
-	// legalBasisMaxMarks bounds the underlines of one check.
+	// legalBasisMaxMarks bounds the underlines of one report.
 	legalBasisMaxMarks = 200
 )
 
@@ -134,19 +171,26 @@ type LegalBasisFinding struct {
 	// Key identifies the finding within a report.
 	Key string `json:"key"`
 	// Citation is the normalised reference: "30/2020/NĐ-CP", "Luật Đất đai
-	// 2013", "Nghị định 68".
+	// 2013", "Nghị định 68", "1461/QĐ-TTg ngày 20/11/2023".
 	Citation string `json:"citation"`
 	// Kind is the FindCitations kind (full, admin, party, standard,
 	// partial, name).
 	Kind    string           `json:"kind"`
 	DocType string           `json:"doc_type,omitempty"`
 	Status  LegalBasisStatus `json:"status"`
+	// IssuedOn is the issue date written after a year-less number
+	// (YYYY-MM-DD), the part of its identity the number lacks.
+	IssuedOn string `json:"issued_on,omitempty"`
 	// Document is the catalogue document, nil when ambiguous or not found.
 	Document *LegalBasisDocument `json:"document,omitempty"`
+	// Ambiguity says why an ambiguous citation is (LegalBasisAmbiguity*).
+	Ambiguity string `json:"ambiguity,omitempty"`
 	// Candidates of an ambiguous citation (newest first), at most
-	// legalBasisMaxCandidates of CandidatesTotal.
+	// legalBasisMaxCandidates of CandidatesTotal; CandidatesMore: the
+	// catalogue holds more than were counted.
 	Candidates      []LegalBasisDocument `json:"candidates,omitempty"`
 	CandidatesTotal int                  `json:"candidates_total,omitempty"`
+	CandidatesMore  bool                 `json:"candidates_more,omitempty"`
 	// Related: documents replacing, repealing, ending, suspending or
 	// amending Document (newest first per relation).
 	Related []LegalBasisRelated `json:"related,omitempty"`
@@ -158,8 +202,17 @@ type LegalBasisFinding struct {
 	// MaybeExpired: the catalogue holds the document partly expired, but a
 	// document in force replaces or ends it: perhaps wholly.
 	MaybeExpired bool `json:"maybe_expired,omitempty"`
-	// Incomplete: the citation lacks the year or code of its number
-	// ("Nghị định 68", "NĐ 68/2026").
+	// ReviewBy: the documents in force that repeal or partly end a
+	// document the catalogue holds in force (Status needs_review).
+	ReviewBy []string `json:"review_by,omitempty"`
+	// PartialSuspension: the catalogue says "Ngưng hiệu lực một phần".
+	PartialSuspension bool `json:"partial_suspension,omitempty"`
+	// StaleStatus: the catalogue says "Chưa có hiệu lực" although the
+	// effective date has passed; the date was trusted.
+	StaleStatus bool `json:"stale_status,omitempty"`
+	// Incomplete: the citation lacks part of its identity: the year or
+	// code of its number ("Nghị định 68", "NĐ 68/2026") or the issue date
+	// of a year-less number.
 	Incomplete bool `json:"incomplete,omitempty"`
 	// Note says the status in one Vietnamese sentence (for clients that
 	// show text, e.g. the Word add-in).
@@ -175,9 +228,12 @@ type LegalBasisReport struct {
 	Findings   []LegalBasisFinding `json:"findings"`
 	// Summary counts findings by status.
 	Summary map[LegalBasisStatus]int `json:"summary"`
-	// DocumentOps underline every place of the findings that need a look
-	// (all but in_force); the client applies them only when the user asks.
+	// DocumentOps underline every place of the findings whose validity is
+	// in question (LegalBasisMarkedByDefault), at most legalBasisMaxMarks;
+	// the client applies them only when the user asks.
 	DocumentOps []DocumentOp `json:"document_ops"`
+	// MarksTruncated: more places than legalBasisMaxMarks.
+	MarksTruncated bool `json:"marks_truncated,omitempty"`
 	// Skipped counts citations deliberately not checked: laws named
 	// without a year (they mean the law in force, nothing to check), the
 	// document's own number ("Số: …") and non-normative paperwork numbers
@@ -201,16 +257,20 @@ type LegalBasisSkipped struct {
 // reads (interfaces.LegalCatalogRepository has it).
 type LegalBasisCatalog interface {
 	FindByNumberKey(ctx context.Context, key string, limit int) ([]*types.LegalDocument, error)
-	FindByNumberPrefix(ctx context.Context, key string, limit int) ([]*types.LegalDocument, error)
+	// FindByNumberPrefixTypes is FindByNumberPrefix limited to documents
+	// of the given types (doc_type, case-insensitive).
+	FindByNumberPrefixTypes(ctx context.Context, key string, docTypes []string, limit int) ([]*types.LegalDocument, error)
 	ListLinks(ctx context.Context, id string, outgoing, incoming []types.LegalRelation) ([]types.LegalRelationLink, error)
 }
 
 // LegalNameResolution is what a LegalNameResolver made of a law named by
 // title and year: the one document it names (Chosen), or the candidates
-// when several may be meant; neither when the catalogue has none.
+// when several may be meant; neither when the catalogue has none. Guess:
+// the candidates match only a shorter form of the name.
 type LegalNameResolution struct {
 	Chosen     *types.LegalDocument
 	Candidates []*types.LegalDocument
+	Guess      bool
 }
 
 // LegalNameResolver resolves a law named with a year ("Luật Đất đai",
@@ -239,11 +299,57 @@ func ReadLegalBasisParagraphs(ctx context.Context, src DocumentWorkspaceSource, 
 // ownNumberRe is the "Số:" a document writes its own number after.
 var ownNumberRe = regexp.MustCompile(`(?i)^\s*số\s*[:.]?\s*$`)
 
+// issueDateAfterRe reads the issue date written right after a number:
+// "ngày 20/11/2023", "ngày 20-11-2023", "ngày 20 tháng 11 năm 2023", also
+// after ", ban hành".
+var issueDateAfterRe = regexp.MustCompile(`(?i)^[\s,]*(?:ban\s+hành\s+)?ngày\s+(?:(\d{1,2})\s*[/.\-]\s*(\d{1,2})\s*[/.\-]\s*((?:19|20)\d\d)|(\d{1,2})\s+tháng\s+(\d{1,2})\s+năm\s+((?:19|20)\d\d))`)
+
+// issueDateAfter is the issue date (YYYY-MM-DD) written right after a
+// citation, "" when none (or not a real date).
+func issueDateAfter(rest string) string {
+	m := issueDateAfterRe.FindStringSubmatch(rest)
+	if m == nil {
+		return ""
+	}
+	d, mo, y := m[1], m[2], m[3]
+	if d == "" {
+		d, mo, y = m[4], m[5], m[6]
+	}
+	day, _ := strconv.Atoi(d)
+	month, _ := strconv.Atoi(mo)
+	year, _ := strconv.Atoi(y)
+	t := time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
+	if t.Day() != day || int(t.Month()) != month {
+		return ""
+	}
+	return t.Format("2006-01-02")
+}
+
+// yearlessKind reports a citation kind whose number has no year: such
+// numbers restart every year ("1461/QĐ-TTg", "18-NQ/TW").
+func yearlessKind(k vietnamese_legal.CitationKind) bool {
+	return k == vietnamese_legal.CitationAdmin || k == vietnamese_legal.CitationParty
+}
+
 // legalBasisGroup collects the places of one distinct citation.
 type legalBasisGroup struct {
 	key       string
 	cit       vietnamese_legal.Citation
+	issued    string // issue date after a year-less number
 	positions []LegalBasisPosition
+}
+
+// paragraphAnchors returns the editor anchor of every paragraph, the
+// normalised text computed once (OpAnchor occurrences counted in one pass).
+func paragraphAnchors(paras []string) []*OpAnchor {
+	out := make([]*OpAnchor, len(paras))
+	seen := map[string]int{}
+	for i, p := range paras {
+		t := anchorText(p)
+		seen[t]++
+		out[i] = &OpAnchor{Text: t, Occurrence: seen[t]}
+	}
+	return out
 }
 
 // CheckLegalBasis checks the citations of paras (a document's paragraph
@@ -251,20 +357,17 @@ type legalBasisGroup struct {
 // with a year are then not checked either.
 func CheckLegalBasis(ctx context.Context, paras []string, catalog LegalBasisCatalog, names LegalNameResolver, now time.Time) (*LegalBasisReport, error) {
 	report := &LegalBasisReport{CheckedAt: now, Summary: map[LegalBasisStatus]int{}}
-	texts := make([]string, len(paras))
-	copy(texts, paras)
-	vdoc := &virtualDoc{texts: texts, ids: make([]int, len(texts)), next: -2}
-	for i := range vdoc.ids {
-		vdoc.ids[i] = i
-	}
+	anchors := paragraphAnchors(paras)
 	var groups []*legalBasisGroup
 	byKey := map[string]*legalBasisGroup{}
+	// the last dated group of a year-less number: a later mention without
+	// its date means the same document
+	lastDated := map[string]*legalBasisGroup{}
 	for pi, text := range paras {
 		if strings.TrimSpace(text) == "" {
 			continue
 		}
 		runes := []rune(text)
-		var anchor *OpAnchor
 		for _, c := range vietnamese_legal.FindCitations(text) {
 			if c.Kind == vietnamese_legal.CitationName && names == nil {
 				continue
@@ -281,27 +384,39 @@ func CheckLegalBasis(ctx context.Context, paras []string, catalog LegalBasisCata
 			case "drop":
 				continue
 			}
-			if anchor == nil {
-				anchor = vdoc.anchor(pi)
-			}
 			pos := LegalBasisPosition{
-				Paragraph: pi, Start: c.Start, End: c.End, Text: c.Raw, Anchor: anchor,
+				Paragraph: pi, Start: c.Start, End: c.End, Text: c.Raw, Anchor: anchors[pi],
 				TextOccurrence: 1 + strings.Count(string(runes[:c.Start]), c.Raw),
 			}
-			g := byKey[key]
+			var g *legalBasisGroup
+			issued := ""
+			if yearlessKind(c.Kind) {
+				issued = issueDateAfter(string(runes[c.End:min(len(runes), c.End+80)]))
+				if issued == "" {
+					g = lastDated[key]
+				} else {
+					key += "|" + issued
+				}
+			}
+			if g == nil {
+				g = byKey[key]
+			}
 			if g == nil {
 				if len(groups) >= legalBasisMaxFindings {
 					report.Truncated = true
 					continue
 				}
-				g = &legalBasisGroup{key: key, cit: c}
+				g = &legalBasisGroup{key: key, cit: c, issued: issued}
 				byKey[key] = g
 				groups = append(groups, g)
+			}
+			if issued != "" {
+				lastDated[strings.TrimSuffix(key, "|"+issued)] = g
 			}
 			g.positions = append(g.positions, pos)
 		}
 	}
-	c := &legalBasisChecker{catalog: catalog, names: names, now: now, docs: map[string]*LegalBasisDocument{}}
+	c := &legalBasisChecker{catalog: catalog, names: names, now: now, docs: map[string]*legalClassified{}}
 	var findings []LegalBasisFinding
 	for _, g := range groups {
 		f, err := c.finding(ctx, g)
@@ -318,13 +433,15 @@ func CheckLegalBasis(ctx context.Context, paras []string, catalog LegalBasisCata
 	sort.SliceStable(findings, func(i, j int) bool {
 		return legalBasisOrder[findings[i].Status] < legalBasisOrder[findings[j].Status]
 	})
+	report.DocumentOps = []DocumentOp{}
 	for _, f := range findings {
 		report.Summary[f.Status]++
-		if f.Status == LegalBasisInForce {
+		if !LegalBasisMarkedByDefault(f.Status) {
 			continue
 		}
 		for _, p := range f.Positions {
 			if len(report.DocumentOps) >= legalBasisMaxMarks {
+				report.MarksTruncated = true
 				break
 			}
 			report.DocumentOps = append(report.DocumentOps, p.MarkOp())
@@ -332,9 +449,6 @@ func CheckLegalBasis(ctx context.Context, paras []string, catalog LegalBasisCata
 	}
 	if findings == nil {
 		findings = []LegalBasisFinding{}
-	}
-	if report.DocumentOps == nil {
-		report.DocumentOps = []DocumentOp{}
 	}
 	report.Findings = findings
 	return report, nil
@@ -374,13 +488,33 @@ func legalBasisKey(c vietnamese_legal.Citation) (key, skip string) {
 	return "number:" + c.Key, ""
 }
 
+// legalClassified is a classified catalogue document.
+type legalClassified struct {
+	doc     LegalBasisDocument
+	class   legalClassification
+	related []LegalBasisRelated
+}
+
 type legalBasisChecker struct {
 	catalog LegalBasisCatalog
 	names   LegalNameResolver
 	now     time.Time
-	// docs caches classified documents by id (a related document is often
-	// cited too)
-	docs map[string]*LegalBasisDocument
+	// docs caches classified documents by id (a candidate or a related
+	// document is often cited too)
+	docs map[string]*legalClassified
+}
+
+// legalDocTypeVariants are the catalogue doc types of one DocTypeClass.
+func legalDocTypeVariants(docType string) []string {
+	switch vietnamese_legal.DocTypeClass(docType) {
+	case "luật":
+		return []string{"Luật", "Bộ luật"}
+	case "thông tư":
+		return []string{"Thông tư", "Thông tư liên tịch"}
+	case "nghị quyết":
+		return []string{"Nghị quyết", "Nghị quyết liên tịch"}
+	}
+	return []string{docType}
 }
 
 // finding looks one citation up and classifies it; nil for paperwork the
@@ -398,27 +532,29 @@ func (c *legalBasisChecker) finding(ctx context.Context, g *legalBasisGroup) (*L
 		if res.Chosen != nil {
 			return f, c.resolve(ctx, f, res.Chosen)
 		}
+		f.Ambiguity = LegalBasisAmbiguitySharedName
+		if res.Guess {
+			f.Ambiguity = LegalBasisAmbiguityNameGuess
+		}
 		return f, c.candidates(ctx, f, res.Candidates)
 	case vietnamese_legal.CitationPartial:
 		f.Citation = strings.TrimSpace(cit.DocType + " " + cit.Number)
 		f.Incomplete = true
-		docs, err := c.catalog.FindByNumberPrefix(ctx, vietnamese_legal.CatalogNumberKey(cit.Number), legalBasisPrefixScan)
+		docs, err := c.catalog.FindByNumberPrefixTypes(ctx, vietnamese_legal.CatalogNumberKey(cit.Number),
+			legalDocTypeVariants(cit.DocType), legalBasisPrefixScan+1)
 		if err != nil {
 			return nil, err
 		}
-		want := vietnamese_legal.DocTypeClass(cit.DocType)
-		var same []*types.LegalDocument
-		for _, d := range docs {
-			if vietnamese_legal.DocTypeClass(d.DocType) == want {
-				same = append(same, d)
-			}
+		if len(docs) > legalBasisPrefixScan {
+			docs, f.CandidatesMore = docs[:legalBasisPrefixScan], true
 		}
 		// with its year the number is one document unless the catalogue
 		// holds several; without it ("Nghị định 68") it never is
-		if cit.Year != "" && legalDistinctNumbers(same) == 1 {
-			return f, c.resolve(ctx, f, same[0])
+		if cit.Year != "" && !f.CandidatesMore && legalDistinctNumbers(docs) == 1 {
+			return f, c.resolve(ctx, f, docs[0])
 		}
-		return f, c.candidates(ctx, f, same)
+		f.Ambiguity = LegalBasisAmbiguityIncompleteNumber
+		return f, c.candidates(ctx, f, docs)
 	}
 	f.Citation = cit.Number
 	docs, err := c.catalog.FindByNumberKey(ctx, cit.Key, legalBasisPrefixScan)
@@ -435,10 +571,46 @@ func (c *legalBasisChecker) finding(ctx context.Context, g *legalBasisGroup) (*L
 	if len(exact) == 0 && !legalBasisNormative(cit) {
 		return nil, nil
 	}
+	if yearlessKind(cit.Kind) && len(exact) > 0 {
+		return f, c.yearless(ctx, f, g.issued, exact)
+	}
 	if len(exact) == 1 {
 		return f, c.resolve(ctx, f, exact[0])
 	}
+	f.Ambiguity = LegalBasisAmbiguitySharedNumber
 	return f, c.candidates(ctx, f, exact)
+}
+
+// yearless resolves a number without a year by the issue date written
+// after it, the exact day of the catalogue's issued_on: a number like
+// "1461/QĐ-TTg" restarts every year, so a lone catalogue row of that
+// number is not the cited document unless the dates agree. Without a
+// date, or with one no row has, the citation stays ambiguous (the year
+// alone is not taken: two rows of a number in one year happen, and a
+// wrong day more likely names a document the catalogue lacks).
+func (c *legalBasisChecker) yearless(ctx context.Context, f *LegalBasisFinding, issued string, docs []*types.LegalDocument) error {
+	if issued == "" {
+		f.Incomplete = true
+		f.Ambiguity = LegalBasisAmbiguityMissingDate
+		return c.candidates(ctx, f, docs)
+	}
+	f.IssuedOn = issued
+	f.Citation += " ngày " + legalBasisDay(issued)
+	var same []*types.LegalDocument
+	for _, d := range docs {
+		if d.IssuedOn != nil && d.IssuedOn.Format("2006-01-02") == issued {
+			same = append(same, d)
+		}
+	}
+	switch {
+	case len(same) == 1:
+		return c.resolve(ctx, f, same[0])
+	case len(same) > 1:
+		f.Ambiguity = LegalBasisAmbiguitySharedNumber
+		return c.candidates(ctx, f, same)
+	}
+	f.Ambiguity = LegalBasisAmbiguityDateMismatch
+	return c.candidates(ctx, f, docs)
 }
 
 // legalNameOnly is the law's name without the year the reader appended.
@@ -495,8 +667,8 @@ func legalDistinctNumbers(docs []*types.LegalDocument) int {
 // candidates fills an ambiguous (or, with none, not found) finding.
 func (c *legalBasisChecker) candidates(ctx context.Context, f *LegalBasisFinding, docs []*types.LegalDocument) error {
 	if len(docs) == 0 {
-		f.Status = LegalBasisNotFound
-		f.Note = legalBasisNote(f)
+		f.Status, f.Ambiguity, f.CandidatesMore = LegalBasisNotFound, "", false
+		f.Note = legalBasisNote(f, c.now)
 		return nil
 	}
 	sort.SliceStable(docs, func(i, j int) bool { return legalDateAfter(docs[i].IssuedOn, docs[j].IssuedOn) })
@@ -506,61 +678,59 @@ func (c *legalBasisChecker) candidates(ctx context.Context, f *LegalBasisFinding
 		if i == legalBasisMaxCandidates {
 			break
 		}
-		doc, _, err := c.classify(ctx, d)
+		cl, err := c.classify(ctx, d)
 		if err != nil {
 			return err
 		}
-		f.Candidates = append(f.Candidates, *doc)
+		f.Candidates = append(f.Candidates, cl.doc)
 	}
-	f.Note = legalBasisNote(f)
+	f.Note = legalBasisNote(f, c.now)
 	return nil
 }
 
 // resolve fills a finding whose citation names one catalogue document.
 func (c *legalBasisChecker) resolve(ctx context.Context, f *LegalBasisFinding, d *types.LegalDocument) error {
-	doc, v, err := c.classify(ctx, d)
+	cl, err := c.classify(ctx, d)
 	if err != nil {
 		return err
 	}
-	f.Document = doc
+	doc := cl.doc
+	f.Document = &doc
 	f.Status = doc.Status
-	f.Related = v.related
-	f.DerivedFrom, f.DerivedExpiredOn = v.derivedFrom, v.derivedOn
-	f.MaybeExpired = v.maybeExpired
+	f.Related = cl.related
+	if by := cl.class.derivedBy; by != nil {
+		if f.Status == LegalBasisPartlyExpired {
+			f.MaybeExpired = true
+		}
+		f.DerivedFrom = legalOr(by.DocumentNumber, by.Title)
+		if cl.class.derivedOn != nil {
+			f.DerivedExpiredOn = cl.class.derivedOn.Format("2006-01-02")
+		}
+	}
+	for _, o := range cl.class.reviewBy {
+		f.ReviewBy = append(f.ReviewBy, legalShortLabel(o))
+	}
+	f.PartialSuspension, f.StaleStatus = cl.class.partialSuspension, cl.class.staleNotYet
 	if f.DocType == "" {
 		f.DocType = d.DocType
 	}
-	f.Note = legalBasisNote(f)
+	f.Note = legalBasisNote(f, c.now)
 	return nil
 }
 
-// legalBasisVerdict is what classify reads beyond the document's status.
-type legalBasisVerdict struct {
-	related      []LegalBasisRelated
-	derivedFrom  string
-	derivedOn    string
-	maybeExpired bool
-}
-
 // classify states a catalogue document's status as of c.now from its
-// catalogue status, dates and incoming links (check_legal_status's rules:
-// a stale "Còn hiệu lực" yields to a replacing document already in force).
-func (c *legalBasisChecker) classify(ctx context.Context, d *types.LegalDocument) (*LegalBasisDocument, legalBasisVerdict, error) {
-	var v legalBasisVerdict
+// catalogue status, dates and incoming links (classifyLegal).
+func (c *legalBasisChecker) classify(ctx context.Context, d *types.LegalDocument) (*legalClassified, error) {
+	if cl, ok := c.docs[d.ID]; ok {
+		return cl, nil
+	}
 	links, err := c.catalog.ListLinks(ctx, d.ID, nil, legalBasisIncoming)
 	if err != nil {
-		return nil, v, err
+		return nil, err
 	}
-	rep := &types.LegalStatusReport{Document: d, Links: links}
-	doc := legalBasisDocument(d)
-	doc.Status = ClassifyLegalDocument(rep, c.now)
-	if by, on := derivedExpiry(rep, c.now); by != nil {
-		if partlyExpired(d) {
-			v.maybeExpired = true
-		} else {
-			v.derivedFrom, v.derivedOn = legalOr(by.DocumentNumber, by.Title), on.Format("2006-01-02")
-		}
-	}
+	cl := &legalClassified{doc: legalBasisDocument(d)}
+	cl.class = classifyLegal(&types.LegalStatusReport{Document: d, Links: links}, c.now)
+	cl.doc.Status = cl.class.status
 	for _, r := range legalBasisRelations {
 		var others []*types.LegalDocument
 		for _, l := range links {
@@ -574,11 +744,14 @@ func (c *legalBasisChecker) classify(ctx context.Context, d *types.LegalDocument
 				break
 			}
 			od := legalBasisDocument(o)
+			// the related document's own links are not read: its status
+			// comes from its catalogue row and dates
 			od.Status = ClassifyLegalDocument(&types.LegalStatusReport{Document: o}, c.now)
-			v.related = append(v.related, LegalBasisRelated{Relation: r.name, LegalBasisDocument: od})
+			cl.related = append(cl.related, LegalBasisRelated{Relation: r.name, LegalBasisDocument: od})
 		}
 	}
-	return &doc, v, nil
+	c.docs[d.ID] = cl
+	return cl, nil
 }
 
 func legalBasisDocument(d *types.LegalDocument) LegalBasisDocument {
@@ -593,54 +766,6 @@ func legalBasisDocument(d *types.LegalDocument) LegalBasisDocument {
 		IssuedOn: day(d.IssuedOn), EffectiveOn: day(d.EffectiveOn), ExpiredOn: day(d.ExpiredOn),
 		CatalogStatus: d.Status, Unverified: d.Unverified(),
 	}
-}
-
-// legalDayAfter reports whether t falls on a later calendar day than at,
-// each read in its own location (catalogue dates are UTC midnights).
-func legalDayAfter(t, at time.Time) bool { return t.Format("2006-01-02") > at.Format("2006-01-02") }
-
-// ClassifyLegalDocument states a catalogue document's status as of now:
-//   - expired: the catalogue says "Hết hiệu lực toàn bộ", its expiry date
-//     has passed, or a document already in force replaces or ends it while
-//     the catalogue still holds it in force (derivedExpiry);
-//   - suspended: "Ngưng hiệu lực" / "Tạm ngưng hiệu lực";
-//   - not yet effective: "Chưa có hiệu lực" or an effective date ahead;
-//   - partly expired: "Hết hiệu lực một phần";
-//   - in force / amended: "Còn hiệu lực", amended when a document amends it;
-//   - unknown: no status stated ("Chưa xác định") and nothing above.
-//
-// rep.Links are the document's incoming links (may be empty).
-func ClassifyLegalDocument(rep *types.LegalStatusReport, now time.Time) LegalBasisStatus {
-	d := rep.Document
-	status := strings.ToLower(strings.Join(strings.Fields(d.Status), " "))
-	switch {
-	case strings.HasPrefix(status, "hết hiệu lực toàn bộ"),
-		d.ExpiredOn != nil && !d.ExpiredOn.IsZero() && !legalDayAfter(*d.ExpiredOn, now):
-		return LegalBasisExpired
-	case strings.Contains(status, "ngưng hiệu lực"):
-		return LegalBasisSuspended
-	}
-	if by, _ := derivedExpiry(rep, now); by != nil {
-		if partlyExpired(d) {
-			return LegalBasisPartlyExpired
-		}
-		return LegalBasisExpired
-	}
-	switch {
-	case status == "chưa có hiệu lực",
-		d.EffectiveOn != nil && !d.EffectiveOn.IsZero() && legalDayAfter(*d.EffectiveOn, now):
-		return LegalBasisNotYetEffective
-	case strings.HasPrefix(status, "hết hiệu lực một phần"):
-		return LegalBasisPartlyExpired
-	case status == "còn hiệu lực":
-		for _, l := range rep.Links {
-			if l.Incoming && l.Relation == types.LegalRelationAmends {
-				return LegalBasisAmended
-			}
-		}
-		return LegalBasisInForce
-	}
-	return LegalBasisUnknown
 }
 
 // mergeLegalBasisFindings joins findings that resolved to the same
@@ -684,32 +809,53 @@ func legalBasisDay(s string) string {
 	return t.Format("02/01/2006")
 }
 
-// legalBasisNote words a finding's status in one sentence.
-func legalBasisNote(f *LegalBasisFinding) string {
-	related := func(rels ...string) string {
-		var names []string
+// legalBasisNote words a finding's status in Vietnamese.
+func legalBasisNote(f *LegalBasisFinding, now time.Time) string {
+	related := func(rels ...string) []LegalBasisRelated {
+		var out []LegalBasisRelated
 		for _, r := range f.Related {
 			for _, want := range rels {
 				if r.Relation == want {
-					names = append(names, legalBasisLabel(&r.LegalBasisDocument))
+					out = append(out, r)
 				}
 			}
 		}
-		return strings.Join(names, ", ")
+		return out
+	}
+	names := func(rs []LegalBasisRelated) string {
+		var out []string
+		for _, r := range rs {
+			out = append(out, legalBasisLabel(&r.LegalBasisDocument))
+		}
+		return strings.Join(out, ", ")
 	}
 	var b strings.Builder
 	switch f.Status {
 	case LegalBasisNotFound:
-		b.WriteString("Chưa có trong danh mục văn bản pháp luật: chưa rõ hiệu lực, cần tự kiểm tra.")
-		return b.String()
-	case LegalBasisAmbiguous:
-		if f.Incomplete {
-			b.WriteString("Viện dẫn chưa đủ số hiệu; có ")
-		} else {
-			b.WriteString("Có ")
+		if f.IssuedOn != "" {
+			return "Chưa có trong danh mục văn bản pháp luật (không có văn bản số này): chưa rõ hiệu lực, cần tự kiểm tra."
 		}
-		b.WriteString(strconv.Itoa(f.CandidatesTotal) + " văn bản trong danh mục khớp, cần ghi rõ văn bản nào (số hiệu đầy đủ, cơ quan ban hành).")
-		return b.String()
+		return "Chưa có trong danh mục văn bản pháp luật: chưa rõ hiệu lực, cần tự kiểm tra."
+	case LegalBasisAmbiguous:
+		n := strconv.Itoa(f.CandidatesTotal)
+		if f.CandidatesMore {
+			n = "hơn " + n
+		}
+		switch f.Ambiguity {
+		case LegalBasisAmbiguityMissingDate:
+			return "Số hiệu này không có năm và được đánh lại hằng năm; viện dẫn chưa ghi ngày ban hành nên chưa xác định được văn bản (" +
+				n + " văn bản cùng số trong danh mục). Cần ghi rõ ngày ban hành."
+		case LegalBasisAmbiguityDateMismatch:
+			return "Danh mục không có văn bản số này ban hành ngày " + legalBasisDay(f.IssuedOn) + " (có " + n +
+				" văn bản cùng số, ngày khác): chưa rõ hiệu lực, cần kiểm tra số hiệu và ngày ban hành."
+		case LegalBasisAmbiguityIncompleteNumber:
+			return "Viện dẫn chưa đủ số hiệu (thiếu năm hoặc ký hiệu); có " + n + " văn bản trong danh mục khớp, cần ghi số hiệu đầy đủ."
+		case LegalBasisAmbiguityNameGuess:
+			return "Tên văn bản không khớp hẳn tên nào trong danh mục; có thể là văn bản dưới đây, cần ghi số hiệu đầy đủ."
+		case LegalBasisAmbiguitySharedName:
+			return "Có " + n + " văn bản trong danh mục cùng tên và năm này, cần ghi số hiệu đầy đủ."
+		}
+		return "Có " + n + " văn bản trong danh mục cùng số hiệu này, cần ghi rõ văn bản nào (cơ quan ban hành, ngày ban hành)."
 	}
 	d := f.Document
 	label := legalBasisLabel(d)
@@ -722,25 +868,47 @@ func legalBasisNote(f *LegalBasisFinding) string {
 		if f.DerivedFrom != "" {
 			b.WriteString(" (suy ra vì " + f.DerivedFrom + " đã có hiệu lực; danh mục chưa cập nhật trạng thái)")
 		}
-		if s := related(LegalBasisReplacedBy, LegalBasisRepealedBy, LegalBasisExpiredBy); s != "" {
+		if s := names(related(LegalBasisReplacedBy, LegalBasisRepealedBy, LegalBasisExpiredBy)); s != "" {
 			b.WriteString("; được thay thế/bãi bỏ bởi " + s)
 		}
 		b.WriteString(".")
 	case LegalBasisSuspended:
 		b.WriteString(label + " đang bị ngưng hiệu lực")
-		if s := related(LegalBasisSuspendedBy); s != "" {
+		if s := names(related(LegalBasisSuspendedBy)); s != "" {
 			b.WriteString(" bởi " + s)
 		}
 		b.WriteString(".")
 	case LegalBasisPartlyExpired:
 		b.WriteString(label + " đã hết hiệu lực một phần")
 		if f.MaybeExpired {
-			b.WriteString(", có thể đã hết hiệu lực toàn bộ")
+			b.WriteString(", có thể đã hết hiệu lực toàn bộ (" + f.DerivedFrom + " thay thế hoặc làm hết hiệu lực văn bản này")
+			if f.DerivedExpiredOn != "" {
+				b.WriteString(" từ ngày " + legalBasisDay(f.DerivedExpiredOn))
+			}
+			b.WriteString(")")
 		}
-		if s := related(LegalBasisReplacedBy, LegalBasisRepealedBy, LegalBasisExpiredBy, LegalBasisPartlyExpiredBy); s != "" {
-			b.WriteString(" (" + s + ")")
+		if s := names(related(LegalBasisRepealedBy, LegalBasisPartlyExpiredBy)); s != "" {
+			b.WriteString("; liên quan: " + s)
 		}
 		b.WriteString("; cần kiểm tra điều, khoản được viện dẫn.")
+	case LegalBasisNeedsReview:
+		switch {
+		case f.PartialSuspension:
+			b.WriteString(label + " bị ngưng hiệu lực một phần")
+			if s := names(related(LegalBasisSuspendedBy)); s != "" {
+				b.WriteString(" bởi " + s)
+			}
+			b.WriteString("; cần kiểm tra điều, khoản được viện dẫn.")
+		case len(f.ReviewBy) > 0:
+			lead := " được danh mục ghi còn hiệu lực"
+			if st := strings.ToLower(strings.TrimSpace(d.CatalogStatus)); st == "" || st == "chưa xác định" {
+				lead = " chưa được danh mục ghi tình trạng hiệu lực"
+			}
+			b.WriteString(label + lead + ", nhưng có văn bản bãi bỏ toàn bộ hoặc một phần: " +
+				strings.Join(f.ReviewBy, ", ") + "; cần kiểm tra điều, khoản được viện dẫn.")
+		default:
+			b.WriteString(label + " có tình trạng hiệu lực một phần (" + d.CatalogStatus + "); cần kiểm tra điều, khoản được viện dẫn.")
+		}
 	case LegalBasisNotYetEffective:
 		b.WriteString(label + " chưa có hiệu lực")
 		if d.EffectiveOn != "" {
@@ -748,18 +916,37 @@ func legalBasisNote(f *LegalBasisFinding) string {
 		}
 		b.WriteString(".")
 	case LegalBasisAmended:
-		b.WriteString(label + " còn hiệu lực, đã được sửa đổi, bổ sung bởi " + related(LegalBasisAmendedBy) + ".")
+		b.WriteString(label + " còn hiệu lực, đã được sửa đổi, bổ sung bởi " + names(related(LegalBasisAmendedBy)) + ".")
 	case LegalBasisInForce:
 		b.WriteString(label + " còn hiệu lực.")
 	default:
 		b.WriteString(label + " có trong danh mục nhưng chưa xác định được hiệu lực.")
 	}
+	if f.StaleStatus {
+		b.WriteString(" Danh mục còn ghi \"Chưa có hiệu lực\" nhưng ngày có hiệu lực (" + legalBasisDay(d.EffectiveOn) + ") đã qua.")
+	}
 	switch f.Status {
 	case LegalBasisExpired, LegalBasisPartlyExpired:
 	default:
-		// a replacing document not in force yet (or without a date)
-		if s := related(LegalBasisReplacedBy, LegalBasisExpiredBy); s != "" {
-			b.WriteString(" Đã có văn bản thay thế chưa có hiệu lực hoặc chưa rõ ngày hiệu lực: " + s + ".")
+		// a replacing document: pending (no date, or one ahead) or, when
+		// the status does not show it, already in force
+		var pending, inForce []string
+		for _, r := range related(LegalBasisReplacedBy, LegalBasisExpiredBy) {
+			on, err := time.Parse("2006-01-02", r.EffectiveOn)
+			switch {
+			case err != nil:
+				pending = append(pending, legalBasisLabel(&r.LegalBasisDocument)+" (chưa rõ ngày hiệu lực)")
+			case legalDayAfter(on, now):
+				pending = append(pending, legalBasisLabel(&r.LegalBasisDocument)+" (có hiệu lực từ ngày "+legalBasisDay(r.EffectiveOn)+")")
+			default:
+				inForce = append(inForce, legalBasisLabel(&r.LegalBasisDocument)+" (đã có hiệu lực từ ngày "+legalBasisDay(r.EffectiveOn)+")")
+			}
+		}
+		if len(pending) > 0 {
+			b.WriteString(" Sắp bị thay thế bởi " + strings.Join(pending, ", ") + ".")
+		}
+		if len(inForce) > 0 {
+			b.WriteString(" Có văn bản thay thế đã có hiệu lực: " + strings.Join(inForce, ", ") + "; cần kiểm tra.")
 		}
 	}
 	if d.Unverified {
