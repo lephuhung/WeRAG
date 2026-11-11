@@ -1,12 +1,12 @@
--- Migration: 000194_legal_request_requesters
+-- Migration: 000195_legal_request_requesters
 -- Everyone who asked for a legal document request's document, so they can
 -- be told when it is added (legal_document_requests keeps only the last
 -- asker in last_*). One row per (request_id, user_id): the same person
 -- asking again moves the row to the latest conversation and makes it
 -- pending again (updated_at moves only then). notified_at is set once the
 -- person was told (an in-app notification, user_notifications of migration
--- 000195), notify_status says how ('in_app').
-DO $$ BEGIN RAISE NOTICE '[Migration 000194] Creating legal_request_requesters'; END $$;
+-- 000196), notify_status says how ('in_app').
+DO $$ BEGIN RAISE NOTICE '[Migration 000195] Creating legal_request_requesters'; END $$;
 
 CREATE TABLE IF NOT EXISTS legal_request_requesters (
     id            VARCHAR(36)  PRIMARY KEY,
@@ -26,6 +26,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_legal_request_requesters_user
     ON legal_request_requesters (request_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_legal_request_requesters_pending
     ON legal_request_requesters (request_id) WHERE notified_at IS NULL;
+-- The notice sweep reads the requests closed as added in the last days.
+CREATE INDEX IF NOT EXISTS idx_legal_document_requests_added_decided_at
+    ON legal_document_requests (decided_at) WHERE status = 'added';
 
 -- The last asker of each open request people asked for is the only one
 -- known so far: keep them, so they are told too.
