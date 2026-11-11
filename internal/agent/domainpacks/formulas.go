@@ -80,7 +80,6 @@ var (
 	// "1000/2000" is a ratio)
 	provisionRefPattern = regexp.MustCompile(`(?i)(?:điều|khoản|điểm|chương|mục|phụ lục)\s+\d{1,3}[a-zđ]?` + refEnd)
 	yearRefPattern      = regexp.MustCompile(`(?i)năm\s+(?:19|20)\d\d` + refEnd)
-	docNumberRefPattern = regexp.MustCompile(`\d{1,4}/(?:19|20)\d\d/[0-9]*[A-Za-zĐđ][A-Za-zĐđ0-9]*(?:[-–—‐][A-Za-zĐđ0-9]+)*`)
 	// the Điều a basis article names ("Điều 10 khoản 2 điểm đ" → "10")
 	articleDieuPattern = regexp.MustCompile(`(?i)điều\s+(\d+[a-zđ]?)`)
 )
@@ -108,7 +107,7 @@ func numericLiterals(text string) []string {
 			out = append(out, string(r))
 		}
 	}
-	text = docNumberRefPattern.ReplaceAllString(text, " ")
+	text = vietnamese_legal.ReplaceDocumentNumbers(text, " ")
 	for _, m := range magnitudePattern.FindAllStringSubmatch(text, -1) {
 		out = append(out, strings.TrimSpace(strings.TrimRightFunc(m[0], func(r rune) bool {
 			return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '%'
