@@ -18,13 +18,6 @@ import (
 // the editor save before it has its own wait (formatCheckSaveWait).
 const legalBasisTimeout = 30 * time.Second
 
-// legalBasisSnapshotter is the workspace service's snapshot that says
-// whether the editor's save landed.
-type legalBasisSnapshotter interface {
-	SnapshotSaved(ctx context.Context, tenantID uint64, sessionID, documentID, label, source string,
-		wait time.Duration) (*types.DocumentRevision, bool, error)
-}
-
 // SetLegalBasis wires the legal catalogue the legal basis check reads; db
 // resolves laws named by title (ResolveLegalDocumentName).
 func (p *DocumentFormatPrecheck) SetLegalBasis(catalog interfaces.LegalCatalogRepository, db *gorm.DB) {
@@ -56,14 +49,7 @@ func (p *DocumentFormatPrecheck) LegalBasisCheck(ctx context.Context, tenantID u
 	unsaved := false
 	if !ws.IsWordAddin() {
 		const label = "ai: rà soát căn cứ pháp lý"
-		var saved bool
-		var err error
-		if snap, ok := p.workspaces.(legalBasisSnapshotter); ok {
-			_, saved, err = snap.SnapshotSaved(ctx, tenantID, sessionID, ws.ID, label, types.DocumentRevisionSourceAI, formatCheckSaveWait)
-		} else {
-			_, err = p.workspaces.Snapshot(ctx, tenantID, sessionID, ws.ID, label, types.DocumentRevisionSourceAI, formatCheckSaveWait)
-			saved = err == nil
-		}
+		_, saved, err := p.workspaces.SnapshotSaved(ctx, tenantID, sessionID, ws.ID, label, types.DocumentRevisionSourceAI, formatCheckSaveWait)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()

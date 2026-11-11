@@ -84,6 +84,9 @@ func (f *callbackOnlyWorkspaces) CommitExternalWrite(context.Context, uint64, st
 func (f *callbackOnlyWorkspaces) Snapshot(context.Context, uint64, string, string, string, string, time.Duration) (*types.DocumentRevision, error) {
 	return nil, nil
 }
+func (f *callbackOnlyWorkspaces) SnapshotSaved(context.Context, uint64, string, string, string, string, time.Duration) (*types.DocumentRevision, bool, error) {
+	return nil, true, nil
+}
 func (f *callbackOnlyWorkspaces) ListRevisions(context.Context, uint64, string, string) ([]*types.DocumentRevision, error) {
 	return nil, nil
 }

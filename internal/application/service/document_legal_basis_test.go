@@ -7,6 +7,8 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/agent/tools"
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/stretchr/testify/require"
 )
 
@@ -55,4 +57,40 @@ func TestLegalBasisCheckOnCatalogue(t *testing.T) {
 	none, err := cat.FindByNumberPrefixTypes(context.Background(), "43/2013", []string{"Nghị định"}, 10)
 	require.NoError(t, err)
 	require.Empty(t, none)
+}
+
+// legalBasisNoCatalog answers every lookup with nothing.
+type legalBasisNoCatalog struct{ interfaces.LegalCatalogRepository }
+
+func (legalBasisNoCatalog) FindByNumberKey(context.Context, string, int) ([]*types.LegalDocument, error) {
+	return nil, nil
+}
+
+func (legalBasisNoCatalog) FindByNumberPrefixTypes(context.Context, string, []string, int) ([]*types.LegalDocument, error) {
+	return nil, nil
+}
+
+func (legalBasisNoCatalog) ListLinks(context.Context, string, []types.LegalRelation, []types.LegalRelation) ([]types.LegalRelationLink, error) {
+	return nil, nil
+}
+
+// Wired as in the container — the workspace service behind the sub-chat
+// decorator — a force-save that fails sets unsaved, also from a sub-chat.
+func TestLegalBasisCheckUnsavedThroughSubChatWorkspaces(t *testing.T) {
+	fx := newDWFixture(t)
+	ws := fx.create(t)
+	wrapped := NewSubChatWorkspaces(fx.svc, &subChatRootsRepo{roots: map[string]string{"sub-1": "sess-1"}})
+	precheck := NewDocumentFormatPrecheck(wrapped, nil, nil, nil)
+	precheck.SetLegalBasis(legalBasisNoCatalog{}, nil)
+
+	fx.ds.onCommand = func(map[string]interface{}) int { return onlyOfficeCommandNoChanges }
+	r, err := precheck.LegalBasisCheck(context.Background(), 7, "sub-1", ws.ID)
+	require.NoError(t, err)
+	require.False(t, r.Unsaved)
+	require.Equal(t, ws.ID, r.DocumentID)
+
+	fx.ds.onCommand = func(map[string]interface{}) int { return 6 } // the Document Server refuses
+	r, err = precheck.LegalBasisCheck(context.Background(), 7, "sub-1", ws.ID)
+	require.NoError(t, err)
+	require.True(t, r.Unsaved, "the failed save must reach the report through the decorator")
 }
