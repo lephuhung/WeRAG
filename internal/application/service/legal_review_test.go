@@ -113,6 +113,8 @@ func TestLegalReviewApprovesVBPLImports(t *testing.T) {
 		{ID: "179941", Source: types.LegalDocumentSourceVBPL, DocumentNumber: "67/2025/QH15", NumberKey: "67/2025/QH15",
 			Title: "Luật Thuế thu nhập doanh nghiệp", Status: "Còn hiệu lực"},
 		{ID: "manual-1", Source: types.LegalDocumentSourceManual, DocumentNumber: "57-NQ/TW", NumberKey: "57-NQ/TW"},
+		{ID: "dangcongsan-tulieu-1", Source: "dangcongsan", DocumentNumber: "114-KL/TW", NumberKey: "114-KL/TW"},
+		{ID: "tvpl-5", Source: "tvpl", DocumentNumber: "5/2026/NĐ-CP", NumberKey: "5/2026/ND-CP"},
 	}))
 	require.NoError(t, db.Create(&types.KnowledgeBase{ID: "kb-pub", Name: "Luật", Visibility: types.KBVisibilityPublic}).Error)
 	for _, k := range []types.Knowledge{
@@ -124,25 +126,40 @@ func TestLegalReviewApprovesVBPLImports(t *testing.T) {
 			Metadata: types.JSON(`{"external_id":"manual-1"}`)},
 		{ID: "k-unknown", KnowledgeBaseID: "kb-pub", Title: "c.pdf", ParseStatus: types.ParseStatusCompleted,
 			Metadata: types.JSON(`{"external_id":"no-such-row"}`)},
+		// a trusted feed's own row is known like a vbpl.vn row; another feed's is not
+		{ID: "k-dcs", KnowledgeBaseID: "kb-pub", Title: "d.html", ParseStatus: types.ParseStatusCompleted,
+			Metadata: types.JSON(`{"external_id":"dangcongsan-tulieu-1"}`)},
+		{ID: "k-tvpl", KnowledgeBaseID: "kb-pub", Title: "e.html", ParseStatus: types.ParseStatusCompleted,
+			Metadata: types.JSON(`{"external_id":"tvpl-5"}`)},
 	} {
 		require.NoError(t, db.Create(&k).Error)
 	}
 
 	created, err := svc.Scan(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 3, created)
+	require.Equal(t, 5, created)
 
 	approved, total, err := svc.List(ctx, string(types.LegalReviewApproved), "", 0, 10)
 	require.NoError(t, err)
-	require.EqualValues(t, 1, total)
-	require.Equal(t, "k-vbpl", approved[0].Link.KnowledgeID)
-	require.Equal(t, "179941", approved[0].Document.ID)
-	require.Equal(t, types.LegalReviewerVBPL, approved[0].Link.ReviewedBy)
-	require.Nil(t, approved[0].Document.ReviewedAt, "the catalogue row stays open to portal updates")
+	require.EqualValues(t, 2, total)
+	by := map[string]*types.LegalReviewItem{}
+	for _, a := range approved {
+		by[a.Link.KnowledgeID] = a
+	}
+	require.Equal(t, "179941", by["k-vbpl"].Document.ID)
+	require.Equal(t, types.LegalReviewerVBPL, by["k-vbpl"].Link.ReviewedBy)
+	require.Nil(t, by["k-vbpl"].Document.ReviewedAt, "the catalogue row stays open to portal updates")
+	require.Equal(t, "feed:dangcongsan", by["k-dcs"].Link.ReviewedBy)
+	require.Nil(t, by["k-dcs"].Document.ReviewedAt)
 
 	_, total, err = svc.List(ctx, string(types.LegalReviewPending), "", 0, 10)
 	require.NoError(t, err)
-	require.EqualValues(t, 2, total)
+	require.EqualValues(t, 3, total, "manual, unknown and the tvpl row wait")
+
+	note, _, err := svc.(*legalReviewService).legalNote(ctx, by["k-dcs"].Document)
+	require.NoError(t, err)
+	require.Contains(t, note, "theo nguồn chính thức dangcongsan.vn")
+	require.NotContains(t, note, "quản trị duyệt")
 }
 
 func TestSuggestedIssuer(t *testing.T) {

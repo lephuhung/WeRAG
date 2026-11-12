@@ -148,11 +148,22 @@ func (s *legalReviewService) suggest(
 			return nil, err
 		}
 		for _, d := range docs {
-			if d.ID == k.ExternalID && d.Source == types.LegalDocumentSourceVBPL {
+			if d.ID != k.ExternalID {
+				continue
+			}
+			// a trusted feed's own row is known the same way (types.LegalTrustedFeeds)
+			by := ""
+			switch {
+			case d.Source == types.LegalDocumentSourceVBPL:
+				by = types.LegalReviewerVBPL
+			case types.LegalTrustedFeeds[d.Source]:
+				by = LegalFeedReviewerPrefix + d.Source
+			}
+			if by != "" {
 				now := time.Now()
 				link.LegalDocumentID = d.ID
 				link.ReviewStatus = types.LegalReviewApproved
-				link.ReviewedBy, link.ReviewedAt = types.LegalReviewerVBPL, &now
+				link.ReviewedBy, link.ReviewedAt = by, &now
 			}
 		}
 	}
@@ -484,7 +495,12 @@ func (s *legalReviewService) AnnotateSearchResults(ctx context.Context, results 
 // fully expired, or a document replacing / ending it is already in force.
 func (s *legalReviewService) legalNote(ctx context.Context, doc *types.LegalDocument) (string, bool, error) {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Văn bản pháp lý (đã được quản trị duyệt): %s", legalReviewDocLabel(doc))
+	if types.LegalTrustedFeeds[doc.Source] {
+		// taken from an official source without a person's review
+		fmt.Fprintf(&b, "Văn bản pháp lý (theo nguồn chính thức %s): %s", types.LegalSourceLabel(doc.Source), legalReviewDocLabel(doc))
+	} else {
+		fmt.Fprintf(&b, "Văn bản pháp lý (đã được quản trị duyệt): %s", legalReviewDocLabel(doc))
+	}
 	fmt.Fprintf(&b, "; ban hành %s; có hiệu lực %s", legalReviewDate(doc.IssuedOn), legalReviewDate(doc.EffectiveOn))
 	if doc.ExpiredOn != nil {
 		fmt.Fprintf(&b, "; hết hiệu lực %s", legalReviewDate(doc.ExpiredOn))

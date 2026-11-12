@@ -10,5 +10,6 @@ UPDATE legal_document_links l
   FROM knowledges k
  WHERE k.id = l.knowledge_id
    AND k.metadata->>'source' = 'dangcongsan'
+   AND l.legal_document_id LIKE 'dangcongsan-%'
    AND l.review_status = 'pending'
    AND COALESCE(l.reviewed_by, '') = '';

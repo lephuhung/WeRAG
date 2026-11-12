@@ -445,11 +445,14 @@ func (s *LegalFeedService) saveReviewLink(ctx context.Context, doc LegalIngestDo
 		KnowledgeID: knowledgeID, KnowledgeBaseID: kbID, LegalDocumentID: doc.VBPLID,
 		ReviewStatus: types.LegalReviewApproved, Suggestion: types.JSON(sug), ReviewedBy: by, ReviewedAt: &now,
 	}
-	if strings.HasPrefix(by, LegalFeedReviewerPrefix) && !types.LegalTrustedFeeds[strings.TrimPrefix(by, LegalFeedReviewerPrefix)] {
+	// a trusted feed's text on its own row stays approved under the feed's
+	// name ("feed:dangcongsan", no person: legalHumanReview does not count
+	// it); on another source's row (a số hiệu shared with a tvpl or vbpl.vn
+	// row) it waits like any feed's word
+	if feed, ok := strings.CutPrefix(by, LegalFeedReviewerPrefix); ok &&
+		!(types.LegalTrustedFeeds[feed] && strings.HasPrefix(doc.VBPLID, feed+"-")) {
 		link.ReviewStatus, link.ReviewedBy, link.ReviewedAt = types.LegalReviewPending, "", nil
 	}
-	// a trusted feed's link stays approved under its own name ("feed:dangcongsan",
-	// no person: legalHumanReview does not count it as a decision)
 	if p := doc.priorLink; p != nil && p.LegalDocumentID == doc.VBPLID {
 		link.ReviewStatus, link.ReviewedBy, link.ReviewedAt = p.ReviewStatus, p.ReviewedBy, p.ReviewedAt
 	}

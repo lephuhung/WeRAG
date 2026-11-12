@@ -205,6 +205,15 @@ func TestLegalFeedIngestFromPortal(t *testing.T) {
 		l.ReviewedAt == nil || l.LegalDocumentID != "dangcongsan-tulieu-1" || legalHumanReview(l) {
 		t.Fatalf("trusted feed review link = %+v", l)
 	}
+	// the trusted feed's text on another source's row waits like any feed's
+	if _, err = feed.IngestHTML(ctx, LegalIngestDocument{VBPLID: "tvpl-77", DocumentNumber: "77-KL/TW", FileName: "77.html",
+		Metadata: map[string]string{"external_id": "tvpl-77", "source": "dangcongsan"}, ReviewedBy: LegalFeedReviewerPrefix + "dangcongsan"},
+		draftHTML, kb, actor, "push dangcongsan onto a tvpl row"); err != nil {
+		t.Fatal(err)
+	}
+	if l := reviews.links["k-new"]; l == nil || l.ReviewStatus != types.LegalReviewPending {
+		t.Fatalf("trusted text on a tvpl row = %+v", l)
+	}
 
 	portal, err := feed.CheckPortal(ctx, "3003")
 	if err != nil || !portal.Exists || portal.HTML || portal.PDFFile != "VanBanGoc_3 TT.pdf" || portal.Status != "Còn hiệu lực" {
