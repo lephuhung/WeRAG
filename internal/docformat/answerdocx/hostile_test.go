@@ -175,7 +175,7 @@ func TestCitationTagsAreRemoved(t *testing.T) {
 		{text: "Số trang ở **giữa, phía dưới**."},
 		{style: "row", text: "Mục | Nguồn"},
 		{style: "row", text: "Lề trang | 3 cm"},
-		{text: "Xem thêm  và `<kb doc=\"giữ trong code\" />`"},
+		{text: "Xem thêm và `<kb doc=\"giữ trong code\" />`"},
 		{style: docxwrite.StyleCodeBlock, text: `<web url="x" />`},
 	}
 	if len(got) != len(want) {
@@ -244,5 +244,33 @@ func TestLinksImagesTagsAndCode(t *testing.T) {
 				t.Errorf("got %+v, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// Removing a tag leaves no space before punctuation, no double space and
+// no trailing space (the cases of a real cited answer).
+func TestCitationTagRemovalLeavesNoGaps(t *testing.T) {
+	kb := `<kb doc="Thông tư số 06-2022-TT-BKHĐT.html" chunk_id="ada9df92" kb_id="f3b46e70" />`
+	cases := []struct{ md, want string }{
+		{"(hướng dẫn Nghị định 80, còn hiệu lực) " + kb + ", Thông tư 52/2023/TT-BTC " + kb + ", và Thông tư 129/2025/TT-BTC vẫn chép nguyên tiêu chí này " + kb + ".",
+			"(hướng dẫn Nghị định 80, còn hiệu lực), Thông tư 52/2023/TT-BTC, và Thông tư 129/2025/TT-BTC vẫn chép nguyên tiêu chí này."},
+		{"vốn ≤ 100 tỷ " + kb + ".", "vốn ≤ 100 tỷ."},
+		{"a " + kb + " b", "a b"},
+		{"a " + kb + " " + kb + " b", "a b"},
+		{"a" + kb + " b", "a b"},
+		{kb + " Đầu dòng", "Đầu dòng"},
+		{"cuối dòng " + kb, "cuối dòng"},
+		{"cuối dòng " + kb + "  \nsau", "cuối dòng\nsau"},
+		{"(theo Điều 6 " + kb + ") và " + kb + "; hết " + kb + "!", "(theo Điều 6) và; hết!"},
+		{"giữ `mã` " + kb + " sau", "giữ `mã` sau"},
+	}
+	for _, tc := range cases {
+		if got := view(MarkdownBlocks(tc.md)); len(got) != 1 || got[0].text != tc.want {
+			t.Errorf("%.60q\n got %+v\nwant %q", tc.md, got, tc.want)
+		}
+	}
+	rows := view(MarkdownBlocks("| Tiêu chí | Căn cứ |\n|---|---|\n| Lao động | Điều 6 " + kb + " |\n| Vốn | Điều 9 " + kb + " " + kb + " |"))
+	if len(rows) != 3 || rows[1].text != "Lao động | Điều 6" || rows[2].text != "Vốn | Điều 9" {
+		t.Errorf("rows = %+v", rows)
 	}
 }

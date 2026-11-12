@@ -140,7 +140,7 @@ func preprocess(md string) string {
 	md = strings.ReplaceAll(md, "\r", "\n")
 	md = stripPairs(md, "<think>", "</think>")
 	md = stripPairs(md, "<people_lookup>", "</people_lookup>")
-	md = replaceOutsideCode(md, citationTagRe, "")
+	md = replaceOutsideCode(md, citationTagRe, removeCitationTags)
 	return wikiLinkRe.ReplaceAllStringFunc(md, func(m string) string {
 		inner := m[2 : len(m)-2]
 		if i := strings.Index(inner, "|"); i > 0 {
@@ -572,9 +572,10 @@ func capColumns(cells []string) []string {
 	return append(out, strings.Join(cells[maxTableColumns-1:], " | "))
 }
 
-// replaceOutsideCode replaces the matches of re outside fenced code and
-// code spans, line by line.
-func replaceOutsideCode(md string, re *regexp.Regexp, repl string) string {
+// replaceOutsideCode rewrites, line by line, the stretches of md outside
+// fenced code and code spans that hold a match of re; lineEnd tells
+// whether the stretch ends its line.
+func replaceOutsideCode(md string, re *regexp.Regexp, rewrite func(seg string, lineEnd bool) string) string {
 	if !re.MatchString(md) {
 		return md
 	}
@@ -604,7 +605,7 @@ func replaceOutsideCode(md string, re *regexp.Regexp, repl string) string {
 				continue
 			case body[i] == '`':
 				if e, ok := spans[i]; ok {
-					b.WriteString(re.ReplaceAllString(body[last:i], repl))
+					b.WriteString(rewrite(body[last:i], false))
 					b.WriteString(body[i:e])
 					last, i = e, e
 					continue
@@ -614,10 +615,42 @@ func replaceOutsideCode(md string, re *regexp.Regexp, repl string) string {
 			}
 			i++
 		}
-		b.WriteString(re.ReplaceAllString(body[last:], repl))
+		b.WriteString(rewrite(body[last:], true))
 		b.WriteString(line[len(body):])
 	}
 	return b.String()
+}
+
+// removeCitationTags drops the citation tags of seg without leaving gaps:
+// before punctuation or the end of the line the space in front of a tag
+// goes too ("này <kb/>." → "này."), and between two spaces one stays
+// ("a <kb/> b" → "a b").
+func removeCitationTags(seg string, lineEnd bool) string {
+	matches := citationTagRe.FindAllStringIndex(seg, -1)
+	if matches == nil {
+		return seg
+	}
+	isSpace := func(c byte) bool { return c == ' ' || c == '\t' }
+	var out []byte
+	last := 0
+	for _, m := range matches {
+		if m[0] > last {
+			out = append(out, seg[last:m[0]]...)
+		}
+		last = m[1]
+		switch {
+		case m[1] == len(seg) && lineEnd, m[1] < len(seg) && strings.IndexByte(",.;:)!?", seg[m[1]]) >= 0:
+			for len(out) > 0 && isSpace(out[len(out)-1]) {
+				out = out[:len(out)-1]
+			}
+		case m[1] < len(seg) && isSpace(seg[m[1]]) && (len(out) == 0 || isSpace(out[len(out)-1])):
+			for last < len(seg) && isSpace(seg[last]) {
+				last++
+			}
+		}
+	}
+	out = append(out, seg[last:]...)
+	return string(out)
 }
 
 // stripPairs removes each closed open…close pair outside fenced code and

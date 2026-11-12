@@ -81,7 +81,7 @@ func Build(ctx context.Context, in Input) ([]byte, error) {
 		docxwrite.Paragraph{Style: docxwrite.StyleMeta, Runs: []docxwrite.Run{{Text: meta, Italic: true}}},
 		docxwrite.Paragraph{Style: docxwrite.StyleRule},
 	)
-	blocks = append(blocks, content...)
+	blocks = append(blocks, leftAlignBreaks(content)...)
 	if refs := referenceParagraphs(in.References); len(refs) > 0 {
 		blocks = append(blocks, docxwrite.Paragraph{Style: docxwrite.StyleHeading3, Align: "left",
 			Runs: []docxwrite.Run{{Text: ReferencesHeading}}})
@@ -103,6 +103,33 @@ func contentBlocks(ctx context.Context, md string, budget time.Duration) ([]docx
 		return nil, ctx.Err()
 	}
 	return PlainBlocks(md), nil
+}
+
+// leftAlignBreaks sets left alignment on body paragraphs that hold a line
+// break. Word and ONLYOFFICE stretch a justified line ending in <w:br/>
+// across the full width ("Lưu       ý       về …"); the chat shows these
+// lines left-aligned, so the document does too. Other paragraphs keep the
+// justified NĐ30 body.
+func leftAlignBreaks(blocks []docxwrite.Block) []docxwrite.Block {
+	for i, blk := range blocks {
+		p, ok := blk.(docxwrite.Paragraph)
+		if !ok || p.Align != "" || p.Center {
+			continue
+		}
+		switch p.Style {
+		case "", docxwrite.StyleNormal, docxwrite.StyleQuote:
+		default:
+			continue
+		}
+		for _, r := range p.Runs {
+			if strings.Contains(r.Text, "\n") {
+				p.Align = "left"
+				blocks[i] = p
+				break
+			}
+		}
+	}
+	return blocks
 }
 
 // referencesListKey is the numbering key of the sources list; the answer's

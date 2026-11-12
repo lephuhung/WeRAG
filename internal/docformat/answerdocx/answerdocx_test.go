@@ -241,3 +241,33 @@ func TestFileNames(t *testing.T) {
 		}
 	}
 }
+
+// A justified line ending in a line break is stretched by Word and
+// ONLYOFFICE: paragraphs holding one are left-aligned, the others stay
+// justified (the Normal style).
+func TestLineBreakParagraphsAreLeftAligned(t *testing.T) {
+	data, err := Build(context.Background(), Input{Content: "**Lưu ý về cẩm nang chuyên môn**\nThông tin tham khảo dựa trên cẩm nang.\n\n" +
+		"Một đoạn bình thường không xuống dòng.\n\n> trích dòng một\n> dòng hai\n\n- mục một\n  tiếp nối"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := readPart(t, data, "word/document.xml")
+	paras := strings.Split(doc, "<w:p>")
+	find := func(text string) string {
+		for _, p := range paras {
+			if strings.Contains(p, text) {
+				return p
+			}
+		}
+		t.Fatalf("no paragraph with %q", text)
+		return ""
+	}
+	for _, text := range []string{"Lưu ý về cẩm nang chuyên môn", "trích dòng một", "mục một"} {
+		if p := find(text); !strings.Contains(p, `<w:jc w:val="left"/>`) || !strings.Contains(p, "<w:br/>") {
+			t.Errorf("paragraph %q is not left-aligned: %s", text, p)
+		}
+	}
+	if p := find("Một đoạn bình thường"); strings.Contains(p, "<w:jc ") {
+		t.Errorf("plain paragraph lost justification: %s", p)
+	}
+}
