@@ -88,5 +88,55 @@ class Fetch(unittest.TestCase):
         self.assertEqual(c.sniff(b""), "empty")
 
 
+class Sync(unittest.TestCase):
+    def test_partial_crawl_updates_previous_records(self):
+        import json as _json
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            prev = [{"url": "u-old", "site": "org"}, {"url": "u-2", "site": "org", "attachments": []}]
+            with open(os.path.join(d, "records.jsonl"), "w") as fh:
+                fh.write("".join(_json.dumps(r) + "\n" for r in prev))
+            fresh = [f.Record(site="org", url="u-new", source_doc_id="n"), f.Record(site="org", url="u-2", source_doc_id="2")]
+            orig = f.crawl
+            f.crawl = lambda site, fx, files, pages, log: fresh if pages == 2 else (_ for _ in ()).throw(AssertionError(pages))
+            try:
+                self.assertEqual(f.main(["--site", "org", "--cache-dir", d, "--out-dir", d, "--refresh-pages", "2"]), 0)
+            finally:
+                f.crawl = orig
+            urls = [_json.loads(x)["url"] for x in open(os.path.join(d, "records.jsonl"))]
+            self.assertEqual(urls, ["u-new", "u-2", "u-old"])
+
+    def test_blocked_portal_leaves_records(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "records.jsonl"), "w") as fh:
+                fh.write('{"url": "u-old"}\n')
+            orig = f.crawl
+
+            def blocked(*_a):
+                raise RuntimeError("org: page 1 has no document table")
+            f.crawl = blocked
+            try:
+                self.assertEqual(f.main(["--site", "org", "--cache-dir", d, "--out-dir", d, "--refresh-pages", "3"]), 2)
+            finally:
+                f.crawl = orig
+            self.assertEqual(open(os.path.join(d, "records.jsonl")).read(), '{"url": "u-old"}\n')
+
+    def test_push_settles_refusals_until_metadata_changes(self):
+        import dcs_push as p
+        import json as _json
+        import tempfile
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as fh:
+            fh.write(_json.dumps({"source_doc_id": "a", "action": "full", "ok": True}) + "\n")
+            fh.write(_json.dumps({"source_doc_id": "b", "action": "queue", "ok": False, "status": 422, "meta_hash": "h1"}) + "\n")
+            fh.write(_json.dumps({"source_doc_id": "c", "action": "queue", "ok": False, "status": 502, "meta_hash": "h1"}) + "\n")
+        done = p.load_done(fh.name)
+        os.unlink(fh.name)
+        self.assertTrue(p.is_done(done, "a", "full", "x"))
+        self.assertTrue(p.is_done(done, "b", "queue", "h1"))
+        self.assertFalse(p.is_done(done, "b", "queue", "h2"), "metadata changed: tried again")
+        self.assertFalse(p.is_done(done, "c", "queue", "h1"), "server error: tried again")
+
+
 if __name__ == "__main__":
     unittest.main()

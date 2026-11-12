@@ -25,6 +25,7 @@ import io
 import json
 import os
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -241,6 +242,18 @@ def analyse_doc(data: bytes) -> dict:
     return out
 
 
+def extract_archive(src: str, dst: str, kind: str) -> bool:
+    """Unpack an archive; RAR through bsdtar (libarchive reads RAR5, the free
+    7-Zip build does not), the rest with 7z."""
+    os.makedirs(dst, exist_ok=True)
+    if kind == "rar" and shutil.which("bsdtar"):
+        cmd = ["bsdtar", "-xf", src, "-C", dst]
+    else:
+        cmd = ["7z", "x", "-y", "-o" + dst, src]
+    r = subprocess.run(cmd, capture_output=True, timeout=120)
+    return r.returncode == 0
+
+
 def analyse_archive(data: bytes, kind: str) -> dict:
     out: dict = {"type": kind, "members": []}
     with tempfile.TemporaryDirectory() as d:
@@ -248,8 +261,7 @@ def analyse_archive(data: bytes, kind: str) -> dict:
         with open(src, "wb") as f:
             f.write(data)
         dst = os.path.join(d, "x")
-        r = subprocess.run(["7z", "x", "-y", "-o" + dst, src], capture_output=True, timeout=120)
-        if r.returncode != 0:
+        if not extract_archive(src, dst, kind):
             return {**out, "error": "extract failed"}
         for root, _, files in os.walk(dst):
             for fn in sorted(files):
@@ -280,7 +292,7 @@ def main(argv=None) -> int:
     ap.add_argument("out")
     a = ap.parse_args(argv)
     n = 0
-    with open(a.records, encoding="utf-8") as fin, open(a.out, "w", encoding="utf-8") as fout:
+    with open(a.records, encoding="utf-8") as fin, open(a.out + ".part", "w", encoding="utf-8") as fout:
         for line in fin:
             rec = json.loads(line)
             for att in rec["attachments"]:
@@ -291,6 +303,7 @@ def main(argv=None) -> int:
                     att["analysis"] = {"class": "missing", "error": att.get("error", "")}
             fout.write(json.dumps(rec, ensure_ascii=False) + "\n")
             n += 1
+    os.replace(a.out + ".part", a.out)
     print(f"{n} records → {a.out}", file=sys.stderr)
     return 0
 

@@ -31,6 +31,7 @@ WERAG_API defaults to http://localhost:18080/api/v1.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -102,17 +103,34 @@ def merged_pdf(parts: list[dict]) -> tuple[bytes, int, list[str]]:
 ACTION_OF_CASE = {"text": "full", "ocr": "scan", "catalogue": "catalogue"}
 
 
-def load_done(path: str) -> set[tuple[str, str]]:
-    """(source_doc_id, action) pushed with success; older lines without an
-    action name it by their case."""
+# Answers that settle a document for good: pushed, already held, or refused
+# for what was sent (400/422; retried once the metadata changes). 401/403
+# stop the run; 429/5xx and transport errors are retried next run.
+FINAL_REFUSALS = {400, 422}
+
+
+def meta_hash(md: dict) -> str:
+    return hashlib.sha1(json.dumps(md, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]
+
+
+def load_done(path: str) -> set[tuple[str, str, str]]:
+    """(source_doc_id, action, meta hash or "*") settled; older lines without
+    an action name it by their case, and count whatever the metadata."""
     done = set()
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:
             for line in f:
                 r = json.loads(line)
+                act = r.get("action") or ACTION_OF_CASE.get(r.get("case"), "")
                 if r.get("ok"):
-                    done.add((r["source_doc_id"], r.get("action") or ACTION_OF_CASE.get(r.get("case"), "")))
+                    done.add((r["source_doc_id"], act, "*"))
+                elif r.get("status") in FINAL_REFUSALS and r.get("meta_hash"):
+                    done.add((r["source_doc_id"], act, r["meta_hash"]))
     return done
+
+
+def is_done(done: set, sid: str, act: str, mh: str) -> bool:
+    return (sid, act, "*") in done or (sid, act, mh) in done
 
 
 def action_for(case: str, ocr: bool) -> str:
@@ -151,6 +169,7 @@ def main(argv=None) -> int:
     results_path = os.path.join(a.plan_dir, "push-results.jsonl")
     done = load_done(results_path)
     n = 0
+    server_errors = 0
     with open(os.path.join(a.plan_dir, "plan.jsonl"), encoding="utf-8") as fin, \
             open(results_path, "a", encoding="utf-8") as fres:
         for line in fin:
@@ -158,15 +177,16 @@ def main(argv=None) -> int:
             md = e["metadata"]
             sid = md["source_doc_id"]
             act = action_for(e["case"], a.ocr)
-            if e["case"] not in cases or (sid, act) in done:
+            mh = meta_hash(md)
+            if e["case"] not in cases or is_done(done, sid, act, mh):
                 continue
-            if act == "queue" and (sid, "scan") in done:
+            if act == "queue" and is_done(done, sid, "scan", mh):
                 continue  # an OCR draft waits for review: TVPL text must not race it
             if a.only and md["doc_number"] not in a.only and sid not in a.only:
                 continue
             if a.limit and n >= a.limit:
                 break
-            res = {"source_doc_id": sid, "doc_number": md["doc_number"], "case": e["case"], "action": act}
+            res = {"source_doc_id": sid, "doc_number": md["doc_number"], "case": e["case"], "action": act, "meta_hash": mh}
             meta_json = json.dumps(md, ensure_ascii=False)
             if e["case"] == "text":
                 with open(os.path.join(a.plan_dir, e["html"]), "rb") as f:
@@ -206,8 +226,17 @@ def main(argv=None) -> int:
             print(f"{code} {act:<9} {md['doc_number']:<20} "
                   f"{data.get('ingest') or draft.get('status') or ('queued' if data.get('full_text_requested') else '')} {(body.get('error') or {}).get('message', '') if isinstance(body.get('error'), dict) else ''}",
                   flush=True)
+            if code in (401, 403):
+                print(f"STOP: the API refused the credentials (HTTP {code}): {json.dumps(body, ensure_ascii=False)[:300]}",
+                      file=sys.stderr)
+                return 3
+            if code == 0 or code == 429 or code >= 500:
+                server_errors += 1
             if act == "scan" and code == 200 and res.get("pages", 0) > SYNC_OCR_PAGES and not data.get("existing"):
                 time.sleep(a.sec_per_page * res["pages"])
+    if server_errors:
+        print(f"{server_errors} pushes failed on the server side (5xx/429/transport): retried next run", file=sys.stderr)
+        return 4
     return 0
 
 

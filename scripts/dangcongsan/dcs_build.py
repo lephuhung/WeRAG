@@ -455,13 +455,14 @@ def read_part(p: dict) -> list:
 
 
 def archive_member(data: bytes, name: str) -> bytes:
-    import subprocess
     import tempfile
     with tempfile.TemporaryDirectory() as d:
         src = os.path.join(d, "a")
         with open(src, "wb") as f:
             f.write(data)
-        subprocess.run(["7z", "x", "-y", "-o" + d + "/x", src], capture_output=True, timeout=120, check=True)
+        kind = clf.sniff(data)
+        if not clf.extract_archive(src, d + "/x", kind):
+            raise RuntimeError(f"cannot unpack {kind} archive")
         for root, _, files in os.walk(d + "/x"):
             if name in files:
                 with open(os.path.join(root, name), "rb") as f:
@@ -480,7 +481,8 @@ def main(argv=None) -> int:
     docs = merge(load(a.classified))
     cases = collections.Counter()
     notes = collections.Counter()
-    with open(os.path.join(a.out_dir, "plan.jsonl"), "w", encoding="utf-8") as fout:
+    plan_path = os.path.join(a.out_dir, "plan.jsonl")
+    with open(plan_path + ".part", "w", encoding="utf-8") as fout:
         for doc in docs:
             meta = doc["meta"]
             rec0 = doc["records"][0]
@@ -552,6 +554,7 @@ def main(argv=None) -> int:
             if type_note:
                 notes["type_overruled"] += 1
             fout.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    os.replace(plan_path + ".part", plan_path)
     print(f"{len(docs)} documents: " + ", ".join(f"{k} {v}" for k, v in cases.most_common()), file=sys.stderr)
     if notes:
         print(dict(notes), file=sys.stderr)

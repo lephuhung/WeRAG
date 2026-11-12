@@ -99,6 +99,18 @@ class Fetcher:
         if not refresh and os.path.exists(path):
             with open(path, "rb") as f:
                 return f.read()
+        try:
+            return self._load(url, path, limit)
+        except Exception:
+            # a page loaded again that fails now keeps its cached copy: a
+            # passing network error must not empty a known document
+            if refresh and os.path.exists(path):
+                print(f"refresh of {url} failed, cached copy kept", file=sys.stderr, flush=True)
+                with open(path, "rb") as f:
+                    return f.read()
+            raise
+
+    def _load(self, url: str, path: str, limit: int) -> bytes:
         data = b""
         for attempt in range(4):
             self._wait()
@@ -218,8 +230,16 @@ def crawl(site: str, fx: Fetcher, with_files: bool, max_pages: int, log) -> list
     page = 1
     while page <= max_pages:
         recent = page <= fx.refresh_pages
-        html = fx.get(f"{base}{path}?pageNo={page}", f"list-{site}", refresh=fx.refresh_lists or recent).decode("utf-8", "replace")
+        list_url = f"{base}{path}?pageNo={page}"
+        html = fx.get(list_url, f"list-{site}", refresh=fx.refresh_lists or recent).decode("utf-8", "replace")
         rows = parse_listing(html)
+        if not rows and page == 1:
+            # page 1 always has rows: a maintenance or block page, not the end
+            try:
+                os.remove(fx.path_for(list_url, f"list-{site}"))
+            except OSError:
+                pass
+            raise RuntimeError(f"{site}: page 1 has no document table (portal down or blocking?)")
         if not rows:
             break
         log(f"{site} page {page}: {len(rows)} rows")
@@ -268,15 +288,29 @@ def main(argv=None) -> int:
     fx = Fetcher(a.cache_dir, a.delay, a.refresh_lists, a.refresh_pages)
     log = lambda m: print(m, file=sys.stderr, flush=True)  # noqa: E731
     sites = list(SITES) if a.site == "all" else [a.site]
-    n = 0
-    tmp = os.path.join(a.out_dir, "records.jsonl.part")
+    out_path = os.path.join(a.out_dir, "records.jsonl")
+    previous: list[dict] = []
+    # scheduled runs crawl only the first pages and update the last full list
+    # (pages further down come from it, not from stale cached listing pages
+    # whose rows shifted down since)
+    partial = a.refresh_pages > 0 and not a.refresh_lists and os.path.exists(out_path)
+    if partial:
+        with open(out_path, encoding="utf-8") as f:
+            previous = [json.loads(line) for line in f if line.strip()]
+    try:
+        fresh = [asdict(rec) for site in sites
+                 for rec in crawl(site, fx, not a.no_files, a.refresh_pages if partial else a.max_pages, log)]
+    except RuntimeError as e:
+        log(f"STOP: {e}; {out_path} left as it was")
+        return 2
+    seen = {r["url"] for r in fresh}
+    merged = fresh + [r for r in previous if r["url"] not in seen]
+    tmp = out_path + ".part"
     with open(tmp, "w", encoding="utf-8") as f:
-        for site in sites:
-            for rec in crawl(site, fx, not a.no_files, a.max_pages, log):
-                f.write(json.dumps(asdict(rec), ensure_ascii=False) + "\n")
-                n += 1
-    os.replace(tmp, os.path.join(a.out_dir, "records.jsonl"))
-    log(f"{n} records → {a.out_dir}/records.jsonl")
+        for rec in merged:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    os.replace(tmp, out_path)
+    log(f"{len(merged)} records ({len(fresh)} loaded now) → {out_path}")
     return 0
 
 
