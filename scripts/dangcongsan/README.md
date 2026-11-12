@@ -74,9 +74,10 @@ S=scripts/dangcongsan
 WERAG_API_KEY=sk-... /tmp/dcs-venv/bin/python -I $S/dcs_push.py $D/build --case text --limit 5
 ```
 
-Cập nhật văn bản mới: `dcs_fetch.py --refresh-lists` (trang danh sách tải
-lại, trang chi tiết và file đã có lấy từ cache), rồi classify → build → push.
-Văn bản đã đẩy thành công thì được bỏ qua.
+Cập nhật văn bản mới chạy theo lịch trong container `dcs-sync`
+(`deploy/dcs-sync`, mặc định 4 giờ một lần): tải lại 3 trang danh sách đầu
+(`--refresh-pages 3`) rồi classify → build → push. Văn bản đã đẩy thành công
+được bỏ qua.
 
 Trước khi đẩy lần đầu: tạo kho công khai tên đúng **"Văn bản của Đảng"**
 (SuperAdmin). API key phải được tạo trong tổ chức nền tảng 10000, có quyền

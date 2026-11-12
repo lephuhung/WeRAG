@@ -77,8 +77,11 @@ class Record:
 
 
 class Fetcher:
-    def __init__(self, cache: str, delay: float, refresh_lists: bool):
+    def __init__(self, cache: str, delay: float, refresh_lists: bool, refresh_pages: int = 0):
         self.cache, self.delay, self.refresh_lists = cache, delay, refresh_lists
+        # the first listing pages and their detail pages are always loaded
+        # again: new documents, and files attached after publication, are there
+        self.refresh_pages = refresh_pages
         self._last = 0.0
 
     def _wait(self):
@@ -214,7 +217,8 @@ def crawl(site: str, fx: Fetcher, with_files: bool, max_pages: int, log) -> list
     seen: set[str] = set()
     page = 1
     while page <= max_pages:
-        html = fx.get(f"{base}{path}?pageNo={page}", f"list-{site}", refresh=fx.refresh_lists).decode("utf-8", "replace")
+        recent = page <= fx.refresh_pages
+        html = fx.get(f"{base}{path}?pageNo={page}", f"list-{site}", refresh=fx.refresh_lists or recent).decode("utf-8", "replace")
         rows = parse_listing(html)
         if not rows:
             break
@@ -228,7 +232,7 @@ def crawl(site: str, fx: Fetcher, with_files: bool, max_pages: int, log) -> list
             rec = Record(site=site, url=clean_url, source_doc_id=source_doc_id(site, clean_url),
                          list_title=row["title"], list_number=row["number"], list_issued=row["issued"])
             try:
-                detail = fx.get(href, f"detail-{site}").decode("utf-8", "replace")
+                detail = fx.get(href, f"detail-{site}", refresh=recent).decode("utf-8", "replace")
                 rec.heading, rec.meta, links, rec.body_text = parse_detail(detail)
             except Exception as e:  # noqa: BLE001 - one bad page must not stop the crawl
                 rec.error = f"detail: {e}"
@@ -256,10 +260,12 @@ def main(argv=None) -> int:
     ap.add_argument("--delay", type=float, default=1.0, help="seconds between requests (default 1)")
     ap.add_argument("--max-pages", type=int, default=500)
     ap.add_argument("--no-files", action="store_true", help="metadata only")
-    ap.add_argument("--refresh-lists", action="store_true", help="reload listing pages (new documents)")
+    ap.add_argument("--refresh-lists", action="store_true", help="reload every listing page")
+    ap.add_argument("--refresh-pages", type=int, default=0,
+                    help="reload the first N listing pages and their detail pages (scheduled runs: new documents, late files)")
     a = ap.parse_args(argv)
     os.makedirs(a.out_dir, exist_ok=True)
-    fx = Fetcher(a.cache_dir, a.delay, a.refresh_lists)
+    fx = Fetcher(a.cache_dir, a.delay, a.refresh_lists, a.refresh_pages)
     log = lambda m: print(m, file=sys.stderr, flush=True)  # noqa: E731
     sites = list(SITES) if a.site == "all" else [a.site]
     n = 0
