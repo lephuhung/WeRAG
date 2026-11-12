@@ -121,6 +121,7 @@ func RegisterLegalPushRoutes(r *gin.RouterGroup, h *handler.LegalPushHandler, g 
 		cands.GET("/documents", h.ListLegalLinkCandidateDocuments)
 		cands.GET("/provision-text", h.GetLegalProvisionText)
 		cands.GET("/provisions", h.ListLegalHeldProvisions)
+		cands.GET("/mentions", h.GetLegalLinkCandidateMentions)
 		cands.POST("/recheck", h.RecheckLegalLinkCandidates)
 		cands.POST("/decide-batch", h.DecideLegalLinkCandidatesBatch)
 		cands.PUT("/:id", h.DecideLegalLinkCandidate)

@@ -65,6 +65,8 @@ export interface AmenderGroup {
 export interface GraphEdge {
   id: string;
   candidateId: number;
+  /** The amending document's group. */
+  groupId: string;
   from: string;
   /** A source node, or the group header when the group is collapsed. */
   to: string;
@@ -79,8 +81,11 @@ export interface LinkGraph {
   edges: GraphEdge[];
   /** Height of the drawing (both columns). */
   height: number;
-  /** Candidates left out (rejected while hidden). */
+  /** Candidates left out (decided while only undecided are shown, or of
+   * another document than the focused one). */
   hidden: number;
+  /** The focused amending document's group, when one is focused and shown. */
+  focus: string | null;
 }
 
 export const LAYOUT = {
@@ -139,17 +144,39 @@ function comparePathsBlankLast(a: string, b: string): number {
   return comparePaths(a, b) || a.localeCompare(b);
 }
 
+/** The group id of a candidate's amending document. */
+export function groupIdOf(c: LinkGraphCandidate): string {
+  return `g:${groupKey(c)}`;
+}
+
+/** Whether a person still has to decide the candidate. */
+export function isUndecided(c: Pick<LinkGraphCandidate, "review_status">): boolean {
+  return c.review_status === "pending";
+}
+
+export interface LinkGraphOptions {
+  /** Hide approved, already-held and rejected links (and the nodes left
+   * without a link). false shows everything, rejected included. */
+  undecidedOnly?: boolean;
+  /** Show only this amending document's group (an AmenderChip id): A's
+   * provisions it acts on left, its block right, centred against them. */
+  focusGroup?: string | null;
+  /** Groups folded to their header ("all" view only); undefined folds every
+   * group with nothing pending. */
+  collapsedGroups?: ReadonlySet<string>;
+}
+
 /**
  * buildLinkGraph lays the candidates of ONE document A out. Groups with
  * links to decide come first, then the documents still missing from the
- * catalogue, then the decided ones; collapsedGroups (ids) fold a group to
- * its header — undefined folds every group with nothing pending.
+ * catalogue, then the decided ones. With focusGroup only that document is
+ * drawn and the shorter column is centred against the taller one, so the
+ * fan from A's provisions to the one document stays on screen.
  */
-export function buildLinkGraph(
-  cands: LinkGraphCandidate[],
-  opts: { showRejected?: boolean; collapsedGroups?: ReadonlySet<string> } = {},
-): LinkGraph {
-  const visible = cands.filter((c) => opts.showRejected || c.review_status !== "rejected");
+export function buildLinkGraph(cands: LinkGraphCandidate[], opts: LinkGraphOptions = {}): LinkGraph {
+  let visible = cands.filter((c) => !opts.undecidedOnly || isUndecided(c));
+  const focus = opts.focusGroup ?? null;
+  if (focus) visible = visible.filter((c) => groupIdOf(c) === focus);
   const targets = new Map<string, TargetNode>();
   const groups = new Map<string, AmenderGroup>();
   const sources = new Map<string, SourceNode>();
@@ -191,7 +218,7 @@ export function buildLinkGraph(
       sources.set(sid, s);
       g.sources.push(s);
     }
-    const e: GraphEdge = { id: `e:${c.id}`, candidateId: c.id, from: tid, to: sid, op: c.op, state, approvable };
+    const e: GraphEdge = { id: `e:${c.id}`, candidateId: c.id, groupId: gid, from: tid, to: sid, op: c.op, state, approvable };
     edges.push(e);
     t.edgeIds.push(e.id);
     s.edgeIds.push(e.id);
@@ -210,8 +237,24 @@ export function buildLinkGraph(
   );
   const targetList = [...targets.values()].sort((a, b) => comparePathsBlankLast(a.path, b.path));
 
+  for (const g of groupList) {
+    g.sources.sort((a, b) => comparePathsBlankLast(a.path, b.path));
+    g.collapsed = focus
+      ? false
+      : opts.collapsedGroups
+        ? opts.collapsedGroups.has(g.id)
+        : g.counts.pending === 0 && g.counts.blocked === 0;
+  }
+  const leftSpan = targetList.length * LAYOUT.row;
+  let rightSpan = 0;
+  for (const g of groupList) rightSpan += LAYOUT.header + (g.collapsed ? 0 : g.sources.length * LAYOUT.row) + LAYOUT.groupGap;
+  if (groupList.length) rightSpan -= LAYOUT.groupGap;
+  // focused: the shorter column is centred against the taller one
+  const leftOffset = focus ? Math.max(0, Math.round((rightSpan - leftSpan) / 2)) : 0;
+  const rightOffset = focus ? Math.max(0, Math.round((leftSpan - rightSpan) / 2)) : 0;
+
   // left column
-  let y = LAYOUT.top;
+  let y = LAYOUT.top + leftOffset;
   for (const t of targetList) {
     t.y = y;
     y += LAYOUT.row;
@@ -219,10 +262,8 @@ export function buildLinkGraph(
   const leftHeight = y;
 
   // right column
-  y = LAYOUT.top;
+  y = LAYOUT.top + rightOffset;
   for (const g of groupList) {
-    g.sources.sort((a, b) => comparePathsBlankLast(a.path, b.path));
-    g.collapsed = opts.collapsedGroups ? opts.collapsedGroups.has(g.id) : g.counts.pending === 0 && g.counts.blocked === 0;
     g.y = y;
     y += LAYOUT.header;
     if (!g.collapsed) {
@@ -248,7 +289,59 @@ export function buildLinkGraph(
     edges,
     height: Math.max(leftHeight, rightHeight, LAYOUT.top + LAYOUT.row) + LAYOUT.bottom,
     hidden: cands.length - visible.length,
+    focus: focus && groupList.length ? focus : null,
   };
+}
+
+/** One amending document in the chip row above the diagram. */
+export interface AmenderChip {
+  id: string;
+  kind: "doc" | "blocked";
+  number: string;
+  /** Pending links a person can approve as they are. */
+  approvable: number;
+  /** Pending links (approvable or needing a correction). */
+  pending: number;
+  /** Links waiting for the document to enter the catalogue. */
+  blocked: number;
+  total: number;
+}
+
+/** The amending documents of A's candidates (all of them, decided too),
+ * in the diagram's order: to decide, waiting for a document, done. */
+export function amenderChips(cands: LinkGraphCandidate[]): AmenderChip[] {
+  const m = new Map<string, AmenderChip>();
+  for (const c of cands) {
+    const id = groupIdOf(c);
+    let chip = m.get(id);
+    if (!chip) {
+      chip = {
+        id,
+        kind: c.amender_doc_id ? "doc" : "blocked",
+        number: c.amender?.document_number || c.amender_doc_number,
+        approvable: 0,
+        pending: 0,
+        blocked: 0,
+        total: 0,
+      };
+      m.set(id, chip);
+    }
+    chip.total += 1;
+    const st = edgeState(c);
+    if (st === "pending") chip.pending += 1;
+    if (st === "blocked") chip.blocked += 1;
+    if (isApprovable(c)) chip.approvable += 1;
+  }
+  const rank = (x: AmenderChip) => (x.pending > 0 ? 0 : x.blocked > 0 ? 1 : 2);
+  return [...m.values()].sort(
+    (a, b) => rank(a) - rank(b) || b.pending - a.pending || a.number.localeCompare(b.number, "vi"),
+  );
+}
+
+/** The chip selected first: the first with links to approve, else the
+ * first waiting for its document, else none ("all"). */
+export function defaultFocus(chips: AmenderChip[]): string | null {
+  return (chips.find((c) => c.approvable > 0) ?? chips.find((c) => c.blocked > 0))?.id ?? null;
 }
 
 /** The edges touching a node (a target, a source or a whole group). */

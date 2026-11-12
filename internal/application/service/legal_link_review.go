@@ -4,11 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/text/unicode/norm"
 
 	"gorm.io/gorm"
 
@@ -456,12 +460,18 @@ type LegalLinkRecheckResult struct {
 	Checked int `json:"checked"`
 	// Resolved: the amender is now one catalogue document.
 	Resolved int `json:"resolved"`
-	// Matched: resolved and both provisions found (approvable as is).
+	// RematchChecked: pending candidates with a known amender and a named
+	// provision whose provisions were not found (doc_only, target_missing).
+	RematchChecked int `json:"rematch_checked"`
+	// Rematched: of those, the ones whose status got better now that the
+	// held copies are parsed.
+	Rematched int `json:"rematched"`
+	// Matched: resolved or rematched, both provisions now found.
 	Matched int `json:"matched"`
 	// AutoApproved: matched and approved without a person (same setting
 	// as a push).
 	AutoApproved int `json:"auto_approved"`
-	// Duplicates: resolved to a link legal_provision_links already holds.
+	// Duplicates: matched to a link legal_provision_links already holds.
 	Duplicates int `json:"duplicates"`
 	// StillMissing: the catalogue still has no document with the number.
 	StillMissing int `json:"still_missing"`
@@ -469,136 +479,213 @@ type LegalLinkRecheckResult struct {
 	Ambiguous int `json:"ambiguous"`
 }
 
-// legalRecheckMax bounds the candidates one recheck reads.
+// legalRecheckMax bounds the candidates one recheck reads (per pass).
 const legalRecheckMax = 5000
 
-// RecheckCandidates resolves again the amender of every pending candidate
-// the catalogue did not know when it was pushed (amender_doc_id empty),
-// optionally only those acting on targetDocID. The resolution is the push's
-// (resolveDoc: several documents with the number stay unresolved), the
-// provisions and the match status are recomputed as a correction does, a
-// link already held becomes a duplicate as in a push, and a fully matched
-// candidate is approved without a person only under the push's own
-// setting. Decided candidates are never touched; each candidate is updated
-// in its own transaction, guarded on still being pending and unresolved.
-func (s *LegalPushService) RecheckCandidates(ctx context.Context, targetDocID string) (*LegalLinkRecheckResult, error) {
-	return s.recheck(ctx, strings.TrimSpace(targetDocID), "")
+// legalRecheckScope narrows a recheck: TargetDocID (the page's button on
+// one document); after a push, DocID + NumberKey: the candidates naming the
+// pushed document as amender by number (pass 1) and those acting on it or
+// by it (pass 2).
+type legalRecheckScope struct {
+	TargetDocID string
+	DocID       string
+	NumberKey   string
 }
 
-// recheck is RecheckCandidates, narrowed to the amenders of number key nk
-// when nk is set (after a push brought that document).
-func (s *LegalPushService) recheck(ctx context.Context, targetDocID, nk string) (*LegalLinkRecheckResult, error) {
+// RecheckCandidates looks again at the pending candidates a push could not
+// match fully. Pass 1: the amender was not in the catalogue (amender_doc_id
+// empty) — resolved again as a push does (resolveDoc: several documents
+// with the number stay unresolved). Pass 2: the amender is known and a
+// provision is named but was not found (doc_only, target_missing) — the
+// held copies may have been parsed since; the status is only ever raised,
+// never lowered. In both, the provisions and the status are recomputed as a
+// correction does, a link already held becomes a duplicate as in a push,
+// and a fully matched candidate is approved without a person only under
+// the push's own setting. Decided candidates are never touched; each
+// candidate is updated in its own transaction, guarded on its state being
+// unchanged. Optionally only those acting on targetDocID.
+func (s *LegalPushService) RecheckCandidates(ctx context.Context, targetDocID string) (*LegalLinkRecheckResult, error) {
+	return s.recheck(ctx, legalRecheckScope{TargetDocID: strings.TrimSpace(targetDocID)})
+}
+
+func (s *LegalPushService) recheck(ctx context.Context, scope legalRecheckScope) (*LegalLinkRecheckResult, error) {
 	res := &LegalLinkRecheckResult{}
 	if s == nil || s.db == nil {
 		return res, nil
 	}
-	q := s.db.WithContext(ctx).Where("review_status = ? AND amender_doc_id = '' AND amender_doc_number <> ''", types.LegalLinkReviewPending)
-	if targetDocID != "" {
-		q = q.Where("target_doc_id = ?", targetDocID)
+	r := &legalRechecker{s: s, res: res, cache: legalProvCache{},
+		auto: s.settings != nil && s.settings.GetBool(ctx, LegalFeedAutoApproveSetting, "", legalFeedAutoApproveDefault)}
+	if err := r.unresolved(ctx, scope); err != nil {
+		return nil, err
+	}
+	if err := r.unmatched(ctx, scope); err != nil {
+		return nil, err
+	}
+	if r.changed {
+		s.Notices.LegalLinksChanged(ctx)
+	}
+	return res, nil
+}
+
+type legalRechecker struct {
+	s       *LegalPushService
+	res     *LegalLinkRecheckResult
+	cache   legalProvCache
+	auto    bool
+	changed bool
+}
+
+// unresolved is pass 1.
+func (r *legalRechecker) unresolved(ctx context.Context, scope legalRecheckScope) error {
+	q := r.s.db.WithContext(ctx).Where("review_status = ? AND amender_doc_id = '' AND amender_doc_number <> ''", types.LegalLinkReviewPending)
+	if scope.TargetDocID != "" {
+		q = q.Where("target_doc_id = ?", scope.TargetDocID)
 	}
 	var list []*types.LegalProvisionLinkCandidate
 	if err := q.Order("id").Limit(legalRecheckMax).Find(&list).Error; err != nil {
-		return nil, err
+		return err
 	}
-	auto := s.settings != nil && s.settings.GetBool(ctx, LegalFeedAutoApproveSetting, "", legalFeedAutoApproveDefault)
 	type resolved struct {
 		doc       *types.LegalDocument
 		ambiguous bool
 	}
 	docs := map[string]resolved{}
-	cache := legalProvCache{}
-	changed := false
 	for _, c := range list {
-		if nk != "" && vietnamese_legal.CatalogNumberKey(c.AmenderDocNumber) != nk {
+		if scope.NumberKey != "" && vietnamese_legal.CatalogNumberKey(c.AmenderDocNumber) != scope.NumberKey {
 			continue
 		}
-		res.Checked++
+		r.res.Checked++
 		ref := legalDocRef{Number: c.AmenderDocNumber, IssueDate: c.AmenderIssueDate, Issuer: c.AmenderIssuer}
 		rk := vietnamese_legal.CatalogNumberKey(ref.Number) + "|" + ref.IssueDate + "|" + strings.ToLower(ref.Issuer)
-		r, ok := docs[rk]
+		d, ok := docs[rk]
 		if !ok {
-			doc, cands, _, err := s.resolveDoc(ctx, ref)
+			doc, cands, _, err := r.s.resolveDoc(ctx, ref)
 			if err != nil {
-				return nil, fmt.Errorf("catalogue lookup: %w", err)
+				return fmt.Errorf("catalogue lookup: %w", err)
 			}
-			r = resolved{doc: doc, ambiguous: doc == nil && len(cands) > 0}
-			docs[rk] = r
+			d = resolved{doc: doc, ambiguous: doc == nil && len(cands) > 0}
+			docs[rk] = d
 		}
 		switch {
-		case r.doc == nil && r.ambiguous:
-			res.Ambiguous++
+		case d.doc == nil && d.ambiguous:
+			r.res.Ambiguous++
 			continue
-		case r.doc == nil:
-			res.StillMissing++
+		case d.doc == nil:
+			r.res.StillMissing++
 			continue
-		case r.doc.ID == c.TargetDocID:
+		case d.doc.ID == c.TargetDocID:
 			// the number is A's own: a push leaves it unresolved too
-			res.StillMissing++
+			r.res.StillMissing++
 			continue
 		}
 		nc := *c
-		nc.AmenderDocID = r.doc.ID
-		if err := s.rematch(ctx, &nc, false, cache); err != nil {
-			return nil, err
+		nc.AmenderDocID = d.doc.ID
+		if err := r.s.rematch(ctx, &nc, false, r.cache); err != nil {
+			return err
 		}
-		if nc.MatchStatus == types.LegalLinkMatched {
-			dup, err := s.linkHeld(ctx, &nc)
-			if err != nil {
-				return nil, err
-			}
-			if dup {
-				nc.MatchStatus, nc.ReviewStatus = types.LegalLinkDuplicate, types.LegalLinkReviewAuto
-			}
+		nc.MatchReason = strings.TrimPrefix(nc.MatchReason+"; kiểm lại: "+d.doc.DocumentNumber+" đã có trong danh mục", "; ")
+		if dk, ok := legalMarkKeyWithAmender(nc.Detail, d.doc.ID); ok {
+			nc.Detail = dk
 		}
-		nc.MatchReason = strings.TrimPrefix(nc.MatchReason+"; kiểm lại: "+r.doc.DocumentNumber+" đã có trong danh mục", "; ")
-		if d, ok := legalMarkKeyWithAmender(nc.Detail, r.doc.ID); ok {
-			nc.Detail = d
-		}
-		now := time.Now()
-		approved, applied := false, false
-		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			upd := tx.Model(&types.LegalProvisionLinkCandidate{}).
-				Where("id = ? AND review_status = ? AND amender_doc_id = ''", nc.ID, types.LegalLinkReviewPending).
-				Updates(map[string]any{
-					"amender_doc_id": nc.AmenderDocID, "target_provision_id": nc.TargetProvisionID,
-					"source_provision_id": nc.SourceProvisionID, "match_status": nc.MatchStatus, "match_reason": nc.MatchReason,
-					"review_status": nc.ReviewStatus, "detail": nc.Detail, "updated_at": now,
-				})
-			if upd.Error != nil {
-				return upd.Error
-			}
-			if upd.RowsAffected == 0 { // decided or replaced meanwhile
-				return nil
-			}
-			applied = true
-			if auto && legalCandidateAutoApprovable(&nc) {
-				approved = true
-				return approveCandidateTx(tx, &nc, types.LegalLinkAutoReviewer, now)
-			}
-			return nil
-		})
+		applied, err := r.apply(ctx, &nc, "amender_doc_id = ''")
 		if err != nil {
-			return nil, fmt.Errorf("recheck candidate %d: %w", c.ID, err)
+			return err
 		}
-		if !applied {
-			continue
-		}
-		changed = true
-		res.Resolved++
-		switch nc.MatchStatus {
-		case types.LegalLinkMatched:
-			res.Matched++
-		case types.LegalLinkDuplicate:
-			res.Duplicates++
-		}
-		if approved {
-			res.AutoApproved++
+		if applied {
+			r.res.Resolved++
 		}
 	}
-	if changed {
-		s.Notices.LegalLinksChanged(ctx)
+	return nil
+}
+
+// unmatched is pass 2: upgrade only.
+func (r *legalRechecker) unmatched(ctx context.Context, scope legalRecheckScope) error {
+	q := r.s.db.WithContext(ctx).Where("review_status = ? AND amender_doc_id <> '' AND source_path <> '' AND match_status IN ?",
+		types.LegalLinkReviewPending, []string{types.LegalLinkDocOnly, types.LegalLinkTargetMissing})
+	if scope.TargetDocID != "" {
+		q = q.Where("target_doc_id = ?", scope.TargetDocID)
 	}
-	return res, nil
+	if scope.DocID != "" {
+		q = q.Where("amender_doc_id = ? OR target_doc_id = ?", scope.DocID, scope.DocID)
+	}
+	var list []*types.LegalProvisionLinkCandidate
+	if err := q.Order("id").Limit(legalRecheckMax).Find(&list).Error; err != nil {
+		return err
+	}
+	for _, c := range list {
+		r.res.RematchChecked++
+		nc := *c
+		if err := r.s.rematch(ctx, &nc, false, r.cache); err != nil {
+			return err
+		}
+		if legalMatchRank[nc.MatchStatus] >= legalMatchRank[c.MatchStatus] || nc.MatchStatus == types.LegalLinkUnresolved {
+			continue // never lowered, nothing gained
+		}
+		nc.MatchReason = strings.TrimPrefix(nc.MatchReason+"; kiểm lại: đã thấy điều khoản trong bản đang lưu", "; ")
+		applied, err := r.apply(ctx, &nc, "match_status = '"+c.MatchStatus+"'")
+		if err != nil {
+			return err
+		}
+		if applied {
+			r.res.Rematched++
+		}
+	}
+	return nil
+}
+
+// apply stores a rechecked candidate: a duplicate of a held link is closed
+// as in a push, a matched one is approved under the push's setting. guard
+// is the state the row must still be in (a constant SQL condition).
+func (r *legalRechecker) apply(ctx context.Context, nc *types.LegalProvisionLinkCandidate, guard string) (bool, error) {
+	if nc.MatchStatus == types.LegalLinkMatched {
+		dup, err := r.s.linkHeld(ctx, nc)
+		if err != nil {
+			return false, err
+		}
+		if dup {
+			nc.MatchStatus, nc.ReviewStatus = types.LegalLinkDuplicate, types.LegalLinkReviewAuto
+		}
+	}
+	now := time.Now()
+	approved, applied := false, false
+	err := r.s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		upd := tx.Model(&types.LegalProvisionLinkCandidate{}).
+			Where("id = ? AND review_status = ? AND "+guard, nc.ID, types.LegalLinkReviewPending).
+			Updates(map[string]any{
+				"amender_doc_id": nc.AmenderDocID, "target_provision_id": nc.TargetProvisionID,
+				"source_provision_id": nc.SourceProvisionID, "match_status": nc.MatchStatus, "match_reason": nc.MatchReason,
+				"review_status": nc.ReviewStatus, "detail": nc.Detail, "updated_at": now,
+			})
+		if upd.Error != nil {
+			return upd.Error
+		}
+		if upd.RowsAffected == 0 { // decided or replaced meanwhile
+			return nil
+		}
+		applied = true
+		if r.auto && legalCandidateAutoApprovable(nc) {
+			approved = true
+			return approveCandidateTx(tx, nc, types.LegalLinkAutoReviewer, now)
+		}
+		return nil
+	})
+	if err != nil {
+		return false, fmt.Errorf("recheck candidate %d: %w", nc.ID, err)
+	}
+	if !applied {
+		return false, nil
+	}
+	r.changed = true
+	switch nc.MatchStatus {
+	case types.LegalLinkMatched:
+		r.res.Matched++
+	case types.LegalLinkDuplicate:
+		r.res.Duplicates++
+	}
+	if approved {
+		r.res.AutoApproved++
+	}
+	return true, nil
 }
 
 // legalMarkKeyWithAmender fills the amender id of a candidate's mark key
@@ -627,25 +714,28 @@ func legalMarkKeyWithAmender(detail types.JSON, amenderID string) (types.JSON, b
 	return types.JSON(b), true
 }
 
-// recheckAfterPush resolves the pending candidates that named document a
-// as their amender before the catalogue knew it. Called once a push has
-// stored a; a failure is only logged (the push itself succeeded).
+// recheckAfterPush rechecks the pending candidates the pushed document a
+// may complete: those naming it by number before the catalogue knew it,
+// and those acting on it or by it whose provisions were not found. Called
+// once a push has stored a (a full text just ingested is usually still
+// parsing: the page's recheck button covers that); a failure is only
+// logged (the push itself succeeded).
 func (s *LegalPushService) recheckAfterPush(ctx context.Context, a *types.LegalDocument) {
 	nk := a.NumberKey
 	if nk == "" {
 		nk = vietnamese_legal.CatalogNumberKey(a.DocumentNumber)
 	}
-	if nk == "" {
+	if nk == "" || a.ID == "" {
 		return
 	}
-	res, err := s.recheck(ctx, "", nk)
+	res, err := s.recheck(ctx, legalRecheckScope{DocID: a.ID, NumberKey: nk})
 	if err != nil {
-		logger.Warnf(ctx, "[LegalPush] recheck links naming %s: %v", a.DocumentNumber, err)
+		logger.Warnf(ctx, "[LegalPush] recheck links of %s: %v", a.DocumentNumber, err)
 		return
 	}
-	if res.Resolved > 0 {
-		logger.Infof(ctx, "[LegalPush] %s: %d pending links now name it (matched %d, auto-approved %d)",
-			a.DocumentNumber, res.Resolved, res.Matched, res.AutoApproved)
+	if res.Resolved > 0 || res.Rematched > 0 {
+		logger.Infof(ctx, "[LegalPush] %s: %d pending links now name it, %d rematched (matched %d, auto-approved %d)",
+			a.DocumentNumber, res.Resolved, res.Rematched, res.Matched, res.AutoApproved)
 	}
 }
 
@@ -706,4 +796,199 @@ func (s *LegalPushService) DecideCandidates(ctx context.Context, b LegalLinkBatc
 		s.Notices.LegalLinksChanged(ctx)
 	}
 	return out, nil
+}
+
+// LegalLinkMentionsMax is how many passages a mention search returns.
+const LegalLinkMentionsMax = 3
+
+// legalMentionRunes is the length of a passage around the match.
+const legalMentionRunes = 600
+
+// LegalLinkMention is one passage of B's held copy naming A.
+type LegalLinkMention struct {
+	ChunkID string `json:"chunk_id"`
+	// Article is the Điều the chunk belongs to ("Điều 3"), "" when unknown.
+	Article string `json:"article,omitempty"`
+	Text    string `json:"text"`
+	// Weak: the passage names A's số hiệu but not the Điều of the link.
+	Weak bool `json:"weak"`
+}
+
+// LegalLinkMentions are search hits in B for a link that names no
+// provision of B: passages mentioning A's số hiệu and the Điều of A the
+// link is on — never the linked provision itself.
+type LegalLinkMentions struct {
+	CandidateID   int64              `json:"candidate_id"`
+	AmenderDocID  string             `json:"amender_doc_id"`
+	Held          bool               `json:"held"`
+	TargetNumber  string             `json:"target_number"`
+	TargetArticle string             `json:"target_article,omitempty"`
+	Passages      []LegalLinkMention `json:"passages"`
+	// Weak: no passage names the Điều; the ones given name A only.
+	Weak bool `json:"weak"`
+	// Reason: why there is nothing to search (no_amender, not_held,
+	// no_target_number).
+	Reason string `json:"reason,omitempty"`
+}
+
+// CandidateMentions finds, in the held copy of the candidate's amender B,
+// up to three passages that mention A's số hiệu together with the Điều of
+// A the link is on ("Điều 52"), each cut to ~600 characters around the
+// match; when none names the Điều, passages naming A only, flagged weak.
+func (s *LegalPushService) CandidateMentions(ctx context.Context, candidateID int64) (*LegalLinkMentions, error) {
+	var c types.LegalProvisionLinkCandidate
+	if err := s.db.WithContext(ctx).Where("id = ?", candidateID).Limit(1).Find(&c).Error; err != nil {
+		return nil, err
+	}
+	if c.ID == 0 {
+		return nil, apperrors.NewNotFoundError("candidate not found")
+	}
+	out := &LegalLinkMentions{CandidateID: c.ID, AmenderDocID: c.AmenderDocID, Passages: []LegalLinkMention{}}
+	if c.AmenderDocID == "" {
+		out.Reason = "no_amender"
+		return out, nil
+	}
+	var a types.LegalDocument
+	if err := s.db.WithContext(ctx).Where("id = ?", c.TargetDocID).Limit(1).Find(&a).Error; err != nil {
+		return nil, err
+	}
+	out.TargetNumber = strings.TrimSpace(a.DocumentNumber)
+	if ref, ok := legalPathRef(c.TargetPath); ok {
+		out.TargetArticle = ref.Article
+	}
+	held, err := s.heldDoc(ctx, c.AmenderDocID)
+	if err != nil {
+		return nil, err
+	}
+	if held == nil {
+		out.Reason = LegalTextNotHeld
+		return out, nil
+	}
+	out.Held = true
+	if out.TargetNumber == "" {
+		out.Reason = "no_target_number"
+		return out, nil
+	}
+	var rows []struct {
+		ID       string
+		Content  string
+		Metadata []byte
+	}
+	if err := s.db.WithContext(ctx).Raw(`SELECT c.id, c.content, c.metadata FROM chunks c WHERE c.deleted_at IS NULL AND c.knowledge_id = ?
+		ORDER BY c.chunk_index, c.id LIMIT ?`, held.KnowledgeID, legalProvisionTextChunksMax).Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("mention chunks: %w", err)
+	}
+	needles := legalMentionNeedles(out.TargetNumber)
+	var article *regexp.Regexp
+	if out.TargetArticle != "" {
+		article = regexp.MustCompile(`điều\s+` + regexp.QuoteMeta(strings.ToLower(out.TargetArticle)) + `(?:[^0-9a-zđ]|$)`)
+	}
+	var strong, weak []LegalLinkMention
+	for _, r := range rows {
+		if len(strong) >= LegalLinkMentionsMax {
+			break
+		}
+		label := ""
+		var meta types.DocumentChunkMetadata
+		if json.Unmarshal(r.Metadata, &meta) == nil && meta.Legal != nil && len(meta.Legal.ArticleNos) == 1 {
+			label = "Điều " + meta.Legal.ArticleNos[0]
+		}
+		text, isStrong, ok := legalMentionPassage(r.Content, needles, article)
+		if !ok {
+			continue
+		}
+		m := LegalLinkMention{ChunkID: r.ID, Article: label, Text: text, Weak: !isStrong}
+		if isStrong {
+			strong = append(strong, m)
+		} else if len(weak) < LegalLinkMentionsMax {
+			weak = append(weak, m)
+		}
+	}
+	if len(strong) > 0 {
+		out.Passages = strong
+	} else if len(weak) > 0 {
+		out.Passages, out.Weak = weak, true
+	}
+	return out, nil
+}
+
+// legalMentionNeedles are the lower-case spellings of a số hiệu searched in
+// a text: as written, with Đ/D swapped, and with spaced slashes removed.
+func legalMentionNeedles(number string) []string {
+	n := strings.ToLower(norm.NFC.String(strings.TrimSpace(number)))
+	set := map[string]bool{n: true, strings.ReplaceAll(n, "đ", "d"): true}
+	if strings.Contains(n, "d") && !strings.Contains(n, "đ") {
+		set[strings.Replace(n, "nd-", "nđ-", 1)] = true
+	}
+	out := make([]string, 0, len(set))
+	for k := range set {
+		if k != "" {
+			out = append(out, k)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// legalMentionPassage finds the needles in content and returns the passage
+// around the best match: one whose surrounding passage also names the
+// Điều (strong), else the first match.
+func legalMentionPassage(content string, needles []string, article *regexp.Regexp) (string, bool, bool) {
+	runes := []rune(norm.NFC.String(content))
+	lower := make([]rune, len(runes))
+	for i, r := range runes {
+		lower[i] = unicode.ToLower(r)
+	}
+	ls := string(lower)
+	cut := func(at, n int) (int, int) {
+		start := at - (legalMentionRunes-n)/2
+		if start < 0 {
+			start = 0
+		}
+		end := start + legalMentionRunes
+		if end > len(runes) {
+			end = len(runes)
+			if start = end - legalMentionRunes; start < 0 {
+				start = 0
+			}
+		}
+		return start, end
+	}
+	first := -1
+	firstLen := 0
+	for _, nd := range needles {
+		for off := 0; off < len(ls); {
+			i := strings.Index(ls[off:], nd)
+			if i < 0 {
+				break
+			}
+			b := off + i
+			at := utf8.RuneCountInString(ls[:b])
+			n := utf8.RuneCountInString(nd)
+			s, e := cut(at, n)
+			if article != nil && article.MatchString(string(lower[s:e])) {
+				return legalMentionText(runes, s, e), true, true
+			}
+			if first < 0 || at < first {
+				first, firstLen = at, n
+			}
+			off = b + len(nd)
+		}
+	}
+	if first < 0 {
+		return "", false, false
+	}
+	s, e := cut(first, firstLen)
+	return legalMentionText(runes, s, e), false, true
+}
+
+func legalMentionText(runes []rune, s, e int) string {
+	text := strings.TrimSpace(string(runes[s:e]))
+	if s > 0 {
+		text = "…" + text
+	}
+	if e < len(runes) {
+		text += "…"
+	}
+	return text
 }

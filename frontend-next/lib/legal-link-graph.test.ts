@@ -11,6 +11,9 @@ import {
   isApprovable,
   nextApprovable,
   numberKey,
+  amenderChips,
+  defaultFocus,
+  groupIdOf,
   parseProvisionInput,
   type LinkGraphCandidate,
 } from "./legal-link-graph.ts";
@@ -59,9 +62,10 @@ describe("buildLinkGraph", () => {
     const g = buildLinkGraph(list);
     assert.deepEqual(
       g.targets.map((t) => t.path),
-      ["dieu:2", "dieu:3", "dieu:5", "dieu:10/khoan:2"],
+      ["dieu:2", "dieu:3", "dieu:5", "dieu:6", "dieu:10/khoan:2"],
+      "everything shown, rejected included",
     );
-    assert.equal(g.hidden, 1, "rejected links are hidden by default");
+    assert.equal(g.hidden, 0);
     assert.deepEqual(
       g.groups.map((x) => [x.kind, x.number]),
       [
@@ -78,6 +82,7 @@ describe("buildLinkGraph", () => {
       "provisions sorted, the unnamed one last",
     );
     assert.equal(nd15.approvableIds.length, 3);
+    assert.equal(nd15.counts.rejected, 1);
     const blocked = g.groups[1];
     assert.equal(blocked.counts.blocked, 2, "one group for the number, dashes and spaces folded");
     assert.equal(blocked.requestStatus, "requested");
@@ -99,7 +104,7 @@ describe("buildLinkGraph", () => {
   });
 
   it("lays rows out without overlap and sizes the drawing", () => {
-    const g = buildLinkGraph(list, { showRejected: true });
+    const g = buildLinkGraph(list);
     assert.equal(g.hidden, 0);
     const ys = g.targets.map((t) => t.y);
     for (let i = 1; i < ys.length; i++) assert.equal(ys[i] - ys[i - 1], LAYOUT.row);
@@ -127,7 +132,7 @@ describe("buildLinkGraph", () => {
   });
 
   it("finds the edges of a node and the next link to decide", () => {
-    const g = buildLinkGraph(list);
+    const g = buildLinkGraph(list, { undecidedOnly: true });
     const t2 = g.targets[0];
     assert.equal(edgesOf(g, t2.id).size, 2);
     assert.equal(edgesOf(g, g.groups[1].id).size, 2);
@@ -139,6 +144,76 @@ describe("buildLinkGraph", () => {
     assert.notEqual(second?.candidateId, first?.candidateId);
     const done = new Set(g.edges.filter((e) => e.state === "pending").map((e) => e.candidateId));
     assert.equal(nextApprovable(g, null, done), null);
+  });
+});
+
+describe("focus on one amending document", () => {
+  const big: LinkGraphCandidate[] = [];
+  // 20 provisions of A spread over Điều 1..90, one document acting on them
+  // from 2 provisions; another document elsewhere; some decided links
+  for (let i = 0; i < 20; i++) {
+    big.push(cand({ target_path: `dieu:${1 + i * 4}`, amender_doc_id: "nq18", amender_doc_number: "18/2026/NQ-CP",
+      source_path: i % 2 ? "dieu:1" : "dieu:2" }));
+  }
+  for (let i = 0; i < 30; i++) big.push(cand({ target_path: `dieu:${2 + i * 3}`, amender_doc_id: "nd15", source_path: `dieu:${i}` }));
+  big.push(cand({ target_path: "dieu:200", amender_doc_id: "nq18", amender_doc_number: "18/2026/NQ-CP", review_status: "approved" }));
+  big.push(cand({ target_path: "dieu:201", amender_doc_id: "nq18", amender_doc_number: "18/2026/NQ-CP", review_status: "rejected" }));
+
+  it("lists the documents as chips and picks the first to review", () => {
+    const chips = amenderChips(big);
+    assert.deepEqual(
+      chips.map((c) => [c.number, c.approvable, c.total]),
+      [
+        ["15/2026/NĐ-CP", 30, 30],
+        ["18/2026/NQ-CP", 20, 22],
+      ],
+    );
+    assert.equal(defaultFocus(chips), chips[0].id);
+    const blockedOnly = amenderChips([cand({ amender_doc_id: "", amender_doc_number: "20/2026/NQ-CP" })]);
+    assert.equal(defaultFocus(blockedOnly), blockedOnly[0].id);
+    assert.equal(defaultFocus(amenderChips([cand({ review_status: "approved" })])), null, "nothing left: all");
+  });
+
+  it("draws only that document, centred against A's provisions", () => {
+    const id = groupIdOf(big[0]);
+    const g = buildLinkGraph(big, { focusGroup: id, undecidedOnly: true });
+    assert.equal(g.focus, id);
+    assert.equal(g.groups.length, 1);
+    assert.equal(g.targets.length, 20, "only the provisions it acts on; decided ones hidden");
+    assert.ok(g.edges.every((e) => e.groupId === id));
+    const grp = g.groups[0];
+    assert.equal(grp.collapsed, false);
+    const top = g.targets[0].y;
+    const bottom = g.targets[g.targets.length - 1].y + LAYOUT.nodeHeight;
+    const leftMid = (top + bottom) / 2;
+    const rightMid = grp.y + grp.height / 2;
+    assert.ok(Math.abs(leftMid - rightMid) <= LAYOUT.row, `centred: ${leftMid} vs ${rightMid}`);
+    // both ends of every edge lie within half the left column's span
+    const half = (bottom - top) / 2 + LAYOUT.row;
+    const ys = new Map(grp.sources.map((s) => [s.id, s.y]));
+    for (const e of g.edges) {
+      const t = g.targets.find((x) => x.id === e.from)!;
+      assert.ok(Math.abs(t.y - (ys.get(e.to) ?? 0)) <= half);
+    }
+
+    const all = buildLinkGraph(big, { focusGroup: id });
+    assert.equal(all.targets.length, 22, "undecided off: decided and rejected too");
+    assert.equal(all.hidden, 30);
+  });
+
+  it("centres A's provisions when the document's block is the taller column", () => {
+    const tall: LinkGraphCandidate[] = [];
+    for (let i = 0; i < 10; i++) tall.push(cand({ target_path: "dieu:1", amender_doc_id: "b", source_path: `dieu:${i + 1}` }));
+    const g = buildLinkGraph(tall, { focusGroup: groupIdOf(tall[0]) });
+    const grp = g.groups[0];
+    const t = g.targets[0];
+    assert.ok(Math.abs(t.y + LAYOUT.nodeHeight / 2 - (grp.y + grp.height / 2)) <= LAYOUT.row);
+  });
+
+  it("is empty when the focused document has nothing undecided", () => {
+    const g = buildLinkGraph(big, { focusGroup: "g:d:none", undecidedOnly: true });
+    assert.equal(g.edges.length, 0);
+    assert.equal(g.focus, null);
   });
 });
 

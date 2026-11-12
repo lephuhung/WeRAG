@@ -9,13 +9,13 @@
  * clicking a document header opens its panel (bulk approval). Every node and
  * link is reachable with Tab and opened with Enter. */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { provisionLabel } from "@/lib/legal-provision-label";
 import { opColor } from "@/components/graph/legal-style";
 import { LAYOUT, edgesOf, type AmenderGroup, type GraphEdge, type LinkGraph } from "@/lib/legal-link-graph";
 import type { LegalLinkCandidate } from "@/lib/api/legal-link-candidates";
-import { ProvisionTextBox } from "./provision-text";
+import { MentionsBox, ProvisionTextBox } from "./provision-text";
 
 const NODE_H = LAYOUT.nodeHeight;
 const HEADER_H = LAYOUT.headerHeight;
@@ -188,7 +188,48 @@ export function LinkDiagram({
     show(nodeId, { nodeId, side: "right", y });
   };
 
-  // the hover card's content
+  // the hover card: placed after it is drawn (below the node, flipped up
+  // when it would pass the diagram's bottom), kept inside the visible part
+  // of the scroll box, and placed again when the box scrolls or the card's
+  // content (the fetched text) changes its height
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [cardBox, setCardBox] = useState<{ top: number; maxH: number; h: number } | null>(null);
+  const place = useCallback(() => {
+    const card = cardRef.current;
+    const box = boxRef.current;
+    if (!card || !box || !anchor) return;
+    const sc = box.closest("[data-diagram-scroll]") as HTMLElement | null;
+    const maxH = Math.max(160, (sc?.clientHeight ?? 480) - 12);
+    const h = Math.min(card.scrollHeight, maxH);
+    let top = anchor.y;
+    if (top + h > graph.height) top = anchor.y + NODE_H - h; // flip up
+    if (sc) {
+      const offset = box.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop;
+      const visTop = sc.scrollTop - offset + 6;
+      const visBottom = sc.scrollTop + sc.clientHeight - offset - 6;
+      if (top + h > visBottom) top = visBottom - h;
+      if (top < visTop) top = visTop;
+    }
+    top = Math.max(0, Math.min(top, Math.max(graph.height, h) - h));
+    setCardBox((cur) => (cur && cur.top === top && cur.maxH === maxH && cur.h === h ? cur : { top, maxH, h }));
+  }, [anchor, graph.height]);
+  useLayoutEffect(() => {
+    if (!anchor) {
+      setCardBox(null);
+      return;
+    }
+    place();
+    const card = cardRef.current;
+    const sc = boxRef.current?.closest("[data-diagram-scroll]");
+    const ro = card ? new ResizeObserver(() => place()) : null;
+    if (card && ro) ro.observe(card);
+    sc?.addEventListener("scroll", place, { passive: true });
+    return () => {
+      ro?.disconnect();
+      sc?.removeEventListener("scroll", place);
+    };
+  }, [anchor, hover, place]);
+
   const card = (() => {
     if (!anchor || !hover || anchor.nodeId !== hover) return null;
     const isTarget = hover.startsWith("t:");
@@ -197,6 +238,7 @@ export function LinkDiagram({
     let docLabel = targetLabel;
     let missing = "";
     let edgeIds: string[] = [];
+    let mentionsFor: LegalLinkCandidate | undefined;
     if (isTarget) {
       const n = graph.targets.find((x) => x.id === hover);
       if (!n) return null;
@@ -212,16 +254,24 @@ export function LinkDiagram({
       path = s.path;
       edgeIds = s.edgeIds;
     }
-    const first = cands.get(Number(edgeIds[0]?.slice(2)));
+    const linked = edgeIds.map((id) => cands.get(Number(id.slice(2)))).filter((c): c is LegalLinkCandidate => !!c);
+    const first = linked[0];
+    if (!isTarget && !path && docId) mentionsFor = first;
     const pending = edgeIds.filter((id) => graph.edges.find((e) => e.id === id)?.approvable).length;
-    const top = Math.max(0, Math.min(anchor.y, graph.height - 40));
     const left = anchor.side === "left" ? leftW + 10 : Math.max(0, rightX - CARD_W - 10);
     return (
       <div
+        ref={cardRef}
         role="dialog"
         aria-label={`${docLabel} — ${path ? provisionLabel(path, locale) : t("llink.noPath")}`}
-        className="card absolute z-10 flex flex-col gap-2 p-3 text-left shadow-lg"
-        style={{ top, left, width: Math.min(CARD_W, W - 20) }}
+        className="card absolute z-10 flex flex-col gap-2 overflow-y-auto p-3 text-left shadow-lg"
+        style={{
+          top: cardBox?.top ?? anchor.y,
+          left,
+          width: Math.min(CARD_W, W - 20),
+          maxHeight: cardBox?.maxH ?? 420,
+          visibility: cardBox ? "visible" : "hidden",
+        }}
         onMouseEnter={cancelHide}
         onMouseLeave={hideSoon}
       >
@@ -245,13 +295,26 @@ export function LinkDiagram({
           feedUrl={first?.feed_url}
           maxHeight="max-h-48"
         />
+        {isTarget && linked.length > 0 && <ActingLinks links={linked} />}
+        {mentionsFor && (
+          <MentionsBox
+            candidateId={mentionsFor.id}
+            targetLabel={provisionLabel(mentionsFor.target_path, locale)}
+            compact
+          />
+        )}
         {pending > 0 && <div className="caption text-warning">{t("llink.diagram.pendingHere", { n: pending })}</div>}
       </div>
     );
   })();
 
   return (
-    <div ref={boxRef} className="relative w-full" onKeyDown={(e) => e.key === "Escape" && closeCard()}>
+    <div
+      ref={boxRef}
+      className="relative w-full"
+      style={{ minHeight: Math.max(graph.height, cardBox?.h ?? 0) }}
+      onKeyDown={(e) => e.key === "Escape" && closeCard()}
+    >
       <svg
         width={W}
         height={graph.height}
@@ -405,6 +468,7 @@ export function LinkDiagram({
                   {clip(line2, chars)}
                 </text>
               </g>
+              {!graph.focus && (
               <g
                 tabIndex={0}
                 role="button"
@@ -419,6 +483,7 @@ export function LinkDiagram({
                   {g.collapsed ? "+" : "−"}
                 </text>
               </g>
+              )}
               {!g.collapsed &&
                 g.sources.map((s) => {
                   const label = s.path ? provisionLabel(s.path, locale) : t("llink.noPath");
@@ -493,6 +558,39 @@ export function LinkDiagramLegend() {
           {swatch(s.stroke, s.dash, s.opacity)}
           {t(`llink.state.${s.key}` as LocaleKey)}
         </span>
+      ))}
+    </div>
+  );
+}
+
+/* What acts on one of A's provisions, for its hover card: each visible link
+ * as "change — document, provision", then the sources' notes, identical
+ * ones shown once. Useful most when A's own text is not held. */
+function ActingLinks({ links }: { links: LegalLinkCandidate[] }) {
+  const { t, locale } = useT();
+  const notes = [...new Set(links.map((c) => c.note.trim()).filter(Boolean))];
+  const shown = links.slice(0, 8);
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-hairline pt-2">
+      <div className="caption font-medium text-muted">{t("llink.card.actedOnBy")}</div>
+      <ul className="flex flex-col gap-0.5">
+        {shown.map((c) => (
+          <li key={c.id} className="caption text-body">
+            <span className="font-medium" style={{ color: opColor(c.op) }}>
+              {t(`llink.op.${c.op}` as LocaleKey)}
+            </span>
+            {" — "}
+            {c.amender?.document_number || c.amender_doc_number}
+            {", "}
+            {c.source_path ? provisionLabel(c.source_path, locale) : t("llink.noPath").toLowerCase()}
+          </li>
+        ))}
+        {links.length > shown.length && <li className="caption text-muted">{t("llink.card.more", { n: links.length - shown.length })}</li>}
+      </ul>
+      {notes.slice(0, 3).map((n, i) => (
+        <p key={i} className="caption line-clamp-3 whitespace-pre-wrap rounded-[8px] bg-canvas-soft px-2 py-1 text-body" title={n}>
+          {n}
+        </p>
       ))}
     </div>
   );

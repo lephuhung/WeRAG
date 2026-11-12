@@ -23,7 +23,7 @@ import {
   type LegalLinkCandidate,
 } from "@/lib/api/legal-link-candidates";
 import { edgeState, isApprovable, parseProvisionInput } from "@/lib/legal-link-graph";
-import { ProvisionTextBox, docName } from "./provision-text";
+import { MentionsBox, ProvisionTextBox, docName } from "./provision-text";
 
 function day(v: string | null | undefined): string {
   return v ? v.slice(0, 10).split("-").reverse().join("/") : "";
@@ -193,6 +193,9 @@ export function LinkConfirmPanel({
                 docLabel={amenderName}
                 missingNumber={c.amender_doc_number}
               />
+              {!c.source_path && c.amender_doc_id && (
+                <MentionsBox candidateId={c.id} targetLabel={provisionLabel(c.target_path, locale)} />
+              )}
               {state === "blocked" && c.amender_request && (
                 <p className="caption text-muted">
                   {t("llink.panel.request", { state: t(`llink.req.${c.amender_request.status}` as LocaleKey) })}

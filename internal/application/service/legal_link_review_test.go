@@ -66,12 +66,12 @@ func TestLegalLinkRecheckResolvesAndAutoApproves(t *testing.T) {
 
 	res, err := svc.RecheckCandidates(ctx, "")
 	require.NoError(t, err)
-	require.Equal(t, LegalLinkRecheckResult{Checked: 1, StillMissing: 1}, *res, "not in the catalogue yet")
+	require.Equal(t, LegalLinkRecheckResult{Checked: 1, StillMissing: 1, RematchChecked: 1}, *res, "not in the catalogue yet; khoản 9 still missing")
 
 	legalLinkAddNd999(t, svc, "nd999", true)
 	res, err = svc.RecheckCandidates(ctx, "nd68")
 	require.NoError(t, err)
-	require.Equal(t, LegalLinkRecheckResult{Checked: 1, Resolved: 1, Matched: 1, AutoApproved: 1}, *res)
+	require.Equal(t, LegalLinkRecheckResult{Checked: 1, Resolved: 1, Matched: 1, AutoApproved: 1, RematchChecked: 1}, *res)
 
 	after := legalLinkUnresolved(t, svc)
 	require.Equal(t, "nd999", after.AmenderDocID)
@@ -87,7 +87,7 @@ func TestLegalLinkRecheckResolvesAndAutoApproves(t *testing.T) {
 
 	res, err = svc.RecheckCandidates(ctx, "")
 	require.NoError(t, err)
-	require.Equal(t, LegalLinkRecheckResult{}, *res, "idempotent")
+	require.Equal(t, LegalLinkRecheckResult{RematchChecked: 1}, *res, "idempotent")
 
 	// the next push of A keeps the decision instead of asking again
 	legalLinkReviewPush(t, svc)
@@ -107,7 +107,7 @@ func TestLegalLinkRecheckLeavesDecisionsAndRespectsSetting(t *testing.T) {
 	legalLinkAddNd999(t, svc, "nd999", true)
 	res, err := svc.RecheckCandidates(ctx, "")
 	require.NoError(t, err)
-	require.Equal(t, LegalLinkRecheckResult{Checked: 1, Resolved: 1, Matched: 1}, *res)
+	require.Equal(t, LegalLinkRecheckResult{Checked: 1, Resolved: 1, Matched: 1, RematchChecked: 1}, *res)
 	c := legalLinkUnresolved(t, svc)
 	require.Equal(t, types.LegalLinkReviewPending, c.ReviewStatus)
 	require.Equal(t, types.LegalLinkMatched, c.MatchStatus)
@@ -138,7 +138,7 @@ func TestLegalLinkRecheckNeverGuessesBetweenDocuments(t *testing.T) {
 	legalLinkAddNd999(t, svc, "nd999b", false)
 	res, err := svc.RecheckCandidates(context.Background(), "")
 	require.NoError(t, err)
-	require.Equal(t, LegalLinkRecheckResult{Checked: 1, Ambiguous: 1}, *res)
+	require.Equal(t, LegalLinkRecheckResult{Checked: 1, Ambiguous: 1, RematchChecked: 1}, *res)
 	require.Empty(t, legalLinkUnresolved(t, svc).AmenderDocID)
 }
 
@@ -306,4 +306,111 @@ func TestLegalHeldProvisionList(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, got.Held)
 	require.Empty(t, got.Provisions)
+}
+
+// legalLinkAddRefs adds subdivision refs to a chunk's legal metadata (the
+// held copy parsed further after the push).
+func legalLinkAddRefs(t *testing.T, svc *LegalPushService, chunkID string, refs ...string) {
+	t.Helper()
+	var c types.Chunk
+	require.NoError(t, svc.db.First(&c, "id = ?", chunkID).Error)
+	var meta types.DocumentChunkMetadata
+	require.NoError(t, json.Unmarshal(c.Metadata, &meta))
+	meta.Legal.SubdivisionRefs = append(meta.Legal.SubdivisionRefs, refs...)
+	b, _ := json.Marshal(meta)
+	require.NoError(t, svc.db.Model(&types.Chunk{}).Where("id = ?", chunkID).Update("metadata", b).Error)
+}
+
+// Pass 2: a known amender whose provisions were not found is matched again
+// once the held copies have them; the status only ever goes up.
+func TestLegalLinkRecheckRematchesUpgradeOnly(t *testing.T) {
+	svc, _ := legalPushTestService(t)
+	svc.settings = legalPushSettings{on: true}
+	ctx := context.Background()
+	legalLinkReviewPush(t, svc)
+	tm := func() *types.LegalProvisionLinkCandidate {
+		var c types.LegalProvisionLinkCandidate
+		require.NoError(t, svc.db.Where("target_path = ?", "dieu:8/khoan:9").First(&c).Error)
+		return &c
+	}
+	require.Equal(t, types.LegalLinkTargetMissing, tm().MatchStatus)
+
+	// a status that would go down is left alone
+	require.NoError(t, svc.db.Model(&types.LegalProvisionLinkCandidate{}).Where("id = ?", tm().ID).
+		Update("match_status", types.LegalLinkDocOnly).Error)
+	res, err := svc.RecheckCandidates(ctx, "nd68")
+	require.NoError(t, err)
+	require.Equal(t, 0, res.Rematched)
+	require.Equal(t, types.LegalLinkDocOnly, tm().MatchStatus, "never lowered to target_missing")
+	require.NoError(t, svc.db.Model(&types.LegalProvisionLinkCandidate{}).Where("id = ?", tm().ID).
+		Update("match_status", types.LegalLinkTargetMissing).Error)
+
+	// A's copy now has khoản 9: target_missing → doc_only (B's khoản 7 still unknown)
+	legalLinkAddRefs(t, svc, "a8", "khoan:9")
+	res, err = svc.RecheckCandidates(ctx, "")
+	require.NoError(t, err)
+	require.Equal(t, 1, res.Rematched)
+	require.Equal(t, 0, res.AutoApproved)
+	require.Equal(t, types.LegalLinkDocOnly, tm().MatchStatus)
+	require.Equal(t, types.LegalLinkReviewPending, tm().ReviewStatus)
+
+	// B's copy has khoản 7 too: matched, approved under the setting
+	legalLinkAddRefs(t, svc, "b150", "khoan:7")
+	res, err = svc.RecheckCandidates(ctx, "")
+	require.NoError(t, err)
+	require.Equal(t, 1, res.Rematched)
+	require.Equal(t, 1, res.Matched)
+	require.Equal(t, 1, res.AutoApproved)
+	c := tm()
+	require.Equal(t, types.LegalLinkMatched, c.MatchStatus)
+	require.Equal(t, types.LegalLinkReviewApproved, c.ReviewStatus)
+	require.Equal(t, types.LegalLinkAutoReviewer, c.ReviewedBy)
+
+	// decided: never looked at again
+	res, err = svc.RecheckCandidates(ctx, "")
+	require.NoError(t, err)
+	require.Equal(t, 0, res.RematchChecked)
+}
+
+// A link naming no provision of B: passages of B's held copy naming A's
+// số hiệu with the Điều of the link, else A only (weak).
+func TestLegalLinkCandidateMentions(t *testing.T) {
+	svc, _ := legalPushTestService(t)
+	ctx := context.Background()
+	legalLinkReviewPush(t, svc)
+	var c types.LegalProvisionLinkCandidate
+	require.NoError(t, svc.db.Where("amender_doc_id = ? AND source_path = ''", "nd141").First(&c).Error)
+	require.Equal(t, "dieu:8/khoan:1", c.TargetPath)
+
+	got, err := svc.CandidateMentions(ctx, c.ID)
+	require.NoError(t, err)
+	require.True(t, got.Held)
+	require.Equal(t, "68/2026/NĐ-CP", got.TargetNumber)
+	require.Equal(t, "8", got.TargetArticle)
+	require.False(t, got.Weak)
+	require.Len(t, got.Passages, 1)
+	p := got.Passages[0]
+	require.Equal(t, "Điều 1", p.Article)
+	require.False(t, p.Weak)
+	require.Contains(t, p.Text, "Điều 8")
+	require.LessOrEqual(t, len([]rune(p.Text)), legalMentionRunes+2)
+
+	// a Điều B never names: A's number only, flagged weak
+	require.NoError(t, svc.db.Model(&types.LegalProvisionLinkCandidate{}).Where("id = ?", c.ID).Update("target_path", "dieu:99").Error)
+	got, err = svc.CandidateMentions(ctx, c.ID)
+	require.NoError(t, err)
+	require.True(t, got.Weak)
+	require.Len(t, got.Passages, 1)
+	require.True(t, got.Passages[0].Weak)
+
+	// B not held
+	require.NoError(t, svc.db.Model(&types.LegalProvisionLinkCandidate{}).Where("id = ?", c.ID).Update("amender_doc_id", "nd200").Error)
+	got, err = svc.CandidateMentions(ctx, c.ID)
+	require.NoError(t, err)
+	require.False(t, got.Held)
+	require.Equal(t, LegalTextNotHeld, got.Reason)
+	require.Empty(t, got.Passages)
+
+	_, err = svc.CandidateMentions(ctx, 999999)
+	require.Error(t, err)
 }

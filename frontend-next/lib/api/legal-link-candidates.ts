@@ -159,6 +159,8 @@ export function listLegalHeldProvisions(docId: string): Promise<{ success: boole
 export interface LegalLinkRecheckResult {
   checked: number;
   resolved: number;
+  rematch_checked: number;
+  rematched: number;
   matched: number;
   auto_approved: number;
   duplicates: number;
@@ -179,4 +181,22 @@ export function decideLegalLinkCandidates(body: {
   note?: string;
 }): Promise<{ success: boolean; data: { done: number[]; failed: { id: number; error: string }[] } }> {
   return apiPost("/api/v1/system/legal-link-candidates/decide-batch", body);
+}
+
+/** Search hits in the amending document for a link that names no provision
+ * of it: passages mentioning the amended document's number (and, unless
+ * weak, the Điều the link is on). Not the linked provision. */
+export interface LegalLinkMentions {
+  candidate_id: number;
+  amender_doc_id: string;
+  held: boolean;
+  target_number: string;
+  target_article?: string;
+  passages: { chunk_id: string; article?: string; text: string; weak: boolean }[];
+  weak: boolean;
+  reason?: "no_amender" | "not_held" | "no_target_number";
+}
+
+export function getLegalLinkMentions(candidateId: number): Promise<{ success: boolean; data: LegalLinkMentions }> {
+  return apiGet(`/api/v1/system/legal-link-candidates/mentions?candidate_id=${candidateId}`);
 }

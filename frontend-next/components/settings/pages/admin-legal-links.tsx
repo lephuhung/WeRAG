@@ -36,7 +36,7 @@ import {
   type LegalLinkTargetGroup,
 } from "@/lib/api/legal-link-candidates";
 import { provisionLabel } from "@/lib/legal-provision-label";
-import { buildLinkGraph, isApprovable, nextApprovable } from "@/lib/legal-link-graph";
+import { amenderChips, buildLinkGraph, defaultFocus, isApprovable, nextApprovable } from "@/lib/legal-link-graph";
 import { LinkDiagram, LinkDiagramLegend } from "@/components/legal-links/link-diagram";
 import { LinkConfirmPanel, MatchBadge } from "@/components/legal-links/link-confirm-panel";
 import { LinkGroupPanel } from "@/components/legal-links/link-group-panel";
@@ -70,7 +70,9 @@ export default function LegalLinksSection({ onDenied }: { onDenied?: () => void 
   const [listCands, setListCands] = useState<LegalLinkCandidate[]>([]);
   const [candsLoading, setCandsLoading] = useState(false);
   const [error, setError] = useState("");
-  const [showRejected, setShowRejected] = useState(false);
+  const [undecidedOnly, setUndecidedOnly] = useState(true);
+  /** per document: the focused amending document (null = all); unset → defaultFocus */
+  const [focusByDoc, setFocusByDoc] = useState<Record<string, string | null>>({});
   const [collapsed, setCollapsed] = useState<Record<string, Set<string>>>({});
   const [panel, setPanel] = useState<Panel>(null);
   const [skipped, setSkipped] = useState<Set<number>>(new Set());
@@ -145,10 +147,16 @@ export default function LegalLinksSection({ onDenied }: { onDenied?: () => void 
   const doc = docs.find((d) => d.target_doc_id === selected);
   const docLabel = doc ? docName(doc.document, doc.target_doc_id) : "";
   const byId = useMemo(() => new Map(cands.map((c) => [c.id, c])), [cands]);
+  const chips = useMemo(() => amenderChips(cands), [cands]);
+  const focus = selected in focusByDoc ? focusByDoc[selected] : defaultFocus(chips);
+  const setFocus = (id: string | null) => setFocusByDoc((cur) => ({ ...cur, [selected]: id }));
   const graph = useMemo(
-    () => buildLinkGraph(cands, { showRejected, collapsedGroups: collapsed[selected] }),
-    [cands, showRejected, collapsed, selected],
+    () => buildLinkGraph(cands, { undecidedOnly, focusGroup: focus, collapsedGroups: collapsed[selected] }),
+    [cands, undecidedOnly, focus, collapsed, selected],
   );
+  /** every undecided link of A: where "review in turn" goes once the
+   * focused document is done */
+  const allUndecided = useMemo(() => buildLinkGraph(cands, { undecidedOnly: true }), [cands]);
 
   const toggleGroup = (gid: string) => {
     setCollapsed((cur) => {
@@ -168,9 +176,9 @@ export default function LegalLinksSection({ onDenied }: { onDenied?: () => void 
       const res = await recheckLegalLinkCandidates();
       const r = res.data;
       toast.success(
-        r && r.resolved > 0
-          ? t("llink.recheckDone", { n: r.resolved, auto: r.auto_approved })
-          : t("llink.recheckNone", { n: r?.checked ?? 0 }),
+        r && (r.resolved > 0 || r.rematched > 0)
+          ? t("llink.recheckDone", { n: r.resolved, m: r.rematched, auto: r.auto_approved })
+          : t("llink.recheckNone", { n: (r?.checked ?? 0) + (r?.rematch_checked ?? 0) }),
       );
       clearProvisionTextCache();
       await refresh();
@@ -181,17 +189,24 @@ export default function LegalLinksSection({ onDenied }: { onDenied?: () => void 
     }
   };
 
-  const openNext = (after: number | null, skip: Set<number>) => {
-    const next = nextApprovable(graph, after, skip);
+  /** The next link to decide: in the focused document first, then in the
+   * next document (the focus follows it). */
+  const findNext = (after: number | null, skip: Set<number>) => {
+    const here = nextApprovable(graph, after, skip);
+    if (here || !focus) return here;
+    return nextApprovable(allUndecided, null, skip);
+  };
+  const goTo = (next: ReturnType<typeof findNext>) => {
+    if (next && focus && next.groupId !== focus) setFocus(next.groupId);
     setPanel(next ? { kind: "edge", id: next.candidateId } : null);
   };
+  const openNext = (after: number | null, skip: Set<number>) => goTo(findNext(after, skip));
 
   const afterDecision = async (id: number, action: "approve" | "reject") => {
     toast.success(t(action === "approve" ? "llink.approved" : "llink.rejected"));
     const skip = new Set(skipped).add(id);
     // the next link to decide in the graph as it was, then reload
-    const next = view === "diagram" ? nextApprovable(graph, id, skip) : null;
-    setPanel(next ? { kind: "edge", id: next.candidateId } : null);
+    goTo(view === "diagram" ? findNext(id, skip) : null);
     await refresh();
   };
 
@@ -312,15 +327,19 @@ export default function LegalLinksSection({ onDenied }: { onDenied?: () => void 
                         {t("llink.diagram.start", { n: pendingEdges.length })}
                       </button>
                     )}
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAllCollapsed(false)}>
-                      {t("llink.diagram.expandAll")}
-                    </button>
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAllCollapsed(true)}>
-                      {t("llink.diagram.collapseAll")}
-                    </button>
+                    {!focus && (
+                      <>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAllCollapsed(false)}>
+                          {t("llink.diagram.expandAll")}
+                        </button>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAllCollapsed(true)}>
+                          {t("llink.diagram.collapseAll")}
+                        </button>
+                      </>
+                    )}
                     <label className="caption inline-flex items-center gap-1.5 text-body">
-                      <input type="checkbox" checked={showRejected} onChange={(e) => setShowRejected(e.target.checked)} />
-                      {t("llink.diagram.showRejected", { n: doc.rejected })}
+                      <input type="checkbox" checked={undecidedOnly} onChange={(e) => setUndecidedOnly(e.target.checked)} />
+                      {t("llink.diagram.undecidedOnly")}
                     </label>
                   </div>
                 </div>
@@ -329,19 +348,42 @@ export default function LegalLinksSection({ onDenied }: { onDenied?: () => void 
                     {t("llink.docs.notHeldHelp", { doc: docLabel })}
                   </Notice>
                 )}
+                {chips.length > 0 && (
+                  <PillGroup ariaLabel={t("llink.chips.aria")} className="mb-3 flex-wrap">
+                    {chips.map((c) => (
+                      <Pill key={c.id} active={focus === c.id} onClick={() => setFocus(c.id)}>
+                        <span className="font-semibold">{c.number || "—"}</span>
+                        <span className="ml-1.5 text-[11px] opacity-80">
+                          {c.approvable > 0
+                            ? t("llink.docs.toReview", { n: c.approvable })
+                            : c.blocked > 0
+                              ? t("llink.chips.waiting")
+                              : c.pending > 0
+                                ? t("llink.chips.needFix", { n: c.pending })
+                                : t("llink.chips.done")}
+                        </span>
+                      </Pill>
+                    ))}
+                    <Pill active={!focus} onClick={() => setFocus(null)}>
+                      {t("llink.chips.all")}
+                    </Pill>
+                  </PillGroup>
+                )}
                 <div className="mb-3">
                   <LinkDiagramLegend />
                 </div>
-                <div className="max-h-[75vh] overflow-y-auto rounded-[14px] border border-hairline bg-canvas-soft p-3">
+                <div data-diagram-scroll className="max-h-[75vh] overflow-y-auto rounded-[14px] border border-hairline bg-canvas-soft p-3">
                   {candsLoading && cands.length === 0 ? (
                     <p className="caption py-8 text-center text-muted">{t("common.loading")}</p>
                   ) : graph.edges.length === 0 ? (
-                    <p className="caption py-8 text-center text-muted">{t("llink.empty")}</p>
+                    <p className="caption py-8 text-center text-muted">
+                      {undecidedOnly && cands.length > 0 ? t("llink.diagram.allDecided") : t("llink.empty")}
+                    </p>
                   ) : (
                     <>
                       <div className="caption mb-2 flex justify-between text-muted">
                         <span>{t("llink.diagram.leftHead", { doc: docLabel })}</span>
-                        <span>{t("llink.diagram.rightHead")}</span>
+                        <span>{focus ? t("llink.diagram.rightHeadOne") : t("llink.diagram.rightHead")}</span>
                       </div>
                       <LinkDiagram
                         graph={graph}

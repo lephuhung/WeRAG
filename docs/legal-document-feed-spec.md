@@ -915,8 +915,15 @@ API (JWT SuperAdmin):
 - `POST /system/legal-link-candidates/recheck` body `{"target_doc_id?"}`:
   phân giải lại B của các ứng viên `pending` chưa có `amender_doc_id` (cùng
   luật với lúc đẩy, không đoán khi nhiều văn bản cùng số hiệu); khớp đủ hai
-  bên thì tự duyệt theo cùng công tắc `legal.feed.auto_approve_matched`. Cũng
-  chạy sau mỗi lần đẩy thành công cho số hiệu của văn bản vừa đẩy.
+  bên thì tự duyệt theo cùng công tắc `legal.feed.auto_approve_matched`. Lượt
+  hai khớp lại các ứng viên `pending` đã biết B, có `source_path`, đang
+  `doc_only`/`target_missing` (bản lưu có thể vừa phân tích xong): chỉ nâng,
+  không hạ trạng thái (`rematched`). Cũng chạy sau mỗi lần đẩy thành công cho
+  văn bản vừa đẩy.
+- `GET /system/legal-link-candidates/mentions?candidate_id=` → tối đa 3 đoạn
+  (~600 ký tự) trong bản lưu của B nhắc số hiệu A cùng "Điều N" của liên kết;
+  không có thì các đoạn chỉ nhắc số hiệu A (`weak`). Là kết quả tìm, không
+  phải điều khoản được liên kết.
 - `POST /system/legal-link-candidates/decide-batch` body
   `{"ids":[…≤200],"action":"approve"|"reject","note?"}` → `{done, failed}`.
 

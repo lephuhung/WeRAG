@@ -11,7 +11,12 @@ import { IconExternal } from "@/components/icons";
 import { useT } from "@/lib/i18n";
 import { userErrorMessage } from "@/lib/user-error";
 import { provisionLabel } from "@/lib/legal-provision-label";
-import { getLegalProvisionText, type LegalProvisionText } from "@/lib/api/legal-link-candidates";
+import {
+  getLegalLinkMentions,
+  getLegalProvisionText,
+  type LegalLinkMentions,
+  type LegalProvisionText,
+} from "@/lib/api/legal-link-candidates";
 
 const cache = new Map<string, Promise<LegalProvisionText>>();
 
@@ -114,6 +119,61 @@ export function ProvisionTextBox({
           <IconExternal className="h-3 w-3" />
         </a>
       )}
+    </div>
+  );
+}
+
+const mentionCache = new Map<number, Promise<LegalLinkMentions>>();
+
+function fetchMentions(id: number): Promise<LegalLinkMentions> {
+  let p = mentionCache.get(id);
+  if (!p) {
+    p = getLegalLinkMentions(id).then((r) => r.data);
+    p.catch(() => mentionCache.delete(id));
+    mentionCache.set(id, p);
+  }
+  return p;
+}
+
+/* For a link naming no provision of the amending document: passages of
+ * its stored text that mention the amended document (and the Điều the link
+ * is on). Shown as search hits under their own heading — never as the
+ * linked provision. */
+export function MentionsBox({ candidateId, targetLabel, compact = false }: { candidateId: number; targetLabel?: string; compact?: boolean }) {
+  const { t } = useT();
+  const [state, setState] = useState<{ id: number; data?: LegalLinkMentions; error?: unknown }>({ id: 0 });
+  useEffect(() => {
+    let alive = true;
+    fetchMentions(candidateId).then(
+      (data) => alive && setState({ id: candidateId, data }),
+      (error) => alive && setState({ id: candidateId, error }),
+    );
+    return () => {
+      alive = false;
+    };
+  }, [candidateId]);
+  const cur = state.id === candidateId ? state : { id: candidateId };
+  const data = cur.data;
+  if (data && !data.held) return null; // the text box already says it is not held
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-hairline pt-2">
+      <div className="caption font-medium text-muted">
+        {targetLabel ? t("llink.mentions.titleFor", { prov: targetLabel }) : t("llink.mentions.title")}
+      </div>
+      {!data && !cur.error && <p className="caption text-muted">{t("common.loading")}</p>}
+      {!!cur.error && <p className="caption text-error">{userErrorMessage(cur.error, t, "llink.mentions.failed")}</p>}
+      {data && data.passages.length === 0 && (
+        <p className="caption text-muted">{t("llink.mentions.none", { doc: data.target_number || "—" })}</p>
+      )}
+      {data && data.weak && data.passages.length > 0 && (
+        <p className="caption text-warning">{t("llink.mentions.weak", { doc: data.target_number })}</p>
+      )}
+      {data?.passages.slice(0, compact ? 2 : 3).map((p) => (
+        <div key={p.chunk_id} className="rounded-[8px] border border-dashed border-hairline-strong px-2 py-1.5">
+          {p.article && <div className="caption font-medium text-muted">{t("llink.mentions.in", { article: p.article })}</div>}
+          <div className={`caption whitespace-pre-wrap text-body ${compact ? "line-clamp-6" : ""}`}>{p.text}</div>
+        </div>
+      ))}
     </div>
   );
 }

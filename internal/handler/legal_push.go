@@ -402,3 +402,32 @@ func (h *LegalPushHandler) DecideLegalLinkCandidatesBatch(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": res})
 }
+
+// GetLegalLinkCandidateMentions godoc
+// @Summary      Passages of the amending document that mention the link
+// @Description  For a link naming no provision of the amending document B:
+// @Description  up to 3 passages of B's public-KB copy mentioning the amended
+// @Description  document's số hiệu and the Điều the link is on (~600
+// @Description  characters each); when none names the Điều, passages naming
+// @Description  the document only, flagged weak. Search hits, not the linked
+// @Description  provision.
+// @Tags         Rà soát pháp lý
+// @Produce      json
+// @Param        candidate_id query int true "Candidate ID"
+// @Success      200 {object} map[string]interface{} "Passages"
+// @Router       /system/legal-link-candidates/mentions [get]
+func (h *LegalPushHandler) GetLegalLinkCandidateMentions(c *gin.Context) {
+	ctx := c.Request.Context()
+	id, err := strconv.ParseInt(c.Query("candidate_id"), 10, 64)
+	if err != nil || id <= 0 {
+		c.Error(errors.NewBadRequestError("invalid candidate_id"))
+		return
+	}
+	res, err := h.svc.CandidateMentions(ctx, id)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": res})
+}

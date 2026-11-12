@@ -37,6 +37,11 @@ func legalPushTestHandler(t *testing.T) *handler.LegalPushHandler {
 			t.Fatal(err)
 		}
 	}
+	// candidate 1: an unknown amender (the mentions route answers without B)
+	if err := db.Create(&types.LegalProvisionLinkCandidate{ID: 1, Feed: "tvpl", FeedDocID: "1", TargetDocID: "a", Op: "sua_doi",
+		MatchStatus: types.LegalLinkUnresolved, ReviewStatus: types.LegalLinkReviewPending}).Error; err != nil {
+		t.Fatal(err)
+	}
 	return handler.NewLegalPushHandler(service.NewLegalPushService(db, nil, nil, nil, nil), nil)
 }
 
@@ -63,6 +68,7 @@ var legalLinkReviewRoutes = []struct{ method, path, body string }{
 	{http.MethodGet, "/api/v1/system/legal-link-candidates/provision-text?doc_id=x&path=dieu:1", ""},
 	{http.MethodGet, "/api/v1/system/legal-link-candidates/provisions?doc_id=x", ""},
 	{http.MethodPost, "/api/v1/system/legal-link-candidates/recheck", `{}`},
+	{http.MethodGet, "/api/v1/system/legal-link-candidates/mentions?candidate_id=1", ""},
 	{http.MethodPost, "/api/v1/system/legal-link-candidates/decide-batch", `{"ids":[1],"action":"reject"}`},
 }
 
