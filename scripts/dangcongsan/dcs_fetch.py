@@ -94,7 +94,7 @@ class Fetcher:
         key = hashlib.sha1(url.encode()).hexdigest()
         return os.path.join(self.cache, kind, key[:2], key)
 
-    def get(self, url: str, kind: str, refresh: bool = False, limit: int = MAX_FILE) -> bytes:
+    def get(self, url: str, kind: str, refresh: bool = False, limit: int = MAX_FILE, fallback: bool = True) -> bytes:
         path = self.path_for(url, kind)
         if not refresh and os.path.exists(path):
             with open(path, "rb") as f:
@@ -104,7 +104,7 @@ class Fetcher:
         except Exception:
             # a page loaded again that fails now keeps its cached copy: a
             # passing network error must not empty a known document
-            if refresh and os.path.exists(path):
+            if refresh and fallback and os.path.exists(path):
                 print(f"refresh of {url} failed, cached copy kept", file=sys.stderr, flush=True)
                 with open(path, "rb") as f:
                     return f.read()
@@ -231,7 +231,12 @@ def crawl(site: str, fx: Fetcher, with_files: bool, max_pages: int, log) -> list
     while page <= max_pages:
         recent = page <= fx.refresh_pages
         list_url = f"{base}{path}?pageNo={page}"
-        html = fx.get(list_url, f"list-{site}", refresh=fx.refresh_lists or recent).decode("utf-8", "replace")
+        # no cached fallback for a listing page: a portal that cannot be
+        # reached must fail the run, not look like a quiet day
+        try:
+            html = fx.get(list_url, f"list-{site}", refresh=fx.refresh_lists or recent, fallback=False).decode("utf-8", "replace")
+        except urllib.error.HTTPError as e:
+            raise RuntimeError(f"{site}: listing page {page}: HTTP {e.code}") from e
         rows = parse_listing(html)
         if not rows and page == 1:
             # page 1 always has rows: a maintenance or block page, not the end

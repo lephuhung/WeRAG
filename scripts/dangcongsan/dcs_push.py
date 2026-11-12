@@ -77,6 +77,8 @@ def post(api: str, path: str, headers: dict, fields: dict, filename: str = "", c
             return e.code, json.loads(raw)
         except ValueError:
             return e.code, {"raw": raw[:500]}
+    except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+        return 0, {"error": {"message": f"transport: {e}"}}
 
 
 def merged_pdf(parts: list[dict]) -> tuple[bytes, int, list[str]]:
@@ -180,7 +182,7 @@ def main(argv=None) -> int:
             mh = meta_hash(md)
             if e["case"] not in cases or is_done(done, sid, act, mh):
                 continue
-            if act == "queue" and is_done(done, sid, "scan", mh):
+            if act == "queue" and (sid, "scan", "*") in done:
                 continue  # an OCR draft waits for review: TVPL text must not race it
             if a.only and md["doc_number"] not in a.only and sid not in a.only:
                 continue
@@ -230,12 +232,12 @@ def main(argv=None) -> int:
                 print(f"STOP: the API refused the credentials (HTTP {code}): {json.dumps(body, ensure_ascii=False)[:300]}",
                       file=sys.stderr)
                 return 3
-            if code == 0 or code == 429 or code >= 500:
-                server_errors += 1
+            if not (200 <= code < 300 or code == 409 or code in FINAL_REFUSALS):
+                server_errors += 1  # 404/405/413 (wrong WERAG_API?), 429, 5xx, transport
             if act == "scan" and code == 200 and res.get("pages", 0) > SYNC_OCR_PAGES and not data.get("existing"):
                 time.sleep(a.sec_per_page * res["pages"])
     if server_errors:
-        print(f"{server_errors} pushes failed on the server side (5xx/429/transport): retried next run", file=sys.stderr)
+        print(f"{server_errors} pushes failed (HTTP 404/429/5xx, transport…): retried next run", file=sys.stderr)
         return 4
     return 0
 
