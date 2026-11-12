@@ -141,7 +141,11 @@ export function TenantMembers() {
         if (demotingSelf) {
           /* The token's role changed: reload the account, and leave this
            * admin page unless SuperAdmin rights still cover it. */
-          await auth.refreshMe();
+          try {
+            await auth.refreshMe();
+          } catch {
+            /* the role change is saved; the next load picks the account up */
+          }
           if (!isSystemAdmin) {
             router.push("/platform/knowledge-bases");
             return;

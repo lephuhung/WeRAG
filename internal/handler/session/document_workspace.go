@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	stderrors "errors"
 	"fmt"
 	"io"
@@ -32,6 +33,13 @@ import (
 func sessionLookupFailed(c *gin.Context, err error) {
 	if stderrors.Is(err, apperrors.ErrSessionNotFound) || stderrors.Is(err, gorm.ErrRecordNotFound) {
 		_ = c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	if stderrors.Is(err, context.Canceled) || stderrors.Is(err, context.DeadlineExceeded) {
+		// the client left or the request ran out of time: nobody reads an
+		// answer, and it is no server fault (nginx's 499)
+		logger.Warnf(c.Request.Context(), "document workspace: session lookup ended: %v", err)
+		c.AbortWithStatus(499)
 		return
 	}
 	logger.Errorf(c.Request.Context(), "document workspace: session lookup failed: %v", err)

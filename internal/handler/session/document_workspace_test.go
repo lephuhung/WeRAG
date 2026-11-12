@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -164,6 +165,9 @@ type ownerOnlySessions struct {
 // Like the service: a missing or not-own session is ErrSessionNotFound;
 // failing ids stand for a database outage.
 func (s *ownerOnlySessions) GetSession(_ context.Context, id string) (*types.Session, error) {
+	if id == "gone" {
+		return nil, fmt.Errorf("load session: %w", context.Canceled)
+	}
 	if s.failing[id] {
 		return nil, errors.New("dial tcp 10.0.0.5:5432: connection refused")
 	}
@@ -174,6 +178,9 @@ func (s *ownerOnlySessions) GetSession(_ context.Context, id string) (*types.Ses
 }
 
 func (s *ownerOnlySessions) GetOwnedSession(_ context.Context, id string) (*types.Session, error) {
+	if id == "gone" {
+		return nil, fmt.Errorf("load session: %w", context.Canceled)
+	}
 	if s.failing[id] {
 		return nil, errors.New("dial tcp 10.0.0.5:5432: connection refused")
 	}
@@ -576,6 +583,8 @@ func TestDocumentWorkspaceSessionLookupErrors(t *testing.T) {
 		{http.MethodGet, "/sessions/broken/documents/ws-mine", http.StatusInternalServerError},
 		{http.MethodDelete, "/sessions/other/documents/ws-mine", http.StatusNotFound},
 		{http.MethodDelete, "/sessions/broken/documents/ws-mine", http.StatusInternalServerError},
+		{http.MethodGet, "/sessions/gone/documents/ws-mine", 499},
+		{http.MethodDelete, "/sessions/gone/documents/ws-mine", 499},
 	}
 	for _, tc := range cases {
 		rec := doJSON(r, tc.method, tc.path, "", nil)

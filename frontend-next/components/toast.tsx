@@ -132,8 +132,9 @@ function ToastRow({
   return (
     <div
       role={item.kind === "error" ? "alert" : "status"}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      /* a tap is not a hover: touch would pause the toast for good */
+      onPointerEnter={(e) => e.pointerType !== "touch" && setHovered(true)}
+      onPointerLeave={(e) => e.pointerType !== "touch" && setHovered(false)}
       onFocus={() => setFocused(true)}
       onBlur={(e) => {
         if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFocused(false);

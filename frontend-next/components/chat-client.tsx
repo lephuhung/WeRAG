@@ -845,7 +845,7 @@ function ChatBody({ id }: { id: string }) {
     ]);
     if (!o || o.applied < 1) {
       void checkLegalBasisStale();
-      throw new Error(editorProblem(o));
+      throw new UserFacingError(editorProblem(o));
     }
   };
   // The report's per-finding review, run in the visible editor: it must
@@ -864,7 +864,7 @@ function ChatBody({ id }: { id: string }) {
     const op = findingSelectOp(finding);
     if (!op) return;
     const o = await findingEditor().runOps([op]);
-    if (!o || o.applied < 1) throw new Error(editorProblem(o));
+    if (!o || o.applied < 1) throw new UserFacingError(editorProblem(o));
   };
   // reads the paragraph back: true when it has the op's formatting; a
   // plugin that cannot read it back is an error, not a "no"
@@ -873,7 +873,7 @@ function ChatBody({ id }: { id: string }) {
     if (o && o.applied === 1) return true;
     const err = o?.failed[0]?.error ?? "";
     if (o && /^format differs/.test(err)) return false;
-    throw new Error(editorProblem(o, err));
+    throw new UserFacingError(editorProblem(o, err));
   };
   const applyFinding = async (finding: FormatFinding, revision: number) => {
     const doc = formatCheckDoc;
@@ -885,11 +885,14 @@ function ChatBody({ id }: { id: string }) {
     if (!view || view.revision !== revision) throw new UserFacingError(tr("docws.fcRvStale"));
     const op = finding.ops[0];
     const o = await editor.runOps([op, findingCheckOp(op)]);
-    if (!o) throw new Error(editorProblem(null));
+    if (!o) throw new UserFacingError(editorProblem(null));
     const failed = new Map(o.failed.map((f) => [f.index, f.error]));
     if (failed.has(0)) {
       const err = failed.get(0) ?? "";
-      throw new Error(/anchor not found/.test(err) ? tr("docws.spGoToFailed") : tr("docws.fcRvFailed", { error: err }));
+      if (/anchor not found/.test(err)) throw new UserFacingError(tr("docws.spGoToFailed"));
+      // the plugin's own error stays in the console, not in the message
+      console.warn("[format review] apply failed:", err);
+      throw new UserFacingError(tr("docws.fcRvFailed", { error: tr("err.generic") }));
     }
     const checkErr = failed.get(1);
     if (checkErr !== undefined && !/^format differs/.test(checkErr)) return { verified: false };
