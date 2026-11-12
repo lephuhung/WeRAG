@@ -8,10 +8,10 @@ import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { updateMyProfile, uploadMyAvatar } from "@/lib/api/auth";
 import { useAvatarUrl } from "@/lib/avatar";
-import { ApiError } from "@/lib/api-client";
 import { WorkContextForm } from "@/components/settings/work-context-form";
 import { useToast } from "@/components/toast";
 import { Notice } from "@/components/settings/notice";
+import { registerErrorKey, userErrorMessage } from "@/lib/user-error";
 
 const AVATAR_MAX_BYTES = 5 * 1024 * 1024;
 
@@ -52,7 +52,8 @@ export function ProfileSettings() {
       await auth.refreshMe();
       toast.success(t("common.saved"));
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : t("common.error"));
+      const key = registerErrorKey(e);
+      setError(key ? t(key) : userErrorMessage(e, t, "common.error"));
     } finally {
       setSaving(false);
     }
@@ -75,7 +76,7 @@ export function ProfileSettings() {
       if (!res.success) throw new Error(res.message || t("common.error"));
       await auth.refreshMe();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("common.error"));
+      setError(userErrorMessage(e, t, "common.error"));
     } finally {
       setUploadingAvatar(false);
     }

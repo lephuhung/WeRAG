@@ -25,6 +25,7 @@ import {
 import type { TenantRole } from "@/lib/api/tenants";
 import { ApiError } from "@/lib/api-client";
 import { formatDate } from "@/lib/datetime";
+import { userErrorMessage } from "@/lib/user-error";
 
 const initials = (name: string) =>
   name
@@ -118,7 +119,7 @@ export default function SystemUsers() {
       setError("");
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) setAllowed(false);
-      else setError(e instanceof Error ? e.message : t("usrp.loadFailed"));
+      else setError(userErrorMessage(e, t, "usrp.loadFailed"));
     } finally {
       setLoading(false);
       setLoaded(true);
@@ -169,7 +170,7 @@ export default function SystemUsers() {
       await load(q.trim(), page);
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("usrp.opFailed"));
+      setError(userErrorMessage(e, t, "usrp.opFailed"));
       return false;
     } finally {
       setBusy(false);
@@ -258,7 +259,7 @@ export default function SystemUsers() {
       setDetail((d) => (d && d.id === u.id ? patchMembershipRole(d, tenantId, role) : d));
       toast.success(t("common.saved"));
     } catch (e) {
-      setDetailError(e instanceof Error ? e.message : t("usrp.roleFailed"));
+      setDetailError(userErrorMessage(e, t, "usrp.roleFailed"));
     } finally {
       setRoleBusy(null);
     }

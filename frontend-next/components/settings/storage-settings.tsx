@@ -22,6 +22,7 @@ import { FieldLabel } from "@/components/settings/field";
 import { ROW_HOVER } from "@/components/settings/data-table";
 import { ConsolePage } from "@/components/settings/console-page";
 import { useToast } from "@/components/toast";
+import { userErrorMessage } from "@/lib/user-error";
 
 const EMPTY_FORM = {
   name: "",
@@ -62,7 +63,7 @@ export function StorageSettings() {
         setDenied(true);
         setBackends([]);
       } else {
-        setError(e instanceof Error ? e.message : t("stor.loadFailed"));
+        setError(userErrorMessage(e, t, "stor.loadFailed"));
       }
     } finally {
       setLoading(false);
@@ -85,7 +86,7 @@ export function StorageSettings() {
         setDenied(true);
         return;
       }
-      setError(e instanceof Error ? e.message : t("stor.setDefaultFailed"));
+      setError(userErrorMessage(e, t, "stor.setDefaultFailed"));
     }
   };
 
@@ -107,7 +108,7 @@ export function StorageSettings() {
         setDenied(true);
         return;
       }
-      setError(e instanceof Error ? e.message : t("stor.deleteFailed"));
+      setError(userErrorMessage(e, t, "stor.deleteFailed"));
     }
   };
 
@@ -142,7 +143,7 @@ export function StorageSettings() {
         setModalOpen(false);
         return;
       }
-      setFormError(err instanceof Error ? err.message : t("stor.createFailed"));
+      setFormError(userErrorMessage(err, t, "stor.createFailed"));
     } finally {
       setSubmitting(false);
     }

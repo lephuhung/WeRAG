@@ -18,6 +18,7 @@ import {
 import { listModels, type ModelConfig } from "@/lib/api/models";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { userErrorMessage } from "@/lib/user-error";
 
 const DEFAULT_CONFIG: MemoryConfig = {
   enabled: false,
@@ -65,7 +66,7 @@ export function MemoryWorkspaceSettings() {
       }
       setModels(mdlRes);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("memw.loadFailed"));
+      setError(userErrorMessage(e, t, "memw.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -88,7 +89,7 @@ export function MemoryWorkspaceSettings() {
         setError(t("memw.saveFailed"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("memw.saveFailed"));
+      setError(userErrorMessage(e, t, "memw.saveFailed"));
     } finally {
       setSaving(false);
     }

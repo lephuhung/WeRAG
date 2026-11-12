@@ -6,6 +6,7 @@ import { createPublicKnowledgeBase } from "@/lib/api/knowledge";
 import { buildPublicCreatePayload } from "@/lib/kb-public";
 import { useTenantRole } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { userErrorMessage } from "@/lib/user-error";
 
 /* Explicit-SuperAdmin-only platform-public KB creation. The request carries
  * only name/description/type — tenant storage backends, vector-store
@@ -36,7 +37,7 @@ export default function NewPublicKnowledgeBase() {
           : null;
       router.push(id ? `/platform/knowledge-bases/${id}` : "/platform/knowledge-bases");
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("ui.err.createFailed"));
+      setError(userErrorMessage(err, t, "ui.err.createFailed"));
     } finally {
       setBusy(false);
     }

@@ -7,6 +7,7 @@ import { AuthCard } from "@/components/auth/auth-card";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { ApiError, apiGet, apiPost } from "@/lib/api-client";
+import { userErrorMessage } from "@/lib/user-error";
 
 /* Approval screen of the browser sign-in (device code) used by clients that
  * must not ask for a password. The client opens its page with
@@ -99,7 +100,7 @@ function DeviceLoginApproval({ kind }: { kind: DeviceLoginKind }) {
       setPhase(approve ? "approved" : "denied");
     } catch (e) {
       if (e instanceof ApiError && (e.status === 404 || e.status === 409)) setPhase("expired");
-      else setError(t("wordLogin.failed", { error: e instanceof Error ? e.message : String(e) }));
+      else setError(t("wordLogin.failed", { error: userErrorMessage(e, t, "err.generic") }));
     } finally {
       setBusy(false);
     }

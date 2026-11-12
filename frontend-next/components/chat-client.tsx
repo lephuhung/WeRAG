@@ -125,6 +125,7 @@ import {
   stepsFromHistory,
   type AgentStepItem,
 } from "@/components/chat/agent-steps";
+import { UserFacingError, userErrorMessage, withUserFacingCause } from "@/lib/user-error";
 
 const NO_SESSION_DOCS: SessionDocument[] = [];
 
@@ -465,16 +466,16 @@ function ChatBody({ id }: { id: string }) {
    * switches to the document's tab); the outcome comes back to the card. */
   const applyProposal = useCallback(
     async (proposal: RewriteProposal, variant: RewriteVariant) => {
-      if (id === "new") throw new Error(tr("docws.proposal.docClosed"));
+      if (id === "new") throw new UserFacingError(tr("docws.proposal.docClosed"));
       if (!openDocs.some((d) => d.id === proposal.documentId && d.role !== "source")) {
-        throw new Error(tr("docws.proposal.docClosed"));
+        throw new UserFacingError(tr("docws.proposal.docClosed"));
       }
       const batch = proposalOpsBatch(proposal, variant);
       // sent before without landing (the editor skips a batch it has seen)
       if (readAppliedBatches(safeLocalStorage(), id).includes(batch.batchId)) {
-        throw new Error(tr("docws.proposal.notFound"));
+        throw new UserFacingError(tr("docws.proposal.notFound"));
       }
-      await applyRewriteProposal(id, proposal.documentId, proposal.batchId, variant.id);
+      await withUserFacingCause(applyRewriteProposal(id, proposal.documentId, proposal.batchId, variant.id), tr, "err.generic");
       setDocOpsBatches((prev) => (prev.some((b) => b.batchId === batch.batchId) ? prev : [...prev, batch]));
     },
     [id, openDocs, tr],
@@ -501,15 +502,15 @@ function ChatBody({ id }: { id: string }) {
    * op goes to the editor; the outcome comes back to the card. */
   const insertIllustration = useCallback(
     async (ill: Illustration, picture: RasterImage) => {
-      if (id === "new" || !ill.documentId || !ill.anchor) throw new Error(tr("docws.proposal.docClosed"));
+      if (id === "new" || !ill.documentId || !ill.anchor) throw new UserFacingError(tr("docws.proposal.docClosed"));
       if (!openDocs.some((d) => d.id === ill.documentId && d.role !== "source")) {
-        throw new Error(tr("docws.proposal.docClosed"));
+        throw new UserFacingError(tr("docws.proposal.docClosed"));
       }
       const batch = illustrationOpsBatch(ill, picture.dataUrl, picture);
       if (readAppliedBatches(safeLocalStorage(), id).includes(batch.batchId)) {
-        throw new Error(tr("docws.illustration.notInserted"));
+        throw new UserFacingError(tr("docws.illustration.notInserted"));
       }
-      await applyRewriteProposal(id, ill.documentId, ill.batchId, "v1", "illustration");
+      await withUserFacingCause(applyRewriteProposal(id, ill.documentId, ill.batchId, "v1", "illustration"), tr, "err.generic");
       setDocOpsBatches((prev) => (prev.some((b) => b.batchId === batch.batchId) ? prev : [...prev, batch]));
     },
     [id, openDocs, tr],
@@ -644,7 +645,7 @@ function ChatBody({ id }: { id: string }) {
       toast.info(tr("docws.fcStarted"), undefined, 8_000);
       requestDocRecheck();
     } catch (e) {
-      toast.error(tr("docws.fcStartFailed", { error: e instanceof Error ? e.message : String(e) }));
+      toast.error(tr("docws.fcStartFailed", { error: userErrorMessage(e, tr, "err.generic") }));
     }
   };
   useEffect(() => {
@@ -696,7 +697,7 @@ function ChatBody({ id }: { id: string }) {
       setFormatReportOpen(false);
       toast.success(tr("docws.fcMarkDone", { n: batch.ops.length }));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      toast.error(userErrorMessage(e, tr, "docws.fcMarkFailed", { prefix: true }));
     }
   };
   // "Rà soát căn cứ pháp lý": the visible document's citations checked
@@ -738,7 +739,7 @@ function ChatBody({ id }: { id: string }) {
       legalBasisMarkedRef.current = false;
     } catch (e) {
       if (legalBasis?.doc.id !== doc.id) setLegalBasisOpen(false);
-      toast.error(tr("docws.lbFailed", { error: e instanceof Error ? e.message : String(e) }));
+      toast.error(tr("docws.lbFailed", { error: userErrorMessage(e, tr, "err.generic") }));
     } finally {
       setLegalBasisBusy(false);
     }
@@ -833,7 +834,7 @@ function ChatBody({ id }: { id: string }) {
     applyLegalBasisMarksFor(chatLegalBasisTarget(item), ops);
   const locateLegalBasis = async (p: LegalBasisPosition) => {
     const editor = editorActionsRef.current;
-    if (!editor || !legalBasis || editor.documentId !== legalBasis.doc.id) throw new Error(tr("docws.lbOtherDoc"));
+    if (!editor || !legalBasis || editor.documentId !== legalBasis.doc.id) throw new UserFacingError(tr("docws.lbOtherDoc"));
     const o = await editor.runOps([
       {
         op: "select",
@@ -844,14 +845,14 @@ function ChatBody({ id }: { id: string }) {
     ]);
     if (!o || o.applied < 1) {
       void checkLegalBasisStale();
-      throw new Error(editorProblem(o));
+      throw new UserFacingError(editorProblem(o));
     }
   };
   // The report's per-finding review, run in the visible editor: it must
   // show the checked document (another tab → open it first).
   const findingEditor = () => {
     const editor = editorActionsRef.current;
-    if (!editor || !formatCheckDoc || editor.documentId !== formatCheckDoc.id) throw new Error(tr("docws.fcRvOtherDoc"));
+    if (!editor || !formatCheckDoc || editor.documentId !== formatCheckDoc.id) throw new UserFacingError(tr("docws.fcRvOtherDoc"));
     return editor;
   };
   const editorProblem = (o: EditorOpsResult | null, failedError = "") => {
@@ -863,7 +864,7 @@ function ChatBody({ id }: { id: string }) {
     const op = findingSelectOp(finding);
     if (!op) return;
     const o = await findingEditor().runOps([op]);
-    if (!o || o.applied < 1) throw new Error(editorProblem(o));
+    if (!o || o.applied < 1) throw new UserFacingError(editorProblem(o));
   };
   // reads the paragraph back: true when it has the op's formatting; a
   // plugin that cannot read it back is an error, not a "no"
@@ -872,23 +873,26 @@ function ChatBody({ id }: { id: string }) {
     if (o && o.applied === 1) return true;
     const err = o?.failed[0]?.error ?? "";
     if (o && /^format differs/.test(err)) return false;
-    throw new Error(editorProblem(o, err));
+    throw new UserFacingError(editorProblem(o, err));
   };
   const applyFinding = async (finding: FormatFinding, revision: number) => {
     const doc = formatCheckDoc;
     const editor = findingEditor();
-    if (!doc || id === "new") throw new Error(tr("docws.fcRvOtherDoc"));
+    if (!doc || id === "new") throw new UserFacingError(tr("docws.fcRvOtherDoc"));
     // a restore or an assistant edit since the check moved the revision:
     // the finding may no longer describe the document
     const view = await getDocumentWorkspace(id, doc.id);
-    if (!view || view.revision !== revision) throw new Error(tr("docws.fcRvStale"));
+    if (!view || view.revision !== revision) throw new UserFacingError(tr("docws.fcRvStale"));
     const op = finding.ops[0];
     const o = await editor.runOps([op, findingCheckOp(op)]);
-    if (!o) throw new Error(editorProblem(null));
+    if (!o) throw new UserFacingError(editorProblem(null));
     const failed = new Map(o.failed.map((f) => [f.index, f.error]));
     if (failed.has(0)) {
       const err = failed.get(0) ?? "";
-      throw new Error(/anchor not found/.test(err) ? tr("docws.spGoToFailed") : tr("docws.fcRvFailed", { error: err }));
+      if (/anchor not found/.test(err)) throw new UserFacingError(tr("docws.spGoToFailed"));
+      // the plugin's own error stays in the console, not in the message
+      console.warn("[format review] apply failed:", err);
+      throw new UserFacingError(tr("docws.fcRvFailed", { error: tr("err.generic") }));
     }
     const checkErr = failed.get(1);
     if (checkErr !== undefined && !/^format differs/.test(checkErr)) return { verified: false };
@@ -911,7 +915,7 @@ function ChatBody({ id }: { id: string }) {
   const [errorAction, setErrorAction] = useState<{ text: string; action: ChatErrorAction } | null>(null);
   const showError = (key: ChatErrorKey | null, e: unknown) => {
     const described = key ? errorMessage(key, e) : null;
-    const text = described ? described.text : e instanceof Error ? e.message : tr("chat.err.generic");
+    const text = described ? described.text : userErrorMessage(e, tr, "chat.err.generic");
     setError(text);
     setErrorAction(described?.action ? { text, action: described.action } : null);
   };
@@ -1024,7 +1028,7 @@ function ChatBody({ id }: { id: string }) {
       );
       setDocsBump((n) => n + 1);
     } catch (e) {
-      toast.error(`${tr("docws.roleChangeFailed")}: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(userErrorMessage(e, tr, "docws.roleChangeFailed", { prefix: true }));
     }
   };
   // index.vue:1395 gates local_browser_enabled on !knownOffline so an offline
@@ -2177,7 +2181,7 @@ function ChatBody({ id }: { id: string }) {
         if (e instanceof DOMException && e.name === "AbortError") return;
         const errorKey = chatErrorKey(e);
         const described = errorKey ? errorMessage(errorKey, e) : null;
-        const errorText = described ? described.text : e instanceof Error ? e.message : tr("chat.err.generic");
+        const errorText = described ? described.text : userErrorMessage(e, tr, "chat.err.generic");
         const turnAction = described?.action;
         console.error("[streamChat] Error:", e);
         onAccountError(e);
@@ -2298,11 +2302,11 @@ function ChatBody({ id }: { id: string }) {
     }
     const sid = idRef.current;
     if (sid === "new") return;
-    await setDocumentScope(sid, action.scope);
+    await withUserFacingCause(setDocumentScope(sid, action.scope), tr, "err.generic");
     setScopeEditing(false);
     setScopeBump((v) => v + 1);
     if (action.resend.trim()) void sendRef.current({ query: action.resend, ...blank });
-  }, []);
+  }, [tr]);
   // A picked option: its message goes out (the question with the full số
   // hiệu, or "ABC = full form" for an abbreviation) and the turn continues.
   // The agent hand-off card: an empty document opens in "Soạn thảo văn
@@ -2312,22 +2316,22 @@ function ChatBody({ id }: { id: string }) {
   const startTemplateHandoff = docTemplate.handoff;
   const runHandoff = useCallback(
     async (option: ChoiceOption) => {
-      if (ctx.isMobile) throw new Error(tr("docws.mobileWordUnavailable", { n: DOCUMENT_EDITOR.stackedMinWidth }));
+      if (ctx.isMobile) throw new UserFacingError(tr("docws.mobileWordUnavailable", { n: DOCUMENT_EDITOR.stackedMinWidth }));
       const h = option.handoff;
       if (!h) return;
       // no session yet (the page has not moved to the new one): say so
       // instead of showing the option as picked with nothing opened
       const sid = idRef.current;
-      if (sid === "new") throw new Error(tr("docws.handoff.failed"));
+      if (sid === "new") throw new UserFacingError(tr("docws.handoff.failed"));
       const { buildBlankDocument } = await import("@/lib/document-templates");
       const file = new File([(await buildBlankDocument()) as BlobPart], tr("docws.newDocumentFile"), {
         type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       });
       const up = await uploadTemporaryAttachment(sid, file, h.agentId, "auto", undefined, "target");
-      if (!up?.data?.id) throw new Error(tr("docws.handoff.failed"));
+      if (!up?.data?.id) throw new UserFacingError(tr("docws.handoff.failed"));
       const view = await createDocumentWorkspace(sid, up.data.id);
       const requestId = startTemplateHandoff(h.templateId as DocumentTemplateId, view.id);
-      if (!requestId) throw new Error(tr("docws.handoff.failed"));
+      if (!requestId) throw new UserFacingError(tr("docws.handoff.failed"));
       pendingHandoff.current = { sessionId: sid, requestId, query: option.resend };
       // an open document pins the document assistant (see the effect above)
       noteSessionDocument(view.file_name);
@@ -2370,7 +2374,7 @@ function ChatBody({ id }: { id: string }) {
       setDocScope((prev) => (prev.sessionId === id ? { ...prev, scope: null } : prev));
       setScopeBump((v) => v + 1);
     } catch (e) {
-      toast.error(`${tr("docws.scope.clearFailed")}: ${e instanceof Error ? e.message : String(e)}`);
+      toast.error(userErrorMessage(e, tr, "docws.scope.clearFailed", { prefix: true }));
     }
   };
 

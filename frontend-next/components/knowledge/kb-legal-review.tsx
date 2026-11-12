@@ -16,6 +16,7 @@ import {
   scanLegalReviews,
   type LegalReviewItem,
 } from "@/lib/api/legal-review";
+import { userErrorMessage } from "@/lib/user-error";
 
 /* The server caps a page at 200. */
 const PAGE_SIZE = 200;
@@ -89,7 +90,7 @@ export function LegalReviewActions({
       );
       await onDecided();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("lrev.loadFailed"));
+      setError(userErrorMessage(e, t, "lrev.loadFailed"));
     } finally {
       setBusy(false);
     }
@@ -156,7 +157,7 @@ export function KbLegalReviewBar({
       await onScanned();
       setNotice(t("lrev.scanDone", { count: res.data?.created ?? 0 }));
     } catch (e) {
-      setNotice(e instanceof Error ? e.message : t("lrev.loadFailed"));
+      setNotice(userErrorMessage(e, t, "lrev.loadFailed"));
     } finally {
       setScanning(false);
     }

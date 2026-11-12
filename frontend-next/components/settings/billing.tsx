@@ -69,6 +69,7 @@ import { Loading } from "@/components/settings/loading";
 import { Notice } from "@/components/settings/notice";
 import { SectionHeader } from "@/components/settings/section-header";
 import { useToast } from "@/components/toast";
+import { classifyUserError, looksTechnical } from "@/lib/user-error";
 
 const MONTH_CHOICES = [1, 3, 6, 12];
 
@@ -129,6 +130,8 @@ function seatsBelowCurrent(e: unknown): number | null {
  * text; the server's message only when it is a refusal written in the
  * reader's language; anything else (a server error, a network failure) a
  * generic "try again or contact the administrator", never raw details. */
+const BILLING_PASS_KEYS = new Set<LocaleKey>(["err.network", "err.timeout", "err.signInAgain", "err.forbidden"]);
+
 function useBillingError() {
   const { t, locale } = useT();
   return useCallback(
@@ -139,7 +142,13 @@ function useBillingError() {
       const key = billingErrorKey(details?.reason);
       if (key) return t(key as LocaleKey, { amount: formatPriceVND(details?.received_vnd ?? 0) });
       const status = e instanceof ApiError ? e.status : undefined;
-      return billingServerMessage(e instanceof Error ? e.message : "", status, locale) ?? t("bill.errGeneric");
+      const message = e instanceof Error ? e.message : "";
+      const server = looksTechnical(message) ? null : billingServerMessage(message, status, locale);
+      if (server) return server;
+      /* no network, a timeout, an ended session: say so; else generic */
+      const r = classifyUserError(e);
+      if (r.kind === "key" && BILLING_PASS_KEYS.has(r.key)) return t(r.key);
+      return t("bill.errGeneric");
     },
     [t, locale],
   );

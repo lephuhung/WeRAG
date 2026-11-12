@@ -8,6 +8,7 @@ import { Notice } from "@/components/settings/notice";
 import { SectionHeader } from "@/components/settings/section-header";
 import { FieldLabel } from "@/components/settings/field";
 import { useToast } from "@/components/toast";
+import { userErrorMessage } from "@/lib/user-error";
 
 export function WeKnoraCloudSettings() {
   const { t } = useT();
@@ -40,7 +41,7 @@ export function WeKnoraCloudSettings() {
         setError(res.message || t("wkn.saveFailed"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("wkn.saveFailed"));
+      setError(userErrorMessage(e, t, "wkn.saveFailed"));
     } finally {
       setSaving(false);
     }

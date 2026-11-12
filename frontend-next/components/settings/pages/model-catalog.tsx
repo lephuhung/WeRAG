@@ -35,6 +35,8 @@ import {
   resolveThinkingControl,
   type ThinkingControl,
 } from "@/lib/model-presets";
+import { technicalErrorDetail, userErrorMessage } from "@/lib/user-error";
+import { TechnicalDetails } from "@/components/technical-details";
 
 const EMPTY_FORM = {
   presetId: "",
@@ -292,6 +294,7 @@ function SystemModels() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [testDetail, setTestDetail] = useState("");
   const [filterType, setFilterType] = useState<string>(initialTab);
 
   useEffect(() => {
@@ -310,7 +313,7 @@ function SystemModels() {
       setModels(rows.map(toUi));
       setLoadError("");
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : t("mdl.loadFailed"));
+      setLoadError(userErrorMessage(e, t, "mdl.loadFailed"));
     } finally {
       setLoaded(true);
     }
@@ -325,12 +328,14 @@ function SystemModels() {
     setForm(EMPTY_FORM);
     setActionError("");
     setTestMsg(null);
+    setTestDetail("");
     setModalOpen(true);
   };
 
   const openEdit = (m: UiModel) => {
     setEditing(m);
     setTestMsg(null);
+    setTestDetail("");
     setForm({
       presetId: "",
       name: m.name,
@@ -440,7 +445,7 @@ function SystemModels() {
       await load();
       toast.success(t("common.saved"));
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : t("mdl.saveFailed"));
+      setActionError(userErrorMessage(e, t, "mdl.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -450,6 +455,7 @@ function SystemModels() {
     if (!editing?.id || testing) return;
     setTesting(true);
     setTestMsg(null);
+    setTestDetail("");
     try {
       if (editing.type === "Decision") {
         // The backend runs the real abbreviation-detection questions.
@@ -475,7 +481,8 @@ function SystemModels() {
       const res = await debugModel(editing.id, { input: "Hello! This is a test query." });
       setTestMsg(res.ok ? t("mdl.testOk") : res.error || t("mdl.testFail"));
     } catch (e) {
-      setTestMsg(e instanceof Error ? e.message : t("mdl.testFail"));
+      setTestMsg(userErrorMessage(e, t, "mdl.testFail", { prefix: true }));
+      setTestDetail(technicalErrorDetail(e));
     } finally {
       setTesting(false);
     }
@@ -487,7 +494,7 @@ function SystemModels() {
       await updateModel(m.id, { status: next });
       await load();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : t("mdl.updateFailed"));
+      setActionError(userErrorMessage(e, t, "mdl.updateFailed"));
     }
   };
 
@@ -502,9 +509,7 @@ function SystemModels() {
       setActionError(
         e instanceof ModelInUseError
           ? t("mdl.inUse")
-          : e instanceof Error
-            ? e.message
-            : t("mdl.deleteFailed"),
+          : userErrorMessage(e, t, "mdl.deleteFailed"),
       );
       setDeleting(null);
     }
@@ -907,6 +912,7 @@ function SystemModels() {
           </button>
         </div>
         {testMsg && <p className="caption mt-3 text-muted">{testMsg}</p>}
+        {testMsg && <TechnicalDetails detail={testDetail} />}
       </Modal>
 
       {loaded && <TaskModelsCard models={models.map((m) => m.raw)} />}

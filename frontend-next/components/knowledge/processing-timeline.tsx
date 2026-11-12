@@ -55,6 +55,7 @@ import {
   type TimelineDetailTab,
   type TimelineDetailView,
 } from "./processing-timeline/timeline-detail";
+import { userErrorMessage } from "@/lib/user-error";
 
 /* Ported from frontend/src/components/knowledge-processing-timeline.vue:
  * Langfuse-style waterfall of the document processing pipeline
@@ -977,7 +978,7 @@ export function ProcessingTimeline({
       setConfirmCancel(false);
       await fetchSpans({ manual: true });
     } catch (e) {
-      setNotice({ kind: "err", text: e instanceof Error && e.message ? e.message : t("doc.cancelParseFailed") });
+      setNotice({ kind: "err", text: userErrorMessage(e, t, "doc.cancelParseFailed") });
     } finally {
       setCancelling(false);
     }

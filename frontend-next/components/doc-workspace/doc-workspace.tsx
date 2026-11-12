@@ -43,6 +43,7 @@ import { FileTypeIcon } from "@/components/files/file-type-icon";
 import { formatFileSize } from "@/components/use-attachments";
 import { DocumentPane } from "./document-pane";
 import { DocumentAddMenu } from "./document-add-menu";
+import { userErrorMessage } from "@/lib/user-error";
 
 type Phase =
   | { kind: "loading" }
@@ -65,9 +66,6 @@ export type SessionDocument = {
 
 const WORD_ACCEPT = ".docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword";
 
-function errMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
 
 function storage(): Storage | null {
   try {
@@ -216,7 +214,7 @@ export const DocWorkspace = memo(function DocWorkspace({
       } catch (e) {
         if (!aliveRef.current) return;
         if (e instanceof DocumentWorkspaceError && e.code === "editor_disabled") setPhase({ kind: "disabled" });
-        else setPhase({ kind: "error", message: errMessage(e) });
+        else setPhase({ kind: "error", message: userErrorMessage(e, t, "err.generic") });
       }
     },
     [sessionId],
@@ -375,7 +373,7 @@ export const DocWorkspace = memo(function DocWorkspace({
       await loadDocs(v.id);
     } catch (e) {
       if (e instanceof DocumentWorkspaceError && e.code === "editor_disabled") setPhase({ kind: "disabled" });
-      else toast.error(`${t("docws.openFailed")}: ${errMessage(e)}`);
+      else toast.error(userErrorMessage(e, t, "docws.openFailed", { prefix: true }));
     } finally {
       setBusyMsg(null);
     }
@@ -431,7 +429,7 @@ export const DocWorkspace = memo(function DocWorkspace({
       if (!aliveRef.current) return;
       setBusyMsg(null);
       setOpenError(
-        e instanceof DocumentWorkspaceError && e.code === "editor_disabled" ? t("docws.disabledTitle") : errMessage(e),
+        e instanceof DocumentWorkspaceError && e.code === "editor_disabled" ? t("docws.disabledTitle") : userErrorMessage(e, t, "err.generic"),
       );
     }
   };
@@ -469,7 +467,7 @@ export const DocWorkspace = memo(function DocWorkspace({
       if (!res?.data?.id) throw new Error("upload returned no attachment id");
       await openAttachment(res.data.id);
     } catch (e) {
-      toast.error(`${t("docws.openFailed")}: ${errMessage(e)}`);
+      toast.error(userErrorMessage(e, t, "docws.openFailed", { prefix: true }));
       setBusyMsg(null);
     }
   };
@@ -486,7 +484,7 @@ export const DocWorkspace = memo(function DocWorkspace({
       });
       await uploadAndOpen(file);
     } catch (e) {
-      toast.error(`${t("docws.openFailed")}: ${errMessage(e)}`);
+      toast.error(userErrorMessage(e, t, "docws.openFailed", { prefix: true }));
     }
   };
 
@@ -514,14 +512,14 @@ export const DocWorkspace = memo(function DocWorkspace({
       }
       await loadDocs();
     } catch (e) {
-      toast.error(`${t("docws.closeTabFailed")}: ${errMessage(e)}`);
+      toast.error(userErrorMessage(e, t, "docws.closeTabFailed", { prefix: true }));
     }
   };
 
   /* ---------- roles ---------- */
   const roleError = (e: unknown) => {
     if (e instanceof DocumentWorkspaceError && e.code === "editor_disabled") setPhase({ kind: "disabled" });
-    else toast.error(`${t("docws.roleChangeFailed")}: ${errMessage(e)}`);
+    else toast.error(userErrorMessage(e, t, "docws.roleChangeFailed", { prefix: true }));
   };
 
   /* "Mở để soạn thảo": a Word source becomes a tab, keeping its handle. */
@@ -577,7 +575,7 @@ export const DocWorkspace = memo(function DocWorkspace({
       await closeDocumentWorkspace(sessionId, src.id);
       await loadDocs();
     } catch (e) {
-      toast.error(`${t("docws.closeTabFailed")}: ${errMessage(e)}`);
+      toast.error(userErrorMessage(e, t, "docws.closeTabFailed", { prefix: true }));
     }
   };
 

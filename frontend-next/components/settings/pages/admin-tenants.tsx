@@ -35,6 +35,7 @@ import {
   tenantNameErrorKey,
   validateTenantName,
 } from "@/lib/tenant-name";
+import { userErrorMessage } from "@/lib/user-error";
 
 type PersonMode = "existing" | "new";
 
@@ -165,7 +166,7 @@ export default function AdminTenants() {
       setError("");
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) setAllowed(false);
-      else setError(e instanceof Error ? e.message : t("tnp.loadFailed"));
+      else setError(userErrorMessage(e, t, "tnp.loadFailed"));
     } finally {
       setUnitsLoading(false);
     }
@@ -182,7 +183,7 @@ export default function AdminTenants() {
       if (request !== memberRequest.current) return;
       setMembers([]);
       if (e instanceof ApiError && e.status === 403) setAllowed(false);
-      else setError(e instanceof Error ? e.message : t("tnp.loadFailed"));
+      else setError(userErrorMessage(e, t, "tnp.loadFailed"));
     } finally {
       if (request === memberRequest.current) setMembersLoading(false);
     }
@@ -219,7 +220,7 @@ export default function AdminTenants() {
     } catch (e) {
       const nameKey = tenantNameErrorKey(e);
       if (nameKey) setNameError(t(nameKey));
-      else setError(e instanceof Error ? e.message : t("tnp.opFailed"));
+      else setError(userErrorMessage(e, t, "tnp.opFailed"));
       return false;
     } finally {
       setBusy(false);

@@ -119,3 +119,28 @@ export function dotCls(status: string, placeholder = false) {
 export function barCls(status: string) {
   return BAR_CLS[status] ?? "bg-muted-soft";
 }
+
+/* ---------- Parse failure codes ---------- */
+
+/* internal/errors/parse_error_codes.go: the stable wire codes of a failed
+ * parse stage. Each maps to a plain title and a "what to do" hint; the raw
+ * code and message stay available as secondary technical detail. */
+export const PARSE_ERROR_TEXT: Record<string, { title: LocaleKey; hint: LocaleKey }> = {
+  DOCREADER_TIMEOUT: { title: "ks.err.docreaderTimeout", hint: "ks.errHint.docreaderTimeout" },
+  DOCREADER_UNAVAILABLE: { title: "ks.err.docreaderUnavailable", hint: "ks.errHint.docreaderUnavailable" },
+  DOCREADER_PARSE_FAILED: { title: "ks.err.docreaderParseFailed", hint: "ks.errHint.docreaderParseFailed" },
+  PARSE_NO_TEXT: { title: "ks.err.parseNoText", hint: "ks.errHint.parseNoText" },
+  CHUNKING_FAILED: { title: "ks.err.chunkingFailed", hint: "ks.errHint.chunkingFailed" },
+  EMBEDDING_RATE_LIMIT: { title: "ks.err.embeddingRateLimit", hint: "ks.errHint.embeddingRateLimit" },
+  EMBEDDING_PROVIDER_FAIL: { title: "ks.err.embeddingProviderFail", hint: "ks.errHint.embeddingProviderFail" },
+  VECTORSTORE_WRITE_FAILED: { title: "ks.err.vectorstoreWriteFailed", hint: "ks.errHint.vectorstoreWriteFailed" },
+  MULTIMODAL_VLM_FAILED: { title: "ks.err.multimodalVlmFailed", hint: "ks.errHint.multimodalVlmFailed" },
+  MULTIMODAL_ALL_FAILED: { title: "ks.err.multimodalAllFailed", hint: "ks.errHint.multimodalAllFailed" },
+  TASK_TIMEOUT: { title: "ks.err.taskTimeout", hint: "ks.errHint.taskTimeout" },
+  UNKNOWN: { title: "ks.err.unknown", hint: "ks.errHint.unknown" },
+};
+
+/** The title and hint keys of a parse failure code; unknown or missing codes read as UNKNOWN. */
+export function parseErrorText(code?: string | null): { title: LocaleKey; hint: LocaleKey } {
+  return PARSE_ERROR_TEXT[(code ?? "").trim().toUpperCase()] ?? PARSE_ERROR_TEXT.UNKNOWN;
+}

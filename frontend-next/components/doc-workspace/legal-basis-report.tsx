@@ -18,6 +18,7 @@ import {
   type LegalBasisReport,
   type LegalBasisStatus,
 } from "@/lib/api/document-workspace";
+import { userErrorMessage } from "@/lib/user-error";
 
 /* "Rà soát căn cứ pháp lý": the documents the open working document cites,
  * checked against the legal catalogue by code (no model). The report lists
@@ -265,7 +266,7 @@ function FindingItem({
     try {
       await onLocate(f.positions[i]);
     } catch (e) {
-      setLost({ index: i, message: e instanceof Error ? e.message : String(e) });
+      setLost({ index: i, message: userErrorMessage(e, t, "err.generic") });
     } finally {
       setLocating(null);
     }

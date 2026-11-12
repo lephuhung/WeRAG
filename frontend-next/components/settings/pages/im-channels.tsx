@@ -24,6 +24,7 @@ import { IMPlatformIcon } from "@/components/agents/im-platform-icon";
 import { ConsolePage } from "@/components/settings/console-page";
 import { Loading } from "@/components/settings/loading";
 import { Notice } from "@/components/settings/notice";
+import { userErrorMessage } from "@/lib/user-error";
 
 export default function IMChannelsPage() {
   return (
@@ -53,7 +54,7 @@ function IMChannelsPanel() {
     setError("");
     listAllIMChannels()
       .then((res) => setChannels(res.data ?? []))
-      .catch((e) => setError(e instanceof Error ? e.message : t("imp.loadFailed")))
+      .catch((e) => setError(userErrorMessage(e, t, "imp.loadFailed")))
       .finally(() => setLoading(false));
     listAgents()
       .then((res) => {
@@ -88,7 +89,7 @@ function IMChannelsPanel() {
       const next = (await toggleIMChannel(c.id)).data;
       setChannels((prev) => prev.map((x) => (x.id === c.id ? { ...x, enabled: next.enabled } : x)));
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("imp.toggleFailed"));
+      setError(userErrorMessage(e, t, "imp.toggleFailed"));
     }
   };
 
@@ -99,7 +100,7 @@ function IMChannelsPanel() {
         setRemoving(null);
         load();
       })
-      .catch((e) => setError(e instanceof Error ? e.message : t("imp.deleteFailed")));
+      .catch((e) => setError(userErrorMessage(e, t, "imp.deleteFailed")));
   };
 
   return (

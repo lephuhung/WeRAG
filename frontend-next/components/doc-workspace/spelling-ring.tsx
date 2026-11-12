@@ -23,6 +23,7 @@ export function SpellingRing({
   onDismiss,
   onFormatCheck,
   formatCheckLabel,
+  goToMessages,
   placement = "below",
 }: {
   status: LiveSpellingStatus;
@@ -30,6 +31,9 @@ export function SpellingRing({
   placement?: "above" | "below";
   /** The format check button's label ("check again" once there is one). */
   formatCheckLabel?: string;
+  /** The host's own wording of a failed "go to" (the defaults speak of
+   * the ONLYOFFICE editor and its plugin). */
+  goToMessages?: Partial<Record<Exclude<GoToResult, "ok">, string>>;
   /** Selects the mistake in the editor. */
   onGoTo: (m: LiveMistake) => Promise<GoToResult>;
   /** The user says the mistake is none; false when that was not recorded. */
@@ -195,13 +199,14 @@ export function SpellingRing({
                     <span className="mt-0.5 block text-[12px] leading-snug text-muted">{mistakeContext(m)}</span>
                     {lost.has(i) && (
                       <span className="mt-0.5 block text-[11.5px] leading-snug text-error">
-                        {t(
-                          lost.get(i) === "outdated"
-                            ? "docws.spGoToOutdated"
-                            : lost.get(i) === "noAnswer"
-                              ? "docws.spGoToNoAnswer"
-                              : "docws.spGoToFailed",
-                        )}
+                        {goToMessages?.[lost.get(i)!] ??
+                          t(
+                            lost.get(i) === "outdated"
+                              ? "docws.spGoToOutdated"
+                              : lost.get(i) === "noAnswer"
+                                ? "docws.spGoToNoAnswer"
+                                : "docws.spGoToFailed",
+                          )}
                       </span>
                     )}
                     {dismissFailed && sameMistake(dismissFailed, m) && (

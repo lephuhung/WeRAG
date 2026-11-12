@@ -173,9 +173,9 @@ const GROUPS: SettingsGroup[] = [
     key: "engines",
     labelKey: "settingsNav.config",
     items: [
-      { key: "catalog", labelKey: "systemNav.catalog", fallback: "Model catalog", icon: IconGraph, minRole: "owner", render: () => <ModelCatalogPage />, route: `${SYS}/models` },
-      { key: "ollama", fallback: "Ollama (local)", icon: IconGraph, minRole: "owner", render: () => <ModelOllamaPage />, route: `${SYS}/models/ollama`, subOnly: true, parent: "catalog" },
-      { key: "weknoracloud", fallback: "WeRAG Cloud", icon: IconGraph, minRole: "owner", render: () => <ModelWeknoraCloudPage />, route: `${SYS}/models/weknoracloud`, subOnly: true, parent: "catalog" },
+      { key: "catalog", labelKey: "systemNav.catalog", fallback: "Model catalog", icon: IconGraph, minRole: "system", render: () => <ModelCatalogPage />, route: `${SYS}/models` },
+      { key: "ollama", labelKey: "systemNav.ollama", fallback: "Ollama (local)", icon: IconGraph, minRole: "system", render: () => <ModelOllamaPage />, route: `${SYS}/models/ollama`, subOnly: true, parent: "catalog" },
+      { key: "weknoracloud", labelKey: "systemNav.weragCloud", fallback: "WeRAG Cloud", icon: IconGraph, minRole: "system", render: () => <ModelWeknoraCloudPage />, route: `${SYS}/models/weknoracloud`, subOnly: true, parent: "catalog" },
       { key: "vector", labelKey: "settingsNav.dataStorage", fallback: "Data storage", icon: IconStorageEngine, minRole: "system", render: () => <DataStorageHub />, route: `${SYS}/engines/vector` },
       { key: "parser", labelKey: "settingsNav.parser", fallback: "Parser engines", icon: IconParserEngine, minRole: "system", render: () => <ParserEngineSettings />, route: `${SYS}/engines/parser` },
       { key: "storage", labelKey: "settingsNav.dataStorage", fallback: "Data storage", icon: IconStorageEngine, minRole: "system", render: () => <DataStorageHub initialTab="storage" />, route: `${SYS}/engines/storage`, subOnly: true, parent: "vector" },

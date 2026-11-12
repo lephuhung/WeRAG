@@ -13,6 +13,7 @@ import { ConsolePage } from "@/components/settings/console-page";
 import { DataTable } from "@/components/settings/data-table";
 import { DeniedView } from "@/components/settings/system-section";
 import { Notice } from "@/components/settings/notice";
+import { userErrorMessage } from "@/lib/user-error";
 
 function formatBytes(bytes: number): string {
   if (!bytes || bytes < 0) return "—";
@@ -57,7 +58,7 @@ export default function AdminBackupsPage() {
       setDenied(false);
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) setDenied(true);
-      else setError(e instanceof Error ? e.message : t("sys.loadFailed"));
+      else setError(userErrorMessage(e, t, "sys.loadFailed"));
     } finally {
       setLoading(false);
     }

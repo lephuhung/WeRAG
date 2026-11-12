@@ -14,10 +14,8 @@ import {
   revisionsNewestFirst,
   type DocumentRevisionEntry,
 } from "@/lib/api/document-workspace";
+import { userErrorMessage } from "@/lib/user-error";
 
-function errMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
 
 const SOURCE_KEYS: Record<string, LocaleKey> = {
   ai: "docws.source.ai",
@@ -58,7 +56,7 @@ export function RevisionHistoryPanel({
       setItems(revisionsNewestFirst(await listDocumentRevisions(sessionId, documentId)));
     } catch (e) {
       setItems([]);
-      setError(errMessage(e));
+      setError(userErrorMessage(e, t, "err.generic"));
     }
   }, [sessionId, documentId]);
 
@@ -88,7 +86,7 @@ export function RevisionHistoryPanel({
       onRestored();
       void load();
     } catch (e) {
-      toast.error(`${t("docws.restoreFailed")}: ${errMessage(e)}`);
+      toast.error(userErrorMessage(e, t, "docws.restoreFailed", { prefix: true }));
     } finally {
       setRestoring(null);
     }

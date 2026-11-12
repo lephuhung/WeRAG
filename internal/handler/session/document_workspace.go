@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	stderrors "errors"
 	"fmt"
 	"io"
@@ -22,7 +23,28 @@ import (
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
+
+// sessionLookupFailed answers a failed session lookup: 404 only when the
+// session does not exist for the caller (missing, another user's, hidden
+// admin-console chat), 500 for anything else, so a database outage does not
+// read as "your chat is gone" and the client does not drop its documents.
+func sessionLookupFailed(c *gin.Context, err error) {
+	if stderrors.Is(err, apperrors.ErrSessionNotFound) || stderrors.Is(err, gorm.ErrRecordNotFound) {
+		_ = c.Error(apperrors.NewNotFoundError("Session not found"))
+		return
+	}
+	if stderrors.Is(err, context.Canceled) || stderrors.Is(err, context.DeadlineExceeded) {
+		// the client left or the request ran out of time: nobody reads an
+		// answer, and it is no server fault (nginx's 499)
+		logger.Warnf(c.Request.Context(), "document workspace: session lookup ended: %v", err)
+		c.AbortWithStatus(499)
+		return
+	}
+	logger.Errorf(c.Request.Context(), "document workspace: session lookup failed: %v", err)
+	_ = c.Error(apperrors.NewInternalServerError("Failed to load session"))
+}
 
 const docxContentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
@@ -100,7 +122,7 @@ func (h *DocumentWorkspaceHandler) CreateDocumentWorkspace(c *gin.Context) {
 	sessionID := sessionIDParam(c)
 	// Creating mutates the session, so use the strict owner scope.
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	userID, _ := types.UserIDFromContext(ctx)
@@ -135,7 +157,7 @@ func (h *DocumentWorkspaceHandler) ListDocumentWorkspaces(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
@@ -179,7 +201,7 @@ func (h *DocumentWorkspaceHandler) SetDocumentScope(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	var req types.DocumentScope
@@ -201,7 +223,7 @@ func (h *DocumentWorkspaceHandler) ClearDocumentScope(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	h.scopes.Clear(ctx, sessionID)
@@ -215,7 +237,7 @@ func (h *DocumentWorkspaceHandler) ActivateDocumentWorkspace(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	ws, err := h.workspaces.Activate(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c))
@@ -232,7 +254,7 @@ func (h *DocumentWorkspaceHandler) DeleteDocumentWorkspace(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	if err := h.workspaces.Remove(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c)); err != nil {
@@ -252,7 +274,7 @@ func (h *DocumentWorkspaceHandler) GetDocumentWorkspace(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	ws, err := h.workspaces.Get(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c))
@@ -278,7 +300,7 @@ func (h *DocumentWorkspaceHandler) GetDocumentFormatCheck(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	ws, err := h.workspaces.Get(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c))
@@ -306,7 +328,7 @@ func (h *DocumentWorkspaceHandler) StartDocumentFormatCheck(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	check, err := h.precheck.StartFormatCheck(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c))
@@ -325,7 +347,7 @@ func (h *DocumentWorkspaceHandler) MarkDocumentFormatFindings(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	ops, err := h.precheck.FormatFindingMarks(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c))
@@ -350,7 +372,7 @@ func (h *DocumentWorkspaceHandler) CheckDocumentLegalBasis(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	report, err := h.precheck.LegalBasisCheck(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c))
@@ -375,7 +397,7 @@ func (h *DocumentWorkspaceHandler) BindWordFile(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	var req BindWordFileRequest
@@ -402,7 +424,7 @@ func (h *DocumentWorkspaceHandler) ForceSaveDocumentWorkspace(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	tenantID := c.GetUint64(types.TenantIDContextKey.String())
@@ -424,7 +446,7 @@ func (h *DocumentWorkspaceHandler) DownloadDocumentWorkspace(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	reader, ws, err := h.workspaces.OpenCurrent(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c))
@@ -457,7 +479,7 @@ func (h *DocumentWorkspaceHandler) SetDocumentRole(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	var req SetDocumentRoleRequest
@@ -499,7 +521,7 @@ func (h *DocumentWorkspaceHandler) ListDocumentRevisions(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	revisions, err := h.workspaces.ListRevisions(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID, documentIDParam(c))
@@ -523,7 +545,7 @@ func (h *DocumentWorkspaceHandler) RestoreDocumentRevision(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	seq, err := strconv.Atoi(c.Param("seq"))
@@ -548,7 +570,7 @@ func (h *DocumentWorkspaceHandler) UploadDocumentContent(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	revision, err := strconv.Atoi(strings.TrimSpace(c.Query("revision")))
@@ -584,7 +606,7 @@ func (h *DocumentWorkspaceHandler) StoreDocumentTemplate(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	revision, err := strconv.Atoi(strings.TrimSpace(c.Query("revision")))
@@ -618,7 +640,7 @@ func (h *DocumentWorkspaceHandler) SnapshotDocumentWorkspace(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	var req SnapshotDocumentWorkspaceRequest
@@ -651,7 +673,7 @@ func (h *DocumentWorkspaceHandler) ReviewDocumentSpelling(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	var req ReviewSpellingRequest
@@ -708,7 +730,7 @@ func (h *DocumentWorkspaceHandler) RecordSpellingVerdict(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	var req SpellingVerdictRequest
@@ -756,7 +778,7 @@ func (h *DocumentWorkspaceHandler) RecordFormatVerdict(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	var req FormatVerdictRequest
@@ -816,7 +838,7 @@ func (h *DocumentWorkspaceHandler) ApplyRewriteProposal(c *gin.Context) {
 	ctx := c.Request.Context()
 	sessionID := sessionIDParam(c)
 	if _, err := h.sessionService.GetOwnedSession(ctx, sessionID); err != nil {
-		c.Error(apperrors.NewNotFoundError("Session not found"))
+		sessionLookupFailed(c, err)
 		return
 	}
 	var req ApplyRewriteProposalRequest

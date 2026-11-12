@@ -7,6 +7,7 @@ import { useTenantRole } from "@/lib/auth";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { buildPublicCreatePayload } from "@/lib/kb-public";
 import type { KBMemberDefault } from "@/lib/kb-access";
+import { userErrorMessage } from "@/lib/user-error";
 
 type CreateScope = "tenant" | "restricted" | "public";
 
@@ -53,7 +54,7 @@ export default function NewKnowledgeBase() {
           : null;
       router.push(id ? `/platform/knowledge-bases/${id}` : "/platform/knowledge-bases");
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("kbNew.createFailed"));
+      setError(userErrorMessage(err, t, "kbNew.createFailed"));
     } finally {
       setBusy(false);
     }

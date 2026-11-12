@@ -11,6 +11,7 @@ import {
   type KBInvite,
 } from "@/lib/api/knowledge";
 import { useT } from "@/lib/i18n";
+import { userErrorMessage } from "@/lib/user-error";
 
 export function MyKBInvites({ onAccepted }: { onAccepted?: () => void }) {
   const { t } = useT();
@@ -24,7 +25,7 @@ export function MyKBInvites({ onAccepted }: { onAccepted?: () => void }) {
     try {
       setInvites(await listMyKBInvites());
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("ui.inv.loadFailed"));
+      setError(userErrorMessage(e, t, "ui.inv.loadFailed"));
     }
   }, [t]);
 
@@ -46,7 +47,7 @@ export function MyKBInvites({ onAccepted }: { onAccepted?: () => void }) {
         setError(res.message || t("ui.inv.acceptFailed"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("ui.inv.acceptFailed"));
+      setError(userErrorMessage(err, t, "ui.inv.acceptFailed"));
     } finally {
       setBusy(false);
     }
@@ -69,7 +70,7 @@ export function MyKBInvites({ onAccepted }: { onAccepted?: () => void }) {
         setError(res.message || t("ui.inv.badToken"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("ui.inv.badToken"));
+      setError(userErrorMessage(err, t, "ui.inv.badToken"));
     } finally {
       setBusy(false);
     }

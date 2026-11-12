@@ -22,6 +22,8 @@ import { FieldLabel } from "@/components/settings/field";
 import { ROW_HOVER } from "@/components/settings/data-table";
 import { ConsolePage } from "@/components/settings/console-page";
 import { useToast } from "@/components/toast";
+import { technicalErrorDetail, userErrorMessage } from "@/lib/user-error";
+import { TechnicalDetails } from "@/components/technical-details";
 
 const SUPPORTED_PROVIDERS = [
   { id: "brave", name: "Brave Search" },
@@ -43,6 +45,7 @@ export function WebSearchSettings() {
   const [denied, setDenied] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [testError, setTestError] = useState("");
+  const [testDetail, setTestDetail] = useState("");
   const [formError, setFormError] = useState("");
   const [nameError, setNameError] = useState("");
 
@@ -72,7 +75,7 @@ export function WebSearchSettings() {
         setDenied(true);
         setProviders([]);
       } else {
-        setError(e instanceof Error ? e.message : t("ws.loadFailed"));
+        setError(userErrorMessage(e, t, "ws.loadFailed"));
       }
     } finally {
       setLoading(false);
@@ -118,7 +121,7 @@ export function WebSearchSettings() {
         setModalOpen(false);
         return;
       }
-      setFormError(e instanceof Error ? e.message : t("ws.addFailed"));
+      setFormError(userErrorMessage(e, t, "ws.addFailed"));
     } finally {
       setBusy(false);
     }
@@ -142,12 +145,13 @@ export function WebSearchSettings() {
         setDenied(true);
         return;
       }
-      setError(e instanceof Error ? e.message : t("ws.removeFailed"));
+      setError(userErrorMessage(e, t, "ws.removeFailed"));
     }
   };
 
   const handleTest = async (id: string) => {
     setTestError("");
+    setTestDetail("");
     try {
       await testWebSearchProvider(id);
       toast.success(t("ws.testOk"));
@@ -156,7 +160,8 @@ export function WebSearchSettings() {
         setDenied(true);
         return;
       }
-      setTestError(e instanceof Error ? e.message : t("ws.testFailed"));
+      setTestError(userErrorMessage(e, t, "ws.testFailed", { prefix: true }));
+      setTestDetail(technicalErrorDetail(e));
     }
   };
 
@@ -197,6 +202,7 @@ export function WebSearchSettings() {
         {testError && (
           <Notice tone="error" className="mt-4" title={t("ws.testStatus")}>
             {testError}
+            <TechnicalDetails detail={testDetail} />
           </Notice>
         )}
 

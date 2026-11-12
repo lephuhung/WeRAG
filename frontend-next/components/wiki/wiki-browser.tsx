@@ -27,6 +27,7 @@ import { formatDateTime } from "@/lib/datetime";
 import { IconDoc } from "@/components/icons";
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
 import { Modal } from "@/components/modal";
+import { userErrorMessage } from "@/lib/user-error";
 
 /* Collect the group entries into one keyed map so the tree can render
  * parents/children from any group bucket. */
@@ -81,7 +82,7 @@ export function WikiBrowser({
       const res = await getWikiIndex(kbId, { limit: 50 });
       setIndex(res as { intro: string; groups: WikiIndexGroup[] });
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("ui.err.wikiIndex"));
+      setError(userErrorMessage(err, t, "ui.err.wikiIndex"));
     } finally {
       setLoading(false);
     }
@@ -311,7 +312,7 @@ export function WikiPageView({
       })
       .catch((e: unknown) => {
         if (alive) {
-          setError(e instanceof Error ? e.message : t("wiki.loadPageFailed"));
+          setError(userErrorMessage(e, t, "wiki.loadPageFailed"));
         }
       })
       .finally(() => {
@@ -346,7 +347,7 @@ export function WikiPageView({
       }
       setEditing(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("wiki.saveFailed"));
+      setError(userErrorMessage(e, t, "wiki.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -371,7 +372,7 @@ export function WikiPageView({
       const pageData = (res as any)?.data ?? res;
       setPage((pageData as WikiPage) ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("wiki.revertFailed"));
+      setError(userErrorMessage(e, t, "wiki.revertFailed"));
     }
   };
 

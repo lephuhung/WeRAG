@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { findingNavigation, parseFormatFindings, type FormatFinding, type ParagraphFormatOp } from "@/lib/format-findings";
+import { UserFacingError, userErrorMessage } from "@/lib/user-error";
 
 export type FindingReviewActions = {
   /** Selects the finding in the editor (it scrolls there). */
@@ -51,7 +52,13 @@ export function FormatFindingReview({
     try {
       await action();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      // a cause already written for the user (it may carry its own
+      // "Could not apply it:") is shown as is; others get the prefix
+      setError(
+        cause instanceof UserFacingError
+          ? cause.message
+          : t("docws.fcRvFailed", { error: userErrorMessage(cause, t, "err.generic") }),
+      );
     } finally {
       setWorking(false);
     }

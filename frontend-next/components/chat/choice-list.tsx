@@ -12,6 +12,7 @@ import { AGENT_HANDOFF_TYPE, optionMessage, type ChoiceList, type ChoiceOption }
 import { availableChatChoices } from "@/lib/mobile-chat-policy";
 import { useMobileChat } from "@/components/use-mobile-chat";
 import { DOCUMENT_EDITOR } from "@/components/doc-workspace/document-layout-policy";
+import { userErrorMessage } from "@/lib/user-error";
 
 export function ChoiceListView({
   card: sourceCard,
@@ -50,7 +51,7 @@ export function ChoiceListView({
       await onPick({ ...o, resend: optionMessage(o, text) });
       setPicked(o.input ? `${o.label}: ${text.trim()}` : o.label);
     } catch (e) {
-      setError(`${t("docws.choice.failed")}: ${e instanceof Error ? e.message : String(e)}`);
+      setError(userErrorMessage(e, t, "docws.choice.failed", { prefix: true }));
     } finally {
       setWorking(false);
     }

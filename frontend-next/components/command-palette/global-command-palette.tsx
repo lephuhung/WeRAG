@@ -13,6 +13,8 @@ import {
   IconClose,
   IconDoc,
   IconFileSearch,
+  IconDownload,
+  IconInfoCircle,
   IconPulse,
   IconSearch,
   IconSettings,
@@ -37,6 +39,7 @@ import { ApiError } from "@/lib/api-client";
 /* Conversations found by title, and content matches per page. */
 const CONTENT_TITLE_LIMIT = 5;
 const CONTENT_PAGE_SIZE = 8;
+import { HELP_PATH, WordAddinInstallModal } from "@/components/help/word-addin-install-modal";
 
 interface CommandItem {
   id: string;
@@ -65,6 +68,7 @@ export function GlobalCommandPalette() {
     )?.role ?? "";
 
   const [query, setQuery] = useState("");
+  const [addinOpen, setAddinOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
@@ -259,6 +263,28 @@ export function GlobalCommandPalette() {
       onSelect: () => {
         close();
         router.push("/platform/system/workspace");
+      },
+    },
+    {
+      id: "quick-help",
+      category: "quick",
+      title: t("cmdk.help"),
+      subtitle: t("cmdk.helpSub"),
+      icon: <IconInfoCircle className="h-4 w-4" />,
+      onSelect: () => {
+        close();
+        window.open(HELP_PATH, "_blank", "noopener,noreferrer");
+      },
+    },
+    {
+      id: "quick-word-addin",
+      category: "quick",
+      title: t("cmdk.wordAddin"),
+      subtitle: t("cmdk.wordAddinSub"),
+      icon: <IconDownload className="h-4 w-4" />,
+      onSelect: () => {
+        close();
+        setAddinOpen(true);
       },
     },
     {
@@ -494,11 +520,17 @@ export function GlobalCommandPalette() {
     }
   }, [selectedIndex]);
 
-  if (!isOpen) return null;
+  /* Opened from the "Install the Word add-in" command: lives outside the
+   * palette, which closes first. */
+  const addinModal = <WordAddinInstallModal open={addinOpen} onClose={() => setAddinOpen(false)} />;
+  if (!isOpen) return addinModal;
 
   const activeOptionId = items.length > 0 ? optionId(selectedIndex) : undefined;
 
-  return createPortal(
+  return (
+    <>
+      {addinModal}
+      {createPortal(
     <div className="fixed inset-0 z-[90] flex items-start justify-center bg-scrim/40 p-4 pt-[12vh] backdrop-blur-sm animate-in fade-in duration-150">
       <div
         className="fixed inset-0"
@@ -674,5 +706,7 @@ export function GlobalCommandPalette() {
         </div>
       </div>
     </div>, document.body,
+      )}
+    </>
   );
 }

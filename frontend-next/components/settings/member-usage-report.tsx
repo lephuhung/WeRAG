@@ -20,6 +20,7 @@ import {
 } from "@/lib/api/usage";
 import { formatDate, vnParts } from "@/lib/datetime";
 import { toCSV } from "@/lib/csv";
+import { userErrorMessage } from "@/lib/user-error";
 
 function monthKey(year: number, month: number): string {
   return `${year}-${String(month).padStart(2, "0")}`;
@@ -64,7 +65,7 @@ export function MemberUsageReport({ tenantId }: { tenantId: number }) {
     } catch (e) {
       if (mine !== seq.current) return;
       setReport(null);
-      setError(e instanceof Error ? e.message : t("mur.loadFailed"));
+      setError(userErrorMessage(e, t, "mur.loadFailed"));
     } finally {
       if (mine === seq.current) setLoading(false);
     }

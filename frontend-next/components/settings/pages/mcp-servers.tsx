@@ -24,6 +24,8 @@ import { useT } from "@/lib/i18n";
 import { ConsolePage } from "@/components/settings/console-page";
 import { Notice } from "@/components/settings/notice";
 import { SectionHeader } from "@/components/settings/section-header";
+import { technicalErrorDetail, userErrorMessage } from "@/lib/user-error";
+import { TechnicalDetails } from "@/components/technical-details";
 
 export default function McpServersPage() {
   return (
@@ -45,13 +47,15 @@ function McpServersPanel() {
   const [toolsForMcp, setToolsForMcp] = useState<MCPService | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, MCPTestResult>>({});
+  /* Raw failure of each connection test, under "Technical details". */
+  const [testDetails, setTestDetails] = useState<Record<string, string>>({});
 
   const loadMcp = useCallback(() => {
     setMcpLoading(true);
     setMcpError("");
     listMCPServices()
       .then((data) => setMcpServices(data ?? []))
-      .catch((e) => setMcpError(e instanceof Error ? e.message : t("mcpp.loadFailed")))
+      .catch((e) => setMcpError(userErrorMessage(e, t, "mcpp.loadFailed")))
       .finally(() => setMcpLoading(false));
   }, []);
 
@@ -64,7 +68,7 @@ function McpServersPanel() {
       const next = await updateMCPService(s.id, { enabled: !s.enabled });
       setMcpServices((prev) => prev.map((x) => (x.id === next.id ? next : x)));
     } catch (e) {
-      setMcpError(e instanceof Error ? e.message : t("mcpp.toggleFailed"));
+      setMcpError(userErrorMessage(e, t, "mcpp.toggleFailed"));
     }
   };
 
@@ -72,13 +76,15 @@ function McpServersPanel() {
     setTestingId(s.id);
     try {
       const res = await testMCPService(s.id);
+      setTestDetails((prev) => ({ ...prev, [s.id]: "" }));
       setTestResults((prev) => ({ ...prev, [s.id]: res }));
     } catch (e) {
+      setTestDetails((prev) => ({ ...prev, [s.id]: technicalErrorDetail(e) }));
       setTestResults((prev) => ({
         ...prev,
         [s.id]: {
           success: false,
-          message: e instanceof Error ? e.message : t("mcpp.testFailed"),
+          message: userErrorMessage(e, t, "mcpp.testFailed", { prefix: true }),
           tools: [],
         },
       }));
@@ -208,6 +214,7 @@ function McpServersPanel() {
                     {testResult.success
                       ? t("mcpp.testOk", { n: (testResult.tools ?? []).length })
                       : testResult.message || t("mcp.testFail")}
+                    {!testResult.success && <TechnicalDetails detail={testDetails[s.id]} />}
                   </div>
                 )}
               </div>

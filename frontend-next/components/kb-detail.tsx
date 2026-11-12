@@ -3,6 +3,8 @@
 import layout from "./knowledge/kb-detail-layout.module.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type { KbDeleteReach } from "@/lib/kb-delete";
 import {
   batchQueryKnowledge,
   getKnowledgeBase,
@@ -57,6 +59,7 @@ import { getKBAccess } from "@/lib/api/kb-access";
 import { MyKBInvites } from "@/components/knowledge/my-kb-invites";
 import { knowledgeStatusStyle } from "@/components/knowledge/trace-status";
 import { formatDate } from "@/lib/datetime";
+import { userErrorMessage } from "@/lib/user-error";
 
 /* Backend field is parse_status (types.Knowledge.go ParseStatus); values
  * are pending/processing/finalizing/completed/failed/cancelled. The port
@@ -97,7 +100,8 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 export function KbDetail({ kbId }: { kbId: string }) {
   const { t } = useT();
-const toast = useToast();
+  const toast = useToast();
+  const router = useRouter();
   const { isTenantAdmin, isSystemAdmin } = useTenantRole();
   const { selectedTenantId, tenant, user } = useAuth();
   const [activeTab, setActiveTab] = useState<MainTab>("docs-wiki");
@@ -212,7 +216,7 @@ const toast = useToast();
       .catch((e) => {
         if (docsRequestRef.current !== req) return;
         setDocs((prev) => prev ?? []);
-        setDocsError(e instanceof Error ? e.message : "Could not load the file list");
+        setDocsError(userErrorMessage(e, t, "kbUi.docsLoadFailed"));
       })
       .finally(() => {
         if (docsRequestRef.current === req) setDocsLoading(false);
@@ -261,7 +265,7 @@ const toast = useToast();
           setDenied(true);
           return;
         }
-        setError(e instanceof Error ? e.message : t("ui.err.load"));
+        setError(userErrorMessage(e, t, "ui.err.load"));
       });
     getSystemParseDefaults()
       .then((def) => alive && setParseDefaults(def))
@@ -427,12 +431,19 @@ const toast = useToast();
    * for display. The backend remains authoritative. */
   const activeTenantId = selectedTenantId ?? String(tenant?.id ?? "");
   const [accessCaps, setAccessCaps] = useState<KBViewerCapabilities | null>(null);
+  /* Who else reads the KB, for the delete dialog's warnings. */
+  const [deleteReach, setDeleteReach] = useState<KbDeleteReach | undefined>(undefined);
   useEffect(() => {
     setAccessCaps(null);
+    setDeleteReach(undefined);
     if (!kb?.id) return;
     let alive = true;
     getKBAccess(kb.id)
-      .then((o) => alive && setAccessCaps(getKBCapabilitiesFromAccess(o)))
+      .then((o) => {
+        if (!alive) return;
+        setAccessCaps(getKBCapabilitiesFromAccess(o));
+        setDeleteReach({ visibility: o.visibility, grantees: o.grantees?.length ?? 0 });
+      })
       .catch(() => alive && setAccessCaps(null));
     return () => {
       alive = false;
@@ -533,7 +544,7 @@ const toast = useToast();
                 href={`/platform/knowledge-bases/${kbId}/creatChat`}
                 className="btn btn-primary"
               >
-                <IconChat className="h-4 w-4" /> Chat
+                <IconChat className="h-4 w-4" /> {t("kbUi.chat")}
               </Link>
             )}
           </div>
@@ -619,7 +630,7 @@ const toast = useToast();
               <div className="flex shrink-0 items-center justify-between border-b border-hairline px-4 py-2.5">
                 <div className="flex items-center gap-2 font-medium text-[13.5px] text-ink">
                   <IconDoc className="h-4 w-4 text-muted" />
-                  <span>Wiki</span>
+                  <span>{t("kbUi.wiki")}</span>
                 </div>
                 <span className="text-[11.5px] text-muted-soft">{t("kbUi.wikiContents")}</span>
               </div>
@@ -894,6 +905,18 @@ const toast = useToast();
               setKb(row ?? null);
             })
             .catch(() => toast.error(t("common.error")));
+        }}
+        /* Delete only on the server's effective Manage permission (the
+         * right DELETE /knowledge-bases/:id requires), never on the
+         * client-side estimate used while /access is loading. */
+        canDelete={accessCaps?.canManage === true}
+        deleteReach={deleteReach}
+        onDeleted={() => {
+          const name = kb?.name ?? "";
+          setSettingsOpen(false);
+          toast.success(t("kbDelete.done", { name }));
+          /* The list page fetches on mount, so it shows the fresh list. */
+          router.push("/platform/knowledge-bases");
         }}
       />
       <UploadModal

@@ -14,8 +14,7 @@ import { useAvatarUrl } from "@/lib/avatar";
 import { useT, type Locale } from "@/lib/i18n";
 import { SETTINGS_REDIRECTED_EVENT, consumeSettingsRedirect } from "@/lib/settings-deep-link";
 import { SettingsModal } from "@/components/settings-modal";
-import { Modal } from "@/components/modal";
-import { WordAddinInstall } from "@/components/auth/word-addin-install";
+import { HELP_PATH, WordAddinInstallModal } from "@/components/help/word-addin-install-modal";
 import { UsagePlanPill } from "@/components/usage-plan-pill";
 import { ADMIN_PATH } from "@/components/admin/admin-routes";
 import {
@@ -23,6 +22,8 @@ import {
   IconChevronRight,
   IconChevronUp,
   IconDownload,
+  IconExternal,
+  IconInfoCircle,
   IconLogout,
   IconPulse,
   IconSettings,
@@ -315,6 +316,17 @@ export function AccountMenu() {
             <IconDownload className="h-[18px] w-[18px] shrink-0" />
             <span className="flex-1 text-left">{t("auth.addinInstall")}</span>
           </button>
+          <a
+            href={HELP_PATH}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="nav-item"
+            onClick={() => setOpen(false)}
+          >
+            <IconInfoCircle className="h-[18px] w-[18px] shrink-0" />
+            <span className="flex-1 text-left">{t("acct.help")}</span>
+            <IconExternal className="h-3.5 w-3.5 shrink-0 text-muted-soft" />
+          </a>
           {isSystemAdmin && (
             <button
               type="button"
@@ -368,14 +380,7 @@ export function AccountMenu() {
         initialSection={settingsSection}
         pendingAbbrev={pending}
       />
-      <Modal
-        open={wordInstallOpen}
-        onClose={() => setWordInstallOpen(false)}
-        title={t("auth.installTitle")}
-        width="w-[620px]"
-      >
-        <WordAddinInstall inDialog />
-      </Modal>
+      <WordAddinInstallModal open={wordInstallOpen} onClose={() => setWordInstallOpen(false)} />
     </div>
   );
 }

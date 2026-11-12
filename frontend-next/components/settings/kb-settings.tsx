@@ -14,6 +14,8 @@ import { Modal } from "@/components/modal";
 import { Toggle } from "@/components/settings/toggle";
 import { Select } from "@/components/select";
 import { WikiCatalogueRebuild } from "@/components/settings/wiki-catalogue-rebuild";
+import { KbDangerZone } from "@/components/knowledge/kb-delete-dialog";
+import type { KbDeleteReach } from "@/lib/kb-delete";
 import { useT } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import {
@@ -21,6 +23,7 @@ import {
   updateKnowledgeBase,
   type KnowledgeBaseRow,
 } from "@/lib/api/knowledge";
+import { userErrorMessage } from "@/lib/user-error";
 
 type IndexingStrategy = {
   vector_enabled: boolean;
@@ -72,11 +75,20 @@ export function KbSettingsModal({
   open,
   onClose,
   onSaved,
+  canDelete = false,
+  deleteReach,
+  onDeleted,
 }: {
   kbId: string;
   open: boolean;
   onClose: () => void;
   onSaved?: (row: KnowledgeBaseRow) => void;
+  /* The caller's effective Manage permission on this KB (the right the
+   * backend requires for DELETE); shows the danger zone. */
+  canDelete?: boolean;
+  /** Who else reads the KB, for the delete dialog's warnings. */
+  deleteReach?: KbDeleteReach;
+  onDeleted?: () => void;
 }) {
   const { t } = useT();
   /* Tenant admins rename and describe the KB; everything that configures it
@@ -153,7 +165,7 @@ export function KbSettingsModal({
         })
         .catch((e: unknown) => {
           if (alive) {
-            setError(e instanceof Error ? e.message : t("kbSettings.loadFailed"));
+            setError(userErrorMessage(e, t, "kbSettings.loadFailed"));
             setLoading(false);
           }
         });
@@ -196,7 +208,7 @@ export function KbSettingsModal({
       setDirty(false);
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("kbSettings.saveFailed"));
+      setError(userErrorMessage(e, t, "kbSettings.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -244,6 +256,9 @@ export function KbSettingsModal({
                   <span className="text-ink">{t("kbSettings.visInAccessTab")}</span>
                 </div>
                 {!isSystemAdmin && <p className="caption text-muted-soft">{t("kbSettings.configBySuperAdmin")}</p>}
+                {canDelete && kb && onDeleted && (
+                  <KbDangerZone kbId={kbId} kbName={kb.name} reach={deleteReach} onDeleted={onDeleted} />
+                )}
               </div>
             )}
 

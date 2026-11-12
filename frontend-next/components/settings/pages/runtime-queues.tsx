@@ -11,6 +11,7 @@ import { ConsolePage } from "@/components/settings/console-page";
 import { DeniedView } from "@/components/settings/system-section";
 import { Notice } from "@/components/settings/notice";
 import { useT } from "@/lib/i18n";
+import { userErrorMessage } from "@/lib/user-error";
 
 export default function RuntimeQueuesPage() {
   const { t } = useT();
@@ -38,7 +39,7 @@ export default function RuntimeQueuesPage() {
         setQueues([]);
         setWikiWindow(null);
       } else {
-        setError(e instanceof Error ? e.message : t("sys.loadFailed"));
+        setError(userErrorMessage(e, t, "sys.loadFailed"));
       }
     } finally {
       setLoading(false);

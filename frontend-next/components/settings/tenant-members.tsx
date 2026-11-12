@@ -9,6 +9,7 @@ import { DataTable } from "@/components/settings/data-table";
 import { Pill, PillGroup } from "@/components/settings/pill";
 import { SectionHeader } from "@/components/settings/section-header";
 import { useToast } from "@/components/toast";
+import { useConfirm } from "@/components/confirm-dialog";
 import {
   fetchAllTenantMembers,
   updateMemberRole,
@@ -26,6 +27,7 @@ import { useRouter } from "next/navigation";
 import { copyToClipboard } from "@/lib/clipboard";
 import { InviteMemberModal } from "@/components/invite-member-modal";
 import { formatDate } from "@/lib/datetime";
+import { userErrorMessage } from "@/lib/user-error";
 
 export function TenantMembers() {
   const { t } = useT();
@@ -51,6 +53,7 @@ export function TenantMembers() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const toast = useToast();
+  const confirm = useConfirm();
 
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
@@ -89,7 +92,7 @@ export function TenantMembers() {
         setInvitations(invRes.data.invitations ?? []);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("mem.networkError"));
+      setError(userErrorMessage(e, t, "mem.networkError"));
     } finally {
       setLoading(false);
     }
@@ -106,21 +109,54 @@ export function TenantMembers() {
       setError(t("mem.errLastAdminDemote"));
       return;
     }
+    const wasAdmin = member.role === "admin" || member.role === "owner";
+    const toAdmin = newRole === "admin" || newRole === "owner";
+    if (member.role === newRole) return;
+    /* Admin and Member differ only in admin rights, so a change is a
+     * promotion or a demotion: confirm it (demoting yourself loses access
+     * to this page). Legacy owner → admin keeps the rights: no question. */
+    const name = member.username || member.email;
+    const demotingSelf = !toAdmin && member.user_id === auth.user?.id;
+    const ok = wasAdmin === toAdmin || (await confirm({
+      title: toAdmin ? t("mem.promoteConfirmTitle") : t("mem.demoteConfirmTitle"),
+      message: t(
+        toAdmin
+          ? "mem.promoteConfirmBody"
+          : demotingSelf
+            ? isSystemAdmin
+              ? "mem.demoteSelfSuperAdminConfirmBody"
+              : "mem.demoteSelfConfirmBody"
+            : "mem.demoteConfirmBody",
+        { name },
+      ),
+      confirmLabel: toAdmin ? t("mem.promoteConfirmCta") : t("mem.demoteConfirmCta"),
+      danger: !toAdmin,
+    }));
+    if (!ok) return;
     setError("");
     try {
       const res = await updateMemberRole(activeTenantId, member.user_id, newRole);
       if (res.success) {
-        toast.success(
-          t("mem.roleUpdated")
-            .replace("{name}", member.username || member.email)
-            .replace("{role}", newRole),
-        );
+        toast.success(t("mem.roleUpdated", { name, role: toAdmin ? t("acct.roleAdmin") : t("acct.roleMember") }));
+        if (demotingSelf) {
+          /* The token's role changed: reload the account, and leave this
+           * admin page unless SuperAdmin rights still cover it. */
+          try {
+            await auth.refreshMe();
+          } catch {
+            /* the role change is saved; the next load picks the account up */
+          }
+          if (!isSystemAdmin) {
+            router.push("/platform/knowledge-bases");
+            return;
+          }
+        }
         await loadData();
       } else {
         setError(res.message || t("mem.updateRoleFailed"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("mem.updateRoleFailed"));
+      setError(userErrorMessage(e, t, "mem.updateRoleFailed"));
     }
   };
 
@@ -138,7 +174,7 @@ export function TenantMembers() {
       const res = await removeMember(activeTenantId, removingMember.user_id);
       if (res.success) {
         toast.success(
-          t("mem.removed").replace("{name}", removingMember.username || removingMember.email),
+          t("mem.removed", { name: removingMember.username || removingMember.email }),
         );
         setRemovingMember(null);
         await loadData();
@@ -146,7 +182,7 @@ export function TenantMembers() {
         setError(res.message || t("mem.removeFailed"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("mem.removeFailed"));
+      setError(userErrorMessage(e, t, "mem.removeFailed"));
     } finally {
       setActionBusy(false);
     }
@@ -170,7 +206,7 @@ export function TenantMembers() {
         setError(res.message || t("mem.leaveFailed"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("mem.leaveFailed"));
+      setError(userErrorMessage(e, t, "mem.leaveFailed"));
     } finally {
       setActionBusy(false);
       setConfirmLeave(false);
@@ -178,17 +214,27 @@ export function TenantMembers() {
   };
 
   // Revoke invite
-  const handleRevokeInvite = async (invId: number) => {
+  const handleRevokeInvite = async (inv: TenantInvitation) => {
     if (!activeTenantId) return;
+    const ok = await confirm({
+      title: t("mem.revokeConfirmTitle"),
+      message: inv.is_share_link
+        ? t("mem.revokeLinkConfirmBody")
+        : t("mem.revokeConfirmBody", { name: inv.invitee_email || inv.invitee_name || t("mem.unknownUser") }),
+      confirmLabel: t("mem.revoke"),
+      danger: true,
+    });
+    if (!ok) return;
     try {
-      const res = await revokeInvitation(activeTenantId, invId);
+      const res = await revokeInvitation(activeTenantId, inv.id);
       if (res.success) {
+        toast.success(t("mem.revoked"));
         await loadData();
       } else {
         setError(res.message || t("mem.revokeFailed"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("mem.revokeFailed"));
+      setError(userErrorMessage(e, t, "mem.revokeFailed"));
     }
   };
 
@@ -294,8 +340,8 @@ export function TenantMembers() {
                   </div>
                   <p className="caption text-muted truncate mt-0.5">
                     {inv.is_share_link
-                      ? t("mem.acceptedCount").replace("{n}", String(inv.accepted_count || 0))
-                      : t("mem.invitedBy").replace("{name}", inv.inviter_name || inv.inviter_email || "admin")}
+                      ? t("mem.acceptedCount", { n: inv.accepted_count || 0 })
+                      : t("mem.invitedBy", { name: inv.inviter_name || inv.inviter_email || "admin" })}
                   </p>
                 </div>
 
@@ -317,7 +363,7 @@ export function TenantMembers() {
                   )}
                   <button
                     type="button"
-                    onClick={() => void handleRevokeInvite(inv.id)}
+                    onClick={() => void handleRevokeInvite(inv)}
                     className="btn btn-danger btn-sm text-xs py-1"
                   >
                     {t("mem.revoke")}
@@ -479,7 +525,7 @@ export function TenantMembers() {
       >
         <div className="space-y-4">
           <p className="body-sm text-body">
-            {t("mem.removeBody").replace("{name}", removingMember?.username || removingMember?.email || "")}
+            {t("mem.removeBody", { name: removingMember?.username || removingMember?.email || "" })}
           </p>
           <div className="flex justify-end gap-3 pt-2">
             <button

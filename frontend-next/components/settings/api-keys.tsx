@@ -23,6 +23,9 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { formatDate } from "@/lib/datetime";
 import { Notice } from "@/components/settings/notice";
 import { Loading } from "@/components/settings/loading";
+import { userErrorMessage } from "@/lib/user-error";
+import { useConfirm } from "@/components/confirm-dialog";
+import { useToast } from "@/components/toast";
 
 const CAPABILITIES: { id: TenantAPIKeyCapability; labelEn: string; labelVi: string }[] = [
   { id: "retrieve", labelEn: "Retrieve", labelVi: "Truy xuất" },
@@ -55,6 +58,9 @@ export function ApiKeysSection() {
   const [error, setError] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [created, setCreated] = useState<CreatedTenantAPIKey | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const confirm = useConfirm();
+  const toast = useToast();
 
   const load = useCallback(() => {
     setLoading(true);
@@ -64,13 +70,40 @@ export function ApiKeysSection() {
         setKeys(res.data ?? []);
         setActingUser(res.acting_user ?? null);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : t("apikey.loadFailed")))
+      .catch((e) => setError(userErrorMessage(e, t, "apikey.loadFailed")))
       .finally(() => setLoading(false));
   }, []);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  /* Deleting a key breaks every integration that uses it at once, so it
+   * is confirmed; failures stay on screen in the UI language. */
+  const handleDelete = async (k: TenantAPIKey) => {
+    const ok = await confirm({
+      title: t("apiKeys.deleteConfirmTitle"),
+      message: t("apiKeys.deleteConfirmBody", { name: k.name }),
+      confirmLabel: t("common.delete"),
+      danger: true,
+    });
+    if (!ok) return;
+    setDeletingId(k.id);
+    setError("");
+    try {
+      const res = await deleteTenantAPIKey(Number(auth.selectedTenantId ?? auth.tenant?.id ?? 0), k.id);
+      if (!res.success) {
+        setError(t("apiKeys.deleteFailed"));
+        return;
+      }
+      toast.success(t("apiKeys.deleted", { name: k.name }));
+      load();
+    } catch (e) {
+      setError(userErrorMessage(e, t, "apiKeys.deleteFailed"));
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const isOwner = ({ member: 10, admin: 30, owner: 40 }[
     auth.memberships.find(
@@ -112,7 +145,7 @@ export function ApiKeysSection() {
                   <span className="badge-pill text-error">{t("apiKeys.fullAccess")}</span>
                 ) : (
                   <span className="badge-pill">
-                  {t("apiKeys.capsCount").replace("{n}", String((k.capabilities ?? []).length))}
+                  {t("apiKeys.capsCount", { n: (k.capabilities ?? []).length })}
                 </span>
                 )}
               </div>
@@ -129,11 +162,11 @@ export function ApiKeysSection() {
             {isOwner && (
               <button
                 className="btn btn-tertiary btn-sm text-[13px] text-error"
-                onClick={() => {
-                  void deleteTenantAPIKey(Number(auth.selectedTenantId ?? auth.tenant?.id ?? 0), k.id).then(() => load());
-                }}
+                disabled={deletingId !== null}
+                aria-busy={deletingId === k.id}
+                onClick={() => void handleDelete(k)}
               >
-                {t("common.delete")}
+                {deletingId === k.id ? "…" : t("common.delete")}
               </button>
             )}
           </div>
@@ -209,7 +242,7 @@ function CreateKeyModal({ onClose, onCreated }: {
       const createdRes = await createTenantAPIKey(tenantId, payload);
       if (createdRes.data) onCreated(createdRes.data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("apikey.createFailed"));
+      setError(userErrorMessage(e, t, "apikey.createFailed"));
     } finally {
       setSaving(false);
     }

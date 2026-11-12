@@ -9,6 +9,7 @@ import Link from "next/link";
 import { AuthShell, authStyles as styles } from "@/components/auth/auth-shell";
 import { AuthCard } from "@/components/auth/auth-card";
 import { useT } from "@/lib/i18n";
+import { registerErrorKey, userErrorMessage } from "@/lib/user-error";
 
 function RegisterForm() {
   const router = useRouter();
@@ -20,6 +21,7 @@ function RegisterForm() {
   const [password, setPassword] = useState("");
   const [tenantName, setTenantName] = useState<string | null>(null);
   const [inviteOnly, setInviteOnly] = useState(false);
+  const [complexPassword, setComplexPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   /* Signed-in visitors landing on an invite link can join with their
@@ -33,7 +35,9 @@ function RegisterForm() {
     let alive = true;
     getAuthConfig()
       .then((c) => {
-        if (alive) setInviteOnly(c.registration_mode === "invite_only");
+        if (!alive) return;
+        setInviteOnly(c.registration_mode === "invite_only");
+        setComplexPassword(!!c.complex_password_enabled);
       })
       .catch(() => {});
     if (token) {
@@ -91,7 +95,8 @@ function RegisterForm() {
             : "/platform/creatChat",
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("auth.registerFailed"));
+      const key = registerErrorKey(err);
+      setError(key ? t(key) : userErrorMessage(err, t, "auth.registerFailed"));
     } finally {
       setBusy(false);
     }
@@ -105,7 +110,7 @@ function RegisterForm() {
       if (!res.success) throw new Error(res.message ?? t("auth.joinFailed"));
       router.push("/platform/knowledge-bases");
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("auth.joinFailed"));
+      setError(userErrorMessage(err, t, "auth.joinFailed"));
     } finally {
       setBusy(false);
     }
@@ -190,9 +195,13 @@ function RegisterForm() {
                 autoComplete="new-password"
                 placeholder={t("auth.passwordPlaceholderNew")}
                 required
+                aria-describedby="register-password-rule"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
               />
+              <span id="register-password-rule" className="caption mt-1.5 block text-muted">
+                {t(complexPassword ? "auth.passwordRuleComplex" : "auth.passwordRule")}
+              </span>
             </label>
             {error && (
               <p role="alert" className={styles.error}>

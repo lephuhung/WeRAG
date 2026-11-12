@@ -34,6 +34,7 @@ import { listAllTenants } from "@/lib/api/tenants";
 import { agentEnabled, normalizeDistribution, scopeSummary, switchOffNeedsConfirm } from "@/lib/agent-tenant-scope";
 import { Toggle } from "@/components/settings/toggle";
 import { RequireSystemAccess } from "@/components/require-system-access";
+import { userErrorMessage } from "@/lib/user-error";
 
 export default function AgentsPage() {
   return (
@@ -69,7 +70,7 @@ function AgentsPanel() {
       const res = await setAgentEnabled(agent.id, next);
       setAgents((prev) => (prev ?? []).map((x) => (x.id === agent.id ? { ...x, enabled: res.data?.enabled ?? next } : x)));
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("agentp.switchFailed"));
+      setError(userErrorMessage(e, t, "agentp.switchFailed"));
     } finally {
       setSwitching(null);
     }
@@ -92,7 +93,7 @@ function AgentsPanel() {
       .catch((e) => {
         if (alive) {
           setAgents([]);
-          setError(e instanceof Error ? e.message : t("agentp.loadFailed"));
+          setError(userErrorMessage(e, t, "agentp.loadFailed"));
         }
       });
     listModels()
@@ -132,7 +133,7 @@ function AgentsPanel() {
       await deleteAgent(removing.id);
       setAgents((prev) => prev?.filter((a) => a.id !== removing.id) ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("agentp.deleteFailed"));
+      setError(userErrorMessage(e, t, "agentp.deleteFailed"));
     } finally {
       setRemoving(null);
     }
@@ -143,7 +144,7 @@ function AgentsPanel() {
       const res = await copyAgent(a.id);
       setAgents((prev) => [...(prev ?? []), res.data]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("agentp.copyFailed"));
+      setError(userErrorMessage(e, t, "agentp.copyFailed"));
     }
   };
 

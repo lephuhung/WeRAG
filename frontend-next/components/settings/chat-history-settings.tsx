@@ -13,6 +13,7 @@ import { FieldLabel } from "@/components/settings/field";
 import { useToast } from "@/components/toast";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
+import { userErrorMessage } from "@/lib/user-error";
 
 export interface ChatHistoryConfig {
   enabled: boolean;
@@ -64,7 +65,7 @@ export function ChatHistorySettings() {
       if (statsRes?.data) setStats(statsRes.data);
       setModels(mdlRes);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("chath.loadFailed"));
+      setError(userErrorMessage(e, t, "chath.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -88,7 +89,7 @@ export function ChatHistorySettings() {
         toast.success(t("chath.saved"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("chath.saveFailed"));
+      setError(userErrorMessage(e, t, "chath.saveFailed"));
     } finally {
       setSaving(false);
     }

@@ -5,6 +5,7 @@ import { IconClose, IconDoc, IconDownload, IconExternal } from "@/components/ico
 import { useDialogFocus } from "./use-dialog-focus";
 import { useT } from "@/lib/i18n";
 import { Markdown } from "@/components/markdown";
+import { userErrorMessage } from "@/lib/user-error";
 
 export interface DocPreviewSource {
   title: string;
@@ -95,7 +96,7 @@ export function DocPreviewModal({
       })
       .catch((err) => {
         if (!active) return;
-        setError(err instanceof Error ? err.message : t("ui.err.docPreview"));
+        setError(userErrorMessage(err, t, "ui.err.docPreview"));
       })
       .finally(() => {
         if (active) setLoading(false);

@@ -12,6 +12,7 @@ import { Select } from "@/components/select";
 import { useToast } from "@/components/toast";
 import { Notice } from "@/components/settings/notice";
 import { FieldLabel } from "@/components/settings/field";
+import { userErrorMessage } from "@/lib/user-error";
 
 export function WorkContextForm({ onSaved, compact = false }: { onSaved?: () => void; compact?: boolean }) {
   const { t } = useT();
@@ -61,7 +62,7 @@ export function WorkContextForm({ onSaved, compact = false }: { onSaved?: () => 
       toast.success(t("common.saved"));
       onSaved?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("common.error"));
+      setError(userErrorMessage(e, t, "common.error"));
     } finally {
       setSaving(false);
     }
