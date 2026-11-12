@@ -37,15 +37,20 @@ ngày 2026-11-12, tăng theo văn bản) chỉ tải object mới/đổi và xo�
 (`--remove`), nên level 1 chỉ chứa phần thay đổi trong tuần. Archive mã hoá như mọi job; status
 `werag-objects.json` có thêm `objects`, `source_bytes`, `copied`, `removed`, `level`. Không đặt
 `BACKUP_SRC_S3_*` → job ghi `ok=true` + "bỏ qua" (bản cài không dùng MinIO); đặt thiếu biến hoặc
-không kết nối được nguồn → `ok=false`. Lần chạy đầu tải cả bucket (vài phút). Khoá nguồn truyền
-cho mc qua biến `MC_HOST_src` (không nằm trong argv hay file cấu hình mc).
+không kết nối được nguồn → `ok=false`. Lần chạy đầu tải cả bucket (vài phút). Khoá nguồn không
+nằm trong argv: khoá chỉ gồm `A-Z a-z 0-9 . _ ~ + = -` → biến `MC_HOST_src` (truyền nguyên, mc
+không giải mã `%xx`); có ký tự khác (`/ @ : % #`…) → file cấu hình mc riêng 0700 trong
+`/work/tmp/objects.mcsrc`, xoá khi xong hoặc khi lỗi. Mỗi job chỉ một tiến trình (`flock`
+`/work/state/<job>.lock`): lần chạy trùng (khởi động + cron, chạy tay) bỏ qua, không ghi status.
 
 Chống xoá nhầm bản sao: nếu bucket nguồn **rỗng** hoặc ít hơn bản sao > 20 % / > 500 object (đổi
 nhầm endpoint/bucket, lỗi quyền liệt kê…), job dừng với `ok=false` và **không** chạy
 `mirror --remove`. Đúng là đã xoá nhiều thì chạy một lần với `BACKUP_OBJECTS_ALLOW_SHRINK=1`:
 `sudo docker exec -u backup -e BACKUP_OBJECTS_ALLOW_SHRINK=1 WeKnora-backup backup.sh objects`.
-Sau mirror, mọi dòng lỗi của mc hoặc số tệp bản sao khác số object nguồn (vd key `x` cùng
-`x/con` trên S3) → `ok=false`, không tạo archive.
+Sau mirror, mọi dòng lỗi của mc → `ok=false`. Số tệp bản sao khác số object nguồn → mirror lại
+tối đa 2 lần (đêm có thể đang nhập văn bản); vẫn lệch thì so từng key: chỉ key nguồn **có từ
+trước** lần mirror cuối mà thiếu trong bản sao (vd key `x` cùng `x/con` trên S3) mới là lỗi, key
+mới hơn được ghi chú và vào lần sau. Lỗi thì không tạo archive.
 
 ## Khoá
 
@@ -113,7 +118,15 @@ thống thật): `sudo deploy/backup/test/objects-test.sh`.
   `inventory-backups/status/werag-*` — nếu không thì bằng `BACKUP_S3_*`. Bảng trạng
   thái: Quản trị hệ thống → Sao lưu (`/platform/admin?section=backups`). Danh sách job theo dõi:
   `BACKUP_MONITOR_JOBS`. Portal inventory KHÔNG giám sát WeRAG (đã gỡ 2026-10-12, inventory
-  cd24a7c). Job WAL báo lỗi khi `archive_command` hỏng (`pg_stat_archiver`).
+  cd24a7c). Job WAL báo lỗi khi `archive_command` hỏng (`pg_stat_archiver`; khi đó không ghi
+  status "ok" giữa vòng đẩy).
+- **Cảnh báo `objects` "giảm bất thường"** (bucket nguồn rỗng / ít hơn bản sao > 20 % hoặc > 500
+  object): **đừng** cho phép ngay. Kiểm tra `BACKUP_SRC_S3_ENDPOINT/BUCKET` đúng chưa, user chỉ-đọc
+  còn quyền liệt kê không, và số object thật (`mc du` bucket `werag`); so với số văn bản đã xoá
+  trong app. Chỉ khi đúng là đã xoá nhiều: `sudo docker exec -u backup -e
+  BACKUP_OBJECTS_ALLOW_SHRINK=1 WeKnora-backup backup.sh objects` (một lần; lần sau tự so với bản
+  sao mới). Nếu nghi bucket bị xoá nhầm: khôi phục từ archive trước đó (mục F, tham số
+  `tới-archive`) rồi `mc mirror` lên lại, bucket còn versioning 15 ngày.
 - **Rủi ro đĩa:** nếu WAL không đẩy được, `pg_wal` và spool phình dần trên ổ của máy này
   (đã dùng > 80%). Cảnh báo WAL phải được xử lý trong ngày.
 - Tại chỗ: `sudo docker logs WeKnora-backup`, `journalctl -u werag-neo4j-backup`,
@@ -125,8 +138,8 @@ thống thật): `sudo deploy/backup/test/objects-test.sh`.
   header age, rồi đối chiếu key MinIO mà DB khôi phục tham chiếu (`resources`, provider
   `minio`, đang dùng, tạo trước lần đóng gói cuối) với danh sách tệp của chuỗi
   (`/work/state/objects-index/`): key có trong bản sao bucket mà thiếu trong chuỗi → lỗi; key
-  thiếu cả trong bucket nguồn → ghi `missing_in_source=N`, lỗi khi N > `BACKUP_OBJECTS_MAX_MISSING`
-  (10) hoặc > 1 % (khi DB tham chiếu ≥ 100). DB tạm luôn bị xoá, kể cả khi job lỗi giữa chừng. Container không có private key
+  thiếu cả trong bucket nguồn → ghi `missing_in_source=N`, lỗi khi N > max(`BACKUP_OBJECTS_MAX_MISSING`
+  (10), `BACKUP_OBJECTS_MAX_MISSING_PCT` (1) % số tệp DB tham chiếu). DB tạm luôn bị xoá, kể cả khi job lỗi giữa chừng. Container không có private key
   nên **không giải mã** — diễn tập giải mã là `restore.sh objects` + `objects-check` (mục F). Lần
   đầu (2026-10-12, 76k vector) mất 1 phút 42 giây. Job này sinh lượng WAL xấp xỉ kích thước
   DB (bị archive như mọi WAL) — khi DB lớn, nên chuyển sang lịch hằng tháng.

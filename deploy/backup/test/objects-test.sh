@@ -25,12 +25,16 @@ cat > "$BINDIR/mc" <<'SH'
 if [ "$1" = mirror ]; then
   [ -z "${TEST_DROP_AFTER_MIRROR:-}" ] || rm -f "$TEST_DROP_AFTER_MIRROR"
   [ -z "${TEST_MIRROR_ERROR_LINE:-}" ] || echo '{"status":"error","error":{"message":"giả lập lỗi một object"}}'
+  # đang nhập văn bản: một object mới xuất hiện ngay sau mỗi lần mirror
+  [ -z "${TEST_INGEST_AFTER_MIRROR:-}" ] || echo new | /usr/bin/mcli pipe -q "src/werag/ingest/$(date +%s%N).html" >/dev/null
 fi
 exit $rc
 SH
 chmod 0755 "$BINDIR/mc"
 
 cleanup() {
+  # KEEP_TEST_ENV=1: giữ container/volume để điều tra (tự xoá bằng tay sau đó)
+  if [ -n "${KEEP_TEST_ENV:-}" ]; then echo "giữ lại: $ID ($IMAGE) KEYDIR=$KEYDIR"; return 0; fi
   docker rm -f "$MINIO" "$PG" >/dev/null 2>&1 || true
   docker volume rm -f "$WORKVOL" >/dev/null 2>&1 || true
   docker network rm "$NET" >/dev/null 2>&1 || true
@@ -50,7 +54,7 @@ docker volume create "$WORKVOL" >/dev/null
 docker run -d --name "$MINIO" --network "$NET" -e MINIO_ROOT_USER=testadmin -e MINIO_ROOT_PASSWORD=testadmin123 \
   "$MINIO_IMAGE" server /data >/dev/null
 docker run -d --name "$PG" --network "$NET" -e POSTGRES_PASSWORD=pw postgres:17-alpine \
-  -c archive_mode=on -c archive_command=/bin/true >/dev/null
+  -c archive_mode=on -c "archive_command=test ! -f /tmp/archive-fail" >/dev/null
 docker run --rm --entrypoint age-keygen "$IMAGE" > "$KEYDIR/key.txt" 2>/dev/null
 RECIPIENT=$(grep -o 'age1[0-9a-z]*' "$KEYDIR/key.txt" | head -1)
 
@@ -68,6 +72,12 @@ field() { status | jq -r "$1"; }
 
 for _ in $(seq 30); do sh_in "mc ls t >/dev/null 2>&1" && break; sleep 1; done
 sh_in "mc mb -q t/inventory-backups t/werag t/empty >/dev/null"
+# user chỉ đọc có khoá chứa ký tự đặc biệt (alias qua file cấu hình tạm) và chỉ + = (MC_HOST_src)
+sh_in "mc admin user add t objspecial 'ab/cd+ef=gh12' >/dev/null && mc admin user add t objspecial2 'p@ss:w%41rd#12' >/dev/null \
+  && mc admin user add t objplus 'abc+def=ghi12' >/dev/null \
+  && printf '%s' '{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:GetObject\",\"s3:ListBucket\",\"s3:GetBucketLocation\"],\"Resource\":[\"arn:aws:s3:::werag\",\"arn:aws:s3:::werag/*\"]}]}' > /tmp/p.json \
+  && mc admin policy create t werag-read /tmp/p.json >/dev/null \
+  && for u in objspecial objspecial2 objplus; do mc admin policy attach t werag-read --user \$u >/dev/null; done"
 for _ in $(seq 30); do docker exec "$PG" pg_isready -q -U postgres && break; sleep 1; done
 
 echo "== 1. BACKUP_SRC_S3_* chưa cấu hình → bỏ qua, ok=true"
@@ -135,10 +145,38 @@ job "${ENV_SRC[@]}" "${FAKE[@]}" -e TEST_MIRROR_ERROR_LINE=1 && bad "job phải 
 check "ok=false nêu dòng lỗi" grep -q "báo 1 lỗi" <<<"$(field .error)"
 check "không thêm archive" [ "$(sh_in 'wc -l < /work/state/objects.chain.tsv')" = 4 ]
 
+echo "== 7d. bucket nhận object mới trong lúc chạy → mirror lại 2 lần, key mới hơn được bỏ qua → ok"
+job "${ENV_SRC[@]}" "${FAKE[@]}" -e TEST_INGEST_AFTER_MIRROR=1 && ok "thoát 0" || bad "thoát lỗi: $(field .error)"
+check "note nêu bucket đổi trong lúc chạy" grep -q "bucket đổi trong lúc chạy" <<<"$(field .note)"
+check "3 object mới ở nguồn (1 + 2 lần mirror lại)" [ "$(sh_in 'mc ls t/werag/ingest/ | wc -l')" = 3 ]
+sh_in 'mc rm -q -r --force t/werag/ingest/ >/dev/null'
+job "${ENV_SRC[@]}" -e BACKUP_OBJECTS_ALLOW_SHRINK=1 && ok "dọn: thoát 0" || bad "dọn: thoát lỗi: $(field .error)"
+check "objects=5 lại" [ "$(field .objects)" = 5 ]
+
+echo "== 7e. khoá nguồn có ký tự đặc biệt (/ + = @ : % #) và chỉ + ="
+for cred in "objspecial ab/cd+ef=gh12" "objspecial2 p@ss:w%41rd#12" "objplus abc+def=ghi12"; do
+  read -r ak sk <<<"$cred"
+  job "${ENV_SRC[@]}" -e BACKUP_SRC_S3_ACCESS_KEY="$ak" -e BACKUP_SRC_S3_SECRET_KEY="$sk" \
+    && ok "$ak: thoát 0" || bad "$ak: thoát lỗi: $(field .error)"
+  check "$ak: objects=5" [ "$(field .objects)" = 5 ]
+done
+check "không còn cấu hình mc tạm" [ -z "$(sh_in 'ls -d /work/tmp/objects.mcsrc 2>/dev/null || true')" ]
+check "không có alias src trong cấu hình mc thường trực" [ -z "$(sh_in 'grep -l objspecial /work/.mc/config.json 2>/dev/null || true')" ]
+
+echo "== 7f. đang có tiến trình giữ khoá job → bỏ qua, thoát 0, không ghi status"
+before=$(field .finished_at)
+run --entrypoint bash "$IMAGE" -c 'exec 7>/work/state/objects.lock; flock -n 7; sleep 6' >/dev/null 2>&1 &
+holder=$!
+sleep 2
+job "${ENV_SRC[@]}" && ok "thoát 0" || bad "thoát lỗi"
+check "status không đổi" [ "$(field .finished_at)" = "$before" ]
+wait "$holder" || true
+
 echo "== 8. restore.sh objects (private key) khớp bucket nguồn"
-sh_in 'restore() { BACKUP_AGE_IDENTITY=/keys/key.txt restore.sh "$@"; }
-  restore objects /tmp/out >/dev/null 2>&1 && mc mirror -q t/werag /tmp/src >/dev/null && diff -r /tmp/src /tmp/out' \
-  && ok "cây khôi phục = bucket nguồn (có sửa/xoá)" || bad "cây khôi phục khác bucket nguồn"
+out8=$(sh_in 'BACKUP_AGE_IDENTITY=/keys/key.txt restore.sh objects /tmp/out >/tmp/r.log 2>&1 || { echo "restore rc=$?"; cat /tmp/r.log; exit 1; }
+  mc mirror -q t/werag /tmp/src >/dev/null || { echo "mirror rc=$?"; exit 1; }
+  diff -r /tmp/src /tmp/out' 2>&1) && rc8=0 || rc8=$?
+if [ "$rc8" = 0 ]; then ok "cây khôi phục = bucket nguồn (có sửa/xoá)"; else bad "cây khôi phục khác bucket nguồn (rc=$rc8)"; echo "$out8" | sed 's/^/    /'; fi
 
 echo "== 8b. restore.sh objects <dir> <archive cũ> → trạng thái lúc archive đó (sau bước 5)"
 sh_in "BACKUP_AGE_IDENTITY=/keys/key.txt restore.sh objects /tmp/out5 '$ARCH5' >/dev/null 2>&1 && diff -r /work/test-snap5 /tmp/out5" \
@@ -168,7 +206,8 @@ rc_out=$(run "${ENV_SRC[@]}" --entrypoint bash "$IMAGE" -c '
   check_objects /tmp/refs; echo "$OBJ_NOTE"' 2>&1) || true
 echo "$rc_out" | sed 's/^/    /'
 check "refs=4 (chỉ minio://werag, đang dùng)" grep -q '^refs=4$' <<<"$rc_out"
-check "chain=4 archive ok" grep -q 'chain=4 archive ok' <<<"$rc_out"
+CHAIN_N=$(sh_in 'wc -l < /work/state/objects.chain.tsv')
+check "chain=$CHAIN_N archive ok" grep -q "chain=$CHAIN_N archive ok" <<<"$rc_out"
 check "missing_in_backup=0 missing_in_source=1" grep -q 'missing_in_backup=0 missing_in_source=1' <<<"$rc_out"
 
 echo "== 10. tệp có trong bản sao mà thiếu trong chuỗi → lỗi"
@@ -195,6 +234,12 @@ rc_out=$(run "${ENV_SRC[@]}" --entrypoint bash "$IMAGE" -c '
 check "check_objects báo lỗi" bash -c '! grep -q UNEXPECTED_OK <<<"$1"' _ "$rc_out"
 check "status nêu mất ở nguồn" grep -q 'không còn trong bucket nguồn' \
   <<<"$(sh_in 'mc cat t/inventory-backups/status/werag-restore-check.json' | jq -r .error)"
+rc_out=$(run "${ENV_SRC[@]}" -e BACKUP_OBJECTS_MAX_MISSING_PCT=100 --entrypoint bash "$IMAGE" -c '
+  set -Eeuo pipefail; source /usr/local/bin/backup.sh restore-check
+  mkdir -p "$TMP"; ERRLOG=$TMP/t.stderr; exec 3>&2 2>"$ERRLOG"
+  mc alias set backup "$BACKUP_S3_ENDPOINT" "$BACKUP_S3_ACCESS_KEY" "$BACKUP_S3_SECRET_KEY" >/dev/null
+  objects_db_refs postgres /tmp/refs; check_objects /tmp/refs; echo "$OBJ_NOTE"' 2>&1) || true
+check "ngưỡng % (100 %) cho qua 12/15" grep -q 'missing_in_source=12' <<<"$rc_out"
 docker exec "$PG" psql -qX -U postgres -c "DELETE FROM resources WHERE physical_path LIKE '%/lost/%'" >/dev/null
 
 echo "== 11. archive trên MinIO bị thay → sha256 lệch → lỗi"
@@ -235,6 +280,21 @@ wal -e BACKUP_WAL_STATUS_EVERY_S=0 && ok "3 file: thoát 0" || bad "3 file: tho�
 check "wal note 3 file" grep -q '^3 file' <<<"$(sh_in 'mc cat t/inventory-backups/status/werag-wal.json' | jq -r .note)"
 check "spool đã trống" [ -z "$(sh_in 'ls /work/spool')" ]
 check "3 WAL trên MinIO" [ "$(sh_in 'mc ls -r t/inventory-backups/werag/wal/ | wc -l')" = 3 ]
+
+echo "== 12d. archive_command đang lỗi → vẫn đẩy spool, status ok=false"
+docker exec "$PG" touch /tmp/archive-fail
+docker exec "$PG" psql -qX -U postgres -c "CREATE TABLE IF NOT EXISTS t_wal (x int)" >/dev/null 2>&1
+for _ in $(seq 20); do
+  docker exec "$PG" psql -qX -U postgres -c "INSERT INTO t_wal VALUES (1)" -c "SELECT pg_switch_wal()" >/dev/null
+  [ "$(docker exec "$PG" psql -qAtX -U postgres -c "SELECT coalesce(last_failed_time > coalesce(last_archived_time, 'epoch'), false) FROM pg_stat_archiver")" = t ] && break
+  sleep 1
+done
+sh_in 'head -c 1000 /dev/urandom > /work/spool/000000010000000000000009'
+wal -e BACKUP_WAL_STATUS_EVERY_S=0 && bad "wal phải thoát lỗi" || ok "wal thoát lỗi"
+check "wal ok=false nêu archive_command" grep -q "archive_command đang lỗi" \
+  <<<"$(sh_in 'mc cat t/inventory-backups/status/werag-wal.json' | jq -r .error)"
+check "spool vẫn được đẩy" [ -z "$(sh_in 'ls /work/spool')" ]
+docker exec "$PG" rm -f /tmp/archive-fail
 
 echo "== 12. không còn tệp tạm trong /work/tmp"
 check "/work/tmp chỉ còn stderr log" [ -z "$(sh_in 'ls /work/tmp | grep -v "\.stderr$" || true')" ]
