@@ -157,19 +157,28 @@ func TestBuildQARequestCarriesDocumentSelection(t *testing.T) {
 
 type ownerOnlySessions struct {
 	interfaces.SessionService
-	owned map[string]bool // session id -> caller owns it
+	owned   map[string]bool // session id -> caller owns it
+	failing map[string]bool // session id -> the lookup itself fails
 }
 
+// Like the service: a missing or not-own session is ErrSessionNotFound;
+// failing ids stand for a database outage.
 func (s *ownerOnlySessions) GetSession(_ context.Context, id string) (*types.Session, error) {
+	if s.failing[id] {
+		return nil, errors.New("dial tcp 10.0.0.5:5432: connection refused")
+	}
 	if _, ok := s.owned[id]; !ok {
-		return nil, errors.New("not found")
+		return nil, apperrors.ErrSessionNotFound
 	}
 	return &types.Session{ID: id}, nil
 }
 
 func (s *ownerOnlySessions) GetOwnedSession(_ context.Context, id string) (*types.Session, error) {
+	if s.failing[id] {
+		return nil, errors.New("dial tcp 10.0.0.5:5432: connection refused")
+	}
 	if !s.owned[id] {
-		return nil, errors.New("not owner")
+		return nil, apperrors.ErrSessionNotFound
 	}
 	return &types.Session{ID: id}, nil
 }
@@ -538,4 +547,41 @@ func TestApplyRewriteProposalSnapshotsAsAI(t *testing.T) {
 		require.Equal(t, http.StatusNotFound, rec.Code, sess)
 	}
 	require.Len(t, ws.revs, 2, "rejected requests take no snapshot")
+}
+
+// A session that does not exist for the caller is a 404; a failed lookup
+// (database down) is a 500, not "session not found".
+func TestDocumentWorkspaceSessionLookupErrors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	sessions := &ownerOnlySessions{
+		owned:   map[string]bool{"mine": true},
+		failing: map[string]bool{"broken": true},
+	}
+	ws := &routeWorkspaces{enabled: true, bySess: map[string]*types.DocumentWorkspace{
+		"mine": {ID: "ws-mine", SessionID: "mine", FileName: "a.docx"},
+	}}
+	h := NewDocumentWorkspaceHandler(sessions, ws, &config.Config{}, nil)
+	r := gin.New()
+	r.Use(middleware.ErrorHandler())
+	r.Use(func(c *gin.Context) { c.Set(types.TenantIDContextKey.String(), uint64(7)) })
+	r.GET("/sessions/:id/documents/:doc_id", h.GetDocumentWorkspace)
+	r.DELETE("/sessions/:id/documents/:doc_id", h.DeleteDocumentWorkspace)
+
+	cases := []struct {
+		method, path string
+		want         int
+	}{
+		{http.MethodGet, "/sessions/mine/documents/ws-mine", http.StatusOK},
+		{http.MethodGet, "/sessions/other/documents/ws-mine", http.StatusNotFound},
+		{http.MethodGet, "/sessions/broken/documents/ws-mine", http.StatusInternalServerError},
+		{http.MethodDelete, "/sessions/other/documents/ws-mine", http.StatusNotFound},
+		{http.MethodDelete, "/sessions/broken/documents/ws-mine", http.StatusInternalServerError},
+	}
+	for _, tc := range cases {
+		rec := doJSON(r, tc.method, tc.path, "", nil)
+		require.Equal(t, tc.want, rec.Code, "%s %s: %s", tc.method, tc.path, rec.Body.String())
+		if tc.want == http.StatusInternalServerError {
+			require.NotContains(t, rec.Body.String(), "dial tcp", "the raw database error must not reach the client")
+		}
+	}
 }
