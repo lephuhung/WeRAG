@@ -2,6 +2,7 @@
 
 import { useMemo, type Dispatch, type SetStateAction } from "react";
 import { IconClose, IconInfoCircle, IconMinusCircle, IconRefresh } from "@/components/icons";
+import { ParseErrorNotice } from "@/components/knowledge/parse-error-notice";
 import { CHIP_CLS } from "@/components/knowledge/trace-status";
 import type { KnowledgeProcessOverrides } from "@/lib/api/knowledge";
 import { useT } from "@/lib/i18n";
@@ -327,23 +328,7 @@ export function TimelineHeader({ view }: { view: TimelineHeaderView }) {
         <div className="mt-2.5 flex overflow-hidden rounded-lg border border-error/30 bg-error/10" role="alert">
           <div className="w-[3px] shrink-0 bg-error" />
           <div className="min-w-0 flex-1 px-3.5 py-2.5">
-            <div className="mb-1 flex items-center gap-2">
-              <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-error text-[11px] font-bold text-white">
-                !
-              </span>
-              <span className="caption font-semibold text-error">{lastError.error_code || t("ks.detail.error")}</span>
-              {lastError.error_code && (
-                <span className="ml-auto rounded bg-error px-1.5 py-px font-mono text-[10px] text-white">
-                  {lastError.error_code}
-                </span>
-              )}
-            </div>
-            <div className="caption mb-1 text-muted">{t("ks.errUnknownSuggestion")}</div>
-            {lastError.error_message && (
-              <div className="whitespace-pre-wrap break-words font-mono text-[11px] text-muted-soft">
-                {lastError.error_message}
-              </div>
-            )}
+            <ParseErrorNotice code={lastError.error_code} message={lastError.error_message} />
           </div>
         </div>
       )}

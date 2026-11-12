@@ -2,6 +2,7 @@
 
 import { useMemo, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { IconCheck, IconClose, IconCopy } from "@/components/icons";
+import { ParseErrorNotice } from "@/components/knowledge/parse-error-notice";
 import { CHIP_CLS, barCls, dotCls } from "@/components/knowledge/trace-status";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import {
@@ -335,23 +336,21 @@ export function TimelineDetail({ view }: { view: TimelineDetailView }) {
                 {(selectedRow.node.status === "failed" || selectedRow.node.status === "cancelled") &&
                   (selectedRow.node.error_code || selectedRow.node.error_message) && (
                     <div className="flex flex-col gap-2 rounded-lg border border-error/30 bg-error/10 px-3 py-2.5">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-error text-[11px] font-bold text-white">
-                          !
-                        </span>
-                        <span className="caption font-semibold text-error">
-                          {selectedRow.node.error_code || t("ks.detail.error")}
-                        </span>
-                        {selectedRow.node.error_code && (
-                          <span className="ml-auto rounded bg-error px-1.5 py-px font-mono text-[10px] text-white">
-                            {selectedRow.node.error_code}
-                          </span>
-                        )}
-                      </div>
-                      {selectedRow.node.error_message && (
-                        <pre className="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border border-hairline bg-surface-card px-2.5 py-2 font-mono text-[11px] text-muted">
-                          {selectedRow.node.error_message}
-                        </pre>
+                      {selectedRow.node.status === "failed" || selectedRow.node.error_code ? (
+                        <ParseErrorNotice code={selectedRow.node.error_code} message={selectedRow.node.error_message} />
+                      ) : (
+                        /* cancelled without a code: only the server's note */
+                        <>
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-error text-[11px] font-bold text-white">
+                              !
+                            </span>
+                            <span className="caption font-semibold text-error">{t("ks.detail.error")}</span>
+                          </div>
+                          <pre className="m-0 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-md border border-hairline bg-surface-card px-2.5 py-2 font-mono text-[11px] text-muted">
+                            {selectedRow.node.error_message}
+                          </pre>
+                        </>
                       )}
                     </div>
                   )}

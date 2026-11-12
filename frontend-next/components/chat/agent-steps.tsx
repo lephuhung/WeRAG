@@ -442,6 +442,32 @@ const TOOL_NAME_KEYS: Record<string, LocaleKey> = {
   check_document_legal_basis: "step.tool.checkDocumentLegalBasis",
   compare_tax_methods: "step.tool.compareTaxMethods",
   calculate_household_tax: "step.tool.householdTax",
+  search_conversations: "step.tool.searchConversations",
+  search_memory: "step.tool.searchMemory",
+  write_skill_file: "step.tool.writeSkillFile",
+  edit_skill_file: "step.tool.editSkillFile",
+  wiki_write_page: "step.tool.wikiWritePage",
+  wiki_replace_text: "step.tool.wikiReplaceText",
+  wiki_rename_page: "step.tool.wikiRenamePage",
+  wiki_delete_page: "step.tool.wikiDeletePage",
+  wiki_flag_issue: "step.tool.wikiFlagIssue",
+  wiki_read_issue: "step.tool.wikiReadIssue",
+  wiki_update_issue: "step.tool.wikiUpdateIssue",
+  read_document_outline: "step.tool.readDocumentOutline",
+  rewrite_paragraphs: "step.tool.rewriteParagraphs",
+  insert_paragraphs: "step.tool.insertParagraphs",
+  mark_passages: "step.tool.markPassages",
+  check_spelling: "step.tool.checkSpelling",
+  apply_format_fixes: "step.tool.applyFormatFixes",
+  draw_diagram: "step.tool.drawDiagram",
+  generate_illustration: "step.tool.generateIllustration",
+  check_legal_status: "step.tool.checkLegalStatus",
+  find_in_documents: "step.tool.findInDocuments",
+  find_related_legal_documents: "step.tool.findRelatedLegalDocuments",
+  people_lookup: "step.tool.peopleLookup",
+  resolve_abbreviation: "step.tool.resolveAbbreviation",
+  prepare_document_template: "step.tool.prepareDocumentTemplate",
+  agent_handoff: "step.tool.agentHandoff",
   local_browser: "step.localBrowser",
 };
 
@@ -457,7 +483,11 @@ export function localizedToolName(t: TFn, toolName?: string | null): string {
       .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
       .join(" ");
   }
-  return toolName;
+  // A tool this map does not know yet: never show the raw snake_case id.
+  // "some_new_tool" → "Some new tool"; nothing readable left → "Tool".
+  const words = toolName.replace(/[_\-.]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!words) return t("step.toolFallback");
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 // ---- titles --------------------------------------------------------------------

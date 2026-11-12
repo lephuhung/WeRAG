@@ -31,6 +31,7 @@ import {
 import { dismissSidebarFold, setSidebarHidden, useSidebarFolded, useSidebarHidden } from "@/lib/sidebar-state";
 import { dayBucket, type DayBucket } from "@/lib/message-time";
 import { useDialogFocus } from "@/components/use-dialog-focus";
+import { paletteShortcutLabel } from "@/lib/shortcut-label";
 import {
   SHELL_DESKTOP_QUERY,
   SHELL_HEADER_HEIGHT_PX,
@@ -68,6 +69,12 @@ export function Sidebar() {
   const router = useRouter();
   const { t } = useT();
   const palette = useCommandPalette();
+  /* "Ctrl K" until mounted (most users are on Windows), "⌘K" on Apple
+   * systems — read after mount so the server render matches. */
+  const [shortcut, setShortcut] = useState("Ctrl K");
+  useEffect(() => {
+    setShortcut(paletteShortcutLabel(navigator.platform || navigator.userAgent));
+  }, []);
   // a guest (no organization) has chat + public KBs; the artifacts library
   // needs an organization
   const { isGuest } = useTenantRole();
@@ -331,7 +338,7 @@ export function Sidebar() {
           <IconSearch className="h-4 w-4" />
           <span className="flex-1 text-left">{t("nav.search")}</span>
           <kbd className="caption rounded border border-hairline px-1.5 py-0.5 text-[11px] text-muted">
-            ⌘K
+            {shortcut}
           </kbd>
         </button>
       </div>

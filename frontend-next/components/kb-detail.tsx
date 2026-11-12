@@ -536,7 +536,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
                 href={`/platform/knowledge-bases/${kbId}/creatChat`}
                 className="btn btn-primary"
               >
-                <IconChat className="h-4 w-4" /> Chat
+                <IconChat className="h-4 w-4" /> {t("kbUi.chat")}
               </Link>
             )}
           </div>
@@ -622,7 +622,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
               <div className="flex shrink-0 items-center justify-between border-b border-hairline px-4 py-2.5">
                 <div className="flex items-center gap-2 font-medium text-[13.5px] text-ink">
                   <IconDoc className="h-4 w-4 text-muted" />
-                  <span>Wiki</span>
+                  <span>{t("kbUi.wiki")}</span>
                 </div>
                 <span className="text-[11.5px] text-muted-soft">{t("kbUi.wikiContents")}</span>
               </div>

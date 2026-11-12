@@ -64,7 +64,7 @@ export const SYSTEM_TABS: SystemTab[] = [
     label: "Models",
     labelKey: "systemNav.models",
     href: "/platform/system/models",
-    minRole: "owner",
+    minRole: "system",
     groups: [
       {
         key: "models",
@@ -74,19 +74,21 @@ export const SYSTEM_TABS: SystemTab[] = [
             label: "Model catalog",
             labelKey: "systemNav.catalog",
             href: "/platform/system/models",
-            minRole: "owner",
+            minRole: "system",
           },
           {
             key: "ollama",
             label: "Ollama (local)",
+            labelKey: "systemNav.ollama",
             href: "/platform/system/models/ollama",
-            minRole: "owner",
+            minRole: "system",
           },
           {
             key: "weknoracloud",
             label: "WeRAG Cloud",
+            labelKey: "systemNav.weragCloud",
             href: "/platform/system/models/weknoracloud",
-            minRole: "owner",
+            minRole: "system",
           },
         ],
       },

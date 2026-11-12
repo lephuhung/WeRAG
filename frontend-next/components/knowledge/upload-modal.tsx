@@ -205,7 +205,7 @@ export function UploadModal({
             disabled={files.length === 0}
             onClick={startUpload}
           >
-            {`Upload${files.length > 0 ? ` (${files.length})` : ""}`}
+            {files.length > 0 ? t("ui.up.submitCount", { count: files.length }) : t("ui.up.submit")}
           </button>
         </div>
       </div>
