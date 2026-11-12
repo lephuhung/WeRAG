@@ -1001,6 +1001,14 @@ services:
       BACKUP_PG_CRON: ${BACKUP_PG_CRON:-15 0 * * *}
       BACKUP_BASE_CRON: ${BACKUP_BASE_CRON:-0 1 * * 0}
       BACKUP_FILES_CRON: ${BACKUP_FILES_CRON:-30 2 * * *}
+      BACKUP_OBJECTS_CRON: ${BACKUP_OBJECTS_CRON:-40 2 * * *}
+      # Bucket file ứng dụng (KB dùng MinIO: văn bản gốc + ảnh/tệp sinh ra khi parse) — job
+      # `objects` mirror về /work/objects rồi tar incremental. Bỏ trống → job bỏ qua.
+      # Dùng user MinIO chỉ-đọc riêng, KHÔNG dùng khoá của app.
+      BACKUP_SRC_S3_ENDPOINT: ${BACKUP_SRC_S3_ENDPOINT:-}
+      BACKUP_SRC_S3_BUCKET: ${BACKUP_SRC_S3_BUCKET:-}
+      BACKUP_SRC_S3_ACCESS_KEY: ${BACKUP_SRC_S3_ACCESS_KEY:-}
+      BACKUP_SRC_S3_SECRET_KEY: ${BACKUP_SRC_S3_SECRET_KEY:-}
       BACKUP_ENV_CRON: ${BACKUP_ENV_CRON:-30 3 * * *}
       BACKUP_RESTORE_CHECK_CRON: ${BACKUP_RESTORE_CHECK_CRON:-45 4 * * 0}
       BACKUP_HOST_LABEL: ${BACKUP_HOST_LABEL:-werag}

@@ -27,6 +27,7 @@ ${BACKUP_WAL_CRON:-* * * * *} /usr/local/bin/backup.sh wal
 ${BACKUP_PG_CRON:-15 0 * * *} /usr/local/bin/backup.sh postgres
 ${BACKUP_BASE_CRON:-0 1 * * 0} /usr/local/bin/backup.sh pgbase
 ${BACKUP_FILES_CRON:-30 2 * * *} /usr/local/bin/backup.sh files
+${BACKUP_OBJECTS_CRON:-40 2 * * *} /usr/local/bin/backup.sh objects
 ${BACKUP_ENV_CRON:-30 3 * * *} /usr/local/bin/backup.sh env
 ${BACKUP_RESTORE_CHECK_CRON:-45 4 * * 0} /usr/local/bin/backup.sh restore-check
 EOF
@@ -38,6 +39,7 @@ if [ "${BACKUP_RUN_ON_START:-true}" = "true" ]; then
   # WAL vô dụng nếu chưa có base backup nào → tạo ngay lần đầu.
   [ -f /work/state/pgbase.ok ] || /usr/local/bin/backup.sh pgbase || true
   [ -f /work/state/files.ok ] || /usr/local/bin/backup.sh files || true
+  [ -f /work/state/objects.ok ] || /usr/local/bin/backup.sh objects || true
 fi
 
 exec supercronic -passthrough-logs /work/crontab

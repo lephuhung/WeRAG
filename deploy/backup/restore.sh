@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
 # Khôi phục (chạy tay, cần age PRIVATE key — container backup thường trực không có).
 #
-#   restore.sh list [postgres|pgbase|wal|files|neo4j|env]   liệt kê bản backup
+#   restore.sh list [postgres|pgbase|wal|files|objects|neo4j|env]   liệt kê bản backup
 #   restore.sh fetch <object|latest-<loại>> <file-ra>         tải + giải mã một object
 #   restore.sh postgres <db> <object|latest> <db-mới>        pg_restore bản dump của <db> vào DB mới
 #   restore.sh pgbase <object|latest> <thư-mục>              giải nén base backup (vật lý) ra thư mục
 #   restore.sh wal <file-WAL-đầu> <thư-mục>                  tải mọi WAL từ file đó trở đi (+ .history)
 #   restore.sh files <thư-mục>                               level 0 mới nhất + level 1 sau nó
+#   restore.sh objects <thư-mục>                             bucket file ứng dụng (như files); đẩy lại
+#                                                            lên bucket bằng mc mirror (README.md)
+#   restore.sh objects-check <thư-mục> [db]                  đối chiếu thư mục đã khôi phục với key
+#                                                            MinIO mà DB tham chiếu (bảng resources)
 #
 # Ví dụ (trong /home/WeRAG, xem README.md cho quy trình đầy đủ):
 #   docker compose -p spec-airag-refactor run --rm --no-deps --user "$(id -u)" \
@@ -27,7 +31,7 @@ mc alias set backup "$BACKUP_S3_ENDPOINT" "$BACKUP_S3_ACCESS_KEY" "$BACKUP_S3_SE
 keys() {  # loại [lọc-tên] — key đầy đủ, cũ → mới
   mc ls --recursive --json "backup/$BUCKET/$PREFIX/$1/" \
     | jq -r 'select(.type=="file") | [.lastModified, .key] | @tsv' \
-    | sort | cut -f2 | grep -E "${2:-.}" | sed "s#^#$PREFIX/$1/#"
+    | sort | cut -f2 | { grep -E "${2:-.}" || true; } | sed "s#^#$PREFIX/$1/#"   # không khớp ≠ lỗi
 }
 
 resolve() {  # object|latest-<loại>
@@ -41,6 +45,20 @@ decrypt() {  # key → stdout
   [ -r "$IDENTITY" ] || { echo "không đọc được private key $IDENTITY" >&2; exit 1; }
   echo "[restore] $1" >&2
   mc cat "backup/$BUCKET/$1" | age -d -i "$IDENTITY"
+}
+
+# Level 1 luôn so với level 0 (backup.sh) → level 0 mới nhất + level 1 cuối cùng sau nó là đủ;
+# -g /dev/null: xoá cả tệp đã bị xoá trước lần level 1 đó.
+restore_incremental() {  # loại thư-mục
+  local kind=$1 dir=$2 l0 l1 key
+  l0=$(keys "$kind" 'L0\.tar' | tail -1)
+  [ -n "$l0" ] || { echo "không có bản level 0 của $kind" >&2; exit 1; }
+  l1=$(keys "$kind" 'L1\.tar' | awk -v l0="$(basename "$l0")" '{ split($0, p, "/"); if (p[length(p)] > l0) last=$0 } END { print last }')
+  mkdir -p "$dir"
+  for key in $l0 $l1; do
+    decrypt "$key" | zstd -q -d | tar -C "$dir" -g /dev/null -xf -
+  done
+  echo "[restore] $kind → $dir (level 0: $(basename "$l0")${l1:+, level 1: $(basename "$l1")})"
 }
 
 fetch() {  # object out
@@ -84,15 +102,23 @@ case "${1:-}" in
     done < <(keys wal)
     echo "[restore] $n file WAL → $dir" ;;
   files)
-    dir="${2:?thư mục ra}"
-    l0=$(keys files 'L0\.tar' | tail -1)
-    [ -n "$l0" ] || { echo "không có bản level 0" >&2; exit 1; }
-    l1=$(keys files 'L1\.tar' | awk -v l0="$(basename "$l0")" '{ split($0, p, "/"); if (p[length(p)] > l0) last=$0 } END { print last }')
-    mkdir -p "$dir"
-    for key in $l0 $l1; do
-      decrypt "$key" | zstd -q -d | tar -C "$dir" -g /dev/null -xf -
-    done
-    echo "[restore] files → $dir (level 0: $(basename "$l0")${l1:+, level 1: $(basename "$l1")})" ;;
+    restore_incremental files "${2:?thư mục ra}" ;;
+  objects)
+    restore_incremental objects "${2:?thư mục ra}" ;;
+  objects-check)
+    # Mọi key mà resources (provider minio, đang dùng) trỏ tới phải có trong thư mục khôi phục.
+    dir="${2:?thư mục đã khôi phục}"; db="${3:-${PGDATABASE:?thiếu PGDATABASE}}"
+    bucket="${BACKUP_SRC_S3_BUCKET:-werag}"
+    [[ "$bucket" =~ ^[a-z0-9][a-z0-9.-]{1,62}$ ]] || { echo "bucket không hợp lệ: $bucket" >&2; exit 1; }
+    export PGHOST="${PGHOST:-postgres}"
+    psql -qAt -d "$db" -c "SELECT substring(physical_path FROM '/minio://$bucket/(.*)\$') FROM resources
+        WHERE provider = 'minio' AND deleted_at IS NULL AND state = 'active'
+          AND physical_path LIKE '%/minio://$bucket/%'" | LC_ALL=C sort -u > "$WORK/refs"
+    (cd "$dir" && find . -type f | sed 's#^\./##' | LC_ALL=C sort -u) > "$WORK/have"
+    missing=$(LC_ALL=C comm -23 "$WORK/refs" "$WORK/have" | wc -l)
+    echo "[restore] $db tham chiếu $(wc -l < "$WORK/refs") object, thư mục có $(wc -l < "$WORK/have") tệp, thiếu $missing"
+    LC_ALL=C comm -23 "$WORK/refs" "$WORK/have" | head -20
+    [ "$missing" -eq 0 ] ;;
   *)
-    sed -n '2,15p' "$0"; exit 2 ;;
+    sed -n '2,19p' "$0"; exit 2 ;;
 esac

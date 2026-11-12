@@ -4,7 +4,7 @@
 # Chỉ giữ age PUBLIC key: container mã hoá được nhưng không đọc lại được backup.
 FROM postgres:17-alpine
 
-RUN apk add --no-cache bash age zstd jq tzdata minio-client supercronic tar coreutils \
+RUN apk add --no-cache bash age zstd jq tzdata minio-client supercronic tar coreutils findutils gzip \
     && ln -s /usr/bin/mcli /usr/local/bin/mc \
     # uid/gid 999 = user postgres trong image paradedb (Debian): file WAL do
     # archive_command chép vào spool thuộc 999, container phải đọc + xoá được.

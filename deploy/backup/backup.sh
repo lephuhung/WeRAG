@@ -1,21 +1,24 @@
 #!/usr/bin/env bash
-# backup.sh wal | pgbase | postgres | files | neo4j <db> | env | restore-check
+# backup.sh wal | pgbase | postgres | files | objects | neo4j <db> | env | restore-check
 #
 #   wal            WAL do archive_command chép vào /spool/wal → zstd → age → MinIO, xoá khỏi spool.
 #                  Cùng base backup cho phép khôi phục tới một thời điểm (PITR).
 #   pgbase         pg_basebackup (tar, kèm WAL cần thiết) → zstd → age → MinIO
 #   postgres       pg_dumpall --globals-only + pg_dump -Fc từng DB → age → MinIO (daily/weekly/monthly)
 #   files          /data/files: GNU tar incremental (CN hoặc lần đầu: level 0, ngày khác: level 1)
+#   objects        bucket file ứng dụng (BACKUP_SRC_S3_*: văn bản gốc + ảnh/tệp sinh ra khi parse của
+#                  KB dùng MinIO) → mc mirror về /work/objects → GNU tar incremental như files
 #   neo4j <db>     dump Neo4j đọc từ stdin (deploy/backup/neo4j-dump.sh trên host gọi) → age
 #   env            các file trong /secrets (.env) → tar|zstd|age (khi đổi, hoặc ≥ 7 ngày)
 #   restore-check  pg_dump | pg_restore DB chính vào DB tạm → so bảng/migration, thử truy vấn
-#                  vector + BM25 → xoá DB tạm
+#                  vector + BM25; kiểm chuỗi backup objects (sha256 + header age) và đối chiếu
+#                  key MinIO mà DB tạm tham chiếu (resources) với danh sách tệp trong chuỗi → xoá DB tạm
 #
 # Mỗi job ghi status/werag-<job>.json lên MinIO (portal inventory đọc để cảnh báo) và
 # /work/state/<job>.ok (healthcheck). Container KHÔNG có private key age.
 set -Eeuo pipefail
 
-JOB="${1:?job: wal | pgbase | postgres | files | neo4j | env | restore-check}"
+JOB="${1:?job: wal | pgbase | postgres | files | objects | neo4j | env | restore-check}"
 BUCKET="${BACKUP_S3_BUCKET:-inventory-backups}"
 PREFIX="${BACKUP_PREFIX:-werag}"
 WORK="${BACKUP_WORK:-/work}"
@@ -27,6 +30,7 @@ OBJECT=""
 BYTES=0
 SHA=""
 NOTE=""
+EXTRA='{}'        # trường thêm của status JSON (job objects: số object, dung lượng…)
 WRITE_STATUS=true
 
 log() { echo "[backup:$JOB] $*"; }
@@ -36,8 +40,8 @@ write_status() {  # ok error
   jq -n --arg job "$JOB" --argjson ok "$ok" --arg error "$err" --arg object "$OBJECT" \
         --argjson bytes "${BYTES:-0}" --arg sha256 "$SHA" --arg note "$NOTE" \
         --arg host "${BACKUP_HOST_LABEL:-$(hostname)}" --arg finished_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-        --argjson duration_s "$(( $(date +%s) - STARTED ))" \
-        '{job:$job, ok:$ok, finished_at:$finished_at, duration_s:$duration_s,
+        --argjson duration_s "$(( $(date +%s) - STARTED ))" --argjson extra "$EXTRA" \
+        '$extra + {job:$job, ok:$ok, finished_at:$finished_at, duration_s:$duration_s,
           object:$object, bytes:$bytes, sha256:$sha256, note:$note, error:$error, host:$host}' > "$f"
   # Bucket có object lock → PUT phải kèm Content-MD5 (--md5).
   mc cp --quiet --md5 "$f" "backup/$BUCKET/status/$PREFIX-$JOB.json" >/dev/null \
@@ -124,9 +128,10 @@ job_wal() {
   fi
   NOTE="$n file; WAL cuối của server: $( [ "$archived_at" -gt 0 ] && date -d "@$archived_at" '+%F %T' || echo chưa có)"
 
-  # Chạy mỗi phút: chỉ ghi status khi có file mới hoặc ≥ 60 phút chưa ghi (đủ cho cảnh báo quá hạn).
+  # Chạy mỗi phút: chỉ ghi status khi có file mới hoặc ≥ 10 phút chưa ghi — backend cảnh báo
+  # WAL quá hạn sau 15 phút (internal/application/service/backup_monitor.go).
   now=$(date +%s); last=$(cat "$STATE/wal.status-epoch" 2>/dev/null || echo 0)
-  if [ "$n" -eq 0 ] && [ $(( now - last )) -lt 3600 ]; then
+  if [ "$n" -eq 0 ] && [ $(( now - last )) -lt "${BACKUP_WAL_STATUS_EVERY_S:-600}" ]; then
     WRITE_STATUS=false
   else
     echo "$now" > "$STATE/wal.status-epoch"
@@ -198,6 +203,88 @@ job_files() {
   NOTE="level=$level"
 }
 
+# Chuỗi objects hiện tại (từ level 0 gần nhất): mỗi dòng "key<TAB>bytes<TAB>sha256<TAB>epoch-bắt-đầu";
+# objects-index/ giữ danh sách tệp (tar --index-file) của từng archive trong chuỗi, để
+# restore-check đối chiếu với DB mà không cần private key.
+OBJECTS_STAGE="$WORK/objects"
+OBJECTS_CHAIN="$STATE/objects.chain.tsv"
+OBJECTS_INDEX="$STATE/objects-index"
+
+# Lỗi mc mirror --json nằm trên stdout (file log), không ở stderr.
+mirror_error() {  # log
+  { jq -r 'select(.status=="error") | (.error.message // "") + " " + (.error.cause.message // "")' "$1" 2>/dev/null || true; } \
+    | grep -v '^\s*$' | tail -1 | cut -c1-200 || true
+}
+
+job_objects() {
+  local src_vars="${BACKUP_SRC_S3_ENDPOINT:-}${BACKUP_SRC_S3_BUCKET:-}${BACKUP_SRC_S3_ACCESS_KEY:-}${BACKUP_SRC_S3_SECRET_KEY:-}"
+  local bucket="${BACKUP_SRC_S3_BUCKET:-}" stage="$OBJECTS_STAGE" snar0="$STATE/objects.l0.snar" snar="$TMP/$JOB.snar"
+  local level enc mlog idx key started n_obj n_bytes copied removed src_size have out
+  # Bản cài không dùng MinIO cho file ứng dụng: không cấu hình gì → bỏ qua, không báo lỗi.
+  if [ -z "$src_vars" ]; then NOTE="chưa cấu hình BACKUP_SRC_S3_* — bỏ qua"; log "$NOTE"; return 0; fi
+  if [ -z "${BACKUP_SRC_S3_ENDPOINT:-}" ] || [ -z "$bucket" ] || [ -z "${BACKUP_SRC_S3_ACCESS_KEY:-}" ] \
+     || [ -z "${BACKUP_SRC_S3_SECRET_KEY:-}" ]; then
+    fail "BACKUP_SRC_S3_* thiếu biến (cần ENDPOINT, BUCKET, ACCESS_KEY, SECRET_KEY)"
+  fi
+  [[ "$bucket" =~ ^[a-z0-9][a-z0-9.-]{1,62}$ ]] || fail "BACKUP_SRC_S3_BUCKET không hợp lệ: $bucket"
+  exec 8>"$STATE/objects.lock"
+  if ! flock -n 8; then WRITE_STATUS=false; log "đang chạy ở tiến trình khác — bỏ qua"; return 0; fi
+
+  # alias set thử kết nối luôn; giữ câu lỗi của mc (không chứa khoá) trong status.
+  if ! out=$(mc alias set src "$BACKUP_SRC_S3_ENDPOINT" "$BACKUP_SRC_S3_ACCESS_KEY" "$BACKUP_SRC_S3_SECRET_KEY" 2>&1 >/dev/null); then
+    fail "không kết nối được nguồn $BACKUP_SRC_S3_ENDPOINT (bucket $bucket): $(echo "${out##*<ERROR> }" | tail -1 | cut -c1-300)"
+  fi
+  if ! out=$(mc ls "src/$bucket" 2>&1 >/dev/null); then
+    fail "không đọc được bucket nguồn $bucket ở $BACKUP_SRC_S3_ENDPOINT: $(echo "${out##*<ERROR> }" | tail -1 | cut -c1-300)"
+  fi
+
+  mkdir -p "$stage"
+  # Chỗ trống: phần bucket chưa có trong bản sao + archive (≈ cả bucket, ảnh/PDF nén ít).
+  src_size=$(mc du --json "src/$bucket" | jq -r '.size // 0')
+  have=$(du -sb "$stage" | cut -f1)
+  need_space $(( src_size > have ? 2 * src_size - have : src_size ))
+  # Bản sao cục bộ của bucket: chỉ tải object mới/đổi, --remove xoá tệp mà bucket đã xoá.
+  # Tệp không đổi giữ nguyên mtime → tar level 1 chỉ chứa phần thay đổi.
+  mlog="$TMP/$JOB.mirror.jsonl"
+  if ! mc mirror --overwrite --remove --retry --json "src/$bucket" "$stage" > "$mlog"; then
+    fail "mc mirror từ $bucket lỗi: $(mirror_error "$mlog")"
+  fi
+  copied=$({ jq -r 'select(.status=="success" and has("target") and (.source // "") != "") | 1' "$mlog" 2>/dev/null || true; } | wc -l)
+  removed=$({ jq -r 'select(.status=="success" and has("target") and (.source // "") == "") | 1' "$mlog" 2>/dev/null || true; } | wc -l)
+  rm -f "$mlog"
+  # Key S3 kiểu symlink/thiết bị không thể có; gặp thì dừng thay vì đóng gói thứ lạ.
+  [ -z "$(find "$stage" ! -type f ! -type d -print -quit)" ] || fail "$stage có mục không phải tệp/thư mục"
+  n_obj=$(find "$stage" -type f | wc -l)
+  n_bytes=$(du -sb "$stage" | cut -f1)
+
+  if [ ! -s "$snar0" ] || [ ! -s "$OBJECTS_CHAIN" ] || [ "$(date +%u)" = "7" ]; then level=0; rm -f "$snar"
+  else level=1; cp "$snar0" "$snar"; fi
+  enc="$TMP/$JOB.tar.zst.age"; idx="$TMP/$JOB.index"
+  started=$(date +%s)
+  tar -C "$stage" --no-check-device --quoting-style=literal -g "$snar" -v --index-file="$idx" -cf - . \
+    | zstd -q -T0 -6 | encrypt "$enc"
+  key="$PREFIX/objects/$(date +%Y/%m)/objects-$(stamp)-L$level.tar.zst.age"
+  upload_verified "$enc" "$key"
+  rm -f "$enc"
+
+  # Level 1 luôn so với level 0 → chỉ thay snapshot + bắt đầu chuỗi mới sau level 0 thành công.
+  if [ "$level" = 0 ]; then
+    mv "$snar" "$snar0"
+    rm -rf "$OBJECTS_INDEX"; : > "$OBJECTS_CHAIN"
+  else
+    rm -f "$snar"
+  fi
+  mkdir -p "$OBJECTS_INDEX"
+  gzip -c "$idx" > "$OBJECTS_INDEX/$(basename "$key" .tar.zst.age).idx.gz"
+  rm -f "$idx"
+  printf '%s\t%s\t%s\t%s\n' "$key" "$BYTES" "$SHA" "$started" >> "$OBJECTS_CHAIN"
+
+  NOTE="level=$level objects=$n_obj source_bytes=$n_bytes copied=$copied removed=$removed"
+  EXTRA=$(jq -nc --argjson level "$level" --argjson objects "$n_obj" --argjson source_bytes "$n_bytes" \
+    --argjson copied "$copied" --argjson removed "$removed" --arg bucket "$bucket" \
+    '{level:$level, objects:$objects, source_bytes:$source_bytes, copied:$copied, removed:$removed, source_bucket:$bucket}')
+}
+
 job_neo4j() {  # db — dump đọc từ stdin
   local db=${1:?tên database Neo4j} enc="$TMP/$JOB.dump.age"
   [ "$db" != "dump-failed" ] || fail "neo4j-admin dump lỗi trên host (xem journalctl -u werag-neo4j-backup)"
@@ -233,9 +320,60 @@ job_env() {
   echo "$digest" > "$STATE/env.digest"; echo "$now" > "$STATE/env.epoch"; echo "$OBJECT" > "$STATE/env.object"
 }
 
+# Chuỗi backup objects (container không có private key → không giải mã được, phần đó là
+# diễn tập tay: restore.sh objects + objects-check):
+#  1. mọi archive của chuỗi còn trên MinIO, đúng sha256 lúc đẩy, mở đầu bằng header age;
+#  2. key MinIO mà DB khôi phục tham chiếu (resources đang dùng, tạo trước lần đóng gói cuối)
+#     có trong danh sách tệp của chuỗi. Key thiếu cả trong bản sao bucket = bucket nguồn đã mất
+#     object (chỉ ghi chú); có trong bản sao mà không có trong chuỗi = backup thiếu (lỗi).
+objects_configured() { [ -n "${BACKUP_SRC_S3_BUCKET:-}" ]; }
+
+objects_db_refs() {  # db file-ra — key (sort -u) mà DB tham chiếu trong bucket nguồn
+  local db=$1 out=$2 bucket=${BACKUP_SRC_S3_BUCKET:-} cutoff
+  [[ "$bucket" =~ ^[a-z0-9][a-z0-9.-]{1,62}$ ]] || fail "BACKUP_SRC_S3_BUCKET không hợp lệ: $bucket"
+  [ -s "$OBJECTS_CHAIN" ] || fail "objects: chưa có chuỗi backup nào (chạy backup.sh objects)"
+  cutoff=$(tail -1 "$OBJECTS_CHAIN" | cut -f4)
+  [[ "$cutoff" =~ ^[0-9]+$ ]] || fail "objects: $OBJECTS_CHAIN hỏng"
+  if [ -z "$(psql -qAt -d "$db" -c "SELECT to_regclass('public.resources')")" ]; then
+    : > "$out"; return 0
+  fi
+  psql -qAt -d "$db" -c "SELECT substring(physical_path FROM '/minio://$bucket/(.*)\$') FROM resources
+      WHERE provider = 'minio' AND deleted_at IS NULL AND state = 'active'
+        AND physical_path LIKE '%/minio://$bucket/%' AND created_at < to_timestamp($cutoff)" \
+    | LC_ALL=C sort -u > "$out"
+}
+
+check_objects() {  # refs-file → OBJ_NOTE
+  local refs=$1 idx="$TMP/$JOB.objects.idx" miss="$TMP/$JOB.objects.missing" f key size sha started
+  local n=0 remote hdr total lost=0 src_missing=0 first=""
+  while IFS=$'\t' read -r -u 4 key size sha started; do
+    [ -n "$key" ] || continue
+    remote=$(mc cat "backup/$BUCKET/$key" | sha256sum | cut -d' ' -f1)
+    [ "$remote" = "$sha" ] || fail "objects: $key trên MinIO khác bản đã đẩy (sha256)"
+    hdr=$(mc head -n 1 "backup/$BUCKET/$key")
+    [ "$hdr" = "age-encryption.org/v1" ] || fail "objects: $key không phải tệp age"
+    n=$(( n + 1 ))
+  done 4< "$OBJECTS_CHAIN"
+  { for f in "$OBJECTS_INDEX"/*.idx.gz; do if [ -e "$f" ]; then gzip -dc "$f"; fi; done; } \
+    | sed 's#^\./##' | LC_ALL=C sort -u > "$idx"
+  LC_ALL=C comm -23 "$refs" "$idx" > "$miss"
+  total=$(wc -l < "$refs")
+  while IFS= read -r key; do
+    if [ -f "$OBJECTS_STAGE/$key" ]; then
+      lost=$(( lost + 1 )); [ -n "$first" ] || first=$key
+    else
+      src_missing=$(( src_missing + 1 ))
+    fi
+  done < "$miss"
+  rm -f "$idx" "$miss"
+  OBJ_NOTE="objects: chain=$n archive ok, db_refs=$total missing_in_backup=$lost missing_in_source=$src_missing"
+  [ "$lost" -eq 0 ] || fail "objects: $lost tệp DB tham chiếu có trong bản sao bucket nhưng thiếu trong chuỗi backup (vd $first)"
+}
+
 job_restore_check() {
   pg_env
   local scratch="${PGDATABASE}_restore_check" src_tables dst_tables src_rev dst_rev dim vec bm25 emb
+  local refs="$TMP/$JOB.objects.refs" OBJ_NOTE="objects: chưa cấu hình BACKUP_SRC_S3_*"
   local q_tables="SELECT count(*) FROM pg_tables WHERE schemaname='public'"
   local q_rev="SELECT version || CASE WHEN dirty THEN ' dirty' ELSE '' END FROM schema_migrations"
   need_space "$(psql -qAt -d postgres -c "SELECT pg_database_size('$PGDATABASE')")"
@@ -254,6 +392,7 @@ job_restore_check() {
     bm25=$(psql -qAt -d "$scratch" -c "SELECT count(*) FROM (SELECT id FROM embeddings
             WHERE id @@@ paradedb.all() LIMIT 5) t")
   fi
+  if objects_configured; then objects_db_refs "$scratch" "$refs"; fi
   psql -qAt -d postgres -c "DROP DATABASE \"$scratch\""
   NOTE="tables=$dst_tables/$src_tables migration=$dst_rev embeddings=$emb vector_hits=$vec bm25_hits=$bm25"
   if [ "$src_tables" != "$dst_tables" ] || [ "$src_rev" != "$dst_rev" ]; then
@@ -262,7 +401,12 @@ job_restore_check() {
   if [ "${emb:-0}" -gt 0 ] && { [ "$vec" -eq 0 ] || [ "$bm25" -eq 0 ]; }; then
     fail "truy vấn vector/BM25 trên bản khôi phục không trả kết quả: $NOTE"
   fi
+  if objects_configured; then check_objects "$refs"; rm -f "$refs"; fi
+  NOTE="$NOTE; $OBJ_NOTE"
 }
+
+# deploy/backup/test/objects-test.sh source file này để gọi từng hàm.
+[ "${BASH_SOURCE[0]}" = "$0" ] || return 0
 
 mkdir -p "$STATE" "$TMP"
 ERRLOG="$TMP/$JOB.stderr"
@@ -273,6 +417,7 @@ case "$JOB" in
   pgbase) job_pgbase ;;
   postgres) job_postgres ;;
   files) job_files ;;
+  objects) job_objects ;;
   neo4j) job_neo4j "${2:-}" ;;
   env) job_env ;;
   restore-check) job_restore_check ;;
