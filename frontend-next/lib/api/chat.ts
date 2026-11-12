@@ -2,7 +2,7 @@
  * chat-history.ts + message-suggestion.ts + artifacts.ts.
  * SSE streaming itself lives in ./stream.ts (postChat equivalent).
  */
-import { apiDel, apiDownload, apiGet, apiPost, apiPut, type ApiRequestOptions } from "@/lib/api-client";
+import { apiDel, apiDownload, apiDownloadNamed, apiGet, apiPost, apiPut, type ApiRequestOptions } from "@/lib/api-client";
 import { clientChannel } from "./client-channel.ts";
 
 // ---- sessions ---------------------------------------------------------------
@@ -359,6 +359,15 @@ export function downloadArtifact(
   const width = opts?.width ? `?width=${opts.width}` : "";
   return apiDownload(
     `/api/v1/sessions/${sessionId}/messages/${messageId}/artifacts/${index}/download${width}`,
+  );
+}
+
+/* One finished answer as a Word file: the stored answer's Markdown, the
+ * question, the time and the sources, built on the server (no model call).
+ * Same ownership rule as loading the session's messages. */
+export function downloadAnswerDocx(sessionId: string, messageId: string): Promise<{ blob: Blob; fileName: string | null }> {
+  return apiDownloadNamed(
+    `/api/v1/sessions/${encodeURIComponent(sessionId)}/messages/${encodeURIComponent(messageId)}/export.docx`,
   );
 }
 

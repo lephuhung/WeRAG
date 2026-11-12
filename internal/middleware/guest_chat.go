@@ -49,6 +49,7 @@ var guestChatRoutes = []guestChatRoute{
 	{http.MethodGet, []string{"messages", "*", "load"}},
 	{http.MethodDelete, []string{"messages", "*", "*"}},
 	{http.MethodPut, []string{"messages", "*", "*", "feedback"}},
+	{http.MethodGet, []string{"sessions", "*", "messages", "*", "export.docx"}},
 	{http.MethodGet, []string{"agents"}},
 	{http.MethodGet, []string{"me", "usage"}},
 	// A Guest's own package: billingScope refuses them the tenant scope.

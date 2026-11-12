@@ -230,6 +230,7 @@ func TestIsGuestChatAPI(t *testing.T) {
 		{http.MethodGet, "/api/v1/sessions/continue-stream/s1"},
 		{http.MethodPut, "/api/v1/messages/s1/m1/feedback"},
 		{http.MethodPost, "/api/v1/sessions/s1/generate_title"},
+		{http.MethodGet, "/api/v1/sessions/s1/messages/m1/export.docx"},
 	}
 	no := []struct{ method, path string }{
 		{http.MethodDelete, "/api/v1/sessions/batch"},
@@ -237,6 +238,8 @@ func TestIsGuestChatAPI(t *testing.T) {
 		{http.MethodGet, "/api/v1/sessions//context-usage"},
 		{http.MethodPost, "/api/v1/agents"},
 		{http.MethodGet, "/api/v1/sessions/s1/documents"},
+		{http.MethodGet, "/api/v1/sessions/s1/messages/m1/artifacts"},
+		{http.MethodPost, "/api/v1/sessions/s1/messages/m1/export.docx"},
 		{http.MethodPost, "/api/v1/agent-chat"},
 		{http.MethodGet, "/api/v2/sessions"},
 	}

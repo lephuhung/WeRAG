@@ -45,6 +45,7 @@ func newGuestChatEngine(t *testing.T, tenant *types.Tenant, role types.TenantRol
 	g := r.Group("/api/v1")
 	RegisterSessionRoutes(g, &session.Handler{}, nil, guards)
 	RegisterDocumentWorkspaceRoutes(g, &session.DocumentWorkspaceHandler{}, guards)
+	RegisterAnswerExportRoutes(g, &session.AnswerExportHandler{}, guards)
 	RegisterChatRoutes(g, &session.Handler{}, guards)
 	RegisterMessageRoutes(g, &handler.MessageHandler{}, guards)
 	RegisterCustomAgentRoutes(g, &handler.CustomAgentHandler{}, guards)
@@ -73,6 +74,7 @@ var guestChatCases = []struct{ method, path string }{
 	{http.MethodGet, "/api/v1/messages/s1/load"},
 	{http.MethodDelete, "/api/v1/messages/s1/m1"},
 	{http.MethodPut, "/api/v1/messages/s1/m1/feedback"},
+	{http.MethodGet, "/api/v1/sessions/s1/messages/m1/export.docx"},
 	{http.MethodGet, "/api/v1/agents"},
 }
 

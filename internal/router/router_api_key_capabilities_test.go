@@ -20,6 +20,7 @@ func TestConversationRoutesDeclareChatCapability(t *testing.T) {
 	RegisterChatRoutes(v1, &sessionhandler.Handler{}, g)
 	RegisterMessageRoutes(v1, &handler.MessageHandler{}, g)
 	RegisterDocumentWorkspaceRoutes(v1, &sessionhandler.DocumentWorkspaceHandler{}, g)
+	RegisterAnswerExportRoutes(v1, &sessionhandler.AnswerExportHandler{}, g)
 
 	cases := []struct {
 		method string
@@ -44,6 +45,7 @@ func TestConversationRoutesDeclareChatCapability(t *testing.T) {
 		{http.MethodGet, "/api/v1/messages/:session_id/load"},
 		{http.MethodDelete, "/api/v1/messages/:session_id/:id"},
 		{http.MethodPut, "/api/v1/messages/:session_id/:id/feedback"},
+		{http.MethodGet, "/api/v1/sessions/:id/messages/:message_id/export.docx"},
 	}
 
 	for _, tc := range cases {

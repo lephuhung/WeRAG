@@ -313,6 +313,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 		dig.Name("knowledgeBaseProfile")))
 
 	must(container.Provide(service.NewMessageService))
+	must(container.Provide(service.NewAnswerExportService))
 	must(container.Provide(service.NewMessageSuggestionService))
 	must(container.Provide(service.NewMCPServiceService))
 	must(container.Provide(service.NewMCPToolApprovalService))
@@ -585,6 +586,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewTagHandler))
 	must(container.Provide(session.NewHandler))
 	must(container.Provide(session.NewDocumentWorkspaceHandler))
+	must(container.Provide(session.NewAnswerExportHandler))
 	must(container.Provide(handler.NewMessageHandler))
 	must(container.Provide(handler.NewMessageSuggestionHandler))
 	must(container.Provide(handler.NewModelHandler))

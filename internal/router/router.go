@@ -60,6 +60,7 @@ type RouterParams struct {
 	ChunkHandler                *handler.ChunkHandler
 	SessionHandler              *session.Handler
 	DocumentWorkspaceHandler    *session.DocumentWorkspaceHandler
+	AnswerExportHandler         *session.AnswerExportHandler
 	MessageHandler              *handler.MessageHandler
 	MessageSuggestionHandler    *handler.MessageSuggestionHandler
 	ModelHandler                *handler.ModelHandler
@@ -153,7 +154,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 			// Scripted clients that must stay out of long-term memory.
 			middleware.MemoryOptOutHeader,
 		},
-		ExposeHeaders:    []string{"Content-Length", "Access-Control-Allow-Origin", "Mcp-Session-Id"},
+		ExposeHeaders:    []string{"Content-Length", "Content-Disposition", "Access-Control-Allow-Origin", "Mcp-Session-Id"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
@@ -329,6 +330,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterChunkRoutes(v1, params.ChunkHandler, rbacGuards)
 		RegisterSessionRoutes(v1, params.SessionHandler, params.MessageSuggestionHandler, rbacGuards)
 		RegisterDocumentWorkspaceRoutes(v1, params.DocumentWorkspaceHandler, rbacGuards)
+		RegisterAnswerExportRoutes(v1, params.AnswerExportHandler, rbacGuards)
 		RegisterChatRoutes(v1, params.SessionHandler, rbacGuards)
 		RegisterMessageRoutes(v1, params.MessageHandler, rbacGuards)
 		RegisterModelRoutes(v1, params.ModelHandler, params.ModelCredentialsHandler, rbacGuards)

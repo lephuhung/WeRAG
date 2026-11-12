@@ -2623,6 +2623,7 @@ function ChatBody({ id }: { id: string }) {
                   onLegalBasisMarkAll={isDocumentAssistant && id !== "new" ? markAllChatLegalBasis : undefined}
                   compact={compact}
                   guest={guest}
+                  question={index > 0 && messages[index - 1].role === "user" ? messages[index - 1].content : undefined}
                 />
                 {m.contextCompacted && (
                   <ContextCompactedDivider summary={m.contextCompacted.summary} degraded={m.contextCompacted.degraded} />

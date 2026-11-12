@@ -3,6 +3,7 @@ package docxwrite
 import (
 	"archive/zip"
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 
@@ -100,4 +101,84 @@ func TestBuildRoundTrip(t *testing.T) {
 	if _, err := Build(Document{Paragraphs: []Paragraph{{Text: "x", Style: "Title"}}}); err == nil {
 		t.Fatal("unknown style accepted")
 	}
+}
+
+// The legal OCR drafts (paragraphs with Text, Style, Bold, Center) must
+// come out as before the writer learnt runs, lists and tables: the golden
+// document.xml was written by the earlier writer (main before F8).
+func TestBuildLegalDraftMatchesGolden(t *testing.T) {
+	doc := Document{Title: "Thông tư 74/2022/TT-BTC", Paragraphs: []Paragraph{
+		{Text: "BỘ TÀI CHÍNH", Bold: true, Center: true},
+		{Text: "[Trang 1]", Style: StylePageMarker},
+		{Text: "[OCR hỏng ở trang 1 — nhập tay từ bản PDF]", Style: StylePageWarning},
+		{Text: "Chương I", Style: StyleHeading2},
+		{Text: "QUY ĐỊNH CHUNG", Style: StyleHeading2},
+		{Text: "Điều 1. Phạm vi <điều chỉnh> & \"đối tượng\"", Style: StyleHeading4},
+		{Text: "1. Khoản\tcó tab\nvà xuống dòng"},
+		{Text: "a) điểm có ký tự lạ \x01\x0b"},
+		{Text: "Điều 2", Style: StyleHeading3},
+		{Text: "Chương II", Style: StyleHeading1},
+		{Text: ""},
+	}}
+	data, err := Build(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := os.ReadFile("testdata/legal_draft_document.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := documentXML(t, data); got != string(want) {
+		t.Fatalf("document.xml changed:\n got %s\nwant %s", got, want)
+	}
+}
+
+// The one change for text-only paragraphs: a paragraph whose text is only
+// control characters no longer carries an empty run.
+func TestBuildControlCharacterParagraphHasNoEmptyRun(t *testing.T) {
+	data, err := Build(Document{Paragraphs: []Paragraph{{Text: "\x01\x02"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := documentXML(t, data); !strings.Contains(got, "<w:p><w:pPr></w:pPr></w:p>") || strings.Contains(got, "<w:r></w:r>") {
+		t.Fatalf("document.xml = %s", got)
+	}
+}
+
+func TestBuildClampsIndentAndListStart(t *testing.T) {
+	data, err := Build(Document{Blocks: []Block{
+		Paragraph{Text: "sâu", Style: StyleQuote, IndentTwips: 100000},
+		Paragraph{Text: "a", List: &ListItem{Ordered: true, List: 1, Start: 99999, Level: 20}},
+		Paragraph{Text: "b", List: &ListItem{Ordered: true, List: 2, Start: 0}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := documentXML(t, data)
+	if !strings.Contains(doc, `<w:ind w:left="4677"/>`) || !strings.Contains(doc, `<w:ind w:left="4677" w:hanging="360"/>`) ||
+		!strings.Contains(doc, `<w:ilvl w:val="8"/>`) {
+		t.Errorf("indent not clamped: %s", doc)
+	}
+	zr, _ := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	f, _ := zr.Open("word/numbering.xml")
+	var num bytes.Buffer
+	_, _ = num.ReadFrom(f)
+	if !strings.Contains(num.String(), `<w:startOverride w:val="32767"/>`) || !strings.Contains(num.String(), `<w:startOverride w:val="0"/>`) {
+		t.Errorf("list starts: %s", num.String())
+	}
+}
+
+func documentXML(t *testing.T, data []byte) string {
+	t.Helper()
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := zr.Open("word/document.xml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b bytes.Buffer
+	_, _ = b.ReadFrom(f)
+	return b.String()
 }
