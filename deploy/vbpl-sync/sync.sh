@@ -44,22 +44,29 @@ TICKER=""
 # the schedule as entrypoint.sh sets it (quotes and backslashes dropped: JSON)
 SCHEDULE=${VBPL_SYNC_CRON:-30 2 * * *}
 SCHEDULE=${SCHEDULE//[\"\\]/}
-# open_run STEP SUMMARY prints a new run's id ("" when tracking is off)
+RUN_ID=""
+# Every call that may take a while runs in the background and is waited
+# for: a trapped signal interrupts a wait, while a foreground command (or
+# a command substitution) would delay the trap until it ends.
+#
+# open_run STEP SUMMARY opens a run and sets RUN_ID ("" when tracking is off)
 open_run() {
-	local id
-	id=$(timeout --foreground "$TRACK_TIMEOUT" legal-catalog-import -run-start -run-worker vbpl_sync -run-step "$1" \
-		-run-summary "$2" 2>"$WORK/.sync.run.err") || id=""
+	local f="$WORK/.sync.run.id"
+	: >"$f"
+	timeout --foreground "$TRACK_TIMEOUT" legal-catalog-import -run-start -run-worker vbpl_sync -run-step "$1" \
+		-run-summary "$2" >"$f" 2>"$WORK/.sync.run.err" &
+	wait $! || true
+	RUN_ID=$(<"$f")
 	# only an id: anything else on stdout must never reach -run-id of the import
-	[[ $id =~ ^[0-9]+$ ]] || id=""
-	echo "$id"
+	[[ $RUN_ID =~ ^[0-9]+$ ]] || RUN_ID=""
 }
-RUN_ID=$(open_run prepare "{\"schedule\":\"$SCHEDULE\"}")
-[ -n "$RUN_ID" ] || log "run tracking off: $(tail -n 1 "$WORK/.sync.run.err" 2>/dev/null)"
 track() {
 	[ -n "$RUN_ID" ] || return 0
-	timeout --foreground "$TRACK_TIMEOUT" legal-catalog-import -run-id "$RUN_ID" "$@" >/dev/null 2>&1 ||
-		log "run tracking ($*) failed"
+	timeout --foreground "$TRACK_TIMEOUT" legal-catalog-import -run-id "$RUN_ID" "$@" >/dev/null 2>&1 &
+	wait $! || log "run tracking ($*) failed"
 }
+# ticker touches the run while the sync lives (it leaves when the sync is
+# gone, e.g. killed hard)
 ticker() {
 	local s=""
 	trap '[ -n "$s" ] && kill "$s" 2>/dev/null; exit 0' TERM
@@ -67,19 +74,17 @@ ticker() {
 		sleep "${VBPL_RUN_HEARTBEAT_S:-300}" &
 		s=$!
 		wait "$s" || true
+		kill -0 $$ 2>/dev/null || exit 0
 		track -run-heartbeat
 	done
 }
-[ -n "$RUN_ID" ] && { ticker 9>&- & TICKER=$!; }
 step() {
 	log "$1"
 	STEP=$1
 	track -run-step "$1"
 	: >"$STEP_LOG"
 }
-# run CMD… runs a step's command in the background and waits for it: a
-# trapped signal interrupts the wait (a foreground command would delay the
-# trap until it ends).
+# run CMD… runs a step's command in the background and waits for it.
 run() {
 	"$@" &
 	CHILD=$!
@@ -96,7 +101,7 @@ finish() {
 	if [ -z "$RUN_ID" ]; then
 		# tracking was off at the start: record the run now, so a good night
 		# is not taken for a missed one
-		RUN_ID=$(open_run "${STEP:-prepare}" "{\"schedule\":\"$SCHEDULE\",\"untracked\":true}")
+		open_run "${STEP:-prepare}" "{\"schedule\":\"$SCHEDULE\",\"untracked\":true}"
 	fi
 	if [ "$rc" -eq 0 ]; then
 		track -run-finish ok
@@ -120,8 +125,13 @@ stop() {
 	fi
 	exit 143
 }
+# the traps first: a stop while the run is being opened is handled too
 trap finish EXIT
 trap stop TERM INT
+
+open_run prepare "{\"schedule\":\"$SCHEDULE\"}"
+[ -n "$RUN_ID" ] || log "run tracking off: $(tail -n 1 "$WORK/.sync.run.err" 2>/dev/null)"
+[ -n "$RUN_ID" ] && { ticker 9>&- & TICKER=$!; }
 
 DEST="store/${VBPL_S3_BUCKET:-}/${VBPL_S3_PREFIX:-werag/vbpl}"
 prepare() {

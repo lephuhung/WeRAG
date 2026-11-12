@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# Tests of sync.sh's run tracking with stub binaries (no database, MinIO or
-# vbpl.vn): bash deploy/vbpl-sync/sync_test.sh
+# Tests of sync.sh's run tracking and entrypoint.sh's stop forwarding with
+# stub binaries (no database, MinIO or vbpl.vn): bash deploy/vbpl-sync/sync_test.sh
 # Stubs: legal-catalog-import logs its arguments (a -run-start prints 42
 # unless START_FAILS names a file that exists, then it is removed: the next
 # start works), mc does nothing, python3 (the crawler) sleeps CRAWL_SLEEP
 # seconds, records its pid and writes a summary.
 set -euo pipefail
-SRC=$(cd "$(dirname "$0")" && pwd)/sync.sh
+DIR=$(cd "$(dirname "$0")" && pwd)
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/bin" "$T/work"
-sed -e "s#^WORK=/work#WORK=$T/work#" -e "s#/app/crawl_vbpl.py#$T/crawl.py#" "$SRC" >"$T/sync.sh"
+sed -e "s#^WORK=/work#WORK=$T/work#" -e "s#/app/crawl_vbpl.py#$T/crawl.py#" "$DIR/sync.sh" >"$T/sync.sh"
+sed -e "s#/usr/local/bin/sync.sh#$T/sync.sh#" -e "s#/tmp/crontab#$T/crontab#" "$DIR/entrypoint.sh" >"$T/entrypoint.sh"
+chmod +x "$T/sync.sh" "$T/entrypoint.sh"
 
 cat >"$T/bin/legal-catalog-import" <<EOF
 #!/usr/bin/env bash
@@ -37,8 +39,16 @@ echo \$! >"$T/crawl.pid"
 wait
 echo '{"fetched":3}' >"\$6"
 EOF
+# like supercronic: runs the job (CRON_RUNS_JOB=1: at once), never forwards
+# a signal to it, on SIGTERM waits for the running job
+cat >"$T/bin/supercronic" <<STUB
+#!/usr/bin/env bash
+trap 'wait; exit 0' TERM
+if [ -n "\${CRON_RUNS_JOB:-}" ]; then /bin/sh -c "$T/sync.sh" & fi
+while :; do sleep 0.2; done
+STUB
 chmod +x "$T/bin/"*
-export PATH="$T/bin:$PATH" VBPL_S3_ENDPOINT=x VBPL_S3_BUCKET=b VBPL_S3_ACCESS_KEY=a VBPL_S3_SECRET_KEY=s DB_HOST=h DB_NAME=n
+export TZ=Asia/Ho_Chi_Minh PATH="$T/bin:$PATH" VBPL_S3_ENDPOINT=x VBPL_S3_BUCKET=b VBPL_S3_ACCESS_KEY=a VBPL_S3_SECRET_KEY=s DB_HOST=h DB_NAME=n
 
 fails=0
 check() { # check NAME CONDITION…
@@ -48,6 +58,10 @@ check() { # check NAME CONDITION…
 }
 has() { grep -qF -- "$1" "$T/calls"; }
 lacks() { ! grep -qF -- "$1" "$T/calls"; }
+# (a function: a "bash -c" would match its own command line)
+no_sync_left() {
+	if pgrep -af "$T/sync\.sh" >"$T/left"; then cat "$T/left"; return 1; fi
+}
 reset() { : >"$T/calls"; rm -f "$T/crawl.pid" "$T/work/.sync.error"; }
 
 # a good night
@@ -98,6 +112,31 @@ check "the crawl is killed with the sync" bash -c "! kill -0 $crawl 2>/dev/null"
 check "the stopped run is closed failed" has '-run-id 42 -run-finish failed'
 check "its error says it was stopped" grep -q 'stopped (SIGTERM/SIGINT)' "$T/work/.sync.error"
 check "the lock is free again" bash -c "exec 9>'$T/work/.sync.lock'; flock -n 9"
+
+# docker stop: SIGTERM reaches the entrypoint (PID 1), which forwards it to
+# the running sync.sh: the start-up run, then a run supercronic started
+for mode in on_start cron; do
+	reset
+	if [ "$mode" = on_start ]; then
+		VBPL_SYNC_ON_START=1 CRAWL_SLEEP=60 bash "$T/entrypoint.sh" >"$T/out" 2>&1 &
+	else
+		CRON_RUNS_JOB=1 CRAWL_SLEEP=60 bash "$T/entrypoint.sh" >"$T/out" 2>&1 &
+	fi
+	pid=$!
+	for _ in $(seq 50); do [ -s "$T/crawl.pid" ] && break; sleep 0.1; done
+	crawl=$(cat "$T/crawl.pid" 2>/dev/null || echo 0)
+	check "$mode: the crawl runs" [ "$crawl" != 0 ]
+	start=$(date +%s)
+	kill -TERM "$pid"
+	rc=0; wait "$pid" || rc=$?
+	took=$(($(date +%s) - start))
+	check "$mode: the entrypoint stops at once with 143 (${took}s)" [ "$rc" = 143 ] && [ "$took" -le 5 ]
+	check "$mode: the crawl is killed" bash -c "! kill -0 $crawl 2>/dev/null"
+	check "$mode: the run is closed failed as stopped" has '-run-id 42 -run-finish failed'
+	sleep 0.3
+	check "$mode: no sync.sh left" no_sync_left
+	pkill -f "$T/bin/supercronic" 2>/dev/null || true
+done
 
 echo
 [ "$fails" = 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }

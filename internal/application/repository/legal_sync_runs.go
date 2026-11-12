@@ -113,8 +113,18 @@ func (r *LegalSyncRunRepository) Finish(ctx context.Context, id int64, status, s
 	})
 }
 
-// Touch records a sign of life of a running run (the sync's ticker).
+// Touch records a sign of life of a running run (the sync's ticker): one
+// UPDATE; only a run that is not running (closed for silence: it may come
+// back) goes through change.
 func (r *LegalSyncRunRepository) Touch(ctx context.Context, id int64) error {
+	res := r.db.WithContext(ctx).Model(&types.LegalSyncRun{}).
+		Where("id = ? AND status = ?", id, types.LegalSyncRunning).Update("heartbeat_at", r.now())
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected > 0 {
+		return nil
+	}
 	return r.change(ctx, id, func(*types.LegalSyncRun, map[string]any, time.Time) {})
 }
 

@@ -236,3 +236,20 @@ func TestLegalSyncTailStripsControlCharacters(t *testing.T) {
 	got := legalSyncTail("\x1b[31mERROR\x1b[0m bad\x00 byte\r\nfetched 1/9\rfetched 9/9\x07\tdone", 1000)
 	require.Equal(t, "ERROR bad byte\nfetched 1/9\nfetched 9/9\tdone", got)
 }
+
+// A touch writes only the heartbeat: the summary and step stay as they are.
+func TestLegalSyncRunTouchOnlyBeats(t *testing.T) {
+	r, now := newLegalSyncRunRepo(t)
+	ctx := context.Background()
+	id, err := r.Start(ctx, types.LegalSyncWorkerVBPL, "crawl", map[string]any{"schedule": "30 2 * * *"})
+	require.NoError(t, err)
+	before, _, err := r.Latest(ctx, types.LegalSyncWorkerVBPL)
+	require.NoError(t, err)
+	*now = now.Add(5 * time.Minute)
+	require.NoError(t, r.Touch(ctx, id))
+	after, _, err := r.Latest(ctx, types.LegalSyncWorkerVBPL)
+	require.NoError(t, err)
+	require.Equal(t, *now, after.HeartbeatAt.UTC())
+	require.JSONEq(t, string(before.Summary), string(after.Summary))
+	require.Equal(t, "crawl", after.Step)
+}

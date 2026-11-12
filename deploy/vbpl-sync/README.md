@@ -25,11 +25,19 @@ tốt không bị coi là quá hạn. Mỗi lệnh ghi có giới hạn (kết n
 `VBPL_RUN_TRACK_TIMEOUT`, mặc định 60 giây). Trong lúc chạy, cứ
 `VBPL_RUN_HEARTBEAT_S` giây (mặc định 300) sync.sh báo còn sống; lần chạy im
 lặng quá 30 phút bị backend đóng là "Bị ngắt" (nếu chỉ là mất kết nối cơ sở dữ
-liệu, lần chạy tự mở lại khi sync.sh ghi tiếp). SIGTERM/SIGINT (`docker stop`)
-dừng ngay bước đang chạy cùng mọi tiến trình con (sync.sh chạy trong process
-group riêng qua `setsid`) và ghi lần chạy là lỗi "stopped"; lần chạy bị giết hẳn
-(SIGKILL) được lần sau hoặc backend đóng là lỗi. Lịch sử giữ 180 ngày.
-Kiểm thử bằng binary giả: `bash deploy/vbpl-sync/sync_test.sh`.
+liệu, lần chạy tự mở lại khi sync.sh ghi tiếp).
+
+Dừng container (`docker stop`, `compose down`/`up` lại): supercronic không chuyển
+tín hiệu cho job, nên `entrypoint.sh` (PID 1, giữ supercronic làm tiến trình con)
+bắt SIGTERM/SIGINT, gửi SIGTERM cho sync.sh đang chạy (lần chạy theo lịch hoặc
+lần chạy lúc khởi động `VBPL_SYNC_ON_START=1`), chờ nó xong (tối đa 80 giây) rồi
+mới dừng supercronic; compose đặt `stop_grace_period: 90s`. sync.sh chạy trong
+process group riêng (`setsid`), nhận SIGTERM thì dừng ngay bước đang chạy cùng
+mọi tiến trình con và ghi lần chạy là lỗi "stopped". `docker exec … kill` vào
+sync.sh cũng vậy. Lần chạy bị giết hẳn (SIGKILL, hết thời gian chờ) được lần
+sau hoặc backend (30 phút im lặng) đóng là lỗi. Lịch sử giữ 180 ngày.
+Kiểm thử bằng binary giả (sync.sh và entrypoint.sh, gồm chuyển tiếp SIGTERM):
+`bash deploy/vbpl-sync/sync_test.sh`.
 SuperAdmin xem ở Quản trị hệ thống → Pháp lý → Thu thập dữ liệu
 (`/platform/admin?section=legal-documents&view=sync`, cùng worker tự nạp và
 xoá toàn văn hết hiệu lực của backend), và nhận thông báo trong app
