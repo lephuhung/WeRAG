@@ -263,6 +263,12 @@ func TestCitationTagRemovalLeavesNoGaps(t *testing.T) {
 		{"cuối dòng " + kb + "  \nsau", "cuối dòng\nsau"},
 		{"(theo Điều 6 " + kb + ") và " + kb + "; hết " + kb + "!", "(theo Điều 6) và; hết!"},
 		{"giữ `mã` " + kb + " sau", "giữ `mã` sau"},
+		{"giữ `mã`" + kb + " sau", "giữ `mã` sau"},
+		{"**x " + kb + "**, y", "**x**, y"},
+		{"“trích " + kb + "” và (xem " + kb + "] hết " + kb + "…", "“trích” và (xem] hết…"},
+		{"đóng ngoặc kép \"a " + kb + "\" và » " + kb + "»", "đóng ngoặc kép \"a\" và »»"},
+		{"*nghiêng " + kb + "* tiếp", "*nghiêng* tiếp"},
+		{"a " + `<kb doc="tiêu đề có dấu " lẻ" chunk_id="x" />` + " b", "a b"},
 	}
 	for _, tc := range cases {
 		if got := view(MarkdownBlocks(tc.md)); len(got) != 1 || got[0].text != tc.want {

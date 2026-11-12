@@ -39,6 +39,27 @@ var knownTagRe = regexp.MustCompile(`^<(/?)(?i:(a|abbr|address|article|b|big|blo
 // maxTagLen bounds the text a tag match looks at (long href URLs fit).
 const maxTagLen = 4096
 
+// tagAt matches knownTagRe at s[i] ("<") only when a letter or "/"
+// follows and a ">" closes the candidate before the next "<" or line end
+// (within maxTagLen): the regex then runs on that candidate alone.
+func (p *inlineParser) tagAt(i, b int) []string {
+	s := p.s
+	if i+1 >= b {
+		return nil
+	}
+	if c := s[i+1]; c != '/' && !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z') {
+		return nil
+	}
+	k := i + 1
+	for k < b && k-i < maxTagLen && s[k] != '>' && s[k] != '<' && s[k] != '\n' {
+		k++
+	}
+	if k >= b || s[k] != '>' {
+		return nil
+	}
+	return knownTagRe.FindStringSubmatch(s[i : k+1])
+}
+
 // entityRe is an HTML character reference with its semicolon, the only
 // form marked decodes: "1826/BNV-CVT&LTNN" stays as written.
 var entityRe = regexp.MustCompile(`&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});`)
@@ -326,7 +347,7 @@ func (p *inlineParser) parse(a, b, linkDepth int, alt bool) []docxwrite.Run {
 					continue
 				}
 			}
-			if m := knownTagRe.FindStringSubmatch(s[i:min(b, i+maxTagLen)]); m != nil {
+			if m := p.tagAt(i, b); m != nil {
 				if strings.EqualFold(m[2], "br") {
 					plain.WriteByte('\n')
 				}

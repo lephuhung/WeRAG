@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/Tencent/WeKnora/internal/docformat/docxwrite"
 )
@@ -123,7 +125,9 @@ var (
 	// <web …/>, <ref …/> (the chat draws them as chips; the sources list
 	// replaces them here). Like imCitationTagRe in internal/im, with no
 	// length bound: titles run to hundreds of characters.
-	citationTagRe = regexp.MustCompile(`</?(?:kb|web|ref)\b(?:[^<>"'\n]|"[^"\n]*"|'[^'\n]*')*>`)
+	// The second form catches a self-closing tag whose quotes do not pair
+	// (a title holding a stray quote).
+	citationTagRe = regexp.MustCompile(`</?(?:kb|web|ref)\b(?:[^<>"'\n]|"[^"\n]*"|'[^'\n]*')*>|<(?:kb|web|ref)\s[^<>\n]*/>`)
 	headingRe     = regexp.MustCompile(`^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$`)
 	closingHash   = regexp.MustCompile(`[ \t]+#+$`)
 	ruleRe        = regexp.MustCompile(`^ {0,3}((?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$`)
@@ -215,6 +219,12 @@ func parseListItem(l string) (listMarker, bool) {
 
 // startsBlock reports whether l opens a block that interrupts a paragraph.
 func startsBlock(l string) bool {
+	// every block opener starts with one of these (after up to 3 spaces
+	// for most, any indent for list items): skip the regexes otherwise
+	t := strings.TrimLeft(l, " ")
+	if t == "" || strings.IndexByte("#`~>-*+_0123456789", t[0]) < 0 {
+		return false
+	}
 	if headingRe.MatchString(l) || fenceRe.MatchString(l) || quoteRe.MatchString(l) || ruleRe.MatchString(l) {
 		return true
 	}
@@ -455,7 +465,7 @@ func (c *converter) paragraph(lines []string, i int, out *[]docxwrite.Block) int
 			break
 		}
 		if j > i {
-			if setextH1Re.MatchString(l) || setextH2Re.MatchString(l) {
+			if t := strings.TrimLeft(l, " "); t != "" && (t[0] == '=' || t[0] == '-') && (setextH1Re.MatchString(l) || setextH2Re.MatchString(l)) {
 				level := 1
 				if setextH2Re.MatchString(l) {
 					level = 2
@@ -466,7 +476,7 @@ func (c *converter) paragraph(lines []string, i int, out *[]docxwrite.Block) int
 			if startsBlock(l) {
 				break
 			}
-			if j+1 < len(lines) && strings.Contains(l, "|") && tableSepRe.MatchString(lines[j+1]) {
+			if j+1 < len(lines) && strings.Contains(l, "|") && strings.Contains(lines[j+1], "-") && tableSepRe.MatchString(lines[j+1]) {
 				break
 			}
 		}
@@ -573,9 +583,9 @@ func capColumns(cells []string) []string {
 }
 
 // replaceOutsideCode rewrites, line by line, the stretches of md outside
-// fenced code and code spans that hold a match of re; lineEnd tells
-// whether the stretch ends its line.
-func replaceOutsideCode(md string, re *regexp.Regexp, rewrite func(seg string, lineEnd bool) string) string {
+// fenced code and code spans that hold a match of re; lineStart and
+// lineEnd tell whether the stretch starts or ends its line.
+func replaceOutsideCode(md string, re *regexp.Regexp, rewrite func(seg string, lineStart, lineEnd bool) string) string {
 	if !re.MatchString(md) {
 		return md
 	}
@@ -605,7 +615,7 @@ func replaceOutsideCode(md string, re *regexp.Regexp, rewrite func(seg string, l
 				continue
 			case body[i] == '`':
 				if e, ok := spans[i]; ok {
-					b.WriteString(rewrite(body[last:i], false))
+					b.WriteString(rewrite(body[last:i], last == 0, false))
 					b.WriteString(body[i:e])
 					last, i = e, e
 					continue
@@ -615,17 +625,18 @@ func replaceOutsideCode(md string, re *regexp.Regexp, rewrite func(seg string, l
 			}
 			i++
 		}
-		b.WriteString(rewrite(body[last:], true))
+		b.WriteString(rewrite(body[last:], last == 0, true))
 		b.WriteString(line[len(body):])
 	}
 	return b.String()
 }
 
 // removeCitationTags drops the citation tags of seg without leaving gaps:
-// before punctuation or the end of the line the space in front of a tag
-// goes too ("này <kb/>." → "này."), and between two spaces one stays
-// ("a <kb/> b" → "a b").
-func removeCitationTags(seg string, lineEnd bool) string {
+// before punctuation, a closing quote or bracket, a closing emphasis run
+// or the end of the line the space in front of a tag goes too ("này
+// <kb/>." → "này.", "**x <kb/>**, y" → "**x**, y"), and between two
+// spaces one stays ("a <kb/> b" → "a b").
+func removeCitationTags(seg string, lineStart, lineEnd bool) string {
 	matches := citationTagRe.FindAllStringIndex(seg, -1)
 	if matches == nil {
 		return seg
@@ -639,11 +650,11 @@ func removeCitationTags(seg string, lineEnd bool) string {
 		}
 		last = m[1]
 		switch {
-		case m[1] == len(seg) && lineEnd, m[1] < len(seg) && strings.IndexByte(",.;:)!?", seg[m[1]]) >= 0:
+		case m[1] == len(seg) && lineEnd, closesBefore(seg, m[1]):
 			for len(out) > 0 && isSpace(out[len(out)-1]) {
 				out = out[:len(out)-1]
 			}
-		case m[1] < len(seg) && isSpace(seg[m[1]]) && (len(out) == 0 || isSpace(out[len(out)-1])):
+		case m[1] < len(seg) && isSpace(seg[m[1]]) && (len(out) == 0 && lineStart || len(out) > 0 && isSpace(out[len(out)-1])):
 			for last < len(seg) && isSpace(seg[last]) {
 				last++
 			}
@@ -651,6 +662,31 @@ func removeCitationTags(seg string, lineEnd bool) string {
 	}
 	out = append(out, seg[last:]...)
 	return string(out)
+}
+
+// closesBefore reports whether s[i:] starts with punctuation that takes no
+// space before it: , . ; : ) ! ? ] } … and closing quotes, or a run of
+// * _ ~ that closes emphasis (followed by a space, punctuation or the end).
+func closesBefore(s string, i int) bool {
+	if i >= len(s) {
+		return false
+	}
+	r, _ := utf8.DecodeRuneInString(s[i:])
+	if strings.ContainsRune(",.;:)!?]}…”’\"»", r) {
+		return true
+	}
+	if c := s[i]; c == '*' || c == '_' || c == '~' {
+		j := i
+		for j < len(s) && s[j] == c {
+			j++
+		}
+		if j == len(s) {
+			return true
+		}
+		next, _ := utf8.DecodeRuneInString(s[j:])
+		return unicode.IsSpace(next) || unicode.IsPunct(next) || unicode.IsSymbol(next)
+	}
+	return false
 }
 
 // stripPairs removes each closed open…close pair outside fenced code and
