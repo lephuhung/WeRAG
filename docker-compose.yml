@@ -1072,6 +1072,9 @@ services:
     volumes:
       - ${VBPL_WORK_DIR:-/home/orca/data/vbpl}:/work
     restart: unless-stopped
+    # docker stop: the entrypoint forwards SIGTERM to a running sync.sh, which
+    # ends its step and records the run as stopped (entrypoint waits ≤ 80 s)
+    stop_grace_period: 90s
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     logging:

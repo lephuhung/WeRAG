@@ -17,7 +17,6 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/Tencent/WeKnora/internal/common/redislock"
 	"github.com/Tencent/WeKnora/internal/logger"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
@@ -52,7 +51,6 @@ const (
 	backupMonitorFirstDelay = time.Minute
 	backupMonitorTimeout    = 2 * time.Minute
 	backupReadErrorGrace    = 30 * time.Minute
-	backupRemindAfter       = 24 * time.Hour
 	backupStatusMaxBytes    = 64 << 10
 	backupMonitorLockKey    = "werag:backup-monitor:lock"
 	backupMonitorLockLease  = 5 * time.Minute
@@ -408,123 +406,36 @@ func (m *BackupMonitor) Check(ctx context.Context) error {
 	return m.raise(ctx, alert)
 }
 
+// incident is the backup_alert digest machinery (incidentDigest).
+func (m *BackupMonitor) incident() incidentDigest {
+	return incidentDigest{digests: m.digests, kind: types.UserNotificationBackupAlert, what: "backup alert"}
+}
+
 // resolve stamps every SuperAdmin's latest backup alert resolved (once)
 // and closes the open ones.
 func (m *BackupMonitor) resolve(ctx context.Context) error {
-	recipients, err := m.digests.reviewers(ctx, "")
-	if err != nil {
-		return fmt.Errorf("listing SuperAdmins: %w", err)
-	}
-	now := m.digests.now()
-	var failed []string
-	for _, userID := range recipients {
-		prev, err := m.digests.notifications.LatestOfKind(ctx, userID, types.UserNotificationBackupAlert)
-		if err != nil {
-			failed = append(failed, fmt.Sprintf("%s: %v", userID, err))
-			continue
-		}
-		if prev == nil {
-			continue
-		}
-		var p types.UserNotificationBackupAlertPayload
-		if len(prev.Payload) > 0 && json.Unmarshal(prev.Payload, &p) != nil {
-			continue // not ours to rewrite
-		}
-		if p.ResolvedAt != nil {
-			continue
-		}
-		at := now
-		p.ResolvedAt = &at
-		raw, _ := json.Marshal(p)
-		if err := m.digests.notifications.SetPayload(ctx, userID, prev.ID, types.JSON(raw)); err != nil {
-			failed = append(failed, fmt.Sprintf("%s: %v", userID, err))
-		}
-	}
-	if err := m.digests.closeIfEmpty(ctx, types.UserNotificationBackupAlert,
-		func(context.Context) (int64, error) { return 0, nil }); err != nil {
-		failed = append(failed, err.Error())
-	}
-	if len(failed) > 0 {
-		return fmt.Errorf("resolving the backup alert: %s", strings.Join(failed, "; "))
-	}
-	return nil
+	return m.incident().resolve(ctx)
 }
 
 // lock takes the cross-instance lock of a check (Redis); without Redis, or
 // when Redis fails, the check runs anyway (it is idempotent).
 func (m *BackupMonitor) lock(ctx context.Context) (release func(), ok bool) {
-	if m.redis == nil {
-		return func() {}, true
-	}
-	token, err := redislock.NewToken()
-	if err != nil {
-		return func() {}, true
-	}
-	got, err := redislock.TryAcquire(ctx, m.redis, backupMonitorLockKey, token, backupMonitorLockLease)
-	if err != nil {
-		logger.Warnf(ctx, "[BackupMonitor] lock: %v (checking anyway)", err)
-		return func() {}, true
-	}
-	if !got {
-		return nil, false
-	}
-	return func() {
-		rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-		defer cancel()
-		_, _ = redislock.Release(rctx, m.redis, backupMonitorLockKey, token)
-	}, true
+	return monitorLock(ctx, m.redis, backupMonitorLockKey, backupMonitorLockLease, "BackupMonitor")
 }
 
 // raise writes the digest of every SuperAdmin whose latest backup_alert is
 // not this incident already (open with the same signature, or read less
 // than a day ago, and not resolved since).
 func (m *BackupMonitor) raise(ctx context.Context, alert types.UserNotificationBackupAlertPayload) error {
-	recipients, err := m.digests.reviewers(ctx, "")
-	if err != nil {
-		return fmt.Errorf("listing SuperAdmins: %w", err)
-	}
-	now := m.digests.now()
-	var failed []string
-	for _, userID := range recipients {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		prev, err := m.digests.notifications.LatestOfKind(ctx, userID, types.UserNotificationBackupAlert)
-		if err != nil {
-			failed = append(failed, fmt.Sprintf("%s: %v", userID, err))
-			continue
-		}
-		if backupAlertCurrent(prev, alert.Signature, now) {
-			continue
-		}
-		n := backupAlertNotification(userID, alert, now)
-		if _, err := m.digests.notifications.UpsertOpenDigest(ctx, n, func(_, next *types.UserNotification) {
-			*next = *backupAlertNotification(next.UserID, alert, next.CreatedAt)
-		}); err != nil {
-			failed = append(failed, fmt.Sprintf("%s: %v", userID, err))
-		}
-	}
-	if len(failed) > 0 {
-		return fmt.Errorf("backup alert of %d SuperAdmin(s) not written: %s", len(failed), strings.Join(failed, "; "))
-	}
-	return nil
+	return m.incident().raise(ctx, alert.Signature, func(userID string, at time.Time) *types.UserNotification {
+		return backupAlertNotification(userID, alert, at)
+	})
 }
 
 // backupAlertCurrent reports whether prev (the person's latest backup
-// alert) already tells the incident of signature: same jobs and problems,
-// not resolved since, and unread or read less than a day ago.
+// alert) already tells the incident of signature (incidentAlertCurrent).
 func backupAlertCurrent(prev *types.UserNotification, signature string, now time.Time) bool {
-	if prev == nil {
-		return false
-	}
-	var p types.UserNotificationBackupAlertPayload
-	if len(prev.Payload) == 0 || json.Unmarshal(prev.Payload, &p) != nil || p.Signature != signature || p.ResolvedAt != nil {
-		return false
-	}
-	if prev.ReadAt == nil {
-		return true
-	}
-	return now.Sub(*prev.ReadAt) < backupRemindAfter
+	return incidentAlertCurrent(prev, signature, now)
 }
 
 // backupAlertPayload lists the jobs of rep with a problem.
