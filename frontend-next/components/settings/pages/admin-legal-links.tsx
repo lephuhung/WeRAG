@@ -3,34 +3,48 @@
 /* SuperAdmin review of provision links pushed by sources other than
  * vbpl.vn (thuvienphapluat…): "khoản X of A is amended by khoản Y of B".
  * Shown as the "Provision links" tab of the legal documents page
- * (admin-legal-documents.tsx). Approve copies a link into the links the
- * current-wording resolver reads; reject keeps it out (the feed's next push
- * does not ask again). Backend: /api/v1/system/legal-link-candidates —
- * SuperAdmin-only. Spec: docs/legal-document-feed-spec.md §9. */
+ * (admin-legal-documents.tsx). Reviewed per amended document A: a list of
+ * the documents with links on the left, A's diagram on the right
+ * (components/legal-links/), each provision's wording on hover, a confirm
+ * panel per link and bulk approval per amending document. The flat list
+ * stays as a second view for browsing decided links. Approve copies a link
+ * into the links the current-wording resolver reads; reject keeps it out
+ * (the feed's next push does not ask again). Backend:
+ * /api/v1/system/legal-link-candidates — SuperAdmin-only. Spec:
+ * docs/legal-document-feed-spec.md §9. */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { IconRefresh } from "@/components/icons";
-import { Modal } from "@/components/modal";
 import { useToast } from "@/components/toast";
 import { ConsolePage } from "@/components/settings/console-page";
 import { DataTable } from "@/components/settings/data-table";
 import { Pager } from "@/components/settings/pager";
 import { Pill, PillGroup } from "@/components/settings/pill";
 import { Notice } from "@/components/settings/notice";
-import { FieldLabel } from "@/components/settings/field";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { ApiError } from "@/lib/api-client";
+import { userErrorMessage } from "@/lib/user-error";
 import {
   decideLegalLinkCandidate,
   listLegalLinkCandidates,
+  listLegalLinkDocuments,
+  recheckLegalLinkCandidates,
   type LegalLinkCandidate,
   type LegalLinkCounts,
   type LegalLinkMatchStatus,
   type LegalLinkReviewFilter,
+  type LegalLinkTargetGroup,
 } from "@/lib/api/legal-link-candidates";
 import { provisionLabel } from "@/lib/legal-provision-label";
+import { buildLinkGraph, isApprovable, nextApprovable } from "@/lib/legal-link-graph";
+import { LinkDiagram, LinkDiagramLegend } from "@/components/legal-links/link-diagram";
+import { LinkConfirmPanel, MatchBadge } from "@/components/legal-links/link-confirm-panel";
+import { LinkGroupPanel } from "@/components/legal-links/link-group-panel";
+import { clearProvisionTextCache, docName } from "@/components/legal-links/provision-text";
 
 const PAGE_SIZE = 50;
+/** Candidates of one document read for its diagram (pages of 500). */
+const DIAGRAM_MAX = 2000;
 
 const REVIEW_FILTERS: { key: LegalLinkReviewFilter; labelKey: LocaleKey }[] = [
   { key: "pending", labelKey: "llink.filter.pending" },
@@ -42,26 +56,359 @@ const REVIEW_FILTERS: { key: LegalLinkReviewFilter; labelKey: LocaleKey }[] = [
 
 const MATCH_STATUSES: LegalLinkMatchStatus[] = ["matched", "doc_only", "target_missing", "unresolved", "duplicate"];
 
-function matchTone(s: LegalLinkMatchStatus): string {
-  switch (s) {
-    case "matched":
-      return "badge-success";
-    case "duplicate":
-      return "badge-info";
-    case "doc_only":
-      return "badge-warning";
-    default:
-      return "badge-error";
-  }
-}
-
-function docText(number: string, title?: string): string {
-  if (title && number && title.includes(number)) return title;
-  return [number, title].filter(Boolean).join(" — ");
-}
+type View = "diagram" | "list";
+type Panel = { kind: "edge"; id: number; edit?: boolean } | { kind: "group"; id: string } | null;
 
 export default function LegalLinksSection({ onDenied }: { onDenied?: () => void }) {
   const { t } = useT();
+  const toast = useToast();
+  const [view, setView] = useState<View>("diagram");
+  const [docs, setDocs] = useState<LegalLinkTargetGroup[]>([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [selected, setSelected] = useState<string>("");
+  const [cands, setCands] = useState<LegalLinkCandidate[]>([]);
+  const [listCands, setListCands] = useState<LegalLinkCandidate[]>([]);
+  const [candsLoading, setCandsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [showRejected, setShowRejected] = useState(false);
+  const [collapsed, setCollapsed] = useState<Record<string, Set<string>>>({});
+  const [panel, setPanel] = useState<Panel>(null);
+  const [skipped, setSkipped] = useState<Set<number>>(new Set());
+  const [rechecking, setRechecking] = useState(false);
+  const [listKey, setListKey] = useState(0);
+
+  const fail = useCallback(
+    (e: unknown, key: LocaleKey) => {
+      if (e instanceof ApiError && e.status === 403) onDenied?.();
+      else setError(userErrorMessage(e, t, key));
+    },
+    [onDenied, t],
+  );
+
+  const loadDocs = useCallback(async () => {
+    setDocsLoading(true);
+    try {
+      const res = await listLegalLinkDocuments();
+      const items = res.data?.items ?? [];
+      setDocs(items);
+      setSelected((cur) => {
+        if (cur && items.some((d) => d.target_doc_id === cur)) return cur;
+        const first = items.find((d) => d.pending_approvable > 0) ?? items.find((d) => d.pending_blocked > 0) ?? items[0];
+        return first?.target_doc_id ?? "";
+      });
+    } catch (e) {
+      fail(e, "llink.loadFailed");
+    } finally {
+      setDocsLoading(false);
+    }
+  }, [fail]);
+
+  const loadCands = useCallback(
+    async (docId: string) => {
+      if (!docId) {
+        setCands([]);
+        return;
+      }
+      setCandsLoading(true);
+      try {
+        const all: LegalLinkCandidate[] = [];
+        for (let page = 1; all.length < DIAGRAM_MAX; page++) {
+          const res = await listLegalLinkCandidates({ reviewStatus: "all", legalDocumentId: docId, page, pageSize: 500 });
+          const items = res.data?.items ?? [];
+          all.push(...items);
+          if (items.length < 500 || all.length >= (res.data?.total ?? 0)) break;
+        }
+        setCands(all);
+      } catch (e) {
+        fail(e, "llink.loadFailed");
+      } finally {
+        setCandsLoading(false);
+      }
+    },
+    [fail],
+  );
+
+  useEffect(() => {
+    void loadDocs();
+  }, [loadDocs]);
+  useEffect(() => {
+    setSkipped(new Set());
+    void loadCands(selected);
+  }, [selected, loadCands]);
+
+  const refresh = useCallback(async () => {
+    setError("");
+    await Promise.all([loadDocs(), loadCands(selected)]);
+    setListKey((k) => k + 1);
+  }, [loadDocs, loadCands, selected]);
+
+  const doc = docs.find((d) => d.target_doc_id === selected);
+  const docLabel = doc ? docName(doc.document, doc.target_doc_id) : "";
+  const byId = useMemo(() => new Map(cands.map((c) => [c.id, c])), [cands]);
+  const graph = useMemo(
+    () => buildLinkGraph(cands, { showRejected, collapsedGroups: collapsed[selected] }),
+    [cands, showRejected, collapsed, selected],
+  );
+
+  const toggleGroup = (gid: string) => {
+    setCollapsed((cur) => {
+      const now = new Set(cur[selected] ?? graph.groups.filter((g) => g.collapsed).map((g) => g.id));
+      if (now.has(gid)) now.delete(gid);
+      else now.add(gid);
+      return { ...cur, [selected]: now };
+    });
+  };
+  const setAllCollapsed = (fold: boolean) =>
+    setCollapsed((cur) => ({ ...cur, [selected]: new Set(fold ? graph.groups.map((g) => g.id) : []) }));
+
+  const recheck = async () => {
+    setRechecking(true);
+    setError("");
+    try {
+      const res = await recheckLegalLinkCandidates();
+      const r = res.data;
+      toast.success(
+        r && r.resolved > 0
+          ? t("llink.recheckDone", { n: r.resolved, auto: r.auto_approved })
+          : t("llink.recheckNone", { n: r?.checked ?? 0 }),
+      );
+      clearProvisionTextCache();
+      await refresh();
+    } catch (e) {
+      fail(e, "llink.recheckFailed");
+    } finally {
+      setRechecking(false);
+    }
+  };
+
+  const openNext = (after: number | null, skip: Set<number>) => {
+    const next = nextApprovable(graph, after, skip);
+    setPanel(next ? { kind: "edge", id: next.candidateId } : null);
+  };
+
+  const afterDecision = async (id: number, action: "approve" | "reject") => {
+    toast.success(t(action === "approve" ? "llink.approved" : "llink.rejected"));
+    const skip = new Set(skipped).add(id);
+    // the next link to decide in the graph as it was, then reload
+    const next = view === "diagram" ? nextApprovable(graph, id, skip) : null;
+    setPanel(next ? { kind: "edge", id: next.candidateId } : null);
+    await refresh();
+  };
+
+  const pendingEdges = graph.edges.filter((e) => e.state === "pending");
+  const panelCand =
+    panel?.kind === "edge"
+      ? view === "list"
+        ? listCands.find((c) => c.id === panel.id)
+        : byId.get(panel.id)
+      : undefined;
+  const panelGroup = panel?.kind === "group" ? graph.groups.find((g) => g.id === panel.id) : undefined;
+  const position = (() => {
+    if (!panelCand || panelCand.review_status !== "pending") return undefined;
+    const i = pendingEdges.findIndex((e) => e.candidateId === panelCand.id);
+    return i >= 0 ? t("llink.panel.position", { i: i + 1, n: pendingEdges.length }) : undefined;
+  })();
+
+  return (
+    <ConsolePage size="wide">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <span className="caption max-w-[640px] text-muted">{t("llink.desc")}</span>
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <PillGroup ariaLabel={t("llink.view.aria")}>
+            <Pill active={view === "diagram"} onClick={() => setView("diagram")}>
+              {t("llink.view.diagram")}
+            </Pill>
+            <Pill active={view === "list"} onClick={() => setView("list")}>
+              {t("llink.view.list")}
+            </Pill>
+          </PillGroup>
+          <button
+            type="button"
+            className="btn btn-outline btn-sm h-8"
+            onClick={() => void recheck()}
+            disabled={rechecking}
+            title={t("llink.recheckHint")}
+          >
+            {rechecking ? t("common.loading") : t("llink.recheck")}
+          </button>
+          <button
+            className="btn btn-outline btn-sm h-8 w-8 p-0"
+            onClick={() => void refresh()}
+            disabled={docsLoading || candsLoading}
+            title={t("common.refresh")}
+            aria-label={t("common.refresh")}
+          >
+            <IconRefresh className={`h-3.5 w-3.5 ${docsLoading || candsLoading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+      </div>
+
+      {error && <Notice tone="error" className="mb-3">{error}</Notice>}
+
+      {view === "list" ? (
+        <LinkList key={listKey} onDenied={onDenied} onOpen={(id, edit) => setPanel({ kind: "edge", id, edit })} onCands={setListCands} />
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-[250px_minmax(0,1fr)]">
+          <nav aria-label={t("llink.docs.aria")} className="flex flex-col gap-1.5 lg:max-h-[75vh] lg:overflow-y-auto">
+            {docsLoading && docs.length === 0 && <p className="caption text-muted">{t("common.loading")}</p>}
+            {!docsLoading && docs.length === 0 && <p className="caption text-muted">{t("llink.empty")}</p>}
+            {docs.map((d) => {
+              const on = d.target_doc_id === selected;
+              return (
+                <button
+                  key={d.target_doc_id}
+                  type="button"
+                  aria-current={on ? "true" : undefined}
+                  onClick={() => {
+                    setSelected(d.target_doc_id);
+                    setPanel(null);
+                  }}
+                  className={`rounded-[12px] border px-3 py-2.5 text-left transition-colors ${
+                    on ? "border-ink bg-surface-strong" : "border-hairline hover:bg-surface-strong"
+                  }`}
+                >
+                  <div className="text-[13px] font-semibold text-ink">{docName(d.document, d.target_doc_id)}</div>
+                  {d.document?.title && <div className="caption mt-0.5 line-clamp-2 text-body">{d.document.title}</div>}
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {d.pending_approvable > 0 && (
+                      <span className="badge-pill badge-warning text-[10.5px] tabular-nums">
+                        {t("llink.docs.toReview", { n: d.pending_approvable })}
+                      </span>
+                    )}
+                    {d.pending_blocked > 0 && (
+                      <span className="badge-pill badge-neutral text-[10.5px] tabular-nums">
+                        {t("llink.docs.waiting", { n: d.pending_blocked })}
+                      </span>
+                    )}
+                    {d.pending_approvable === 0 && d.pending_blocked === 0 && (
+                      <span className="badge-pill badge-success text-[10.5px]">{t("llink.docs.done")}</span>
+                    )}
+                  </div>
+                  {!d.held && <div className="caption mt-1 text-muted">{t("llink.docs.notHeld")}</div>}
+                </button>
+              );
+            })}
+          </nav>
+
+          <section className="min-w-0">
+            {doc && (
+              <>
+                <div className="mb-3 flex flex-wrap items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-[15px] font-semibold text-ink">{docLabel}</h3>
+                    {doc.document?.title && <p className="caption text-body">{doc.document.title}</p>}
+                    <p className="caption mt-0.5 text-muted">
+                      {t("llink.docs.summary", {
+                        review: doc.pending_approvable,
+                        waiting: doc.pending_blocked,
+                        approved: doc.approved,
+                        rejected: doc.rejected,
+                      })}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {pendingEdges.length > 0 && (
+                      <button type="button" className="btn btn-primary btn-sm" onClick={() => openNext(null, skipped)}>
+                        {t("llink.diagram.start", { n: pendingEdges.length })}
+                      </button>
+                    )}
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAllCollapsed(false)}>
+                      {t("llink.diagram.expandAll")}
+                    </button>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAllCollapsed(true)}>
+                      {t("llink.diagram.collapseAll")}
+                    </button>
+                    <label className="caption inline-flex items-center gap-1.5 text-body">
+                      <input type="checkbox" checked={showRejected} onChange={(e) => setShowRejected(e.target.checked)} />
+                      {t("llink.diagram.showRejected", { n: doc.rejected })}
+                    </label>
+                  </div>
+                </div>
+                {!doc.held && (
+                  <Notice tone="info" className="mb-3">
+                    {t("llink.docs.notHeldHelp", { doc: docLabel })}
+                  </Notice>
+                )}
+                <div className="mb-3">
+                  <LinkDiagramLegend />
+                </div>
+                <div className="max-h-[75vh] overflow-y-auto rounded-[14px] border border-hairline bg-canvas-soft p-3">
+                  {candsLoading && cands.length === 0 ? (
+                    <p className="caption py-8 text-center text-muted">{t("common.loading")}</p>
+                  ) : graph.edges.length === 0 ? (
+                    <p className="caption py-8 text-center text-muted">{t("llink.empty")}</p>
+                  ) : (
+                    <>
+                      <div className="caption mb-2 flex justify-between text-muted">
+                        <span>{t("llink.diagram.leftHead", { doc: docLabel })}</span>
+                        <span>{t("llink.diagram.rightHead")}</span>
+                      </div>
+                      <LinkDiagram
+                        graph={graph}
+                        cands={byId}
+                        targetDocId={selected}
+                        targetLabel={docLabel}
+                        selectedEdge={panel?.kind === "edge" ? panel.id : null}
+                        onOpenEdge={(id) => setPanel({ kind: "edge", id })}
+                        onOpenGroup={(id) => setPanel({ kind: "group", id })}
+                        onToggleGroup={toggleGroup}
+                      />
+                    </>
+                  )}
+                </div>
+                <p className="caption mt-2 text-muted-soft">{t("llink.diagram.help")}</p>
+              </>
+            )}
+          </section>
+        </div>
+      )}
+
+      {panelCand && (
+        <LinkConfirmPanel
+          c={panelCand}
+          targetHeld={view === "list" ? true : doc?.held ?? true}
+          position={position}
+          startEditing={panel?.kind === "edge" && !!panel.edit}
+          onClose={() => setPanel(null)}
+          onDecided={(action) => void afterDecision(panelCand.id, action)}
+          onSkip={
+            view === "diagram" && isApprovable(panelCand)
+              ? () => {
+                  const skip = new Set(skipped).add(panelCand.id);
+                  setSkipped(skip);
+                  openNext(panelCand.id, skip);
+                }
+              : undefined
+          }
+        />
+      )}
+      {panelGroup && (
+        <LinkGroupPanel
+          group={panelGroup}
+          cands={panelGroup.edgeIds.map((id) => byId.get(Number(id.slice(2)))).filter((c): c is LegalLinkCandidate => !!c)}
+          onClose={() => setPanel(null)}
+          onOpenEdge={(id) => setPanel({ kind: "edge", id })}
+          onChanged={refresh}
+          onRecheck={() => void recheck()}
+          rechecking={rechecking}
+        />
+      )}
+    </ConsolePage>
+  );
+}
+
+/* The flat list (second view): every candidate with the filters, for
+ * browsing decided links; a row opens the same confirm panel. */
+function LinkList({
+  onDenied,
+  onOpen,
+  onCands,
+}: {
+  onDenied?: () => void;
+  onOpen: (id: number, edit?: boolean) => void;
+  onCands: (c: LegalLinkCandidate[]) => void;
+}) {
+  const { t, locale } = useT();
   const toast = useToast();
   const [review, setReview] = useState<LegalLinkReviewFilter>("pending");
   const [match, setMatch] = useState<LegalLinkMatchStatus | "">("");
@@ -72,23 +419,24 @@ export default function LegalLinksSection({ onDenied }: { onDenied?: () => void 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<number | null>(null);
-  const [editing, setEditing] = useState<LegalLinkCandidate | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
       const res = await listLegalLinkCandidates({ reviewStatus: review, matchStatus: match, page, pageSize: PAGE_SIZE });
-      setItems(res.data?.items ?? []);
+      const list = res.data?.items ?? [];
+      setItems(list);
+      onCands(list); // the confirm panel reads its candidate from here
       setTotal(res.data?.total ?? 0);
       setCounts(res.data?.counts ?? {});
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) onDenied?.();
-      else setError(e instanceof Error && e.message ? e.message : t("llink.loadFailed"));
+      else setError(userErrorMessage(e, t, "llink.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, [review, match, page, t, onDenied]);
+  }, [review, match, page, t, onDenied, onCands]);
 
   useEffect(() => {
     void load();
@@ -102,7 +450,7 @@ export default function LegalLinksSection({ onDenied }: { onDenied?: () => void 
       toast.success(t(action === "approve" ? "llink.approved" : "llink.rejected"));
       await load();
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : t("llink.decideFailed"));
+      setError(userErrorMessage(e, t, "llink.decideFailed"));
     } finally {
       setBusy(null);
     }
@@ -111,292 +459,132 @@ export default function LegalLinksSection({ onDenied }: { onDenied?: () => void 
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
-    <ConsolePage size="wide">
-      <div className="mb-5 flex flex-wrap items-center gap-3">
-        <span className="caption text-muted">{t("llink.desc")}</span>
-        <div className="ml-auto flex items-center gap-2">
-          <select
-            className="input h-8 py-0 text-[12.5px]"
-            value={match}
-            aria-label={t("llink.col.match")}
-            onChange={(e) => {
-              setMatch(e.target.value as LegalLinkMatchStatus | "");
-              setPage(1);
-            }}
-          >
-            <option value="">{t("llink.match.any")}</option>
-            {MATCH_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {t(`llink.match.${s}` as LocaleKey)}
-              </option>
-            ))}
-          </select>
-          <button
-            className="btn btn-outline btn-sm h-8 w-8 p-0"
-            onClick={() => void load()}
-            disabled={loading}
-            title={t("common.refresh")}
-            aria-label={t("common.refresh")}
-          >
-            <IconRefresh className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
-          </button>
-        </div>
+    <>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <PillGroup ariaLabel={t("common.filters")} className="flex-wrap">
+          {REVIEW_FILTERS.map((f) => (
+            <Pill
+              key={f.key}
+              active={review === f.key}
+              onClick={() => {
+                setReview(f.key);
+                setPage(1);
+              }}
+            >
+              {t(f.labelKey)}
+              {f.key !== "all" && (counts[f.key] ?? 0) > 0 ? ` (${counts[f.key]})` : ""}
+            </Pill>
+          ))}
+        </PillGroup>
+        <select
+          className="input ml-auto h-8 py-0 text-[12.5px]"
+          value={match}
+          aria-label={t("llink.col.match")}
+          onChange={(e) => {
+            setMatch(e.target.value as LegalLinkMatchStatus | "");
+            setPage(1);
+          }}
+        >
+          <option value="">{t("llink.match.any")}</option>
+          {MATCH_STATUSES.map((s) => (
+            <option key={s} value={s}>
+              {t(`llink.match.${s}` as LocaleKey)}
+            </option>
+          ))}
+        </select>
       </div>
 
       {error && <Notice tone="error" className="mb-3">{error}</Notice>}
 
-      <PillGroup ariaLabel={t("common.filters")} className="mb-5 flex-wrap">
-        {REVIEW_FILTERS.map((f) => (
-          <Pill
-            key={f.key}
-            active={review === f.key}
-            onClick={() => {
-              setReview(f.key);
-              setPage(1);
-            }}
-          >
-            {t(f.labelKey)}
-            {f.key !== "all" && (counts[f.key] ?? 0) > 0 ? ` (${counts[f.key]})` : ""}
-          </Pill>
-        ))}
-      </PillGroup>
-
       <DataTable<LegalLinkCandidate>
         columns={[
-          { key: "target", header: t("llink.col.target"), className: "min-w-[240px]" },
+          { key: "target", header: t("llink.col.target"), className: "min-w-[220px]" },
           { key: "op", header: t("llink.col.op"), className: "w-[130px]" },
-          { key: "amender", header: t("llink.col.amender"), className: "min-w-[240px]" },
-          { key: "match", header: t("llink.col.match"), className: "min-w-[220px]" },
-          { key: "note", header: t("llink.col.note"), className: "min-w-[220px]" },
-          { key: "action", header: t("llink.col.action"), className: "w-[200px]" },
+          { key: "amender", header: t("llink.col.amender"), className: "min-w-[220px]" },
+          { key: "match", header: t("llink.col.match"), className: "min-w-[200px]" },
+          { key: "action", header: t("llink.col.action"), className: "w-[220px]" },
         ]}
         rows={items}
         rowKey={(c) => String(c.id)}
-        renderRow={(c) => (
-          <LinkCells
-            c={c}
-            busy={busy === c.id}
-            onApprove={() => void decide(c, "approve")}
-            onReject={() => void decide(c, "reject")}
-            onEdit={() => setEditing(c)}
-          />
-        )}
+        renderRow={(c) => {
+          const pending = c.review_status === "pending";
+          const canApprove = isApprovable(c);
+          return (
+            <>
+              <td className="px-5 py-3.5">
+                <div className="text-[13px] font-semibold text-ink">{provisionLabel(c.target_path, locale) || "—"}</div>
+                <div className="caption mt-0.5 line-clamp-2 text-body" title={c.target?.title}>
+                  {docName(c.target, c.target_doc_id)}
+                </div>
+              </td>
+              <td className="px-5 py-3.5">
+                <span className="badge-pill badge-neutral inline-block w-fit text-[10.5px]">{t(`llink.op.${c.op}` as LocaleKey)}</span>
+                {c.eff_from && (
+                  <div className="caption mt-1 tabular-nums text-muted">
+                    {t("llink.effFrom", { day: c.eff_from.slice(0, 10).split("-").reverse().join("/") })}
+                  </div>
+                )}
+              </td>
+              <td className="px-5 py-3.5">
+                <div className="text-[13px] font-semibold text-ink">
+                  {c.source_path ? provisionLabel(c.source_path, locale) : t("llink.noPath")}
+                </div>
+                <div className="caption mt-0.5 line-clamp-2 text-body" title={c.amender?.title}>
+                  {docName(c.amender, c.amender_doc_number)}
+                </div>
+              </td>
+              <td className="px-5 py-3.5">
+                <MatchBadge c={c} />
+                {c.note && (
+                  <div className="caption mt-1 line-clamp-2 text-muted" title={c.note}>
+                    {c.note}
+                  </div>
+                )}
+              </td>
+              <td className="px-5 py-3.5">
+                <div className="flex flex-wrap gap-1.5">
+                  <button type="button" className="btn btn-outline btn-sm py-0.5 text-[12px]" onClick={() => onOpen(c.id)}>
+                    {t("llink.view.open")}
+                  </button>
+                  {pending ? (
+                    <>
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm py-0.5 text-[12px]"
+                        disabled={busy === c.id || !canApprove}
+                        title={canApprove ? undefined : t("llink.needFix")}
+                        onClick={() => void decide(c, "approve")}
+                      >
+                        {t("llink.approve")}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-danger btn-sm py-0.5 text-[12px]"
+                        disabled={busy === c.id}
+                        onClick={() => void decide(c, "reject")}
+                      >
+                        {t("llink.reject")}
+                      </button>
+                    </>
+                  ) : (
+                    <span className="caption self-center text-muted">
+                      {t(`llink.filter.${c.review_status}` as LocaleKey)}
+                      {c.reviewed_by ? ` · ${c.reviewed_by === "auto:matched" ? t("llink.autoReviewer") : c.reviewed_by}` : ""}
+                    </span>
+                  )}
+                </div>
+              </td>
+            </>
+          );
+        }}
         rowClassName="align-top"
         loading={loading}
         loadingLabel={t("common.loading")}
         emptyLabel={t("llink.empty")}
-        minWidth="min-w-[1180px]"
+        minWidth="min-w-[1000px]"
       />
 
       <Pager page={page} pageCount={pages} onPage={setPage} loading={loading} />
-
-      {editing && (
-        <EditDialog
-          c={editing}
-          onClose={() => setEditing(null)}
-          onDone={async () => {
-            setEditing(null);
-            toast.success(t("llink.approved"));
-            await load();
-          }}
-        />
-      )}
-    </ConsolePage>
-  );
-}
-
-/* The cells of one candidate row (the <tr> comes from <DataTable>). */
-function LinkCells({
-  c,
-  busy,
-  onApprove,
-  onReject,
-  onEdit,
-}: {
-  c: LegalLinkCandidate;
-  busy: boolean;
-  onApprove: () => void;
-  onReject: () => void;
-  onEdit: () => void;
-}) {
-  const { t, locale } = useT();
-  const pending = c.review_status === "pending";
-  const canApprove = pending && c.amender_doc_id !== "" && c.target_path !== "";
-  return (
-    <>
-      <td className="px-5 py-3.5">
-        <div className="text-[13px] font-semibold text-ink">{provisionLabel(c.target_path, locale) || "—"}</div>
-        <div className="caption mt-0.5 line-clamp-2 text-body" title={c.target?.title}>
-          {docText(c.target?.document_number ?? c.target_doc_id, c.target?.title)}
-        </div>
-      </td>
-      <td className="px-5 py-3.5">
-        <span className="badge-pill inline-block w-fit text-[10.5px] badge-neutral">
-          {t(`llink.op.${c.op}` as LocaleKey)}
-        </span>
-        {c.eff_from && (
-          <div className="caption mt-1 tabular-nums text-muted">
-            {t("llink.effFrom", { day: c.eff_from.slice(0, 10).split("-").reverse().join("/") })}
-          </div>
-        )}
-      </td>
-      <td className="px-5 py-3.5">
-        <div className="text-[13px] font-semibold text-ink">
-          {c.source_path ? provisionLabel(c.source_path, locale) : t("llink.noPath")}
-        </div>
-        <div className="caption mt-0.5 line-clamp-2 text-body" title={c.amender?.title}>
-          {c.amender
-            ? docText(c.amender.document_number, c.amender.title)
-            : [c.amender_doc_number, c.amender_issue_date, c.amender_issuer].filter(Boolean).join(" · ")}
-        </div>
-      </td>
-      <td className="px-5 py-3.5">
-        <span className={`badge-pill inline-block w-fit text-[10.5px] ${matchTone(c.match_status)}`}>
-          {t(`llink.match.${c.match_status}` as LocaleKey)}
-        </span>
-        {c.match_reason && <div className="caption mt-1 line-clamp-3 text-muted" title={c.match_reason}>{c.match_reason}</div>}
-        {c.other_links.length > 0 && (
-          <div className="caption mt-1 text-body">
-            {t("llink.others", { n: c.other_links.length })}:{" "}
-            {c.other_links
-              .slice(0, 3)
-              .map((l) => `${t(`llink.op.${l.op}` as LocaleKey)} (${l.source})`)
-              .join(", ")}
-          </div>
-        )}
-      </td>
-      <td className="px-5 py-3.5">
-        {c.note ? (
-          <div className="caption line-clamp-4 text-body" title={c.note}>
-            {c.note}
-          </div>
-        ) : (
-          <span className="caption text-muted">—</span>
-        )}
-        <a href={c.feed_url} target="_blank" rel="noreferrer" className="caption mt-1 inline-block text-link hover:underline">
-          {c.feed} · {c.feed_doc_id}
-        </a>
-      </td>
-      <td className="px-5 py-3.5">
-        {pending ? (
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              type="button"
-              className="btn btn-primary btn-sm py-0.5 text-[12px]"
-              disabled={busy || !canApprove}
-              title={canApprove ? undefined : t("llink.needFix")}
-              onClick={onApprove}
-            >
-              {t("llink.approve")}
-            </button>
-            <button type="button" className="btn btn-outline btn-sm py-0.5 text-[12px]" disabled={busy} onClick={onEdit}>
-              {t("llink.edit")}
-            </button>
-            <button type="button" className="btn btn-danger btn-sm py-0.5 text-[12px]" disabled={busy} onClick={onReject}>
-              {t("llink.reject")}
-            </button>
-          </div>
-        ) : (
-          <div className="caption text-muted">
-            {t(`llink.filter.${c.review_status}` as LocaleKey)}
-            {c.reviewed_by ? ` · ${c.reviewed_by}` : ""}
-          </div>
-        )}
-      </td>
     </>
-  );
-}
-
-/* Correct the amending document or a position, then approve. */
-function EditDialog({ c, onClose, onDone }: { c: LegalLinkCandidate; onClose: () => void; onDone: () => Promise<void> }) {
-  const { t } = useT();
-  const [amender, setAmender] = useState(c.amender_doc_id);
-  const [sourcePath, setSourcePath] = useState(c.source_path);
-  const [targetPath, setTargetPath] = useState(c.target_path);
-  const [note, setNote] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const save = async () => {
-    setSaving(true);
-    setError("");
-    try {
-      await decideLegalLinkCandidate(c.id, {
-        action: "approve",
-        amender_doc_id: amender.trim() || undefined,
-        source_path: sourcePath.trim() || undefined,
-        target_path: targetPath.trim() || undefined,
-        note: note.trim() || undefined,
-      });
-      await onDone();
-    } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : t("llink.decideFailed"));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Modal open title={t("llink.dialog.title")} onClose={onClose} width="w-[520px]">
-      <div className="flex flex-col gap-4">
-        {c.note && (
-          <div className="rounded-[12px] border border-hairline bg-canvas-soft p-3">
-            <div className="caption text-body">{c.note}</div>
-          </div>
-        )}
-        <div className="flex flex-col gap-1">
-          <FieldLabel htmlFor="llink-amender">{t("llink.f.amender")}</FieldLabel>
-          <input
-            id="llink-amender"
-            className="input h-9 font-mono text-[13px]"
-            value={amender}
-            onChange={(e) => setAmender(e.target.value)}
-          />
-          <span className="caption text-muted-soft">{t("llink.f.amenderHint")}</span>
-        </div>
-        <div className="flex flex-col gap-1">
-          <FieldLabel htmlFor="llink-source-path">{t("llink.f.sourcePath")}</FieldLabel>
-          <input
-            id="llink-source-path"
-            className="input h-9 font-mono text-[13px]"
-            value={sourcePath}
-            placeholder="dieu:1/khoan:3"
-            onChange={(e) => setSourcePath(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <FieldLabel htmlFor="llink-target-path">{t("llink.f.targetPath")}</FieldLabel>
-          <input
-            id="llink-target-path"
-            className="input h-9 font-mono text-[13px]"
-            value={targetPath}
-            placeholder="dieu:5/khoan:2"
-            onChange={(e) => setTargetPath(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <FieldLabel htmlFor="llink-note">{t("llink.f.note")}</FieldLabel>
-          <textarea
-            id="llink-note"
-            className="input min-h-[72px] w-full resize-y py-2 text-[13px] leading-relaxed"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-          />
-        </div>
-        {error && <Notice tone="error">{error}</Notice>}
-        <div className="flex justify-end gap-2 border-t border-hairline pt-4">
-          <button className="btn btn-ghost btn-sm" onClick={onClose} disabled={saving}>
-            {t("common.cancel")}
-          </button>
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={() => void save()}
-            disabled={saving || !amender.trim() || !targetPath.trim()}
-          >
-            {saving ? t("common.loading") : t("llink.saveApprove")}
-          </button>
-        </div>
-      </div>
-    </Modal>
   );
 }

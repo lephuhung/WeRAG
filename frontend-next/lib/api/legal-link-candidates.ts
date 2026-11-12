@@ -3,7 +3,7 @@
  * docs/legal-document-feed-spec.md §9). An approved candidate is copied
  * into legal_provision_links; nothing pushed reaches answers before that.
  * Every route is SuperAdmin-only; the server enforces it. */
-import { apiGet, apiPut } from "@/lib/api-client";
+import { apiGet, apiPost, apiPut } from "@/lib/api-client";
 
 export type LegalLinkReviewStatus = "pending" | "approved" | "rejected" | "auto";
 export type LegalLinkReviewFilter = LegalLinkReviewStatus | "all";
@@ -59,6 +59,8 @@ export interface LegalLinkCandidate {
   target?: LegalLinkDoc | null;
   amender?: LegalLinkDoc | null;
   other_links: LegalHeldLink[];
+  /** The legal document request of B's number while B is not in the catalogue. */
+  amender_request?: { id: string; document_number: string; status: string } | null;
 }
 
 export type LegalLinkCounts = Partial<Record<LegalLinkReviewStatus, number>>;
@@ -96,4 +98,85 @@ export function decideLegalLinkCandidate(
   body: LegalLinkDecision,
 ): Promise<{ success: boolean; data: LegalLinkCandidate }> {
   return apiPut(`/api/v1/system/legal-link-candidates/${id}`, body);
+}
+
+/** One amended document A with candidates, and their counts. */
+export interface LegalLinkTargetGroup {
+  target_doc_id: string;
+  document?: LegalLinkDoc | null;
+  /** A public knowledge base holds A's full text. */
+  held: boolean;
+  knowledge_id?: string;
+  /** Pending, amending document known: a person can decide them. */
+  pending_approvable: number;
+  /** Pending while the amending document is not in the catalogue. */
+  pending_blocked: number;
+  approved: number;
+  rejected: number;
+  auto: number;
+}
+
+export function listLegalLinkDocuments(): Promise<{
+  success: boolean;
+  data: { items: LegalLinkTargetGroup[]; totals: { pending_approvable: number; pending_blocked: number } };
+}> {
+  return apiGet("/api/v1/system/legal-link-candidates/documents");
+}
+
+export type LegalProvisionTextReason = "unknown_doc" | "not_held" | "no_path" | "appendix" | "not_found";
+
+export interface LegalProvisionText {
+  doc_id: string;
+  path: string;
+  label: string;
+  document?: LegalLinkDoc | null;
+  held: boolean;
+  found: boolean;
+  text: string;
+  whole_article?: boolean;
+  truncated?: boolean;
+  knowledge_id?: string;
+  knowledge_base_id?: string;
+  reason?: LegalProvisionTextReason;
+}
+
+export function getLegalProvisionText(docId: string, path: string): Promise<{ success: boolean; data: LegalProvisionText }> {
+  const q = new URLSearchParams({ doc_id: docId, path });
+  return apiGet(`/api/v1/system/legal-link-candidates/provision-text?${q.toString()}`);
+}
+
+export interface LegalHeldProvisionList {
+  doc_id: string;
+  held: boolean;
+  knowledge_id?: string;
+  provisions: { path: string; label: string }[];
+}
+
+export function listLegalHeldProvisions(docId: string): Promise<{ success: boolean; data: LegalHeldProvisionList }> {
+  return apiGet(`/api/v1/system/legal-link-candidates/provisions?doc_id=${encodeURIComponent(docId)}`);
+}
+
+export interface LegalLinkRecheckResult {
+  checked: number;
+  resolved: number;
+  matched: number;
+  auto_approved: number;
+  duplicates: number;
+  still_missing: number;
+  ambiguous: number;
+}
+
+export function recheckLegalLinkCandidates(targetDocId?: string): Promise<{ success: boolean; data: LegalLinkRecheckResult }> {
+  return apiPost("/api/v1/system/legal-link-candidates/recheck", targetDocId ? { target_doc_id: targetDocId } : {});
+}
+
+/** At most this many ids per batch (the server refuses more). */
+export const LEGAL_LINK_BATCH_MAX = 200;
+
+export function decideLegalLinkCandidates(body: {
+  ids: number[];
+  action: "approve" | "reject";
+  note?: string;
+}): Promise<{ success: boolean; data: { done: number[]; failed: { id: number; error: string }[] } }> {
+  return apiPost("/api/v1/system/legal-link-candidates/decide-batch", body);
 }

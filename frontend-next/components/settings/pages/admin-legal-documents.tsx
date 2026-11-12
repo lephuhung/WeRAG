@@ -42,6 +42,7 @@ import LegalLinksSection from "@/components/settings/pages/admin-legal-links";
 import LegalLookupMissesSection from "@/components/settings/pages/admin-legal-lookup-misses";
 import LegalSyncSection from "@/components/settings/pages/admin-legal-sync";
 import { listLegalRequests, type LegalRequestCounts } from "@/lib/api/legal-requests";
+import { listLegalLinkDocuments } from "@/lib/api/legal-link-candidates";
 import { legalStatusTextBadgeClass } from "@/lib/legal-status";
 import { userErrorMessage } from "@/lib/user-error";
 
@@ -218,6 +219,7 @@ export default function AdminLegalDocuments() {
     return () => window.removeEventListener(NOTIFICATION_OPENED_EVENT, onOpen);
   }, []);
   const [requestCounts, setRequestCounts] = useState<LegalRequestCounts | null>(null);
+  const [linksPending, setLinksPending] = useState(0);
   const denyRequests = useCallback(() => setAllowed(false), []);
 
   useEffect(() => {
@@ -271,6 +273,22 @@ export default function AdminLegalDocuments() {
     };
   }, [allowed]);
 
+  /* the links a person can decide now, on the links tab; read again on every
+   * tab change so it follows the review */
+  useEffect(() => {
+    if (!allowed) return;
+    let alive = true;
+    listLegalLinkDocuments().then(
+      (res) => alive && setLinksPending(res.data?.totals?.pending_approvable ?? 0),
+      () => {
+        /* the badge is optional */
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [allowed, view]);
+
   const scan = async () => {
     setScanning(true);
     setError("");
@@ -311,6 +329,8 @@ export default function AdminLegalDocuments() {
           badge:
             v === "requests" && (requestCounts?.requested ?? 0) > 0 ? (
               <span className="badge-pill badge-warning text-[10.5px] tabular-nums">{requestCounts?.requested}</span>
+            ) : v === "links" && linksPending > 0 ? (
+              <span className="badge-pill badge-warning text-[10.5px] tabular-nums">{linksPending}</span>
             ) : undefined,
         }))}
       />
