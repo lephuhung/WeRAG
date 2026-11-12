@@ -16,6 +16,8 @@ type retentionSettings struct{ days int64 }
 
 func (s retentionSettings) GetInt(context.Context, string, string, int64) int64 { return s.days }
 
+func (s retentionSettings) GetBool(_ context.Context, _ string, _ string, def bool) bool { return def }
+
 type retentionFixture struct {
 	db      *gorm.DB
 	w       *LegalExpiredRetention

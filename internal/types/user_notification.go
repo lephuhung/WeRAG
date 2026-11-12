@@ -71,7 +71,39 @@ const (
 	// One open digest per SuperAdmin like the queues above, closed for
 	// everyone once every job is healthy again.
 	UserNotificationBackupAlert = "backup_alert"
+	// UserNotificationLegalSyncAlert: the legal data workers (nightly
+	// vbpl.vn sync, auto-ingest, expired retention) failed, are overdue or
+	// stopped (payload: UserNotificationLegalSyncAlertPayload). One open
+	// digest per SuperAdmin like backup_alert, closed for everyone once
+	// every worker is healthy again.
+	UserNotificationLegalSyncAlert = "legal_sync_alert"
 )
+
+// UserNotificationLegalSyncAlertPayload is the payload of a
+// legal_sync_alert digest: the workers with a problem, in monitor order.
+// Signature names the set of (worker, problem) pairs, so an unchanged
+// incident is not toasted again; ResolvedAt as in backup_alert.
+type UserNotificationLegalSyncAlertPayload struct {
+	Count      int                               `json:"count"`
+	Workers    []UserNotificationLegalSyncWorker `json:"workers"`
+	Signature  string                            `json:"signature"`
+	ResolvedAt *time.Time                        `json:"resolved_at,omitempty"`
+}
+
+// UserNotificationLegalSyncWorker is one worker a legal_sync_alert names.
+// Worker is a LegalSyncWorker* name; Problem the reason
+// (last_failed, stale, running_long, heartbeat_stale, no_heartbeat,
+// tick_error); Step the sync step a failed or long run was at; At the
+// start of that run (or the backend worker's last pass); LastOKAt its
+// last successful run when known; Note the error's tail.
+type UserNotificationLegalSyncWorker struct {
+	Worker   string     `json:"worker"`
+	Problem  string     `json:"problem"`
+	Step     string     `json:"step,omitempty"`
+	At       *time.Time `json:"at,omitempty"`
+	LastOKAt *time.Time `json:"last_ok_at,omitempty"`
+	Note     string     `json:"note,omitempty"`
+}
 
 // UserNotificationBackupAlertPayload is the payload of a backup_alert
 // digest: the jobs with a problem, in job order. Signature names the set

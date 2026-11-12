@@ -324,6 +324,7 @@ def crawl_documents(client, db, action, args):
     html_dir = os.path.join(args.out_dir, "html")
     os.makedirs(html_dir, exist_ok=True)
     started = time.monotonic()
+    fetched = failed = 0
     for n, doc_id in enumerate(todo, 1):
         sig = db.execute("SELECT list_sig FROM docs WHERE id=?", (doc_id,)).fetchone()[0]
         try:
@@ -338,6 +339,7 @@ def crawl_documents(client, db, action, args):
             with db:
                 db.execute("UPDATE docs SET error=? WHERE id=?", (str(e)[:500], doc_id))
             log(f"  {doc_id}: {e}")
+            failed += 1
             continue
         content = (detail.get("documentContent") or {}).get("content") or ""
         if (detail.get("effStatus") or {}).get("name", "").strip() == EXPIRED_STATUS:
@@ -357,9 +359,11 @@ def crawl_documents(client, db, action, args):
                 "UPDATE docs SET detail=?, diagram=?, fetched_sig=?, fetched_at=?, error=NULL WHERE id=?",
                 (json.dumps(detail, ensure_ascii=False), json.dumps(diagram, ensure_ascii=False),
                  sig, dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), doc_id))
+        fetched += 1
         if n % 100 == 0 or n == len(todo):
             rate = n / max(time.monotonic() - started, 1e-9)
             log(f"fetched {n}/{len(todo)} ({rate:.2f} doc/s, ~{(len(todo) - n) / max(rate, 1e-9) / 3600:.1f} h left)")
+    return {"to_fetch": len(todo), "fetched": fetched, "fetch_failed": failed}
 
 
 def full_text_md5(html_dir, doc_id):
@@ -478,6 +482,7 @@ def export(db, args):
     for name in ("documents.jsonl", "relations.jsonl"):
         os.replace(os.path.join(out_dir, name + ".tmp"), os.path.join(out_dir, name))
     log(f"exported {docs} documents, {stubs} metadata-only documents and {rels} relations to {out_dir}")
+    return {"exported_documents": docs, "exported_metadata_only": stubs, "exported_relations": rels}
 
 
 def main():
@@ -498,7 +503,9 @@ def main():
                     help="crawl local documents of this province (vbpl administrative unit id; repeatable)")
     ap.add_argument("--list-action", help="server action id of the catalogue search")
     ap.add_argument("--diagram-action", help="server action id of the relation diagram")
+    ap.add_argument("--summary", help="write this run's counts as JSON to this file (the sync's run monitor)")
     args = ap.parse_args()
+    summary = {}
 
     os.makedirs(args.out_dir, exist_ok=True)
     db = sqlite3.connect(os.path.join(args.out_dir, "state.sqlite"))
@@ -519,12 +526,21 @@ def main():
                     db.execute("UPDATE docs SET kept=? WHERE id=?",
                                (int(is_kept(json.loads(item), args.min_year, args.all_central, args.province)),
                                 doc_id))
-        crawl_documents(client, db, diagram_action, args)
+        summary.update(crawl_documents(client, db, diagram_action, args))
         log(f"{client.requests} requests")
-    export(db, args)
+        summary["requests"] = client.requests
+    summary.update(export(db, args))
     kept, done, failed = db.execute(
         "SELECT SUM(kept), SUM(kept AND fetched_sig = list_sig), SUM(kept AND error IS NOT NULL) FROM docs").fetchone()
     log(f"kept {kept or 0}, up to date {done or 0}, last fetch failed {failed or 0}")
+    summary.update({"kept": kept or 0, "up_to_date": done or 0, "last_fetch_failed": failed or 0})
+    if args.summary:
+        try:  # the run monitor's counts never fail a crawl
+            with open(args.summary + ".tmp", "w", encoding="utf-8") as f:
+                json.dump(summary, f)
+            os.replace(args.summary + ".tmp", args.summary)
+        except OSError as e:
+            log(f"summary {args.summary}: {e}")
 
 
 if __name__ == "__main__":

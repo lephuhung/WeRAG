@@ -39,6 +39,14 @@ type LegalExpiredRetention struct {
 	}
 	remove func(ctx context.Context, id string) error
 	now    func() time.Time
+	// runs records the passes that changed something (the SuperAdmin monitor)
+	runs legalRunRecorder
+}
+
+// WithRuns makes the worker record its passes.
+func (w *LegalExpiredRetention) WithRuns(r legalRunRecorder) *LegalExpiredRetention {
+	w.runs = r
+	return w
 }
 
 // NewLegalExpiredRetention creates the worker.
@@ -55,6 +63,7 @@ func NewLegalExpiredRetention(
 // StartLegalExpiredRetention runs the worker until the returned func is
 // called; the first pass starts the clock of documents already expired.
 func StartLegalExpiredRetention(w *LegalExpiredRetention) (stop func()) {
+	noteLegalWorkerStarted(types.LegalSyncWorkerExpiredRetention, legalRetentionTick, time.Now())
 	done := make(chan struct{})
 	go func() {
 		w.Tick(context.Background())
@@ -81,15 +90,24 @@ const legalRetentionFrom = ` FROM knowledges k
 // Tick updates the clocks and removes one batch of documents past their
 // period. Returns how many it removed.
 func (w *LegalExpiredRetention) Tick(ctx context.Context) (removed int) {
+	now := w.now()
+	noteLegalWorkerPassStart(types.LegalSyncWorkerExpiredRetention, legalRetentionTick, now)
+	var started, cleared, failed, kept int
+	tickErr, lastErr := "", ""
 	// A bare goroutine: a panic in the delete path must not take the server down.
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Errorf(ctx, "[LegalExpiredRetention] panic: %v", r)
+			tickErr = fmt.Sprintf("panic: %v", r)
 		}
+		beatErr := w.record(ctx, now, map[string]int{"removed": removed, "clocks_started": started, "clocks_cleared": cleared,
+			"failed": failed, "kept_live_copy": kept}, lastErr, tickErr)
+		noteLegalWorkerBeat(types.LegalSyncWorkerExpiredRetention, legalRetentionTick, w.now(), beatErr)
 	}()
-	now := w.now()
-	if err := w.updateClocks(ctx, now); err != nil {
+	var err error
+	if started, cleared, err = w.updateClocks(ctx, now); err != nil {
 		logger.Warnf(ctx, "[LegalExpiredRetention] clocks: %v", err)
+		tickErr = "clocks: " + err.Error()
 		return 0
 	}
 	days := w.settings.GetInt(ctx, types.LegalExpiredRetentionDaysSettingKey, "", types.LegalExpiredRetentionDefaultDays)
@@ -104,6 +122,7 @@ func (w *LegalExpiredRetention) Tick(ctx context.Context) (removed int) {
 		`AND d.status LIKE ? AND k.metadata->>'`+legalExpiredAtKey+`' IS NOT NULL`, LegalExpiredStatusPrefix+"%").
 		Scan(&rows).Error; err != nil {
 		logger.Warnf(ctx, "[LegalExpiredRetention] listing: %v", err)
+		tickErr = "listing: " + err.Error()
 		return 0
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ExpiredAt < rows[j].ExpiredAt })
@@ -115,6 +134,7 @@ func (w *LegalExpiredRetention) Tick(ctx context.Context) (removed int) {
 	byKey, err := w.catalogueRows(ctx, keys)
 	if err != nil {
 		logger.Warnf(ctx, "[LegalExpiredRetention] catalogue rows: %v", err)
+		tickErr = "catalogue rows: " + err.Error()
 		return 0
 	}
 	for _, r := range rows {
@@ -128,10 +148,13 @@ func (w *LegalExpiredRetention) Tick(ctx context.Context) (removed int) {
 		if legalHasLiveCopy(r.ExternalID, byKey[r.NumberKey]) {
 			logger.Infof(ctx, "[LegalExpiredRetention] %s (%s) kept: another row of the document is in force",
 				r.ExternalID, r.DocumentNumber)
+			kept++
 			continue
 		}
 		if err := w.removeOne(ctx, r.ID, r.KnowledgeBaseID); err != nil {
 			logger.Warnf(ctx, "[LegalExpiredRetention] %s (%s): %v", r.ExternalID, r.DocumentNumber, err)
+			failed++
+			lastErr = r.DocumentNumber + ": " + err.Error()
 			continue
 		}
 		removed++
@@ -142,6 +165,41 @@ func (w *LegalExpiredRetention) Tick(ctx context.Context) (removed int) {
 		logger.Infof(ctx, "[LegalExpiredRetention] %s (%s): full text removed, catalogue row kept", r.ExternalID, r.DocumentNumber)
 	}
 	return removed
+}
+
+// record writes a pass that removed a text, started or cleared a clock, or
+// failed: a pass with nothing to do leaves only the heartbeat. (A document
+// kept for a live copy is seen on every pass, so it alone is no reason.)
+// Returns the error of a failed pass (the heartbeat shows it); a panic here
+// is caught, not the server's.
+func (w *LegalExpiredRetention) record(ctx context.Context, started time.Time, counts map[string]int, lastErr, tickErr string) (failed string) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Errorf(ctx, "[LegalExpiredRetention] recording panic: %v", r)
+		}
+	}()
+	status, errText := types.LegalSyncOK, lastErr
+	if tickErr != "" || (counts["failed"] > 0 && counts["removed"] == 0) {
+		status = types.LegalSyncFailed
+		if tickErr != "" {
+			errText = tickErr
+		}
+		failed = errText
+	}
+	if w.runs == nil {
+		return failed
+	}
+	if tickErr == "" && counts["removed"]+counts["clocks_started"]+counts["clocks_cleared"]+counts["failed"] == 0 {
+		return failed
+	}
+	summary := map[string]any{}
+	for k, n := range counts {
+		summary[k] = n
+	}
+	if err := w.runs.Record(ctx, types.LegalSyncWorkerExpiredRetention, started, status, errText, summary); err != nil {
+		logger.Warnf(ctx, "[LegalExpiredRetention] recording the pass: %v", err)
+	}
+	return failed
 }
 
 // catalogueRows loads the catalogue rows of the numbers, by number key.
@@ -183,8 +241,8 @@ func legalHasLiveCopy(id string, rows []*types.LegalDocument) bool {
 }
 
 // updateClocks starts the clock of newly expired documents and clears that
-// of documents the portal put back in force.
-func (w *LegalExpiredRetention) updateClocks(ctx context.Context, now time.Time) error {
+// of documents the portal put back in force; it returns how many of each.
+func (w *LegalExpiredRetention) updateClocks(ctx context.Context, now time.Time) (int, int, error) {
 	set := "json_set(metadata, '$." + legalExpiredAtKey + "', ?)"
 	clear := "json_remove(metadata, '$." + legalExpiredAtKey + "')"
 	if w.db.Dialector.Name() == "postgres" {
@@ -195,14 +253,14 @@ func (w *LegalExpiredRetention) updateClocks(ctx context.Context, now time.Time)
 	db := w.db.WithContext(ctx)
 	if err := db.Raw(`SELECT k.id`+legalRetentionFrom+`AND d.status LIKE ? AND k.metadata->>'`+legalExpiredAtKey+`' IS NULL`,
 		LegalExpiredStatusPrefix+"%").Scan(&start).Error; err != nil {
-		return err
+		return 0, 0, err
 	}
 	if err := db.Raw(`SELECT k.id`+legalRetentionFrom+`AND d.status NOT LIKE ? AND k.metadata->>'`+legalExpiredAtKey+`' IS NOT NULL`,
 		LegalExpiredStatusPrefix+"%").Scan(&stop).Error; err != nil {
-		return err
+		return 0, 0, err
 	}
 	stamp := now.UTC().Format(time.RFC3339)
-	return db.Transaction(func(tx *gorm.DB) error {
+	err := db.Transaction(func(tx *gorm.DB) error {
 		for _, id := range start {
 			if err := tx.Exec("UPDATE knowledges SET metadata = "+set+" WHERE id = ? AND metadata->>'"+legalExpiredAtKey+"' IS NULL",
 				stamp, id).Error; err != nil {
@@ -216,6 +274,10 @@ func (w *LegalExpiredRetention) updateClocks(ctx context.Context, now time.Time)
 		}
 		return nil
 	})
+	if err != nil {
+		return 0, 0, err
+	}
+	return len(start), len(stop), nil
 }
 
 // removeOne deletes one knowledge with a write grant on its own KB.

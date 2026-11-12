@@ -119,6 +119,7 @@ type RouterParams struct {
 	LegalRequestHandler         *handler.LegalRequestHandler
 	LegalPushHandler            *handler.LegalPushHandler
 	LegalDraftHandler           *handler.LegalDraftHandler
+	LegalSyncHandler            *handler.LegalSyncHandler
 	DomainPackReconcileHandler  *handler.DomainPackReconcileHandler
 	KnowledgeGraphViewHandler   *handler.KnowledgeGraphViewHandler
 }
@@ -379,6 +380,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterLegalRequestRoutes(v1, params.LegalRequestHandler, rbacGuards)
 		RegisterLegalPushRoutes(v1, params.LegalPushHandler, rbacGuards)
 		RegisterLegalDraftRoutes(v1, params.LegalDraftHandler, rbacGuards)
+		RegisterLegalSyncRoutes(v1, params.LegalSyncHandler, rbacGuards)
 		RegisterDomainPackReconcileRoutes(v1, params.DomainPackReconcileHandler, rbacGuards)
 		RegisterChunkerDebugRoutes(v1, rbacGuards)
 

@@ -121,3 +121,16 @@ func RegisterLegalPushRoutes(r *gin.RouterGroup, h *handler.LegalPushHandler, g 
 		cands.PUT("/:id", h.DecideLegalLinkCandidate)
 	}
 }
+
+// RegisterLegalSyncRoutes wires the SuperAdmin monitor of the legal data
+// workers (read only).
+func RegisterLegalSyncRoutes(r *gin.RouterGroup, h *handler.LegalSyncHandler, g *rbacGuards) {
+	if h == nil {
+		return
+	}
+	sync := r.Group("/system/legal-sync", g.PlatformSuperAdmin())
+	{
+		sync.GET("/status", h.GetLegalSyncStatus)
+		sync.GET("/runs", h.ListLegalSyncRuns)
+	}
+}

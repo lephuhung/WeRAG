@@ -78,6 +78,12 @@ func main() {
 	autoIngest := flag.Bool("auto-ingest-html", false,
 		"Queue documents with a portal full text and no public KB copy for the backend's auto-ingest worker")
 	flag.Parse()
+	if runControlRequested() {
+		if err := runControl(); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if *docsPath == "" || *relsPath == "" || *snapshot == "" {
 		flag.Usage()
 		os.Exit(2)
@@ -96,6 +102,9 @@ func main() {
 	}
 	ctx := context.Background()
 	repo := repository.NewLegalCatalogRepository(db)
+	runs := repository.NewLegalSyncRunRepository(db)
+	recordImportStart(ctx, runs)
+	stat("snapshot", *snapshot)
 
 	var docs []*types.LegalDocument
 	ids := map[string]bool{}
@@ -160,6 +169,7 @@ func main() {
 			}
 		}
 		log.Printf("%d list-only documents, %d of them kept as already catalogued", len(listOnly), len(docs)-len(kept))
+		stat("list_only", len(listOnly))
 		docs = kept
 	}
 
@@ -178,6 +188,7 @@ func main() {
 	twins := legalcatalog.ResolveTwins(catalogued, docs)
 	docs, alias := twins.Keep, twins.Alias
 	log.Printf("%d twin documents attached to their catalogue row", len(alias))
+	stat("twins_attached", len(alias))
 	if err := reportTwins(*report, twins); err != nil {
 		log.Fatalf("write twin report: %v", err)
 	}
@@ -259,6 +270,7 @@ func main() {
 	adoptFeedRows(ctx, db, feedAdoptions(catalogued, alias))
 	log.Printf("%d reviewed documents: %d updated from the portal, %d not from the portal hold new values",
 		len(reviewedByID), len(rec.overwritten), rec.parked)
+	stat("reviewed_updated_from_portal", len(rec.overwritten))
 	if *prune {
 		var existing []string
 		if err := db.WithContext(ctx).Model(&types.LegalDocument{}).
@@ -274,6 +286,7 @@ func main() {
 			}
 		}
 		log.Printf("pruned %d documents absent from this import", len(gone))
+		stat("pruned", len(gone))
 	}
 	if *merge {
 		if err := mergeRelations(ctx, db, ids, alias, edges.survivor, rels); err != nil {
@@ -291,45 +304,58 @@ func main() {
 		}
 	}
 	if n, err := updateListOnlyValidity(ctx, db, listRows, catalogued); err != nil {
-		log.Printf("update validity of list-only documents: %v", err)
+		warnf("update validity of list-only documents: %v", err)
 	} else {
 		log.Printf("%d list-only documents took the portal's validity", n)
+		stat("list_only_validity_updated", n)
 	}
 	if n, err := syncKnowledgeValidity(ctx, db); err != nil {
-		log.Printf("copy validity to knowledge documents: %v", err)
+		warnf("copy validity to knowledge documents: %v", err)
 	} else {
 		log.Printf("%d knowledge documents took the catalogue's status", n)
+		stat("knowledge_validity_updated", n)
 	}
 	if n, err := linkPortalKnowledge(ctx, db); err != nil {
-		log.Printf("link portal documents: %v", err)
+		warnf("link portal documents: %v", err)
 	} else {
 		log.Printf("%d portal documents in public knowledge bases linked to their catalogue row", n)
+		stat("knowledge_linked", n)
 	}
 	if *enqueueNoText {
 		// The catalogue is already imported: a queue problem is not worth
 		// failing the night's sync (and skipping its MinIO push).
 		if n, err := enqueueNoFullText(ctx, db, docs, catalogued, noFullText, time.Now()); err != nil {
-			log.Printf("queue documents without full text: %v", err)
+			warnf("queue documents without full text: %v", err)
 		} else {
 			log.Printf("%d documents without full text added to the request queue", n)
+			stat("queued_no_full_text", n)
 		}
 	}
 	if *autoIngest {
 		if added, moved, err := queueAutoIngest(ctx, db, docs, catalogued, hasHTML, time.Now()); err != nil {
-			log.Printf("queue documents for auto-ingest: %v", err)
+			warnf("queue documents for auto-ingest: %v", err)
 		} else {
 			log.Printf("%d new documents and %d waiting requests queued for auto-ingest", added, moved)
+			stat("queued_auto_ingest", added)
+			stat("requests_moved_to_auto_ingest", moved)
 		}
 		if n, err := queueChangedText(ctx, db, docs, htmlMD5, time.Now()); err != nil {
-			log.Printf("queue documents with a changed text: %v", err)
+			warnf("queue documents with a changed text: %v", err)
 		} else {
 			log.Printf("%d documents whose text changed on the portal queued for re-ingest", n)
+			stat("queued_text_changed", n)
 		}
 	}
 	log.Printf("imported %d documents and %d relations (snapshot %s)", len(docs), len(rels), *snapshot)
+	stat("documents", len(docs))
+	stat("relations", len(rels))
+	skippedRels := 0
 	for reason, n := range skipped {
 		log.Printf("skipped %d relation rows: %s", n, reason)
+		skippedRels += n
 	}
+	stat("relations_skipped", skippedRels)
+	recordImport(ctx, runs)
 }
 
 // feedAdoptions are the feed rows (types.LegalDocument.IsFeedRow) the
@@ -512,15 +538,36 @@ func (b *edgeBuilder) add(r vbplRelation) {
 // openDB connects to the Postgres database the server uses (DB_* env).
 // Deployments are Postgres only, so the importer builds without cgo.
 func openDB() (*gorm.DB, error) {
-	cfg := &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Warn)}
+	return openDBWith(gormlogger.Default.LogMode(gormlogger.Warn))
+}
+
+// openDBWith opens the database with the given SQL logger (the run-control
+// mode is silent: its stdout is the run id sync.sh captures).
+func openDBWith(sqlLog gormlogger.Interface) (*gorm.DB, error) {
+	return openDBWithTimeout(sqlLog, 0)
+}
+
+// openDBWithTimeout opens the database; connectTimeout (seconds, 0 = the
+// driver's default) bounds the connection.
+func openDBWithTimeout(sqlLog gormlogger.Interface, connectTimeout int) (*gorm.DB, error) {
+	cfg := &gorm.Config{Logger: sqlLog}
 	if d := os.Getenv("DB_DRIVER"); d != "" && d != "postgres" {
 		return nil, fmt.Errorf("unsupported DB_DRIVER %q: Postgres only", d)
 	}
-	return gorm.Open(postgres.Open(fmt.Sprintf(
+	return gorm.Open(postgres.Open(postgresDSN(connectTimeout)), cfg)
+}
+
+// postgresDSN is the DSN of the DB_* env.
+func postgresDSN(connectTimeout int) string {
+	dsn := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=UTC",
 		os.Getenv("DB_HOST"), os.Getenv("DB_PORT"), os.Getenv("DB_USER"),
 		os.Getenv("DB_PASSWORD"), os.Getenv("DB_NAME"),
-	)), cfg)
+	)
+	if connectTimeout > 0 {
+		dsn += fmt.Sprintf(" connect_timeout=%d", connectTimeout)
+	}
+	return dsn
 }
 
 // mergeRelations replaces the edges touching the imported documents and

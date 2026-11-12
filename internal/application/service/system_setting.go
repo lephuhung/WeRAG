@@ -505,6 +505,11 @@ var registry = map[string]settingSpec{
 		Type: "int", EnvName: "", Default: int64(types.LegalExpiredRetentionDefaultDays), Category: "legal",
 		Description: "Số ngày văn bản hết hiệu lực toàn bộ còn giữ toàn văn trong kho công khai; hết hạn thì xóa nội dung, giữ số hiệu và metadata trong danh mục.",
 	},
+	types.LegalSyncAlertEnabledSettingKey: {
+		Type: "bool", EnvName: "", Default: true, Category: "legal",
+		Description: "Gửi thông báo trong ứng dụng cho SuperAdmin khi đồng bộ vbpl.vn hằng đêm hoặc worker tự nạp/xóa toàn văn " +
+			"hết hiệu lực gặp sự cố. Tắt khi cố ý dừng đồng bộ; tắt thì thông báo đang mở được đóng ở lần kiểm tra sau (10 phút).",
+	},
 	types.BillingOrderTTLHoursSettingKey: {
 		Type: "int", EnvName: "", Default: int64(72), Category: "billing",
 		Description: "Đơn hàng chưa thanh toán tự hết hạn sau số giờ này.",
