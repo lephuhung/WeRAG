@@ -214,3 +214,19 @@ func TestExportAnswerDocxRefusals(t *testing.T) {
 		})
 	}
 }
+
+// A client that left gets no file and no error log: 499, as nginx writes it.
+func TestExportAnswerDocxClientGone(t *testing.T) {
+	r := newExportEngine(t, "alice")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/sessions/s-alice/messages/a1/export.docx", nil).WithContext(ctx)
+	r.ServeHTTP(rec, req)
+	if rec.Code != 499 {
+		t.Fatalf("status %d, want 499, body=%s", rec.Code, rec.Body.String())
+	}
+	if rec.Header().Get("Content-Disposition") != "" || rec.Body.Len() != 0 {
+		t.Errorf("a file went out: %q", rec.Body.String())
+	}
+}

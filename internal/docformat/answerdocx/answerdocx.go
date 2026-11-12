@@ -59,6 +59,9 @@ const ConvertBudget = 5 * time.Second
 // (the client left); when only the ConvertBudget runs out, the answer is
 // written as plain paragraphs.
 func Build(ctx context.Context, in Input) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	content, err := contentBlocks(ctx, in.Content, ConvertBudget)
 	if err != nil {
 		return nil, err

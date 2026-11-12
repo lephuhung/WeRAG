@@ -162,3 +162,87 @@ func TestInlineTextDetails(t *testing.T) {
 		t.Errorf("rows = %+v", rows)
 	}
 }
+
+func TestCitationTagsAreRemoved(t *testing.T) {
+	long := strings.Repeat("Thông tư quy định về quản lý nhiệm vụ khoa học ", 10) // ~480 bytes
+	kb := `<kb doc="` + long + `.html" chunk_id="d97f7bfd-cb96-4d72-ab02-d94dcdf45226" kb_id="f3b46e70-121c-44d6-bd75-6a67d417a791" />`
+	web := `<web url="https://chinhphu.vn/a?b=1&c=2" title="Cổng > thông tin" />`
+	md := "Số trang ở **giữa, phía dưới**" + kb + ".\n\n" +
+		"| Mục | Nguồn |\n|---|---|\n| Lề trang " + kb + " | 3 cm" + web + " |\n\n" +
+		"Xem thêm <ref id=\"c4\"/> và `<kb doc=\"giữ trong code\" />`\n\n```\n<web url=\"x\" />\n```"
+	got := view(MarkdownBlocks(md))
+	want := []para{
+		{text: "Số trang ở **giữa, phía dưới**."},
+		{style: "row", text: "Mục | Nguồn"},
+		{style: "row", text: "Lề trang | 3 cm"},
+		{text: "Xem thêm  và `<kb doc=\"giữ trong code\" />`"},
+		{style: docxwrite.StyleCodeBlock, text: `<web url="x" />`},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %+v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("block %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
+func TestEntitiesNeedTheirSemicolon(t *testing.T) {
+	for md, want := range map[string]string{
+		"1826/BNV-CVT&LTNN":        "1826/BNV-CVT&LTNN",
+		"Bộ XD&GTVT":               "Bộ XD&GTVT",
+		"AT&T":                     "AT&T",
+		"a &amp; b &#273; &#x111;": "a & b đ đ",
+		"&notanentity; &lt;b&gt;":  "&notanentity; <b>",
+		"a&#59;b":                  "a;b",
+	} {
+		if got := view(MarkdownBlocks(md)); len(got) != 1 || got[0].text != want {
+			t.Errorf("%q -> %+v, want %q", md, got, want)
+		}
+	}
+}
+
+func TestNestedImagesAndLinksStayFast(t *testing.T) {
+	const limit = 500 * time.Millisecond
+	n := (MaxMarkdownBytes - 100) / 6
+	images := timed(t, "nested images", strings.Repeat("![", n)+strings.Repeat("](u)", n), limit)
+	if len(images) != 1 {
+		t.Errorf("nested images: %d blocks", len(images))
+	}
+	m := (MaxMarkdownBytes - 100) / 11
+	timed(t, "nested linked images", strings.Repeat("[![", m)+strings.Repeat("](u)](u)", m), limit)
+	timed(t, "nested links", strings.Repeat("[", n)+strings.Repeat("](u)", n), limit)
+
+	// the client leaving stops the work at once
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	start := time.Now()
+	if _, err := Build(ctx, Input{Content: strings.Repeat("![", n) + strings.Repeat("](u)", n)}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v", err)
+	}
+	if d := time.Since(start); d > 50*time.Millisecond {
+		t.Errorf("cancelled build took %v", d)
+	}
+}
+
+func TestLinksImagesTagsAndCode(t *testing.T) {
+	cases := []struct{ name, md, want string }{
+		{"link inside a link: outer brackets are text", "[a [b](c) d](e)", "[a b (c) d](e)"},
+		{"image inside a link", "[![sơ đồ](x.png)](https://a.vn)", "[Hình: sơ đồ] (https://a.vn)"},
+		{"image alt drops markup", "![*sơ* **đồ**](x.png)", "[Hình: sơ đồ]"},
+		{"backslash is literal in a code span", "`a\\` b", "`a\\` b"},
+		// "\`" is a literal backtick; "` b`" is then the code span " b"
+		{"escaped backtick opens nothing", "\\`a` b`", "`a` b`"},
+		{"common html tags keep their text", `<a href="https://a.vn/x">Luật</a>, <code>mã</code>, <pre>pre</pre> <ul><li>mục</li></ul> <img src="x.png" alt="ảnh">`,
+			"Luật, mã, pre mục "},
+		{"long href fits", `<a href="https://a.vn/` + strings.Repeat("x", 1500) + `">Luật</a>`, "Luật"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := view(MarkdownBlocks(tc.md)); len(got) != 1 || got[0].text != tc.want {
+				t.Errorf("got %+v, want %q", got, tc.want)
+			}
+		})
+	}
+}

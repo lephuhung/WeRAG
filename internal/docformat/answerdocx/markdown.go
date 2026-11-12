@@ -25,10 +25,12 @@ import (
 //     code is read as text (answers indent lists, not code)
 //   - thematic breaks (---, ***, ___)
 //
-// Common HTML tags (b, i, sup, span, …) are dropped, their text kept, and
-// <br> is a line break; anything else in angle brackets stays as text.
-// HTML entities in text are decoded. Closed <think>…</think> reasoning and
-// <people_lookup>…</people_lookup> envelopes outside code are removed.
+// Common HTML tags (b, a, code, li, span, …) are dropped, their text kept,
+// and <br> is a line break; anything else in angle brackets stays as text.
+// HTML character references with their ";" are decoded (as marked does).
+// Inline citation tags (<kb …/>, <web …/>, <ref …/>), closed
+// <think>…</think> reasoning and <people_lookup>…</people_lookup>
+// envelopes outside code are removed.
 //
 // The parser is linear in the input: emphasis follows the CommonMark
 // delimiter algorithm, brackets, parentheses and code spans are matched in
@@ -116,16 +118,21 @@ func PlainBlocks(md string) []docxwrite.Block {
 }
 
 var (
-	wikiLinkRe  = regexp.MustCompile(`\[\[([^\]\n]+)\]\]`)
-	headingRe   = regexp.MustCompile(`^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$`)
-	closingHash = regexp.MustCompile(`[ \t]+#+$`)
-	ruleRe      = regexp.MustCompile(`^ {0,3}((?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$`)
-	fenceRe     = regexp.MustCompile("^( {0,3})(`{3,}|~{3,})(.*)$")
-	listItemRe  = regexp.MustCompile(`^( *)([-*+]|\d{1,9}[.)])([ \t]+|$)(.*)$`)
-	tableSepRe  = regexp.MustCompile(`^ {0,3}\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$`)
-	setextH1Re  = regexp.MustCompile(`^ {0,3}=+[ \t]*$`)
-	setextH2Re  = regexp.MustCompile(`^ {0,3}-+[ \t]*$`)
-	quoteRe     = regexp.MustCompile(`^ {0,3}>`)
+	wikiLinkRe = regexp.MustCompile(`\[\[([^\]\n]+)\]\]`)
+	// citationTagRe is an inline citation of the agent pipeline: <kb …/>,
+	// <web …/>, <ref …/> (the chat draws them as chips; the sources list
+	// replaces them here). Like imCitationTagRe in internal/im, with no
+	// length bound: titles run to hundreds of characters.
+	citationTagRe = regexp.MustCompile(`</?(?:kb|web|ref)\b(?:[^<>"'\n]|"[^"\n]*"|'[^'\n]*')*>`)
+	headingRe     = regexp.MustCompile(`^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$`)
+	closingHash   = regexp.MustCompile(`[ \t]+#+$`)
+	ruleRe        = regexp.MustCompile(`^ {0,3}((?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$`)
+	fenceRe       = regexp.MustCompile("^( {0,3})(`{3,}|~{3,})(.*)$")
+	listItemRe    = regexp.MustCompile(`^( *)([-*+]|\d{1,9}[.)])([ \t]+|$)(.*)$`)
+	tableSepRe    = regexp.MustCompile(`^ {0,3}\|?[ \t]*:?-+:?[ \t]*(\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$`)
+	setextH1Re    = regexp.MustCompile(`^ {0,3}=+[ \t]*$`)
+	setextH2Re    = regexp.MustCompile(`^ {0,3}-+[ \t]*$`)
+	quoteRe       = regexp.MustCompile(`^ {0,3}>`)
 )
 
 func preprocess(md string) string {
@@ -133,6 +140,7 @@ func preprocess(md string) string {
 	md = strings.ReplaceAll(md, "\r", "\n")
 	md = stripPairs(md, "<think>", "</think>")
 	md = stripPairs(md, "<people_lookup>", "</people_lookup>")
+	md = replaceOutsideCode(md, citationTagRe, "")
 	return wikiLinkRe.ReplaceAllStringFunc(md, func(m string) string {
 		inner := m[2 : len(m)-2]
 		if i := strings.Index(inner, "|"); i > 0 {
@@ -562,6 +570,54 @@ func capColumns(cells []string) []string {
 	}
 	out := append([]string{}, cells[:maxTableColumns-1]...)
 	return append(out, strings.Join(cells[maxTableColumns-1:], " | "))
+}
+
+// replaceOutsideCode replaces the matches of re outside fenced code and
+// code spans, line by line.
+func replaceOutsideCode(md string, re *regexp.Regexp, repl string) string {
+	if !re.MatchString(md) {
+		return md
+	}
+	var b strings.Builder
+	inFence, fenceCh, fenceLen := false, byte(0), 0
+	for _, line := range strings.SplitAfter(md, "\n") {
+		body := strings.TrimRight(line, "\n")
+		if m := fenceRe.FindStringSubmatch(body); m != nil {
+			if !inFence {
+				inFence, fenceCh, fenceLen = true, m[2][0], len(m[2])
+			} else if m[2][0] == fenceCh && len(m[2]) >= fenceLen && strings.TrimSpace(m[3]) == "" {
+				inFence = false
+			}
+			b.WriteString(line)
+			continue
+		}
+		if inFence || !re.MatchString(body) {
+			b.WriteString(line)
+			continue
+		}
+		spans := codeSpans(body, true)
+		last := 0
+		for i := 0; i < len(body); {
+			switch {
+			case body[i] == '\\':
+				i += 2
+				continue
+			case body[i] == '`':
+				if e, ok := spans[i]; ok {
+					b.WriteString(re.ReplaceAllString(body[last:i], repl))
+					b.WriteString(body[i:e])
+					last, i = e, e
+					continue
+				}
+				i += runLen(body, i, '`')
+				continue
+			}
+			i++
+		}
+		b.WriteString(re.ReplaceAllString(body[last:], repl))
+		b.WriteString(line[len(body):])
+	}
+	return b.String()
 }
 
 // stripPairs removes each closed open…close pair outside fenced code and

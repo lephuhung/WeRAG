@@ -3,6 +3,7 @@ package answerdocx
 import (
 	"html"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -16,8 +17,10 @@ import (
 //     brackets and parentheses outside them with stacks, so a link is
 //     recognised in O(1) and a failed "[" is never rescanned;
 //  2. the text is cut into tokens: plain text, code, links (their text
-//     parsed recursively over its own range, at most maxLinkNesting deep)
-//     and delimiter runs of *, _ and ~~;
+//     parsed recursively over its own range, at most maxLinkNesting deep;
+//     brackets holding a link are text, as in marked), images (their alt
+//     text read once, without images or links inside it) and
+//     delimiter runs of *, _ and ~~;
 //  3. emphasis pairs the delimiter runs with the CommonMark "process
 //     emphasis" algorithm (openers_bottom, rule of three) on a linked list,
 //     recording on each run how many bold/italic/strike spans it opens or
@@ -27,13 +30,33 @@ import (
 const maxLinkNesting = 4
 
 // knownTagRe matches the HTML tags dropped from text (their content kept):
-// a known name and attributes of the name=value shape only, so prose such
-// as "a <b and c> d" is left alone.
-var knownTagRe = regexp.MustCompile(`^<(/?)(?i:(b|strong|i|em|u|s|strike|del|ins|sup|sub|span|div|p|br|small|mark|font|center|details|summary|kbd|abbr|cite|q|hr|think|people_lookup))` +
+// a common name and attributes of the name=value shape only, so prose such
+// as "a <b and c> d" is left alone. No part of it crosses a "<", so a
+// failed match stops at the next one.
+var knownTagRe = regexp.MustCompile(`^<(/?)(?i:(a|abbr|address|article|b|big|blockquote|br|caption|center|cite|code|col|colgroup|dd|del|details|dfn|div|dl|dt|em|figcaption|figure|font|footer|h[1-6]|header|hr|i|img|ins|kbd|label|li|mark|nav|ol|p|people_lookup|pre|q|s|samp|section|small|span|strike|strong|sub|summary|sup|table|tbody|td|tfoot|th|thead|think|time|tr|tt|u|ul|var|wbr))` +
 	`((?:\s+[a-zA-Z_:][-a-zA-Z0-9_:.]*\s*=\s*(?:"[^"<>]*"|'[^'<>]*'|[^\s"'<>=` + "`" + `]+))*)\s*/?>`)
 
-// maxTagLen bounds the text a tag match looks at.
-const maxTagLen = 512
+// maxTagLen bounds the text a tag match looks at (long href URLs fit).
+const maxTagLen = 4096
+
+// entityRe is an HTML character reference with its semicolon, the only
+// form marked decodes: "1826/BNV-CVT&LTNN" stays as written.
+var entityRe = regexp.MustCompile(`&(?:#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});`)
+
+// decodeEntities decodes the character references of plain text.
+func decodeEntities(s string) string {
+	if !strings.Contains(s, "&") {
+		return s
+	}
+	return entityRe.ReplaceAllStringFunc(s, func(ref string) string {
+		// html also reads legacy names without ";" ("&not" in
+		// "&notanentity;"): keep a reference it does not decode whole
+		if out := html.UnescapeString(ref); strings.HasPrefix(ref, "&#") || !strings.Contains(out, ";") {
+			return out
+		}
+		return ref
+	})
+}
 
 const (
 	stBold = iota
@@ -60,6 +83,9 @@ type inlineParser struct {
 	spans   map[int]int // code span start → index past its end
 	bracket map[int]int // "[" → its "]"
 	paren   map[int]int // "(" → its ")"
+	// textOnly marks "[" whose text holds a link: as in CommonMark and
+	// marked, such brackets are text and the inner link stays a link
+	textOnly map[int]bool
 }
 
 // inline converts the inline Markdown of one paragraph to runs.
@@ -72,7 +98,7 @@ func (c *converter) inline(s string) []docxwrite.Run {
 	}
 	p := &inlineParser{s: s, bud: c.bud, spans: codeSpans(s, true)}
 	p.matchBrackets()
-	return mergeRuns(p.parse(0, len(s), 0))
+	return mergeRuns(p.parse(0, len(s), 0, false))
 }
 
 // inlineRuns is inline without a context (tests, captions).
@@ -81,43 +107,40 @@ func inlineRuns(s string) []docxwrite.Run {
 }
 
 // codeSpans returns, for each backtick run that opens a code span when s is
-// read left to right, the index just past its closing run (the next run of
-// the same length). Backslash-escaped backticks are skipped when escapes.
+// read left to right, the index just past its closing run: the next run of
+// exactly the same length. Inside a span a backslash is literal; outside
+// it, when escapes, "\`" is an escaped backtick that opens nothing.
 func codeSpans(s string, escapes bool) map[int]int {
-	type run struct{ pos, n int }
-	var runs []run
+	byLen := map[int][]int{} // starts of the raw backtick runs, by length
+	for i := 0; i < len(s); {
+		if s[i] != '`' {
+			i++
+			continue
+		}
+		n := runLen(s, i, '`')
+		byLen[n] = append(byLen[n], i)
+		i += n
+	}
+	if len(byLen) == 0 {
+		return nil
+	}
+	out := map[int]int{}
 	for i := 0; i < len(s); {
 		switch {
 		case escapes && s[i] == '\\':
 			i += 2
 		case s[i] == '`':
 			n := runLen(s, i, '`')
-			runs = append(runs, run{i, n})
+			starts := byLen[n]
+			if k := sort.SearchInts(starts, i+n); k < len(starts) {
+				out[i] = starts[k] + n
+				i = starts[k] + n
+				continue
+			}
 			i += n
 		default:
 			i++
 		}
-	}
-	if len(runs) < 2 {
-		return nil
-	}
-	out := map[int]int{}
-	next := make([]int, len(runs))
-	last := map[int]int{}
-	for k := len(runs) - 1; k >= 0; k-- {
-		next[k] = -1
-		if j, ok := last[runs[k].n]; ok {
-			next[k] = j
-		}
-		last[runs[k].n] = k
-	}
-	for k := 0; k < len(runs); {
-		if j := next[k]; j >= 0 {
-			out[runs[k].pos] = runs[j].pos + runs[j].n
-			k = j + 1
-			continue
-		}
-		k++
 	}
 	return out
 }
@@ -134,8 +157,12 @@ func runLen(s string, i int, ch byte) int {
 // escapes; parentheses do not pair across lines (a link destination cannot
 // span one).
 func (p *inlineParser) matchBrackets() {
-	p.bracket, p.paren = map[int]int{}, map[int]int{}
+	p.bracket, p.paren, p.textOnly = map[int]int{}, map[int]int{}, map[int]bool{}
 	var bs, ps []int
+	// closed lists the "[" in the order their "]" came (inner before
+	// outer), parent the "[" around each one (-1 at the top)
+	var closed []int
+	parent := map[int]int{}
 	s := p.s
 	for i := 0; i < len(s); {
 		switch s[i] {
@@ -153,8 +180,14 @@ func (p *inlineParser) matchBrackets() {
 			bs = append(bs, i)
 		case ']':
 			if n := len(bs); n > 0 {
-				p.bracket[bs[n-1]] = i
+				open := bs[n-1]
+				p.bracket[open] = i
 				bs = bs[:n-1]
+				closed = append(closed, open)
+				parent[open] = -1
+				if n > 1 {
+					parent[open] = bs[n-2]
+				}
 			}
 		case '(':
 			ps = append(ps, i)
@@ -168,12 +201,30 @@ func (p *inlineParser) matchBrackets() {
 		}
 		i++
 	}
+	// a link may not hold another link (an image may): walk the pairs
+	// inner first, passing "holds a link" up to the enclosing pair
+	holds := map[int]bool{}
+	for _, open := range closed {
+		image := open > 0 && s[open-1] == '!'
+		isLink := false
+		if j := p.bracket[open]; j+1 < len(s) && s[j+1] == '(' {
+			_, hasDest := p.paren[j+1]
+			isLink = hasDest && !image
+		}
+		if isLink && holds[open] {
+			p.textOnly[open] = true
+			isLink = false
+		}
+		if up := parent[open]; up >= 0 && (isLink || holds[open]) {
+			holds[up] = true
+		}
+	}
 }
 
 // link reports a link "[text](dest)" whose "[" is at i, inside [i, end).
 func (p *inlineParser) link(i, end int) (textEnd int, dest string, next int, ok bool) {
 	j, ok := p.bracket[i]
-	if !ok || j+1 >= end || p.s[j+1] != '(' {
+	if !ok || p.textOnly[i] || j+1 >= end || p.s[j+1] != '(' {
 		return 0, "", 0, false
 	}
 	k, ok := p.paren[j+1]
@@ -190,8 +241,9 @@ func (p *inlineParser) link(i, end int) (textEnd int, dest string, next int, ok 
 
 const escapable = "\\`*_{}[]()#+-.!|~<>\"'&"
 
-// parse tokenises s[a:b] and resolves its emphasis.
-func (p *inlineParser) parse(a, b, linkDepth int) []docxwrite.Run {
+// parse tokenises s[a:b] and resolves its emphasis. In alt (an image's
+// alt text, read once) images and links are text.
+func (p *inlineParser) parse(a, b, linkDepth int, alt bool) []docxwrite.Run {
 	s := p.s
 	var toks []token
 	var plain strings.Builder
@@ -229,14 +281,15 @@ func (p *inlineParser) parse(a, b, linkDepth int) []docxwrite.Run {
 			plain.WriteString(s[i : i+n])
 			i += n
 			continue
-		case ch == '!' && i+1 < b && s[i+1] == '[':
+		case ch == '!' && !alt && i+1 < b && s[i+1] == '[':
 			if te, _, next, ok := p.link(i+1, b); ok {
 				flush()
-				var alt strings.Builder
-				for _, r := range p.parse(i+2, te, maxLinkNesting) {
-					alt.WriteString(r.Text)
+				var altText strings.Builder
+				altRuns := p.parse(i+2, te, maxLinkNesting, true)
+				for _, r := range altRuns {
+					altText.WriteString(r.Text)
 				}
-				if a := strings.TrimSpace(alt.String()); a != "" {
+				if a := strings.TrimSpace(altText.String()); a != "" {
 					plain.WriteString("[Hình: " + a + "]")
 				} else {
 					plain.WriteString("[Hình]")
@@ -244,10 +297,10 @@ func (p *inlineParser) parse(a, b, linkDepth int) []docxwrite.Run {
 				i = next
 				continue
 			}
-		case ch == '[' && linkDepth < maxLinkNesting:
+		case ch == '[' && !alt && linkDepth < maxLinkNesting:
 			if te, dest, next, ok := p.link(i, b); ok {
 				flush()
-				sub := p.parse(i+1, te, linkDepth+1)
+				sub := p.parse(i+1, te, linkDepth+1, false)
 				toks = append(toks, token{sub: sub, isSub: true})
 				var shown strings.Builder
 				for _, r := range sub {
@@ -300,7 +353,7 @@ func (p *inlineParser) parse(a, b, linkDepth int) []docxwrite.Run {
 			for k < b && strings.IndexByte("\\`![<*_~", s[k]) < 0 {
 				k++
 			}
-			plain.WriteString(html.UnescapeString(s[i:k]))
+			plain.WriteString(decodeEntities(s[i:k]))
 			i = k
 			continue
 		}
