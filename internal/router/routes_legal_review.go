@@ -118,6 +118,11 @@ func RegisterLegalPushRoutes(r *gin.RouterGroup, h *handler.LegalPushHandler, g 
 	cands := r.Group("/system/legal-link-candidates", g.PlatformSuperAdmin())
 	{
 		cands.GET("", h.ListLegalLinkCandidates)
+		cands.GET("/documents", h.ListLegalLinkCandidateDocuments)
+		cands.GET("/provision-text", h.GetLegalProvisionText)
+		cands.GET("/provisions", h.ListLegalHeldProvisions)
+		cands.POST("/recheck", h.RecheckLegalLinkCandidates)
+		cands.POST("/decide-batch", h.DecideLegalLinkCandidatesBatch)
 		cands.PUT("/:id", h.DecideLegalLinkCandidate)
 	}
 }

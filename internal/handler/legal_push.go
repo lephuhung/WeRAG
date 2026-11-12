@@ -276,3 +276,129 @@ func (h *LegalPushHandler) DecideLegalLinkCandidate(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": item})
 }
+
+// ListLegalLinkCandidateDocuments godoc
+// @Summary      Documents with pushed provision link candidates
+// @Description  One row per amended document A: its catalogue row, whether a
+// @Description  public KB holds its full text, and the candidates per state
+// @Description  (pending_approvable: amending document known; pending_blocked:
+// @Description  amending document not in the catalogue yet). totals sums the
+// @Description  pending counts.
+// @Tags         Rà soát pháp lý
+// @Produce      json
+// @Param        feed query string false "Feed name (tvpl)"
+// @Success      200 {object} map[string]interface{} "Items and totals"
+// @Router       /system/legal-link-candidates/documents [get]
+func (h *LegalPushHandler) ListLegalLinkCandidateDocuments(c *gin.Context) {
+	ctx := c.Request.Context()
+	items, totals, err := h.svc.ListCandidateDocuments(ctx, c.Query("feed"))
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"items": items, "totals": totals}})
+}
+
+// GetLegalProvisionText godoc
+// @Summary      Wording of one provision of a catalogue document
+// @Description  Read from the chunks of the document's public-KB copy. held
+// @Description  false: no public KB holds the full text; reason tells why no
+// @Description  text is given (unknown_doc, not_held, no_path, appendix,
+// @Description  not_found). Text is capped at 4,000 characters (truncated).
+// @Tags         Rà soát pháp lý
+// @Produce      json
+// @Param        doc_id query string true  "Catalogue id"
+// @Param        path   query string false "Provision path (dieu:5/khoan:2/diem:a)"
+// @Success      200 {object} map[string]interface{} "Provision text"
+// @Router       /system/legal-link-candidates/provision-text [get]
+func (h *LegalPushHandler) GetLegalProvisionText(c *gin.Context) {
+	ctx := c.Request.Context()
+	res, err := h.svc.ProvisionText(ctx, c.Query("doc_id"), c.Query("path"))
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": res})
+}
+
+// ListLegalHeldProvisions godoc
+// @Summary      Provisions of a catalogue document's held copy
+// @Description  The Điều/khoản/điểm paths the chunks of the document's
+// @Description  public-KB copy record, sorted; held false when no public KB
+// @Description  holds it (the structure is unknown).
+// @Tags         Rà soát pháp lý
+// @Produce      json
+// @Param        doc_id query string true "Catalogue id"
+// @Success      200 {object} map[string]interface{} "Provisions"
+// @Router       /system/legal-link-candidates/provisions [get]
+func (h *LegalPushHandler) ListLegalHeldProvisions(c *gin.Context) {
+	ctx := c.Request.Context()
+	res, err := h.svc.HeldProvisionList(ctx, c.Query("doc_id"))
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": res})
+}
+
+// RecheckLegalLinkCandidates godoc
+// @Summary      Resolve again the amending documents of pending links
+// @Description  Pending candidates whose amending document was not in the
+// @Description  catalogue are resolved again by số hiệu (several documents
+// @Description  with the number stay unresolved); a fully matched one is
+// @Description  approved without a person under the push's own setting.
+// @Tags         Rà soát pháp lý
+// @Accept       json
+// @Produce      json
+// @Param        request body object false "{target_doc_id}"
+// @Success      200 {object} map[string]interface{} "Counts"
+// @Router       /system/legal-link-candidates/recheck [post]
+func (h *LegalPushHandler) RecheckLegalLinkCandidates(c *gin.Context) {
+	ctx := c.Request.Context()
+	var req struct {
+		TargetDocID string `json:"target_doc_id"`
+	}
+	if c.Request.ContentLength != 0 {
+		if err := c.ShouldBindJSON(&req); err != nil && err != io.EOF {
+			c.Error(errors.NewBadRequestError("invalid request").WithDetails(err.Error()))
+			return
+		}
+	}
+	res, err := h.svc.RecheckCandidates(ctx, req.TargetDocID)
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": res})
+}
+
+// DecideLegalLinkCandidatesBatch godoc
+// @Summary      Approve or reject several pushed provision links
+// @Description  Each id is decided like PUT /{id} without corrections; a
+// @Description  failing id is reported in failed and does not stop the
+// @Description  others. At most 200 ids.
+// @Tags         Rà soát pháp lý
+// @Accept       json
+// @Produce      json
+// @Param        request body service.LegalLinkBatchDecision true "Decision"
+// @Success      200 {object} map[string]interface{} "Done and failed ids"
+// @Router       /system/legal-link-candidates/decide-batch [post]
+func (h *LegalPushHandler) DecideLegalLinkCandidatesBatch(c *gin.Context) {
+	ctx := c.Request.Context()
+	var req service.LegalLinkBatchDecision
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.Error(errors.NewBadRequestError("invalid request").WithDetails(err.Error()))
+		return
+	}
+	res, err := h.svc.DecideCandidates(ctx, req, types.CallerFromContext(ctx))
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": res})
+}

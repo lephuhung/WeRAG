@@ -11,6 +11,7 @@ import (
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 )
 
 // LegalLinkCandidateFilter selects candidates for the review page.
@@ -38,6 +39,9 @@ type LegalLinkCandidateItem struct {
 	Target  *LegalLinkCandidateDoc     `json:"target,omitempty"`
 	Amender *LegalLinkCandidateDoc     `json:"amender,omitempty"`
 	Others  []types.LegalProvisionLink `json:"other_links"`
+	// AmenderRequest is the legal document request of B's số hiệu when the
+	// catalogue does not know B yet (amender_doc_id empty), nil otherwise.
+	AmenderRequest *LegalLinkAmenderRequest `json:"amender_request,omitempty"`
 }
 
 // LegalLinkDecision is the SuperAdmin's decision on one candidate. The
@@ -139,10 +143,14 @@ func (s *LegalPushService) decorate(ctx context.Context, list []*types.LegalProv
 			held[k] = append(held[k], l)
 		}
 	}
+	requests := s.amenderRequests(ctx, list)
 	out := make([]*LegalLinkCandidateItem, 0, len(list))
 	for _, c := range list {
 		it := &LegalLinkCandidateItem{LegalProvisionLinkCandidate: c, Target: docs[c.TargetDocID], Amender: docs[c.AmenderDocID],
 			Others: []types.LegalProvisionLink{}}
+		if c.AmenderDocID == "" {
+			it.AmenderRequest = requests[vietnamese_legal.CatalogNumberKey(c.AmenderDocNumber)]
+		}
 		for _, l := range held[c.TargetDocID+"|"+c.TargetPath] {
 			if c.LinkID != nil && l.ID == *c.LinkID {
 				continue
@@ -158,6 +166,17 @@ func (s *LegalPushService) decorate(ctx context.Context, list []*types.LegalProv
 // the feed) or rejects one pending candidate. Corrections in d are applied
 // before an approval; the provision ids are looked up again.
 func (s *LegalPushService) DecideCandidate(ctx context.Context, id int64, d LegalLinkDecision, caller types.Caller) (*LegalLinkCandidateItem, error) {
+	c, err := s.decide(ctx, id, d, caller)
+	if err != nil {
+		return nil, err
+	}
+	s.Notices.LegalLinksChanged(ctx)
+	return s.one(ctx, c)
+}
+
+// decide is DecideCandidate without the notice and the decoration (a batch
+// tells the SuperAdmins once).
+func (s *LegalPushService) decide(ctx context.Context, id int64, d LegalLinkDecision, caller types.Caller) (*types.LegalProvisionLinkCandidate, error) {
 	action := strings.ToLower(strings.TrimSpace(d.Action))
 	if action != "approve" && action != "reject" {
 		return nil, apperrors.NewBadRequestError("action must be approve or reject")
@@ -185,8 +204,7 @@ func (s *LegalPushService) DecideCandidate(ctx context.Context, id int64, d Lega
 		if err := s.db.WithContext(ctx).Save(&c).Error; err != nil {
 			return nil, err
 		}
-		s.Notices.LegalLinksChanged(ctx)
-		return s.one(ctx, &c)
+		return &c, nil
 	}
 	if err := s.correct(ctx, &c, d); err != nil {
 		return nil, err
@@ -206,8 +224,7 @@ func (s *LegalPushService) DecideCandidate(ctx context.Context, id int64, d Lega
 	if err != nil {
 		return nil, fmt.Errorf("approve candidate %d: %w", id, err)
 	}
-	s.Notices.LegalLinksChanged(ctx)
-	return s.one(ctx, &c)
+	return &c, nil
 }
 
 // legalCandidateAutoApprovable reports whether a candidate may be approved
@@ -287,16 +304,27 @@ func (s *LegalPushService) correct(ctx context.Context, c *types.LegalProvisionL
 	if !changed {
 		return nil
 	}
+	if err := s.rematch(ctx, c, targetChanged, nil); err != nil {
+		return err
+	}
+	c.MatchReason = strings.TrimPrefix(c.MatchReason+"; đã sửa khi duyệt", "; ")
+	return nil
+}
+
+// rematch looks both provisions of c up again (A's in its held copy, B's in
+// B's) and recomputes the provision ids and the match status the way a push
+// does. targetChanged: A's path moved, so an id of the pushed file is
+// dropped. cache keeps the held copies' provisions across calls (nil: none).
+// The reason is left to the caller.
+func (s *LegalPushService) rematch(ctx context.Context, c *types.LegalProvisionLinkCandidate, targetChanged bool,
+	cache legalProvCache,
+) error {
 	// A's provision: the held copy's id at the path, else a stable synthetic
 	// id; an id of the pushed file (mode full) stays unless the path moved
 	targetFound := true
-	if held, err := s.heldDoc(ctx, c.TargetDocID); err != nil {
+	if provs, err := s.heldProvisionsOf(ctx, c.TargetDocID, cache); err != nil {
 		return err
-	} else if held != nil {
-		provs, err := s.heldProvisions(ctx, held.KnowledgeID)
-		if err != nil {
-			return err
-		}
+	} else if provs != nil {
 		targetFound = provs.has(c.TargetPath) || strings.HasPrefix(c.TargetPath, "phuluc/") // appendix: not checked
 		if id := provs.ids[c.TargetPath]; id != "" {
 			c.TargetProvisionID = id
@@ -310,16 +338,16 @@ func (s *LegalPushService) correct(ctx context.Context, c *types.LegalProvisionL
 	sourceFound := false
 	if c.AmenderDocID != "" {
 		c.SourceProvisionID = legalSyntheticProvisionID(c.AmenderDocID, c.SourcePath)
-		if held, err := s.heldDoc(ctx, c.AmenderDocID); err != nil {
-			return err
-		} else if held != nil && c.SourcePath != "" {
-			provs, err := s.heldProvisions(ctx, held.KnowledgeID)
+		if c.SourcePath != "" {
+			provs, err := s.heldProvisionsOf(ctx, c.AmenderDocID, cache)
 			if err != nil {
 				return err
 			}
-			sourceFound = provs.has(c.SourcePath)
-			if id := provs.ids[c.SourcePath]; id != "" {
-				c.SourceProvisionID = id
+			if provs != nil {
+				sourceFound = provs.has(c.SourcePath)
+				if id := provs.ids[c.SourcePath]; id != "" {
+					c.SourceProvisionID = id
+				}
 			}
 		}
 	}
@@ -333,8 +361,33 @@ func (s *LegalPushService) correct(ctx context.Context, c *types.LegalProvisionL
 	default:
 		c.MatchStatus = types.LegalLinkMatched
 	}
-	c.MatchReason = strings.TrimPrefix(c.MatchReason+"; đã sửa khi duyệt", "; ")
 	return nil
+}
+
+// legalProvCache maps a catalogue id to the provisions of its held copy
+// (nil value: no copy held).
+type legalProvCache map[string]*legalHeldProvisions
+
+// heldProvisionsOf is the provisions of docID's held copy, nil when no
+// public KB holds it.
+func (s *LegalPushService) heldProvisionsOf(ctx context.Context, docID string, cache legalProvCache) (*legalHeldProvisions, error) {
+	if p, ok := cache[docID]; ok {
+		return p, nil
+	}
+	held, err := s.heldDoc(ctx, docID)
+	if err != nil {
+		return nil, err
+	}
+	var provs *legalHeldProvisions
+	if held != nil {
+		if provs, err = s.heldProvisions(ctx, held.KnowledgeID); err != nil {
+			return nil, err
+		}
+	}
+	if cache != nil {
+		cache[docID] = provs
+	}
+	return provs, nil
 }
 
 func (s *LegalPushService) one(ctx context.Context, c *types.LegalProvisionLinkCandidate) (*LegalLinkCandidateItem, error) {

@@ -904,6 +904,21 @@ API (JWT SuperAdmin):
 - `PUT /system/legal-link-candidates/{id}` body
   `{"action":"approve"|"reject","amender_doc_id?","source_path?","target_path?","note?"}`;
   ứng viên không còn `pending` → `409`.
+- `GET /system/legal-link-candidates/documents?feed=` → `{items, totals}`: mỗi
+  văn bản A có ứng viên, kèm `held` và số `pending_approvable` (đã biết B),
+  `pending_blocked` (B chưa có trong danh mục), `approved`, `rejected`, `auto`.
+- `GET /system/legal-link-candidates/provision-text?doc_id=&path=` → lời văn
+  của điều khoản trong bản đang lưu (`held`, `found`, `text` ≤ 4.000 ký tự,
+  `truncated`, `reason`: `unknown_doc|not_held|no_path|appendix|not_found`).
+- `GET /system/legal-link-candidates/provisions?doc_id=` → danh sách điều
+  khoản của bản đang lưu (`held=false`: chưa biết cấu trúc).
+- `POST /system/legal-link-candidates/recheck` body `{"target_doc_id?"}`:
+  phân giải lại B của các ứng viên `pending` chưa có `amender_doc_id` (cùng
+  luật với lúc đẩy, không đoán khi nhiều văn bản cùng số hiệu); khớp đủ hai
+  bên thì tự duyệt theo cùng công tắc `legal.feed.auto_approve_matched`. Cũng
+  chạy sau mỗi lần đẩy thành công cho số hiệu của văn bản vừa đẩy.
+- `POST /system/legal-link-candidates/decide-batch` body
+  `{"ids":[…≤200],"action":"approve"|"reject","note?"}` → `{done, failed}`.
 
 Sau khi duyệt, liên kết của nguồn đi vào bộ giải như liên kết biên tập vbpl
 (cùng quy tắc tầng: lời văn mới lấy từ B, ghi rõ nguồn "thuvienphapluat (đã

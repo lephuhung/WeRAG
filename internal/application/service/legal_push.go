@@ -639,6 +639,9 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 			"links": res.Links, "pending": res.Pending, "auto_approved": res.AutoApproved, "kept_decisions": kept, "problems": len(res.Problems), "ingest": res.Ingest,
 			"catalogue_created": res.CatalogueCreated},
 	})
+	// links other documents' pushes named a by its số hiệu before the
+	// catalogue knew it can be resolved now
+	s.recheckAfterPush(ctx, a)
 	return res, nil
 }
 
@@ -678,6 +681,7 @@ func (s *LegalPushService) pushCatalogueRow(ctx context.Context, a, feedRow *typ
 		Detail: map[string]any{"feed": meta.feed, "feed_doc_id": meta.feedDocID, "feed_url": meta.feedURL,
 			"catalogue_created": res.CatalogueCreated, "full_text_requested": res.FullTextRequested},
 	})
+	s.recheckAfterPush(ctx, a)
 	return res, nil
 }
 
