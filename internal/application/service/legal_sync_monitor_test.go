@@ -27,46 +27,74 @@ func (f *fakeRuns) Record(_ context.Context, worker string, _ time.Time, status,
 func TestLegalSyncContainerHealth(t *testing.T) {
 	now := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
 	run := func(status string, started time.Time, finished *time.Time) *types.LegalSyncRun {
-		return &types.LegalSyncRun{Status: status, StartedAt: started, FinishedAt: finished}
+		beat := started
+		if finished != nil {
+			beat = *finished
+		}
+		return &types.LegalSyncRun{Status: status, StartedAt: started, FinishedAt: finished, HeartbeatAt: &beat}
 	}
 	at := func(d time.Duration) *time.Time { t := now.Add(-d); return &t }
 
-	h, r := legalSyncContainerHealth(nil, nil, now)
+	h, r := legalSyncContainerHealth(nil, nil, nil, now)
 	require.Equal(t, LegalSyncHealthUnknown, h)
 	require.Equal(t, []string{LegalSyncReasonNoRuns}, r)
 
 	ok := run(types.LegalSyncOK, now.Add(-7*time.Hour), at(6*time.Hour))
-	h, r = legalSyncContainerHealth(ok, ok, now)
+	h, r = legalSyncContainerHealth(ok, nil, ok, now)
 	require.Equal(t, LegalSyncHealthOK, h)
 	require.Empty(t, r)
 
 	failed := run(types.LegalSyncFailed, now.Add(-7*time.Hour), at(6*time.Hour))
-	h, r = legalSyncContainerHealth(failed, ok, now)
+	h, r = legalSyncContainerHealth(failed, nil, ok, now)
 	require.Equal(t, LegalSyncHealthError, h)
 	require.Equal(t, []string{LegalSyncReasonLastFailed}, r)
 
 	old := run(types.LegalSyncOK, now.Add(-31*time.Hour), at(30*time.Hour))
-	h, r = legalSyncContainerHealth(old, old, now)
+	h, r = legalSyncContainerHealth(old, nil, old, now)
 	require.Equal(t, LegalSyncHealthError, h)
 	require.Equal(t, []string{LegalSyncReasonStale}, r, "no success started within 26 h")
-	// yesterday's run ended at 03:00; tonight's is slower: not late while it runs
+	// yesterday's run went well; tonight's is slower: not late while it runs
 	yesterday := run(types.LegalSyncOK, now.Add(-24*time.Hour-30*time.Minute), at(20*time.Hour))
 	tonight := run(types.LegalSyncRunning, now.Add(-30*time.Minute), nil)
-	h, r = legalSyncContainerHealth(tonight, yesterday, now)
+	h, r = legalSyncContainerHealth(tonight, yesterday, yesterday, now)
 	require.Equal(t, LegalSyncHealthOK, h)
 	require.Empty(t, r)
-	h, _ = legalSyncContainerHealth(tonight, nil, now)
+	// … even past 26 h since yesterday's start: staleness counts at its start
+	long := run(types.LegalSyncRunning, now.Add(-5*time.Hour), nil)
+	long.HeartbeatAt = at(-3*time.Hour + 2*time.Minute)
+	h, r = legalSyncContainerHealth(long, yesterday, yesterday, now.Add(3*time.Hour))
+	require.Equal(t, LegalSyncHealthOK, h, "%v", r)
+	h, _ = legalSyncContainerHealth(tonight, nil, nil, now)
 	require.Equal(t, LegalSyncHealthOK, h, "the first run ever, in progress")
 
+	// last night failed: tonight's run in progress keeps the problem
+	h, r = legalSyncContainerHealth(tonight, failed, ok, now)
+	require.Equal(t, LegalSyncHealthError, h)
+	require.Equal(t, []string{LegalSyncReasonLastFailed}, r)
+	// no success for two nights: still stale while the third runs
+	h, r = legalSyncContainerHealth(tonight, old, old, now)
+	require.Equal(t, LegalSyncHealthError, h)
+	require.Equal(t, []string{LegalSyncReasonStale}, r)
+	h, r = legalSyncContainerHealth(tonight, failed, nil, now)
+	require.Equal(t, []string{LegalSyncReasonLastFailed, LegalSyncReasonStale}, r, "failed, never a success")
+
 	stuck := run(types.LegalSyncRunning, now.Add(-13*time.Hour), nil)
-	h, r = legalSyncContainerHealth(stuck, ok, now)
+	stuck.HeartbeatAt = at(time.Minute)
+	h, r = legalSyncContainerHealth(stuck, ok, ok, now)
 	require.Equal(t, LegalSyncHealthWarning, h)
 	require.Equal(t, []string{LegalSyncReasonRunningLong}, r)
 
-	running := run(types.LegalSyncRunning, now.Add(-time.Hour), nil)
-	h, _ = legalSyncContainerHealth(running, ok, now)
-	require.Equal(t, LegalSyncHealthOK, h, "a run in progress with a recent success")
-	h, r = legalSyncContainerHealth(failed, nil, now)
+	// no sign of life for 30 minutes: dead
+	silent := run(types.LegalSyncRunning, now.Add(-2*time.Hour), nil)
+	silent.HeartbeatAt = at(31 * time.Minute)
+	h, r = legalSyncContainerHealth(silent, yesterday, yesterday, now)
+	require.Equal(t, LegalSyncHealthError, h)
+	require.Equal(t, []string{LegalSyncReasonSilent}, r)
+	silent.HeartbeatAt = at(29 * time.Minute)
+	h, _ = legalSyncContainerHealth(silent, yesterday, yesterday, now)
+	require.Equal(t, LegalSyncHealthOK, h, "the ticker beats every 5 minutes")
+
+	h, r = legalSyncContainerHealth(failed, nil, nil, now)
 	require.Equal(t, LegalSyncHealthError, h)
 	require.Equal(t, []string{LegalSyncReasonLastFailed, LegalSyncReasonStale}, r)
 }

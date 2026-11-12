@@ -62,6 +62,7 @@ const REASON_LABEL: Record<string, LocaleKey> = {
   heartbeat_stale: "lsync.reason.heartbeat_stale",
   tick_error: "lsync.reason.tick_error",
   not_started: "lsync.reason.not_started",
+  silent: "lsync.reason.silent",
 };
 const STEP_LABEL: Record<string, LocaleKey> = {
   prepare: "lsync.step.prepare",
@@ -117,6 +118,7 @@ const COUNT_LABEL: Record<string, LocaleKey> = {
   clocks_cleared: "lsync.count.clocks_cleared",
   failed: "lsync.count.failed",
   kept_live_copy: "lsync.count.kept_live_copy",
+  untracked: "lsync.count.untracked",
 };
 const REQUEST_SOURCE_LABEL: Record<string, LocaleKey> = {
   vbpl_no_text: "lsync.reqSource.vbpl_no_text",
@@ -213,8 +215,9 @@ function fmtNum(n: number, locale: string): string {
   return n.toLocaleString(locale === "vi" ? "vi-VN" : "en-US");
 }
 
-function formatValue(v: unknown, locale: string): string {
+function formatValue(v: unknown, locale: string, t: T): string {
   if (typeof v === "number") return fmtNum(v, locale);
+  if (v === true) return t("lsync.yes");
   if (Array.isArray(v)) return v.map(String).join("; ");
   if (v && typeof v === "object") return JSON.stringify(v);
   return String(v ?? "");
@@ -316,6 +319,11 @@ export default function LegalSyncSection({ onDenied }: { onDenied?: () => void }
 
       {status && (
         <>
+          {!status.alerts_enabled && (
+            <Notice tone="warning" className="mb-3">
+              {t("lsync.alertsOff")}
+            </Notice>
+          )}
           <div className="mb-6 grid gap-3 lg:grid-cols-3">
             {status.workers.map((w) => (
               <WorkerCard key={w.worker} w={w} now={now} t={t} locale={locale} />
@@ -353,6 +361,12 @@ export default function LegalSyncSection({ onDenied }: { onDenied?: () => void }
 function WorkerCard({ w, now, t, locale }: { w: LegalSyncWorkerStatus; now: number; t: T; locale: string }) {
   const last = w.last;
   const name = label(t, WORKER_LABEL, w.worker);
+  // a backend worker's last failed pass, the sync's failed run, or (while
+  // the next run goes on) the failed run before it
+  const lastError =
+    w.last_error ||
+    (last?.status === "failed" ? last.error : "") ||
+    (w.last_finished?.status === "failed" ? w.last_finished.error : "");
   return (
     <section className="rounded-lg border border-hairline px-4 py-3" aria-label={name}>
       <div className="mb-1 flex items-center gap-2">
@@ -421,11 +435,11 @@ function WorkerCard({ w, now, t, locale }: { w: LegalSyncWorkerStatus; now: numb
           </>
         )}
       </dl>
-      {(w.last_error || (last?.status === "failed" && last.error)) && (
+      {lastError && (
         <details className="mt-2 text-[12px]">
           <summary className="cursor-pointer text-error">{t("lsync.lastError")}</summary>
           <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-card/70 p-2 text-[11.5px]">
-            {w.last_error || last?.error}
+            {lastError}
           </pre>
         </details>
       )}
@@ -614,7 +628,7 @@ function CountGrid({
         {entries.map(([k, v]) => (
           <div key={k} className="flex gap-2">
             <dt className="min-w-0 flex-1 text-muted">{label(t, COUNT_LABEL, k)}</dt>
-            <dd className="max-w-[60%] break-words text-right tabular-nums">{formatValue(v, locale)}</dd>
+            <dd className="max-w-[60%] break-words text-right tabular-nums">{formatValue(v, locale, t)}</dd>
           </div>
         ))}
       </dl>

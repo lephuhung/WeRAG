@@ -19,6 +19,9 @@ const (
 	legalSyncStaleAfter = 26 * time.Hour
 	// legalSyncLongRun: a sync still running after this is likely stuck.
 	legalSyncLongRun = 12 * time.Hour
+	// legalSyncSilentAfter: a running sync without a sign of life (a write,
+	// or the sync.sh ticker every 5 minutes) for this long is dead.
+	legalSyncSilentAfter = 30 * time.Minute
 	// legalBeatStaleTicks: a backend worker that missed this many ticks
 	// has stopped.
 	legalBeatStaleTicks = 3
@@ -47,7 +50,17 @@ const (
 	// LegalSyncReasonNotStarted: the backend worker does not run in this
 	// process (no Redis: the background workers are off).
 	LegalSyncReasonNotStarted = "not_started"
+	// LegalSyncReasonSilent: the sync's running run gave no sign of life
+	// for legalSyncSilentAfter (killed container, database lost); the next
+	// check closes it as failed.
+	LegalSyncReasonSilent = "silent"
 )
+
+// legalSyncSettings are the system settings the monitor reads.
+type legalSyncSettings interface {
+	GetInt(ctx context.Context, key string, envName string, def int64) int64
+	GetBool(ctx context.Context, key string, envName string, def bool) bool
+}
 
 // legalRunRecorder writes a backend worker's pass (repository.LegalSyncRunRepository).
 type legalRunRecorder interface {
@@ -126,6 +139,9 @@ type LegalSyncWorkerStatus struct {
 	Kind   string              `json:"kind"`
 	Last   *types.LegalSyncRun `json:"last"`
 	LastOK *types.LegalSyncRun `json:"last_ok"`
+	// LastFinished: while the sync runs, its previous finished run (whose
+	// problem the worker keeps until this run ends).
+	LastFinished *types.LegalSyncRun `json:"last_finished,omitempty"`
 	// Schedule is the sync's cron line as its last run reported it.
 	Schedule        string     `json:"schedule,omitempty"`
 	IntervalSeconds int        `json:"interval_seconds,omitempty"`
@@ -171,29 +187,28 @@ type LegalFeedActivity struct {
 
 // LegalSyncStatus is the monitor's page.
 type LegalSyncStatus struct {
-	Now     time.Time               `json:"now"`
-	Workers []LegalSyncWorkerStatus `json:"workers"`
-	Queues  LegalSyncQueues         `json:"queues"`
-	Feeds   []LegalFeedActivity     `json:"feeds"`
+	Now time.Time `json:"now"`
+	// AlertsEnabled: the legal_sync_alert digest is kept (system setting
+	// legal.sync_alert.enabled).
+	AlertsEnabled bool                    `json:"alerts_enabled"`
+	Workers       []LegalSyncWorkerStatus `json:"workers"`
+	Queues        LegalSyncQueues         `json:"queues"`
+	Feeds         []LegalFeedActivity     `json:"feeds"`
 }
 
 // LegalSyncMonitor reads the state of the legal data workers.
 type LegalSyncMonitor struct {
 	db       *gorm.DB
 	runs     *repository.LegalSyncRunRepository
-	settings interface {
-		GetInt(ctx context.Context, key string, envName string, def int64) int64
-	}
-	now func() time.Time
+	settings legalSyncSettings
+	now      func() time.Time
 	// alerts keeps the SuperAdmin digest (WithAlerts); nil: page only
 	alerts *legalSyncAlerts
 }
 
 // NewLegalSyncMonitor creates the monitor.
 func NewLegalSyncMonitor(db *gorm.DB, runs *repository.LegalSyncRunRepository,
-	settings interface {
-		GetInt(ctx context.Context, key string, envName string, def int64) int64
-	},
+	settings legalSyncSettings,
 ) *LegalSyncMonitor {
 	return &LegalSyncMonitor{db: db, runs: runs, settings: settings, now: time.Now}
 }
@@ -206,7 +221,7 @@ func (m *LegalSyncMonitor) Runs(ctx context.Context, worker string, limit int) (
 // Status reads the workers, queues and feeds.
 func (m *LegalSyncMonitor) Status(ctx context.Context) (*LegalSyncStatus, error) {
 	now := m.now()
-	out := &LegalSyncStatus{Now: now}
+	out := &LegalSyncStatus{Now: now, AlertsEnabled: m.alertsEnabled(ctx)}
 	var err error
 	if out.Workers, err = m.workers(ctx, now); err != nil {
 		return nil, err
@@ -238,7 +253,12 @@ func (m *LegalSyncMonitor) workers(ctx context.Context, now time.Time) ([]LegalS
 		st := LegalSyncWorkerStatus{Worker: w.name, Kind: w.kind, Last: last, LastOK: lastOK}
 		if w.kind == "container" {
 			st.Schedule = legalRunString(last, "schedule")
-			st.Health, st.Reasons = legalSyncContainerHealth(last, lastOK, now)
+			if last != nil && last.Status == types.LegalSyncRunning {
+				if st.LastFinished, err = m.runs.LatestFinished(ctx, w.name); err != nil {
+					return nil, err
+				}
+			}
+			st.Health, st.Reasons = legalSyncContainerHealth(last, st.LastFinished, lastOK, now)
 		} else {
 			st.IntervalSeconds = int(w.interval / time.Second)
 			beat, ok := legalWorkerBeat(w.name)
@@ -255,8 +275,13 @@ func (m *LegalSyncMonitor) workers(ctx context.Context, now time.Time) ([]LegalS
 	return out, nil
 }
 
-// legalSyncContainerHealth judges the nightly sync from its runs.
-func legalSyncContainerHealth(last, lastOK *types.LegalSyncRun, now time.Time) (string, []string) {
+// legalSyncContainerHealth judges the nightly sync from its runs: last,
+// its newest successful run lastOK and, while last runs, the run before it
+// that finished (lastFinished). A run in progress keeps the problem of the
+// night before (failed, or no success within a day as of its start) until
+// it ends: only a successful run clears it. A running run without a sign
+// of life for legalSyncSilentAfter is dead.
+func legalSyncContainerHealth(last, lastFinished, lastOK *types.LegalSyncRun, now time.Time) (string, []string) {
 	if last == nil {
 		return LegalSyncHealthUnknown, []string{LegalSyncReasonNoRuns}
 	}
@@ -267,18 +292,33 @@ func legalSyncContainerHealth(last, lastOK *types.LegalSyncRun, now time.Time) (
 		}
 		reasons = append(reasons, reason)
 	}
-	inProgress := false // a run going on normally: not late yet
+	staleAt := func(at time.Time) bool { return lastOK == nil || at.Sub(lastOK.StartedAt) > legalSyncStaleAfter }
 	switch last.Status {
 	case types.LegalSyncFailed:
 		worse(LegalSyncHealthError, LegalSyncReasonLastFailed)
 	case types.LegalSyncRunning:
-		if now.Sub(last.StartedAt) > legalSyncLongRun {
+		beat := last.StartedAt
+		if last.HeartbeatAt != nil && last.HeartbeatAt.After(beat) {
+			beat = *last.HeartbeatAt
+		}
+		switch {
+		case now.Sub(beat) > legalSyncSilentAfter:
+			worse(LegalSyncHealthError, LegalSyncReasonSilent)
+		case now.Sub(last.StartedAt) > legalSyncLongRun:
 			worse(LegalSyncHealthWarning, LegalSyncReasonRunningLong)
-		} else {
-			inProgress = true
+		default:
+			// in progress: the night before still counts (the first run
+			// ever has nothing before it)
+			if lastFinished != nil && lastFinished.Status == types.LegalSyncFailed {
+				worse(LegalSyncHealthError, LegalSyncReasonLastFailed)
+			}
+			if lastFinished != nil && staleAt(last.StartedAt) {
+				worse(LegalSyncHealthError, LegalSyncReasonStale)
+			}
+			return health, reasons
 		}
 	}
-	if !inProgress && (lastOK == nil || now.Sub(lastOK.StartedAt) > legalSyncStaleAfter) {
+	if staleAt(now) {
 		worse(LegalSyncHealthError, LegalSyncReasonStale)
 	}
 	return health, reasons

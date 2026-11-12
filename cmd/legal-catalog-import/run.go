@@ -20,6 +20,7 @@ import (
 //	id=$(legal-catalog-import -run-start -run-worker vbpl_sync -run-step crawl -run-summary '{"schedule":"30 2 * * *"}')
 //	legal-catalog-import -run-id "$id" -run-step import -run-summary-key crawl -run-summary-file crawl.json
 //	legal-catalog-import -documents … -run-id "$id"   # the import adds its counts under "import"
+//	legal-catalog-import -run-id "$id" -run-heartbeat               # a sign of life (sync.sh ticker)
 //	legal-catalog-import -run-id "$id" -run-finish failed -run-error-file step.log
 var (
 	runStart       = flag.Bool("run-start", false, "Open a run (legal_sync_runs) and print its id")
@@ -31,7 +32,12 @@ var (
 	runSummaryFile = flag.String("run-summary-file", "", "JSON file merged into the run's summary (under -run-summary-key when set)")
 	runSummaryKey  = flag.String("run-summary-key", "", "Summary key the -run-summary-file object goes under")
 	runErrorFile   = flag.String("run-error-file", "", "File whose tail is the failed run's error")
+	runHeartbeat   = flag.Bool("run-heartbeat", false, "Record a sign of life of the run (a running run silent for 30 minutes is closed)")
 )
+
+// runControlConnectTimeout bounds the connection of the run-control mode:
+// a tracking call must never hold the sync up.
+const runControlConnectTimeout = 10
 
 // importStats are the import's counts, recorded under "import" in the run.
 var importStats = map[string]any{}
@@ -51,12 +57,13 @@ func warnf(format string, args ...any) {
 
 // runControlRequested: the flags ask for run tracking only, no import.
 func runControlRequested() bool {
-	return *runStart || (*runID > 0 && (*runFinish != "" || *runStep != "" || *runSummary != "" || *runSummaryFile != ""))
+	return *runStart || (*runID > 0 && (*runFinish != "" || *runStep != "" || *runSummary != "" || *runSummaryFile != "" ||
+		*runHeartbeat))
 }
 
 // runControl opens, moves or closes a run.
 func runControl() error {
-	db, err := openDBWith(gormlogger.Discard)
+	db, err := openDBWithTimeout(gormlogger.Discard, runControlConnectTimeout)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
@@ -82,6 +89,9 @@ func runControl() error {
 			}
 		}
 		return runs.Finish(ctx, *runID, *runFinish, *runStep, errText, patch)
+	}
+	if *runHeartbeat && *runStep == "" && len(patch) == 0 {
+		return runs.Touch(ctx, *runID)
 	}
 	return runs.Update(ctx, *runID, *runStep, patch)
 }

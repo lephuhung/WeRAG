@@ -44,11 +44,20 @@ func (e *legalSyncAlertEnv) run(t *testing.T, status, step string, ago, took tim
 	t.Helper()
 	r := &types.LegalSyncRun{Worker: types.LegalSyncWorkerVBPL, Status: status, Step: step,
 		StartedAt: e.now.Add(-ago), Summary: types.JSON(`{"schedule":"30 2 * * *"}`), Error: errText}
+	beat := e.now
 	if status != types.LegalSyncRunning {
 		end := r.StartedAt.Add(took)
-		r.FinishedAt = &end
+		r.FinishedAt, beat = &end, end
 	}
+	r.HeartbeatAt = &beat
 	require.NoError(t, e.db.Create(r).Error)
+}
+
+// beat records a sign of life of the running sync runs now.
+func (e *legalSyncAlertEnv) beat(t *testing.T) {
+	t.Helper()
+	require.NoError(t, e.db.Model(&types.LegalSyncRun{}).Where("status = ?", types.LegalSyncRunning).
+		Update("heartbeat_at", e.now).Error)
 }
 
 func (e *legalSyncAlertEnv) check(t *testing.T) {
@@ -174,6 +183,7 @@ func TestLegalSyncAlertRunningSync(t *testing.T) {
 	require.Nil(t, n, "a run in progress is not late")
 
 	e.now = e.now.Add(12 * time.Hour)
+	e.beat(t)
 	e.check(t)
 	n, p := e.alert(t, "sa1")
 	require.NotNil(t, n)
@@ -203,4 +213,93 @@ func TestIncidentResolvedPayload(t *testing.T) {
 	require.False(t, ok, "stamped once")
 	_, ok = incidentResolvedPayload(types.JSON(`[1]`), at)
 	require.False(t, ok, "not ours to rewrite")
+}
+
+// M1: the night after a failure, the next run in progress keeps the alert
+// open (no resolve, no new toast); only its success closes it.
+func TestLegalSyncAlertKeptWhileNextRunGoesOn(t *testing.T) {
+	e := newLegalSyncAlertEnv(t)
+	e.run(t, types.LegalSyncOK, "push", 48*time.Hour, time.Hour, "")
+	e.run(t, types.LegalSyncFailed, "import", 24*time.Hour, 30*time.Minute, "pq: connection refused")
+	e.check(t)
+	first, p := e.alert(t, "sa1")
+	require.NotNil(t, first)
+	require.Equal(t, "vbpl_sync:last_failed", p.Signature)
+	upserts := e.notices.upserts.Load()
+
+	// tonight's run starts: still the same incident, named by the failed night
+	e.run(t, types.LegalSyncRunning, "crawl", 10*time.Minute, 0, "")
+	e.now = e.now.Add(10 * time.Minute)
+	e.beat(t)
+	e.check(t)
+	n, p := e.alert(t, "sa1")
+	require.NotNil(t, n, "not resolved while the next run goes on")
+	require.Equal(t, first.ID, n.ID)
+	require.Equal(t, upserts, e.notices.upserts.Load(), "not written again")
+	require.Equal(t, "import", p.Workers[0].Step)
+
+	// it succeeds: closed
+	require.NoError(t, e.db.Model(&types.LegalSyncRun{}).Where("status = ?", types.LegalSyncRunning).
+		Updates(map[string]any{"status": types.LegalSyncOK, "finished_at": e.now}).Error)
+	e.now = e.now.Add(10 * time.Minute)
+	e.check(t)
+	e.closed(t, types.UserNotificationLegalSyncAlert)
+}
+
+// M2: a running run silent for 30 minutes is closed as interrupted by the
+// check and alerted as a failed run.
+func TestLegalSyncAlertClosesSilentRun(t *testing.T) {
+	e := newLegalSyncAlertEnv(t)
+	e.run(t, types.LegalSyncOK, "push", 24*time.Hour, time.Hour, "")
+	e.run(t, types.LegalSyncRunning, "crawl", 20*time.Minute, 0, "")
+	e.check(t)
+	n, _ := e.alert(t, "sa1")
+	require.Nil(t, n)
+
+	e.now = e.now.Add(31 * time.Minute) // no beat since
+	e.check(t)
+	n, p := e.alert(t, "sa1")
+	require.NotNil(t, n)
+	require.Equal(t, "vbpl_sync:last_failed", p.Signature)
+	require.Equal(t, "crawl", p.Workers[0].Step)
+	require.Equal(t, repository.LegalSyncHeartbeatLost, p.Workers[0].Note)
+	var run types.LegalSyncRun
+	require.NoError(t, e.db.Order("id DESC").First(&run).Error)
+	require.Equal(t, types.LegalSyncFailed, run.Status)
+	require.NotNil(t, run.FinishedAt)
+}
+
+type syncAlertSwitch struct{ on bool }
+
+func (s syncAlertSwitch) GetInt(_ context.Context, _ string, _ string, def int64) int64 { return def }
+
+func (s syncAlertSwitch) GetBool(_ context.Context, key string, _ string, def bool) bool {
+	if key == types.LegalSyncAlertEnabledSettingKey {
+		return s.on
+	}
+	return def
+}
+
+// L4: legal.sync_alert.enabled off silences the alert and closes an open one.
+func TestLegalSyncAlertSwitchedOff(t *testing.T) {
+	e := newLegalSyncAlertEnv(t)
+	e.run(t, types.LegalSyncFailed, "crawl", time.Hour, time.Minute, "boom")
+	e.check(t)
+	n, _ := e.alert(t, "sa1")
+	require.NotNil(t, n)
+
+	e.monitor.settings = syncAlertSwitch{on: false}
+	e.now = e.now.Add(10 * time.Minute)
+	e.check(t)
+	e.closed(t, types.UserNotificationLegalSyncAlert)
+	st, err := e.monitor.Status(context.Background())
+	if err == nil { // the env has no legal tables for the queues: only the flag matters here
+		require.False(t, st.AlertsEnabled)
+	}
+	require.False(t, e.monitor.alertsEnabled(context.Background()))
+
+	e.monitor.settings = syncAlertSwitch{on: true}
+	e.check(t)
+	n, _ = e.alert(t, "sa1")
+	require.NotNil(t, n, "back on: alerted again")
 }

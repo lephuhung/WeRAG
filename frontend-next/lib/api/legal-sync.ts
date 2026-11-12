@@ -17,7 +17,8 @@ export type LegalSyncReason =
   | "starting"
   | "heartbeat_stale"
   | "tick_error"
-  | "not_started";
+  | "not_started"
+  | "silent";
 
 /** Timing of one step of a run (RFC 3339, UTC). */
 export interface LegalSyncStepTiming {
@@ -41,6 +42,8 @@ export interface LegalSyncRun {
   finished_at: string | null;
   summary: LegalSyncSummary | null;
   error: string;
+  /** last sign of life of the run */
+  heartbeat_at?: string | null;
 }
 
 export interface LegalSyncWorkerStatus {
@@ -50,6 +53,8 @@ export interface LegalSyncWorkerStatus {
   kind: "container" | "backend";
   last: LegalSyncRun | null;
   last_ok: LegalSyncRun | null;
+  /** while the sync runs: its previous finished run */
+  last_finished?: LegalSyncRun | null;
   schedule?: string;
   interval_seconds?: number;
   last_tick_at?: string;
@@ -86,6 +91,8 @@ export interface LegalFeedActivity {
 
 export interface LegalSyncStatus {
   now: string;
+  /** the legal_sync_alert digest is kept (system setting legal.sync_alert.enabled) */
+  alerts_enabled: boolean;
   workers: LegalSyncWorkerStatus[];
   queues: LegalSyncQueues;
   feeds: LegalFeedActivity[];

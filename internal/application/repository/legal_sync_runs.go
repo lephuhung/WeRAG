@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,10 +19,23 @@ const legalSyncErrorMax = 4000
 // come every few minutes while there is work.
 const LegalSyncRecordKeep = 30 * 24 * time.Hour
 
+// LegalSyncRunKeep is how long the runs of the nightly sync (and any other
+// worker) are kept; Start prunes older ones.
+const LegalSyncRunKeep = 180 * 24 * time.Hour
+
 // legalSyncInterrupted is the error of a run left open by a sync that was
 // killed (container stop, redeploy) or could not reach the database at its
 // end: the next run of the worker closes it.
 const legalSyncInterrupted = "Bị ngắt: lần chạy không được đóng (container dừng hoặc mất kết nối cơ sở dữ liệu)."
+
+// LegalSyncHeartbeatLost is the error of a running run the monitor closed
+// because it gave no sign of life (CloseSilent). Such a run comes back when
+// its sync writes again (the database was only out of reach).
+const LegalSyncHeartbeatLost = "Bị ngắt: lần chạy không còn tín hiệu hơn 30 phút (container dừng hoặc mất kết nối cơ sở dữ liệu)."
+
+// legalSyncControl drops control characters but newline and tab, ANSI
+// escape sequences and carriage returns (progress bars) from an error.
+var legalSyncControl = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[@-_]|[\x00-\x08\x0b-\x1f\x7f]`)
 
 // LegalSyncRunRepository writes and reads types.LegalSyncRun rows. The
 // nightly sync (cmd/legal-catalog-import run flags) and the backend workers
@@ -55,10 +69,14 @@ func (r *LegalSyncRunRepository) Start(ctx context.Context, worker, step string,
 	if err != nil {
 		return 0, err
 	}
-	run := &types.LegalSyncRun{Worker: worker, Status: types.LegalSyncRunning, Step: step, StartedAt: now, Summary: raw}
+	run := &types.LegalSyncRun{Worker: worker, Status: types.LegalSyncRunning, Step: step, StartedAt: now, Summary: raw,
+		HeartbeatAt: &now}
 	if err := r.db.WithContext(ctx).Create(run).Error; err != nil {
 		return 0, fmt.Errorf("start %s run: %w", worker, err)
 	}
+	// keeping the history is not worth failing the start
+	_ = r.db.WithContext(ctx).Where("worker = ? AND started_at < ?", worker, now.Add(-LegalSyncRunKeep)).
+		Delete(&types.LegalSyncRun{}).Error
 	return run.ID, nil
 }
 
@@ -93,6 +111,35 @@ func (r *LegalSyncRunRepository) Finish(ctx context.Context, id int64, status, s
 		run.FinishedAt = &now
 		run.Error = legalSyncTail(errText, legalSyncErrorMax)
 	})
+}
+
+// Touch records a sign of life of a running run (the sync's ticker).
+func (r *LegalSyncRunRepository) Touch(ctx context.Context, id int64) error {
+	return r.change(ctx, id, func(*types.LegalSyncRun, map[string]any, time.Time) {})
+}
+
+// CloseSilent closes as failed (LegalSyncHeartbeatLost) the running runs
+// of worker whose last sign of life is before silentBefore; returns how
+// many.
+func (r *LegalSyncRunRepository) CloseSilent(ctx context.Context, worker string, silentBefore time.Time) (int64, error) {
+	res := r.db.WithContext(ctx).Model(&types.LegalSyncRun{}).
+		Where("worker = ? AND status = ? AND COALESCE(heartbeat_at, started_at) < ?", worker, types.LegalSyncRunning, silentBefore).
+		Updates(map[string]any{"status": types.LegalSyncFailed, "finished_at": r.now(), "error": LegalSyncHeartbeatLost})
+	return res.RowsAffected, res.Error
+}
+
+// LatestFinished returns the worker's newest run that is not running (nil
+// when there is none).
+func (r *LegalSyncRunRepository) LatestFinished(ctx context.Context, worker string) (*types.LegalSyncRun, error) {
+	var rows []*types.LegalSyncRun
+	if err := r.db.WithContext(ctx).Where("worker = ? AND status <> ?", worker, types.LegalSyncRunning).
+		Order("started_at DESC").Order("id DESC").Limit(1).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return rows[0], nil
 }
 
 // Record writes a finished run in one go: a backend worker's pass. Passes
@@ -161,7 +208,20 @@ func (r *LegalSyncRunRepository) change(ctx context.Context, id int64,
 			return fmt.Errorf("run %d: %w", id, err)
 		}
 		if run.Status != types.LegalSyncRunning {
-			return fmt.Errorf("run %d is %s, not running", id, run.Status)
+			// closed by the monitor for silence while the sync went on (the
+			// database was out of reach): it comes back, unless a newer run
+			// of the worker started meanwhile
+			var newer int64
+			if run.Status == types.LegalSyncFailed && run.Error == LegalSyncHeartbeatLost {
+				if err := tx.Model(&types.LegalSyncRun{}).Where("worker = ? AND id > ?", run.Worker, run.ID).
+					Count(&newer).Error; err != nil {
+					return err
+				}
+			}
+			if run.Status != types.LegalSyncFailed || run.Error != LegalSyncHeartbeatLost || newer > 0 {
+				return fmt.Errorf("run %d is %s, not running", id, run.Status)
+			}
+			run.Status, run.FinishedAt, run.Error = types.LegalSyncRunning, nil, ""
 		}
 		sum := map[string]any{}
 		if len(run.Summary) > 0 {
@@ -169,7 +229,8 @@ func (r *LegalSyncRunRepository) change(ctx context.Context, id int64,
 				sum = map[string]any{}
 			}
 		}
-		edit(&run, sum, r.now())
+		now := r.now()
+		edit(&run, sum, now)
 		raw, err := json.Marshal(sum)
 		if err != nil {
 			return err
@@ -177,6 +238,7 @@ func (r *LegalSyncRunRepository) change(ctx context.Context, id int64,
 		run.Summary = raw
 		return tx.Model(&types.LegalSyncRun{}).Where("id = ?", id).Updates(map[string]any{
 			"status": run.Status, "step": run.Step, "finished_at": run.FinishedAt, "summary": run.Summary, "error": run.Error,
+			"heartbeat_at": now,
 		}).Error
 	})
 }
@@ -230,9 +292,12 @@ func legalSyncCloseStep(sum map[string]any, step string, now time.Time) {
 
 // legalSyncTail keeps the last max bytes of s on a rune boundary: the end
 // of a step's output holds the error. Invalid UTF-8 (a shell tail cut inside
-// a character) is dropped: Postgres refuses it.
+// a character) is dropped: Postgres refuses it; so are NUL, other control
+// characters and ANSI colour codes (a carriage return becomes a newline).
 func legalSyncTail(s string, max int) string {
-	s = strings.TrimSpace(strings.ToValidUTF8(s, ""))
+	s = strings.ReplaceAll(strings.ToValidUTF8(s, ""), "\r\n", "\n")
+	s = strings.ReplaceAll(s, "\r", "\n")
+	s = strings.TrimSpace(legalSyncControl.ReplaceAllString(s, ""))
 	if len(s) <= max {
 		return s
 	}

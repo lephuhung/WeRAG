@@ -18,6 +18,7 @@ import (
 func TestRunControlRequested(t *testing.T) {
 	reset := func() {
 		*runStart, *runID, *runStep, *runFinish, *runSummary, *runSummaryFile = false, 0, "", "", "", ""
+		*runHeartbeat = false
 	}
 	t.Cleanup(reset)
 	cases := []struct {
@@ -32,6 +33,8 @@ func TestRunControlRequested(t *testing.T) {
 		{"move", func() { *runID = 7; *runStep = "crawl" }, true},
 		{"summary", func() { *runID = 7; *runSummaryFile = "crawl.json" }, true},
 		{"finish", func() { *runID = 7; *runFinish = "failed" }, true},
+		{"heartbeat", func() { *runID = 7; *runHeartbeat = true }, true},
+		{"heartbeat without a run", func() { *runHeartbeat = true }, false},
 	}
 	for _, c := range cases {
 		reset()
@@ -115,4 +118,10 @@ func TestRecordImport(t *testing.T) {
 	require.Equal(t, []any{"link portal documents: timeout"}, imp["warnings"])
 	steps := sum[types.LegalSyncRunSteps].(map[string]any)
 	require.Contains(t, steps["crawl"], "finished_at", "moving to import closes the crawl step")
+}
+
+func TestPostgresDSNConnectTimeout(t *testing.T) {
+	t.Setenv("DB_HOST", "db")
+	require.NotContains(t, postgresDSN(0), "connect_timeout")
+	require.Contains(t, postgresDSN(10), " connect_timeout=10")
 }

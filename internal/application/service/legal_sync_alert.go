@@ -87,6 +87,17 @@ func (m *LegalSyncMonitor) Check(ctx context.Context) error {
 	}
 	defer release()
 	now := m.now()
+	// a running sync silent for too long is dead: closed as failed, so the
+	// page and the alert see a failed run
+	if n, err := m.runs.CloseSilent(ctx, types.LegalSyncWorkerVBPL, now.Add(-legalSyncSilentAfter)); err != nil {
+		logger.Warnf(ctx, "[LegalSyncMonitor] closing silent runs: %v", err)
+	} else if n > 0 {
+		logger.Warnf(ctx, "[LegalSyncMonitor] %d silent vbpl sync run(s) closed as interrupted", n)
+	}
+	if !m.alertsEnabled(ctx) {
+		// silenced (a sync stopped on purpose): close what is open
+		return m.alerts.incident.resolve(ctx)
+	}
 	workers, err := m.workers(ctx, now)
 	if err != nil {
 		return fmt.Errorf("reading the workers: %w", err)
@@ -100,9 +111,20 @@ func (m *LegalSyncMonitor) Check(ctx context.Context) error {
 	})
 }
 
+// alertsEnabled: alerts are configured and not silenced by the system
+// setting legal.sync_alert.enabled (on by default).
+func (m *LegalSyncMonitor) alertsEnabled(ctx context.Context) bool {
+	if m == nil || m.alerts == nil {
+		return false
+	}
+	return m.settings == nil || m.settings.GetBool(ctx, types.LegalSyncAlertEnabledSettingKey, "", true)
+}
+
 // legalSyncContainerAlertOrder: the problem a sync's alert names, first
-// match wins (a failed run is also stale a day later: one incident).
-var legalSyncContainerAlertOrder = []string{LegalSyncReasonLastFailed, LegalSyncReasonRunningLong, LegalSyncReasonStale}
+// match wins (a failed run is also stale a day later: one incident; a
+// silent run is closed as failed by the same check).
+var legalSyncContainerAlertOrder = []string{LegalSyncReasonLastFailed, LegalSyncReasonSilent, LegalSyncReasonRunningLong,
+	LegalSyncReasonStale}
 
 // legalSyncAlertProblem is the problem of w worth an alert, "" for none.
 func legalSyncAlertProblem(w LegalSyncWorkerStatus, now time.Time) string {
@@ -140,11 +162,18 @@ func legalSyncAlertPayload(workers []LegalSyncWorkerStatus, now time.Time) types
 		}
 		e := types.UserNotificationLegalSyncWorker{Worker: w.Worker, Problem: problem}
 		if w.Kind == "container" {
-			if w.Last != nil && problem != LegalSyncReasonStale {
-				at := w.Last.StartedAt
-				e.At, e.Step = &at, w.Last.Step
+			run := w.Last
+			if problem == LegalSyncReasonLastFailed && w.LastFinished != nil && run != nil && run.Status == types.LegalSyncRunning {
+				run = w.LastFinished // the failed night, while the next run goes on
+			}
+			if problem == LegalSyncReasonSilent {
+				problem, e.Problem = LegalSyncReasonLastFailed, LegalSyncReasonLastFailed // closed as failed by now
+			}
+			if run != nil && problem != LegalSyncReasonStale {
+				at := run.StartedAt
+				e.At, e.Step = &at, run.Step
 				if problem == LegalSyncReasonLastFailed {
-					e.Note = legalSyncErrorGist(w.Last.Error)
+					e.Note = legalSyncErrorGist(run.Error)
 				}
 			}
 			if w.LastOK != nil {
@@ -161,7 +190,7 @@ func legalSyncAlertPayload(workers []LegalSyncWorkerStatus, now time.Time) types
 			}
 		}
 		p.Workers = append(p.Workers, e)
-		sig = append(sig, w.Worker+":"+problem)
+		sig = append(sig, w.Worker+":"+e.Problem)
 	}
 	sort.Strings(sig)
 	p.Count, p.Signature = len(p.Workers), strings.Join(sig, ",")

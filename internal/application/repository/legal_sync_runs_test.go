@@ -161,3 +161,78 @@ func TestLegalSyncTailKeepsRunes(t *testing.T) {
 	require.True(t, json.Valid([]byte(`"`+got+`"`)), "valid UTF-8 after the cut")
 	require.Equal(t, "short", legalSyncTail("short", 1000))
 }
+
+func TestLegalSyncRunHeartbeatSilenceAndComeback(t *testing.T) {
+	r, now := newLegalSyncRunRepo(t)
+	ctx := context.Background()
+	id, err := r.Start(ctx, types.LegalSyncWorkerVBPL, "crawl", nil)
+	require.NoError(t, err)
+	*now = now.Add(5 * time.Minute)
+	require.NoError(t, r.Touch(ctx, id))
+	last, _, err := r.Latest(ctx, types.LegalSyncWorkerVBPL)
+	require.NoError(t, err)
+	require.Equal(t, *now, last.HeartbeatAt.UTC(), "a touch is a sign of life")
+
+	n, err := r.CloseSilent(ctx, types.LegalSyncWorkerVBPL, now.Add(-30*time.Minute))
+	require.NoError(t, err)
+	require.Zero(t, n, "beat 0 minutes ago")
+	*now = now.Add(31 * time.Minute)
+	n, err = r.CloseSilent(ctx, types.LegalSyncWorkerVBPL, now.Add(-30*time.Minute))
+	require.NoError(t, err)
+	require.EqualValues(t, 1, n)
+	fin, err := r.LatestFinished(ctx, types.LegalSyncWorkerVBPL)
+	require.NoError(t, err)
+	require.Equal(t, id, fin.ID)
+	require.Equal(t, types.LegalSyncFailed, fin.Status)
+	require.Equal(t, LegalSyncHeartbeatLost, fin.Error)
+
+	// the database was only out of reach: the sync writes again, the run is back
+	require.NoError(t, r.Update(ctx, id, "import", nil))
+	last, _, err = r.Latest(ctx, types.LegalSyncWorkerVBPL)
+	require.NoError(t, err)
+	require.Equal(t, types.LegalSyncRunning, last.Status)
+	require.Empty(t, last.Error)
+	require.Nil(t, last.FinishedAt)
+	require.NoError(t, r.Finish(ctx, id, types.LegalSyncOK, "", "", nil))
+	_, lastOK, err := r.Latest(ctx, types.LegalSyncWorkerVBPL)
+	require.NoError(t, err)
+	require.Equal(t, id, lastOK.ID)
+
+	// once a newer run started, a silenced run stays closed
+	old, err := r.Start(ctx, types.LegalSyncWorkerVBPL, "crawl", nil)
+	require.NoError(t, err)
+	*now = now.Add(time.Hour)
+	_, err = r.CloseSilent(ctx, types.LegalSyncWorkerVBPL, now.Add(-30*time.Minute))
+	require.NoError(t, err)
+	_, err = r.Start(ctx, types.LegalSyncWorkerVBPL, "prepare", nil)
+	require.NoError(t, err)
+	require.Error(t, r.Touch(ctx, old))
+	// an ordinary failure never comes back
+	require.Error(t, r.Touch(ctx, 999))
+}
+
+func TestLegalSyncRunLatestFinishedAndKeep(t *testing.T) {
+	r, now := newLegalSyncRunRepo(t)
+	ctx := context.Background()
+	fin, err := r.LatestFinished(ctx, types.LegalSyncWorkerVBPL)
+	require.NoError(t, err)
+	require.Nil(t, fin)
+	first, err := r.Start(ctx, types.LegalSyncWorkerVBPL, "crawl", nil)
+	require.NoError(t, err)
+	require.NoError(t, r.Finish(ctx, first, types.LegalSyncFailed, "", "x", nil))
+	*now = now.Add(LegalSyncRunKeep + time.Hour)
+	running, err := r.Start(ctx, types.LegalSyncWorkerVBPL, "crawl", nil)
+	require.NoError(t, err)
+	runs, err := r.List(ctx, types.LegalSyncWorkerVBPL, 10)
+	require.NoError(t, err)
+	require.Len(t, runs, 1, "runs older than 180 days are pruned")
+	require.Equal(t, running, runs[0].ID)
+	fin, err = r.LatestFinished(ctx, types.LegalSyncWorkerVBPL)
+	require.NoError(t, err)
+	require.Nil(t, fin, "the running run is not finished")
+}
+
+func TestLegalSyncTailStripsControlCharacters(t *testing.T) {
+	got := legalSyncTail("\x1b[31mERROR\x1b[0m bad\x00 byte\r\nfetched 1/9\rfetched 9/9\x07\tdone", 1000)
+	require.Equal(t, "ERROR bad byte\nfetched 1/9\nfetched 9/9\tdone", got)
+}

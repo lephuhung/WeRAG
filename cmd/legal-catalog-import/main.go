@@ -544,15 +544,30 @@ func openDB() (*gorm.DB, error) {
 // openDBWith opens the database with the given SQL logger (the run-control
 // mode is silent: its stdout is the run id sync.sh captures).
 func openDBWith(sqlLog gormlogger.Interface) (*gorm.DB, error) {
+	return openDBWithTimeout(sqlLog, 0)
+}
+
+// openDBWithTimeout opens the database; connectTimeout (seconds, 0 = the
+// driver's default) bounds the connection.
+func openDBWithTimeout(sqlLog gormlogger.Interface, connectTimeout int) (*gorm.DB, error) {
 	cfg := &gorm.Config{Logger: sqlLog}
 	if d := os.Getenv("DB_DRIVER"); d != "" && d != "postgres" {
 		return nil, fmt.Errorf("unsupported DB_DRIVER %q: Postgres only", d)
 	}
-	return gorm.Open(postgres.Open(fmt.Sprintf(
+	return gorm.Open(postgres.Open(postgresDSN(connectTimeout)), cfg)
+}
+
+// postgresDSN is the DSN of the DB_* env.
+func postgresDSN(connectTimeout int) string {
+	dsn := fmt.Sprintf(
 		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable TimeZone=UTC",
 		os.Getenv("DB_HOST"), os.Getenv("DB_PORT"), os.Getenv("DB_USER"),
 		os.Getenv("DB_PASSWORD"), os.Getenv("DB_NAME"),
-	)), cfg)
+	)
+	if connectTimeout > 0 {
+		dsn += fmt.Sprintf(" connect_timeout=%d", connectTimeout)
+	}
+	return dsn
 }
 
 // mergeRelations replaces the edges touching the imported documents and
