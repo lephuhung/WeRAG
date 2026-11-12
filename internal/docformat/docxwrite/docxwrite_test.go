@@ -155,7 +155,7 @@ func TestBuildClampsIndentAndListStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	doc := documentXML(t, data)
-	if !strings.Contains(doc, `<w:ind w:left="4677"/>`) || !strings.Contains(doc, `<w:ind w:left="4677" w:hanging="360"/>`) ||
+	if !strings.Contains(doc, `<w:ind w:left="4677"/>`) || !strings.Contains(doc, `<w:ind w:left="5387" w:hanging="1070"/>`) ||
 		!strings.Contains(doc, `<w:ilvl w:val="8"/>`) {
 		t.Errorf("indent not clamped: %s", doc)
 	}
@@ -181,4 +181,71 @@ func documentXML(t *testing.T, data []byte) string {
 	var b bytes.Buffer
 	_, _ = b.ReadFrom(f)
 	return b.String()
+}
+
+// Numbers of two or three digits get a wider hanging indent, the text
+// moving right, so "10." never runs into its text; one-digit lists keep
+// the old indent.
+func TestBuildWidensHangingForLongNumbers(t *testing.T) {
+	var blocks []Block
+	for i := 0; i < 12; i++ {
+		blocks = append(blocks, Paragraph{Text: "mục", List: &ListItem{Ordered: true, List: 1, Start: 1}})
+	}
+	for i := 0; i < 9; i++ {
+		blocks = append(blocks, Paragraph{Text: "ngắn", List: &ListItem{Ordered: true, List: 2, Start: 1}})
+	}
+	blocks = append(blocks, Table{Rows: [][]TableCell{{{Paragraphs: []Paragraph{
+		{Text: "ô", List: &ListItem{Ordered: true, List: 3, Start: 98}},
+		{Text: "ô", List: &ListItem{Ordered: true, List: 3, Start: 98}},
+		{Text: "ô", List: &ListItem{Ordered: true, List: 3, Start: 98}},
+	}}}}})
+	blocks = append(blocks, Paragraph{Text: "chấm", List: &ListItem{Level: 1}})
+	data, err := Build(Document{Blocks: blocks})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := documentXML(t, data)
+	for want, n := range map[string]int{
+		`<w:numId w:val="2"/></w:numPr><w:ind w:left="767" w:hanging="560"/>`:  12, // 1…12
+		`<w:numId w:val="3"/></w:numPr><w:ind w:left="567" w:hanging="360"/>`:  9,  // 1…9
+		`<w:numId w:val="4"/></w:numPr><w:ind w:left="937" w:hanging="730"/>`:  3,  // 98…100
+		`<w:numId w:val="1"/></w:numPr><w:ind w:left="1134" w:hanging="360"/>`: 1,  // bullet
+	} {
+		if got := strings.Count(doc, want); got != n {
+			t.Errorf("%d × %s, want %d", got, want, n)
+		}
+	}
+}
+
+// A follow-up paragraph of an item starts where the item's text does,
+// past a wide number too.
+func TestBuildContinuationFollowsWideNumbers(t *testing.T) {
+	var blocks []Block
+	var tenth *ListItem
+	for i := 0; i < 12; i++ {
+		li := &ListItem{Ordered: true, List: 1, Start: 1}
+		if i == 9 {
+			tenth = li
+		}
+		blocks = append(blocks, Paragraph{Text: "mục", List: li})
+		if i == 9 {
+			blocks = append(blocks, Paragraph{Text: "giải thích", Continues: tenth},
+				Paragraph{Text: "trích", Style: StyleQuote, Continues: tenth, IndentTwips: 284})
+		}
+	}
+	blocks = append(blocks, Paragraph{Text: "chấm", List: &ListItem{}}, Paragraph{Text: "tiếp", Continues: &ListItem{}})
+	data, err := Build(Document{Blocks: blocks})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := documentXML(t, data)
+	for _, want := range []string{
+		`<w:p><w:pPr><w:ind w:left="767"/></w:pPr><w:r><w:t xml:space="preserve">giải thích`,
+		`<w:pStyle w:val="WeRAGQuote"/><w:ind w:left="1051"/>`,
+		`<w:p><w:pPr><w:ind w:left="567"/></w:pPr><w:r><w:t xml:space="preserve">tiếp`,
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("document.xml lacks %s", want)
+		}
+	}
 }

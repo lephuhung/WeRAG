@@ -13,6 +13,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -69,6 +70,10 @@ type Paragraph struct {
 	// IndentTwips is extra left indent (block quotes, the follow-up
 	// paragraphs of a list item).
 	IndentTwips int
+	// Continues makes the paragraph a follow-up of that list item: it
+	// starts where the item's text does (past a wide number too), plus
+	// IndentTwips. Ignored on a list item.
+	Continues *ListItem
 }
 
 // Run is a stretch of text with one character format. Text may hold "\t"
@@ -136,7 +141,7 @@ const textWidthTwips = 11906 - 1701 - 851
 
 // Build writes doc as a .docx package.
 func Build(doc Document) ([]byte, error) {
-	w := &bodyWriter{orderedNums: map[int]int{}}
+	w := &bodyWriter{orderedNums: map[int]int{}, listWidth: listNumberWidths(doc)}
 	for i, p := range doc.Paragraphs {
 		if err := w.paragraph(p); err != nil {
 			return nil, fmt.Errorf("paragraph %d: %w", i, err)
@@ -208,6 +213,9 @@ type bodyWriter struct {
 	// keeps the keys in first-use order with their start values.
 	orderedNums  map[int]int
 	orderedOrder []orderedNum
+	// listWidth is the hanging indent of each ordered list (by List key),
+	// wide enough for its largest number
+	listWidth map[int]int
 }
 
 type orderedNum struct {
@@ -255,6 +263,77 @@ func clampLevel(l int) int {
 func listIndent(lvl int) int { return 567 * (clampLevel(lvl) + 1) }
 
 const listHanging = 360
+
+// numberHanging is the hanging indent for list numbers of the given
+// digits: "9." fits listHanging; "10." and "100." need more, or the text
+// starts right after the dot ("10.Thông tư") — Times New Roman 14 pt
+// digits are 140 twips wide.
+func numberHanging(digits int) int {
+	if digits <= 1 {
+		return listHanging
+	}
+	return 220 + 170*digits
+}
+
+// listNumberWidths finds the largest number of each ordered list (its
+// start plus its items, counted over paragraphs and table cells) and the
+// hanging indent that number needs.
+func listNumberWidths(doc Document) map[int]int {
+	type seq struct{ start, items int }
+	lists := map[int]*seq{}
+	visit := func(p Paragraph) {
+		if p.List == nil || !p.List.Ordered {
+			return
+		}
+		l := lists[p.List.List]
+		if l == nil {
+			l = &seq{start: min(max(p.List.Start, 0), maxListStart)}
+			lists[p.List.List] = l
+		}
+		l.items++
+	}
+	for _, p := range doc.Paragraphs {
+		visit(p)
+	}
+	for _, blk := range doc.Blocks {
+		switch v := blk.(type) {
+		case Paragraph:
+			visit(v)
+		case *Paragraph:
+			visit(*v)
+		case Table, *Table:
+			t, ok := v.(Table)
+			if !ok {
+				t = *v.(*Table)
+			}
+			for _, row := range t.Rows {
+				for _, c := range row {
+					for _, p := range c.Paragraphs {
+						visit(p)
+					}
+				}
+			}
+		}
+	}
+	out := map[int]int{}
+	for key, l := range lists {
+		largest := l.start + l.items - 1
+		out[key] = numberHanging(len(strconv.Itoa(max(largest, 0))))
+	}
+	return out
+}
+
+// textIndent is where the text of list item l starts (0 for nil).
+func (w *bodyWriter) textIndent(l *ListItem) int {
+	if l == nil {
+		return 0
+	}
+	extra := 0
+	if l.Ordered && w.listWidth[l.List] > listHanging {
+		extra = w.listWidth[l.List] - listHanging
+	}
+	return listIndent(clampLevel(l.Level)) + extra
+}
 
 // ListTextIndent is the left indent of the text of a level-lvl list item,
 // for paragraphs that continue the item.
@@ -343,9 +422,15 @@ func writeParagraph(b *strings.Builder, style string, p Paragraph, w *bodyWriter
 	if p.List != nil {
 		lvl := clampLevel(p.List.Level)
 		b.WriteString(fmt.Sprintf(`<w:numPr><w:ilvl w:val="%d"/><w:numId w:val="%d"/></w:numPr>`, lvl, w.numID(p.List)))
-		b.WriteString(fmt.Sprintf(`<w:ind w:left="%d" w:hanging="%d"/>`, min(listIndent(lvl)+p.IndentTwips, maxIndentTwips), listHanging))
-	} else if p.IndentTwips > 0 {
-		b.WriteString(fmt.Sprintf(`<w:ind w:left="%d"/>`, min(p.IndentTwips, maxIndentTwips)))
+		// a wider number moves the text right, the number stays in place
+		hanging := listHanging
+		if p.List.Ordered && w.listWidth[p.List.List] > 0 {
+			hanging = w.listWidth[p.List.List]
+		}
+		b.WriteString(fmt.Sprintf(`<w:ind w:left="%d" w:hanging="%d"/>`,
+			min(listIndent(lvl)+p.IndentTwips+hanging-listHanging, maxIndentTwips+hanging-listHanging), hanging))
+	} else if left := p.IndentTwips + w.textIndent(p.Continues); left > 0 {
+		b.WriteString(fmt.Sprintf(`<w:ind w:left="%d"/>`, min(left, maxIndentTwips)))
 	}
 	switch {
 	case p.Align == "left" || p.Align == "center" || p.Align == "right" || p.Align == "both":

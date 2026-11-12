@@ -36,8 +36,13 @@ type AnswerExportFile struct {
 	Data     []byte
 }
 
-// maxExportReferences bounds the sources listed (distinct documents).
+// maxExportReferences bounds the sources listed (distinct documents) of an
+// answer whose citations name them.
 const maxExportReferences = 100
+
+// maxUncitedReferences bounds the sources of an answer without citation
+// tags: then the list is everything retrieved, mostly not used.
+const maxUncitedReferences = 10
 
 // NewAnswerExportService wires the export. The legal repositories may be
 // nil (no số hiệu then).
@@ -76,7 +81,7 @@ func (s *AnswerExportService) Export(ctx context.Context, sessionID, messageID s
 	in := answerdocx.Input{
 		AnsweredAt: formatDateTimeVN(answer.CreatedAt),
 		Content:    answer.Content,
-		References: s.references(ctx, answer.KnowledgeReferences),
+		References: s.references(ctx, citedReferences(answer.Content, answer.KnowledgeReferences)),
 	}
 	if question != nil {
 		in.Question = question.Content
@@ -137,8 +142,86 @@ func (s *AnswerExportService) load(ctx context.Context, sessionID, messageID str
 	return answer, question, nil
 }
 
+// citedReferences keeps the references the answer cites with <kb/> and
+// <web/> tags, in order of first citation: a chunk by its id, else a
+// document by its title (in the cited knowledge base), a web page by its
+// URL. Only references the caller may read are left by then, so a tag
+// matching none of them is dropped (an answer citing only sources the
+// caller lost lists none), except a web page, which is listed from its
+// tag. Only an answer with no tags at all keeps the first
+// maxUncitedReferences documents retrieved.
+func citedReferences(content string, refs types.References) types.References {
+	cites := answerdocx.Citations(content)
+	if len(cites) == 0 {
+		return firstDocuments(refs, maxUncitedReferences)
+	}
+	var out types.References
+	for _, c := range cites {
+		if r := matchCitation(c, refs); r != nil {
+			out = append(out, r)
+		} else if c.URL != "" {
+			out = append(out, &types.SearchResult{ID: c.URL, KnowledgeID: c.URL, KnowledgeTitle: c.Title,
+				ChunkType: string(types.ChunkTypeWebSearch), Metadata: map[string]string{"url": c.URL}})
+		}
+	}
+	return out
+}
+
+func matchCitation(c answerdocx.Citation, refs types.References) *types.SearchResult {
+	if c.URL != "" {
+		for _, r := range refs {
+			if r != nil && isWebSearchReference(r) && (r.Metadata["url"] == c.URL || r.KnowledgeID == c.URL || r.ID == c.URL) {
+				return r
+			}
+		}
+		return nil
+	}
+	if c.ChunkID != "" {
+		for _, r := range refs {
+			if r != nil && !isWebSearchReference(r) && (r.ID == c.ChunkID || r.ParentChunkID == c.ChunkID) {
+				return r
+			}
+		}
+	}
+	if c.Doc != "" {
+		for _, r := range refs {
+			if r == nil || isWebSearchReference(r) || c.KBID != "" && r.KnowledgeBaseID != "" && r.KnowledgeBaseID != c.KBID {
+				continue
+			}
+			if r.KnowledgeTitle == c.Doc || r.KnowledgeFilename == c.Doc {
+				return r
+			}
+		}
+	}
+	return nil
+}
+
+// firstDocuments keeps the references of the first n distinct documents.
+func firstDocuments(refs types.References, n int) types.References {
+	var out types.References
+	docs := map[string]bool{}
+	for _, r := range refs {
+		if r == nil {
+			continue
+		}
+		key := r.KnowledgeID
+		if key == "" {
+			key = r.ID
+		}
+		if !docs[key] {
+			if len(docs) == n {
+				break
+			}
+			docs[key] = true
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
 // references lists each source document once, in first-cited order, with
-// its knowledge base and, for a reviewed legal document, its số hiệu.
+// its knowledge base and, for a reviewed legal document, its catalogue
+// title and số hiệu; other titles are the file name without extension.
 func (s *AnswerExportService) references(ctx context.Context, refs types.References) []answerdocx.Reference {
 	type entry struct {
 		ref         answerdocx.Reference
@@ -151,12 +234,10 @@ func (s *AnswerExportService) references(ctx context.Context, refs types.Referen
 		if r == nil || len(entries) >= maxExportReferences {
 			continue
 		}
-		e := &entry{ref: answerdocx.Reference{
-			Title:    strings.TrimSpace(r.KnowledgeTitle),
-			FileName: strings.TrimSpace(r.KnowledgeFilename),
-		}}
+		e := &entry{}
 		key := r.KnowledgeID
 		if isWebSearchReference(r) {
+			e.ref.Title = strings.TrimSpace(r.KnowledgeTitle) // a page title, not a file name
 			e.ref.URL = strings.TrimSpace(r.Metadata["url"])
 			if e.ref.URL == "" && strings.HasPrefix(r.KnowledgeID, "http") {
 				e.ref.URL = r.KnowledgeID
@@ -167,6 +248,10 @@ func (s *AnswerExportService) references(ctx context.Context, refs types.Referen
 			key = "web:" + e.ref.URL
 		} else {
 			e.knowledgeID, e.kbID = r.KnowledgeID, r.KnowledgeBaseID
+			e.ref.Title = answerdocx.DisplayTitle(r.KnowledgeTitle)
+			if f := strings.TrimSpace(r.KnowledgeFilename); f != "" && answerdocx.DisplayTitle(f) != e.ref.Title && f != r.KnowledgeTitle {
+				e.ref.FileName = f
+			}
 		}
 		if key == "" || key == "web:" {
 			key = "title:" + e.ref.Title + "\x00" + e.ref.FileName
@@ -202,15 +287,51 @@ func (s *AnswerExportService) references(ctx context.Context, refs types.Referen
 		}
 	}
 	kbNames := s.kbNames(ctx, kbIDs)
-	numbers := s.documentNumbers(ctx, knowledgeIDs)
+	legal := s.legalDocuments(ctx, knowledgeIDs)
 
 	out := make([]answerdocx.Reference, 0, len(entries))
+	// the first document of a catalogue entry takes its title; another
+	// one on the same entry (a phụ lục, a second copy) keeps its own name
+	titled := map[string]bool{}
+	printed := map[answerdocx.Reference]bool{}
 	for _, e := range entries {
 		e.ref.Source = kbNames[e.kbID]
-		e.ref.DocumentNumber = numbers[e.knowledgeID]
+		if d := legal[e.knowledgeID]; d != nil {
+			e.ref.DocumentNumber = strings.TrimSpace(d.DocumentNumber)
+			if t := legalReferenceTitle(d); t != "" && !titled[d.ID] {
+				titled[d.ID] = true
+				e.ref.Title, e.ref.FileName = t, ""
+			}
+		}
+		if printed[e.ref] {
+			continue // the same line again (one văn bản held twice)
+		}
+		printed[e.ref] = true
 		out = append(out, e.ref)
 	}
 	return out
+}
+
+// legalReferenceTitle names a catalogue document the way legal citations
+// do: "Nghị định số 80/2021/NĐ-CP Quy định chi tiết …", "Luật Doanh nghiệp
+// số 59/2020/QH14"; a catalogue title already holding the số hiệu is kept,
+// and "" (no catalogue title) keeps the document's own.
+func legalReferenceTitle(d *types.LegalDocument) string {
+	title := strings.Join(strings.Fields(d.Title), " ")
+	num := strings.TrimSpace(d.DocumentNumber)
+	docType := strings.TrimSpace(d.DocType)
+	switch {
+	case num == "" || title == "":
+		return title // "" keeps the document's own title
+	case strings.Contains(title, num):
+		return title
+	case docType != "" && strings.HasPrefix(strings.ToLower(title), strings.ToLower(docType)):
+		return title + " số " + num
+	case docType != "":
+		return docType + " số " + num + " " + title
+	default:
+		return num + " " + title
+	}
 }
 
 func (s *AnswerExportService) kbNames(ctx context.Context, ids map[string]bool) map[string]string {
@@ -236,10 +357,10 @@ func (s *AnswerExportService) kbNames(ctx context.Context, ids map[string]bool) 
 	return names
 }
 
-// documentNumbers maps knowledge IDs with an approved legal link to the số
-// hiệu of their catalogue document. Best effort: failures leave it out.
-func (s *AnswerExportService) documentNumbers(ctx context.Context, knowledgeIDs []string) map[string]string {
-	out := map[string]string{}
+// legalDocuments maps knowledge IDs with an approved legal link to their
+// catalogue document. Best effort: failures leave it out.
+func (s *AnswerExportService) legalDocuments(ctx context.Context, knowledgeIDs []string) map[string]*types.LegalDocument {
+	out := map[string]*types.LegalDocument{}
 	if s.reviews == nil || s.catalog == nil || len(knowledgeIDs) == 0 {
 		return out
 	}
@@ -262,14 +383,14 @@ func (s *AnswerExportService) documentNumbers(ctx context.Context, knowledgeIDs 
 		logger.Warnf(ctx, "answer export: legal catalogue unavailable: %v", err)
 		return out
 	}
-	byID := map[string]string{}
+	byID := map[string]*types.LegalDocument{}
 	for _, d := range docs {
 		if d != nil {
-			byID[d.ID] = strings.TrimSpace(d.DocumentNumber)
+			byID[d.ID] = d
 		}
 	}
 	for kid, l := range links {
-		if l != nil && byID[l.LegalDocumentID] != "" {
+		if l != nil && byID[l.LegalDocumentID] != nil {
 			out[kid] = byID[l.LegalDocumentID]
 		}
 	}
