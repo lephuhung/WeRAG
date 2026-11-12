@@ -136,7 +136,7 @@ export default function EmbedPage() {
         })),
       );
     } catch (e) {
-      setError(userErrorMessage(e, t, "ui.err.loadChat"));
+      setError(userErrorMessage(e, t, "ui.err.loadChat", { anonymous: true }));
     } finally {
       setLoading(false);
     }
@@ -249,7 +249,7 @@ export default function EmbedPage() {
     })
       .catch((e: unknown) => {
         if (e instanceof DOMException && e.name === "AbortError") return;
-        setError(e instanceof Error ? e.message : "Stream failed");
+        setError(userErrorMessage(e, t, "chat.err.generic", { anonymous: true }));
       })
       .finally(() => {
         setBusy(false);

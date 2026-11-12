@@ -5,6 +5,7 @@ import { TEMPLATE_CHOICES } from "@/lib/template-protocol";
 import type { DocumentTemplateId } from "@/lib/document-templates";
 import type { TemplateNotice } from "./use-document-template";
 import { IconClose } from "@/components/icons";
+import { userErrorMessage } from "@/lib/user-error";
 
 type TranslationKey = Parameters<ReturnType<typeof useT>["t"]>[0];
 
@@ -146,7 +147,7 @@ function noticeText(n: TemplateNotice, t: ReturnType<typeof useT>["t"]): string 
     case "needs":
       return t("docws.tplNeeds", { fields: n.fields.join("; ") });
     case "failed":
-      return t("docws.tplFailed", { error: n.error });
+      return t("docws.tplFailed", { error: userErrorMessage(n.cause, t, "err.generic") });
     case "building":
       return t("docws.tplBuilding");
     case "done":

@@ -68,6 +68,44 @@ export function isVietnameseText(s: string): boolean {
   return VIETNAMESE_RE.test(s);
 }
 
+/** Longest backend text shown as is; longer ones are dumps, not sentences. */
+const MAX_PASSTHROUGH_LENGTH = 200;
+
+/** Signs of an internal error rather than a sentence written for people:
+ * database and network errors, Go error chains, file paths. */
+const TECHNICAL_RES: RegExp[] = [
+  /SQLSTATE|\bERROR:|\bpq:|duplicate key|violates .*constraint/i,
+  /dial tcp|connection refused|connection reset|i\/o timeout|no such host|rpc error|context (deadline exceeded|canceled)/i,
+  /no such file|permission denied|is a directory|unexpected EOF|nil pointer|panic|runtime error|goroutine/i,
+  // Go error chains: "open …: ", "failed to create user: …"
+  /^(open|read|write|stat|lookup|mkdir|remove|rename|dial|listen|parse|decode|encode|unmarshal|marshal|json|sql|failed to [\w ]+?|error [\w ]+?):\s/i,
+  // unix paths with at least two segments, Windows drive paths
+  /(^|[\s('"=:])\/(?:[\w.\-]+\/)+/,
+  /\b[A-Za-z]:\\/,
+];
+
+/** Whether a backend message can be shown to the user as is: Vietnamese,
+ * short, from a 4xx answer (a 5xx text is an internal failure, a message
+ * without a status did not come from an answer the backend shaped) and
+ * free of technical fragments. */
+export function isShowableBackendText(message: string, status: number | undefined): boolean {
+  if (status === undefined || status < 400 || status >= 500) return false;
+  const m = message.trim();
+  if (!m || m.length > MAX_PASSTHROUGH_LENGTH || !isVietnameseText(m)) return false;
+  return !looksTechnical(m);
+}
+
+/** Whether a text carries internal error fragments (SQL, network, Go error
+ * chains, file paths) or is too long to be a sentence for people. */
+export function looksTechnical(message: string): boolean {
+  const m = message.trim();
+  return m.length > MAX_PASSTHROUGH_LENGTH || TECHNICAL_RES.some((re) => re.test(m));
+}
+
+function lookup<V>(table: Record<string, V>, key: string | number | undefined): V | undefined {
+  return key !== undefined && Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined;
+}
+
 /** What a failure turns into: nothing (aborted), a translation key, a text
  * to show as is, or the caller's fallback. */
 export type UserErrorResult =
@@ -126,11 +164,12 @@ function statusKey(status: number): LocaleKey | null {
 }
 
 /** The pure core: how a failure reads to the user. */
-export function classifyUserError(e: unknown): UserErrorResult {
+export function classifyUserError(e: unknown, opts: { anonymous?: boolean } = {}): UserErrorResult {
   if (isAbort(e)) return { kind: "aborted" };
   if (e instanceof UserFacingError) return e.message ? { kind: "text", text: e.message } : { kind: "fallback" };
   if (e instanceof Error && e.name === "ModelInUseError") return { kind: "key", key: "err.modelInUse" };
-  if (typeof e === "string") return isVietnameseText(e) ? { kind: "text", text: e } : { kind: "fallback" };
+  // a bare string carries no status: never shown as is
+  if (typeof e === "string") return { kind: "fallback" };
 
   const parts = partsOf(e);
   const message = parts?.message ?? (e instanceof Error ? e.message : "");
@@ -143,19 +182,23 @@ export function classifyUserError(e: unknown): UserErrorResult {
   if (status === undefined && message === "unauthorized") status = 401;
 
   // a code that names its failure, whatever status carries it
-  if (env.errorCode && STRING_CODE_KEYS[env.errorCode]) return { kind: "key", key: STRING_CODE_KEYS[env.errorCode] };
+  const stringCodeKey = lookup(STRING_CODE_KEYS, env.errorCode);
+  if (stringCodeKey) return { kind: "key", key: stringCodeKey };
   if (env.code === 2105) {
     return { kind: "key", key: env.reason === "public_lookup_no_knowledge" ? "chat.err.publicLookup.noKnowledge" : "chat.err.publicLookup.off" };
   }
-  if (env.code !== undefined && CODE_KEYS[env.code]) return { kind: "key", key: CODE_KEYS[env.code] };
-  if (status === 429 && env.reason && USAGE_REASON_KEYS[env.reason]) return { kind: "key", key: USAGE_REASON_KEYS[env.reason] };
+  const codeKey = lookup(CODE_KEYS, env.code);
+  if (codeKey) return { kind: "key", key: codeKey };
+  const usageKey = status === 429 ? lookup(USAGE_REASON_KEYS, env.reason) : undefined;
+  if (usageKey) return { kind: "key", key: usageKey };
 
-  // the session ended: signing in again is the only way on
-  if (status === 401) return { kind: "key", key: "err.signInAgain" };
+  // the session ended: signing in again is the only way on — except on
+  // pages without a sign-in (embed), where the caller's text is clearer
+  if (status === 401) return opts.anonymous ? { kind: "fallback" } : { kind: "key", key: "err.signInAgain" };
   const transport = transportKey(e, status, message);
   if (transport) return { kind: "key", key: transport };
 
-  if (message && isVietnameseText(message)) return { kind: "text", text: message };
+  if (message && isShowableBackendText(message, status)) return { kind: "text", text: message.trim() };
 
   if (status !== undefined) {
     const k = statusKey(status);
@@ -170,12 +213,15 @@ export type UserErrorOptions = {
    * "<what failed>: <raw message>". */
   prefix?: boolean;
   vars?: Record<string, string | number>;
+  /** The page has no sign-in (embed): a 401 reads as the fallback, not
+   * "sign in again". */
+  anonymous?: boolean;
 };
 
 /** Localized text for a failure. "" for an aborted request (nothing to
  * show; toast.error ignores empty text). */
 export function userErrorMessage(e: unknown, t: Translate, fallbackKey: LocaleKey, opts: UserErrorOptions = {}): string {
-  const r = classifyUserError(e);
+  const r = classifyUserError(e, { anonymous: opts.anonymous });
   if (r.kind === "aborted") return "";
   const fallback = t(fallbackKey, opts.vars);
   if (r.kind === "fallback") return fallback;
@@ -183,7 +229,8 @@ export function userErrorMessage(e: unknown, t: Translate, fallbackKey: LocaleKe
   return opts.prefix ? `${fallback.replace(/[.:]\s*$/, "")}: ${text}` : text;
 }
 
-/** Sign-up failures (POST /auth/register, /auth/register-by-invite): the
+/** Account form failures — sign-up (POST /auth/register,
+ * /auth/register-by-invite) and the profile name (PUT /auth/me/profile): the
  * backend answers in English (password policy sentinels, duplicate
  * account, gin binding errors in error.details), so each known case gets
  * its own sentence. null → not a sign-up specific failure; use
@@ -215,9 +262,10 @@ export function registerErrorKey(e: unknown): LocaleKey | null {
     return m.includes("uppercase") ? "auth.err.passwordRuleComplex" : "auth.err.passwordRule";
   }
   if (m.includes("email already") || m.includes("with this email")) return "auth.err.emailExists";
-  if (m.includes("with this username")) return "auth.err.usernameExists";
+  if (m.includes("with this username") || m.includes("name is already taken")) return "auth.err.usernameExists";
+  if (m.includes("username cannot be empty")) return "auth.err.usernameLength";
   if (m.includes("are required")) return "auth.err.fieldsRequired";
-  if (m.includes("invalid registration parameters")) {
+  if (m.includes("invalid registration parameters") || m.includes("invalid profile request")) {
     // gin: "Key: 'RegisterRequest.Username' Error:Field validation for 'Username' failed on the 'min' tag"
     if (/'Username'/.test(details)) return "auth.err.usernameLength";
     if (/'Email'/.test(details)) return "auth.err.emailInvalid";
@@ -225,4 +273,31 @@ export function registerErrorKey(e: unknown): LocaleKey | null {
     return "auth.err.invalidFields";
   }
   return null;
+}
+
+/** The raw failure for an administrator's "Technical details" disclosure
+ * (connection tests and the like): backend code and message, or "" when
+ * there is nothing beyond what userErrorMessage already says. */
+export function technicalErrorDetail(e: unknown): string {
+  if (isAbort(e)) return "";
+  const parts = partsOf(e);
+  const message = (parts?.message ?? (e instanceof Error ? e.message : typeof e === "string" ? e : "")).trim();
+  const code = parts?.env.errorCode ?? (parts?.env.code !== undefined ? String(parts.env.code) : "");
+  const status = parts?.status ? `HTTP ${parts.status}` : "";
+  const head = [status, code].filter(Boolean).join(" · ");
+  if (!message) return head;
+  return head ? `${head}: ${message}` : message;
+}
+
+/** Awaits p; a failure is rethrown as a UserFacingError whose text is the
+ * localized cause (userErrorMessage with fallbackKey). For callers whose
+ * catch prints "<what failed>: <e.message>" without this module (cards
+ * shared with the Word add-in). */
+export async function withUserFacingCause<T>(p: Promise<T>, t: Translate, fallbackKey: LocaleKey): Promise<T> {
+  try {
+    return await p;
+  } catch (e) {
+    if (e instanceof UserFacingError || isAbort(e)) throw e;
+    throw new UserFacingError(userErrorMessage(e, t, fallbackKey));
+  }
 }

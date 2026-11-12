@@ -28,9 +28,10 @@ import { DeniedView } from "@/components/settings/system-section";
 import { FieldLabel } from "@/components/settings/field";
 import { ConsolePage } from "@/components/settings/console-page";
 import { useToast } from "@/components/toast";
-import { userErrorMessage } from "@/lib/user-error";
+import { technicalErrorDetail, userErrorMessage } from "@/lib/user-error";
+import { TechnicalDetails } from "@/components/technical-details";
 
-type Probe = { ok: boolean; message: string } | null;
+type Probe = { ok: boolean; message: string; detail?: string } | null;
 
 function StatusDot({ ok }: { ok: boolean }) {
   return <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${ok ? "bg-success" : "bg-warning"}`} />;
@@ -39,7 +40,10 @@ function StatusDot({ ok }: { ok: boolean }) {
 function ProbeNote({ probe }: { probe: Probe }) {
   if (!probe) return null;
   return (
-    <p className={`caption mt-2 ${probe.ok ? "text-success" : "text-error"}`}>{probe.message}</p>
+    <div className="mt-2">
+      <p className={`caption ${probe.ok ? "text-success" : "text-error"}`}>{probe.message}</p>
+      {!probe.ok && <TechnicalDetails detail={probe.detail} />}
+    </div>
   );
 }
 
@@ -139,7 +143,11 @@ export function ParserEngineSettings() {
         setDenied(true);
         return;
       }
-      setDocreaderProbe({ ok: false, message: userErrorMessage(e, t, "eng.docreaderFail") });
+      setDocreaderProbe({
+        ok: false,
+        message: userErrorMessage(e, t, "eng.docreaderFail", { prefix: true }),
+        detail: technicalErrorDetail(e),
+      });
     } finally {
       setReconnecting(false);
     }
@@ -162,7 +170,7 @@ export function ParserEngineSettings() {
         setDenied(true);
         return;
       }
-      setOcrProbe({ ok: false, message: userErrorMessage(e, t, "eng.testFail") });
+      setOcrProbe({ ok: false, message: userErrorMessage(e, t, "eng.testFail", { prefix: true }), detail: technicalErrorDetail(e) });
     } finally {
       setChecking(false);
     }

@@ -22,7 +22,8 @@ import { FieldLabel } from "@/components/settings/field";
 import { ROW_HOVER } from "@/components/settings/data-table";
 import { ConsolePage } from "@/components/settings/console-page";
 import { useToast } from "@/components/toast";
-import { userErrorMessage } from "@/lib/user-error";
+import { technicalErrorDetail, userErrorMessage } from "@/lib/user-error";
+import { TechnicalDetails } from "@/components/technical-details";
 
 const SUPPORTED_PROVIDERS = [
   { id: "brave", name: "Brave Search" },
@@ -44,6 +45,7 @@ export function WebSearchSettings() {
   const [denied, setDenied] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [testError, setTestError] = useState("");
+  const [testDetail, setTestDetail] = useState("");
   const [formError, setFormError] = useState("");
   const [nameError, setNameError] = useState("");
 
@@ -149,6 +151,7 @@ export function WebSearchSettings() {
 
   const handleTest = async (id: string) => {
     setTestError("");
+    setTestDetail("");
     try {
       await testWebSearchProvider(id);
       toast.success(t("ws.testOk"));
@@ -157,7 +160,8 @@ export function WebSearchSettings() {
         setDenied(true);
         return;
       }
-      setTestError(userErrorMessage(e, t, "ws.testFailed"));
+      setTestError(userErrorMessage(e, t, "ws.testFailed", { prefix: true }));
+      setTestDetail(technicalErrorDetail(e));
     }
   };
 
@@ -198,6 +202,7 @@ export function WebSearchSettings() {
         {testError && (
           <Notice tone="error" className="mt-4" title={t("ws.testStatus")}>
             {testError}
+            <TechnicalDetails detail={testDetail} />
           </Notice>
         )}
 

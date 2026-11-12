@@ -119,12 +119,16 @@ export function TenantMembers() {
     const demotingSelf = !toAdmin && member.user_id === auth.user?.id;
     const ok = wasAdmin === toAdmin || (await confirm({
       title: toAdmin ? t("mem.promoteConfirmTitle") : t("mem.demoteConfirmTitle"),
-      message: (toAdmin
-        ? t("mem.promoteConfirmBody")
-        : demotingSelf
-          ? t("mem.demoteSelfConfirmBody")
-          : t("mem.demoteConfirmBody")
-      ).replace("{name}", name),
+      message: t(
+        toAdmin
+          ? "mem.promoteConfirmBody"
+          : demotingSelf
+            ? isSystemAdmin
+              ? "mem.demoteSelfSuperAdminConfirmBody"
+              : "mem.demoteSelfConfirmBody"
+            : "mem.demoteConfirmBody",
+        { name },
+      ),
       confirmLabel: toAdmin ? t("mem.promoteConfirmCta") : t("mem.demoteConfirmCta"),
       danger: !toAdmin,
     }));
@@ -133,11 +137,16 @@ export function TenantMembers() {
     try {
       const res = await updateMemberRole(activeTenantId, member.user_id, newRole);
       if (res.success) {
-        toast.success(
-          t("mem.roleUpdated")
-            .replace("{name}", name)
-            .replace("{role}", toAdmin ? t("acct.roleAdmin") : t("acct.roleMember")),
-        );
+        toast.success(t("mem.roleUpdated", { name, role: toAdmin ? t("acct.roleAdmin") : t("acct.roleMember") }));
+        if (demotingSelf) {
+          /* The token's role changed: reload the account, and leave this
+           * admin page unless SuperAdmin rights still cover it. */
+          await auth.refreshMe();
+          if (!isSystemAdmin) {
+            router.push("/platform/knowledge-bases");
+            return;
+          }
+        }
         await loadData();
       } else {
         setError(res.message || t("mem.updateRoleFailed"));
@@ -161,7 +170,7 @@ export function TenantMembers() {
       const res = await removeMember(activeTenantId, removingMember.user_id);
       if (res.success) {
         toast.success(
-          t("mem.removed").replace("{name}", removingMember.username || removingMember.email),
+          t("mem.removed", { name: removingMember.username || removingMember.email }),
         );
         setRemovingMember(null);
         await loadData();
@@ -207,7 +216,7 @@ export function TenantMembers() {
       title: t("mem.revokeConfirmTitle"),
       message: inv.is_share_link
         ? t("mem.revokeLinkConfirmBody")
-        : t("mem.revokeConfirmBody").replace("{name}", inv.invitee_email || inv.invitee_name || t("mem.unknownUser")),
+        : t("mem.revokeConfirmBody", { name: inv.invitee_email || inv.invitee_name || t("mem.unknownUser") }),
       confirmLabel: t("mem.revoke"),
       danger: true,
     });
@@ -327,8 +336,8 @@ export function TenantMembers() {
                   </div>
                   <p className="caption text-muted truncate mt-0.5">
                     {inv.is_share_link
-                      ? t("mem.acceptedCount").replace("{n}", String(inv.accepted_count || 0))
-                      : t("mem.invitedBy").replace("{name}", inv.inviter_name || inv.inviter_email || "admin")}
+                      ? t("mem.acceptedCount", { n: inv.accepted_count || 0 })
+                      : t("mem.invitedBy", { name: inv.inviter_name || inv.inviter_email || "admin" })}
                   </p>
                 </div>
 
@@ -512,7 +521,7 @@ export function TenantMembers() {
       >
         <div className="space-y-4">
           <p className="body-sm text-body">
-            {t("mem.removeBody").replace("{name}", removingMember?.username || removingMember?.email || "")}
+            {t("mem.removeBody", { name: removingMember?.username || removingMember?.email || "" })}
           </p>
           <div className="flex justify-end gap-3 pt-2">
             <button

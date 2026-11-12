@@ -8,6 +8,7 @@ import { Modal } from "@/components/modal";
 import { TenantPicker } from "@/components/knowledge/tenant-picker";
 import { transferKBOwner, type KBOwnerTransferResult } from "@/lib/api/kb-access";
 import { useT } from "@/lib/i18n";
+import { userErrorMessage } from "@/lib/user-error";
 
 export function KbTransferOwnerDialog({
   kbId,
@@ -46,7 +47,7 @@ export function KbTransferOwnerDialog({
       setResult(res);
       onTransferred();
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : t("kbAccess.failed"));
+      setError(userErrorMessage(e, t, "kbAccess.failed"));
     } finally {
       setBusy(false);
     }

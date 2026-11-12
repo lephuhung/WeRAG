@@ -83,7 +83,7 @@ export function ApiKeysSection() {
   const handleDelete = async (k: TenantAPIKey) => {
     const ok = await confirm({
       title: t("apiKeys.deleteConfirmTitle"),
-      message: t("apiKeys.deleteConfirmBody").replace("{name}", k.name),
+      message: t("apiKeys.deleteConfirmBody", { name: k.name }),
       confirmLabel: t("common.delete"),
       danger: true,
     });
@@ -96,7 +96,7 @@ export function ApiKeysSection() {
         setError(t("apiKeys.deleteFailed"));
         return;
       }
-      toast.success(t("apiKeys.deleted").replace("{name}", k.name));
+      toast.success(t("apiKeys.deleted", { name: k.name }));
       load();
     } catch (e) {
       setError(userErrorMessage(e, t, "apiKeys.deleteFailed"));
@@ -145,7 +145,7 @@ export function ApiKeysSection() {
                   <span className="badge-pill text-error">{t("apiKeys.fullAccess")}</span>
                 ) : (
                   <span className="badge-pill">
-                  {t("apiKeys.capsCount").replace("{n}", String((k.capabilities ?? []).length))}
+                  {t("apiKeys.capsCount", { n: (k.capabilities ?? []).length })}
                 </span>
                 )}
               </div>

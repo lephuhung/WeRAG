@@ -4,6 +4,7 @@ import layout from "./knowledge/kb-detail-layout.module.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { KbDeleteReach } from "@/lib/kb-delete";
 import {
   batchQueryKnowledge,
   getKnowledgeBase,
@@ -215,7 +216,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
       .catch((e) => {
         if (docsRequestRef.current !== req) return;
         setDocs((prev) => prev ?? []);
-        setDocsError(e instanceof Error ? e.message : "Could not load the file list");
+        setDocsError(userErrorMessage(e, t, "kbUi.docsLoadFailed"));
       })
       .finally(() => {
         if (docsRequestRef.current === req) setDocsLoading(false);
@@ -430,12 +431,19 @@ export function KbDetail({ kbId }: { kbId: string }) {
    * for display. The backend remains authoritative. */
   const activeTenantId = selectedTenantId ?? String(tenant?.id ?? "");
   const [accessCaps, setAccessCaps] = useState<KBViewerCapabilities | null>(null);
+  /* Who else reads the KB, for the delete dialog's warnings. */
+  const [deleteReach, setDeleteReach] = useState<KbDeleteReach | undefined>(undefined);
   useEffect(() => {
     setAccessCaps(null);
+    setDeleteReach(undefined);
     if (!kb?.id) return;
     let alive = true;
     getKBAccess(kb.id)
-      .then((o) => alive && setAccessCaps(getKBCapabilitiesFromAccess(o)))
+      .then((o) => {
+        if (!alive) return;
+        setAccessCaps(getKBCapabilitiesFromAccess(o));
+        setDeleteReach({ visibility: o.visibility, grantees: o.grantees?.length ?? 0 });
+      })
       .catch(() => alive && setAccessCaps(null));
     return () => {
       alive = false;
@@ -902,6 +910,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
          * right DELETE /knowledge-bases/:id requires), never on the
          * client-side estimate used while /access is loading. */
         canDelete={accessCaps?.canManage === true}
+        deleteReach={deleteReach}
         onDeleted={() => {
           const name = kb?.name ?? "";
           setSettingsOpen(false);

@@ -23,7 +23,7 @@ export function ParseErrorNotice({ code, message }: { code?: string | null; mess
       {(rawCode || raw) && (
         <details className="mt-0.5">
           <summary className="cursor-pointer select-none text-[11px] text-muted hover:text-ink">
-            {t("ks.err.technicalDetails")}
+            {t("common.technicalDetails")}
           </summary>
           <div className="mt-1 flex flex-col gap-1">
             {rawCode && <span className="font-mono text-[10px] text-muted-soft">{rawCode}</span>}

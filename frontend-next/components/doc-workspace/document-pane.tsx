@@ -25,6 +25,7 @@ import { RevisionHistoryPanel } from "./revision-history";
 import { useEditorOps, type EditorOpsOutcome } from "./use-editor-ops";
 import { useLiveSpelling, type EditorActions } from "./use-live-spelling";
 import type { LiveSpellingStatus, SpellingActions } from "@/lib/live-spelling";
+import { userErrorMessage } from "@/lib/user-error";
 
 type Phase = { kind: "loading" } | { kind: "disabled" } | { kind: "error"; message: string } | { kind: "editor" };
 
@@ -41,9 +42,6 @@ const SETTLE_RECHECK_MS = [4_000, 12_000];
 // Minimum gap between two refreshFile() calls unless onDocumentReady fires.
 const REFRESH_COOLDOWN_MS = 1_500;
 
-function errMessage(e: unknown): string {
-  return e instanceof Error ? e.message : String(e);
-}
 
 /* One document of the document assistant: an ONLYOFFICE editor bound to one
  * workspace (tab). It applies the assistant's edit plans for this document
@@ -168,7 +166,7 @@ export function DocumentPane({
       if (e instanceof DocumentWorkspaceError && e.code === "editor_disabled") {
         setPhase({ kind: "disabled" });
         onDisabledRef.current();
-      } else setPhase({ kind: "error", message: errMessage(e) });
+      } else setPhase({ kind: "error", message: userErrorMessage(e, t, "err.generic") });
     }
   }, [sessionId, documentId, adopt, t]);
 
@@ -404,7 +402,7 @@ export function DocumentPane({
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
-      toast.error(`${t("docws.downloadFailed")}: ${errMessage(e)}`);
+      toast.error(userErrorMessage(e, t, "docws.downloadFailed", { prefix: true }));
     }
   };
 
@@ -415,7 +413,7 @@ export function DocumentPane({
       editedRef.current = false;
       toast.success(t("docws.saveRequested"));
     } catch (e) {
-      toast.error(`${t("docws.saveFailed")}: ${errMessage(e)}`);
+      toast.error(userErrorMessage(e, t, "docws.saveFailed", { prefix: true }));
     } finally {
       setSaving(false);
     }

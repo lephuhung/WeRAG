@@ -14,14 +14,18 @@ import { ApiError } from "@/lib/api-client";
 import { deleteKnowledgeBase } from "@/lib/api/knowledge";
 import { useT } from "@/lib/i18n";
 import { userErrorMessage } from "@/lib/user-error";
+import { kbDeleteWarnings, kbNameMatches, type KbDeleteReach } from "@/lib/kb-delete";
 
 export function KbDangerZone({
   kbId,
   kbName,
+  reach,
   onDeleted,
 }: {
   kbId: string;
   kbName: string;
+  /** Who else reads the KB (visibility, grantees), for extra warnings. */
+  reach?: KbDeleteReach;
   onDeleted: () => void;
 }) {
   const { t } = useT();
@@ -36,7 +40,7 @@ export function KbDangerZone({
         </button>
       </div>
       {open && (
-        <KbDeleteDialog kbId={kbId} kbName={kbName} onClose={() => setOpen(false)} onDeleted={onDeleted} />
+        <KbDeleteDialog kbId={kbId} kbName={kbName} reach={reach} onClose={() => setOpen(false)} onDeleted={onDeleted} />
       )}
     </div>
   );
@@ -45,11 +49,13 @@ export function KbDangerZone({
 function KbDeleteDialog({
   kbId,
   kbName,
+  reach,
   onClose,
   onDeleted,
 }: {
   kbId: string;
   kbName: string;
+  reach?: KbDeleteReach;
   onClose: () => void;
   onDeleted: () => void;
 }) {
@@ -57,7 +63,8 @@ function KbDeleteDialog({
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const matches = typed.trim() === kbName.trim() && kbName.trim() !== "";
+  const matches = kbNameMatches(typed, kbName);
+  const warnings = kbDeleteWarnings(reach);
 
   const submit = async () => {
     if (!matches || busy) return;
@@ -85,6 +92,11 @@ function KbDeleteDialog({
         }}
       >
         <p className="body-sm text-body">{t("kbDelete.body", { name: kbName })}</p>
+        {warnings.map((w) => (
+          <p key={w.key} className="body-sm rounded-lg bg-warning-surface px-3 py-2 text-warning">
+            {t(w.key, w.vars)}
+          </p>
+        ))}
         <p className="body-sm text-error">{t("kbDelete.irreversible")}</p>
         <label className="block">
           <span className="caption mb-1.5 block text-muted">{t("kbDelete.typeName", { name: kbName })}</span>

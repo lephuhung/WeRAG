@@ -23,6 +23,7 @@ import { useToast } from "@/components/toast";
 import { KbAccessGrantees } from "@/components/knowledge/kb-access-grantees";
 import { KbGrantForm, KbInviteForm } from "@/components/knowledge/kb-access-share-forms";
 import { KbTransferOwnerDialog } from "@/components/knowledge/kb-transfer-owner-dialog";
+import { userErrorMessage } from "@/lib/user-error";
 
 const SCOPE_KEYS: Record<KBScope, { label: LocaleKey; desc: LocaleKey }> = {
   tenant: { label: "kbAccess.scope.tenant", desc: "kbAccess.scope.tenantDesc" },
@@ -57,7 +58,7 @@ export function KbAccessTab({ kbId, onChanged }: { kbId: string; onChanged?: () 
       setOverview(await getKBAccess(kbId));
       setError(null);
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : "");
+      setError(userErrorMessage(e, t, "kbAccess.failed"));
     }
   }, [kbId]);
   const errorText = error === null ? "" : error || t("kbAccess.loadFailed");
@@ -79,7 +80,7 @@ export function KbAccessTab({ kbId, onChanged }: { kbId: string; onChanged?: () 
       toast.success(t("kbAccess.saved"));
       refresh();
     } catch (e) {
-      toast.error(e instanceof Error && e.message ? e.message : t("kbAccess.failed"));
+      toast.error(userErrorMessage(e, t, "kbAccess.failed"));
     } finally {
       setBusy(false);
     }

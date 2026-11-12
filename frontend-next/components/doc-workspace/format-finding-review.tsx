@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
 import { findingNavigation, parseFormatFindings, type FormatFinding, type ParagraphFormatOp } from "@/lib/format-findings";
+import { userErrorMessage } from "@/lib/user-error";
 
 export type FindingReviewActions = {
   /** Selects the finding in the editor (it scrolls there). */
@@ -51,7 +52,7 @@ export function FormatFindingReview({
     try {
       await action();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(t("docws.fcRvFailed", { error: userErrorMessage(cause, t, "err.generic") }));
     } finally {
       setWorking(false);
     }

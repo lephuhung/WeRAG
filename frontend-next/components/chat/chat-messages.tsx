@@ -39,6 +39,7 @@ import type { DocumentOp, Illustration, RewriteProposal, RewriteVariant } from "
 import type { ChatLegalBasis } from "@/lib/api/document-workspace";
 import type { RasterImage } from "@/lib/illustration-render";
 import type { UiMessage } from "@/components/chat/chat-types";
+import { userErrorMessage } from "@/lib/user-error";
 
 /* Answer text streamed between tool rounds is a preamble that the next
  * tool_call retracts (folded into the thinking card title). Longer output is
@@ -427,8 +428,7 @@ function DownloadDocxButton({ sessionId, messageId, question }: { sessionId: str
       a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
-      const detail = e instanceof Error && e.message ? `: ${e.message}` : "";
-      toast.error(`${t("ui.msg.downloadDocxFailed")}${detail}`);
+      toast.error(userErrorMessage(e, t, "ui.msg.downloadDocxFailed", { prefix: true }));
     } finally {
       setBusy(false);
     }

@@ -175,7 +175,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
           }
           saveFirstTurnHandoff(window.sessionStorage, sessionId, { attachmentIds, attachmentNames });
         } catch (err) {
-          setError(err instanceof Error ? err.message : "Could not stage attachments — files kept for retry");
+          setError(t("err.attachmentStageFailed"));
           await cleanupSessionBestEffort((id) => deleteSession(id), sessionId);
           return;
         }

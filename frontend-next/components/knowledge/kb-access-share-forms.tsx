@@ -9,11 +9,9 @@ import { grantKBToTenant, issueKBInvite } from "@/lib/api/knowledge";
 import { copyToClipboard } from "@/lib/clipboard";
 import { defaultInviteTenant, type KBAccessOverview } from "@/lib/kb-access";
 import { useT } from "@/lib/i18n";
+import { userErrorMessage } from "@/lib/user-error";
 import { TenantPicker } from "@/components/knowledge/tenant-picker";
 
-function errText(e: unknown, fallback: string) {
-  return e instanceof Error && e.message ? e.message : fallback;
-}
 
 export function KbInviteForm({ overview, onDone }: { overview: KBAccessOverview; onDone: () => void }) {
   const { t } = useT();
@@ -44,7 +42,7 @@ export function KbInviteForm({ overview, onDone }: { overview: KBAccessOverview;
       setEmail("");
       onDone();
     } catch (err) {
-      setError(errText(err, t("kbAccess.failed")));
+      setError(userErrorMessage(err, t, "kbAccess.failed"));
     } finally {
       setBusy(false);
     }
@@ -110,7 +108,7 @@ export function KbGrantForm({ overview, onDone }: { overview: KBAccessOverview; 
       setExpires("");
       onDone();
     } catch (err) {
-      setError(errText(err, t("kbAccess.failed")));
+      setError(userErrorMessage(err, t, "kbAccess.failed"));
     } finally {
       setBusy(false);
     }

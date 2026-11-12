@@ -16,6 +16,7 @@ import {
 } from "@/lib/kb-access";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { formatDate } from "@/lib/datetime";
+import { userErrorMessage } from "@/lib/user-error";
 
 export function KbAccessGrantees({ overview, onChanged }: { overview: KBAccessOverview; onChanged: () => void }) {
   const { t } = useT();
@@ -40,7 +41,7 @@ export function KbAccessGrantees({ overview, onChanged }: { overview: KBAccessOv
       setConfirming(null);
       onChanged();
     } catch (e) {
-      setError(e instanceof Error && e.message ? e.message : t("kbAccess.failed"));
+      setError(userErrorMessage(e, t, "kbAccess.failed"));
     } finally {
       setBusy(null);
     }

@@ -35,7 +35,8 @@ import {
   resolveThinkingControl,
   type ThinkingControl,
 } from "@/lib/model-presets";
-import { userErrorMessage } from "@/lib/user-error";
+import { technicalErrorDetail, userErrorMessage } from "@/lib/user-error";
+import { TechnicalDetails } from "@/components/technical-details";
 
 const EMPTY_FORM = {
   presetId: "",
@@ -293,6 +294,7 @@ function SystemModels() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [testDetail, setTestDetail] = useState("");
   const [filterType, setFilterType] = useState<string>(initialTab);
 
   useEffect(() => {
@@ -326,12 +328,14 @@ function SystemModels() {
     setForm(EMPTY_FORM);
     setActionError("");
     setTestMsg(null);
+    setTestDetail("");
     setModalOpen(true);
   };
 
   const openEdit = (m: UiModel) => {
     setEditing(m);
     setTestMsg(null);
+    setTestDetail("");
     setForm({
       presetId: "",
       name: m.name,
@@ -451,6 +455,7 @@ function SystemModels() {
     if (!editing?.id || testing) return;
     setTesting(true);
     setTestMsg(null);
+    setTestDetail("");
     try {
       if (editing.type === "Decision") {
         // The backend runs the real abbreviation-detection questions.
@@ -476,7 +481,8 @@ function SystemModels() {
       const res = await debugModel(editing.id, { input: "Hello! This is a test query." });
       setTestMsg(res.ok ? t("mdl.testOk") : res.error || t("mdl.testFail"));
     } catch (e) {
-      setTestMsg(userErrorMessage(e, t, "mdl.testFail"));
+      setTestMsg(userErrorMessage(e, t, "mdl.testFail", { prefix: true }));
+      setTestDetail(technicalErrorDetail(e));
     } finally {
       setTesting(false);
     }
@@ -906,6 +912,7 @@ function SystemModels() {
           </button>
         </div>
         {testMsg && <p className="caption mt-3 text-muted">{testMsg}</p>}
+        {testMsg && <TechnicalDetails detail={testDetail} />}
       </Modal>
 
       {loaded && <TaskModelsCard models={models.map((m) => m.raw)} />}

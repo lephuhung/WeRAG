@@ -18,7 +18,8 @@ import { DeniedView } from "@/components/settings/system-section";
 import { ROW_HOVER } from "@/components/settings/data-table";
 import { ConsolePage } from "@/components/settings/console-page";
 import { useToast } from "@/components/toast";
-import { userErrorMessage } from "@/lib/user-error";
+import { technicalErrorDetail, userErrorMessage } from "@/lib/user-error";
+import { TechnicalDetails } from "@/components/technical-details";
 
 export function VectorStoreSettings() {
   const { t } = useT();
@@ -29,7 +30,7 @@ export function VectorStoreSettings() {
   const [error, setError] = useState("");
   const [denied, setDenied] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
-  const [testResults, setTestResults] = useState<Record<string, string>>({});
+  const [testResults, setTestResults] = useState<Record<string, { text: string; detail: string }>>({});
 
   const loadData = async () => {
     setLoading(true);
@@ -66,7 +67,7 @@ export function VectorStoreSettings() {
       }
       setTestResults((prev) => ({
         ...prev,
-        [id]: userErrorMessage(err, t, "vstore.testFail"),
+        [id]: { text: userErrorMessage(err, t, "vstore.testFail", { prefix: true }), detail: technicalErrorDetail(err) },
       }));
     } finally {
       setTestingId(null);
@@ -174,7 +175,12 @@ export function VectorStoreSettings() {
                     </div>
                   </div>
 
-                  {res && <Notice tone="error">{res}</Notice>}
+                  {res && (
+                    <Notice tone="error">
+                      {res.text}
+                      <TechnicalDetails detail={res.detail} />
+                    </Notice>
+                  )}
                 </div>
               );
             })}

@@ -77,7 +77,7 @@ export function AgentIMChannels({ agentId, open, onClose, agentName }: {
       const next = (await toggleIMChannel(c.id)).data;
       setChannels((prev) => prev.map((x) => (x.id === c.id ? { ...x, enabled: next.enabled } : x)));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Toggle failed");
+      setError(userErrorMessage(e, t, "ui.err.toggleFailed"));
     }
   };
 

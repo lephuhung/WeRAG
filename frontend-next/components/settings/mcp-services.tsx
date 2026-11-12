@@ -28,7 +28,8 @@ import { Chip } from "@/components/settings/chips";
 import { Toggle } from "@/components/settings/toggle";
 import { Notice } from "@/components/settings/notice";
 import { Loading } from "@/components/settings/loading";
-import { userErrorMessage } from "@/lib/user-error";
+import { technicalErrorDetail, userErrorMessage } from "@/lib/user-error";
+import { TechnicalDetails } from "@/components/technical-details";
 
 export function McpServiceForm({ service, onClose, onSaved }: {
   service: MCPService | null;
@@ -49,6 +50,8 @@ export function McpServiceForm({ service, onClose, onSaved }: {
   const [args, setArgs] = useState((service?.stdio_config?.args ?? []).join(" "));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  /* Raw failure of the last connection test, under "Technical details". */
+  const [testDetail, setTestDetail] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<MCPTestResult | null>(null);
 
@@ -56,6 +59,7 @@ export function McpServiceForm({ service, onClose, onSaved }: {
     if (!name.trim()) return;
     setSaving(true);
     setError("");
+    setTestDetail("");
     try {
       const payload: Partial<MCPService> = {
         name: name.trim(),
@@ -97,11 +101,13 @@ export function McpServiceForm({ service, onClose, onSaved }: {
   const runTest = async () => {
     if (!service) return;
     setTesting(true);
+    setTestDetail("");
     try {
       const res = await testMCPService(service.id);
       setTestResult(res);
     } catch (e) {
-      setError(userErrorMessage(e, t, "mcp.testFailed"));
+      setError(userErrorMessage(e, t, "mcp.testFailed", { prefix: true }));
+      setTestDetail(technicalErrorDetail(e));
     } finally {
       setTesting(false);
     }
@@ -111,6 +117,7 @@ export function McpServiceForm({ service, onClose, onSaved }: {
     <Modal open title={service ? t("mcp.editService") : t("mcp.addService")} onClose={onClose} width="w-[620px]">
       <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto pr-1">
         {error && <p className="caption text-error">{error}</p>}
+        {error && <TechnicalDetails detail={testDetail} />}
         <div className="flex gap-4">
           <label className="block flex-1">
             <span className="caption mb-1.5 block text-muted">{t("mcp.name")}</span>

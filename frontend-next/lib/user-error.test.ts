@@ -5,7 +5,17 @@ import assert from "node:assert/strict";
 
 import { ApiError } from "./api-client.ts";
 import { ChatStreamError } from "./api/chat-errors.ts";
-import { UserFacingError, classifyUserError, isVietnameseText, registerErrorKey, userErrorMessage, type Translate } from "./user-error.ts";
+import {
+  UserFacingError,
+  classifyUserError,
+  isShowableBackendText,
+  isVietnameseText,
+  registerErrorKey,
+  technicalErrorDetail,
+  withUserFacingCause,
+  userErrorMessage,
+  type Translate,
+} from "./user-error.ts";
 
 const t: Translate = (k, vars) => (vars ? `${k}${JSON.stringify(vars)}` : k);
 const envelope = (code: number, message: string, details?: unknown) => ({ success: false, error: { code, message, details } });
@@ -41,7 +51,39 @@ describe("classifyUserError", () => {
   it("keeps a backend message already in Vietnamese", () => {
     assert.deepEqual(classifyUserError(new ApiError(400, "x", envelope(1000, "Tên kho đã tồn tại"))), { kind: "text", text: "Tên kho đã tồn tại" });
     assert.deepEqual(classifyUserError(new ApiError(409, "Tài liệu đã có")), { kind: "text", text: "Tài liệu đã có" });
-    assert.deepEqual(classifyUserError(new Error("Không đọc được tệp")), { kind: "text", text: "Không đọc được tệp" });
+  });
+  it("never shows a Vietnamese text without a status, or a 5xx text", () => {
+    assert.deepEqual(classifyUserError(new Error("Không đọc được tệp")), { kind: "fallback" });
+    assert.deepEqual(classifyUserError("Không đọc được tệp"), { kind: "fallback" });
+    assert.deepEqual(classifyUserError(new ApiError(500, "x", envelope(1007, "Lỗi máy chủ nội bộ khi lưu kho"))), { kind: "key", key: "err.server" });
+    assert.deepEqual(classifyUserError(new ApiError(503, "Dịch vụ đọc tệp đang bận")), { kind: "key", key: "err.unavailable" });
+  });
+  it("rejects technical texts even on a 4xx", () => {
+    const m409 = "Tên kho đã tồn tại trong Tổ chức này";
+    const leaks = [
+      'ERROR: duplicate key value violates unique constraint "kb_name" Key (name)=(Kho tài liệu) (SQLSTATE 23505)',
+      "open /data/files/10009/Báo cáo.docx: no such file or directory",
+      "dial tcp 10.0.0.5:5432: connection refused (Kho tài liệu)",
+      "rpc error: code = Unavailable desc = máy chủ đọc tệp",
+      "failed to create knowledge: tên kho không hợp lệ",
+      "không mở được C:\\data\\tệp.docx",
+      "Tên kho " + "rất dài ".repeat(40),
+    ];
+    for (const m of leaks) {
+      assert.deepEqual(classifyUserError(new ApiError(400, "x", envelope(1000, m))), { kind: "fallback" }, m);
+      assert.equal(isShowableBackendText(m, 400), false, m);
+    }
+    assert.deepEqual(classifyUserError(new ApiError(409, "x", envelope(1004, m409))), { kind: "text", text: m409 });
+  });
+  it("ignores prototype keys in the code tables", () => {
+    assert.deepEqual(classifyUserError(new ApiError(403, "x", { error: "x", code: "constructor" })), { kind: "key", key: "err.forbidden" });
+    assert.deepEqual(classifyUserError(new ApiError(403, "x", { error: "x", code: "__proto__" })), { kind: "key", key: "err.forbidden" });
+    assert.deepEqual(classifyUserError(new ApiError(429, "x", envelope(1006, "x", { reason: "toString" }))), { kind: "key", key: "err.tooMany" });
+    assert.deepEqual(classifyUserError(new ApiError(429, "x", envelope(1006, "x", { reason: "hasOwnProperty" }))), { kind: "key", key: "err.tooMany" });
+  });
+  it("a 401 on a page without sign-in reads as the fallback", () => {
+    assert.deepEqual(classifyUserError(new ApiError(401, "x"), { anonymous: true }), { kind: "fallback" });
+    assert.equal(userErrorMessage(new ApiError(401, "x"), t, "embed.loadFailed" as never, { anonymous: true }), "embed.loadFailed");
   });
   it("maps English messages by status class", () => {
     const cases: [number, string][] = [
@@ -131,9 +173,35 @@ describe("registerErrorKey", () => {
     assert.equal(registerErrorKey(new ApiError(400, "x", envelope(1000, "Invalid registration parameters", "EOF"))), "auth.err.invalidFields");
     assert.equal(registerErrorKey(new ApiError(400, "x", envelope(1000, "Username, email and password are required"))), "auth.err.fieldsRequired");
   });
+  it("maps the profile name failures", () => {
+    assert.equal(registerErrorKey(new ApiError(409, "x", envelope(1004, "This display name is already taken"))), "auth.err.usernameExists");
+    assert.equal(registerErrorKey(new ApiError(400, "x", envelope(1000, "Username cannot be empty"))), "auth.err.usernameLength");
+  });
   it("leaves other failures to userErrorMessage", () => {
     assert.equal(registerErrorKey(new ApiError(403, "x", envelope(1003, "Registration is invite-only"))), null);
     assert.equal(registerErrorKey(new ApiError(500, "Request failed")), null);
     assert.equal(registerErrorKey(undefined), null);
+  });
+});
+
+describe("technicalErrorDetail", () => {
+  it("joins status, code and raw message", () => {
+    assert.equal(technicalErrorDetail(new ApiError(502, "bad gateway", envelope(1007, "dial tcp 10.0.0.5:9000: connection refused"))), "HTTP 502 · 1007: dial tcp 10.0.0.5:9000: connection refused");
+    assert.equal(technicalErrorDetail(new Error("boom")), "boom");
+    assert.equal(technicalErrorDetail(new ApiError(0, "Upload aborted")), "");
+  });
+});
+
+describe("withUserFacingCause", () => {
+  it("passes results through and rewords failures", async () => {
+    assert.equal(await withUserFacingCause(Promise.resolve(3), t, "err.generic"), 3);
+    await assert.rejects(withUserFacingCause(Promise.reject(new ApiError(403, "forbidden")), t, "err.generic"), (e: unknown) => {
+      assert.ok(e instanceof UserFacingError);
+      assert.equal((e as Error).message, "err.forbidden");
+      return true;
+    });
+    await assert.rejects(withUserFacingCause(Promise.reject(new Error("raw english")), t, "err.generic"), { message: "err.generic" });
+    const own = new UserFacingError("Tài liệu đã đóng");
+    await assert.rejects(withUserFacingCause(Promise.reject(own), t, "err.generic"), (e: unknown) => e === own);
   });
 });

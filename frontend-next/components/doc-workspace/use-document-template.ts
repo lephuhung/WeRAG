@@ -37,7 +37,8 @@ const randomId = () =>
 export type TemplateNotice =
   | { kind: "needs"; fields: string[] }
   | { kind: "building" | "done" | "invalid" | "notEmpty" | "otherDoc" | "noData" | "skipped" }
-  | { kind: "failed"; error: string };
+  /** cause: the failure, put into words by the picker (userErrorMessage). */
+  | { kind: "failed"; cause: unknown };
 
 /* A new NĐ30 document drafted from chat into the open, empty document (the
  * Word add-in's flow, docs/backend-document-template-contract.md there):
@@ -216,7 +217,7 @@ export function useDocumentTemplate({
       onWrittenRef.current();
     } catch (e) {
       if (e instanceof DocumentWorkspaceError && e.status === 409) setNotice({ kind: "notEmpty" });
-      else setNotice({ kind: "failed", error: e instanceof Error ? e.message : String(e) });
+      else setNotice({ kind: "failed", cause: e });
     } finally {
       pendingRef.current.delete(key);
     }
