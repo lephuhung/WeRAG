@@ -64,6 +64,7 @@ func NewLegalAutoIngest(
 
 // StartLegalAutoIngest runs the worker until the returned func is called.
 func StartLegalAutoIngest(w *LegalAutoIngest) (stop func()) {
+	noteLegalWorkerStarted(types.LegalSyncWorkerAutoIngest, legalAutoIngestTick, time.Now())
 	done := make(chan struct{})
 	go func() {
 		ticker := time.NewTicker(legalAutoIngestTick)

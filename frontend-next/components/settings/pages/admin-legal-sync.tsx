@@ -61,6 +61,7 @@ const REASON_LABEL: Record<string, LocaleKey> = {
   starting: "lsync.reason.starting",
   heartbeat_stale: "lsync.reason.heartbeat_stale",
   tick_error: "lsync.reason.tick_error",
+  not_started: "lsync.reason.not_started",
 };
 const STEP_LABEL: Record<string, LocaleKey> = {
   prepare: "lsync.step.prepare",
@@ -227,7 +228,8 @@ export default function LegalSyncSection({ onDenied }: { onDenied?: () => void }
   const [filter, setFilter] = useState<LegalSyncWorker | "">("vbpl_sync");
   const seq = useRef(0);
   const inFlight = useRef(0);
-  const [loading, setLoading] = useState(false);
+  // true until the first answer: no "no runs" flash before it
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [loadedAt, setLoadedAt] = useState<number>(0);
 
@@ -275,7 +277,9 @@ export default function LegalSyncSection({ onDenied }: { onDenied?: () => void }
   return (
     <ConsolePage size="wide">
       <div className="mb-5 flex flex-wrap items-center gap-3">
-        <span className="caption text-muted">{t("lsync.desc")}</span>
+        <span className="caption max-w-3xl text-muted">
+          {t("lsync.desc")} {t("lsync.alertNote")}
+        </span>
         <div className="ml-auto flex items-center gap-2">
           {loadedAt > 0 && (
             <span className="caption text-muted">
@@ -307,6 +311,8 @@ export default function LegalSyncSection({ onDenied }: { onDenied?: () => void }
           {error}
         </Notice>
       )}
+
+      {!status && loading && <p className="caption mb-6 text-muted">{t("common.loading")}</p>}
 
       {status && (
         <>
@@ -406,6 +412,12 @@ function WorkerCard({ w, now, t, locale }: { w: LegalSyncWorkerStatus; now: numb
             <dd>{formatDuration(t, (w.interval_seconds ?? 0) * 1000)}</dd>
             <dt className="text-muted">{t("lsync.lastTick")}</dt>
             <dd>{w.last_tick_at ? formatDateTime(w.last_tick_at, locale) : "—"}</dd>
+            {w.failing_since && (
+              <>
+                <dt className="text-muted">{t("lsync.failingSince")}</dt>
+                <dd className="text-warning">{formatDateTime(w.failing_since, locale)}</dd>
+              </>
+            )}
           </>
         )}
       </dl>

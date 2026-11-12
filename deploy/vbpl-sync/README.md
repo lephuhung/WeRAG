@@ -15,6 +15,18 @@ Container chạy `sync.sh` theo lịch (`VBPL_SYNC_CRON`, mặc định 02:30 gi
    hiệu lực trong danh mục và trên văn bản đã nạp luôn theo vbpl.vn;
 4. `mc mirror` thư mục làm việc lên MinIO (`$VBPL_S3_BUCKET/$VBPL_S3_PREFIX`).
 
+Mỗi lần chạy được ghi vào bảng `legal_sync_runs` (migration 000198) qua các cờ
+`-run-*` của `legal-catalog-import`: bước đang chạy (chuẩn bị → cào → nạp →
+sao lưu MinIO), thời gian từng bước, số liệu của crawler (`--summary`) và của
+import, và khi lỗi là đoạn cuối output của bước hỏng. Ghi nhận không bao giờ làm
+hỏng lần đồng bộ: không mở được lần chạy (chưa migrate, mất kết nối) thì chạy
+tiếp không ghi. Lần chạy bị ngắt (container dừng) được lần sau đóng là lỗi.
+SuperAdmin xem ở Quản trị hệ thống → Pháp lý → Thu thập dữ liệu
+(`/platform/admin?section=legal-documents&view=sync`, cùng worker tự nạp và
+xoá toàn văn hết hiệu lực của backend), và nhận thông báo trong app
+`legal_sync_alert` khi lần chạy gần nhất lỗi, chạy quá 12 giờ, hoặc 26 giờ không
+có lần thành công (lịch mặc định hằng ngày; lịch thưa hơn sẽ bị coi là quá hạn).
+
 Dữ liệu nằm ở bucket riêng `werag-vbpl` (prefix `vbpl/`) trên MinIO dùng chung
 10.10.0.123, user `werag-vbpl` toàn quyền trên riêng bucket này (tạo 2026-10-12
 bằng tài khoản admin MinIO của inventory, như `provision_backup_storage.py`).

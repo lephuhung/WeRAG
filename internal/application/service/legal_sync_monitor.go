@@ -44,11 +44,10 @@ const (
 	LegalSyncReasonStarting    = "starting"
 	LegalSyncReasonBeatStale   = "heartbeat_stale"
 	LegalSyncReasonTickError   = "tick_error"
+	// LegalSyncReasonNotStarted: the backend worker does not run in this
+	// process (no Redis: the background workers are off).
+	LegalSyncReasonNotStarted = "not_started"
 )
-
-// legalMonitorBoot is when this process started: a backend worker without
-// a heartbeat yet is only starting during its first ticks.
-var legalMonitorBoot = time.Now()
 
 // legalRunRecorder writes a backend worker's pass (repository.LegalSyncRunRepository).
 type legalRunRecorder interface {
@@ -57,31 +56,58 @@ type legalRunRecorder interface {
 
 // LegalWorkerBeat is the heartbeat of a backend worker in this process:
 // when it last ran a pass and the error of its last pass, if any.
+// FailingSince is the end of the first of the failed passes in a row
+// (nil after a pass without error): the alert waits until a failure has
+// lasted legalTickErrorAlertAfter.
 type LegalWorkerBeat struct {
-	Interval    time.Duration
-	LastTick    time.Time
-	LastError   string
-	LastErrorAt *time.Time
+	Interval     time.Duration
+	LastTick     time.Time
+	LastError    string
+	LastErrorAt  *time.Time
+	FailingSince *time.Time
 }
 
-var legalWorkerBeats sync.Map // worker → LegalWorkerBeat
+var (
+	legalWorkerBeats   sync.Map // worker → LegalWorkerBeat
+	legalWorkerStarted sync.Map // worker → time.Time the worker was started in this process
+)
 
-// noteLegalWorkerBeat records a pass of a backend worker; a pass without
-// error clears the last error.
+// noteLegalWorkerStarted records that a backend worker runs in this
+// process (Start*): until its first pass it is starting, not missing.
+func noteLegalWorkerStarted(worker string, _ time.Duration, at time.Time) {
+	legalWorkerStarted.Store(worker, at)
+}
+
+// legalWorkerStartedAt is when the worker was started in this process.
+func legalWorkerStartedAt(worker string) (time.Time, bool) {
+	v, ok := legalWorkerStarted.Load(worker)
+	if !ok {
+		return time.Time{}, false
+	}
+	return v.(time.Time), true
+}
+
+// noteLegalWorkerBeat records the end of a pass of a backend worker; a
+// pass without error clears the last error and the failure streak.
 func noteLegalWorkerBeat(worker string, interval time.Duration, at time.Time, errText string) {
+	prev, _ := legalWorkerBeat(worker)
 	b := LegalWorkerBeat{Interval: interval, LastTick: at}
 	if errText != "" {
 		b.LastError, b.LastErrorAt = errText, &at
+		b.FailingSince = prev.FailingSince
+		if b.FailingSince == nil {
+			b.FailingSince = &at
+		}
 	}
 	legalWorkerBeats.Store(worker, b)
 }
 
-// noteLegalWorkerPassStart beats when a pass starts and keeps the error of
-// the previous pass until this one ends.
+// noteLegalWorkerPassStart beats when a pass starts and keeps the error
+// (and failure streak) of the previous pass until this one ends.
 func noteLegalWorkerPassStart(worker string, interval time.Duration, at time.Time) {
 	prev, _ := legalWorkerBeat(worker)
 	legalWorkerBeats.Store(worker, LegalWorkerBeat{Interval: interval, LastTick: at,
-		LastError: prev.LastError, LastErrorAt: prev.LastErrorAt})
+		LastError: prev.LastError, LastErrorAt: prev.LastErrorAt, FailingSince: prev.FailingSince})
 }
 
 func legalWorkerBeat(worker string) (LegalWorkerBeat, bool) {
@@ -106,8 +132,10 @@ type LegalSyncWorkerStatus struct {
 	LastTickAt      *time.Time `json:"last_tick_at,omitempty"`
 	LastError       string     `json:"last_error,omitempty"`
 	LastErrorAt     *time.Time `json:"last_error_at,omitempty"`
-	Health          string     `json:"health"`
-	Reasons         []string   `json:"reasons"`
+	// FailingSince: the backend worker's passes have failed since then.
+	FailingSince *time.Time `json:"failing_since,omitempty"`
+	Health       string     `json:"health"`
+	Reasons      []string   `json:"reasons"`
 }
 
 // LegalSyncQueues are the queues the workers drain.
@@ -157,6 +185,8 @@ type LegalSyncMonitor struct {
 		GetInt(ctx context.Context, key string, envName string, def int64) int64
 	}
 	now func() time.Time
+	// alerts keeps the SuperAdmin digest (WithAlerts); nil: page only
+	alerts *legalSyncAlerts
 }
 
 // NewLegalSyncMonitor creates the monitor.
@@ -177,6 +207,22 @@ func (m *LegalSyncMonitor) Runs(ctx context.Context, worker string, limit int) (
 func (m *LegalSyncMonitor) Status(ctx context.Context) (*LegalSyncStatus, error) {
 	now := m.now()
 	out := &LegalSyncStatus{Now: now}
+	var err error
+	if out.Workers, err = m.workers(ctx, now); err != nil {
+		return nil, err
+	}
+	if out.Queues, err = m.queues(ctx, now); err != nil {
+		return nil, err
+	}
+	if out.Feeds, err = m.feeds(ctx, now); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// workers reads the state of every watched worker at now.
+func (m *LegalSyncMonitor) workers(ctx context.Context, now time.Time) ([]LegalSyncWorkerStatus, error) {
+	var out []LegalSyncWorkerStatus
 	for _, w := range []struct {
 		name, kind string
 		interval   time.Duration
@@ -199,17 +245,12 @@ func (m *LegalSyncMonitor) Status(ctx context.Context) (*LegalSyncStatus, error)
 			if ok {
 				t := beat.LastTick
 				st.LastTickAt, st.LastError, st.LastErrorAt = &t, beat.LastError, beat.LastErrorAt
+				st.FailingSince = beat.FailingSince
 			}
-			st.Health, st.Reasons = legalSyncBackendHealth(beat, ok, w.interval, now, legalMonitorBoot)
+			startedAt, started := legalWorkerStartedAt(w.name)
+			st.Health, st.Reasons = legalSyncBackendHealth(beat, ok, w.interval, now, startedAt, started)
 		}
-		out.Workers = append(out.Workers, st)
-	}
-	var err error
-	if out.Queues, err = m.queues(ctx, now); err != nil {
-		return nil, err
-	}
-	if out.Feeds, err = m.feeds(ctx, now); err != nil {
-		return nil, err
+		out = append(out, st)
 	}
 	return out, nil
 }
@@ -245,9 +286,15 @@ func legalSyncContainerHealth(last, lastOK *types.LegalSyncRun, now time.Time) (
 
 // legalSyncBackendHealth judges a backend worker from its heartbeat (beaten
 // when a pass starts and when it ends; the end carries the pass's error).
-func legalSyncBackendHealth(beat LegalWorkerBeat, ok bool, interval time.Duration, now, boot time.Time) (string, []string) {
+// started: the worker was started in this process at startedAt.
+func legalSyncBackendHealth(beat LegalWorkerBeat, ok bool, interval time.Duration, now, startedAt time.Time,
+	started bool,
+) (string, []string) {
+	if !ok && !started {
+		return LegalSyncHealthUnknown, []string{LegalSyncReasonNotStarted}
+	}
 	if !ok {
-		if now.Sub(boot) <= 2*interval {
+		if now.Sub(startedAt) <= 2*interval {
 			return LegalSyncHealthUnknown, []string{LegalSyncReasonStarting}
 		}
 		return LegalSyncHealthWarning, []string{LegalSyncReasonNoHeartbeat}

@@ -65,15 +65,32 @@ export type BackupProblem = (typeof BACKUP_PROBLEMS)[number];
 /** A job's note longer than this is cut in the body. */
 const BACKUP_NOTE_MAX = 120;
 
+/** SuperAdmins: the legal data workers failed, are overdue or stopped
+ * (payload: { count, workers: [{ worker, problem, step?, at?, last_ok_at?,
+ * note? }], signature }), one unread per SuperAdmin, closed once every
+ * worker is healthy again. */
+export const KIND_LEGAL_SYNC_ALERT = "legal_sync_alert";
+/** The SuperAdmin page of the legal data workers. */
+export const LEGAL_SYNC_STATUS_PATH = "/platform/admin?section=legal-documents&view=sync";
+export const LEGAL_SYNC_WORKERS = ["vbpl_sync", "auto_ingest", "expired_retention"] as const;
+export type LegalSyncAlertWorker = (typeof LEGAL_SYNC_WORKERS)[number];
+export const LEGAL_SYNC_PROBLEMS = ["last_failed", "running_long", "stale", "heartbeat_stale", "no_heartbeat", "tick_error"] as const;
+export type LegalSyncProblem = (typeof LEGAL_SYNC_PROBLEMS)[number];
+/** The steps of the nightly sync, in order. */
+export const LEGAL_SYNC_STEPS = ["prepare", "crawl", "import", "push"] as const;
+export type LegalSyncStep = (typeof LEGAL_SYNC_STEPS)[number];
+/** A worker's note longer than this is cut in the body. */
+const LEGAL_SYNC_NOTE_MAX = 120;
+
 export function isQueueKind(kind: string): kind is QueueKind {
   return (QUEUE_KINDS as readonly string[]).includes(kind);
 }
 
-/** isReviewDigest: a SuperAdmin digest (review queues, backup alert),
- * whose page is in the web app's admin console (the Word add-in only says
- * where). */
+/** isReviewDigest: a SuperAdmin digest (review queues, backup and legal
+ * sync alerts), whose page is in the web app's admin console (the Word
+ * add-in only says where). */
 export function isReviewDigest(kind: string): boolean {
-  return kind === KIND_ABBREVIATION_PENDING || kind === KIND_BACKUP_ALERT || isQueueKind(kind);
+  return kind === KIND_ABBREVIATION_PENDING || kind === KIND_BACKUP_ALERT || kind === KIND_LEGAL_SYNC_ALERT || isQueueKind(kind);
 }
 
 /** The fields these helpers read (lib/api/notifications UserNotification). */
@@ -215,8 +232,17 @@ export interface NotificationTexts {
   backupAlertTitle: (count: number) => string;
   /** a job's problem; at = its last run (failed) in the reader's format, "" if unknown */
   backupProblem: (problem: BackupProblem, at: string) => string;
-  /** "last success {at}" */
+  /** "last success {at}" (backup jobs and legal workers) */
   backupLastOk: (at: string) => string;
+  /** "Legal data collection problems: {n}" */
+  legalSyncAlertTitle: (count: number) => string;
+  /** a legal worker's name: "vbpl.vn nightly sync" */
+  legalSyncWorker: (worker: LegalSyncAlertWorker) => string;
+  /** a sync step's name in a sentence: "crawl" */
+  legalSyncStep: (step: LegalSyncStep) => string;
+  /** a worker's problem; step = the step's name ("" if none), at = the
+   * failed run's start in the reader's format ("" if none) */
+  legalSyncProblem: (problem: LegalSyncProblem, step: string, at: string) => string;
   /** an ISO time in Vietnam time ("14h05 - 16/10/2026"); "" when invalid */
   dateTime: (iso: string) => string;
 }
@@ -292,6 +318,54 @@ function backupJobText(j: BackupJob, texts: NotificationTexts): string {
   return s;
 }
 
+type LegalSyncWorkerAlert = {
+  worker: LegalSyncAlertWorker;
+  problem: LegalSyncProblem;
+  step: string;
+  at: string;
+  lastOkAt: string;
+  note: string;
+};
+
+/** The workers a legal_sync_alert names, in monitor order. */
+function legalSyncWorkers(n: Pick<NotificationLike, "payload">): LegalSyncWorkerAlert[] {
+  const raw = n.payload?.workers;
+  if (!Array.isArray(raw)) return [];
+  const str = (o: Record<string, unknown>, k: string) => (typeof o[k] === "string" ? (o[k] as string).trim() : "");
+  return raw.flatMap((it) => {
+    if (!it || typeof it !== "object") return [];
+    const o = it as Record<string, unknown>;
+    const worker = str(o, "worker");
+    const problem = str(o, "problem");
+    if (!(LEGAL_SYNC_WORKERS as readonly string[]).includes(worker) || !(LEGAL_SYNC_PROBLEMS as readonly string[]).includes(problem)) {
+      return [];
+    }
+    return [
+      {
+        worker: worker as LegalSyncAlertWorker,
+        problem: problem as LegalSyncProblem,
+        step: str(o, "step"),
+        at: str(o, "at"),
+        lastOkAt: str(o, "last_ok_at"),
+        note: str(o, "note"),
+      },
+    ];
+  });
+}
+
+/** "vbpl.vn nightly sync: failed at step crawl (run of 09h30 - 12/11/2026), last success … — HTTP 503" */
+function legalSyncWorkerText(w: LegalSyncWorkerAlert, texts: NotificationTexts): string {
+  // the step and the run's time tell a failed or a stuck run of the sync
+  const withRun = w.problem === "last_failed" || w.problem === "running_long";
+  const step = withRun && w.step ? ((LEGAL_SYNC_STEPS as readonly string[]).includes(w.step) ? texts.legalSyncStep(w.step as LegalSyncStep) : w.step) : "";
+  const at = w.problem === "last_failed" && w.at ? texts.dateTime(w.at) : "";
+  let s = `${texts.legalSyncWorker(w.worker)}: ${texts.legalSyncProblem(w.problem, step, at)}`;
+  const ok = w.lastOkAt ? texts.dateTime(w.lastOkAt) : "";
+  if (ok) s += `, ${texts.backupLastOk(ok)}`;
+  if (w.note) s += ` — ${cut(w.note, LEGAL_SYNC_NOTE_MAX)}`;
+  return s;
+}
+
 /** The suggestions an abbreviation_pending digest names, newest first. */
 function abbreviationItems(n: Pick<NotificationLike, "payload">): { short: string; full: string; proper: boolean }[] {
   const raw = n.payload?.items;
@@ -351,6 +425,12 @@ export function notificationText(
     const jobs = backupJobs(n);
     if (jobs.length > 0) {
       return { title: texts.backupAlertTitle(jobs.length), body: jobs.map((j) => backupJobText(j, texts)).join("; ") };
+    }
+  }
+  if (n.kind === KIND_LEGAL_SYNC_ALERT) {
+    const workers = legalSyncWorkers(n);
+    if (workers.length > 0) {
+      return { title: texts.legalSyncAlertTitle(workers.length), body: workers.map((w) => legalSyncWorkerText(w, texts)).join("; ") };
     }
   }
   if (n.kind === KIND_LEGAL_REQUEST_ADDED) {

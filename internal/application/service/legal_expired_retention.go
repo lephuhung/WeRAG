@@ -63,6 +63,7 @@ func NewLegalExpiredRetention(
 // StartLegalExpiredRetention runs the worker until the returned func is
 // called; the first pass starts the clock of documents already expired.
 func StartLegalExpiredRetention(w *LegalExpiredRetention) (stop func()) {
+	noteLegalWorkerStarted(types.LegalSyncWorkerExpiredRetention, legalRetentionTick, time.Now())
 	done := make(chan struct{})
 	go func() {
 		w.Tick(context.Background())

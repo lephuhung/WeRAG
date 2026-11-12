@@ -74,20 +74,41 @@ func TestLegalSyncContainerHealth(t *testing.T) {
 func TestLegalSyncBackendHealth(t *testing.T) {
 	now := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
 	boot := now.Add(-24 * time.Hour)
-	h, r := legalSyncBackendHealth(LegalWorkerBeat{}, false, time.Hour, now, boot)
+	h, r := legalSyncBackendHealth(LegalWorkerBeat{}, false, time.Hour, now, time.Time{}, false)
+	require.Equal(t, LegalSyncHealthUnknown, h, "not run in this process (no Redis)")
+	require.Equal(t, []string{LegalSyncReasonNotStarted}, r)
+	h, r = legalSyncBackendHealth(LegalWorkerBeat{}, false, time.Hour, now, boot, true)
 	require.Equal(t, LegalSyncHealthWarning, h)
 	require.Equal(t, []string{LegalSyncReasonNoHeartbeat}, r)
-	h, r = legalSyncBackendHealth(LegalWorkerBeat{}, false, 3*time.Minute, now, now.Add(-time.Minute))
-	require.Equal(t, LegalSyncHealthUnknown, h, "just restarted")
+	h, r = legalSyncBackendHealth(LegalWorkerBeat{}, false, 3*time.Minute, now, now.Add(-time.Minute), true)
+	require.Equal(t, LegalSyncHealthUnknown, h, "just started")
 	require.Equal(t, []string{LegalSyncReasonStarting}, r)
-	h, _ = legalSyncBackendHealth(LegalWorkerBeat{LastTick: now.Add(-50 * time.Minute)}, true, time.Hour, now, boot)
+	h, _ = legalSyncBackendHealth(LegalWorkerBeat{LastTick: now.Add(-50 * time.Minute)}, true, time.Hour, now, boot, true)
 	require.Equal(t, LegalSyncHealthOK, h)
-	h, r = legalSyncBackendHealth(LegalWorkerBeat{LastTick: now.Add(-4 * time.Hour)}, true, time.Hour, now, boot)
+	h, r = legalSyncBackendHealth(LegalWorkerBeat{LastTick: now.Add(-4 * time.Hour)}, true, time.Hour, now, boot, true)
 	require.Equal(t, LegalSyncHealthError, h)
 	require.Equal(t, []string{LegalSyncReasonBeatStale}, r)
-	h, r = legalSyncBackendHealth(LegalWorkerBeat{LastTick: now, LastError: "listing: db down"}, true, time.Hour, now, boot)
+	h, r = legalSyncBackendHealth(LegalWorkerBeat{LastTick: now, LastError: "listing: db down"}, true, time.Hour, now, boot, true)
 	require.Equal(t, LegalSyncHealthWarning, h)
 	require.Equal(t, []string{LegalSyncReasonTickError}, r)
+}
+
+func TestLegalWorkerBeatFailureStreak(t *testing.T) {
+	const w = "test_streak"
+	t.Cleanup(func() { legalWorkerBeats.Delete(w) })
+	t0 := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
+	noteLegalWorkerBeat(w, time.Minute, t0, "db down")
+	noteLegalWorkerPassStart(w, time.Minute, t0.Add(time.Minute))
+	b, _ := legalWorkerBeat(w)
+	require.Equal(t, t0, *b.FailingSince, "a pass in progress keeps the streak")
+	noteLegalWorkerBeat(w, time.Minute, t0.Add(2*time.Minute), "db down again")
+	b, _ = legalWorkerBeat(w)
+	require.Equal(t, t0, *b.FailingSince, "the streak starts at the first failed pass")
+	require.Equal(t, "db down again", b.LastError)
+	noteLegalWorkerBeat(w, time.Minute, t0.Add(3*time.Minute), "")
+	b, _ = legalWorkerBeat(w)
+	require.Nil(t, b.FailingSince, "a good pass ends the streak")
+	require.Empty(t, b.LastError)
 }
 
 func TestLegalAutoIngestRecordsItsPasses(t *testing.T) {
@@ -210,6 +231,7 @@ func TestLegalSyncMonitorStatus(t *testing.T) {
 			e.action, `{"feed":"`+e.feed+`"}`, e.at).Error)
 	}
 	legalWorkerBeats.Delete(types.LegalSyncWorkerAutoIngest)
+	legalWorkerStarted.Delete(types.LegalSyncWorkerAutoIngest)
 	noteLegalWorkerBeat(types.LegalSyncWorkerExpiredRetention, legalRetentionTick, now.Add(-10*time.Minute), "")
 
 	m := NewLegalSyncMonitor(f.db, runsRepo, retentionSettings{15})
@@ -225,7 +247,8 @@ func TestLegalSyncMonitorStatus(t *testing.T) {
 	require.Equal(t, "30 2 * * *", vbpl.Schedule)
 	require.NotNil(t, vbpl.LastOK)
 	require.Equal(t, LegalSyncHealthOK, vbpl.Health, "%v", vbpl.Reasons)
-	require.Equal(t, LegalSyncHealthUnknown, byName[types.LegalSyncWorkerAutoIngest].Health, "no heartbeat yet, the process just started")
+	require.Equal(t, LegalSyncHealthUnknown, byName[types.LegalSyncWorkerAutoIngest].Health, "not started in this process")
+	require.Equal(t, []string{LegalSyncReasonNotStarted}, byName[types.LegalSyncWorkerAutoIngest].Reasons)
 	require.Equal(t, LegalSyncHealthOK, byName[types.LegalSyncWorkerExpiredRetention].Health)
 	require.Equal(t, 3600, byName[types.LegalSyncWorkerExpiredRetention].IntervalSeconds)
 

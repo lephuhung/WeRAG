@@ -16,7 +16,8 @@ export type LegalSyncReason =
   | "no_heartbeat"
   | "starting"
   | "heartbeat_stale"
-  | "tick_error";
+  | "tick_error"
+  | "not_started";
 
 /** Timing of one step of a run (RFC 3339, UTC). */
 export interface LegalSyncStepTiming {
@@ -54,6 +55,8 @@ export interface LegalSyncWorkerStatus {
   last_tick_at?: string;
   last_error?: string;
   last_error_at?: string;
+  /** a backend worker's passes have failed since then */
+  failing_since?: string;
   health: LegalSyncHealth;
   reasons: LegalSyncReason[];
 }

@@ -6,6 +6,8 @@
 #   4. đẩy thư mục làm việc lên MinIO (mirror; VBPL_S3_REMOVE=1 xoá cả HTML
 #      đã gỡ — văn bản chuyển sang hết hiệu lực toàn bộ chỉ còn metadata —
 #      cần khoá có quyền xoá, khoá backup chỉ ghi thêm).
+# Mỗi lần chạy được ghi vào legal_sync_runs (bước, số liệu, lỗi) cho trang
+# SuperAdmin Pháp lý → Thu thập dữ liệu và cảnh báo legal_sync_alert.
 set -euo pipefail
 WORK=/work
 log() { echo "$(date -u +%FT%TZ) vbpl-sync: $*"; }
@@ -21,8 +23,11 @@ touch "$WORK/.sync.started"
 # the MinIO mirror.
 STEP_LOG="$WORK/.sync.step.log"
 CRAWL_SUMMARY="$WORK/.sync.crawl.json"
+# the schedule as entrypoint.sh sets it (quotes and backslashes dropped: JSON)
+SCHEDULE=${VBPL_SYNC_CRON:-30 2 * * *}
+SCHEDULE=${SCHEDULE//[\"\\]/}
 RUN_ID=$(legal-catalog-import -run-start -run-worker vbpl_sync -run-step prepare \
-	-run-summary "{\"schedule\":\"${VBPL_SYNC_CRON:-}\"}" 2>"$WORK/.sync.run.err") || RUN_ID=""
+	-run-summary "{\"schedule\":\"$SCHEDULE\"}" 2>"$WORK/.sync.run.err") || RUN_ID=""
 # only an id: anything else on stdout must never reach -run-id of the import
 if ! [[ $RUN_ID =~ ^[0-9]+$ ]]; then
 	RUN_ID=""

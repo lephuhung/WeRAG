@@ -756,6 +756,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(startSuperAdminQueueNotices))
 	// SuperAdmin digest when a backup job fails or is overdue
 	must(container.Invoke(startBackupMonitor))
+	// SuperAdmin digest when the legal data workers (nightly vbpl.vn sync,
+	// auto-ingest, expired retention) fail, are overdue or stop
+	must(container.Invoke(startLegalSyncMonitor))
 	// users' verdicts on the format check reports
 	must(container.Invoke(func(precheck *service.DocumentFormatPrecheck, feedback interfaces.DocumentFormatFeedbackRepository) {
 		precheck.SetFormatFeedback(feedback)
@@ -1838,11 +1841,23 @@ func startLegalExpiredRetention(db *gorm.DB, knowledge interfaces.KnowledgeServi
 	})
 }
 
-// newLegalSyncMonitor builds the SuperAdmin monitor of the legal workers.
+// newLegalSyncMonitor builds the SuperAdmin monitor of the legal workers
+// (the page, and the legal_sync_alert digest of startLegalSyncMonitor).
 func newLegalSyncMonitor(db *gorm.DB, runs *repository.LegalSyncRunRepository,
-	settings interfaces.SystemSettingService,
+	settings interfaces.SystemSettingService, users interfaces.UserRepository,
+	notifications interfaces.UserNotificationRepository, rdb *redis.Client,
 ) *service.LegalSyncMonitor {
-	return service.NewLegalSyncMonitor(db, runs, settings)
+	return service.NewLegalSyncMonitor(db, runs, settings).WithAlerts(users, notifications, rdb)
+}
+
+// startLegalSyncMonitor runs the legal workers' alert check and stops it
+// on shutdown.
+func startLegalSyncMonitor(m *service.LegalSyncMonitor, cleaner interfaces.ResourceCleaner) {
+	stop := m.Start(service.LegalSyncMonitorInterval)
+	cleaner.RegisterWithName("LegalSyncMonitor", func() error {
+		stop()
+		return nil
+	})
 }
 
 // startLegalAutoIngest runs the worker of service.LegalAutoIngest.

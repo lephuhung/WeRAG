@@ -72,6 +72,13 @@ export function NotificationBell() {
       backupProblem: (problem, at) =>
         problem === "failed" && at ? t("notif.backup.failedAt", { at }) : t(`notif.backup.${problem}` as LocaleKey),
       backupLastOk: (at) => t("notif.backup.lastOk", { at }),
+      legalSyncAlertTitle: (n) => t("notif.legalSync.title", { n }),
+      legalSyncWorker: (worker) => t(`notif.legalSync.worker.${worker}` as LocaleKey),
+      legalSyncStep: (step) => t(`notif.legalSync.step.${step}` as LocaleKey),
+      legalSyncProblem: (problem, step, at) =>
+        t(`notif.legalSync.${problem}` as LocaleKey) +
+        (step ? t("notif.legalSync.atStep", { step }) : "") +
+        (at ? t("notif.legalSync.runAt", { at }) : ""),
       dateTime: (iso) => formatDateTime(iso, locale),
     }),
     [t, locale],

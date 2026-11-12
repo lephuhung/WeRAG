@@ -17,6 +17,11 @@ import {
   KIND_BACKUP_ALERT,
   BACKUP_STATUS_PATH,
   type BackupProblem,
+  KIND_LEGAL_SYNC_ALERT,
+  LEGAL_SYNC_STATUS_PATH,
+  type LegalSyncAlertWorker,
+  type LegalSyncProblem,
+  type LegalSyncStep,
   KIND_LEGAL_DRAFT_READY,
   KIND_LEGAL_IDENTITY_PENDING,
   KIND_LEGAL_LINK_PENDING,
@@ -74,6 +79,21 @@ const texts = {
   backupProblem: (problem: BackupProblem, at: string) =>
     ({ failed: at ? `failed at ${at}` : "failed", stale: "overdue", missing: "no status yet", unreadable: "status unreadable" })[problem],
   backupLastOk: (at: string) => `last success ${at}`,
+  legalSyncAlertTitle: (count: number) => `Legal data collection problems: ${count}`,
+  legalSyncWorker: (worker: LegalSyncAlertWorker) =>
+    ({ vbpl_sync: "vbpl.vn nightly sync", auto_ingest: "Auto-ingest", expired_retention: "Expired text removal" })[worker],
+  legalSyncStep: (step: LegalSyncStep) => ({ prepare: "prepare", crawl: "crawl", import: "import", push: "MinIO backup" })[step],
+  legalSyncProblem: (problem: LegalSyncProblem, step: string, at: string) =>
+    ({
+      last_failed: "failed",
+      running_long: "running for over 12 hours",
+      stale: "overdue: no successful run in the last day",
+      heartbeat_stale: "stopped (missed three passes)",
+      no_heartbeat: "no pass since the server started",
+      tick_error: "its passes keep failing",
+    })[problem] +
+    (step ? ` at step ${step}` : "") +
+    (at ? ` (run of ${at})` : ""),
   // the clients pass lib/datetime formatDateTime; a fixed stand-in here
   dateTime: (iso: string) => (Number.isNaN(Date.parse(iso)) ? "" : `T(${iso.slice(0, 16)})`),
 };
@@ -102,6 +122,21 @@ const textsVi = {
   backupProblem: (problem: BackupProblem, at: string) =>
     ({ failed: at ? `lỗi lúc ${at}` : "lỗi", stale: "quá hạn", missing: "chưa có trạng thái", unreadable: "không đọc được trạng thái" })[problem],
   backupLastOk: (at: string) => `lần thành công cuối ${at}`,
+  legalSyncAlertTitle: (count: number) => `Thu thập dữ liệu pháp lý gặp sự cố: ${count} việc`,
+  legalSyncWorker: (worker: LegalSyncAlertWorker) =>
+    ({ vbpl_sync: "Đồng bộ vbpl.vn", auto_ingest: "Tự nạp văn bản", expired_retention: "Xóa toàn văn hết hiệu lực" })[worker],
+  legalSyncStep: (step: LegalSyncStep) => ({ prepare: "chuẩn bị", crawl: "cào dữ liệu", import: "nạp danh mục", push: "sao lưu MinIO" })[step],
+  legalSyncProblem: (problem: LegalSyncProblem, step: string, at: string) =>
+    ({
+      last_failed: "lỗi",
+      running_long: "chạy quá 12 giờ",
+      stale: "quá hạn, không có lần chạy thành công trong ngày qua",
+      heartbeat_stale: "đã dừng (lỡ ba lượt liên tiếp)",
+      no_heartbeat: "chưa chạy lượt nào từ khi khởi động",
+      tick_error: "các lượt chạy liên tiếp bị lỗi",
+    })[problem] +
+    (step ? ` ở bước ${step}` : "") +
+    (at ? ` (lần chạy lúc ${at})` : ""),
 };
 
 const digest = (over: Partial<NotificationLike> = {}): NotificationLike => ({
@@ -415,6 +450,76 @@ describe("backup alert", () => {
 
   it("keeps the stored text when no job is named", () => {
     for (const payload of [null, {}, { count: 1 }, { jobs: "x" }, { jobs: [] }]) {
+      assert.deepEqual(notificationText(alert(payload), texts), { title: "stored title", body: "stored body" });
+    }
+  });
+});
+
+describe("legal sync alert", () => {
+  const alert = (payload: Record<string, unknown> | null): NotificationLike => ({
+    id: "l",
+    kind: KIND_LEGAL_SYNC_ALERT,
+    title: "stored title",
+    body: "stored body",
+    link: LEGAL_SYNC_STATUS_PATH,
+    tenant_id: 0,
+    payload,
+    seen_at: null,
+    read_at: null,
+  });
+
+  it("names each worker with its problem, step, last success and note", () => {
+    const n = alert({
+      count: 2,
+      signature: "auto_ingest:heartbeat_stale,vbpl_sync:last_failed",
+      workers: [
+        {
+          worker: "vbpl_sync",
+          problem: "last_failed",
+          step: "crawl",
+          at: "2026-11-11T19:30:00Z",
+          last_ok_at: "2026-11-11T03:30:00Z",
+          note: "HTTP Error 503",
+        },
+        { worker: "auto_ingest", problem: "heartbeat_stale", at: "2026-11-12T01:00:00Z" },
+      ],
+    });
+    assert.deepEqual(notificationText(n, texts), {
+      title: "Legal data collection problems: 2",
+      body:
+        "vbpl.vn nightly sync: failed at step crawl (run of T(2026-11-11T19:30)), last success T(2026-11-11T03:30) — HTTP Error 503; " +
+        "Auto-ingest: stopped (missed three passes)",
+    });
+    assert.deepEqual(notificationText(n, textsVi), {
+      title: "Thu thập dữ liệu pháp lý gặp sự cố: 2 việc",
+      body:
+        "Đồng bộ vbpl.vn: lỗi ở bước cào dữ liệu (lần chạy lúc T(2026-11-11T19:30)), lần thành công cuối T(2026-11-11T03:30) — HTTP Error 503; " +
+        "Tự nạp văn bản: đã dừng (lỡ ba lượt liên tiếp)",
+    });
+    assert.equal(isReviewDigest(KIND_LEGAL_SYNC_ALERT), true);
+    assert.equal(safeAppLink(n.link, ORIGIN), LEGAL_SYNC_STATUS_PATH);
+    assert.equal(linkParam(n.link, "view"), "sync");
+  });
+
+  it("keeps the step of a stuck run, shows an unknown step as is, skips unknown workers and problems", () => {
+    const t = notificationText(
+      alert({
+        workers: [
+          { worker: "vbpl_sync", problem: "running_long", step: "verify", at: "2026-11-11T19:30:00Z" },
+          { worker: "expired_retention", problem: "tick_error", step: "crawl", note: "y".repeat(300) },
+          { worker: "other", problem: "stale" },
+          { worker: "vbpl_sync", problem: "weird" },
+        ],
+      }),
+      texts,
+    );
+    assert.equal(t.title, "Legal data collection problems: 2");
+    assert.ok(t.body.startsWith("vbpl.vn nightly sync: running for over 12 hours at step verify; Expired text removal: its passes keep failing — yyy"));
+    assert.ok(t.body.endsWith("…"));
+  });
+
+  it("keeps the stored text when no worker is named", () => {
+    for (const payload of [null, {}, { count: 1 }, { workers: "x" }, { workers: [] }]) {
       assert.deepEqual(notificationText(alert(payload), texts), { title: "stored title", body: "stored body" });
     }
   });
