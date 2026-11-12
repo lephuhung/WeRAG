@@ -68,6 +68,11 @@ export function NotificationBell() {
       queueLinkCount: (n) => t("notif.queue.linkCount", { n }),
       money: (vnd) => (locale === "vi" ? `${vnd.toLocaleString("vi-VN")} đ` : `${vnd.toLocaleString("en-US")} VND`),
       queueUntitled: t("notif.queue.untitled"),
+      backupAlertTitle: (n) => t("notif.backup.title", { n }),
+      backupProblem: (problem, at) =>
+        problem === "failed" && at ? t("notif.backup.failedAt", { at }) : t(`notif.backup.${problem}` as LocaleKey),
+      backupLastOk: (at) => t("notif.backup.lastOk", { at }),
+      dateTime: (iso) => formatDateTime(iso, locale),
     }),
     [t, locale],
   );

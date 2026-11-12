@@ -18,6 +18,7 @@ import {
   IconOrg,
   IconPulse,
   IconSend,
+  IconStorageEngine,
   IconThumbDown,
   IconUser,
 } from "@/components/icons";
@@ -33,6 +34,7 @@ const AdminBillingPage = lazy(() => import("@/components/settings/pages/admin-bi
 const AdminEmailPage = lazy(() => import("@/components/settings/pages/admin-email"));
 const AdminQualityPage = lazy(() => import("@/components/settings/pages/admin-quality"));
 const RuntimeQueuesPage = lazy(() => import("@/components/settings/pages/runtime-queues"));
+const AdminBackupsPage = lazy(() => import("@/components/settings/pages/admin-backups"));
 
 export interface AdminSection {
   key: string;
@@ -73,6 +75,7 @@ export const ADMIN_GROUPS: AdminSectionGroup[] = [
       { key: "billing", labelKey: "systemNav.billing", fallback: "Billing & promo codes", icon: IconCreditCard, render: () => <AdminBillingPage />, route: `${SYS}/admin/billing` },
       { key: "email", labelKey: "systemNav.email", fallback: "Email", icon: IconSend, render: () => <AdminEmailPage />, route: `${SYS}/admin/email` },
       { key: "queues", labelKey: "systemNav.queues", fallback: "Runtime queues", icon: IconClock, render: () => <RuntimeQueuesPage />, route: `${SYS}/engines/queues` },
+      { key: "backups", labelKey: "systemNav.backups", fallback: "Backups", icon: IconStorageEngine, render: () => <AdminBackupsPage /> },
     ],
   },
 ];

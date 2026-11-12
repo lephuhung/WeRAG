@@ -1328,3 +1328,45 @@ export function addSystemTenantMember(
 export function removeSystemTenantMember(tenantId: number, userId: string) {
   return apiDel(`/api/v1/system/admin/tenants/${tenantId}/members/${userId}`);
 }
+
+/* Backup jobs (deploy/backup) as the backend's monitor last read them. */
+export type BackupJobState = "ok" | "unknown" | "failed" | "stale" | "missing" | "unreadable";
+
+export interface BackupJobStatus {
+  job: string;
+  ok: boolean;
+  /** ISO time of the last run */
+  finished_at: string;
+  duration_s: number;
+  object: string;
+  bytes: number;
+  note: string;
+  error: string;
+  host: string;
+  /** objects job only */
+  objects?: number;
+  source_bytes?: number;
+}
+
+export interface BackupJobReport {
+  job: string;
+  state: BackupJobState;
+  max_age_s: number;
+  status?: BackupJobStatus;
+  last_ok_at?: string;
+  read_error?: string;
+}
+
+export interface BackupReport {
+  /** false: BACKUP_S3_* is not configured on the server */
+  enabled: boolean;
+  checked_at: string;
+  problems: number;
+  jobs: BackupJobReport[];
+}
+
+/** GET /api/v1/system/admin/backups (SuperAdmin only). */
+export async function getBackupStatus(): Promise<BackupReport> {
+  const res = await apiGet<{ success: boolean; data: BackupReport }>("/api/v1/system/admin/backups");
+  return res.data;
+}

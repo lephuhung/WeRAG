@@ -243,6 +243,24 @@ func (r *userNotificationRepository) CloseOpenDigests(ctx context.Context, kind 
 	return res.RowsAffected, res.Error
 }
 
+func (r *userNotificationRepository) LatestOfKind(ctx context.Context, userID, kind string) (*types.UserNotification, error) {
+	var n types.UserNotification
+	err := r.db.WithContext(ctx).Where("user_id = ? AND kind = ?", userID, kind).
+		Order("created_at DESC").Order("id DESC").Take(&n).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &n, nil
+}
+
+func (r *userNotificationRepository) SetPayload(ctx context.Context, userID, id string, payload types.JSON) error {
+	return r.db.WithContext(ctx).Model(&types.UserNotification{}).Where("id = ? AND user_id = ?", id, userID).
+		Update("payload", payload).Error
+}
+
 // isSQLiteLockError: the in-memory SQLite of the unit tests refused a
 // concurrent write (shared-cache table lock or busy); worth a retry.
 func isSQLiteLockError(err error) bool {
