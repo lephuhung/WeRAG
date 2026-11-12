@@ -434,6 +434,17 @@ func RegisterSystemAdminRoutes(
 	}
 }
 
+// RegisterBackupStatusRoutes mounts the SuperAdmin backup status page's
+// read under /system/admin (human SuperAdmin only; not declared to the
+// API-key gate, which therefore refuses API keys). Separate from
+// RegisterSystemAdminRoutes so that signature stays stable.
+func RegisterBackupStatusRoutes(r *gin.RouterGroup, h *handler.BackupStatusHandler, g *rbacGuards) {
+	if h == nil {
+		return
+	}
+	r.Group("/system/admin", g.SystemAdmin()).GET("/backups", h.Get)
+}
+
 // RegisterUserNotificationRoutes wires the signed-in person's in-app
 // notifications under /notifications. Like /me/invitations there is no role
 // gate: the handler reads whose rows from the context only. The paths are

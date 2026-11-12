@@ -52,6 +52,8 @@ type RouterParams struct {
 	TenantInvitationHandler *handler.TenantInvitationHandler
 	// UserNotificationHandler serves the caller's in-app notifications.
 	UserNotificationHandler *handler.UserNotificationHandler `optional:"true"`
+	// BackupStatusHandler serves the SuperAdmin backup status page.
+	BackupStatusHandler *handler.BackupStatusHandler `optional:"true"`
 	// AnswerQualityHandler serves the admins' answer-quality inbox.
 	AnswerQualityHandler *handler.AnswerQualityHandler `optional:"true"`
 
@@ -351,6 +353,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterSystemRoutes(v1, params.SystemHandler, rbacGuards)
 		RegisterSystemAdminRoutes(v1, params.SystemHandler, params.StatsHandler, params.AuditLogHandler, params.UsageAdminHandler, rbacGuards)
 		RegisterEmailAdminRoutes(v1, params.EmailHandler, rbacGuards)
+		RegisterBackupStatusRoutes(v1, params.BackupStatusHandler, rbacGuards)
 		RegisterMCPServiceRoutes(v1, params.MCPServiceHandler, params.MCPCredentialsHandler, params.MCPOAuthHandler, rbacGuards)
 		RegisterWebSearchRoutes(v1, params.WebSearchHandler, rbacGuards)
 		RegisterWebSearchProviderRoutes(v1, params.WebSearchProviderHandler, params.WebSearchCredentialsHandler, rbacGuards)

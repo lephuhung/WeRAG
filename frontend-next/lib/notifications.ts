@@ -54,14 +54,26 @@ export type QueueKind = (typeof QUEUE_KINDS)[number];
 /** A plan, organization or title longer than this is cut in the body. */
 const QUEUE_TEXT_MAX = 60;
 
+/** SuperAdmins: backup jobs failed or are overdue (payload: { count, jobs:
+ * [{ job, problem, finished_at?, last_ok_at?, note? }], signature }), one
+ * unread per SuperAdmin, closed once every job is healthy again. */
+export const KIND_BACKUP_ALERT = "backup_alert";
+/** The SuperAdmin page listing the backup jobs. */
+export const BACKUP_STATUS_PATH = "/platform/admin?section=backups";
+export const BACKUP_PROBLEMS = ["failed", "stale", "missing", "unreadable"] as const;
+export type BackupProblem = (typeof BACKUP_PROBLEMS)[number];
+/** A job's note longer than this is cut in the body. */
+const BACKUP_NOTE_MAX = 120;
+
 export function isQueueKind(kind: string): kind is QueueKind {
   return (QUEUE_KINDS as readonly string[]).includes(kind);
 }
 
-/** isReviewDigest: a SuperAdmin review digest, whose page is in the web
- * app's admin console (the Word add-in only says where). */
+/** isReviewDigest: a SuperAdmin digest (review queues, backup alert),
+ * whose page is in the web app's admin console (the Word add-in only says
+ * where). */
 export function isReviewDigest(kind: string): boolean {
-  return kind === KIND_ABBREVIATION_PENDING || isQueueKind(kind);
+  return kind === KIND_ABBREVIATION_PENDING || kind === KIND_BACKUP_ALERT || isQueueKind(kind);
 }
 
 /** The fields these helpers read (lib/api/notifications UserNotification). */
@@ -199,6 +211,14 @@ export interface NotificationTexts {
   money: (vnd: number) => string;
   /** an item with neither số hiệu nor title: "untitled document" */
   queueUntitled: string;
+  /** "Backup problems: {n} job(s)" */
+  backupAlertTitle: (count: number) => string;
+  /** a job's problem; at = its last run (failed) in the reader's format, "" if unknown */
+  backupProblem: (problem: BackupProblem, at: string) => string;
+  /** "last success {at}" */
+  backupLastOk: (at: string) => string;
+  /** an ISO time in Vietnam time ("14h05 - 16/10/2026"); "" when invalid */
+  dateTime: (iso: string) => string;
 }
 
 type QueueItem = { ref: string; title: string; count: number; plan: string; amount: number; org: string; untitled: boolean };
@@ -243,6 +263,33 @@ function queueItemText(kind: QueueKind, it: QueueItem, texts: NotificationTexts)
     default:
       return it.untitled ? texts.queueUntitled : cut(it.ref, QUEUE_TEXT_MAX);
   }
+}
+
+type BackupJob = { job: string; problem: BackupProblem; finishedAt: string; lastOkAt: string; note: string };
+
+/** The jobs a backup_alert names, in job order. */
+function backupJobs(n: Pick<NotificationLike, "payload">): BackupJob[] {
+  const raw = n.payload?.jobs;
+  if (!Array.isArray(raw)) return [];
+  const str = (o: Record<string, unknown>, k: string) => (typeof o[k] === "string" ? (o[k] as string).trim() : "");
+  return raw.flatMap((it) => {
+    if (!it || typeof it !== "object") return [];
+    const o = it as Record<string, unknown>;
+    const job = str(o, "job");
+    const problem = str(o, "problem");
+    if (!job || !(BACKUP_PROBLEMS as readonly string[]).includes(problem)) return [];
+    return [{ job, problem: problem as BackupProblem, finishedAt: str(o, "finished_at"), lastOkAt: str(o, "last_ok_at"), note: str(o, "note") }];
+  });
+}
+
+/** "files: failed at 09h00 - 12/11/2026, last success … — tar: …" */
+function backupJobText(j: BackupJob, texts: NotificationTexts): string {
+  const at = j.problem === "failed" && j.finishedAt ? texts.dateTime(j.finishedAt) : "";
+  let s = `${j.job}: ${texts.backupProblem(j.problem, at)}`;
+  const ok = j.lastOkAt ? texts.dateTime(j.lastOkAt) : "";
+  if (ok) s += `, ${texts.backupLastOk(ok)}`;
+  if (j.note) s += ` — ${cut(j.note, BACKUP_NOTE_MAX)}`;
+  return s;
 }
 
 /** The suggestions an abbreviation_pending digest names, newest first. */
@@ -298,6 +345,12 @@ export function notificationText(
       // links count links while the items name documents: no "and N more"
       if (n.kind !== KIND_LEGAL_LINK_PENDING && items.length > 0 && count > items.length) parts.push(texts.queueMore(n.kind, count - items.length));
       return { title: texts.queueTitle(n.kind, count), body: parts.join(", ") };
+    }
+  }
+  if (n.kind === KIND_BACKUP_ALERT) {
+    const jobs = backupJobs(n);
+    if (jobs.length > 0) {
+      return { title: texts.backupAlertTitle(jobs.length), body: jobs.map((j) => backupJobText(j, texts)).join("; ") };
     }
   }
   if (n.kind === KIND_LEGAL_REQUEST_ADDED) {

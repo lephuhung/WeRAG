@@ -42,6 +42,9 @@ type UserNotificationRepository interface {
 	// before `before` (a digest updated later reports something newer);
 	// returns how many.
 	CloseOpenDigests(ctx context.Context, kind string, before, at time.Time) (int64, error)
+	// LatestOfKind returns the user's newest notification of kind, read
+	// or not (nil when none).
+	LatestOfKind(ctx context.Context, userID, kind string) (*types.UserNotification, error)
 	// PurgeRead deletes the notifications read before readBefore, batch
 	// rows at a time; returns how many.
 	PurgeRead(ctx context.Context, readBefore time.Time, batch int) (int64, error)

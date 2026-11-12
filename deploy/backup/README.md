@@ -27,8 +27,10 @@ Thời gian giữ đổi bằng biến `BACKUP_RETENTION_WERAG_*` khi chạy
 `provision_backup_storage` (repo inventory, xem dưới). Base backup và WAL phải giữ bằng nhau.
 
 **Không nằm trong backup này:** Redis (chỉ cache/khoá có TTL), Langfuse ClickHouse (đã archive
-Parquet riêng; DB `langfuse` trong Postgres thì có). Bucket `werag` **không** có versioning hay
-replication — bản duy nhất ngoài chính nó là job `objects`.
+Parquet riêng; DB `langfuse` trong Postgres thì có). Bucket `werag` không có replication; từ
+2026-11-12 có versioning (giữ phiên bản cũ / object đã xoá 15 ngày — chống ghi đè, xoá nhầm) nhưng
+cùng ổ đĩa đơn với `inventory-backups` trên 10.10.0.123: hỏng ổ là mất cả bản gốc lẫn backup. Bản
+sao ngoài bucket là job `objects` (và chưa có bản offsite).
 
 Job `objects`: bản sao cục bộ `/work/objects` (volume `backup-work`, ~1,4 GiB / 11,7 nghìn object
 ngày 2026-11-12, tăng theo văn bản) chỉ tải object mới/đổi và xoá object bucket đã xoá

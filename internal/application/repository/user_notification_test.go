@@ -122,3 +122,26 @@ func TestUserNotificationPurgeRead(t *testing.T) {
 	require.NoError(t, repo.db.Model(&types.UserNotification{}).Order("id").Pluck("id", &left).Error)
 	require.Equal(t, []string{"recent", "unread"}, left, "unread ones are never purged")
 }
+
+func TestUserNotificationLatestOfKind(t *testing.T) {
+	repo := newUserNotificationRepo(t)
+	ctx := context.Background()
+	base := time.Now().Add(-time.Hour)
+	n, err := repo.LatestOfKind(ctx, "a", "backup_alert")
+	require.NoError(t, err)
+	require.Nil(t, n, "none yet")
+	for i, row := range []struct{ user, kind string }{{"a", "backup_alert"}, {"a", "backup_alert"}, {"a", "other"}, {"b", "backup_alert"}} {
+		_, err := repo.Create(ctx, &types.UserNotification{UserID: row.user, Kind: row.kind, Title: fmt.Sprint(i),
+			DedupeKey: fmt.Sprint("k", i), CreatedAt: base.Add(time.Duration(i) * time.Minute)})
+		require.NoError(t, err)
+	}
+	n, err = repo.LatestOfKind(ctx, "a", "backup_alert")
+	require.NoError(t, err)
+	require.Equal(t, "1", n.Title, "newest of the kind, the user's own")
+	_, err = repo.MarkRead(ctx, "a", n.ID, time.Now())
+	require.NoError(t, err)
+	n, err = repo.LatestOfKind(ctx, "a", "backup_alert")
+	require.NoError(t, err)
+	require.Equal(t, "1", n.Title, "read rows count too")
+	require.NotNil(t, n.ReadAt)
+}

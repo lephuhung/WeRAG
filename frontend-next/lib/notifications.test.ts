@@ -14,6 +14,9 @@ import {
   wordFileTarget,
   ABBREVIATION_REVIEW_PATH,
   KIND_ABBREVIATION_PENDING,
+  KIND_BACKUP_ALERT,
+  BACKUP_STATUS_PATH,
+  type BackupProblem,
   KIND_LEGAL_DRAFT_READY,
   KIND_LEGAL_IDENTITY_PENDING,
   KIND_LEGAL_LINK_PENDING,
@@ -67,6 +70,12 @@ const texts = {
   queueLinkCount: (count: number) => `${count} links`,
   money: (vnd: number) => `${vnd.toLocaleString("en-US")} VND`,
   queueUntitled: "untitled document",
+  backupAlertTitle: (count: number) => `Backup problems: ${count} job(s)`,
+  backupProblem: (problem: BackupProblem, at: string) =>
+    ({ failed: at ? `failed at ${at}` : "failed", stale: "overdue", missing: "no status yet", unreadable: "status unreadable" })[problem],
+  backupLastOk: (at: string) => `last success ${at}`,
+  // the clients pass lib/datetime formatDateTime; a fixed stand-in here
+  dateTime: (iso: string) => (Number.isNaN(Date.parse(iso)) ? "" : `T(${iso.slice(0, 16)})`),
 };
 
 // the vi dictionary's wording (lib/i18n.tsx notif.abbrevPending.*)
@@ -89,6 +98,10 @@ const textsVi = {
   queueLinkCount: (count: number) => `${count} liên kết`,
   money: (vnd: number) => `${String(vnd).replace(/\B(?=(\d{3})+(?!\d))/g, ".")} đ`,
   queueUntitled: "văn bản không số",
+  backupAlertTitle: (count: number) => `Sao lưu gặp sự cố: ${count} việc`,
+  backupProblem: (problem: BackupProblem, at: string) =>
+    ({ failed: at ? `lỗi lúc ${at}` : "lỗi", stale: "quá hạn", missing: "chưa có trạng thái", unreadable: "không đọc được trạng thái" })[problem],
+  backupLastOk: (at: string) => `lần thành công cuối ${at}`,
 };
 
 const digest = (over: Partial<NotificationLike> = {}): NotificationLike => ({
@@ -350,6 +363,59 @@ describe("notifications", () => {
       "/platform/admin?section=legal-documents&view=review",
     ]) {
       assert.equal(resolveTarget({ ...identity, link }, ctx).path, link);
+    }
+  });
+});
+
+describe("backup alert", () => {
+  const alert = (payload: Record<string, unknown> | null): NotificationLike => ({
+    id: "b",
+    kind: KIND_BACKUP_ALERT,
+    title: "stored title",
+    body: "stored body",
+    link: BACKUP_STATUS_PATH,
+    tenant_id: 0,
+    payload,
+    seen_at: null,
+    read_at: null,
+  });
+
+  it("names each job with its problem, last success and note", () => {
+    const n = alert({
+      count: 2,
+      signature: "files:failed,wal:stale",
+      jobs: [
+        { job: "wal", problem: "stale", last_ok_at: "2026-11-12T02:40:00Z" },
+        { job: "files", problem: "failed", finished_at: "2026-11-12T02:30:05Z", note: "tar: lỗi đọc" },
+      ],
+    });
+    assert.deepEqual(notificationText(n, texts), {
+      title: "Backup problems: 2 job(s)",
+      body: "wal: overdue, last success T(2026-11-12T02:40); files: failed at T(2026-11-12T02:30) — tar: lỗi đọc",
+    });
+    assert.deepEqual(notificationText(n, textsVi), {
+      title: "Sao lưu gặp sự cố: 2 việc",
+      body: "wal: quá hạn, lần thành công cuối T(2026-11-12T02:40); files: lỗi lúc T(2026-11-12T02:30) — tar: lỗi đọc",
+    });
+    assert.equal(isReviewDigest(KIND_BACKUP_ALERT), true);
+    assert.equal(safeAppLink(n.link, ORIGIN), BACKUP_STATUS_PATH);
+  });
+
+  it("cuts long notes and skips unknown problems or bad times", () => {
+    const long = "x".repeat(300);
+    const t = notificationText(
+      alert({ jobs: [{ job: "env", problem: "missing", note: long, last_ok_at: "not a time" }, { job: "x", problem: "weird" }, { problem: "failed" }] }),
+      texts,
+    );
+    assert.equal(t.title, "Backup problems: 1 job(s)");
+    assert.ok(t.body.startsWith("env: no status yet — xxx"));
+    assert.ok(t.body.endsWith("…"));
+    assert.ok(Array.from(t.body).length < 160);
+  });
+
+  it("keeps the stored text when no job is named", () => {
+    for (const payload of [null, {}, { count: 1 }, { jobs: "x" }, { jobs: [] }]) {
+      assert.deepEqual(notificationText(alert(payload), texts), { title: "stored title", body: "stored body" });
     }
   });
 });

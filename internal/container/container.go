@@ -600,6 +600,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewMeEnvVarHandler))
 	must(container.Provide(handler.NewMeUsageHandler))
 	must(container.Provide(handler.NewUserNotificationHandler))
+	// backup job status (BACKUP_S3_*; nil = off) for the SuperAdmin page
+	must(container.Provide(service.NewBackupMonitorFromEnv))
+	must(container.Provide(handler.NewBackupStatusHandler))
 	must(container.Provide(handler.NewAnswerQualityHandler))
 	must(container.Provide(handler.NewUsageAdminHandler))
 	must(container.Provide(handler.NewTenantUsageHandler))
@@ -748,6 +751,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// the SuperAdmins' review-queue digests; needs SessionService, so after
 	// the chat pipeline block like the legal wiring above
 	must(container.Invoke(startSuperAdminQueueNotices))
+	// SuperAdmin digest when a backup job fails or is overdue
+	must(container.Invoke(startBackupMonitor))
 	// users' verdicts on the format check reports
 	must(container.Invoke(func(precheck *service.DocumentFormatPrecheck, feedback interfaces.DocumentFormatFeedbackRepository) {
 		precheck.SetFormatFeedback(feedback)
@@ -1788,6 +1793,19 @@ func startSuperAdminQueueNotices(n *service.SuperAdminQueueNotifier, sessions in
 		if !n.WaitTimeout(10 * time.Second) {
 			logger.Warnf(context.Background(), "[QueueNotice] shutdown: notices still being written after 10s")
 		}
+		return nil
+	})
+}
+
+// startBackupMonitor runs the backup status check (off when BACKUP_S3_* is
+// unset: the monitor is nil) and stops it on shutdown.
+func startBackupMonitor(m *service.BackupMonitor, cleaner interfaces.ResourceCleaner) {
+	if m == nil {
+		return
+	}
+	stop := m.Start(service.BackupMonitorInterval)
+	cleaner.RegisterWithName("BackupMonitor", func() error {
+		stop()
 		return nil
 	})
 }

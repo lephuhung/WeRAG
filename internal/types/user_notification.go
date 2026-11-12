@@ -65,7 +65,41 @@ const (
 	// UserNotificationLegalIdentityPending: documents of the public legal
 	// KBs wait for their identity review (items: số hiệu or file title).
 	UserNotificationLegalIdentityPending = "legal_identity_pending"
+
+	// UserNotificationBackupAlert: backup jobs failed, are overdue or
+	// left no readable status (payload: UserNotificationBackupAlertPayload).
+	// One open digest per SuperAdmin like the queues above, closed for
+	// everyone once every job is healthy again.
+	UserNotificationBackupAlert = "backup_alert"
 )
+
+// UserNotificationBackupAlertPayload is the payload of a backup_alert
+// digest: the jobs with a problem, in job order. Signature names the set
+// of (job, problem) pairs, so an unchanged incident is not toasted again.
+type UserNotificationBackupAlertPayload struct {
+	Count     int                         `json:"count"`
+	Jobs      []UserNotificationBackupJob `json:"jobs"`
+	Signature string                      `json:"signature"`
+}
+
+// Problems of a UserNotificationBackupJob.
+const (
+	BackupProblemFailed     = "failed"     // the last run ended with ok=false
+	BackupProblemStale      = "stale"      // the last run is older than the job's limit
+	BackupProblemMissing    = "missing"    // no status file on the backup storage
+	BackupProblemUnreadable = "unreadable" // the status file could not be read or parsed
+)
+
+// UserNotificationBackupJob is one job a backup_alert names. FinishedAt is
+// its last run (nil: none known), LastOKAt its last successful run when
+// known; Note the error or note of that run, or the read error.
+type UserNotificationBackupJob struct {
+	Job        string     `json:"job"`
+	Problem    string     `json:"problem"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	LastOKAt   *time.Time `json:"last_ok_at,omitempty"`
+	Note       string     `json:"note,omitempty"`
+}
 
 // UserNotificationQueueMaxItems caps the newest items a review-queue
 // digest names; Count says how many arrived.
