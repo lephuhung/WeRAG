@@ -40,6 +40,7 @@ import LegalRequestsSection from "@/components/settings/pages/admin-legal-reques
 import LegalDraftsSection from "@/components/settings/pages/admin-legal-drafts";
 import LegalLinksSection from "@/components/settings/pages/admin-legal-links";
 import LegalLookupMissesSection from "@/components/settings/pages/admin-legal-lookup-misses";
+import LegalSyncSection from "@/components/settings/pages/admin-legal-sync";
 import { listLegalRequests, type LegalRequestCounts } from "@/lib/api/legal-requests";
 import { legalStatusTextBadgeClass } from "@/lib/legal-status";
 import { userErrorMessage } from "@/lib/user-error";
@@ -50,7 +51,7 @@ const PAGE_SIZE = 50;
  * documents no knowledge base holds, and the OCR drafts of documents
  * vbpl.vn has only as a scanned PDF. ?view= opens one directly (the draft
  * review page links back with view=requests / view=drafts). */
-type PageView = "review" | "requests" | "drafts" | "links" | "misses";
+type PageView = "review" | "requests" | "drafts" | "links" | "misses" | "sync";
 
 const VIEWS: { key: PageView; labelKey: LocaleKey }[] = [
   { key: "review", labelKey: "lreq.view.review" },
@@ -58,10 +59,11 @@ const VIEWS: { key: PageView; labelKey: LocaleKey }[] = [
   { key: "drafts", labelKey: "lreq.view.drafts" },
   { key: "links", labelKey: "lreq.view.links" },
   { key: "misses", labelKey: "lreq.view.misses" },
+  { key: "sync", labelKey: "lreq.view.sync" },
 ];
 
 function pageViewOf(v: string | null): PageView {
-  return v === "requests" || v === "drafts" || v === "links" || v === "misses" ? v : "review";
+  return v === "requests" || v === "drafts" || v === "links" || v === "misses" || v === "sync" ? v : "review";
 }
 
 type DialogTab = "identity" | "content" | "display";
@@ -322,6 +324,8 @@ export default function AdminLegalDocuments() {
           <LegalLinksSection onDenied={denyRequests} />
         ) : view === "misses" ? (
           <LegalLookupMissesSection onDenied={denyRequests} />
+        ) : view === "sync" ? (
+          <LegalSyncSection onDenied={denyRequests} />
         ) : (
           <>
             <div className="mb-5 flex flex-wrap items-center gap-3">

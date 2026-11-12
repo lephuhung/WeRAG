@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	stderrors "errors"
+	"fmt"
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/access"
@@ -34,6 +35,23 @@ type LegalAutoIngest struct {
 	kbs      interfaces.KnowledgeBaseService
 	tenants  interfaces.TenantRepository
 	ingest   func(context.Context, string, *types.KnowledgeBase, LegalFeedActor, string) (*LegalIngestResult, error)
+	// runs records the passes that tried a document (the SuperAdmin monitor)
+	runs legalRunRecorder
+}
+
+// Outcomes of one row of a pass, counted in the run's summary.
+const (
+	legalAutoIngestAdded    = "added"
+	legalAutoIngestRejected = "rejected" // closed with the refusal's reason
+	legalAutoIngestReturned = "returned" // no portal text after all: back to the operators
+	legalAutoIngestRetry    = "retry"    // transient failure, tried again later
+	legalAutoIngestSkipped  = "skipped"  // another replica has it, or it just closed
+)
+
+// WithRuns makes the worker record its passes.
+func (w *LegalAutoIngest) WithRuns(r legalRunRecorder) *LegalAutoIngest {
+	w.runs = r
+	return w
 }
 
 // NewLegalAutoIngest creates the worker.
@@ -64,15 +82,24 @@ func StartLegalAutoIngest(w *LegalAutoIngest) (stop func()) {
 
 // Tick ingests one batch and returns how many documents it added.
 func (w *LegalAutoIngest) Tick(ctx context.Context) (added int) {
+	started := time.Now()
+	noteLegalWorkerPassStart(types.LegalSyncWorkerAutoIngest, legalAutoIngestTick, started)
+	tickErr := ""
+	outcomes := map[string]int{}
+	var lastErr string
 	// A bare goroutine: a panic in the ingest path must not take the server down.
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Errorf(ctx, "[LegalAutoIngest] panic: %v", r)
+			tickErr = fmt.Sprintf("panic: %v", r)
 		}
+		beatErr := w.record(ctx, started, outcomes, lastErr, tickErr)
+		noteLegalWorkerBeat(types.LegalSyncWorkerAutoIngest, legalAutoIngestTick, time.Now(), beatErr)
 	}()
 	rows, err := w.requests.NextAutoIngest(ctx, legalAutoIngestScan)
 	if err != nil {
 		logger.Warnf(ctx, "[LegalAutoIngest] listing: %v", err)
+		tickErr = "listing: " + err.Error()
 		return 0
 	}
 	if len(rows) == 0 {
@@ -81,6 +108,7 @@ func (w *LegalAutoIngest) Tick(ctx context.Context) (added int) {
 	kbs, err := w.requests.PublicKnowledgeBases(ctx)
 	if err != nil {
 		logger.Warnf(ctx, "[LegalAutoIngest] public KBs: %v", err)
+		tickErr = "public KBs: " + err.Error()
 		return 0
 	}
 	targets := LegalTypeTargets(kbs)
@@ -95,8 +123,12 @@ func (w *LegalAutoIngest) Tick(ctx context.Context) (added int) {
 			continue
 		}
 		tried++
-		if w.one(ctx, row, targets) {
+		outcome, reason := w.one(ctx, row, targets)
+		outcomes[outcome]++
+		if outcome == legalAutoIngestAdded {
 			added++
+		} else if reason != "" {
+			lastErr = row.DocumentNumber + ": " + reason
 		}
 	}
 	if tried > 0 {
@@ -117,37 +149,34 @@ func legalAutoIngestGivenUp(row *types.LegalDocumentRequest) bool {
 // one ingests a row. A document the portal has no HTML for after all goes to
 // the operators; any other refusal (fully expired meanwhile, held by another
 // KB, a stale id) closes the row with its reason; a transient failure is
-// retried on a later tick.
-func (w *LegalAutoIngest) one(ctx context.Context, row *types.LegalDocumentRequest, targets map[string]types.LegalPublicKB) bool {
+// retried on a later tick. Returns the outcome and, when it is not added,
+// why.
+func (w *LegalAutoIngest) one(ctx context.Context, row *types.LegalDocumentRequest, targets map[string]types.LegalPublicKB) (string, string) {
 	kbID := row.KnowledgeBaseID
 	if kbID == "" {
 		kbID = targets[row.DocType].ID
 	}
 	claimed, err := w.requests.Claim(ctx, row.ID, legalAutoIngestActor, true)
 	if err != nil || claimed == nil {
-		return false // another replica has it, or the row just closed
+		return legalAutoIngestSkipped, "" // another replica has it, or the row just closed
 	}
 	kb, err := w.kbs.GetKnowledgeBaseByIDOnly(ctx, kbID)
 	if err != nil || kb == nil {
-		w.retryLater(ctx, row, "knowledge base "+kbID+" is not available")
-		return false
+		return w.retryLater(ctx, row, "knowledge base "+kbID+" is not available")
 	}
 	scoped, err := access.WithKBTaskWrite(ctx, kb, kb.TenantID)
 	if err != nil {
-		w.retryLater(ctx, row, "no write grant on knowledge base "+kb.ID)
-		return false
+		return w.retryLater(ctx, row, "no write grant on knowledge base "+kb.ID)
 	}
 	if scoped, err = withKBWriteTenantInfo(scoped, kb, w.tenants); err != nil {
-		w.retryLater(ctx, row, "owner of knowledge base "+kb.ID+": "+err.Error())
-		return false
+		return w.retryLater(ctx, row, "owner of knowledge base "+kb.ID+": "+err.Error())
 	}
 	res, err := w.ingest(scoped, row.LegalDocumentID, kb, LegalFeedActor{TenantID: kb.TenantID, UserID: legalAutoIngestActor},
 		"Tự nạp từ vbpl.vn ("+row.DocumentNumber+")")
 	if err != nil {
 		var refusal *LegalFeedRefusal
 		if !stderrors.As(err, &refusal) {
-			w.retryLater(ctx, row, err.Error())
-			return false
+			return w.retryLater(ctx, row, err.Error())
 		}
 		// A refused text update keeps the copy the KB has: nothing for the
 		// operators to fetch.
@@ -157,17 +186,54 @@ func (w *LegalAutoIngest) one(ctx context.Context, row *types.LegalDocumentReque
 				"Tự nạp từ vbpl.vn: "+refusal.Error(), "", ""); err != nil {
 				logger.Warnf(ctx, "[LegalAutoIngest] closing %s: %v", row.ID, err)
 			}
-			return false
+			return legalAutoIngestRejected, refusal.Error()
 		}
 		// no HTML after all: the operators fetch it elsewhere
 		w.giveUp(ctx, row, refusal.Error())
 		if err := w.requests.ReturnToOperators(ctx, row.ID, types.LegalRequestSourceNoFullText); err != nil {
 			logger.Warnf(ctx, "[LegalAutoIngest] returning %s: %v", row.ID, err)
 		}
-		return false
+		return legalAutoIngestReturned, refusal.Error()
 	}
 	logger.Infof(ctx, "[LegalAutoIngest] %s (%s): %s as %s", row.LegalDocumentID, row.DocumentNumber, res.Result, res.KnowledgeID)
-	return true
+	return legalAutoIngestAdded, ""
+}
+
+// record writes a pass that tried a document, or failed before it could:
+// a pass with nothing to do leaves only the heartbeat. A pass whose every
+// try failed transiently counts as failed. Returns the error of a failed
+// pass (the heartbeat shows it); a panic here is caught, not the server's.
+func (w *LegalAutoIngest) record(ctx context.Context, started time.Time, outcomes map[string]int, lastErr, tickErr string) (failed string) {
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Errorf(ctx, "[LegalAutoIngest] recording panic: %v", r)
+		}
+	}()
+	tried := 0
+	for k, n := range outcomes {
+		if k != legalAutoIngestSkipped {
+			tried += n
+		}
+	}
+	status, errText := types.LegalSyncOK, lastErr
+	if tickErr != "" || (tried > 0 && outcomes[legalAutoIngestRetry] == tried) {
+		status = types.LegalSyncFailed
+		if tickErr != "" {
+			errText = tickErr
+		}
+		failed = errText
+	}
+	if w.runs == nil || (tried == 0 && tickErr == "") {
+		return failed
+	}
+	summary := map[string]any{"tried": tried}
+	for k, n := range outcomes {
+		summary[k] = n
+	}
+	if err := w.runs.Record(ctx, types.LegalSyncWorkerAutoIngest, started, status, errText, summary); err != nil {
+		logger.Warnf(ctx, "[LegalAutoIngest] recording the pass: %v", err)
+	}
+	return failed
 }
 
 func (w *LegalAutoIngest) giveUp(ctx context.Context, row *types.LegalDocumentRequest, reason string) {
@@ -175,9 +241,10 @@ func (w *LegalAutoIngest) giveUp(ctx context.Context, row *types.LegalDocumentRe
 	w.note(ctx, row, types.LegalRequestDetailAutoIngestSkip, reason)
 }
 
-func (w *LegalAutoIngest) retryLater(ctx context.Context, row *types.LegalDocumentRequest, reason string) {
+func (w *LegalAutoIngest) retryLater(ctx context.Context, row *types.LegalDocumentRequest, reason string) (string, string) {
 	logger.Warnf(ctx, "[LegalAutoIngest] %s (%s) will be retried: %s", row.LegalDocumentID, row.DocumentNumber, reason)
 	w.note(ctx, row, types.LegalRequestDetailAutoIngestError, reason)
+	return legalAutoIngestRetry, reason
 }
 
 // note records why and releases the lease; touching the row also sends it to

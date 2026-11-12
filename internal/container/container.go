@@ -154,6 +154,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// Platform-wide legal catalogue (vbpl.vn metadata + relations) behind
 	// the check_legal_status agent tool.
 	must(container.Provide(repository.NewLegalCatalogRepository))
+	must(container.Provide(repository.NewLegalSyncRunRepository))
+	must(container.Provide(newLegalSyncMonitor))
 	must(container.Provide(repository.NewLegalReviewRepository))
 	must(container.Provide(repository.NewLegalLookupMissRepository))
 	// Requests to add legal documents users asked about that no KB holds.
@@ -666,6 +668,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewLegalRequestHandler))
 	must(container.Provide(handler.NewLegalPushHandler))
 	must(container.Provide(handler.NewLegalDraftHandler))
+	must(container.Provide(handler.NewLegalSyncHandler))
 	must(container.Provide(handler.NewKnowledgeGraphViewHandler))
 	must(container.Provide(handler.NewStatsHandler))
 
@@ -1824,20 +1827,30 @@ func startWikiRunWindow(inspector *asynq.Inspector, settings interfaces.SystemSe
 
 // startLegalExpiredRetention runs the worker of service.LegalExpiredRetention.
 func startLegalExpiredRetention(db *gorm.DB, knowledge interfaces.KnowledgeService, kbs interfaces.KnowledgeBaseService,
-	tenants interfaces.TenantRepository, settings interfaces.SystemSettingService, cleaner interfaces.ResourceCleaner,
+	tenants interfaces.TenantRepository, settings interfaces.SystemSettingService, runs *repository.LegalSyncRunRepository,
+	cleaner interfaces.ResourceCleaner,
 ) {
-	stop := service.StartLegalExpiredRetention(service.NewLegalExpiredRetention(db, knowledge, kbs, tenants, settings))
+	stop := service.StartLegalExpiredRetention(
+		service.NewLegalExpiredRetention(db, knowledge, kbs, tenants, settings).WithRuns(runs))
 	cleaner.RegisterWithName("LegalExpiredRetention", func() error {
 		stop()
 		return nil
 	})
 }
 
+// newLegalSyncMonitor builds the SuperAdmin monitor of the legal workers.
+func newLegalSyncMonitor(db *gorm.DB, runs *repository.LegalSyncRunRepository,
+	settings interfaces.SystemSettingService,
+) *service.LegalSyncMonitor {
+	return service.NewLegalSyncMonitor(db, runs, settings)
+}
+
 // startLegalAutoIngest runs the worker of service.LegalAutoIngest.
 func startLegalAutoIngest(requests interfaces.LegalRequestRepository, kbs interfaces.KnowledgeBaseService,
-	tenants interfaces.TenantRepository, feed *service.LegalFeedService, cleaner interfaces.ResourceCleaner,
+	tenants interfaces.TenantRepository, feed *service.LegalFeedService, runs *repository.LegalSyncRunRepository,
+	cleaner interfaces.ResourceCleaner,
 ) {
-	stop := service.StartLegalAutoIngest(service.NewLegalAutoIngest(requests, kbs, tenants, feed))
+	stop := service.StartLegalAutoIngest(service.NewLegalAutoIngest(requests, kbs, tenants, feed).WithRuns(runs))
 	cleaner.RegisterWithName("LegalAutoIngest", func() error {
 		stop()
 		return nil
