@@ -18,6 +18,7 @@ import { DeniedView } from "@/components/settings/system-section";
 import { ROW_HOVER } from "@/components/settings/data-table";
 import { ConsolePage } from "@/components/settings/console-page";
 import { useToast } from "@/components/toast";
+import { userErrorMessage } from "@/lib/user-error";
 
 export function VectorStoreSettings() {
   const { t } = useT();
@@ -42,7 +43,7 @@ export function VectorStoreSettings() {
         setDenied(true);
         setStores([]);
       } else {
-        setError(e instanceof Error ? e.message : t("vstore.loadFailed"));
+        setError(userErrorMessage(e, t, "vstore.loadFailed"));
       }
     } finally {
       setLoading(false);
@@ -65,7 +66,7 @@ export function VectorStoreSettings() {
       }
       setTestResults((prev) => ({
         ...prev,
-        [id]: err instanceof Error ? err.message : t("vstore.testFail"),
+        [id]: userErrorMessage(err, t, "vstore.testFail"),
       }));
     } finally {
       setTestingId(null);
@@ -90,7 +91,7 @@ export function VectorStoreSettings() {
         setDenied(true);
         return;
       }
-      setError(e instanceof Error ? e.message : t("vstore.deleteFailed"));
+      setError(userErrorMessage(e, t, "vstore.deleteFailed"));
     }
   };
 

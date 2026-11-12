@@ -42,6 +42,7 @@ import LegalLinksSection from "@/components/settings/pages/admin-legal-links";
 import LegalLookupMissesSection from "@/components/settings/pages/admin-legal-lookup-misses";
 import { listLegalRequests, type LegalRequestCounts } from "@/lib/api/legal-requests";
 import { legalStatusTextBadgeClass } from "@/lib/legal-status";
+import { userErrorMessage } from "@/lib/user-error";
 
 const PAGE_SIZE = 50;
 
@@ -241,7 +242,7 @@ export default function AdminLegalDocuments() {
       setTotal(res.total ?? 0);
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) setAllowed(false);
-      else setError(e instanceof Error ? e.message : t("lrev.loadFailed"));
+      else setError(userErrorMessage(e, t, "lrev.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -276,7 +277,7 @@ export default function AdminLegalDocuments() {
       toast.success(t("lrev.scanDone", { count: res.data?.created ?? 0 }));
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("lrev.loadFailed"));
+      setError(userErrorMessage(e, t, "lrev.loadFailed"));
     } finally {
       setScanning(false);
     }
@@ -582,7 +583,7 @@ export function ReviewDialog({
       setOptions((prev) => [...prev, ...found.filter((d) => !prev.some((p) => p.id === d.id))]);
       if (found.length === 0) setError(t("lrev.searchEmpty"));
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("lrev.loadFailed"));
+      setError(userErrorMessage(e, t, "lrev.loadFailed"));
     } finally {
       setSearching(false);
     }
@@ -600,7 +601,7 @@ export function ReviewDialog({
       );
       onDone();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("lrev.loadFailed"));
+      setError(userErrorMessage(e, t, "lrev.loadFailed"));
       setSaving(false);
     }
   };

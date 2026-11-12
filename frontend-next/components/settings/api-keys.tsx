@@ -23,6 +23,7 @@ import { copyToClipboard } from "@/lib/clipboard";
 import { formatDate } from "@/lib/datetime";
 import { Notice } from "@/components/settings/notice";
 import { Loading } from "@/components/settings/loading";
+import { userErrorMessage } from "@/lib/user-error";
 
 const CAPABILITIES: { id: TenantAPIKeyCapability; labelEn: string; labelVi: string }[] = [
   { id: "retrieve", labelEn: "Retrieve", labelVi: "Truy xuất" },
@@ -64,7 +65,7 @@ export function ApiKeysSection() {
         setKeys(res.data ?? []);
         setActingUser(res.acting_user ?? null);
       })
-      .catch((e) => setError(e instanceof Error ? e.message : t("apikey.loadFailed")))
+      .catch((e) => setError(userErrorMessage(e, t, "apikey.loadFailed")))
       .finally(() => setLoading(false));
   }, []);
 
@@ -209,7 +210,7 @@ function CreateKeyModal({ onClose, onCreated }: {
       const createdRes = await createTenantAPIKey(tenantId, payload);
       if (createdRes.data) onCreated(createdRes.data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("apikey.createFailed"));
+      setError(userErrorMessage(e, t, "apikey.createFailed"));
     } finally {
       setSaving(false);
     }

@@ -16,7 +16,8 @@
     "test:model-presets": "node --experimental-strip-types --test lib/model-presets.test.ts",
     "test:notifications": "node --experimental-strip-types --test lib/notifications.test.ts",
     "test:csv": "node --experimental-strip-types --test lib/csv.test.ts",
-    "test:answer-docx": "node --experimental-strip-types --test lib/answer-docx.test.ts"
+    "test:answer-docx": "node --experimental-strip-types --test lib/answer-docx.test.ts",
+    "test:user-errors": "node --experimental-strip-types --test lib/user-error.test.ts"
   },
   "dependencies": {
     "d3-force": "^3.0.0",

@@ -22,6 +22,7 @@ import { FieldLabel } from "@/components/settings/field";
 import { ROW_HOVER } from "@/components/settings/data-table";
 import { ConsolePage } from "@/components/settings/console-page";
 import { useToast } from "@/components/toast";
+import { userErrorMessage } from "@/lib/user-error";
 
 const SUPPORTED_PROVIDERS = [
   { id: "brave", name: "Brave Search" },
@@ -72,7 +73,7 @@ export function WebSearchSettings() {
         setDenied(true);
         setProviders([]);
       } else {
-        setError(e instanceof Error ? e.message : t("ws.loadFailed"));
+        setError(userErrorMessage(e, t, "ws.loadFailed"));
       }
     } finally {
       setLoading(false);
@@ -118,7 +119,7 @@ export function WebSearchSettings() {
         setModalOpen(false);
         return;
       }
-      setFormError(e instanceof Error ? e.message : t("ws.addFailed"));
+      setFormError(userErrorMessage(e, t, "ws.addFailed"));
     } finally {
       setBusy(false);
     }
@@ -142,7 +143,7 @@ export function WebSearchSettings() {
         setDenied(true);
         return;
       }
-      setError(e instanceof Error ? e.message : t("ws.removeFailed"));
+      setError(userErrorMessage(e, t, "ws.removeFailed"));
     }
   };
 
@@ -156,7 +157,7 @@ export function WebSearchSettings() {
         setDenied(true);
         return;
       }
-      setTestError(e instanceof Error ? e.message : t("ws.testFailed"));
+      setTestError(userErrorMessage(e, t, "ws.testFailed"));
     }
   };
 

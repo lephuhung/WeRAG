@@ -21,6 +21,7 @@ import {
   updateKnowledgeBase,
   type KnowledgeBaseRow,
 } from "@/lib/api/knowledge";
+import { userErrorMessage } from "@/lib/user-error";
 
 type IndexingStrategy = {
   vector_enabled: boolean;
@@ -153,7 +154,7 @@ export function KbSettingsModal({
         })
         .catch((e: unknown) => {
           if (alive) {
-            setError(e instanceof Error ? e.message : t("kbSettings.loadFailed"));
+            setError(userErrorMessage(e, t, "kbSettings.loadFailed"));
             setLoading(false);
           }
         });
@@ -196,7 +197,7 @@ export function KbSettingsModal({
       setDirty(false);
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("kbSettings.saveFailed"));
+      setError(userErrorMessage(e, t, "kbSettings.saveFailed"));
     } finally {
       setSaving(false);
     }

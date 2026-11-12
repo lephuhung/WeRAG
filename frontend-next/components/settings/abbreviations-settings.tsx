@@ -25,6 +25,7 @@ import { Pager } from "@/components/settings/pager";
 import { FieldLabel } from "@/components/settings/field";
 import { useToast } from "@/components/toast";
 import { SETTINGS_REDIRECTED_EVENT, consumeSettingsParam } from "@/lib/settings-deep-link";
+import { userErrorMessage } from "@/lib/user-error";
 
 const PAGE_SIZE = 20;
 type StatusFilter = "all" | "active" | "pending";
@@ -136,7 +137,7 @@ export function AbbreviationsSettings() {
         total: res.total ?? 0,
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("abbrev.loadFailed"));
+      setError(userErrorMessage(e, t, "abbrev.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -255,7 +256,7 @@ export function AbbreviationsSettings() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("abbrev.saveFailed"));
+      setError(userErrorMessage(err, t, "abbrev.saveFailed"));
     } finally {
       setFormBusy(false);
     }
@@ -288,7 +289,7 @@ export function AbbreviationsSettings() {
       }
     } catch (err) {
       revert();
-      setError(err instanceof Error ? err.message : t("abbrev.saveFailed"));
+      setError(userErrorMessage(err, t, "abbrev.saveFailed"));
     } finally {
       setBusyIds((s) => {
         const n = new Set(s);
@@ -320,7 +321,7 @@ export function AbbreviationsSettings() {
         setError(t("abbrev.deleteFailed"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("abbrev.deleteFailed"));
+      setError(userErrorMessage(err, t, "abbrev.deleteFailed"));
     } finally {
       setBusyIds((s) => {
         const n = new Set(s);
@@ -381,7 +382,7 @@ export function AbbreviationsSettings() {
         setError(t("abbrev.deleteFailed"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("abbrev.deleteFailed"));
+      setError(userErrorMessage(err, t, "abbrev.deleteFailed"));
     } finally {
       setActionBusy(false);
     }

@@ -24,6 +24,7 @@ import {
   type DocumentLabel,
   type DocumentLabelFilters,
 } from "@/lib/api/document-labels";
+import { userErrorMessage } from "@/lib/user-error";
 
 const PAGE_SIZE = 50;
 /* The list pages through the first 2,000 rows (server cap); the export has all. */
@@ -146,7 +147,7 @@ export function DocumentLabels() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("labels.exportFailed"));
+      toast.error(userErrorMessage(e, t, "labels.exportFailed"));
     } finally {
       setExporting(false);
     }

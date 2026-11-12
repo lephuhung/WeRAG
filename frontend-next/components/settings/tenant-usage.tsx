@@ -32,6 +32,7 @@ import { InfoRow } from "@/components/settings/info-row";
 import { Loading } from "@/components/settings/loading";
 import { Notice } from "@/components/settings/notice";
 import { SectionHeader } from "@/components/settings/section-header";
+import { userErrorMessage } from "@/lib/user-error";
 
 export function TenantUsage() {
   const { isGuest } = useTenantRole();
@@ -51,7 +52,7 @@ function PersonalUsage() {
       setMine((await getMyUsage()).data);
       setError("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("tus.loadFailed"));
+      setError(userErrorMessage(e, t, "tus.loadFailed"));
     }
   }, [t]);
 
@@ -172,7 +173,7 @@ function OrganizationUsage() {
         setMembers(await fetchAllTenantMembers(tenantId));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("tus.loadFailed"));
+      setError(userErrorMessage(e, t, "tus.loadFailed"));
     }
   }, [tenantId, isAdmin, t]);
 
@@ -187,7 +188,7 @@ function OrganizationUsage() {
       await fn();
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("tus.opFailed"));
+      setError(userErrorMessage(e, t, "tus.opFailed"));
     } finally {
       setBusy(false);
     }

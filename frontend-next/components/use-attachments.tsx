@@ -10,6 +10,7 @@ import {
 } from "@/lib/api/attachments";
 import { closeDocumentWorkspace } from "@/lib/api/document-workspace";
 import { useChatContext } from "@/lib/chat-context";
+import { userErrorMessage } from "@/lib/user-error";
 
 /* Ports AttachmentUpload.vue: hidden file input + preview bar with
  * upload→poll(ready/failed) lifecycle against
@@ -71,7 +72,7 @@ export function useAttachments(sessionId?: string) {
           patch(localId, { status: res.data.status, error: res.data.error_message });
           if (res.data.status !== "ready" && res.data.status !== "failed") poll(localId, documentId);
         } catch {
-          patch(localId, { status: "failed", error: "Parse status check failed" });
+          patch(localId, { status: "failed", error: t("err.parseStatusFailed") });
         }
       }, 800),
     );
@@ -99,7 +100,7 @@ export function useAttachments(sessionId?: string) {
       patch(localId, { documentId: data.id, status: data.status, progress: 100, source });
       if (data.status !== "ready" && data.status !== "failed") poll(localId, data.id);
     } catch (e) {
-      patch(localId, { status: "failed", error: e instanceof Error ? e.message : t("ui.err.uploadFailed") });
+      patch(localId, { status: "failed", error: userErrorMessage(e, t, "ui.err.uploadFailed") });
     }
   };
 

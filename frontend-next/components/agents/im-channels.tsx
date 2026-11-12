@@ -26,6 +26,7 @@ import {
 import { listKnowledgeBases } from "@/lib/api/knowledge";
 import type { KnowledgeBaseRow } from "@/lib/api/knowledge";
 import { IMPlatformIcon } from "@/components/agents/im-platform-icon";
+import { userErrorMessage } from "@/lib/user-error";
 
 type Platform = IMChannel["platform"];
 
@@ -61,7 +62,7 @@ export function AgentIMChannels({ agentId, open, onClose, agentName }: {
   const load = useCallback(() => {
     listIMChannels(agentId)
       .then((res) => setChannels(res.data ?? []))
-      .catch((e) => setError(e instanceof Error ? e.message : t("ui.err.loadChannels")));
+      .catch((e) => setError(userErrorMessage(e, t, "ui.err.loadChannels")));
   }, [agentId, t]);
 
   useEffect(() => {
@@ -249,7 +250,7 @@ function IMChannelFields({ agentId, agents, channel, onClose, onSaved }: {
       else await createIMChannel(agent, payload);
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("ui.err.saveFailed"));
+      setError(userErrorMessage(e, t, "ui.err.saveFailed"));
     } finally {
       setSaving(false);
     }

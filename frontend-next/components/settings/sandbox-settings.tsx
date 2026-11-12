@@ -28,6 +28,7 @@ import { FieldLabel } from "@/components/settings/field";
 import { Pill, PillGroup } from "@/components/settings/pill";
 import { ConsolePage } from "@/components/settings/console-page";
 import { useToast } from "@/components/toast";
+import { userErrorMessage } from "@/lib/user-error";
 
 /* Same default the Vue editor pre-fills (SandboxConfigEditorDrawer.vue). */
 const DEFAULT_DOCKER_IMAGE = "wechatopenai/weknora-sandbox:main";
@@ -94,7 +95,7 @@ export function SandboxSettings() {
         setDenied(true);
         setConfigs([]);
       } else {
-        setError(e instanceof Error ? e.message : t("sbox.loadFailed"));
+        setError(userErrorMessage(e, t, "sbox.loadFailed"));
       }
     } finally {
       setLoading(false);
@@ -117,7 +118,7 @@ export function SandboxSettings() {
         setDenied(true);
         return;
       }
-      setError(e instanceof Error ? e.message : t("sbox.policyFailed"));
+      setError(userErrorMessage(e, t, "sbox.policyFailed"));
     }
   };
 
@@ -249,7 +250,7 @@ export function SandboxSettings() {
         setModalOpen(false);
         return;
       }
-      setFormError(e instanceof Error ? e.message : t("sbox.saveFailed"));
+      setFormError(userErrorMessage(e, t, "sbox.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -272,7 +273,7 @@ export function SandboxSettings() {
         setDenied(true);
         return;
       }
-      setError(e instanceof Error ? e.message : t("sbox.loadActiveFailed"));
+      setError(userErrorMessage(e, t, "sbox.loadActiveFailed"));
     } finally {
       setLoadingInventory(false);
     }
@@ -293,7 +294,7 @@ export function SandboxSettings() {
         setDenied(true);
         return;
       }
-      setDeleteError(e instanceof Error ? e.message : t("sbox.deleteFailed"));
+      setDeleteError(userErrorMessage(e, t, "sbox.deleteFailed"));
     } finally {
       setDeletingBusy(false);
     }

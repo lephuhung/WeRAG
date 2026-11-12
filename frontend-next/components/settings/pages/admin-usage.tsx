@@ -51,6 +51,7 @@ import {
   type UsageAgentAddonCatalogue,
 } from "@/lib/api/usage";
 import { addonsForPlan, planIncludedAgents, togglePlanId } from "@/lib/agent-addon-catalogue";
+import { userErrorMessage } from "@/lib/user-error";
 
 const USER_PAGE = 30;
 
@@ -338,7 +339,7 @@ export default function AdminUsage() {
         .then(setCatalogue)
         .catch(() => setCatalogue({ addons: [], included_agents: [], addon_agents: [] }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("usg.loadFailed"));
+      setError(userErrorMessage(e, t, "usg.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -366,7 +367,7 @@ export default function AdminUsage() {
       await fn();
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("usg.opFailed"));
+      setError(userErrorMessage(e, t, "usg.opFailed"));
       return false;
     } finally {
       setBusy(false);

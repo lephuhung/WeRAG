@@ -35,6 +35,7 @@ import {
   resolveThinkingControl,
   type ThinkingControl,
 } from "@/lib/model-presets";
+import { userErrorMessage } from "@/lib/user-error";
 
 const EMPTY_FORM = {
   presetId: "",
@@ -310,7 +311,7 @@ function SystemModels() {
       setModels(rows.map(toUi));
       setLoadError("");
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : t("mdl.loadFailed"));
+      setLoadError(userErrorMessage(e, t, "mdl.loadFailed"));
     } finally {
       setLoaded(true);
     }
@@ -440,7 +441,7 @@ function SystemModels() {
       await load();
       toast.success(t("common.saved"));
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : t("mdl.saveFailed"));
+      setActionError(userErrorMessage(e, t, "mdl.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -475,7 +476,7 @@ function SystemModels() {
       const res = await debugModel(editing.id, { input: "Hello! This is a test query." });
       setTestMsg(res.ok ? t("mdl.testOk") : res.error || t("mdl.testFail"));
     } catch (e) {
-      setTestMsg(e instanceof Error ? e.message : t("mdl.testFail"));
+      setTestMsg(userErrorMessage(e, t, "mdl.testFail"));
     } finally {
       setTesting(false);
     }
@@ -487,7 +488,7 @@ function SystemModels() {
       await updateModel(m.id, { status: next });
       await load();
     } catch (e) {
-      setActionError(e instanceof Error ? e.message : t("mdl.updateFailed"));
+      setActionError(userErrorMessage(e, t, "mdl.updateFailed"));
     }
   };
 
@@ -502,9 +503,7 @@ function SystemModels() {
       setActionError(
         e instanceof ModelInUseError
           ? t("mdl.inUse")
-          : e instanceof Error
-            ? e.message
-            : t("mdl.deleteFailed"),
+          : userErrorMessage(e, t, "mdl.deleteFailed"),
       );
       setDeleting(null);
     }

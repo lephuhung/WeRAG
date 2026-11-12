@@ -21,6 +21,7 @@ import {
   type HeaderTitleMode,
   type WidgetPosition,
 } from "@/lib/api/embed";
+import { userErrorMessage } from "@/lib/user-error";
 
 const LOCALES: { value: string; labelEn: string }[] = [
   { value: "", labelEn: "Follow browser" },
@@ -99,7 +100,7 @@ export function AgentEmbedChannels({ agentId, open, onClose, agentName }: {
     setLoading(true);
     listEmbedChannels(agentId)
       .then((res) => setChannels(res.data ?? []))
-      .catch((e) => setError(e instanceof Error ? e.message : t("ui.err.loadChannels")))
+      .catch((e) => setError(userErrorMessage(e, t, "ui.err.loadChannels")))
       .finally(() => setLoading(false));
   }, [agentId, t]);
 
@@ -292,7 +293,7 @@ function EmbedChannelForm({ agentId, channel, onClose, onSaved }: {
       else await createEmbedChannel(agentId, payload);
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("ui.err.saveFailed"));
+      setError(userErrorMessage(e, t, "ui.err.saveFailed"));
     } finally {
       setSaving(false);
     }

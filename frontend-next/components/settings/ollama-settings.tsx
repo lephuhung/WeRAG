@@ -10,6 +10,7 @@ import {
 } from "@/lib/api/initialization";
 import { useT } from "@/lib/i18n";
 import { Notice } from "@/components/settings/notice";
+import { userErrorMessage } from "@/lib/user-error";
 
 export function OllamaSettings() {
   const { t } = useT();
@@ -39,7 +40,7 @@ export function OllamaSettings() {
         setModels([]);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("ol.connectFailed"));
+      setError(userErrorMessage(e, t, "ol.connectFailed"));
       setRunning(false);
     } finally {
       setBusy(false);
@@ -60,7 +61,7 @@ export function OllamaSettings() {
       setPullModelName("");
       setTimeout(() => void refresh(), 3000);
     } catch (e) {
-      setPullMsg(e instanceof Error ? e.message : t("ol.pullFailed"));
+      setPullMsg(userErrorMessage(e, t, "ol.pullFailed"));
     } finally {
       setPulling(false);
     }

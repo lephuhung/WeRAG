@@ -7,6 +7,7 @@ import { apiPost } from "@/lib/api-client";
 import { Orb } from "@/components/orb";
 import { useT } from "@/lib/i18n";
 import { tenantNameErrorKey } from "@/lib/tenant-name";
+import { userErrorMessage } from "@/lib/user-error";
 
 export default function WorkspaceOnboarding() {
   const router = useRouter();
@@ -39,7 +40,7 @@ export default function WorkspaceOnboarding() {
       router.push("/platform/knowledge-bases");
     } catch (err) {
       const nameKey = tenantNameErrorKey(err);
-      setError(nameKey ? t(nameKey) : err instanceof Error ? err.message : t("onb.failed"));
+      setError(nameKey ? t(nameKey) : userErrorMessage(err, t, "onb.failed"));
     } finally {
       setBusy(false);
     }

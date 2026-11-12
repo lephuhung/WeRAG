@@ -29,6 +29,7 @@ import {
 import { cacheHitRate, formatMicroVND, formatTokens } from "@/lib/api/usage";
 import { MessageHeatmap } from "@/components/system/message-heatmap";
 import { IconRefresh } from "@/components/icons";
+import { userErrorMessage } from "@/lib/user-error";
 
 const STATS_REFRESH_MS = 60_000;
 const PIPELINE_REFRESH_MS = 10_000;
@@ -111,7 +112,7 @@ function AdminDashboardBody() {
   const onError = useCallback(
     (e: unknown) => {
       if (e instanceof ApiError && e.status === 403) setDenied(true);
-      else setError(e instanceof Error ? e.message : t("adm.loadFailed"));
+      else setError(userErrorMessage(e, t, "adm.loadFailed"));
     },
     [t],
   );

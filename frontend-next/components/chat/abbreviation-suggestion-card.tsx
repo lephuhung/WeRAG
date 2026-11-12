@@ -8,6 +8,7 @@ import {
   listAbbreviations,
   type Abbreviation,
 } from "@/lib/api/abbreviations";
+import { userErrorMessage } from "@/lib/user-error";
 
 function dedupeCandidates(candidates: string[]): string[] {
   const seen = new Set<string>();
@@ -106,7 +107,7 @@ export function AbbreviationSuggestionCard({
       setFullForm("");
       setDescription("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("ui.abbr.submitFailed"));
+      setError(userErrorMessage(e, t, "ui.abbr.submitFailed"));
     } finally {
       setSubmitting(false);
     }

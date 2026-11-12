@@ -25,6 +25,7 @@ import { FieldLabel } from "@/components/settings/field";
 import { TabStrip } from "@/components/settings/tab-strip";
 import { ConsolePage } from "@/components/settings/console-page";
 import { useToast } from "@/components/toast";
+import { userErrorMessage } from "@/lib/user-error";
 
 export function SkillsSettings() {
   const { t } = useT();
@@ -98,7 +99,7 @@ export function SkillsSettings() {
         setDenied(true);
         setCatalog([]);
       } else {
-        setError(e instanceof Error ? e.message : t("skillc.loadFailed"));
+        setError(userErrorMessage(e, t, "skillc.loadFailed"));
       }
     } finally {
       setLoading(false);
@@ -133,7 +134,7 @@ export function SkillsSettings() {
         setRegisterModalOpen(false);
         return;
       }
-      setFormError(e instanceof Error ? e.message : t("skillc.registerFailed"));
+      setFormError(userErrorMessage(e, t, "skillc.registerFailed"));
     } finally {
       setRegistering(false);
       setUploadProgress(0);
@@ -156,7 +157,7 @@ export function SkillsSettings() {
         setInstallSkill(null);
         return;
       }
-      setInstallError(e instanceof Error ? e.message : t("skillc.installFailed"));
+      setInstallError(userErrorMessage(e, t, "skillc.installFailed"));
     } finally {
       setInstalling(false);
     }
@@ -178,7 +179,7 @@ export function SkillsSettings() {
         setFileContent(cRes.data?.content ?? "");
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("skillc.inspectFailed"));
+      setError(userErrorMessage(e, t, "skillc.inspectFailed"));
     } finally {
       setLoadingFiles(false);
     }
@@ -214,7 +215,7 @@ export function SkillsSettings() {
         setDenied(true);
         return;
       }
-      setDeleteError(e instanceof Error ? e.message : t("skillc.deleteFailed"));
+      setDeleteError(userErrorMessage(e, t, "skillc.deleteFailed"));
     } finally {
       setDeletingBusy(false);
     }

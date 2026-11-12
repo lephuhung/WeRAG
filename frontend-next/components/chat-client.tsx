@@ -125,6 +125,7 @@ import {
   stepsFromHistory,
   type AgentStepItem,
 } from "@/components/chat/agent-steps";
+import { userErrorMessage } from "@/lib/user-error";
 
 const NO_SESSION_DOCS: SessionDocument[] = [];
 
@@ -911,7 +912,7 @@ function ChatBody({ id }: { id: string }) {
   const [errorAction, setErrorAction] = useState<{ text: string; action: ChatErrorAction } | null>(null);
   const showError = (key: ChatErrorKey | null, e: unknown) => {
     const described = key ? errorMessage(key, e) : null;
-    const text = described ? described.text : e instanceof Error ? e.message : tr("chat.err.generic");
+    const text = described ? described.text : userErrorMessage(e, tr, "chat.err.generic");
     setError(text);
     setErrorAction(described?.action ? { text, action: described.action } : null);
   };
@@ -2177,7 +2178,7 @@ function ChatBody({ id }: { id: string }) {
         if (e instanceof DOMException && e.name === "AbortError") return;
         const errorKey = chatErrorKey(e);
         const described = errorKey ? errorMessage(errorKey, e) : null;
-        const errorText = described ? described.text : e instanceof Error ? e.message : tr("chat.err.generic");
+        const errorText = described ? described.text : userErrorMessage(e, tr, "chat.err.generic");
         const turnAction = described?.action;
         console.error("[streamChat] Error:", e);
         onAccountError(e);

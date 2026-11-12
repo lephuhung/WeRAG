@@ -16,6 +16,7 @@ import { SectionHeader } from "@/components/settings/section-header";
 import { FieldLabel } from "@/components/settings/field";
 import { useToast } from "@/components/toast";
 import { formatDateTime } from "@/lib/datetime";
+import { userErrorMessage } from "@/lib/user-error";
 
 export function BrowserConnectionSettings() {
   const { t, locale } = useT();
@@ -33,7 +34,7 @@ export function BrowserConnectionSettings() {
       const res = await getBrowserConnection();
       setStatus(res.data ?? null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("browser.loadFailed"));
+      setError(userErrorMessage(e, t, "browser.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -52,7 +53,7 @@ export function BrowserConnectionSettings() {
         setPairingLink(res.data.pairing_link);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("browser.pairFailed"));
+      setError(userErrorMessage(e, t, "browser.pairFailed"));
     } finally {
       setActionBusy(false);
     }
@@ -66,7 +67,7 @@ export function BrowserConnectionSettings() {
       setStatus(res.data ?? null);
       setPairingLink("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("browser.disconnectFailed"));
+      setError(userErrorMessage(e, t, "browser.disconnectFailed"));
     } finally {
       setActionBusy(false);
     }
@@ -82,7 +83,7 @@ export function BrowserConnectionSettings() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("browser.downloadFailed"));
+      setError(userErrorMessage(e, t, "browser.downloadFailed"));
     }
   };
 

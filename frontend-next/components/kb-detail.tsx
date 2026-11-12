@@ -57,6 +57,7 @@ import { getKBAccess } from "@/lib/api/kb-access";
 import { MyKBInvites } from "@/components/knowledge/my-kb-invites";
 import { knowledgeStatusStyle } from "@/components/knowledge/trace-status";
 import { formatDate } from "@/lib/datetime";
+import { userErrorMessage } from "@/lib/user-error";
 
 /* Backend field is parse_status (types.Knowledge.go ParseStatus); values
  * are pending/processing/finalizing/completed/failed/cancelled. The port
@@ -261,7 +262,7 @@ const toast = useToast();
           setDenied(true);
           return;
         }
-        setError(e instanceof Error ? e.message : t("ui.err.load"));
+        setError(userErrorMessage(e, t, "ui.err.load"));
       });
     getSystemParseDefaults()
       .then((def) => alive && setParseDefaults(def))

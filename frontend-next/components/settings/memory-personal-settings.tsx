@@ -39,6 +39,7 @@ import {
 import { Toggle } from "@/components/settings/toggle";
 import { useT } from "@/lib/i18n";
 import { formatDate, vnDayKey } from "@/lib/datetime";
+import { userErrorMessage } from "@/lib/user-error";
 
 export function MemoryPersonalSettings() {
   const { t } = useT();
@@ -89,7 +90,7 @@ export function MemoryPersonalSettings() {
       if (sRes.success && sRes.data) setSettings(sRes.data);
       if (iRes.success && iRes.data) setItems(iRes.data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("memp.loadFailed"));
+      setError(userErrorMessage(e, t, "memp.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -100,7 +101,7 @@ export function MemoryPersonalSettings() {
       const res = await listMemoryTopics({ limit: 100 });
       if (res.success && res.data) setTopics(res.data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("memp.loadTopicsFailed"));
+      setError(userErrorMessage(e, t, "memp.loadTopicsFailed"));
     }
   };
 
@@ -109,7 +110,7 @@ export function MemoryPersonalSettings() {
       const res = await listMemoryDocuments({ limit: 100 });
       if (res.success && res.data) setDocs(res.data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("memp.loadDocsFailed"));
+      setError(userErrorMessage(e, t, "memp.loadDocsFailed"));
     }
   };
 
@@ -129,7 +130,7 @@ export function MemoryPersonalSettings() {
         toast.success(t(checked ? "memp.enabledMsg" : "memp.disabledMsg"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("memp.updateFailed"));
+      setError(userErrorMessage(e, t, "memp.updateFailed"));
     }
   };
 
@@ -140,7 +141,7 @@ export function MemoryPersonalSettings() {
       toast.success(t("memp.approved"));
       await loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("memp.confirmFailed"));
+      setError(userErrorMessage(e, t, "memp.confirmFailed"));
     }
   };
 
@@ -151,7 +152,7 @@ export function MemoryPersonalSettings() {
       toast.success(t("memp.rejected"));
       await loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("memp.rejectFailed"));
+      setError(userErrorMessage(e, t, "memp.rejectFailed"));
     }
   };
 
@@ -162,7 +163,7 @@ export function MemoryPersonalSettings() {
       toast.success(t("memp.deleted"));
       await loadData();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("memp.deleteFailed"));
+      setError(userErrorMessage(e, t, "memp.deleteFailed"));
     }
   };
 
@@ -183,7 +184,7 @@ export function MemoryPersonalSettings() {
         await loadData();
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("memp.consolidateFailed"));
+      setError(userErrorMessage(e, t, "memp.consolidateFailed"));
     } finally {
       setBusyAction(false);
     }
@@ -204,7 +205,7 @@ export function MemoryPersonalSettings() {
         URL.revokeObjectURL(url);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("memp.exportFailed"));
+      setError(userErrorMessage(e, t, "memp.exportFailed"));
     }
   };
 
@@ -220,7 +221,7 @@ export function MemoryPersonalSettings() {
         await loadData();
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("memp.clearFailed"));
+      setError(userErrorMessage(e, t, "memp.clearFailed"));
     } finally {
       setBusyAction(false);
     }
@@ -245,7 +246,7 @@ export function MemoryPersonalSettings() {
         await loadData();
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("memp.createFailed"));
+      setError(userErrorMessage(e, t, "memp.createFailed"));
     } finally {
       setSavingItem(false);
     }
@@ -268,7 +269,7 @@ export function MemoryPersonalSettings() {
         await loadData();
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("memp.updateItemFailed"));
+      setError(userErrorMessage(e, t, "memp.updateItemFailed"));
     } finally {
       setSavingItem(false);
     }

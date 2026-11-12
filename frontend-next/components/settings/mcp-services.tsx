@@ -28,6 +28,7 @@ import { Chip } from "@/components/settings/chips";
 import { Toggle } from "@/components/settings/toggle";
 import { Notice } from "@/components/settings/notice";
 import { Loading } from "@/components/settings/loading";
+import { userErrorMessage } from "@/lib/user-error";
 
 export function McpServiceForm({ service, onClose, onSaved }: {
   service: MCPService | null;
@@ -87,7 +88,7 @@ export function McpServiceForm({ service, onClose, onSaved }: {
         : await createMCPService(payload);
       onSaved(saved);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("mcp.saveFailed"));
+      setError(userErrorMessage(e, t, "mcp.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -100,7 +101,7 @@ export function McpServiceForm({ service, onClose, onSaved }: {
       const res = await testMCPService(service.id);
       setTestResult(res);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("mcp.testFailed"));
+      setError(userErrorMessage(e, t, "mcp.testFailed"));
     } finally {
       setTesting(false);
     }
@@ -245,7 +246,7 @@ export function McpToolsPanel({ service, onClose }: { service: MCPService; onClo
     let alive = true;
     getMCPServiceTools(service.id)
       .then((list) => alive && setTools(list))
-      .catch((e) => alive && setError(e instanceof Error ? e.message : t("mcp.loadToolsFailed")))
+      .catch((e) => alive && setError(userErrorMessage(e, t, "mcp.loadToolsFailed")))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;

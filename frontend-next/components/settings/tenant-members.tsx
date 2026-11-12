@@ -26,6 +26,7 @@ import { useRouter } from "next/navigation";
 import { copyToClipboard } from "@/lib/clipboard";
 import { InviteMemberModal } from "@/components/invite-member-modal";
 import { formatDate } from "@/lib/datetime";
+import { userErrorMessage } from "@/lib/user-error";
 
 export function TenantMembers() {
   const { t } = useT();
@@ -89,7 +90,7 @@ export function TenantMembers() {
         setInvitations(invRes.data.invitations ?? []);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("mem.networkError"));
+      setError(userErrorMessage(e, t, "mem.networkError"));
     } finally {
       setLoading(false);
     }
@@ -120,7 +121,7 @@ export function TenantMembers() {
         setError(res.message || t("mem.updateRoleFailed"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("mem.updateRoleFailed"));
+      setError(userErrorMessage(e, t, "mem.updateRoleFailed"));
     }
   };
 
@@ -146,7 +147,7 @@ export function TenantMembers() {
         setError(res.message || t("mem.removeFailed"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("mem.removeFailed"));
+      setError(userErrorMessage(e, t, "mem.removeFailed"));
     } finally {
       setActionBusy(false);
     }
@@ -170,7 +171,7 @@ export function TenantMembers() {
         setError(res.message || t("mem.leaveFailed"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("mem.leaveFailed"));
+      setError(userErrorMessage(e, t, "mem.leaveFailed"));
     } finally {
       setActionBusy(false);
       setConfirmLeave(false);
@@ -188,7 +189,7 @@ export function TenantMembers() {
         setError(res.message || t("mem.revokeFailed"));
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("mem.revokeFailed"));
+      setError(userErrorMessage(e, t, "mem.revokeFailed"));
     }
   };
 

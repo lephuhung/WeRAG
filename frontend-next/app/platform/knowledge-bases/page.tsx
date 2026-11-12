@@ -28,6 +28,7 @@ import {
   IconSearch,
 } from "@/components/icons";
 import { formatDate } from "@/lib/datetime";
+import { userErrorMessage } from "@/lib/user-error";
 
 const ORBS = ["mint", "lavender", "peach", "sky", "rose"] as const;
 const PUBLIC_PAGE_SIZE = 12;
@@ -88,7 +89,7 @@ export default function KnowledgeBaseList() {
       })
       .catch((e) => {
         setKbs([]);
-        setError(e instanceof Error ? e.message : t("kbList.loadFailed"));
+        setError(userErrorMessage(e, t, "kbList.loadFailed"));
       });
   };
 
@@ -105,7 +106,7 @@ export default function KnowledgeBaseList() {
       .catch((e) => {
         if (alive) {
           setKbs([]);
-          setError(e instanceof Error ? e.message : t("kbList.loadFailed"));
+          setError(userErrorMessage(e, t, "kbList.loadFailed"));
         }
       });
     return () => {
@@ -128,7 +129,7 @@ export default function KnowledgeBaseList() {
           if (!alive) return;
           setPubItems([]);
           setPubTotal(0);
-          setPubError(e instanceof Error ? e.message : t("kbList.pubLoadFailed"));
+          setPubError(userErrorMessage(e, t, "kbList.pubLoadFailed"));
           setPubOk(false);
         });
     }, 250);
@@ -152,7 +153,7 @@ export default function KnowledgeBaseList() {
           if (!alive) return;
           setPubdItems([]);
           setPubdTotal(0);
-          setPubdError(e instanceof Error ? e.message : t("kbPublished.loadFailed"));
+          setPubdError(userErrorMessage(e, t, "kbPublished.loadFailed"));
         });
     }, 250);
     return () => {
@@ -172,7 +173,7 @@ export default function KnowledgeBaseList() {
       setPubdReload((n) => n + 1);
       reload();
     } catch (e) {
-      setPubdError(e instanceof Error ? e.message : t("kbPublished.loadFailed"));
+      setPubdError(userErrorMessage(e, t, "kbPublished.loadFailed"));
     } finally {
       setSubBusy(null);
     }

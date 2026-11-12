@@ -66,6 +66,7 @@ import {
   type AgentDistribution,
   type ScopeTenantOption,
 } from "@/lib/agent-tenant-scope";
+import { userErrorMessage } from "@/lib/user-error";
 
 type TabKey = "basic" | "knowledge" | "tools" | "multimodal";
 
@@ -566,7 +567,7 @@ export function AgentEditorModal({
       }
       onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("ui.err.saveFailed"));
+      setError(userErrorMessage(e, t, "ui.err.saveFailed"));
     } finally {
       setSaving(false);
     }

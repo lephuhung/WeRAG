@@ -21,6 +21,7 @@ import {
   type AuditOutcome,
 } from "@/lib/api/audit";
 import { ApiError } from "@/lib/api-client";
+import { userErrorMessage } from "@/lib/user-error";
 
 type Level = "info" | "warn" | "error";
 
@@ -166,7 +167,7 @@ export default function SystemAuditLogs() {
       setHasMore(!!res.next_cursor && rows.length > 0);
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) setAllowed(false);
-      else setError(e instanceof Error ? e.message : t("ulogs.loadFailed"));
+      else setError(userErrorMessage(e, t, "ulogs.loadFailed"));
     } finally {
       setLoading(false);
       setLoaded(true);

@@ -27,6 +27,7 @@ import { LegalLookupBox } from "@/components/legal-lookup/legal-lookup-box";
 import { chatErrorKey, chatErrorTextKey } from "@/lib/api/chat-errors";
 import { shouldRefreshAccount } from "@/lib/guest-chat";
 import { useAuth } from "@/lib/auth";
+import { userErrorMessage } from "@/lib/user-error";
 
 /* Suggested questions are fetched once per page load and shared: the
  * endpoint samples a random set on every call, so refetching on each visit
@@ -158,7 +159,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
             },
           );
         } catch (err) {
-          setError(err instanceof Error ? err.message : "Attachment upload failed — files kept for retry");
+          setError(userErrorMessage(err, t, "err.attachmentUploadFailed"));
           await cleanupSessionBestEffort((id) => deleteSession(id), sessionId);
           return;
         }
@@ -195,7 +196,7 @@ function CreateChatBody({ kbId }: { kbId?: string }) {
       // and the page follows the new kind
       if (shouldRefreshAccount(err, { isGuest: ctx.isGuest, sessionCall: false })) void refreshMe();
       const key = chatErrorKey(err);
-      setError(key ? t(chatErrorTextKey(key, ctx.isGuest)) : err instanceof Error ? err.message : t("ui.err.createSession"));
+      setError(key ? t(chatErrorTextKey(key, ctx.isGuest)) : userErrorMessage(err, t, "ui.err.createSession"));
     } finally {
       setBusy(false);
     }

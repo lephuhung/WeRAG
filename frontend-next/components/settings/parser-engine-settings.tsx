@@ -28,6 +28,7 @@ import { DeniedView } from "@/components/settings/system-section";
 import { FieldLabel } from "@/components/settings/field";
 import { ConsolePage } from "@/components/settings/console-page";
 import { useToast } from "@/components/toast";
+import { userErrorMessage } from "@/lib/user-error";
 
 type Probe = { ok: boolean; message: string } | null;
 
@@ -101,7 +102,7 @@ export function ParserEngineSettings() {
         setDenied(true);
         setEngines([]);
       } else {
-        setError(e instanceof Error ? e.message : t("peng.loadFailed"));
+        setError(userErrorMessage(e, t, "peng.loadFailed"));
       }
     } finally {
       setLoading(false);
@@ -138,7 +139,7 @@ export function ParserEngineSettings() {
         setDenied(true);
         return;
       }
-      setDocreaderProbe({ ok: false, message: e instanceof Error ? e.message : t("eng.docreaderFail") });
+      setDocreaderProbe({ ok: false, message: userErrorMessage(e, t, "eng.docreaderFail") });
     } finally {
       setReconnecting(false);
     }
@@ -161,7 +162,7 @@ export function ParserEngineSettings() {
         setDenied(true);
         return;
       }
-      setOcrProbe({ ok: false, message: e instanceof Error ? e.message : t("eng.testFail") });
+      setOcrProbe({ ok: false, message: userErrorMessage(e, t, "eng.testFail") });
     } finally {
       setChecking(false);
     }
@@ -184,7 +185,7 @@ export function ParserEngineSettings() {
         setDenied(true);
         return;
       }
-      setError(e instanceof Error ? e.message : t("eng.saveFailed"));
+      setError(userErrorMessage(e, t, "eng.saveFailed"));
     } finally {
       setSaving(false);
     }

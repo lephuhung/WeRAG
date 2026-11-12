@@ -23,6 +23,7 @@ import { FieldLabel, RequiredMark } from "@/components/settings/field";
 import { ROW_HOVER } from "@/components/settings/data-table";
 import { ConsolePage } from "@/components/settings/console-page";
 import { useToast } from "@/components/toast";
+import { userErrorMessage } from "@/lib/user-error";
 
 export function EnvVarsSettings() {
   const { t } = useT();
@@ -53,7 +54,7 @@ export function EnvVarsSettings() {
         setDenied(true);
         setGroups([]);
       } else {
-        setError(e instanceof Error ? e.message : t("envv.loadFailed"));
+        setError(userErrorMessage(e, t, "envv.loadFailed"));
       }
     } finally {
       setLoading(false);
@@ -84,7 +85,7 @@ export function EnvVarsSettings() {
         setEditingVar(null);
         return;
       }
-      setFormError(err instanceof Error ? err.message : t("envv.updateFailed"));
+      setFormError(userErrorMessage(err, t, "envv.updateFailed"));
     } finally {
       setSaving(false);
     }
@@ -106,7 +107,7 @@ export function EnvVarsSettings() {
         setDenied(true);
         return;
       }
-      setError(err instanceof Error ? err.message : t("envv.clearFailed"));
+      setError(userErrorMessage(err, t, "envv.clearFailed"));
     }
   };
 

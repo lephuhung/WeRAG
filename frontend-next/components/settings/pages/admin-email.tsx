@@ -20,6 +20,7 @@ import {
   updateSystemSetting,
   type SMTPSecurity,
 } from "@/lib/api/system";
+import { userErrorMessage } from "@/lib/user-error";
 
 type Form = {
   enabled: boolean;
@@ -71,7 +72,7 @@ export default function AdminEmail() {
       setPassword("");
       setError("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("email.loadFailed"));
+      setError(userErrorMessage(e, t, "email.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -117,7 +118,7 @@ export default function AdminEmail() {
       setBase(saved);
       toast.success(t("common.saved"));
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("email.saveFailed"));
+      setError(userErrorMessage(e, t, "email.saveFailed"));
     } finally {
       setBusy(false);
     }
@@ -132,7 +133,7 @@ export default function AdminEmail() {
       setPassword("");
       toast.success(t("common.saved"));
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("email.saveFailed"));
+      setError(userErrorMessage(e, t, "email.saveFailed"));
     } finally {
       setBusy(false);
     }
@@ -145,7 +146,7 @@ export default function AdminEmail() {
       const r = await sendTestEmail();
       setTestResult(r.sent ? { ok: true, text: t("email.testSent", { to: r.to }) } : { ok: false, text: r.error || t("email.testFailed") });
     } catch (e) {
-      setTestResult({ ok: false, text: e instanceof Error ? e.message : t("email.testFailed") });
+      setTestResult({ ok: false, text: userErrorMessage(e, t, "email.testFailed") });
     } finally {
       setBusy(false);
     }

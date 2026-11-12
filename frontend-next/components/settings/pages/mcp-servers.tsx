@@ -24,6 +24,7 @@ import { useT } from "@/lib/i18n";
 import { ConsolePage } from "@/components/settings/console-page";
 import { Notice } from "@/components/settings/notice";
 import { SectionHeader } from "@/components/settings/section-header";
+import { userErrorMessage } from "@/lib/user-error";
 
 export default function McpServersPage() {
   return (
@@ -51,7 +52,7 @@ function McpServersPanel() {
     setMcpError("");
     listMCPServices()
       .then((data) => setMcpServices(data ?? []))
-      .catch((e) => setMcpError(e instanceof Error ? e.message : t("mcpp.loadFailed")))
+      .catch((e) => setMcpError(userErrorMessage(e, t, "mcpp.loadFailed")))
       .finally(() => setMcpLoading(false));
   }, []);
 
@@ -64,7 +65,7 @@ function McpServersPanel() {
       const next = await updateMCPService(s.id, { enabled: !s.enabled });
       setMcpServices((prev) => prev.map((x) => (x.id === next.id ? next : x)));
     } catch (e) {
-      setMcpError(e instanceof Error ? e.message : t("mcpp.toggleFailed"));
+      setMcpError(userErrorMessage(e, t, "mcpp.toggleFailed"));
     }
   };
 
@@ -78,7 +79,7 @@ function McpServersPanel() {
         ...prev,
         [s.id]: {
           success: false,
-          message: e instanceof Error ? e.message : t("mcpp.testFailed"),
+          message: userErrorMessage(e, t, "mcpp.testFailed"),
           tools: [],
         },
       }));

@@ -21,6 +21,7 @@ import {
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { Select } from "@/components/select";
 import { SegmentedPills } from "@/components/knowledge/segmented-pills";
+import { userErrorMessage } from "@/lib/user-error";
 
 /* SystemAdmin editor for the platform-wide parse defaults stored under the
  * system_settings key "knowledge.parse_defaults". While `enabled` is on,
@@ -123,7 +124,7 @@ export function ParseDefaultsEditor() {
       setTimeout(() => setSaved(false), 3500);
       setState(applyOverrides(createDefaultUIState(), value));
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("pd.saveFailed"));
+      setError(userErrorMessage(e, t, "pd.saveFailed"));
     } finally {
       setSaving(false);
     }
@@ -140,7 +141,7 @@ export function ParseDefaultsEditor() {
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("pd.saveFailed"));
+      setError(userErrorMessage(e, t, "pd.saveFailed"));
     } finally {
       setSaving(false);
     }

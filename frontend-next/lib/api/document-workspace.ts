@@ -180,10 +180,13 @@ export type DocumentWorkspaceErrorCode = "editor_disabled" | "already_exists" | 
 export class DocumentWorkspaceError extends Error {
   code: DocumentWorkspaceErrorCode;
   status: number;
-  constructor(code: DocumentWorkspaceErrorCode, status: number, message: string) {
+  /** Raw response body, so the shown text can follow the backend's code. */
+  payload?: unknown;
+  constructor(code: DocumentWorkspaceErrorCode, status: number, message: string, payload?: unknown) {
     super(message);
     this.code = code;
     this.status = status;
+    this.payload = payload;
   }
 }
 
@@ -223,9 +226,9 @@ export function sessionRequestOptions(sessionId: string, opts?: ApiRequestOption
 
 function toWorkspaceError(err: unknown): unknown {
   if (err instanceof ApiError) {
-    if (err.status === 503) return new DocumentWorkspaceError("editor_disabled", 503, err.message);
-    if (err.status === 409) return new DocumentWorkspaceError("already_exists", 409, err.message);
-    return new DocumentWorkspaceError("request_failed", err.status, err.message);
+    if (err.status === 503) return new DocumentWorkspaceError("editor_disabled", 503, err.message, err.payload);
+    if (err.status === 409) return new DocumentWorkspaceError("already_exists", 409, err.message, err.payload);
+    return new DocumentWorkspaceError("request_failed", err.status, err.message, err.payload);
   }
   return err;
 }

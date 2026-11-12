@@ -26,6 +26,7 @@ import {
   tenantNameErrorKey,
   validateTenantName,
 } from "@/lib/tenant-name";
+import { userErrorMessage } from "@/lib/user-error";
 
 const ownerCount = (members: { role: string }[]) => members.filter((m) => m.role === "owner").length;
 
@@ -63,7 +64,7 @@ export function TenantInfo() {
         setError(res.message || t("tenant.loadFailed"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("tenant.networkError"));
+      setError(userErrorMessage(err, t, "tenant.networkError"));
     } finally {
       setLoading(false);
     }

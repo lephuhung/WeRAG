@@ -37,6 +37,7 @@ import {
   SIDEBAR_WIDTH_PX,
   useIsDesktopShell,
 } from "@/components/shell-breakpoints";
+import { userErrorMessage } from "@/lib/user-error";
 
 const NAV = [
   { href: "/platform/creatChat", labelKey: "nav.newChat", icon: IconChat, match: ["/platform/creatChat", "/platform/chat"] },
@@ -111,7 +112,7 @@ export function Sidebar() {
       }
       setRemoving(null);
     } catch (e) {
-      setDeleteError(e instanceof Error ? e.message : t("sidebar.deleteFailed"));
+      setDeleteError(userErrorMessage(e, t, "sidebar.deleteFailed"));
     } finally {
       setDeleting(false);
     }

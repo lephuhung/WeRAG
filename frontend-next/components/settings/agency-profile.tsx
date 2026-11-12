@@ -12,6 +12,7 @@ import { useT, type LocaleKey } from "@/lib/i18n";
 import { TemplateFontSizesSettings } from "@/components/settings/template-font-sizes";
 import { useToast } from "@/components/toast";
 import { Notice } from "@/components/settings/notice";
+import { userErrorMessage } from "@/lib/user-error";
 
 const EMPTY: AgencyProfile = {
   parent_agency: "", agency_name: "", agency_abbr: "", locality: "",
@@ -58,7 +59,7 @@ export function AgencyProfileSettings() {
       const res = await getAgencyProfile();
       apply(res.data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : t("agencyProfile.loadFailed"));
+      setError(userErrorMessage(e, t, "agencyProfile.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -78,7 +79,7 @@ export function AgencyProfileSettings() {
       toast.success(t("common.saved"));
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) setError(t("agencyProfile.conflict"));
-      else setError(e instanceof Error ? e.message : t("agencyProfile.saveFailed"));
+      else setError(userErrorMessage(e, t, "agencyProfile.saveFailed"));
     } finally {
       setSaving(false);
     }

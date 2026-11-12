@@ -10,6 +10,7 @@ import { addMember, createInviteLink, type TenantRole } from "@/lib/api/tenants"
 import { copyToClipboard } from "@/lib/clipboard";
 import type { LocaleKey } from "@/lib/i18n";
 import { useT } from "@/lib/i18n";
+import { userErrorMessage } from "@/lib/user-error";
 
 /* Assignable workspace roles: Admin and Member. The legacy owner role is
  * retired and never offered. */
@@ -61,7 +62,7 @@ export function InviteMemberModal({
         setError(res.message || t("ui.invm.sendFailed"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("ui.invm.sendFailed"));
+      setError(userErrorMessage(err, t, "ui.invm.sendFailed"));
     } finally {
       setBusy(false);
     }
@@ -87,7 +88,7 @@ export function InviteMemberModal({
         setError(res.message || t("ui.invm.linkFailed"));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : t("ui.invm.linkFailed"));
+      setError(userErrorMessage(err, t, "ui.invm.linkFailed"));
     } finally {
       setBusy(false);
     }
