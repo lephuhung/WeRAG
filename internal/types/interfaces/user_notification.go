@@ -45,6 +45,9 @@ type UserNotificationRepository interface {
 	// LatestOfKind returns the user's newest notification of kind, read
 	// or not (nil when none).
 	LatestOfKind(ctx context.Context, userID, kind string) (*types.UserNotification, error)
+	// SetPayload replaces the payload of the user's notification id (no
+	// other column changes: it is not toasted again).
+	SetPayload(ctx context.Context, userID, id string, payload types.JSON) error
 	// PurgeRead deletes the notifications read before readBefore, batch
 	// rows at a time; returns how many.
 	PurgeRead(ctx context.Context, readBefore time.Time, batch int) (int64, error)

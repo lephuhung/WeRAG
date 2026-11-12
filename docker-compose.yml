@@ -1009,6 +1009,10 @@ services:
       BACKUP_SRC_S3_BUCKET: ${BACKUP_SRC_S3_BUCKET:-}
       BACKUP_SRC_S3_ACCESS_KEY: ${BACKUP_SRC_S3_ACCESS_KEY:-}
       BACKUP_SRC_S3_SECRET_KEY: ${BACKUP_SRC_S3_SECRET_KEY:-}
+      # Bucket nguồn giảm > 20 % / > 500 object (hoặc rỗng) so với bản sao → job dừng; đặt 1 cho
+      # một lần chạy khi đúng là đã xoá nhiều. restore-check lỗi khi > N tệp DB tham chiếu mất ở nguồn.
+      BACKUP_OBJECTS_ALLOW_SHRINK: ${BACKUP_OBJECTS_ALLOW_SHRINK:-0}
+      BACKUP_OBJECTS_MAX_MISSING: ${BACKUP_OBJECTS_MAX_MISSING:-10}
       BACKUP_ENV_CRON: ${BACKUP_ENV_CRON:-30 3 * * *}
       BACKUP_RESTORE_CHECK_CRON: ${BACKUP_RESTORE_CHECK_CRON:-45 4 * * 0}
       BACKUP_HOST_LABEL: ${BACKUP_HOST_LABEL:-werag}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -152,10 +153,39 @@ func TestNewBackupMonitorFromEnv(t *testing.T) {
 
 	t.Setenv("BACKUP_S3_ENDPOINT", "http://")
 	require.Nil(t, NewBackupMonitorFromEnv(nil, nil, nil), "bad endpoint → off, no panic")
+
+	// the status-only account is enough on its own
+	t.Setenv("BACKUP_S3_ENDPOINT", "http://127.0.0.1:1")
+	t.Setenv("BACKUP_S3_ACCESS_KEY", "")
+	t.Setenv("BACKUP_S3_SECRET_KEY", "")
+	t.Setenv("BACKUP_STATUS_S3_ACCESS_KEY", "ro")
+	require.Nil(t, NewBackupMonitorFromEnv(nil, nil, nil), "half a status account → off")
+	t.Setenv("BACKUP_STATUS_S3_SECRET_KEY", "ro-secret")
+	require.NotNil(t, NewBackupMonitorFromEnv(nil, nil, nil))
+}
+
+// TestMinioBackupStatusReaderLive reads from a real MinIO with an account
+// that may only GET status/werag-* (set BACKUP_MONITOR_TEST_ENDPOINT,
+// _ACCESS, _SECRET, _BUCKET; skipped otherwise — deploy/backup tests).
+func TestMinioBackupStatusReaderLive(t *testing.T) {
+	ep := os.Getenv("BACKUP_MONITOR_TEST_ENDPOINT")
+	if ep == "" {
+		t.Skip("BACKUP_MONITOR_TEST_ENDPOINT not set")
+	}
+	r, err := NewMinioBackupStatusReader(ep, os.Getenv("BACKUP_MONITOR_TEST_ACCESS"), os.Getenv("BACKUP_MONITOR_TEST_SECRET"),
+		os.Getenv("BACKUP_MONITOR_TEST_BUCKET"), "werag", "us-east-1")
+	require.NoError(t, err)
+	raw, err := r.ReadStatus(context.Background(), "wal")
+	require.NoError(t, err)
+	st, err := parseBackupStatus(raw)
+	require.NoError(t, err)
+	require.Equal(t, "wal", st.Job)
+	_, err = r.ReadStatus(context.Background(), "nope")
+	require.ErrorIs(t, err, ErrBackupStatusMissing)
 }
 
 func TestMinioBackupStatusReaderUnreachable(t *testing.T) {
-	r, err := NewMinioBackupStatusReader("127.0.0.1:1", "a", "s", "b", "werag")
+	r, err := NewMinioBackupStatusReader("127.0.0.1:1", "a", "s", "b", "werag", "us-east-1")
 	require.NoError(t, err)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -359,14 +389,98 @@ func TestBackupAlertCurrent(t *testing.T) {
 	now := time.Now()
 	payload, _ := json.Marshal(types.UserNotificationBackupAlertPayload{Signature: "wal:stale"})
 	open := &types.UserNotification{Payload: types.JSON(payload), CreatedAt: now.Add(-time.Hour)}
-	require.False(t, backupAlertCurrent(nil, "wal:stale", time.Time{}, now))
-	require.True(t, backupAlertCurrent(open, "wal:stale", time.Time{}, now))
-	require.False(t, backupAlertCurrent(open, "wal:failed", time.Time{}, now))
+	require.False(t, backupAlertCurrent(nil, "wal:stale", now))
+	require.True(t, backupAlertCurrent(open, "wal:stale", now))
+	require.False(t, backupAlertCurrent(open, "wal:failed", now))
 	readAt := now.Add(-time.Hour)
 	read := &types.UserNotification{Payload: types.JSON(payload), CreatedAt: now.Add(-2 * time.Hour), ReadAt: &readAt}
-	require.True(t, backupAlertCurrent(read, "wal:stale", time.Time{}, now))
-	require.False(t, backupAlertCurrent(read, "wal:stale", now.Add(-90*time.Minute), now), "closed by a healthy check")
+	require.True(t, backupAlertCurrent(read, "wal:stale", now))
+	resolved, _ := json.Marshal(types.UserNotificationBackupAlertPayload{Signature: "wal:stale", ResolvedAt: &readAt})
+	closed := &types.UserNotification{Payload: types.JSON(resolved), CreatedAt: now.Add(-2 * time.Hour), ReadAt: &readAt}
+	require.False(t, backupAlertCurrent(closed, "wal:stale", now), "resolved by a healthy check")
 	old := now.Add(-25 * time.Hour)
 	read.ReadAt = &old
-	require.False(t, backupAlertCurrent(read, "wal:stale", time.Time{}, now), "reminded after a day")
+	require.False(t, backupAlertCurrent(read, "wal:stale", now), "reminded after a day")
+}
+
+// restart: a new monitor on the same database (in-memory state lost).
+func (e *backupMonitorEnv) restart() {
+	e.monitor = NewBackupMonitor(e.statuses, nil, repository.NewUserRepository(e.db), e.notices, nil)
+	e.monitor.now = func() time.Time { return e.now }
+	e.monitor.digests.now = func() time.Time { return e.now }
+}
+
+func TestBackupMonitorUnknownKeepsDigestAfterRestart(t *testing.T) {
+	e := newBackupMonitorEnv(t)
+	e.statuses.set("files", false, e.now, "boom")
+	e.check(t)
+	n, _ := e.alert(t, "sa1")
+	require.NotNil(t, n)
+
+	// restart while the storage cannot be read for files: nothing is closed
+	e.restart()
+	e.now = e.now.Add(10 * time.Minute)
+	e.healthyExcept("files")
+	e.statuses.fail("files", errors.New("connection refused"))
+	e.check(t)
+	n, _ = e.alert(t, "sa1")
+	require.NotNil(t, n, "an unknown job must not close the digest")
+
+	// files readable and healthy again: closed and stamped resolved
+	e.now = e.now.Add(10 * time.Minute)
+	e.healthy()
+	e.check(t)
+	e.closed(t, types.UserNotificationBackupAlert)
+	last, err := e.notices.LatestOfKind(context.Background(), "sa1", types.UserNotificationBackupAlert)
+	require.NoError(t, err)
+	var p types.UserNotificationBackupAlertPayload
+	require.NoError(t, json.Unmarshal(last.Payload, &p))
+	require.NotNil(t, p.ResolvedAt)
+}
+
+func TestBackupMonitorRecurrenceAfterRestart(t *testing.T) {
+	e := newBackupMonitorEnv(t)
+	e.statuses.set("objects", false, e.now, "x")
+	e.check(t)
+	first, _ := e.alert(t, "sa1")
+	require.NotNil(t, first)
+	// sa2 reads it; then the incident ends
+	ok, err := e.notices.MarkRead(context.Background(), "sa2", e.mustAlert(t, "sa2").ID, e.now)
+	require.NoError(t, err)
+	require.True(t, ok)
+	e.now = e.now.Add(10 * time.Minute)
+	e.healthy()
+	e.check(t)
+	e.closed(t, types.UserNotificationBackupAlert)
+
+	// restart, then the same job fails the same way within a day: a new
+	// incident for both (the resolved stamp survives the restart)
+	e.restart()
+	e.now = e.now.Add(time.Hour)
+	e.healthyExcept("objects")
+	e.statuses.set("objects", false, e.now, "x")
+	e.check(t)
+	for _, sa := range []string{"sa1", "sa2"} {
+		n, _ := e.alert(t, sa)
+		require.NotNil(t, n, sa)
+		require.NotEqual(t, first.ID, n.ID)
+	}
+
+	// a SuperAdmin who read the current incident is not told again after a restart
+	ok, err = e.notices.MarkRead(context.Background(), "sa1", e.mustAlert(t, "sa1").ID, e.now)
+	require.NoError(t, err)
+	require.True(t, ok)
+	e.restart()
+	e.now = e.now.Add(10 * time.Minute)
+	e.healthyExcept("objects")
+	e.check(t)
+	n, _ := e.alert(t, "sa1")
+	require.Nil(t, n)
+}
+
+func (e *backupMonitorEnv) mustAlert(t *testing.T, user string) *types.UserNotification {
+	t.Helper()
+	n, _ := e.alert(t, user)
+	require.NotNil(t, n, user)
+	return n
 }

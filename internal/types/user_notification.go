@@ -80,6 +80,10 @@ type UserNotificationBackupAlertPayload struct {
 	Count     int                         `json:"count"`
 	Jobs      []UserNotificationBackupJob `json:"jobs"`
 	Signature string                      `json:"signature"`
+	// ResolvedAt: a later check found every job healthy (the incident
+	// ended); set on the person's latest alert, read or not, so a restart
+	// still tells a recurrence from the same incident.
+	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
 }
 
 // Problems of a UserNotificationBackupJob.

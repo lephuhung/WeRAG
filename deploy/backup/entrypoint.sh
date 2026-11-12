@@ -34,12 +34,18 @@ EOF
 echo "[backup] lịch:"; sed 's/^/  /' /work/crontab
 
 if [ "${BACKUP_RUN_ON_START:-true}" = "true" ]; then
-  /usr/local/bin/backup.sh postgres || true
-  /usr/local/bin/backup.sh env || true
-  # WAL vô dụng nếu chưa có base backup nào → tạo ngay lần đầu.
-  [ -f /work/state/pgbase.ok ] || /usr/local/bin/backup.sh pgbase || true
-  [ -f /work/state/files.ok ] || /usr/local/bin/backup.sh files || true
-  [ -f /work/state/objects.ok ] || /usr/local/bin/backup.sh objects || true
+  # WAL trước (đẩy spool + ghi status), rồi các job dài chạy nền để supercronic khởi động ngay:
+  # chạy tuần tự trước exec thì WAL không được đẩy/ghi status suốt lúc dump (cảnh báo quá hạn
+  # 15 phút ở backend).
+  /usr/local/bin/backup.sh wal || true
+  (
+    /usr/local/bin/backup.sh postgres || true
+    /usr/local/bin/backup.sh env || true
+    # WAL vô dụng nếu chưa có base backup nào → tạo ngay lần đầu.
+    [ -f /work/state/pgbase.ok ] || /usr/local/bin/backup.sh pgbase || true
+    [ -f /work/state/files.ok ] || /usr/local/bin/backup.sh files || true
+    [ -f /work/state/objects.ok ] || /usr/local/bin/backup.sh objects || true
+  ) &
 fi
 
 exec supercronic -passthrough-logs /work/crontab

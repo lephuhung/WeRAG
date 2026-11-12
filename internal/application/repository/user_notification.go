@@ -256,6 +256,11 @@ func (r *userNotificationRepository) LatestOfKind(ctx context.Context, userID, k
 	return &n, nil
 }
 
+func (r *userNotificationRepository) SetPayload(ctx context.Context, userID, id string, payload types.JSON) error {
+	return r.db.WithContext(ctx).Model(&types.UserNotification{}).Where("id = ? AND user_id = ?", id, userID).
+		Update("payload", payload).Error
+}
+
 // isSQLiteLockError: the in-memory SQLite of the unit tests refused a
 // concurrent write (shared-cache table lock or busy); worth a retry.
 func isSQLiteLockError(err error) bool {

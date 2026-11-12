@@ -37,7 +37,15 @@ ngày 2026-11-12, tăng theo văn bản) chỉ tải object mới/đổi và xo�
 (`--remove`), nên level 1 chỉ chứa phần thay đổi trong tuần. Archive mã hoá như mọi job; status
 `werag-objects.json` có thêm `objects`, `source_bytes`, `copied`, `removed`, `level`. Không đặt
 `BACKUP_SRC_S3_*` → job ghi `ok=true` + "bỏ qua" (bản cài không dùng MinIO); đặt thiếu biến hoặc
-không kết nối được nguồn → `ok=false`. Lần chạy đầu tải cả bucket (vài phút).
+không kết nối được nguồn → `ok=false`. Lần chạy đầu tải cả bucket (vài phút). Khoá nguồn truyền
+cho mc qua biến `MC_HOST_src` (không nằm trong argv hay file cấu hình mc).
+
+Chống xoá nhầm bản sao: nếu bucket nguồn **rỗng** hoặc ít hơn bản sao > 20 % / > 500 object (đổi
+nhầm endpoint/bucket, lỗi quyền liệt kê…), job dừng với `ok=false` và **không** chạy
+`mirror --remove`. Đúng là đã xoá nhiều thì chạy một lần với `BACKUP_OBJECTS_ALLOW_SHRINK=1`:
+`sudo docker exec -u backup -e BACKUP_OBJECTS_ALLOW_SHRINK=1 WeKnora-backup backup.sh objects`.
+Sau mirror, mọi dòng lỗi của mc hoặc số tệp bản sao khác số object nguồn (vd key `x` cùng
+`x/con` trên S3) → `ok=false`, không tạo archive.
 
 ## Khoá
 
@@ -76,7 +84,8 @@ không kết nối được nguồn → `ok=false`. Lần chạy đầu tải c�
    sudo docker compose -p spec-airag-refactor -f docker-compose.yml --profile backup up -d --no-deps --build backup
    ```
 
-   Lần đầu container chạy ngay `postgres`, `env`, `pgbase`, `files`, `objects`. Cho tới khi container
+   Mỗi lần khởi động container chạy `wal` trước, rồi chạy nền `postgres`, `env` và (lần đầu)
+   `pgbase`, `files`, `objects` — supercronic khởi động ngay nên WAL vẫn được đẩy mỗi phút. Cho tới khi container
    tạo `/spool/wal`, `archive_command` báo lỗi và Postgres giữ WAL trong `pg_wal` (không mất).
 4. Timer Neo4j trên host:
 
@@ -95,9 +104,13 @@ thống thật): `sudo deploy/backup/test/objects-test.sh`.
 - **Cảnh báo trong app WeRAG** (không qua inventory/Telegram): backend đọc
   `status/werag-<job>.json` mỗi 10 phút bằng `BACKUP_S3_*` (cùng `.env`) và tạo một thông báo
   gom cho mọi SuperAdmin (loại `backup_alert`, "Sao lưu gặp sự cố: N việc") khi một job
-  `ok=false`, quá hạn, hoặc không có/không đọc được status (lỗi đọc phải kéo dài ≥ 30 phút);
-  tự đóng khi mọi job ổn lại. Quá hạn sau: `wal` 15 phút (job ghi status ít nhất 10 phút/lần),
-  `postgres`/`files`/`objects`/`neo4j` 26 giờ, `pgbase`/`env`/`restore-check` 8 ngày. Bảng trạng
+  `ok=false`, quá hạn, hoặc không có/không đọc được status (lỗi đọc phải kéo dài ≥ 30 phút; trong
+  lúc có job chưa đọc được, thông báo giữ nguyên, không đóng); tự đóng khi mọi job ổn lại (đánh
+  dấu `resolved_at` trong payload nên khởi động lại backend không nuốt mất lần lỗi sau). Quá hạn sau: `wal` 15 phút (job ghi status ít nhất 10 phút/lần),
+  `postgres`/`files`/`objects`/`neo4j` 26 giờ, `pgbase`/`env`/`restore-check` 8 ngày. Job WAL ghi
+  status cả giữa lúc đẩy dồn nhiều file (≥ 10 phút/lần). Backend đọc bằng
+  `BACKUP_STATUS_S3_ACCESS_KEY/SECRET_KEY` nếu có — user MinIO chỉ `s3:GetObject` trên
+  `inventory-backups/status/werag-*` — nếu không thì bằng `BACKUP_S3_*`. Bảng trạng
   thái: Quản trị hệ thống → Sao lưu (`/platform/admin?section=backups`). Danh sách job theo dõi:
   `BACKUP_MONITOR_JOBS`. Portal inventory KHÔNG giám sát WeRAG (đã gỡ 2026-10-12, inventory
   cd24a7c). Job WAL báo lỗi khi `archive_command` hỏng (`pg_stat_archiver`).
@@ -112,7 +125,8 @@ thống thật): `sudo deploy/backup/test/objects-test.sh`.
   header age, rồi đối chiếu key MinIO mà DB khôi phục tham chiếu (`resources`, provider
   `minio`, đang dùng, tạo trước lần đóng gói cuối) với danh sách tệp của chuỗi
   (`/work/state/objects-index/`): key có trong bản sao bucket mà thiếu trong chuỗi → lỗi; key
-  thiếu cả trong bucket nguồn → chỉ ghi `missing_in_source=N`. Container không có private key
+  thiếu cả trong bucket nguồn → ghi `missing_in_source=N`, lỗi khi N > `BACKUP_OBJECTS_MAX_MISSING`
+  (10) hoặc > 1 % (khi DB tham chiếu ≥ 100). DB tạm luôn bị xoá, kể cả khi job lỗi giữa chừng. Container không có private key
   nên **không giải mã** — diễn tập giải mã là `restore.sh objects` + `objects-check` (mục F). Lần
   đầu (2026-10-12, 76k vector) mất 1 phút 42 giây. Job này sinh lượng WAL xấp xỉ kích thước
   DB (bị archive như mọi WAL) — khi DB lớn, nên chuyển sang lịch hằng tháng.
@@ -205,6 +219,7 @@ $RESTORE fetch latest-env /restore/env.tar.zst && zstd -dc /var/tmp/werag-restor
 
 ```bash
 $RESTORE objects /restore/objects                 # level 0 mới nhất + level 1 cuối sau nó
+$RESTORE objects /restore/objects 20261110T024001 # hoặc: trạng thái lúc một archive cũ hơn
 $RESTORE objects-check /restore/objects WeKnora   # mọi key resources (minio) trỏ tới phải có
 ```
 
@@ -217,7 +232,9 @@ sudo docker run --rm --network host -v /var/tmp/werag-restore/objects:/src:ro \
   mirror --overwrite /src dst/werag
 ```
 
-Không dùng `--remove` khi đẩy lại (bucket có thể đã có object mới hơn bản backup).
+Không dùng `--remove` khi đẩy lại (bucket có thể đã có object mới hơn bản backup). Bản mới nhất
+hỏng (vd nguồn bị xoá rồi mới backup với `ALLOW_SHRINK`) → `$RESTORE list objects` rồi khôi phục
+tới archive trước đó (tham số thứ hai; level 0 tương ứng được lấy tự động, giữ 35 ngày).
 
 **Khôi phục toàn bộ sau sự cố** (thứ tự, mỗi bước xem mục tương ứng):
 

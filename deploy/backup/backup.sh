@@ -31,6 +31,7 @@ BYTES=0
 SHA=""
 NOTE=""
 EXTRA='{}'        # trường thêm của status JSON (job objects: số object, dung lượng…)
+RESTORE_SCRATCH=""  # DB tạm của restore-check (on_error xoá)
 WRITE_STATUS=true
 
 log() { echo "[backup:$JOB] $*"; }
@@ -51,6 +52,7 @@ write_status() {  # ok error
 
 on_error() {
   local rc=$? line=$1 reason
+  trap - ERR
   # Dòng stderr cuối (vd "pg_dump: error: ... password authentication failed") để
   # cảnh báo nói được nguyên nhân thay vì chỉ số dòng.
   reason=$(grep -v '^\s*$' "$ERRLOG" 2>/dev/null | tail -1 | cut -c1-300 || true)
@@ -60,6 +62,10 @@ on_error() {
   # Lần chạy thành công kế tiếp phải ghi status ngay để xoá cảnh báo (wal chỉ ghi mỗi giờ).
   rm -f "$STATE/$JOB.status-epoch" 2>/dev/null || true
   rm -f "$TMP/$JOB".* 2>/dev/null || true
+  # restore-check: không để DB tạm (cỡ cả DB chính) nằm lại tới lần chạy sau.
+  if [ -n "${RESTORE_SCRATCH:-}" ]; then
+    psql -qAt -d postgres -c "DROP DATABASE IF EXISTS \"$RESTORE_SCRATCH\"" >/dev/null 2>&1 || true
+  fi
   exit "$rc"
 }
 trap 'on_error $LINENO' ERR
@@ -98,7 +104,7 @@ need_space() {  # bytes
 
 job_wal() {
   pg_env
-  local mode failed_at archived_at n=0 f dir enc last now
+  local mode failed_at archived_at n=0 f dir enc last now every="${BACKUP_WAL_STATUS_EVERY_S:-600}"
   [ -d "$SPOOL" ] || fail "thiếu thư mục spool $SPOOL"
   # Lần chạy theo lịch và lần chạy tay không được cùng đẩy/xoá một file WAL.
   exec 9>"$STATE/wal.lock"
@@ -117,6 +123,14 @@ job_wal() {
     OBJECT="$PREFIX/wal/$dir/$f.zst.age"
     rm -f "$enc" "$SPOOL/$f"
     n=$(( n + 1 ))
+    # Đẩy dồn nhiều WAL (sau sự cố) có thể lâu hơn hạn cảnh báo 15 phút: ghi status giữa chừng
+    # (các lần cron trong lúc này bị flock bỏ qua, không ghi gì).
+    now=$(date +%s); last=$(cat "$STATE/wal.status-epoch" 2>/dev/null || echo 0)
+    if [ $(( now - last )) -ge "$every" ]; then
+      NOTE="đang đẩy WAL dồn: $n file xong"
+      write_status true
+      echo "$now" > "$STATE/wal.status-epoch"
+    fi
   done
 
   # archive_command lỗi (spool chưa có, đầy đĩa…) → WAL dồn lại trong pg_wal của server.
@@ -131,7 +145,7 @@ job_wal() {
   # Chạy mỗi phút: chỉ ghi status khi có file mới hoặc ≥ 10 phút chưa ghi — backend cảnh báo
   # WAL quá hạn sau 15 phút (internal/application/service/backup_monitor.go).
   now=$(date +%s); last=$(cat "$STATE/wal.status-epoch" 2>/dev/null || echo 0)
-  if [ "$n" -eq 0 ] && [ $(( now - last )) -lt "${BACKUP_WAL_STATUS_EVERY_S:-600}" ]; then
+  if [ "$n" -eq 0 ] && [ $(( now - last )) -lt "$every" ]; then
     WRITE_STATUS=false
   else
     echo "$now" > "$STATE/wal.status-epoch"
@@ -216,10 +230,28 @@ mirror_error() {  # log
     | grep -v '^\s*$' | tail -1 | cut -c1-200 || true
 }
 
+# mc_host_url endpoint access secret → "http://ACCESS:SECRET@host:port" cho MC_HOST_<alias>
+# (khoá được percent-encode; endpoint không có scheme coi là http).
+mc_host_url() {
+  local ep=${1%/} scheme=http
+  case "$ep" in
+    https://*) scheme=https; ep=${ep#https://} ;;
+    http://*) ep=${ep#http://} ;;
+  esac
+  printf '%s://%s:%s@%s' "$scheme" "$(jq -rn --arg v "$2" '$v|@uri')" "$(jq -rn --arg v "$3" '$v|@uri')" "$ep"
+}
+
+# source_counts bucket → "số-object tổng-byte" (object hiện hành, bỏ key kiểu thư mục "…/").
+source_counts() {
+  mc ls --recursive --json "src/$1" \
+    | jq -rs '[.[] | select(.type == "file" and ((.key // "") | endswith("/") | not))]
+              | "\(length) \(map(.size // 0) | add // 0)"'
+}
+
 job_objects() {
   local src_vars="${BACKUP_SRC_S3_ENDPOINT:-}${BACKUP_SRC_S3_BUCKET:-}${BACKUP_SRC_S3_ACCESS_KEY:-}${BACKUP_SRC_S3_SECRET_KEY:-}"
   local bucket="${BACKUP_SRC_S3_BUCKET:-}" stage="$OBJECTS_STAGE" snar0="$STATE/objects.l0.snar" snar="$TMP/$JOB.snar"
-  local level enc mlog idx key started n_obj n_bytes copied removed src_size have out
+  local level enc mlog idx key started n_obj n_bytes copied removed src_count src_size have have_bytes drop errors out counts
   # Bản cài không dùng MinIO cho file ứng dụng: không cấu hình gì → bỏ qua, không báo lỗi.
   if [ -z "$src_vars" ]; then NOTE="chưa cấu hình BACKUP_SRC_S3_* — bỏ qua"; log "$NOTE"; return 0; fi
   if [ -z "${BACKUP_SRC_S3_ENDPOINT:-}" ] || [ -z "$bucket" ] || [ -z "${BACKUP_SRC_S3_ACCESS_KEY:-}" ] \
@@ -230,31 +262,47 @@ job_objects() {
   exec 8>"$STATE/objects.lock"
   if ! flock -n 8; then WRITE_STATUS=false; log "đang chạy ở tiến trình khác — bỏ qua"; return 0; fi
 
-  # alias set thử kết nối luôn; giữ câu lỗi của mc (không chứa khoá) trong status.
-  if ! out=$(mc alias set src "$BACKUP_SRC_S3_ENDPOINT" "$BACKUP_SRC_S3_ACCESS_KEY" "$BACKUP_SRC_S3_SECRET_KEY" 2>&1 >/dev/null); then
-    fail "không kết nối được nguồn $BACKUP_SRC_S3_ENDPOINT (bucket $bucket): $(echo "${out##*<ERROR> }" | tail -1 | cut -c1-300)"
-  fi
+  # Khoá nguồn qua biến môi trường MC_HOST_src (không nằm trong argv/ps hay file cấu hình mc).
+  export MC_HOST_src
+  MC_HOST_src=$(mc_host_url "$BACKUP_SRC_S3_ENDPOINT" "$BACKUP_SRC_S3_ACCESS_KEY" "$BACKUP_SRC_S3_SECRET_KEY")
+  # Giữ câu lỗi của mc (không chứa khoá) trong status.
   if ! out=$(mc ls "src/$bucket" 2>&1 >/dev/null); then
     fail "không đọc được bucket nguồn $bucket ở $BACKUP_SRC_S3_ENDPOINT: $(echo "${out##*<ERROR> }" | tail -1 | cut -c1-300)"
   fi
 
   mkdir -p "$stage"
+  counts=$(source_counts "$bucket"); read -r src_count src_size <<<"$counts"
+  have=$(find "$stage" -type f | wc -l)
+  # Nguồn sai/rỗng (đổi endpoint, bucket mới, lỗi quyền liệt kê…) + --remove = xoá sạch bản sao
+  # mà vẫn báo ok. Bucket giảm bất thường so với bản sao → dừng, không mirror.
+  if [ "${BACKUP_OBJECTS_ALLOW_SHRINK:-0}" != 1 ] && [ "$have" -gt 0 ]; then
+    drop=$(( have - src_count ))
+    if [ "$src_count" -eq 0 ] || [ "$drop" -gt 500 ] || [ $(( drop * 100 )) -gt $(( have * 20 )) ]; then
+      fail "bucket nguồn $bucket có $src_count object, bản sao có $have — giảm bất thường, không mirror --remove (đúng là đã xoá thì chạy với BACKUP_OBJECTS_ALLOW_SHRINK=1)"
+    fi
+  fi
   # Chỗ trống: phần bucket chưa có trong bản sao + archive (≈ cả bucket, ảnh/PDF nén ít).
-  src_size=$(mc du --json "src/$bucket" | jq -r '.size // 0')
-  have=$(du -sb "$stage" | cut -f1)
-  need_space $(( src_size > have ? 2 * src_size - have : src_size ))
+  have_bytes=$(du -sb "$stage" | cut -f1)
+  need_space $(( src_size > have_bytes ? 2 * src_size - have_bytes : src_size ))
   # Bản sao cục bộ của bucket: chỉ tải object mới/đổi, --remove xoá tệp mà bucket đã xoá.
   # Tệp không đổi giữ nguyên mtime → tar level 1 chỉ chứa phần thay đổi.
   mlog="$TMP/$JOB.mirror.jsonl"
   if ! mc mirror --overwrite --remove --retry --json "src/$bucket" "$stage" > "$mlog"; then
     fail "mc mirror từ $bucket lỗi: $(mirror_error "$mlog")"
   fi
+  errors=$({ jq -r 'select(.status=="error") | 1' "$mlog" 2>/dev/null || true; } | wc -l)
+  [ "$errors" -eq 0 ] || fail "mc mirror từ $bucket báo $errors lỗi: $(mirror_error "$mlog")"
   copied=$({ jq -r 'select(.status=="success" and has("target") and (.source // "") != "") | 1' "$mlog" 2>/dev/null || true; } | wc -l)
   removed=$({ jq -r 'select(.status=="success" and has("target") and (.source // "") == "") | 1' "$mlog" 2>/dev/null || true; } | wc -l)
   rm -f "$mlog"
   # Key S3 kiểu symlink/thiết bị không thể có; gặp thì dừng thay vì đóng gói thứ lạ.
   [ -z "$(find "$stage" ! -type f ! -type d -print -quit)" ] || fail "$stage có mục không phải tệp/thư mục"
+  # Bản sao phải đủ từng object: key "x" cùng "x/con" (tệp trùng tên thư mục) bị mc bỏ qua im lặng.
   n_obj=$(find "$stage" -type f | wc -l)
+  counts=$(source_counts "$bucket"); read -r src_count src_size <<<"$counts"
+  if [ "$n_obj" -ne "$src_count" ]; then
+    fail "bản sao có $n_obj tệp nhưng bucket nguồn $bucket có $src_count object — mirror thiếu/thừa (key trùng tên thư mục, hoặc bucket đổi trong lúc chạy)"
+  fi
   n_bytes=$(du -sb "$stage" | cut -f1)
 
   if [ ! -s "$snar0" ] || [ ! -s "$OBJECTS_CHAIN" ] || [ "$(date +%u)" = "7" ]; then level=0; rm -f "$snar"
@@ -345,7 +393,7 @@ objects_db_refs() {  # db file-ra — key (sort -u) mà DB tham chiếu trong bu
 
 check_objects() {  # refs-file → OBJ_NOTE
   local refs=$1 idx="$TMP/$JOB.objects.idx" miss="$TMP/$JOB.objects.missing" f key size sha started
-  local n=0 remote hdr total lost=0 src_missing=0 first=""
+  local n=0 remote hdr total lost=0 src_missing=0 first="" first_src=""
   while IFS=$'\t' read -r -u 4 key size sha started; do
     [ -n "$key" ] || continue
     remote=$(mc cat "backup/$BUCKET/$key" | sha256sum | cut -d' ' -f1)
@@ -362,12 +410,18 @@ check_objects() {  # refs-file → OBJ_NOTE
     if [ -f "$OBJECTS_STAGE/$key" ]; then
       lost=$(( lost + 1 )); [ -n "$first" ] || first=$key
     else
-      src_missing=$(( src_missing + 1 ))
+      src_missing=$(( src_missing + 1 )); [ -n "$first_src" ] || first_src=$key
     fi
   done < "$miss"
   rm -f "$idx" "$miss"
   OBJ_NOTE="objects: chain=$n archive ok, db_refs=$total missing_in_backup=$lost missing_in_source=$src_missing"
   [ "$lost" -eq 0 ] || fail "objects: $lost tệp DB tham chiếu có trong bản sao bucket nhưng thiếu trong chuỗi backup (vd $first)"
+  # Vài object mất lẻ tẻ ở nguồn chỉ ghi chú; nhiều (> BACKUP_OBJECTS_MAX_MISSING, mặc định 10,
+  # hoặc > 1 % khi DB tham chiếu ≥ 100) = bucket nguồn hỏng/sai → lỗi để được xem ngay.
+  if [ "$src_missing" -gt "${BACKUP_OBJECTS_MAX_MISSING:-10}" ] \
+     || { [ "$total" -ge 100 ] && [ $(( src_missing * 100 )) -gt "$total" ]; }; then
+    fail "objects: $src_missing/$total tệp DB tham chiếu không còn trong bucket nguồn (vd $first_src)"
+  fi
 }
 
 job_restore_check() {
@@ -377,6 +431,7 @@ job_restore_check() {
   local q_tables="SELECT count(*) FROM pg_tables WHERE schemaname='public'"
   local q_rev="SELECT version || CASE WHEN dirty THEN ' dirty' ELSE '' END FROM schema_migrations"
   need_space "$(psql -qAt -d postgres -c "SELECT pg_database_size('$PGDATABASE')")"
+  RESTORE_SCRATCH=$scratch
   psql -qAt -d postgres -c "DROP DATABASE IF EXISTS \"$scratch\"" -c "CREATE DATABASE \"$scratch\" TEMPLATE template0"
   # Khôi phục dựng lại toàn bộ index HNSW + BM25 → thời gian job ≈ thời gian khôi phục logic thật.
   pg_dump -Fc -d "$PGDATABASE" | pg_restore --no-owner --no-privileges --exit-on-error -d "$scratch"
@@ -394,6 +449,7 @@ job_restore_check() {
   fi
   if objects_configured; then objects_db_refs "$scratch" "$refs"; fi
   psql -qAt -d postgres -c "DROP DATABASE \"$scratch\""
+  RESTORE_SCRATCH=""
   NOTE="tables=$dst_tables/$src_tables migration=$dst_rev embeddings=$emb vector_hits=$vec bm25_hits=$bm25"
   if [ "$src_tables" != "$dst_tables" ] || [ "$src_rev" != "$dst_rev" ]; then
     fail "khôi phục không khớp: $NOTE"

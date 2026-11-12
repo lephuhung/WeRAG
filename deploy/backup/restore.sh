@@ -6,8 +6,9 @@
 #   restore.sh postgres <db> <object|latest> <db-mới>        pg_restore bản dump của <db> vào DB mới
 #   restore.sh pgbase <object|latest> <thư-mục>              giải nén base backup (vật lý) ra thư mục
 #   restore.sh wal <file-WAL-đầu> <thư-mục>                  tải mọi WAL từ file đó trở đi (+ .history)
-#   restore.sh files <thư-mục>                               level 0 mới nhất + level 1 sau nó
-#   restore.sh objects <thư-mục>                             bucket file ứng dụng (như files); đẩy lại
+#   restore.sh files <thư-mục> [tới-archive]                 level 0 mới nhất + level 1 sau nó (hoặc
+#                                                            trạng thái lúc archive chỉ định)
+#   restore.sh objects <thư-mục> [tới-archive]               bucket file ứng dụng (như files); đẩy lại
 #                                                            lên bucket bằng mc mirror (README.md)
 #   restore.sh objects-check <thư-mục> [db]                  đối chiếu thư mục đã khôi phục với key
 #                                                            MinIO mà DB tham chiếu (bảng resources)
@@ -48,12 +49,26 @@ decrypt() {  # key → stdout
 }
 
 # Level 1 luôn so với level 0 (backup.sh) → level 0 mới nhất + level 1 cuối cùng sau nó là đủ;
-# -g /dev/null: xoá cả tệp đã bị xoá trước lần level 1 đó.
-restore_incremental() {  # loại thư-mục
-  local kind=$1 dir=$2 l0 l1 key
-  l0=$(keys "$kind" 'L0\.tar' | tail -1)
-  [ -n "$l0" ] || { echo "không có bản level 0 của $kind" >&2; exit 1; }
-  l1=$(keys "$kind" 'L1\.tar' | awk -v l0="$(basename "$l0")" '{ split($0, p, "/"); if (p[length(p)] > l0) last=$0 } END { print last }')
+# -g /dev/null: xoá cả tệp đã bị xoá trước lần level 1 đó. <tới-archive> (tên archive hoặc
+# một phần duy nhất của nó, vd 20261110T024001) khôi phục trạng thái lúc archive đó: archive
+# đó + level 0 ngay trước nó (dùng khi bản mới nhất đã hỏng, vd nguồn bị xoá rồi mới backup).
+restore_incremental() {  # loại thư-mục [tới-archive]
+  local kind=$1 dir=$2 upto=${3:-} l0 l1 key target n
+  if [ -n "$upto" ]; then
+    n=$(keys "$kind" | { grep -F -- "$upto" || true; } | wc -l)
+    [ "$n" -eq 1 ] || { echo "'$upto' khớp $n archive $kind (cần đúng 1; xem: restore.sh list $kind)" >&2; exit 1; }
+    target=$(keys "$kind" | grep -F -- "$upto")
+    case "$(basename "$target")" in
+      *-L0.tar*) l0=$target; l1="" ;;
+      *) l1=$target
+         l0=$(keys "$kind" 'L0\.tar' | awk -v t="$(basename "$target")" '{ split($0, p, "/"); if (p[length(p)] < t) last=$0 } END { print last }') ;;
+    esac
+    [ -n "$l0" ] || { echo "không có bản level 0 trước $(basename "$target")" >&2; exit 1; }
+  else
+    l0=$(keys "$kind" 'L0\.tar' | tail -1)
+    [ -n "$l0" ] || { echo "không có bản level 0 của $kind" >&2; exit 1; }
+    l1=$(keys "$kind" 'L1\.tar' | awk -v l0="$(basename "$l0")" '{ split($0, p, "/"); if (p[length(p)] > l0) last=$0 } END { print last }')
+  fi
   mkdir -p "$dir"
   for key in $l0 $l1; do
     decrypt "$key" | zstd -q -d | tar -C "$dir" -g /dev/null -xf -
@@ -102,9 +117,9 @@ case "${1:-}" in
     done < <(keys wal)
     echo "[restore] $n file WAL → $dir" ;;
   files)
-    restore_incremental files "${2:?thư mục ra}" ;;
+    restore_incremental files "${2:?thư mục ra}" "${3:-}" ;;
   objects)
-    restore_incremental objects "${2:?thư mục ra}" ;;
+    restore_incremental objects "${2:?thư mục ra}" "${3:-}" ;;
   objects-check)
     # Mọi key mà resources (provider minio, đang dùng) trỏ tới phải có trong thư mục khôi phục.
     dir="${2:?thư mục đã khôi phục}"; db="${3:-${PGDATABASE:?thiếu PGDATABASE}}"
@@ -120,5 +135,5 @@ case "${1:-}" in
     LC_ALL=C comm -23 "$WORK/refs" "$WORK/have" | head -20
     [ "$missing" -eq 0 ] ;;
   *)
-    sed -n '2,19p' "$0"; exit 2 ;;
+    sed -n '2,21p' "$0"; exit 2 ;;
 esac

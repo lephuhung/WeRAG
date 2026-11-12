@@ -34,10 +34,14 @@ import (
 //
 // A digest is written only when the set of failing jobs changes (or a day
 // after a SuperAdmin read it while the incident goes on), so the check
-// every ten minutes does not toast the same incident again. A read error
-// (backup storage unreachable) counts only once it lasted
-// backupReadErrorGrace; until then the job keeps its previous state.
-// With Redis, one instance at a time runs the check.
+// every ten minutes does not toast the same incident again. When every job
+// is healthy, each SuperAdmin's latest alert is stamped resolved (in its
+// payload, so a restart still tells a recurrence from the same incident)
+// and the open ones are closed. A read error (backup storage unreachable)
+// counts only once it lasted backupReadErrorGrace; until then the job
+// keeps its previous state, and while any job is in that state (e.g. right
+// after a restart) the digests are left as they are. With Redis, one
+// instance at a time runs the check.
 
 const (
 	// BackupMonitorInterval is how often the status files are read.
@@ -145,9 +149,6 @@ type BackupMonitor struct {
 	last map[string]BackupJobReport
 	// lastOK: the newest successful run seen of each job
 	lastOK map[string]time.Time
-	// resolvedAt: the last check that found every job healthy; a digest
-	// older than it belongs to an earlier incident
-	resolvedAt time.Time
 	// checking: one check at a time in this process
 	checking sync.Mutex
 }
@@ -166,21 +167,28 @@ func NewBackupMonitor(reader BackupStatusReader, jobs []BackupJobSpec, users int
 }
 
 // NewBackupMonitorFromEnv creates the monitor from BACKUP_S3_ENDPOINT,
-// BACKUP_S3_ACCESS_KEY, BACKUP_S3_SECRET_KEY, BACKUP_S3_BUCKET
-// (inventory-backups), BACKUP_PREFIX (werag) and BACKUP_MONITOR_JOBS (a
-// comma-separated subset of DefaultBackupJobs); nil when unset. Nothing is
+// BACKUP_S3_BUCKET (inventory-backups), BACKUP_PREFIX (werag),
+// BACKUP_S3_REGION (us-east-1) and BACKUP_MONITOR_JOBS (a comma-separated
+// subset of DefaultBackupJobs). It reads with BACKUP_STATUS_S3_ACCESS_KEY /
+// BACKUP_STATUS_S3_SECRET_KEY (a user that may only read the status
+// files) when both are set, else with BACKUP_S3_ACCESS_KEY /
+// BACKUP_S3_SECRET_KEY; nil when no credentials or endpoint. Nothing is
 // contacted here: an unreachable storage only shows in the checks.
 func NewBackupMonitorFromEnv(users interfaces.UserRepository, notifications interfaces.UserNotificationRepository,
 	rdb *redis.Client,
 ) *BackupMonitor {
 	endpoint := strings.TrimSpace(os.Getenv("BACKUP_S3_ENDPOINT"))
-	access := strings.TrimSpace(os.Getenv("BACKUP_S3_ACCESS_KEY"))
-	secret := strings.TrimSpace(os.Getenv("BACKUP_S3_SECRET_KEY"))
+	access := strings.TrimSpace(os.Getenv("BACKUP_STATUS_S3_ACCESS_KEY"))
+	secret := strings.TrimSpace(os.Getenv("BACKUP_STATUS_S3_SECRET_KEY"))
+	if access == "" || secret == "" {
+		access = strings.TrimSpace(os.Getenv("BACKUP_S3_ACCESS_KEY"))
+		secret = strings.TrimSpace(os.Getenv("BACKUP_S3_SECRET_KEY"))
+	}
 	if endpoint == "" || access == "" || secret == "" {
 		return nil
 	}
 	reader, err := NewMinioBackupStatusReader(endpoint, access, secret,
-		envOr("BACKUP_S3_BUCKET", "inventory-backups"), envOr("BACKUP_PREFIX", "werag"))
+		envOr("BACKUP_S3_BUCKET", "inventory-backups"), envOr("BACKUP_PREFIX", "werag"), envOr("BACKUP_S3_REGION", "us-east-1"))
 	if err != nil {
 		logger.Warnf(context.Background(), "[BackupMonitor] off: %v", err)
 		return nil
@@ -225,8 +233,10 @@ type minioBackupStatusReader struct {
 }
 
 // NewMinioBackupStatusReader creates a reader; endpoint is a URL
-// ("http://host:9000", as mc takes it) or host:port (plain HTTP).
-func NewMinioBackupStatusReader(endpoint, access, secret, bucket, prefix string) (BackupStatusReader, error) {
+// ("http://host:9000", as mc takes it) or host:port (plain HTTP). A fixed
+// region skips the bucket-location lookup, so the account needs only
+// s3:GetObject on the status files.
+func NewMinioBackupStatusReader(endpoint, access, secret, bucket, prefix, region string) (BackupStatusReader, error) {
 	host, secure := endpoint, false
 	if strings.Contains(endpoint, "://") {
 		u, err := url.Parse(endpoint)
@@ -235,7 +245,8 @@ func NewMinioBackupStatusReader(endpoint, access, secret, bucket, prefix string)
 		}
 		host, secure = u.Host, u.Scheme == "https"
 	}
-	client, err := minio.New(host, &minio.Options{Creds: credentials.NewStaticV4(access, secret, ""), Secure: secure})
+	client, err := minio.New(host, &minio.Options{Creds: credentials.NewStaticV4(access, secret, ""), Secure: secure,
+		Region: region})
 	if err != nil {
 		return nil, fmt.Errorf("backup storage client: %w", err)
 	}
@@ -383,15 +394,60 @@ func (m *BackupMonitor) Check(ctx context.Context) error {
 	}
 	defer release()
 	rep := m.read(ctx, true)
+	for _, r := range rep.Jobs {
+		if r.State == BackupStateUnknown {
+			// a job not read yet (storage unreachable, e.g. after a restart):
+			// neither close an open digest nor change it on partial news
+			return nil
+		}
+	}
 	alert := backupAlertPayload(rep)
 	if alert.Count == 0 {
-		m.mu.Lock()
-		m.resolvedAt = m.digests.now()
-		m.mu.Unlock()
-		return m.digests.closeIfEmpty(ctx, types.UserNotificationBackupAlert,
-			func(context.Context) (int64, error) { return 0, nil })
+		return m.resolve(ctx)
 	}
 	return m.raise(ctx, alert)
+}
+
+// resolve stamps every SuperAdmin's latest backup alert resolved (once)
+// and closes the open ones.
+func (m *BackupMonitor) resolve(ctx context.Context) error {
+	recipients, err := m.digests.reviewers(ctx, "")
+	if err != nil {
+		return fmt.Errorf("listing SuperAdmins: %w", err)
+	}
+	now := m.digests.now()
+	var failed []string
+	for _, userID := range recipients {
+		prev, err := m.digests.notifications.LatestOfKind(ctx, userID, types.UserNotificationBackupAlert)
+		if err != nil {
+			failed = append(failed, fmt.Sprintf("%s: %v", userID, err))
+			continue
+		}
+		if prev == nil {
+			continue
+		}
+		var p types.UserNotificationBackupAlertPayload
+		if len(prev.Payload) > 0 && json.Unmarshal(prev.Payload, &p) != nil {
+			continue // not ours to rewrite
+		}
+		if p.ResolvedAt != nil {
+			continue
+		}
+		at := now
+		p.ResolvedAt = &at
+		raw, _ := json.Marshal(p)
+		if err := m.digests.notifications.SetPayload(ctx, userID, prev.ID, types.JSON(raw)); err != nil {
+			failed = append(failed, fmt.Sprintf("%s: %v", userID, err))
+		}
+	}
+	if err := m.digests.closeIfEmpty(ctx, types.UserNotificationBackupAlert,
+		func(context.Context) (int64, error) { return 0, nil }); err != nil {
+		failed = append(failed, err.Error())
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("resolving the backup alert: %s", strings.Join(failed, "; "))
+	}
+	return nil
 }
 
 // lock takes the cross-instance lock of a check (Redis); without Redis, or
@@ -421,15 +477,12 @@ func (m *BackupMonitor) lock(ctx context.Context) (release func(), ok bool) {
 
 // raise writes the digest of every SuperAdmin whose latest backup_alert is
 // not this incident already (open with the same signature, or read less
-// than a day ago and newer than the last healthy check).
+// than a day ago, and not resolved since).
 func (m *BackupMonitor) raise(ctx context.Context, alert types.UserNotificationBackupAlertPayload) error {
 	recipients, err := m.digests.reviewers(ctx, "")
 	if err != nil {
 		return fmt.Errorf("listing SuperAdmins: %w", err)
 	}
-	m.mu.Lock()
-	resolvedAt := m.resolvedAt
-	m.mu.Unlock()
 	now := m.digests.now()
 	var failed []string
 	for _, userID := range recipients {
@@ -441,7 +494,7 @@ func (m *BackupMonitor) raise(ctx context.Context, alert types.UserNotificationB
 			failed = append(failed, fmt.Sprintf("%s: %v", userID, err))
 			continue
 		}
-		if backupAlertCurrent(prev, alert.Signature, resolvedAt, now) {
+		if backupAlertCurrent(prev, alert.Signature, now) {
 			continue
 		}
 		n := backupAlertNotification(userID, alert, now)
@@ -458,19 +511,20 @@ func (m *BackupMonitor) raise(ctx context.Context, alert types.UserNotificationB
 }
 
 // backupAlertCurrent reports whether prev (the person's latest backup
-// alert) already tells the incident of signature.
-func backupAlertCurrent(prev *types.UserNotification, signature string, resolvedAt, now time.Time) bool {
+// alert) already tells the incident of signature: same jobs and problems,
+// not resolved since, and unread or read less than a day ago.
+func backupAlertCurrent(prev *types.UserNotification, signature string, now time.Time) bool {
 	if prev == nil {
 		return false
 	}
 	var p types.UserNotificationBackupAlertPayload
-	if len(prev.Payload) == 0 || json.Unmarshal(prev.Payload, &p) != nil || p.Signature != signature {
+	if len(prev.Payload) == 0 || json.Unmarshal(prev.Payload, &p) != nil || p.Signature != signature || p.ResolvedAt != nil {
 		return false
 	}
 	if prev.ReadAt == nil {
 		return true
 	}
-	return now.Sub(*prev.ReadAt) < backupRemindAfter && prev.CreatedAt.After(resolvedAt)
+	return now.Sub(*prev.ReadAt) < backupRemindAfter
 }
 
 // backupAlertPayload lists the jobs of rep with a problem.
