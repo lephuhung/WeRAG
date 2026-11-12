@@ -34,6 +34,10 @@ const ToastContext = createContext<Toast>({
 });
 
 const AUTO_DISMISS_MS = 5000;
+/* Errors stay until the user closes them (or a caller passes durationMs):
+ * a failure message that vanishes after 5 s is easy to miss. The stack
+ * keeps the 5 newest toasts, so lingering errors never pile up. */
+const ERROR_DISMISS_MS: number | null = null;
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<ToastItem[]>([]);
@@ -98,9 +102,10 @@ function ToastRow({
 }) {
   const { t } = useT();
   const [leaving, setLeaving] = useState(false);
-  const duration = item.durationMs ?? AUTO_DISMISS_MS;
+  const duration = item.durationMs ?? (item.kind === "error" ? ERROR_DISMISS_MS : AUTO_DISMISS_MS);
 
   useEffect(() => {
+    if (duration === null) return;
     const hide = setTimeout(() => setLeaving(true), duration);
     const remove = setTimeout(() => onDismiss(item.id), duration + 200);
     return () => {
@@ -111,7 +116,7 @@ function ToastRow({
 
   return (
     <div
-      role="status"
+      role={item.kind === "error" ? "alert" : "status"}
       onClick={item.onClick}
       className={`card pointer-events-auto flex items-start gap-2.5 py-2.5 pl-3 pr-1.5 shadow-lg transition-all duration-200 ${
         leaving ? "-translate-y-1 opacity-0" : "opacity-100"

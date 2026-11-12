@@ -248,12 +248,13 @@ export default function KnowledgeBaseList() {
             <button
               type="button"
               title={t("kbAccess.tab")}
+              aria-label={t("kbAccess.tab")}
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 router.push(`/platform/knowledge-bases/${kb.id}?tab=access`);
               }}
-              className="absolute right-4 top-4 z-10 flex h-7 items-center justify-center gap-1 rounded-full px-2 text-[11px] font-medium text-muted opacity-0 transition-opacity hover:bg-surface-strong hover:text-ink group-hover:opacity-100"
+              className="absolute right-4 top-4 z-10 flex h-7 items-center justify-center gap-1 rounded-full px-2 text-[11px] font-medium text-muted opacity-0 transition-opacity hover:bg-surface-strong hover:text-ink group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100"
             >
               <IconExternal className="h-4 w-4" />
               {kb.caps.canInvite ? t("kbList.invite") : null}

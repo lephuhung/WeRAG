@@ -15,6 +15,7 @@ import {
   type ArtifactLibraryItem,
 } from "@/lib/api/chat";
 import { useT } from "@/lib/i18n";
+import { useToast } from "@/components/toast";
 import {
   ARTIFACT_CATEGORIES,
   artifactCategoryExtensions,
@@ -97,6 +98,7 @@ function ArtifactThumb({ item }: { item: ArtifactLibraryItem }) {
 
 function ArtifactsInner() {
   const { t, locale } = useT();
+  const toast = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [category, setCategory] = useState<ArtifactCategory>("all");
@@ -232,7 +234,7 @@ function ArtifactsInner() {
       document.body.removeChild(el);
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch {
-      alert(t("artifactLibrary.downloadFailed"));
+      toast.error(t("artifactLibrary.downloadFailed"));
     } finally {
       setDownloading((d) => ({ ...d, [key]: false }));
     }

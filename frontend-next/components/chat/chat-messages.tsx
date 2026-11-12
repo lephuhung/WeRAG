@@ -358,7 +358,7 @@ function AnswerFeedback({
         disabled={saving}
         aria-pressed={vote === -1}
         className={thumbClass(vote === -1)}
-        title={vote === 1 ? t("chat.feedback.clear") : t("chat.feedback.down")}
+        title={vote === -1 ? t("chat.feedback.clear") : t("chat.feedback.down")}
         aria-label={t("chat.feedback.down")}
       >
         <IconThumbDown className={`h-3.5 w-3.5 ${vote === -1 ? "fill-current" : ""}`} />

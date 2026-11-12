@@ -1,6 +1,7 @@
 /* Grantees of the "Access" tab: personal invitations and unit grants with
- * status, expiry and revoke. Revoking when the person would still read
- * the KB (published, or tenant-wide and in the owner unit) asks first. */
+ * status, expiry and revoke. Every revoke asks first; when the person would
+ * still read the KB another way (published, or open to the whole owner
+ * organization) the question says so. */
 "use client";
 
 import { useState } from "react";
@@ -46,8 +47,8 @@ export function KbAccessGrantees({ overview, onChanged }: { overview: KBAccessOv
   };
 
   const askRevoke = (g: KBGrantee) => {
-    if (revokeKeepsAccess(overview, g)) setConfirming(rowKey(g));
-    else void revoke(g);
+    setError("");
+    setConfirming(rowKey(g));
   };
 
   return (
@@ -104,20 +105,33 @@ export function KbAccessGrantees({ overview, onChanged }: { overview: KBAccessOv
                     </button>
                   )}
                 </div>
-                {confirming === key && keeps && (
-                  <div className="flex flex-wrap items-center gap-2 rounded-lg bg-warning-surface px-2.5 py-1.5 text-warning">
+                {confirming === key && (
+                  <div
+                    role="alertdialog"
+                    aria-label={t("kbAccess.revoke")}
+                    className={`flex flex-wrap items-center gap-2 rounded-lg px-2.5 py-1.5 ${
+                      keeps ? "bg-warning-surface text-warning" : "bg-surface-strong text-ink"
+                    }`}
+                  >
                     <span className="caption">
-                      {keeps === "published" ? t("kbAccess.revokeKeepsPublished") : t("kbAccess.revokeKeepsTenant")}
+                      {keeps
+                        ? keeps === "published"
+                          ? t("kbAccess.revokeKeepsPublished")
+                          : t("kbAccess.revokeKeepsTenant")
+                        : g.kind === "user"
+                          ? t("kbAccess.revokeConfirmUser", { name: g.name || g.email || g.id })
+                          : t("kbAccess.revokeConfirmTenant", { name: g.name || g.id })}
                     </span>
                     <button
                       type="button"
                       className="btn btn-outline btn-sm py-0.5 text-xs text-error"
                       disabled={busy !== null}
+                      aria-busy={busy === key}
                       onClick={() => void revoke(g)}
                     >
-                      {t("kbAccess.revokeAnyway")}
+                      {busy === key ? "…" : keeps ? t("kbAccess.revokeAnyway") : t("kbAccess.revoke")}
                     </button>
-                    <button type="button" className="btn btn-outline btn-sm py-0.5 text-xs" onClick={() => setConfirming(null)}>
+                    <button type="button" className="btn btn-outline btn-sm py-0.5 text-xs" disabled={busy === key} onClick={() => setConfirming(null)}>
                       {t("common.cancel")}
                     </button>
                   </div>

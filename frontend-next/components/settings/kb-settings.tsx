@@ -14,6 +14,7 @@ import { Modal } from "@/components/modal";
 import { Toggle } from "@/components/settings/toggle";
 import { Select } from "@/components/select";
 import { WikiCatalogueRebuild } from "@/components/settings/wiki-catalogue-rebuild";
+import { KbDangerZone } from "@/components/knowledge/kb-delete-dialog";
 import { useT } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import {
@@ -73,11 +74,17 @@ export function KbSettingsModal({
   open,
   onClose,
   onSaved,
+  canDelete = false,
+  onDeleted,
 }: {
   kbId: string;
   open: boolean;
   onClose: () => void;
   onSaved?: (row: KnowledgeBaseRow) => void;
+  /* The caller's effective Manage permission on this KB (the right the
+   * backend requires for DELETE); shows the danger zone. */
+  canDelete?: boolean;
+  onDeleted?: () => void;
 }) {
   const { t } = useT();
   /* Tenant admins rename and describe the KB; everything that configures it
@@ -245,6 +252,9 @@ export function KbSettingsModal({
                   <span className="text-ink">{t("kbSettings.visInAccessTab")}</span>
                 </div>
                 {!isSystemAdmin && <p className="caption text-muted-soft">{t("kbSettings.configBySuperAdmin")}</p>}
+                {canDelete && kb && onDeleted && (
+                  <KbDangerZone kbId={kbId} kbName={kb.name} onDeleted={onDeleted} />
+                )}
               </div>
             )}
 

@@ -3,6 +3,7 @@
 import layout from "./knowledge/kb-detail-layout.module.css";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   batchQueryKnowledge,
   getKnowledgeBase,
@@ -98,7 +99,8 @@ const SEARCH_DEBOUNCE_MS = 300;
 
 export function KbDetail({ kbId }: { kbId: string }) {
   const { t } = useT();
-const toast = useToast();
+  const toast = useToast();
+  const router = useRouter();
   const { isTenantAdmin, isSystemAdmin } = useTenantRole();
   const { selectedTenantId, tenant, user } = useAuth();
   const [activeTab, setActiveTab] = useState<MainTab>("docs-wiki");
@@ -895,6 +897,17 @@ const toast = useToast();
               setKb(row ?? null);
             })
             .catch(() => toast.error(t("common.error")));
+        }}
+        /* Delete only on the server's effective Manage permission (the
+         * right DELETE /knowledge-bases/:id requires), never on the
+         * client-side estimate used while /access is loading. */
+        canDelete={accessCaps?.canManage === true}
+        onDeleted={() => {
+          const name = kb?.name ?? "";
+          setSettingsOpen(false);
+          toast.success(t("kbDelete.done", { name }));
+          /* The list page fetches on mount, so it shows the fresh list. */
+          router.push("/platform/knowledge-bases");
         }}
       />
       <UploadModal
