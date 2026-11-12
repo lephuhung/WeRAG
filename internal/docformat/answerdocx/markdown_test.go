@@ -57,6 +57,9 @@ func viewPara(p docxwrite.Paragraph) para {
 		b.WriteString(t)
 	}
 	v := para{style: p.Style, text: b.String(), indent: p.IndentTwips}
+	if p.Continues != nil {
+		v.indent += docxwrite.ListTextIndent(p.Continues.Level)
+	}
 	if p.List != nil {
 		if p.List.Ordered {
 			v.list = "n" + string(rune('0'+p.List.Level)) + ":" + itoa(p.List.Start)
@@ -125,6 +128,9 @@ func TestMarkdownBlocks(t *testing.T) {
 		{"loose list with follow-up paragraph", "1. Bước một\n\n   Giải thích thêm.\n\n2. Bước hai",
 			[]para{{text: "Bước một", list: "n0:1"}, {text: "Giải thích thêm.", indent: docxwrite.ListTextIndent(0)},
 				{text: "Bước hai", list: "n0:2"}}},
+		{"follow-up of a nested item is not indented twice", "1. a\n   - b\n\n     thêm\n2. c",
+			[]para{{text: "a", list: "n0:1"}, {text: "b", list: "b1"}, {text: "thêm", indent: docxwrite.ListTextIndent(1)},
+				{text: "c", list: "n0:2"}}},
 		{"lazy continuation", "- dòng đầu\ntiếp nối", []para{{text: "dòng đầu\ntiếp nối", list: "b0"}}},
 		{"list ends at paragraph", "- mục\n\nĐoạn sau", []para{{text: "mục", list: "b0"}, {text: "Đoạn sau"}}},
 		{"year is not a list inside a paragraph", "Ban hành năm\n2024. Có hiệu lực", []para{{text: "Ban hành năm\n2024. Có hiệu lực"}}},

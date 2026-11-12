@@ -20,12 +20,17 @@ type Citation struct {
 
 var citationAttrRe = regexp.MustCompile(`([A-Za-z_]+)\s*=\s*"([^"]*)"`)
 
-// Citations lists the <kb/> and <web/> tags of md in order of first use,
-// each chunk or URL once. Read before the tags are stripped.
+// Citations lists the <kb/> and <web/> tags of md outside code in order
+// of first use, each chunk or URL once. Read before the tags are stripped.
 func Citations(md string) []Citation {
+	var tags []string
+	replaceOutsideCode(md, citationTagRe, func(seg string, _, _ bool) string {
+		tags = append(tags, citationTagRe.FindAllString(seg, -1)...)
+		return seg
+	})
 	var out []Citation
 	seen := map[string]bool{}
-	for _, tag := range citationTagRe.FindAllString(md, -1) {
+	for _, tag := range tags {
 		isKB := strings.HasPrefix(tag, "<kb")
 		if !isKB && !strings.HasPrefix(tag, "<web") {
 			continue // </kb>, <ref …/>: no source of their own
@@ -36,7 +41,9 @@ func Citations(md string) []Citation {
 		}
 		c := Citation{ChunkID: attrs["chunk_id"], KBID: attrs["kb_id"], Doc: attrs["doc"], URL: attrs["url"], Title: attrs["title"]}
 		key := "kb:" + c.ChunkID + "\x00" + c.Doc
-		if !isKB {
+		if isKB {
+			c.URL, c.Title = "", "" // a page link is for <web/> tags only
+		} else {
 			c.ChunkID, c.KBID, c.Doc = "", "", ""
 			key = "web:" + c.URL
 		}

@@ -216,3 +216,36 @@ func TestBuildWidensHangingForLongNumbers(t *testing.T) {
 		}
 	}
 }
+
+// A follow-up paragraph of an item starts where the item's text does,
+// past a wide number too.
+func TestBuildContinuationFollowsWideNumbers(t *testing.T) {
+	var blocks []Block
+	var tenth *ListItem
+	for i := 0; i < 12; i++ {
+		li := &ListItem{Ordered: true, List: 1, Start: 1}
+		if i == 9 {
+			tenth = li
+		}
+		blocks = append(blocks, Paragraph{Text: "mục", List: li})
+		if i == 9 {
+			blocks = append(blocks, Paragraph{Text: "giải thích", Continues: tenth},
+				Paragraph{Text: "trích", Style: StyleQuote, Continues: tenth, IndentTwips: 284})
+		}
+	}
+	blocks = append(blocks, Paragraph{Text: "chấm", List: &ListItem{}}, Paragraph{Text: "tiếp", Continues: &ListItem{}})
+	data, err := Build(Document{Blocks: blocks})
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := documentXML(t, data)
+	for _, want := range []string{
+		`<w:p><w:pPr><w:ind w:left="767"/></w:pPr><w:r><w:t xml:space="preserve">giải thích`,
+		`<w:pStyle w:val="WeRAGQuote"/><w:ind w:left="1051"/>`,
+		`<w:p><w:pPr><w:ind w:left="567"/></w:pPr><w:r><w:t xml:space="preserve">tiếp`,
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("document.xml lacks %s", want)
+		}
+	}
+}

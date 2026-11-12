@@ -23,6 +23,11 @@ func TestCitationsInOrderOfFirstUse(t *testing.T) {
 			t.Errorf("citation %d = %+v, want %+v", i, got[i], want[i])
 		}
 	}
+	inCode := "`<kb doc=\"a\" chunk_id=\"c-code\" />`\n\n```\n<web url=\"https://code.vn\" />\n```\n" +
+		`<kb doc="b" chunk_id="c-real" url="https://kb-url.vn" title="t" />`
+	if got := Citations(inCode); len(got) != 1 || got[0] != (Citation{ChunkID: "c-real", Doc: "b"}) {
+		t.Errorf("citations with code = %+v", got)
+	}
 	if Citations("Không có trích dẫn.") != nil {
 		t.Error("citations in plain text")
 	}

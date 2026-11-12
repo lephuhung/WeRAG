@@ -444,8 +444,10 @@ func (c *converter) listItem(item []string, lm listMarker, key, depth, nest int,
 		if !marked && len(own) == 0 && p.List == nil && (p.Style == "" || p.Style == docxwrite.StyleNormal) {
 			p.List = marker
 			marked = true
-		} else if p.List == nil {
-			p.IndentTwips += docxwrite.ListTextIndent(depth)
+		} else if p.List == nil && p.Continues == nil {
+			// a follow-up of this item (one of a nested item already
+			// follows that one)
+			p.Continues = marker
 		}
 		own = append(own, p)
 	}

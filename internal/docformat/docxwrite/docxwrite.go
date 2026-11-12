@@ -70,6 +70,10 @@ type Paragraph struct {
 	// IndentTwips is extra left indent (block quotes, the follow-up
 	// paragraphs of a list item).
 	IndentTwips int
+	// Continues makes the paragraph a follow-up of that list item: it
+	// starts where the item's text does (past a wide number too), plus
+	// IndentTwips. Ignored on a list item.
+	Continues *ListItem
 }
 
 // Run is a stretch of text with one character format. Text may hold "\t"
@@ -319,6 +323,18 @@ func listNumberWidths(doc Document) map[int]int {
 	return out
 }
 
+// textIndent is where the text of list item l starts (0 for nil).
+func (w *bodyWriter) textIndent(l *ListItem) int {
+	if l == nil {
+		return 0
+	}
+	extra := 0
+	if l.Ordered && w.listWidth[l.List] > listHanging {
+		extra = w.listWidth[l.List] - listHanging
+	}
+	return listIndent(clampLevel(l.Level)) + extra
+}
+
 // ListTextIndent is the left indent of the text of a level-lvl list item,
 // for paragraphs that continue the item.
 func ListTextIndent(lvl int) int { return listIndent(lvl) }
@@ -413,8 +429,8 @@ func writeParagraph(b *strings.Builder, style string, p Paragraph, w *bodyWriter
 		}
 		b.WriteString(fmt.Sprintf(`<w:ind w:left="%d" w:hanging="%d"/>`,
 			min(listIndent(lvl)+p.IndentTwips+hanging-listHanging, maxIndentTwips+hanging-listHanging), hanging))
-	} else if p.IndentTwips > 0 {
-		b.WriteString(fmt.Sprintf(`<w:ind w:left="%d"/>`, min(p.IndentTwips, maxIndentTwips)))
+	} else if left := p.IndentTwips + w.textIndent(p.Continues); left > 0 {
+		b.WriteString(fmt.Sprintf(`<w:ind w:left="%d"/>`, min(left, maxIndentTwips)))
 	}
 	switch {
 	case p.Align == "left" || p.Align == "center" || p.Align == "right" || p.Align == "both":

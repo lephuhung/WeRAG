@@ -146,11 +146,15 @@ func (s *AnswerExportService) load(ctx context.Context, sessionID, messageID str
 // <web/> tags, in order of first citation: a chunk by its id, else a
 // document by its title (in the cited knowledge base), a web page by its
 // URL. Only references the caller may read are left by then, so a tag
-// matching none of them is dropped, except a web page, which is listed
-// from its tag. An answer with no tags, or none that match, keeps the
-// first maxUncitedReferences documents retrieved.
+// matching none of them is dropped (an answer citing only sources the
+// caller lost lists none), except a web page, which is listed from its
+// tag. Only an answer with no tags at all keeps the first
+// maxUncitedReferences documents retrieved.
 func citedReferences(content string, refs types.References) types.References {
 	cites := answerdocx.Citations(content)
+	if len(cites) == 0 {
+		return firstDocuments(refs, maxUncitedReferences)
+	}
 	var out types.References
 	for _, c := range cites {
 		if r := matchCitation(c, refs); r != nil {
@@ -160,10 +164,7 @@ func citedReferences(content string, refs types.References) types.References {
 				ChunkType: string(types.ChunkTypeWebSearch), Metadata: map[string]string{"url": c.URL}})
 		}
 	}
-	if len(out) > 0 {
-		return out
-	}
-	return firstDocuments(refs, maxUncitedReferences)
+	return out
 }
 
 func matchCitation(c answerdocx.Citation, refs types.References) *types.SearchResult {
@@ -233,12 +234,10 @@ func (s *AnswerExportService) references(ctx context.Context, refs types.Referen
 		if r == nil || len(entries) >= maxExportReferences {
 			continue
 		}
-		e := &entry{ref: answerdocx.Reference{Title: answerdocx.DisplayTitle(r.KnowledgeTitle)}}
-		if f := strings.TrimSpace(r.KnowledgeFilename); f != "" && answerdocx.DisplayTitle(f) != e.ref.Title && f != r.KnowledgeTitle {
-			e.ref.FileName = f
-		}
+		e := &entry{}
 		key := r.KnowledgeID
 		if isWebSearchReference(r) {
+			e.ref.Title = strings.TrimSpace(r.KnowledgeTitle) // a page title, not a file name
 			e.ref.URL = strings.TrimSpace(r.Metadata["url"])
 			if e.ref.URL == "" && strings.HasPrefix(r.KnowledgeID, "http") {
 				e.ref.URL = r.KnowledgeID
@@ -249,6 +248,10 @@ func (s *AnswerExportService) references(ctx context.Context, refs types.Referen
 			key = "web:" + e.ref.URL
 		} else {
 			e.knowledgeID, e.kbID = r.KnowledgeID, r.KnowledgeBaseID
+			e.ref.Title = answerdocx.DisplayTitle(r.KnowledgeTitle)
+			if f := strings.TrimSpace(r.KnowledgeFilename); f != "" && answerdocx.DisplayTitle(f) != e.ref.Title && f != r.KnowledgeTitle {
+				e.ref.FileName = f
+			}
 		}
 		if key == "" || key == "web:" {
 			key = "title:" + e.ref.Title + "\x00" + e.ref.FileName
@@ -287,14 +290,23 @@ func (s *AnswerExportService) references(ctx context.Context, refs types.Referen
 	legal := s.legalDocuments(ctx, knowledgeIDs)
 
 	out := make([]answerdocx.Reference, 0, len(entries))
+	// the first document of a catalogue entry takes its title; another
+	// one on the same entry (a phụ lục, a second copy) keeps its own name
+	titled := map[string]bool{}
+	printed := map[answerdocx.Reference]bool{}
 	for _, e := range entries {
 		e.ref.Source = kbNames[e.kbID]
 		if d := legal[e.knowledgeID]; d != nil {
 			e.ref.DocumentNumber = strings.TrimSpace(d.DocumentNumber)
-			if t := legalReferenceTitle(d); t != "" {
+			if t := legalReferenceTitle(d); t != "" && !titled[d.ID] {
+				titled[d.ID] = true
 				e.ref.Title, e.ref.FileName = t, ""
 			}
 		}
+		if printed[e.ref] {
+			continue // the same line again (one văn bản held twice)
+		}
+		printed[e.ref] = true
 		out = append(out, e.ref)
 	}
 	return out
