@@ -182,7 +182,8 @@ func refuse(format string, args ...any) error {
 }
 
 // LegalFeedReviewerPrefix starts the ReviewedBy of a document a legal feed
-// pushed ("feed:tvpl"): not a reviewer, so its identity link stays pending.
+// pushed ("feed:tvpl"): not a reviewer, so its identity link stays pending
+// (approved at once for a types.LegalTrustedFeeds feed).
 const LegalFeedReviewerPrefix = "feed:"
 
 // LegalPDFOnlyMessage is the refusal for a document vbpl.vn has only as a
@@ -444,9 +445,11 @@ func (s *LegalFeedService) saveReviewLink(ctx context.Context, doc LegalIngestDo
 		KnowledgeID: knowledgeID, KnowledgeBaseID: kbID, LegalDocumentID: doc.VBPLID,
 		ReviewStatus: types.LegalReviewApproved, Suggestion: types.JSON(sug), ReviewedBy: by, ReviewedAt: &now,
 	}
-	if strings.HasPrefix(by, LegalFeedReviewerPrefix) {
+	if strings.HasPrefix(by, LegalFeedReviewerPrefix) && !types.LegalTrustedFeeds[strings.TrimPrefix(by, LegalFeedReviewerPrefix)] {
 		link.ReviewStatus, link.ReviewedBy, link.ReviewedAt = types.LegalReviewPending, "", nil
 	}
+	// a trusted feed's link stays approved under its own name ("feed:dangcongsan",
+	// no person: legalHumanReview does not count it as a decision)
 	if p := doc.priorLink; p != nil && p.LegalDocumentID == doc.VBPLID {
 		link.ReviewStatus, link.ReviewedBy, link.ReviewedAt = p.ReviewStatus, p.ReviewedBy, p.ReviewedAt
 	}

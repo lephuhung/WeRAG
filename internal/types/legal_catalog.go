@@ -61,9 +61,18 @@ func (d *LegalDocument) IsFeedRow() bool {
 	return s != "" && s != LegalDocumentSourceVBPL && s != LegalDocumentSourceManual
 }
 
+// LegalTrustedFeeds are the legal feeds that are official sources, taken
+// like vbpl.vn without a SuperAdmin review: their catalogue rows are not
+// "unverified" and the identity links of their full texts are approved at
+// once (SuperAdmin decision 2026-11-12: the Party's own portals,
+// tulieuvankien.dangcongsan.vn and dangcongsan.org.vn).
+var LegalTrustedFeeds = map[string]bool{"dangcongsan": true}
+
 // Unverified reports whether the row's values come only from a legal feed:
-// a feed row no SuperAdmin has confirmed yet.
-func (d *LegalDocument) Unverified() bool { return d.IsFeedRow() && d.ReviewedAt == nil }
+// a feed row no SuperAdmin has confirmed yet, unless the feed is trusted.
+func (d *LegalDocument) Unverified() bool {
+	return d.IsFeedRow() && d.ReviewedAt == nil && !LegalTrustedFeeds[d.Source]
+}
 
 // LegalSourceLabel names a catalogue source for a reader ("tvpl" →
 // "thuvienphapluat.vn", "dangcongsan" → "dangcongsan.vn"; "vbpl" and

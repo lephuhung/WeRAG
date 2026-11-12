@@ -303,8 +303,10 @@ func TestLegalPushCatalogueRow(t *testing.T) {
 	require.Equal(t, "Trần Cẩm Tú", row.Signer)
 	require.Equal(t, "Xây dựng Đảng", row.Field)
 	require.Equal(t, legalFeedStatusUnknown, row.Status)
-	require.True(t, row.Unverified())
-	require.Contains(t, types.LegalUnverifiedNote(&row), "dangcongsan.vn")
+	require.False(t, row.Unverified(), "the Party's portals are a trusted source")
+	tvplRow := row
+	tvplRow.Source = "tvpl"
+	require.True(t, tvplRow.Unverified())
 
 	res, err = svc.Push(ctx, LegalPushInput{Metadata: legalPartyMeta(), Mode: LegalPushCatalogue}, types.Caller{}, LegalFeedActor{})
 	require.NoError(t, err)
