@@ -72,7 +72,7 @@ const (
 	// everyone once every job is healthy again.
 	UserNotificationBackupAlert = "backup_alert"
 	// UserNotificationLegalSyncAlert: the legal data workers (nightly
-	// vbpl.vn sync, auto-ingest, expired retention) failed, are overdue or
+	// vbpl.vn sync, Party documents sync, auto-ingest, expired retention) failed, are overdue or
 	// stopped (payload: UserNotificationLegalSyncAlertPayload). One open
 	// digest per SuperAdmin like backup_alert, closed for everyone once
 	// every worker is healthy again.
@@ -95,7 +95,9 @@ type UserNotificationLegalSyncAlertPayload struct {
 // (last_failed, stale, running_long, heartbeat_stale, no_heartbeat,
 // tick_error); Step the sync step a failed or long run was at; At the
 // start of that run (or the backend worker's last pass); LastOKAt its
-// last successful run when known; Note the error's tail.
+// last successful run when known; Note the error's tail; Hours the
+// threshold behind running_long and stale (each sync has its own: its
+// schedule), 0 for the other problems.
 type UserNotificationLegalSyncWorker struct {
 	Worker   string     `json:"worker"`
 	Problem  string     `json:"problem"`
@@ -103,6 +105,7 @@ type UserNotificationLegalSyncWorker struct {
 	At       *time.Time `json:"at,omitempty"`
 	LastOKAt *time.Time `json:"last_ok_at,omitempty"`
 	Note     string     `json:"note,omitempty"`
+	Hours    int        `json:"hours,omitempty"`
 }
 
 // UserNotificationBackupAlertPayload is the payload of a backup_alert

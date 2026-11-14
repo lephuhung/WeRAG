@@ -2,7 +2,8 @@
 
 /* SuperAdmin monitor of the legal data workers, the "Data collection" tab of
  * the legal documents page (admin-legal-documents.tsx): the nightly vbpl.vn
- * sync, the auto-ingest and expired-retention workers (health, last run),
+ * sync, the Party documents sync (dcs-sync, every 4 hours), the auto-ingest
+ * and expired-retention workers (health, last run),
  * the queues they drain, the push activity of the legal feeds, and the run
  * history with each run's counts and error. Read only; refreshes itself.
  * Backend: /api/v1/system/legal-sync — SuperAdmin-only. */
@@ -33,11 +34,13 @@ const RUNS_LIMIT = 30;
 
 const WORKER_LABEL: Record<LegalSyncWorker, LocaleKey> = {
   vbpl_sync: "lsync.worker.vbpl_sync",
+  dcs_sync: "lsync.worker.dcs_sync",
   auto_ingest: "lsync.worker.auto_ingest",
   expired_retention: "lsync.worker.expired_retention",
 };
 const WORKER_DESC: Record<LegalSyncWorker, LocaleKey> = {
   vbpl_sync: "lsync.workerDesc.vbpl_sync",
+  dcs_sync: "lsync.workerDesc.dcs_sync",
   auto_ingest: "lsync.workerDesc.auto_ingest",
   expired_retention: "lsync.workerDesc.expired_retention",
 };
@@ -69,11 +72,18 @@ const STEP_LABEL: Record<string, LocaleKey> = {
   crawl: "lsync.step.crawl",
   import: "lsync.step.import",
   push: "lsync.step.push",
+  // dcs-sync (its push to WeRAG is "upload": "push" is vbpl-sync's MinIO backup)
+  fetch: "lsync.step.fetch",
+  build: "lsync.step.build",
+  upload: "lsync.step.upload",
 };
 /** Summary groups shown as sections of a run's details, in order. */
 const GROUP_LABEL: Record<string, LocaleKey> = {
   crawl: "lsync.step.crawl",
   import: "lsync.step.import",
+  fetch: "lsync.step.fetch",
+  build: "lsync.step.build",
+  upload: "lsync.step.upload",
 };
 /** Labels of the known counts; an unknown key shows as is. */
 const COUNT_LABEL: Record<string, LocaleKey> = {
@@ -119,6 +129,20 @@ const COUNT_LABEL: Record<string, LocaleKey> = {
   failed: "lsync.count.failed",
   kept_live_copy: "lsync.count.kept_live_copy",
   untracked: "lsync.count.untracked",
+  // dcs-sync: fetch, build, upload
+  records: "lsync.count.records",
+  loaded: "lsync.count.loaded",
+  planned: "lsync.count.planned",
+  text: "lsync.count.text",
+  ocr: "lsync.count.ocr",
+  catalogue: "lsync.count.catalogue",
+  skip: "lsync.count.skip",
+  pushed: "lsync.count.pushed",
+  queued: "lsync.count.queued",
+  existing: "lsync.count.existing",
+  refused: "lsync.count.refused",
+  credentials_refused: "lsync.count.credentials_refused",
+  gave_up: "lsync.count.gave_up",
 };
 const REQUEST_SOURCE_LABEL: Record<string, LocaleKey> = {
   vbpl_no_text: "lsync.reqSource.vbpl_no_text",
@@ -140,6 +164,7 @@ const ACTION_LABEL: Record<string, LocaleKey> = {
 const RUN_FILTERS: { key: LegalSyncWorker | ""; labelKey: LocaleKey }[] = [
   { key: "", labelKey: "lsync.filter.all" },
   { key: "vbpl_sync", labelKey: "lsync.worker.vbpl_sync" },
+  { key: "dcs_sync", labelKey: "lsync.worker.dcs_sync" },
   { key: "auto_ingest", labelKey: "lsync.worker.auto_ingest" },
   { key: "expired_retention", labelKey: "lsync.worker.expired_retention" },
 ];
@@ -203,6 +228,15 @@ function stepDuration(t: T, timing: LegalSyncStepTiming, run: LegalSyncRun, now:
   const endAt = timing.finished_at ?? run.finished_at;
   const end = endAt ? Date.parse(endAt) : now;
   return Number.isFinite(start) && Number.isFinite(end) ? formatDuration(t, end - start) : "";
+}
+
+/** A reason; stale and running_long name the sync's own threshold. */
+function reasonText(t: T, w: LegalSyncWorkerStatus, reason: string): string {
+  const k = REASON_LABEL[reason];
+  if (!k) return reason;
+  if (reason === "stale") return t(k, { h: w.stale_after_hours ?? 26 });
+  if (reason === "running_long") return t(k, { h: w.long_run_hours ?? 12 });
+  return t(k);
 }
 
 function label(t: T, map: Record<string, LocaleKey>, key: string): string {
@@ -324,7 +358,7 @@ export default function LegalSyncSection({ onDenied }: { onDenied?: () => void }
               {t("lsync.alertsOff")}
             </Notice>
           )}
-          <div className="mb-6 grid gap-3 lg:grid-cols-3">
+          <div className="mb-6 grid gap-3 md:grid-cols-2 2xl:grid-cols-4">
             {status.workers.map((w) => (
               <WorkerCard key={w.worker} w={w} now={now} t={t} locale={locale} />
             ))}
@@ -376,10 +410,11 @@ function WorkerCard({ w, now, t, locale }: { w: LegalSyncWorkerStatus; now: numb
         </span>
       </div>
       {WORKER_DESC[w.worker] && <p className="caption mb-2 text-muted">{t(WORKER_DESC[w.worker])}</p>}
+      {w.alert_muted && <p className="caption mb-2 text-warning">{t("lsync.alertMuted")}</p>}
       {w.reasons.length > 0 && (
         <ul className={`mb-2 space-y-0.5 text-[12.5px] ${healthText(w.health)}`}>
           {w.reasons.map((r) => (
-            <li key={r}>{label(t, REASON_LABEL, r)}</li>
+            <li key={r}>{reasonText(t, w, r)}</li>
           ))}
         </ul>
       )}
@@ -602,6 +637,17 @@ function runHeadline(t: T, run: LegalSyncRun): string {
       fetched: num(crawl.fetched),
       queued: num(imp.queued_auto_ingest) + num(imp.queued_text_changed),
       noText: num(imp.queued_no_full_text),
+    });
+  }
+  if (run.worker === "dcs_sync") {
+    const fetch = (s.fetch ?? {}) as Record<string, unknown>;
+    const up = (s.upload ?? {}) as Record<string, unknown>;
+    if (!s.fetch && !s.upload) return "";
+    return t("lsync.headline.dcs", {
+      loaded: num(fetch.loaded),
+      pushed: num(up.pushed),
+      queued: num(up.queued),
+      failed: num(up.failed),
     });
   }
   if (run.worker === "auto_ingest") return t("lsync.headline.autoIngest", { added: num(s.added), tried: num(s.tried) });

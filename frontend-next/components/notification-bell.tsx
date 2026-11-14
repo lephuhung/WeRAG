@@ -75,8 +75,10 @@ export function NotificationBell() {
       legalSyncAlertTitle: (n) => t("notif.legalSync.title", { n }),
       legalSyncWorker: (worker) => t(`notif.legalSync.worker.${worker}` as LocaleKey),
       legalSyncStep: (step) => t(`notif.legalSync.step.${step}` as LocaleKey),
-      legalSyncProblem: (problem, step, at) =>
-        t(`notif.legalSync.${problem}` as LocaleKey) +
+      legalSyncProblem: (problem, step, at, hours) =>
+        (hours > 0 && (problem === "running_long" || problem === "stale")
+          ? t(`notif.legalSync.${problem}_h` as LocaleKey, { h: hours })
+          : t(`notif.legalSync.${problem}` as LocaleKey)) +
         (step ? t("notif.legalSync.atStep", { step }) : "") +
         (at ? t("notif.legalSync.runAt", { at }) : ""),
       dateTime: (iso) => formatDateTime(iso, locale),

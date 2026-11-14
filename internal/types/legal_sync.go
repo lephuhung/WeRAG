@@ -1,12 +1,20 @@
 package types
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // Workers of the legal data pipeline watched by the SuperAdmin monitor.
 const (
 	// LegalSyncWorkerVBPL is the nightly vbpl.vn sync (deploy/vbpl-sync):
 	// steps crawl → import → push.
 	LegalSyncWorkerVBPL = "vbpl_sync"
+	// LegalSyncWorkerDCS is the Party documents sync (deploy/dcs-sync),
+	// every 4 hours: steps fetch → build → upload. It has no database
+	// credentials and records its runs through the backend's run endpoints
+	// (POST /system/legal-sync/runs …).
+	LegalSyncWorkerDCS = "dcs_sync"
 	// LegalSyncWorkerAutoIngest is the backend worker adding the documents
 	// the sync queued (service.LegalAutoIngest).
 	LegalSyncWorkerAutoIngest = "auto_ingest"
@@ -19,6 +27,38 @@ const (
 // legal data workers (legal_sync_alert); on by default, off to silence a
 // sync stopped on purpose.
 const LegalSyncAlertEnabledSettingKey = "legal.sync_alert.enabled"
+
+// LegalSyncAlertDisabledWorkersSettingKey silences the alert of some
+// workers only (comma list of LegalSyncWorker* names, e.g. "dcs_sync"
+// while that container is stopped on purpose); the page still judges
+// them. Empty by default.
+const LegalSyncAlertDisabledWorkersSettingKey = "legal.sync_alert.disabled_workers"
+
+// LegalSyncWorkers are the workers the monitor watches, in its order.
+var LegalSyncWorkers = []string{LegalSyncWorkerVBPL, LegalSyncWorkerDCS, LegalSyncWorkerAutoIngest,
+	LegalSyncWorkerExpiredRetention}
+
+// ParseLegalSyncWorkerList splits a comma list of worker names (spaces
+// and empty items dropped) and returns the names that are no worker.
+func ParseLegalSyncWorkerList(s string) (workers map[string]bool, unknown []string) {
+	workers = map[string]bool{}
+	known := map[string]bool{}
+	for _, w := range LegalSyncWorkers {
+		known[w] = true
+	}
+	for _, item := range strings.Split(s, ",") {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		if !known[item] {
+			unknown = append(unknown, item)
+			continue
+		}
+		workers[item] = true
+	}
+	return workers, unknown
+}
 
 // Statuses of a LegalSyncRun.
 const (

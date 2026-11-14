@@ -22,8 +22,9 @@ import (
 // SuperAdmin digest (incidentDigest, like backup_alert); the digest is
 // stamped resolved and closed once every worker is healthy again.
 //
-// Worth an alert: the nightly sync's last run failed, it is running for
-// more than 12 h, or no successful run started within 26 h (a sync that
+// Worth an alert: a scheduled sync's last run failed, it is running for
+// longer than its longRun, or no successful run started within its
+// staleAfter (vbpl.vn: 12 h / 26 h, Party documents: 4 h / 9 h; a sync that
 // never reported a run is not deployed: no alert); a backend worker
 // missed three passes, never passed since it was started, or its passes
 // have failed for legalTickErrorAlertAfter. A backend worker that is
@@ -89,10 +90,12 @@ func (m *LegalSyncMonitor) Check(ctx context.Context) error {
 	now := m.now()
 	// a running sync silent for too long is dead: closed as failed, so the
 	// page and the alert see a failed run
-	if n, err := m.runs.CloseSilent(ctx, types.LegalSyncWorkerVBPL, now.Add(-legalSyncSilentAfter)); err != nil {
-		logger.Warnf(ctx, "[LegalSyncMonitor] closing silent runs: %v", err)
-	} else if n > 0 {
-		logger.Warnf(ctx, "[LegalSyncMonitor] %d silent vbpl sync run(s) closed as interrupted", n)
+	for _, c := range legalSyncContainers {
+		if n, err := m.runs.CloseSilent(ctx, c.worker, now.Add(-legalSyncSilentAfter)); err != nil {
+			logger.Warnf(ctx, "[LegalSyncMonitor] closing silent %s runs: %v", c.worker, err)
+		} else if n > 0 {
+			logger.Warnf(ctx, "[LegalSyncMonitor] %d silent %s run(s) closed as interrupted", n, c.worker)
+		}
 	}
 	if !m.alertsEnabled(ctx) {
 		// silenced (a sync stopped on purpose): close what is open
@@ -126,8 +129,12 @@ func (m *LegalSyncMonitor) alertsEnabled(ctx context.Context) bool {
 var legalSyncContainerAlertOrder = []string{LegalSyncReasonLastFailed, LegalSyncReasonSilent, LegalSyncReasonRunningLong,
 	LegalSyncReasonStale}
 
-// legalSyncAlertProblem is the problem of w worth an alert, "" for none.
+// legalSyncAlertProblem is the problem of w worth an alert, "" for none
+// (and for a worker whose alert is silenced on its own).
 func legalSyncAlertProblem(w LegalSyncWorkerStatus, now time.Time) string {
+	if w.AlertMuted {
+		return ""
+	}
 	has := map[string]bool{}
 	for _, r := range w.Reasons {
 		has[r] = true
@@ -175,6 +182,12 @@ func legalSyncAlertPayload(workers []LegalSyncWorkerStatus, now time.Time) types
 				if problem == LegalSyncReasonLastFailed {
 					e.Note = legalSyncErrorGist(run.Error)
 				}
+			}
+			switch problem {
+			case LegalSyncReasonStale:
+				e.Hours = w.StaleAfterHours
+			case LegalSyncReasonRunningLong:
+				e.Hours = w.LongRunHours
 			}
 			if w.LastOK != nil {
 				at := w.LastOK.StartedAt
@@ -233,6 +246,7 @@ func legalSyncAlertNotification(userID string, p types.UserNotificationLegalSync
 
 var legalSyncWorkerNamesVI = map[string]string{
 	types.LegalSyncWorkerVBPL:             "Đồng bộ vbpl.vn",
+	types.LegalSyncWorkerDCS:              "Đồng bộ văn bản của Đảng",
 	types.LegalSyncWorkerAutoIngest:       "Tự nạp văn bản",
 	types.LegalSyncWorkerExpiredRetention: "Xóa toàn văn hết hiệu lực",
 }
@@ -242,6 +256,10 @@ var legalSyncStepNamesVI = map[string]string{
 	"crawl":   "cào dữ liệu",
 	"import":  "nạp danh mục",
 	"push":    "sao lưu MinIO",
+	// dcs-sync
+	"fetch":  "tải trang",
+	"build":  "phân loại và dựng HTML",
+	"upload": "đẩy lên WeRAG",
 }
 
 // legalSyncAlertWorkerText: "Đồng bộ vbpl.vn: lỗi ở bước cào dữ liệu lúc
@@ -266,12 +284,18 @@ func legalSyncAlertWorkerText(w types.UserNotificationLegalSyncWorker) string {
 			s += " (lần chạy lúc " + formatDateTimeVN(*w.At) + ")"
 		}
 	case LegalSyncReasonRunningLong:
-		s = name + ": chạy quá 12 giờ"
+		s = name + ": chạy quá lâu"
+		if w.Hours > 0 {
+			s = fmt.Sprintf("%s: chạy quá %d giờ", name, w.Hours)
+		}
 		if step != "" {
 			s += " ở bước " + step
 		}
 	case LegalSyncReasonStale:
-		s = name + ": quá hạn, không có lần chạy thành công trong ngày qua"
+		s = name + ": quá hạn, không có lần chạy thành công theo lịch"
+		if w.Hours > 0 {
+			s = fmt.Sprintf("%s: quá hạn, không có lần chạy thành công trong %d giờ qua", name, w.Hours)
+		}
 	case LegalSyncReasonBeatStale:
 		s = name + ": đã dừng (lỡ ba lượt liên tiếp)"
 	case LegalSyncReasonNoHeartbeat:

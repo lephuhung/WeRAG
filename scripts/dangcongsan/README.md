@@ -16,7 +16,7 @@ hành/hiệu lực, cơ quan, người ký). Toàn văn nằm trong file đính 
 | `dcs_classify.py` | đọc từng file: loại thật theo byte, PDF theo từng trang (chữ / scan / lớp OCR của máy scan / trắng), Word (chữ, ảnh dán), zip/rar, bảng mã tiếng Việt |
 | `dcs_text.py` | chữ của Word (.docx, .doc kể cả bảng) và PDF có chữ; đổi font TCVN3 (.VnTime, .VnTimeH viết hoa) và VNI sang Unicode |
 | `dcs_build.py` | gộp hai cổng, chọn nguồn nội dung, dựng HTML chuẩn v1 (`prov-*` khi có ≥ 2 Điều), ghi `plan.jsonl` |
-| `dcs_push.py` | đẩy theo kế hoạch; `push-results.jsonl` ghi kết quả, chạy lại thì bỏ qua văn bản đã xong |
+| `dcs_push.py` | đẩy theo kế hoạch; `push-results.jsonl` ghi kết quả (kèm lần chạy), chạy lại thì bỏ qua văn bản đã xong, bị từ chối (400/413/422) hay đã bỏ qua sau 5 lần chạy liên tiếp máy chủ lỗi (`gave_up`, thử lại khi metadata đổi) |
 | `test_dcs.py` | `python3 -I -m unittest discover -s scripts/dangcongsan -p 'test_*.py'` |
 
 ## Các trường hợp

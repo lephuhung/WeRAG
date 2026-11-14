@@ -1095,6 +1095,8 @@ services:
   # dangcongsan.org.vn; văn bản có chữ vào kho "Văn bản của Đảng", bản scan /
   # không có tệp vào hàng chờ của extension TVPL. Cần DCS_API_KEY: API key tạo
   # trong tổ chức 10000, quyền ingest, danh sách KB có kho "Văn bản của Đảng".
+  # Mỗi lần chạy được ghi vào trang Thu thập dữ liệu (worker dcs_sync) qua
+  # POST /system/legal-sync/runs … bằng cùng API key.
   dcs-sync:
     build:
       context: .
@@ -1115,6 +1117,9 @@ services:
       # same path inside: the crawl records name cached files by absolute path
       - ${DCS_WORK_DIR:-/home/orca/dcs-data}:${DCS_WORK_DIR:-/home/orca/dcs-data}
     restart: unless-stopped
+    # docker stop: the entrypoint forwards SIGTERM to a running sync.sh, which
+    # ends its step and records the run as stopped (entrypoint waits ≤ 80 s)
+    stop_grace_period: 90s
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     logging:

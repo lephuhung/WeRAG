@@ -269,9 +269,19 @@ func TestLegalSyncAlertClosesSilentRun(t *testing.T) {
 	require.NotNil(t, run.FinishedAt)
 }
 
-type syncAlertSwitch struct{ on bool }
+type syncAlertSwitch struct {
+	on    bool
+	muted string
+}
 
 func (s syncAlertSwitch) GetInt(_ context.Context, _ string, _ string, def int64) int64 { return def }
+
+func (s syncAlertSwitch) GetString(_ context.Context, key string, _ string, def string) string {
+	if key == types.LegalSyncAlertDisabledWorkersSettingKey {
+		return s.muted
+	}
+	return def
+}
 
 func (s syncAlertSwitch) GetBool(_ context.Context, key string, _ string, def bool) bool {
 	if key == types.LegalSyncAlertEnabledSettingKey {

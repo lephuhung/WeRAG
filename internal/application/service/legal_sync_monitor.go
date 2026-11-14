@@ -13,12 +13,6 @@ import (
 )
 
 const (
-	// legalSyncStaleAfter: no successful nightly sync started within a day
-	// and a margin (the cron is daily: a slower run the next night is not
-	// late).
-	legalSyncStaleAfter = 26 * time.Hour
-	// legalSyncLongRun: a sync still running after this is likely stuck.
-	legalSyncLongRun = 12 * time.Hour
 	// legalSyncSilentAfter: a running sync without a sign of life (a write,
 	// or the sync.sh ticker every 5 minutes) for this long is dead.
 	legalSyncSilentAfter = 30 * time.Minute
@@ -28,6 +22,49 @@ const (
 	// legalFeedWindow is how far back the push activity of the feeds goes.
 	legalFeedWindow = 30 * 24 * time.Hour
 )
+
+// legalSyncSchedule are the thresholds of a scheduled sync (a container
+// seen through its runs), derived from its cron: stale when no successful
+// run started within staleAfter (a missed run and a margin), stuck when a
+// run is still going after longRun.
+type legalSyncSchedule struct {
+	staleAfter, longRun time.Duration
+}
+
+var (
+	// legalSyncVBPL: the nightly vbpl.vn sync (cron daily 02:30): a day and
+	// a margin, so a slower run the next night is not late.
+	legalSyncVBPL = legalSyncSchedule{staleAfter: 26 * time.Hour, longRun: 12 * time.Hour}
+	// legalSyncDCS: the Party documents sync (cron every 4 hours, a run
+	// takes minutes): two missed runs and a margin; stuck when a run takes
+	// its whole slot (a full re-crawl or many OCR pauses can take hours).
+	legalSyncDCS = legalSyncSchedule{staleAfter: 9 * time.Hour, longRun: 4 * time.Hour}
+)
+
+// legalSyncContainers are the scheduled syncs, in monitor order.
+var legalSyncContainers = []struct {
+	worker   string
+	schedule legalSyncSchedule
+}{
+	{types.LegalSyncWorkerVBPL, legalSyncVBPL},
+	{types.LegalSyncWorkerDCS, legalSyncDCS},
+}
+
+// legalSyncScheduleOf is the thresholds of a scheduled sync (ok false for
+// a backend worker).
+func legalSyncScheduleOf(worker string) (legalSyncSchedule, bool) {
+	for _, c := range legalSyncContainers {
+		if c.worker == worker {
+			return c.schedule, true
+		}
+	}
+	return legalSyncSchedule{}, false
+}
+
+// LegalSyncReportingWorkers are the scheduled syncs that record their runs
+// through the backend's run endpoints (no database credentials); the other
+// workers write the table themselves.
+var LegalSyncReportingWorkers = map[string]bool{types.LegalSyncWorkerDCS: true}
 
 // Health of a worker on the monitor, worst last.
 const (
@@ -60,6 +97,7 @@ const (
 type legalSyncSettings interface {
 	GetInt(ctx context.Context, key string, envName string, def int64) int64
 	GetBool(ctx context.Context, key string, envName string, def bool) bool
+	GetString(ctx context.Context, key string, envName string, def string) string
 }
 
 // legalRunRecorder writes a backend worker's pass (repository.LegalSyncRunRepository).
@@ -134,8 +172,9 @@ func legalWorkerBeat(worker string) (LegalWorkerBeat, bool) {
 // LegalSyncWorkerStatus is one worker on the monitor.
 type LegalSyncWorkerStatus struct {
 	Worker string `json:"worker"`
-	// Kind is "container" (deploy/vbpl-sync, seen through its runs) or
-	// "backend" (a goroutine of this server, with a heartbeat).
+	// Kind is "container" (deploy/vbpl-sync, deploy/dcs-sync: seen through
+	// their runs) or "backend" (a goroutine of this server, with a
+	// heartbeat).
 	Kind   string              `json:"kind"`
 	Last   *types.LegalSyncRun `json:"last"`
 	LastOK *types.LegalSyncRun `json:"last_ok"`
@@ -143,7 +182,11 @@ type LegalSyncWorkerStatus struct {
 	// problem the worker keeps until this run ends).
 	LastFinished *types.LegalSyncRun `json:"last_finished,omitempty"`
 	// Schedule is the sync's cron line as its last run reported it.
-	Schedule        string     `json:"schedule,omitempty"`
+	Schedule string `json:"schedule,omitempty"`
+	// StaleAfterHours / LongRunHours: the sync's thresholds (stale,
+	// running_long).
+	StaleAfterHours int        `json:"stale_after_hours,omitempty"`
+	LongRunHours    int        `json:"long_run_hours,omitempty"`
 	IntervalSeconds int        `json:"interval_seconds,omitempty"`
 	LastTickAt      *time.Time `json:"last_tick_at,omitempty"`
 	LastError       string     `json:"last_error,omitempty"`
@@ -152,6 +195,9 @@ type LegalSyncWorkerStatus struct {
 	FailingSince *time.Time `json:"failing_since,omitempty"`
 	Health       string     `json:"health"`
 	Reasons      []string   `json:"reasons"`
+	// AlertMuted: the worker's alert is silenced on its own (system setting
+	// legal.sync_alert.disabled_workers).
+	AlertMuted bool `json:"alert_muted,omitempty"`
 }
 
 // LegalSyncQueues are the queues the workers drain.
@@ -237,20 +283,24 @@ func (m *LegalSyncMonitor) Status(ctx context.Context) (*LegalSyncStatus, error)
 
 // workers reads the state of every watched worker at now.
 func (m *LegalSyncMonitor) workers(ctx context.Context, now time.Time) ([]LegalSyncWorkerStatus, error) {
-	var out []LegalSyncWorkerStatus
-	for _, w := range []struct {
+	type watched struct {
 		name, kind string
 		interval   time.Duration
-	}{
-		{types.LegalSyncWorkerVBPL, "container", 0},
-		{types.LegalSyncWorkerAutoIngest, "backend", legalAutoIngestTick},
-		{types.LegalSyncWorkerExpiredRetention, "backend", legalRetentionTick},
-	} {
+	}
+	list := make([]watched, 0, len(legalSyncContainers)+2)
+	for _, c := range legalSyncContainers {
+		list = append(list, watched{c.worker, "container", 0})
+	}
+	list = append(list, watched{types.LegalSyncWorkerAutoIngest, "backend", legalAutoIngestTick},
+		watched{types.LegalSyncWorkerExpiredRetention, "backend", legalRetentionTick})
+	out := make([]LegalSyncWorkerStatus, 0, len(list))
+	muted := m.mutedWorkers(ctx)
+	for _, w := range list {
 		last, lastOK, err := m.runs.Latest(ctx, w.name)
 		if err != nil {
 			return nil, err
 		}
-		st := LegalSyncWorkerStatus{Worker: w.name, Kind: w.kind, Last: last, LastOK: lastOK}
+		st := LegalSyncWorkerStatus{Worker: w.name, Kind: w.kind, Last: last, LastOK: lastOK, AlertMuted: muted[w.name]}
 		if w.kind == "container" {
 			st.Schedule = legalRunString(last, "schedule")
 			if last != nil && last.Status == types.LegalSyncRunning {
@@ -258,7 +308,9 @@ func (m *LegalSyncMonitor) workers(ctx context.Context, now time.Time) ([]LegalS
 					return nil, err
 				}
 			}
-			st.Health, st.Reasons = legalSyncContainerHealth(last, st.LastFinished, lastOK, now)
+			sched, _ := legalSyncScheduleOf(w.name)
+			st.StaleAfterHours, st.LongRunHours = int(sched.staleAfter/time.Hour), int(sched.longRun/time.Hour)
+			st.Health, st.Reasons = sched.health(last, st.LastFinished, lastOK, now)
 		} else {
 			st.IntervalSeconds = int(w.interval / time.Second)
 			beat, ok := legalWorkerBeat(w.name)
@@ -275,13 +327,13 @@ func (m *LegalSyncMonitor) workers(ctx context.Context, now time.Time) ([]LegalS
 	return out, nil
 }
 
-// legalSyncContainerHealth judges the nightly sync from its runs: last,
-// its newest successful run lastOK and, while last runs, the run before it
-// that finished (lastFinished). A run in progress keeps the problem of the
-// night before (failed, or no success within a day as of its start) until
+// health judges a scheduled sync from its runs: last, its newest
+// successful run lastOK and, while last runs, the run before it that
+// finished (lastFinished). A run in progress keeps the problem of the run
+// before (failed, or no success within staleAfter as of its start) until
 // it ends: only a successful run clears it. A running run without a sign
 // of life for legalSyncSilentAfter is dead.
-func legalSyncContainerHealth(last, lastFinished, lastOK *types.LegalSyncRun, now time.Time) (string, []string) {
+func (sc legalSyncSchedule) health(last, lastFinished, lastOK *types.LegalSyncRun, now time.Time) (string, []string) {
 	if last == nil {
 		return LegalSyncHealthUnknown, []string{LegalSyncReasonNoRuns}
 	}
@@ -292,7 +344,7 @@ func legalSyncContainerHealth(last, lastFinished, lastOK *types.LegalSyncRun, no
 		}
 		reasons = append(reasons, reason)
 	}
-	staleAt := func(at time.Time) bool { return lastOK == nil || at.Sub(lastOK.StartedAt) > legalSyncStaleAfter }
+	staleAt := func(at time.Time) bool { return lastOK == nil || at.Sub(lastOK.StartedAt) > sc.staleAfter }
 	switch last.Status {
 	case types.LegalSyncFailed:
 		worse(LegalSyncHealthError, LegalSyncReasonLastFailed)
@@ -304,7 +356,7 @@ func legalSyncContainerHealth(last, lastFinished, lastOK *types.LegalSyncRun, no
 		switch {
 		case now.Sub(beat) > legalSyncSilentAfter:
 			worse(LegalSyncHealthError, LegalSyncReasonSilent)
-		case now.Sub(last.StartedAt) > legalSyncLongRun:
+		case now.Sub(last.StartedAt) > sc.longRun:
 			worse(LegalSyncHealthWarning, LegalSyncReasonRunningLong)
 		default:
 			// in progress: the night before still counts (the first run
@@ -358,6 +410,16 @@ func legalHealthRank(h string) int {
 		return 2
 	}
 	return 3
+}
+
+// mutedWorkers are the workers whose alert is silenced on their own
+// (legal.sync_alert.disabled_workers; unknown names are ignored).
+func (m *LegalSyncMonitor) mutedWorkers(ctx context.Context) map[string]bool {
+	if m.settings == nil {
+		return map[string]bool{}
+	}
+	w, _ := types.ParseLegalSyncWorkerList(m.settings.GetString(ctx, types.LegalSyncAlertDisabledWorkersSettingKey, "", ""))
+	return w
 }
 
 // legalRunString reads a top-level string of a run's summary.

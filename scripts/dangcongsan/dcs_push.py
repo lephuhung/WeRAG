@@ -21,8 +21,18 @@ TVPL text).
 
 One request at a time. A scan of ≤ 20 pages is OCRed while the request
 waits, so the queue paces itself; after a longer one the script sleeps
---sec-per-page × pages. ``<out>/push-results.jsonl`` records every answer;
-a document already pushed with success is skipped on the next run.
+--sec-per-page × pages. ``<out>/push-results.jsonl`` records every answer
+(with the run it came from); a document already pushed with success is
+skipped on the next run.
+
+A document the server keeps failing on (HTTP 500 and the like, or a
+request that times out) in GIVE_UP_RUNS runs in a row is given up: the
+next run records it as refused (``gave_up``, with the reason) instead of
+trying again, so one poison document cannot fail every run (and keep the
+SuperAdmin alert on) for ever. Like a 400/422, it is tried again once its
+metadata changes. Failures that say nothing about the document (the
+backend unreachable, a wrong WERAG_API, 429, 502–504) do not count, nor
+does a run in which every push of three or more failed.
 
 Authentication: WERAG_API_KEY (X-API-Key of a key created in platform
 organization 10000 with ingest) or WERAG_TOKEN (SuperAdmin JWT).
@@ -106,9 +116,15 @@ ACTION_OF_CASE = {"text": "full", "ocr": "scan", "catalogue": "catalogue"}
 
 
 # Answers that settle a document for good: pushed, already held, or refused
-# for what was sent (400/422; retried once the metadata changes). 401/403
-# stop the run; 429/5xx and transport errors are retried next run.
-FINAL_REFUSALS = {400, 422}
+# for what was sent (400/422, 413 too large; retried once the metadata
+# changes). 401/403 stop the run; 429/5xx and transport errors are retried
+# next run.
+FINAL_REFUSALS = {400, 413, 422}
+
+# A document failing in this many runs in a row is given up (see above).
+GIVE_UP_RUNS = 5
+# Failures that say nothing about the document: not counted toward giving up.
+NOT_THE_DOCUMENT = {0, 404, 405, 429, 502, 503, 504}
 
 
 def meta_hash(md: dict) -> str:
@@ -126,9 +142,54 @@ def load_done(path: str) -> set[tuple[str, str, str]]:
                 act = r.get("action") or ACTION_OF_CASE.get(r.get("case"), "")
                 if r.get("ok"):
                     done.add((r["source_doc_id"], act, "*"))
-                elif r.get("status") in FINAL_REFUSALS and r.get("meta_hash"):
+                elif (r.get("status") in FINAL_REFUSALS or r.get("gave_up")) and r.get("meta_hash"):
                     done.add((r["source_doc_id"], act, r["meta_hash"]))
     return done
+
+
+def _document_failure(r: dict) -> bool:
+    """A failed answer that is about the document (counts toward giving up)."""
+    if r.get("ok") or r.get("gave_up") or r.get("status") in FINAL_REFUSALS:
+        return False
+    status = r.get("status")
+    if status == 0:
+        msg = json.dumps(r.get("answer") or {}, ensure_ascii=False)
+        return "timed out" in msg  # the server hung on it; DNS / refused say nothing
+    return isinstance(status, int) and status not in NOT_THE_DOCUMENT
+
+
+def failure_streaks(path: str) -> dict[tuple[str, str], tuple[int, str]]:
+    """(source_doc_id, action) → (runs in a row the server failed on the
+    document, the last such answer), from push-results.jsonl in order. A
+    success, a refusal or a give-up ends the streak; a run in which every
+    push of three or more failed is ignored (an outage, not the document);
+    lines without a run (older) count one run each."""
+    if not os.path.exists(path):
+        return {}
+    rows = []
+    with open(path, encoding="utf-8") as f:
+        for i, line in enumerate(f):
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            r.setdefault("run", f"line-{i}")
+            rows.append(r)
+    attempts: dict[str, list[bool]] = {}
+    for r in rows:
+        attempts.setdefault(r["run"], []).append(bool(r.get("ok")) or r.get("status") in FINAL_REFUSALS)
+    outage = {run for run, oks in attempts.items() if len(oks) >= 3 and not any(oks)}
+    streaks: dict[tuple[str, str], tuple[int, str]] = {}
+    for r in rows:
+        if r["run"] in outage:
+            continue
+        key = (r.get("source_doc_id", ""), r.get("action") or ACTION_OF_CASE.get(r.get("case"), ""))
+        if _document_failure(r):
+            n, _ = streaks.get(key, (0, ""))
+            streaks[key] = (n + 1, f"HTTP {r.get('status')}")
+        elif r.get("ok") or r.get("gave_up") or r.get("status") in FINAL_REFUSALS:
+            streaks.pop(key, None)
+    return streaks
 
 
 def is_done(done: set, sid: str, act: str, mh: str) -> bool:
@@ -170,6 +231,8 @@ def main(argv=None) -> int:
     cases = set(a.case or ["text", "ocr", "catalogue"])
     results_path = os.path.join(a.plan_dir, "push-results.jsonl")
     done = load_done(results_path)
+    streaks = failure_streaks(results_path)
+    run_id = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
     n = 0
     server_errors = 0
     with open(os.path.join(a.plan_dir, "plan.jsonl"), encoding="utf-8") as fin, \
@@ -188,7 +251,15 @@ def main(argv=None) -> int:
                 continue
             if a.limit and n >= a.limit:
                 break
-            res = {"source_doc_id": sid, "doc_number": md["doc_number"], "case": e["case"], "action": act, "meta_hash": mh}
+            res = {"source_doc_id": sid, "doc_number": md["doc_number"], "case": e["case"], "action": act, "meta_hash": mh,
+                   "run": run_id}
+            fails, last = streaks.get((sid, act), (0, ""))
+            if fails >= GIVE_UP_RUNS and not a.dry_run:
+                res.update(ok=False, gave_up=True, reason=f"máy chủ lỗi {fails} lần chạy liên tiếp ({last}): bỏ qua tới khi metadata đổi")
+                fres.write(json.dumps(res, ensure_ascii=False) + "\n")
+                fres.flush()
+                print(f"GAVE_UP {act:<9} {md['doc_number']:<20} {res['reason']}", flush=True)
+                continue
             meta_json = json.dumps(md, ensure_ascii=False)
             if e["case"] == "text":
                 with open(os.path.join(a.plan_dir, e["html"]), "rb") as f:
