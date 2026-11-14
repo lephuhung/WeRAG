@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -32,6 +33,10 @@ const legalSyncInterrupted = "Bị ngắt: lần chạy không được đóng (
 // because it gave no sign of life (CloseSilent). Such a run comes back when
 // its sync writes again (the database was only out of reach).
 const LegalSyncHeartbeatLost = "Bị ngắt: lần chạy không còn tín hiệu hơn 30 phút (container dừng hoặc mất kết nối cơ sở dữ liệu)."
+
+// ErrLegalSyncRunClosed: the run is no longer running (finished, or closed
+// as interrupted and a newer run of the worker started since).
+var ErrLegalSyncRunClosed = errors.New("legal sync run is not running")
 
 // legalSyncControl drops control characters but newline and tab, ANSI
 // escape sequences and carriage returns (progress bars) from an error.
@@ -138,6 +143,15 @@ func (r *LegalSyncRunRepository) CloseSilent(ctx context.Context, worker string,
 	return res.RowsAffected, res.Error
 }
 
+// Get returns the run id (gorm.ErrRecordNotFound when there is none).
+func (r *LegalSyncRunRepository) Get(ctx context.Context, id int64) (*types.LegalSyncRun, error) {
+	var run types.LegalSyncRun
+	if err := r.db.WithContext(ctx).First(&run, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &run, nil
+}
+
 // LatestFinished returns the worker's newest run that is not running (nil
 // when there is none).
 func (r *LegalSyncRunRepository) LatestFinished(ctx context.Context, worker string) (*types.LegalSyncRun, error) {
@@ -229,7 +243,7 @@ func (r *LegalSyncRunRepository) change(ctx context.Context, id int64,
 				}
 			}
 			if run.Status != types.LegalSyncFailed || run.Error != LegalSyncHeartbeatLost || newer > 0 {
-				return fmt.Errorf("run %d is %s, not running", id, run.Status)
+				return fmt.Errorf("run %d is %s: %w", id, run.Status, ErrLegalSyncRunClosed)
 			}
 			run.Status, run.FinishedAt, run.Error = types.LegalSyncRunning, nil, ""
 		}

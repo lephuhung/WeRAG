@@ -7,6 +7,11 @@ const (
 	// LegalSyncWorkerVBPL is the nightly vbpl.vn sync (deploy/vbpl-sync):
 	// steps crawl → import → push.
 	LegalSyncWorkerVBPL = "vbpl_sync"
+	// LegalSyncWorkerDCS is the Party documents sync (deploy/dcs-sync),
+	// every 4 hours: steps fetch → build → upload. It has no database
+	// credentials and records its runs through the backend's run endpoints
+	// (POST /system/legal-sync/runs …).
+	LegalSyncWorkerDCS = "dcs_sync"
 	// LegalSyncWorkerAutoIngest is the backend worker adding the documents
 	// the sync queued (service.LegalAutoIngest).
 	LegalSyncWorkerAutoIngest = "auto_ingest"

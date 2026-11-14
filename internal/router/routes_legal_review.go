@@ -129,7 +129,10 @@ func RegisterLegalPushRoutes(r *gin.RouterGroup, h *handler.LegalPushHandler, g 
 }
 
 // RegisterLegalSyncRoutes wires the SuperAdmin monitor of the legal data
-// workers (read only).
+// workers (read only, human SuperAdmin) and the run tracking of the
+// scheduled syncs without database credentials (deploy/dcs-sync): an API
+// key of the platform organization with ingest, or a human SuperAdmin (the
+// handler's legalSyncReportAllowed re-checks both).
 func RegisterLegalSyncRoutes(r *gin.RouterGroup, h *handler.LegalSyncHandler, g *rbacGuards) {
 	if h == nil {
 		return
@@ -139,4 +142,9 @@ func RegisterLegalSyncRoutes(r *gin.RouterGroup, h *handler.LegalSyncHandler, g 
 		sync.GET("/status", h.GetLegalSyncStatus)
 		sync.GET("/runs", h.ListLegalSyncRuns)
 	}
+	report := apiKeyIngest(apiKeyFullAccess())
+	g.apiKeyRoute(r, http.MethodPost, "/system/legal-sync/runs", report, h.StartLegalSyncRun)
+	g.apiKeyRoute(r, http.MethodPost, "/system/legal-sync/runs/:id/step", report, h.UpdateLegalSyncRun)
+	g.apiKeyRoute(r, http.MethodPost, "/system/legal-sync/runs/:id/heartbeat", report, h.HeartbeatLegalSyncRun)
+	g.apiKeyRoute(r, http.MethodPost, "/system/legal-sync/runs/:id/finish", report, h.FinishLegalSyncRun)
 }

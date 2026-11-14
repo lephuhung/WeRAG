@@ -78,7 +78,7 @@ func TestLegalSyncHandlerStatusAndRuns(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &st))
 	require.True(t, st.Success)
-	require.Len(t, st.Data.Workers, 3)
+	require.Len(t, st.Data.Workers, 4)
 	require.Equal(t, types.LegalSyncWorkerVBPL, st.Data.Workers[0].Worker)
 	require.Equal(t, service.LegalSyncHealthOK, st.Data.Workers[0].Health)
 	require.Equal(t, "30 2 * * *", st.Data.Workers[0].Schedule)
