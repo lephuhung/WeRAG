@@ -1,11 +1,12 @@
 /* SuperAdmin monitor of the legal data workers: the nightly vbpl.vn sync
- * (container vbpl-sync: crawl → import → MinIO push), the backend's
+ * (container vbpl-sync: crawl → import → MinIO push), the Party documents
+ * sync (container dcs-sync, every 4 hours: fetch → build → upload), the backend's
  * auto-ingest and expired-retention workers, the queues they drain and the
  * push activity of the legal feeds (TVPL extension, Party documents).
  * Read only. Backend: /api/v1/system/legal-sync — SuperAdmin-only. */
 import { apiGet, type ApiEnvelope } from "@/lib/api-client";
 
-export type LegalSyncWorker = "vbpl_sync" | "auto_ingest" | "expired_retention";
+export type LegalSyncWorker = "vbpl_sync" | "dcs_sync" | "auto_ingest" | "expired_retention";
 export type LegalSyncRunStatus = "running" | "ok" | "failed";
 export type LegalSyncHealth = "ok" | "unknown" | "warning" | "error";
 export type LegalSyncReason =
@@ -48,7 +49,7 @@ export interface LegalSyncRun {
 
 export interface LegalSyncWorkerStatus {
   worker: LegalSyncWorker;
-  /** container: deploy/vbpl-sync, seen through its runs; backend: a
+  /** container: deploy/vbpl-sync or deploy/dcs-sync, seen through its runs; backend: a
    * goroutine of the server, with a heartbeat. */
   kind: "container" | "backend";
   last: LegalSyncRun | null;
@@ -56,6 +57,9 @@ export interface LegalSyncWorkerStatus {
   /** while the sync runs: its previous finished run */
   last_finished?: LegalSyncRun | null;
   schedule?: string;
+  /** a container's thresholds: stale after, stuck after (hours) */
+  stale_after_hours?: number;
+  long_run_hours?: number;
   interval_seconds?: number;
   last_tick_at?: string;
   last_error?: string;

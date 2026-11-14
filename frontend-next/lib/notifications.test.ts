@@ -81,13 +81,14 @@ const texts = {
   backupLastOk: (at: string) => `last success ${at}`,
   legalSyncAlertTitle: (count: number) => `Legal data collection problems: ${count}`,
   legalSyncWorker: (worker: LegalSyncAlertWorker) =>
-    ({ vbpl_sync: "vbpl.vn nightly sync", auto_ingest: "Auto-ingest", expired_retention: "Expired text removal" })[worker],
-  legalSyncStep: (step: LegalSyncStep) => ({ prepare: "prepare", crawl: "crawl", import: "import", push: "MinIO backup" })[step],
-  legalSyncProblem: (problem: LegalSyncProblem, step: string, at: string) =>
+    ({ vbpl_sync: "vbpl.vn nightly sync", dcs_sync: "Party documents sync", auto_ingest: "Auto-ingest", expired_retention: "Expired text removal" })[worker],
+  legalSyncStep: (step: LegalSyncStep) =>
+    ({ prepare: "prepare", crawl: "crawl", import: "import", push: "MinIO backup", fetch: "fetch", build: "classify and build", upload: "push to WeRAG" })[step],
+  legalSyncProblem: (problem: LegalSyncProblem, step: string, at: string, hours: number) =>
     ({
       last_failed: "failed",
-      running_long: "running for over 12 hours",
-      stale: "overdue: no successful run in the last day",
+      running_long: hours ? `running for over ${hours} hours` : "running for over 12 hours",
+      stale: hours ? `overdue: no successful run in the last ${hours} hours` : "overdue: no successful run in the last day",
       heartbeat_stale: "stopped (missed three passes)",
       no_heartbeat: "no pass since the server started",
       tick_error: "its passes keep failing",
@@ -124,13 +125,14 @@ const textsVi = {
   backupLastOk: (at: string) => `lần thành công cuối ${at}`,
   legalSyncAlertTitle: (count: number) => `Thu thập dữ liệu pháp lý gặp sự cố: ${count} việc`,
   legalSyncWorker: (worker: LegalSyncAlertWorker) =>
-    ({ vbpl_sync: "Đồng bộ vbpl.vn", auto_ingest: "Tự nạp văn bản", expired_retention: "Xóa toàn văn hết hiệu lực" })[worker],
-  legalSyncStep: (step: LegalSyncStep) => ({ prepare: "chuẩn bị", crawl: "cào dữ liệu", import: "nạp danh mục", push: "sao lưu MinIO" })[step],
-  legalSyncProblem: (problem: LegalSyncProblem, step: string, at: string) =>
+    ({ vbpl_sync: "Đồng bộ vbpl.vn", dcs_sync: "Đồng bộ văn bản của Đảng", auto_ingest: "Tự nạp văn bản", expired_retention: "Xóa toàn văn hết hiệu lực" })[worker],
+  legalSyncStep: (step: LegalSyncStep) =>
+    ({ prepare: "chuẩn bị", crawl: "cào dữ liệu", import: "nạp danh mục", push: "sao lưu MinIO", fetch: "tải trang", build: "phân loại và dựng HTML", upload: "đẩy lên WeRAG" })[step],
+  legalSyncProblem: (problem: LegalSyncProblem, step: string, at: string, hours: number) =>
     ({
       last_failed: "lỗi",
-      running_long: "chạy quá 12 giờ",
-      stale: "quá hạn, không có lần chạy thành công trong ngày qua",
+      running_long: hours ? `chạy quá ${hours} giờ` : "chạy quá 12 giờ",
+      stale: hours ? `quá hạn, không có lần chạy thành công trong ${hours} giờ qua` : "quá hạn, không có lần chạy thành công trong ngày qua",
       heartbeat_stale: "đã dừng (lỡ ba lượt liên tiếp)",
       no_heartbeat: "chưa chạy lượt nào từ khi khởi động",
       tick_error: "các lượt chạy liên tiếp bị lỗi",
@@ -516,6 +518,38 @@ describe("legal sync alert", () => {
     assert.equal(t.title, "Legal data collection problems: 2");
     assert.ok(t.body.startsWith("vbpl.vn nightly sync: running for over 12 hours at step verify; Expired text removal: its passes keep failing — yyy"));
     assert.ok(t.body.endsWith("…"));
+  });
+
+  it("names the Party documents sync, its steps and its own thresholds", () => {
+    const n = alert({
+      count: 2,
+      workers: [
+        {
+          worker: "dcs_sync",
+          problem: "last_failed",
+          step: "upload",
+          at: "2026-11-14T01:15:00Z",
+          last_ok_at: "2026-11-12T07:20:00Z",
+          note: "2 pushes failed (HTTP 404/429/5xx, transport…): retried next run",
+          hours: 9,
+        },
+        { worker: "vbpl_sync", problem: "stale", hours: 26 },
+      ],
+    });
+    assert.deepEqual(notificationText(n, texts), {
+      title: "Legal data collection problems: 2",
+      body:
+        "Party documents sync: failed at step push to WeRAG (run of T(2026-11-14T01:15)), last success T(2026-11-12T07:20) — 2 pushes failed (HTTP 404/429/5xx, transport…): retried next run; " +
+        "vbpl.vn nightly sync: overdue: no successful run in the last 26 hours",
+    });
+    const vi = notificationText(
+      alert({ workers: [{ worker: "dcs_sync", problem: "running_long", step: "fetch", hours: 2 }, { worker: "dcs_sync", problem: "stale", hours: 9 }] }),
+      textsVi,
+    );
+    assert.equal(vi.body, "Đồng bộ văn bản của Đảng: chạy quá 2 giờ ở bước tải trang; Đồng bộ văn bản của Đảng: quá hạn, không có lần chạy thành công trong 9 giờ qua");
+    // an alert stored before the thresholds were sent keeps the old wording
+    const old = notificationText(alert({ workers: [{ worker: "vbpl_sync", problem: "stale", hours: "x" }] }), texts);
+    assert.equal(old.body, "vbpl.vn nightly sync: overdue: no successful run in the last day");
   });
 
   it("keeps the stored text when no worker is named", () => {
