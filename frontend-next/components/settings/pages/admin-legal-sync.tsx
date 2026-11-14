@@ -142,6 +142,7 @@ const COUNT_LABEL: Record<string, LocaleKey> = {
   existing: "lsync.count.existing",
   refused: "lsync.count.refused",
   credentials_refused: "lsync.count.credentials_refused",
+  gave_up: "lsync.count.gave_up",
 };
 const REQUEST_SOURCE_LABEL: Record<string, LocaleKey> = {
   vbpl_no_text: "lsync.reqSource.vbpl_no_text",
@@ -409,6 +410,7 @@ function WorkerCard({ w, now, t, locale }: { w: LegalSyncWorkerStatus; now: numb
         </span>
       </div>
       {WORKER_DESC[w.worker] && <p className="caption mb-2 text-muted">{t(WORKER_DESC[w.worker])}</p>}
+      {w.alert_muted && <p className="caption mb-2 text-warning">{t("lsync.alertMuted")}</p>}
       {w.reasons.length > 0 && (
         <ul className={`mb-2 space-y-0.5 text-[12.5px] ${healthText(w.health)}`}>
           {w.reasons.map((r) => (

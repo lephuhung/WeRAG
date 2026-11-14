@@ -36,8 +36,9 @@ var (
 	// a margin, so a slower run the next night is not late.
 	legalSyncVBPL = legalSyncSchedule{staleAfter: 26 * time.Hour, longRun: 12 * time.Hour}
 	// legalSyncDCS: the Party documents sync (cron every 4 hours, a run
-	// takes minutes): two missed runs and a margin.
-	legalSyncDCS = legalSyncSchedule{staleAfter: 9 * time.Hour, longRun: 2 * time.Hour}
+	// takes minutes): two missed runs and a margin; stuck when a run takes
+	// its whole slot (a full re-crawl or many OCR pauses can take hours).
+	legalSyncDCS = legalSyncSchedule{staleAfter: 9 * time.Hour, longRun: 4 * time.Hour}
 )
 
 // legalSyncContainers are the scheduled syncs, in monitor order.
@@ -96,6 +97,7 @@ const (
 type legalSyncSettings interface {
 	GetInt(ctx context.Context, key string, envName string, def int64) int64
 	GetBool(ctx context.Context, key string, envName string, def bool) bool
+	GetString(ctx context.Context, key string, envName string, def string) string
 }
 
 // legalRunRecorder writes a backend worker's pass (repository.LegalSyncRunRepository).
@@ -193,6 +195,9 @@ type LegalSyncWorkerStatus struct {
 	FailingSince *time.Time `json:"failing_since,omitempty"`
 	Health       string     `json:"health"`
 	Reasons      []string   `json:"reasons"`
+	// AlertMuted: the worker's alert is silenced on its own (system setting
+	// legal.sync_alert.disabled_workers).
+	AlertMuted bool `json:"alert_muted,omitempty"`
 }
 
 // LegalSyncQueues are the queues the workers drain.
@@ -289,12 +294,13 @@ func (m *LegalSyncMonitor) workers(ctx context.Context, now time.Time) ([]LegalS
 	list = append(list, watched{types.LegalSyncWorkerAutoIngest, "backend", legalAutoIngestTick},
 		watched{types.LegalSyncWorkerExpiredRetention, "backend", legalRetentionTick})
 	out := make([]LegalSyncWorkerStatus, 0, len(list))
+	muted := m.mutedWorkers(ctx)
 	for _, w := range list {
 		last, lastOK, err := m.runs.Latest(ctx, w.name)
 		if err != nil {
 			return nil, err
 		}
-		st := LegalSyncWorkerStatus{Worker: w.name, Kind: w.kind, Last: last, LastOK: lastOK}
+		st := LegalSyncWorkerStatus{Worker: w.name, Kind: w.kind, Last: last, LastOK: lastOK, AlertMuted: muted[w.name]}
 		if w.kind == "container" {
 			st.Schedule = legalRunString(last, "schedule")
 			if last != nil && last.Status == types.LegalSyncRunning {
@@ -404,6 +410,16 @@ func legalHealthRank(h string) int {
 		return 2
 	}
 	return 3
+}
+
+// mutedWorkers are the workers whose alert is silenced on their own
+// (legal.sync_alert.disabled_workers; unknown names are ignored).
+func (m *LegalSyncMonitor) mutedWorkers(ctx context.Context) map[string]bool {
+	if m.settings == nil {
+		return map[string]bool{}
+	}
+	w, _ := types.ParseLegalSyncWorkerList(m.settings.GetString(ctx, types.LegalSyncAlertDisabledWorkersSettingKey, "", ""))
+	return w
 }
 
 // legalRunString reads a top-level string of a run's summary.

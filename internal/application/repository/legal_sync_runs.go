@@ -38,6 +38,10 @@ const LegalSyncHeartbeatLost = "Bị ngắt: lần chạy không còn tín hiệ
 // as interrupted and a newer run of the worker started since).
 var ErrLegalSyncRunClosed = errors.New("legal sync run is not running")
 
+// ErrLegalSyncSummaryTooLarge: a capped write (UpdateCapped, FinishCapped)
+// would make the run's summary larger than its cap.
+var ErrLegalSyncSummaryTooLarge = errors.New("legal sync run summary too large")
+
 // legalSyncControl drops control characters but newline and tab, ANSI
 // escape sequences and carriage returns (progress bars) from an error.
 var legalSyncControl = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[@-_]|[\x00-\x08\x0b-\x1f\x7f]`)
@@ -88,7 +92,15 @@ func (r *LegalSyncRunRepository) Start(ctx context.Context, worker, step string,
 // Update moves a running run to step (closing the timing of the step it
 // was at) and merges patch into its summary; step "" keeps the step.
 func (r *LegalSyncRunRepository) Update(ctx context.Context, id int64, step string, patch map[string]any) error {
-	return r.change(ctx, id, func(run *types.LegalSyncRun, sum map[string]any, now time.Time) {
+	return r.UpdateCapped(ctx, id, step, patch, 0)
+}
+
+// UpdateCapped is Update refusing (ErrLegalSyncSummaryTooLarge, nothing
+// written) a summary that would exceed maxSummary bytes of JSON; 0: no cap.
+func (r *LegalSyncRunRepository) UpdateCapped(ctx context.Context, id int64, step string, patch map[string]any,
+	maxSummary int,
+) error {
+	return r.change(ctx, id, maxSummary, func(run *types.LegalSyncRun, sum map[string]any, now time.Time) {
 		if step != "" && step != run.Step {
 			legalSyncCloseStep(sum, run.Step, now)
 			legalSyncOpenStep(sum, step, now)
@@ -101,10 +113,17 @@ func (r *LegalSyncRunRepository) Update(ctx context.Context, id int64, step stri
 // Finish closes a run as ok or failed. A failed run keeps the step it
 // failed at (or step, when given) and the error's tail.
 func (r *LegalSyncRunRepository) Finish(ctx context.Context, id int64, status, step, errText string, patch map[string]any) error {
+	return r.FinishCapped(ctx, id, status, step, errText, patch, 0)
+}
+
+// FinishCapped is Finish with UpdateCapped's summary cap.
+func (r *LegalSyncRunRepository) FinishCapped(ctx context.Context, id int64, status, step, errText string,
+	patch map[string]any, maxSummary int,
+) error {
 	if status != types.LegalSyncOK && status != types.LegalSyncFailed {
 		return fmt.Errorf("finish run %d: status %q is not ok or failed", id, status)
 	}
-	return r.change(ctx, id, func(run *types.LegalSyncRun, sum map[string]any, now time.Time) {
+	return r.change(ctx, id, maxSummary, func(run *types.LegalSyncRun, sum map[string]any, now time.Time) {
 		if step != "" && step != run.Step {
 			legalSyncCloseStep(sum, run.Step, now)
 			legalSyncOpenStep(sum, step, now)
@@ -130,7 +149,7 @@ func (r *LegalSyncRunRepository) Touch(ctx context.Context, id int64) error {
 	if res.RowsAffected > 0 {
 		return nil
 	}
-	return r.change(ctx, id, func(*types.LegalSyncRun, map[string]any, time.Time) {})
+	return r.change(ctx, id, 0, func(*types.LegalSyncRun, map[string]any, time.Time) {})
 }
 
 // CloseSilent closes as failed (LegalSyncHeartbeatLost) the running runs
@@ -150,6 +169,19 @@ func (r *LegalSyncRunRepository) Get(ctx context.Context, id int64) (*types.Lega
 		return nil, err
 	}
 	return &run, nil
+}
+
+// LatestRunning returns the worker's newest running run (nil when none).
+func (r *LegalSyncRunRepository) LatestRunning(ctx context.Context, worker string) (*types.LegalSyncRun, error) {
+	var rows []*types.LegalSyncRun
+	if err := r.db.WithContext(ctx).Where("worker = ? AND status = ?", worker, types.LegalSyncRunning).
+		Order("started_at DESC").Order("id DESC").Limit(1).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return rows[0], nil
 }
 
 // LatestFinished returns the worker's newest run that is not running (nil
@@ -221,9 +253,10 @@ func (r *LegalSyncRunRepository) Latest(ctx context.Context, worker string) (las
 	return last, lastOK, nil
 }
 
-// change loads a running run, applies edit and saves it. One run has one
-// writer (the sync's steps run one after another), so no row lock.
-func (r *LegalSyncRunRepository) change(ctx context.Context, id int64,
+// change loads a running run, applies edit and saves it (maxSummary > 0:
+// refused when the summary's JSON would exceed it). One run has one writer
+// (the sync's steps run one after another), so no row lock.
+func (r *LegalSyncRunRepository) change(ctx context.Context, id int64, maxSummary int,
 	edit func(run *types.LegalSyncRun, sum map[string]any, now time.Time),
 ) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -258,6 +291,9 @@ func (r *LegalSyncRunRepository) change(ctx context.Context, id int64,
 		raw, err := json.Marshal(sum)
 		if err != nil {
 			return err
+		}
+		if maxSummary > 0 && len(raw) > maxSummary {
+			return fmt.Errorf("run %d: %d bytes > %d: %w", id, len(raw), maxSummary, ErrLegalSyncSummaryTooLarge)
 		}
 		run.Summary = raw
 		return tx.Model(&types.LegalSyncRun{}).Where("id = ?", id).Updates(map[string]any{

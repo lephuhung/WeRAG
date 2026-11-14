@@ -35,8 +35,9 @@ tệp trong cache. Cấu trúc thư mục:
 | `DCS_SYNC_ON_START` | `0` | `1`: chạy ngay khi container khởi động |
 | `DCS_REFRESH_PAGES` | `3` | |
 | `DCS_DELAY` | `1` | giây giữa hai request tới cổng |
-| `DCS_RUN_TRACK_TIMEOUT` | `20` | giây cho mỗi request ghi nhận lần chạy (cả lệnh tối đa 3×) |
-| `DCS_RUN_HEARTBEAT_S` | `300` | chu kỳ báo còn sống trong lúc chạy |
+| `DCS_RUN_TRACK_TIMEOUT` | `20` | giây cho mỗi request ghi nhận lần chạy (cả lệnh tối đa 3×; khi dừng container 10 giây) |
+| `DCS_RUN_HEARTBEAT_S` | `60` | chu kỳ báo còn sống trong lúc chạy (backend coi lần chạy ghi trong 2 phút là còn sống) |
+| `DCS_RUN_RETRY_S` | `2` | nghỉ giữa các lần thử đóng lần chạy (tối đa 3 lần) |
 
 ```bash
 sudo docker compose --profile dcs-sync up -d --build dcs-sync
@@ -65,21 +66,46 @@ key `DCS_API_KEY` sẵn có là đủ, không cần tạo key mới — hoặc S
 nhập. Key của tổ chức khác, key thiếu `ingest`, người đẩy văn bản pháp luật,
 quản trị tổ chức: 403. Chỉ worker `dcs_sync` được ghi qua API (vbpl-sync và
 các worker của backend tự ghi); key không chạm được lần chạy của worker khác.
+Lưu ý: **ai giữ một API key ingest của tổ chức 10000 cũng ghi được lần chạy
+`dcs_sync`** (kể cả báo "thành công" giả, làm tắt cảnh báo của nguồn này) —
+giữ kín key như key đẩy văn bản. Để key không làm phình bảng: bước chỉ là
+`fetch`, `build`, `upload`; summary chỉ nhận `schedule` (chuỗi), `untracked`
+(boolean) và số liệu của một bước (tối đa 32 giá trị đơn: số, boolean, chuỗi
+≤ 200 ký tự); summary của một lần chạy tối đa 32 KB. Sai → 400, không ghi gì.
 
 Ngữ nghĩa giống vbpl-sync: mở lần chạy mới thì lần chạy cũ còn treo được đóng
 là "Bị ngắt"; mỗi lần ghi là một tín hiệu sống; trong lúc chạy cứ
 `DCS_RUN_HEARTBEAT_S` giây sync.sh báo còn sống, lần chạy im lặng quá 30 phút bị
-backend đóng là lỗi (tự mở lại nếu sync.sh ghi tiếp). Mỗi bước gửi kèm số liệu
+backend đóng là lỗi (tự mở lại nếu sync.sh ghi tiếp).
+
+Hai dcs-sync cùng đẩy vào một backend (container thứ hai, thư mục làm việc
+khác nên khoá `flock` không thấy nhau): khi một lần chạy `dcs_sync` còn sống
+(ghi trong 2 phút qua), backend từ chối mở lần chạy mới (409) và sync.sh **không
+làm gì, thoát 0** ("skip: another dcs-sync run is in progress"), để lần chạy kia
+làm tiếp; không ghi lần chạy nào cho lượt bị bỏ. Hệ quả: chạy tay `sync.sh`
+ngay sau khi container bị giết hẳn (SIGKILL) có thể bị bỏ trong tối đa 2 phút. Mỗi bước gửi kèm số liệu
 mà script đã in:
 
 - `fetch`: `records` (văn bản trong danh sách hai cổng), `loaded` (tải trong lần này);
 - `build`: `planned`, `text`, `ocr`, `catalogue`, `skip`;
 - `upload`: `pushed` (toàn văn), `queued` (vào hàng chờ extension TVPL),
   `existing` (409, đã có toàn văn), `refused` (400/422), `failed` (404/429/5xx,
-  lỗi mạng: đẩy lại lần sau), `credentials_refused` khi API từ chối key.
+  lỗi mạng: đẩy lại lần sau), `gave_up` (văn bản bị bỏ qua, xem dưới),
+  `credentials_refused` khi API từ chối key.
 
-Lần chạy lỗi ghi đoạn cuối output của bước hỏng (API key bị che, bỏ ký tự điều
-khiển/mã màu; backend giữ 4000 byte cuối). Có lệnh đẩy lỗi (dcs_push thoát 4)
+`dcs_push.py` coi 413 (tệp quá lớn) là bị từ chối hẳn như 400/422. Một văn bản
+mà máy chủ lỗi (HTTP 500…, hay treo tới hết thời gian chờ) **5 lần chạy liên
+tiếp** thì lần sau được ghi là bỏ qua (`gave_up`, kèm lý do) thay vì đẩy lại,
+để một văn bản "độc" không làm mọi lần chạy lỗi và giữ cảnh báo mãi; metadata
+của nó đổi thì thử lại. Lỗi không nói gì về văn bản (backend không tới được, sai
+`WERAG_API`, 404/405/429/502–504) không tính, lần chạy mà mọi lệnh đẩy (từ ba
+trở lên) đều lỗi cũng không tính. Muốn đẩy lại ngay: xoá các dòng `gave_up` của
+văn bản trong `build/push-results.jsonl`.
+
+Output của các bước (docker logs, `.sync.step.log`, `push.log`) đi qua bộ lọc
+che API key. Lần chạy lỗi ghi đoạn cuối output của bước hỏng (API key bị che,
+bỏ ký tự điều khiển/mã màu; backend giữ 4000 byte cuối). Lệnh đóng lần chạy được
+thử tối đa 3 lần khi lỗi mạng/5xx. Có lệnh đẩy lỗi (dcs_push thoát 4)
 thì lần chạy là **lỗi** ở bước `upload`, đoạn lỗi chỉ gồm các dòng đẩy hỏng và
 dòng tổng kết. Ghi nhận không bao giờ làm hỏng lần đồng bộ: không mở được lần
 chạy (backend không tới được) thì chạy tiếp không ghi và thử ghi lại lúc kết thúc
@@ -92,9 +118,12 @@ phải từ lần chạy lỗi. Container chưa từng ghi lần chạy nào th�
 triển khai: không cảnh báo.
 
 Ngưỡng của `dcs_sync` (theo lịch 4 giờ): quá hạn khi 9 giờ không có lần chạy
-thành công nào bắt đầu; chạy quá 2 giờ là có thể treo; im lặng 30 phút là bị
+thành công nào bắt đầu; chạy quá 4 giờ là có thể treo; im lặng 30 phút là bị
 ngắt. Cảnh báo chung digest `legal_sync_alert` với vbpl-sync (ngưỡng riêng
-12/26 giờ), tắt bằng thiết lập hệ thống `legal.sync_alert.enabled`. Lịch sử giữ
+12/26 giờ). Tắt toàn bộ bằng thiết lập hệ thống `legal.sync_alert.enabled`;
+tắt riêng nguồn này (cố ý dừng container) bằng
+`legal.sync_alert.disabled_workers` = `dcs_sync` (danh sách cách nhau bằng dấu
+phẩy; trang vẫn hiện tình trạng, kèm dòng "không gửi cảnh báo"). Lịch sử giữ
 180 ngày.
 
 Dừng container (`docker stop`, `compose up` lại): `entrypoint.sh` (PID 1) gửi

@@ -145,7 +145,7 @@ func legalSyncReportError(c *gin.Context, err error) {
 		c.Error(errors.NewBadRequestError(err.Error()))
 	case stderrors.Is(err, service.ErrLegalSyncReportRun):
 		c.Error(errors.NewNotFoundError(err.Error()))
-	case stderrors.Is(err, service.ErrLegalSyncReportClosed):
+	case stderrors.Is(err, service.ErrLegalSyncReportClosed), stderrors.Is(err, service.ErrLegalSyncReportBusy):
 		c.Error(errors.NewConflictError(err.Error()))
 	default:
 		c.Error(errors.NewInternalServerError("legal sync run").WithDetails(err.Error()))
@@ -156,7 +156,10 @@ func legalSyncReportError(c *gin.Context, err error) {
 // @Summary      Open a run of a scheduled sync
 // @Description  For the syncs without database credentials (worker
 // @Description  dcs_sync). JSON {worker, step, summary}; closes the worker's
-// @Description  runs left open as interrupted and returns the new run's id.
+// @Description  runs left open as interrupted and returns the new run's id;
+// @Description  409 while another run of the worker is alive (written to
+// @Description  within 2 minutes). summary: schedule, untracked, and the
+// @Description  counts of a step (fetch, build, upload); at most 32 KB.
 // @Description  API key of the platform organization (ingest) or a human
 // @Description  SuperAdmin.
 // @Tags         Rà soát pháp lý

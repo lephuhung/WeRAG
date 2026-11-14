@@ -24,7 +24,7 @@ import (
 //
 // Worth an alert: a scheduled sync's last run failed, it is running for
 // longer than its longRun, or no successful run started within its
-// staleAfter (vbpl.vn: 12 h / 26 h, Party documents: 2 h / 9 h; a sync that
+// staleAfter (vbpl.vn: 12 h / 26 h, Party documents: 4 h / 9 h; a sync that
 // never reported a run is not deployed: no alert); a backend worker
 // missed three passes, never passed since it was started, or its passes
 // have failed for legalTickErrorAlertAfter. A backend worker that is
@@ -129,8 +129,12 @@ func (m *LegalSyncMonitor) alertsEnabled(ctx context.Context) bool {
 var legalSyncContainerAlertOrder = []string{LegalSyncReasonLastFailed, LegalSyncReasonSilent, LegalSyncReasonRunningLong,
 	LegalSyncReasonStale}
 
-// legalSyncAlertProblem is the problem of w worth an alert, "" for none.
+// legalSyncAlertProblem is the problem of w worth an alert, "" for none
+// (and for a worker whose alert is silenced on its own).
 func legalSyncAlertProblem(w LegalSyncWorkerStatus, now time.Time) string {
+	if w.AlertMuted {
+		return ""
+	}
 	has := map[string]bool{}
 	for _, r := range w.Reasons {
 		has[r] = true

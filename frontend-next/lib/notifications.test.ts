@@ -543,10 +543,10 @@ describe("legal sync alert", () => {
         "vbpl.vn nightly sync: overdue: no successful run in the last 26 hours",
     });
     const vi = notificationText(
-      alert({ workers: [{ worker: "dcs_sync", problem: "running_long", step: "fetch", hours: 2 }, { worker: "dcs_sync", problem: "stale", hours: 9 }] }),
+      alert({ workers: [{ worker: "dcs_sync", problem: "running_long", step: "fetch", hours: 4 }, { worker: "dcs_sync", problem: "stale", hours: 9 }] }),
       textsVi,
     );
-    assert.equal(vi.body, "Đồng bộ văn bản của Đảng: chạy quá 2 giờ ở bước tải trang; Đồng bộ văn bản của Đảng: quá hạn, không có lần chạy thành công trong 9 giờ qua");
+    assert.equal(vi.body, "Đồng bộ văn bản của Đảng: chạy quá 4 giờ ở bước tải trang; Đồng bộ văn bản của Đảng: quá hạn, không có lần chạy thành công trong 9 giờ qua");
     // an alert stored before the thresholds were sent keeps the old wording
     const old = notificationText(alert({ workers: [{ worker: "vbpl_sync", problem: "stale", hours: "x" }] }), texts);
     assert.equal(old.body, "vbpl.vn nightly sync: overdue: no successful run in the last day");

@@ -138,5 +138,82 @@ class Sync(unittest.TestCase):
         self.assertFalse(p.is_done(done, "c", "queue", "h1"), "server error: tried again")
 
 
+class PushGiveUp(unittest.TestCase):
+    def _results(self, rows):
+        import json as _json
+        import tempfile
+        fh = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)
+        fh.write("".join(_json.dumps(r) + "\n" for r in rows))
+        fh.close()
+        self.addCleanup(os.unlink, fh.name)
+        return fh.name
+
+    def test_413_is_final(self):
+        import dcs_push as p
+        done = p.load_done(self._results([{"source_doc_id": "a", "action": "full", "ok": False, "status": 413, "meta_hash": "h"}]))
+        self.assertTrue(p.is_done(done, "a", "full", "h"))
+
+    def test_streaks(self):
+        import dcs_push as p
+        rows = []
+        for i in range(5):  # five runs, the server fails on "bad" every time
+            rows.append({"source_doc_id": "bad", "action": "full", "ok": False, "status": 500, "run": f"r{i}"})
+            rows.append({"source_doc_id": f"ok{i}", "action": "queue", "ok": True, "status": 200, "run": f"r{i}"})
+        # DNS: transport errors say nothing about the document
+        rows += [{"source_doc_id": "dns", "action": "full", "ok": False, "status": 0, "run": f"d{i}",
+                  "answer": {"error": {"message": "transport: Temporary failure in name resolution"}}} for i in range(6)]
+        # an outage run: three or more pushes, all failed with 500
+        rows += [{"source_doc_id": s, "action": "full", "ok": False, "status": 500, "run": "out"} for s in ("x", "y", "back")]
+        # a success ends a streak
+        rows += [{"source_doc_id": "back", "action": "full", "ok": False, "status": 500, "run": f"b{i}"} for i in range(4)]
+        rows.append({"source_doc_id": "back", "action": "full", "ok": True, "status": 200, "run": "b9"})
+        # a request the server hung on counts
+        rows += [{"source_doc_id": "slow", "action": "scan", "ok": False, "status": 0, "run": f"s{i}",
+                  "answer": {"error": {"message": "transport: timed out"}}} for i in range(2)]
+        st = p.failure_streaks(self._results(rows))
+        self.assertEqual(st[("bad", "full")], (5, "HTTP 500"))
+        self.assertNotIn(("dns", "full"), st)
+        self.assertNotIn(("x", "full"), st)
+        self.assertNotIn(("back", "full"), st)
+        self.assertEqual(st[("slow", "scan")][0], 2)
+
+    def test_poison_document_given_up(self):
+        import dcs_push as p
+        import json as _json
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            md = {"source_doc_id": "bad", "doc_number": "01-QĐ/TW", "title": "t"}
+            with open(os.path.join(d, "plan.jsonl"), "w", encoding="utf-8") as fh:
+                fh.write(_json.dumps({"case": "catalogue", "metadata": md, "why": "no file"}) + "\n")
+            mh = p.meta_hash(md)
+            with open(os.path.join(d, "push-results.jsonl"), "w", encoding="utf-8") as fh:
+                for i in range(5):
+                    fh.write(_json.dumps({"source_doc_id": "bad", "action": "queue", "ok": False, "status": 500,
+                                          "meta_hash": mh, "run": f"r{i}"}) + "\n")
+            calls = []
+            orig, env = p.post, os.environ.get("WERAG_API_KEY")
+            p.post = lambda *a, **k: calls.append(a) or (500, {})
+            os.environ["WERAG_API_KEY"] = "k"
+            try:
+                self.assertEqual(p.main([d]), 0, "a given-up document is no server error")
+                self.assertEqual(calls, [])
+                last = _json.loads(open(os.path.join(d, "push-results.jsonl"), encoding="utf-8").read().splitlines()[-1])
+                self.assertTrue(last["gave_up"])
+                self.assertIn("5 lần chạy", last["reason"])
+                self.assertTrue(p.is_done(p.load_done(os.path.join(d, "push-results.jsonl")), "bad", "queue", mh))
+                # a fourth failure only: tried, and still exit 4
+                with open(os.path.join(d, "push-results.jsonl"), "w", encoding="utf-8") as fh:
+                    fh.write(_json.dumps({"source_doc_id": "bad", "action": "queue", "ok": False, "status": 500,
+                                          "meta_hash": mh, "run": "r0"}) + "\n")
+                self.assertEqual(p.main([d]), 4)
+                self.assertEqual(len(calls), 1)
+            finally:
+                p.post = orig
+                if env is None:
+                    os.environ.pop("WERAG_API_KEY", None)
+                else:
+                    os.environ["WERAG_API_KEY"] = env
+
+
 if __name__ == "__main__":
     unittest.main()

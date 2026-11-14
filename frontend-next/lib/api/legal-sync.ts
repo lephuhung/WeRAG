@@ -57,6 +57,8 @@ export interface LegalSyncWorkerStatus {
   /** while the sync runs: its previous finished run */
   last_finished?: LegalSyncRun | null;
   schedule?: string;
+  /** the worker's alert is silenced on its own (legal.sync_alert.disabled_workers) */
+  alert_muted?: boolean;
   /** a container's thresholds: stale after, stuck after (hours) */
   stale_after_hours?: number;
   long_run_hours?: number;

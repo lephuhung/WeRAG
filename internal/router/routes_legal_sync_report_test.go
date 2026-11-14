@@ -125,6 +125,16 @@ func TestLegalSyncReportRoutesLifecycle(t *testing.T) {
 		t.Fatalf("start answer %s: %v", w.Body.String(), err)
 	}
 	base := "/api/v1/system/legal-sync/runs/" + jsonInt(started.Data.ID)
+	// a second container while this run is alive: refused
+	if w := legalSyncReport(key, http.MethodPost, "/api/v1/system/legal-sync/runs", legalSyncStartBody); w.Code != http.StatusConflict {
+		t.Fatalf("start while a run is alive = %d, want 409", w.Code)
+	}
+	// summary keys outside the allow-list, nested values, unknown steps
+	for _, body := range []string{`{"summary":{"extra":1}}`, `{"summary":{"fetch":{"a":{"b":1}}}}`, `{"step":"crawl"}`} {
+		if w := legalSyncReport(key, http.MethodPost, base+"/step", body); w.Code != http.StatusBadRequest {
+			t.Fatalf("step %s = %d, want 400", body, w.Code)
+		}
+	}
 	for _, s := range []struct{ path, body string }{
 		{"/step", `{"step":"build","summary":{"fetch":{"loaded":4}}}`},
 		{"/heartbeat", ""},

@@ -38,10 +38,17 @@ APP=/app
 # fails the sync: without a run id the sync goes on untracked and is
 # recorded at its end. Each tracking call is bounded (each HTTP request
 # DCS_RUN_TRACK_TIMEOUT s inside, the whole call 3× that: DNS is not
-# bounded by the socket timeout). A ticker touches the run every
-# DCS_RUN_HEARTBEAT_S s: a running run silent for 30 minutes is closed as
-# interrupted by the monitor. Each step's output is kept in .sync.step.log;
-# a step's counts go into the run, a failed run records the output's tail.
+# bounded by the socket timeout; 10 s on a stop, within the entrypoint's
+# 80 s); closing the run is tried three times. A ticker touches the run
+# every DCS_RUN_HEARTBEAT_S s: a running run silent for 30 minutes is
+# closed as interrupted by the monitor. Each step's output (API key
+# masked) is kept in .sync.step.log; a step's counts go into the run, a
+# failed run records the output's tail.
+#
+# Another dcs-sync (a second container on the same backend, another work
+# dir: the lock does not see it) whose run is alive makes the backend
+# refuse the start (409): this sync then does nothing and exits 0, leaving
+# the run to the other one.
 STEP_LOG="$WORK/.sync.step.log"
 SUMMARY="$WORK/.sync.summary.json"
 TRACK_TIMEOUT=$((3 * ${DCS_RUN_TRACK_TIMEOUT:-20}))
@@ -52,6 +59,9 @@ TICKER=""
 SCHEDULE=${DCS_SYNC_CRON:-15 */4 * * *}
 SCHEDULE=${SCHEDULE//[\"\\]/}
 RUN_ID=""
+OPEN_RC=0
+TRACK_RC=0
+SKIP=0
 # Every call that may take a while runs in the background and is waited
 # for: a trapped signal interrupts a wait, while a foreground command (or
 # a command substitution) would delay the trap until it ends.
@@ -60,18 +70,36 @@ RUN_ID=""
 open_run() {
 	local f="$WORK/.sync.run.id"
 	: >"$f"
+	OPEN_RC=0
 	timeout --foreground "$TRACK_TIMEOUT" $PY "$APP/run_track.py" start "$1" --summary "$2" \
-		>"$f" 2>"$WORK/.sync.run.err" &
-	wait $! || true
+		>"$f" 2>>"$WORK/.sync.run.err" &
+	wait $! || OPEN_RC=$?
 	RUN_ID=$(<"$f")
 	# only an id
 	[[ $RUN_ID =~ ^[0-9]+$ ]] || RUN_ID=""
 }
+# track CMD ARGS… (never fails; TRACK_RC: run_track.py's exit code, 124 on
+# timeout)
 track() {
+	TRACK_RC=0
 	[ -n "$RUN_ID" ] || return 0
 	timeout --foreground "$TRACK_TIMEOUT" $PY "$APP/run_track.py" "$1" "$RUN_ID" "${@:2}" >/dev/null 2>>"$WORK/.sync.run.err" &
-	wait $! || log "run tracking ($1) failed: $(tail -n 1 "$WORK/.sync.run.err" 2>/dev/null)"
+	wait $! || TRACK_RC=$?
+	[ "$TRACK_RC" = 0 ] || log "run tracking ($1) failed: $(tail -n 1 "$WORK/.sync.run.err" 2>/dev/null)"
 }
+# track_retry: track, again up to twice after a failure worth retrying
+# (transport, 5xx, timeout; not a refusal)
+track_retry() {
+	local i
+	for i in 1 2 3; do
+		track "$@"
+		case "$TRACK_RC" in 0 | 2 | 3 | 4) return 0 ;; esac
+		[ "$i" = 3 ] || sleep "${DCS_RUN_RETRY_S:-2}"
+	done
+}
+# mask: the step's output with the API key masked (docker logs and the
+# step log alike)
+mask() { $PY "$APP/run_track.py" mask; }
 # summarize: the counts of the current step's output, into $SUMMARY
 summarize() {
 	: >"$SUMMARY"
@@ -85,7 +113,7 @@ ticker() {
 	local s=""
 	trap '[ -n "$s" ] && kill "$s" 2>/dev/null; exit 0' TERM
 	while :; do
-		sleep "${DCS_RUN_HEARTBEAT_S:-300}" &
+		sleep "${DCS_RUN_HEARTBEAT_S:-60}" &
 		s=$!
 		wait "$s" || true
 		kill -0 $$ 2>/dev/null || exit 0
@@ -110,6 +138,12 @@ run() {
 finish() {
 	rc=$?
 	trap '' TERM INT
+	[ "$SKIP" = 1 ] && return 0
+	if [ "$rc" -eq 143 ]; then
+		# a stop: the entrypoint waits 80 s at most
+		TRACK_TIMEOUT=10
+		export DCS_RUN_TRACK_TIMEOUT=8
+	fi
 	if [ -n "$TICKER" ]; then
 		kill "$TICKER" 2>/dev/null || true
 		wait "$TICKER" 2>/dev/null || true
@@ -119,9 +153,10 @@ finish() {
 		# tracking was off at the start: record the run now, so a good run
 		# is not taken for a missed one
 		open_run "${STEP:-fetch}" "{\"schedule\":\"$SCHEDULE\",\"untracked\":true}"
+		[ "$OPEN_RC" = 3 ] && log "run not recorded: another dcs-sync run is in progress"
 	fi
 	if [ "$rc" -eq 0 ]; then
-		track finish ok --summary-file "$SUMMARY"
+		track_retry finish ok --summary-file "$SUMMARY"
 	else
 		# the upload's tail: only the failed pushes and the script's verdict
 		# (a 2xx/409 line is a document that went through)
@@ -132,7 +167,7 @@ finish() {
 		fi
 		[ "$rc" -eq 143 ] && echo "dcs-sync: stopped (SIGTERM/SIGINT)" >>"$WORK/.sync.error"
 		[ "$rc" -eq 4 ] && echo "dcs-sync: some pushes failed (exit 4), retried next run" >>"$WORK/.sync.error"
-		track finish failed --error-file "$WORK/.sync.error" --summary-file "$SUMMARY"
+		track_retry finish failed --error-file "$WORK/.sync.error" --summary-file "$SUMMARY"
 	fi
 }
 # on a stop, end the running step and everything it started (the whole
@@ -154,6 +189,11 @@ trap stop TERM INT
 
 : >"$WORK/.sync.run.err"
 open_run fetch "{\"schedule\":\"$SCHEDULE\"}"
+if [ "$OPEN_RC" = 3 ]; then
+	log "skip: another dcs-sync run is in progress on this backend ($(tail -n 1 "$WORK/.sync.run.err" 2>/dev/null))"
+	SKIP=1
+	exit 0
+fi
 [ -n "$RUN_ID" ] || log "run tracking off: $(tail -n 1 "$WORK/.sync.run.err" 2>/dev/null)"
 [ -n "$RUN_ID" ] && { ticker 9>&- & TICKER=$!; }
 
@@ -163,17 +203,17 @@ fetch() {
 	{
 		$PY "$APP/dcs_fetch.py" --site tulieu --cache-dir "$WORK/cache" --out-dir "$WORK/run-tulieu" --delay "$DELAY" --refresh-pages "$PAGES"
 		$PY "$APP/dcs_fetch.py" --site org --cache-dir "$WORK/cache" --out-dir "$WORK/run-org" --delay "$DELAY" --refresh-pages "$PAGES"
-	} 2>&1 | tee -a "$STEP_LOG"
+	} 2>&1 | mask | tee -a "$STEP_LOG"
 }
 build() {
 	{
 		$PY "$APP/dcs_classify.py" "$WORK/run-tulieu/records.jsonl" "$WORK/run-tulieu/classified.jsonl"
 		$PY "$APP/dcs_classify.py" "$WORK/run-org/records.jsonl" "$WORK/run-org/classified.jsonl"
 		$PY "$APP/dcs_build.py" "$WORK/run-tulieu/classified.jsonl" "$WORK/run-org/classified.jsonl" --out-dir "$WORK/build"
-	} 2>&1 | tee -a "$STEP_LOG"
+	} 2>&1 | mask | tee -a "$STEP_LOG"
 }
 upload() {
-	$PY "$APP/dcs_push.py" "$WORK/build" 2>&1 | tee -a "$WORK/push.log" "$STEP_LOG"
+	$PY "$APP/dcs_push.py" "$WORK/build" 2>&1 | mask | tee -a "$WORK/push.log" "$STEP_LOG"
 }
 
 step fetch

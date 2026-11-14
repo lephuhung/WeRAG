@@ -8,12 +8,19 @@ its run over HTTP with the same API key as the pushes.
     run_track.py heartbeat ID
     run_track.py finish ID ok|failed [--error-file F] [--summary-file F]
     run_track.py summarize fetch|build|upload LOG   → {"<step>": {counts}} on stdout
+    run_track.py mask                               stdin → stdout, API key masked
 
 POST {WERAG_API}/system/legal-sync/runs[/ID/step|heartbeat|finish], header
 X-API-Key: WERAG_API_KEY (an API key of organization 10000 with ingest) or
 Authorization: Bearer WERAG_TOKEN. Each call is bounded by
-DCS_RUN_TRACK_TIMEOUT seconds (default 20). Exit 0 on success, 1 otherwise
-(the reason on stderr); sync.sh never fails on it.
+DCS_RUN_TRACK_TIMEOUT seconds (default 20). Exit codes (the reason on
+stderr; sync.sh never fails on them):
+
+    0  done
+    1  worth retrying: transport error, HTTP 408/429/5xx
+    2  usage
+    3  start refused: another dcs_sync run is alive (HTTP 409)
+    4  refused for good: any other HTTP 4xx (closed run, bad summary, key)
 
 The error sent with "finish failed" is the tail of the failed step's
 output: the API key (and token) masked, control characters but newline
@@ -48,6 +55,12 @@ def sanitize(text: str) -> str:
     return text
 
 
+class TrackError(RuntimeError):
+    def __init__(self, msg: str, code: int = 1):
+        super().__init__(msg)
+        self.code = code
+
+
 def call(path: str, body: dict | None = None) -> dict:
     api = os.environ.get("WERAG_API", "http://localhost:18080/api/v1").rstrip("/")
     headers = {"Content-Type": "application/json"}
@@ -56,7 +69,7 @@ def call(path: str, body: dict | None = None) -> dict:
     elif os.environ.get("WERAG_TOKEN"):
         headers["Authorization"] = "Bearer " + os.environ["WERAG_TOKEN"]
     else:
-        raise RuntimeError("WERAG_API_KEY or WERAG_TOKEN is required")
+        raise TrackError("WERAG_API_KEY or WERAG_TOKEN is required", 4)
     timeout = float(os.environ.get("DCS_RUN_TRACK_TIMEOUT") or 20)
     data = json.dumps(body or {}, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(api + "/system/legal-sync/runs" + path, data=data, method="POST", headers=headers)
@@ -65,9 +78,28 @@ def call(path: str, body: dict | None = None) -> dict:
             return json.loads(r.read().decode("utf-8") or "{}")
     except urllib.error.HTTPError as e:
         raw = e.read().decode("utf-8", "replace")[:300]
-        raise RuntimeError(f"HTTP {e.code}: {sanitize(raw)}") from None
+        if e.code in (408, 429) or e.code >= 500:
+            code = 1
+        elif e.code == 409 and path == "":
+            code = 3
+        else:
+            code = 4
+        raise TrackError(f"HTTP {e.code}: {sanitize(raw)}", code) from None
     except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
-        raise RuntimeError(f"transport: {e}") from None
+        raise TrackError(f"transport: {e}") from None
+
+
+def mask_stream() -> int:
+    """Copy stdin to stdout line by line with the API key (and token) masked."""
+    secrets = [os.environ.get(n, "").encode() for n in ("WERAG_API_KEY", "WERAG_TOKEN")]
+    secrets = [x for x in secrets if len(x) >= 8]
+    out = sys.stdout.buffer
+    for line in iter(sys.stdin.buffer.readline, b""):
+        for x in secrets:
+            line = line.replace(x, b"***")
+        out.write(line)
+        out.flush()
+    return 0
 
 
 def read_json_file(path: str | None) -> dict:
@@ -96,7 +128,7 @@ def read_text_file(path: str | None) -> str:
 _FETCH = re.compile(r"^(\d+) records \((\d+) loaded now\)", re.M)
 _BUILD = re.compile(r"^(\d+) documents: (.*)$", re.M)
 _PUSH = re.compile(r"^(\d{1,3}) (full|scan|queue)\s", re.M)
-_PUSH_FAILED = re.compile(r"^(\d+) pushes failed", re.M)
+_GAVE_UP = re.compile(r"^GAVE_UP ", re.M)
 
 
 def summarize(kind: str, text: str) -> dict:
@@ -130,6 +162,9 @@ def summarize(kind: str, text: str) -> dict:
                 out["refused"] += 1
             else:
                 out["failed"] += 1
+        gave_up = len(_GAVE_UP.findall(text))
+        if gave_up:
+            out["gave_up"] = gave_up
         if "STOP: the API refused the credentials" in text:
             out["credentials_refused"] = True
         return out
@@ -148,6 +183,8 @@ def main(argv: list[str]) -> int:
         print(__doc__, file=sys.stderr)
         return 2
     cmd, args = argv[0], argv[1:]
+    if cmd == "mask":
+        return mask_stream()
     try:
         if cmd == "summarize":
             counts = summarize(args[0], read_text_file(args[1]))
@@ -158,7 +195,7 @@ def main(argv: list[str]) -> int:
             res = call("", {"worker": WORKER, "step": args[0], "summary": summary})
             run_id = (res.get("data") or {}).get("id")
             if not isinstance(run_id, int) or run_id <= 0:
-                raise RuntimeError(f"no run id in the answer: {str(res)[:200]}")
+                raise TrackError(f"no run id in the answer: {str(res)[:200]}")
             print(run_id)
             return 0
         run_id = int(args[0])
@@ -175,9 +212,12 @@ def main(argv: list[str]) -> int:
         else:
             print(f"unknown command {cmd!r}", file=sys.stderr)
             return 2
-    except (RuntimeError, ValueError, IndexError) as e:
+    except TrackError as e:
         print(f"run tracking {cmd}: {e}", file=sys.stderr)
-        return 1
+        return e.code
+    except (ValueError, IndexError) as e:
+        print(f"run tracking {cmd}: {e}", file=sys.stderr)
+        return 2
     return 0
 
 

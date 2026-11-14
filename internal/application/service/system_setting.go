@@ -507,8 +507,14 @@ var registry = map[string]settingSpec{
 	},
 	types.LegalSyncAlertEnabledSettingKey: {
 		Type: "bool", EnvName: "", Default: true, Category: "legal",
-		Description: "Gửi thông báo trong ứng dụng cho SuperAdmin khi đồng bộ vbpl.vn hằng đêm hoặc worker tự nạp/xóa toàn văn " +
+		Description: "Gửi thông báo trong ứng dụng cho SuperAdmin khi đồng bộ vbpl.vn, đồng bộ văn bản của Đảng hoặc worker tự nạp/xóa toàn văn " +
 			"hết hiệu lực gặp sự cố. Tắt khi cố ý dừng đồng bộ; tắt thì thông báo đang mở được đóng ở lần kiểm tra sau (10 phút).",
+	},
+	types.LegalSyncAlertDisabledWorkersSettingKey: {
+		Type: "string", EnvName: "", Default: "", Category: "legal",
+		Description: "Tắt thông báo sự cố cho riêng một số nguồn thu thập dữ liệu pháp lý, cách nhau bằng dấu phẩy: " +
+			"vbpl_sync, dcs_sync, auto_ingest, expired_retention (ví dụ dcs_sync khi cố ý dừng container dcs-sync). " +
+			"Trang Thu thập dữ liệu vẫn hiện tình trạng. Để trống = cảnh báo mọi nguồn.",
 	},
 	types.BillingOrderTTLHoursSettingKey: {
 		Type: "int", EnvName: "", Default: int64(72), Category: "billing",
@@ -1851,6 +1857,15 @@ func validateRegistryEntry(key string, rawValue any) error {
 		}
 		if _, err := types.ParseMemoryConfig(raw); err != nil {
 			return err
+		}
+	case types.LegalSyncAlertDisabledWorkersSettingKey:
+		str, ok := rawValue.(string)
+		if !ok {
+			return errors.New("a comma list of worker names is required")
+		}
+		if _, unknown := types.ParseLegalSyncWorkerList(str); len(unknown) > 0 {
+			return fmt.Errorf("unknown worker(s) %s; known: %s", strings.Join(unknown, ", "),
+				strings.Join(types.LegalSyncWorkers, ", "))
 		}
 	case types.DocumentTemplateFontSizesSettingKey:
 		raw, err := json.Marshal(rawValue)
