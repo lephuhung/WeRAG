@@ -1,5 +1,6 @@
 # Đồng bộ văn bản của Đảng từ hai cổng dangcongsan theo lịch (supercronic):
-# tải trang danh sách mới → phân loại → dựng HTML → đẩy lên WeRAG.
+# tải trang danh sách mới → phân loại → dựng HTML → đẩy lên WeRAG; mỗi lần chạy
+# ghi vào trang theo dõi qua API của backend (run_track.py).
 # Build context là thư mục gốc repo (cần scripts/dangcongsan).
 FROM python:3.12-slim-bookworm
 ARG SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/v0.2.49/supercronic-linux-amd64
@@ -11,7 +12,7 @@ RUN apt-get update \
     && pip install --no-cache-dir pymupdf==1.26.* beautifulsoup4==4.13.* lxml==6.* olefile==0.47
 
 COPY scripts/dangcongsan/dcs_fetch.py scripts/dangcongsan/dcs_classify.py scripts/dangcongsan/dcs_text.py \
-     scripts/dangcongsan/dcs_build.py scripts/dangcongsan/dcs_push.py /app/
+     scripts/dangcongsan/dcs_build.py scripts/dangcongsan/dcs_push.py deploy/dcs-sync/run_track.py /app/
 COPY deploy/dcs-sync/sync.sh deploy/dcs-sync/entrypoint.sh /usr/local/bin/
 RUN chmod 0755 /usr/local/bin/sync.sh /usr/local/bin/entrypoint.sh
 
