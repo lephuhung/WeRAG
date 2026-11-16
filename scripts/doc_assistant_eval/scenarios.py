@@ -635,7 +635,12 @@ SCENARIOS: List[Scenario] = [
         documents=[("target", "cong_van_loi.docx")],
         steps=[Step(
             "Văn bản này còn hiệu lực không?",
-            S(C.any_tool_called(["check_legal_status", "find_related_legal_documents", "search_knowledge"]),
+            # check_document_legal_basis arrived after the 2026-10-18 baseline and is
+            # what the assistant now reaches for on this question; it reads the same
+            # catalogue, and every content check here passed on it. Without it listed,
+            # the scenario failed on the tool name alone while answering correctly.
+            S(C.any_tool_called(["check_legal_status", "find_related_legal_documents",
+                                 "check_document_legal_basis", "search_knowledge"]),
               C.answer_contains_any(["còn hiệu lực"]), C.answer_not_contains(["hết hiệu lực toàn bộ"]),
               C.tool_not_called(["rewrite_paragraphs"]), C.no_edit_ops()),
             selection=sel("cong_van_loi.docx", lambda ctx: "Nghị định số 30/2020/NĐ-CP"),
