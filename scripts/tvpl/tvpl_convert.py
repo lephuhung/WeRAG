@@ -66,7 +66,7 @@ _EXPIRES_RE = re.compile(r"\bhết\s+hiệu\s+lực\b", re.I)
 _REF_RE = re.compile(r"\b(?:theo(?:\s+quy\s+định)?(?:\s+tại)?|tại)\b", re.I)
 
 # A số hiệu written in the note: 80/2021/NĐ-CP, 152/QĐ-UBND, 43/2024/QH15.
-NUMBER_RE = re.compile(r"\b(\d{1,5}(?:/\d{4})?/[A-ZĐ][A-ZĐa-z0-9]*(?:-[A-ZĐ][A-ZĐa-z0-9]*)*)")
+NUMBER_RE = re.compile(r"\b((?:\d{1,3}\.)?\d{1,5}(?:/\d{4})?/[A-ZĐ][A-ZĐa-z0-9]*(?:-[A-ZĐ][A-ZĐa-z0-9]*)*)")
 _DATE_RE = re.compile(r"(\d{1,2})/(\d{1,2})/(\d{4})")
 _EFF_RE = re.compile(r"hiệu\s*lực\s*(?:thi\s*hành\s*)?(?:kể\s*)?từ\s*ngày\s*(\d{1,2}/\d{1,2}/\d{4})", re.I)
 _EFF_TO_RE = re.compile(r"(?:đến|tới)\s*(?:hết\s*)?ngày\s*(\d{1,2}/\d{1,2}/\d{4})", re.I)
