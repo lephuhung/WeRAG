@@ -16,6 +16,8 @@ import {
   KIND_ABBREVIATION_PENDING,
   KIND_BACKUP_ALERT,
   BACKUP_STATUS_PATH,
+  KIND_SEARCH_INDEX_ALERT,
+  SEARCH_INDEX_PATH,
   type BackupProblem,
   KIND_LEGAL_SYNC_ALERT,
   LEGAL_SYNC_STATUS_PATH,
@@ -79,6 +81,9 @@ const texts = {
   backupProblem: (problem: BackupProblem, at: string) =>
     ({ failed: at ? `failed at ${at}` : "failed", stale: "overdue", missing: "no status yet", unreadable: "status unreadable" })[problem],
   backupLastOk: (at: string) => `last success ${at}`,
+  searchIndexAlertTitle: "Keyword search index needs a rebuild",
+  searchIndexAlertBody: (segments: number, threshold: number, deleted: number) =>
+    `${segments} segments (threshold ${threshold}), ${deleted} deleted documents still indexed`,
   legalSyncAlertTitle: (count: number) => `Legal data collection problems: ${count}`,
   legalSyncWorker: (worker: LegalSyncAlertWorker) =>
     ({ vbpl_sync: "vbpl.vn nightly sync", dcs_sync: "Party documents sync", auto_ingest: "Auto-ingest", expired_retention: "Expired text removal" })[worker],
@@ -123,6 +128,9 @@ const textsVi = {
   backupProblem: (problem: BackupProblem, at: string) =>
     ({ failed: at ? `lỗi lúc ${at}` : "lỗi", stale: "quá hạn", missing: "chưa có trạng thái", unreadable: "không đọc được trạng thái" })[problem],
   backupLastOk: (at: string) => `lần thành công cuối ${at}`,
+  searchIndexAlertTitle: "Chỉ mục tìm kiếm từ khoá cần dựng lại",
+  searchIndexAlertBody: (segments: number, threshold: number, deleted: number) =>
+    `${segments} segment (ngưỡng ${threshold}), còn ${deleted} bản ghi đã xoá trong chỉ mục`,
   legalSyncAlertTitle: (count: number) => `Thu thập dữ liệu pháp lý gặp sự cố: ${count} việc`,
   legalSyncWorker: (worker: LegalSyncAlertWorker) =>
     ({ vbpl_sync: "Đồng bộ vbpl.vn", dcs_sync: "Đồng bộ văn bản của Đảng", auto_ingest: "Tự nạp văn bản", expired_retention: "Xóa toàn văn hết hiệu lực" })[worker],
@@ -454,6 +462,53 @@ describe("backup alert", () => {
     for (const payload of [null, {}, { count: 1 }, { jobs: "x" }, { jobs: [] }]) {
       assert.deepEqual(notificationText(alert(payload), texts), { title: "stored title", body: "stored body" });
     }
+  });
+});
+
+describe("search index alert", () => {
+  const alert = (payload: Record<string, unknown> | null): NotificationLike => ({
+    id: "s",
+    kind: KIND_SEARCH_INDEX_ALERT,
+    title: "stored title",
+    body: "stored body",
+    link: SEARCH_INDEX_PATH,
+    tenant_id: 0,
+    payload,
+    seen_at: null,
+    read_at: null,
+  });
+
+  it("names the segment count, the threshold and the deleted documents", () => {
+    const n = alert({
+      index: "embeddings_search_idx",
+      segments: 187,
+      threshold: 60,
+      deleted_docs: 20607,
+      signature: "embeddings_search_idx:fragmented",
+    });
+    assert.deepEqual(notificationText(n, texts), {
+      title: "Keyword search index needs a rebuild",
+      body: "187 segments (threshold 60), 20607 deleted documents still indexed",
+    });
+    assert.deepEqual(notificationText(n, textsVi), {
+      title: "Chỉ mục tìm kiếm từ khoá cần dựng lại",
+      body: "187 segment (ngưỡng 60), còn 20607 bản ghi đã xoá trong chỉ mục",
+    });
+    assert.equal(isReviewDigest(KIND_SEARCH_INDEX_ALERT), true);
+    assert.equal(safeAppLink(n.link, ORIGIN), SEARCH_INDEX_PATH);
+  });
+
+  it("keeps the stored text when the payload carries no segment count", () => {
+    for (const payload of [null, {}, { segments: 0 }, { segments: "many" }, { segments: -3 }, { threshold: 60 }]) {
+      assert.deepEqual(notificationText(alert(payload), texts), { title: "stored title", body: "stored body" });
+    }
+  });
+
+  it("reads a missing threshold or deleted count as zero rather than NaN", () => {
+    assert.deepEqual(notificationText(alert({ segments: 61 }), texts), {
+      title: "Keyword search index needs a rebuild",
+      body: "61 segments (threshold 0), 0 deleted documents still indexed",
+    });
   });
 });
 

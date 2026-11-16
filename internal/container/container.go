@@ -604,8 +604,9 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewUserNotificationHandler))
 	// backup job status (BACKUP_S3_*; nil = off) for the SuperAdmin page
 	must(container.Provide(service.NewBackupMonitorFromEnv))
-	// BM25 index fragmentation for the SuperAdmin runtime page
-	must(container.Provide(service.NewSearchIndexHealth))
+	// BM25 index fragmentation: the SuperAdmin runtime page plus the
+	// search_index_alert digest
+	must(container.Provide(newSearchIndexHealth))
 	must(container.Provide(handler.NewBackupStatusHandler))
 	must(container.Provide(handler.NewAnswerQualityHandler))
 	must(container.Provide(handler.NewUsageAdminHandler))
@@ -1864,6 +1865,16 @@ func startSuperAdminQueueNotices(n *service.SuperAdminQueueNotifier, sessions in
 		}
 		return nil
 	})
+}
+
+// newSearchIndexHealth builds the BM25 index check with the SuperAdmin
+// digest attached. Without users/notifications (a partially wired container)
+// WithAlerts leaves it reporting and logging only.
+func newSearchIndexHealth(db *gorm.DB, settings interfaces.SystemSettingService,
+	users interfaces.UserRepository, notifications interfaces.UserNotificationRepository,
+	rdb *redis.Client,
+) *service.SearchIndexHealth {
+	return service.NewSearchIndexHealth(db, settings).WithAlerts(users, notifications, rdb)
 }
 
 // startSearchIndexHealth runs the BM25 index fragmentation check. It only

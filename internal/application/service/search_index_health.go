@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -96,10 +97,14 @@ type SearchIndexHealthReport struct {
 }
 
 // SearchIndexHealth checks the BM25 index and caches the last report.
+// digests and redis are set by WithAlerts; without them the check reports
+// and logs but raises no SuperAdmin notice.
 type SearchIndexHealth struct {
 	db       *gorm.DB
 	settings interfaces.SystemSettingService
 	now      func() time.Time
+	digests  *reviewDigests
+	redis    *redis.Client
 
 	mu     sync.Mutex
 	cached *SearchIndexHealthReport
@@ -259,6 +264,8 @@ func (h *SearchIndexHealth) Tick(ctx context.Context) SearchIndexHealthReport {
 		logger.Debugf(ctx, "[SearchIndexHealth] %s healthy: %d segments (threshold %d), %d deleted documents",
 			rep.Index, rep.Segments, rep.Threshold, rep.DeletedDocs)
 	}
+	// The log line above waits for somebody to read it; the digest does not.
+	h.alert(ctx, rep)
 	return rep
 }
 

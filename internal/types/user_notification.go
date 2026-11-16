@@ -77,7 +77,32 @@ const (
 	// digest per SuperAdmin like backup_alert, closed for everyone once
 	// every worker is healthy again.
 	UserNotificationLegalSyncAlert = "legal_sync_alert"
+
+	// UserNotificationSearchIndexAlert: the BM25 index behind keyword
+	// retrieval has fragmented past its segment threshold and wants a
+	// REINDEX (payload: UserNotificationSearchIndexAlertPayload). One open
+	// digest per SuperAdmin like backup_alert, closed for everyone once the
+	// index is back under the threshold. It exists because the cost
+	// fragmentation adds is fixed per query rather than proportional to the
+	// rows matched, so nothing about a slow search points at it — the last
+	// time, the index reached 187 segments unnoticed.
+	UserNotificationSearchIndexAlert = "search_index_alert"
 )
+
+// UserNotificationSearchIndexAlertPayload is the payload of a
+// search_index_alert digest. Signature names the index rather than its
+// segment count, so a count that keeps creeping up does not re-toast the
+// same incident; the digest is rewritten a day after it was read, like the
+// other incident alerts, and ResolvedAt as in backup_alert.
+type UserNotificationSearchIndexAlertPayload struct {
+	Index       string `json:"index"`
+	Segments    int    `json:"segments"`
+	Threshold   int    `json:"threshold"`
+	DeletedDocs int64  `json:"deleted_docs"`
+	Signature   string `json:"signature"`
+	// ResolvedAt: a later check found the index back under the threshold.
+	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
+}
 
 // UserNotificationLegalSyncAlertPayload is the payload of a
 // legal_sync_alert digest: the workers with a problem, in monitor order.

@@ -60,6 +60,15 @@ const QUEUE_TEXT_MAX = 60;
 export const KIND_BACKUP_ALERT = "backup_alert";
 /** The SuperAdmin page listing the backup jobs. */
 export const BACKUP_STATUS_PATH = "/platform/admin?section=backups";
+/** SuperAdmins: the BM25 index behind keyword search has fragmented past its
+ * segment threshold and wants a REINDEX (payload: { index, segments,
+ * threshold, deleted_docs, signature }), one unread per SuperAdmin, closed
+ * once the index is back under the threshold. It exists because the cost
+ * fragmentation adds is the same for every query, so a slow search gives no
+ * hint of it. */
+export const KIND_SEARCH_INDEX_ALERT = "search_index_alert";
+/** The SuperAdmin runtime page holding the index card. */
+export const SEARCH_INDEX_PATH = "/platform/admin?section=queues";
 export const BACKUP_PROBLEMS = ["failed", "stale", "missing", "unreadable"] as const;
 export type BackupProblem = (typeof BACKUP_PROBLEMS)[number];
 /** A job's note longer than this is cut in the body. */
@@ -92,7 +101,13 @@ export function isQueueKind(kind: string): kind is QueueKind {
  * sync alerts), whose page is in the web app's admin console (the Word
  * add-in only says where). */
 export function isReviewDigest(kind: string): boolean {
-  return kind === KIND_ABBREVIATION_PENDING || kind === KIND_BACKUP_ALERT || kind === KIND_LEGAL_SYNC_ALERT || isQueueKind(kind);
+  return (
+    kind === KIND_ABBREVIATION_PENDING ||
+    kind === KIND_BACKUP_ALERT ||
+    kind === KIND_LEGAL_SYNC_ALERT ||
+    kind === KIND_SEARCH_INDEX_ALERT ||
+    isQueueKind(kind)
+  );
 }
 
 /** The fields these helpers read (lib/api/notifications UserNotification). */
@@ -189,6 +204,12 @@ export function payloadString(n: Pick<NotificationLike, "payload">, key: string)
   return typeof v === "string" ? v : "";
 }
 
+/** A finite, non-negative number from the payload; 0 when absent or unusable. */
+export function payloadNumber(n: Pick<NotificationLike, "payload">, key: string): number {
+  const v = n.payload?.[key];
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : 0;
+}
+
 /** The lookup page searching for a document. */
 export function legalLookupPath(doc: string): string {
   return `/platform/legal-lookup?q=${encodeURIComponent(doc)}`;
@@ -236,6 +257,10 @@ export interface NotificationTexts {
   backupProblem: (problem: BackupProblem, at: string) => string;
   /** "last success {at}" (backup jobs and legal workers) */
   backupLastOk: (at: string) => string;
+  /** "Keyword search index needs a rebuild" */
+  searchIndexAlertTitle: string;
+  /** "187 segments (threshold 60), 20,607 deleted documents still indexed" */
+  searchIndexAlertBody: (segments: number, threshold: number, deleted: number) => string;
   /** "Legal data collection problems: {n}" */
   legalSyncAlertTitle: (count: number) => string;
   /** a legal worker's name: "vbpl.vn nightly sync" */
@@ -431,6 +456,15 @@ export function notificationText(
     const jobs = backupJobs(n);
     if (jobs.length > 0) {
       return { title: texts.backupAlertTitle(jobs.length), body: jobs.map((j) => backupJobText(j, texts)).join("; ") };
+    }
+  }
+  if (n.kind === KIND_SEARCH_INDEX_ALERT) {
+    const segments = payloadNumber(n, "segments");
+    if (segments > 0) {
+      return {
+        title: texts.searchIndexAlertTitle,
+        body: texts.searchIndexAlertBody(segments, payloadNumber(n, "threshold"), payloadNumber(n, "deleted_docs")),
+      };
     }
   }
   if (n.kind === KIND_LEGAL_SYNC_ALERT) {

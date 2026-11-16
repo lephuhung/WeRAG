@@ -72,6 +72,9 @@ export function NotificationBell() {
       backupProblem: (problem, at) =>
         problem === "failed" && at ? t("notif.backup.failedAt", { at }) : t(`notif.backup.${problem}` as LocaleKey),
       backupLastOk: (at) => t("notif.backup.lastOk", { at }),
+      searchIndexAlertTitle: t("notif.searchIndex.title"),
+      searchIndexAlertBody: (segments, threshold, deleted) =>
+        t("notif.searchIndex.body", { segments, threshold, deleted }),
       legalSyncAlertTitle: (n) => t("notif.legalSync.title", { n }),
       legalSyncWorker: (worker) => t(`notif.legalSync.worker.${worker}` as LocaleKey),
       legalSyncStep: (step) => t(`notif.legalSync.step.${step}` as LocaleKey),
