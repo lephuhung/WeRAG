@@ -232,7 +232,7 @@ function MatchCard({ m }: { m: LegalValidityMatch }) {
             <Link
               key={k.knowledge_id}
               href={knowledgeDocHref(k.knowledge_base_id, k.knowledge_id)}
-              className="btn btn-outline btn-sm py-0.5 text-[12px]"
+              className="btn btn-row btn-soft"
             >
               <IconFileSearch className="h-3.5 w-3.5" />
               {k.knowledge_base_name || k.title}

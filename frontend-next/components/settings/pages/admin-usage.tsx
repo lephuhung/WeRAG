@@ -660,7 +660,7 @@ export default function AdminUsage() {
         ) : (
           <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-4">
             {plans.map((p) => (
-              <article key={p.id} className="flex min-w-0 flex-col rounded-xl border border-hairline bg-surface-card p-5 text-[14px]">
+              <article key={p.id} className="card flex min-w-0 flex-col p-5 text-[14px]">
                 <div className="min-w-0 flex-1 space-y-3 break-words">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <h4 className="text-lg font-semibold leading-snug text-ink">{p.name}</h4>
@@ -709,10 +709,10 @@ export default function AdminUsage() {
                   {p.limits.length ? p.limits.map((l) => limitText(l, t as never)).join(" · ") : t("usg.unlimited")}
                 </div>
                 <div className="mt-4 flex flex-wrap justify-end gap-2">
-                <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => openEditPlan(p)}>
+                <button type="button" className="btn btn-soft btn-sm" disabled={busy} onClick={() => openEditPlan(p)}>
                   <IconEdit className="h-3.5 w-3.5" /> {t("common.edit")}
                 </button>
-                <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void removePlan(p)}>
+                <button type="button" className="btn btn-soft-danger btn-sm" disabled={busy} onClick={() => void removePlan(p)}>
                   {t("common.delete")}
                 </button>
                 </div>
@@ -769,11 +769,11 @@ export default function AdminUsage() {
                   )}
                 </div>
                 <div className="flex shrink-0 flex-col gap-1.5">
-                  <button type="button" className="btn btn-outline btn-sm min-w-[86px]" disabled={busy} onClick={() => openAssign("tenant", String(row.tenant_id), row.tenant_name, sub)}>
+                  <button type="button" className="btn btn-row btn-soft min-w-[86px]" disabled={busy} onClick={() => openAssign("tenant", String(row.tenant_id), row.tenant_name, sub)}>
                     {sub ? t("usg.changePlan") : t("usg.assignPlan")}
                   </button>
                   {sub && (
-                    <button type="button" className="btn btn-danger btn-sm min-w-[86px]" disabled={busy} onClick={() => void cancelSub(sub)}>
+                    <button type="button" className="btn btn-row btn-soft-danger min-w-[86px]" disabled={busy} onClick={() => void cancelSub(sub)}>
                       {t("usg.cancelSub")}
                     </button>
                   )}
@@ -823,11 +823,11 @@ export default function AdminUsage() {
                 </div>
                 {sub.status === "active" && (
                   <>
-                    <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => openAssign("user", sub.scope_id, sub.scope_name, sub)}>
+                    <button type="button" className="btn btn-row btn-soft" disabled={busy} onClick={() => openAssign("user", sub.scope_id, sub.scope_name, sub)}>
                       {t("usg.changePlan")}
                     </button>
                     {!sub.implicit && (
-                      <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void cancelSub(sub)}>
+                      <button type="button" className="btn btn-row btn-soft-danger" disabled={busy} onClick={() => void cancelSub(sub)}>
                         {t("usg.cancelSub")}
                       </button>
                     )}

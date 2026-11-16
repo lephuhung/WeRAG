@@ -414,20 +414,20 @@ function RequestCells({
           <div className="flex flex-col gap-1.5">
             <div className="flex flex-wrap gap-1.5">
               {item.legal_document_id && !draft && (
-                <button type="button" className="btn btn-primary btn-sm py-0.5 text-[12px]" onClick={() => onAct("ingest")}>
+                <button type="button" className="btn btn-row btn-soft-accent" onClick={() => onAct("ingest")}>
                   {t("lreq.act.ingest")}
                 </button>
               )}
-              <button type="button" className="btn btn-outline btn-sm py-0.5 text-[12px]" onClick={() => onAct("added")}>
+              <button type="button" className="btn btn-row btn-soft" onClick={() => onAct("added")}>
                 {t("lreq.act.added")}
               </button>
-              <button type="button" className="btn btn-outline btn-sm py-0.5 text-[12px]" onClick={() => onAct("reject")}>
+              <button type="button" className="btn btn-row btn-soft-danger" onClick={() => onAct("reject")}>
                 {t("lreq.act.reject")}
               </button>
               {item.legal_document_id && (
                 <button
                   type="button"
-                  className="btn btn-ghost btn-sm py-0.5 text-[12px]"
+                  className="btn btn-row btn-ghost"
                   onClick={() => void checkPortal()}
                   disabled={checking}
                 >
@@ -604,7 +604,7 @@ function DecisionDialog({
               </div>
             )}
             {blocked && (
-              <div className="rounded-[10px] border border-hairline bg-canvas-soft p-2.5">
+              <div className="card-inset p-2.5">
                 <p className="caption text-body">{t(kind === "gone" ? "lreq.gone.reason" : "lreq.none.reason")}</p>
                 <p className="caption mt-1 text-muted">{t("lreq.none.hint")}</p>
               </div>
@@ -749,7 +749,7 @@ function DraftControls({
         )}
         <button
           type="button"
-          className="btn btn-outline btn-sm w-fit py-0.5 text-[12px]"
+          className="btn btn-row btn-soft w-fit"
           onClick={() => void fetchDraft()}
           title={t("lreq.draft.fetchHint")}
         >
@@ -794,7 +794,7 @@ function DraftControls({
         {draft.ocr_pages > 0 ? ` · ${t("lreq.draft.pages", { n: draft.ocr_pages })}` : ""}
       </span>
       {legalDraftEditable(draft.status) && (
-        <Link href={legalDraftHref(draft.id, item.suggested_kb_id)} className="btn btn-primary btn-sm py-0.5 text-[12px]">
+        <Link href={legalDraftHref(draft.id, item.suggested_kb_id)} className="btn btn-row btn-soft-accent">
           {t("lreq.draft.edit")}
         </Link>
       )}

@@ -36,7 +36,16 @@ const LOCALES: { id: Locale; label: string }[] = [
 
 const PENDING_POLL_MS = 20_000;
 
-export function AccountMenu() {
+/* The rail's footer opens this upward and has room for the name; a top bar
+ * (the administration console) opens it downward from the right edge and
+ * only has room for the avatar. */
+export function AccountMenu({
+  placement = "up",
+  compact = false,
+}: {
+  placement?: "up" | "down";
+  compact?: boolean;
+} = {}) {
   const router = useRouter();
   const pathname = usePathname();
   const { t, locale, setLocale } = useT();
@@ -168,7 +177,8 @@ export function AccountMenu() {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left transition-colors hover:bg-surface-strong"
+        aria-label={compact ? name || t("user.settings") : undefined}
+        className={`flex items-center gap-2 rounded-[10px] px-2 py-1.5 text-left transition-colors hover:bg-surface-strong ${compact ? "" : "w-full"}`}
       >
         <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-sky-500 to-indigo-500 text-[11px] font-semibold text-white">
           {avatarUrl ? (
@@ -178,27 +188,31 @@ export function AccountMenu() {
             initials
           )}
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[14.5px] font-semibold leading-tight text-ink">
-            {name || "—"}
+        {!compact && (
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[14.5px] font-semibold leading-tight text-ink">
+              {name || "—"}
+            </span>
+            <span className="block truncate text-[12.5px] leading-tight text-muted">
+              {roleLabel}
+            </span>
           </span>
-          <span className="block truncate text-[12.5px] leading-tight text-muted">
-            {roleLabel}
-          </span>
-        </span>
+        )}
         {isSystemAdmin && pending > 0 && (
           <span className="badge-pill shrink-0 border border-amber-500/20 bg-amber-500/10 text-amber-600">
             {pending}
           </span>
         )}
-        <IconChevronUp className="h-4 w-4 shrink-0 text-muted-soft" />
+        <IconChevronUp className={`h-4 w-4 shrink-0 text-muted-soft ${placement === "down" ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
         <div
           role="dialog"
           aria-label={name || t("user.settings")}
-          className="acct-menu card absolute bottom-full left-0 z-50 mb-2 w-[272px] max-w-[calc(100vw-1.5rem)] p-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.04)]"
+          className={`acct-menu card absolute z-50 w-[272px] max-w-[calc(100vw-1.5rem)] p-1.5 shadow-[0_4px_16px_rgba(0,0,0,0.04)] ${
+            placement === "down" ? "right-0 top-full mt-2" : "bottom-full left-0 mb-2"
+          }`}
         >
           {/* account card */}
           <div className="flex items-center gap-3 px-2.5 py-2.5">

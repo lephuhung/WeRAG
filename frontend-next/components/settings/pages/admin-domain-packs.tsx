@@ -413,7 +413,7 @@ function ReconcilePanel({ result, onClose }: { result: DomainPackReconcileResult
             ambiguous: result.ambiguous.length,
           })}
         </div>
-        <button type="button" className="btn btn-ghost btn-sm py-0.5 text-[12px]" onClick={onClose}>
+        <button type="button" className="btn btn-row btn-ghost" onClick={onClose}>
           {t("dpk.result.close")}
         </button>
       </div>
@@ -671,7 +671,7 @@ function FormulasTab({
                 </span>
               )}
             </div>
-            <button type="button" className="btn btn-outline btn-sm" onClick={() => setEditing(f)}>
+            <button type="button" className="btn btn-soft btn-sm" onClick={() => setEditing(f)}>
               {t("dpk.edit.open")}
             </button>
           </div>

@@ -15,6 +15,7 @@ html[data-theme="anthropic"] {
   --color-canvas-deep: #141413;
   --color-surface-card: #ffffff;
   --color-surface-strong: #f1efe8;
+  --color-admin-pane: #e9e6da;
   --color-surface-dark: #141413;
   --color-surface-dark-elevated: #26251f;
 
@@ -68,6 +69,7 @@ html[data-theme="anthropic"].dark {
   --color-canvas-deep: #0c0b0a;
   --color-surface-card: #1e1d1b;
   --color-surface-strong: #26251f;
+  --color-admin-pane: #100f0e;
   --color-surface-dark: #0f0e0d;
   --color-surface-dark-elevated: #1e1d1b;
 

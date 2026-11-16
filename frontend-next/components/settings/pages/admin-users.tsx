@@ -459,7 +459,7 @@ export default function SystemUsers() {
                   )}
                   {!u.is_system_admin && (
                     <button
-                      className="btn btn-outline btn-sm px-3 text-xs font-medium"
+                      className="btn btn-row btn-soft"
                       onClick={() => {
                         setNewPassword("");
                         setResetting(u);
@@ -525,7 +525,7 @@ export default function SystemUsers() {
                 .map((m) => (
                   <div
                     key={m.tenant_id}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-hairline/80 bg-surface-card/70 px-3 py-2.5"
+                    className="card-inset flex items-center justify-between gap-3 px-3 py-2.5"
                   >
                     <div className="flex min-w-0 items-center gap-2.5">
                       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-surface-strong text-[11px] font-semibold text-muted">

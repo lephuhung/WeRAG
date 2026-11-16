@@ -1,5 +1,5 @@
 /* Whether the app's left rail is hidden on desktop. A page that needs the
- * whole width (the legal draft review: PDF + editor side by side) offers a
+ * whole width (an open document: pane + editor side by side) offers a
  * toggle; the rail itself shows a small tab to bring it back.
  *
  * The stored value is scoped to the page that hid the rail. A full page load

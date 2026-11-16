@@ -5,8 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { deleteSession, listSessions, type SessionRow } from "@/lib/api/chat";
 import {
-  clearSessionActivity,
-  refreshSessionActivity,
   updateSessionActivity,
   useSessionActivityEntries,
 } from "@/lib/session-activity";
@@ -87,24 +85,20 @@ export function Sidebar() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
-  // hidden on desktop by a full-width page (the legal draft review); the
-  // tab at the left edge brings it back from any page
+  // the stored "keep the rail out of the way" preference; the tab at the
+  // left edge brings the rail back from any page. Nothing sets it any more
+  // (the admin console, which used to, is its own page now) — the fold
+  // below is the live path.
   const savedSidebarHidden = useSidebarHidden();
   // folded (not stored) while an open document needs the width
   const sidebarFolded = useSidebarFolded();
-  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
-  const inAdmin = pathname === "/platform/admin" || pathname.startsWith("/platform/admin/");
-  const desktopHidden = inAdmin ? !adminMenuOpen : savedSidebarHidden || sidebarFolded;
+  const desktopHidden = savedSidebarHidden || sidebarFolded;
   const isDesktop = useIsDesktopShell();
   const railRef = useRef<HTMLElement | null>(null);
   /* The rail is off-screen below the shell breakpoint while the drawer is
    * closed, and on desktop while a full-width page hides it. In both cases
    * it must not be reachable by keyboard or by a screen reader. */
   const railHidden = (!isDesktop && !mobileOpen) || (isDesktop && desktopHidden);
-
-  useEffect(() => {
-    setAdminMenuOpen(false);
-  }, [inAdmin]);
 
   const confirmDelete = async () => {
     if (!removing || deleting) return;
@@ -129,16 +123,10 @@ export function Sidebar() {
   // header's menu button dispatches this event; navigation and the
   // backdrop close it.
   useEffect(() => {
-    const toggle = () => {
-      if (inAdmin && window.matchMedia(SHELL_DESKTOP_QUERY).matches) {
-        setAdminMenuOpen((open) => !open);
-      } else {
-        setMobileOpen((v) => !v);
-      }
-    };
+    const toggle = () => setMobileOpen((v) => !v);
     window.addEventListener("weknora:toggle-sidebar", toggle);
     return () => window.removeEventListener("weknora:toggle-sidebar", toggle);
-  }, [inAdmin]);
+  }, []);
 
   // Rotating the phone or resizing the window must not leave the drawer
   // open (and off-screen) — close it as soon as the shell turns desktop.
@@ -163,19 +151,6 @@ export function Sidebar() {
   });
 
   useEffect(() => setMobileOpen(false), [pathname]);
-
-  // Poll sessions left mid-generation (detached markers) so the sidebar's
-  // "reply in progress" indicator clears once the backend finishes the turn —
-  // mirrors menu.vue's 5s sessionActivity.refresh() interval.
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      void refreshSessionActivity();
-    }, 5000);
-    return () => {
-      window.clearInterval(timer);
-      clearSessionActivity();
-    };
-  }, []);
 
   // reloaded when the account kind changes: a guest's sessions live in the
   // public portal, a member's in the organization
@@ -289,17 +264,11 @@ export function Sidebar() {
       {/* Desktop: the translate makes the rail its own stacking layer, so it
        * needs a z-index above the page (the ONLYOFFICE pane is z-10) or the
        * account menu, wider than the rail, opens under the editor. */}
-      {/* The way back must exist wherever the rail is hidden — including the
-       * admin console, whose rail is a local toggle rather than the stored
-       * preference (that page is full-width by design). */}
+      {/* The way back must exist wherever the rail is hidden. */}
       {desktopHidden && (
         <button
           type="button"
           onClick={() => {
-            if (inAdmin) {
-              setAdminMenuOpen(true);
-              return;
-            }
             dismissSidebarFold();
             setSidebarHidden(false);
           }}

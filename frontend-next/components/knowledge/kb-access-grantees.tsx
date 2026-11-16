@@ -125,14 +125,14 @@ export function KbAccessGrantees({ overview, onChanged }: { overview: KBAccessOv
                     </span>
                     <button
                       type="button"
-                      className="btn btn-outline btn-sm py-0.5 text-xs text-error"
+                      className="btn btn-row btn-soft-danger"
                       disabled={busy !== null}
                       aria-busy={busy === key}
                       onClick={() => void revoke(g)}
                     >
                       {busy === key ? "…" : keeps ? t("kbAccess.revokeAnyway") : t("kbAccess.revoke")}
                     </button>
-                    <button type="button" className="btn btn-outline btn-sm py-0.5 text-xs" disabled={busy === key} onClick={() => setConfirming(null)}>
+                    <button type="button" className="btn btn-row btn-soft" disabled={busy === key} onClick={() => setConfirming(null)}>
                       {t("common.cancel")}
                     </button>
                   </div>

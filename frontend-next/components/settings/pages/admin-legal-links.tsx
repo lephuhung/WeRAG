@@ -585,14 +585,14 @@ function LinkList({
               </td>
               <td className="px-5 py-3.5">
                 <div className="flex flex-wrap gap-1.5">
-                  <button type="button" className="btn btn-outline btn-sm py-0.5 text-[12px]" onClick={() => onOpen(c.id)}>
+                  <button type="button" className="btn btn-row btn-soft" onClick={() => onOpen(c.id)}>
                     {t("llink.view.open")}
                   </button>
                   {pending ? (
                     <>
                       <button
                         type="button"
-                        className="btn btn-primary btn-sm py-0.5 text-[12px]"
+                        className="btn btn-row btn-soft-accent"
                         disabled={busy === c.id || !canApprove}
                         title={canApprove ? undefined : t("llink.needFix")}
                         onClick={() => void decide(c, "approve")}
@@ -601,7 +601,7 @@ function LinkList({
                       </button>
                       <button
                         type="button"
-                        className="btn btn-danger btn-sm py-0.5 text-[12px]"
+                        className="btn btn-row btn-soft-danger"
                         disabled={busy === c.id}
                         onClick={() => void decide(c, "reject")}
                       >

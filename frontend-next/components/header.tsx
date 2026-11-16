@@ -22,7 +22,6 @@ const SECTION_KEYS: [RegExp, LocaleKey][] = [
 export function Header() {
   const pathname = usePathname();
   const { t } = useT();
-  const inAdmin = pathname === "/platform/admin" || pathname.startsWith("/platform/admin/");
   const inConversation = pathname.startsWith("/platform/chat/");
 
   const sectionLabel =
@@ -37,7 +36,7 @@ export function Header() {
         onClick={() => window.dispatchEvent(new Event("weknora:toggle-sidebar"))}
         aria-label={t("header.toggleNav")}
         title={t("header.toggleNav")}
-        className={`-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-strong hover:text-ink ${inAdmin ? "" : "lg:hidden"}`}
+        className="-ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-strong hover:text-ink lg:hidden"
       >
         <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
           <path d="M4 7h16M4 12h16M4 17h16" />

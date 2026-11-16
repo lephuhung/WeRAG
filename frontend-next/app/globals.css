@@ -12,6 +12,14 @@
   --color-canvas-deep: #0c0a09;
   --color-surface-card: #ffffff;
   --color-surface-strong: #f0efed;
+  /* The system administration console sits one step deeper than the rest
+     of the app: its panels are white and packed many to a screen, so the
+     page behind them has to be a surface of its own, not another near
+     white. It also has to stay clear of --color-surface-strong, which
+     fills pills, neutral badges and hover states that sit straight on the
+     page — at the same value those lose their fill. Dark mode goes below
+     the canvas, where the panel is the lighter of the two. */
+  --color-admin-pane: #e7e5e2;
   --color-surface-dark: #0c0a09;
   --color-surface-dark-elevated: #1c1917;
 
@@ -108,6 +116,7 @@ html.dark {
   --color-hairline: #292524;
   --color-hairline-soft: #1c1917;
   --color-hairline-strong: #44403c;
+  --color-admin-pane: #121010;
   --color-primary: #f5f5f4;
   --color-primary-active: #e7e5e4;
   /* semantic — lightened for contrast against the dark canvas */
@@ -313,6 +322,51 @@ html.dark {
     padding: 5px 12px;
     font-size: calc(12.5px * var(--app-font-scale, 1));
   }
+  /* Actions that live inside a table row or a list item. They were built
+     from `btn-sm py-0.5 text-[12px]`, which only shrank the type: a row of
+     three still carried a solid black slab next to two bare outlines
+     (reported 2026-11-16 on the legal-request queue). This is the size;
+     the .btn-soft* variants below are the weight. */
+  .btn-row {
+    height: 26px;
+    padding: 4px 11px;
+    font-size: calc(12px * var(--app-font-scale, 1));
+    font-weight: 500;
+  }
+  /* Quiet filled button: a secondary action reads as a button without
+     spending the page's only black fill or drawing another outline. */
+  .btn-soft {
+    background: var(--color-surface-strong);
+    color: var(--color-ink);
+    border: 1px solid var(--color-hairline);
+  }
+  .btn-soft:hover {
+    background: color-mix(in srgb, var(--color-ink) 9%, var(--color-surface-strong));
+    border-color: var(--color-hairline-strong);
+  }
+  /* The one action a row leads with. */
+  .btn-soft-accent {
+    background: var(--color-accent-surface);
+    color: var(--color-accent);
+    border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+    font-weight: 600;
+  }
+  .btn-soft-accent:hover {
+    background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+    border-color: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  }
+  /* Destructive, but at row weight: the solid red of .btn-danger shouts
+     when it sits in every row of a queue. */
+  .btn-soft-danger {
+    background: var(--color-error-surface);
+    color: var(--color-error);
+    border: 1px solid color-mix(in srgb, var(--color-error) 30%, transparent);
+    font-weight: 600;
+  }
+  .btn-soft-danger:hover {
+    background: color-mix(in srgb, var(--color-error) 20%, transparent);
+    border-color: color-mix(in srgb, var(--color-error) 45%, transparent);
+  }
 
   /* ---------- surfaces ---------- */
   .card {
@@ -324,6 +378,44 @@ html.dark {
     transition: box-shadow 0.2s ease, transform 0.2s ease;
   }
   .card-hover:hover {
+    box-shadow: var(--shadow-soft-drop);
+  }
+
+  /* A block nested inside a panel: a log dump, a stat tile, one row of a
+     list. The panel it sits on is already the light surface, so the inset
+     steps down a shade instead of drawing a second outline around it. */
+  .card-inset {
+    background: var(--color-surface-strong);
+    border: 1px solid var(--color-hairline-soft);
+    border-radius: var(--radius-md2);
+  }
+
+  /* ---------- system administration console ---------- */
+  /* The console carries far more per screen than the rest of the app, and
+     a panel was marked only by a 1px hairline on a near-white page, so a
+     screenful read as one sheet (reported 2026-11-16 on the legal-sync
+     view). Separation now comes from the surface instead: the page drops
+     to --color-admin-pane and the white panels on it gain a stronger
+     outline and a slight lift. Every panel in the console goes through
+     .card (DataTable included), so this reaches all of them at once. */
+  .admin-pane {
+    background: var(--color-admin-pane);
+  }
+  /* Only the panel outline is raised, not the --color-hairline token: the
+     token also draws input borders, badge edges and the row rules inside a
+     table, and a console full of those at full strength reads as a grid.
+     The lift repeats Tailwind's shadow-sm on purpose — DataTable's wrapper
+     carries that utility, and a utility beats this layer, so any other
+     value would leave tables and plain panels sitting at two heights. */
+  [data-admin-ui] .card {
+    border-color: var(--color-hairline-strong);
+    box-shadow: var(--shadow-sm);
+  }
+  /* No console panel is a .card-hover today; this is here because the lift
+     above has the same specificity as .card-hover:hover and comes later in
+     the file, so without it the first clickable panel added to the console
+     would silently stop answering the pointer. */
+  [data-admin-ui] .card-hover:hover {
     box-shadow: var(--shadow-soft-drop);
   }
 

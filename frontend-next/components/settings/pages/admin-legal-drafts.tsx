@@ -298,14 +298,14 @@ function DraftCells({
       <td className="px-5 py-3.5 align-middle">
         <div className="flex flex-wrap gap-1.5">
           {legalDraftEditable(d.status) && (
-            <Link href={legalDraftHref(d.id)} className="btn btn-primary btn-sm py-0.5 text-[12px]">
+            <Link href={legalDraftHref(d.id)} className="btn btn-row btn-soft-accent">
               {t("ldraft.edit")}
             </Link>
           )}
           {d.status === "approved" && d.approved_kb_id && d.approved_knowledge_id && (
             <Link
               href={`/platform/knowledge-bases/${encodeURIComponent(d.approved_kb_id)}?knowledge_id=${encodeURIComponent(d.approved_knowledge_id)}`}
-              className="btn btn-outline btn-sm py-0.5 text-[12px]"
+              className="btn btn-row btn-soft"
             >
               {t("ldraft.openKnowledge")}
             </Link>
@@ -313,7 +313,7 @@ function DraftCells({
           {d.status !== "approved" && (
             <button
               type="button"
-              className="btn btn-danger btn-sm py-0.5 text-[12px]"
+              className="btn btn-row btn-soft-danger"
               disabled={deleting === d.id}
               onClick={onDiscard}
             >

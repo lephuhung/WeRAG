@@ -83,7 +83,7 @@ export function InputLimitsCard() {
   };
 
   const group = (prefix: "limits.chat.pdf" | "limits.chat.docx" | "limits.kb." | "limits.chat.question" | "limits.parse.", title: string) => (
-    <div className="min-w-0 rounded-xl border border-hairline p-4">
+    <div className="min-w-0 card-inset p-4">
       <div className="caption mb-2 font-medium text-ink">{title}</div>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,130px),1fr))] gap-3">
         {INPUT_LIMIT_KEYS.filter((k) => k.key.startsWith(prefix)).map((k) => (
@@ -113,7 +113,7 @@ export function InputLimitsCard() {
       </div>
       <p className="caption mb-4 text-muted">{t("q.limitsDesc")}</p>
       <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,320px),1fr))] gap-4">
-        <div className="min-w-0 rounded-xl border border-hairline p-4">
+        <div className="min-w-0 card-inset p-4">
           <div className="caption mb-2 font-medium text-ink">{t("q.limitsChat")}</div>
           <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,130px),1fr))] gap-3">
             {INPUT_LIMIT_KEYS.filter((k) => k.key.startsWith("limits.chat.pdf") || k.key.startsWith("limits.chat.docx")).map((k) => (
@@ -136,7 +136,7 @@ export function InputLimitsCard() {
       <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(100%,320px),1fr))] gap-4">
         {group("limits.chat.question", t("q.limitsQuestions"))}
         {group("limits.parse.", t("q.limitsParsing"))}
-        <div className="col-span-full min-w-0 rounded-xl border border-hairline p-4">
+        <div className="col-span-full min-w-0 card-inset p-4">
           <div className="caption mb-2 font-medium text-ink">{t("q.limitsBroad")}</div>
           <div className="flex items-center gap-2">
             <Toggle checked={broadDraft} onChange={setBroadDraft} label={t("q.limitsBroadOn")} />

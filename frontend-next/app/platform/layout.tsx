@@ -1,6 +1,15 @@
-import { Header } from "@/components/header";
+/* Everything a signed-in page needs, with no chrome of its own.
+ *
+ * The chrome lives one level down, in two route groups that share these
+ * providers but not each other's frame:
+ *   (app)     — the working app: chat rail, header, plan banner
+ *   (console) — the system administration console, its own full page
+ * Route groups add no URL segment, so the paths stay /platform/...
+ * The console used to sit inside the app frame, which meant the chat list
+ * and the console's own section rail were two menus nested in one page
+ * (reported 2026-11-16: "2 menu lồng nhau quá chật").
+ */
 import { RequireAuth } from "@/components/require-auth";
-import { Sidebar } from "@/components/sidebar";
 import { AuthProvider } from "@/lib/auth";
 import { CommandPaletteProvider } from "@/components/command-palette/command-palette-context";
 import { GlobalCommandPalette } from "@/components/command-palette/global-command-palette";
@@ -10,7 +19,7 @@ import { GlobalFileDrop } from "@/components/upload-tasks/global-file-drop";
 import { ToastProvider } from "@/components/toast";
 import { ConfirmProvider } from "@/components/confirm-dialog";
 import { WorkContextPrompt } from "@/components/work-context-prompt";
-import { PlanBannerBar } from "@/components/plan-banner";
+import { SessionActivityWatch } from "@/components/session-activity-watch";
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -19,26 +28,19 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
       <RequireAuth>
         <ToastProvider>
           <ConfirmProvider>
-          <CommandPaletteProvider>
-            <UploadTasksProvider>
-              <div className="flex h-dvh min-h-0 w-full bg-canvas">
-                <Sidebar />
-                <div className="flex min-w-0 flex-1 flex-col">
-                  <Header />
-                  <PlanBannerBar />
-                  <main className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</main>
-                </div>
-              </div>
-              <GlobalCommandPalette />
-              <UploadTasksPanel />
-              <GlobalFileDrop />
-              <WorkContextPrompt />
-            </UploadTasksProvider>
-          </CommandPaletteProvider>
+            <CommandPaletteProvider>
+              <UploadTasksProvider>
+                {children}
+                <GlobalCommandPalette />
+                <UploadTasksPanel />
+                <GlobalFileDrop />
+                <WorkContextPrompt />
+                <SessionActivityWatch />
+              </UploadTasksProvider>
+            </CommandPaletteProvider>
           </ConfirmProvider>
         </ToastProvider>
       </RequireAuth>
     </AuthProvider>
   );
 }
-

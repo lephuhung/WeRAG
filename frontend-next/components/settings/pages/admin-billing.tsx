@@ -595,21 +595,21 @@ export default function AdminBilling() {
               <td className="px-5 py-3.5 text-right align-middle">
                 {o.status === "pending" && (
                   <div className="flex flex-col items-stretch gap-1.5">
-                    <button type="button" className="btn btn-primary btn-sm w-full px-2" disabled={busy} onClick={() => void confirmOrder(o)}>{t("badm.confirm")}</button>
-                    <button type="button" className="btn btn-danger btn-sm w-full px-2" disabled={busy} onClick={() => void cancelOrder(o)}>{t("badm.cancelOrder")}</button>
+                    <button type="button" className="btn btn-row btn-soft-accent w-full px-2" disabled={busy} onClick={() => void confirmOrder(o)}>{t("badm.confirm")}</button>
+                    <button type="button" className="btn btn-row btn-soft-danger w-full px-2" disabled={busy} onClick={() => void cancelOrder(o)}>{t("badm.cancelOrder")}</button>
                   </div>
                 )}
                 {o.status === "expired" && (
-                  <button type="button" className="btn btn-outline btn-sm w-full px-2" disabled={busy} onClick={() => void reopenOrder(o)}>{t("badm.reopen")}</button>
+                  <button type="button" className="btn btn-row btn-soft w-full px-2" disabled={busy} onClick={() => void reopenOrder(o)}>{t("badm.reopen")}</button>
                 )}
                 {o.status === "paid" && (
                   <div className="flex flex-col items-stretch gap-1.5">
                     {o.invoice_requested && (
-                      <button type="button" className={`btn btn-sm w-full px-2 ${needsInvoice(o) ? "btn-primary" : "btn-outline"}`} disabled={busy} onClick={() => openInvoice(o)}>
+                      <button type="button" className={`btn btn-row w-full px-2 ${needsInvoice(o) ? "btn-soft-accent" : "btn-soft"}`} disabled={busy} onClick={() => openInvoice(o)}>
                         {t("badm.invoiceOpen")}
                       </button>
                     )}
-                    <a className="btn btn-outline btn-sm w-full px-2" href={receiptHref(o.order_code)} target="_blank" rel="noopener">
+                    <a className="btn btn-row btn-soft w-full px-2" href={receiptHref(o.order_code)} target="_blank" rel="noopener">
                       {t("bill.receipt")}
                     </a>
                   </div>
@@ -633,7 +633,7 @@ export default function AdminBilling() {
         {promos.length === 0 ? (
           <p className="caption text-muted-soft">{t("badm.noPromos")}</p>
         ) : (
-          <div className="divide-y divide-hairline rounded-lg border border-hairline px-3">
+          <div className="card divide-y divide-hairline px-3">
             {promos.map((p) => (
               <div key={p.id} className={`flex flex-wrap items-center gap-3 py-2.5 text-[14px] ${ROW_HOVER}`}>
                 <div className="min-w-0 flex-1">
@@ -649,10 +649,10 @@ export default function AdminBilling() {
                     {" · "}{dateOf(p.starts_at)}{p.ends_at ? ` → ${dateOf(p.ends_at)}` : ""}
                   </div>
                 </div>
-                <button type="button" className="btn btn-outline btn-sm" disabled={busy} onClick={() => openEditPromo(p)}>
+                <button type="button" className="btn btn-row btn-soft" disabled={busy} onClick={() => openEditPromo(p)}>
                   <IconEdit className="h-3.5 w-3.5" /> {t("common.edit")}
                 </button>
-                <button type="button" className="btn btn-danger btn-sm" disabled={busy} onClick={() => void removePromo(p)}>
+                <button type="button" className="btn btn-row btn-soft-danger" disabled={busy} onClick={() => void removePromo(p)}>
                   {t("common.delete")}
                 </button>
               </div>

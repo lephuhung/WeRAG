@@ -503,7 +503,7 @@ export default function AdminTenants() {
                       </span>
                       <button
                         type="button"
-                        className="btn btn-danger btn-sm py-1 text-xs"
+                        className="btn btn-row btn-soft-danger"
                         disabled={busy}
                         onClick={() => void remove(m)}
                       >

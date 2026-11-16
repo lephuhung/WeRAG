@@ -685,7 +685,7 @@ export function ReviewDialog({
               <span className="text-[13px] font-medium text-warning">{t("lrev.sourcePending")}</span>
               <button
                 type="button"
-                className="btn btn-outline btn-sm ml-auto py-0.5 text-[12px]"
+                className="btn btn-row btn-soft ml-auto"
                 onClick={() => setForm((f) => ({ ...f, ...pending }))}
               >
                 {t("lrev.usePortal")}

@@ -382,7 +382,7 @@ export default function LegalSyncSection({ onDenied }: { onDenied?: () => void }
       {runs.length === 0 && !loading ? (
         <p className="caption text-muted">{t("lsync.noRuns")}</p>
       ) : (
-        <div className="divide-y divide-hairline rounded-lg border border-hairline">
+        <div className="card divide-y divide-hairline overflow-hidden">
           {runs.map((r) => (
             <RunRow key={r.id} run={r} now={now} t={t} locale={locale} />
           ))}
@@ -402,7 +402,7 @@ function WorkerCard({ w, now, t, locale }: { w: LegalSyncWorkerStatus; now: numb
     (last?.status === "failed" ? last.error : "") ||
     (w.last_finished?.status === "failed" ? w.last_finished.error : "");
   return (
-    <section className="rounded-lg border border-hairline px-4 py-3" aria-label={name}>
+    <section className="card px-4 py-3" aria-label={name}>
       <div className="mb-1 flex items-center gap-2">
         <h3 className="text-sm font-semibold">{name}</h3>
         <span className={`badge-pill ${healthTone(w.health)} ml-auto text-[10.5px]`}>
@@ -473,7 +473,7 @@ function WorkerCard({ w, now, t, locale }: { w: LegalSyncWorkerStatus; now: numb
       {lastError && (
         <details className="mt-2 text-[12px]">
           <summary className="cursor-pointer text-error">{t("lsync.lastError")}</summary>
-          <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-card/70 p-2 text-[11.5px]">
+          <pre className="card-inset mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words p-2 text-[11.5px]">
             {lastError}
           </pre>
         </details>
@@ -512,7 +512,7 @@ function QueuesCard({ status, t, locale }: { status: LegalSyncStatus; t: T; loca
     },
   ];
   return (
-    <section className="rounded-lg border border-hairline px-4 py-3">
+    <section className="card px-4 py-3">
       <h3 className="mb-2 text-sm font-semibold">{t("lsync.queues")}</h3>
       <ul className="divide-y divide-hairline">
         {rows.map((r) => (
@@ -531,7 +531,7 @@ function QueuesCard({ status, t, locale }: { status: LegalSyncStatus; t: T; loca
 
 function FeedsCard({ feeds, t, locale }: { feeds: LegalFeedActivity[]; t: T; locale: string }) {
   return (
-    <section className="rounded-lg border border-hairline px-4 py-3">
+    <section className="card px-4 py-3">
       <h3 className="mb-2 text-sm font-semibold">{t("lsync.feeds")}</h3>
       {feeds.length === 0 ? (
         <p className="caption text-muted">{t("lsync.noFeeds")}</p>
@@ -616,7 +616,7 @@ function RunRow({ run, now, t, locale }: { run: LegalSyncRun; now: number; t: T;
         ))}
         {flat.length > 0 && <CountGrid counts={Object.fromEntries(flat)} t={t} locale={locale} />}
         {run.error && (
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-surface-card/70 p-2 text-[11.5px]">
+          <pre className="card-inset max-h-64 overflow-auto whitespace-pre-wrap break-words p-2 text-[11.5px]">
             {run.error}
           </pre>
         )}

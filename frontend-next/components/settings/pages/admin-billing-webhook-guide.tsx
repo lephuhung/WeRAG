@@ -133,7 +133,7 @@ export function WebhookGuide({ enabled, secretShown }: { enabled: boolean; secre
 
   const h4 = "mb-1.5 mt-4 text-[13px] font-medium text-ink";
   return (
-    <details className="mt-3 rounded-md border border-hairline px-3 py-2">
+    <details className="card-inset mt-3 px-3 py-2">
       <summary className="cursor-pointer text-[13px] font-medium text-ink">{t("bwg.title")}</summary>
       <div className="caption pb-2 text-muted">
         <h4 className={h4}>{t("bwg.setupTitle")}</h4>

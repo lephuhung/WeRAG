@@ -323,20 +323,20 @@ function ChunkCard({
         {chunk.index_status === "failed" && <span className="caption text-error">{t("lrev.c.indexFailed")}</span>}
         <div className="ml-auto flex flex-wrap gap-1.5">
           {!editing && (
-            <button type="button" className="btn btn-outline btn-sm py-0.5 text-[12px]" onClick={() => onDraft(chunk.content)} disabled={busy}>
+            <button type="button" className="btn btn-row btn-soft" onClick={() => onDraft(chunk.content)} disabled={busy}>
               {t("lrev.c.edit")}
             </button>
           )}
           <button
             type="button"
-            className="btn btn-outline btn-sm py-0.5 text-[12px]"
+            className="btn btn-row btn-soft"
             onClick={() => void save({ is_enabled: !chunk.is_enabled })}
             disabled={busy || editing}
             title={chunk.is_enabled ? t("lrev.c.disableHint") : undefined}
           >
             {chunk.is_enabled ? t("lrev.c.disable") : t("lrev.c.enable")}
           </button>
-          <button type="button" className="btn btn-ghost btn-sm py-0.5 text-[12px]" onClick={() => void toggleHistory()} disabled={busy}>
+          <button type="button" className="btn btn-row btn-ghost" onClick={() => void toggleHistory()} disabled={busy}>
             {history ? t("lrev.c.hideHistory") : t("lrev.c.history")}
           </button>
         </div>
@@ -374,7 +374,7 @@ function ChunkCard({
         <div className="mt-2 rounded-[10px] bg-warning-surface p-2">
           <div className="mb-1 flex items-center gap-2">
             <span className="caption text-warning">{t("lrev.c.findings", { count: findings.length })}</span>
-            <button type="button" className="btn btn-outline btn-sm ml-auto py-0.5 text-[12px]" onClick={applyAll}>
+            <button type="button" className="btn btn-row btn-soft ml-auto" onClick={applyAll}>
               {t("lrev.c.applyAll")}
             </button>
           </div>
@@ -391,7 +391,7 @@ function ChunkCard({
                   <span className="ml-auto flex gap-1">
                     <button
                       type="button"
-                      className="btn btn-outline btn-sm py-0 text-[11px]"
+                      className="btn btn-row btn-soft"
                       onClick={() => apply(f)}
                       disabled={stale}
                     >
@@ -399,7 +399,7 @@ function ChunkCard({
                     </button>
                     <button
                       type="button"
-                      className="btn btn-ghost btn-sm py-0 text-[11px]"
+                      className="btn btn-row btn-ghost"
                       onClick={() => onFindings(findings.filter((x) => x.key !== f.key))}
                     >
                       {t("lrev.c.dismiss")}
@@ -413,7 +413,7 @@ function ChunkCard({
       )}
 
       {history && (
-        <div className="mt-2 rounded-[10px] border border-hairline p-2">
+        <div className="card-inset mt-2 p-2">
           {history.length === 0 ? (
             <p className="caption text-muted">{t("lrev.c.noHistory")}</p>
           ) : (
@@ -431,7 +431,7 @@ function ChunkCard({
                       {r.revision !== chunk.content_revision && (
                         <button
                           type="button"
-                          className="btn btn-outline btn-sm ml-auto py-0 text-[11px]"
+                          className="btn btn-row btn-soft ml-auto"
                           onClick={() => void revert(r.revision)}
                           disabled={busy}
                         >

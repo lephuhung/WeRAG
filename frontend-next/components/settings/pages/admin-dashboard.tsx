@@ -294,7 +294,7 @@ function AdminDashboardBody() {
                   { label: t("adm.qRetry"), value: queueTotals.retry },
                   { label: t("adm.qFailed"), value: queueTotals.archived },
                 ].map((s) => (
-                  <div key={s.label} className="rounded-lg border border-hairline px-3 py-2.5">
+                  <div key={s.label} className="card-inset px-3 py-2.5">
                     <dt className="caption text-muted">{s.label}</dt>
                     <dd className="mt-0.5 text-[18px] font-semibold tabular-nums text-ink">
                       {s.value.toLocaleString()}

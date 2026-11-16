@@ -126,12 +126,12 @@ export default function LegalLookupMissesSection({ onDenied }: { onDenied?: () =
             </td>
             <td className="px-5 py-3.5">
               <div className="flex flex-wrap gap-1.5">
-                <Link href={legalLookupHref(m.sample || m.query)} className="btn btn-outline btn-sm py-0.5 text-[12px]">
+                <Link href={legalLookupHref(m.sample || m.query)} className="btn btn-row btn-soft">
                   {t("lmiss.retry")}
                 </Link>
                 <button
                   type="button"
-                  className="btn btn-outline btn-sm py-0.5 text-[12px]"
+                  className="btn btn-row btn-soft"
                   disabled={busy === m.id}
                   onClick={() => void dismiss(m)}
                 >
