@@ -354,6 +354,21 @@ var registry = map[string]settingSpec{
 			"generation runs. Outside it the wiki queue is paused so interactive chat keeps the LLM; " +
 			"queued wiki work resumes when the window opens. enabled=false runs wiki at any time.",
 	},
+	// search.index_segment_threshold is the segment count above which the
+	// BM25 index behind keyword retrieval is reported as wanting a REINDEX
+	// (SearchIndexHealth: the SuperAdmin runtime page and an hourly warning
+	// in the logs). Read at every check, so edits apply without a restart.
+	// 0 or less keeps reporting the counters but stops the verdict.
+	SearchIndexSegmentThresholdKey: {
+		Type:     "int",
+		EnvName:  SearchIndexSegmentThresholdEnv,
+		Default:  int64(DefaultSearchIndexSegmentThreshold),
+		Category: "knowledge",
+		Description: "Số segment của chỉ mục tìm kiếm từ khoá (BM25) mà vượt quá thì hệ thống báo cần dựng lại chỉ mục. " +
+			"Chỉ mục phân mảnh làm mỗi truy vấn từ khoá tốn thêm một khoản cố định, không phụ thuộc số dòng khớp " +
+			"(đo ngày 16/11/2026: 864 ms so với 311 ms sau khi dựng lại). Dựng lại bằng REINDEX, xem docs/paradedb-upgrade.md. " +
+			"Mặc định 60, tức gấp ba mức khoảng 20 segment của một lần dựng mới; đặt 0 thì vẫn báo số liệu nhưng không kết luận.",
+	},
 	// model.max_concurrency is the DEFAULT per-model cap on concurrent
 	// background (ingestion/enrichment) LLM/embedding/VLM calls, keyed by
 	// model ID and shared across replicas. Read at every gated call via the

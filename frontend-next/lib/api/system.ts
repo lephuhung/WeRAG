@@ -552,7 +552,33 @@ export interface RuntimeQueuesResponse {
   model_limiter_available: boolean;
   models: ModelRuntimeStat[];
   wiki_run_window?: WikiRunWindowStatus;
+  /** Absent when the deployment does not wire the BM25 index check. */
+  search_index?: SearchIndexHealth;
   timestamp: number;
+}
+
+/* State of the BM25 index behind keyword retrieval. It loses performance as
+ * it fragments, and silently: the cost it adds is fixed per query rather
+ * than proportional to the rows matched. `available` is false where the
+ * check cannot run (non-PostgreSQL, no pg_search, no index, failing query);
+ * `reason` is then a code the UI translates — never a server error string —
+ * and the counters are meaningless. The remedy when `needs_rebuild` is set
+ * is a REINDEX, see docs/paradedb-upgrade.md. */
+export interface SearchIndexHealth {
+  index: string;
+  available: boolean;
+  segments: number;
+  documents: number;
+  deleted_docs: number;
+  total_bytes: number;
+  largest_bytes: number;
+  /** Segment count above which a rebuild is advised; 0 disables the verdict. */
+  threshold: number;
+  needs_rebuild: boolean;
+  checked_at: string;
+  /** Set only when `available` is false: one of not_configured, no_database,
+   *  not_postgres, pg_search_missing, index_missing, query_failed. */
+  reason?: string;
 }
 
 /* Value of the `wiki.run_window` system setting: the daily window (HH:MM in

@@ -48,7 +48,18 @@ outside the backup window: the rebuild pushes the whole new index, around
 
 Why the index fragmented in the first place is not established: a simulation on
 a copy of the same cluster did not reproduce it, and nothing was holding an old
-snapshot. Until that is understood, watch the segment count.
+snapshot. Until that is understood, watch the segment count — and because a
+rebuild erases the evidence, capture `paradedb.index_info('embeddings_search_idx', true)`
+and `paradedb.merge_info('embeddings_search_idx')` before running one.
+
+The segment count is watched for you. `SearchIndexHealth` reads it hourly and
+on every load of **Settings → System → Runtime queues**, where a card shows
+segments, deleted documents still indexed, index size and when it last looked.
+Above the threshold the card advises a rebuild and the server logs a warning
+naming the `REINDEX` to run. The threshold is the `search.index_segment_threshold`
+system setting (default 60 — three times a fresh build, and clear of the 31–38
+a simulated 200,000-row ingest settled at); 0 keeps the counters on display but
+stops the verdict.
 
 ## Existing deployments
 

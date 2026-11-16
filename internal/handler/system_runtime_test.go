@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/gin-gonic/gin"
 )
@@ -604,4 +605,61 @@ func TestRuntimeTaskCancelPurgesOrphanWhenSweepAlreadyRemovedTask(t *testing.T) 
 	if inspector.forceDeleted != "task-orphan" {
 		t.Fatalf("expected force delete attempt, got %q", inspector.forceDeleted)
 	}
+}
+
+// The BM25 index check is optional in the dig graph, so GetRuntimeQueues has
+// to serve both shapes: the field is absent when nothing was wired, and
+// present-but-unavailable when the check exists and cannot read the index —
+// which is what the unit-test dialect always gives.
+func TestGetRuntimeQueuesSearchIndexField(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	call := func(t *testing.T, h *SystemHandler) (*httptest.ResponseRecorder, map[string]any) {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/system/admin/runtime/queues", nil)
+		h.GetRuntimeQueues(ctx)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+		}
+		var raw map[string]any
+		if err := json.Unmarshal(recorder.Body.Bytes(), &raw); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		return recorder, raw
+	}
+
+	t.Run("omitted when the check is not wired", func(t *testing.T) {
+		_, raw := call(t, &SystemHandler{
+			systemSettingSvc: runtimeTestSettings{},
+			taskInspector:    runtimeTestInspector{},
+		})
+		if _, ok := raw["search_index"]; ok {
+			t.Fatalf("search_index must be absent without the check, got %v", raw["search_index"])
+		}
+	})
+
+	t.Run("reported as unavailable with a reason code", func(t *testing.T) {
+		_, raw := call(t, &SystemHandler{
+			systemSettingSvc:  runtimeTestSettings{},
+			taskInspector:     runtimeTestInspector{},
+			searchIndexHealth: service.NewSearchIndexHealth(nil, nil),
+		})
+		field, ok := raw["search_index"].(map[string]any)
+		if !ok {
+			t.Fatalf("search_index missing or not an object: %v", raw["search_index"])
+		}
+		if field["available"] != false {
+			t.Fatalf("available = %v, want false", field["available"])
+		}
+		// A code, not a sentence: the clients translate it, and a provider's
+		// error text must not reach a page.
+		if field["reason"] != service.SearchIndexReasonNoDatabase {
+			t.Fatalf("reason = %v, want %q", field["reason"], service.SearchIndexReasonNoDatabase)
+		}
+		if _, leaked := field["note"]; leaked {
+			t.Fatal("the report must not carry a free-text note")
+		}
+	})
 }

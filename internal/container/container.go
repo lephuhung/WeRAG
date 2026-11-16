@@ -604,6 +604,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewUserNotificationHandler))
 	// backup job status (BACKUP_S3_*; nil = off) for the SuperAdmin page
 	must(container.Provide(service.NewBackupMonitorFromEnv))
+	// BM25 index fragmentation for the SuperAdmin runtime page
+	must(container.Provide(service.NewSearchIndexHealth))
 	must(container.Provide(handler.NewBackupStatusHandler))
 	must(container.Provide(handler.NewAnswerQualityHandler))
 	must(container.Provide(handler.NewUsageAdminHandler))
@@ -756,6 +758,8 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(startSuperAdminQueueNotices))
 	// SuperAdmin digest when a backup job fails or is overdue
 	must(container.Invoke(startBackupMonitor))
+	// hourly warning while the BM25 keyword index is fragmented
+	must(container.Invoke(startSearchIndexHealth))
 	// SuperAdmin digest when the legal data workers (nightly vbpl.vn sync,
 	// auto-ingest, expired retention) fail, are overdue or stop
 	must(container.Invoke(startLegalSyncMonitor))
@@ -1858,6 +1862,17 @@ func startSuperAdminQueueNotices(n *service.SuperAdminQueueNotifier, sessions in
 		if !n.WaitTimeout(10 * time.Second) {
 			logger.Warnf(context.Background(), "[QueueNotice] shutdown: notices still being written after 10s")
 		}
+		return nil
+	})
+}
+
+// startSearchIndexHealth runs the BM25 index fragmentation check. It only
+// reports — the REINDEX it suggests takes SHARE on embeddings and blocks
+// ingest, so an operator picks the moment (docs/paradedb-upgrade.md).
+func startSearchIndexHealth(h *service.SearchIndexHealth, cleaner interfaces.ResourceCleaner) {
+	stop := service.StartSearchIndexHealth(h, service.SearchIndexHealthInterval)
+	cleaner.RegisterWithName("SearchIndexHealth", func() error {
+		stop()
 		return nil
 	})
 }

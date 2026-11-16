@@ -3,9 +3,15 @@
 
 import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api-client";
-import { getRuntimeQueues, type QueueStat, type WikiRunWindowStatus } from "@/lib/api/system";
+import {
+  getRuntimeQueues,
+  type QueueStat,
+  type SearchIndexHealth,
+  type WikiRunWindowStatus,
+} from "@/lib/api/system";
 import { IconRefresh } from "@/components/icons";
 import { WikiRunWindowCard } from "@/components/settings/wiki-run-window-card";
+import { SearchIndexHealthCard } from "@/components/settings/search-index-health-card";
 import { InputLimitsCard } from "@/components/settings/input-limits-card";
 import { ConsolePage } from "@/components/settings/console-page";
 import { DeniedView } from "@/components/settings/system-section";
@@ -17,6 +23,7 @@ export default function RuntimeQueuesPage() {
   const { t } = useT();
   const [queues, setQueues] = useState<QueueStat[] | null>(null);
   const [wikiWindow, setWikiWindow] = useState<WikiRunWindowStatus | null>(null);
+  const [searchIndex, setSearchIndex] = useState<SearchIndexHealth | null>(null);
   const [denied, setDenied] = useState(false);
   const [unavailable, setUnavailable] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -31,6 +38,7 @@ export default function RuntimeQueuesPage() {
       const res = await getRuntimeQueues();
       setQueues(res.queues ?? []);
       setWikiWindow(res.wiki_run_window ?? null);
+      setSearchIndex(res.search_index ?? null);
       setUnavailable(!res.available);
       setDenied(false);
     } catch (e) {
@@ -38,6 +46,7 @@ export default function RuntimeQueuesPage() {
         setDenied(true);
         setQueues([]);
         setWikiWindow(null);
+        setSearchIndex(null);
       } else {
         setError(userErrorMessage(e, t, "sys.loadFailed"));
       }
@@ -118,6 +127,9 @@ export default function RuntimeQueuesPage() {
       {queues !== null && queues.length === 0 && !denied && !error && (
         <p className="caption mt-2 text-muted-soft">{t("q.empty")}</p>
       )}
+      {/* Not gated on `unavailable`: that flag means no asynq/Redis in this
+          deployment, while this card reports on PostgreSQL. */}
+      {searchIndex && !denied && <SearchIndexHealthCard status={searchIndex} />}
       {wikiWindow && !unavailable && (
         <WikiRunWindowCard status={wikiWindow} onSaved={() => void load()} />
       )}

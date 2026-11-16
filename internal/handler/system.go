@@ -68,6 +68,10 @@ type SystemHandler struct {
 	// unit tests, in which case only the legacy config is consulted.
 	storageBackendRepo interfaces.StorageBackendRepository
 	sandboxConfigSvc   sandboxConfigService
+	// searchIndexHealth reports BM25 index fragmentation on the runtime
+	// page. Optional — nil in partially-wired unit tests, in which case
+	// GetRuntimeQueues omits the field.
+	searchIndexHealth *service.SearchIndexHealth
 	// startup snapshot for GET /system/capabilities; bound in router.NewRouter.
 	deploymentCapabilities DeploymentCapabilitiesData
 }
@@ -86,6 +90,7 @@ func NewSystemHandler(cfg *config.Config,
 	knowledgeSvc interfaces.KnowledgeService,
 	storageBackendRepo interfaces.StorageBackendRepository,
 	sandboxConfigSvc *service.TenantSandboxConfigService,
+	searchIndexHealth *service.SearchIndexHealth,
 ) *SystemHandler {
 	return &SystemHandler{
 		cfg:            cfg,
@@ -102,6 +107,7 @@ func NewSystemHandler(cfg *config.Config,
 		knowledgeSvc:       knowledgeSvc,
 		storageBackendRepo: storageBackendRepo,
 		sandboxConfigSvc:   sandboxConfigSvc,
+		searchIndexHealth:  searchIndexHealth,
 	}
 }
 
@@ -1484,7 +1490,9 @@ type RuntimeQueuesResponse struct {
 	ModelLimiterAvailable bool                       `json:"model_limiter_available"`
 	Models                []modellimiter.RuntimeStat `json:"models"`
 	WikiRunWindow         WikiRunWindowStatus        `json:"wiki_run_window"`
-	Timestamp             int64                      `json:"timestamp"`
+	// SearchIndex is omitted when the check is not wired (unit tests).
+	SearchIndex *service.SearchIndexHealthReport `json:"search_index,omitempty"`
+	Timestamp   int64                            `json:"timestamp"`
 }
 
 // WikiRunWindowStatus is the configured wiki run window plus whether wiki
@@ -1609,6 +1617,11 @@ func (h *SystemHandler) GetRuntimeQueues(c *gin.Context) {
 	}
 	resp.ModelLimiterAvailable = modelSupported
 	resp.Models = modelStats
+
+	if h.searchIndexHealth != nil {
+		rep := h.searchIndexHealth.Report(ctx)
+		resp.SearchIndex = &rep
+	}
 
 	window := types.ResolveWikiRunWindow(ctx, h.systemSettingSvc)
 	now := time.Now()
