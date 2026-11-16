@@ -13,6 +13,43 @@ ARM `neoverse-n1` requirement or establish CPU compatibility for other services.
 - [0.22.6 release](https://github.com/paradedb/paradedb/releases/tag/v0.22.6)
 - [Version-specific upgrade instructions](https://github.com/paradedb/paradedb/blob/v0.22.6/docs/deploy/upgrading.mdx)
 
+## BM25 index maintenance
+
+The BM25 index on `embeddings` (`embeddings_search_idx`) loses performance as
+it fragments. Measured on this deployment: at 187 segments — the largest only
+2.35 MB, carrying 20,607 deleted documents — a keyword query cost about 864 ms,
+and that cost was fixed rather than proportional to the rows matched (a filter
+matching nothing still took 667 ms). A rebuild brought it to 20 segments and
+about 295 ms. `VACUUM` does not merge those segments, and
+`paradedb.force_merge` is deprecated in favour of `VACUUM`; `REINDEX` is what
+works. Migration `000200_reindex_embeddings_bm25` does exactly that.
+
+Check the current state, and rebuild when the segment count climbs back:
+
+```sql
+SELECT count(*) AS segments,
+       pg_size_pretty(max(byte_size)) AS largest,
+       sum(num_deleted) AS deleted
+  FROM paradedb.index_info('embeddings_search_idx');
+
+REINDEX INDEX public.embeddings_search_idx;  -- ~1 minute per 300k rows
+```
+
+`REINDEX INDEX` takes `SHARE` on `embeddings` and `ACCESS EXCLUSIVE` on the
+index. That blocks every write to the table for the duration — ingest included
+— and because the planner opens all of a table's indexes, reads wait too:
+vector search as well as keyword search. Queries issued during the rebuild wait
+rather than fail, but retrieve branches give up after 30s, so pick a quiet
+period. An open transaction that has read or written `embeddings` (a long
+ingest batch, say) will make the rebuild wait instead; a concurrent `pg_dump`
+will not, since `ACCESS SHARE` does not conflict with `SHARE`. Still prefer
+outside the backup window: the rebuild pushes the whole new index, around
+300 MB, through WAL, and with `archive_mode` on that lands in the backup spool.
+
+Why the index fragmented in the first place is not established: a simulation on
+a copy of the same cluster did not reproduce it, and nothing was holding an old
+snapshot. Until that is understood, watch the segment count.
+
 ## Existing deployments
 
 Keep PostgreSQL on major version **17** and retain the existing data volume.
