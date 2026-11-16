@@ -137,6 +137,9 @@ class WeragClient:
         self.tenant_id = tenant_id
         self.timeout = timeout
         self.verbose = verbose
+        # Fields added to every chat request (e.g. summary_model_id for a
+        # model A/B; honoured only for system admins).
+        self.chat_defaults: Dict[str, Any] = {}
         self.s = requests.Session()
 
     # ---- plumbing ----------------------------------------------------------
@@ -353,6 +356,8 @@ class WeragClient:
             body["mentioned_items"] = mentions
         if attachment_ids:
             body["attachment_ids"] = attachment_ids
+        if self.chat_defaults:
+            body.update(self.chat_defaults)
         if extra:
             body.update(extra)
         turn = Turn(query=query, request=body)

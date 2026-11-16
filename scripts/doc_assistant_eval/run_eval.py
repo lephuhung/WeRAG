@@ -281,6 +281,8 @@ def main() -> int:
     ap.add_argument("--keep-sessions", action="store_true")
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--turn-timeout", type=float, default=900)
+    ap.add_argument("--model-id", default="",
+                    help="run every turn on this chat model (summary_model_id; needs a system-admin token)")
     ap.add_argument("--retries", type=int, default=2, help="re-run a scenario whose turn died on a transport error (backend restart)")
     args = ap.parse_args()
 
@@ -304,6 +306,8 @@ def main() -> int:
 
     manifest = ensure_fixtures(args.fixtures)
     client = WeragClient(args.base_url, token, tenant_id=args.tenant or None, timeout=args.turn_timeout)
+    if args.model_id:
+        client.chat_defaults["summary_model_id"] = args.model_id
     me = client.me()  # fail fast on a bad token
     tenant = (me.get("data") or {}).get("tenant", {}).get("id") if isinstance(me, dict) else None
     judge = Judge()
