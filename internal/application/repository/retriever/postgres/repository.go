@@ -210,7 +210,9 @@ func (g *pgRepository) KeywordsRetrieve(ctx context.Context,
 	}})
 
 	var embeddingDBList []pgVectorWithScore
-	err := g.db.WithContext(ctx).Clauses(conds...).Debug().
+	// No .Debug() here: it logs the full SQL and the bound query text for every
+	// keyword retrieval, and this path runs several times per chat turn.
+	err := g.db.WithContext(ctx).Clauses(conds...).
 		Select([]string{
 			"paradedb.score(id) as score",
 			"id",

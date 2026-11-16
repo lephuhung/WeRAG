@@ -21,9 +21,11 @@ func validateRerankBaseURL(baseURL string) error {
 // sharedRerankHTTPTransport keeps a single SSRF-safe connection pool for all
 // rerank clients. Rerankers are recreated on every GetRerankModel call, but
 // their outbound connections can be safely reused, so the transport (and its
-// keep-alive pool) is built once at package load.
-var sharedRerankHTTPTransport = secutils.NewSSRFSafeTransport(
-	secutils.DefaultSSRFSafeHTTPClientConfig(),
+// keep-alive pool) is built once at package load. The pool is sized for a hot
+// upstream: rerank runs on nearly every knowledge search, so Go's default of
+// 2 idle connections per host would reconnect constantly.
+var sharedRerankHTTPTransport = secutils.WithUpstreamIdleConnPool(
+	secutils.NewSSRFSafeTransport(secutils.DefaultSSRFSafeHTTPClientConfig()),
 )
 
 // newRerankHTTPClient returns an HTTP client with connection-level SSRF

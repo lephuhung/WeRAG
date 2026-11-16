@@ -12,8 +12,10 @@ import (
 // all embedding clients. Embedders are recreated as model configuration changes,
 // but their outbound connections can be safely reused across client instances,
 // so the transport (and its keep-alive pool) is built once at package load.
-var sharedEmbeddingHTTPTransport = secutils.NewSSRFSafeTransport(
-	secutils.DefaultSSRFSafeHTTPClientConfig(),
+// The pool is sized for a hot upstream: every retrieval embeds its query, so
+// Go's default of 2 idle connections per host would reconnect constantly.
+var sharedEmbeddingHTTPTransport = secutils.WithUpstreamIdleConnPool(
+	secutils.NewSSRFSafeTransport(secutils.DefaultSSRFSafeHTTPClientConfig()),
 )
 
 // validateEmbeddingBaseURL checks that a resolved embedding API base URL is safe

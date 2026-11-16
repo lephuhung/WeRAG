@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -720,6 +721,65 @@ func NewSSRFSafeTransport(config SSRFSafeHTTPClientConfig) *http.Transport {
 		// Dial with SSRF protection - validates resolved IPs before connecting
 		DialContext: SSRFSafeDialContext,
 	}
+}
+
+// Keep-alive pool sizing for transports that talk to a small, fixed set of
+// upstreams (model providers, the embedding/rerank service). Go's default
+// MaxIdleConnsPerHost is 2, so beyond two in-flight calls to the same host
+// every extra call pays a fresh TCP — and for remote providers a fresh TLS —
+// handshake, and its connection is dropped instead of pooled. With many chat
+// sessions running concurrently that handshake churn becomes a large share of
+// the request time. These are idle-connection caps, not concurrency limits:
+// the transport still opens as many connections as callers ask for.
+const (
+	defaultMaxIdleConnsPerHost = 64
+	defaultMaxIdleConns        = 256
+	defaultIdleConnTimeout     = 90 * time.Second
+)
+
+// WithUpstreamIdleConnPool sizes t's keep-alive pool for a hot upstream and
+// returns t. Override the per-host cap with WEKNORA_HTTP_MAX_IDLE_CONNS_PER_HOST
+// (<= 0 or unparseable keeps the default); the total cap follows at 4x so a
+// single host cannot starve the others sharing the transport.
+//
+// An IdleConnTimeout of 0 means "keep idle connections forever", which a larger
+// pool makes riskier: upstreams close idle keep-alives on their own schedule
+// (uvicorn defaults to 5s), and Go will not retry a POST whose body it has
+// already written, so a connection reused exactly as the server closes it
+// surfaces as EOF. Fill in a default when the caller left it unset.
+//
+// Only for transports whose upstreams are few and frequently called. Do not use
+// it for user-supplied URLs (web fetch and the like): there the host set is
+// unbounded, so a large idle pool just pins connections to hosts never revisited.
+func WithUpstreamIdleConnPool(t *http.Transport) *http.Transport {
+	if t == nil {
+		return nil
+	}
+	perHost := EnvPositiveInt("WEKNORA_HTTP_MAX_IDLE_CONNS_PER_HOST", defaultMaxIdleConnsPerHost)
+	total := perHost * 4
+	if total < defaultMaxIdleConns {
+		total = defaultMaxIdleConns
+	}
+	t.MaxIdleConnsPerHost = perHost
+	t.MaxIdleConns = total
+	if t.IdleConnTimeout == 0 {
+		t.IdleConnTimeout = defaultIdleConnTimeout
+	}
+	return t
+}
+
+// EnvPositiveInt reads a positive integer from the environment, falling back to
+// def when the variable is unset, unparseable or not positive.
+func EnvPositiveInt(key string, def int) int {
+	v := strings.TrimSpace(os.Getenv(key))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
 }
 
 // newSSRFCheckRedirect returns a CheckRedirect policy that enforces the redirect

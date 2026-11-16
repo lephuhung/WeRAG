@@ -48,13 +48,15 @@ func withLLMTimeout(ctx context.Context, d time.Duration) (context.Context, cont
 // Per-request timeout is enforced via context deadline (see defaultChatTimeout / defaultStreamTimeout)
 // rather than http.Client.Timeout, so streaming calls are not prematurely terminated.
 // Uses SSRFSafeDialContext to prevent DNS rebinding attacks at the connection layer.
-var rawHTTPTransport = &http.Transport{
+// The keep-alive pool is sized for a hot upstream (see WithUpstreamIdleConnPool):
+// the set of model providers is small and called constantly, so a low per-host
+// idle cap makes every concurrent call beyond it pay a fresh TLS handshake.
+var rawHTTPTransport = secutils.WithUpstreamIdleConnPool(&http.Transport{
 	Proxy:               http.ProxyFromEnvironment,
 	DialContext:         secutils.SSRFSafeDialContext,
 	TLSHandshakeTimeout: 10 * time.Second,
 	IdleConnTimeout:     90 * time.Second,
-	MaxIdleConnsPerHost: 5,
-}
+})
 
 var rawHTTPClient = secutils.NewSSRFSafeHTTPClientWithTransport(
 	secutils.SSRFSafeHTTPClientConfig{Timeout: 0, MaxRedirects: 10},

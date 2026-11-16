@@ -377,7 +377,10 @@ func (r *knowledgeRepository) GetKnowledgeBatch(
 	ctx context.Context, tenantID uint64, ids []string,
 ) ([]*types.Knowledge, error) {
 	var knowledge []*types.Knowledge
-	if err := r.db.WithContext(ctx).Debug().
+	// No .Debug() here: this batch load sits on the chat path (entity search,
+	// KB grants, the list_documents tool), so logging every statement is noise
+	// on a hot query. The shared GORM logger still reports slow queries and errors.
+	if err := r.db.WithContext(ctx).
 		Where("tenant_id = ? AND id IN ?", tenantID, ids).
 		Find(&knowledge).Error; err != nil {
 		return nil, err

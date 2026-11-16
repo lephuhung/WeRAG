@@ -1190,10 +1190,69 @@ func initDatabase(cfg *config.Config) (*gorm.DB, error) {
 	}
 
 	// Configure connection pool parameters
-	sqlDB.SetMaxIdleConns(10)
-	sqlDB.SetConnMaxLifetime(time.Duration(10) * time.Minute)
+	configureDBPool(sqlDB)
 
 	return db, nil
+}
+
+// Connection pool defaults. MaxOpenConns was previously unset, which means
+// database/sql opens an unlimited number of connections: under a burst of
+// concurrent sessions the process would keep opening connections until
+// PostgreSQL refused them with "too many connections" (max_connections is 100
+// by default and is shared with every other database on the instance, so the
+// budget is smaller than it looks). A bounded pool turns that hard failure
+// into waiting.
+//
+// Be aware of what that waiting means today: database/sql has no acquire
+// timeout of its own, it only honours the query's context, and much of this
+// codebase does not carry a deadline into the database — the HTTP server sets
+// no timeouts, the chat path deliberately detaches with context.WithoutCancel,
+// and a number of repository calls omit WithContext entirely. So an exhausted
+// pool queues silently rather than erroring. That is still better than
+// refusing connections, but it needs sqlDB.Stats() monitoring (WaitCount /
+// WaitDuration) to be visible, and interactive paths need their own deadline.
+//
+// MaxIdleConns sits close to MaxOpenConns on purpose. When it is far lower
+// (it used to be 10), connections above the idle cap are closed the moment
+// they are returned, so a steady load re-establishes connections constantly —
+// each one a TCP round trip plus PostgreSQL backend fork.
+//
+// Sizing note: this budget is per process, and the asynq worker pools run in
+// the same process as the HTTP handlers (see types.DefaultUpstreamWorkerConcurrency),
+// so ingestion shares this pool with interactive chat. Raise the limits
+// together with PostgreSQL's max_connections, and divide by the number of
+// replicas once more than one runs.
+const (
+	defaultDBMaxOpenConns    = 40
+	defaultDBMaxIdleConns    = 20
+	defaultDBConnMaxLifetime = 10 * time.Minute
+	defaultDBConnMaxIdleTime = 5 * time.Minute
+)
+
+// resolveDBPoolLimits reads the pool limits, allowing each to be overridden by
+// environment variable (DB_MAX_OPEN_CONNS, DB_MAX_IDLE_CONNS). A value that is
+// absent, unparseable or not positive keeps the default; maxIdle is clamped to
+// maxOpen because database/sql would otherwise silently reduce it and the
+// configured value would be misleading.
+func resolveDBPoolLimits() (maxOpen, maxIdle int) {
+	maxOpen = secutils.EnvPositiveInt("DB_MAX_OPEN_CONNS", defaultDBMaxOpenConns)
+	maxIdle = secutils.EnvPositiveInt("DB_MAX_IDLE_CONNS", defaultDBMaxIdleConns)
+	if maxIdle > maxOpen {
+		maxIdle = maxOpen
+	}
+	return maxOpen, maxIdle
+}
+
+// configureDBPool applies the limits from resolveDBPoolLimits to sqlDB.
+func configureDBPool(sqlDB *sql.DB) {
+	maxOpen, maxIdle := resolveDBPoolLimits()
+	sqlDB.SetMaxOpenConns(maxOpen)
+	sqlDB.SetMaxIdleConns(maxIdle)
+	sqlDB.SetConnMaxLifetime(defaultDBConnMaxLifetime)
+	sqlDB.SetConnMaxIdleTime(defaultDBConnMaxIdleTime)
+	logger.Infof(context.Background(),
+		"[DB] connection pool: max_open=%d max_idle=%d max_lifetime=%s max_idle_time=%s",
+		maxOpen, maxIdle, defaultDBConnMaxLifetime, defaultDBConnMaxIdleTime)
 }
 
 // resolveStorageProviderPending replaces the "__pending_env__" sentinel in
