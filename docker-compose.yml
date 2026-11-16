@@ -1150,11 +1150,34 @@ services:
       - HRAG_RERANKER_MODEL=${RERANKER_MODEL:-BAAI/bge-reranker-v2-m3}
       - HRAG_EMBEDDING_DEVICE=cuda
       - HRAG_RERANKER_DEVICE=cuda
+      # float16 halves memory traffic on the GPU: 4.7x more rerank pairs/s on
+      # 450-character documents. Against float32 over 20 real legal queries
+      # the top-10 candidate set was identical 20/20 and the top-30 set 19/20
+      # (deeper positions swap among documents under 0.0006 apart), and query
+      # embeddings came back at cosine 0.9999981. Set false to fall back.
+      - HRAG_FP16=${HRAG_FP16:-true}
+      # Cap on texts merged into one /embed call. Concurrent single-query
+      # embeds are coalesced because one text costs about as much as 32:
+      # 32 -> 481 requests/s at 64 concurrent callers (short query strings).
+      - HRAG_EMBED_COALESCE_MAX=${HRAG_EMBED_COALESCE_MAX:-256}
+      # Requests of at most this many texts are merged with each other only,
+      # so a single query is never made to wait behind an ingest batch.
+      - HRAG_EMBED_COALESCE_SMALL=${HRAG_EMBED_COALESCE_SMALL:-8}
       - EMBED_RERANK_CONCURRENCY=${EMBED_RERANK_CONCURRENCY:-1}
       - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
       - NVIDIA_VISIBLE_DEVICES=${EMBED_RERANK_GPU:-0}
     volumes:
       - ${HF_CACHE_DIR:-/root/.cache/huggingface}:/root/.cache/huggingface
+    # /health answers 503 once the embedding worker stops, which is the one
+    # failure that leaves the process up but every /embed call broken.
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "/usr/bin/python3 -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=5).status == 200 else 1)\""
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
     deploy:
       resources:
         reservations:
