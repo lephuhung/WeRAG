@@ -220,7 +220,9 @@ func TestBuildOpenDocumentPromptInjectsTheScope(t *testing.T) {
 	for _, want := range []string{
 		"Phạm vi hiện tại: vb2 (Điều 2. Chi đầu tư [3–4]) · đối chiếu (do bộ định tuyến chọn)\n",
 		`<document_sections handle="vb2" name="bao-cao.docx" role="văn bản làm việc" unit="đoạn">`,
-		"### Điều 2. Chi đầu tư [3–4]\n[3] Điều 2. Chi đầu tư\n[4] Chi đầu tư phát triển 430 tỷ đồng",
+		// Paragraph 3 is the one holding "Điều 2": the labels differ on
+		// purpose, which is why the index now says "đoạn".
+		"### Điều 2. Chi đầu tư [3–4]\n[đoạn 3] Điều 2. Chi đầu tư\n[đoạn 4] Chi đầu tư phát triển 430 tỷ đồng",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("prompt lacks %q:\n%s", want, got)

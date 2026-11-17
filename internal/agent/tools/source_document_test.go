@@ -153,7 +153,10 @@ func TestBuildOpenDocumentPromptIndexesSourcesWithoutTheirText(t *testing.T) {
 	}
 	// a question about the source brings its matching chunk
 	got = BuildOpenDocumentPrompt(context.Background(), ws, 7, "s-1", "chi đầu tư phát triển bao nhiêu")
-	if !strings.Contains(got, "[1] (Chương II) Điều 5. Chi đầu tư phát triển 430 tỷ đồng.") || !strings.Contains(got, `<open_document handle="vb1"`) {
+	// A source counts in chunks, so its label says "chunk" — calling chunk 1
+	// "đoạn 1" would be the same mis-citation in another unit.
+	if !strings.Contains(got, "[chunk 1] (Chương II) Điều 5. Chi đầu tư phát triển 430 tỷ đồng.") ||
+		!strings.Contains(got, `<open_document handle="vb1"`) {
 		t.Fatalf("the working document whole and the matching chunk of the source:\n%s", got)
 	}
 

@@ -79,7 +79,7 @@ outer:
 			if u.Index < s.From || u.Index > s.To || written[u.Index] {
 				continue
 			}
-			line := fmt.Sprintf("[%d] %s\n", u.Index, flatText(u.Text))
+			line := unitIndexLine(du.unit, u.Index, flatText(u.Text))
 			if !headed {
 				line = heading + line
 			}

@@ -27,7 +27,7 @@ const (
 
 const relevantPassagesInstruction = "Each <relevant_passages> block holds, for one document not given whole this turn, the passages " +
 	"that match the question by keyword (with the passage before and after), and, for a document whose card is still being made, its opening lines. " +
-	"[i] is a paragraph index of a working document (as rewrite_paragraphs takes) or a chunk/line number of a source. " +
+	"Each line starts with its unit and index — [đoạn i] for a working document (the index rewrite_paragraphs takes), [chunk i] or [dòng i] for a source. It is a position in the file, never an article number. " +
 	"Answer from these passages and the cards when they suffice; otherwise search with find_in_documents or read a part with read_document_outline document=vbN from=<i>. " +
 	"Quote the passages, never the card."
 
@@ -76,7 +76,7 @@ func relevantPassages(ctx, readCtx context.Context, src DocumentWorkspaceSource,
 		cost := 0
 		for _, pos := range []int{h.Prev, h.Pos, h.Next} {
 			if pos >= 0 && !shown[pos] {
-				cost += utf8.RuneCountInString(passageLine(q, units, pos, h.Pos)) + 1
+				cost += utf8.RuneCountInString(passageLine(loaded, q, units, pos, h.Pos)) + 1
 			}
 		}
 		cost += utf8.RuneCountInString(units[h.Pos].Header) // the tag, roughly
@@ -138,7 +138,7 @@ func relevantPassages(ctx, readCtx context.Context, src DocumentWorkspaceSource,
 						anchor = pos + 1 // before one
 					}
 				}
-				body.WriteString(passageLine(q, units, pos, anchor) + "\n")
+				body.WriteString(passageLine(loaded, q, units, pos, anchor) + "\n")
 			}
 		}
 		if head == "" && body.Len() == 0 {
@@ -167,7 +167,7 @@ func relevantPassages(ctx, readCtx context.Context, src DocumentWorkspaceSource,
 // a hit (pos == anchor; a long chunk is cut to its matching lines), else as
 // a neighbour of the hit at anchor: the end of the unit before it, the
 // start of the unit after it.
-func passageLine(q *searchQuery, units []searchUnit, pos, anchor int) string {
+func passageLine(dus []*sessionDocUnits, q *searchQuery, units []searchUnit, pos, anchor int) string {
 	u := units[pos]
 	var text string
 	switch {
@@ -182,7 +182,13 @@ func passageLine(q *searchQuery, units []searchUnit, pos, anchor int) string {
 	if u.Header != "" && pos == anchor {
 		tag = "(" + clipRunes(flatText(u.Header), 60) + ") "
 	}
-	return fmt.Sprintf("[%d] %s%s", u.Index, tag, text)
+	// The unit comes from the document this line belongs to: a source
+	// counts in chunks or lines, not paragraphs.
+	unit := ""
+	if u.Doc >= 0 && u.Doc < len(dus) {
+		unit = dus[u.Doc].unit
+	}
+	return strings.TrimRight(unitIndexLine(unit, u.Index, tag+text), "\n")
 }
 
 func tailRunes(s string, n int) string {
@@ -203,7 +209,7 @@ func documentHead(du *sessionDocUnits) string {
 			if l = strings.TrimSpace(l); l == "" {
 				continue
 			}
-			fmt.Fprintf(&b, "[%d] %s\n", u.Index, clipRunes(flatText(l), documentHeadLineRunes))
+			b.WriteString(unitIndexLine(du.unit, u.Index, clipRunes(flatText(l), documentHeadLineRunes)))
 			if lines++; lines >= documentHeadLines {
 				return b.String()
 			}

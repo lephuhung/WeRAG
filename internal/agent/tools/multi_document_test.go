@@ -194,8 +194,10 @@ func TestRelevantPassagesFindTheQuestionInEveryDocument(t *testing.T) {
 	got := BuildOpenDocumentPrompt(context.Background(), ws, 7, "s-1", "PA05 rà soát gì")
 	for _, want := range []string{
 		`<relevant_passages handle="vb1" name="cong-van.docx" role="văn bản làm việc" unit="đoạn">`,
-		"[41] Giao Phòng PA05 rà soát lỗ hổng bảo mật",
-		"[40] Đoạn 40 nói về", "[42] Đoạn 41 nói về",
+		// The label names the unit: a bare "[41]" in front of Vietnamese
+		// prose was being cited back as "Điều 41".
+		"[đoạn 41] Giao Phòng PA05 rà soát lỗ hổng bảo mật",
+		"[đoạn 40] Đoạn 40 nói về", "[đoạn 42] Đoạn 41 nói về",
 		`<relevant_passages handle="vb2"`, "] Phòng PA05 báo cáo kết quả rà soát",
 	} {
 		if !strings.Contains(got, want) {

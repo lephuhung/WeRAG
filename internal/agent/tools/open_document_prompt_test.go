@@ -90,12 +90,14 @@ func TestBuildOpenDocumentPromptInjectsTheWindowAroundTheSelection(t *testing.T)
 	ctx := types.WithDocumentSelection(context.Background(), &types.DocumentSelection{Text: "Đoạn số 70 của văn bản.", DocumentID: "ws-1"})
 
 	got := BuildOpenDocumentPrompt(ctx, ws, 7, "s-1", "viết lại đoạn này")
-	for _, want := range []string{"<window>", "[0] Đoạn số 0 ", "[5] Đoạn số 5 ", "…\n[55] Đoạn số 55 ", "[70] Đoạn số 70 ", "[85] Đoạn số 85 ", "read_document_outline document=vb1 from=<index>"} {
+	// The label names the index ("[đoạn 5]"): a bare "[5]" in front of
+	// Vietnamese prose was being cited back as "Điều 5".
+	for _, want := range []string{"<window>", "[đoạn 0] Đoạn số 0 ", "[đoạn 5] Đoạn số 5 ", "…\n[đoạn 55] Đoạn số 55 ", "[đoạn 70] Đoạn số 70 ", "[đoạn 85] Đoạn số 85 ", "read_document_outline document=vb1 from=<index>"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("prompt lacks %q:\n%s", want, got)
 		}
 	}
-	for _, absent := range []string{"[6] ", "[54] ", "[86] "} {
+	for _, absent := range []string{"[đoạn 6] ", "[đoạn 54] ", "[đoạn 86] "} {
 		if strings.Contains(got, absent) {
 			t.Fatalf("prompt has %q outside the window:\n%s", absent, got)
 		}
@@ -103,7 +105,7 @@ func TestBuildOpenDocumentPromptInjectsTheWindowAroundTheSelection(t *testing.T)
 
 	// a selection elsewhere (not found) injects from the start as before
 	ctx = types.WithDocumentSelection(context.Background(), &types.DocumentSelection{Text: "không có trong văn bản", DocumentID: "ws-1"})
-	if got := BuildOpenDocumentPrompt(ctx, ws, 7, "s-1", ""); strings.Contains(got, "<window>") || !strings.Contains(got, "[99] ") {
+	if got := BuildOpenDocumentPrompt(ctx, ws, 7, "s-1", ""); strings.Contains(got, "<window>") || !strings.Contains(got, "[đoạn 99] ") {
 		t.Fatalf("selection not found:\n%s", got)
 	}
 }

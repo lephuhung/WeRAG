@@ -25,6 +25,26 @@ const (
 	openDocumentMatchRunes  = 8000
 )
 
+// unitIndexLine labels a line with its index and the name of the unit that
+// index counts: "[đoạn 14] …", "[chunk 12] …", "[dòng 7] …".
+//
+// The label names the number because a bare "[14]" in front of Vietnamese
+// prose reads as a provision number: the assistant answered "quy_trinh.docx
+// tại Điều 14 có nhắc đến Luật Bảo vệ bí mật nhà nước" and "Theo Điều 15 của
+// văn bản" about documents that contain no article at all — paragraphs 14 and
+// 15 were exactly those sentences. Saying it in the instruction was not
+// enough; the number itself had to stop looking like an article.
+//
+// The unit must come from the document, not be assumed: a source is counted
+// in chunks or lines, and calling its chunk 12 "đoạn 12" would be the same
+// mis-citation in a different unit. "đoạn" is what the user already sees for
+// a paragraph (rewrite_paragraphs reports "- Đoạn [12]: …"). The label costs
+// a few runes a line out of a rune-budgeted block, so a long document shows
+// slightly less text before the cut.
+func unitIndexLine(unit string, index int, text string) string {
+	return fmt.Sprintf("[%s %d] %s\n", unitLabel(unit), index, text)
+}
+
 // openDocumentMinRunes is the least text each document gets when several
 // documents are injected in one turn (the budget above is split among them).
 const openDocumentMinRunes = 8000
@@ -32,7 +52,7 @@ const openDocumentMinRunes = 8000
 const openDocumentInstruction = "This is the current text of a Word document open in the editor next to this conversation. " +
 	"Answer questions about the document from this text. Names, unit codes and abbreviations that appear in it " +
 	"(for example a department code such as PA05) take their meaning from the document; do not ask the user to explain them. " +
-	"Paragraph numbers in [ ] are the indexes rewrite_paragraphs takes."
+	"Each line starts with its unit and index, [đoạn N]: N is the paragraph index rewrite_paragraphs takes. It is a position in the file, never an article number — this document may have no articles at all, so quote the passage itself when you cite it, and only write \"Điều N\" when that text is in the document."
 
 const sessionDocumentsInstruction = "The conversation holds these documents, one card each: handle and file name, role, then when known the document type, số ký hiệu, issuer and date, a one-line gist, key points, and its sections as \"title [from–to]\". " +
 	"Section ranges are paragraph indexes of a working document and chunk (or line) indexes of a source: read a section with read_document_outline document=vbN from=<from>. " +
@@ -557,7 +577,7 @@ func renderOpenDocument(ws *types.DocumentWorkspace, layout *docformat.Layout, q
 		if text == "" {
 			continue
 		}
-		line := fmt.Sprintf("[%d] %s\n", i, flat.Replace(text))
+		line := unitIndexLine(types.DocumentProfileUnitParagraph, i, flat.Replace(text))
 		if prev >= 0 && i > prev+1 && window != nil && i == window.From {
 			line = "…\n" + line
 		}
@@ -595,7 +615,7 @@ func renderOpenDocument(ws *types.DocumentWorkspace, layout *docformat.Layout, q
 			if text == "" {
 				continue
 			}
-			line := fmt.Sprintf("[%d] %s\n", i, flat.Replace(text))
+			line := unitIndexLine(types.DocumentProfileUnitParagraph, i, flat.Replace(text))
 			n := utf8.RuneCountInString(line)
 			if extra+n > matchBudget {
 				break
