@@ -46,7 +46,10 @@ khác biệt đo được sẽ trộn cả những thứ đó vào. `--skip-pair
 khi đó các ngưỡng so sánh vô nghĩa. Kết quả JSON ghi khối `pair` cho biết đã kiểm hay chưa.
 
 Cấu hình hai agent được đọc lại sau lượt chạy: nếu ai đó sửa agent giữa chừng (băm
-cấu hình đổi) hoặc agent không đọc được nữa, lượt đó thành `INCOMPLETE`. Kết quả JSON
+cấu hình đổi) hoặc agent không đọc được nữa (đã thử lại 3 lần), lượt đó thành
+`INCOMPLETE`. Băm chỉ phủ chính bản ghi config, nên **không** bắt được: nội dung tham
+chiếu qua id (`system_prompt_id`, `context_template_id`) bị sửa, lời công thức của gói
+sửa lúc chạy mà `version` không đổi, và sửa rồi hoàn lại trong cùng lượt. Kết quả JSON
 ghi tên, `domain_packs`, băm cấu hình trước/sau của từng bên, và phiên bản gói
 (`pack_versions`, lấy từ `GET /api/v1/agents/domain-packs`) để về sau còn biết hai lượt
 có chạy trên cùng một bản gói hay không.
@@ -54,7 +57,8 @@ có chạy trên cùng một bản gói hay không.
 `--skip-pair-check` không còn ra `OVERALL PASS`: lượt chưa kiểm cặp — hoặc phải chấm
 footer/answer-block theo tên vai trò vì không đọc được cấu hình — luôn là `INCOMPLETE`
 (mã thoát 2), kèm dòng `[INCOMPLETE]` nói rõ lý do. Script đọc mã thoát không nhận nhầm
-một lượt chưa kiểm là lượt sạch.
+một lượt chưa kiểm là lượt sạch; kết quả JSON cũng ghi `verdict` và `doubts` cho script
+chỉ đọc file.
 
 Hai ngưỡng chỉ dành cho agent có gói (`must_have_footer`, `must_have_answer_block`)
 chấm theo `domain_packs` đọc từ chính agent đó, **không** theo tên vai trò. Ở

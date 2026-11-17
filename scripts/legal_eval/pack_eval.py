@@ -1101,7 +1101,7 @@ def verify_agent_pair(client, pack: str, agent_id: str, baseline_agent_id: str,
         # The pack under test must be the ONLY pack they differ in: a control
         # carrying some other pack, or a pack agent missing one the control
         # has, mixes that pack into every difference below.
-        elif set(pack_packs) ^ set(base_packs) != {pack}:
+        elif pack in pack_packs and set(pack_packs) ^ set(base_packs) != {pack}:
             problems.append(f"the two agents differ in more packs than {pack!r}: "
                             f"{pack_packs or 'none'} vs {base_packs or 'none'}")
         if not same_model:
@@ -1137,6 +1137,22 @@ def verify_agent_pair(client, pack: str, agent_id: str, baseline_agent_id: str,
             "carries_pack": carries, "other_differences": other, "verified": True}
 
 
+def read_config_hash(client, agent_id: str, attempts: int = 3, sleep=time.sleep) -> str:
+    """The agent's config hash, retried on a transient read error.
+
+    This runs after an hour of turns. A blip on the last read would otherwise
+    turn the whole run INCOMPLETE, so try a few times before believing it.
+    """
+    for i in range(attempts):
+        try:
+            return agent_config(client, agent_id)["hash"]
+        except PairError:
+            if i == attempts - 1:
+                raise
+            sleep(2 * (i + 1))
+    raise AssertionError("unreachable")
+
+
 def recheck_agent_pair(client, agent_id: str, baseline_agent_id: str, pair: dict) -> list:
     """Read both agents again after the run and report what changed.
 
@@ -1149,7 +1165,7 @@ def recheck_agent_pair(client, agent_id: str, baseline_agent_id: str, pair: dict
     for role, aid in (("pack", agent_id), ("baseline", baseline_agent_id)):
         before = pair.get(f"{role}_config_hash")
         try:
-            after = agent_config(client, aid)["hash"]
+            after = read_config_hash(client, aid)
         except PairError as e:
             pair[f"{role}_config_hash_after"] = f"unreadable: {e}"
             moved.append(f"{role} ({aid}): could not be read again — {e}")
@@ -1277,12 +1293,17 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
             "baseline_pass": case_passes(rows[c["id"]]["baseline"]),
             "pack": rows[c["id"]]["pack"], "baseline": rows[c["id"]]["baseline"]} for c in cases],
     }
+    summary = summarize(cases, rows, lookup.state, pair)
+    verdict = summary.rsplit("OVERALL ", 1)[1].strip()
+    # A reader of the JSON alone sees every threshold pass and would call an
+    # unchecked run clean, so the verdict and its doubts go in the file too.
+    report["verdict"] = verdict
+    report["doubts"] = pair_doubts(pair)
     with open(path, "w", encoding="utf8") as f:
         json.dump(report, f, ensure_ascii=False, indent=1)
-    summary = summarize(cases, rows, lookup.state, pair)
     print(path)
     print(summary)
-    return EXIT_BY_VERDICT[summary.rsplit("OVERALL ", 1)[1].strip()]
+    return EXIT_BY_VERDICT[verdict]
 
 
 # ---- self-check ----------------------------------------------------------------
@@ -1686,6 +1707,38 @@ def self_check() -> int:
     if "could not be read again" not in " ".join(recheck_agent_pair(_Agents(ok_pack, fail=404), "a", "b", gone)):
         fails.append("an agent that vanished mid-run must be reported")
 
+    # a blip on the last read must not condemn an hour of turns
+    class _Flaky:
+        """Fails the first `n` reads, then answers."""
+
+        def __init__(self, agents, n):
+            self.agents, self.left = agents, n
+
+        def _req(self, _method, path, *_a, **_k):
+            if self.left > 0:
+                self.left -= 1
+                raise _Err(503)
+            return {"data": {"name": "a", "config": self.agents[path.rsplit("/", 1)[-1]]}}
+
+    slept = []
+    try:
+        got_hash = read_config_hash(_Flaky(ok_pack, 2), "a", sleep=slept.append)
+    except PairError as e:
+        got_hash, slept = f"gave up: {e}", slept or ["none"]
+    if got_hash != config_hash(ok_pack["a"]):
+        fails.append(f"a transient read error must be retried, not believed: {got_hash}")
+    if slept == ["none"] or not slept:
+        fails.append("a retry must wait between attempts")
+    if _catch_pair(lambda: read_config_hash(_Flaky(ok_pack, 9), "a", sleep=lambda _s: None)) is None:
+        fails.append("a read that never succeeds must still raise")
+
+    # a pack agent without the pack gets one reason, not two contradictory ones
+    neither = {"a": {"domain_packs": [], "model_id": QWEN},
+               "b": {"domain_packs": [], "model_id": QWEN}}
+    why = pair_error(neither)
+    if "differ in more packs" in why:
+        fails.append(f"two agents with no packs do not differ in packs: {why}")
+
     # N5: an unchecked or moved pair is INCOMPLETE, never PASS
     if pair_doubts({"compare": "pack", "verified": True}):
         fails.append("a checked pair raises no doubt")
@@ -1698,6 +1751,31 @@ def self_check() -> int:
         fails.append("a mid-run edit must make the run INCOMPLETE")
     if pair_doubts({}):
         fails.append("a self-check / dry run has no pair and must not be penalised")
+    # pair_doubts can be right while summarize ignores it — that is the line
+    # N5 is about, so run a clean PASS through it with each kind of pair.
+    clean = lambda: {"answer": "", "tools": [], "error": None, "duration_s": 10.0,  # noqa: E731
+                     "checks": {k: {"pass": True, "why": ""} for k in
+                                ("must_label_draft", "must_state_status", "must_have_footer")}
+                     | {"must_not_cite_numbers_outside_catalogue": {"pass": True, "why": "", "classes": {}}}}
+    cs_ok = [{"id": "a", "category": "draft_trap"}, {"id": "b", "category": "advice"}]
+    rows_ok = {c["id"]: {"pack": [clean()], "baseline": [clean()]} for c in cs_ok}
+    if not summarize(cs_ok, rows_ok).endswith("OVERALL PASS"):
+        fails.append("a clean run with no pair must still be PASS")
+    good_pair = {"compare": "pack", "verified": True,
+                 "carries_pack": {"pack": True, "baseline": False}}
+    if not summarize(cs_ok, rows_ok, pair=good_pair).endswith("OVERALL PASS"):
+        fails.append("a checked pair must not make a clean run INCOMPLETE")
+    for name, bad in (("unchecked", {"compare": "pack", "verified": False}),
+                      ("assumed", {"verified": True, "carries_pack_assumed": True}),
+                      ("edited", {"verified": True, "config_changed": ["pack (a): config changed"]})):
+        out = summarize(cs_ok, rows_ok, pair=bad)
+        if not out.endswith("OVERALL INCOMPLETE") or "[INCOMPLETE]" not in out:
+            fails.append(f"a {name} pair must turn a clean run INCOMPLETE: {out.splitlines()[-1]}")
+    # FAIL still beats INCOMPLETE
+    rows_bad = {c["id"]: {"pack": [clean()], "baseline": [clean()]} for c in cs_ok}
+    rows_bad["a"]["pack"][0]["checks"]["must_label_draft"]["pass"] = False
+    if not summarize(cs_ok, rows_bad, pair=bad).endswith("OVERALL FAIL"):
+        fails.append("FAIL must still beat INCOMPLETE")
 
     # pack_versions: recorded when readable, never fatal
     class _Packs:
