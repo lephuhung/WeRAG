@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import hashlib
 import json
 import os
 import re
@@ -851,6 +852,25 @@ def pair_headline(pair: dict) -> str:
     return f"so sánh: {mode} — {sides}{tail}"
 
 
+def pair_doubts(pair: dict) -> list:
+    """Why the comparison thresholds of this run cannot be read at face value.
+
+    Any entry makes the run INCOMPLETE (exit 2) rather than PASS: a run whose
+    pair was never checked, or whose agents were edited while it ran, must not
+    hand a green exit code to a script that only reads the verdict.
+    """
+    if not pair:
+        return []
+    doubts = []
+    if not pair.get("verified"):
+        doubts.append("cặp agent chưa được kiểm (--skip-pair-check): các ngưỡng so sánh "
+                      "không đọc được")
+    if pair.get("carries_pack_assumed"):
+        doubts.append("không đọc được cấu hình agent: ngưỡng footer/answer-block chấm theo "
+                      "tên vai trò, có thể sai bên")
+    return doubts + list(pair.get("config_changed") or [])
+
+
 def summarize(cases: list, rows: dict, lookup_state: str = "", pair: dict | None = None) -> str:
     lines = []
     head = pair_headline(pair or {})
@@ -914,6 +934,9 @@ def summarize(cases: list, rows: dict, lookup_state: str = "", pair: dict | None
                     bad = [f"error: {r['error']}"]
                 if bad:
                     lines.append(f"  {c['id']} {agent}#{i + 1}: " + " | ".join(bad))
+    doubts = pair_doubts(pair or {})
+    incomplete |= bool(doubts)
+    lines += [f"[INCOMPLETE] {d}" for d in doubts]
     lines.append("OVERALL " + overall_verdict(failed, incomplete))
     return "\n".join(lines)
 
@@ -997,8 +1020,30 @@ def agent_config(client, agent_id: str) -> dict:
         raise PairError(f"agent {agent_id}: the API answered {type(got).__name__}, not JSON "
                         f"(wrong --base-url?)")
     data = got.get("data") if isinstance(got.get("data"), dict) else got
-    cfg = data.get("config")
-    return {"name": data.get("name") or agent_id, "config": cfg if isinstance(cfg, dict) else {}}
+    cfg = data.get("config") if isinstance(data.get("config"), dict) else {}
+    return {"name": data.get("name") or agent_id, "config": cfg, "hash": config_hash(cfg)}
+
+
+def config_hash(cfg: dict) -> str:
+    """A short digest of one agent config, for telling "same config" from
+    "edited between the two reads"."""
+    canonical = json.dumps(cfg or {}, sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
+
+
+def pack_versions(client) -> dict:
+    """{pack name: "version (as_of)"} from the build under test, so a later
+    reader can tell whether two runs used the same pack. Best effort: a run
+    is not worth failing over a missing version line."""
+    try:
+        got = client._req("GET", "/api/v1/agents/domain-packs", "domain packs")
+    except Exception as e:  # noqa: BLE001
+        return {"error": str(e)[:200]}
+    data = got.get("data") if isinstance(got, dict) else None
+    if not isinstance(data, list):
+        return {"error": f"the API answered {type(data).__name__}, not a list"}
+    return {d.get("name"): f"{d.get('version') or '?'} ({d.get('as_of') or '?'})"
+            for d in data if isinstance(d, dict) and d.get("name")}
 
 
 def _catch_pair(fn):
@@ -1053,6 +1098,12 @@ def verify_agent_pair(client, pack: str, agent_id: str, baseline_agent_id: str,
             problems.append(f"--baseline-agent-id {baseline_agent_id} ({base_agent['name']}) also "
                             f"carries {pack!r}, so it is not a control for the pack. Pass "
                             f"--compare model if a model A/B is what you meant.")
+        # The pack under test must be the ONLY pack they differ in: a control
+        # carrying some other pack, or a pack agent missing one the control
+        # has, mixes that pack into every difference below.
+        elif set(pack_packs) ^ set(base_packs) != {pack}:
+            problems.append(f"the two agents differ in more packs than {pack!r}: "
+                            f"{pack_packs or 'none'} vs {base_packs or 'none'}")
         if not same_model:
             problems.append(f"the two agents run different models ({pack_model or 'default'} vs "
                             f"{base_model or 'default'}), so a difference would mix the pack and "
@@ -1062,6 +1113,10 @@ def verify_agent_pair(client, pack: str, agent_id: str, baseline_agent_id: str,
             problems.append(f"--compare model wants both agents on {pack!r}, but "
                             f"{baseline_agent_id} ({base_agent['name']}) has "
                             f"{base_packs or 'none'}")
+        elif set(pack_packs) != set(base_packs):
+            # the model is meant to be the only difference
+            problems.append(f"--compare model wants the same packs on both sides, but they are "
+                            f"{pack_packs} vs {base_packs}")
         if same_model:
             problems.append(f"--compare model wants different models, but both agents run "
                             f"{pack_model or 'default'}")
@@ -1076,8 +1131,35 @@ def verify_agent_pair(client, pack: str, agent_id: str, baseline_agent_id: str,
     print(f"agent pair ({compare}): {pack_agent['name']} [{pack_model or 'default model'}] vs "
           f"{base_agent['name']} [{base_model or 'default model'}]", flush=True)
     return {"compare": compare, "pack_model": pack_model, "baseline_model": base_model,
+            "pack_name": pack_agent["name"], "baseline_name": base_agent["name"],
             "pack_domain_packs": pack_packs, "baseline_domain_packs": base_packs,
+            "pack_config_hash": pack_agent["hash"], "baseline_config_hash": base_agent["hash"],
             "carries_pack": carries, "other_differences": other, "verified": True}
+
+
+def recheck_agent_pair(client, agent_id: str, baseline_agent_id: str, pair: dict) -> list:
+    """Read both agents again after the run and report what changed.
+
+    The pair is read once, before the first turn. A run takes an hour; an
+    agent edited halfway through would be reported under the config it had at
+    the start. Records the second hash in `pair` and returns the roles that
+    moved — the summary turns those into INCOMPLETE.
+    """
+    moved = []
+    for role, aid in (("pack", agent_id), ("baseline", baseline_agent_id)):
+        before = pair.get(f"{role}_config_hash")
+        try:
+            after = agent_config(client, aid)["hash"]
+        except PairError as e:
+            pair[f"{role}_config_hash_after"] = f"unreadable: {e}"
+            moved.append(f"{role} ({aid}): could not be read again — {e}")
+            continue
+        pair[f"{role}_config_hash_after"] = after
+        if before and after != before:
+            moved.append(f"{role} ({aid}): config changed during the run ({before} → {after})")
+    if moved:
+        pair["config_changed"] = moved
+    return moved
 
 
 def grade_run(r: dict, case: dict, agent: str, carries: dict, catalogue: list,
@@ -1144,6 +1226,9 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
         pair = {"compare": getattr(args, "compare", "pack"), "verified": False,
                 "carries_pack": getattr(e, "carries", None)}
     carries = pack_flags(pair)
+    pair["pack_versions"] = pack_versions(client)
+    if isinstance(pair["pack_versions"], dict) and args.pack in pair["pack_versions"]:
+        print(f"pack {args.pack}: {pair['pack_versions'][args.pack]}", flush=True)
     lookup = LegalCatalogueLookup(client)
     if catalogue:
         lookup(catalogue[0])  # probe: a 401/403 disables the lookup before the run
@@ -1173,6 +1258,10 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
     with ThreadPoolExecutor(max(1, args.parallel)) as ex:
         for fut in as_completed([ex.submit(one, j) for j in jobs]):
             fut.result()
+
+    if pair.get("verified"):
+        for line in recheck_agent_pair(client, args.agent_id, args.baseline_agent_id, pair):
+            print(f"[warn] {line}", flush=True)
 
     os.makedirs(os.path.join(HERE, "results"), exist_ok=True)
     path = args.out or os.path.join(HERE, "results", f"pack-{args.pack}-{time.strftime('%Y%m%d-%H%M%S')}.json")
@@ -1556,6 +1645,77 @@ def self_check() -> int:
                              "carries_pack_assumed": True})
     if "giả định" not in assumed:
         fails.append(f"a fallback to the role name must not read as a fact: {assumed}")
+
+    # N3: the pack under test must be the only pack the two differ in
+    other_pack = {"a": {"domain_packs": [PACK], "model_id": QWEN},
+                  "b": {"domain_packs": ["other-pack"], "model_id": QWEN}}
+    if "differ in more packs" not in pair_error(other_pack):
+        fails.append("a control carrying a different pack must be refused")
+    extra_on_pack = {"a": {"domain_packs": [PACK, "other-pack"], "model_id": QWEN},
+                     "b": {"domain_packs": [], "model_id": QWEN}}
+    if "differ in more packs" not in pair_error(extra_on_pack):
+        fails.append("a pack agent carrying an extra pack must be refused")
+    shared_other = {"a": {"domain_packs": [PACK, "other-pack"], "model_id": QWEN},
+                    "b": {"domain_packs": ["other-pack"], "model_id": QWEN}}
+    if pair_error(shared_other):
+        fails.append(f"a pack both sides share is not a difference: {pair_error(shared_other)}")
+    model_extra = {"a": {"domain_packs": [PACK, "other-pack"], "model_id": DEEPSEEK},
+                   "b": {"domain_packs": [PACK], "model_id": QWEN}}
+    if "same packs on both sides" not in pair_error(model_extra, "model"):
+        fails.append("a model A/B with different packs must be refused")
+
+    # N4: the config is read again at the end, and a change is reported
+    if config_hash({"a": 1, "b": [2]}) != config_hash({"b": [2], "a": 1}):
+        fails.append("config_hash must not depend on key order")
+    if config_hash({"a": 1}) == config_hash({"a": 2}):
+        fails.append("config_hash must change with the config")
+    before = pair(ok_pack)
+    if not before.get("pack_config_hash") or before["pack_config_hash"] == before["baseline_config_hash"]:
+        fails.append("the pair block must record a hash per side")
+    unchanged = dict(before)
+    if recheck_agent_pair(_Agents(ok_pack), "a", "b", unchanged) or unchanged.get("config_changed"):
+        fails.append("an untouched pair must not be reported as changed")
+    edited = {"a": {"domain_packs": [PACK], "model_id": QWEN, "temperature": 0.9},
+              "b": {"domain_packs": [], "model_id": QWEN}}
+    moved = dict(before)
+    if "config changed during the run" not in " ".join(recheck_agent_pair(_Agents(edited), "a", "b", moved)):
+        fails.append("an agent edited mid-run must be reported")
+    if not moved.get("config_changed"):
+        fails.append("a mid-run edit must be recorded in the pair block")
+    gone = dict(before)
+    if "could not be read again" not in " ".join(recheck_agent_pair(_Agents(ok_pack, fail=404), "a", "b", gone)):
+        fails.append("an agent that vanished mid-run must be reported")
+
+    # N5: an unchecked or moved pair is INCOMPLETE, never PASS
+    if pair_doubts({"compare": "pack", "verified": True}):
+        fails.append("a checked pair raises no doubt")
+    if not pair_doubts({"compare": "pack", "verified": False}):
+        fails.append("--skip-pair-check must make the run INCOMPLETE")
+    if not pair_doubts({"verified": True, "carries_pack_assumed": True}):
+        fails.append("grading by role name must make the run INCOMPLETE")
+    if pair_doubts({"verified": True, "config_changed": ["pack (a): config changed"]}) != \
+            ["pack (a): config changed"]:
+        fails.append("a mid-run edit must make the run INCOMPLETE")
+    if pair_doubts({}):
+        fails.append("a self-check / dry run has no pair and must not be penalised")
+
+    # pack_versions: recorded when readable, never fatal
+    class _Packs:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def _req(self, *_a, **_k):
+            if isinstance(self.payload, Exception):
+                raise self.payload
+            return self.payload
+
+    if pack_versions(_Packs({"data": [{"name": PACK, "version": "1.4", "as_of": "2026-10-01"}]})) \
+            != {PACK: "1.4 (2026-10-01)"}:
+        fails.append("the pack version must be recorded")
+    if "error" not in pack_versions(_Packs({"data": "nope"})):
+        fails.append("a malformed pack list is an error, not a crash")
+    if "error" not in pack_versions(_Packs(RuntimeError("down"))):
+        fails.append("an unreachable pack list must not fail the run")
 
     # the code block and the footer are not graded as the model's text
     block_answer = "Kết luận ngắn." + ANSWER_BLOCK_MARKER + "Theo Nghị định 12/2027/NĐ-CP …" + footer

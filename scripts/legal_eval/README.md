@@ -38,12 +38,23 @@ hai agent qua API và từ chối chạy khi cặp không khớp `--compare`:
 
 | `--compare` | Yêu cầu | Dùng để |
 |---|---|---|
-| `pack` (mặc định) | agent chính có gói, baseline **không** có, **cùng** `model_id` | đo giá trị của gói |
-| `model` | **cả hai** có gói, `model_id` **khác** nhau | A/B model trên cùng gói |
+| `pack` (mặc định) | agent chính có gói, baseline **không** có, hai tập `domain_packs` lệch nhau **đúng** gói đó, **cùng** `model_id` | đo giá trị của gói |
+| `model` | **cả hai** có gói, hai tập `domain_packs` **bằng** nhau, `model_id` **khác** nhau | A/B model trên cùng gói |
 
 Lệch ở khoá cấu hình nào khác (ví dụ `allowed_tools`) thì chỉ cảnh báo, nhưng mọi
 khác biệt đo được sẽ trộn cả những thứ đó vào. `--skip-pair-check` bỏ qua guard;
 khi đó các ngưỡng so sánh vô nghĩa. Kết quả JSON ghi khối `pair` cho biết đã kiểm hay chưa.
+
+Cấu hình hai agent được đọc lại sau lượt chạy: nếu ai đó sửa agent giữa chừng (băm
+cấu hình đổi) hoặc agent không đọc được nữa, lượt đó thành `INCOMPLETE`. Kết quả JSON
+ghi tên, `domain_packs`, băm cấu hình trước/sau của từng bên, và phiên bản gói
+(`pack_versions`, lấy từ `GET /api/v1/agents/domain-packs`) để về sau còn biết hai lượt
+có chạy trên cùng một bản gói hay không.
+
+`--skip-pair-check` không còn ra `OVERALL PASS`: lượt chưa kiểm cặp — hoặc phải chấm
+footer/answer-block theo tên vai trò vì không đọc được cấu hình — luôn là `INCOMPLETE`
+(mã thoát 2), kèm dòng `[INCOMPLETE]` nói rõ lý do. Script đọc mã thoát không nhận nhầm
+một lượt chưa kiểm là lượt sạch.
 
 Hai ngưỡng chỉ dành cho agent có gói (`must_have_footer`, `must_have_answer_block`)
 chấm theo `domain_packs` đọc từ chính agent đó, **không** theo tên vai trò. Ở
