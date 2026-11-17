@@ -393,9 +393,15 @@ MODEL_WRITTEN_KEYS = {"query", "queries", "original_query", "section", "effectiv
 
 # What persist.go leaves behind once it has dropped the chunk bodies
 # (persistStripFields / compactToolOutput): the model read text the event
-# stream no longer carries, so the evidence is incomplete, not absent.
-OMITTED_CONTENT_MARK = "content omitted from history"
+# stream no longer carries, so the evidence is incomplete, not absent. The
+# two display types word their replacement differently — "content omitted"
+# for a chunk list, "details omitted" for a keyword search — and count with
+# different keys, so match on the display type and treat any of the counts
+# as "there was something to read".
+OMITTED_CONTENT_MARKS = ("omitted from history",)
 OMITTED_DISPLAY_TYPES = {"knowledge_chunks_list", "grep_results"}
+OMITTED_COUNT_KEYS = ("fetched_chunks", "count", "total_matches", "result_count", "document_count")
+OMITTED_BODY_KEYS = ("chunks", "chunk_results")
 
 
 def _prune_model_written(value: Any) -> Any:
@@ -428,17 +434,22 @@ def _content_was_omitted(turn: Turn) -> List[str]:
     out = []
     for t in turn.tool_calls:
         data = t.data if isinstance(t.data, dict) else {}
-        if OMITTED_CONTENT_MARK in (t.output or ""):
+        output = t.output or ""
+        if any(mark in output for mark in OMITTED_CONTENT_MARKS):
             out.append(t.name)
             continue
-        if data.get("display_type") in OMITTED_DISPLAY_TYPES:
-            fetched = data.get("fetched_chunks") or data.get("count") or 0
+        if data.get("display_type") not in OMITTED_DISPLAY_TYPES:
+            continue
+        if any(data.get(k) for k in OMITTED_BODY_KEYS):
+            continue  # the bodies are still here
+        counted = 0
+        for key in OMITTED_COUNT_KEYS:
             try:
-                fetched = int(fetched)
+                counted = max(counted, int(data.get(key) or 0))
             except (TypeError, ValueError):
-                fetched = 0
-            if fetched > 0 and not data.get("chunks") and not data.get("chunk_results"):
-                out.append(t.name)
+                continue
+        if counted > 0:
+            out.append(t.name)
     return out
 
 

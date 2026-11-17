@@ -54,9 +54,37 @@ class ArticleRefsGrounded(unittest.TestCase):
         self.assertEqual(res.status, SKIP, res.detail)
         self.assertIn("not in the event stream", res.detail)
 
-    def test_skips_a_grep_whose_chunk_results_were_dropped(self):
-        grep = tool("find_in_documents", output="", display_type="grep_results", fetched_chunks=4)
+    def test_skips_a_grep_result_in_the_shape_persist_go_really_writes(self):
+        """persist.go words and counts a grep differently from a chunk list.
+
+        It writes "details omitted from history" and counts with
+        total_matches / document_count — reading only fetched_chunks and
+        "content omitted" missed this shape entirely.
+        """
+        grep = tool(
+            "grep_chunks",
+            output="Keyword search found 7 matching chunks across 2 document(s) "
+                   "(details omitted from history)",
+            display_type="grep_results",
+            total_matches=7,
+            document_count=2,
+        )
+        res = self.check(turn("Xem Điều 27.", grep))
+        self.assertEqual(res.status, SKIP, res.detail)
+
+    def test_skips_a_grep_counted_only_by_total_matches(self):
+        """Same shape with the sentence rewritten: the display type decides."""
+        grep = tool("grep_chunks", output="", display_type="grep_results", total_matches=4)
         self.assertEqual(self.check(turn("Xem Điều 27.", grep)).status, SKIP)
+
+    def test_find_in_documents_keeps_its_output_so_it_is_checked(self):
+        """find_in_documents is display_type document_search, not stripped."""
+        found = tool("find_in_documents", output="Điều 27. Lưu trữ dữ liệu",
+                     display_type="document_search")
+        self.assertEqual(self.check(turn("Điều 27 …", found)).status, PASS)
+        self.assertEqual(
+            self.check(turn("Điều 28 …", found)).status, WARN,
+            "a tool that kept its output must still be checked")
 
     def test_still_checks_when_the_chunks_are_present(self):
         listed = tool(
