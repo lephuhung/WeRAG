@@ -951,6 +951,90 @@ class LegalCatalogueLookup:
         return LOOKUP_FAILED
 
 
+class PairError(Exception):
+    """The pack/baseline pair cannot answer the question the run asks."""
+
+
+def agent_config(client, agent_id: str) -> dict:
+    """Read one agent over the API. Raises PairError when it cannot be read."""
+    try:
+        got = client._req("GET", f"/api/v1/agents/{agent_id}", f"agent {agent_id}")
+    except Exception as e:  # noqa: BLE001 - the status is in the message
+        status = getattr(e, "status", None) or getattr(e, "status_code", None)
+        raise PairError(f"could not read agent {agent_id}: {e}") from e
+    if not isinstance(got, dict):
+        raise PairError(f"agent {agent_id}: the API answered {type(got).__name__}, not JSON "
+                        f"(wrong --base-url?)")
+    data = got.get("data") if isinstance(got.get("data"), dict) else got
+    cfg = data.get("config")
+    return {"name": data.get("name") or agent_id, "config": cfg if isinstance(cfg, dict) else {}}
+
+
+def pair_differences(pack_cfg: dict, base_cfg: dict) -> list:
+    """Config keys that differ, other than the pack and the model."""
+    skip = {"domain_packs", "model_id"}
+    keys = (set(pack_cfg) | set(base_cfg)) - skip
+    return sorted(k for k in keys if pack_cfg.get(k) != base_cfg.get(k))
+
+
+def verify_agent_pair(client, pack: str, agent_id: str, baseline_agent_id: str,
+                      compare: str = "pack") -> dict:
+    """Check that the two agents differ in what the run claims to measure.
+
+    A comparison threshold ("không xấu hơn baseline", the latency ratio) only
+    means something when the two agents differ in one thing. The ids are typed
+    on the command line and say nothing about their config, so read it.
+
+    compare="pack" (default): the pack agent carries the pack, the baseline
+    does not, and both run the same model.
+    compare="model": both carry the pack and the models differ — what the
+    2026-11-08 DeepSeek-vs-Qwen A/B did (agent 28552de3 is deepseek-flash with
+    the pack, aca20bff is Qwen with the same pack). Two runs after it reused
+    that pair while reporting pack-vs-control thresholds, so their regression
+    and latency numbers were a model comparison wearing the wrong label.
+    """
+    pack_agent, base_agent = agent_config(client, agent_id), agent_config(client, baseline_agent_id)
+    pack_packs = pack_agent["config"].get("domain_packs") or []
+    base_packs = base_agent["config"].get("domain_packs") or []
+    pack_model = pack_agent["config"].get("model_id") or ""
+    base_model = base_agent["config"].get("model_id") or ""
+    same_model = pack_model == base_model
+
+    problems = []
+    if pack not in pack_packs:
+        problems.append(f"--agent-id {agent_id} ({pack_agent['name']}) does not carry the pack "
+                        f"{pack!r} (domain_packs={pack_packs or 'none'})")
+    if compare == "pack":
+        if pack in base_packs:
+            problems.append(f"--baseline-agent-id {baseline_agent_id} ({base_agent['name']}) also "
+                            f"carries {pack!r}, so it is not a control for the pack. Pass "
+                            f"--compare model if a model A/B is what you meant.")
+        if not same_model:
+            problems.append(f"the two agents run different models ({pack_model or 'default'} vs "
+                            f"{base_model or 'default'}), so a difference would mix the pack and "
+                            f"the model")
+    else:  # compare == "model"
+        if pack not in base_packs:
+            problems.append(f"--compare model wants both agents on {pack!r}, but "
+                            f"{baseline_agent_id} ({base_agent['name']}) has "
+                            f"{base_packs or 'none'}")
+        if same_model:
+            problems.append(f"--compare model wants different models, but both agents run "
+                            f"{pack_model or 'default'}")
+    if problems:
+        raise PairError("the pack/baseline pair does not measure what this run reports:\n  "
+                        + "\n  ".join(problems))
+
+    other = pair_differences(pack_agent["config"], base_agent["config"])
+    if other:
+        print(f"[warn] the two agents also differ in {', '.join(other)}: a difference below mixes "
+              f"those in", flush=True)
+    print(f"agent pair ({compare}): {pack_agent['name']} [{pack_model or 'default model'}] vs "
+          f"{base_agent['name']} [{base_model or 'default model'}]", flush=True)
+    return {"compare": compare, "pack_model": pack_model, "baseline_model": base_model,
+            "other_differences": other, "verified": True}
+
+
 def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
     sys.path.insert(0, os.path.join(HERE, "..", "doc_assistant_eval"))
     from werag_client import WeragClient  # noqa: PLC0415 — needs requests, imported only for a live run
@@ -966,6 +1050,15 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
         raise SystemExit("token missing (--token / --token-file / WERAG_TOKEN, or --email + WERAG_PASSWORD); see mint_token.py")
     client = WeragClient(args.base_url, token, tenant_id=args.tenant or None, timeout=args.turn_timeout)
     client.me()  # fail fast on a bad token
+    try:
+        pair = verify_agent_pair(client, args.pack, args.agent_id, args.baseline_agent_id,
+                                 getattr(args, "compare", "pack"))
+    except PairError as e:
+        if not getattr(args, "skip_pair_check", False):
+            raise SystemExit(str(e) + "\npass --skip-pair-check to run anyway (the comparison "
+                                      "thresholds will be meaningless)") from e
+        print(f"[warn] {e}\n[warn] --skip-pair-check given: running anyway", flush=True)
+        pair = {"compare": getattr(args, "compare", "pack"), "verified": False}
     lookup = LegalCatalogueLookup(client)
     if catalogue:
         lookup(catalogue[0])  # probe: a 401/403 disables the lookup before the run
@@ -1004,6 +1097,7 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
     path = args.out or os.path.join(HERE, "results", f"pack-{args.pack}-{time.strftime('%Y%m%d-%H%M%S')}.json")
     report = {
         "pack": args.pack, "agent_id": args.agent_id, "baseline_agent_id": args.baseline_agent_id,
+        "pair": pair,
         "runs": args.runs, "kb_ids": args.kb, "started": time.strftime("%Y-%m-%d %H:%M:%S"),
         "legal_catalogue_lookup": lookup.state, "legal_catalogue_lookup_failures": lookup.failures,
         "thresholds": [{"name": n, "value": v, "target": t, "pass": ok, "n": cnt, "note": note}
@@ -1234,6 +1328,78 @@ def self_check() -> int:
     lk = LegalCatalogueLookup(_Client([403]), sleep=lambda _s: None)
     if lk("76/2025/QH15") != LOOKUP_DISABLED or lk.state != "disabled" or lk("x/2000/QH1") != LOOKUP_DISABLED:
         fails.append("403 disables the lookup")
+    # verify_agent_pair: the pair must differ in what the run reports.
+    # The "different model" case is here because the first version read
+    # config.summary_model_id, a chat-request field no agent config carries,
+    # so the check never fired and the run printed "model (default)" for two
+    # agents on different models.
+    QWEN, DEEPSEEK, PACK = "qwen-id", "deepseek-id", "opc-vn-business-law"
+
+    class _Agents:
+        """Answers GET /api/v1/agents/:id from a dict of id -> config."""
+
+        def __init__(self, agents, fail=None):
+            self.agents, self.fail = agents, fail
+
+        def _req(self, _method, path, *_a, **_k):
+            if self.fail is not None:
+                raise _Err(self.fail)
+            if isinstance(self.agents, str):
+                return self.agents
+            aid = path.rsplit("/", 1)[-1]
+            return {"data": {"name": aid, "config": self.agents[aid]}}
+
+    def pair(agents, compare="pack", fail=None):
+        return verify_agent_pair(_Agents(agents, fail), PACK, "a", "b", compare)
+
+    def pair_error(agents, compare="pack", fail=None):
+        try:
+            pair(agents, compare, fail)
+        except PairError as e:
+            return str(e)
+        return ""
+
+    ok_pack = {"a": {"domain_packs": [PACK], "model_id": QWEN},
+               "b": {"domain_packs": [], "model_id": QWEN}}
+    if pair(ok_pack).get("compare") != "pack":
+        fails.append("verify_agent_pair rejects a correct pack/control pair")
+    if "also\n  carries" in pair_error(ok_pack) or pair_error(ok_pack):
+        fails.append(f"a correct pair must raise nothing: {pair_error(ok_pack)}")
+
+    both_pack = {"a": {"domain_packs": [PACK], "model_id": DEEPSEEK},
+                 "b": {"domain_packs": [PACK], "model_id": QWEN}}
+    if "not a control for the pack" not in pair_error(both_pack):
+        fails.append("a baseline carrying the pack must be refused in pack mode")
+    # the same pair IS the model A/B, and must be allowed in model mode
+    got = pair(both_pack, "model")
+    if got.get("pack_model") != DEEPSEEK or got.get("baseline_model") != QWEN:
+        fails.append(f"model mode must report both models: {got}")
+
+    diff_model = {"a": {"domain_packs": [PACK], "model_id": DEEPSEEK},
+                  "b": {"domain_packs": [], "model_id": QWEN}}
+    if "different models" not in pair_error(diff_model):
+        fails.append("pack mode must refuse two different models")
+
+    same_model_both_pack = {"a": {"domain_packs": [PACK], "model_id": QWEN},
+                            "b": {"domain_packs": [PACK], "model_id": QWEN}}
+    if "different models" not in pair_error(same_model_both_pack, "model"):
+        fails.append("model mode must refuse two identical models")
+
+    no_pack = {"a": {"domain_packs": [], "model_id": QWEN},
+               "b": {"domain_packs": [], "model_id": QWEN}}
+    if "does not carry the pack" not in pair_error(no_pack):
+        fails.append("an agent without the pack must not be the pack side")
+
+    if "could not read agent" not in pair_error(ok_pack, fail=404):
+        fails.append("a 404 on the agent read must be refused, not warned")
+    if "not JSON" not in pair_error("<html>login</html>"):
+        fails.append("a non-JSON answer must be refused")
+
+    extra_tools = {"a": {"domain_packs": [PACK], "model_id": QWEN, "allowed_tools": ["thinking"]},
+                   "b": {"domain_packs": [], "model_id": QWEN}}
+    if pair(extra_tools).get("other_differences") != ["allowed_tools"]:
+        fails.append("a pair differing beyond the pack must be reported")
+
     # the code block and the footer are not graded as the model's text
     block_answer = "Kết luận ngắn." + ANSWER_BLOCK_MARKER + "Theo Nghị định 12/2027/NĐ-CP …" + footer
     if body_of(block_answer) != "Kết luận ngắn." or not has_answer_block(block_answer):
@@ -1359,6 +1525,12 @@ def build_parser(ap: argparse.ArgumentParser | None = None) -> argparse.Argument
     ap.add_argument("--cases", default="", help="cases file (default domain-packs/<pack>/evals/cases.jsonl)")
     ap.add_argument("--agent-id", default="", help="agent with the pack (domain_packs=[pack])")
     ap.add_argument("--baseline-agent-id", default="", help="same agent without the pack")
+    ap.add_argument("--compare", choices=("pack", "model"), default="pack",
+                    help="what the two agents differ in: pack (default — baseline has no pack, same model) "
+                         "or model (both on the pack, different models)")
+    ap.add_argument("--skip-pair-check", action="store_true",
+                    help="run even when the pair does not match --compare (the comparison thresholds "
+                         "become meaningless)")
     ap.add_argument("--runs", type=int, default=3, help="runs per case and agent (latency = median)")
     ap.add_argument("--dry-run", action="store_true", help="validate the cases file and exit (offline)")
     ap.add_argument("--self-check", action="store_true", help="test the check functions and exit (offline)")

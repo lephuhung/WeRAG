@@ -33,6 +33,28 @@ WERAG_TOKEN=$(python ../doc_assistant_eval/mint_token.py ...) \
     --agent-id <agent có gói> --baseline-agent-id <agent không gói> --runs 3 [--kb <id> ...] [--ids opc-01,opc-02]
 ```
 
+**Cặp agent quyết định ngưỡng so sánh có nghĩa hay không.** `run_suite` đọc cấu hình
+hai agent qua API và từ chối chạy khi cặp không khớp `--compare`:
+
+| `--compare` | Yêu cầu | Dùng để |
+|---|---|---|
+| `pack` (mặc định) | agent chính có gói, baseline **không** có, **cùng** `model_id` | đo giá trị của gói |
+| `model` | **cả hai** có gói, `model_id` **khác** nhau | A/B model trên cùng gói |
+
+Lệch ở khoá cấu hình nào khác (ví dụ `allowed_tools`) thì chỉ cảnh báo, nhưng mọi
+khác biệt đo được sẽ trộn cả những thứ đó vào. `--skip-pair-check` bỏ qua guard;
+khi đó các ngưỡng so sánh vô nghĩa. Kết quả JSON ghi khối `pair` cho biết đã kiểm hay chưa.
+
+Trên dev: `aca20bff` = "[eval] OPC có gói" (Qwen), `a93d142a` = "[eval] OPC không gói"
+(Qwen) — đây là cặp cho `--compare pack`. `28552de3` = "Tư vấn doanh nghiệp nhỏ – thuế"
+(deepseek-flash, **có** gói) nên cặp `28552de3` vs `aca20bff` là `--compare model`, không
+phải đối chứng gói: hai lượt chạy 2026-11-11 và 2026-11-16 dùng cặp này mà báo theo ngưỡng
+pack-vs-control, nên số liệu hồi quy và độ trễ của chúng là so model dưới nhãn sai.
+
+Lưu ý `--ids` chỉ chạy tập con: ngưỡng "không xấu hơn baseline" chỉ so các case thuộc
+`draft_trap`/`status`/`refusal`, nên một lượt chỉ chạy tập con thì các ngưỡng khác không
+phủ hết bộ.
+
 Đăng nhập: `--token`/`--token-file`/`WERAG_TOKEN` (xem `mint_token.py`) hoặc `--email` + `WERAG_PASSWORD`. Không truyền `--kb`
 thì agent dùng KB đã cấu hình. Báo cáo JSON: `results/pack-<gói>-<thời điểm>.json`; tóm tắt in PASS/FAIL theo từng ngưỡng.
 
