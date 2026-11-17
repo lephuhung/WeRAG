@@ -91,7 +91,12 @@ def wait_format_check(name: str):
     return f
 
 
-BASE = [C.no_turn_error(), C.answer_nonempty(), C.no_phantom_button(), C.no_tool_loop()]
+# article_refs_grounded rides in BASE on purpose: naming an article the
+# evidence never mentioned is a failure any answer can commit, not a
+# property of one scenario. WARN while it is new — promote to FAIL once a
+# full run shows it only fires where it should.
+BASE = [C.no_turn_error(), C.answer_nonempty(), C.no_phantom_button(), C.no_tool_loop(),
+        C.article_refs_grounded()]
 
 
 def S(*extra: C.Check) -> List[C.Check]:

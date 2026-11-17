@@ -375,6 +375,125 @@ def grounded_or_refused(status: str = FAIL) -> Check:
     return run
 
 
+# Article references. The answer side is strict — one spelling, no case
+# folding, no trailing digits swallowed — because a false "this is invented"
+# is the worst outcome here. The evidence side is deliberately generous: it
+# folds case, normalises to NFC, and expands the list and range spellings a
+# document actually uses ("Điều 13, 14", "Điều 5 đến Điều 9").
+ANSWER_ARTICLE_RE = re.compile(r"Điều\s+(\d{1,3})(?!\d)")
+EVIDENCE_ARTICLE_RE = re.compile(r"(?i)điều\s+(\d{1,3})(?!\d)")
+# "Điều 13, 14 và 15" — the numbers trailing a first "Điều N".
+EVIDENCE_LIST_RE = re.compile(r"(?i)điều\s+\d{1,3}((?:\s*(?:,|và|&)\s*\d{1,3})+)")
+# "Điều 5 đến Điều 9", "Điều 5-9", "từ Điều 5 tới Điều 9".
+EVIDENCE_RANGE_RE = re.compile(r"(?i)điều\s+(\d{1,3})\s*(?:-|–|đến|tới)\s*(?:điều\s+)?(\d{1,3})(?!\d)")
+
+# Tool data keys the model wrote itself: crediting them would let the model
+# ask "section: Điều 4" and thereby "prove" Điều 4 to itself.
+MODEL_WRITTEN_KEYS = {"query", "queries", "original_query", "section", "effective_query"}
+
+# What persist.go leaves behind once it has dropped the chunk bodies
+# (persistStripFields / compactToolOutput): the model read text the event
+# stream no longer carries, so the evidence is incomplete, not absent.
+OMITTED_CONTENT_MARK = "content omitted from history"
+OMITTED_DISPLAY_TYPES = {"knowledge_chunks_list", "grep_results"}
+
+
+def _prune_model_written(value: Any) -> Any:
+    """A copy of value without the keys the model supplied."""
+    if isinstance(value, dict):
+        return {k: _prune_model_written(v) for k, v in value.items() if k not in MODEL_WRITTEN_KEYS}
+    if isinstance(value, list):
+        return [_prune_model_written(v) for v in value]
+    return value
+
+
+def _answer_articles(text: str) -> List[int]:
+    return [int(n) for n in ANSWER_ARTICLE_RE.findall(text or "")]
+
+
+def _evidence_articles(text: str) -> set:
+    t = unicodedata.normalize("NFC", text or "")
+    found = {int(n) for n in EVIDENCE_ARTICLE_RE.findall(t)}
+    for tail in EVIDENCE_LIST_RE.findall(t):
+        found |= {int(n) for n in re.findall(r"\d{1,3}", tail)}
+    for lo, hi in EVIDENCE_RANGE_RE.findall(t):
+        lo, hi = int(lo), int(hi)
+        if 0 < hi - lo <= 60:
+            found |= set(range(lo, hi + 1))
+    return found
+
+
+def _content_was_omitted(turn: Turn) -> List[str]:
+    """Tools whose text the stream dropped, so evidence cannot be judged."""
+    out = []
+    for t in turn.tool_calls:
+        data = t.data if isinstance(t.data, dict) else {}
+        if OMITTED_CONTENT_MARK in (t.output or ""):
+            out.append(t.name)
+            continue
+        if data.get("display_type") in OMITTED_DISPLAY_TYPES:
+            fetched = data.get("fetched_chunks") or data.get("count") or 0
+            try:
+                fetched = int(fetched)
+            except (TypeError, ValueError):
+                fetched = 0
+            if fetched > 0 and not data.get("chunks") and not data.get("chunk_results"):
+                out.append(t.name)
+    return out
+
+
+def article_refs_grounded(status: str = WARN) -> Check:
+    """Every article the answer names should appear in the turn's evidence.
+
+    The grounding gate only asks whether *some* evidence came back, so an
+    answer that cites a document and then lists articles out of the model's
+    own memory passes it. This check looks at the article numbers themselves.
+
+    It only runs when the evidence is complete. persist.go strips chunk
+    bodies from the stream it replays (persistStripFields drops `chunks` /
+    `chunk_results`, and the output becomes "Listed N/M chunks … (content
+    omitted from history)"), so after a read_document or a grep the harness
+    can no longer see what the model read — judge.py carries the same caveat.
+    Those turns are SKIPped rather than accused: a false "this was invented"
+    is worse than a miss.
+
+    Two more limits worth knowing:
+      * No document scoping — Điều 5 of one law counts as evidence for
+        Điều 5 of another, so small numbers are weakly checked.
+      * Text injected straight into the prompt (the open document, the
+        document card's section list, the selection window) is not in the
+        stream either. Today's fixtures carry no "Điều N", so this does not
+        misfire; a quy chế fixture would need its text folded in here.
+    """
+
+    def run(turn: Turn, ctx: Dict[str, Any]) -> Result:
+        label = "articles named in the answer appear in the evidence"
+        cited = sorted(set(_answer_articles(turn.text)))
+        if not cited:
+            return Result(SKIP, label, "the answer names no article")
+        if not turn.tool_calls:
+            return Result(SKIP, label, "no tool ran (see the grounding check)")
+        if omitted := _content_was_omitted(turn):
+            return Result(SKIP, label,
+                          "content not in the event stream: " + ", ".join(sorted(set(omitted))))
+        known = set()
+        for t in turn.tool_calls:
+            known |= _evidence_articles(t.output)
+            try:
+                known |= _evidence_articles(json.dumps(_prune_model_written(t.data), ensure_ascii=False))
+            except (TypeError, ValueError):
+                pass
+        known |= _evidence_articles(turn.query or "")
+        missing = [c for c in cited if c not in known]
+        if not missing:
+            return Result(PASS, label, f"{len(cited)} article(s), all in the evidence")
+        return Result(status, label,
+                      "named but absent from the evidence: "
+                      + ", ".join(f"Điều {m}" for m in missing)
+                      + f" (of {len(cited)} named)")
+    return run
+
+
 def has_evidence(turn: Turn) -> List[str]:
     out = []
     for t in turn.tool_calls:
