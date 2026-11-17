@@ -846,6 +846,8 @@ def pair_headline(pair: dict) -> str:
     mode = {"pack": "so gói (pack vs không gói)",
             "model": "so model (hai agent cùng gói)"}.get(pair.get("compare"), pair.get("compare"))
     tail = "" if pair.get("verified") else "  [CHƯA KIỂM CẶP AGENT]"
+    if pair.get("carries_pack_assumed"):
+        sides += " (giả định — không đọc được cấu hình)"
     return f"so sánh: {mode} — {sides}{tail}"
 
 
@@ -1078,6 +1080,24 @@ def verify_agent_pair(client, pack: str, agent_id: str, baseline_agent_id: str,
             "carries_pack": carries, "other_differences": other, "verified": True}
 
 
+def grade_run(r: dict, case: dict, agent: str, carries: dict, catalogue: list,
+              drafts: list, lookup=None) -> dict:
+    """Score one finished run in place.
+
+    `agent` is only the role name ("pack"/"baseline"); whether the pack-only
+    thresholds apply comes from `carries`, which pack_flags() read off each
+    agent's own config. Scoring by role name was the N1 bug: in a model A/B
+    both sides carry the pack, and only the side called "pack" was held to
+    the footer and answer-block thresholds.
+    """
+    r["checks"] = {} if r.get("error") else grade(case, r["answer"], r["tools"], catalogue, drafts,
+                                                  carries[agent], lookup)
+    compact_tools_for_report(r["tools"])
+    r["answer_block"] = has_answer_block(r.get("answer") or "")
+    r["removed_numbers"] = (r.get("answer") or "").count(REMOVED_NUMBER_NOTE)
+    return r
+
+
 def pack_flags(pair: dict) -> dict:
     """Which side the pack-only thresholds (footer, answer block) apply to.
 
@@ -1141,11 +1161,7 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
             r = run_one(client, case, agent_id, args.kb)
         except Exception as e:  # noqa: BLE001
             r = {"answer": "", "tools": [], "error": str(e), "duration_s": 0}
-        r["checks"] = {} if r.get("error") else grade(case, r["answer"], r["tools"], catalogue, drafts,
-                                                       carries[agent], lookup)
-        compact_tools_for_report(r["tools"])
-        r["answer_block"] = has_answer_block(r.get("answer") or "")
-        r["removed_numbers"] = (r.get("answer") or "").count(REMOVED_NUMBER_NOTE)
+        grade_run(r, case, agent, carries, catalogue, drafts, lookup)
         with lock:
             rows[case["id"]][agent].append(r)
             done[0] += 1
@@ -1476,13 +1492,33 @@ def self_check() -> int:
         fails.append("the pair block must record each side's packs")
     # a rejected pair still knows who had the pack, so --skip-pair-check does
     # not fall back to the role name
-    try:
-        pair(both_pack)
-    except PairError as e:
-        if getattr(e, "carries", None) != {"pack": True, "baseline": True}:
-            fails.append(f"a refused pair must carry what was read: {getattr(e, 'carries', None)}")
+    refused = _catch_pair(lambda: pair(both_pack))
+    if refused is None:
+        fails.append("a baseline carrying the pack must still be refused in pack mode")
+    elif getattr(refused, "carries", None) != {"pack": True, "baseline": True}:
+        fails.append(f"a refused pair must carry what was read: {getattr(refused, 'carries', None)}")
     if getattr(_catch_pair(lambda: pair(ok_pack, fail=404)), "carries", "x") is not None:
         fails.append("an unreadable pair knows nothing and must say so")
+
+    # The call site itself. pack_flags can be right while run_suite still
+    # scores by role name — that is the line N1 was about, so test it: with
+    # both sides carrying the pack, the BASELINE run must be held to the
+    # pack-only thresholds too.
+    sym = {"id": "x", "category": "tax", "checks": {"must_have_footer": True,
+                                                    "must_have_answer_block": True}}
+    both = {"pack": True, "baseline": True}
+    for role in ("pack", "baseline"):
+        run = {"answer": "Trả lời.", "tools": [dict(search_tool)], "duration_s": 1}
+        graded = grade_run(run, sym, role, both, cat, drafts)
+        if "must_have_footer" not in graded["checks"]:
+            fails.append(f"{role} carries the pack, so it must be graded on the footer")
+    only_pack = {"pack": True, "baseline": False}
+    run = {"answer": "Trả lời.", "tools": [dict(search_tool)], "duration_s": 1}
+    if "must_have_footer" in grade_run(run, sym, "baseline", only_pack, cat, drafts)["checks"]:
+        fails.append("a baseline without the pack must not be graded on the footer")
+    err = grade_run({"answer": "", "tools": [], "error": "boom"}, sym, "pack", both, cat, drafts)
+    if err["checks"] != {}:
+        fails.append("an errored run is not graded")
 
     # the wiring: run_suite grades each role with this, so it must follow the
     # config and only fall back to the role name when nothing could be read
@@ -1516,6 +1552,10 @@ def self_check() -> int:
         fails.append(f"a model A/B must not read as a pack comparison: {model_head}")
     if "CHƯA KIỂM" not in pair_headline({"compare": "pack", "verified": False, "carries_pack": {}}):
         fails.append("an unverified pair must be marked in the summary")
+    assumed = pair_headline({"compare": "pack", "verified": False, "carries_pack": only_pack,
+                             "carries_pack_assumed": True})
+    if "giả định" not in assumed:
+        fails.append(f"a fallback to the role name must not read as a fact: {assumed}")
 
     # the code block and the footer are not graded as the model's text
     block_answer = "Kết luận ngắn." + ANSWER_BLOCK_MARKER + "Theo Nghị định 12/2027/NĐ-CP …" + footer
