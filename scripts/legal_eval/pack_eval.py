@@ -832,8 +832,28 @@ def number_class_runs(cases: list, rows: dict, cls: str, agent: str = "pack") ->
     return out
 
 
-def summarize(cases: list, rows: dict, lookup_state: str = "") -> str:
+def pair_headline(pair: dict) -> str:
+    """One line naming what the run compared, so a reader of the summary
+    alone cannot mistake a model A/B for a pack comparison."""
+    if not pair:
+        return ""
+    carries = pair.get("carries_pack") or {}
+    show_model = pair.get("compare") == "model"
+    sides = " / ".join(
+        f"{role} {'có gói' if carries.get(role) else 'không gói'}"
+        + (f" [{pair.get(role + '_model') or 'default'}]" if show_model else "")
+        for role in ("pack", "baseline"))
+    mode = {"pack": "so gói (pack vs không gói)",
+            "model": "so model (hai agent cùng gói)"}.get(pair.get("compare"), pair.get("compare"))
+    tail = "" if pair.get("verified") else "  [CHƯA KIỂM CẶP AGENT]"
+    return f"so sánh: {mode} — {sides}{tail}"
+
+
+def summarize(cases: list, rows: dict, lookup_state: str = "", pair: dict | None = None) -> str:
     lines = []
+    head = pair_headline(pair or {})
+    if head:
+        lines.append(head)
     if lookup_state:
         lines.append(f"legal_catalogue_lookup: {lookup_state}")
     by_cat = collections.defaultdict(lambda: {"pack": [0, 0], "baseline": [0, 0]})
@@ -952,7 +972,16 @@ class LegalCatalogueLookup:
 
 
 class PairError(Exception):
-    """The pack/baseline pair cannot answer the question the run asks."""
+    """The pack/baseline pair cannot answer the question the run asks.
+
+    `carries` holds {"pack": bool, "baseline": bool} — whether each side
+    actually has the pack — when both configs were read before the pair was
+    rejected. --skip-pair-check grades on that rather than on the role name.
+    """
+
+    def __init__(self, message: str, carries: dict | None = None):
+        super().__init__(message)
+        self.carries = carries
 
 
 def agent_config(client, agent_id: str) -> dict:
@@ -968,6 +997,15 @@ def agent_config(client, agent_id: str) -> dict:
     data = got.get("data") if isinstance(got.get("data"), dict) else got
     cfg = data.get("config")
     return {"name": data.get("name") or agent_id, "config": cfg if isinstance(cfg, dict) else {}}
+
+
+def _catch_pair(fn):
+    """The PairError fn raises (self-check helper)."""
+    try:
+        fn()
+    except PairError as e:
+        return e
+    return None
 
 
 def pair_differences(pack_cfg: dict, base_cfg: dict) -> list:
@@ -996,6 +1034,10 @@ def verify_agent_pair(client, pack: str, agent_id: str, baseline_agent_id: str,
     pack_agent, base_agent = agent_config(client, agent_id), agent_config(client, baseline_agent_id)
     pack_packs = pack_agent["config"].get("domain_packs") or []
     base_packs = base_agent["config"].get("domain_packs") or []
+    # Which side really has the pack. The pack-only thresholds are graded on
+    # this, never on the role name: in a model A/B both sides carry it, and
+    # grading only the side called "pack" judged one of them more strictly.
+    carries = {"pack": pack in pack_packs, "baseline": pack in base_packs}
     pack_model = pack_agent["config"].get("model_id") or ""
     base_model = base_agent["config"].get("model_id") or ""
     same_model = pack_model == base_model
@@ -1023,7 +1065,7 @@ def verify_agent_pair(client, pack: str, agent_id: str, baseline_agent_id: str,
                             f"{pack_model or 'default'}")
     if problems:
         raise PairError("the pack/baseline pair does not measure what this run reports:\n  "
-                        + "\n  ".join(problems))
+                        + "\n  ".join(problems), carries)
 
     other = pair_differences(pack_agent["config"], base_agent["config"])
     if other:
@@ -1032,7 +1074,28 @@ def verify_agent_pair(client, pack: str, agent_id: str, baseline_agent_id: str,
     print(f"agent pair ({compare}): {pack_agent['name']} [{pack_model or 'default model'}] vs "
           f"{base_agent['name']} [{base_model or 'default model'}]", flush=True)
     return {"compare": compare, "pack_model": pack_model, "baseline_model": base_model,
-            "other_differences": other, "verified": True}
+            "pack_domain_packs": pack_packs, "baseline_domain_packs": base_packs,
+            "carries_pack": carries, "other_differences": other, "verified": True}
+
+
+def pack_flags(pair: dict) -> dict:
+    """Which side the pack-only thresholds (footer, answer block) apply to.
+
+    It comes from each agent's own `domain_packs`, never from the role name:
+    in a model A/B both sides carry the pack, and grading only the side called
+    "pack" judged it more strictly than the baseline it was compared against.
+    Mutates `pair` so the result JSON records what was used.
+    """
+    carries = pair.get("carries_pack")
+    if not carries:
+        # Only reachable when no config could be read (--skip-pair-check after
+        # a failed read). The role name is the old, wrong rule; say so.
+        carries = {"pack": True, "baseline": False}
+        pair["carries_pack_assumed"] = True
+        print("[warn] the agent config could not be read: the pack-only thresholds "
+              "(footer, answer block) fall back to the role name", flush=True)
+    pair["carries_pack"] = carries
+    return carries
 
 
 def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
@@ -1058,7 +1121,9 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
             raise SystemExit(str(e) + "\npass --skip-pair-check to run anyway (the comparison "
                                       "thresholds will be meaningless)") from e
         print(f"[warn] {e}\n[warn] --skip-pair-check given: running anyway", flush=True)
-        pair = {"compare": getattr(args, "compare", "pack"), "verified": False}
+        pair = {"compare": getattr(args, "compare", "pack"), "verified": False,
+                "carries_pack": getattr(e, "carries", None)}
+    carries = pack_flags(pair)
     lookup = LegalCatalogueLookup(client)
     if catalogue:
         lookup(catalogue[0])  # probe: a 401/403 disables the lookup before the run
@@ -1076,8 +1141,8 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
             r = run_one(client, case, agent_id, args.kb)
         except Exception as e:  # noqa: BLE001
             r = {"answer": "", "tools": [], "error": str(e), "duration_s": 0}
-        r["checks"] = {} if r.get("error") else grade(case, r["answer"], r["tools"], catalogue, drafts, agent == "pack",
-                                                       lookup)
+        r["checks"] = {} if r.get("error") else grade(case, r["answer"], r["tools"], catalogue, drafts,
+                                                       carries[agent], lookup)
         compact_tools_for_report(r["tools"])
         r["answer_block"] = has_answer_block(r.get("answer") or "")
         r["removed_numbers"] = (r.get("answer") or "").count(REMOVED_NUMBER_NOTE)
@@ -1109,7 +1174,7 @@ def run_suite(args, cases: list, catalogue: list, drafts: list) -> int:
     }
     with open(path, "w", encoding="utf8") as f:
         json.dump(report, f, ensure_ascii=False, indent=1)
-    summary = summarize(cases, rows, lookup.state)
+    summary = summarize(cases, rows, lookup.state, pair)
     print(path)
     print(summary)
     return EXIT_BY_VERDICT[summary.rsplit("OVERALL ", 1)[1].strip()]
@@ -1399,6 +1464,58 @@ def self_check() -> int:
                    "b": {"domain_packs": [], "model_id": QWEN}}
     if pair(extra_tools).get("other_differences") != ["allowed_tools"]:
         fails.append("a pair differing beyond the pack must be reported")
+
+    # The pack-only thresholds follow the config, never the role name. Grading
+    # them by role judged the side called "pack" more strictly in a model A/B,
+    # where both sides carry the pack — the bias went to the baseline.
+    if pair(ok_pack).get("carries_pack") != {"pack": True, "baseline": False}:
+        fails.append("pack mode must report who carries the pack")
+    if pair(both_pack, "model").get("carries_pack") != {"pack": True, "baseline": True}:
+        fails.append("model mode: both sides carry the pack, so both must be graded on it")
+    if pair(both_pack, "model").get("baseline_domain_packs") != [PACK]:
+        fails.append("the pair block must record each side's packs")
+    # a rejected pair still knows who had the pack, so --skip-pair-check does
+    # not fall back to the role name
+    try:
+        pair(both_pack)
+    except PairError as e:
+        if getattr(e, "carries", None) != {"pack": True, "baseline": True}:
+            fails.append(f"a refused pair must carry what was read: {getattr(e, 'carries', None)}")
+    if getattr(_catch_pair(lambda: pair(ok_pack, fail=404)), "carries", "x") is not None:
+        fails.append("an unreadable pair knows nothing and must say so")
+
+    # the wiring: run_suite grades each role with this, so it must follow the
+    # config and only fall back to the role name when nothing could be read
+    if pack_flags(pair(both_pack, "model")) != {"pack": True, "baseline": True}:
+        fails.append("pack_flags must follow the config in a model A/B")
+    if pack_flags(pair(ok_pack)) != {"pack": True, "baseline": False}:
+        fails.append("pack_flags must follow the config in a pack run")
+    unread = {"compare": "pack", "verified": False, "carries_pack": None}
+    if pack_flags(unread) != {"pack": True, "baseline": False} or not unread.get("carries_pack_assumed"):
+        fails.append("an unreadable config falls back to the role name and must record that")
+    kept = {"compare": "pack", "verified": False, "carries_pack": {"pack": True, "baseline": True}}
+    if pack_flags(kept) != {"pack": True, "baseline": True} or kept.get("carries_pack_assumed"):
+        fails.append("--skip-pair-check must still grade on what was read")
+
+    # grading is symmetric once with_pack comes from the config
+    sym_case = {"checks": {"must_have_footer": True, "must_have_answer_block": True}}
+    for side in (True, False):
+        got = set(grade(sym_case, "Trả lời.", [search_tool], cat, drafts, with_pack=side))
+        want = {"must_have_footer", "must_have_answer_block"} if side else set()
+        if got != want:
+            fails.append(f"with_pack={side} should grade {want or 'nothing'}, graded {got}")
+
+    pack_head = pair_headline({"compare": "pack", "verified": True,
+                               "carries_pack": {"pack": True, "baseline": False}})
+    model_head = pair_headline({"compare": "model", "verified": True, "pack_model": DEEPSEEK,
+                                "baseline_model": QWEN,
+                                "carries_pack": {"pack": True, "baseline": True}})
+    if "so gói" not in pack_head or "baseline không gói" not in pack_head:
+        fails.append(f"the summary must name the comparison: {pack_head}")
+    if "so model" not in model_head or DEEPSEEK not in model_head or "baseline có gói" not in model_head:
+        fails.append(f"a model A/B must not read as a pack comparison: {model_head}")
+    if "CHƯA KIỂM" not in pair_headline({"compare": "pack", "verified": False, "carries_pack": {}}):
+        fails.append("an unverified pair must be marked in the summary")
 
     # the code block and the footer are not graded as the model's text
     block_answer = "Kết luận ngắn." + ANSWER_BLOCK_MARKER + "Theo Nghị định 12/2027/NĐ-CP …" + footer

@@ -45,6 +45,13 @@ Lệch ở khoá cấu hình nào khác (ví dụ `allowed_tools`) thì chỉ c�
 khác biệt đo được sẽ trộn cả những thứ đó vào. `--skip-pair-check` bỏ qua guard;
 khi đó các ngưỡng so sánh vô nghĩa. Kết quả JSON ghi khối `pair` cho biết đã kiểm hay chưa.
 
+Hai ngưỡng chỉ dành cho agent có gói (`must_have_footer`, `must_have_answer_block`)
+chấm theo `domain_packs` đọc từ chính agent đó, **không** theo tên vai trò. Ở
+`--compare model` cả hai bên đều có gói nên cả hai cùng bị chấm; trước 2026-11-17 chúng
+chấm theo vai trò, nên bên "pack" bị chấm chặt hơn baseline và số case đạt của hai bên
+không so trực tiếp được (các lượt A/B model trước ngày đó lệch theo hướng có lợi cho
+baseline). Dòng đầu bản tóm tắt nay nói rõ chế độ so sánh và bên nào có gói.
+
 Trên dev: `aca20bff` = "[eval] OPC có gói" (Qwen), `a93d142a` = "[eval] OPC không gói"
 (Qwen) — đây là cặp cho `--compare pack`. `28552de3` = "Tư vấn doanh nghiệp nhỏ – thuế"
 (deepseek-flash, **có** gói) nên cặp `28552de3` vs `aca20bff` là `--compare model`, không
