@@ -1153,7 +1153,8 @@ def read_config_hash(client, agent_id: str, attempts: int = 3, sleep=time.sleep)
     raise AssertionError("unreachable")
 
 
-def recheck_agent_pair(client, agent_id: str, baseline_agent_id: str, pair: dict) -> list:
+def recheck_agent_pair(client, agent_id: str, baseline_agent_id: str, pair: dict,
+                       sleep=time.sleep) -> list:
     """Read both agents again after the run and report what changed.
 
     The pair is read once, before the first turn. A run takes an hour; an
@@ -1165,7 +1166,7 @@ def recheck_agent_pair(client, agent_id: str, baseline_agent_id: str, pair: dict
     for role, aid in (("pack", agent_id), ("baseline", baseline_agent_id)):
         before = pair.get(f"{role}_config_hash")
         try:
-            after = read_config_hash(client, aid)
+            after = read_config_hash(client, aid, sleep=sleep)
         except PairError as e:
             pair[f"{role}_config_hash_after"] = f"unreadable: {e}"
             moved.append(f"{role} ({aid}): could not be read again — {e}")
@@ -1704,7 +1705,8 @@ def self_check() -> int:
     if not moved.get("config_changed"):
         fails.append("a mid-run edit must be recorded in the pair block")
     gone = dict(before)
-    if "could not be read again" not in " ".join(recheck_agent_pair(_Agents(ok_pack, fail=404), "a", "b", gone)):
+    if "could not be read again" not in " ".join(
+            recheck_agent_pair(_Agents(ok_pack, fail=404), "a", "b", gone, sleep=lambda _s: None)):
         fails.append("an agent that vanished mid-run must be reported")
 
     # a blip on the last read must not condemn an hour of turns
@@ -1731,6 +1733,15 @@ def self_check() -> int:
         fails.append("a retry must wait between attempts")
     if _catch_pair(lambda: read_config_hash(_Flaky(ok_pack, 9), "a", sleep=lambda _s: None)) is None:
         fails.append("a read that never succeeds must still raise")
+    # the call site: recheck_agent_pair must go through the retry, or a blip
+    # on the last read still condemns the run
+    flaky_pair = dict(before)
+    naps = []
+    moved_blip = recheck_agent_pair(_Flaky(ok_pack, 1), "a", "b", flaky_pair, sleep=naps.append)
+    if moved_blip or flaky_pair.get("config_changed"):
+        fails.append(f"a blip on the end-of-run read must be retried, not reported: {moved_blip}")
+    if not naps:
+        fails.append("recheck must pass its sleep through to the retry")
 
     # a pack agent without the pack gets one reason, not two contradictory ones
     neither = {"a": {"domain_packs": [], "model_id": QWEN},

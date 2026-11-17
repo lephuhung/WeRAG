@@ -58,7 +58,8 @@ có chạy trên cùng một bản gói hay không.
 footer/answer-block theo tên vai trò vì không đọc được cấu hình — luôn là `INCOMPLETE`
 (mã thoát 2), kèm dòng `[INCOMPLETE]` nói rõ lý do. Script đọc mã thoát không nhận nhầm
 một lượt chưa kiểm là lượt sạch; kết quả JSON cũng ghi `verdict` và `doubts` cho script
-chỉ đọc file.
+chỉ đọc file. Lưu ý `doubts` chỉ chứa lý do **về cặp agent**: một lượt có thể là
+`INCOMPLETE` với `doubts` rỗng khi lý do là một ngưỡng không đo được (`pass: null`).
 
 Hai ngưỡng chỉ dành cho agent có gói (`must_have_footer`, `must_have_answer_block`)
 chấm theo `domain_packs` đọc từ chính agent đó, **không** theo tên vai trò. Ở
