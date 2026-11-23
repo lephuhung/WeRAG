@@ -352,6 +352,7 @@ func RegisterSystemAdminRoutes(
 		// each one is born with its Tenant Admin (an existing account or
 		// one created here). The SuperAdmin does not join the workspace.
 		adminRoutes.POST("/tenants", handler.ProvisionTenant)
+		adminRoutes.GET("/tenants", handler.ListSystemTenants)
 		adminRoutes.PUT("/tenants/:tenant_id", handler.UpdateSystemTenant)
 		adminRoutes.GET("/tenants/:tenant_id/members", handler.ListSystemTenantMembers)
 		adminRoutes.POST("/tenants/:tenant_id/members", handler.AddSystemTenantMember)

@@ -393,6 +393,54 @@ func (h *SystemHandler) RemoveSystemTenantMember(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
+// SystemTenantEntry is one organization on the SuperAdmin organizations
+// page: the directory entry plus its active member count.
+type SystemTenantEntry struct {
+	ID          uint64 `json:"id"`
+	Name        string `json:"name"`
+	MemberCount int64  `json:"member_count"`
+}
+
+// ListSystemTenants godoc
+// @Summary      List organizations with their member counts
+// @Description  Every visible, enabled organization's id, name and active member count, for the SuperAdmin organizations page.
+// @Tags         Quản trị hệ thống
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Security     Bearer
+// @Router       /system/admin/tenants [get]
+func (h *SystemHandler) ListSystemTenants(c *gin.Context) {
+	ctx := c.Request.Context()
+	if h.memberSvc == nil {
+		c.Error(apperrors.NewInternalServerError("membership service unavailable"))
+		return
+	}
+	tenants, err := h.tenantSvc.ListTenants(ctx)
+	if err != nil {
+		logger.Errorf(ctx, "ListSystemTenants: %v", err)
+		c.Error(apperrors.NewInternalServerError("failed to list organizations"))
+		return
+	}
+	out := make([]SystemTenantEntry, 0, len(tenants))
+	for _, t := range tenants {
+		// same set as the organization directory, minus the hidden
+		// platform tenants the member endpoints refuse anyway
+		if t == nil || t.Status == "disabled" || t.IsHiddenTenant() {
+			continue
+		}
+		// One count per organization: the list is a few dozen rows, and
+		// ListMembersPage counts exactly what the members dialog lists.
+		_, total, cerr := h.memberSvc.ListMembersPage(ctx, t.ID, "", 1, 1)
+		if cerr != nil {
+			logger.Errorf(ctx, "ListSystemTenants: count members of tenant=%d: %v", t.ID, cerr)
+			c.Error(apperrors.NewInternalServerError("failed to count members"))
+			return
+		}
+		out = append(out, SystemTenantEntry{ID: t.ID, Name: t.Name, MemberCount: total})
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": out})
+}
+
 // ListSystemTenantMembers godoc
 // @Summary      List the members of any organization
 // @Tags         Quản trị hệ thống

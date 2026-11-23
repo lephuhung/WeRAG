@@ -21,13 +21,14 @@ import { getCurrentUser } from "@/lib/api/auth";
 import {
   addSystemTenantMember,
   listSystemTenantMembers,
+  listSystemTenants,
   provisionTenant,
   removeSystemTenantMember,
   updateSystemTenant,
+  type SystemTenantEntry,
   type SystemTenantMember,
   type TenantMemberTarget,
 } from "@/lib/api/system";
-import { listTenantDirectory, type TenantDirectoryEntry } from "@/lib/api/tenants";
 import { ApiError } from "@/lib/api-client";
 import {
   TENANT_NAME_MAX_LENGTH,
@@ -131,13 +132,13 @@ export default function AdminTenants() {
   const toast = useToast();
   const confirm = useConfirm();
   const [allowed, setAllowed] = useState<boolean | null>(null);
-  const [units, setUnits] = useState<TenantDirectoryEntry[]>([]);
+  const [units, setUnits] = useState<SystemTenantEntry[]>([]);
   const [unitsLoading, setUnitsLoading] = useState(false);
   const [q, setQ] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const [selected, setSelected] = useState<TenantDirectoryEntry | null>(null);
+  const [selected, setSelected] = useState<SystemTenantEntry | null>(null);
   const [members, setMembers] = useState<SystemTenantMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const memberRequest = useRef(0);
@@ -162,7 +163,7 @@ export default function AdminTenants() {
   const loadUnits = useCallback(async () => {
     setUnitsLoading(true);
     try {
-      setUnits(await listTenantDirectory());
+      setUnits(await listSystemTenants());
       setError("");
     } catch (e) {
       if (e instanceof ApiError && e.status === 403) setAllowed(false);
@@ -172,13 +173,17 @@ export default function AdminTenants() {
     }
   }, []);
 
-  const loadMembers = useCallback(async (unit: TenantDirectoryEntry) => {
+  const loadMembers = useCallback(async (unit: SystemTenantEntry) => {
     const request = ++memberRequest.current;
     setMembers([]);
     setMembersLoading(true);
     try {
       const result = await listSystemTenantMembers(unit.id);
-      if (request === memberRequest.current) setMembers(result);
+      if (request === memberRequest.current) {
+        setMembers(result);
+        // the card's count follows every reload (open, add, remove)
+        setUnits((list) => list.map((u) => (u.id === unit.id ? { ...u, member_count: result.length } : u)));
+      }
     } catch (e) {
       if (request !== memberRequest.current) return;
       setMembers([]);
@@ -251,7 +256,8 @@ export default function AdminTenants() {
       setUnitDesc("");
       setAdmin(emptyPerson);
       await loadUnits();
-      if (res.tenant) setSelected({ id: res.tenant.id, name: res.tenant.name });
+      // born with its Tenant Admin; opening it reloads the real count
+      if (res.tenant) setSelected({ id: res.tenant.id, name: res.tenant.name, member_count: 1 });
       toast.success(t("tnp.created"));
     });
   };
@@ -289,7 +295,7 @@ export default function AdminTenants() {
     }
     await run(async () => {
       const res = await updateSystemTenant(selected.id, { name });
-      const renamed = { id: selected.id, name: res.data?.name ?? name };
+      const renamed = { ...selected, name: res.data?.name ?? name };
       setUnits((list) => list.map((u) => (u.id === renamed.id ? renamed : u)));
       setSelected(renamed);
       setRenameTo(null);
@@ -398,7 +404,10 @@ export default function AdminTenants() {
             >
               <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface-strong text-lg font-semibold text-ink" aria-hidden="true">{u.name.slice(0, 1).toUpperCase()}</span>
               <span className="w-full break-words text-[15px] font-semibold leading-snug text-ink">{u.name}</span>
-              <span className="caption font-mono text-muted-soft">#{u.id}</span>
+              <span className="flex w-full items-center justify-between gap-2">
+                <span className="caption text-muted">{t("tnp.memberCount", { n: u.member_count })}</span>
+                <span className="caption font-mono text-muted-soft">#{u.id}</span>
+              </span>
             </button>
           ))}
         </div>

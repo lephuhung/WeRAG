@@ -1338,6 +1338,22 @@ export interface SystemTenantMember {
   joined_at: string;
 }
 
+/** One organization on the SuperAdmin organizations page. */
+export interface SystemTenantEntry {
+  id: number;
+  name: string;
+  /** Active members (the same rows the members dialog lists). */
+  member_count: number;
+}
+
+/* GET /api/v1/system/admin/tenants — every enabled organization with its
+ * member count (SuperAdmin only). */
+export function listSystemTenants(): Promise<SystemTenantEntry[]> {
+  return apiGet<{ success: boolean; data?: SystemTenantEntry[] }>("/api/v1/system/admin/tenants").then(
+    (r) => r.data ?? [],
+  );
+}
+
 export function listSystemTenantMembers(tenantId: number): Promise<SystemTenantMember[]> {
   return apiGet<{ success: boolean; data?: SystemTenantMember[] }>(
     `/api/v1/system/admin/tenants/${tenantId}/members`,
