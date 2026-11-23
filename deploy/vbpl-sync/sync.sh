@@ -151,6 +151,15 @@ crawl() {
 import_catalogue() {
 	legal-catalog-import -documents "$WORK/documents.jsonl" -relations "$WORK/relations.jsonl" \
 		-snapshot "$(date -u +%F)" -enqueue-no-fulltext -auto-ingest-html -run-id "${RUN_ID:-0}" 2>&1 | tee -a "$STEP_LOG"
+	# The relations read from the documents' own texts ("toàn văn") are
+	# derived from the held copies: re-read them after every import, so an
+	# importer that replaces relations wholesale (an image built before the
+	# 2026-11-21 fix wiped them on 2026-11-20 and 2026-11-22) cannot leave the
+	# Party documents without a graph. VBPL_TEXT_RELATION_SOURCES="" turns it off.
+	local sources=${VBPL_TEXT_RELATION_SOURCES-dangcongsan}
+	if [ -n "$sources" ]; then
+		legal-catalog-import -rebuild-text-relations "$sources" 2>&1 | tee -a "$STEP_LOG"
+	fi
 }
 # --remove also deletes the HTML of documents that turned fully expired;
 # it needs delete rights, which append-only (backup) keys lack.

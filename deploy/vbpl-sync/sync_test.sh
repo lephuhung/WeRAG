@@ -97,6 +97,16 @@ check "heartbeats during a long crawl" has '-run-id 42 -run-heartbeat'
 sleep 0.3
 check "the ticker and its sleep are gone after the run" bash -c "! pgrep -fx 'sleep 1.07' >/dev/null"
 
+# every import is followed by a rebuild of the "toàn văn" relations
+reset
+bash "$T/sync.sh" >"$T/out" 2>&1 || true
+check "the import runs" has '-documents '
+check "the text relations of dangcongsan are rebuilt after it" has '-rebuild-text-relations dangcongsan'
+check "the rebuild comes after the import" awk '/^-documents /{i=NR} /^-rebuild-text-relations /{r=NR} END{exit !(i && r > i)}' "$T/calls"
+reset
+VBPL_TEXT_RELATION_SOURCES= bash "$T/sync.sh" >"$T/out" 2>&1 || true
+check "an empty VBPL_TEXT_RELATION_SOURCES skips the rebuild" lacks '-rebuild-text-relations'
+
 # a stop (docker stop / SIGTERM) during the crawl
 reset
 CRAWL_SLEEP=60 bash "$T/sync.sh" >"$T/out" 2>&1 &

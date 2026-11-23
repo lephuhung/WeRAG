@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/application/service"
 	"github.com/Tencent/WeKnora/internal/legalcatalog"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
@@ -77,9 +78,17 @@ func main() {
 		"Queue documents in force the portal publishes no full text for, so an operator can add them from another source")
 	autoIngest := flag.Bool("auto-ingest-html", false,
 		"Queue documents with a portal full text and no public KB copy for the backend's auto-ingest worker")
+	rebuildText := flag.String("rebuild-text-relations", "",
+		"Comma-separated sources (e.g. dangcongsan): re-read the \"toàn văn\" relations of their documents from the held copies' text, then exit")
 	flag.Parse()
 	if runControlRequested() {
 		if err := runControl(); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+	if strings.TrimSpace(*rebuildText) != "" {
+		if err := rebuildTextRelations(*rebuildText); err != nil {
 			log.Fatal(err)
 		}
 		return
@@ -685,4 +694,31 @@ func parseVNDate(s string) *time.Time {
 		return nil
 	}
 	return &t
+}
+
+// rebuildTextRelations re-reads the relations written in the documents' own
+// texts (source label types.LegalRelationSourceText) for every document of
+// each source. They are derived data: the held copies keep the text, so a
+// rebuild restores exactly what an older importer's wholesale relation
+// replace wiped (2026-11-20 and 2026-11-22). sync.sh runs it after every
+// import so the edges survive even an importer image built before the fix.
+func rebuildTextRelations(sources string) error {
+	db, err := openDB()
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	ctx := context.Background()
+	for _, src := range strings.Split(sources, ",") {
+		src = strings.TrimSpace(src)
+		if src == "" {
+			continue
+		}
+		st, err := service.BuildLegalTextRelations(ctx, db, src, nil)
+		if err != nil {
+			return fmt.Errorf("rebuild text relations of %s: %w", src, err)
+		}
+		log.Printf("text relations %s: documents=%d without_text=%d citations=%d unresolved=%d stored=%d",
+			src, st.Documents, st.WithoutText, st.Citations, st.Unresolved, st.Relations)
+	}
+	return nil
 }

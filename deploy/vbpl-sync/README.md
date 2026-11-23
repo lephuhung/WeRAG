@@ -13,6 +13,12 @@ Container chạy `sync.sh` theo lịch (`VBPL_SYNC_CRON`, mặc định 02:30 gi
    văn bản có HTML mà kho chưa có, hoặc toàn văn trên cổng đã đổi so với bản
    trong kho, thì backend tự nạp (`status=auto_ingest`);
    hiệu lực trong danh mục và trên văn bản đã nạp luôn theo vbpl.vn;
+   ngay sau đó đọc lại quan hệ ghi trong toàn văn (nhãn "toàn văn") của các
+   nguồn `VBPL_TEXT_RELATION_SOURCES` (mặc định `dangcongsan`; để trống thì bỏ
+   qua) bằng `legal-catalog-import -rebuild-text-relations`, để lần nạp không
+   bao giờ làm mất đồ thị văn bản Đảng. **Sửa `cmd/legal-catalog-import` hay
+   `internal/legalcatalog` thì phải build lại image này**: image dịch sẵn
+   chương trình nhập, backend chạy bằng air không kéo theo nó;
 4. `mc mirror` thư mục làm việc lên MinIO (`$VBPL_S3_BUCKET/$VBPL_S3_PREFIX`).
 
 Mỗi lần chạy được ghi vào bảng `legal_sync_runs` (migration 000198) qua các cờ
@@ -70,7 +76,7 @@ Biến `.env` (đều tuỳ chọn; mặc định theo `BACKUP_S3_*`): `VBPL_S3_
 `VBPL_S3_REMOVE=1` (xoá trên MinIO HTML của văn bản đã hết hiệu lực; cần khoá
 có quyền xoá — khoá backup chỉ ghi thêm), `VBPL_SYNC_CRON`, `VBPL_SYNC_ON_START=1` (chạy ngay khi khởi động),
 `VBPL_WORK_DIR` (thư mục host, mặc định `/home/orca/data/vbpl`),
-`VBPL_UID`/`VBPL_GID` (chủ thư mục đó), `VBPL_CRAWL_ARGS` (thêm tham số crawler).
+`VBPL_UID`/`VBPL_GID` (chủ thư mục đó), `VBPL_CRAWL_ARGS` (thêm tham số crawler), `VBPL_TEXT_RELATION_SOURCES` (nguồn đọc lại quan hệ toàn văn sau mỗi lần nạp, mặc định `dangcongsan`).
 
 Lần crawl đầu tiên khoảng 5 giờ (≈18 nghìn văn bản, ~1 văn bản/giây); các
 lần sau chỉ vài phút đến vài chục phút. HTML có ảnh nhúng: vài GB trên MinIO.
