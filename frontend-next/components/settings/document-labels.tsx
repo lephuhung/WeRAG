@@ -14,7 +14,7 @@ import { Pager } from "@/components/settings/pager";
 import { SectionHeader } from "@/components/settings/section-header";
 import { useToast } from "@/components/toast";
 import { useAuth } from "@/lib/auth";
-import { formatDateTime } from "@/lib/datetime";
+import { formatDate, formatTime } from "@/lib/datetime";
 import { useT, type LocaleKey } from "@/lib/i18n";
 import { listAllTenants, type TenantInfo } from "@/lib/api/tenants";
 import {
@@ -30,7 +30,7 @@ const PAGE_SIZE = 50;
 /* The list pages through the first 2,000 rows (server cap); the export has all. */
 const MAX_ROWS = 2000;
 /* Code points of a long paragraph shown around the flagged span. */
-const PARAGRAPH_WINDOW = 160;
+const PARAGRAPH_WINDOW = 220;
 
 const VERDICTS: Record<string, LocaleKey> = {
   not_error: "labels.verdict.not_error",
@@ -160,13 +160,16 @@ export function DocumentLabels() {
   }, [filters.kind, t]);
 
   const pageCount = Math.max(1, Math.ceil(Math.min(total, MAX_ROWS) / PAGE_SIZE));
+  /* Shares of the table width, not pixels: the paragraph column is the one
+   * without a width, so it takes everything the others leave (≈35 % for the
+   * SuperAdmin, ≈48 % otherwise) instead of being squeezed to a sliver. */
   const columns = [
-    { key: "time", header: t("labels.col.time"), className: "w-[150px]" },
-    ...(isSystemAdmin ? [{ key: "org", header: t("labels.col.organization"), className: "w-[160px]" }] : []),
+    { key: "time", header: t("labels.col.time"), className: "w-[11%]" },
+    ...(isSystemAdmin ? [{ key: "org", header: t("labels.col.organization"), className: "w-[13%]" }] : []),
     { key: "paragraph", header: t("labels.col.paragraph") },
-    { key: "suggestion", header: t("labels.col.suggestion"), className: "w-[200px]" },
-    { key: "verdict", header: t("labels.col.verdict"), className: "w-[170px]" },
-    { key: "model", header: t("labels.col.model"), className: "w-[170px]" },
+    { key: "suggestion", header: t("labels.col.suggestion"), className: "w-[16%]" },
+    { key: "verdict", header: t("labels.col.verdict"), className: "w-[13%]" },
+    { key: "model", header: t("labels.col.model"), className: "w-[12%]" },
   ];
 
   return (
@@ -270,14 +273,20 @@ export function DocumentLabels() {
         rowKey={(l) => l.id}
         loading={loading}
         emptyLabel={t("labels.empty")}
-        minWidth="min-w-[1000px]"
+        minWidth="min-w-[960px]"
+        fixedLayout
+        dense
         renderRow={(l) => (
           <>
-            <td className="px-5 py-3 align-top text-[13px] tabular-nums text-muted">{formatDateTime(l.created_at, locale)}</td>
+            {/* time over date, so the column stays narrow */}
+            <td className="px-3 py-2.5 align-top text-[13px] tabular-nums text-muted">
+              <div className="whitespace-nowrap">{formatTime(l.created_at, locale)}</div>
+              <div className="whitespace-nowrap text-[12px]">{formatDate(l.created_at)}</div>
+            </td>
             {isSystemAdmin && (
-              <td className="px-5 py-3 align-top text-[13px]">{l.organization_name || `#${l.organization_id}`}</td>
+              <td className="px-3 py-2.5 align-top text-[13px] break-words">{l.organization_name || `#${l.organization_id}`}</td>
             )}
-            <td className="px-5 py-3 align-top text-[13px] leading-relaxed">
+            <td className="px-3 py-2.5 align-top text-[13px] leading-relaxed break-words">
               <div className="mb-1 flex flex-wrap items-center gap-1.5">
                 <span className="badge-pill text-[10px] uppercase">{t(l.kind === "format" ? "labels.kind.format" : "labels.kind.spelling")}</span>
                 {l.finding_title && <span className="caption text-muted">{l.finding_title}</span>}
@@ -285,7 +294,7 @@ export function DocumentLabels() {
               <HighlightedParagraph label={l} />
               {l.note && <p className="caption mt-1 text-muted">{l.note}</p>}
             </td>
-            <td className="px-5 py-3 align-top text-[13px]">
+            <td className="px-3 py-2.5 align-top text-[13px] break-words">
               {l.kind === "format" && l.current ? (
                 <span>
                   <span className="text-muted line-through">{l.current}</span> → {l.suggestion || "—"}
@@ -294,11 +303,11 @@ export function DocumentLabels() {
                 l.suggestion || "—"
               )}
             </td>
-            <td className="px-5 py-3 align-top text-[13px]">
+            <td className="px-3 py-2.5 align-top text-[13px] break-words">
               <div>{VERDICTS[l.verdict] ? t(VERDICTS[l.verdict]) : l.verdict}</div>
               <div className="caption text-muted">{t(l.source === "verifier" ? "labels.source.verifier" : "labels.source.user")}</div>
             </td>
-            <td className="break-all px-5 py-3 align-top text-[12px] text-muted">{l.model || "—"}</td>
+            <td className="break-all px-3 py-2.5 align-top text-[12px] text-muted">{l.model || "—"}</td>
           </>
         )}
       />

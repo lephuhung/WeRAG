@@ -33,6 +33,8 @@ export function DataTable<T>({
   empty,
   emptyLabel,
   minWidth = "min-w-[900px]",
+  fixedLayout = false,
+  dense = false,
   onRowClick,
   rowClassName = "",
   caption,
@@ -49,6 +51,13 @@ export function DataTable<T>({
   empty?: ReactNode;
   emptyLabel?: string;
   minWidth?: string;
+  /* Fixed layout: column widths come only from the `className` widths below,
+   * so a long text column keeps its share instead of being squeezed by the
+   * content of its neighbours. Give every column but one a width. */
+  fixedLayout?: boolean;
+  /* Tighter cell padding, for tables with many narrow columns. Rows must use
+   * the same `px-3 py-2.5` as the header. */
+  dense?: boolean;
   onRowClick?: (row: T) => void;
   rowClassName?: string;
   caption?: ReactNode;
@@ -58,9 +67,10 @@ export function DataTable<T>({
 }) {
   const showEmpty = !loading && rows.length === 0;
   const { t } = useT();
+  const pad = dense ? "px-3 py-2.5" : "px-5 py-3";
   return (
     <div className="card overflow-x-auto shadow-sm">
-      <table className={`w-full ${minWidth} border-collapse text-left`}>
+      <table className={`w-full ${minWidth} ${fixedLayout ? "table-fixed" : ""} border-collapse text-left`}>
         {caption ? <caption className="sr-only">{caption}</caption> : null}
         <thead>
           <tr className="caption-uppercase border-b border-hairline bg-surface-strong/30 text-muted">
@@ -68,7 +78,7 @@ export function DataTable<T>({
               <th
                 key={c.key}
                 scope="col"
-                className={`px-5 py-3 font-medium ${c.align === "right" ? "text-right" : ""} ${c.className ?? ""}`}
+                className={`${pad} font-medium ${c.align === "right" ? "text-right" : ""} ${c.className ?? ""}`}
               >
                 {c.header}
               </th>
