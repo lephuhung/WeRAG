@@ -151,6 +151,17 @@ type UsagePlanOffer struct {
 	Addons         []UsagePlanAddonOffer `json:"addons"`
 }
 
+// UsageSignupGift is the package every new account receives (setting
+// usage.signup_plan_id), as the public pricing page shows it: the plan's
+// name, quota, length and agents only — the gift plan is not sold, so its
+// admin-written description stays private. Days 0 = no end date.
+type UsageSignupGift struct {
+	Name           string           `json:"name"`
+	Limits         UsageLimits      `json:"limits"`
+	Days           int64            `json:"days"`
+	IncludedAgents []UsagePlanAgent `json:"included_agents"`
+}
+
 // UsageAgentAddonCatalogue is the admin listing: the catalogue rows and the
 // basic agents every plan includes (for the plan cards).
 type UsageAgentAddonCatalogue struct {

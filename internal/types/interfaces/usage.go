@@ -294,6 +294,10 @@ type UsageBillingService interface {
 	// Each plan carries the basic agents it includes and the add-ons sold
 	// with it.
 	PurchasablePlans(ctx context.Context, scopeKind string) ([]*types.UsagePlanOffer, error)
+	// SignupGift is the package a new account receives (nil, nil when none
+	// is set or the plan cannot be granted — the same rules as
+	// UsagePlanService.GrantSignupPlan).
+	SignupGift(ctx context.Context) (*types.UsageSignupGift, error)
 	// ScopeAddons is a scope's current subscription with the add-ons it
 	// holds and those it may still buy on it (kind "addon" orders).
 	ScopeAddons(ctx context.Context, scopeType, scopeID string) (*types.UsageScopeAddons, error)
