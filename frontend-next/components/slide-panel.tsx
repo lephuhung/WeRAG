@@ -12,6 +12,11 @@ type SlidePanelProps = {
   label: string;
   width?: string;
   children: React.ReactNode;
+  /** Called once the slide-in has finished (transitionend of the drawer's
+   * transform, or at once when the panel is hosted and does not slide).
+   * Heavy content waits for it: rendering during the 200 ms slide drops
+   * its frames. */
+  onOpened?: () => void;
 };
 
 /* `width` is a Tailwind width class ("w-[440px]"); it is applied from the
@@ -33,6 +38,11 @@ function cssLength(width: string): string {
  */
 export function SlidePanel(props: SlidePanelProps) {
   const hosted = useInSubPageHost();
+  const { open, onOpened } = props;
+  // hosted: no slide, the content may render at once
+  useEffect(() => {
+    if (hosted && open) onOpened?.();
+  }, [hosted, open, onOpened]);
   if (hosted) {
     return props.open ? (
       <HostedSubPage title={props.label} onClose={props.onClose}>
@@ -49,6 +59,7 @@ function OverlaySlidePanel({
   label,
   width = "w-[440px]",
   children,
+  onOpened,
 }: SlidePanelProps) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -76,6 +87,10 @@ function OverlaySlidePanel({
         role="dialog"
         aria-label={label}
         style={{ "--panel-w": cssLength(width) } as React.CSSProperties}
+        onTransitionEnd={(e) => {
+          // Tailwind v4 animates the individual `translate` property
+          if (open && e.target === e.currentTarget && (e.propertyName === "translate" || e.propertyName === "transform")) onOpened?.();
+        }}
         className={`fixed right-0 top-0 z-45 flex h-full w-full max-w-none flex-col border-l border-hairline bg-surface-card shadow-[0_4px_16px_rgba(0,0,0,0.04)] transition-transform duration-200 ease-out will-change-transform sm:w-[var(--panel-w)] sm:max-w-[92vw] ${
           open ? "translate-x-0" : "translate-x-full"
         }`}

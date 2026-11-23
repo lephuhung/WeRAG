@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState, type MutableRefObject } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
 import { IconDoc } from "@/components/icons";
 import { Markdown } from "@/components/markdown";
@@ -118,9 +118,37 @@ export const ReferencesDrawer = memo(function ReferencesDrawer({
   const fetchedText = currentChunkId ? chunkContentMap[currentChunkId] : undefined;
   const isLoading = currentChunkId === loadingChunkId;
   const contentText = (currentRef?.content || fetchedText || "").trim();
-  // Parse the markdown after the open frame paints, so the slide-in starts
-  // right away instead of waiting on marked + highlight.js + KaTeX.
-  const shownText = useDeferredValue(contentText, "");
+  // The markdown (marked + DOMPurify + highlight.js + KaTeX, one synchronous
+  // block) renders only once the slide-in has finished: a deferred value
+  // alone still rendered it in the frames right after the first paint, i.e.
+  // mid-slide, and the drawer stuttered. A chunk fetched during the slide
+  // waits the same way. Switching references in an open drawer renders at
+  // once (settled stays true).
+  // Each opening gets a number; the slide of that opening settles it. While
+  // closing, the content stays as it was (same text: the memoized markdown
+  // does not re-render), so nothing is unmounted mid-slide either.
+  const [openSeq, setOpenSeq] = useState(0);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) setOpenSeq((n) => n + 1);
+  }
+  const [settledSeq, setSettledSeq] = useState(-1);
+  const settled = settledSeq === openSeq;
+  const markSettled = useCallback(() => setSettledSeq(openSeq), [openSeq]);
+  useEffect(() => {
+    if (!open) return;
+    // transitionend may never come (reduced motion, already in place)
+    const fallback = window.setTimeout(markSettled, 320);
+    return () => window.clearTimeout(fallback);
+  }, [open, markSettled]);
+  // the text already on screen (reopening the same source keeps it)
+  const shownRef = useRef("");
+  const visibleText = !open || settled || shownRef.current === contentText ? contentText : "";
+  const shownText = useDeferredValue(visibleText, "");
+  useEffect(() => {
+    shownRef.current = shownText;
+  }, [shownText]);
   const contentPending = shownText !== contentText;
 
   return (
@@ -129,6 +157,7 @@ export const ReferencesDrawer = memo(function ReferencesDrawer({
       onClose={onClose}
       label={t("ui.ref.title")}
       width="w-[540px]"
+      onOpened={markSettled}
     >
       <SlidePanelHeader
         title={t("ui.ref.title")}
