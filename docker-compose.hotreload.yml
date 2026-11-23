@@ -45,8 +45,11 @@ services:
     image: wechatopenai/werag-frontend-next:${WEKNORA_VERSION:-latest}
     container_name: WeKnora-frontend-dev
     entrypoint: ["/bin/sh", "/src/docker/docker-entrypoint.sh"]
+    # Its own port: FRONTEND_PORT (the public origin) is served by the
+    # production image (service "frontend" in docker-compose.yml); this
+    # hot-reload copy is for development only.
     ports:
-      - "${FRONTEND_PORT:-80}:80"
+      - "${FRONTEND_DEV_PORT:-18002}:80"
     environment:
       - NEXT_DEV=1
       - NEXT_TELEMETRY_DISABLED=1
