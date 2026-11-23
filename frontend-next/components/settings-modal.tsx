@@ -335,7 +335,7 @@ export function SettingsModal({
         role="dialog"
         aria-modal="true"
         aria-label={t("user.settings")}
-        className="card relative flex max-h-[calc(100dvh-1rem)] w-full max-w-[1120px] flex-col overflow-hidden sm:h-[min(760px,calc(100dvh-3rem))] sm:flex-row"
+        className="card relative flex max-h-[calc(100dvh-1rem)] w-full max-w-[1440px] flex-col overflow-hidden sm:h-[min(920px,calc(100dvh-3rem))] sm:flex-row"
       >
         {/* left rail — close, search, grouped nav */}
         <div className="flex shrink-0 flex-col border-b border-hairline sm:w-[260px] sm:border-b-0 sm:border-r">

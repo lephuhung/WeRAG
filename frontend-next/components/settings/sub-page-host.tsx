@@ -112,7 +112,7 @@ export function HostedSubPage({
 
   if (!el) return null;
   return createPortal(
-    <div hidden={topId !== id} className="mx-auto w-full max-w-[760px]">
+    <div hidden={topId !== id} className="mx-auto w-full max-w-[960px]">
       {children}
     </div>,
     el,
