@@ -221,6 +221,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(service.NewLegalValidityLookupService))
 	must(container.Provide(service.NewLegalLookupMissService))
 	must(container.Provide(service.NewLegalGraphFocusService))
+	must(container.Provide(service.NewLegalGraphExploreService))
 	must(container.Provide(service.NewLegalReviewService))
 	// vbpl.vn ingest shared by the MCP feed and the SuperAdmin request queue
 	must(container.Provide(service.NewLegalFeedService))

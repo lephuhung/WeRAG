@@ -30,7 +30,7 @@ func (f *fakeLegalGraphFocus) KBFocus(_ context.Context, kbID, doc, q string) (*
 func TestGetLegalGraphFocus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	fake := &fakeLegalGraphFocus{}
-	h := NewKnowledgeGraphViewHandler(nil, nil, nil, fake)
+	h := NewKnowledgeGraphViewHandler(nil, fake)
 	r := gin.New()
 	r.Use(middleware.ErrorHandler())
 	r.GET("/knowledge-bases/:id/legal-graph/focus", h.GetLegalGraphFocus)

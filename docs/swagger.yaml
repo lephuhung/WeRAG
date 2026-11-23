@@ -10207,47 +10207,6 @@ paths:
       summary: Tạo bản sao kho tri thức
       tags:
       - Kho tri thức
-  /knowledge-bases/{id}/entity-graph:
-    get:
-      description: |-
-        The best-connected entities extracted from the KB's documents
-        and the relations among them. q filters by name (adding the
-        matches' neighbours), types by entity type (comma-separated:
-        Document, Article, Organization, Person, Task, Location),
-        knowledge_id by document.
-      parameters:
-      - description: Knowledge base ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Name words
-        in: query
-        name: q
-        type: string
-      - description: Entity types
-        in: query
-        name: types
-        type: string
-      - description: Only this document
-        in: query
-        name: knowledge_id
-        type: string
-      - description: Node budget (default 150, max 500)
-        in: query
-        name: limit
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: GraphView + graph_enabled + graph_store
-          schema:
-            additionalProperties: true
-            type: object
-      summary: Entity graph of a knowledge base
-      tags:
-      - Đồ thị tri thức
   /knowledge-bases/{id}/faq/entries:
     delete:
       consumes:

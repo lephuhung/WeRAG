@@ -591,7 +591,9 @@ func mergeRelations(ctx context.Context, db *gorm.DB, ids map[string]bool, alias
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for start := 0; start < len(all); start += 1000 {
 			batch := all[start:min(start+1000, len(all))]
-			if err := tx.Where("from_id IN ? OR to_id IN ?", batch, batch).
+			// the portal's edges only: the ones read from the documents'
+			// texts (types.LegalRelationSourceText) stay
+			if err := tx.Where("(from_id IN ? OR to_id IN ?) AND source_label <> ?", batch, batch, types.LegalRelationSourceText).
 				Delete(&types.LegalDocumentRelation{}).Error; err != nil {
 				return err
 			}

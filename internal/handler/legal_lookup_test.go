@@ -36,6 +36,10 @@ func (f *fakeLegalLookup) LookupValidity(_ context.Context, q string, _ int) (*t
 		}}}, nil
 }
 
+func (f *fakeLegalLookup) Suggest(context.Context, string, int) ([]types.LegalValidityRef, error) {
+	return []types.LegalValidityRef{}, nil
+}
+
 func serveLegalLookup(f *fakeLegalLookup, rawQuery string) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
@@ -47,7 +51,7 @@ func serveLegalLookup(f *fakeLegalLookup, rawQuery string) *httptest.ResponseRec
 			}
 		}
 	})
-	r.GET("/legal-lookup", NewLegalLookupHandler(f, nil).LookupLegalValidity)
+	r.GET("/legal-lookup", NewLegalLookupHandler(f, nil, nil).LookupLegalValidity)
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/legal-lookup?"+rawQuery, nil))
 	return w
@@ -118,7 +122,7 @@ func (f *fakeLookupMisses) DeleteMiss(_ context.Context, id uint64) error {
 func TestLegalLookupMissEndpoints(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	m := &fakeLookupMisses{}
-	h := NewLegalLookupHandler(&fakeLegalLookup{}, m)
+	h := NewLegalLookupHandler(&fakeLegalLookup{}, m, nil)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Next()

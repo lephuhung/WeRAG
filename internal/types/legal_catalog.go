@@ -122,6 +122,11 @@ const (
 	LegalRelationRelated          LegalRelation = "related"
 )
 
+// LegalRelationSourceText labels the relations read from a document's own
+// text (service.BuildLegalTextRelations) as opposed to vbpl.vn's lists; a
+// catalogue import replaces the lists and leaves these rows alone.
+const LegalRelationSourceText = "toàn văn"
+
 // LegalDocumentRelation is one directed edge of the legal catalogue.
 type LegalDocumentRelation struct {
 	FromID      string        `json:"from_id"      gorm:"type:varchar(64);primaryKey"`

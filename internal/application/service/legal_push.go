@@ -813,6 +813,10 @@ func (s *LegalPushService) ingest(ctx context.Context, a *types.LegalDocument, c
 	if err == nil && title != a.Title {
 		s.retitleFeedRow(ctx, a, title)
 	}
+	if err == nil {
+		// a feed lists no relations: read them off the text just ingested
+		s.textRelations(ctx, a.ID)
+	}
 	return res, created, err
 }
 

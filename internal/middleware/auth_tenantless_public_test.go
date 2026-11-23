@@ -54,7 +54,6 @@ func TestTenantOptionalPublicReadSurface(t *testing.T) {
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/tags", true},
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/access", true},
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/files", true},
-		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/entity-graph", true},
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/legal-graph", true},
 		{http.MethodGet, "/api/v1/knowledge-bases/kb-1/legal-graph/focus", true},
 		{http.MethodGet, "/api/v1/knowledgebase/kb-1/wiki/pages", true},
@@ -110,7 +109,6 @@ func TestTenantOptionalPublicReadSurface(t *testing.T) {
 func TestTenantlessKBAssetRoutesReachAndRemainBoundByKBGuards(t *testing.T) {
 	routes := []string{
 		"/api/v1/knowledge-bases/:id/files",
-		"/api/v1/knowledge-bases/:id/entity-graph",
 		"/api/v1/knowledge-bases/:id/legal-graph",
 		"/api/v1/knowledge-bases/:id/legal-graph/focus",
 	}

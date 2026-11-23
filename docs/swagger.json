@@ -4527,60 +4527,6 @@
                 }
             }
         },
-        "/knowledge-bases/{id}/entity-graph": {
-            "get": {
-                "description": "The best-connected entities extracted from the KB's documents\nand the relations among them. q filters by name (adding the\nmatches' neighbours), types by entity type (comma-separated:\nDocument, Article, Organization, Person, Task, Location),\nknowledge_id by document.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Đồ thị tri thức"
-                ],
-                "summary": "Entity graph of a knowledge base",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Knowledge base ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "description": "Name words",
-                        "name": "q",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Entity types",
-                        "name": "types",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Only this document",
-                        "name": "knowledge_id",
-                        "in": "query"
-                    },
-                    {
-                        "type": "integer",
-                        "description": "Node budget (default 150, max 500)",
-                        "name": "limit",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "GraphView + graph_enabled + graph_store",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
         "/knowledge-bases/{id}/faq/entries": {
             "get": {
                 "security": [

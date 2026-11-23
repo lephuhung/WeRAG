@@ -4,7 +4,6 @@ import (
 	stderrors "errors"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -17,71 +16,16 @@ import (
 // entity graph extracted from its documents (Neo4j) and the relation graph
 // of its catalogued legal documents (legal catalogue, Postgres).
 type KnowledgeGraphViewHandler struct {
-	graph     interfaces.RetrieveGraphRepository
-	kbService interfaces.KnowledgeBaseService
-	legal     interfaces.LegalCatalogService
-	focus     interfaces.LegalGraphFocusService
+	legal interfaces.LegalCatalogService
+	focus interfaces.LegalGraphFocusService
 }
 
 // NewKnowledgeGraphViewHandler creates the handler.
 func NewKnowledgeGraphViewHandler(
-	graph interfaces.RetrieveGraphRepository,
-	kbService interfaces.KnowledgeBaseService,
 	legal interfaces.LegalCatalogService,
 	focus interfaces.LegalGraphFocusService,
 ) *KnowledgeGraphViewHandler {
-	return &KnowledgeGraphViewHandler{graph: graph, kbService: kbService, legal: legal, focus: focus}
-}
-
-// GetEntityGraph godoc
-// @Summary      Entity graph of a knowledge base
-// @Description  The best-connected entities extracted from the KB's documents
-// @Description  and the relations among them. q filters by name (adding the
-// @Description  matches' neighbours), types by entity type (comma-separated:
-// @Description  Document, Article, Organization, Person, Task, Location),
-// @Description  knowledge_id by document.
-// @Tags         Đồ thị tri thức
-// @Produce      json
-// @Param        id           path   string true  "Knowledge base ID"
-// @Param        q            query  string false "Name words"
-// @Param        types        query  string false "Entity types"
-// @Param        knowledge_id query  string false "Only this document"
-// @Param        limit        query  int    false "Node budget (default 150, max 500)"
-// @Success      200 {object} map[string]interface{} "GraphView + graph_enabled + graph_store"
-// @Router       /knowledge-bases/{id}/entity-graph [get]
-func (h *KnowledgeGraphViewHandler) GetEntityGraph(c *gin.Context) {
-	ctx := c.Request.Context()
-	kbID := c.Param("id")
-	kb, err := h.kbService.GetKnowledgeBaseByIDOnly(ctx, kbID)
-	if err != nil {
-		c.Error(err)
-		return
-	}
-	storeOn := h.graph != nil
-	resp := gin.H{"success": true, "graph_enabled": kb.IsGraphEnabled(), "graph_store": storeOn}
-	if !storeOn {
-		resp["data"] = &types.GraphView{Nodes: []*types.GraphViewNode{}, Edges: []*types.GraphViewEdge{}}
-		c.JSON(http.StatusOK, resp)
-		return
-	}
-	limit, _ := strconv.Atoi(c.Query("limit"))
-	var entityTypes []string
-	for _, t := range strings.Split(c.Query("types"), ",") {
-		if t = strings.TrimSpace(t); t != "" {
-			entityTypes = append(entityTypes, t)
-		}
-	}
-	view, err := h.graph.ViewGraph(ctx, types.NameSpace{KnowledgeBase: kbID}, types.GraphViewFilter{
-		Query: strings.TrimSpace(c.Query("q")), Types: entityTypes,
-		KnowledgeID: strings.TrimSpace(c.Query("knowledge_id")), Limit: limit,
-	})
-	if err != nil {
-		logger.ErrorWithFields(ctx, err, map[string]interface{}{"kb_id": kbID})
-		c.Error(errors.NewInternalServerError("failed to read the knowledge graph"))
-		return
-	}
-	resp["data"] = view
-	c.JSON(http.StatusOK, resp)
+	return &KnowledgeGraphViewHandler{legal: legal, focus: focus}
 }
 
 // GetLegalGraph godoc

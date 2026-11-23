@@ -26,6 +26,9 @@ func RegisterLegalLookupRoutes(
 		return
 	}
 	r.GET("/legal-lookup", middleware.LegalLookupAccess(redisClient), h.LookupLegalValidity)
+	r.GET("/legal-lookup/suggest", middleware.LegalLookupAccess(redisClient), h.SuggestLegalDocuments)
+	// the catalogue map: the same audience and rate limit as the lookup
+	r.GET("/legal-graph/explore", middleware.LegalLookupAccess(redisClient), h.ExploreLegalGraph)
 	misses := r.Group("/system/legal-lookup-misses", g.PlatformSuperAdmin())
 	{
 		misses.GET("", h.ListLegalLookupMisses)
@@ -126,6 +129,8 @@ func RegisterLegalPushRoutes(r *gin.RouterGroup, h *handler.LegalPushHandler, g 
 		cands.POST("/decide-batch", h.DecideLegalLinkCandidatesBatch)
 		cands.PUT("/:id", h.DecideLegalLinkCandidate)
 	}
+	// relations read from the held texts of a feed's documents (no model)
+	r.POST("/system/legal-relations/rebuild-text", g.PlatformSuperAdmin(), h.RebuildLegalTextRelations)
 }
 
 // RegisterLegalSyncRoutes wires the SuperAdmin monitor of the legal data

@@ -507,77 +507,38 @@ func (s *legalValidityLookupService) writeMiss(m *types.LegalLookupMiss) {
 	}
 }
 
-// readableCopies returns, per catalogue document, the copies the caller
-// may open, in the knowledge bases the caller may read (the same listing
-// and rule as the knowledge base list and default retrieval scope:
-// ListReadableKnowledgeBases + access.InDefaultRetrievalScope): copies with
-// an approved legal link in any of them, and vbpl.vn imports (metadata
-// source + external_id, not reviewed) in platform public KBs and the
-// caller's own organization's KBs — never in another organization's
-// published or granted KB. Errors only drop the links.
+// readableCopies: legalReadableCopies for the matches.
 func (s *legalValidityLookupService) readableCopies(
 	ctx context.Context, docs []*types.LegalDocument,
 ) map[string][]types.LegalKnowledgeRef {
-	out := map[string][]types.LegalKnowledgeRef{}
-	if len(docs) == 0 || s.kbs == nil {
-		return out
-	}
-	caller := types.CallerFromContext(ctx)
-	kbs, err := s.kbs.ListReadableKnowledgeBases(ctx, access.KBReaderFor(ctx, caller))
-	if err != nil {
-		logger.Warnf(ctx, "[LegalLookup] readable knowledge bases unavailable: %v", err)
-		return out
-	}
-	readable := map[string]bool{}
-	var vouchedKBIDs []string
-	for _, kb := range kbs {
-		if kb == nil || !access.InDefaultRetrievalScope(caller, kb) || readable[kb.ID] {
-			continue
-		}
-		readable[kb.ID] = true
-		// the import metadata (source + external_id) is trusted in platform
-		// public KBs (only a SuperAdmin or the platform API key can write it
-		// there) and in the caller's own organization; another
-		// organization's published or granted KB needs an approved link
-		if access.IsPlatformPublicKB(kb) || (caller.TenantID != 0 && kb.OwnerTenantID == caller.TenantID) {
-			vouchedKBIDs = append(vouchedKBIDs, kb.ID)
-		}
-	}
-	if len(readable) == 0 {
-		return out
-	}
 	ids := make([]string, 0, len(docs))
 	for _, d := range docs {
 		ids = append(ids, d.ID)
 	}
-	seen := map[string]bool{}
-	add := func(docID string, r types.LegalKnowledgeRef) {
-		if readable[r.KnowledgeBaseID] && !seen[docID+"\x00"+r.KnowledgeID] {
-			seen[docID+"\x00"+r.KnowledgeID] = true
-			out[docID] = append(out[docID], r)
-		}
+	return legalReadableCopies(ctx, s.repo, s.reviews, s.kbs, ids)
+}
+
+// legalSuggestMax bounds a type-ahead answer.
+const legalSuggestMax = 8
+
+// Suggest: the documents query names, slim, for the search box's list.
+func (s *legalValidityLookupService) Suggest(ctx context.Context, query string, limit int) ([]types.LegalValidityRef, error) {
+	if limit <= 0 || limit > legalSuggestMax {
+		limit = legalSuggestMax
 	}
-	if s.reviews != nil {
-		if linked, err := s.reviews.KnowledgeForDocuments(ctx, ids); err != nil {
-			logger.Warnf(ctx, "[LegalLookup] linked copies unavailable: %v", err)
-		} else {
-			for docID, refs := range linked {
-				for _, r := range refs {
-					add(docID, r)
-				}
-			}
-		}
+	query = strings.Join(strings.Fields(query), " ")
+	out := []types.LegalValidityRef{}
+	if query == "" {
+		return out, nil
 	}
-	if imported, err := s.repo.ExternalCopies(ctx, ids, vouchedKBIDs); err != nil {
-		logger.Warnf(ctx, "[LegalLookup] imported copies unavailable: %v", err)
-	} else {
-		for docID, refs := range imported {
-			for _, r := range refs {
-				add(docID, r)
-			}
-		}
+	docs, _, _, err := s.find(ctx, parseLegalLookupQuery(query), limit)
+	if err != nil {
+		return nil, err
 	}
-	return out
+	for _, d := range docs {
+		out = append(out, legalValidityRef(d, "", nil))
+	}
+	return out, nil
 }
 
 // relatedStatus reconciles the status of the documents acting on the

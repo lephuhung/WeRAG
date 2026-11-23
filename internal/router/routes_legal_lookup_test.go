@@ -30,6 +30,10 @@ func (s *stubLegalLookupService) LookupValidity(_ context.Context, q string, _ i
 	return &types.LegalValidityLookup{Query: q, Matches: []types.LegalValidityMatch{}}, nil
 }
 
+func (s *stubLegalLookupService) Suggest(context.Context, string, int) ([]types.LegalValidityRef, error) {
+	return []types.LegalValidityRef{}, nil
+}
+
 // newLegalLookupEngine wires the production RegisterLegalLookupRoutes behind
 // the API-key gate, as NewRouter does, with ctx as the authenticated session.
 func newLegalLookupEngine(t *testing.T, svc *stubLegalLookupService, ctx context.Context) (*gin.Engine, *rbacGuards) {
@@ -45,7 +49,7 @@ func newLegalLookupEngine(t *testing.T, svc *stubLegalLookupService, ctx context
 	})
 	v1 := r.Group("/api/v1")
 	v1.Use(guards.ensureAPIKeyAuthorizer().Middleware())
-	RegisterLegalLookupRoutes(v1, handler.NewLegalLookupHandler(svc, stubLookupMisses{}), nil, guards)
+	RegisterLegalLookupRoutes(v1, handler.NewLegalLookupHandler(svc, stubLookupMisses{}, nil), nil, guards)
 	return r, guards
 }
 
@@ -59,6 +63,11 @@ func TestLegalLookupRoute(t *testing.T) {
 	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/legal-lookup?q=53", nil))
 	require.Equal(t, http.StatusOK, rec.Code, "body=%s", rec.Body.String())
 	require.Equal(t, 1, svc.calls)
+	// the catalogue map shares the lookup's audience (no explore service
+	// wired here: the handler answers 503, not 403/404 from the gate)
+	rec = httptest.NewRecorder()
+	engine.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/legal-graph/explore?doc=x", nil))
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code, "body=%s", rec.Body.String())
 
 	for method, paths := range guards.ensureAPIKeyAuthorizer().RegisteredRoutes() {
 		for _, p := range paths {

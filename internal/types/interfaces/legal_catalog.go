@@ -367,11 +367,24 @@ type LegalGraphFocusService interface {
 // LegalValidityLookupService answers the validity lookup page: members and
 // guests look a document up by số hiệu or title without the chat (no LLM,
 // no usage quota).
+// LegalGraphExploreService draws the catalogue map around one document.
+type LegalGraphExploreService interface {
+	// Explore walks depth steps (1–3, default 2) out of docID on both
+	// sides over the whole catalogue and returns the reached documents
+	// with every relation between them; types.ErrLegalGraphFocusNotFound
+	// when the catalogue has no such document.
+	Explore(ctx context.Context, docID string, depth int) (*types.LegalGraphExplore, error)
+}
+
 type LegalValidityLookupService interface {
 	// LookupValidity finds the catalogue documents query names (a số hiệu,
 	// a bare number, or title words), at most limit, newest first, each
 	// with its status and the documents replacing, ending or amending it.
 	LookupValidity(ctx context.Context, query string, limit int) (*types.LegalValidityLookup, error)
+	// Suggest names the catalogue documents query may mean, for a search
+	// box typing ahead: the same matching as LookupValidity, at most limit,
+	// without the validity work and without recording a miss.
+	Suggest(ctx context.Context, query string, limit int) ([]types.LegalValidityRef, error)
 }
 
 // LegalLookupMissRepository counts validity lookups that found nothing.

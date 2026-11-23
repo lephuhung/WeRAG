@@ -39,7 +39,9 @@ func (r *legalCatalogRepository) UpsertDocuments(ctx context.Context, docs []*ty
 
 func (r *legalCatalogRepository) ReplaceRelations(ctx context.Context, rels []*types.LegalDocumentRelation) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("1 = 1").Delete(&types.LegalDocumentRelation{}).Error; err != nil {
+		// the relations read from the documents' texts are not the
+		// portal's to replace (a Party document has no other)
+		if err := tx.Where("source_label <> ?", types.LegalRelationSourceText).Delete(&types.LegalDocumentRelation{}).Error; err != nil {
 			return err
 		}
 		if len(rels) == 0 {

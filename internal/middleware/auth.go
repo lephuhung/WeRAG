@@ -330,7 +330,7 @@ func matchTenantlessKBReadShape(rest string, isGet, isPost bool) bool {
 			return false
 		}
 		switch segs[1] {
-		case "knowledge", "tags", "access", "files", "entity-graph", "legal-graph":
+		case "knowledge", "tags", "access", "files", "legal-graph":
 			return true
 		default:
 			// pin (PUT-only), visibility, activity and move-targets:

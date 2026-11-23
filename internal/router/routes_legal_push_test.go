@@ -70,6 +70,7 @@ var legalLinkReviewRoutes = []struct{ method, path, body string }{
 	{http.MethodPost, "/api/v1/system/legal-link-candidates/recheck", `{}`},
 	{http.MethodGet, "/api/v1/system/legal-link-candidates/mentions?candidate_id=1", ""},
 	{http.MethodPost, "/api/v1/system/legal-link-candidates/decide-batch", `{"ids":[1],"action":"reject"}`},
+	{http.MethodPost, "/api/v1/system/legal-relations/rebuild-text", `{"source":"dangcongsan"}`},
 }
 
 // The link review stays human SuperAdmin only: not the feed's operator

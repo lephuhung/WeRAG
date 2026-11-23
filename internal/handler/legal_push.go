@@ -376,6 +376,37 @@ func (h *LegalPushHandler) RecheckLegalLinkCandidates(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": res})
 }
 
+// RebuildLegalTextRelations godoc
+// @Summary      Re-read the document relations stated in the texts of a source
+// @Description  For every catalogue document of the source holding an approved
+// @Description  copy, the số hiệu its text names (Căn cứ, thay thế, bãi bỏ,
+// @Description  sửa đổi, mentions) are stored as catalogue relations under the
+// @Description  "toàn văn" label; no model call. vbpl.vn's own relations are
+// @Description  kept. Used for feeds that list no relations (dangcongsan.vn).
+// @Tags         Rà soát pháp lý
+// @Accept       json
+// @Produce      json
+// @Param        request body object{source=string} true "source: catalogue source, e.g. dangcongsan"
+// @Success      200 {object} map[string]interface{} "success + data (counts)"
+// @Router       /api/v1/system/legal-relations/rebuild-text [post]
+func (h *LegalPushHandler) RebuildLegalTextRelations(c *gin.Context) {
+	ctx := c.Request.Context()
+	var req struct {
+		Source string `json:"source"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || strings.TrimSpace(req.Source) == "" {
+		c.Error(errors.NewBadRequestError("source is required"))
+		return
+	}
+	res, err := h.svc.RebuildTextRelations(ctx, strings.TrimSpace(req.Source))
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": res})
+}
+
 // DecideLegalLinkCandidatesBatch godoc
 // @Summary      Approve or reject several pushed provision links
 // @Description  Each id is decided like PUT /{id} without corrections; a
