@@ -275,13 +275,15 @@ func sentenceStart(before string) bool {
 		strings.HasSuffix(t, "!") || strings.HasSuffix(t, "?") || strings.HasSuffix(t, ":")
 }
 
-// cleanAnswerNumbers is rewrite for a whole answer when the check is on.
+// cleanAnswerNumbers is rewrite for a whole answer when the check is on,
+// then the money-reading fix (always on, answer_money.go): the stored
+// answer equals what the guards streamed.
 func cleanAnswerNumbers(ctx context.Context, text string) string {
 	c := numberCheckFromContext(ctx)
 	if c == nil || text == "" {
-		return text
+		return fixMoneyReadings(ctx, text)
 	}
-	return c.rewrite(ctx, "", text)
+	return fixMoneyReadings(ctx, c.rewrite(ctx, "", text))
 }
 
 // numberGuard filters a streamed answer: it holds back only what could

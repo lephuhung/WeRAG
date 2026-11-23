@@ -84,9 +84,11 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 			Data:      event.AgentFinalAnswerData{Content: content},
 		})
 	}
-	// the button guard emits through the number guard (answer_numbers.go)
-	emitChunk := emitBus
-	numbers := newNumberGuard(ctx, emitBus)
+	// the button guard emits through the number guard (answer_numbers.go),
+	// the number guard through the money readings (answer_money.go)
+	money := newMoneyGuard(ctx, emitBus)
+	emitChunk := money.Write
+	numbers := newNumberGuard(ctx, money.Write)
 	if numbers != nil {
 		emitChunk = numbers.Write
 	}
@@ -139,6 +141,9 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 			if chunk.Done && numbers != nil {
 				numbers.Flush()
 			}
+			if chunk.Done {
+				money.Flush()
+			}
 		},
 	)
 	if err == nil {
@@ -151,6 +156,9 @@ func (e *AgentEngine) streamFinalAnswerToEventBus(
 	}
 	if numbers != nil {
 		numbers.Flush()
+	}
+	if err == nil {
+		money.Flush()
 	}
 	if err != nil {
 		logger.Errorf(ctx, "[Agent][FinalAnswer] Final answer generation failed: %v", err)

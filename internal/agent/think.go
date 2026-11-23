@@ -344,14 +344,16 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	// answer guard first when the turn has one (answer_guard.go)
 	var emitAnswerRaw func(content string)
 	var guard *answerGuard
-	// button guard → number guard (answer_numbers.go) → event bus
-	numbers := newNumberGuard(ctx, func(s string) { emitAnswerRaw(s) })
+	// button guard → number guard (answer_numbers.go) → money readings
+	// (answer_money.go) → event bus
+	money := newMoneyGuard(ctx, func(s string) { emitAnswerRaw(s) })
+	numbers := newNumberGuard(ctx, money.Write)
 	toNumbers := func(s string) {
 		if numbers != nil {
 			numbers.Write(s)
 			return
 		}
-		emitAnswerRaw(s)
+		money.Write(s)
 	}
 	guard = newAnswerGuard(ctx, toNumbers)
 	toGuard := func(s string) {
@@ -534,6 +536,7 @@ func (e *AgentEngine) streamThinkingToEventBus(
 				if numbers != nil {
 					numbers.Flush()
 				}
+				money.Flush()
 				closeThinking()
 			}
 		},
@@ -565,6 +568,7 @@ func (e *AgentEngine) streamThinkingToEventBus(
 	if numbers != nil {
 		numbers.Flush()
 	}
+	money.Flush()
 	content := agenttools.StripThinkBlocks(llmResult.Content)
 	heldBack := answerOK
 	if len(llmResult.ToolCalls) == 0 && !lead.Preamble() {
