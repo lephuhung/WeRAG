@@ -33,6 +33,8 @@ export interface CanvasEdge {
   target: string;
   /** Shown on the edges of the hovered or selected node. */
   label?: string;
+  /** Drawn dashed (a weaker relation, e.g. "căn cứ"). */
+  dashed?: boolean;
 }
 
 export interface TypeStyle {
@@ -48,6 +50,8 @@ interface SimNode extends CanvasNode, SimulationNodeDatum {
 }
 
 const ZOOM_MIN = 0.1;
+/** Below this zoom the số hiệu inside a bubble cannot be read. */
+const MIN_READABLE_ZOOM = 0.55;
 const ZOOM_MAX = 5;
 /* Every colour comes from the shared graph palette (CSS custom properties),
    so the dark mode and the Anthropic preset override the whole set at
@@ -61,9 +65,33 @@ const DEFAULT_STYLE: TypeStyle = {
 /* Pointer travel (px) past which a press is a pan/drag, not a click. */
 const CLICK_SLOP = 4;
 
-/* nodeRadius grows with connectivity, kept small so hubs don't crowd. */
+/* nodeRadius grows with connectivity. Bubbles are large enough to carry
+ * their label inside (a số hiệu on one or two lines), hubs larger. */
 function nodeRadius(weight: number) {
-  return Math.max(5, Math.min(15, 5 + Math.sqrt(weight || 0) * 1.6));
+  return Math.max(18, Math.min(36, 18 + Math.sqrt(weight || 0) * 3));
+}
+
+/* splitLabel breaks a label into at most two lines for the bubble: at the
+ * last "/" or "-" before the middle ("151/2020/NĐ-CP" → "151/2020" +
+ * "NĐ-CP"), else at a space, else by length. */
+function splitLabel(title: string): string[] {
+  const t = title.trim();
+  if (t.length <= 9) return [t];
+  const cut = (seps: string[]) => {
+    let best = -1;
+    for (const sep of seps) {
+      const i = t.lastIndexOf(sep, Math.ceil(t.length / 2) + 2);
+      if (i > 1 && i < t.length - 2 && i > best) best = i;
+    }
+    return best;
+  };
+  let i = cut(["/"]);
+  if (i < 0) i = cut([" ", "-"]);
+  if (i < 0) i = Math.ceil(t.length / 2);
+  const keep = t[i] === "/" || t[i] === "-" ? 1 : 0; // keep "/" with the first line
+  const a = t.slice(0, i + keep).trim();
+  const b = t.slice(i + keep).trim();
+  return [a, b].filter(Boolean);
 }
 
 /* buildSimulation lays the graph out with d3-force: links pull with a
@@ -86,8 +114,8 @@ function buildSimulation(nodes: SimNode[], edges: CanvasEdge[]): Simulation<SimN
         .id((n) => n.id)
         .distance(density > 3 ? 110 : 80)
     )
-    .force("charge", forceManyBody<SimNode>().strength(density > 3 ? -420 : -260).distanceMax(900))
-    .force("collide", forceCollide<SimNode>((n) => n.radius + 14).iterations(2))
+    .force("charge", forceManyBody<SimNode>().strength(density > 3 ? -700 : -480).distanceMax(1100))
+    .force("collide", forceCollide<SimNode>((n) => n.radius + 10).iterations(2))
     .force("x", forceX<SimNode>(0).strength(gravity))
     .force("y", forceY<SimNode>(0).strength(gravity))
     .stop();
@@ -105,6 +133,7 @@ export function GraphCanvas({
   toolbarExtra,
   renderDetails,
   onNodeClick,
+  centreId,
 }: {
   nodes: CanvasNode[];
   edges: CanvasEdge[];
@@ -118,6 +147,9 @@ export function GraphCanvas({
   toolbarExtra?: ReactNode;
   renderDetails?: (node: CanvasNode, edges: CanvasEdge[], byId: Record<string, CanvasNode>) => ReactNode;
   onNodeClick?: (node: CanvasNode) => void;
+  /** A node pinned at the middle of the layout and drawn larger (the
+   * document a map is drawn around); the first view centres on it. */
+  centreId?: string;
 }) {
   const { t } = useT();
   const [hovered, setHovered] = useState<string | null>(null);
@@ -148,6 +180,9 @@ export function GraphCanvas({
   // Where the current press started and whether it moved past CLICK_SLOP;
   // a moved press (pan or node drag) does not count as a click.
   const pressRef = useRef<{ x: number; y: number; moved: boolean }>({ x: 0, y: 0, moved: false });
+
+  const centreIdRef = useRef(centreId);
+  centreIdRef.current = centreId;
 
   const setView = useCallback((z: number, p: { x: number; y: number }) => {
     viewRef.current = { zoom: z, pan: p };
@@ -185,8 +220,19 @@ export function GraphCanvas({
     const padding = 40;
     const graphW = Math.max(maxX - minX, 1);
     const graphH = Math.max(maxY - minY, 1);
-    const z = Math.max(0.2, Math.min(2, Math.min((width - padding * 2) / graphW, (height - padding * 2) / graphH)));
-    setView(z, { x: width / 2 - (minX + graphW / 2) * z, y: height / 2 - (minY + graphH / 2) * z });
+    let z = Math.max(0.2, Math.min(2, Math.min((width - padding * 2) / graphW, (height - padding * 2) / graphH)));
+    let cx = minX + graphW / 2;
+    let cy = minY + graphH / 2;
+    // A big network fitted whole is a cloud of dots: keep the bubbles
+    // readable and start on the best-connected one; "fit" is still a pan away.
+    if (z < MIN_READABLE_ZOOM) {
+      z = MIN_READABLE_ZOOM;
+      const hub =
+        nodes.find((n) => n.id === centreIdRef.current) ?? nodes.reduce((a, b) => (b.weight > a.weight ? b : a), nodes[0]);
+      cx = hub.x;
+      cy = hub.y;
+    }
+    setView(z, { x: width / 2 - cx * z, y: height / 2 - cy * z });
   }, [setView]);
 
   useEffect(() => {
@@ -196,7 +242,11 @@ export function GraphCanvas({
 
   useEffect(() => {
     // x/y left unset so d3 seeds a phyllotaxis spiral; ticking fills them in.
-    const nodes = rawNodes.map((n) => ({ ...n, radius: nodeRadius(n.weight) })) as SimNode[];
+    const nodes = rawNodes.map((n) =>
+      n.id === centreIdRef.current
+        ? { ...n, radius: nodeRadius(n.weight) + 10, fx: 0, fy: 0 }
+        : { ...n, radius: nodeRadius(n.weight) }
+    ) as SimNode[];
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const edges = rawEdges.filter((e) => byId.has(e.source) && byId.has(e.target) && e.source !== e.target);
     simRef.current = { nodes, edges, byId };
@@ -246,13 +296,26 @@ export function GraphCanvas({
     setView(1, { x: width / 2, y: height / 2 });
   };
 
-  // Ctrl/Cmd+wheel (and trackpad pinch, which reports ctrlKey) zooms; a
-  // plain wheel scrolls the page. Non-passive so preventDefault works.
+  /* zoomToNode centres a node and zooms in far enough to read it. */
+  const zoomToNode = useCallback(
+    (id: string) => {
+      const n = simRef.current.byId.get(id);
+      if (!n) return;
+      autoFitRef.current = false;
+      const { width, height } = sizeRef.current;
+      const z = Math.min(ZOOM_MAX, Math.max(viewRef.current.zoom, 1.8));
+      setView(z, { x: width / 2 - n.x * z, y: height / 2 - n.y * z });
+    },
+    [setView]
+  );
+
+  // The wheel (and trackpad pinch, which reports ctrlKey) zooms around the
+  // pointer: the canvas fills its panel, so there is no page to scroll.
+  // Non-passive so preventDefault works.
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg) return;
     const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       const rect = svg.getBoundingClientRect();
       // Normalise to pixels: Firefox reports lines (deltaMode 1) or pages (2).
@@ -317,7 +380,8 @@ export function GraphCanvas({
     const dragId = nodeDragRef.current;
     if (dragId) {
       const n = simById.get(dragId);
-      if (n) n.fx = n.fy = null;
+      // the centre stays pinned where it is dropped
+      if (n && n.id !== centreIdRef.current) n.fx = n.fy = null;
       forceRef.current?.alphaTarget(0);
       nodeDragRef.current = null;
     }
@@ -443,6 +507,11 @@ export function GraphCanvas({
             onClick={(e) => {
               if (e.target === e.currentTarget && !pressRef.current.moved) setSelectedId(null);
             }}
+            onDoubleClick={(e) => {
+              if (e.target !== e.currentTarget) return;
+              const rect = svgRef.current!.getBoundingClientRect();
+              zoomAt(2, e.clientX - rect.left, e.clientY - rect.top);
+            }}
           >
             <defs>
               {Object.entries(markerIds).map(([color, id]) => (
@@ -482,6 +551,8 @@ export function GraphCanvas({
                 nodeDragRef={nodeDragRef}
                 pressRef={pressRef}
                 onNodeClick={onNodeClick}
+                onNodeDoubleClick={zoomToNode}
+                centreId={centreId}
               />
             </g>
           </svg>
@@ -559,6 +630,8 @@ const GraphLayer = memo(function GraphLayer({
   nodeDragRef,
   pressRef,
   onNodeClick,
+  onNodeDoubleClick,
+  centreId,
 }: {
   sim: Simulation<SimNode, undefined> | null;
   nodes: SimNode[];
@@ -580,6 +653,8 @@ const GraphLayer = memo(function GraphLayer({
   nodeDragRef: MutableRefObject<string | null>;
   pressRef: MutableRefObject<{ x: number; y: number; moved: boolean }>;
   onNodeClick?: (node: CanvasNode) => void;
+  onNodeDoubleClick: (id: string) => void;
+  centreId?: string;
 }) {
   const [, setFrame] = useState(0);
   useEffect(() => {
@@ -614,6 +689,7 @@ const GraphLayer = memo(function GraphLayer({
               y2={y2}
               strokeWidth={active ? 1.8 : 1}
               strokeOpacity={dimmed ? 0.08 : active ? 0.85 : 0.35}
+              strokeDasharray={e.dashed ? "4 3" : undefined}
               style={{ stroke: color }}
               markerEnd={directed && !dimmed ? `url(#${markerIdOf(color)})` : undefined}
             />
@@ -641,8 +717,7 @@ const GraphLayer = memo(function GraphLayer({
         const isSelected = selectedId === n.id;
         const isFocused = focusId !== null && neighbours.has(n.id);
         const isDimmed = focusId !== null && !isFocused;
-        const showLabel = labelAll || isFocused || hubIds.has(n.id);
-        const fontSize = (isHovered || isSelected ? 11 : 9.5) * labelScale;
+        const isCentre = n.id === centreId;
         return (
           <g
             key={n.id}
@@ -673,6 +748,11 @@ const GraphLayer = memo(function GraphLayer({
               setSelectedId(n.id === selectedId ? null : n.id);
               onNodeClick?.(n);
             }}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              setSelectedId(n.id);
+              onNodeDoubleClick(n.id);
+            }}
             className="cursor-pointer focus:outline-none"
           >
             {(isHovered || isSelected) && (
@@ -682,30 +762,34 @@ const GraphLayer = memo(function GraphLayer({
             <circle
               r={n.radius}
               fillOpacity={isDimmed ? 0.15 : 0.9}
-              strokeWidth={isSelected ? 2 : 1}
+              strokeWidth={isCentre ? 3 : isSelected ? 2 : 1}
               strokeOpacity={isDimmed ? 0.2 : 1}
-              style={{ fill: s.fill, stroke: isSelected ? "var(--color-ink)" : s.stroke }}
+              style={{ fill: s.fill, stroke: isSelected || isCentre ? "var(--color-ink)" : s.stroke }}
             />
-            {showLabel && (
-              <text
-                y={n.radius + 2 + fontSize}
-                textAnchor="middle"
-                fontSize={fontSize}
-                fontWeight={isHovered || isSelected ? 600 : 500}
-                strokeWidth={3 * labelScale}
-                strokeLinejoin="round"
-                paintOrder="stroke fill"
-                fillOpacity={isDimmed ? 0.2 : 1}
-                style={{
-                  fontFamily: "var(--font-sans)",
-                  pointerEvents: "none",
-                  fill: isFocused ? "var(--color-ink)" : "var(--color-body)",
-                  stroke: "var(--color-surface-card)",
-                }}
-              >
-                {isHovered || isSelected || n.title.length <= 20 ? n.title : `${n.title.slice(0, 18)}…`}
-              </text>
-            )}
+            {(() => {
+              const lines = splitLabel(n.title);
+              const longest = Math.max(...lines.map((l) => l.length), 1);
+              // fit the longest line in the bubble's width (~0.58 em per glyph)
+              const fit = (n.radius * 1.85) / (longest * 0.58);
+              const fs = Math.max(7.5, Math.min(isCentre ? 13 : isHovered || isSelected ? 11 : 10, fit));
+              const lineH = fs * 1.15;
+              const y0 = -((lines.length - 1) * lineH) / 2;
+              return (
+                <text
+                  textAnchor="middle"
+                  fontSize={fs}
+                  fontWeight={isCentre || isHovered || isSelected ? 700 : 600}
+                  fillOpacity={isDimmed ? 0.25 : 1}
+                  style={{ fontFamily: "var(--font-sans)", pointerEvents: "none", fill: "var(--color-ink)" }}
+                >
+                  {lines.map((l, li) => (
+                    <tspan key={li} x={0} y={y0 + li * lineH} dominantBaseline="central">
+                      {l}
+                    </tspan>
+                  ))}
+                </text>
+              );
+            })()}
           </g>
         );
       })}

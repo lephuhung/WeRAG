@@ -11,6 +11,7 @@ const SECTION_KEYS: [RegExp, LocaleKey][] = [
   [/^\/platform\/knowledge-bases/, "nav.knowledgeBases"],
   [/^\/platform\/artifacts/, "nav.artifacts"],
   [/^\/platform\/legal-lookup/, "nav.legalLookup"],
+  [/^\/platform\/legal-map/, "nav.legalLookup"],
   [/^\/platform\/agents/, "nav.agents"],
   [/^\/platform\/system/, "nav.settings"],
   [/^\/platform\/settings/, "nav.settings"],

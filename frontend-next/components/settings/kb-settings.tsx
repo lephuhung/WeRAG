@@ -269,7 +269,6 @@ export function KbSettingsModal({
                     ["vector_enabled", "kbSettings.idxVector"],
                     ["keyword_enabled", "kbSettings.idxKeyword"],
                     ["wiki_enabled", "kbSettings.idxWiki"],
-                    ["graph_enabled", "kbSettings.idxGraph"],
                   ] as const
                 ).map(([field, labelKey]) => (
                   <ToggleRow

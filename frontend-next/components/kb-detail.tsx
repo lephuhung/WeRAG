@@ -865,11 +865,7 @@ export function KbDetail({ kbId }: { kbId: string }) {
         ) : (
           /* TAB 2: Full Knowledge Graph */
           <section className="card flex min-h-0 flex-1 flex-col overflow-hidden">
-            <KnowledgeGraph
-              kbId={kbId}
-              onSelectSlug={(slug) => setSelectedWikiSlug(slug)}
-              onOpenKnowledge={openDocById}
-            />
+            <KnowledgeGraph kbId={kbId} onOpenKnowledge={openDocById} />
           </section>
         )}
       </div>

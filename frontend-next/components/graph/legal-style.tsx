@@ -12,12 +12,16 @@ const LEGAL_GROUPS: Record<string, string[]> = {
   decree: ["Nghị định"],
   circular: ["Thông tư", "Thông tư liên tịch", "Thông tư liên bộ"],
   decision: ["Quyết định", "Nghị quyết", "Nghị quyết liên tịch", "Chỉ thị"],
+  // Party and steering documents (dangcongsan.vn): guidance, conclusions,
+  // regulations, plans, notices, dispatches
+  party: ["Hướng dẫn", "Kết luận", "Quy định", "Quy chế", "Kế hoạch", "Thông báo", "Công văn", "Chương trình", "Đề án", "Điều lệ"],
 };
 export const LEGAL_FAMILY: Record<string, GraphFamily> = {
   law: "red",
   decree: "skyDeep",
   circular: "emerald",
   decision: "amber",
+  party: "purple",
   other: "slate",
 };
 
@@ -73,13 +77,40 @@ export function docLabel(d: LegalGraphDoc) {
   return num ? `${d.doc_type} ${num}`.trim() : d.title;
 }
 
+/* statusTone maps a validity status to its colour family: expired → error,
+ * partly expired / suspended / not yet in force → warning, in force →
+ * success, unknown → muted. */
+export function statusTone(status: string): "error" | "warning" | "success" | "muted" {
+  const s = (status ?? "").toLowerCase();
+  if (s.includes("hết hiệu lực toàn bộ") || s.includes("bị bãi bỏ")) return "error";
+  if (s.includes("một phần") || s.includes("ngưng") || s.includes("chưa")) return "warning";
+  if (s.includes("còn hiệu lực") || s.includes("có hiệu lực")) return "success";
+  return "muted";
+}
+
+const STATUS_CHIP: Record<ReturnType<typeof statusTone>, string> = {
+  error: "bg-error-surface text-error",
+  warning: "bg-warning-surface text-warning",
+  success: "bg-success-surface text-success",
+  muted: "bg-surface-strong text-muted",
+};
+
+const STATUS_DOT: Record<ReturnType<typeof statusTone>, string> = {
+  error: "bg-error",
+  warning: "bg-warning",
+  success: "bg-success",
+  muted: "bg-muted-soft",
+};
+
 export function StatusChip({ status }: { status: string }) {
   if (!status) return null;
-  const s = status.toLowerCase();
-  let tone = "bg-surface-strong text-muted";
-  if (s.includes("hết hiệu lực toàn bộ") || s.includes("bị bãi bỏ")) tone = "bg-error-surface text-error";
-  else if (s.includes("một phần") || s.includes("ngưng") || s.includes("chưa")) tone = "bg-warning-surface text-warning";
-  else if (s.includes("còn hiệu lực") || s.includes("có hiệu lực")) tone = "bg-success-surface text-success";
-  return <span className={`inline-block max-w-full truncate rounded px-1.5 py-px text-[10.5px] font-medium ${tone}`}>{status}</span>;
+  return <span className={`inline-block max-w-full truncate rounded px-1.5 py-px text-[10.5px] font-medium ${STATUS_CHIP[statusTone(status)]}`}>{status}</span>;
+}
+
+/* StatusDot is the chip shrunk to a dot for the compact graph cards; the
+ * status itself is in the card's tooltip. */
+export function StatusDot({ status }: { status: string }) {
+  if (!status) return null;
+  return <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT[statusTone(status)]}`} title={status} />;
 }
 

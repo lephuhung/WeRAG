@@ -77,6 +77,19 @@ export async function lookupLegalValidity(
   return res.data;
 }
 
+/** Type-ahead: the documents the text typed so far may mean (at most 8),
+ * matched like the lookup but without validity details. */
+export async function suggestLegalDocuments(
+  q: string,
+  opts: { isGuest?: boolean; signal?: AbortSignal } = {},
+): Promise<LegalValidityRef[]> {
+  const res = await apiGet<{ success: boolean; data: LegalValidityRef[] }>(
+    `/api/v1/legal-lookup/suggest?q=${encodeURIComponent(q)}`,
+    { skipTenant: opts.isGuest === true, signal: opts.signal },
+  );
+  return res.data ?? [];
+}
+
 /* A lookup that found nothing (or only documents mentioning a missing số
  * hiệu), per normalized query — the SuperAdmin list of catalogue gaps. */
 export interface LegalLookupMiss {

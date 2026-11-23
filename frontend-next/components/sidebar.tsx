@@ -42,7 +42,7 @@ const NAV = [
   { href: "/platform/creatChat", labelKey: "nav.newChat", icon: IconChat, match: ["/platform/creatChat", "/platform/chat"] },
   { href: "/platform/knowledge-bases", labelKey: "nav.knowledgeBases", icon: IconBook, match: ["/platform/knowledge-bases"] },
   // members and guests alike: the catalogue lookup needs no organization
-  { href: "/platform/legal-lookup", labelKey: "nav.legalLookup", icon: IconFileSearch, match: ["/platform/legal-lookup"] },
+  { href: "/platform/legal-lookup", labelKey: "nav.legalLookup", icon: IconFileSearch, match: ["/platform/legal-lookup", "/platform/legal-map"] },
   { href: "/platform/artifacts", labelKey: "nav.artifacts", icon: IconArtifact, match: ["/platform/artifacts"], orgOnly: true },
 ] as const;
 

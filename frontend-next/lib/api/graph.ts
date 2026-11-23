@@ -1,9 +1,12 @@
 import { apiGet } from "@/lib/api-client";
 
-/* Graph views drawn on a KB page (internal/handler/knowledge_graph_view.go):
- * the entity graph extracted from the KB's documents (Neo4j) and the
- * relation graph of its documents in the legal catalogue. */
+/* The graph drawn on a KB page (internal/handler/knowledge_graph_view.go):
+ * the relation graph of its documents in the legal catalogue. */
 
+/* The relation network of a knowledge base (GET …/legal-graph): its
+ * catalogued documents, the documents they act on or are acted on by, and
+ * the relations between them. Meta: document_number, title, status,
+ * issuer, issued_on, in_kb, knowledge_id, knowledge_title. */
 export interface GraphViewNode {
   id: string;
   name: string;
@@ -24,37 +27,9 @@ export interface GraphView {
   truncated: boolean;
 }
 
-export interface EntityGraphResponse {
-  success: boolean;
-  data: GraphView;
-  /** The KB's own graph switch (indexing strategy + extraction). */
-  graph_enabled: boolean;
-  /** Whether the graph store is connected (always true on a running app). */
-  graph_store: boolean;
-}
-
-export interface EntityGraphParams {
-  q?: string;
-  types?: string[];
-  knowledgeId?: string;
-  limit?: number;
-}
-
-export function getEntityGraph(kbId: string, params: EntityGraphParams = {}) {
-  const query = new URLSearchParams();
-  if (params.q) query.set("q", params.q);
-  if (params.types?.length) query.set("types", params.types.join(","));
-  if (params.knowledgeId) query.set("knowledge_id", params.knowledgeId);
-  if (params.limit) query.set("limit", String(params.limit));
-  const qs = query.toString();
-  return apiGet<EntityGraphResponse>(
-    `/api/v1/knowledge-bases/${kbId}/entity-graph${qs ? "?" + qs : ""}`
-  );
-}
-
 export function getLegalGraph(kbId: string, limit?: number) {
   return apiGet<{ success: boolean; data: GraphView }>(
-    `/api/v1/knowledge-bases/${kbId}/legal-graph${limit ? "?limit=" + limit : ""}`
+    `/api/v1/knowledge-bases/${kbId}/legal-graph${limit ? "?limit=" + limit : ""}`,
   );
 }
 
@@ -129,4 +104,47 @@ export function getLegalGraphFocus(kbId: string, params: { doc?: string; q?: str
   return apiGet<{ success: boolean; data: LegalGraphFocus }>(
     `/api/v1/knowledge-bases/${kbId}/legal-graph/focus${qs ? "?" + qs : ""}`
   );
+}
+
+/* The catalogue map (GET /legal-graph/explore): one document and the
+ * documents around it to a depth over the whole legal catalogue. depth
+ * is signed: +k on the "in" side (acts on the focus, or on what acts on
+ * it), -k on the "out" side (what the focus acts on, and so on). */
+export interface LegalKnowledgeCopy {
+  knowledge_id: string;
+  knowledge_base_id: string;
+  knowledge_base_name: string;
+  title: string;
+}
+
+export interface LegalGraphExploreNode {
+  doc: LegalGraphDoc;
+  depth: number;
+  copies?: LegalKnowledgeCopy[];
+  /** Per relation, the next-step documents the per-node cap left out. */
+  dropped?: Record<string, number>;
+}
+
+export interface LegalGraphExploreEdge {
+  from: string;
+  to: string;
+  relation: string;
+}
+
+export interface LegalGraphExplore {
+  focus: LegalGraphDoc;
+  nodes: LegalGraphExploreNode[];
+  edges: LegalGraphExploreEdge[];
+  depth: number;
+  node_cap_hit: boolean;
+}
+
+/** A guest sends no organization (a stored one would be refused). */
+export function getLegalGraphExplore(doc: string, opts: { depth?: number; isGuest?: boolean; signal?: AbortSignal } = {}) {
+  const q = new URLSearchParams({ doc });
+  if (opts.depth) q.set("depth", String(opts.depth));
+  return apiGet<{ success: boolean; data: LegalGraphExplore }>(`/api/v1/legal-graph/explore?${q.toString()}`, {
+    skipTenant: opts.isGuest === true,
+    signal: opts.signal,
+  });
 }
