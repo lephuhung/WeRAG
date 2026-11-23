@@ -420,26 +420,34 @@ export function GraphCanvas({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface-card">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-hairline px-6 py-3">
-        <div className="flex flex-wrap items-center gap-2">
-          {presentTypes.length > 1 && (
-            <div className="flex flex-wrap items-center gap-1 rounded-full bg-surface-strong p-1">
+      {/* Toolbar: the type filters stay on one row (scrolling sideways on a
+       * narrow screen); the zoom controls float over the canvas instead, so
+       * the toolbar does not eat the drawing area on a small screen. */}
+      <div className="flex flex-col gap-2 border-b border-hairline px-3 py-2 sm:px-6 sm:py-3">
+        {presentTypes.length > 1 && (
+          <div className="-mx-1 max-w-full overflow-x-auto px-1 [scrollbar-width:none]">
+            <div className="inline-flex items-center gap-1 rounded-full bg-surface-strong p-1">
               {["all", ...presentTypes].map((type) => (
                 <button
                   key={type}
                   onClick={() => setFilterType(type)}
-                  className={`rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${
+                  className={`flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 text-[12px] font-medium transition-colors ${
                     filterType === type
                       ? "bg-surface-card text-ink shadow-[0_1px_3px_rgba(0,0,0,0.08)]"
                       : "text-muted hover:text-ink"
                   }`}
                 >
+                  {type !== "all" && (
+                    <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: styleOf(type).fill }} />
+                  )}
                   {type === "all" ? t("graph.all") : styleOf(type).label}
                 </button>
               ))}
             </div>
-          )}
-          <div className="relative w-48">
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <div className="relative w-full min-[480px]:w-48">
             <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-soft" />
             <input
               type="text"
@@ -450,33 +458,6 @@ export function GraphCanvas({
             />
           </div>
           {toolbarExtra}
-        </div>
-        <div className="flex items-center gap-2 text-muted">
-          <div className="flex items-center rounded-lg border border-hairline bg-surface-card p-0.5">
-            <button
-              className="btn btn-ghost btn-sm h-7 w-7 p-0"
-              onClick={() => zoomBy(1.2)}
-              title={t("graph.zoomIn")}
-              aria-label={t("graph.zoomIn")}
-            >
-              <IconPlus className="h-3.5 w-3.5" />
-            </button>
-            <button
-              className="btn btn-ghost btn-sm h-7 w-7 p-0"
-              onClick={() => zoomBy(1 / 1.2)}
-              title={t("graph.zoomOut")}
-              aria-label={t("graph.zoomOut")}
-            >
-              <IconMinus className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <button className="btn btn-outline btn-sm h-7 text-[12px]" onClick={fitView} title={t("graph.fitTitle")}>
-            {t("graph.fit")}
-          </button>
-          <button className="btn btn-tertiary btn-sm h-7 text-[12px]" onClick={resetView} title={t("graph.resetTitle")}>
-            {t("graph.reset")}
-          </button>
-          <span className="text-[12px] text-muted-soft">{Math.round(zoom * 100)}%</span>
         </div>
       </div>
 
@@ -556,11 +537,42 @@ export function GraphCanvas({
               />
             </g>
           </svg>
+          <div className="pointer-events-none absolute left-3 top-3 z-10 flex items-center gap-2 text-muted">
+            <div className="pointer-events-auto flex items-center rounded-lg border border-hairline bg-surface-card p-0.5 shadow-sm">
+              <button
+                className="btn btn-ghost btn-sm h-7 w-7 p-0"
+                onClick={() => zoomBy(1.2)}
+                title={t("graph.zoomIn")}
+                aria-label={t("graph.zoomIn")}
+              >
+                <IconPlus className="h-3.5 w-3.5" />
+              </button>
+              <button
+                className="btn btn-ghost btn-sm h-7 w-7 p-0"
+                onClick={() => zoomBy(1 / 1.2)}
+                title={t("graph.zoomOut")}
+                aria-label={t("graph.zoomOut")}
+              >
+                <IconMinus className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <button className="btn btn-outline btn-sm pointer-events-auto h-7 bg-surface-card text-[12px] shadow-sm" onClick={fitView} title={t("graph.fitTitle")}>
+              {t("graph.fit")}
+            </button>
+            <button
+              className="btn btn-tertiary btn-sm pointer-events-auto hidden h-7 bg-surface-card text-[12px] shadow-sm sm:inline-flex"
+              onClick={resetView}
+              title={t("graph.resetTitle")}
+            >
+              {t("graph.reset")}
+            </button>
+            <span className="hidden rounded-md bg-surface-card/80 px-1 text-[12px] text-muted-soft sm:inline">{Math.round(zoom * 100)}%</span>
+          </div>
         </div>
       )}
 
       {selected && (
-        <div className="absolute bottom-16 right-6 max-h-[60%] w-80 overflow-y-auto rounded-xl border border-hairline bg-surface-card p-4 shadow-lg">
+        <div className="absolute inset-x-3 bottom-3 z-20 max-h-[55%] overflow-y-auto rounded-xl sm:inset-x-auto sm:bottom-16 sm:right-6 sm:max-h-[60%] sm:w-80 border border-hairline bg-surface-card p-4 shadow-lg">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2">
               <span className="inline-block h-3 w-3 rounded-full" style={{ background: styleOf(selected.type).fill }} />
@@ -588,8 +600,9 @@ export function GraphCanvas({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-hairline bg-surface-card/50 px-6 py-2.5">
-        <div className="flex flex-wrap items-center gap-5">
+      {/* the legend repeats the filter chips' colours: phones show only the chips */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-hairline bg-surface-card/50 px-3 py-2 sm:px-6 sm:py-2.5">
+        <div className="hidden flex-wrap items-center gap-x-5 gap-y-1 sm:flex">
           {presentTypes.map((type) => (
             <span key={type} className="caption flex items-center gap-2 text-muted">
               <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: styleOf(type).fill }} />
@@ -600,7 +613,7 @@ export function GraphCanvas({
         <div className="caption text-muted-soft">
           <span>{t("graph.counts", { nodes: displayIds.size, edges: edges.length })}</span>
           {truncated && <span className="ml-3">· {t("graph.truncated")}</span>}
-          <span className="ml-3 hidden sm:inline">{t("graph.hint")}</span>
+          <span className="ml-3 hidden lg:inline">{t("graph.hint")}</span>
         </div>
       </div>
     </div>

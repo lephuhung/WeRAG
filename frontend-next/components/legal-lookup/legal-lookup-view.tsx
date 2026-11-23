@@ -229,7 +229,7 @@ export function LegalLookupView() {
     <div className="flex-1 overflow-y-auto">
       <div className={`mx-auto w-full px-4 sm:px-8 ${doc ? "max-w-[1680px] py-6" : "max-w-[880px] py-6 sm:py-10"}`}>
         <div className="mb-6">
-          <h1 className="display-xl">{t("llookup.title")}</h1>
+          <h1 className="display-xl max-sm:text-[calc(30px*var(--app-font-scale,1))]">{t("llookup.title")}</h1>
           <p className="mt-3 max-w-[620px] text-body">{t("llookup.subtitle")}</p>
         </div>
 
@@ -298,7 +298,8 @@ export function LegalLookupView() {
       </div>
 
       {doc && (
-        <div className="mx-auto flex w-full max-w-[1680px] flex-col gap-6 px-4 pb-10 sm:px-8 lg:flex-row lg:items-start">
+        <div className="@container mx-auto w-full max-w-[1680px] px-4 pb-10 sm:px-8">
+        <div className="flex flex-col gap-6 @[1000px]:flex-row @[1000px]:items-start">
           <div ref={mapRef} className="min-w-0 flex-1 scroll-mt-4">
             <LegalMap
               docId={doc}
@@ -307,10 +308,12 @@ export function LegalLookupView() {
               onDepthChange={(dp) => router.replace(hrefWith({ depth: dp }))}
             />
           </div>
-          {/* the results sit right of the map, scrolling on their own */}
-          <aside className="w-full shrink-0 lg:sticky lg:top-4 lg:max-h-[min(78vh,820px)] lg:w-[380px] lg:overflow-y-auto lg:pr-1">
+          {/* the results sit right of the map (scrolling on their own) when
+          the column is wide, under it otherwise */}
+          <aside className="w-full shrink-0 @[1000px]:sticky @[1000px]:top-4 @[1000px]:max-h-[min(82dvh,820px)] @[1000px]:w-[340px] @[1000px]:overflow-y-auto @[1000px]:pr-1 @[1360px]:w-[380px]">
             {resultsBlock}
           </aside>
+        </div>
         </div>
       )}
     </div>
@@ -346,7 +349,7 @@ function MatchCard({ m, mapOpen, onMap }: { m: LegalValidityMatch; mapOpen: bool
   if (m.expired_on) dates.push(t("llookup.expired", { date: formatLegalDate(m.expired_on) }));
   const knowledge = m.knowledge ?? [];
   return (
-    <article className={`card px-5 py-4 ${mapOpen ? "ring-1 ring-ink" : ""}`}>
+    <article className={`card px-4 py-4 sm:px-5 ${mapOpen ? "ring-1 ring-ink" : ""}`}>
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-[16px] font-semibold text-ink">{label}</h2>
         <StatusBadge kind={m.status} />

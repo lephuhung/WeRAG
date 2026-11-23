@@ -156,14 +156,14 @@ export function LegalMap({
 
   const toolbar = (
     <>
-      <span className="text-[13px] font-semibold text-ink">{t("lmap.heading")}</span>
+      <span className="hidden text-[13px] font-semibold text-ink md:inline">{t("lmap.heading")}</span>
       {data && trail.length > 1 && (
-        <button type="button" className="btn btn-ghost btn-sm h-8 gap-1 px-2 text-[12px]" onClick={goBack}>
-          <IconChevronLeft className="h-3.5 w-3.5" />
-          {legalDocShortLabel(trail[trail.length - 2])}
+        <button type="button" className="btn btn-ghost btn-sm h-8 max-w-[160px] gap-1 px-2 text-[12px]" onClick={goBack}>
+          <IconChevronLeft className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{legalDocShortLabel(trail[trail.length - 2])}</span>
         </button>
       )}
-      <label className="flex items-center gap-1.5 text-[12px] text-muted">
+      <label className="flex items-center gap-1.5 whitespace-nowrap text-[12px] text-muted">
         {t("lmap.depth")}
         <select className="input h-8 w-auto min-w-[92px] py-0 pl-2.5 pr-8 text-[12.5px] bg-[position:right_8px_center]" value={depth} onChange={(e) => onDepthChange(Number(e.target.value))}>
           {MAP_DEPTHS.map((d) => (
@@ -179,7 +179,7 @@ export function LegalMap({
           {t("graph.lf.basis", { n: basisCount })}
         </label>
       )}
-      <button type="button" className="btn btn-outline btn-sm h-7 text-[12px]" onClick={() => setFull((f) => !f)}>
+      <button type="button" className="btn btn-outline btn-sm h-8 whitespace-nowrap text-[12px]" onClick={() => setFull((f) => !f)}>
         {full ? t("graph.lf.exitFullscreen") : t("graph.lf.fullscreen")}
       </button>
     </>
@@ -192,9 +192,9 @@ export function LegalMap({
   ].filter(Boolean) as { text: string; cls: string }[];
 
   return (
-    <div className={`flex min-h-0 flex-col ${full ? "fixed inset-0 z-50 bg-canvas" : "card h-[min(78vh,820px)] min-h-[520px] overflow-hidden"}`}>
+    <div className={`flex min-h-0 flex-col ${full ? "fixed inset-0 z-50 bg-canvas" : "card h-[min(82dvh,820px)] min-h-[460px] overflow-hidden sm:min-h-[520px]"}`}>
       {notes.length > 0 && (
-        <div className="border-b border-hairline px-6 py-1.5">
+        <div className="border-b border-hairline px-3 py-1.5 sm:px-6">
           {notes.map((n) => (
             <p key={n.text} className={`caption ${n.cls}`}>
               {n.text}
