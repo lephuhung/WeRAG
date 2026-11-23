@@ -62,7 +62,7 @@ func (s *sessionService) KnowledgeQA(
 	// Platform-wide SuperAdmin switch: while off, no knowledge-QA turn
 	// performs web search regardless of the request or agent switches.
 	webSearchEnabled := resolveWebSearchEnabled(req) &&
-		s.systemSettings.GetBool(ctx, "chat.web_search_enabled", "", true)
+		s.systemSettings.GetBool(ctx, "chat.web_search_enabled", "", chatWebSearchEnabledDefault)
 	logger.Infof(
 		ctx,
 		"Knowledge base question answering parameters, session ID: %s, query: %s, webSearchEnabled: %v",

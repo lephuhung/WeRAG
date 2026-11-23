@@ -616,7 +616,8 @@ func (s *sessionService) buildAgentConfig(
 	// Platform-wide SuperAdmin switches: while a switch is off, the
 	// per-agent and per-request choices stay stored but are neutralised
 	// for every tenant and user.
-	platformWebSearch := s.systemSettings.GetBool(ctx, "chat.web_search_enabled", "", true)
+	platformWebSearch := s.systemSettings.GetBool(
+		ctx, "chat.web_search_enabled", "", chatWebSearchEnabledDefault)
 	platformMCP := s.systemSettings.GetBool(ctx, "chat.mcp_enabled", "", true)
 	agentConfig := &types.AgentConfig{
 		MaxIterations:               customAgent.Config.MaxIterations,

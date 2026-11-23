@@ -16,6 +16,14 @@ import { documentsNamedIn, splitDocumentMentions } from "@/lib/document-mentions
 import { ErrorNote } from "@/components/chat/error-note";
 import { ClickAwayLayer } from "@/components/click-away-layer";
 
+/* Web search is off platform-wide (chat.web_search_enabled defaults to
+ * false, see chatWebSearchEnabledDefault in the backend, which drops the
+ * web tools on every turn): a legal answer must trace to a reviewed corpus
+ * document. The globe toggle is therefore not drawn; a switch that does
+ * nothing only misleads. To bring it back, set this to true together with
+ * the provider editor entry in settings-modal.tsx / system-nav.ts. */
+const WEB_SEARCH_IN_COMPOSER = false;
+
 /* Ports Input-field.vue's composer: textarea + @mention picker + image/file
  * attachments + agent-mode switch + websearch toggle + model picker + send/stop.
  * Emits the same send-msg tuple the Vue chat view consumes:
@@ -303,7 +311,7 @@ export function Composer({
   };
 
   const imageCapable = selectedAgent?.config?.image_upload_enabled === true;
-  const websearchOn = settings.webSearchEnabled;
+  const websearchOn = WEB_SEARCH_IN_COMPOSER && settings.webSearchEnabled;
   const placeholder = isGuest
     ? t("guest.composerPlaceholder")
     : documents.length > 1 && documentMentions.length === 0
@@ -637,9 +645,9 @@ export function Composer({
             // no web search, attachments or images for a guest
             <>{agentControl}{!toolbarStartInMenu && toolbarStart}</>
           ) : uploadsBecomeSources ? (
-            <>{attachmentControl}{webControl}{!toolbarStartInMenu && toolbarStart}</>
+            <>{attachmentControl}{WEB_SEARCH_IN_COMPOSER && webControl}{!toolbarStartInMenu && toolbarStart}</>
           ) : (
-            <>{agentControl}{webControl}{attachmentControl}{!toolbarStartInMenu && toolbarStart}</>
+            <>{agentControl}{WEB_SEARCH_IN_COMPOSER && webControl}{attachmentControl}{!toolbarStartInMenu && toolbarStart}</>
           )}
 
           <DictationButton

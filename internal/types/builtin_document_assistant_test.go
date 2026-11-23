@@ -43,7 +43,13 @@ func TestBuiltinDocumentAssistantLoadsFromYAML(t *testing.T) {
 	if !reflect.DeepEqual(cfg.AllowedTools, wantTools) {
 		t.Fatalf("allowed_tools = %v", cfg.AllowedTools)
 	}
-	if !cfg.FormatCheckOnOpenEnabled() || !cfg.WebSearchDefaultOn || cfg.FormatCheckModelID != "" || cfg.SpellcheckModelID != "builtin-llm-spellcheck" {
+	// WebSearchEnabled / WebSearchDefaultOn are false on purpose: a legal
+	// drafting assistant answers from the reviewed corpus, and the platform
+	// switch is off as well (see chatWebSearchEnabledDefault).
+	if cfg.WebSearchEnabled || cfg.WebSearchDefaultOn {
+		t.Fatalf("web search must stay off for the document assistant: %+v", cfg)
+	}
+	if !cfg.FormatCheckOnOpenEnabled() || cfg.FormatCheckModelID != "" || cfg.SpellcheckModelID != "builtin-llm-spellcheck" {
 		t.Fatalf("document assistant settings: %+v", cfg)
 	}
 	if cfg.FormatCheckModel() != cfg.ModelID || cfg.SpellcheckModel() != "builtin-llm-spellcheck" {

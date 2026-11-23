@@ -24,6 +24,19 @@ func (defaultChatSystemSettings) GetBool(_ context.Context, _, _ string, fallbac
 	return fallback
 }
 
+// chatSwitchesOnSystemSettings stands for a SuperAdmin who turned the
+// platform chat switches on. chat.web_search_enabled is off by default (see
+// chatWebSearchEnabledDefault), so a test about per-request / per-agent
+// selections has to say so explicitly instead of asserting the platform
+// default by accident.
+type chatSwitchesOnSystemSettings struct {
+	interfaces.SystemSettingService
+}
+
+func (chatSwitchesOnSystemSettings) GetBool(_ context.Context, _, _ string, _ bool) bool {
+	return true
+}
+
 type browserSourceKBService struct{ fakeAgentKnowledgeBaseService }
 
 func (s *browserSourceKBService) GetKnowledgeBaseByIDOnly(context.Context, string) (*types.KnowledgeBase, error) {
@@ -93,7 +106,7 @@ func TestBrowserSourceUnavailableDoesNotCreateFallbackEngine(t *testing.T) {
 func TestBrowserSourceConfigPreservesOtherSelectionsAndResetsNextTurn(t *testing.T) {
 	svc := &sessionService{
 		cfg: &config.Config{}, webSearchProviderRepo: &emptyWebSearchProviderRepo{},
-		systemSettings: defaultChatSystemSettings{},
+		systemSettings: chatSwitchesOnSystemSettings{},
 	}
 	req := &types.QARequest{
 		LocalBrowserEnabled: true, WebSearchEnabled: true,
@@ -146,4 +159,26 @@ func TestAgentPromptReferencesReachBothRuntimePaths(t *testing.T) {
 	a.Config.SystemPrompt = "My custom prompt"
 	svc.applyAgentOverridesToChatManage(t.Context(), a, cm)
 	require.Equal(t, "My custom prompt", cm.SummaryConfig.Prompt)
+}
+
+// TestWebSearchOffWhenPlatformSwitchUnset pins the platform decision: with no
+// stored value for chat.web_search_enabled, a turn gets neither web search nor
+// the local browser, however loudly the agent config and the request ask for
+// them. See chatWebSearchEnabledDefault for why this system ships that way.
+func TestWebSearchOffWhenPlatformSwitchUnset(t *testing.T) {
+	svc := &sessionService{
+		cfg: &config.Config{}, webSearchProviderRepo: &emptyWebSearchProviderRepo{},
+		systemSettings: defaultChatSystemSettings{},
+	}
+	req := &types.QARequest{
+		LocalBrowserEnabled: true, WebSearchEnabled: true,
+		Session: &types.Session{ID: "session", TenantID: 1},
+		CustomAgent: &types.CustomAgent{TenantID: 1, Config: types.CustomAgentConfig{
+			WebSearchEnabled: true,
+		}},
+	}
+	cfg, err := svc.buildAgentConfig(t.Context(), req, &types.Tenant{ID: 1}, 1)
+	require.NoError(t, err)
+	require.False(t, cfg.WebSearchEnabled, "platform switch unset must neutralise web search")
+	require.False(t, cfg.LocalBrowserEnabled, "the same switch gates the local browser tool")
 }

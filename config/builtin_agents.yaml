@@ -4,6 +4,12 @@
 # `enabled: false` hides an agent from the agent picker (web and Word add-in)
 # while keeping it resolvable by ID for existing sessions and API callers.
 # Absent means enabled.
+#
+# `web_search_enabled: false` everywhere is deliberate, not an oversight: this
+# is a legal-document system and answers must trace to a reviewed corpus
+# document. The platform switch `chat.web_search_enabled` defaults to off as
+# well (see chatWebSearchEnabledDefault in internal/application/service/
+# system_setting.go), so flipping an agent back on here alone changes nothing.
 
 builtin_agents:
   - id: "builtin-quick-answer"
@@ -23,8 +29,8 @@ builtin_agents:
       context_template_id: "default_context"
       temperature: 0.7
       max_completion_tokens: 0
-      web_search_enabled: true
-      web_search_max_results: 5
+      web_search_enabled: false
+      web_search_max_results: 0
       multi_turn_enabled: true
       history_turns: 5
       kb_selection_mode: "all"
@@ -67,8 +73,8 @@ builtin_agents:
         - "query_knowledge_graph"
         # No wiki tools: the wiki is a code-generated catalogue for people
         # (decision 2026-10-13); agents read the documents themselves.
-      web_search_enabled: true
-      web_search_max_results: 5
+      web_search_enabled: false
+      web_search_max_results: 0
       reflection_enabled: false
       multi_turn_enabled: true
       faq_priority_enabled: true
@@ -200,8 +206,8 @@ builtin_agents:
         - "read_document"
         - "query_knowledge_graph"
         - "resolve_abbreviation"
-      web_search_enabled: true
-      web_search_max_results: 5
+      web_search_enabled: false
+      web_search_max_results: 0
       # Document assistant components. Empty model ids use model_id.
       format_check_model_id: ""
       format_check_on_open: true
@@ -210,7 +216,7 @@ builtin_agents:
       # MCP service generate_illustration paints with; empty = the first
       # enabled service offering generate_image (e.g. Qwen-Image).
       illustration_mcp_service_id: ""
-      web_search_default_on: true
+      web_search_default_on: false
       reflection_enabled: false
       multi_turn_enabled: true
       embedding_top_k: 10

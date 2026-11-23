@@ -54,7 +54,6 @@ import { AbbreviationsSettings } from "@/components/settings/abbreviations-setti
 import { SkillsSettings } from "@/components/settings/skills-settings";
 import { DataStorageHub } from "@/components/settings/data-storage-hub";
 import { ParserEngineSettings } from "@/components/settings/parser-engine-settings";
-import { WebSearchSettings } from "@/components/settings/web-search-settings";
 import { SandboxSettings } from "@/components/settings/sandbox-settings";
 import {
   IconAgent,
@@ -179,7 +178,13 @@ const GROUPS: SettingsGroup[] = [
       { key: "vector", labelKey: "settingsNav.dataStorage", fallback: "Data storage", icon: IconStorageEngine, minRole: "system", render: () => <DataStorageHub />, route: `${SYS}/engines/vector` },
       { key: "parser", labelKey: "settingsNav.parser", fallback: "Parser engines", icon: IconParserEngine, minRole: "system", render: () => <ParserEngineSettings />, route: `${SYS}/engines/parser` },
       { key: "storage", labelKey: "settingsNav.dataStorage", fallback: "Data storage", icon: IconStorageEngine, minRole: "system", render: () => <DataStorageHub initialTab="storage" />, route: `${SYS}/engines/storage`, subOnly: true, parent: "vector" },
-      { key: "search", labelKey: "settingsNav.websearch", fallback: "Web search", icon: IconSearch, minRole: "system", render: () => <WebSearchSettings />, route: `${SYS}/engines/search` },
+      // Web search is off platform-wide (chat.web_search_enabled defaults to
+      // false — see chatWebSearchEnabledDefault in the backend): this is a
+      // legal-document system and answers must trace to a reviewed corpus
+      // document. The provider editor stays in the codebase but is not
+      // reachable, so nobody configures a provider the platform ignores.
+      // To bring it back: restore this entry, the matching entry in
+      // system-nav.ts, and turn the platform switch on.
       { key: "sandbox", labelKey: "settingsNav.sandbox", fallback: "Sandbox", icon: IconPower, minRole: "system", render: () => <SandboxSettings />, route: `${SYS}/engines/sandbox` },
 
     ],

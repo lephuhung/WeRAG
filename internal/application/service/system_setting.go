@@ -114,6 +114,12 @@ type settingSpec struct {
 	HideTail bool
 }
 
+// chatWebSearchEnabledDefault is the platform default for
+// "chat.web_search_enabled", used both by the setting registry below and by
+// the QA paths that read the switch, so the two cannot drift apart. See the
+// registry entry for why it is off.
+const chatWebSearchEnabledDefault = false
+
 // registry pins the set of legal keys. Expanding it is a deliberate,
 // reviewable operation — the implicit contract is "every key here is
 // safely runtime-tunable (no startup caching that would not honour
@@ -599,10 +605,18 @@ var registry = map[string]settingSpec{
 	// local-browser tool) platform-wide. The per-agent / per-request switches
 	// and the tenant provider config stay in place but are neutralised while
 	// this is off. Read live per QA turn.
+	//
+	// Defaults to OFF: this is a legal-document system, where an answer is
+	// only worth as much as the reviewed corpus document behind it (the
+	// vbpl / dangcongsan / TVPL feeds). A general search engine returns
+	// copies of legal texts whose consolidation and in-force state nobody
+	// vouches for, which is the one failure class the grounding gate exists
+	// to prevent. Turning it on is a deliberate platform decision, not a
+	// per-tenant convenience.
 	"chat.web_search_enabled": {
 		Type:     "bool",
 		EnvName:  "",
-		Default:  true,
+		Default:  chatWebSearchEnabledDefault,
 		Category: "chat",
 		Description: "Công tắc tìm kiếm Internet cấp nền tảng. Khi tắt, mọi cuộc trò chuyện (gồm trợ lý và công cụ trình duyệt cục bộ) không còn tìm kiếm Internet, " +
 			"công tắc phía người dùng được giữ nhưng không có tác dụng. Có hiệu lực ngay sau khi thay đổi.",

@@ -120,13 +120,8 @@ export const SYSTEM_TABS: SystemTab[] = [
             href: "/platform/system/engines/storage",
             minRole: "system",
           },
-          {
-            key: "search",
-            label: "Web search",
-            labelKey: "settingsNav.websearch",
-            href: "/platform/system/engines/search",
-            minRole: "system",
-          },
+          // Web search intentionally absent: off platform-wide, see the note in
+          // components/settings-modal.tsx.
           {
             key: "sandbox",
             label: "Sandbox",
