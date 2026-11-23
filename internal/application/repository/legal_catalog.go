@@ -37,11 +37,20 @@ func (r *legalCatalogRepository) UpsertDocuments(ctx context.Context, docs []*ty
 	}).CreateInBatches(docs, legalCatalogBatchSize).Error
 }
 
+// LegalCatalogSourceVBPL is legal_documents.source of the rows the vbpl.vn
+// import owns (the column's default).
+const LegalCatalogSourceVBPL = "vbpl"
+
 func (r *legalCatalogRepository) ReplaceRelations(ctx context.Context, rels []*types.LegalDocumentRelation) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// the relations read from the documents' texts are not the
-		// portal's to replace (a Party document has no other)
-		if err := tx.Where("source_label <> ?", types.LegalRelationSourceText).Delete(&types.LegalDocumentRelation{}).Error; err != nil {
+		// Only the portal's own relations are replaced: never an edge read
+		// from a document's text, and never an edge leaving a document of
+		// another source (a Party, TVPL or hand-entered document is not on
+		// vbpl.vn, so the import has nothing to put back). An edge whose
+		// source document is gone (pruned) is dropped with the rest.
+		if err := tx.Where("source_label <> ?", types.LegalRelationSourceText).
+			Where("from_id NOT IN (?)", tx.Model(&types.LegalDocument{}).Select("id").Where("source <> ?", LegalCatalogSourceVBPL)).
+			Delete(&types.LegalDocumentRelation{}).Error; err != nil {
 			return err
 		}
 		if len(rels) == 0 {

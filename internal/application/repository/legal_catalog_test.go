@@ -92,6 +92,52 @@ func TestLegalCatalogRepository(t *testing.T) {
 	}
 }
 
+// A vbpl import replaces the portal's relations only: an edge read from a
+// document's text and an edge leaving a document of another source (a Party
+// document is not on vbpl.vn) survive it, whatever their label.
+func TestLegalCatalogReplaceRelationsKeepsOtherSources(t *testing.T) {
+	repo := newLegalCatalogRepo(t)
+	ctx := context.Background()
+	docs := []*types.LegalDocument{
+		{ID: "luat", Source: "vbpl", DocumentNumber: "31/2024/QH15", NumberKey: "31/2024/QH15"},
+		{ID: "nd", Source: "vbpl", DocumentNumber: "102/2024/NĐ-CP", NumberKey: "102/2024/ND-CP"},
+		{ID: "hd", Source: "dangcongsan", DocumentNumber: "01-HD/TW", NumberKey: "01-HD/TW"},
+		{ID: "tay", Source: "manual", DocumentNumber: "9/2025/QĐ-UBND", NumberKey: "9/2025/QD-UBND"},
+	}
+	if err := repo.UpsertDocuments(ctx, docs); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	portal := &types.LegalDocumentRelation{FromID: "nd", ToID: "luat", Relation: types.LegalRelationGuides, SourceLabel: "Quy định chi tiết"}
+	text := &types.LegalDocumentRelation{FromID: "hd", ToID: "luat", Relation: types.LegalRelationBasedOn, SourceLabel: types.LegalRelationSourceText}
+	party := &types.LegalDocumentRelation{FromID: "hd", ToID: "nd", Relation: types.LegalRelationReferences, SourceLabel: "Dẫn chiếu"}
+	manual := &types.LegalDocumentRelation{FromID: "tay", ToID: "luat", Relation: types.LegalRelationBasedOn, SourceLabel: "Căn cứ"}
+	if err := repo.ReplaceRelations(ctx, []*types.LegalDocumentRelation{portal, text, party, manual}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	// the next night's snapshot no longer has the portal edge
+	if err := repo.ReplaceRelations(ctx, []*types.LegalDocumentRelation{
+		{FromID: "luat", ToID: "nd", Relation: types.LegalRelationReferences, SourceLabel: "Dẫn chiếu"},
+	}); err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+	var got []types.LegalDocumentRelation
+	if err := repo.db.Order("from_id, to_id").Find(&got).Error; err != nil {
+		t.Fatal(err)
+	}
+	keys := map[string]bool{}
+	for _, r := range got {
+		keys[r.FromID+">"+r.ToID] = true
+	}
+	for _, want := range []string{"hd>luat", "hd>nd", "tay>luat", "luat>nd"} {
+		if !keys[want] {
+			t.Errorf("edge %s lost; have %v", want, keys)
+		}
+	}
+	if keys["nd>luat"] {
+		t.Errorf("stale portal edge nd>luat survived")
+	}
+}
+
 // A bare number of one type: the prefix is escaped, the type matched
 // whatever its case, newest first, at most limit rows.
 func TestLegalCatalogFindByNumberPrefixTypes(t *testing.T) {

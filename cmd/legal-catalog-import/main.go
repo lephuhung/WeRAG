@@ -601,8 +601,11 @@ func mergeRelations(ctx context.Context, db *gorm.DB, ids map[string]bool, alias
 		for start := 0; start < len(all); start += 1000 {
 			batch := all[start:min(start+1000, len(all))]
 			// the portal's edges only: the ones read from the documents'
-			// texts (types.LegalRelationSourceText) stay
+			// texts (types.LegalRelationSourceText) and the ones leaving a
+			// document of another source (a Party document citing a vbpl
+			// one) stay, see repository.ReplaceRelations
 			if err := tx.Where("(from_id IN ? OR to_id IN ?) AND source_label <> ?", batch, batch, types.LegalRelationSourceText).
+				Where("from_id NOT IN (?)", tx.Model(&types.LegalDocument{}).Select("id").Where("source <> ?", repository.LegalCatalogSourceVBPL)).
 				Delete(&types.LegalDocumentRelation{}).Error; err != nil {
 				return err
 			}

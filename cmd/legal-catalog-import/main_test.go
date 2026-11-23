@@ -85,7 +85,11 @@ func TestMergeRelationsMovesTwinEdges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&types.LegalDocumentRelation{}); err != nil {
+	if err := db.AutoMigrate(&types.LegalDocument{}, &types.LegalDocumentRelation{}); err != nil {
+		t.Fatal(err)
+	}
+	// a Party document citing an imported vbpl one: not the portal's edge
+	if err := db.Create(&types.LegalDocument{ID: "dcs-1", Source: "dangcongsan"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	rel := func(from, to string, r types.LegalRelation) *types.LegalDocumentRelation {
@@ -103,6 +107,7 @@ func TestMergeRelationsMovesTwinEdges(t *testing.T) {
 		rel("placeholder", "600", types.LegalRelationBasedOn),  // only stored
 		rel("placeholder", "full", types.LegalRelationBasedOn), // becomes a self edge
 		rel("700", "800", types.LegalRelationBasedOn),          // untouched
+		rel("dcs-1", "500", types.LegalRelationReferences),     // another source's: stays
 	}).Error)
 	ids := map[string]bool{"full": true, "500": true}
 	alias := map[string]string{"placeholder": "full"}
@@ -120,6 +125,7 @@ func TestMergeRelationsMovesTwinEdges(t *testing.T) {
 	want := []string{
 		"500 " + string(types.LegalRelationReplaces) + " full",
 		"700 " + string(types.LegalRelationBasedOn) + " 800",
+		"dcs-1 " + string(types.LegalRelationReferences) + " 500",
 		"full " + string(types.LegalRelationBasedOn) + " 600",
 	}
 	if strings.Join(edges, "|") != strings.Join(want, "|") {
