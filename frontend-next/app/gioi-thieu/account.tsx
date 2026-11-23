@@ -1,10 +1,11 @@
 "use client";
 
-/* Header actions of the landing page: "Đăng nhập" for a visitor; the
- * signed-in person's name and avatar when this browser still holds a
- * session. The page lives outside AuthProvider (and must never bounce a
- * visitor to /login), so it reads /auth/me itself and refreshes an expired
- * access token once without the app's sign-in redirect. */
+/* Who is looking at the landing page, and its header actions: "Đăng nhập"
+ * and "Đăng ký" for a visitor; the signed-in person's name and avatar plus
+ * "Vào ứng dụng" when this browser still holds a session. The page lives
+ * outside AuthProvider (and must never bounce a visitor to /login), so it
+ * reads /auth/me itself and refreshes an expired access token once without
+ * the app's sign-in redirect. */
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -44,31 +45,59 @@ async function loadSignedInUser(signal: AbortSignal): Promise<UserInfo | null> {
   return body?.success && body.data?.user ? (body.data.user as UserInfo) : null;
 }
 
-export function LandingAccount() {
-  const { t } = useT();
-  const [user, setUser] = useState<UserInfo | null>(null);
+/** checking: this browser holds tokens and /auth/me has not answered yet. */
+export type LandingViewer = { status: "checking" | "visitor" | "signedIn"; user: UserInfo | null };
+
+/** The person viewing the landing page. Starts as "checking" (server render
+ * and first paint); a browser without tokens turns "visitor" at once, so
+ * only a returning user waits on /auth/me. */
+export function useLandingViewer(): LandingViewer {
+  const [viewer, setViewer] = useState<LandingViewer>({ status: "checking", user: null });
 
   useEffect(() => {
+    const { token, refreshToken } = getTokens();
+    if (!token && !refreshToken) {
+      setViewer({ status: "visitor", user: null });
+      return;
+    }
     const controller = new AbortController();
     loadSignedInUser(controller.signal)
-      .then((u) => { if (!controller.signal.aborted) setUser(u); })
-      .catch(() => {});
+      .then((u) => {
+        if (!controller.signal.aborted) setViewer(u ? { status: "signedIn", user: u } : { status: "visitor", user: null });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setViewer({ status: "visitor", user: null });
+      });
     return () => controller.abort();
   }, []);
 
+  return viewer;
+}
+
+export function LandingAccount({ viewer }: { viewer: LandingViewer }) {
+  const { t } = useT();
+  const { user, status } = viewer;
   const avatarUrl = useAvatarUrl(user?.avatar);
   const name = user?.username || user?.email || "";
 
-  return <div className={styles.headerActions}>
-    {user
-      ? <Link href="/platform/creatChat" className={styles.account} title={user.email}>
+  if (status === "signedIn" && user) {
+    return <div className={styles.headerActions}>
+      <Link href="/platform/creatChat" className={styles.account} title={user.email}>
         <span className={styles.avatar} aria-hidden="true">
           {/* eslint-disable-next-line @next/next/no-img-element -- authenticated blob URL, not a Next asset */}
           {avatarUrl ? <img src={avatarUrl} alt="" /> : name.slice(0, 1).toUpperCase()}
         </span>
         <span className={styles.accountName}>{name}</span>
       </Link>
-      : <Link href="/login" className={styles.login}>{t("auth.signIn")}</Link>}
-    <Link href="/platform/creatChat" className={styles.primary}>{t("landing.enterApp")} <span aria-hidden="true">↗</span></Link>
+      <Link href="/platform/creatChat" className={styles.primary}>{t("landing.enterApp")} <span aria-hidden="true">↗</span></Link>
+    </div>;
+  }
+
+  /* A visitor (or a browser still checking its saved session) sees the
+   * sign-in and sign-up buttons; only a returning user, whose /auth/me
+   * answers, sees them swapped for the account link. */
+  return <div className={styles.headerActions} aria-busy={status === "checking"}>
+    <Link href="/login" className={styles.login}>{t("auth.signIn")}</Link>
+    <Link href="/register" className={styles.primary}>{t("auth.signUp")} <span aria-hidden="true">↗</span></Link>
   </div>;
 }

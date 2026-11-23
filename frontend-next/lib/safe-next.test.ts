@@ -3,7 +3,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { loginPathFor, resolveSafeNextPath, DEFAULT_POST_LOGIN_ROUTE } from "./safe-next.ts";
+import { loginPathFor, resolveOptionalNextPath, resolveSafeNextPath, DEFAULT_POST_LOGIN_ROUTE } from "./safe-next.ts";
 
 describe("resolveSafeNextPath (issue 2)", () => {
   it("falls back for missing/empty values", () => {
@@ -69,5 +69,18 @@ describe("loginPathFor (email deep links)", () => {
     assert.equal(loginPathFor(DEFAULT_POST_LOGIN_ROUTE), "/login");
     assert.equal(loginPathFor("/"), "/login");
     assert.equal(loginPathFor("//evil.example"), "/login");
+  });
+});
+
+describe("resolveOptionalNextPath", () => {
+  it("is empty for missing, unsafe or default targets", () => {
+    assert.equal(resolveOptionalNextPath(null), "");
+    assert.equal(resolveOptionalNextPath(""), "");
+    assert.equal(resolveOptionalNextPath("//evil.example"), "");
+    assert.equal(resolveOptionalNextPath("garbage"), "");
+    assert.equal(resolveOptionalNextPath(DEFAULT_POST_LOGIN_ROUTE), "");
+  });
+  it("keeps a safe local target", () => {
+    assert.equal(resolveOptionalNextPath("/platform/system/workspace/billing?scope=user&plan=p1"), "/platform/system/workspace/billing?scope=user&plan=p1");
   });
 });

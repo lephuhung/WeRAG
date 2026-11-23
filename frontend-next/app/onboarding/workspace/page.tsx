@@ -1,16 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
+import { resolveOptionalNextPath } from "@/lib/safe-next";
 import { apiPost } from "@/lib/api-client";
 import { Orb } from "@/components/orb";
 import { useT } from "@/lib/i18n";
 import { tenantNameErrorKey } from "@/lib/tenant-name";
 import { userErrorMessage } from "@/lib/user-error";
 
-export default function WorkspaceOnboarding() {
+function WorkspaceOnboardingForm() {
   const router = useRouter();
+  /* A Tổ chức plan picked on the pricing table: the shop opens on it once
+   * the organization exists. */
+  const rawNext = useSearchParams().get("next");
+  const next = resolveOptionalNextPath(rawNext);
   const { t } = useT();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -37,7 +42,7 @@ export default function WorkspaceOnboarding() {
           /* ignore */
         }
       }
-      router.push("/platform/knowledge-bases");
+      router.push(next || "/platform/knowledge-bases");
     } catch (err) {
       const nameKey = tenantNameErrorKey(err);
       setError(nameKey ? t(nameKey) : userErrorMessage(err, t, "onb.failed"));
@@ -89,5 +94,13 @@ export default function WorkspaceOnboarding() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function WorkspaceOnboarding() {
+  return (
+    <Suspense>
+      <WorkspaceOnboardingForm />
+    </Suspense>
   );
 }

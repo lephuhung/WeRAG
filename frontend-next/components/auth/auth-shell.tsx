@@ -6,6 +6,7 @@ import { useT } from "@/lib/i18n";
 import { BrandLockup } from "@/components/brand-logo";
 import styles from "./auth-shell.module.css";
 import { WordAddinInstall } from "./word-addin-install";
+import { withNext } from "@/lib/plan-checkout";
 
 export type AuthMode = "login" | "register" | "word" | "extension";
 
@@ -18,11 +19,15 @@ export function AuthShell({
   children,
   mode,
   showcase = true,
+  next = "",
 }: {
   children: ReactNode;
   mode: AuthMode;
   /** Hide the marketing column (the client approval screens). */
   showcase?: boolean;
+  /** The validated page to land on after signing in; the link to the other
+   * auth page (sign-in ↔ sign-up) carries it along. */
+  next?: string;
 }) {
   const { t } = useT();
   const year = new Date().getFullYear();
@@ -155,14 +160,14 @@ export function AuthShell({
           ) : mode === "login" ? (
             <>
               {t("auth.noAccount")}{" "}
-              <Link href="/register">
+              <Link href={withNext("/register", next)}>
                 {t("auth.signUp")} <span aria-hidden="true">↗</span>
               </Link>
             </>
           ) : (
             <>
               {t("auth.hasAccount")}{" "}
-              <Link href="/login">
+              <Link href={withNext("/login", next)}>
                 {t("auth.signIn")} <span aria-hidden="true">↗</span>
               </Link>
             </>
