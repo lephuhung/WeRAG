@@ -256,7 +256,7 @@ export function Sidebar() {
         <div
           /* Click-to-close layer that also dims + blurs the page behind the
            * mobile drawer, keeping focus on the sidebar. */
-          className="fixed inset-0 z-40 bg-scrim/40 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-40 bg-scrim/40 lg:hidden"
           onClick={() => setMobileOpen(false)}
           aria-hidden
         />

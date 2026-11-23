@@ -91,6 +91,8 @@ export function GlobalCommandPalette() {
   useDialogFocus({ open: isOpen, containerRef: dialogRef, onClose: close });
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  // set by the arrow keys: only then does the active item scroll into view
+  const keyboardMove = useRef(false);
 
   // Load KBs and Agents once when opened
   useEffect(() => {
@@ -500,9 +502,11 @@ export function GlobalCommandPalette() {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
+      keyboardMove.current = true;
       setSelectedIndex((prev) => (prev + 1) % Math.max(1, items.length));
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
+      keyboardMove.current = true;
       setSelectedIndex((prev) => (prev - 1 + items.length) % Math.max(1, items.length));
     } else if (e.key === "Enter") {
       e.preventDefault();
@@ -512,8 +516,12 @@ export function GlobalCommandPalette() {
     }
   };
 
-  // Scroll active item into view
+  /* Scroll the active item into view, only when the keyboard moved it: an
+   * item the pointer selected is already in view, and scrolling it there
+   * again fought the wheel. */
   useEffect(() => {
+    if (!keyboardMove.current) return;
+    keyboardMove.current = false;
     const el = listRef.current?.querySelector(`[data-index="${selectedIndex}"]`);
     if (el) {
       el.scrollIntoView({ block: "nearest" });
@@ -531,7 +539,9 @@ export function GlobalCommandPalette() {
     <>
       {addinModal}
       {createPortal(
-    <div className="fixed inset-0 z-[90] flex items-start justify-center bg-scrim/40 p-4 pt-[12vh] backdrop-blur-sm animate-in fade-in duration-150">
+    // No backdrop-blur: a full-screen blur is redrawn on every frame the
+    // list scrolls, hovers or spins its loader, which made the palette lag.
+    <div className="fixed inset-0 z-[90] flex items-start justify-center bg-scrim/40 p-4 pt-[12vh] animate-in fade-in duration-150">
       <div
         className="fixed inset-0"
         onClick={close}
@@ -631,8 +641,8 @@ export function GlobalCommandPalette() {
                   role="option"
                   aria-selected={isSelected}
                   onClick={item.onSelect}
-                  onMouseEnter={() => setSelectedIndex(idx)}
-                  className={`flex cursor-pointer items-center gap-3 rounded-[12px] px-3.5 py-2.5 transition-colors ${
+                  onMouseMove={() => idx !== selectedIndex && setSelectedIndex(idx)}
+                  className={`flex cursor-pointer items-center gap-3 rounded-[12px] px-3.5 py-2.5 ${
                     isSelected
                       ? "bg-surface-strong text-ink shadow-[0_1px_2px_rgba(0,0,0,0.04)]"
                       : "text-ink hover:bg-surface-strong"
