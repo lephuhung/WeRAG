@@ -76,7 +76,7 @@ function OverlayModal({
 
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-6">
-      <div className="absolute inset-0 z-40 bg-scrim/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 z-40 bg-scrim/40" onClick={onClose} />
       <div
         ref={dialogRef}
         role="dialog"

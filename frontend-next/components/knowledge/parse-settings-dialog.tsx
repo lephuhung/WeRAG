@@ -266,7 +266,7 @@ export function ParseSettingsDialog({
 
   return (
     <div className="fixed inset-0 z-60 flex items-center justify-center p-0 sm:p-6">
-      <div className="absolute inset-0 z-40 bg-scrim/40 backdrop-blur-sm" onClick={onCancel} />
+      <div className="absolute inset-0 z-40 bg-scrim/40" onClick={onCancel} />
       <div
         ref={dialogRef}
         role="dialog"

@@ -270,7 +270,7 @@ export function LegalLookupView() {
                       type="button"
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => pickSuggestion(d)}
-                      onMouseEnter={() => setSuggestIdx(i)}
+                      onMouseMove={() => i !== suggestIdx && setSuggestIdx(i)}
                       className={`flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-1.5 text-left ${
                         i === suggestIdx ? "bg-surface-strong" : "hover:bg-surface-strong"
                       }`}

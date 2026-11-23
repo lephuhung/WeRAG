@@ -165,8 +165,15 @@ export function Select({
     }
   };
 
-  /* Keep the highlighted option in view while arrowing. */
+  /* Keep the highlighted option in view while arrowing or on open. An
+   * option the pointer highlighted is already in view: scrolling it there
+   * again fought the wheel, so pointer moves skip it. */
+  const pointerMove = useRef(false);
   useEffect(() => {
+    if (pointerMove.current) {
+      pointerMove.current = false;
+      return;
+    }
     if (!open || highlight < 0) return;
     menuRef.current
       ?.querySelector(`[data-index="${highlight}"]`)
@@ -249,9 +256,13 @@ export function Select({
                 aria-selected={isSel}
                 data-index={i}
                 disabled={o.disabled}
-                onMouseEnter={() => setHighlight(i)}
+                onMouseMove={() => {
+                  if (i === highlight) return;
+                  pointerMove.current = true;
+                  setHighlight(i);
+                }}
                 onClick={() => pick(o.value)}
-                className={`flex w-full items-center justify-between gap-2 rounded-[8px] px-3 py-1.5 text-left text-[13px] transition-colors disabled:opacity-50 ${
+                className={`flex w-full items-center justify-between gap-2 rounded-[8px] px-3 py-1.5 text-left text-[13px] disabled:opacity-50 ${
                   i === highlight ? "bg-surface-strong" : ""
                 } ${isSel ? "font-medium text-ink" : "text-body"}`}
               >

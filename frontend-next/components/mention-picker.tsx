@@ -162,7 +162,14 @@ export function MentionPicker({
     onItems?.(items);
   }, [items, onItems]);
 
+  // arrow keys scroll the active row into view; a row the pointer made
+  // active is already visible, and scrolling to it fought the wheel
+  const pointerMove = useRef(false);
   useEffect(() => {
+    if (pointerMove.current) {
+      pointerMove.current = false;
+      return;
+    }
     listRef.current?.querySelector(`[data-idx="${activeIndex}"]`)?.scrollIntoView({ block: "nearest" });
   }, [activeIndex]);
 
@@ -218,8 +225,12 @@ export function MentionPicker({
                       key={`${item.type}:${item.id}:${item.kb_id ?? ""}`}
                       data-idx={idx}
                       onClick={() => onSelect(item)}
-                      onMouseEnter={() => onActiveIndex(idx)}
-                      className={`flex w-full items-center gap-3 rounded-[8px] px-3 py-2 text-left transition-colors ${
+                      onMouseMove={() => {
+                        if (idx === activeIndex) return;
+                        pointerMove.current = true;
+                        onActiveIndex(idx);
+                      }}
+                      className={`flex w-full items-center gap-3 rounded-[8px] px-3 py-2 text-left ${
                         idx === activeIndex ? "bg-surface-strong" : "hover:bg-surface-strong"
                       }`}
                     >
