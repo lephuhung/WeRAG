@@ -21,6 +21,11 @@ type publicBillingStub struct {
 	scope string
 	err   error
 	plans []*types.UsagePlanOffer
+	gift  *types.UsageSignupGift
+}
+
+func (s *publicBillingStub) SignupGift(context.Context) (*types.UsageSignupGift, error) {
+	return s.gift, s.err
 }
 
 func (s *publicBillingStub) PurchasablePlans(_ context.Context, scope string) ([]*types.UsagePlanOffer, error) {
@@ -141,5 +146,37 @@ func TestPublicBillingPlansAgentOffers(t *testing.T) {
 	}
 	if body.Data[1].IncludedAgents == nil || body.Data[1].Addons == nil {
 		t.Fatalf("empty offers must be arrays: %s", w.Body.String())
+	}
+}
+
+func TestPublicSignupGiftAnonymous(t *testing.T) {
+	s := &publicBillingStub{gift: &types.UsageSignupGift{
+		Name: "Gói chào mừng", Days: 30,
+		Limits:         types.UsageLimits{{Metric: "tokens", Period: "month", Limit: 1500000}},
+		IncludedAgents: []types.UsagePlanAgent{{ID: "a", Name: "Suy luận nâng cao", Included: true}},
+	}}
+	w := httptest.NewRecorder()
+	publicBillingTestRouter(s).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/public/billing/signup-gift", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+	var body struct {
+		Data *types.UsageSignupGift `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || body.Data == nil || body.Data.Days != 30 || body.Data.Limits[0].Limit != 1500000 {
+		t.Fatalf("gift = %s (%v)", w.Body.String(), err)
+	}
+
+	// none configured: data null, still 200
+	w = httptest.NewRecorder()
+	publicBillingTestRouter(&publicBillingStub{}).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/public/billing/signup-gift", nil))
+	if w.Code != http.StatusOK || w.Body.String() != "{\"data\":null,\"success\":true}" {
+		t.Fatalf("no gift = %d %s", w.Code, w.Body.String())
+	}
+
+	w = httptest.NewRecorder()
+	publicBillingTestRouter(&publicBillingStub{err: errors.New("db down")}).ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/public/billing/signup-gift", nil))
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("failure status = %d", w.Code)
 	}
 }

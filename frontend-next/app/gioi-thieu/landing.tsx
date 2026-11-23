@@ -3,12 +3,20 @@
 import Link from "next/link";
 import { useT } from "@/lib/i18n";
 import { BrandLockup, BrandLogo } from "@/components/brand-logo";
-import { LandingAccount } from "./account";
+import { LandingAccount, useLandingViewer } from "./account";
 import { LandingPricing } from "./pricing";
+import { LandingGiftCard, useGiftOffer, useSignupGift } from "./gift";
 import styles from "./page.module.css";
 
 export function Landing() {
   const { t } = useT();
+  const viewer = useLandingViewer();
+  const signedIn = viewer.status === "signedIn";
+  // the sign-up gift is for visitors; a signed-in person already had it,
+  // and a browser still checking its session waits (no flash then hide)
+  const visitor = viewer.status === "visitor";
+  const gift = useSignupGift();
+  const giftOffer = useGiftOffer(visitor ? gift : null);
 
   const features = [
     {
@@ -75,11 +83,10 @@ export function Landing() {
           <a href="#tinh-nang">{t("landing.navFeatures")}</a>
           <a href="#cach-hoat-dong">{t("landing.navHow")}</a>
           <a href="#goi-cuoc">{t("landing.navPricing")}</a>
-          <Link href="/chinh-sach-bao-mat">{t("legal.navPrivacy")}</Link>
-          <Link href="/dieu-khoan">{t("legal.navTerms")}</Link>
-          <Link href="/ho-tro">{t("legal.navSupport")}</Link>
+          {/* privacy, terms and support stay in the footer: the header row
+              must fit a phone on one line */}
         </nav>
-        <LandingAccount />
+        <LandingAccount viewer={viewer} />
       </header>
       <main id="noi-dung">
         <section className={styles.hero}>
@@ -94,14 +101,18 @@ export function Landing() {
             </h1>
             <p className={styles.intro}>{t("landing.heroIntro")}</p>
             <div className={styles.actions}>
-              <Link href="/register" className={styles.primary}>
-                {t("landing.heroCta")} <span aria-hidden="true">↗</span>
+              <Link href={signedIn ? "/platform/creatChat" : "/register"} className={styles.primary}>
+                {signedIn ? t("landing.enterApp") : t("landing.heroCta")} <span aria-hidden="true">↗</span>
               </Link>
               <a href="#goi-cuoc" className={styles.secondary}>
                 {t("landing.heroSecondary")} <span aria-hidden="true">↓</span>
               </a>
             </div>
-            <p className={styles.heroNote}>{t("landing.heroNote")}</p>
+            {giftOffer ? (
+              <p className={`${styles.heroNote} ${styles.heroGift}`}>{t("landing.giftHero", { offer: giftOffer })}</p>
+            ) : (
+              <p className={styles.heroNote}>{t("landing.heroNote")}</p>
+            )}
           </div>
           <div
             className={styles.preview}
@@ -194,7 +205,8 @@ export function Landing() {
             </h2>
             <p>{t("landing.pricingLead")}</p>
           </div>
-          <LandingPricing />
+          {visitor && <LandingGiftCard gift={gift} />}
+          <LandingPricing signedIn={signedIn} />
         </section>
         <section className={`${styles.section} ${styles.faq}`}>
           <p className={styles.eyebrow}>{t("landing.faqEyebrow")}</p>
@@ -216,8 +228,8 @@ export function Landing() {
             <br />
             {t("landing.ctaTitle2")}
           </h2>
-          <Link href="/register" className={styles.primary}>
-            {t("landing.ctaButton")} <span aria-hidden="true">↗</span>
+          <Link href={signedIn ? "/platform/creatChat" : "/register"} className={styles.primary}>
+            {signedIn ? t("landing.enterApp") : t("landing.ctaButton")} <span aria-hidden="true">↗</span>
           </Link>
         </section>
       </main>

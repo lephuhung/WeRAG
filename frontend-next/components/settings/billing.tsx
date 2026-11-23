@@ -59,7 +59,9 @@ import {
   preferredPlanId,
 } from "@/lib/billing-order";
 import { formatDateTime, formatLastDay } from "@/lib/datetime";
-import { BILLING_INTENT_EVENT, clearBillingIntent, readBillingIntent, type BillingIntent } from "@/lib/billing-intent";
+import { BILLING_INTENT_EVENT, clearBillingIntent, readBillingIntent, setBillingIntent, type BillingIntent } from "@/lib/billing-intent";
+import { SETTINGS_REDIRECTED_EVENT, consumeSettingsSearch } from "@/lib/settings-deep-link";
+import { checkoutFromSearch } from "@/lib/plan-checkout";
 import { EMPTY_INVOICE, type InvoiceDetails } from "@/lib/billing-invoice";
 import { InvoiceFields, OrderInvoicePanel, invoiceRequestPart } from "@/components/settings/billing-invoice";
 import { useConfirm } from "@/components/confirm-dialog";
@@ -72,6 +74,18 @@ import { useToast } from "@/components/toast";
 import { classifyUserError, looksTechnical } from "@/lib/user-error";
 
 const MONTH_CHOICES = [1, 3, 6, 12];
+
+/* The plan a shop deep link (?scope=…&plan=…) asks for, handed over as a
+ * billing intent: the query is consumed once, the intent stays readable
+ * for a few seconds, so React's StrictMode second initializer run still
+ * sees it. */
+function takeDeepLinkIntent(): BillingIntent | null {
+  if (typeof window === "undefined") return null;
+  const q = consumeSettingsSearch(window.sessionStorage, "billing");
+  const pick = q ? checkoutFromSearch(q) : null;
+  if (pick) setBillingIntent({ scope: pick.scope, planId: pick.planId });
+  return pick ? readBillingIntent() : null;
+}
 
 /* The month counts a plan can be bought for: those a priced term fits. */
 function monthChoicesFor(plan: UsagePlan | null): number[] {
@@ -173,13 +187,15 @@ export function BillingPage() {
       .then((r) => setMyUsage(r.data ?? null))
       .catch(() => setMyUsage(null));
   }, [tenantId]);
-  // a banner's Renew/Buy button names the scope and plan to open on
-  const [intent] = useState(() => readBillingIntent());
+  // a banner's Renew/Buy button names the scope and plan to open on; so
+  // does a plan picked on the public pricing table, which arrives as the
+  // /platform/system/workspace/billing?scope=…&plan=… deep link
+  const [intent] = useState(() => takeDeepLinkIntent() ?? readBillingIntent());
   useEffect(() => clearBillingIntent(), []);
   useEffect(() => {
-    const onIntent = (e: Event) => {
-      const next = (e as CustomEvent<BillingIntent>).detail;
+    const apply = (next: BillingIntent | null) => {
       clearBillingIntent();
+      if (next?.scope === "tenant" && !isAdmin) setTenantIntentRefused(true);
       if (!next || (next.scope === "tenant" && !isAdmin)) return;
       setScope(next.scope);
       // an intent without a plan (welcome) keeps the page's choice
@@ -187,11 +203,23 @@ export function BillingPage() {
       planPickedRef.current = !!next.planId;
       if (next.addSeats) setFocusSeats(true);
     };
+    const onIntent = (e: Event) => apply((e as CustomEvent<BillingIntent>).detail);
+    // a deep link opened while this page is already on screen
+    const onRedirect = (e: Event) => {
+      if ((e as CustomEvent<string>).detail === "billing") apply(takeDeepLinkIntent());
+    };
     window.addEventListener(BILLING_INTENT_EVENT, onIntent);
-    return () => window.removeEventListener(BILLING_INTENT_EVENT, onIntent);
+    window.addEventListener(SETTINGS_REDIRECTED_EVENT, onRedirect);
+    return () => {
+      window.removeEventListener(BILLING_INTENT_EVENT, onIntent);
+      window.removeEventListener(SETTINGS_REDIRECTED_EVENT, onRedirect);
+    };
   }, [isAdmin]);
   // (a scope the person may not buy for drops the intent's plan too)
   const intentAllowed = !!intent && (intent.scope === "user" || isAdmin);
+  // a Tổ chức plan asked for by someone who may not buy it: say why the
+  // shop opened on the personal tab instead of dropping it silently
+  const [tenantIntentRefused, setTenantIntentRefused] = useState(() => !!intent && intent.scope === "tenant" && !isAdmin);
   const [scope, setScope] = useState<UsageScopeKind>(intentAllowed ? intent.scope : isAdmin ? "tenant" : "user");
   const [plans, setPlans] = useState<UsagePlan[]>([]);
   const [planId, setPlanId] = useState(intentAllowed ? intent.planId : "");
@@ -952,6 +980,7 @@ export function BillingPage() {
       )}
 
       {!isAdmin && auth.membershipState === "member" && <p className="caption text-muted">{t("bill.memberTenantHint")}</p>}
+      {tenantIntentRefused && <Notice tone="info">{t("bill.tenantPlanNeedsAdmin")}</Notice>}
       {scope === "user" && coveredBy && (
         <Notice tone="info">{t("bill.coveredByTenant", { plan: pn(coveredBy) })}</Notice>
       )}

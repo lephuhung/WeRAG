@@ -813,6 +813,24 @@ export async function listPublicPlans(scope: UsageScopeKind, signal?: AbortSigna
   return (result.data as PublicUsagePlan[]).sort((a, b) => a.sort_order - b.sort_order);
 }
 
+/** The package every new account receives (setting usage.signup_plan_id),
+ * as GET /public/billing/signup-gift answers it; days 0 = no end date. */
+export type PublicSignupGift = {
+  name: string;
+  limits: UsageLimit[] | null;
+  days: number;
+  included_agents: { id: string; name: string; included?: boolean }[];
+};
+
+// Anonymous, like listPublicPlans: null when no gift is configured.
+export async function getPublicSignupGift(signal?: AbortSignal): Promise<PublicSignupGift | null> {
+  const response = await fetch("/api/v1/public/billing/signup-gift", { signal, credentials: "omit", cache: "no-store" });
+  if (!response.ok) throw new Error(`Unable to load the sign-up gift (${response.status})`);
+  const result = await response.json();
+  if (result.success !== true) throw new Error("Invalid sign-up gift");
+  return (result.data as PublicSignupGift | null) ?? null;
+}
+
 export function quoteUsageOrder(req: UsageQuoteRequest): Promise<UsageQuote> {
   return apiPost<{ data: UsageQuote }>(`${BILLING}/quote`, req).then((r) => r.data);
 }

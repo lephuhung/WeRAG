@@ -477,6 +477,49 @@
   margin-right: 12px;
   color: var(--color-accent);
 }
+/* ---------- sign-up gift ---------- */
+.heroGift {
+  color: var(--color-ink);
+  font-weight: 500;
+}
+.giftCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+  padding: 24px 28px;
+  border: 1px dashed var(--color-hairline-strong, var(--color-hairline));
+  border-radius: 16px;
+  background: var(--color-surface-card);
+  color: var(--color-ink);
+}
+.giftCard h3 {
+  margin: 6px 0 8px;
+  font-size: 22px;
+}
+.giftOffer {
+  font-size: 14px;
+}
+.giftAgents {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-body);
+}
+.giftCard .primary {
+  flex: none;
+}
+@media (max-width: 650px) {
+  .giftCard {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 22px;
+  }
+}
+
+.pricingBody[aria-busy="true"] {
+  min-height: 520px;
+}
 .pricingNote {
   font-size: 11px;
   color: var(--color-muted);
@@ -774,7 +817,10 @@
   .header nav {
     order: 3;
     width: 100%;
-    justify-content: space-between;
+    justify-content: flex-start;
+    gap: 22px;
+    white-space: nowrap;
+    overflow-x: auto;
   }
   .hero {
     grid-template-columns: 1fr;

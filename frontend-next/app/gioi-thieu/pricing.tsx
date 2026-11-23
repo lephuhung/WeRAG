@@ -11,15 +11,13 @@ import {
   type PublicUsagePlan,
 } from "@/lib/api/usage";
 import { capLines } from "@/lib/plan-caps";
+import { planCheckoutPath, withNext } from "@/lib/plan-checkout";
 import styles from "./page.module.css";
 
 /* Every plan gets its own accent. The variant is picked from the plan's ID
  * — not from its position in the grid — so switching the Cá nhân / Tổ chức
- * tab keeps the same colour on the same plan.
- *
- * Which plan is the recommended one is NOT decided yet (the catalogue is
- * still being tested): no plan is highlighted, and .planFeatured stays
- * unused until that tier is picked. */
+ * tab keeps the same colour on the same plan. No plan is highlighted as
+ * the recommended one until that tier is decided. */
 const PLAN_ACCENTS = ["planAccent0", "planAccent1", "planAccent2", "planAccent3"] as const;
 
 /** A stable accent variant for a plan id (the same plan keeps its colour). */
@@ -29,22 +27,18 @@ function planAccent(planId: string): string {
   return styles[PLAN_ACCENTS[hash % PLAN_ACCENTS.length]];
 }
 
-/* The plan the page highlights. The accent used to follow the card's
- * position in the grid, so switching the Cá nhân / Tổ chức tab recoloured
- * the same plan. The flag is now explicit: a plan that names itself as the
- * recommended tier wins, otherwise the most expensive plan of the
- * catalogue is highlighted. */
-const FEATURED_PLAN_NAMES: Record<string, true> = {
-  pro: true,
-  professional: true,
-  business: true,
-  team: true,
-  enterprise: true,
-  "nâng cao": true,
-  "chuyên nghiệp": true,
-};
+/* The catalogue's sort order first; plans left on the same order (all 0
+ * by default) by their monthly price, then name — a stable order, the same
+ * on both tabs, cheapest first. A plan sold only on request (a price label,
+ * no monthly price) goes last. */
+function monthlyRank(p: PublicUsagePlan): number {
+  return !p.price_vnd && p.price_label ? Number.MAX_SAFE_INTEGER : p.price_vnd || 0;
+}
+function byCatalogueOrder(a: PublicUsagePlan, b: PublicUsagePlan): number {
+  return a.sort_order - b.sort_order || monthlyRank(a) - monthlyRank(b) || a.name.localeCompare(b.name, "vi");
+}
 
-export function LandingPricing() {
+export function LandingPricing({ signedIn }: { signedIn: boolean }) {
   const { t } = useT();
   const [scope, setScope] = useState<"user" | "tenant">("user");
   const [plans, setPlans] = useState<PublicUsagePlan[]>([]);
@@ -57,7 +51,7 @@ export function LandingPricing() {
     listPublicPlans(scope, controller.signal)
       .then((result) => {
         if (!controller.signal.aborted) {
-          setPlans(result);
+          setPlans([...result].sort(byCatalogueOrder));
           setStatus("ready");
         }
       })
@@ -85,7 +79,9 @@ export function LandingPricing() {
           {t("pricing.scopeTenant")}
         </button>
       </div>
-      <div aria-live="polite" aria-busy={status === "loading"}>
+      {/* keeps the room of a plan row while the catalogue loads, so the
+          FAQ below does not jump up and back */}
+      <div aria-live="polite" aria-busy={status === "loading"} className={styles.pricingBody}>
         {status === "loading" ? (
           <p className={styles.pricingNote}>{t("pricing.loading")}</p>
         ) : status === "error" ? (
@@ -117,15 +113,15 @@ export function LandingPricing() {
                   key={plan.id}
                   className={`${styles.plan} ${planAccent(plan.id)}`}
                 >
-                  <p className={styles.eyebrow}>
-                    {plan.mode === "seat"
-                      ? t("pricing.modeSeat")
-                      : scope === "user"
-                        ? t("pricing.modeUser")
-                        : t("pricing.modeTenant")}
-                  </p>
+                  {/* the Cá nhân tab already says who the plan is for; the
+                      Tổ chức tab tells shared quota from per-seat plans */}
+                  {scope === "tenant" && (
+                    <p className={styles.eyebrow}>
+                      {plan.mode === "seat" ? t("pricing.modeSeat") : t("pricing.modeTenant")}
+                    </p>
+                  )}
                   <h3>{plan.name}</h3>
-                  <p>{plan.description}</p>
+                  {plan.description && plan.description.trim() !== plan.name.trim() ? <p>{plan.description}</p> : null}
                   {price ? (
                     <div className={styles.price}>
                       {price}
@@ -209,7 +205,12 @@ export function LandingPricing() {
                       </div>
                     )}
                   </div>
-                  <Link href="/platform/creatChat" className={styles.planCta}>
+                  {/* the shop opens on this plan: straight away when signed
+                      in, after sign-up (or sign-in) otherwise */}
+                  <Link
+                    href={signedIn ? planCheckoutPath(scope, plan.id) : withNext("/register", planCheckoutPath(scope, plan.id))}
+                    className={styles.planCta}
+                  >
                     {t("pricing.chooseInApp")} <span aria-hidden="true">↗</span>
                   </Link>
                 </article>

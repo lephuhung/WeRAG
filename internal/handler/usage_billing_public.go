@@ -52,3 +52,16 @@ func (h *UsageBillingHandler) PublicPlans(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": data})
 }
+
+// PublicSignupGift exposes the package a new account receives, so the
+// pricing page can say "sign up and get …". data is null when there is none.
+func (h *UsageBillingHandler) PublicSignupGift(c *gin.Context) {
+	gift, err := h.billing.SignupGift(c.Request.Context())
+	if err != nil {
+		usageAdminFail(c, err)
+		return
+	}
+	// the same for every visitor: a short shared cache spares the DB reads
+	c.Header("Cache-Control", "public, max-age=60")
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gift})
+}

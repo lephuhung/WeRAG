@@ -115,6 +115,49 @@ func (s *usageBillingService) PurchasablePlans(ctx context.Context, scopeKind st
 	return out, nil
 }
 
+// SignupGift describes the package GrantSignupPlan hands a new account, for
+// the public pricing page. It applies GrantSignupPlan's rules — a set,
+// active, personal plan — so the page never promises a gift sign-up would
+// not give.
+func (s *usageBillingService) SignupGift(ctx context.Context) (*types.UsageSignupGift, error) {
+	if s.settings == nil || s.planRepo == nil {
+		return nil, nil
+	}
+	planID := strings.TrimSpace(s.settings.GetString(ctx, types.UsageSignupPlanSettingKey, "", ""))
+	if planID == "" {
+		return nil, nil
+	}
+	plan, err := s.planRepo.GetPlan(ctx, planID)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if plan == nil || !plan.IsActive || plan.ScopeKind != types.UsagePlanScopeUser {
+		return nil, nil
+	}
+	days := s.settings.GetInt(ctx, types.UsageSignupPlanDaysSettingKey, "", types.UsageSignupPlanDaysDefault)
+	if days < 0 {
+		days = types.UsageSignupPlanDaysDefault
+	}
+	live, err := s.planRepo.LiveAddonAgents(ctx)
+	if err != nil {
+		return nil, err
+	}
+	agents := append(append([]types.UsagePlanAgent{}, includedPlanAgents(ctx, s.planRepo)...), planOwnAgents(plan, live)...)
+	limits := plan.Limits
+	if limits == nil {
+		limits = types.UsageLimits{}
+	}
+	return &types.UsageSignupGift{
+		Name:           plan.Name,
+		Limits:         limits,
+		Days:           min(days, 3650),
+		IncludedAgents: agents,
+	}, nil
+}
+
 // quote prices req for scopeID; when strict, an unusable promo code is an
 // error rather than a note on the quote.
 func (s *usageBillingService) quote(

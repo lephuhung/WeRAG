@@ -7,7 +7,8 @@ import { AuthShell, authStyles as styles } from "@/components/auth/auth-shell";
 import { AuthCard } from "@/components/auth/auth-card";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
-import { resolveSafeNextPath } from "@/lib/safe-next";
+import { resolveOptionalNextPath, resolveSafeNextPath } from "@/lib/safe-next";
+import { withNext } from "@/lib/plan-checkout";
 import { takeSignedOutDisabled } from "@/lib/account-disabled";
 import { IconEye } from "@/components/icons";
 
@@ -18,6 +19,8 @@ function LoginForm() {
   /* The sign-in API lives in lib/auth.tsx — the page must not re-implement
    * the token handling (it used to store the tokens itself). */
   const { login } = useAuth();
+  const rawNext = searchParams.get("next");
+  const next = resolveOptionalNextPath(rawNext);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -109,7 +112,7 @@ function LoginForm() {
   };
 
   return (
-    <AuthShell mode="login">
+    <AuthShell mode="login" next={next}>
       <AuthCard
         kicker={t("auth.loginKicker")}
         title={t("auth.loginTitle")}
@@ -212,8 +215,10 @@ function LoginForm() {
           </button>
         </form>
         <div className={styles.divider}>{t("auth.or")}</div>
-        <Link href="/onboarding/workspace" className="btn btn-outline h-11 w-full">
-          {t("auth.loginViaOrg")}
+        {/* a visitor without an account signs up here, keeping the page
+            (e.g. a plan picked on the pricing table) they were heading to */}
+        <Link href={withNext("/register", next)} className="btn btn-outline h-11 w-full">
+          {t("auth.createNewAccount")}
         </Link>
       </AuthCard>
     </AuthShell>

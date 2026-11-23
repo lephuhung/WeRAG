@@ -53,3 +53,12 @@ export function loginPathFor(pathname: string, search = ""): string {
   if (safe !== target || safe === DEFAULT_POST_LOGIN_ROUTE || safe === "/") return "/login";
   return `/login?next=${encodeURIComponent(target)}`;
 }
+
+/* An optional ?next=: "" when it is missing, unsafe, or only the default
+ * route — so "no next" keeps a page's own default (sign-up still offers
+ * onboarding) and links do not carry ?next=%2Fplatform%2FcreatChat. */
+export function resolveOptionalNextPath(raw: unknown): string {
+  if (raw == null || raw === "") return "";
+  const path = resolveSafeNextPath(raw);
+  return path === DEFAULT_POST_LOGIN_ROUTE ? "" : path;
+}

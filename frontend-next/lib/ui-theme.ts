@@ -47,18 +47,19 @@ export function readCachedUiTheme(): UiTheme {
   }
 }
 
-/** Fetch the authoritative global theme. Never throws. */
-export async function fetchUiTheme(timeoutMs = 0): Promise<UiTheme> {
+/** Fetch the authoritative global theme; null when the server did not
+ * answer (nothing to apply or cache then). Never throws. */
+export async function fetchUiTheme(timeoutMs = 0): Promise<UiTheme | null> {
   try {
     const controller = timeoutMs > 0 ? new AbortController() : undefined;
     const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : undefined;
     const res = await fetch(UI_THEME_ENDPOINT, { cache: "no-store", signal: controller?.signal });
     if (timer) clearTimeout(timer);
-    if (!res.ok) return DEFAULT_UI_THEME;
+    if (!res.ok) return null;
     const body = (await res.json()) as { data?: { theme?: unknown } } | null;
     return normalizeUiTheme(body?.data?.theme);
   } catch {
-    return DEFAULT_UI_THEME;
+    return null;
   }
 }
 
@@ -76,10 +77,17 @@ export function subscribeUiTheme(listener: (theme: UiTheme) => void): () => void
   return () => window.removeEventListener(UI_THEME_CHANGED_EVENT, handler);
 }
 
-/** Boot: apply the cached theme now, then reconcile with the server value. */
+/** Boot: reconcile the page with the server value. The cache is only ever
+ * used to ADD a theme before paint (the inline boot script does that);
+ * nothing here removes the attribute before the server answers — the web
+ * app renders data-theme on the server, and resetting it to the default
+ * from a missing or stale cache re-styled the page twice (fonts swapped,
+ * the hero reflowed). A failed fetch changes nothing and caches nothing. */
 export async function bootUiTheme(): Promise<UiTheme> {
-  applyUiTheme(readCachedUiTheme());
+  const cached = readCachedUiTheme();
+  if (cached !== DEFAULT_UI_THEME) applyUiTheme(cached);
   const theme = await fetchUiTheme();
+  if (theme === null) return cached;
   applyUiTheme(theme);
   return theme;
 }
