@@ -113,7 +113,7 @@ import { shouldCommitDeferredSendTurn } from "@/lib/deferred-send-guard";
 import { detachSessionActivity, updateSessionActivity } from "@/lib/session-activity";
 import { uploadImagesWithFallback } from "@/lib/image-upload-fallback";
 import { GuestChatNote } from "@/components/chat/guest-chat-note";
-import { ReferencesDrawer, type KnowledgeReferenceItem } from "@/components/chat/references-drawer";
+import { ReferencesDrawerHost, type KnowledgeReferenceItem, type ReferencesDrawerApi } from "@/components/chat/references-drawer";
 import { AssistantMessage, DayDivider, ErrorActionButton, UserMessageBubble } from "@/components/chat/chat-messages";
 import type { UiAttachment, UiIllustration, UiMessage, UiRewriteProposal } from "@/components/chat/chat-types";
 import { ErrorNote } from "@/components/chat/error-note";
@@ -1047,21 +1047,13 @@ function ChatBody({ id }: { id: string }) {
   );
   const [subChatBannerClosed, setSubChatBannerClosed] = useState<string | null>(null);
 
-  // References slide-out panel (drawer)
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerRefs, setDrawerRefs] = useState<KnowledgeReferenceItem[]>([]);
-  const [activeRefKey, setActiveRefKey] = useState<string | null>(null);
-
+  // References slide-out panel (drawer). Its state lives in
+  // ReferencesDrawerHost: opening it must not re-render this page, or the
+  // slide-in stutters.
+  const drawerApi = useRef<ReferencesDrawerApi | null>(null);
   const handleOpenDrawer = useCallback((refs: KnowledgeReferenceItem[], activeItem?: KnowledgeReferenceItem, index = 0) => {
-    setDrawerRefs(refs);
-    if (activeItem) {
-      setActiveRefKey(activeItem.chunk_id || activeItem.id || `${activeItem.knowledge_id || "ref"}-${index}`);
-    } else {
-      setActiveRefKey(null);
-    }
-    setDrawerOpen(true);
+    drawerApi.current?.open(refs, activeItem, index);
   }, []);
-  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
 
   // The account kind changed while the chat was open (a guest joined an
   // organization, a member lost the last membership): the session belongs
@@ -2841,12 +2833,7 @@ function ChatBody({ id }: { id: string }) {
         </div>
       </div>
 
-      <ReferencesDrawer
-        open={drawerOpen}
-        onClose={closeDrawer}
-        references={drawerRefs}
-        activeKey={activeRefKey}
-      />
+      <ReferencesDrawerHost apiRef={drawerApi} />
     </div>
   );
 

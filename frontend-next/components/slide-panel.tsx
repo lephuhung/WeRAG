@@ -62,7 +62,9 @@ function OverlaySlidePanel({
     <>
       <div
         onClick={onClose}
-        className={`fixed inset-0 z-40 bg-scrim/40 backdrop-blur-sm transition-opacity duration-200 ${
+        // No backdrop-blur: blurring the whole page again on every frame of
+        // the fade made the drawer's slide-in stutter.
+        className={`fixed inset-0 z-40 bg-scrim/40 transition-opacity duration-200 ${
           open ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
       />

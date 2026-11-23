@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useDeferredValue, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState, type MutableRefObject } from "react";
 import { SlidePanel, SlidePanelHeader } from "@/components/slide-panel";
 import { IconDoc } from "@/components/icons";
 import { Markdown } from "@/components/markdown";
@@ -245,3 +245,33 @@ export const ReferencesDrawer = memo(function ReferencesDrawer({
     </SlidePanel>
   );
 });
+
+/** Opens the references drawer without re-rendering its parent. */
+export type ReferencesDrawerApi = {
+  open: (refs: KnowledgeReferenceItem[], activeItem?: KnowledgeReferenceItem, index?: number) => void;
+};
+
+/* ReferencesDrawerHost owns the drawer's state. The chat page used to hold
+ * it, so a click on a source re-rendered the whole page (message list,
+ * composer…) in the very frame the slide-in started, and the slide
+ * stuttered. The page now calls apiRef.current.open(); only this host and
+ * the drawer render. */
+export function ReferencesDrawerHost({ apiRef }: { apiRef: MutableRefObject<ReferencesDrawerApi | null> }) {
+  const [open, setOpen] = useState(false);
+  const [refs, setRefs] = useState<KnowledgeReferenceItem[]>([]);
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  useEffect(() => {
+    apiRef.current = {
+      open: (list, activeItem, index = 0) => {
+        setRefs(list);
+        setActiveKey(activeItem ? getRefKey(activeItem, index) : null);
+        setOpen(true);
+      },
+    };
+    return () => {
+      apiRef.current = null;
+    };
+  }, [apiRef]);
+  const close = useCallback(() => setOpen(false), []);
+  return <ReferencesDrawer open={open} onClose={close} references={refs} activeKey={activeKey} />;
+}
