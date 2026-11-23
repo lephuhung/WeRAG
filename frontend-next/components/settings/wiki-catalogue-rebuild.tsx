@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useT } from "@/lib/i18n";
+import { userErrorMessage } from "@/lib/user-error";
 import {
   getWikiCatalogueStatus,
   rebuildWikiCatalogue,
@@ -28,9 +29,10 @@ export function WikiCatalogueRebuild({ kbId, enabled }: { kbId: string; enabled:
         timer.current = setTimeout(poll, 2000);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      /* one translated sentence, never the backend's own English text */
+      setError(userErrorMessage(e, t, "kbSettings.wikiCatalogueStatusFailed"));
     }
-  }, [kbId]);
+  }, [kbId, t]);
 
   useEffect(() => {
     void poll();
@@ -48,7 +50,7 @@ export function WikiCatalogueRebuild({ kbId, enabled }: { kbId: string; enabled:
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(poll, 1500);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(userErrorMessage(e, t, "kbSettings.wikiCatalogueFailed"));
     } finally {
       setStarting(false);
     }

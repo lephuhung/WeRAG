@@ -59,6 +59,15 @@ const USAGE_REASON_KEYS: Record<string, LocaleKey> = {
   session_limit: "chat.err.usage.sessionLimit",
 };
 
+/** English backend sentences that need their own translated line, keyed by
+ * the message rather than a code (ErrBadRequest 1000 covers too many cases
+ * to map wholesale). The pattern also matches the handlers that still
+ * answer a flat {"error": err.Error()}, i.e. "error code: 1000, error
+ * message: <sentence>". */
+const MESSAGE_KEYS: [RegExp, LocaleKey][] = [
+  [/wiki (feature )?is not enabled/i, "err.wikiDisabled"],
+];
+
 /** Letters only Vietnamese uses among the Latin scripts the backend writes
  * in (tone marks and ă â đ ê ô ơ ư). */
 const VIETNAMESE_RE =
@@ -197,6 +206,12 @@ export function classifyUserError(e: unknown, opts: { anonymous?: boolean } = {}
   if (status === 401) return opts.anonymous ? { kind: "fallback" } : { kind: "key", key: "err.signInAgain" };
   const transport = transportKey(e, status, message);
   if (transport) return { kind: "key", key: transport };
+
+  // a backend sentence with its own translation (see MESSAGE_KEYS)
+  if (message) {
+    const hit = MESSAGE_KEYS.find(([re]) => re.test(message));
+    if (hit) return { kind: "key", key: hit[1] };
+  }
 
   if (message && isShowableBackendText(message, status)) return { kind: "text", text: message.trim() };
 

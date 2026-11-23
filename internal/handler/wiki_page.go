@@ -44,7 +44,14 @@ func NewWikiPageHandler(
 	}
 }
 
-// validateWikiKB validates that the KB exists and is a wiki type
+// validateWikiKB validates that the KB exists and is a wiki type. Its error
+// is an *errors.AppError, so callers hand it to c.Error() and let
+// middleware.ErrorHandler answer the standard
+// {success:false,error:{code,message}} envelope with the error's own status
+// (404 for a missing KB, 400 for a KB with the wiki switched off). Writing
+// err.Error() into a flat {"error": "..."} string instead leaked
+// "error code: 1000, error message: Wiki feature is not enabled for this
+// knowledge base" into the UI, which cannot translate it.
 func (h *WikiPageHandler) validateWikiKB(c *gin.Context) (string, uint64, error) {
 	ctx := c.Request.Context()
 	kbID := secutils.SanitizeForLog(c.Param("kb_id"))
@@ -95,7 +102,7 @@ func getSlugParam(c *gin.Context) string {
 func (h *WikiPageHandler) ListPages(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 
@@ -153,7 +160,7 @@ func (h *WikiPageHandler) ListPages(c *gin.Context) {
 func (h *WikiPageHandler) ListFolders(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 	parentID := strings.TrimSpace(c.Query("parent_id"))
@@ -192,7 +199,7 @@ func (h *WikiPageHandler) ListFolders(c *gin.Context) {
 func (h *WikiPageHandler) CreateFolder(c *gin.Context) {
 	kbID, tenantID, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 	var req types.WikiFolderCreateRequest
@@ -226,7 +233,7 @@ func (h *WikiPageHandler) CreateFolder(c *gin.Context) {
 func (h *WikiPageHandler) UpdateFolder(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 	folderID := secutils.SanitizeForLog(c.Param("folder_id"))
@@ -262,7 +269,7 @@ func (h *WikiPageHandler) UpdateFolder(c *gin.Context) {
 func (h *WikiPageHandler) DeleteFolder(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 	folderID := secutils.SanitizeForLog(c.Param("folder_id"))
@@ -292,7 +299,7 @@ func (h *WikiPageHandler) DeleteFolder(c *gin.Context) {
 func (h *WikiPageHandler) MovePage(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 	var req types.WikiPageMoveRequest
@@ -355,7 +362,7 @@ func parseWikiCategoryPath(raw string) []string {
 func (h *WikiPageHandler) CreatePage(c *gin.Context) {
 	kbID, tenantID, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 
@@ -416,7 +423,7 @@ func (h *WikiPageHandler) recordManualWikiActivity(
 func (h *WikiPageHandler) GetPage(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 
@@ -461,7 +468,7 @@ func (h *WikiPageHandler) GetPage(c *gin.Context) {
 func (h *WikiPageHandler) UpdatePage(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 
@@ -565,7 +572,7 @@ func (h *WikiPageHandler) UpdatePage(c *gin.Context) {
 func (h *WikiPageHandler) ListRevisions(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 
@@ -640,7 +647,7 @@ func (h *WikiPageHandler) ListRevisions(c *gin.Context) {
 func (h *WikiPageHandler) RevertPage(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 
@@ -692,7 +699,7 @@ func (h *WikiPageHandler) RevertPage(c *gin.Context) {
 func (h *WikiPageHandler) DeletePage(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 
@@ -738,7 +745,7 @@ func (h *WikiPageHandler) DeletePage(c *gin.Context) {
 func (h *WikiPageHandler) GetIndex(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 
@@ -801,7 +808,7 @@ const (
 func (h *WikiPageHandler) GetGraph(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 
@@ -889,7 +896,7 @@ func (h *WikiPageHandler) GetGraph(c *gin.Context) {
 func (h *WikiPageHandler) GetStats(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 
@@ -916,7 +923,7 @@ func (h *WikiPageHandler) GetStats(c *gin.Context) {
 func (h *WikiPageHandler) ListIssues(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 
@@ -948,7 +955,7 @@ func (h *WikiPageHandler) ListIssues(c *gin.Context) {
 func (h *WikiPageHandler) UpdateIssueStatus(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 
@@ -998,7 +1005,7 @@ func (h *WikiPageHandler) UpdateIssueStatus(c *gin.Context) {
 func (h *WikiPageHandler) SearchPages(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 
@@ -1030,7 +1037,7 @@ func (h *WikiPageHandler) SearchPages(c *gin.Context) {
 func (h *WikiPageHandler) RebuildLinks(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 
@@ -1054,7 +1061,7 @@ func (h *WikiPageHandler) RebuildLinks(c *gin.Context) {
 func (h *WikiPageHandler) Lint(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 
@@ -1079,7 +1086,7 @@ func (h *WikiPageHandler) Lint(c *gin.Context) {
 func (h *WikiPageHandler) AutoFix(c *gin.Context) {
 	kbID, _, err := h.validateWikiKB(c)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		_ = c.Error(err)
 		return
 	}
 

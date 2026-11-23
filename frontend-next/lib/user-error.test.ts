@@ -30,6 +30,19 @@ describe("isVietnameseText", () => {
 });
 
 describe("classifyUserError", () => {
+  it("maps a wiki-off refusal to its own line, envelope or flat string", () => {
+    // standard envelope (ErrorHandler)
+    assert.deepEqual(
+      classifyUserError(new ApiError(400, "x", envelope(1000, "Wiki feature is not enabled for this knowledge base"))),
+      { kind: "key", key: "err.wikiDisabled" },
+    );
+    // handlers that still answer a flat {"error": err.Error()}
+    assert.deepEqual(
+      classifyUserError(new ApiError(400, "error code: 1000, error message: Wiki feature is not enabled for this knowledge base")),
+      { kind: "key", key: "err.wikiDisabled" },
+    );
+  });
+
   it("maps backend codes that name their failure, whatever the status", () => {
     assert.deepEqual(classifyUserError(new ApiError(409, "tenant exists", envelope(2001, "tenant exists"))), { kind: "key", key: "err.tenantExists" });
     assert.deepEqual(classifyUserError(new ApiError(403, "x", envelope(2005, "x"))), { kind: "key", key: "err.tenantCreationDisabled" });
