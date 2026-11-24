@@ -132,3 +132,9 @@ EXPOSE 8080
 
 ENTRYPOINT ["./scripts/docker-entrypoint.sh"]
 CMD ["./WeKnora"]
+
+# Source stamp (scripts/image-sources.sh, passed by scripts/build-image.sh):
+# scripts/check-images.sh compares it with the repo. Last, so a new stamp
+# only rebuilds this layer.
+ARG WERAG_SRC_STAMP=unknown
+LABEL werag.src-stamp=$WERAG_SRC_STAMP

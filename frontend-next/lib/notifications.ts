@@ -84,13 +84,14 @@ const BACKUP_NOTE_MAX = 120;
 export const KIND_LEGAL_SYNC_ALERT = "legal_sync_alert";
 /** The SuperAdmin page of the legal data workers. */
 export const LEGAL_SYNC_STATUS_PATH = "/platform/admin?section=legal-documents&view=sync";
-export const LEGAL_SYNC_WORKERS = ["vbpl_sync", "dcs_sync", "auto_ingest", "expired_retention"] as const;
+export const LEGAL_SYNC_WORKERS = ["vbpl_sync", "dcs_sync", "auto_ingest", "expired_retention", "image_check"] as const;
 export type LegalSyncAlertWorker = (typeof LEGAL_SYNC_WORKERS)[number];
 export const LEGAL_SYNC_PROBLEMS = ["last_failed", "running_long", "stale", "heartbeat_stale", "no_heartbeat", "tick_error", "image_stale"] as const;
 export type LegalSyncProblem = (typeof LEGAL_SYNC_PROBLEMS)[number];
 /** The steps of the scheduled syncs, in order: vbpl.vn (prepare … push,
- * the MinIO backup), Party documents (fetch, build, upload to WeRAG). */
-export const LEGAL_SYNC_STEPS = ["prepare", "crawl", "import", "push", "fetch", "build", "upload"] as const;
+ * the MinIO backup), Party documents (fetch, build, upload to WeRAG), the
+ * host's image check (check). */
+export const LEGAL_SYNC_STEPS = ["prepare", "crawl", "import", "push", "fetch", "build", "upload", "check"] as const;
 export type LegalSyncStep = (typeof LEGAL_SYNC_STEPS)[number];
 /** A worker's note longer than this is cut in the body. */
 const LEGAL_SYNC_NOTE_MAX = 120;

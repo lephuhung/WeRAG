@@ -86,9 +86,9 @@ const texts = {
     `${segments} segments (threshold ${threshold}), ${deleted} deleted documents still indexed`,
   legalSyncAlertTitle: (count: number) => `Legal data collection problems: ${count}`,
   legalSyncWorker: (worker: LegalSyncAlertWorker) =>
-    ({ vbpl_sync: "vbpl.vn nightly sync", dcs_sync: "Party documents sync", auto_ingest: "Auto-ingest", expired_retention: "Expired text removal" })[worker],
+    ({ vbpl_sync: "vbpl.vn nightly sync", dcs_sync: "Party documents sync", auto_ingest: "Auto-ingest", expired_retention: "Expired text removal", image_check: "Image check" })[worker],
   legalSyncStep: (step: LegalSyncStep) =>
-    ({ prepare: "prepare", crawl: "crawl", import: "import", push: "MinIO backup", fetch: "fetch", build: "classify and build", upload: "push to WeRAG" })[step],
+    ({ prepare: "prepare", crawl: "crawl", import: "import", push: "MinIO backup", fetch: "fetch", build: "classify and build", upload: "push to WeRAG", check: "compare images with the source" })[step],
   legalSyncProblem: (problem: LegalSyncProblem, step: string, at: string, hours: number, rev?: { image: number; source: number }) =>
     ({
       image_stale: `vbpl-sync image is older than the source (${rev?.image ? `revision ${rev.image}` : "no revision recorded"}, source revision ${rev?.source}): rebuild it`,
@@ -134,9 +134,9 @@ const textsVi = {
     `${segments} segment (ngưỡng ${threshold}), còn ${deleted} bản ghi đã xoá trong chỉ mục`,
   legalSyncAlertTitle: (count: number) => `Thu thập dữ liệu pháp lý gặp sự cố: ${count} việc`,
   legalSyncWorker: (worker: LegalSyncAlertWorker) =>
-    ({ vbpl_sync: "Đồng bộ vbpl.vn", dcs_sync: "Đồng bộ văn bản của Đảng", auto_ingest: "Tự nạp văn bản", expired_retention: "Xóa toàn văn hết hiệu lực" })[worker],
+    ({ vbpl_sync: "Đồng bộ vbpl.vn", dcs_sync: "Đồng bộ văn bản của Đảng", auto_ingest: "Tự nạp văn bản", expired_retention: "Xóa toàn văn hết hiệu lực", image_check: "Kiểm tra image" })[worker],
   legalSyncStep: (step: LegalSyncStep) =>
-    ({ prepare: "chuẩn bị", crawl: "cào dữ liệu", import: "nạp danh mục", push: "sao lưu MinIO", fetch: "tải trang", build: "phân loại và dựng HTML", upload: "đẩy lên WeRAG" })[step],
+    ({ prepare: "chuẩn bị", crawl: "cào dữ liệu", import: "nạp danh mục", push: "sao lưu MinIO", fetch: "tải trang", build: "phân loại và dựng HTML", upload: "đẩy lên WeRAG", check: "so sánh image với mã nguồn" })[step],
   legalSyncProblem: (problem: LegalSyncProblem, step: string, at: string, hours: number, rev?: { image: number; source: number }) =>
     ({
       image_stale: `image vbpl-sync cũ hơn mã nguồn (${rev?.image ? `bản ${rev.image}` : "không ghi số bản"}, mã nguồn bản ${rev?.source}): cần dựng lại image`,
@@ -607,6 +607,24 @@ describe("legal sync alert", () => {
     // an alert stored before the thresholds were sent keeps the old wording
     const old = notificationText(alert({ workers: [{ worker: "vbpl_sync", problem: "stale", hours: "x" }] }), texts);
     assert.equal(old.body, "vbpl.vn nightly sync: overdue: no successful run in the last day");
+  });
+
+  it("names the host's image check, its step and the stale images", () => {
+    const n = alert({
+      workers: [
+        {
+          worker: "image_check",
+          problem: "last_failed",
+          step: "check",
+          at: "2026-11-24T23:17:00Z",
+          note: "image cũ hơn mã nguồn: docreader, frontend (chưa có nhãn: sherpa-asr)",
+        },
+      ],
+    });
+    assert.equal(
+      notificationText(n, textsVi).body,
+      "Kiểm tra image: lỗi ở bước so sánh image với mã nguồn (lần chạy lúc T(2026-11-24T23:17)) — image cũ hơn mã nguồn: docreader, frontend (chưa có nhãn: sherpa-asr)",
+    );
   });
 
   it("names the revisions of a stale vbpl-sync image, without run time or last success", () => {

@@ -8,6 +8,7 @@ services:
       args:
         NPM_REGISTRY: ${NPM_REGISTRY:-}
         NODE_MAX_OLD_SPACE_SIZE: ${NODE_MAX_OLD_SPACE_SIZE:-4096}
+        WERAG_SRC_STAMP: ${WERAG_SRC_STAMP_FRONTEND:-unknown}
     container_name: WeKnora-frontend
     ports:
       - "${FRONTEND_PORT:-80}:80"
@@ -49,6 +50,7 @@ services:
       dockerfile: docker/Dockerfile.app
       args:
         - APK_MIRROR_ARG=${APK_MIRROR_ARG:-}
+        - WERAG_SRC_STAMP=${WERAG_SRC_STAMP_APP:-unknown}
     container_name: WeKnora-app
     ports:
       - "${APP_PORT:-8080}:8080"
@@ -312,6 +314,8 @@ services:
       context: .
       dockerfile: docker/Dockerfile.sandbox
       target: sandbox
+      args:
+        WERAG_SRC_STAMP: ${WERAG_SRC_STAMP_SANDBOX:-unknown}
     profiles:
       - full
     command: ["true"]
@@ -324,6 +328,7 @@ services:
       dockerfile: docker/Dockerfile.docreader
       args:
         - APT_MIRROR=${APT_MIRROR:-}
+        - WERAG_SRC_STAMP=${WERAG_SRC_STAMP_DOCREADER:-unknown}
     container_name: WeKnora-docreader
     # docreader gRPC ships without auth/TLS and is only consumed by the app
     # container over the WeKnora-network (DOCREADER_ADDR defaults to
@@ -467,6 +472,8 @@ services:
   sherpa-asr:
     build:
       context: ./docker/sherpa-asr
+      args:
+        WERAG_SRC_STAMP: ${WERAG_SRC_STAMP_SHERPA_ASR:-unknown}
     image: werag-sherpa-asr:latest
     container_name: WeKnora-sherpa-asr
     profiles:
@@ -498,6 +505,8 @@ services:
   screenai-ocr:
     build:
       context: ./docker/screenai-ocr
+      args:
+        WERAG_SRC_STAMP: ${WERAG_SRC_STAMP_SCREENAI_OCR:-unknown}
     image: werag-screenai-ocr:latest
     container_name: WeKnora-screenai-ocr
     profiles:
@@ -985,6 +994,8 @@ services:
   backup:
     build:
       context: ./deploy/backup
+      args:
+        WERAG_SRC_STAMP: ${WERAG_SRC_STAMP_BACKUP:-unknown}
     image: werag-backup:latest
     container_name: WeKnora-backup
     environment:
@@ -1052,6 +1063,7 @@ services:
         # stamped into the image (WERAG_IMAGE_COMMIT), recorded in each run:
         # GIT_COMMIT=$(git rev-parse --short HEAD) docker compose … build vbpl-sync
         GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        WERAG_SRC_STAMP: ${WERAG_SRC_STAMP_VBPL_SYNC:-unknown}
     image: werag-vbpl-sync:latest
     container_name: WeKnora-vbpl-sync
     # Chủ thư mục crawl trên host (orca = 999:987).
@@ -1108,6 +1120,8 @@ services:
     build:
       context: .
       dockerfile: deploy/dcs-sync/Dockerfile
+      args:
+        WERAG_SRC_STAMP: ${WERAG_SRC_STAMP_DCS_SYNC:-unknown}
     image: werag-dcs-sync:latest
     container_name: WeKnora-dcs-sync
     user: "${DCS_UID:-999}:${DCS_GID:-987}"
@@ -1148,6 +1162,8 @@ services:
     build:
       context: .
       dockerfile: services/embed-rerank/Dockerfile
+      args:
+        WERAG_SRC_STAMP: ${WERAG_SRC_STAMP_EMBED_RERANK:-unknown}
     container_name: hrag-embed-rerank
     expose:
       - "8090"
@@ -1228,6 +1244,8 @@ services:
       context: ./docker/tvpl
       additional_contexts:
         tvplsrc: ./scripts/tvpl
+      args:
+        WERAG_SRC_STAMP: ${WERAG_SRC_STAMP_TVPL:-unknown}
     image: werag-tvpl:latest
     profiles:
       - tvpl

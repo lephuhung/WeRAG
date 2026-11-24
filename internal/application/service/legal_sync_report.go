@@ -13,7 +13,8 @@ import (
 )
 
 // Run tracking over HTTP for the scheduled syncs without database
-// credentials (LegalSyncReportingWorkers: deploy/dcs-sync). The same
+// credentials (LegalSyncReportingWorkers: deploy/dcs-sync, and the host's
+// scripts/check-images.sh --report). The same
 // repository calls as legal-catalog-import's -run-* flags (vbpl-sync), so
 // the same semantics: a start closes the worker's runs left open as
 // interrupted, every write is a sign of life, a run the monitor closed for
@@ -55,7 +56,8 @@ const (
 
 // legalSyncReportSteps are the steps of each reporting worker.
 var legalSyncReportSteps = map[string]map[string]bool{
-	types.LegalSyncWorkerDCS: {"fetch": true, "build": true, "upload": true},
+	types.LegalSyncWorkerDCS:        {"fetch": true, "build": true, "upload": true},
+	types.LegalSyncWorkerImageCheck: {"check": true},
 }
 
 func legalSyncReportStep(worker, step string) error {

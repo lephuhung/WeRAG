@@ -40,6 +40,9 @@ var (
 	// takes minutes): two missed runs and a margin; stuck when a run takes
 	// its whole slot (a full re-crawl or many OCR pauses can take hours).
 	legalSyncDCS = legalSyncSchedule{staleAfter: 9 * time.Hour, longRun: 4 * time.Hour}
+	// legalSyncImageCheck: the host's image check (cron daily, a run takes
+	// seconds): a day and a margin; stuck after an hour.
+	legalSyncImageCheck = legalSyncSchedule{staleAfter: 26 * time.Hour, longRun: time.Hour}
 )
 
 // legalSyncContainers are the scheduled syncs, in monitor order.
@@ -49,6 +52,7 @@ var legalSyncContainers = []struct {
 }{
 	{types.LegalSyncWorkerVBPL, legalSyncVBPL},
 	{types.LegalSyncWorkerDCS, legalSyncDCS},
+	{types.LegalSyncWorkerImageCheck, legalSyncImageCheck},
 }
 
 // legalSyncScheduleOf is the thresholds of a scheduled sync (ok false for
@@ -65,7 +69,7 @@ func legalSyncScheduleOf(worker string) (legalSyncSchedule, bool) {
 // LegalSyncReportingWorkers are the scheduled syncs that record their runs
 // through the backend's run endpoints (no database credentials); the other
 // workers write the table themselves.
-var LegalSyncReportingWorkers = map[string]bool{types.LegalSyncWorkerDCS: true}
+var LegalSyncReportingWorkers = map[string]bool{types.LegalSyncWorkerDCS: true, types.LegalSyncWorkerImageCheck: true}
 
 // Health of a worker on the monitor, worst last.
 const (

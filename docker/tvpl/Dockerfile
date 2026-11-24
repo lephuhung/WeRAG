@@ -34,3 +34,9 @@ ENV TVPL_CACHE_DIR=/data/cache \
 
 # starts as root only to hand the mounted dirs to TVPL_UID, then drops to it
 ENTRYPOINT ["sh", "/app/entrypoint.sh"]
+
+# Source stamp (scripts/image-sources.sh, passed by scripts/build-image.sh):
+# scripts/check-images.sh compares it with the repo. Last, so a new stamp
+# only rebuilds this layer.
+ARG WERAG_SRC_STAMP=unknown
+LABEL werag.src-stamp=$WERAG_SRC_STAMP

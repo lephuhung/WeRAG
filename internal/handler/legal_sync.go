@@ -49,11 +49,11 @@ func (h *LegalSyncHandler) GetLegalSyncStatus(c *gin.Context) {
 // ListLegalSyncRuns godoc
 // @Summary      Legal data worker runs
 // @Description  The latest runs, newest first. worker is vbpl_sync,
-// @Description  dcs_sync, auto_ingest, expired_retention or empty for all; limit 1–200
+// @Description  dcs_sync, auto_ingest, expired_retention, image_check or empty for all; limit 1–200
 // @Description  (default 30).
 // @Tags         Rà soát pháp lý
 // @Produce      json
-// @Param        worker  query  string  false  "vbpl_sync, dcs_sync, auto_ingest, expired_retention"
+// @Param        worker  query  string  false  "vbpl_sync, dcs_sync, auto_ingest, expired_retention, image_check"
 // @Param        limit   query  int     false  "1–200, default 30"
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
@@ -62,7 +62,7 @@ func (h *LegalSyncHandler) ListLegalSyncRuns(c *gin.Context) {
 	worker := strings.TrimSpace(c.Query("worker"))
 	switch worker {
 	case "", types.LegalSyncWorkerVBPL, types.LegalSyncWorkerDCS, types.LegalSyncWorkerAutoIngest,
-		types.LegalSyncWorkerExpiredRetention:
+		types.LegalSyncWorkerExpiredRetention, types.LegalSyncWorkerImageCheck:
 	default:
 		c.Error(errors.NewBadRequestError("unknown worker " + worker))
 		return
@@ -154,8 +154,8 @@ func legalSyncReportError(c *gin.Context, err error) {
 
 // StartLegalSyncRun godoc
 // @Summary      Open a run of a scheduled sync
-// @Description  For the syncs without database credentials (worker
-// @Description  dcs_sync). JSON {worker, step, summary}; closes the worker's
+// @Description  For the syncs without database credentials (workers
+// @Description  dcs_sync, image_check). JSON {worker, step, summary}; closes the worker's
 // @Description  runs left open as interrupted and returns the new run's id;
 // @Description  409 while another run of the worker is alive (written to
 // @Description  within 2 minutes). summary: schedule, untracked, and the

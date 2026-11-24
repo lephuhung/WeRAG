@@ -21,6 +21,11 @@ const (
 	// LegalSyncWorkerExpiredRetention is the backend worker removing the
 	// full text of fully expired documents (service.LegalExpiredRetention).
 	LegalSyncWorkerExpiredRetention = "expired_retention"
+	// LegalSyncWorkerImageCheck is the host's daily check that the
+	// containers built from the repo run the code of HEAD
+	// (scripts/check-images.sh --report, step "check"): a failed run lists
+	// the stale images. It records its runs through the run endpoints.
+	LegalSyncWorkerImageCheck = "image_check"
 )
 
 // LegalSyncAlertEnabledSettingKey switches the SuperAdmin alert of the
@@ -36,7 +41,7 @@ const LegalSyncAlertDisabledWorkersSettingKey = "legal.sync_alert.disabled_worke
 
 // LegalSyncWorkers are the workers the monitor watches, in its order.
 var LegalSyncWorkers = []string{LegalSyncWorkerVBPL, LegalSyncWorkerDCS, LegalSyncWorkerAutoIngest,
-	LegalSyncWorkerExpiredRetention}
+	LegalSyncWorkerExpiredRetention, LegalSyncWorkerImageCheck}
 
 // ParseLegalSyncWorkerList splits a comma list of worker names (spaces
 // and empty items dropped) and returns the names that are no worker.

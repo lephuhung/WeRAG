@@ -35,3 +35,9 @@ COPY docker/docker-entrypoint.sh /docker-entrypoint.sh
 ENV MAX_FILE_SIZE_MB=50
 EXPOSE 80
 ENTRYPOINT ["/docker-entrypoint.sh"]
+
+# Source stamp (scripts/image-sources.sh, passed by scripts/build-image.sh):
+# scripts/check-images.sh compares it with the repo. Last, so a new stamp
+# only rebuilds this layer.
+ARG WERAG_SRC_STAMP=unknown
+LABEL werag.src-stamp=$WERAG_SRC_STAMP

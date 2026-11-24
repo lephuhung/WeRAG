@@ -36,7 +36,9 @@ import sys
 import urllib.error
 import urllib.request
 
-WORKER = "dcs_sync"
+# the worker whose runs are recorded; scripts/check-images.sh --report sets
+# image_check
+WORKER = os.environ.get("WERAG_RUN_WORKER") or "dcs_sync"
 ERROR_TAIL = 8000
 
 _CONTROL = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[@-_]|[\x00-\x08\x0b-\x1f\x7f]")

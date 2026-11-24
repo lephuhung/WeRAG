@@ -23,3 +23,9 @@ HEALTHCHECK --interval=30m --timeout=10s --start-period=1h \
     CMD find "$DCS_WORK_DIR/.sync.ok" -mmin -${DCS_HEALTH_MAX_AGE_MIN:-1440} | grep -q . || [ ! -f "$DCS_WORK_DIR/.sync.started" ]
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Source stamp (scripts/image-sources.sh, passed by scripts/build-image.sh):
+# scripts/check-images.sh compares it with the repo. Last, so a new stamp
+# only rebuilds this layer.
+ARG WERAG_SRC_STAMP=unknown
+LABEL werag.src-stamp=$WERAG_SRC_STAMP

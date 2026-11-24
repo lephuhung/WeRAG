@@ -24,3 +24,9 @@ HEALTHCHECK --interval=5m --timeout=10s --start-period=10m \
 
 # entrypoint chạy bằng root chỉ để chown /spool/wal rồi hạ quyền xuống backup (999).
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+
+# Source stamp (scripts/image-sources.sh, passed by scripts/build-image.sh):
+# scripts/check-images.sh compares it with the repo. Last, so a new stamp
+# only rebuilds this layer.
+ARG WERAG_SRC_STAMP=unknown
+LABEL werag.src-stamp=$WERAG_SRC_STAMP

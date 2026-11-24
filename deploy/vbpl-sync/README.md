@@ -69,7 +69,8 @@ bằng tài khoản admin MinIO của inventory, như `provision_backup_storage.
 (chỉ ghi thêm, phải để `VBPL_S3_REMOVE=0`).
 
 ```bash
-# build + chạy (luôn -p spec-airag-refactor; GIT_COMMIT ghi commit vào image)
+# build + chạy: scripts/build-image.sh vbpl-sync --up (kèm GIT_COMMIT và nhãn
+# werag.src-stamp, xem deploy/image-check); tương đương bằng tay (không nhãn):
 GIT_COMMIT=$(git rev-parse --short HEAD) docker compose -p spec-airag-refactor -f docker-compose.yml --profile vbpl-sync build vbpl-sync && docker compose -p spec-airag-refactor -f docker-compose.yml --profile vbpl-sync up -d --no-deps vbpl-sync
 # chạy một lần ngay
 sudo docker exec WeKnora-vbpl-sync sync.sh

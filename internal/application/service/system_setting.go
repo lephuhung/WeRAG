@@ -534,7 +534,7 @@ var registry = map[string]settingSpec{
 	types.LegalSyncAlertDisabledWorkersSettingKey: {
 		Type: "string", EnvName: "", Default: "", Category: "legal",
 		Description: "Tắt thông báo sự cố cho riêng một số nguồn thu thập dữ liệu pháp lý, cách nhau bằng dấu phẩy: " +
-			"vbpl_sync, dcs_sync, auto_ingest, expired_retention (ví dụ dcs_sync khi cố ý dừng container dcs-sync). " +
+			"vbpl_sync, dcs_sync, auto_ingest, expired_retention, image_check (ví dụ dcs_sync khi cố ý dừng container dcs-sync). " +
 			"Trang Thu thập dữ liệu vẫn hiện tình trạng. Để trống = cảnh báo mọi nguồn.",
 	},
 	types.BillingOrderTTLHoursSettingKey: {

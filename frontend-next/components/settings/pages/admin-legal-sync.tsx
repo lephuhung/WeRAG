@@ -37,12 +37,14 @@ const WORKER_LABEL: Record<LegalSyncWorker, LocaleKey> = {
   dcs_sync: "lsync.worker.dcs_sync",
   auto_ingest: "lsync.worker.auto_ingest",
   expired_retention: "lsync.worker.expired_retention",
+  image_check: "lsync.worker.image_check",
 };
 const WORKER_DESC: Record<LegalSyncWorker, LocaleKey> = {
   vbpl_sync: "lsync.workerDesc.vbpl_sync",
   dcs_sync: "lsync.workerDesc.dcs_sync",
   auto_ingest: "lsync.workerDesc.auto_ingest",
   expired_retention: "lsync.workerDesc.expired_retention",
+  image_check: "lsync.workerDesc.image_check",
 };
 const HEALTH_LABEL: Record<LegalSyncHealth, LocaleKey> = {
   ok: "lsync.health.ok",
@@ -77,6 +79,8 @@ const STEP_LABEL: Record<string, LocaleKey> = {
   fetch: "lsync.step.fetch",
   build: "lsync.step.build",
   upload: "lsync.step.upload",
+  // the host's image check (scripts/check-images.sh --report)
+  check: "lsync.step.check",
 };
 /** Summary groups shown as sections of a run's details, in order. */
 const GROUP_LABEL: Record<string, LocaleKey> = {
@@ -85,6 +89,7 @@ const GROUP_LABEL: Record<string, LocaleKey> = {
   fetch: "lsync.step.fetch",
   build: "lsync.step.build",
   upload: "lsync.step.upload",
+  check: "lsync.step.check",
 };
 /** Labels of the known counts; an unknown key shows as is. */
 const COUNT_LABEL: Record<string, LocaleKey> = {
@@ -160,6 +165,11 @@ const ACTION_LABEL: Record<string, LocaleKey> = {
   push_links: "lsync.action.push_links",
   push_catalogue: "lsync.action.push_catalogue",
   push_draft: "lsync.action.push_draft",
+  // check (image_check)
+  ok: "lsync.count.images_ok",
+  stale: "lsync.count.images_stale",
+  unstamped: "lsync.count.images_unstamped",
+  not_running: "lsync.count.images_not_running",
 };
 
 const RUN_FILTERS: { key: LegalSyncWorker | ""; labelKey: LocaleKey }[] = [
@@ -168,6 +178,7 @@ const RUN_FILTERS: { key: LegalSyncWorker | ""; labelKey: LocaleKey }[] = [
   { key: "dcs_sync", labelKey: "lsync.worker.dcs_sync" },
   { key: "auto_ingest", labelKey: "lsync.worker.auto_ingest" },
   { key: "expired_retention", labelKey: "lsync.worker.expired_retention" },
+  { key: "image_check", labelKey: "lsync.worker.image_check" },
 ];
 
 /** Text colour of a health's reasons. */
@@ -661,6 +672,11 @@ function runHeadline(t: T, run: LegalSyncRun): string {
       queued: num(up.queued),
       failed: num(up.failed),
     });
+  }
+  if (run.worker === "image_check") {
+    const c = (s.check ?? {}) as Record<string, unknown>;
+    if (!s.check) return "";
+    return t("lsync.headline.imageCheck", { ok: num(c.ok), stale: num(c.stale), unstamped: num(c.unstamped) });
   }
   if (run.worker === "auto_ingest") return t("lsync.headline.autoIngest", { added: num(s.added), tried: num(s.tried) });
   return t("lsync.headline.retention", { removed: num(s.removed), started: num(s.clocks_started) });

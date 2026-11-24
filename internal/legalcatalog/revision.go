@@ -7,7 +7,14 @@ package legalcatalog
 // three nights in a row). The importer records its revision in every run it
 // tracks (legal_sync_runs summary "importer_revision"); the backend's
 // SuperAdmin monitor reports a vbpl_sync run with a lower revision, or none,
-// as a stale image.
+// as a stale image. scripts/check-images.sh (deploy/image-check) is the
+// automatic net for every image built from the repo, vbpl-sync included (a
+// source stamp in the image label, no number to bump); this revision also
+// catches an image rebuilt from an old checkout after the source was bumped.
+// The vbpl-sync stamp is narrowed on purpose to the importer's own code and
+// the legal code it drives (scripts/image-sources.sh): a behaviour change
+// outside these paths needs ImporterRevision bumped, which stays the second
+// net.
 //
 // Bump it whenever the behaviour of cmd/legal-catalog-import,
 // internal/legalcatalog, the relation write paths (repository

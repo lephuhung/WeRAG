@@ -6,7 +6,7 @@
  * Read only. Backend: /api/v1/system/legal-sync — SuperAdmin-only. */
 import { apiGet, type ApiEnvelope } from "@/lib/api-client";
 
-export type LegalSyncWorker = "vbpl_sync" | "dcs_sync" | "auto_ingest" | "expired_retention";
+export type LegalSyncWorker = "vbpl_sync" | "dcs_sync" | "auto_ingest" | "expired_retention" | "image_check";
 export type LegalSyncRunStatus = "running" | "ok" | "failed";
 export type LegalSyncHealth = "ok" | "unknown" | "warning" | "error";
 export type LegalSyncReason =

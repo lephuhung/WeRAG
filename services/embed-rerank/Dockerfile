@@ -15,3 +15,9 @@ EXPOSE 8090
 
 ENTRYPOINT ["/usr/bin/python3", "-m", "uvicorn"]
 CMD ["app:app", "--host", "0.0.0.0", "--port", "8090"]
+
+# Source stamp (scripts/image-sources.sh, passed by scripts/build-image.sh):
+# scripts/check-images.sh compares it with the repo. Last, so a new stamp
+# only rebuilds this layer.
+ARG WERAG_SRC_STAMP=unknown
+LABEL werag.src-stamp=$WERAG_SRC_STAMP

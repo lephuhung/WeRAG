@@ -252,6 +252,7 @@ var legalSyncWorkerNamesVI = map[string]string{
 	types.LegalSyncWorkerDCS:              "Đồng bộ văn bản của Đảng",
 	types.LegalSyncWorkerAutoIngest:       "Tự nạp văn bản",
 	types.LegalSyncWorkerExpiredRetention: "Xóa toàn văn hết hiệu lực",
+	types.LegalSyncWorkerImageCheck:       "Kiểm tra image",
 }
 
 var legalSyncStepNamesVI = map[string]string{
@@ -263,6 +264,8 @@ var legalSyncStepNamesVI = map[string]string{
 	"fetch":  "tải trang",
 	"build":  "phân loại và dựng HTML",
 	"upload": "đẩy lên WeRAG",
+	// image_check
+	"check": "so sánh image với mã nguồn",
 }
 
 // legalSyncAlertWorkerText: "Đồng bộ vbpl.vn: lỗi ở bước cào dữ liệu lúc

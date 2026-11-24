@@ -16,6 +16,7 @@ import (
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/application/service"
+	"github.com/Tencent/WeKnora/internal/legalcatalog"
 	"github.com/Tencent/WeKnora/internal/middleware"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -54,7 +55,8 @@ func legalSyncTestEngine(t *testing.T) (*gin.Engine, *repository.LegalSyncRunRep
 func TestLegalSyncHandlerStatusAndRuns(t *testing.T) {
 	r, runs := legalSyncTestEngine(t)
 	ctx := context.Background()
-	id, err := runs.Start(ctx, types.LegalSyncWorkerVBPL, "crawl", map[string]any{"schedule": "30 2 * * *"})
+	id, err := runs.Start(ctx, types.LegalSyncWorkerVBPL, "crawl", map[string]any{"schedule": "30 2 * * *",
+		"importer_revision": legalcatalog.ImporterRevision})
 	require.NoError(t, err)
 	require.NoError(t, runs.Finish(ctx, id, types.LegalSyncOK, "", "", nil))
 	require.NoError(t, runs.Record(ctx, types.LegalSyncWorkerAutoIngest, time.Now(), types.LegalSyncOK, "", map[string]any{"added": 1}))
@@ -78,7 +80,7 @@ func TestLegalSyncHandlerStatusAndRuns(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &st))
 	require.True(t, st.Success)
-	require.Len(t, st.Data.Workers, 4)
+	require.Len(t, st.Data.Workers, 5)
 	require.Equal(t, types.LegalSyncWorkerVBPL, st.Data.Workers[0].Worker)
 	require.Equal(t, service.LegalSyncHealthOK, st.Data.Workers[0].Health)
 	require.Equal(t, "30 2 * * *", st.Data.Workers[0].Schedule)
