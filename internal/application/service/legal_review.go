@@ -364,19 +364,45 @@ func (s *legalReviewService) Decide(
 // decision changed the approved copy of: the one link is now the approved
 // copy of (a feed document's text was parsed while its link was pending,
 // so nothing read it), and the one it was the approved copy of before
-// (re-linked or rejected). A document left without an approved copy keeps
-// its old text edges (BuildLegalTextRelations counts it WithoutText). Best
+// (re-linked or rejected). The decision declares that text not to be the
+// old document's, so the "toàn văn" edges read from it go: the old
+// document is rebuilt from another approved copy when it still has one,
+// else its text edges are deleted. (A text that merely goes away, by
+// retention, deletion or a re-parse, leaves the edges: they are facts about
+// the document; only this decision removes them.) The same knowledge
+// re-approved for the same document removes nothing: it is rebuilt. Best
 // effort: logged, the nightly rebuild catches up.
 func (s *legalReviewService) decisionTextRelations(ctx context.Context, link *types.LegalDocumentLink, wasApproved string) {
 	if s.db == nil {
 		return
 	}
 	var ids []string
+	nowApproved := ""
 	if link.ReviewStatus == types.LegalReviewApproved && link.LegalDocumentID != "" {
-		ids = append(ids, link.LegalDocumentID)
+		nowApproved = link.LegalDocumentID
+		ids = append(ids, nowApproved)
 	}
-	if wasApproved != "" && (len(ids) == 0 || ids[0] != wasApproved) {
-		ids = append(ids, wasApproved)
+	if wasApproved != "" && wasApproved != nowApproved {
+		var copies int64
+		err := s.db.WithContext(ctx).Table("legal_document_links l").
+			Joins("JOIN knowledges k ON k.id = l.knowledge_id AND k.deleted_at IS NULL").
+			Where("l.legal_document_id = ? AND l.review_status = ?", wasApproved, types.LegalReviewApproved).
+			Count(&copies).Error
+		switch {
+		case err != nil:
+			logger.Warnf(ctx, "[LegalReview] approved copies of %s: %v", wasApproved, err)
+		case copies > 0:
+			ids = append(ids, wasApproved)
+		default:
+			res := s.db.WithContext(ctx).Where("from_id = ? AND source_label = ?", wasApproved, LegalTextRelationLabel).
+				Delete(&types.LegalDocumentRelation{})
+			if res.Error != nil {
+				logger.Warnf(ctx, "[LegalReview] text relations of %s: %v", wasApproved, res.Error)
+			} else {
+				logger.Infof(ctx, "[LegalReview] %s lost its approved copy %s: %d text relations removed",
+					wasApproved, link.KnowledgeID, res.RowsAffected)
+			}
+		}
 	}
 	if len(ids) == 0 {
 		return

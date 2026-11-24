@@ -84,6 +84,29 @@ có quyền xoá — khoá backup chỉ ghi thêm), `VBPL_SYNC_CRON`, `VBPL_SYNC
 `VBPL_WORK_DIR` (thư mục host, mặc định `/home/orca/data/vbpl`),
 `VBPL_UID`/`VBPL_GID` (chủ thư mục đó), `VBPL_CRAWL_ARGS` (thêm tham số crawler), `VBPL_TEXT_RELATION_SOURCES` (nguồn đọc lại quan hệ toàn văn sau mỗi lần nạp, mặc định `dangcongsan,tvpl,vbpl`; compose dùng `${VBPL_TEXT_RELATION_SOURCES-…}` nên giá trị rỗng vẫn tắt được).
 
+## Quan hệ vbpl.vn: cập nhật theo chênh lệch, chặn xoá hàng loạt
+
+Mỗi lần nạp, quan hệ của vbpl.vn (không phải cạnh "toàn văn", không phải cạnh
+xuất phát từ văn bản nguồn khác) được cập nhật theo chênh lệch với danh sách
+của đêm đó: chỉ xoá cạnh không còn trong danh sách, chỉ thêm cạnh mới, sửa
+nhãn đã đổi; cạnh không đổi giữ nguyên `created_at`. Số liệu ghi vào run
+(`import.relations_added` / `relations_removed` / `relations_relabelled` /
+`relations_unchanged`).
+
+Nếu chênh lệch phải **xoá quá max(1000, 10 %)** số cạnh vbpl.vn hiện có, lần
+nạp từ chối (file crawl hỏng hoặc thiếu), không ghi gì, bước nạp lỗi và lần
+chạy được ghi là lỗi. Khi đã kiểm tra là xoá thật (vbpl.vn gỡ hàng loạt quan
+hệ), chạy lại bước nạp một lần bằng tay với `-allow-relation-removal` (cùng
+file của đêm đó; lần chạy tay không ghi vào `legal_sync_runs`):
+
+```bash
+sudo docker exec WeKnora-vbpl-sync sh -c 'legal-catalog-import -documents /work/documents.jsonl \
+  -relations /work/relations.jsonl -snapshot "$(date -u +%F)" -enqueue-no-fulltext -auto-ingest-html \
+  -allow-relation-removal && legal-catalog-import -rebuild-text-relations dangcongsan,tvpl,vbpl'
+```
+
+Đêm sau chạy bình thường (không có cờ).
+
 ## Image cũ
 
 Image dịch sẵn `legal-catalog-import` lúc build: sửa mã nguồn mà không build

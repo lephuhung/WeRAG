@@ -146,6 +146,25 @@ type LegalDocumentRelation struct {
 // TableName returns the table name for LegalDocumentRelation.
 func (LegalDocumentRelation) TableName() string { return "legal_document_relations" }
 
+// LegalRelationSyncOptions steers LegalCatalogRepository.SyncRelations.
+type LegalRelationSyncOptions struct {
+	// AllowMassRemoval lifts the guard against removing more than
+	// repository.LegalRelationRemovalLimit of the owned relations
+	// (legal-catalog-import -allow-relation-removal).
+	AllowMassRemoval bool
+}
+
+// LegalRelationSyncStats counts what one SyncRelations changed. HeldElsewhere:
+// listed keys already held by an edge the import does not own (read from a
+// text, or leaving another source's document), left as they are.
+type LegalRelationSyncStats struct {
+	Added         int `json:"added"`
+	Removed       int `json:"removed"`
+	Relabelled    int `json:"relabelled"`
+	Unchanged     int `json:"unchanged"`
+	HeldElsewhere int `json:"held_elsewhere"`
+}
+
 // LegalRelationLink is a relation seen from one catalogue document: the
 // other document and whether it acts on this one (Incoming) or this one
 // acts on it.

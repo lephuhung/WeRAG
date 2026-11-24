@@ -19,10 +19,18 @@ type LegalCatalogRepository interface {
 	ArticleChunkIDs(ctx context.Context, knowledgeIDs, articles []string, perArticle int) (map[string][]string, error)
 	// UpsertDocuments inserts or refreshes documents by ID.
 	UpsertDocuments(ctx context.Context, docs []*types.LegalDocument) error
-	// ReplaceRelations swaps the vbpl.vn relations for rels in one
-	// transaction (a catalogue import is a full snapshot of the portal):
-	// edges read from a document's text and edges leaving a document of
-	// another source (Party, TVPL, manual) stay.
+	// SyncRelations brings the vbpl.vn relations to rels by difference in
+	// one transaction (a catalogue import is a full snapshot of the
+	// portal): only owned edges absent from rels are deleted, new ones
+	// inserted, changed labels rewritten; edges read from a document's text
+	// and edges leaving a document of another source (Party, TVPL, manual)
+	// stay. Without opts.AllowMassRemoval it refuses (nothing written) to
+	// remove more than repository.LegalRelationRemovalLimit of the owned
+	// edges.
+	SyncRelations(ctx context.Context, rels []*types.LegalDocumentRelation,
+		opts types.LegalRelationSyncOptions) (types.LegalRelationSyncStats, error)
+	// ReplaceRelations is SyncRelations without the removal guard (a caller
+	// that holds the full list, the tests).
 	ReplaceRelations(ctx context.Context, rels []*types.LegalDocumentRelation) error
 
 	// FindByNumberKey returns documents whose number key equals key, or —

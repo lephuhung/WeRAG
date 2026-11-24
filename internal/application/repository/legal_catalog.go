@@ -42,23 +42,133 @@ func (r *legalCatalogRepository) UpsertDocuments(ctx context.Context, docs []*ty
 const LegalCatalogSourceVBPL = "vbpl"
 
 func (r *legalCatalogRepository) ReplaceRelations(ctx context.Context, rels []*types.LegalDocumentRelation) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Only the portal's own relations are replaced: never an edge read
-		// from a document's text, and never an edge leaving a document of
-		// another source (a Party, TVPL or hand-entered document is not on
-		// vbpl.vn, so the import has nothing to put back). An edge whose
-		// source document is gone (pruned) is dropped with the rest.
-		if err := tx.Where("source_label <> ?", types.LegalRelationSourceText).
+	_, err := r.SyncRelations(ctx, rels, types.LegalRelationSyncOptions{AllowMassRemoval: true})
+	return err
+}
+
+// legalRelationKeyBatch bounds the rows of one row-value IN (3 parameters
+// each, well under Postgres' 65,535 and SQLite's 32,766).
+const legalRelationKeyBatch = 1000
+
+// LegalRelationRemovalLimit is how many of owned vbpl.vn relations one
+// import may remove without AllowMassRemoval: 10 %, at least 1,000. More
+// is taken for a broken or partial crawl file, not a night's changes.
+func LegalRelationRemovalLimit(owned int) int { return max(1000, owned/10) }
+
+// ErrLegalRelationMassRemoval: the import would remove more relations than
+// LegalRelationRemovalLimit allows; nothing was written.
+type ErrLegalRelationMassRemoval struct{ Remove, Owned, Limit int }
+
+func (e *ErrLegalRelationMassRemoval) Error() string {
+	return fmt.Sprintf("refusing to remove %d of %d vbpl.vn relations (limit %d): broken or partial crawl? "+
+		"rerun the import with -allow-relation-removal if the removal is real", e.Remove, e.Owned, e.Limit)
+}
+
+type legalRelationKey struct {
+	from, to string
+	rel      types.LegalRelation
+}
+
+func (k legalRelationKey) values() []any { return []any{k.from, k.to, string(k.rel)} }
+
+// SyncRelations brings the relations the vbpl.vn import owns to rels by
+// difference, in one transaction. Owned: every edge not read from a
+// document's text and not leaving a document of another source (a Party,
+// TVPL or hand-entered document is not on vbpl.vn, so the import has
+// nothing to put back); an edge whose source document is gone (pruned) is
+// owned and, absent from rels, removed. An owned edge rels no longer lists
+// is deleted, a new one inserted (a key already held by a text or
+// other-source edge stays theirs), a changed label rewritten; unchanged
+// rows keep their created_at. Repeated keys in rels count once (the first).
+func (r *legalCatalogRepository) SyncRelations(ctx context.Context, rels []*types.LegalDocumentRelation,
+	opts types.LegalRelationSyncOptions,
+) (types.LegalRelationSyncStats, error) {
+	var stats types.LegalRelationSyncStats
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		stats = types.LegalRelationSyncStats{}
+		var owned []types.LegalDocumentRelation
+		if err := tx.Model(&types.LegalDocumentRelation{}).Select("from_id", "to_id", "relation", "source_label").
+			Where("source_label <> ?", types.LegalRelationSourceText).
 			Where("from_id NOT IN (?)", tx.Model(&types.LegalDocument{}).Select("id").Where("source <> ?", LegalCatalogSourceVBPL)).
-			Delete(&types.LegalDocumentRelation{}).Error; err != nil {
+			Find(&owned).Error; err != nil {
 			return err
 		}
-		if len(rels) == 0 {
-			return nil
+		have := make(map[legalRelationKey]string, len(owned))
+		for _, o := range owned {
+			have[legalRelationKey{o.FromID, o.ToID, o.Relation}] = o.SourceLabel
 		}
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).
-			CreateInBatches(rels, legalCatalogBatchSize).Error
+		want := make(map[legalRelationKey]bool, len(rels))
+		var insert []*types.LegalDocumentRelation
+		relabel := map[string][]legalRelationKey{}
+		for _, rel := range rels {
+			k := legalRelationKey{rel.FromID, rel.ToID, rel.Relation}
+			if want[k] {
+				continue
+			}
+			want[k] = true
+			label, ok := have[k]
+			switch {
+			case !ok:
+				insert = append(insert, rel)
+			case label != rel.SourceLabel:
+				relabel[rel.SourceLabel] = append(relabel[rel.SourceLabel], k)
+			default:
+				stats.Unchanged++
+			}
+		}
+		var remove []legalRelationKey
+		for k := range have {
+			if !want[k] {
+				remove = append(remove, k)
+			}
+		}
+		if limit := LegalRelationRemovalLimit(len(owned)); !opts.AllowMassRemoval && len(remove) > limit {
+			return &ErrLegalRelationMassRemoval{Remove: len(remove), Owned: len(owned), Limit: limit}
+		}
+		for start := 0; start < len(remove); start += legalRelationKeyBatch {
+			batch := remove[start:min(start+legalRelationKeyBatch, len(remove))]
+			res := tx.Where("(from_id, to_id, relation) IN ?", legalRelationKeyValues(batch)).
+				Delete(&types.LegalDocumentRelation{})
+			if res.Error != nil {
+				return res.Error
+			}
+			stats.Removed += int(res.RowsAffected)
+		}
+		for label, keys := range relabel {
+			for start := 0; start < len(keys); start += legalRelationKeyBatch {
+				batch := keys[start:min(start+legalRelationKeyBatch, len(keys))]
+				res := tx.Model(&types.LegalDocumentRelation{}).
+					Where("(from_id, to_id, relation) IN ?", legalRelationKeyValues(batch)).
+					Update("source_label", label)
+				if res.Error != nil {
+					return res.Error
+				}
+				stats.Relabelled += int(res.RowsAffected)
+			}
+		}
+		for start := 0; start < len(insert); start += legalCatalogBatchSize {
+			batch := insert[start:min(start+legalCatalogBatchSize, len(insert))]
+			res := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&batch)
+			if res.Error != nil {
+				return res.Error
+			}
+			stats.Added += int(res.RowsAffected)
+		}
+		stats.HeldElsewhere = len(insert) - stats.Added
+		return nil
 	})
+	if err != nil {
+		return types.LegalRelationSyncStats{}, err
+	}
+	return stats, nil
+}
+
+func legalRelationKeyValues(keys []legalRelationKey) [][]any {
+	out := make([][]any, len(keys))
+	for i, k := range keys {
+		out[i] = k.values()
+	}
+	return out
 }
 
 func (r *legalCatalogRepository) FindByNumberKey(

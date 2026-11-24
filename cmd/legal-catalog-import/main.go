@@ -74,6 +74,8 @@ func main() {
 	report := flag.String("report", "", "Write the Ð twins left unreachable by number (TSV) to this file")
 	merge := flag.Bool("merge", false,
 		"Partial import: replace only the relations touching these documents, keep the rest of the catalogue")
+	allowRemoval := flag.Bool("allow-relation-removal", false,
+		"Let this import remove more than max(1000, 10 %) of the vbpl.vn relations (refused otherwise as a broken or partial crawl)")
 	enqueueNoText := flag.Bool("enqueue-no-fulltext", false,
 		"Queue documents in force the portal publishes no full text for, so an operator can add them from another source")
 	autoIngest := flag.Bool("auto-ingest-html", false,
@@ -308,9 +310,18 @@ func main() {
 			log.Fatal("no relation between imported documents: refusing to clear the relation table " +
 				"(partial import? use -merge)")
 		}
-		if err := repo.ReplaceRelations(ctx, rels); err != nil {
-			log.Fatalf("replace relations: %v", err)
+		// by difference: only what changed since last night is written, and a
+		// mass removal (a broken or partial file) is refused, nothing written
+		st, err := repo.SyncRelations(ctx, rels, types.LegalRelationSyncOptions{AllowMassRemoval: *allowRemoval})
+		if err != nil {
+			log.Fatalf("update relations: %v", err)
 		}
+		log.Printf("relations: %d added, %d removed, %d relabelled, %d unchanged, %d held by a text or another source",
+			st.Added, st.Removed, st.Relabelled, st.Unchanged, st.HeldElsewhere)
+		stat("relations_added", st.Added)
+		stat("relations_removed", st.Removed)
+		stat("relations_relabelled", st.Relabelled)
+		stat("relations_unchanged", st.Unchanged)
 	}
 	if n, err := updateListOnlyValidity(ctx, db, listRows, catalogued); err != nil {
 		warnf("update validity of list-only documents: %v", err)

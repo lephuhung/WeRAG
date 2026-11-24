@@ -11,6 +11,8 @@ package legalcatalog
 //
 // Bump it whenever the behaviour of cmd/legal-catalog-import,
 // internal/legalcatalog, the relation write paths (repository
-// ReplaceRelations, mergeRelations) or service.BuildLegalTextRelations
-// changes, then rebuild the vbpl-sync image (deploy/vbpl-sync/README.md).
-const ImporterRevision = 2
+// SyncRelations/ReplaceRelations, mergeRelations) or
+// service.BuildLegalTextRelations changes, then rebuild the vbpl-sync image
+// (deploy/vbpl-sync/README.md). 3: relations updated by difference, mass
+// removal refused.
+const ImporterRevision = 3
