@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/legalcatalog"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -43,7 +45,8 @@ func newLegalSyncAlertEnv(t *testing.T) *legalSyncAlertEnv {
 func (e *legalSyncAlertEnv) run(t *testing.T, status, step string, ago, took time.Duration, errText string) {
 	t.Helper()
 	r := &types.LegalSyncRun{Worker: types.LegalSyncWorkerVBPL, Status: status, Step: step,
-		StartedAt: e.now.Add(-ago), Summary: types.JSON(`{"schedule":"30 2 * * *"}`), Error: errText}
+		StartedAt: e.now.Add(-ago), Summary: types.JSON(fmt.Sprintf(`{"schedule":"30 2 * * *","importer_revision":%d}`,
+			legalcatalog.ImporterRevision)), Error: errText}
 	beat := e.now
 	if status != types.LegalSyncRunning {
 		end := r.StartedAt.Add(took)
@@ -162,6 +165,9 @@ func TestLegalSyncAlertProblems(t *testing.T) {
 		{"failed and stale", sync(LegalSyncReasonLastFailed, LegalSyncReasonStale), LegalSyncReasonLastFailed},
 		{"stuck", sync(LegalSyncReasonRunningLong, LegalSyncReasonStale), LegalSyncReasonRunningLong},
 		{"did not run", sync(LegalSyncReasonStale), LegalSyncReasonStale},
+		{"stale image", sync(LegalSyncReasonImageStale), LegalSyncReasonImageStale},
+		{"a failure is named before a stale image", sync(LegalSyncReasonLastFailed, LegalSyncReasonImageStale),
+			LegalSyncReasonLastFailed},
 		{"backend starting", backend(nil, LegalSyncReasonStarting), ""},
 		{"backend not started here", backend(nil, LegalSyncReasonNotStarted), ""},
 		{"backend never passed", backend(nil, LegalSyncReasonNoHeartbeat), LegalSyncReasonNoHeartbeat},
@@ -312,4 +318,74 @@ func TestLegalSyncAlertSwitchedOff(t *testing.T) {
 	e.check(t)
 	n, _ = e.alert(t, "sa1")
 	require.NotNil(t, n, "back on: alerted again")
+}
+
+// The newest vbpl_sync run names the importer revision its image runs: a
+// lower one, or none (an image older than the stamp), is a stale image,
+// alerted until a run of a rebuilt image starts.
+func TestLegalSyncAlertImageStale(t *testing.T) {
+	e := newLegalSyncAlertEnv(t)
+	ctx := context.Background()
+	stamped := func(rev string, status string, ago time.Duration) {
+		t.Helper()
+		started := e.now.Add(-ago)
+		r := &types.LegalSyncRun{Worker: types.LegalSyncWorkerVBPL, Status: status, Step: "push", StartedAt: started,
+			HeartbeatAt: &started, Summary: types.JSON(`{"schedule":"30 2 * * *"` + rev + `}`)}
+		if status != types.LegalSyncRunning {
+			end := started.Add(time.Hour)
+			r.FinishedAt, r.HeartbeatAt = &end, &end
+		}
+		require.NoError(t, e.db.Create(r).Error)
+	}
+	vbpl := func() LegalSyncWorkerStatus {
+		t.Helper()
+		ws, err := e.monitor.workers(ctx, e.now)
+		require.NoError(t, err)
+		for _, w := range ws {
+			if w.Worker == types.LegalSyncWorkerVBPL {
+				return w
+			}
+		}
+		t.Fatal("no vbpl_sync worker")
+		return LegalSyncWorkerStatus{}
+	}
+
+	// an image built before the stamp
+	stamped("", types.LegalSyncOK, 6*time.Hour)
+	w := vbpl()
+	require.Equal(t, LegalSyncHealthWarning, w.Health)
+	require.Equal(t, []string{LegalSyncReasonImageStale}, w.Reasons)
+	require.Zero(t, w.ImporterRevision)
+	require.Equal(t, legalcatalog.ImporterRevision, w.SourceRevision)
+	e.check(t)
+	n, p := e.alert(t, "sa1")
+	require.NotNil(t, n)
+	require.Equal(t, "vbpl_sync:image_stale", p.Signature)
+	require.Equal(t, fmt.Sprintf("Đồng bộ vbpl.vn: image vbpl-sync cũ hơn mã nguồn (không ghi số bản, mã nguồn bản %d): "+
+		"cần dựng lại image", legalcatalog.ImporterRevision), n.Body)
+	require.Nil(t, p.Workers[0].At, "no run time or last success for a stale image")
+	require.Nil(t, p.Workers[0].LastOKAt)
+
+	// an older revision
+	e.now = e.now.Add(time.Hour)
+	stamped(`,"importer_revision":1`, types.LegalSyncOK, 2*time.Hour)
+	w = vbpl()
+	require.Equal(t, 1, w.ImporterRevision)
+	require.Equal(t, []string{LegalSyncReasonImageStale}, w.Reasons)
+	// (the same incident: the open alert is not rewritten)
+	p = legalSyncAlertPayload([]LegalSyncWorkerStatus{w}, e.now)
+	require.Equal(t, 1, p.Workers[0].ImporterRevision)
+	require.Equal(t, legalcatalog.ImporterRevision, p.Workers[0].SourceRevision)
+	require.Equal(t, fmt.Sprintf("Đồng bộ vbpl.vn: image vbpl-sync cũ hơn mã nguồn (bản 1, mã nguồn bản %d): cần dựng lại image",
+		legalcatalog.ImporterRevision), legalSyncAlertWorkerText(p.Workers[0]))
+
+	// the rebuilt image's first run clears it as it starts
+	e.now = e.now.Add(time.Hour)
+	stamped(fmt.Sprintf(`,"importer_revision":%d`, legalcatalog.ImporterRevision), types.LegalSyncRunning, time.Minute)
+	w = vbpl()
+	require.Equal(t, LegalSyncHealthOK, w.Health, "%v", w.Reasons)
+	require.Empty(t, w.Reasons)
+	e.check(t)
+	n, _ = e.alert(t, "sa1")
+	require.Nil(t, n, "closed")
 }

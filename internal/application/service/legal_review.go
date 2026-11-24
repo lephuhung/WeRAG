@@ -14,6 +14,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	"github.com/Tencent/WeKnora/internal/vietnamese_legal"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 const (
@@ -32,6 +33,7 @@ const (
 // legalSupersedingRelations are the incoming edges that end a document.
 var legalSupersedingRelations = []types.LegalRelation{
 	types.LegalRelationReplaces, types.LegalRelationRepeals, types.LegalRelationExpires,
+	types.LegalRelationSucceeds,
 }
 
 type legalReviewService struct {
@@ -43,11 +45,18 @@ type legalReviewService struct {
 	// notices tells the SuperAdmins about the identities a scan leaves
 	// pending (nil: nobody is told)
 	notices *SuperAdminQueueNotifier
+	// db re-reads the text relations of the documents a decision gives or
+	// takes an approved copy (SetLegalCatalogDB; nil: not done)
+	db *gorm.DB
 }
 
 // SetQueueNotices lets the scan tell the SuperAdmins about new pending
 // identities.
 func (s *legalReviewService) SetQueueNotices(n *SuperAdminQueueNotifier) { s.notices = n }
+
+// SetLegalCatalogDB lets a decision re-read the text relations of the
+// documents it touches.
+func (s *legalReviewService) SetLegalCatalogDB(db *gorm.DB) { s.db = db }
 
 // NewLegalReviewService creates the legal review service.
 func NewLegalReviewService(
@@ -318,6 +327,11 @@ func (s *legalReviewService) Decide(
 	}
 	reviewer, _ := types.UserIDFromContext(ctx)
 	now := time.Now()
+	// the document this knowledge was the approved copy of before
+	wasApproved := ""
+	if link.ReviewStatus == types.LegalReviewApproved {
+		wasApproved = link.LegalDocumentID
+	}
 	switch d.Action {
 	case "reject":
 		link.ReviewStatus = types.LegalReviewRejected
@@ -342,7 +356,38 @@ func (s *legalReviewService) Decide(
 		return nil, err
 	}
 	s.notices.LegalIdentitiesChanged(ctx)
+	s.decisionTextRelations(ctx, link, wasApproved)
 	return s.buildItem(ctx, interfaces.LegalLinkRow{Link: link})
+}
+
+// decisionTextRelations re-reads the text relations of the documents a
+// decision changed the approved copy of: the one link is now the approved
+// copy of (a feed document's text was parsed while its link was pending,
+// so nothing read it), and the one it was the approved copy of before
+// (re-linked or rejected). A document left without an approved copy keeps
+// its old text edges (BuildLegalTextRelations counts it WithoutText). Best
+// effort: logged, the nightly rebuild catches up.
+func (s *legalReviewService) decisionTextRelations(ctx context.Context, link *types.LegalDocumentLink, wasApproved string) {
+	if s.db == nil {
+		return
+	}
+	var ids []string
+	if link.ReviewStatus == types.LegalReviewApproved && link.LegalDocumentID != "" {
+		ids = append(ids, link.LegalDocumentID)
+	}
+	if wasApproved != "" && (len(ids) == 0 || ids[0] != wasApproved) {
+		ids = append(ids, wasApproved)
+	}
+	if len(ids) == 0 {
+		return
+	}
+	stats, err := BuildLegalTextRelations(ctx, s.db, "", ids)
+	if err != nil {
+		logger.Warnf(ctx, "[LegalReview] text relations of %v: %v", ids, err)
+		return
+	}
+	logger.Infof(ctx, "[LegalReview] text relations of %v: %d cited, %d unresolved, %d stored, %d without text",
+		ids, stats.Citations, stats.Unresolved, stats.Relations, stats.WithoutText)
 }
 
 // reviewedDocument returns the catalogue row an approval writes: the picked
@@ -425,6 +470,8 @@ var legalSupersessionLabels = map[types.LegalRelation]string{
 	types.LegalRelationReplaces: "Bị thay thế bởi",
 	types.LegalRelationRepeals:  "Bị bãi bỏ (toàn bộ hoặc một phần) bởi",
 	types.LegalRelationExpires:  "Bị làm hết hiệu lực bởi",
+	types.LegalRelationSucceeds: "Được kế tiếp bởi (điều khoản chuyển tiếp của văn bản mới hơn nhắc đến văn bản này; " +
+		"ưu tiên trả lời theo văn bản mới hơn)",
 }
 
 func (s *legalReviewService) AnnotateSearchResults(ctx context.Context, results []*types.SearchResult) {

@@ -55,6 +55,7 @@ var legalRelatedWalks = map[types.LegalRelatedMode]struct {
 var legalSupersessionRelations = []types.LegalRelation{
 	types.LegalRelationReplaces, types.LegalRelationRepeals,
 	types.LegalRelationExpires, types.LegalRelationPartiallyExpires,
+	types.LegalRelationSucceeds,
 }
 
 func (s *legalCatalogService) Related(
@@ -198,6 +199,7 @@ const (
 // repealing document does not carry the replacement rules.
 var legalSuccessorSteps = []legalWalkStep{{[]types.LegalRelation{
 	types.LegalRelationReplaces, types.LegalRelationExpires, types.LegalRelationPartiallyExpires,
+	types.LegalRelationSucceeds,
 }, true}}
 
 func (s *legalCatalogService) ExpandRelated(

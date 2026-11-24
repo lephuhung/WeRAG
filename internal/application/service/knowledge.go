@@ -23,6 +23,7 @@ import (
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 	secutils "github.com/Tencent/WeKnora/internal/utils"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 )
 
 // Error definitions for knowledge service operations
@@ -85,6 +86,9 @@ type knowledgeService struct {
 	audit       interfaces.AuditLogService
 	// gate refuses an upload with more pages than a knowledge-base file may have
 	gate *inputGate
+	// legalDB re-reads the text relations of a legal document once its
+	// approved copy is parsed (SetLegalCatalogDB; nil: not done)
+	legalDB *gorm.DB
 }
 
 const (

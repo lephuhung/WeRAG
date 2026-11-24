@@ -33,6 +33,13 @@ RUN chmod 0755 /usr/local/bin/sync.sh /usr/local/bin/entrypoint.sh
 ENV HOME=/work MC_CONFIG_DIR=/tmp/.mc TZ=Asia/Ho_Chi_Minh JIEBA_DICT_DIR=/usr/share/jieba-dict
 WORKDIR /work
 
+# The commit the image was built from (compose build arg GIT_COMMIT): the
+# importer records it in each run (image_commit) next to its revision.
+# Last, so a new commit only rebuilds this layer.
+ARG GIT_COMMIT=unknown
+ENV WERAG_IMAGE_COMMIT=$GIT_COMMIT
+LABEL org.opencontainers.image.revision=$GIT_COMMIT
+
 # Healthy khi lần đồng bộ thành công gần nhất trong vòng 2 ngày.
 HEALTHCHECK --interval=30m --timeout=10s --start-period=1h \
     CMD find /work/.sync.ok -mmin -${VBPL_HEALTH_MAX_AGE_MIN:-2880} | grep -q . || [ ! -f /work/.sync.started ]

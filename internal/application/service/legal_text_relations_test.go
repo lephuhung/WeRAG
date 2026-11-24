@@ -211,3 +211,103 @@ func TestReplaceRelationsKeepsTextEdges(t *testing.T) {
 	require.Equal(t, "a", rows[0].FromID)
 	require.Equal(t, "e", rows[1].FromID)
 }
+
+// A "Điều khoản chuyển tiếp" names the document the new one takes over
+// from without "thay thế" wording (Nghị định 331/2026/NĐ-CP → 85/2016/NĐ-CP,
+// which vbpl.vn still listed "Còn hiệu lực" on 2026-11-23): a plain mention
+// there reads as succeeds; "căn cứ" wording and the next article do not.
+func TestLegalTextCitationsTransitional(t *testing.T) {
+	text := `Nghị định số 331/2026/NĐ-CP Về bảo vệ an ninh mạng đối với hệ thống thông tin
+
+Căn cứ Luật An ninh mạng số 116/2025/QH15;
+#### Điều 38. Hiệu lực thi hành
+Nghị định này có hiệu lực thi hành kể từ ngày 19 tháng 8 năm 2026.
+#### Điều 39. Điều khoản chuyển tiếp
+1. Đối với hệ thống thông tin đang đầu tư, trong thời hạn 06 tháng kể từ ngày Luật An ninh mạng số 116/2025/QH15 có hiệu lực thi hành, hoàn thành việc thẩm định cấp độ theo quy định tại Nghị định số 85/2016/NĐ-CP.
+2. Giấy phép cấp theo Thông tư số 12/2022/TT-BTTTT có giá trị đến hết thời hạn.
+#### Điều 40. Tổ chức thực hiện
+Bộ Công an hướng dẫn Nghị định này; xem thêm Nghị định số 53/2022/NĐ-CP.`
+	have := map[string]types.LegalRelation{}
+	for _, c := range LegalTextCitations(text, "331/2026/ND-CP") {
+		have[c.Key] = c.Relation
+	}
+	require.Equal(t, map[string]types.LegalRelation{
+		"116/2025/QH15":    types.LegalRelationBasedOn, // the căn cứ line wins over the transitional mention
+		"85/2016/ND-CP":    types.LegalRelationSucceeds,
+		"12/2022/TT-BTTTT": types.LegalRelationSucceeds, // resolve drops it: another kind of document
+		"53/2022/ND-CP":    types.LegalRelationReferences,
+	}, have)
+
+	// an annex or a chapter heading ends the transitional article
+	lines := legalTextTransitionalLines([]rune("Điều 9. Điều khoản chuyển tiếp\nxem A\nPhụ lục I\nxem B\n"))
+	require.True(t, lines[0] && lines[len([]rune("Điều 9. Điều khoản chuyển tiếp\n"))])
+	require.False(t, lines[len([]rune("Điều 9. Điều khoản chuyển tiếp\nxem A\nPhụ lục I\n"))])
+}
+
+// Of a vbpl.vn document (the portal lists its relations itself) only
+// succeeds is stored, and only towards a document of the same type issued
+// earlier; a feed document keeps every text relation.
+func TestBuildLegalTextRelationsSucceeds(t *testing.T) {
+	f := newLegalTextFixture(t)
+	ctx := context.Background()
+	typed := func(id, source, num, docType, issued string) {
+		require.NoError(t, f.db.Create(&types.LegalDocument{ID: id, Source: source, DocumentNumber: num,
+			NumberKey: num, DocType: docType, Title: num, IssuedOn: legalFocusDay(issued)}).Error)
+	}
+	typed("nd331", "vbpl", "331/2026/ND-CP", "Nghị định", "2026-08-19")
+	typed("nd85", "vbpl", "85/2016/ND-CP", "Nghị định", "2016-07-01")
+	for _, d := range []struct{ id, title string }{
+		{"nd331", "Nghị định số 331/2026/NĐ-CP Về bảo vệ an ninh mạng đối với hệ thống thông tin"},
+		{"nd85", "Nghị định số 85/2016/NĐ-CP Về bảo đảm an toàn hệ thống thông tin theo cấp độ"},
+	} {
+		require.NoError(t, f.db.Model(&types.LegalDocument{}).Where("id = ?", d.id).Update("title", d.title).Error)
+	}
+	typed("nd999", "vbpl", "999/2027/ND-CP", "Nghị định", "2027-01-01") // issued later: not a predecessor
+	typed("tt12", "vbpl", "12/2022/TT-BTTTT", "Thông tư", "2022-08-12")
+	typed("l116", "vbpl", "116/2025/QH15", "Luật", "2025-06-27")
+	f.hold("nd331",
+		"Số 331/2026/NĐ-CP\nCăn cứ Luật số 116/2025/QH15;\n",
+		"#### Điều 39. Điều khoản chuyển tiếp\n1. Thẩm định theo Nghị định số 85/2016/NĐ-CP và Nghị định số 999/2027/NĐ-CP; giấy phép theo Thông tư số 12/2022/TT-BTTTT còn giá trị.",
+		"#### Điều 40. Tổ chức thực hiện\nXem Nghị định số 53/2022/NĐ-CP.")
+	stats, err := BuildLegalTextRelations(ctx, f.db, "", []string{"nd331"})
+	require.NoError(t, err)
+	require.Equal(t, 1, stats.Relations)
+	require.Equal(t, map[string]types.LegalRelation{"nd85": types.LegalRelationSucceeds}, f.rels("nd331"))
+
+	// the same text pushed by a feed keeps its căn cứ and mentions too
+	typed("dcs331", "dangcongsan", "331-QD/TW", "Quyết định", "2026-08-19")
+	typed("dcs85", "dangcongsan", "85-QD/TW", "Quyết định", "2016-07-01")
+	f.hold("dcs331", "Số 331-QĐ/TW\nCăn cứ Luật số 116/2025/QH15;\n",
+		"Điều 9. Điều khoản chuyển tiếp\nViệc đang làm theo Quyết định số 85-QĐ/TW tiếp tục; xem Nghị định số 53/2022/NĐ-CP.")
+	_, err = BuildLegalTextRelations(ctx, f.db, "", []string{"dcs331"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]types.LegalRelation{
+		"l116": types.LegalRelationBasedOn, "dcs85": types.LegalRelationSucceeds,
+	}, f.rels("dcs331"))
+}
+
+// The transitional clause also names documents the new one merely applies;
+// the titles must share a subject-word pair (the 2026-11-23 vbpl backfill
+// had read "Luật Công an nhân dân" as taking over from "Luật Tổ chức chính
+// quyền địa phương").
+func TestLegalTextSameSubject(t *testing.T) {
+	yes := [][2]string{
+		{"Nghị định số 331/2026/NĐ-CP Về bảo vệ an ninh mạng đối với hệ thống thông tin",
+			"Nghị định số 85/2016/NĐ-CP Về bảo đảm an toàn hệ thống thông tin theo cấp độ"},
+		{"Nghị định số 96/2016/NĐ-CP Quy định điều kiện về an ninh, trật tự đối với một số ngành, nghề đầu tư kinh doanh có điều kiện",
+			"Nghị định số 72/2009/NĐ-CP Quy định điều kiện về an ninh, trật tự đối với một số ngành, nghề kinh doanh có điều kiện"},
+		{"Thông tư số 20/2026/TT-BNV Quy định chi tiết và hướng dẫn thi hành", "Thông tư số 20/2025/TT-BNV Quy định chi tiết thi hành một số điều"},
+	}
+	for _, p := range yes {
+		require.True(t, legalTextSameSubject(p[0], p[1]), p[0])
+	}
+	no := [][2]string{
+		{"Luật Công an nhân dân số 37/2018/QH14", "Luật Tổ chức chính quyền địa phương số 77/2015/QH13"},
+		{"Nghị quyết số 41/2017/QH14 Về việc thi hành Bộ luật Hình sự", "Nghị quyết số 19/2003/QH11 Về nhiệm vụ năm 2004"},
+		{"Nghị định số 39/2019/NĐ-CP Về tổ chức và hoạt động của Quỹ Phát triển doanh nghiệp nhỏ và vừa",
+			"Nghị định số 51/2016/NĐ-CP Quy định quản lý lao động, tiền lương và tiền thưởng"},
+	}
+	for _, p := range no {
+		require.False(t, legalTextSameSubject(p[0], p[1]), p[0])
+	}
+}

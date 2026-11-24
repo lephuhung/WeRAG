@@ -38,6 +38,7 @@ const REL_FAMILY: Record<string, RelFamily> = {
   amends: "amends",
   corrects: "amends",
   replaces: "replaces",
+  succeeds: "replaces",
   repeals: "repeals",
   expires: "repeals",
   partially_expires: "repeals",
@@ -46,6 +47,7 @@ const REL_FAMILY: Record<string, RelFamily> = {
   interprets: "guides",
   consolidates: "consolidates",
   based_on: "based_on",
+  references: "based_on",
 };
 export const REL_COLOR: Record<RelFamily, GraphFamily> = {
   amends: "indigo",

@@ -89,8 +89,9 @@ const texts = {
     ({ vbpl_sync: "vbpl.vn nightly sync", dcs_sync: "Party documents sync", auto_ingest: "Auto-ingest", expired_retention: "Expired text removal" })[worker],
   legalSyncStep: (step: LegalSyncStep) =>
     ({ prepare: "prepare", crawl: "crawl", import: "import", push: "MinIO backup", fetch: "fetch", build: "classify and build", upload: "push to WeRAG" })[step],
-  legalSyncProblem: (problem: LegalSyncProblem, step: string, at: string, hours: number) =>
+  legalSyncProblem: (problem: LegalSyncProblem, step: string, at: string, hours: number, rev?: { image: number; source: number }) =>
     ({
+      image_stale: `vbpl-sync image is older than the source (${rev?.image ? `revision ${rev.image}` : "no revision recorded"}, source revision ${rev?.source}): rebuild it`,
       last_failed: "failed",
       running_long: hours ? `running for over ${hours} hours` : "running for over 12 hours",
       stale: hours ? `overdue: no successful run in the last ${hours} hours` : "overdue: no successful run in the last day",
@@ -136,8 +137,9 @@ const textsVi = {
     ({ vbpl_sync: "Đồng bộ vbpl.vn", dcs_sync: "Đồng bộ văn bản của Đảng", auto_ingest: "Tự nạp văn bản", expired_retention: "Xóa toàn văn hết hiệu lực" })[worker],
   legalSyncStep: (step: LegalSyncStep) =>
     ({ prepare: "chuẩn bị", crawl: "cào dữ liệu", import: "nạp danh mục", push: "sao lưu MinIO", fetch: "tải trang", build: "phân loại và dựng HTML", upload: "đẩy lên WeRAG" })[step],
-  legalSyncProblem: (problem: LegalSyncProblem, step: string, at: string, hours: number) =>
+  legalSyncProblem: (problem: LegalSyncProblem, step: string, at: string, hours: number, rev?: { image: number; source: number }) =>
     ({
+      image_stale: `image vbpl-sync cũ hơn mã nguồn (${rev?.image ? `bản ${rev.image}` : "không ghi số bản"}, mã nguồn bản ${rev?.source}): cần dựng lại image`,
       last_failed: "lỗi",
       running_long: hours ? `chạy quá ${hours} giờ` : "chạy quá 12 giờ",
       stale: hours ? `quá hạn, không có lần chạy thành công trong ${hours} giờ qua` : "quá hạn, không có lần chạy thành công trong ngày qua",
@@ -605,6 +607,17 @@ describe("legal sync alert", () => {
     // an alert stored before the thresholds were sent keeps the old wording
     const old = notificationText(alert({ workers: [{ worker: "vbpl_sync", problem: "stale", hours: "x" }] }), texts);
     assert.equal(old.body, "vbpl.vn nightly sync: overdue: no successful run in the last day");
+  });
+
+  it("names the revisions of a stale vbpl-sync image, without run time or last success", () => {
+    const n = alert({
+      workers: [
+        { worker: "vbpl_sync", problem: "image_stale", importer_revision: 1, source_revision: 2, at: "2026-11-24T19:30:00Z", step: "import" },
+      ],
+    });
+    assert.equal(notificationText(n, texts).body, "vbpl.vn nightly sync: vbpl-sync image is older than the source (revision 1, source revision 2): rebuild it");
+    const vi = notificationText(alert({ workers: [{ worker: "vbpl_sync", problem: "image_stale", source_revision: 2 }] }), textsVi);
+    assert.equal(vi.body, "Đồng bộ vbpl.vn: image vbpl-sync cũ hơn mã nguồn (không ghi số bản, mã nguồn bản 2): cần dựng lại image");
   });
 
   it("keeps the stored text when no worker is named", () => {

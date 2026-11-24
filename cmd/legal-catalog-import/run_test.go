@@ -12,6 +12,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/legalcatalog"
 	"github.com/Tencent/WeKnora/internal/types"
 )
 
@@ -84,6 +85,7 @@ func TestRecordImport(t *testing.T) {
 	require.NoError(t, db.AutoMigrate(&types.LegalSyncRun{}))
 	runs := repository.NewLegalSyncRunRepository(db)
 	ctx := context.Background()
+	t.Setenv("WERAG_IMAGE_COMMIT", "0188cae55")
 	t.Cleanup(func() {
 		*runID = 0
 		importStats, importWarnings = map[string]any{}, nil
@@ -118,6 +120,18 @@ func TestRecordImport(t *testing.T) {
 	require.Equal(t, []any{"link portal documents: timeout"}, imp["warnings"])
 	steps := sum[types.LegalSyncRunSteps].(map[string]any)
 	require.Contains(t, steps["crawl"], "finished_at", "moving to import closes the crawl step")
+	require.Equal(t, float64(legalcatalog.ImporterRevision), sum["importer_revision"], "the import names its revision")
+	require.Equal(t, "0188cae55", sum["image_commit"])
+}
+
+// The stamp leaves out a commit the image was not given.
+func TestImporterStamp(t *testing.T) {
+	for _, c := range []string{"", "unknown", "  "} {
+		t.Setenv("WERAG_IMAGE_COMMIT", c)
+		require.Equal(t, map[string]any{"importer_revision": legalcatalog.ImporterRevision}, importerStamp(), "%q", c)
+	}
+	t.Setenv("WERAG_IMAGE_COMMIT", "abc1234")
+	require.Equal(t, "abc1234", importerStamp()["image_commit"])
 }
 
 func TestPostgresDSNConnectTimeout(t *testing.T) {

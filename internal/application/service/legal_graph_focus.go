@@ -44,6 +44,9 @@ var legalRelationRank = map[types.LegalRelation]int{
 	types.LegalRelationPartiallyExpires: 3, types.LegalRelationSuspends: 4, types.LegalRelationAmends: 5,
 	types.LegalRelationCorrects: 6, types.LegalRelationConsolidates: 7, types.LegalRelationGuides: 8,
 	types.LegalRelationInterprets: 9, types.LegalRelationBasedOn: 10,
+	// weaker than "căn cứ": a transitional mention of the law a decree
+	// implements stays its basis
+	types.LegalRelationSucceeds: 11,
 }
 
 // legalDegreeRelations are the relations a held document's degree counts

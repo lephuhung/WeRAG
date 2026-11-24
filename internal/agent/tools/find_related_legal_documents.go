@@ -129,6 +129,7 @@ var legalRelatedLabels = map[types.LegalRelation][2]string{
 	types.LegalRelationRepeals:          {"bị bãi bỏ bởi", "bãi bỏ"},
 	types.LegalRelationExpires:          {"bị làm hết hiệu lực bởi", "làm hết hiệu lực"},
 	types.LegalRelationPartiallyExpires: {"bị làm hết hiệu lực một phần bởi", "làm hết hiệu lực một phần"},
+	types.LegalRelationSucceeds:         {"được kế tiếp bởi (điều khoản chuyển tiếp)", "kế tiếp (điều khoản chuyển tiếp)"},
 	types.LegalRelationBasedOn:          {"là căn cứ của", "căn cứ vào"},
 }
 

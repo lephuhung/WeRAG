@@ -120,6 +120,13 @@ const (
 	LegalRelationBasedOn          LegalRelation = "based_on"
 	LegalRelationReferences       LegalRelation = "references"
 	LegalRelationRelated          LegalRelation = "related"
+	// LegalRelationSucceeds: FromID's "Điều khoản chuyển tiếp" names ToID,
+	// a document of the same type issued earlier, without "thay thế" /
+	// "bãi bỏ" wording — the newer document takes over the old one's subject
+	// (Nghị định 331/2026/NĐ-CP → 85/2016/NĐ-CP). Read from the text only
+	// (LegalRelationSourceText); vbpl.vn lists no such relation and may keep
+	// the old document "Còn hiệu lực" for months.
+	LegalRelationSucceeds LegalRelation = "succeeds"
 )
 
 // LegalRelationSourceText labels the relations read from a document's own

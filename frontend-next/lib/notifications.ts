@@ -78,13 +78,15 @@ const BACKUP_NOTE_MAX = 120;
  * (payload: { count, workers: [{ worker, problem, step?, at?, last_ok_at?,
  * note?, hours? }], signature }), one unread per SuperAdmin, closed once
  * every worker is healthy again. hours: the sync's own threshold behind
- * running_long / stale (absent in older alerts). */
+ * running_long / stale (absent in older alerts); importer_revision /
+ * source_revision: of image_stale, the importer revision the vbpl-sync image
+ * runs (absent: none recorded) and the source's. */
 export const KIND_LEGAL_SYNC_ALERT = "legal_sync_alert";
 /** The SuperAdmin page of the legal data workers. */
 export const LEGAL_SYNC_STATUS_PATH = "/platform/admin?section=legal-documents&view=sync";
 export const LEGAL_SYNC_WORKERS = ["vbpl_sync", "dcs_sync", "auto_ingest", "expired_retention"] as const;
 export type LegalSyncAlertWorker = (typeof LEGAL_SYNC_WORKERS)[number];
-export const LEGAL_SYNC_PROBLEMS = ["last_failed", "running_long", "stale", "heartbeat_stale", "no_heartbeat", "tick_error"] as const;
+export const LEGAL_SYNC_PROBLEMS = ["last_failed", "running_long", "stale", "heartbeat_stale", "no_heartbeat", "tick_error", "image_stale"] as const;
 export type LegalSyncProblem = (typeof LEGAL_SYNC_PROBLEMS)[number];
 /** The steps of the scheduled syncs, in order: vbpl.vn (prepare … push,
  * the MinIO backup), Party documents (fetch, build, upload to WeRAG). */
@@ -269,8 +271,9 @@ export interface NotificationTexts {
   legalSyncStep: (step: LegalSyncStep) => string;
   /** a worker's problem; step = the step's name ("" if none), at = the
    * failed run's start in the reader's format ("" if none), hours = the
-   * threshold of running_long / stale (0 if unknown) */
-  legalSyncProblem: (problem: LegalSyncProblem, step: string, at: string, hours: number) => string;
+   * threshold of running_long / stale (0 if unknown), rev = of image_stale
+   * the image's importer revision (0 if not recorded) and the source's */
+  legalSyncProblem: (problem: LegalSyncProblem, step: string, at: string, hours: number, rev?: { image: number; source: number }) => string;
   /** an ISO time in Vietnam time ("14h05 - 16/10/2026"); "" when invalid */
   dateTime: (iso: string) => string;
 }
@@ -354,7 +357,12 @@ type LegalSyncWorkerAlert = {
   lastOkAt: string;
   note: string;
   hours: number;
+  importerRevision: number;
+  sourceRevision: number;
 };
+
+/** n when it is a positive whole number, else 0. */
+const posInt = (n: unknown) => (typeof n === "number" && Number.isInteger(n) && n > 0 ? n : 0);
 
 /** The workers a legal_sync_alert names, in monitor order. */
 function legalSyncWorkers(n: Pick<NotificationLike, "payload">): LegalSyncWorkerAlert[] {
@@ -378,6 +386,8 @@ function legalSyncWorkers(n: Pick<NotificationLike, "payload">): LegalSyncWorker
         lastOkAt: str(o, "last_ok_at"),
         note: str(o, "note"),
         hours: typeof o.hours === "number" && Number.isInteger(o.hours) && o.hours > 0 ? o.hours : 0,
+        importerRevision: posInt(o.importer_revision),
+        sourceRevision: posInt(o.source_revision),
       },
     ];
   });
@@ -390,7 +400,8 @@ function legalSyncWorkerText(w: LegalSyncWorkerAlert, texts: NotificationTexts):
   const step = withRun && w.step ? ((LEGAL_SYNC_STEPS as readonly string[]).includes(w.step) ? texts.legalSyncStep(w.step as LegalSyncStep) : w.step) : "";
   const at = w.problem === "last_failed" && w.at ? texts.dateTime(w.at) : "";
   const hours = w.problem === "running_long" || w.problem === "stale" ? w.hours : 0;
-  let s = `${texts.legalSyncWorker(w.worker)}: ${texts.legalSyncProblem(w.problem, step, at, hours)}`;
+  const rev = w.problem === "image_stale" ? { image: w.importerRevision, source: w.sourceRevision } : undefined;
+  let s = `${texts.legalSyncWorker(w.worker)}: ${texts.legalSyncProblem(w.problem, step, at, hours, rev)}`;
   const ok = w.lastOkAt ? texts.dateTime(w.lastOkAt) : "";
   if (ok) s += `, ${texts.backupLastOk(ok)}`;
   if (w.note) s += ` — ${cut(w.note, LEGAL_SYNC_NOTE_MAX)}`;

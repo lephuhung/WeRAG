@@ -155,8 +155,13 @@ import_catalogue() {
 	# derived from the held copies: re-read them after every import, so an
 	# importer that replaces relations wholesale (an image built before the
 	# 2026-11-21 fix wiped them on 2026-11-20 and 2026-11-22) cannot leave the
-	# Party documents without a graph. VBPL_TEXT_RELATION_SOURCES="" turns it off.
-	local sources=${VBPL_TEXT_RELATION_SOURCES-dangcongsan}
+	# documents without a graph. The backend reads them when an approved copy
+	# is parsed or approved; this is also the nightly catch-up for every
+	# document whose hook missed, of all sources (of vbpl documents only the
+	# "succeeds" edges are kept; vbpl takes ~5 min for 11k held documents).
+	# A failure fails the run (recorded). VBPL_TEXT_RELATION_SOURCES="" turns
+	# it off.
+	local sources=${VBPL_TEXT_RELATION_SOURCES-dangcongsan,tvpl,vbpl}
 	if [ -n "$sources" ]; then
 		legal-catalog-import -rebuild-text-relations "$sources" 2>&1 | tee -a "$STEP_LOG"
 	fi

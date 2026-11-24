@@ -19,7 +19,8 @@ export type LegalSyncReason =
   | "heartbeat_stale"
   | "tick_error"
   | "not_started"
-  | "silent";
+  | "silent"
+  | "image_stale";
 
 /** Timing of one step of a run (RFC 3339, UTC). */
 export interface LegalSyncStepTiming {
@@ -68,6 +69,11 @@ export interface LegalSyncWorkerStatus {
   last_error_at?: string;
   /** a backend worker's passes have failed since then */
   failing_since?: string;
+  /** vbpl_sync: the importer revision / commit its newest run recorded
+   * (absent: an image older than the stamp) and the backend's revision */
+  importer_revision?: number;
+  image_commit?: string;
+  source_revision?: number;
   health: LegalSyncHealth;
   reasons: LegalSyncReason[];
 }

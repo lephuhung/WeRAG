@@ -427,6 +427,16 @@ func (s *LegalFeedService) saveReviewLink(ctx context.Context, doc LegalIngestDo
 	if s.Reviews == nil || knowledgeID == "" {
 		return
 	}
+	if fresh {
+		// the new text's own relations (a transitional clause naming the
+		// document it takes over from); best effort, after the link exists.
+		// Not enough alone: the knowledge was only queued for parsing, so
+		// usually no chunk exists yet and this reads nothing. The parse reads
+		// them once its chunks are written (legalTextRelationsAfterParse) and
+		// an approval of a pending link does (Decide); this covers a parse
+		// that finished before the link row was written.
+		defer s.textRelations(ctx, doc.VBPLID)
+	}
 	if !fresh {
 		if existing, err := s.Reviews.GetLink(ctx, knowledgeID); err != nil || existing != nil {
 			return
@@ -540,4 +550,21 @@ func memoryFileHeader(field, name string, content []byte) (*multipart.FileHeader
 // MemoryFileHeader is memoryFileHeader for other packages (the MCP tests).
 func MemoryFileHeader(field, name string, content []byte) (*multipart.FileHeader, error) {
 	return memoryFileHeader(field, name, content)
+}
+
+// textRelations reads the relations the freshly ingested document's text
+// states (BuildLegalTextRelations); of a vbpl.vn document only "succeeds"
+// is kept. Best effort: the rebuild endpoint catches up on a failure.
+func (s *LegalFeedService) textRelations(ctx context.Context, docID string) {
+	if s == nil || s.db == nil || docID == "" {
+		return
+	}
+	stats, err := BuildLegalTextRelations(ctx, s.db, "", []string{docID})
+	if err != nil {
+		logger.Warnf(ctx, "[LegalFeed] text relations of %s: %v", docID, err)
+		return
+	}
+	if stats.Relations > 0 {
+		logger.Infof(ctx, "[LegalFeed] text relations of %s: %d stored", docID, stats.Relations)
+	}
 }

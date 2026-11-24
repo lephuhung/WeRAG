@@ -97,6 +97,7 @@ const RELATION_KEYS: Partial<Record<LegalRelation, LocaleKey>> = {
   replaces: "lrev.rel.replaces",
   repeals: "lrev.rel.repeals",
   expires: "lrev.rel.expires",
+  succeeds: "lrev.rel.succeeds",
 };
 
 const PENDING_FIELD_KEYS: Record<string, LocaleKey> = {

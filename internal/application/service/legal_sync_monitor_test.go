@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/legalcatalog"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/stretchr/testify/require"
 )
@@ -232,7 +233,8 @@ func TestLegalSyncMonitorStatus(t *testing.T) {
 	ctx := context.Background()
 	f.w.Tick(ctx) // starts the clock of k-exp at f.now
 	runsRepo := repository.NewLegalSyncRunRepository(f.db)
-	id, err := runsRepo.Start(ctx, types.LegalSyncWorkerVBPL, "crawl", map[string]any{"schedule": "30 2 * * *"})
+	id, err := runsRepo.Start(ctx, types.LegalSyncWorkerVBPL, "crawl", map[string]any{"schedule": "30 2 * * *",
+		"importer_revision": legalcatalog.ImporterRevision, "image_commit": "0188cae55"})
 	require.NoError(t, err)
 	require.NoError(t, runsRepo.Finish(ctx, id, types.LegalSyncOK, "", "", nil))
 	for _, r := range []*types.LegalDocumentRequest{
@@ -275,6 +277,9 @@ func TestLegalSyncMonitorStatus(t *testing.T) {
 	require.Equal(t, "30 2 * * *", vbpl.Schedule)
 	require.NotNil(t, vbpl.LastOK)
 	require.Equal(t, LegalSyncHealthOK, vbpl.Health, "%v", vbpl.Reasons)
+	require.Equal(t, legalcatalog.ImporterRevision, vbpl.ImporterRevision)
+	require.Equal(t, legalcatalog.ImporterRevision, vbpl.SourceRevision)
+	require.Equal(t, "0188cae55", vbpl.ImageCommit)
 	require.Equal(t, LegalSyncHealthUnknown, byName[types.LegalSyncWorkerAutoIngest].Health, "not started in this process")
 	require.Equal(t, []string{LegalSyncReasonNotStarted}, byName[types.LegalSyncWorkerAutoIngest].Reasons)
 	require.Equal(t, LegalSyncHealthOK, byName[types.LegalSyncWorkerExpiredRetention].Health)

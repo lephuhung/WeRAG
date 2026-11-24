@@ -94,6 +94,7 @@ type LegalTextCitation struct {
 func LegalTextCitations(text, ownKey string) []LegalTextCitation {
 	text = norm.NFC.String(text)
 	runes := []rune(text)
+	transitional := legalTextTransitionalLines(runes)
 	var out []LegalTextCitation
 	at := map[string]int{}
 	// prevEnd / prevRel: the citation before this one on the same line; a
@@ -134,6 +135,12 @@ func LegalTextCitations(text, ownKey string) []LegalTextCitation {
 		if !found && inList && legalTextListGap(gap) {
 			rel = prevRel
 		}
+		// a plain mention inside "Điều khoản chuyển tiếp" names the document
+		// this one takes over from (resolve keeps it only for a document of
+		// the same type issued earlier)
+		if rel == types.LegalRelationReferences && transitional[lineStart] {
+			rel = types.LegalRelationSucceeds
+		}
 		prevEnd, prevRel = c.End, rel
 		if c.Key == ownKey {
 			continue
@@ -148,6 +155,44 @@ func LegalTextCitations(text, ownKey string) []LegalTextCitation {
 		}
 		at[c.Key] = len(out)
 		out = append(out, cite)
+	}
+	return out
+}
+
+// legalTextArticleRe matches an article heading line ("Điều 39. Điều khoản
+// chuyển tiếp", "#### Điều 39: …"); group 1 is the heading's wording.
+var legalTextArticleRe = regexp.MustCompile(`(?i)^[#*\s]*điều\s+\d{1,4}[a-z]?\s*[.:]?\s*(.*)$`)
+
+// legalTextSectionRe matches the start of a higher division or an annex,
+// which ends the article before it.
+var legalTextSectionRe = regexp.MustCompile(`(?i)^[#*\s]*(chương|mục|phần|phụ lục)\b`)
+
+// legalTextTransitionalLines marks, by the rune offset of its first
+// character, every line of a "Điều khoản chuyển tiếp" article (from its
+// heading to the next article, division or annex). Such an article names
+// the documents whose regime the new one takes over ("hoàn thành việc …
+// theo quy định tại Nghị định số 85/2016/NĐ-CP"), with no "thay thế"
+// wording for legalTextRelationOf to read.
+func legalTextTransitionalLines(runes []rune) map[int]bool {
+	out := map[int]bool{}
+	in := false
+	for start := 0; start < len(runes); {
+		end := start
+		for end < len(runes) && runes[end] != '\n' {
+			end++
+		}
+		line := strings.TrimSpace(string(runes[start:end]))
+		switch {
+		case legalTextSectionRe.MatchString(line):
+			in = false
+		case legalTextArticleRe.MatchString(line):
+			heading := strings.ToLower(legalTextArticleRe.FindStringSubmatch(line)[1])
+			in = strings.Contains(heading, "chuyển tiếp")
+		}
+		if in {
+			out[start] = true
+		}
+		start = end + 1
 	}
 	return out
 }
@@ -369,6 +414,53 @@ func BuildLegalTextRelations(ctx context.Context, db *gorm.DB, source string, do
 	return stats, nil
 }
 
+// LegalTextRelationsOfKnowledge re-reads the text relations of the catalogue
+// document knowledgeID is the approved copy of, once the knowledge's text
+// chunks are written (a first parse, a re-parse, a replaced file): the
+// ingest hooks run before parsing has written them. A knowledge that is no
+// approved copy (most of them) costs one primary-key lookup on
+// legal_document_links and returns "", nil, nil; so does a nil db. docID is
+// the document read.
+func LegalTextRelationsOfKnowledge(ctx context.Context, db *gorm.DB, knowledgeID string,
+) (docID string, stats *LegalTextRelationStats, err error) {
+	if db == nil || knowledgeID == "" {
+		return "", nil, nil
+	}
+	var ids []string
+	if err := db.WithContext(ctx).Model(&types.LegalDocumentLink{}).
+		Where("knowledge_id = ? AND review_status = ? AND legal_document_id <> ''", knowledgeID, types.LegalReviewApproved).
+		Limit(1).Pluck("legal_document_id", &ids).Error; err != nil {
+		return "", nil, err
+	}
+	if len(ids) == 0 {
+		return "", nil, nil
+	}
+	stats, err = BuildLegalTextRelations(ctx, db, "", ids)
+	return ids[0], stats, err
+}
+
+// SetLegalCatalogDB lets the parse re-read the text relations of the legal
+// document a knowledge is the approved copy of (container wiring).
+func (s *knowledgeService) SetLegalCatalogDB(db *gorm.DB) { s.legalDB = db }
+
+// legalTextRelationsAfterParse runs LegalTextRelationsOfKnowledge once
+// processChunks has written the knowledge's chunks. Best effort: a failure
+// is logged and never fails the parse (the nightly rebuild catches up).
+func (s *knowledgeService) legalTextRelationsAfterParse(ctx context.Context, knowledgeID string) {
+	if s == nil || s.legalDB == nil {
+		return
+	}
+	docID, stats, err := LegalTextRelationsOfKnowledge(ctx, s.legalDB, knowledgeID)
+	if err != nil {
+		logger.Warnf(ctx, "[LegalText] text relations after parsing %s (document %q): %v", knowledgeID, docID, err)
+		return
+	}
+	if stats != nil {
+		logger.Infof(ctx, "[LegalText] text relations of %s after parsing %s: %d cited, %d unresolved, %d stored",
+			docID, knowledgeID, stats.Citations, stats.Unresolved, stats.Relations)
+	}
+}
+
 // heldText is the text of the document's approved copy (the latest link
 // when several knowledge bases hold one), "" when none.
 func (b *legalTextRelationBuilder) heldText(ctx context.Context, docID string) (string, error) {
@@ -419,10 +511,88 @@ func (b *legalTextRelationBuilder) resolve(ctx context.Context, doc *types.Legal
 			}
 			continue
 		}
-		out = append(out, types.LegalDocumentRelation{FromID: doc.ID, ToID: target.ID, Relation: c.Relation,
+		rel := c.Relation
+		if rel == types.LegalRelationSucceeds && !legalTextSucceeds(doc, target) {
+			rel = types.LegalRelationReferences
+		}
+		// vbpl.vn lists a document's relations itself (căn cứ, dẫn chiếu,
+		// thay thế …): of its documents only what the portal cannot know is
+		// kept, so the graph is not doubled with text mentions.
+		if doc.Source == types.LegalDocumentSourceVBPL && rel != types.LegalRelationSucceeds {
+			continue
+		}
+		out = append(out, types.LegalDocumentRelation{FromID: doc.ID, ToID: target.ID, Relation: rel,
 			SourceLabel: LegalTextRelationLabel, CreatedAt: now})
 	}
 	return out, unresolved, nil
+}
+
+// legalTextSucceeds reports whether doc can take over from target: the same
+// kind of document ("Nghị định" → "Nghị định"; a decree does not succeed
+// the law it names), issued no earlier than target (an unknown date passes),
+// on the same subject (the titles share a pair of consecutive words once
+// the type and boilerplate are dropped: "hệ thống thông tin"). A
+// transitional clause also names documents it merely applies ("theo Luật
+// Tổ chức chính quyền địa phương …"), which the subject test drops.
+func legalTextSucceeds(doc, target *types.LegalDocument) bool {
+	if !strings.EqualFold(strings.TrimSpace(doc.DocType), strings.TrimSpace(target.DocType)) {
+		return false
+	}
+	if doc.IssuedOn != nil && target.IssuedOn != nil && target.IssuedOn.After(*doc.IssuedOn) {
+		return false
+	}
+	return legalTextSameSubject(doc.Title, target.Title)
+}
+
+// legalTextTitleStop are the words of a title that say nothing about its
+// subject: the document type, "quy định chi tiết … thi hành", numbers.
+var legalTextTitleStop = map[string]bool{
+	"luật": true, "bộ": true, "pháp": true, "lệnh": true, "nghị": true, "định": true, "quyết": true, "thông": true,
+	"tư": true, "liên": true, "tịch": true, "chỉ": true, "thị": true, "quy": true, "chế": true, "văn": true, "bản": true,
+	"hợp": true, "nhất": true, "số": true, "ban": true, "hành": true, "về": true, "việc": true, "của": true, "và": true,
+	"các": true, "một": true, "điều": true, "chi": true, "tiết": true, "hướng": true, "dẫn": true, "thi": true,
+	"biện": true, "sửa": true, "đổi": true, "bổ": true, "sung": true, "thay": true, "thế": true, "bãi": true, "bỏ": true,
+	"theo": true, "tại": true, "trong": true, "đối": true, "với": true, "cho": true, "từ": true, "đến": true,
+	"chính": true, "phủ": true, "thủ": true, "tướng": true, "năm": true, "ngày": true, "tháng": true,
+}
+
+var legalTextTitleSplitRe = regexp.MustCompile(`[^\p{L}]+`)
+
+// legalTextTitleNumberRe is a số hiệu or year in a title ("331/2026/NĐ-CP",
+// "QH14"): dropped whole, so its letters do not become subject words.
+var legalTextTitleNumberRe = regexp.MustCompile(`\S*\d\S*`)
+
+// legalTextTitleBigrams is the set of consecutive subject-word pairs of a
+// title (the stop words removed first, so "an toàn hệ thống" and "an ninh
+// mạng đối với hệ thống" both hold "hệ thống").
+func legalTextTitleBigrams(title string) map[string]bool {
+	var words []string
+	title = legalTextTitleNumberRe.ReplaceAllString(norm.NFC.String(title), " ")
+	for _, w := range legalTextTitleSplitRe.Split(strings.ToLower(title), -1) {
+		if w != "" && !legalTextTitleStop[w] {
+			words = append(words, w)
+		}
+	}
+	out := map[string]bool{}
+	for i := 1; i < len(words); i++ {
+		out[words[i-1]+" "+words[i]] = true
+	}
+	return out
+}
+
+// legalTextSameSubject reports whether two titles share a subject-word pair;
+// a title left without one (nothing but boilerplate) passes.
+func legalTextSameSubject(a, b string) bool {
+	ba, bb := legalTextTitleBigrams(a), legalTextTitleBigrams(b)
+	if len(ba) == 0 || len(bb) == 0 {
+		return true
+	}
+	for k := range ba {
+		if bb[k] {
+			return true
+		}
+	}
+	return false
 }
 
 // legalTextPickTarget chooses among the rows sharing a cited key.

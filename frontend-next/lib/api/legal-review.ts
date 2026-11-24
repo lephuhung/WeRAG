@@ -19,7 +19,8 @@ export type LegalRelation =
   | "corrects"
   | "based_on"
   | "references"
-  | "related";
+  | "related"
+  | "succeeds";
 
 export interface LegalDocument {
   id: string;

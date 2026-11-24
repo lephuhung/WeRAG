@@ -714,6 +714,12 @@ func (s *knowledgeService) processChunks(ctx context.Context,
 		logger.GetLogger(ctx).WithField("error", err).Errorf("processChunks update knowledge failed")
 	}
 
+	// The text chunks are in: when this knowledge is the approved copy of a
+	// legal document, read the relations its text states now (the ingest
+	// hooks ran before parsing wrote them). Every parse, re-parse and file
+	// replacement passes here; summaries and questions are not needed.
+	s.legalTextRelationsAfterParse(ctx, knowledge.ID)
+
 	// Enqueue multimodal tasks for images (async, non-blocking)
 	if options.EnableMultimodel && len(options.StoredImages) > 0 {
 		s.beginStage(ctx, knowledge.ID, types.StageMultimodal, types.JSONMap{

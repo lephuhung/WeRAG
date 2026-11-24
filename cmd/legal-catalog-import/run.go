@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/legalcatalog"
 	"github.com/Tencent/WeKnora/internal/types"
 	gormlogger "gorm.io/gorm/logger"
 )
@@ -74,6 +75,11 @@ func runControl() error {
 		return err
 	}
 	if *runStart {
+		// the binary opening the run is the image's: a run whose import
+		// never starts (a failed crawl) still names the image
+		for k, v := range importerStamp() {
+			patch[k] = v
+		}
 		id, err := runs.Start(ctx, strings.TrimSpace(*runWorker), *runStep, patch)
 		if err != nil {
 			return err
@@ -125,12 +131,25 @@ func runPatch() (map[string]any, error) {
 	return patch, nil
 }
 
-// recordImport moves the run to the import step when it starts.
+// importerStamp names the code a run was made by: importer_revision
+// (legalcatalog.ImporterRevision, compared with the backend's by the
+// SuperAdmin monitor) and image_commit (WERAG_IMAGE_COMMIT, stamped at image
+// build; left out when empty or "unknown").
+func importerStamp() map[string]any {
+	stamp := map[string]any{"importer_revision": legalcatalog.ImporterRevision}
+	if c := strings.TrimSpace(os.Getenv("WERAG_IMAGE_COMMIT")); c != "" && c != "unknown" {
+		stamp["image_commit"] = c
+	}
+	return stamp
+}
+
+// recordImportStart moves the run to the import step when it starts and
+// stamps it with the importer's revision.
 func recordImportStart(ctx context.Context, runs *repository.LegalSyncRunRepository) {
 	if *runID <= 0 {
 		return
 	}
-	if err := runs.Update(ctx, *runID, "import", nil); err != nil {
+	if err := runs.Update(ctx, *runID, "import", importerStamp()); err != nil {
 		log.Printf("run %d: %v", *runID, err)
 	}
 }

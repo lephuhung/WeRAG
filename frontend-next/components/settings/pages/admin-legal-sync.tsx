@@ -66,6 +66,7 @@ const REASON_LABEL: Record<string, LocaleKey> = {
   tick_error: "lsync.reason.tick_error",
   not_started: "lsync.reason.not_started",
   silent: "lsync.reason.silent",
+  image_stale: "lsync.reason.image_stale",
 };
 const STEP_LABEL: Record<string, LocaleKey> = {
   prepare: "lsync.step.prepare",
@@ -454,6 +455,17 @@ function WorkerCard({ w, now, t, locale }: { w: LegalSyncWorkerStatus; now: numb
             <dd>
               <code className="text-[12px]">{w.schedule || "—"}</code>
             </dd>
+            {!!w.source_revision && (
+              <>
+                <dt className="text-muted">{t("lsync.image")}</dt>
+                <dd className={w.reasons.includes("image_stale") ? "text-warning" : undefined}>
+                  {w.importer_revision
+                    ? t("lsync.imageRevision", { n: w.importer_revision, m: w.source_revision })
+                    : t("lsync.imageNoRevision", { m: w.source_revision })}
+                  {w.image_commit && <code className="ml-1.5 text-[12px]">{w.image_commit}</code>}
+                </dd>
+              </>
+            )}
           </>
         ) : (
           <>

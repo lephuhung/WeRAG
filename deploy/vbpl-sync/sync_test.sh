@@ -26,6 +26,8 @@ case " \$* " in
 *" -documents "*)
 	printf 'import output\033[31m red\033[0m\n'
 	if [ -n "\${FAIL_IMPORT:-}" ]; then echo "pq: boom" >&2; exit 1; fi ;;
+*" -rebuild-text-relations "*)
+	if [ -n "\${FAIL_REBUILD:-}" ]; then echo "rebuild boom" >&2; exit 1; fi ;;
 esac
 exit 0
 EOF
@@ -101,11 +103,19 @@ check "the ticker and its sleep are gone after the run" bash -c "! pgrep -fx 'sl
 reset
 bash "$T/sync.sh" >"$T/out" 2>&1 || true
 check "the import runs" has '-documents '
-check "the text relations of dangcongsan are rebuilt after it" has '-rebuild-text-relations dangcongsan'
+check "the text relations of every source are rebuilt after it" has '-rebuild-text-relations dangcongsan,tvpl,vbpl'
 check "the rebuild comes after the import" awk '/^-documents /{i=NR} /^-rebuild-text-relations /{r=NR} END{exit !(i && r > i)}' "$T/calls"
 reset
 VBPL_TEXT_RELATION_SOURCES= bash "$T/sync.sh" >"$T/out" 2>&1 || true
 check "an empty VBPL_TEXT_RELATION_SOURCES skips the rebuild" lacks '-rebuild-text-relations'
+reset
+VBPL_TEXT_RELATION_SOURCES=dangcongsan bash "$T/sync.sh" >"$T/out" 2>&1 || true
+check "VBPL_TEXT_RELATION_SOURCES picks the sources" has '-rebuild-text-relations dangcongsan'
+check "only those" lacks '-rebuild-text-relations dangcongsan,'
+reset
+rc=0; FAIL_REBUILD=1 bash "$T/sync.sh" >"$T/out" 2>&1 || rc=$?
+check "a failed rebuild fails the run" [ "$rc" != 0 ]
+check "and closes it failed" has '-run-id 42 -run-finish failed -run-error-file'
 
 # a stop (docker stop / SIGTERM) during the crawl
 reset

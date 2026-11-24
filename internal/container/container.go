@@ -773,6 +773,21 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(func(precheck *service.DocumentFormatPrecheck, catalog interfaces.LegalCatalogRepository, db *gorm.DB) {
 		precheck.SetLegalBasis(catalog, db)
 	}))
+	// a parsed approved copy of a legal document, and an approval, re-read
+	// the relations the document's text states ("toàn văn")
+	must(container.Invoke(func(knowledge interfaces.KnowledgeService, reviews interfaces.LegalReviewService, db *gorm.DB) error {
+		k, ok := knowledge.(interface{ SetLegalCatalogDB(*gorm.DB) })
+		if !ok {
+			return fmt.Errorf("%T cannot read legal text relations", knowledge)
+		}
+		k.SetLegalCatalogDB(db)
+		r, ok := reviews.(interface{ SetLegalCatalogDB(*gorm.DB) })
+		if !ok {
+			return fmt.Errorf("%T cannot read legal text relations", reviews)
+		}
+		r.SetLegalCatalogDB(db)
+		return nil
+	}))
 	// and the document assistant runs it from the chat
 	must(container.Invoke(func(precheck *service.DocumentFormatPrecheck, agents interfaces.AgentService) error {
 		u, ok := agents.(interface {

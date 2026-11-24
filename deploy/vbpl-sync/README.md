@@ -14,11 +14,17 @@ Container chạy `sync.sh` theo lịch (`VBPL_SYNC_CRON`, mặc định 02:30 gi
    trong kho, thì backend tự nạp (`status=auto_ingest`);
    hiệu lực trong danh mục và trên văn bản đã nạp luôn theo vbpl.vn;
    ngay sau đó đọc lại quan hệ ghi trong toàn văn (nhãn "toàn văn") của các
-   nguồn `VBPL_TEXT_RELATION_SOURCES` (mặc định `dangcongsan`; để trống thì bỏ
-   qua) bằng `legal-catalog-import -rebuild-text-relations`, để lần nạp không
-   bao giờ làm mất đồ thị văn bản Đảng. **Sửa `cmd/legal-catalog-import` hay
-   `internal/legalcatalog` thì phải build lại image này**: image dịch sẵn
-   chương trình nhập, backend chạy bằng air không kéo theo nó;
+   nguồn `VBPL_TEXT_RELATION_SOURCES` (mặc định `dangcongsan,tvpl,vbpl`; đặt
+   rỗng `VBPL_TEXT_RELATION_SOURCES=` thì bỏ qua) bằng
+   `legal-catalog-import -rebuild-text-relations`, để lần nạp không bao giờ
+   làm mất đồ thị. Backend tự đọc quan hệ toàn văn khi bản được duyệt của một
+   văn bản phân tích xong hoặc khi SuperAdmin duyệt; bước này là lưới an toàn
+   hằng đêm cho mọi văn bản mà các hook đó bỏ sót, của mọi nguồn (văn bản vbpl
+   chỉ giữ cạnh "succeeds"; riêng nguồn `vbpl` mất khoảng 5 phút cho ~11 nghìn
+   văn bản có bản trong kho). Bước này lỗi thì cả lần chạy ghi là lỗi (cố ý).
+   **Sửa `cmd/legal-catalog-import` hay `internal/legalcatalog` thì phải build
+   lại image này**: image dịch sẵn chương trình nhập, backend chạy bằng air
+   không kéo theo nó (xem "Image cũ" bên dưới);
 4. `mc mirror` thư mục làm việc lên MinIO (`$VBPL_S3_BUCKET/$VBPL_S3_PREFIX`).
 
 Mỗi lần chạy được ghi vào bảng `legal_sync_runs` (migration 000198) qua các cờ
@@ -63,8 +69,8 @@ bằng tài khoản admin MinIO của inventory, như `provision_backup_storage.
 (chỉ ghi thêm, phải để `VBPL_S3_REMOVE=0`).
 
 ```bash
-# build + chạy
-sudo docker compose --profile vbpl-sync up -d --build vbpl-sync
+# build + chạy (luôn -p spec-airag-refactor; GIT_COMMIT ghi commit vào image)
+GIT_COMMIT=$(git rev-parse --short HEAD) docker compose -p spec-airag-refactor -f docker-compose.yml --profile vbpl-sync build vbpl-sync && docker compose -p spec-airag-refactor -f docker-compose.yml --profile vbpl-sync up -d --no-deps vbpl-sync
 # chạy một lần ngay
 sudo docker exec WeKnora-vbpl-sync sync.sh
 # log
@@ -76,7 +82,25 @@ Biến `.env` (đều tuỳ chọn; mặc định theo `BACKUP_S3_*`): `VBPL_S3_
 `VBPL_S3_REMOVE=1` (xoá trên MinIO HTML của văn bản đã hết hiệu lực; cần khoá
 có quyền xoá — khoá backup chỉ ghi thêm), `VBPL_SYNC_CRON`, `VBPL_SYNC_ON_START=1` (chạy ngay khi khởi động),
 `VBPL_WORK_DIR` (thư mục host, mặc định `/home/orca/data/vbpl`),
-`VBPL_UID`/`VBPL_GID` (chủ thư mục đó), `VBPL_CRAWL_ARGS` (thêm tham số crawler), `VBPL_TEXT_RELATION_SOURCES` (nguồn đọc lại quan hệ toàn văn sau mỗi lần nạp, mặc định `dangcongsan`).
+`VBPL_UID`/`VBPL_GID` (chủ thư mục đó), `VBPL_CRAWL_ARGS` (thêm tham số crawler), `VBPL_TEXT_RELATION_SOURCES` (nguồn đọc lại quan hệ toàn văn sau mỗi lần nạp, mặc định `dangcongsan,tvpl,vbpl`; compose dùng `${VBPL_TEXT_RELATION_SOURCES-…}` nên giá trị rỗng vẫn tắt được).
+
+## Image cũ
+
+Image dịch sẵn `legal-catalog-import` lúc build: sửa mã nguồn mà không build
+lại thì đêm nào cũng chạy mã cũ (đã xoá quan hệ toàn văn ba đêm liền). Mỗi lần
+chạy ghi vào summary `importer_revision` (hằng `legalcatalog.ImporterRevision`
+trong `internal/legalcatalog/revision.go`) và `image_commit` (build arg
+`GIT_COMMIT` → `WERAG_IMAGE_COMMIT`, nhãn `org.opencontainers.image.revision`;
+bỏ trống khi build không truyền `GIT_COMMIT`). Trang Thu thập dữ liệu và cảnh
+báo `legal_sync_alert` báo `image_stale` khi lần chạy mới nhất của `vbpl_sync`
+ghi bản thấp hơn bản của backend, hoặc không ghi bản nào (image dựng trước
+khi có dấu này); lần chạy đầu tiên của image dựng lại sẽ xoá cảnh báo ngay khi
+bắt đầu (`sudo docker exec WeKnora-vbpl-sync sync.sh` để không phải chờ đêm).
+
+**Tăng `ImporterRevision`** mỗi khi đổi hành vi của `cmd/legal-catalog-import`,
+`internal/legalcatalog`, đường ghi quan hệ (repository `ReplaceRelations`,
+`mergeRelations`) hoặc `service.BuildLegalTextRelations`, rồi build lại image
+bằng lệnh ở trên.
 
 Lần crawl đầu tiên khoảng 5 giờ (≈18 nghìn văn bản, ~1 văn bản/giây); các
 lần sau chỉ vài phút đến vài chục phút. HTML có ảnh nhúng: vài GB trên MinIO.

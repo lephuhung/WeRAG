@@ -131,6 +131,10 @@ type UserNotificationLegalSyncWorker struct {
 	LastOKAt *time.Time `json:"last_ok_at,omitempty"`
 	Note     string     `json:"note,omitempty"`
 	Hours    int        `json:"hours,omitempty"`
+	// ImporterRevision / SourceRevision: of an image_stale problem, the
+	// importer revision the image runs (0: not recorded) and the source's.
+	ImporterRevision int `json:"importer_revision,omitempty"`
+	SourceRevision   int `json:"source_revision,omitempty"`
 }
 
 // UserNotificationBackupAlertPayload is the payload of a backup_alert

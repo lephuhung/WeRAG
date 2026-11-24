@@ -814,7 +814,11 @@ func (s *LegalPushService) ingest(ctx context.Context, a *types.LegalDocument, c
 		s.retitleFeedRow(ctx, a, title)
 	}
 	if err == nil {
-		// a feed lists no relations: read them off the text just ingested
+		// a feed lists no relations: read them off the text just ingested.
+		// Not enough alone: the text was only queued for parsing (no chunk
+		// yet), and a feed's link is usually pending; the parse
+		// (legalTextRelationsAfterParse) and the approval (Decide) read it
+		// once it is there. This covers a parse that finished first.
 		s.textRelations(ctx, a.ID)
 	}
 	return res, created, err

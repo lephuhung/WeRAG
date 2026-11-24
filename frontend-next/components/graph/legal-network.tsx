@@ -72,7 +72,7 @@ export function LegalNetwork({ kbId, onOpenKnowledge }: { kbId: string; onOpenKn
         source: e.source,
         target: e.target,
         label: t(`graph.lf.edge.${e.type}` as LocaleKey),
-        dashed: e.type === "based_on",
+        dashed: e.type === "based_on" || e.type === "references",
       })),
     [view, t],
   );

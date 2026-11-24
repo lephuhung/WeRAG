@@ -16,14 +16,45 @@ const (
 	legalGraphMaxAnchors = 500
 )
 
-// legalGraphRelations are the edges drawn. based_on is drawn only between
-// two documents of the KB: a Luật Tổ chức Chính phủ is the basis of almost
-// everything and would swamp the picture.
+// legalGraphRelations are the edges the focus, explore and related views
+// walk (based_on included, references not). The KB graph reads its own
+// lists (legalKBGraphWeak, legalKBGraphStrong).
 var legalGraphRelations = []types.LegalRelation{
 	types.LegalRelationReplaces, types.LegalRelationRepeals, types.LegalRelationExpires,
 	types.LegalRelationPartiallyExpires, types.LegalRelationSuspends, types.LegalRelationAmends,
 	types.LegalRelationGuides, types.LegalRelationInterprets, types.LegalRelationConsolidates,
-	types.LegalRelationCorrects, types.LegalRelationBasedOn,
+	types.LegalRelationCorrects, types.LegalRelationBasedOn, types.LegalRelationSucceeds,
+}
+
+// The KB graph draws a KB document's căn cứ and dẫn chiếu (the weak
+// relations) also when the other end is outside the KB: most of a Party
+// document's edges point to documents the KB does not hold. Only the ones
+// a KB document states are read (outgoing): the reverse, every document
+// citing a held Luật Tổ chức Chính phủ as its basis, runs into thousands
+// and would swamp the picture; an edge between two KB documents comes in
+// through the citing one. Strong relations are read both ways.
+var (
+	legalKBGraphWeak   = []types.LegalRelation{types.LegalRelationBasedOn, types.LegalRelationReferences}
+	legalKBGraphStrong = legalGraphStrongRelations()
+)
+
+// legalKBGraphStrongWeight: in ranking which documents get the node budget,
+// a strong edge (replaces, amends, guides …) counts this many weak ones, so
+// a KB document is not ranked high for citing many generic căn cứ.
+const legalKBGraphStrongWeight = 4
+
+func legalGraphStrongRelations() []types.LegalRelation {
+	out := make([]types.LegalRelation, 0, len(legalGraphRelations))
+	for _, r := range legalGraphRelations {
+		if r != types.LegalRelationBasedOn && r != types.LegalRelationReferences {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func legalKBGraphWeakRelation(r types.LegalRelation) bool {
+	return r == types.LegalRelationBasedOn || r == types.LegalRelationReferences
 }
 
 func (s *legalCatalogService) KBGraph(ctx context.Context, kbID string, limit int) (*types.GraphView, error) {
@@ -55,9 +86,15 @@ func (s *legalCatalogService) KBGraph(ctx context.Context, kbID string, limit in
 		return view, nil
 	}
 
+	// outgoing: strong and weak (bounded by what ≤ legalGraphMaxAnchors
+	// documents cite); incoming: strong only (see legalKBGraphWeak)
 	var edges []types.LegalDocumentRelation
 	for _, incoming := range []bool{false, true} {
-		e, err := s.repo.ListEdges(ctx, anchors, legalGraphRelations, incoming)
+		rels := legalKBGraphStrong
+		if !incoming {
+			rels = append(append([]types.LegalRelation{}, legalKBGraphStrong...), legalKBGraphWeak...)
+		}
+		e, err := s.repo.ListEdges(ctx, anchors, rels, incoming)
 		if err != nil {
 			return nil, err
 		}
@@ -74,9 +111,6 @@ func (s *legalCatalogService) KBGraph(ctx context.Context, kbID string, limit in
 			continue
 		}
 		seenEdge[key] = true
-		if e.Relation == types.LegalRelationBasedOn && !(isHeld(e.FromID) && isHeld(e.ToID)) {
-			continue
-		}
 		kept = append(kept, e)
 		for _, id := range []string{e.FromID, e.ToID} {
 			if !isHeld(id) {
@@ -84,15 +118,23 @@ func (s *legalCatalogService) KBGraph(ctx context.Context, kbID string, limit in
 			}
 		}
 	}
-	degree := map[string]int{}
+	// degree is the nodes' edge count; rank orders the budget, a strong
+	// edge counting legalKBGraphStrongWeight weak ones
+	degree, rank := map[string]int{}, map[string]int{}
 	for _, e := range kept {
-		degree[e.FromID]++
-		degree[e.ToID]++
+		w := legalKBGraphStrongWeight
+		if legalKBGraphWeakRelation(e.Relation) {
+			w = 1
+		}
+		for _, id := range []string{e.FromID, e.ToID} {
+			degree[id]++
+			rank[id] += w
+		}
 	}
 	byDegree := func(list []string) {
 		sort.SliceStable(list, func(i, j int) bool {
-			if degree[list[i]] != degree[list[j]] {
-				return degree[list[i]] > degree[list[j]]
+			if rank[list[i]] != rank[list[j]] {
+				return rank[list[i]] > rank[list[j]]
 			}
 			return list[i] < list[j]
 		})

@@ -1048,6 +1048,10 @@ services:
     build:
       context: .
       dockerfile: deploy/vbpl-sync/Dockerfile
+      args:
+        # stamped into the image (WERAG_IMAGE_COMMIT), recorded in each run:
+        # GIT_COMMIT=$(git rev-parse --short HEAD) docker compose … build vbpl-sync
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
     image: werag-vbpl-sync:latest
     container_name: WeKnora-vbpl-sync
     # Chủ thư mục crawl trên host (orca = 999:987).
@@ -1068,6 +1072,9 @@ services:
       VBPL_SYNC_CRON: ${VBPL_SYNC_CRON:-30 2 * * *}
       VBPL_SYNC_ON_START: ${VBPL_SYNC_ON_START:-0}
       VBPL_CRAWL_ARGS: ${VBPL_CRAWL_ARGS:-}
+      # sources whose "toàn văn" relations are re-read after each import;
+      # "-" not ":-": an explicitly empty value turns the rebuild off
+      VBPL_TEXT_RELATION_SOURCES: ${VBPL_TEXT_RELATION_SOURCES-dangcongsan,tvpl,vbpl}
       TZ: Asia/Ho_Chi_Minh
     volumes:
       - ${VBPL_WORK_DIR:-/home/orca/data/vbpl}:/work

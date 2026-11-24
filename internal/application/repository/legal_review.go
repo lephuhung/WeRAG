@@ -149,6 +149,7 @@ func (r *legalReviewRepository) ListSupersededLinks(
 		Where("(d.status LIKE ? OR EXISTS (SELECT 1 FROM legal_document_relations r WHERE r.to_id = d.id AND r.relation IN ?))",
 			"Hết hiệu lực%", []types.LegalRelation{
 				types.LegalRelationReplaces, types.LegalRelationRepeals, types.LegalRelationExpires,
+				types.LegalRelationSucceeds,
 			})
 	return r.linkRows(q, offset, limit)
 }

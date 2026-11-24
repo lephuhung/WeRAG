@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
+	"github.com/Tencent/WeKnora/internal/legalcatalog"
 	"github.com/Tencent/WeKnora/internal/types"
 	"gorm.io/gorm"
 )
@@ -91,6 +92,11 @@ const (
 	// for legalSyncSilentAfter (killed container, database lost); the next
 	// check closes it as failed.
 	LegalSyncReasonSilent = "silent"
+	// LegalSyncReasonImageStale: the vbpl-sync image runs an older importer
+	// than this backend's source (its newest run carries an
+	// importer_revision below legalcatalog.ImporterRevision, or none): the
+	// image must be rebuilt.
+	LegalSyncReasonImageStale = "image_stale"
 )
 
 // legalSyncSettings are the system settings the monitor reads.
@@ -198,6 +204,12 @@ type LegalSyncWorkerStatus struct {
 	// AlertMuted: the worker's alert is silenced on its own (system setting
 	// legal.sync_alert.disabled_workers).
 	AlertMuted bool `json:"alert_muted,omitempty"`
+	// ImporterRevision / ImageCommit: what the newest run of vbpl_sync says
+	// its image runs (0 / "": not recorded, an image older than the stamp);
+	// SourceRevision is this backend's legalcatalog.ImporterRevision.
+	ImporterRevision int    `json:"importer_revision,omitempty"`
+	ImageCommit      string `json:"image_commit,omitempty"`
+	SourceRevision   int    `json:"source_revision,omitempty"`
 }
 
 // LegalSyncQueues are the queues the workers drain.
@@ -311,6 +323,9 @@ func (m *LegalSyncMonitor) workers(ctx context.Context, now time.Time) ([]LegalS
 			sched, _ := legalSyncScheduleOf(w.name)
 			st.StaleAfterHours, st.LongRunHours = int(sched.staleAfter/time.Hour), int(sched.longRun/time.Hour)
 			st.Health, st.Reasons = sched.health(last, st.LastFinished, lastOK, now)
+			if w.name == types.LegalSyncWorkerVBPL {
+				legalSyncJudgeImage(&st, last)
+			}
 		} else {
 			st.IntervalSeconds = int(w.interval / time.Second)
 			beat, ok := legalWorkerBeat(w.name)
@@ -376,6 +391,27 @@ func (sc legalSyncSchedule) health(last, lastFinished, lastOK *types.LegalSyncRu
 	return health, reasons
 }
 
+// legalSyncJudgeImage marks the vbpl-sync image stale (warning) when its
+// newest run carries an importer_revision below the backend's, or none. The
+// importer stamps the run when it opens it (-run-start) and again at the
+// import, so the newest run, running or not, names the image now deployed:
+// a rebuilt image clears the problem when its first run starts.
+func legalSyncJudgeImage(st *LegalSyncWorkerStatus, last *types.LegalSyncRun) {
+	st.SourceRevision = legalcatalog.ImporterRevision
+	if last == nil {
+		return
+	}
+	st.ImporterRevision = legalRunInt(last, "importer_revision")
+	st.ImageCommit = legalRunString(last, "image_commit")
+	if st.ImporterRevision >= legalcatalog.ImporterRevision {
+		return
+	}
+	st.Reasons = append(st.Reasons, LegalSyncReasonImageStale)
+	if legalHealthRank(st.Health) < legalHealthRank(LegalSyncHealthWarning) {
+		st.Health = LegalSyncHealthWarning
+	}
+}
+
 // legalSyncBackendHealth judges a backend worker from its heartbeat (beaten
 // when a pass starts and when it ends; the end carries the pass's error).
 // started: the worker was started in this process at startedAt.
@@ -420,6 +456,20 @@ func (m *LegalSyncMonitor) mutedWorkers(ctx context.Context) map[string]bool {
 	}
 	w, _ := types.ParseLegalSyncWorkerList(m.settings.GetString(ctx, types.LegalSyncAlertDisabledWorkersSettingKey, "", ""))
 	return w
+}
+
+// legalRunInt reads a top-level whole number of a run's summary (0 when
+// absent or not a number).
+func legalRunInt(r *types.LegalSyncRun, key string) int {
+	if r == nil || len(r.Summary) == 0 {
+		return 0
+	}
+	var sum map[string]any
+	if json.Unmarshal(r.Summary, &sum) != nil {
+		return 0
+	}
+	n, _ := sum[key].(float64)
+	return int(n)
 }
 
 // legalRunString reads a top-level string of a run's summary.

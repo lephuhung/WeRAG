@@ -144,7 +144,7 @@ func TestLegalCatalogRelated(t *testing.T) {
 	require.Empty(t, exps, "only hits with an approved legal link are expanded")
 
 	// KB graph: the KB holds the law and the decree; their neighbours come
-	// along, and based_on is drawn only between two KB documents.
+	// along, and a based_on into the KB from outside is not drawn.
 	view, err := svc.KBGraph(ctx, "kb", 0)
 	require.NoError(t, err)
 	nodes := map[string]*types.GraphViewNode{}
@@ -163,11 +163,88 @@ func TestLegalCatalogRelated(t *testing.T) {
 	}
 	require.True(t, edges["tt guides nd"])
 	require.True(t, edges["law replaces law-old"])
-	require.False(t, edges["tt based_on law"], "based_on to a document outside the KB is not drawn")
+	require.False(t, edges["tt based_on law"], "a căn cứ an outside document states is not drawn")
 	require.False(t, view.Truncated)
 
 	view, err = svc.KBGraph(ctx, "kb", 3)
 	require.NoError(t, err)
 	require.Len(t, view.Nodes, 3)
 	require.True(t, view.Truncated)
+}
+
+// A KB document's căn cứ and dẫn chiếu to documents outside the KB are
+// drawn (outside documents as plain nodes); the budget ranks a strong edge
+// above several weak ones.
+func TestLegalKBGraphWeakEdgesOutside(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&types.KnowledgeBase{}, &types.Knowledge{},
+		&types.LegalDocument{}, &types.LegalDocumentRelation{}, &types.LegalDocumentLink{}))
+	ctx := context.Background()
+	catalog := repository.NewLegalCatalogRepository(db)
+	svc := NewLegalCatalogService(catalog, repository.NewLegalReviewRepository(db))
+	var docs []*types.LegalDocument
+	for _, id := range []string{"p-a", "p-x", "v-y", "p-z", "s", "w", "o1", "o2", "w1", "w2", "w3", "w4", "w5"} {
+		docs = append(docs, &types.LegalDocument{ID: id, Source: "dangcongsan", DocumentNumber: id, NumberKey: id,
+			DocType: "Quy định", Title: id})
+	}
+	require.NoError(t, catalog.UpsertDocuments(ctx, docs))
+	rel := func(from, to string, r types.LegalRelation) *types.LegalDocumentRelation {
+		return &types.LegalDocumentRelation{FromID: from, ToID: to, Relation: r, SourceLabel: LegalTextRelationLabel}
+	}
+	rels := []*types.LegalDocumentRelation{
+		rel("p-a", "p-x", types.LegalRelationBasedOn),
+		rel("p-a", "v-y", types.LegalRelationReferences),
+		rel("p-z", "p-a", types.LegalRelationBasedOn), // stated by an outside document
+		rel("s", "o1", types.LegalRelationAmends), rel("s", "o2", types.LegalRelationReplaces),
+	}
+	for _, w := range []string{"w1", "w2", "w3", "w4", "w5"} {
+		rels = append(rels, rel("w", w, types.LegalRelationBasedOn))
+	}
+	require.NoError(t, db.Create(&rels).Error)
+	hold := func(kb, doc string) {
+		require.NoError(t, db.Create(&types.Knowledge{ID: "k-" + kb + doc, KnowledgeBaseID: kb, Title: doc}).Error)
+		require.NoError(t, db.Create(&types.LegalDocumentLink{KnowledgeID: "k-" + kb + doc, KnowledgeBaseID: kb,
+			LegalDocumentID: doc, ReviewStatus: types.LegalReviewApproved}).Error)
+	}
+	for _, kb := range []string{"party", "mixed"} {
+		require.NoError(t, db.Create(&types.KnowledgeBase{ID: kb, Name: kb, Visibility: types.KBVisibilityPublic}).Error)
+	}
+	hold("party", "p-a")
+	for _, d := range []string{"s", "w"} {
+		hold("mixed", d)
+	}
+
+	view, err := svc.KBGraph(ctx, "party", 0)
+	require.NoError(t, err)
+	nodes := map[string]*types.GraphViewNode{}
+	for _, n := range view.Nodes {
+		nodes[n.ID] = n
+	}
+	require.Len(t, nodes, 3, "p-a and the two documents it cites")
+	require.Equal(t, "true", nodes["p-a"].Meta["in_kb"])
+	require.Empty(t, nodes["p-x"].Meta["in_kb"])
+	require.Empty(t, nodes["v-y"].Meta["in_kb"])
+	require.Equal(t, 2, nodes["p-a"].Degree)
+	edges := map[string]bool{}
+	for _, e := range view.Edges {
+		edges[e.Source+" "+e.Type+" "+e.Target] = true
+	}
+	require.Equal(t, map[string]bool{"p-a based_on p-x": true, "p-a references v-y": true}, edges)
+
+	// two nodes: w cites five căn cứ, s amends and replaces one document
+	// each: s and a document it changes win the budget
+	view, err = svc.KBGraph(ctx, "mixed", 2)
+	require.NoError(t, err)
+	require.True(t, view.Truncated)
+	got := map[string]int{}
+	for _, n := range view.Nodes {
+		got[n.ID] = n.Degree
+	}
+	require.Len(t, got, 2)
+	require.Equal(t, 2, got["s"])
+	require.NotContains(t, got, "w")
+	_, o1 := got["o1"]
+	_, o2 := got["o2"]
+	require.True(t, o1 || o2, "%v", got)
 }
