@@ -636,19 +636,52 @@ func legalTextPickTarget(doc *types.LegalDocument, rows []*types.LegalDocument) 
 	return cands[0]
 }
 
-// store replaces the text edges of docID with rels in one transaction; an
-// edge the catalogue import already holds (same from, to, relation) is
-// left as vbpl's.
+// store brings the text edges of docID to rels by difference in one
+// transaction: an edge no longer read is deleted, a new one inserted, an
+// unchanged one left (its created_at stays). An edge the catalogue import
+// already holds (same from, to, relation) is left as vbpl's.
 func (b *legalTextRelationBuilder) store(ctx context.Context, docID string, rels []types.LegalDocumentRelation) error {
 	return b.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("from_id = ? AND source_label = ?", docID, LegalTextRelationLabel).
-			Delete(&types.LegalDocumentRelation{}).Error; err != nil {
+		var have []types.LegalDocumentRelation
+		if err := tx.Select("from_id", "to_id", "relation").
+			Where("from_id = ? AND source_label = ?", docID, LegalTextRelationLabel).Find(&have).Error; err != nil {
 			return err
 		}
-		if len(rels) == 0 {
+		type key struct {
+			to  string
+			rel types.LegalRelation
+		}
+		want := make(map[key]bool, len(rels))
+		var insert []types.LegalDocumentRelation
+		for _, r := range rels {
+			k := key{r.ToID, r.Relation}
+			if !want[k] {
+				want[k] = true
+				insert = append(insert, r)
+			}
+		}
+		held := make(map[key]bool, len(have))
+		for _, h := range have {
+			k := key{h.ToID, h.Relation}
+			held[k] = true
+			if want[k] {
+				continue
+			}
+			if err := tx.Where("from_id = ? AND to_id = ? AND relation = ? AND source_label = ?",
+				docID, h.ToID, h.Relation, LegalTextRelationLabel).Delete(&types.LegalDocumentRelation{}).Error; err != nil {
+				return err
+			}
+		}
+		fresh := insert[:0]
+		for _, r := range insert {
+			if !held[key{r.ToID, r.Relation}] {
+				fresh = append(fresh, r)
+			}
+		}
+		if len(fresh) == 0 {
 			return nil
 		}
-		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&rels).Error
+		return tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&fresh).Error
 	})
 }
 

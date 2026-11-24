@@ -195,13 +195,23 @@ type requestRow struct {
 	ID              string
 	NumberKey       string
 	LegalDocumentID string
+	DocumentNumber  string
 	Source          string
 	Status          string
 	KnowledgeID     string
 	ClaimedBy       string
 	ClaimedAt       *time.Time
+	DecidedBy       string
+	DecidedAt       *time.Time
+	DecisionNote    string
 	Detail          types.JSON
 }
+
+// requestReopenedAction is the legal_feed_log action of a decided request
+// (added, or rejected by a SuperAdmin) the import hands back to the worker;
+// the decision it replaces is in the log row and in the request's detail
+// (types.LegalRequestDetailPreviousDecision).
+const requestReopenedAction = "request_reopened"
 
 // loadRequests returns the requests of the candidates' numbers, keyed by
 // number key + NUL + catalogue id.
@@ -214,7 +224,8 @@ func loadRequests(ctx context.Context, db *gorm.DB, candidates []*types.LegalDoc
 	err := inChunks(keys, func(part []string) error {
 		var rows []requestRow
 		if err := db.WithContext(ctx).Model(&types.LegalDocumentRequest{}).
-			Select("id", "number_key", "legal_document_id", "source", "status", "knowledge_id", "claimed_by", "claimed_at", "detail").
+			Select("id", "number_key", "legal_document_id", "document_number", "source", "status", "knowledge_id",
+				"claimed_by", "claimed_at", "decided_by", "decided_at", "decision_note", "detail").
 			Where("number_key IN ?", part).Scan(&rows).Error; err != nil {
 			return fmt.Errorf("existing requests: %w", err)
 		}
@@ -234,17 +245,6 @@ func autoIngestSkipped(detail types.JSON) bool {
 	}
 	v := d[types.LegalRequestDetailAutoIngestSkip]
 	return len(v) > 0 && string(v) != "null"
-}
-
-// withoutAutoIngestSkip removes the worker's give-up marker.
-func withoutAutoIngestSkip(detail types.JSON) (types.JSON, error) {
-	var d map[string]json.RawMessage
-	if err := json.Unmarshal(detail, &d); err != nil {
-		return nil, err
-	}
-	delete(d, types.LegalRequestDetailAutoIngestSkip)
-	raw, err := json.Marshal(d)
-	return types.JSON(raw), err
 }
 
 // queueAutoIngest hands the imported documents vbpl.vn has the full text of,
@@ -293,7 +293,10 @@ func queueAutoIngest(
 // person is working on it or the worker gave up on it. kbID names the public
 // KB holding the copy to replace ("": the worker picks one by type). A text
 // update (update true) concerns a document the KB holds, so an earlier
-// rejection or give-up, which was about adding it, does not stop it.
+// rejection or give-up, which was about adding it, does not stop it. The
+// decision a reopened request carried (status, by, at, note) is kept in its
+// detail under previous_decision and in a legal_feed_log row, so it does not
+// vanish with the reset fields.
 func moveToAutoIngest(ctx context.Context, db *gorm.DB, r requestRow, kbID string, update bool, now time.Time) (int, error) {
 	held := r.ClaimedBy != "" && r.ClaimedAt != nil && now.Sub(*r.ClaimedAt) < types.LegalRequestClaimLease
 	added := r.Status == types.LegalRequestAdded || (update && r.Status == types.LegalRequestRejected)
@@ -305,25 +308,78 @@ func moveToAutoIngest(ctx context.Context, db *gorm.DB, r requestRow, kbID strin
 		source = types.LegalRequestSourceHTML
 	}
 	values := map[string]any{"status": types.LegalRequestAutoIngest, "source": source, "knowledge_base_id": kbID, "updated_at": now}
+	var previous map[string]any
 	if added {
 		values["knowledge_id"] = ""
 		values["decided_by"], values["decided_at"], values["decision_note"] = "", nil, ""
+		previous = map[string]any{"status": r.Status, "by": r.DecidedBy, "note": r.DecisionNote,
+			"knowledge_id": r.KnowledgeID, "reopened_at": now.UTC().Format(time.RFC3339)}
+		if r.DecidedAt != nil {
+			previous["at"] = r.DecidedAt.UTC().Format(time.RFC3339)
+		}
 	}
-	if update && autoIngestSkipped(r.Detail) {
-		detail, err := withoutAutoIngestSkip(r.Detail)
+	if previous != nil || (update && autoIngestSkipped(r.Detail)) {
+		detail, err := reopenedDetail(r.Detail, previous, update)
 		if err != nil {
 			return 0, fmt.Errorf("request %s detail: %w", r.ID, err)
 		}
 		values["detail"] = detail
 	}
-	res := db.WithContext(ctx).Model(&types.LegalDocumentRequest{}).
-		Where("id = ? AND status = ?", r.ID, r.Status).
-		Where("claimed_by = '' OR claimed_at IS NULL OR claimed_at < ?", now.Add(-types.LegalRequestClaimLease)).
-		Updates(values)
-	if res.Error != nil {
-		return 0, fmt.Errorf("move request %s: %w", r.ID, res.Error)
+	moved := 0
+	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		res := tx.Model(&types.LegalDocumentRequest{}).
+			Where("id = ? AND status = ?", r.ID, r.Status).
+			Where("claimed_by = '' OR claimed_at IS NULL OR claimed_at < ?", now.Add(-types.LegalRequestClaimLease)).
+			Updates(values)
+		if res.Error != nil {
+			return fmt.Errorf("move request %s: %w", r.ID, res.Error)
+		}
+		moved = int(res.RowsAffected)
+		if moved == 0 || previous == nil {
+			return nil
+		}
+		reason := "Văn bản đã có trong kho: tự nạp lại"
+		if update {
+			reason = "Toàn văn trên vbpl.vn đã đổi: tự nạp bản mới, quyết định trước được giữ trong nhật ký"
+		}
+		raw, err := json.Marshal(map[string]any{"request_id": r.ID, "previous_decision": previous})
+		if err != nil {
+			return err
+		}
+		if err := tx.Exec(`INSERT INTO legal_feed_log (action, vbpl_id, document_number, reason, detail)
+			VALUES (?, ?, ?, ?, ?)`, requestReopenedAction, r.LegalDocumentID, r.DocumentNumber, reason, string(raw)).Error; err != nil {
+			return fmt.Errorf("log reopened request %s: %w", r.ID, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
 	}
-	return int(res.RowsAffected), nil
+	return moved, nil
+}
+
+// reopenedDetail is a request's detail with previous (when not nil) under
+// types.LegalRequestDetailPreviousDecision and, for a text update, the
+// worker's give-up marker removed; the other keys stay.
+func reopenedDetail(detail types.JSON, previous map[string]any, update bool) (types.JSON, error) {
+	d := map[string]json.RawMessage{}
+	if len(detail) > 0 && string(detail) != "null" {
+		if err := json.Unmarshal(detail, &d); err != nil {
+			return nil, err
+		}
+	}
+	if update {
+		delete(d, types.LegalRequestDetailAutoIngestSkip)
+	}
+	if previous != nil {
+		raw, err := json.Marshal(previous)
+		if err != nil {
+			return nil, err
+		}
+		d[types.LegalRequestDetailPreviousDecision] = raw
+	}
+	raw, err := json.Marshal(d)
+	return types.JSON(raw), err
 }
 
 // queueChangedText hands the worker the documents whose full text on the

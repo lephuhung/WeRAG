@@ -22,7 +22,9 @@ func legalAdoptTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&types.LegalDocument{}, &types.LegalDocumentRelation{}, &types.LegalDocumentLink{},
 		&types.LegalDocumentRequest{}, &types.LegalDocumentDraft{}, &types.LegalProvisionLink{}, &types.LegalProvisionLinkCandidate{},
-		&types.KnowledgeBase{}, &types.Knowledge{}, &types.Chunk{}))
+		&types.KnowledgeBase{}, &types.Knowledge{}, &types.Chunk{}, &types.LegalRequestRequester{}))
+	require.NoError(t, db.Exec(`CREATE TABLE legal_feed_log (id INTEGER PRIMARY KEY, action TEXT, vbpl_id TEXT,
+		document_number TEXT, reason TEXT, detail TEXT)`).Error)
 	return db
 }
 
@@ -57,7 +59,20 @@ func TestAdoptLegalDocument(t *testing.T) {
 	require.NoError(t, db.Create(&[]types.LegalDocumentRequest{
 		{ID: "r1", NumberKey: key, DocumentNumber: "777/2026/NĐ-CP", LegalDocumentID: "tvpl-777", Status: "added", FirstRequestedAt: now, LastRequestedAt: now},
 		{ID: "r2", NumberKey: "dup", DocumentNumber: "dup", LegalDocumentID: "tvpl-777", Status: "requested", FirstRequestedAt: now, LastRequestedAt: now},
-		{ID: "r3", NumberKey: "dup", DocumentNumber: "dup", LegalDocumentID: "v777", Status: "requested", FirstRequestedAt: now, LastRequestedAt: now},
+		{ID: "r3", NumberKey: "dup", DocumentNumber: "dup", LegalDocumentID: "v777", Status: "requested", FirstRequestedAt: now, LastRequestedAt: now,
+			RequestCount: 1},
+	}).Error)
+	require.NoError(t, db.Model(&types.LegalDocumentRequest{}).Where("id = ?", "r2").Update("request_count", 2).Error)
+	// u1 and u2 asked through r2 (the one dropped), u2 also through r3
+	require.NoError(t, db.Create(&[]types.LegalRequestRequester{
+		{ID: "q1", RequestID: "r2", UserID: "u1", CreatedAt: now, UpdatedAt: now},
+		{ID: "q2", RequestID: "r2", UserID: "u2", CreatedAt: now, UpdatedAt: now},
+		{ID: "q3", RequestID: "r3", UserID: "u2", CreatedAt: now, UpdatedAt: now},
+	}).Error)
+	// a draft of each row: the feed row's cannot move (one per document)
+	require.NoError(t, db.Create(&[]types.LegalDocumentDraft{
+		{ID: "d-feed", LegalDocumentID: "tvpl-777", Status: types.LegalDraftReady},
+		{ID: "d-vbpl", LegalDocumentID: "v777", Status: types.LegalDraftReviewing},
 	}).Error)
 	require.NoError(t, db.Create(&[]types.LegalDocumentRelation{
 		{FromID: "nd68", ToID: "tvpl-777", Relation: types.LegalRelationReplaces},
@@ -120,6 +135,29 @@ func TestAdoptLegalDocument(t *testing.T) {
 	for _, r := range reqs {
 		require.Equal(t, "v777", r.LegalDocumentID)
 	}
+	require.Equal(t, 3, reqs[1].RequestCount, "r3 counts r2's asks too")
+	var askers []types.LegalRequestRequester
+	require.NoError(t, db.Order("user_id").Find(&askers).Error)
+	require.Len(t, askers, 2, "u2's second row went with r2")
+	require.Equal(t, []string{"r3", "r3"}, []string{askers[0].RequestID, askers[1].RequestID})
+	require.Equal(t, "u1", askers[0].UserID, "u1 is still told when r3's document is added")
+	require.EqualValues(t, 1, res.RequestersMoved)
+
+	var drafts []types.LegalDocumentDraft
+	require.NoError(t, db.Order("id").Find(&drafts).Error)
+	require.Equal(t, "tvpl-777", drafts[0].LegalDocumentID)
+	require.Contains(t, drafts[0].Error, "đã gộp vào v777", "the draft left behind says so")
+	require.Equal(t, types.LegalDraftReady, drafts[0].Status)
+	require.Empty(t, drafts[1].Error)
+	require.EqualValues(t, 1, res.DraftsLeft)
+
+	var logged []struct{ Action, VBPLID, Detail string }
+	require.NoError(t, db.Raw(`SELECT action, vbpl_id, detail FROM legal_feed_log ORDER BY id`).Scan(&logged).Error)
+	require.Len(t, logged, 2)
+	require.Contains(t, logged[0].Detail, `"draft_id":"d-feed"`)
+	require.Equal(t, "adopt", logged[1].Action)
+	require.Contains(t, logged[1].Detail, `"title":"Nghị định 777/2026/NĐ-CP quy định thuế"`,
+		"the feed row's curated title the vbpl row did not take is in the log")
 
 	var rels []types.LegalDocumentRelation
 	require.NoError(t, db.Find(&rels).Error)

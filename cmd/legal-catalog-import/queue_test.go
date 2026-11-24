@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -37,6 +38,7 @@ func queueTestDB(t *testing.T) *gorm.DB {
 		`CREATE TABLE knowledge_bases (id TEXT PRIMARY KEY, owner_tenant_id INTEGER, deleted_at DATETIME)`,
 		`CREATE TABLE knowledges (id TEXT PRIMARY KEY, knowledge_base_id TEXT, metadata TEXT, deleted_at DATETIME)`,
 		`CREATE TABLE legal_document_links (knowledge_id TEXT, legal_document_id TEXT, review_status TEXT)`,
+		`CREATE TABLE legal_feed_log (id INTEGER PRIMARY KEY, action TEXT, vbpl_id TEXT, document_number TEXT, reason TEXT, detail TEXT)`,
 	} {
 		if err := db.Exec(stmt).Error; err != nil {
 			t.Fatal(err)
@@ -259,6 +261,20 @@ func TestQueueChangedText(t *testing.T) {
 	if rejected.Status != types.LegalRequestAutoIngest || autoIngestSkipped(rejected.Detail) || rejected.DecisionNote != "" ||
 		!strings.Contains(string(rejected.Detail), `"keep"`) {
 		t.Errorf("a rejection must not stop a text update: %+v", rejected)
+	}
+	// the rejection is not lost: in the request's detail and in the log
+	var det struct {
+		Previous map[string]any `json:"previous_decision"`
+	}
+	if err := json.Unmarshal(rejected.Detail, &det); err != nil || det.Previous["status"] != types.LegalRequestRejected ||
+		det.Previous["note"] != "n" || det.Previous["reopened_at"] == nil {
+		t.Errorf("previous decision = %+v (%v)", det.Previous, err)
+	}
+	var logged []struct{ Action, VBPLID, Detail string }
+	db.Raw(`SELECT action, vbpl_id, detail FROM legal_feed_log ORDER BY vbpl_id`).Scan(&logged)
+	if len(logged) != 2 || logged[0].Action != requestReopenedAction || logged[0].VBPLID != "60" || logged[1].VBPLID != "70" ||
+		!strings.Contains(logged[1].Detail, `"note":"n"`) || !strings.Contains(logged[0].Detail, `"by":"x"`) {
+		t.Errorf("feed log = %+v", logged)
 	}
 	var fresh types.LegalDocumentRequest
 	if err := db.Take(&fresh, "legal_document_id = ?", "10").Error; err != nil {

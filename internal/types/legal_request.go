@@ -148,8 +148,27 @@ const LegalRequestSourceNoFullText = "vbpl_no_text"
 // document keeps its full text in a public KB; its catalogue row stays.
 const LegalExpiredRetentionDaysSettingKey = "legal.expired_retention_days"
 
+// LegalRequestDetailPreviousDecision (detail key) is the decision a request
+// carried before the catalogue import handed it back to the auto-ingest
+// worker: {status, by, at, note, knowledge_id, reopened_at}.
+const LegalRequestDetailPreviousDecision = "previous_decision"
+
 // LegalExpiredRetentionDefaultDays is that setting's default.
 const LegalExpiredRetentionDefaultDays = 15
+
+// LegalExpiredRetentionCohortMaxSettingKey: more held copies than this
+// turning fully expired on one Vietnam calendar day is a wave the portal
+// may report by mistake: that day's texts wait for a SuperAdmin
+// (LegalExpiredRetentionConfirmedDaysSettingKey).
+const LegalExpiredRetentionCohortMaxSettingKey = "legal.expired_retention.cohort_max"
+
+// LegalExpiredRetentionDefaultCohortMax is that setting's default.
+const LegalExpiredRetentionDefaultCohortMax = 100
+
+// LegalExpiredRetentionConfirmedDaysSettingKey: the days (yyyy-mm-dd,
+// comma list) a SuperAdmin confirmed as real waves of expiry: their texts
+// are removed like any other once their period is over.
+const LegalExpiredRetentionConfirmedDaysSettingKey = "legal.expired_retention.confirmed_days"
 
 // LegalRequestSourceHTML marks a request the nightly import queued for the
 // auto-ingest worker: vbpl.vn has the full text, no public KB holds it.

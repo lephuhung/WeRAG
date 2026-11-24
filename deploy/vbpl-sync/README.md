@@ -85,6 +85,23 @@ có quyền xoá — khoá backup chỉ ghi thêm), `VBPL_SYNC_CRON`, `VBPL_SYNC
 `VBPL_WORK_DIR` (thư mục host, mặc định `/home/orca/data/vbpl`),
 `VBPL_UID`/`VBPL_GID` (chủ thư mục đó), `VBPL_CRAWL_ARGS` (thêm tham số crawler), `VBPL_TEXT_RELATION_SOURCES` (nguồn đọc lại quan hệ toàn văn sau mỗi lần nạp, mặc định `dangcongsan,tvpl,vbpl`; compose dùng `${VBPL_TEXT_RELATION_SOURCES-…}` nên giá trị rỗng vẫn tắt được).
 
+## Không xoá dữ liệu tốt vì đầu vào đêm nay rỗng hoặc thiếu
+
+- **Crawl**: toàn văn đã lưu chỉ bị xoá khi văn bản chuyển "Hết hiệu lực toàn
+  bộ"; cổng trả nội dung rỗng cho văn bản còn hiệu lực thì giữ bản cũ (đếm
+  `empty_content_kept`, lấy lại đêm sau). Quá max(200, 2 %) văn bản cùng chuyển
+  hết hiệu lực trong một lần thì không xoá bản nào (`mass_expiry_held`), vẫn
+  xuất file, nạp và sao lưu, rồi ghi lần chạy là lỗi. Đã kiểm tra là thật thì
+  chạy một lần: `sudo docker exec -e VBPL_CRAWL_ARGS=--allow-mass-expiry WeKnora-vbpl-sync sync.sh`.
+- **Chuẩn bị**: không có `state.sqlite` mà MinIO trả lỗi khác "không tồn tại"
+  (mạng, khoá) thì dừng, không crawl lại từ đầu. Có `state.sqlite` mà thiếu
+  `html/` thì khôi phục `html/` từ MinIO (mirror, không xoá, không ghi đè),
+  không được thì dừng trước khi crawl.
+- **Sao lưu với `VBPL_S3_REMOVE=1`**: đếm HTML trên MinIO không còn ở máy;
+  quá `VBPL_S3_REMOVE_MAX` (mặc định max(200, 2 % số HTML trên MinIO)) thì
+  mirror không `--remove` và ghi lần chạy là lỗi. Xoá thật thì chạy một lần
+  `sudo docker exec -e VBPL_S3_REMOVE_FORCE=1 WeKnora-vbpl-sync sync.sh`.
+
 ## Quan hệ vbpl.vn: cập nhật theo chênh lệch, chặn xoá hàng loạt
 
 Mỗi lần nạp, quan hệ của vbpl.vn (không phải cạnh "toàn văn", không phải cạnh

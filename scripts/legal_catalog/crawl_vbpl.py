@@ -38,6 +38,13 @@ provinces instead (types and year filtered the same way). The local list is
 sorted newest first, so listing stops at the first page older than
 --min-year; the portal search cannot filter by province itself.
 
+A stored full text is removed only when its document turns fully expired;
+an empty text for another document keeps the stored one. More expiry
+removals in one run than --max-expired-removals (default max(200, 2 % of
+the documents holding HTML)) and none is applied: the export is written as
+usual and the crawl exits 3 (EXIT_HELD) so the sync imports, pushes and then
+records the run as failed; --allow-mass-expiry lets them through once.
+
 Usage:
   python3 -I scripts/legal_catalog/crawl_vbpl.py <out-dir> [--limit N]
   go run ./cmd/legal-catalog-import -documents <out-dir>/documents.jsonl \\
@@ -76,6 +83,17 @@ SERVER_ERROR_RETRIES = 2
 # text must not be served as current law. Partial expiry, suspension and
 # "Không còn phù hợp" keep the full text.
 EXPIRED_STATUS = "Hết hiệu lực toàn bộ"
+
+# A run whose documents would turn fully expired (HTML removed) in larger
+# numbers than max(200, 2 % of the documents holding HTML) is a portal
+# glitch until a person says otherwise (--allow-mass-expiry): none is
+# removed, the export stays consistent and the crawl exits EXIT_HELD.
+MASS_EXPIRY_MIN = 200
+MASS_EXPIRY_SHARE = 0.02
+# Exit code of a crawl that held something back (mass expiry): the export
+# files are complete and consistent, the import may run, but the run must
+# end as failed so a person looks (deploy/vbpl-sync/sync.sh).
+EXIT_HELD = 3
 
 # Smaller pages are the portal's empty HTML shells (83 bytes), not a full
 # text: same threshold as MinHTMLBytes in internal/vbpl.
@@ -314,7 +332,34 @@ def crawl_list(client, db, action, args):
         page += 1
 
 
+def mass_expiry_limit(args, html_dir):
+    """How many stored full texts one run may remove for turning fully
+    expired: --max-expired-removals, else max(200, 2 % of the documents
+    holding HTML)."""
+    if getattr(args, "max_expired_removals", None) is not None:
+        return args.max_expired_removals
+    try:
+        held = sum(1 for n in os.listdir(html_dir) if n.endswith(".html"))
+    except OSError:
+        held = 0
+    return max(MASS_EXPIRY_MIN, int(held * MASS_EXPIRY_SHARE))
+
+
+def save_fetched(db, doc_id, detail, diagram, sig):
+    with db:
+        db.execute(
+            "UPDATE docs SET detail=?, diagram=?, fetched_sig=?, fetched_at=?, error=NULL WHERE id=?",
+            (json.dumps(detail, ensure_ascii=False), json.dumps(diagram, ensure_ascii=False),
+             sig, dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), doc_id))
+
+
 def crawl_documents(client, db, action, args):
+    """Fetch the new or changed documents. The stored full text is removed
+    only when a document turns fully expired; an empty text for any other
+    document keeps the previous one (fetched again next run). The expiry
+    removals wait until the end of the run: more than mass_expiry_limit of
+    them and none is applied (the documents keep their old row and text and
+    are fetched again next run), summary "mass_expiry_held"."""
     where = "kept=1" if args.refetch_all else \
         "kept=1 AND (fetched_sig IS NULL OR fetched_sig <> list_sig)"
     todo = [r[0] for r in db.execute(f"SELECT id FROM docs WHERE {where} ORDER BY id")]
@@ -323,8 +368,10 @@ def crawl_documents(client, db, action, args):
     log(f"{len(todo)} documents to fetch")
     html_dir = os.path.join(args.out_dir, "html")
     os.makedirs(html_dir, exist_ok=True)
+    limit = mass_expiry_limit(args, html_dir)
     started = time.monotonic()
-    fetched = failed = 0
+    fetched = failed = empty_kept = 0
+    expiring = []  # (doc_id, path, detail, diagram, sig): removal deferred
     for n, doc_id in enumerate(todo, 1):
         sig = db.execute("SELECT list_sig FROM docs WHERE id=?", (doc_id,)).fetchone()[0]
         try:
@@ -342,28 +389,43 @@ def crawl_documents(client, db, action, args):
             failed += 1
             continue
         content = (detail.get("documentContent") or {}).get("content") or ""
-        if (detail.get("effStatus") or {}).get("name", "").strip() == EXPIRED_STATUS:
+        expired = (detail.get("effStatus") or {}).get("name", "").strip() == EXPIRED_STATUS
+        if expired:
             content = ""
         path = os.path.join(html_dir, f"{doc_id}.html")
+        # The full text lives in html/; keep the rest of the payload.
+        detail.pop("documentContent", None)
+        detail.pop("documentContentEn", None)
+        fetched += 1
         if content:
             with open(path + ".tmp", "w", encoding="utf-8") as f:
                 f.write(content)
             os.replace(path + ".tmp", path)
+        elif expired and os.path.exists(path):
+            expiring.append((doc_id, path, detail, diagram, sig))
+            continue
         elif os.path.exists(path):
-            os.remove(path)
-        # The full text lives in html/; keep the rest of the payload.
-        detail.pop("documentContent", None)
-        detail.pop("documentContentEn", None)
-        with db:
-            db.execute(
-                "UPDATE docs SET detail=?, diagram=?, fetched_sig=?, fetched_at=?, error=NULL WHERE id=?",
-                (json.dumps(detail, ensure_ascii=False), json.dumps(diagram, ensure_ascii=False),
-                 sig, dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), doc_id))
-        fetched += 1
+            # the portal answered without a text for a document in force:
+            # keep the stored one, fetch it again next run
+            empty_kept += 1
+            log(f"  {doc_id}: empty full text, the stored one is kept")
+            sig = None
+        save_fetched(db, doc_id, detail, diagram, sig)
         if n % 100 == 0 or n == len(todo):
             rate = n / max(time.monotonic() - started, 1e-9)
             log(f"fetched {n}/{len(todo)} ({rate:.2f} doc/s, ~{(len(todo) - n) / max(rate, 1e-9) / 3600:.1f} h left)")
-    return {"to_fetch": len(todo), "fetched": fetched, "fetch_failed": failed}
+    out = {"to_fetch": len(todo), "fetched": fetched, "fetch_failed": failed, "empty_content_kept": empty_kept}
+    if len(expiring) > limit and not getattr(args, "allow_mass_expiry", False):
+        log(f"HELD: {len(expiring)} documents turned fully expired in one run (limit {limit}): "
+            "no full text removed; check the portal, then rerun with --allow-mass-expiry")
+        out["mass_expiry_held"] = len(expiring)
+        return out
+    for doc_id, path, detail, diagram, sig in expiring:
+        if os.path.exists(path):
+            os.remove(path)
+        save_fetched(db, doc_id, detail, diagram, sig)
+    out["expired_html_removed"] = len(expiring)
+    return out
 
 
 def full_text_md5(html_dir, doc_id):
@@ -504,6 +566,11 @@ def main():
     ap.add_argument("--list-action", help="server action id of the catalogue search")
     ap.add_argument("--diagram-action", help="server action id of the relation diagram")
     ap.add_argument("--summary", help="write this run's counts as JSON to this file (the sync's run monitor)")
+    ap.add_argument("--max-expired-removals", type=int, default=None, metavar="N",
+                    help="remove at most N full texts of newly fully expired documents per run "
+                         "(default max(200, 2%% of the documents holding HTML)); more: none is removed")
+    ap.add_argument("--allow-mass-expiry", action="store_true",
+                    help="remove the full texts of newly expired documents whatever their number (once, by hand)")
     args = ap.parse_args()
     summary = {}
 
@@ -541,6 +608,13 @@ def main():
             os.replace(args.summary + ".tmp", args.summary)
         except OSError as e:
             log(f"summary {args.summary}: {e}")
+    if summary.get("mass_expiry_held"):
+        # the export is consistent (the held documents keep their old row and
+        # text): the import may run, the run must still end as failed
+        log(f"vbpl.vn: {summary['mass_expiry_held']} văn bản cùng chuyển hết hiệu lực toàn bộ trong một lần: "
+            "chưa xoá toàn văn, cần kiểm tra (chạy lại với --allow-mass-expiry)")
+        return EXIT_HELD
+    return 0
 
 
 if __name__ == "__main__":

@@ -21,5 +21,7 @@ package legalcatalog
 // SyncRelations/ReplaceRelations, mergeRelations) or
 // service.BuildLegalTextRelations changes, then rebuild the vbpl-sync image
 // (deploy/vbpl-sync/README.md). 3: relations updated by difference, mass
-// removal refused.
-const ImporterRevision = 3
+// removal refused. 4: a reopened request keeps its decision, an adoption
+// moves the requesters and logs what it drops, text edges stored by
+// difference.
+const ImporterRevision = 4

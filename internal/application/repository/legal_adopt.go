@@ -25,12 +25,18 @@ type LegalAdoption struct {
 	ReviewLinks      int64
 	Requests         int64
 	RequestsDropped  int64
-	Drafts           int64
-	Relations        int
-	ProvisionLinks   int
-	LinksMerged      int
-	Candidates       int
-	ReviewInherited  bool
+	// RequestersMoved: people who had asked through a dropped request, now
+	// on the surviving request of the same number (told when it is added).
+	RequestersMoved int64
+	Drafts          int64
+	// DraftsLeft: drafts of fromID not moved because toID has its own; each
+	// is marked (error text) and logged, its legal_document_id still fromID.
+	DraftsLeft      int64
+	Relations       int
+	ProvisionLinks  int
+	LinksMerged     int
+	Candidates      int
+	ReviewInherited bool
 }
 
 // AdoptLegalDocument hands every reference to the catalogue row fromID — a
@@ -91,6 +97,9 @@ func AdoptLegalDocument(ctx context.Context, db *gorm.DB, fromID, toID string) (
 			return res.Error
 		}
 		out.Drafts = res.RowsAffected
+		if err := markLeftDrafts(tx, &from, out); err != nil {
+			return err
+		}
 		if err := adoptRelations(tx, out); err != nil {
 			return err
 		}
@@ -159,8 +168,41 @@ func adoptKnowledges(tx *gorm.DB, pg bool, out *LegalAdoption) error {
 }
 
 // adoptRequests moves the requests; one of a number already filed for toID
-// (unique number_key + legal_document_id) is dropped, toID's is kept.
+// (unique number_key + legal_document_id) is dropped, toID's is kept. The
+// dropped request's requesters move to toID's first (a person already on
+// it keeps their row there; the rest would go with the cascade) and its
+// asks add to toID's request_count (both counted asks for the document).
 func adoptRequests(tx *gorm.DB, out *LegalAdoption) error {
+	var pairs []struct {
+		Dropped, Kept string
+		Count         int
+	}
+	if err := tx.Raw(`SELECT f.id AS dropped, s.id AS kept, f.request_count AS count
+		FROM legal_document_requests f
+		JOIN legal_document_requests s ON s.number_key = f.number_key AND s.legal_document_id = ?
+		WHERE f.legal_document_id = ?`, out.ToID, out.FromID).Scan(&pairs).Error; err != nil {
+		return err
+	}
+	for _, p := range pairs {
+		res := tx.Exec(`UPDATE legal_request_requesters SET request_id = ? WHERE request_id = ?
+			AND user_id NOT IN (SELECT q.user_id FROM legal_request_requesters q WHERE q.request_id = ?)`,
+			p.Kept, p.Dropped, p.Kept)
+		if res.Error != nil {
+			return fmt.Errorf("requesters of request %s: %w", p.Dropped, res.Error)
+		}
+		out.RequestersMoved += res.RowsAffected
+		// the rest already ask through the kept request (the cascade would
+		// drop them too; explicit, whatever the schema)
+		if err := tx.Exec(`DELETE FROM legal_request_requesters WHERE request_id = ?`, p.Dropped).Error; err != nil {
+			return err
+		}
+		if p.Count > 0 {
+			if err := tx.Exec(`UPDATE legal_document_requests SET request_count = request_count + ? WHERE id = ?`,
+				p.Count, p.Kept).Error; err != nil {
+				return err
+			}
+		}
+	}
 	res := tx.Exec(`DELETE FROM legal_document_requests WHERE legal_document_id = ? AND number_key IN
 		(SELECT r.number_key FROM legal_document_requests r WHERE r.legal_document_id = ?)`, out.FromID, out.ToID)
 	if res.Error != nil {
@@ -316,15 +358,63 @@ func movedMarkKey(detail types.JSON, fromID, toID string) (types.JSON, bool) {
 	return types.JSON(b), true
 }
 
+// legalAdoptAction is the legal_feed_log action of what an adoption leaves
+// behind: a feed row's curated values a vbpl row did not take, a draft not
+// moved.
+const legalAdoptAction = "adopt"
+
+// logAdoption writes one legal_feed_log row of the adoption of from.
+func logAdoption(tx *gorm.DB, from *types.LegalDocument, toID, reason string, detail map[string]any) error {
+	detail["from_id"], detail["to_id"] = from.ID, toID
+	raw, err := json.Marshal(detail)
+	if err != nil {
+		return err
+	}
+	return tx.Exec(`INSERT INTO legal_feed_log (action, vbpl_id, document_number, reason, detail) VALUES (?, ?, ?, ?, ?)`,
+		legalAdoptAction, toID, from.DocumentNumber, reason, string(raw)).Error
+}
+
+// markLeftDrafts marks the drafts of the feed row that could not move (toID
+// has its own draft, one per document): their error says why and a log row
+// keeps their id; they stay for a person to close. Their status is left
+// alone: an OCR job may still be writing to them.
+func markLeftDrafts(tx *gorm.DB, from *types.LegalDocument, out *LegalAdoption) error {
+	var left []types.LegalDocumentDraft
+	if err := tx.Select("id", "status").Where("legal_document_id = ?", out.FromID).Find(&left).Error; err != nil {
+		return err
+	}
+	for _, d := range left {
+		note := fmt.Sprintf("Văn bản %s đã gộp vào %s, văn bản này đã có bản nháp riêng: bản nháp này không còn gắn với văn bản nào",
+			out.FromID, out.ToID)
+		if err := tx.Model(&types.LegalDocumentDraft{}).Where("id = ?", d.ID).
+			Updates(map[string]any{"error": note, "updated_at": time.Now()}).Error; err != nil {
+			return err
+		}
+		if err := logAdoption(tx, from, out.ToID, "Bản nháp của văn bản nguồn khác không được chuyển: "+out.ToID+" đã có bản nháp",
+			map[string]any{"draft_id": d.ID, "draft_status": d.Status}); err != nil {
+			return err
+		}
+		out.DraftsLeft++
+	}
+	return nil
+}
+
 // inheritReview passes a SuperAdmin's review of the feed row to the portal
 // row. A vbpl row takes only the reviewer: vbpl.vn is the standard and its
-// values stay. On a row from another source the curated values and reviewer
+// values stay; the feed row's curated values that differ are written to
+// legal_feed_log (action adopt) before the row goes. On a row from another source the curated values and reviewer
 // stay, the differing values wait in source_pending; a value the feed row
 // never had (an empty date, the "Chưa xác định" status a push writes when
 // its source gave none) is no curated value: that row's stays. The target
 // keeps its source.
 func inheritReview(tx *gorm.DB, from, to *types.LegalDocument) error {
 	if to.Source == types.LegalDocumentSourceVBPL {
+		if dropped := legalcatalog.ReviewDiff(to, from); len(dropped) > 0 {
+			if err := logAdoption(tx, from, to.ID, "vbpl.vn là chuẩn: giá trị đã duyệt của văn bản nguồn khác không được giữ",
+				map[string]any{"dropped": dropped, "reviewed_by": from.ReviewedBy}); err != nil {
+				return err
+			}
+		}
 		return tx.Model(&types.LegalDocument{}).Where("id = ?", to.ID).Updates(map[string]any{
 			"reviewed_by": from.ReviewedBy, "reviewed_at": from.ReviewedAt, "source_pending": nil, "updated_at": time.Now(),
 		}).Error

@@ -31,7 +31,29 @@ case " \$* " in
 esac
 exit 0
 EOF
-printf '#!/usr/bin/env bash\nexit 0\n' >"$T/bin/mc"
+# mc: logs its calls; stat answers MC_STAT (ok, notfound, error); ls prints
+# MC_LS_FILE (or fails with MC_LS_FAIL); a mirror into a local html/ makes
+# the files MC_MIRROR_HTML names
+cat >"$T/bin/mc" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >>"$MC_CALLS"
+case "$1" in
+stat)
+	case "${MC_STAT:-ok}" in
+	notfound) echo "mc: <ERROR> Unable to stat. Object does not exist." >&2; exit 1 ;;
+	error) echo "mc: <ERROR> Unable to stat. dial tcp 10.0.0.1:9000: i/o timeout" >&2; exit 1 ;;
+	esac ;;
+ls)
+	[ -n "${MC_LS_FAIL:-}" ] && { echo "mc: <ERROR> Access Denied." >&2; exit 1; }
+	[ -n "${MC_LS_FILE:-}" ] && cat "$MC_LS_FILE" ;;
+mirror)
+	dest=${!#}
+	if [ "${dest##*/}" = html ] && [ -n "${MC_MIRROR_HTML:-}" ]; then
+		for f in $MC_MIRROR_HTML; do echo x >"$dest/$f"; done
+	fi ;;
+esac
+exit 0
+STUB
 cat >"$T/bin/python3" <<EOF
 #!/usr/bin/env bash
 # -I -u script WORK --summary FILE …
@@ -40,6 +62,10 @@ sleep "\${CRAWL_SLEEP:-0}" &
 echo \$! >"$T/crawl.pid"
 wait
 echo '{"fetched":3}' >"\$6"
+if [ -n "\${CRAWL_HELD:-}" ]; then
+	echo "06:00:00 vbpl.vn: 300 văn bản cùng chuyển hết hiệu lực toàn bộ trong một lần: chưa xoá toàn văn"
+	exit 3
+fi
 EOF
 # like supercronic: runs the job (CRON_RUNS_JOB=1: at once), never forwards
 # a signal to it, on SIGTERM waits for the running job
@@ -50,6 +76,7 @@ if [ -n "\${CRON_RUNS_JOB:-}" ]; then /bin/sh -c "$T/sync.sh" & fi
 while :; do sleep 0.2; done
 STUB
 chmod +x "$T/bin/"*
+export MC_CALLS="$T/mccalls"
 export TZ=Asia/Ho_Chi_Minh PATH="$T/bin:$PATH" VBPL_S3_ENDPOINT=x VBPL_S3_BUCKET=b VBPL_S3_ACCESS_KEY=a VBPL_S3_SECRET_KEY=s DB_HOST=h DB_NAME=n
 
 fails=0
@@ -64,7 +91,10 @@ lacks() { ! grep -qF -- "$1" "$T/calls"; }
 no_sync_left() {
 	if pgrep -af "$T/sync\.sh" >"$T/left"; then cat "$T/left"; return 1; fi
 }
-reset() { : >"$T/calls"; rm -f "$T/crawl.pid" "$T/work/.sync.error"; }
+reset() { : >"$T/calls"; : >"$T/mccalls"; rm -f "$T/crawl.pid" "$T/work/.sync.error"; }
+mc_has() { grep -qF -- "$1" "$T/mccalls"; }
+mc_lacks() { ! grep -qF -- "$1" "$T/mccalls"; }
+err_has() { grep -qF -- "$1" "$T/work/.sync.error"; }
 
 # a good night
 reset
@@ -116,6 +146,73 @@ reset
 rc=0; FAIL_REBUILD=1 bash "$T/sync.sh" >"$T/out" 2>&1 || rc=$?
 check "a failed rebuild fails the run" [ "$rc" != 0 ]
 check "and closes it failed" has '-run-id 42 -run-finish failed -run-error-file'
+
+# prepare: only "does not exist" is a first run
+reset
+rm -rf "$T/work/state.sqlite" "$T/work/html"
+rc=0; MC_STAT=notfound bash "$T/sync.sh" >"$T/out" 2>&1 || rc=$?
+check "no copy on MinIO: a first run crawls" bash -c "[ $rc = 0 ] && grep -qF -- '-documents ' '$T/calls'"
+check "and restores nothing" mc_lacks "mirror --quiet store/"
+reset
+rc=0; MC_STAT=error bash "$T/sync.sh" >"$T/out" 2>&1 || rc=$?
+check "MinIO unreadable: the run fails" [ "$rc" != 0 ]
+check "without crawling from scratch" bash -c "! grep -q crawling '$T/out' && ! grep -qF -- '-documents ' '$T/calls'"
+check "the reason is recorded" err_has "refusing to crawl from scratch"
+reset
+rc=0; MC_STAT=ok bash "$T/sync.sh" >"$T/out" 2>&1 || rc=$?
+check "a copy on MinIO is restored" mc_has "mirror --quiet store/b/werag/vbpl $T/work"
+
+# prepare: state.sqlite without html/ while MinIO has HTML
+reset
+touch "$T/work/state.sqlite"
+rm -rf "$T/work/html"
+printf '[2026-11-24 02:30:00 UTC]  12KiB STANDARD 1.html\n' >"$T/ls"
+rc=0; MC_LS_FILE="$T/ls" MC_MIRROR_HTML="1.html" bash "$T/sync.sh" >"$T/out" 2>&1 || rc=$?
+check "html/ missing: restored from MinIO" bash -c "[ $rc = 0 ] && [ -f '$T/work/html/1.html' ]"
+check "with a plain mirror (no --remove, no --overwrite)" mc_has "mirror --quiet store/b/werag/vbpl/html $T/work/html"
+reset
+rm -rf "$T/work/html"
+rc=0; MC_LS_FILE="$T/ls" bash "$T/sync.sh" >"$T/out" 2>&1 || rc=$?
+check "html/ not restorable: the run fails before crawling" bash -c "[ $rc != 0 ] && ! grep -q crawling '$T/out'"
+check "no push" mc_lacks "--overwrite"
+reset
+rm -rf "$T/work/html"
+rc=0; MC_LS_FAIL=1 bash "$T/sync.sh" >"$T/out" 2>&1 || rc=$?
+check "html/ missing and MinIO unlistable: fails" bash -c "[ $rc != 0 ] && grep -q 'cannot list' '$T/work/.sync.error'"
+reset
+rm -rf "$T/work/html"
+: >"$T/ls"
+rc=0; MC_LS_FILE="$T/ls" bash "$T/sync.sh" >"$T/out" 2>&1 || rc=$?
+check "nothing on MinIO either: goes on" [ "$rc" = 0 ]
+
+# push --remove: a mass deletion is not applied
+mkdir -p "$T/work/html"
+echo x >"$T/work/html/1.html"
+for i in $(seq 1 300); do printf '[2026-11-24 02:30:00 UTC]  12KiB STANDARD %s.html\n' "$i"; done >"$T/ls"
+reset
+rc=0; VBPL_S3_REMOVE=1 MC_LS_FILE="$T/ls" bash "$T/sync.sh" >"$T/out" 2>&1 || rc=$?
+check "299 of 300 to delete: mirrored without --remove" bash -c "grep -q -- '--overwrite' '$T/mccalls' && ! grep -q -- '--remove' '$T/mccalls'"
+check "and the run fails" [ "$rc" != 0 ]
+check "saying why" err_has "push without --remove: --remove would delete 299 of 300 HTML"
+reset
+rc=0; VBPL_S3_REMOVE=1 VBPL_S3_REMOVE_FORCE=1 MC_LS_FILE="$T/ls" bash "$T/sync.sh" >"$T/out" 2>&1 || rc=$?
+check "VBPL_S3_REMOVE_FORCE=1 applies it" bash -c "[ $rc = 0 ] && grep -q -- '--overwrite --remove' '$T/mccalls'"
+reset
+rc=0; VBPL_S3_REMOVE=1 VBPL_S3_REMOVE_MAX=500 MC_LS_FILE="$T/ls" bash "$T/sync.sh" >"$T/out" 2>&1 || rc=$?
+check "within VBPL_S3_REMOVE_MAX: --remove" bash -c "[ $rc = 0 ] && grep -q -- '--overwrite --remove' '$T/mccalls'"
+reset
+rc=0; VBPL_S3_REMOVE=1 MC_LS_FAIL=1 bash "$T/sync.sh" >"$T/out" 2>&1 || rc=$?
+check "remote unlistable: no --remove, the run fails" bash -c "[ $rc != 0 ] && ! grep -q -- '--remove' '$T/mccalls'"
+
+# a crawl that held back a mass expiry: import and push, then fail
+reset
+rc=0; CRAWL_HELD=1 bash "$T/sync.sh" >"$T/out" 2>&1 || rc=$?
+check "held crawl: the import still runs" has '-documents '
+check "and the push" mc_has "--overwrite"
+check "the run fails" [ "$rc" != 0 ]
+check "closed failed" has '-run-id 42 -run-finish failed'
+check "the reason is the last line" bash -c "tail -n 1 '$T/work/.sync.error' | grep -qF 'vbpl-sync: crawl: vbpl.vn: 300 văn bản cùng chuyển hết hiệu lực'"
+check "no .sync.ok for the night" bash -c "[ ! -f '$T/work/.sync.ok' ] || [ '$T/work/.sync.ok' -ot '$T/work/.sync.error' ]"
 
 # a stop (docker stop / SIGTERM) during the crawl
 reset

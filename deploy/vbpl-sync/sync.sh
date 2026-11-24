@@ -88,8 +88,10 @@ step() {
 run() {
 	"$@" &
 	CHILD=$!
-	wait "$CHILD"
+	local rc=0
+	wait "$CHILD" || rc=$?
 	CHILD=""
+	return "$rc"
 }
 finish() {
 	rc=$?
@@ -139,15 +141,50 @@ prepare() {
 		: "${VBPL_S3_ENDPOINT:?VBPL_S3_ENDPOINT is required}"
 		: "${VBPL_S3_BUCKET:?VBPL_S3_BUCKET is required}"
 		mc alias set store "$VBPL_S3_ENDPOINT" "${VBPL_S3_ACCESS_KEY:?}" "${VBPL_S3_SECRET_KEY:?}" >/dev/null
-		if [ ! -f "$WORK/state.sqlite" ] && mc stat "$DEST/state.sqlite" >/dev/null 2>&1; then
-			log "restore working copy from $DEST"
-			mc mirror --quiet "$DEST" "$WORK"
+		if [ ! -f "$WORK/state.sqlite" ]; then
+			# Only "the object does not exist" means a first run; any other
+			# failure (network, credentials) must not start a crawl from
+			# scratch whose push would then replace the copy on MinIO. The
+			# message is matched, so a wording mc changes fails safe.
+			local out
+			if out=$(mc stat "$DEST/state.sqlite" 2>&1); then
+				log "restore working copy from $DEST"
+				mc mirror --quiet "$DEST" "$WORK"
+			elif grep -qiE 'does not exist|NoSuchKey|not found' <<<"$out"; then
+				log "no working copy on $DEST: first run"
+			else
+				log "cannot read $DEST/state.sqlite: $out"
+				log "refusing to crawl from scratch while MinIO may hold the working copy"
+				exit 1
+			fi
+		elif [ -z "$(find "$WORK/html" -name '*.html' -print -quit 2>/dev/null)" ]; then
+			# state.sqlite says what was fetched; without html/ the export
+			# would drop every full text and a push --remove delete them
+			local listing
+			if ! listing=$(mc ls --recursive "$DEST/html/" 2>&1); then
+				log "cannot list $DEST/html/: $(head -n 3 <<<"$listing")"
+				exit 1
+			fi
+			if [ -n "$listing" ]; then
+				log "html/ is missing locally: restore it from $DEST/html"
+				mkdir -p "$WORK/html"
+				mc mirror --quiet "$DEST/html" "$WORK/html"
+				if [ -z "$(find "$WORK/html" -name '*.html' -print -quit 2>/dev/null)" ]; then
+					log "html/ could not be restored from $DEST/html"
+					exit 1
+				fi
+			fi
 		fi
 	} 2>&1 | tee -a "$STEP_LOG"
 }
 crawl() {
 	python3 -I -u /app/crawl_vbpl.py "$WORK" --summary "$CRAWL_SUMMARY" ${VBPL_CRAWL_ARGS:-} 2>&1 | tee -a "$STEP_LOG"
 }
+# Exit code of a crawl that held something back (crawl_vbpl.py EXIT_HELD:
+# a mass expiry kept the full texts): its export is consistent, so the sync
+# imports and pushes, then ends the run as failed with HELD as the reason.
+CRAWL_HELD=3
+HELD=""
 import_catalogue() {
 	legal-catalog-import -documents "$WORK/documents.jsonl" -relations "$WORK/relations.jsonl" \
 		-snapshot "$(date -u +%F)" -enqueue-no-fulltext -auto-ingest-html -run-id "${RUN_ID:-0}" 2>&1 | tee -a "$STEP_LOG"
@@ -168,9 +205,37 @@ import_catalogue() {
 }
 # --remove also deletes the HTML of documents that turned fully expired;
 # it needs delete rights, which append-only (backup) keys lack.
+#
+# Before a --remove, the HTML it would delete is counted (remote names
+# missing locally); more than VBPL_S3_REMOVE_MAX (default max(200, 2 % of
+# the remote HTML)) and the mirror runs without --remove and the run fails,
+# unless VBPL_S3_REMOVE_FORCE=1 (once, by hand). A listing that fails also
+# drops --remove. (push runs in a background subshell: the reason goes
+# through REMOVE_HELD_FILE.)
+REMOVE_HELD_FILE="$WORK/.sync.remove-held"
 push() {
 	local remove=()
-	[ "${VBPL_S3_REMOVE:-0}" = "1" ] && remove=(--remove)
+	if [ "${VBPL_S3_REMOVE:-0}" = "1" ]; then
+		remove=(--remove)
+		local remote removed limit
+		if ! remote=$(mc ls --recursive "$DEST/html/" 2>&1); then
+			log "cannot list $DEST/html/ ($(head -n 3 <<<"$remote")): mirroring without --remove"
+			remove=()
+			echo "cannot list $DEST/html/" >"$REMOVE_HELD_FILE"
+		else
+			removed=$(comm -23 <(awk 'NF {print $NF}' <<<"$remote" | sed 's#^html/##' | LC_ALL=C sort -u) \
+				<(cd "$WORK/html" 2>/dev/null && find . -type f -name '*.html' | sed 's#^\./##' | LC_ALL=C sort -u) |
+				grep -c '\.html$' || true)
+			local total
+			total=$(awk 'NF {print $NF}' <<<"$remote" | grep -c '\.html$' || true)
+			limit=${VBPL_S3_REMOVE_MAX:-$((total / 50 > 200 ? total / 50 : 200))}
+			log "push: --remove would delete $removed of $total HTML on $DEST (limit $limit)"
+			if [ "$removed" -gt "$limit" ] && [ "${VBPL_S3_REMOVE_FORCE:-0}" != "1" ]; then
+				remove=()
+				echo "--remove would delete $removed of $total HTML on $DEST (limit $limit)" >"$REMOVE_HELD_FILE"
+			fi
+		fi
+	fi
 	mc mirror --quiet --overwrite "${remove[@]}" \
 		--exclude ".sync.*" --exclude "*.tmp" --exclude "*.log" \
 		"$WORK" "$DEST" 2>&1 | tee -a "$STEP_LOG"
@@ -181,7 +246,14 @@ run prepare
 
 step crawl
 rm -f "$CRAWL_SUMMARY"
-run crawl
+rc=0
+run crawl || rc=$?
+if [ "$rc" = "$CRAWL_HELD" ]; then
+	HELD="crawl: $(grep -m1 -o 'vbpl.vn: .*' "$STEP_LOG" || echo 'mass expiry held')"
+	log "crawl held back a mass expiry: going on, the run will end as failed"
+elif [ "$rc" != 0 ]; then
+	exit "$rc"
+fi
 track -run-summary-key crawl -run-summary-file "$CRAWL_SUMMARY"
 
 step import
@@ -190,6 +262,15 @@ run import_catalogue
 
 step push
 log "push to $DEST"
+rm -f "$REMOVE_HELD_FILE"
 run push
+REMOVE_HELD=$(cat "$REMOVE_HELD_FILE" 2>/dev/null || true)
+# held back tonight: the data is safe and pushed, the run fails so a
+# person looks (the reason is the last line of the step log)
+if [ -n "$HELD" ] || [ -n "$REMOVE_HELD" ]; then
+	[ -n "$REMOVE_HELD" ] && echo "vbpl-sync: push without --remove: $REMOVE_HELD (VBPL_S3_REMOVE_FORCE=1 to apply)" | tee -a "$STEP_LOG"
+	[ -n "$HELD" ] && echo "vbpl-sync: $HELD" | tee -a "$STEP_LOG"
+	exit 1
+fi
 touch "$WORK/.sync.ok"
 log "done"

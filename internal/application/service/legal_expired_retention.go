@@ -36,6 +36,7 @@ type LegalExpiredRetention struct {
 	tenants  interfaces.TenantRepository
 	settings interface {
 		GetInt(ctx context.Context, key string, envName string, def int64) int64
+		GetString(ctx context.Context, key string, envName string, def string) string
 	}
 	remove func(ctx context.Context, id string) error
 	now    func() time.Time
@@ -114,9 +115,7 @@ func (w *LegalExpiredRetention) Tick(ctx context.Context) (removed int) {
 	if days < 1 { // never read as "delete at once"
 		days = types.LegalExpiredRetentionDefaultDays
 	}
-	var rows []struct {
-		ID, KnowledgeBaseID, ExternalID, DocumentNumber, NumberKey, ExpiredAt string
-	}
+	var rows []legalRetentionRow
 	if err := w.db.WithContext(ctx).Raw(`SELECT k.id, k.knowledge_base_id, d.id AS external_id,
 		d.document_number, d.number_key, k.metadata->>'`+legalExpiredAtKey+`' AS expired_at`+legalRetentionFrom+
 		`AND d.status LIKE ? AND k.metadata->>'`+legalExpiredAtKey+`' IS NOT NULL`, LegalExpiredStatusPrefix+"%").
@@ -126,6 +125,16 @@ func (w *LegalExpiredRetention) Tick(ctx context.Context) (removed int) {
 		return 0
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ExpiredAt < rows[j].ExpiredAt })
+	held, heldErr := w.heldCohorts(ctx, rows)
+	if heldErr != "" {
+		logger.Warnf(ctx, "[LegalExpiredRetention] %s", heldErr)
+		// the other days go on; the pass reports the hold (tick error)
+		defer func() {
+			if tickErr == "" {
+				tickErr = heldErr
+			}
+		}()
+	}
 	cutoff := now.AddDate(0, 0, -int(days))
 	keys := make([]string, 0, len(rows))
 	for _, r := range rows {
@@ -142,7 +151,7 @@ func (w *LegalExpiredRetention) Tick(ctx context.Context) (removed int) {
 			break
 		}
 		at, err := time.Parse(time.RFC3339, r.ExpiredAt)
-		if err != nil || at.After(cutoff) {
+		if err != nil || at.After(cutoff) || held[types.LegalToday(at)] {
 			continue
 		}
 		if legalHasLiveCopy(r.ExternalID, byKey[r.NumberKey]) {
@@ -165,6 +174,54 @@ func (w *LegalExpiredRetention) Tick(ctx context.Context) (removed int) {
 		logger.Infof(ctx, "[LegalExpiredRetention] %s (%s): full text removed, catalogue row kept", r.ExternalID, r.DocumentNumber)
 	}
 	return removed
+}
+
+type legalRetentionRow struct {
+	ID, KnowledgeBaseID, ExternalID, DocumentNumber, NumberKey, ExpiredAt string
+}
+
+// heldCohorts are the Vietnam calendar days on which more held copies than
+// legal.expired_retention.cohort_max turned fully expired (their clocks
+// started): a wave the portal may have reported by mistake. Their texts are
+// not removed until a SuperAdmin lists the day in
+// legal.expired_retention.confirmed_days; the message names the days (the
+// pass reports it as its error, so the tick-error alert fires).
+func (w *LegalExpiredRetention) heldCohorts(ctx context.Context, rows []legalRetentionRow) (map[string]bool, string) {
+	limit := w.settings.GetInt(ctx, types.LegalExpiredRetentionCohortMaxSettingKey, "", types.LegalExpiredRetentionDefaultCohortMax)
+	if limit < 1 {
+		limit = types.LegalExpiredRetentionDefaultCohortMax
+	}
+	confirmed := map[string]bool{}
+	for _, d := range strings.Split(w.settings.GetString(ctx, types.LegalExpiredRetentionConfirmedDaysSettingKey, "", ""), ",") {
+		if d = strings.TrimSpace(d); d != "" {
+			confirmed[d] = true
+		}
+	}
+	perDay := map[string]int{}
+	for _, r := range rows {
+		if at, err := time.Parse(time.RFC3339, r.ExpiredAt); err == nil {
+			perDay[types.LegalToday(at)]++
+		}
+	}
+	held := map[string]bool{}
+	var days []string
+	for day, n := range perDay {
+		if int64(n) > limit && !confirmed[day] {
+			held[day] = true
+			days = append(days, day)
+		}
+	}
+	if len(days) == 0 {
+		return held, ""
+	}
+	sort.Strings(days)
+	parts := make([]string, 0, len(days))
+	for _, day := range days {
+		t, _ := time.Parse("2006-01-02", day)
+		parts = append(parts, fmt.Sprintf("%d văn bản cùng chuyển hết hiệu lực ngày %s", perDay[day], t.Format("02/01/2006")))
+	}
+	return held, strings.Join(parts, "; ") + ": chờ SuperAdmin xác nhận (thêm ngày vào " +
+		types.LegalExpiredRetentionConfirmedDaysSettingKey + ")"
 }
 
 // record writes a pass that removed a text, started or cleared a clock, or

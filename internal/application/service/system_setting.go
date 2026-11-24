@@ -526,6 +526,16 @@ var registry = map[string]settingSpec{
 		Type: "int", EnvName: "", Default: int64(types.LegalExpiredRetentionDefaultDays), Category: "legal",
 		Description: "Số ngày văn bản hết hiệu lực toàn bộ còn giữ toàn văn trong kho công khai; hết hạn thì xóa nội dung, giữ số hiệu và metadata trong danh mục.",
 	},
+	types.LegalExpiredRetentionCohortMaxSettingKey: {
+		Type: "int", EnvName: "", Default: int64(types.LegalExpiredRetentionDefaultCohortMax), Category: "legal",
+		Description: "Quá số văn bản này cùng chuyển hết hiệu lực toàn bộ trong một ngày (giờ Việt Nam) thì coi là bất thường: " +
+			"toàn văn của ngày đó chưa bị xóa và SuperAdmin nhận cảnh báo cho đến khi xác nhận ngày đó.",
+	},
+	types.LegalExpiredRetentionConfirmedDaysSettingKey: {
+		Type: "string", EnvName: "", Default: "", Category: "legal",
+		Description: "Các ngày (yyyy-mm-dd, cách nhau bằng dấu phẩy) SuperAdmin đã xác nhận là có thật nhiều văn bản cùng hết hiệu lực, " +
+			"ví dụ 2026-11-20: toàn văn của ngày đó được xóa như thường sau thời hạn giữ. Ngày được nêu trong cảnh báo.",
+	},
 	types.LegalSyncAlertEnabledSettingKey: {
 		Type: "bool", EnvName: "", Default: true, Category: "legal",
 		Description: "Gửi thông báo trong ứng dụng cho SuperAdmin khi đồng bộ vbpl.vn, đồng bộ văn bản của Đảng hoặc worker tự nạp/xóa toàn văn " +

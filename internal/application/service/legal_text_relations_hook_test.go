@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/types"
@@ -126,4 +127,32 @@ func TestLegalReviewDecideReadsTextRelations(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, stats.WithoutText)
 	require.Equal(t, based, f.rels("dcs-c"))
+}
+
+// A rebuild writes the difference: an edge read again keeps its created_at,
+// one no longer read goes, a new one comes.
+func TestBuildLegalTextRelationsStoresTheDifference(t *testing.T) {
+	f := newLegalTextFixture(t)
+	ctx := context.Background()
+	f.doc("dcs-b", "dangcongsan", "24-QD/TW", "2021-07-30")
+	f.doc("dcs-e", "dangcongsan", "25-QD/TW", "2021-08-01")
+	f.doc("dcs-a", "dangcongsan", "117-QD/TW", "2023-08-18")
+	f.copyOf("k-a", "dcs-a", types.LegalReviewApproved, "- Căn cứ Quy định số 24-QĐ/TW ngày 30/7/2021;")
+	_, err := BuildLegalTextRelations(ctx, f.db, "", []string{"dcs-a"})
+	require.NoError(t, err)
+	old := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	require.NoError(t, f.db.Model(&types.LegalDocumentRelation{}).Where("from_id = ?", "dcs-a").Update("created_at", old).Error)
+
+	_, err = BuildLegalTextRelations(ctx, f.db, "", []string{"dcs-a"})
+	require.NoError(t, err)
+	var kept types.LegalDocumentRelation
+	require.NoError(t, f.db.Where("from_id = ? AND to_id = ?", "dcs-a", "dcs-b").First(&kept).Error)
+	require.True(t, kept.CreatedAt.Equal(old), "an unchanged edge is not rewritten")
+
+	// the text now cites 25 instead of 24
+	require.NoError(t, f.db.Exec(`UPDATE chunks SET content = ? WHERE knowledge_id = ?`,
+		"Dẫn chiếu Quy định số 25-QĐ/TW.", "k-a").Error)
+	_, err = BuildLegalTextRelations(ctx, f.db, "", []string{"dcs-a"})
+	require.NoError(t, err)
+	require.Equal(t, map[string]types.LegalRelation{"dcs-e": types.LegalRelationReferences}, f.rels("dcs-a"))
 }
