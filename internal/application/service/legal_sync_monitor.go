@@ -43,9 +43,15 @@ var (
 	// legalSyncImageCheck: the host's image check (cron daily, a run takes
 	// seconds): a day and a margin; stuck after an hour.
 	legalSyncImageCheck = legalSyncSchedule{staleAfter: 26 * time.Hour, longRun: time.Hour}
+	// legalSyncInvariants: the backend's daily data check (LegalInvariants,
+	// once a Vietnam day, seconds long), judged through its runs like a
+	// container: a day and a margin; stuck after an hour.
+	legalSyncInvariants = legalSyncSchedule{staleAfter: 26 * time.Hour, longRun: time.Hour}
 )
 
-// legalSyncContainers are the scheduled syncs, in monitor order.
+// legalSyncContainers are the scheduled syncs, in monitor order: the
+// containers, and the daily data check (a backend worker seen through its
+// runs, kind "container" on the page and in the alert).
 var legalSyncContainers = []struct {
 	worker   string
 	schedule legalSyncSchedule
@@ -53,6 +59,7 @@ var legalSyncContainers = []struct {
 	{types.LegalSyncWorkerVBPL, legalSyncVBPL},
 	{types.LegalSyncWorkerDCS, legalSyncDCS},
 	{types.LegalSyncWorkerImageCheck, legalSyncImageCheck},
+	{types.LegalSyncWorkerInvariants, legalSyncInvariants},
 }
 
 // legalSyncScheduleOf is the thresholds of a scheduled sync (ok false for
@@ -266,6 +273,9 @@ type LegalSyncMonitor struct {
 	now      func() time.Time
 	// alerts keeps the SuperAdmin digest (WithAlerts); nil: page only
 	alerts *legalSyncAlerts
+	// invariants is the daily data check (Invariants), built once
+	invariantsOnce sync.Once
+	invariants     *LegalInvariants
 }
 
 // NewLegalSyncMonitor creates the monitor.

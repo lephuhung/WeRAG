@@ -22,7 +22,7 @@ func newLegalRequestRepo(t *testing.T) (*legalRequestRepository, *gorm.DB) {
 	if err := db.AutoMigrate(&types.LegalDocumentRequest{}, &types.LegalRequestRequester{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	if err := db.Exec(`CREATE TABLE knowledges (id TEXT, knowledge_base_id TEXT, title TEXT, file_name TEXT, deleted_at DATETIME, metadata TEXT)`).Error; err != nil {
+	if err := db.Exec(`CREATE TABLE knowledges (id TEXT, knowledge_base_id TEXT, title TEXT, file_name TEXT, deleted_at DATETIME, metadata TEXT, parse_status TEXT DEFAULT 'completed')`).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`CREATE TABLE knowledge_bases (id TEXT, name TEXT, owner_tenant_id INTEGER, deleted_at DATETIME)`).Error; err != nil {
@@ -148,9 +148,7 @@ func TestLegalRequestUpdateDetailMergesAndParseStatus(t *testing.T) {
 		t.Fatalf("missing: %+v %v", missing, err)
 	}
 
-	if err := db.Exec(`ALTER TABLE knowledges ADD COLUMN parse_status TEXT`).Error; err != nil {
-		t.Fatal(err)
-	}
+	// knowledges.parse_status comes with newLegalRequestRepo
 	db.Exec(`INSERT INTO knowledges (id, parse_status) VALUES ('k1', 'processing'), ('k2', 'completed')`)
 	db.Exec(`INSERT INTO knowledges (id, parse_status, deleted_at) VALUES ('k3', 'failed', CURRENT_TIMESTAMP)`)
 	st, err := repo.KnowledgeParseStatuses(ctx, []string{"k1", "k2", "k3"})

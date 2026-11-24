@@ -80,7 +80,7 @@ func TestLegalSyncHandlerStatusAndRuns(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &st))
 	require.True(t, st.Success)
-	require.Len(t, st.Data.Workers, 5)
+	require.Len(t, st.Data.Workers, 6)
 	require.Equal(t, types.LegalSyncWorkerVBPL, st.Data.Workers[0].Worker)
 	require.Equal(t, service.LegalSyncHealthOK, st.Data.Workers[0].Health)
 	require.Equal(t, "30 2 * * *", st.Data.Workers[0].Schedule)
@@ -106,4 +106,56 @@ func TestLegalSyncHandlerStatusAndRuns(t *testing.T) {
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/runs?worker=bogus", nil))
 	require.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+// POST /system/legal-sync/invariants/run checks the legal data now and
+// returns the run: the first one is the baseline (ok), a lost class fails
+// the next; every manual run records a row.
+func TestLegalSyncHandlerRunInvariants(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&types.LegalSyncRun{}, &types.LegalDocument{}, &types.LegalDocumentRelation{},
+		&types.LegalDocumentLink{}, &types.LegalProvisionLink{}, &types.LegalProvisionLinkCandidate{},
+		&types.LegalDocumentRequest{}))
+	for _, stmt := range []string{
+		`CREATE TABLE knowledge_bases (id TEXT PRIMARY KEY, name TEXT, owner_tenant_id INTEGER, deleted_at DATETIME)`,
+		`CREATE TABLE knowledges (id TEXT PRIMARY KEY, knowledge_base_id TEXT, title TEXT, parse_status TEXT,
+			updated_at DATETIME, deleted_at DATETIME)`,
+		`CREATE TABLE chunks (id TEXT PRIMARY KEY, knowledge_id TEXT, deleted_at DATETIME)`,
+		`INSERT INTO legal_documents (id, source) VALUES ('d1', 'dangcongsan'), ('d2', 'dangcongsan')`,
+		`INSERT INTO legal_document_relations (from_id, to_id, relation, source_label) VALUES ('d1', 'd2', 'references', 'toàn văn')`,
+	} {
+		require.NoError(t, db.Exec(stmt).Error)
+	}
+	h := NewLegalSyncHandler(service.NewLegalSyncMonitor(db, repository.NewLegalSyncRunRepository(db), nil))
+	r := gin.New()
+	r.Use(middleware.ErrorHandler())
+	r.POST("/invariants/run", h.RunLegalInvariants)
+	run := func() types.LegalSyncRun {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/invariants/run", nil))
+		require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+		var body struct {
+			Success bool               `json:"success"`
+			Data    types.LegalSyncRun `json:"data"`
+		}
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+		require.True(t, body.Success)
+		return body.Data
+	}
+	first := run()
+	require.Equal(t, types.LegalSyncWorkerInvariants, first.Worker)
+	require.Equal(t, types.LegalSyncOK, first.Status, first.Error)
+	require.NoError(t, db.Exec(`DELETE FROM legal_document_relations`).Error)
+	second := run()
+	require.Equal(t, types.LegalSyncFailed, second.Status)
+	require.Equal(t, "Quan hệ đọc từ toàn văn (văn bản Đảng): 1 → 0 (mất 1)", second.Error)
+
+	w := httptest.NewRecorder()
+	r2 := gin.New()
+	r2.GET("/runs", h.ListLegalSyncRuns)
+	r2.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/runs?worker=invariants", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Contains(t, w.Body.String(), `"worker":"invariants"`)
 }

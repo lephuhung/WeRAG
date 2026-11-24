@@ -148,6 +148,42 @@ const LegalRequestSourceNoFullText = "vbpl_no_text"
 // document keeps its full text in a public KB; its catalogue row stays.
 const LegalExpiredRetentionDaysSettingKey = "legal.expired_retention_days"
 
+// LegalCopyNotHeldStatuses are the parse states of a knowledge that does
+// not hold its document: the parse failed or was cancelled, or the copy is
+// being deleted. Such a copy neither blocks a request or an ingest of the
+// document nor is read for its text. A copy in progress (pending,
+// processing without chunks) still counts as held, so nothing ingests the
+// document twice, but is not readable (LegalCopyReadable).
+var LegalCopyNotHeldStatuses = []string{ParseStatusFailed, ParseStatusCancelled, ParseStatusDeleting}
+
+// LegalCopyReadable reports whether a held copy's text can be read: its
+// chunks are written (enable_status "enabled", set when they are indexed,
+// while the summaries may still run) or its parse is done.
+func LegalCopyReadable(parseStatus, enableStatus string) bool {
+	switch parseStatus {
+	case ParseStatusCompleted, ParseStatusFinalizing:
+		return true
+	case ParseStatusFailed, ParseStatusCancelled, ParseStatusDeleting:
+		return false
+	}
+	return enableStatus == "enabled"
+}
+
+// LegalReplacesKnowledgeKey (knowledges.metadata) marks a new public copy of
+// a legal document that replaces older copies (comma list of knowledge ids):
+// they stay readable until the new copy's chunks are written, then the swap
+// deletes them and clears the key (service.LegalFeedService.FinishReplacement).
+const LegalReplacesKnowledgeKey = "replaces_knowledge_id"
+
+// LegalRequestDetailParseFailures (detail key) counts the copies of the
+// request's document whose parse failed and were cleaned up; at
+// LegalRequestParseFailureMax the worker gives up (auto_ingest_skip).
+const LegalRequestDetailParseFailures = "parse_failures"
+
+// LegalRequestParseFailureMax is how many failed parses a request is retried
+// for.
+const LegalRequestParseFailureMax = 3
+
 // LegalRequestDetailPreviousDecision (detail key) is the decision a request
 // carried before the catalogue import handed it back to the auto-ingest
 // worker: {status, by, at, note, knowledge_id, reopened_at}.

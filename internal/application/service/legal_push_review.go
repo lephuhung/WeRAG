@@ -379,7 +379,10 @@ func (s *LegalPushService) heldProvisionsOf(ctx context.Context, docID string, c
 		return nil, err
 	}
 	var provs *legalHeldProvisions
-	if held != nil {
+	switch {
+	case held != nil && !held.Readable():
+		provs = &legalHeldProvisions{parsing: true} // no text to match yet
+	case held != nil:
 		if provs, err = s.heldProvisions(ctx, held.KnowledgeID); err != nil {
 			return nil, err
 		}

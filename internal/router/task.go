@@ -263,21 +263,30 @@ func RunAsynqServer(params AsynqTaskParams) *asynq.ServeMux {
 	mux.HandleFunc(types.TypeChunkExtract, params.ChunkExtractor.Handle)
 	mux.HandleFunc(types.TypeDataTableSummary, params.DataTableSummary.Handle)
 
+	// The parse and enrichment tasks load a knowledge row and save it back
+	// minutes later: they must not write back metadata others changed
+	// meanwhile (types.WithKnowledgeMetadataReadOnly).
+	metaRO := func(h func(context.Context, *asynq.Task) error) func(context.Context, *asynq.Task) error {
+		return func(ctx context.Context, t *asynq.Task) error {
+			return h(types.WithKnowledgeMetadataReadOnly(ctx), t)
+		}
+	}
+
 	// Register document processing handler
-	mux.HandleFunc(types.TypeDocumentProcess, params.KnowledgeService.ProcessDocument)
+	mux.HandleFunc(types.TypeDocumentProcess, metaRO(params.KnowledgeService.ProcessDocument))
 	mux.HandleFunc(types.TypeTemporaryDocumentProcess, params.TemporaryDocument.Process)
 
 	// Register manual knowledge processing handler (cleanup + re-indexing)
-	mux.HandleFunc(types.TypeManualProcess, params.KnowledgeService.ProcessManualUpdate)
+	mux.HandleFunc(types.TypeManualProcess, metaRO(params.KnowledgeService.ProcessManualUpdate))
 
 	// Register FAQ import handler (includes dry run mode)
 	mux.HandleFunc(types.TypeFAQImport, params.KnowledgeService.ProcessFAQImport)
 
 	// Register question generation handler
-	mux.HandleFunc(types.TypeQuestionGeneration, params.KnowledgeService.ProcessQuestionGeneration)
+	mux.HandleFunc(types.TypeQuestionGeneration, metaRO(params.KnowledgeService.ProcessQuestionGeneration))
 
 	// Register summary generation handler
-	mux.HandleFunc(types.TypeSummaryGeneration, params.KnowledgeService.ProcessSummaryGeneration)
+	mux.HandleFunc(types.TypeSummaryGeneration, metaRO(params.KnowledgeService.ProcessSummaryGeneration))
 
 	// Register KB clone handler
 	mux.HandleFunc(types.TypeKBClone, params.KnowledgeService.ProcessKBClone)
@@ -298,10 +307,10 @@ func RunAsynqServer(params AsynqTaskParams) *asynq.ServeMux {
 	mux.HandleFunc(types.TypeKBDelete, params.KnowledgeBaseService.ProcessKBDelete)
 
 	// Register image multimodal handler
-	mux.HandleFunc(types.TypeImageMultimodal, params.ImageMultimodal.Handle)
+	mux.HandleFunc(types.TypeImageMultimodal, metaRO(params.ImageMultimodal.Handle))
 
 	// Register knowledge post process handler
-	mux.HandleFunc(types.TypeKnowledgePostProcess, params.KnowledgePostProcess.Handle)
+	mux.HandleFunc(types.TypeKnowledgePostProcess, metaRO(params.KnowledgePostProcess.Handle))
 	mux.HandleFunc(types.TypeKnowledgeAutoTag, params.KnowledgeAutoTag.Handle)
 	mux.HandleFunc(types.TypeKnowledgeBaseProfile, params.KnowledgeBaseProfile.Handle)
 

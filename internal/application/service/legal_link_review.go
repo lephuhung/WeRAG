@@ -265,7 +265,7 @@ func (s *LegalPushService) ProvisionText(ctx context.Context, docID, path string
 	if err != nil {
 		return nil, err
 	}
-	if held != nil {
+	if held.Readable() { // a copy still parsing has no text to show yet: "not held"
 		out.Held, out.KnowledgeID, out.KnowledgeBaseID = true, held.KnowledgeID, held.KnowledgeBaseID
 	}
 	switch {
@@ -278,7 +278,7 @@ func (s *LegalPushService) ProvisionText(ctx context.Context, docID, path string
 	case !refOK:
 		out.Reason = LegalTextNotFound
 		return out, nil
-	case held == nil:
+	case !held.Readable():
 		out.Reason = LegalTextNotHeld
 		return out, nil
 	}
@@ -370,7 +370,7 @@ func (s *LegalPushService) HeldProvisionList(ctx context.Context, docID string) 
 	}
 	out := &LegalHeldProvisionList{DocID: docID, Provisions: []LegalHeldProvision{}}
 	held, err := s.heldDoc(ctx, docID)
-	if err != nil || held == nil {
+	if err != nil || !held.Readable() {
 		return out, err
 	}
 	out.Held, out.KnowledgeID = true, held.KnowledgeID
@@ -621,7 +621,7 @@ func (r *legalRechecker) unmatched(ctx context.Context, scope legalRecheckScope)
 		if legalMatchRank[nc.MatchStatus] >= legalMatchRank[c.MatchStatus] || nc.MatchStatus == types.LegalLinkUnresolved {
 			continue // never lowered, nothing gained
 		}
-		nc.MatchReason = strings.TrimPrefix(nc.MatchReason+"; kiểm lại: đã thấy điều khoản trong bản đang lưu", "; ")
+		nc.MatchReason = strings.TrimPrefix(legalDropWaiting(nc.MatchReason)+"; kiểm lại: đã thấy điều khoản trong bản đang lưu", "; ")
 		applied, err := r.apply(ctx, &nc, "match_status = '"+c.MatchStatus+"'")
 		if err != nil {
 			return err
@@ -714,12 +714,70 @@ func legalMarkKeyWithAmender(detail types.JSON, amenderID string) (types.JSON, b
 	return types.JSON(b), true
 }
 
+// legalDropWaiting drops the "waiting for the text" parts of a match reason
+// (legalWaitingForText) once the text was read.
+func legalDropWaiting(reason string) string {
+	parts := strings.Split(reason, "; ")
+	kept := parts[:0]
+	for _, p := range parts {
+		if !strings.Contains(p, legalWaitingForText) {
+			kept = append(kept, p)
+		}
+	}
+	return strings.Join(kept, "; ")
+}
+
+// LegalTextParsed rechecks, once a public-KB copy's chunks are written, the
+// pending candidates acting on its document or by it whose provision was
+// not found (a push that ran while the copy was parsing marks them waiting:
+// legalWaitingForText). Only pass 2 of a recheck (upgrade only); one lookup
+// for a knowledge that is no catalogue document's public copy, one count
+// for a document without such candidates. Best effort: logged.
+func (s *LegalPushService) LegalTextParsed(ctx context.Context, knowledgeID string) {
+	if s == nil || s.db == nil || knowledgeID == "" {
+		return
+	}
+	var ids []string
+	ext := legalJSONText(s.db, "k.metadata", "external_id")
+	if err := s.db.WithContext(ctx).Raw(`SELECT `+ext+` FROM knowledges k
+		JOIN knowledge_bases kb ON kb.id = k.knowledge_base_id AND kb.owner_tenant_id = 0 AND kb.deleted_at IS NULL
+		WHERE k.id = ? AND k.deleted_at IS NULL`, knowledgeID).Scan(&ids).Error; err != nil {
+		logger.Warnf(ctx, "[LegalPush] links after parsing %s: %v", knowledgeID, err)
+		return
+	}
+	if len(ids) == 0 || strings.TrimSpace(ids[0]) == "" {
+		return
+	}
+	docID := strings.TrimSpace(ids[0])
+	var n int64
+	if err := s.db.WithContext(ctx).Model(&types.LegalProvisionLinkCandidate{}).
+		Where("review_status = ? AND match_status IN ? AND (target_doc_id = ? OR amender_doc_id = ?)", types.LegalLinkReviewPending,
+			[]string{types.LegalLinkDocOnly, types.LegalLinkTargetMissing}, docID, docID).Count(&n).Error; err != nil || n == 0 {
+		if err != nil {
+			logger.Warnf(ctx, "[LegalPush] links after parsing %s: %v", knowledgeID, err)
+		}
+		return
+	}
+	res := &LegalLinkRecheckResult{}
+	r := &legalRechecker{s: s, res: res, cache: legalProvCache{},
+		auto: s.settings != nil && s.settings.GetBool(ctx, LegalFeedAutoApproveSetting, "", legalFeedAutoApproveDefault)}
+	if err := r.unmatched(ctx, legalRecheckScope{DocID: docID}); err != nil {
+		logger.Warnf(ctx, "[LegalPush] links of %s after parsing: %v", docID, err)
+		return
+	}
+	if r.changed {
+		s.Notices.LegalLinksChanged(ctx)
+	}
+	logger.Infof(ctx, "[LegalPush] %s parsed: %d pending links checked, %d rematched (matched %d, auto-approved %d)",
+		docID, res.RematchChecked, res.Rematched, res.Matched, res.AutoApproved)
+}
+
 // recheckAfterPush rechecks the pending candidates the pushed document a
 // may complete: those naming it by number before the catalogue knew it,
 // and those acting on it or by it whose provisions were not found. Called
 // once a push has stored a (a full text just ingested is usually still
-// parsing: the page's recheck button covers that); a failure is only
-// logged (the push itself succeeded).
+// parsing: LegalTextParsed checks again once it is parsed); a failure is
+// only logged (the push itself succeeded).
 func (s *LegalPushService) recheckAfterPush(ctx context.Context, a *types.LegalDocument) {
 	nk := a.NumberKey
 	if nk == "" {
@@ -860,7 +918,7 @@ func (s *LegalPushService) CandidateMentions(ctx context.Context, candidateID in
 	if err != nil {
 		return nil, err
 	}
-	if held == nil {
+	if !held.Readable() {
 		out.Reason = LegalTextNotHeld
 		return out, nil
 	}

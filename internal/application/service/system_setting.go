@@ -544,8 +544,23 @@ var registry = map[string]settingSpec{
 	types.LegalSyncAlertDisabledWorkersSettingKey: {
 		Type: "string", EnvName: "", Default: "", Category: "legal",
 		Description: "Tắt thông báo sự cố cho riêng một số nguồn thu thập dữ liệu pháp lý, cách nhau bằng dấu phẩy: " +
-			"vbpl_sync, dcs_sync, auto_ingest, expired_retention, image_check (ví dụ dcs_sync khi cố ý dừng container dcs-sync). " +
+			"vbpl_sync, dcs_sync, auto_ingest, expired_retention, image_check, invariants (ví dụ dcs_sync khi cố ý dừng container dcs-sync). " +
 			"Trang Thu thập dữ liệu vẫn hiện tình trạng. Để trống = cảnh báo mọi nguồn.",
+	},
+	types.LegalInvariantsRunAtSettingKey: {
+		Type: "string", EnvName: "", Default: types.LegalInvariantsDefaultRunAt, Category: "legal",
+		Description: "Giờ (HH:MM, giờ Việt Nam) chạy kiểm tra dữ liệu pháp lý hằng ngày, sau lần đồng bộ vbpl.vn ban đêm (02:30). " +
+			"Mỗi ngày chạy một lần; giá trị sai thì dùng 04:30.",
+	},
+	types.LegalInvariantsDropPercentSettingKey: {
+		Type: "int", EnvName: "", Default: int64(5), Category: "legal",
+		Description: "Kiểm tra dữ liệu báo lỗi khi một số liệu được canh (quan hệ, danh mục, văn bản đọc được, liên kết đã duyệt, " +
+			"liên kết điều khoản) giảm quá số phần trăm này so với lần kiểm tra trước (và quá số dòng tối thiểu).",
+	},
+	types.LegalInvariantsDropMinRowsSettingKey: {
+		Type: "int", EnvName: "", Default: int64(20), Category: "legal",
+		Description: "Kiểm tra dữ liệu chỉ báo một lần giảm khi số dòng mất nhiều hơn mức này (cùng với ngưỡng phần trăm); " +
+			"một số liệu về 0 luôn bị báo.",
 	},
 	types.BillingOrderTTLHoursSettingKey: {
 		Type: "int", EnvName: "", Default: int64(72), Category: "billing",
@@ -1905,6 +1920,19 @@ func validateRegistryEntry(key string, rawValue any) error {
 		if _, unknown := types.ParseLegalSyncWorkerList(str); len(unknown) > 0 {
 			return fmt.Errorf("unknown worker(s) %s; known: %s", strings.Join(unknown, ", "),
 				strings.Join(types.LegalSyncWorkers, ", "))
+		}
+	case types.LegalInvariantsRunAtSettingKey:
+		str, _ := rawValue.(string)
+		if _, _, ok := types.ParseLegalInvariantsRunAt(str); !ok {
+			return errors.New("a Vietnam time of day HH:MM is required, e.g. 04:30")
+		}
+	case types.LegalInvariantsDropPercentSettingKey:
+		if n, err := coerceToPositiveInt64(rawValue); err != nil || n < 1 || n > 100 {
+			return errors.New("the drop threshold is a percentage from 1 to 100")
+		}
+	case types.LegalInvariantsDropMinRowsSettingKey:
+		if n, err := coerceToPositiveInt64(rawValue); err != nil || n < 0 {
+			return errors.New("the minimum drop is a number of rows, 0 or more")
 		}
 	case types.DocumentTemplateFontSizesSettingKey:
 		raw, err := json.Marshal(rawValue)

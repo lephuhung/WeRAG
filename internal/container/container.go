@@ -765,6 +765,16 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// SuperAdmin digest when the legal data workers (nightly vbpl.vn sync,
 	// auto-ingest, expired retention) fail, are overdue or stop
 	must(container.Invoke(startLegalSyncMonitor))
+	// once a Vietnam day (legal.invariants.run_at), the legal data check:
+	// counts compared with the previous check; a violation fails its run,
+	// so the alert above fires
+	must(container.Invoke(func(m *service.LegalSyncMonitor, rdb *redis.Client, cleaner interfaces.ResourceCleaner) {
+		stop := service.StartLegalInvariants(m.Invariants().WithLock(rdb))
+		cleaner.RegisterWithName("LegalInvariants", func() error {
+			stop()
+			return nil
+		})
+	}))
 	// users' verdicts on the format check reports
 	must(container.Invoke(func(precheck *service.DocumentFormatPrecheck, feedback interfaces.DocumentFormatFeedbackRepository) {
 		precheck.SetFormatFeedback(feedback)
@@ -772,6 +782,34 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// the legal basis check of an open document reads the legal catalogue
 	must(container.Invoke(func(precheck *service.DocumentFormatPrecheck, catalog interfaces.LegalCatalogRepository, db *gorm.DB) {
 		precheck.SetLegalBasis(catalog, db)
+	}))
+	// a replacement's new copy, once parsed, swaps the old one out (the first
+	// legal follow-up of a parse); the swap and the failed-copy cleanup run
+	// without a caller, on the workers' write grant
+	must(container.Invoke(func(knowledge interfaces.KnowledgeService, feed *service.LegalFeedService,
+		kbs interfaces.KnowledgeBaseService, tenants interfaces.TenantRepository,
+	) error {
+		feed.KBs, feed.Tenants = kbs, tenants
+		k, ok := knowledge.(interface {
+			SetLegalReplaceHook(func(context.Context, string))
+		})
+		if !ok {
+			return fmt.Errorf("%T cannot swap legal replacements", knowledge)
+		}
+		k.SetLegalReplaceHook(feed.LegalReplaceAfterParse)
+		return nil
+	}))
+	// a parsed public copy rechecks the link candidates waiting for its
+	// text (after the text relations: knowledgeService.legalAfterParse)
+	must(container.Invoke(func(knowledge interfaces.KnowledgeService, push *service.LegalPushService) error {
+		k, ok := knowledge.(interface {
+			AddLegalParsedHook(func(context.Context, string))
+		})
+		if !ok {
+			return fmt.Errorf("%T cannot run legal follow-ups of a parse", knowledge)
+		}
+		k.AddLegalParsedHook(push.LegalTextParsed)
+		return nil
 	}))
 	// a parsed approved copy of a legal document, and an approval, re-read
 	// the relations the document's text states ("toàn văn")

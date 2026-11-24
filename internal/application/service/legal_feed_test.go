@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
@@ -90,7 +91,8 @@ func TestLegalFeedIngestFromPortal(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, ddl := range []string{
-		`CREATE TABLE knowledges (id TEXT, knowledge_base_id TEXT, file_hash TEXT, title TEXT, file_name TEXT, metadata TEXT, deleted_at DATETIME)`,
+		`CREATE TABLE knowledges (id TEXT, knowledge_base_id TEXT, file_hash TEXT, title TEXT, file_name TEXT, metadata TEXT, deleted_at DATETIME,
+			parse_status TEXT DEFAULT 'completed', enable_status TEXT DEFAULT 'enabled', error_message TEXT, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE knowledge_bases (id TEXT, owner_tenant_id INTEGER, deleted_at DATETIME)`,
 		`CREATE TABLE legal_feed_log (id INTEGER PRIMARY KEY, action TEXT, vbpl_id TEXT, knowledge_id TEXT, knowledge_base_id TEXT,
 			document_number TEXT, reason TEXT, actor_endpoint_id TEXT, actor_tenant_id INTEGER, detail TEXT, created_at DATETIME)`,
@@ -261,30 +263,64 @@ func TestLegalFeedReplaceKeepsDisplayTitleAndRecordsEdits(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	for _, ddl := range []string{
-		`CREATE TABLE knowledges (id TEXT, knowledge_base_id TEXT, file_hash TEXT, title TEXT, file_name TEXT, metadata TEXT, deleted_at DATETIME)`,
+		`CREATE TABLE knowledges (id TEXT, knowledge_base_id TEXT, file_hash TEXT, title TEXT, file_name TEXT, metadata TEXT, deleted_at DATETIME,
+			parse_status TEXT DEFAULT 'completed', enable_status TEXT DEFAULT 'enabled', error_message TEXT, created_at DATETIME, updated_at DATETIME)`,
 		`CREATE TABLE knowledge_bases (id TEXT, owner_tenant_id INTEGER, deleted_at DATETIME)`,
 		`CREATE TABLE chunk_revisions (knowledge_id TEXT, chunk_id TEXT)`,
 		`CREATE TABLE legal_feed_log (id INTEGER PRIMARY KEY, action TEXT, vbpl_id TEXT, knowledge_id TEXT, knowledge_base_id TEXT,
 			document_number TEXT, reason TEXT, actor_endpoint_id TEXT, actor_tenant_id INTEGER, detail TEXT, created_at DATETIME)`,
 		`INSERT INTO knowledge_bases VALUES ('kb', 0, NULL)`,
-		`INSERT INTO knowledges VALUES ('old', 'kb', 'stale', 'Tiêu đề đã sửa', 'a.html', '{"external_id":"9"}', NULL),
+		`INSERT INTO knowledges (id, knowledge_base_id, file_hash, title, file_name, metadata, deleted_at) VALUES ('old', 'kb', 'stale', 'Tiêu đề đã sửa', 'a.html', '{"external_id":"9"}', NULL),
 			('k-new', 'kb', 'x', 'b.html', 'b.html', '{}', NULL)`,
 		`INSERT INTO chunk_revisions VALUES ('old', 'c1'), ('old', 'c1'), ('old', 'c2')`,
 	} {
 		require.NoError(t, db.Exec(ddl).Error)
 	}
-	require.NoError(t, db.AutoMigrate(&types.LegalDocument{}))
+	require.NoError(t, db.AutoMigrate(&types.LegalDocument{}, &types.LegalDocumentRequest{}))
 	know := &feedKnowledgeDeleting{db: db}
 	feed := NewLegalFeedService(db, know, &feedRequests{})
-	res, err := feed.IngestHTML(context.Background(), LegalIngestDocument{VBPLID: "9", DocumentNumber: "9/2026/ND-CP", FileName: "b.html",
+	ctx := context.Background()
+	res, err := feed.IngestHTML(ctx, LegalIngestDocument{VBPLID: "9", DocumentNumber: "9/2026/ND-CP", FileName: "b.html",
 		Metadata: map[string]string{"external_id": "9"}}, []byte("<p>văn bản mới</p>"), &types.KnowledgeBase{ID: "kb"}, LegalFeedActor{UserID: "u"}, "r")
 	require.NoError(t, err)
-	require.Equal(t, "replaced", res.Result)
-	require.Equal(t, []string{"old"}, know.deleted)
+	require.Equal(t, "replaced", res.Result, "the response keeps its shape")
+	require.Equal(t, "old", res.ReplacedKnowledgeID)
+	require.Empty(t, know.deleted, "the old copy stays until the new one is parsed")
+	require.Equal(t, "old", know.lastMeta[types.LegalReplacesKnowledgeKey], "the new copy names the copy it replaces")
 
 	var title, detail string
 	require.NoError(t, db.Raw(`SELECT title FROM knowledges WHERE id = 'k-new'`).Row().Scan(&title))
 	require.Equal(t, "Tiêu đề đã sửa", title)
-	require.NoError(t, db.Raw(`SELECT detail FROM legal_feed_log WHERE action = 'ingest_replaced'`).Row().Scan(&detail))
+	require.NoError(t, db.Raw(`SELECT detail FROM legal_feed_log WHERE action = 'ingest_replace_started'`).Row().Scan(&detail))
 	require.Contains(t, detail, `"edited_chunks_replaced":2`)
+
+	// the created copy as CreateKnowledgeFromFile stores it, still parsing
+	require.NoError(t, db.Exec(`UPDATE knowledges SET metadata = '{"external_id":"9","replaces_knowledge_id":"old"}',
+		parse_status = 'processing', enable_status = 'disabled' WHERE id = 'k-new'`).Error)
+	require.NoError(t, db.Create(&types.LegalDocumentRequest{ID: "r1", NumberKey: "9", LegalDocumentID: "9", Status: types.LegalRequestAdded,
+		KnowledgeID: "old", FirstRequestedAt: time.Now(), LastRequestedAt: time.Now()}).Error)
+	done, err := feed.FinishReplacement(ctx, "k-new")
+	require.NoError(t, err)
+	require.False(t, done, "no swap before the new copy's chunks are written")
+	require.Empty(t, know.deleted)
+
+	require.NoError(t, db.Exec(`UPDATE knowledges SET enable_status = 'enabled' WHERE id = 'k-new'`).Error)
+	done, err = feed.FinishReplacement(ctx, "k-new")
+	require.NoError(t, err)
+	require.True(t, done)
+	require.Equal(t, []string{"old"}, know.deleted)
+	var meta, reqKnowledge string
+	require.NoError(t, db.Raw(`SELECT metadata FROM knowledges WHERE id = 'k-new'`).Row().Scan(&meta))
+	require.NotContains(t, meta, types.LegalReplacesKnowledgeKey, "the marker is cleared")
+	require.NoError(t, db.Raw(`SELECT knowledge_id FROM legal_document_requests WHERE id = 'r1'`).Row().Scan(&reqKnowledge))
+	require.Equal(t, "k-new", reqKnowledge, "the request points at the new copy")
+	require.NoError(t, db.Raw(`SELECT detail FROM legal_feed_log WHERE action = 'ingest_replaced'`).Row().Scan(&detail))
+	require.Contains(t, detail, `"edited_chunks_replaced":2`, "the swap's row keeps the detail")
+	require.Contains(t, detail, `"new_knowledge_id":"k-new"`)
+	require.Contains(t, detail, `"old_knowledge_ids":["old"]`)
+
+	done, err = feed.FinishReplacement(ctx, "k-new")
+	require.NoError(t, err)
+	require.False(t, done, "idempotent")
+	require.Equal(t, []string{"old"}, know.deleted)
 }

@@ -34,7 +34,7 @@ func newReconcileFixture(t *testing.T) (*DomainPackReconciler, *gorm.DB) {
 		&types.UsageAgentAddon{}, &types.UsageSubscription{}, &types.UsageSubscriptionAddon{}))
 	require.NoError(t, db.Exec(`CREATE TABLE tenants (id INTEGER PRIMARY KEY, name TEXT)`).Error)
 	require.NoError(t, db.Exec(`CREATE TABLE knowledges (id TEXT, knowledge_base_id TEXT, title TEXT,
-		file_name TEXT, deleted_at DATETIME, metadata TEXT)`).Error)
+		file_name TEXT, deleted_at DATETIME, metadata TEXT, parse_status TEXT DEFAULT 'completed')`).Error)
 	require.NoError(t, db.Exec(`CREATE TABLE knowledge_bases (id TEXT, name TEXT, owner_tenant_id INTEGER,
 		deleted_at DATETIME)`).Error)
 	packs, err := domainpacks.Load(domainpackassets.FS)

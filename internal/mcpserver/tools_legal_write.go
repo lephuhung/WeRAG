@@ -147,8 +147,17 @@ func (s *Server) handleLegalIngest(ctx context.Context, req mcp.CallToolRequest)
 		"replaced_knowledge_id": res.ReplacedKnowledgeID, "document": summarizeKnowledge(res.Knowledge),
 		"document_number": res.DocumentNumber, "doc_type": res.DocType, "status": res.Status, "vbpl_markup": res.VBPLMarkup,
 		"source_format": res.SourceFormat,
-	}, fmt.Sprintf("Document %s (%s, %s) %s in %s as %s from %s; indexing runs asynchronously (parse_status).",
-		vbplID, res.DocumentNumber, res.DocType, res.Result, kb.Name, res.KnowledgeID, res.SourceFormat)), nil
+	}, fmt.Sprintf("Document %s (%s, %s) %s in %s as %s from %s; indexing runs asynchronously (parse_status).%s",
+		vbplID, res.DocumentNumber, res.DocType, res.Result, kb.Name, res.KnowledgeID, res.SourceFormat, legalReplacedNote(res))), nil
+}
+
+// legalReplacedNote says that a replaced document keeps its old copy until
+// the new text is parsed.
+func legalReplacedNote(res *service.LegalIngestResult) string {
+	if res.Result != "replaced" {
+		return ""
+	}
+	return " The previous copy " + res.ReplacedKnowledgeID + " stays searchable until the new text is parsed, then it is deleted."
 }
 
 func (s *Server) handleLegalFetchDraft(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

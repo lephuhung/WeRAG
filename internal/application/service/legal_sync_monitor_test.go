@@ -268,7 +268,7 @@ func TestLegalSyncMonitorStatus(t *testing.T) {
 	m.now = func() time.Time { return now }
 	st, err := m.Status(ctx)
 	require.NoError(t, err)
-	require.Len(t, st.Workers, 5)
+	require.Len(t, st.Workers, 6)
 	byName := map[string]LegalSyncWorkerStatus{}
 	for _, w := range st.Workers {
 		byName[w.Worker] = w

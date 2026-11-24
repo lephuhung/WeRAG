@@ -6,7 +6,13 @@
  * Read only. Backend: /api/v1/system/legal-sync — SuperAdmin-only. */
 import { apiGet, type ApiEnvelope } from "@/lib/api-client";
 
-export type LegalSyncWorker = "vbpl_sync" | "dcs_sync" | "auto_ingest" | "expired_retention" | "image_check";
+export type LegalSyncWorker =
+  | "vbpl_sync"
+  | "dcs_sync"
+  | "auto_ingest"
+  | "expired_retention"
+  | "image_check"
+  | "invariants";
 export type LegalSyncRunStatus = "running" | "ok" | "failed";
 export type LegalSyncHealth = "ok" | "unknown" | "warning" | "error";
 export type LegalSyncReason =
@@ -34,6 +40,33 @@ export type LegalSyncSummary = Record<string, unknown> & {
   steps?: Record<string, LegalSyncStepTiming>;
   schedule?: string;
 };
+
+/** One copy named by a data check's lists. */
+export interface LegalInvariantItem {
+  id: string;
+  title?: string;
+}
+
+/** The snapshot of the daily data check (worker invariants, summary
+ * "snapshot"): counts keyed relations.list, relations.text.<source>,
+ * catalogue.<source>, kb.<id>.readable|in_progress|failed|approved_links,
+ * copies.*, links.*, provisions.*, candidates.<status>,
+ * requests.<status>.<source>; kbs names the KB ids. */
+export interface LegalInvariantSnapshot {
+  counts: Record<string, number>;
+  kbs?: Record<string, string>;
+  failed_copies?: LegalInvariantItem[];
+  stuck_copies?: LegalInvariantItem[];
+  dangling_knowledge?: string[];
+  dangling_catalogue?: string[];
+}
+
+/** The previous check a data check compared with (summary "previous"). */
+export interface LegalInvariantPrevious {
+  run_id: number;
+  at: string;
+  counts: Record<string, number>;
+}
 
 export interface LegalSyncRun {
   id: number;

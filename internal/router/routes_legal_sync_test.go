@@ -101,6 +101,30 @@ func TestLegalSyncRoutesRefuseAPIKeys(t *testing.T) {
 			t.Fatalf("GET %s with an API key = %d, want 403", p, w.Code)
 		}
 	}
+	w := httptest.NewRecorder()
+	engine.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/system/legal-sync/invariants/run", nil))
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("POST invariants/run with an API key = %d, want 403", w.Code)
+	}
 	// nil handler: no route
 	RegisterLegalSyncRoutes(engine.Group("/x"), nil, g)
+}
+
+// The manual data check is SuperAdmin only, like the page.
+func TestLegalSyncRoutesInvariantsRunSuperAdminOnly(t *testing.T) {
+	const p = "/api/v1/system/legal-sync/invariants/run"
+	admin := legalSyncTestEngine(t, types.Caller{TenantID: types.PlatformTenantID, UserID: "u-admin"}, true, false)
+	operator := legalSyncTestEngine(t, types.Caller{TenantID: types.PlatformTenantID, UserID: "u-operator"}, false, true)
+	member := legalSyncTestEngine(t, types.Caller{TenantID: 7, UserID: "u-member", Role: types.TenantRoleAdmin}, false, false)
+	// the test schema lacks the legal tables: the check runs and records a
+	// failed run (200), the guards are what is tested
+	if code := serve(admin, http.MethodPost, p, ""); code != http.StatusOK {
+		t.Fatalf("SuperAdmin POST %s = %d, want 200", p, code)
+	}
+	if code := serve(operator, http.MethodPost, p, ""); code != http.StatusForbidden {
+		t.Fatalf("operator POST %s = %d, want 403", p, code)
+	}
+	if code := serve(member, http.MethodPost, p, ""); code != http.StatusForbidden {
+		t.Fatalf("tenant admin POST %s = %d, want 403", p, code)
+	}
 }

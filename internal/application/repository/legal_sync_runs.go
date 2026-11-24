@@ -60,6 +60,15 @@ func NewLegalSyncRunRepository(db *gorm.DB) *LegalSyncRunRepository {
 	return &LegalSyncRunRepository{db: db, now: time.Now}
 }
 
+// WithClock makes the repository stamp its writes with now (a worker and
+// its runs on one injected clock in tests); nil keeps time.Now.
+func (r *LegalSyncRunRepository) WithClock(now func() time.Time) *LegalSyncRunRepository {
+	if now != nil {
+		r.now = now
+	}
+	return r
+}
+
 // Start opens a running run at step (its timing starts now) and returns its
 // id. Runs of the worker still open are closed as failed first: one sync
 // runs at a time (sync.sh holds a lock), so they were interrupted.

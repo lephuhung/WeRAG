@@ -23,5 +23,7 @@ package legalcatalog
 // (deploy/vbpl-sync/README.md). 3: relations updated by difference, mass
 // removal refused. 4: a reopened request keeps its decision, an adoption
 // moves the requesters and logs what it drops, text edges stored by
-// difference.
-const ImporterRevision = 4
+// difference. 5: a copy whose parse failed holds nothing (heldInPublicKB,
+// PublicKnowledgeByExternalIDs). 6: a replacement in flight (the portal's
+// bytes already held by a copy still parsing) is not queued again.
+const ImporterRevision = 6

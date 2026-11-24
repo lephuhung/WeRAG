@@ -35,6 +35,9 @@ type LegalAutoIngest struct {
 	kbs      interfaces.KnowledgeBaseService
 	tenants  interfaces.TenantRepository
 	ingest   func(context.Context, string, *types.KnowledgeBase, LegalFeedActor, string) (*LegalIngestResult, error)
+	// feed's sweep finishes replacement swaps and cleans failed copies each
+	// tick (nil: skipped)
+	feed *LegalFeedService
 	// runs records the passes that tried a document (the SuperAdmin monitor)
 	runs legalRunRecorder
 }
@@ -46,6 +49,9 @@ const (
 	legalAutoIngestReturned = "returned" // no portal text after all: back to the operators
 	legalAutoIngestRetry    = "retry"    // transient failure, tried again later
 	legalAutoIngestSkipped  = "skipped"  // another replica has it, or it just closed
+	// the sweep: replacements swapped in, copies whose parse failed cleaned
+	legalAutoIngestSwapped = "replacements_swapped"
+	legalAutoIngestCleaned = "failed_copies_cleaned"
 )
 
 // WithRuns makes the worker record its passes.
@@ -59,7 +65,7 @@ func NewLegalAutoIngest(
 	requests interfaces.LegalRequestRepository, kbs interfaces.KnowledgeBaseService,
 	tenants interfaces.TenantRepository, feed *LegalFeedService,
 ) *LegalAutoIngest {
-	return &LegalAutoIngest{requests: requests, kbs: kbs, tenants: tenants, ingest: feed.IngestFromPortal}
+	return &LegalAutoIngest{requests: requests, kbs: kbs, tenants: tenants, ingest: feed.IngestFromPortal, feed: feed}
 }
 
 // StartLegalAutoIngest runs the worker until the returned func is called.
@@ -87,6 +93,9 @@ func (w *LegalAutoIngest) Tick(ctx context.Context) (added int) {
 	noteLegalWorkerPassStart(types.LegalSyncWorkerAutoIngest, legalAutoIngestTick, started)
 	tickErr := ""
 	outcomes := map[string]int{}
+	// the sweep's work (legalAutoIngestSwapped / Cleaned), recorded beside
+	// the outcomes but not counted as tried
+	swept := map[string]int{}
 	var lastErr string
 	// A bare goroutine: a panic in the ingest path must not take the server down.
 	defer func() {
@@ -94,9 +103,27 @@ func (w *LegalAutoIngest) Tick(ctx context.Context) (added int) {
 			logger.Errorf(ctx, "[LegalAutoIngest] panic: %v", r)
 			tickErr = fmt.Sprintf("panic: %v", r)
 		}
-		beatErr := w.record(ctx, started, outcomes, lastErr, tickErr)
+		beatErr := w.record(ctx, started, outcomes, swept, lastErr, tickErr)
 		noteLegalWorkerBeat(types.LegalSyncWorkerAutoIngest, legalAutoIngestTick, time.Now(), beatErr)
 	}()
+	// first the copies of earlier passes: swaps a restart interrupted, parses
+	// that failed (their requests come back to this queue, retried at most
+	// types.LegalRequestParseFailureMax times); within the same budget
+	if w.feed != nil {
+		finished, cleaned, err := w.feed.SweepIngests(ctx, time.Now(), legalAutoIngestBatch)
+		if finished > 0 {
+			swept[legalAutoIngestSwapped] = finished
+		}
+		if cleaned > 0 {
+			swept[legalAutoIngestCleaned] = cleaned
+		}
+		if finished+cleaned > 0 || err != "" {
+			logger.Infof(ctx, "[LegalAutoIngest] sweep: %d replacements swapped, %d failed copies cleaned %s", finished, cleaned, err)
+			if err != "" {
+				lastErr = "sweep: " + err
+			}
+		}
+	}
 	rows, err := w.requests.NextAutoIngest(ctx, legalAutoIngestScan)
 	if err != nil {
 		logger.Warnf(ctx, "[LegalAutoIngest] listing: %v", err)
@@ -204,7 +231,8 @@ func (w *LegalAutoIngest) one(ctx context.Context, row *types.LegalDocumentReque
 // a pass with nothing to do leaves only the heartbeat. A pass whose every
 // try failed transiently counts as failed. Returns the error of a failed
 // pass (the heartbeat shows it); a panic here is caught, not the server's.
-func (w *LegalAutoIngest) record(ctx context.Context, started time.Time, outcomes map[string]int, lastErr, tickErr string) (failed string) {
+func (w *LegalAutoIngest) record(ctx context.Context, started time.Time, outcomes, swept map[string]int, lastErr, tickErr string,
+) (failed string) {
 	defer func() {
 		if r := recover(); r != nil {
 			logger.Errorf(ctx, "[LegalAutoIngest] recording panic: %v", r)
@@ -224,11 +252,14 @@ func (w *LegalAutoIngest) record(ctx context.Context, started time.Time, outcome
 		}
 		failed = errText
 	}
-	if w.runs == nil || (tried == 0 && tickErr == "") {
+	if w.runs == nil || (tried == 0 && tickErr == "" && len(swept) == 0) {
 		return failed
 	}
 	summary := map[string]any{"tried": tried}
 	for k, n := range outcomes {
+		summary[k] = n
+	}
+	for k, n := range swept {
 		summary[k] = n
 	}
 	if err := w.runs.Record(ctx, types.LegalSyncWorkerAutoIngest, started, status, errText, summary); err != nil {

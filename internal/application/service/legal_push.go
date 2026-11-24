@@ -338,15 +338,28 @@ func legalFilterDocs(docs []*types.LegalDocument, keep func(*types.LegalDocument
 type legalHeldDoc struct {
 	KnowledgeID     string
 	KnowledgeBaseID string
+	ParseStatus     string
+	EnableStatus    string
 }
 
-// heldDoc finds the public-KB copy of a catalogue document, nil when none.
+// Readable: the copy's chunks can be read (types.LegalCopyReadable); a copy
+// still parsing holds the document (nothing ingests it twice) but has no
+// text to match links against yet.
+func (h *legalHeldDoc) Readable() bool {
+	return h != nil && types.LegalCopyReadable(h.ParseStatus, h.EnableStatus)
+}
+
+// heldDoc finds the public-KB copy of a catalogue document, nil when none: a
+// copy whose parse failed or that is being deleted is none; a readable copy
+// comes before one still parsing, then the oldest.
 func (s *LegalPushService) heldDoc(ctx context.Context, docID string) (*legalHeldDoc, error) {
 	var rows []legalHeldDoc
 	ext := legalJSONText(s.db, "k.metadata", "external_id")
-	err := s.db.WithContext(ctx).Raw(`SELECT k.id AS knowledge_id, k.knowledge_base_id FROM knowledges k
+	err := s.db.WithContext(ctx).Raw(`SELECT k.id AS knowledge_id, k.knowledge_base_id, k.parse_status, k.enable_status FROM knowledges k
 		JOIN knowledge_bases kb ON kb.id = k.knowledge_base_id AND kb.owner_tenant_id = 0 AND kb.deleted_at IS NULL
-		WHERE k.deleted_at IS NULL AND `+ext+` = ? ORDER BY k.created_at LIMIT 1`, docID).Scan(&rows).Error
+		WHERE k.deleted_at IS NULL AND COALESCE(k.parse_status, '') NOT IN ? AND `+ext+` = ?
+		ORDER BY CASE WHEN k.parse_status IN ? OR k.enable_status = 'enabled' THEN 0 ELSE 1 END, k.created_at LIMIT 1`,
+		types.LegalCopyNotHeldStatuses, docID, []string{types.ParseStatusCompleted, types.ParseStatusFinalizing}).Scan(&rows).Error
 	if err != nil || len(rows) == 0 {
 		return nil, err
 	}
@@ -359,7 +372,15 @@ func (s *LegalPushService) heldDoc(ctx context.Context, docID string) (*legalHel
 type legalHeldProvisions struct {
 	ids       map[string]string
 	structure LegalDocStructure
+	// parsing: the document is held but its copy is still parsing (no
+	// chunks to read yet)
+	parsing bool
 }
+
+// legalWaitingForText is the reason of a candidate whose document is held
+// but still parsing: not a problem with the link, the post-parse hook
+// checks it again.
+const legalWaitingForText = "đang chờ phân tích toàn văn: tự kiểm lại khi phân tích xong"
 
 func (h *legalHeldProvisions) has(path string) bool {
 	if h == nil {
@@ -556,7 +577,11 @@ func (s *LegalPushService) Push(ctx context.Context, in LegalPushInput, caller t
 		res.CatalogueCreated = created
 	} else if held != nil {
 		res.KnowledgeID, res.KnowledgeBaseID = held.KnowledgeID, held.KnowledgeBaseID
-		if target, err = s.heldProvisions(ctx, held.KnowledgeID); err != nil {
+		if !held.Readable() {
+			// still parsing: nothing to match against yet (LegalTextParsed
+			// checks again once its chunks are written)
+			target = &legalHeldProvisions{parsing: true}
+		} else if target, err = s.heldProvisions(ctx, held.KnowledgeID); err != nil {
 			return nil, fmt.Errorf("held provisions: %w", err)
 		}
 	}
@@ -865,7 +890,12 @@ func (r *legalPushResolver) provisions(docID string) (*legalHeldProvisions, erro
 		return nil, fmt.Errorf("held document lookup: %w", err)
 	}
 	var p *legalHeldProvisions
-	if held != nil {
+	switch {
+	case held != nil && !held.Readable():
+		// held, its text not parsed yet: nothing to match against, the
+		// post-parse hook rechecks (legalTextParsed)
+		p = &legalHeldProvisions{parsing: true}
+	case held != nil:
 		if p, err = r.s.heldProvisions(r.ctx, held.KnowledgeID); err != nil {
 			return nil, fmt.Errorf("held provisions: %w", err)
 		}
@@ -907,6 +937,9 @@ func (r *legalPushResolver) candidate(a *types.LegalDocument, meta *legalPushMet
 	case target == nil:
 		c.TargetProvisionID = legalSyntheticProvisionID(a.ID, place.Path)
 		reasons = append(reasons, "chưa có toàn văn trong kho: vị trí theo tệp đẩy lên")
+	case target.parsing:
+		c.TargetProvisionID = legalSyntheticProvisionID(a.ID, place.Path)
+		status(types.LegalLinkTargetMissing, legalWaitingForText)
 	case target != nil && target.ids[place.Path] != "":
 		c.TargetProvisionID = target.ids[place.Path]
 	case target.has(place.Path):
@@ -947,6 +980,8 @@ func (r *legalPushResolver) candidate(a *types.LegalDocument, meta *legalPushMet
 			switch {
 			case provs == nil:
 				status(types.LegalLinkDocOnly, b.doc.DocumentNumber+" chưa có toàn văn trong kho công khai, chưa kiểm được "+mk.Path)
+			case provs.parsing:
+				status(types.LegalLinkDocOnly, b.doc.DocumentNumber+": "+legalWaitingForText)
 			case provs.ids[mk.Path] != "":
 				c.SourceProvisionID = provs.ids[mk.Path]
 			case provs.has(mk.Path):

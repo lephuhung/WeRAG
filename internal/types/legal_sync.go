@@ -26,6 +26,35 @@ const (
 	// (scripts/check-images.sh --report, step "check"): a failed run lists
 	// the stale images. It records its runs through the run endpoints.
 	LegalSyncWorkerImageCheck = "image_check"
+	// LegalSyncWorkerInvariants is the backend's daily data check
+	// (service.LegalInvariants, step "audit"): a snapshot of the legal
+	// tables' counts compared with the previous one; a failed run lists the
+	// drops and the broken links. It writes its own runs.
+	LegalSyncWorkerInvariants = "invariants"
+)
+
+// LegalInvariantsRunAtSettingKey is the Vietnam time of day ("HH:MM") the
+// daily data check runs at, after the nightly vbpl.vn sync (02:30).
+const LegalInvariantsRunAtSettingKey = "legal.invariants.run_at"
+
+// LegalInvariantsDefaultRunAt is that setting's default.
+const LegalInvariantsDefaultRunAt = "04:30"
+
+// ParseLegalInvariantsRunAt reads an "HH:MM" time of day (24 h).
+func ParseLegalInvariantsRunAt(s string) (hour, minute int, ok bool) {
+	t, err := time.Parse("15:04", strings.TrimSpace(s))
+	if err != nil {
+		return 0, 0, false
+	}
+	return t.Hour(), t.Minute(), true
+}
+
+// LegalInvariantsDropPercentSettingKey / LegalInvariantsDropMinRowsSettingKey:
+// a guarded count that fell by more than this percentage AND more than
+// this many rows since the previous check fails the check.
+const (
+	LegalInvariantsDropPercentSettingKey = "legal.invariants.drop_percent"
+	LegalInvariantsDropMinRowsSettingKey = "legal.invariants.drop_min_rows"
 )
 
 // LegalSyncAlertEnabledSettingKey switches the SuperAdmin alert of the
@@ -41,7 +70,7 @@ const LegalSyncAlertDisabledWorkersSettingKey = "legal.sync_alert.disabled_worke
 
 // LegalSyncWorkers are the workers the monitor watches, in its order.
 var LegalSyncWorkers = []string{LegalSyncWorkerVBPL, LegalSyncWorkerDCS, LegalSyncWorkerAutoIngest,
-	LegalSyncWorkerExpiredRetention, LegalSyncWorkerImageCheck}
+	LegalSyncWorkerExpiredRetention, LegalSyncWorkerImageCheck, LegalSyncWorkerInvariants}
 
 // ParseLegalSyncWorkerList splits a comma list of worker names (spaces
 // and empty items dropped) and returns the names that are no worker.

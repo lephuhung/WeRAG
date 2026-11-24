@@ -31,7 +31,7 @@ func legalPushTestHandler(t *testing.T) *handler.LegalPushHandler {
 	}
 	for _, stmt := range []string{
 		`CREATE TABLE knowledge_bases (id TEXT PRIMARY KEY, owner_tenant_id INTEGER, deleted_at DATETIME)`,
-		`CREATE TABLE knowledges (id TEXT PRIMARY KEY, knowledge_base_id TEXT, metadata TEXT, created_at DATETIME, deleted_at DATETIME)`,
+		`CREATE TABLE knowledges (id TEXT PRIMARY KEY, knowledge_base_id TEXT, metadata TEXT, created_at DATETIME, deleted_at DATETIME, parse_status TEXT, enable_status TEXT)`,
 	} {
 		if err := db.Exec(stmt).Error; err != nil {
 			t.Fatal(err)

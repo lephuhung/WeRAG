@@ -49,7 +49,9 @@ func inChunks(ids []string, fn func([]string) error) error {
 }
 
 // heldInPublicKB returns the ids among ids that a public KB holds, by the
-// knowledge's external_id or an approved link.
+// knowledge's external_id or an approved link. A copy whose parse failed (or
+// that is being deleted) holds nothing: the document is queued again; one
+// still parsing holds it (no second ingest).
 func heldInPublicKB(ctx context.Context, db *gorm.DB, ids []string) (map[string]bool, error) {
 	held := map[string]bool{}
 	requests := repository.NewLegalRequestRepository(db)
@@ -63,9 +65,9 @@ func heldInPublicKB(ctx context.Context, db *gorm.DB, ids []string) (map[string]
 		}
 		var linked []string
 		if err := db.WithContext(ctx).Raw(`SELECT DISTINCT l.legal_document_id FROM legal_document_links l
-			JOIN knowledges k ON k.id = l.knowledge_id AND k.deleted_at IS NULL
+			JOIN knowledges k ON k.id = l.knowledge_id AND k.deleted_at IS NULL AND COALESCE(k.parse_status, '') NOT IN ?
 			JOIN knowledge_bases kb ON kb.id = k.knowledge_base_id AND kb.owner_tenant_id = 0 AND kb.deleted_at IS NULL
-			WHERE l.review_status = 'approved' AND l.legal_document_id IN ?`, part).Scan(&linked).Error; err != nil {
+			WHERE l.review_status = 'approved' AND l.legal_document_id IN ?`, types.LegalCopyNotHeldStatuses, part).Scan(&linked).Error; err != nil {
 			return fmt.Errorf("approved links: %w", err)
 		}
 		for _, id := range linked {
@@ -398,23 +400,33 @@ func queueChangedText(
 	for _, d := range candidates {
 		ids = append(ids, d.ID)
 	}
+	// A completed copy with other bytes is a changed text, unless a copy of
+	// the portal's current bytes is already there, parsing or not (a
+	// replacement in flight: the old copy stays until the new one is
+	// parsed, and must not be queued again meanwhile).
 	copyKB := map[string]string{}
+	current := map[string]bool{}
 	err := inChunks(ids, func(part []string) error {
 		var rows []struct {
 			ExternalID      string
 			KnowledgeBaseID string
 			FileHash        string
+			ParseStatus     string
 		}
-		if err := db.WithContext(ctx).Raw(`SELECT k.metadata->>'external_id' AS external_id, k.knowledge_base_id, k.file_hash
+		if err := db.WithContext(ctx).Raw(`SELECT k.metadata->>'external_id' AS external_id, k.knowledge_base_id, k.file_hash,
+			COALESCE(k.parse_status, '') AS parse_status
 			FROM knowledges k
 			JOIN knowledge_bases kb ON kb.id = k.knowledge_base_id AND kb.owner_tenant_id = 0 AND kb.deleted_at IS NULL
-			WHERE k.deleted_at IS NULL AND k.parse_status = ? AND k.metadata->>'source' = ?
+			WHERE k.deleted_at IS NULL AND COALESCE(k.parse_status, '') NOT IN ? AND k.metadata->>'source' = ?
 			  AND k.metadata->>'external_id' IN ?`,
-			types.ParseStatusCompleted, types.LegalDocumentSourceVBPL, part).Scan(&rows).Error; err != nil {
+			types.LegalCopyNotHeldStatuses, types.LegalDocumentSourceVBPL, part).Scan(&rows).Error; err != nil {
 			return fmt.Errorf("public KB copies: %w", err)
 		}
 		for _, r := range rows {
-			if r.FileHash != "" && r.FileHash != htmlMD5[r.ExternalID] {
+			switch {
+			case r.FileHash != "" && r.FileHash == htmlMD5[r.ExternalID]:
+				current[r.ExternalID] = true
+			case r.FileHash != "" && r.ParseStatus == types.ParseStatusCompleted:
 				copyKB[r.ExternalID] = r.KnowledgeBaseID
 			}
 		}
@@ -425,7 +437,7 @@ func queueChangedText(
 	}
 	var changed []*types.LegalDocument
 	for _, d := range candidates {
-		if _, ok := copyKB[d.ID]; ok {
+		if _, ok := copyKB[d.ID]; ok && !current[d.ID] {
 			changed = append(changed, d)
 		}
 	}

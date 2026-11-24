@@ -250,7 +250,7 @@ func newDraftTestService(t *testing.T) (*LegalDraftService, *gorm.DB, *feedKnowl
 		t.Fatal(err)
 	}
 	for _, ddl := range []string{
-		`CREATE TABLE knowledges (id TEXT, knowledge_base_id TEXT, file_hash TEXT, metadata TEXT, deleted_at DATETIME, parse_status TEXT, title TEXT, file_name TEXT)`,
+		`CREATE TABLE knowledges (id TEXT, knowledge_base_id TEXT, file_hash TEXT, metadata TEXT, deleted_at DATETIME, parse_status TEXT, title TEXT, file_name TEXT, enable_status TEXT)`,
 		`CREATE TABLE knowledge_bases (id TEXT, name TEXT, owner_tenant_id INTEGER, deleted_at DATETIME)`,
 		`CREATE TABLE legal_feed_log (id INTEGER PRIMARY KEY, action TEXT, vbpl_id TEXT, knowledge_id TEXT, knowledge_base_id TEXT,
 			document_number TEXT, reason TEXT, actor_endpoint_id TEXT, actor_tenant_id INTEGER, detail TEXT, created_at DATETIME)`,

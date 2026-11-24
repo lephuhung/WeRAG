@@ -3,7 +3,8 @@
 /* SuperAdmin monitor of the legal data workers, the "Data collection" tab of
  * the legal documents page (admin-legal-documents.tsx): the nightly vbpl.vn
  * sync, the Party documents sync (dcs-sync, every 4 hours), the auto-ingest
- * and expired-retention workers (health, last run),
+ * and expired-retention workers, the image check and the daily data check
+ * (health, last run),
  * the queues they drain, the push activity of the legal feeds, and the run
  * history with each run's counts and error. Read only; refreshes itself.
  * Backend: /api/v1/system/legal-sync — SuperAdmin-only. */
@@ -20,6 +21,8 @@ import {
   getLegalSyncStatus,
   listLegalSyncRuns,
   type LegalFeedActivity,
+  type LegalInvariantPrevious,
+  type LegalInvariantSnapshot,
   type LegalSyncHealth,
   type LegalSyncRun,
   type LegalSyncRunStatus,
@@ -38,6 +41,7 @@ const WORKER_LABEL: Record<LegalSyncWorker, LocaleKey> = {
   auto_ingest: "lsync.worker.auto_ingest",
   expired_retention: "lsync.worker.expired_retention",
   image_check: "lsync.worker.image_check",
+  invariants: "lsync.worker.invariants",
 };
 const WORKER_DESC: Record<LegalSyncWorker, LocaleKey> = {
   vbpl_sync: "lsync.workerDesc.vbpl_sync",
@@ -45,6 +49,7 @@ const WORKER_DESC: Record<LegalSyncWorker, LocaleKey> = {
   auto_ingest: "lsync.workerDesc.auto_ingest",
   expired_retention: "lsync.workerDesc.expired_retention",
   image_check: "lsync.workerDesc.image_check",
+  invariants: "lsync.workerDesc.invariants",
 };
 const HEALTH_LABEL: Record<LegalSyncHealth, LocaleKey> = {
   ok: "lsync.health.ok",
@@ -81,6 +86,8 @@ const STEP_LABEL: Record<string, LocaleKey> = {
   upload: "lsync.step.upload",
   // the host's image check (scripts/check-images.sh --report)
   check: "lsync.step.check",
+  // the backend's daily data check
+  audit: "lsync.step.audit",
 };
 /** Summary groups shown as sections of a run's details, in order. */
 const GROUP_LABEL: Record<string, LocaleKey> = {
@@ -128,6 +135,8 @@ const COUNT_LABEL: Record<string, LocaleKey> = {
   returned: "lsync.count.returned",
   retry: "lsync.count.retry",
   skipped: "lsync.count.skipped",
+  replacements_swapped: "lsync.count.replacements_swapped",
+  failed_copies_cleaned: "lsync.count.failed_copies_cleaned",
   // expired retention
   removed: "lsync.count.removed",
   clocks_started: "lsync.count.clocks_started",
@@ -149,6 +158,9 @@ const COUNT_LABEL: Record<string, LocaleKey> = {
   refused: "lsync.count.refused",
   credentials_refused: "lsync.count.credentials_refused",
   gave_up: "lsync.count.gave_up",
+  // invariants
+  violations: "lsync.count.violations",
+  baseline: "lsync.count.baseline",
 };
 const REQUEST_SOURCE_LABEL: Record<string, LocaleKey> = {
   vbpl_no_text: "lsync.reqSource.vbpl_no_text",
@@ -179,7 +191,39 @@ const RUN_FILTERS: { key: LegalSyncWorker | ""; labelKey: LocaleKey }[] = [
   { key: "auto_ingest", labelKey: "lsync.worker.auto_ingest" },
   { key: "expired_retention", labelKey: "lsync.worker.expired_retention" },
   { key: "image_check", labelKey: "lsync.worker.image_check" },
+  { key: "invariants", labelKey: "lsync.worker.invariants" },
 ];
+
+/** Keys of a data check's summary drawn by InvariantsTable, not as counts. */
+const INVARIANT_OWN_KEYS = new Set(["snapshot", "previous", "trigger"]);
+/** The count families of a data check, in display order. */
+const INVARIANT_GROUPS = ["relations.", "catalogue.", "kb.", "copies.", "links.", "provisions.", "candidates.", "requests."];
+const INVARIANT_SOURCE_LABEL: Record<string, LocaleKey> = {
+  vbpl: "lsync.inv.src.vbpl",
+  dangcongsan: "lsync.inv.src.dangcongsan",
+  tvpl: "lsync.inv.src.tvpl",
+  manual: "lsync.inv.src.manual",
+  missing: "lsync.inv.src.missing",
+  vbpl_editor: "lsync.inv.src.vbpl_editor",
+};
+const INVARIANT_FIXED_LABEL: Record<string, LocaleKey> = {
+  "relations.list": "lsync.inv.relations.list",
+  "relations.orphan": "lsync.inv.relations.orphan",
+  "copies.failed": "lsync.inv.copies.failed",
+  "copies.stuck": "lsync.inv.copies.stuck",
+  "copies.no_chunks": "lsync.inv.copies.no_chunks",
+  "links.dangling_knowledge": "lsync.inv.links.dangling_knowledge",
+  "links.dangling_catalogue": "lsync.inv.links.dangling_catalogue",
+  "links.kb_mismatch": "lsync.inv.links.kb_mismatch",
+  "provisions.total": "lsync.inv.provisions.total",
+  "provisions.orphan": "lsync.inv.provisions.orphan",
+};
+const INVARIANT_KB_LABEL: Record<string, LocaleKey> = {
+  readable: "lsync.inv.kb.readable",
+  in_progress: "lsync.inv.kb.in_progress",
+  failed: "lsync.inv.kb.failed",
+  approved_links: "lsync.inv.kb.approved_links",
+};
 
 /** Text colour of a health's reasons. */
 function healthText(h: LegalSyncHealth): string {
@@ -603,8 +647,13 @@ function RunRow({ run, now, t, locale }: { run: LegalSyncRun; now: number; t: T;
     (a.started_at ?? "").localeCompare(b.started_at ?? ""),
   );
   const groups = Object.keys(GROUP_LABEL).filter((g) => summary[g] && typeof summary[g] === "object");
+  const invariants = run.worker === "invariants";
   const flat = Object.entries(summary).filter(
-    ([k, v]) => k !== "steps" && k !== "schedule" && !(k in GROUP_LABEL && v && typeof v === "object"),
+    ([k, v]) =>
+      k !== "steps" &&
+      k !== "schedule" &&
+      !(invariants && INVARIANT_OWN_KEYS.has(k)) &&
+      !(k in GROUP_LABEL && v && typeof v === "object"),
   );
   return (
     <details className="group px-3 py-2">
@@ -637,6 +686,15 @@ function RunRow({ run, now, t, locale }: { run: LegalSyncRun; now: number; t: T;
             locale={locale}
           />
         ))}
+        {invariants && summary.snapshot ? (
+          <InvariantsTable
+            snapshot={summary.snapshot as LegalInvariantSnapshot}
+            previous={summary.previous as LegalInvariantPrevious | undefined}
+            manual={summary.trigger === "manual"}
+            t={t}
+            locale={locale}
+          />
+        ) : null}
         {flat.length > 0 && <CountGrid counts={Object.fromEntries(flat)} t={t} locale={locale} />}
         {run.error && (
           <pre className="card-inset max-h-64 overflow-auto whitespace-pre-wrap break-words p-2 text-[11.5px]">
@@ -678,6 +736,11 @@ function runHeadline(t: T, run: LegalSyncRun): string {
     if (!s.check) return "";
     return t("lsync.headline.imageCheck", { ok: num(c.ok), stale: num(c.stale), unstamped: num(c.unstamped) });
   }
+  if (run.worker === "invariants") {
+    if (!s.snapshot) return "";
+    const n = num(s.violations);
+    return n > 0 ? t("lsync.headline.invariants", { n }) : t("lsync.headline.invariantsOk");
+  }
   if (run.worker === "auto_ingest") return t("lsync.headline.autoIngest", { added: num(s.added), tried: num(s.tried) });
   return t("lsync.headline.retention", { removed: num(s.removed), started: num(s.clocks_started) });
 }
@@ -706,6 +769,112 @@ function CountGrid({
           </div>
         ))}
       </dl>
+    </div>
+  );
+}
+
+/** The label of one count of a data check ("Relations read from full
+ * texts (Party documents)", "<KB>: readable copies"). */
+function invariantLabel(t: T, key: string, kbs: Record<string, string>): string {
+  const fixed = INVARIANT_FIXED_LABEL[key];
+  if (fixed) return t(fixed);
+  const source = (s: string) => label(t, INVARIANT_SOURCE_LABEL, s);
+  if (key.startsWith("relations.text.")) return t("lsync.inv.relations.text", { source: source(key.slice(15)) });
+  if (key.startsWith("catalogue.")) return t("lsync.inv.catalogue", { source: source(key.slice(10)) });
+  if (key.startsWith("provisions.")) return t("lsync.inv.provisions.source", { source: source(key.slice(11)) });
+  if (key.startsWith("candidates.")) return t("lsync.inv.candidates", { status: key.slice(11) });
+  if (key.startsWith("requests.")) {
+    const [status, ...rest] = key.slice(9).split(".");
+    const src = rest.join(".");
+    return t("lsync.inv.requests", {
+      status,
+      source: src === "none" ? t("lsync.inv.src.none") : label(t, REQUEST_SOURCE_LABEL, src),
+    });
+  }
+  if (key.startsWith("kb.")) {
+    const rest = key.slice(3);
+    const dot = rest.lastIndexOf(".");
+    const id = rest.slice(0, dot);
+    const part = rest.slice(dot + 1);
+    const k = INVARIANT_KB_LABEL[part];
+    const kb = kbs[id] || id;
+    return k ? t(k, { kb }) : `${kb}: ${part}`;
+  }
+  return key;
+}
+
+/** The counts of a data check with the change since the check it compared
+ * with (summary "previous"); the lists of copies and links it named. */
+function InvariantsTable({
+  snapshot,
+  previous,
+  manual,
+  t,
+  locale,
+}: {
+  snapshot: LegalInvariantSnapshot;
+  previous?: LegalInvariantPrevious;
+  manual: boolean;
+  t: T;
+  locale: string;
+}) {
+  const counts = snapshot.counts ?? {};
+  const prev = previous?.counts;
+  const kbs = snapshot.kbs ?? {};
+  const keys = Array.from(new Set([...Object.keys(counts), ...Object.keys(prev ?? {})]));
+  const group = (k: string) => {
+    const i = INVARIANT_GROUPS.findIndex((g) => k.startsWith(g));
+    return i < 0 ? INVARIANT_GROUPS.length : i;
+  };
+  keys.sort((a, b) => group(a) - group(b) || a.localeCompare(b));
+  const lists: { label: string; items: string[] }[] = [
+    { label: t("lsync.inv.copies.failed"), items: (snapshot.failed_copies ?? []).map((i) => i.title || i.id) },
+    { label: t("lsync.inv.copies.stuck"), items: (snapshot.stuck_copies ?? []).map((i) => i.title || i.id) },
+    { label: t("lsync.inv.links.dangling_knowledge"), items: snapshot.dangling_knowledge ?? [] },
+    { label: t("lsync.inv.links.dangling_catalogue"), items: snapshot.dangling_catalogue ?? [] },
+  ].filter((l) => l.items.length > 0);
+  return (
+    <div>
+      <div className="caption mb-1 text-muted">
+        {previous
+          ? t("lsync.inv.previousAt", { time: formatDateTime(previous.at, locale) })
+          : t("lsync.inv.baselineNote")}
+        {manual && ` · ${t("lsync.inv.manual")}`}
+      </div>
+      <table className="w-full text-[12.5px]">
+        <thead>
+          <tr className="text-left text-muted">
+            <th className="py-1 font-normal">{t("lsync.inv.col.metric")}</th>
+            {prev && <th className="py-1 text-right font-normal">{t("lsync.inv.col.previous")}</th>}
+            <th className="py-1 text-right font-normal">{t("lsync.inv.col.current")}</th>
+            {prev && <th className="py-1 text-right font-normal">{t("lsync.inv.col.delta")}</th>}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-hairline">
+          {keys.map((k) => {
+            const cur = counts[k] ?? 0;
+            const before = prev?.[k] ?? 0;
+            const delta = cur - before;
+            return (
+              <tr key={k}>
+                <td className="py-1">{invariantLabel(t, k, kbs)}</td>
+                {prev && <td className="py-1 text-right tabular-nums text-muted">{fmtNum(before, locale)}</td>}
+                <td className="py-1 text-right tabular-nums">{fmtNum(cur, locale)}</td>
+                {prev && (
+                  <td className={`py-1 text-right tabular-nums ${delta < 0 ? "text-warning" : "text-muted"}`}>
+                    {delta === 0 ? "—" : `${delta > 0 ? "+" : ""}${fmtNum(delta, locale)}`}
+                  </td>
+                )}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {lists.map((l) => (
+        <div key={l.label} className="mt-2">
+          <span className="text-muted">{l.label}:</span> {l.items.join("; ")}
+        </div>
+      ))}
     </div>
   );
 }

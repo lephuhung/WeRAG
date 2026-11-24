@@ -137,7 +137,13 @@ func (s *knowledgeService) processVBPLFile(
 	return true
 }
 
+// recordVBPLConverterVersion sets the converter version key on the row's
+// current metadata (re-read: the copy loaded at task start may lack keys
+// written meanwhile, e.g. adoption's external_id).
 func (s *knowledgeService) recordVBPLConverterVersion(ctx context.Context, knowledge *types.Knowledge) {
+	if fresh, err := s.repo.GetKnowledgeByIDOnly(ctx, knowledge.ID); err == nil && fresh != nil {
+		knowledge.Metadata = fresh.Metadata
+	}
 	meta := map[string]interface{}{}
 	if len(knowledge.Metadata) > 0 {
 		if m, err := knowledge.Metadata.Map(); err == nil && m != nil {

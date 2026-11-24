@@ -146,6 +146,8 @@ func RegisterLegalSyncRoutes(r *gin.RouterGroup, h *handler.LegalSyncHandler, g 
 	{
 		sync.GET("/status", h.GetLegalSyncStatus)
 		sync.GET("/runs", h.ListLegalSyncRuns)
+		// the daily data check, now (a run of worker invariants)
+		sync.POST("/invariants/run", h.RunLegalInvariants)
 	}
 	report := apiKeyIngest(apiKeyFullAccess())
 	g.apiKeyRoute(r, http.MethodPost, "/system/legal-sync/runs", report, h.StartLegalSyncRun)

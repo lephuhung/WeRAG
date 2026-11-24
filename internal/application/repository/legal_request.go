@@ -405,7 +405,7 @@ func (r *legalRequestRepository) KnowledgeNamed(ctx context.Context, kbIDs []str
 	}
 	var n int64
 	err := r.db.WithContext(ctx).Table("knowledges").
-		Where("knowledge_base_id IN ? AND deleted_at IS NULL", kbIDs).
+		Where("knowledge_base_id IN ? AND deleted_at IS NULL AND COALESCE(parse_status, '') NOT IN ?", kbIDs, types.LegalCopyNotHeldStatuses).
 		Where("("+strings.Join(conds, " OR ")+")", args...).
 		Limit(1).Count(&n).Error
 	return n > 0, err
@@ -419,7 +419,8 @@ func (r *legalRequestRepository) PublicKnowledgeByExternalIDs(ctx context.Contex
 	var found []string
 	err := r.db.WithContext(ctx).Raw(`SELECT DISTINCT k.metadata->>'external_id' FROM knowledges k
 		JOIN knowledge_bases kb ON kb.id = k.knowledge_base_id AND kb.owner_tenant_id = 0 AND kb.deleted_at IS NULL
-		WHERE k.deleted_at IS NULL AND k.metadata->>'external_id' IN ?`, ids).Scan(&found).Error
+		WHERE k.deleted_at IS NULL AND COALESCE(k.parse_status, '') NOT IN ? AND k.metadata->>'external_id' IN ?`,
+		types.LegalCopyNotHeldStatuses, ids).Scan(&found).Error
 	for _, id := range found {
 		out[id] = true
 	}

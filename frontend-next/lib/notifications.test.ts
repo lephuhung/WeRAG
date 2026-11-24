@@ -86,9 +86,9 @@ const texts = {
     `${segments} segments (threshold ${threshold}), ${deleted} deleted documents still indexed`,
   legalSyncAlertTitle: (count: number) => `Legal data collection problems: ${count}`,
   legalSyncWorker: (worker: LegalSyncAlertWorker) =>
-    ({ vbpl_sync: "vbpl.vn nightly sync", dcs_sync: "Party documents sync", auto_ingest: "Auto-ingest", expired_retention: "Expired text removal", image_check: "Image check" })[worker],
+    ({ vbpl_sync: "vbpl.vn nightly sync", dcs_sync: "Party documents sync", auto_ingest: "Auto-ingest", expired_retention: "Expired text removal", image_check: "Image check", invariants: "Data check" })[worker],
   legalSyncStep: (step: LegalSyncStep) =>
-    ({ prepare: "prepare", crawl: "crawl", import: "import", push: "MinIO backup", fetch: "fetch", build: "classify and build", upload: "push to WeRAG", check: "compare images with the source" })[step],
+    ({ prepare: "prepare", crawl: "crawl", import: "import", push: "MinIO backup", fetch: "fetch", build: "classify and build", upload: "push to WeRAG", check: "compare images with the source", audit: "compare the counts with the previous check" })[step],
   legalSyncProblem: (problem: LegalSyncProblem, step: string, at: string, hours: number, rev?: { image: number; source: number }) =>
     ({
       image_stale: `vbpl-sync image is older than the source (${rev?.image ? `revision ${rev.image}` : "no revision recorded"}, source revision ${rev?.source}): rebuild it`,
@@ -134,9 +134,9 @@ const textsVi = {
     `${segments} segment (ngưỡng ${threshold}), còn ${deleted} bản ghi đã xoá trong chỉ mục`,
   legalSyncAlertTitle: (count: number) => `Thu thập dữ liệu pháp lý gặp sự cố: ${count} việc`,
   legalSyncWorker: (worker: LegalSyncAlertWorker) =>
-    ({ vbpl_sync: "Đồng bộ vbpl.vn", dcs_sync: "Đồng bộ văn bản của Đảng", auto_ingest: "Tự nạp văn bản", expired_retention: "Xóa toàn văn hết hiệu lực", image_check: "Kiểm tra image" })[worker],
+    ({ vbpl_sync: "Đồng bộ vbpl.vn", dcs_sync: "Đồng bộ văn bản của Đảng", auto_ingest: "Tự nạp văn bản", expired_retention: "Xóa toàn văn hết hiệu lực", image_check: "Kiểm tra image", invariants: "Kiểm tra dữ liệu" })[worker],
   legalSyncStep: (step: LegalSyncStep) =>
-    ({ prepare: "chuẩn bị", crawl: "cào dữ liệu", import: "nạp danh mục", push: "sao lưu MinIO", fetch: "tải trang", build: "phân loại và dựng HTML", upload: "đẩy lên WeRAG", check: "so sánh image với mã nguồn" })[step],
+    ({ prepare: "chuẩn bị", crawl: "cào dữ liệu", import: "nạp danh mục", push: "sao lưu MinIO", fetch: "tải trang", build: "phân loại và dựng HTML", upload: "đẩy lên WeRAG", check: "so sánh image với mã nguồn", audit: "đối chiếu số liệu với lần trước" })[step],
   legalSyncProblem: (problem: LegalSyncProblem, step: string, at: string, hours: number, rev?: { image: number; source: number }) =>
     ({
       image_stale: `image vbpl-sync cũ hơn mã nguồn (${rev?.image ? `bản ${rev.image}` : "không ghi số bản"}, mã nguồn bản ${rev?.source}): cần dựng lại image`,
@@ -624,6 +624,28 @@ describe("legal sync alert", () => {
     assert.equal(
       notificationText(n, textsVi).body,
       "Kiểm tra image: lỗi ở bước so sánh image với mã nguồn (lần chạy lúc T(2026-11-24T23:17)) — image cũ hơn mã nguồn: docreader, frontend (chưa có nhãn: sherpa-asr)",
+    );
+  });
+
+  it("names the daily data check, its step and the gist of its violations", () => {
+    const n = alert({
+      workers: [
+        {
+          worker: "invariants",
+          problem: "last_failed",
+          step: "audit",
+          at: "2026-11-24T21:30:00Z",
+          note: "2 vi phạm, nặng nhất: Quan hệ đọc từ toàn văn (văn bản Đảng): 644 → 0 (mất 644)",
+        },
+      ],
+    });
+    assert.equal(
+      notificationText(n, textsVi).body,
+      "Kiểm tra dữ liệu: lỗi ở bước đối chiếu số liệu với lần trước (lần chạy lúc T(2026-11-24T21:30)) — 2 vi phạm, nặng nhất: Quan hệ đọc từ toàn văn (văn bản Đảng): 644 → 0 (mất 644)",
+    );
+    assert.equal(
+      notificationText(n, texts).body,
+      "Data check: failed at step compare the counts with the previous check (run of T(2026-11-24T21:30)) — 2 vi phạm, nặng nhất: Quan hệ đọc từ toàn văn (văn bản Đảng): 644 → 0 (mất 644)",
     );
   });
 

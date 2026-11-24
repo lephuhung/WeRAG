@@ -253,6 +253,7 @@ var legalSyncWorkerNamesVI = map[string]string{
 	types.LegalSyncWorkerAutoIngest:       "Tự nạp văn bản",
 	types.LegalSyncWorkerExpiredRetention: "Xóa toàn văn hết hiệu lực",
 	types.LegalSyncWorkerImageCheck:       "Kiểm tra image",
+	types.LegalSyncWorkerInvariants:       "Kiểm tra dữ liệu",
 }
 
 var legalSyncStepNamesVI = map[string]string{
@@ -266,6 +267,8 @@ var legalSyncStepNamesVI = map[string]string{
 	"upload": "đẩy lên WeRAG",
 	// image_check
 	"check": "so sánh image với mã nguồn",
+	// invariants
+	"audit": "đối chiếu số liệu với lần trước",
 }
 
 // legalSyncAlertWorkerText: "Đồng bộ vbpl.vn: lỗi ở bước cào dữ liệu lúc

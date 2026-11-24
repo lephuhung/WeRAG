@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"slices"
 	"strings"
 	"time"
 
@@ -44,6 +45,11 @@ type LegalFeedService struct {
 	// ingest leaves pending, and closes their request digests once the
 	// requests are added (nil: nobody is told).
 	Notices *SuperAdminQueueNotifier
+	// KBs and Tenants build the write grant of the replacement swap and the
+	// failed-copy cleanup, which run without a caller (container wiring;
+	// nil KBs: ctx as given).
+	KBs     interfaces.KnowledgeBaseService
+	Tenants interfaces.TenantRepository
 }
 
 // NotifyRequestsAdded tells RequestsAdded that requests may have been
@@ -292,6 +298,14 @@ func legalHumanReview(l *types.LegalDocumentLink) bool {
 // replace the old copy, a copy in another public KB is refused. On success
 // the write is logged and open requests for the document are marked added.
 // ctx must carry the write grant for kb.
+//
+// A replacement ("replaced") keeps the old copy readable until the new one
+// is parsed: the new copy names it in metadata (types.LegalReplacesKnowledgeKey)
+// and the swap (FinishReplacement, run when its chunks are written, or by
+// the auto-ingest worker's sweep) deletes it. The CreateKnowledgeFromFile
+// dedup goes by file hash, which differs by construction, so the two copies
+// may share the file name. A copy still waiting for its swap, or whose parse
+// failed, is superseded by a newer text at once.
 func (s *LegalFeedService) IngestHTML(
 	ctx context.Context, doc LegalIngestDocument, content []byte, kb *types.KnowledgeBase, actor LegalFeedActor, reason string,
 ) (*LegalIngestResult, error) {
@@ -331,24 +345,40 @@ func (s *LegalFeedService) IngestHTML(
 		FileHash        string
 		Title           string
 		FileName        string
+		ParseStatus     string
+		Replaces        string
 	}
-	if err := s.db.WithContext(ctx).Raw(`SELECT k.id, k.knowledge_base_id, k.file_hash, k.title, k.file_name FROM knowledges k
+	if err := s.db.WithContext(ctx).Raw(`SELECT k.id, k.knowledge_base_id, k.file_hash, k.title, k.file_name,
+		COALESCE(k.parse_status, '') AS parse_status, COALESCE(k.metadata->>'`+types.LegalReplacesKnowledgeKey+`', '') AS replaces
+		FROM knowledges k
 		JOIN knowledge_bases kb ON kb.id = k.knowledge_base_id AND kb.owner_tenant_id = 0 AND kb.deleted_at IS NULL
 		WHERE k.deleted_at IS NULL AND k.metadata->>'external_id' = ?`, vbplID).Scan(&existing).Error; err != nil {
 		return nil, fmt.Errorf("lookup failed: %w", err)
 	}
 	var editedTitle string
 	var editedChunks int64
+	var keep []string // the readable copies the new one replaces
 	for _, e := range existing {
 		if e.KnowledgeBaseID != kb.ID {
 			return nil, refuse("document %s is already held by knowledge base %s as %s; a document lives "+
 				"in one knowledge base only", vbplID, e.KnowledgeBaseID, e.ID)
 		}
-		if e.FileHash == hash {
+		if e.FileHash == hash && !slices.Contains(types.LegalCopyNotHeldStatuses, e.ParseStatus) {
 			res.Result, res.KnowledgeID = "unchanged", e.ID
 			s.saveReviewLink(ctx, doc, e.ID, kb.ID, false)
 			s.markRequestsAdded(ctx, res, actor)
 			return res, nil
+		}
+	}
+	for _, e := range existing {
+		if e.Replaces != "" || slices.Contains(types.LegalCopyNotHeldStatuses, e.ParseStatus) {
+			// an earlier replacement still waiting for its swap, or a copy whose
+			// parse failed: nothing readable to keep, the newer text supersedes it
+			if err := s.knowledge.DeleteKnowledge(ctx, e.ID); err != nil {
+				return nil, fmt.Errorf("failed to delete the superseded copy %s: %w", e.ID, err)
+			}
+			logger.Infof(ctx, "[LegalFeed] %s: superseded copy %s (%s) deleted", vbplID, e.ID, e.ParseStatus)
+			continue
 		}
 		// a reviewer's decision on the outdated copy carries over to the new one
 		if s.Reviews != nil {
@@ -361,14 +391,23 @@ func (s *LegalFeedService) IngestHTML(
 		if e.Title != "" && e.Title != e.FileName {
 			editedTitle = e.Title
 		}
+		var edited int64
 		if err := s.db.WithContext(ctx).Raw(`SELECT COUNT(DISTINCT chunk_id) FROM chunk_revisions WHERE knowledge_id = ?`,
-			e.ID).Scan(&editedChunks).Error; err != nil {
+			e.ID).Scan(&edited).Error; err != nil {
 			logger.Warnf(ctx, "[LegalFeed] counting edited chunks of %s: %v", e.ID, err)
 		}
-		if err := s.knowledge.DeleteKnowledge(ctx, e.ID); err != nil {
-			return nil, fmt.Errorf("failed to delete the outdated copy %s: %w", e.ID, err)
+		editedChunks += edited
+		keep = append(keep, e.ID)
+	}
+	if len(keep) > 0 {
+		// the old copy stays until the new one is parsed (FinishReplacement)
+		res.ReplacedKnowledgeID = keep[0]
+		meta := make(map[string]string, len(doc.Metadata)+1)
+		for k, v := range doc.Metadata {
+			meta[k] = v
 		}
-		res.ReplacedKnowledgeID = e.ID
+		meta[types.LegalReplacesKnowledgeKey] = strings.Join(keep, ",")
+		doc.Metadata = meta
 	}
 
 	fh, err := memoryFileHeader("file", doc.FileName, content)
@@ -396,6 +435,9 @@ func (s *LegalFeedService) IngestHTML(
 	}
 	logDetail := map[string]any{"replaced_knowledge_id": res.ReplacedKnowledgeID, "status": doc.Status, "md5": hash,
 		"vbpl_markup": res.VBPLMarkup, "source_format": format}
+	if len(keep) > 0 {
+		logDetail["old_knowledge_ids"], logDetail["new_knowledge_id"] = keep, created.ID
+	}
 	for k, v := range doc.LogDetail {
 		logDetail[k] = v
 	}
@@ -406,8 +448,14 @@ func (s *LegalFeedService) IngestHTML(
 		logDetail["edited_chunks_replaced"] = editedChunks
 		logger.Warnf(ctx, "[LegalFeed] %s: %d hand-edited chunks replaced by the portal's new text", vbplID, editedChunks)
 	}
+	// a replacement logs twice: "ingest_replace_started" now, "ingest_replaced"
+	// (same detail) at the swap, when the old copy is gone
+	action := "ingest_" + res.Result
+	if res.Result == "replaced" {
+		action = legalReplaceStartedAction
+	}
 	WriteLegalFeedLog(ctx, s.db, actor, LegalFeedEntry{
-		Action: "ingest_" + res.Result, VBPLID: vbplID, KnowledgeID: created.ID, KnowledgeBaseID: kb.ID,
+		Action: action, VBPLID: vbplID, KnowledgeID: created.ID, KnowledgeBaseID: kb.ID,
 		DocumentNumber: doc.DocumentNumber, Reason: reason, Detail: logDetail,
 	})
 	s.saveReviewLink(ctx, doc, created.ID, kb.ID, true)

@@ -49,11 +49,11 @@ func (h *LegalSyncHandler) GetLegalSyncStatus(c *gin.Context) {
 // ListLegalSyncRuns godoc
 // @Summary      Legal data worker runs
 // @Description  The latest runs, newest first. worker is vbpl_sync,
-// @Description  dcs_sync, auto_ingest, expired_retention, image_check or empty for all; limit 1–200
+// @Description  dcs_sync, auto_ingest, expired_retention, image_check, invariants or empty for all; limit 1–200
 // @Description  (default 30).
 // @Tags         Rà soát pháp lý
 // @Produce      json
-// @Param        worker  query  string  false  "vbpl_sync, dcs_sync, auto_ingest, expired_retention, image_check"
+// @Param        worker  query  string  false  "vbpl_sync, dcs_sync, auto_ingest, expired_retention, image_check, invariants"
 // @Param        limit   query  int     false  "1–200, default 30"
 // @Success      200  {object}  map[string]interface{}
 // @Security     Bearer
@@ -62,7 +62,7 @@ func (h *LegalSyncHandler) ListLegalSyncRuns(c *gin.Context) {
 	worker := strings.TrimSpace(c.Query("worker"))
 	switch worker {
 	case "", types.LegalSyncWorkerVBPL, types.LegalSyncWorkerDCS, types.LegalSyncWorkerAutoIngest,
-		types.LegalSyncWorkerExpiredRetention, types.LegalSyncWorkerImageCheck:
+		types.LegalSyncWorkerExpiredRetention, types.LegalSyncWorkerImageCheck, types.LegalSyncWorkerInvariants:
 	default:
 		c.Error(errors.NewBadRequestError("unknown worker " + worker))
 		return
@@ -74,6 +74,32 @@ func (h *LegalSyncHandler) ListLegalSyncRuns(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"items": runs}})
+}
+
+// RunLegalInvariants godoc
+// @Summary      Run the legal data check now
+// @Description  Takes a snapshot of the legal tables' counts, compares it
+// @Description  with the previous check and records a run of worker
+// @Description  invariants (failed when a count dropped or a link is
+// @Description  broken: the error lists them). The daily guard applies to
+// @Description  the scheduled check only: a manual run on a day that has
+// @Description  one records a second run. 409 while a check is running.
+// @Tags         Rà soát pháp lý
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Security     Bearer
+// @Router       /system/legal-sync/invariants/run [post]
+func (h *LegalSyncHandler) RunLegalInvariants(c *gin.Context) {
+	run, err := h.monitor.RunInvariants(c.Request.Context())
+	if err != nil {
+		if stderrors.Is(err, service.ErrLegalInvariantsBusy) {
+			c.Error(errors.NewConflictError(err.Error()))
+			return
+		}
+		c.Error(errors.NewInternalServerError("legal data check").WithDetails(err.Error()))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": run})
 }
 
 // legalSyncReportBodyMax bounds a run report (the error is kept to its

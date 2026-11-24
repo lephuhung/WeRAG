@@ -36,7 +36,7 @@ func queueTestDB(t *testing.T) *gorm.DB {
 	}
 	for _, stmt := range []string{
 		`CREATE TABLE knowledge_bases (id TEXT PRIMARY KEY, owner_tenant_id INTEGER, deleted_at DATETIME)`,
-		`CREATE TABLE knowledges (id TEXT PRIMARY KEY, knowledge_base_id TEXT, metadata TEXT, deleted_at DATETIME)`,
+		`CREATE TABLE knowledges (id TEXT PRIMARY KEY, knowledge_base_id TEXT, metadata TEXT, deleted_at DATETIME, parse_status TEXT DEFAULT 'completed')`,
 		`CREATE TABLE legal_document_links (knowledge_id TEXT, legal_document_id TEXT, review_status TEXT)`,
 		`CREATE TABLE legal_feed_log (id INTEGER PRIMARY KEY, action TEXT, vbpl_id TEXT, document_number TEXT, reason TEXT, detail TEXT)`,
 	} {
@@ -215,7 +215,6 @@ func TestQueueChangedText(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 	for _, stmt := range []string{
-		`ALTER TABLE knowledges ADD COLUMN parse_status TEXT DEFAULT 'completed'`,
 		`ALTER TABLE knowledges ADD COLUMN file_hash TEXT DEFAULT ''`,
 		`INSERT INTO knowledge_bases (id, owner_tenant_id) VALUES ('kb', 0), ('private', 7)`,
 		`INSERT INTO knowledges (id, knowledge_base_id, metadata, file_hash, parse_status) VALUES
@@ -296,5 +295,59 @@ func TestQueueChangedText(t *testing.T) {
 	// Once queued, the next night adds nothing.
 	if n, err := queueChangedText(ctx, db, docs, sums, now); err != nil || n != 0 {
 		t.Errorf("second run = %d, %v", n, err)
+	}
+}
+
+// A copy whose parse failed holds nothing (the document is queued again); a
+// copy still parsing, or an approved link to one, holds it.
+func TestHeldInPublicKBFollowsParseStatus(t *testing.T) {
+	db := queueTestDB(t)
+	ctx := context.Background()
+	for _, stmt := range []string{
+		`INSERT INTO knowledge_bases (id, owner_tenant_id) VALUES ('kb', 0)`,
+		`INSERT INTO knowledges (id, knowledge_base_id, metadata, parse_status) VALUES
+			('k1', 'kb', '{"external_id":"1"}', 'failed'),
+			('k2', 'kb', '{"external_id":"2"}', 'processing'),
+			('k3', 'kb', '{}', 'failed')`,
+		`INSERT INTO legal_document_links VALUES ('k3', '3', 'approved')`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	held, err := heldInPublicKB(ctx, db, []string{"1", "2", "3"})
+	if err != nil || len(held) != 1 || !held["2"] {
+		t.Fatalf("held = %v, %v; want only 2", held, err)
+	}
+}
+
+// While a replacement parses (the old copy completed with the old bytes,
+// the new copy of the portal's bytes still in progress), the night does not
+// queue the change again.
+func TestQueueChangedTextSkipsAReplacementInFlight(t *testing.T) {
+	db := queueTestDB(t)
+	ctx := context.Background()
+	for _, stmt := range []string{
+		`ALTER TABLE knowledges ADD COLUMN file_hash TEXT DEFAULT ''`,
+		`INSERT INTO knowledge_bases (id, owner_tenant_id) VALUES ('kb', 0)`,
+		`INSERT INTO knowledges (id, knowledge_base_id, metadata, file_hash, parse_status) VALUES
+			('old', 'kb', '{"external_id":"10","source":"vbpl"}', 'h-old', 'completed'),
+			('new', 'kb', '{"external_id":"10","source":"vbpl","replaces_knowledge_id":"old"}', 'h10', 'processing'),
+			('old2', 'kb', '{"external_id":"20","source":"vbpl"}', 'h-old', 'completed'),
+			('failed', 'kb', '{"external_id":"20","source":"vbpl"}', 'h20', 'failed')`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	n, err := queueChangedText(ctx, db, []*types.LegalDocument{queueDoc("10", "k10"), queueDoc("20", "k20")},
+		map[string]string{"10": "h10", "20": "h20"}, time.Now())
+	if err != nil || n != 1 {
+		t.Fatalf("queued = %d, %v; want only 20 (its new copy failed)", n, err)
+	}
+	var queued []string
+	db.Raw(`SELECT legal_document_id FROM legal_document_requests`).Scan(&queued)
+	if len(queued) != 1 || queued[0] != "20" {
+		t.Fatalf("queued = %v", queued)
 	}
 }

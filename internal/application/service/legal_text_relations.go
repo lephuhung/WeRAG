@@ -443,6 +443,41 @@ func LegalTextRelationsOfKnowledge(ctx context.Context, db *gorm.DB, knowledgeID
 // document a knowledge is the approved copy of (container wiring).
 func (s *knowledgeService) SetLegalCatalogDB(db *gorm.DB) { s.legalDB = db }
 
+// AddLegalParsedHook adds a legal follow-up of a parsed copy (container
+// wiring): run after the text relations, in the order added.
+func (s *knowledgeService) AddLegalParsedHook(fn func(ctx context.Context, knowledgeID string)) {
+	if fn != nil {
+		s.legalParsed = append(s.legalParsed, fn)
+	}
+}
+
+// SetLegalReplaceHook sets the replacement swap, the first legal follow-up
+// of a parse (container wiring: LegalFeedService.LegalReplaceAfterParse).
+func (s *knowledgeService) SetLegalReplaceHook(fn func(ctx context.Context, knowledgeID string)) {
+	s.legalReplace = fn
+}
+
+// legalAfterParse is the one place the legal follow-ups of a parse run,
+// once processChunks has written and indexed the knowledge's chunks (every
+// parse, re-parse and replaced file passes there), in a fixed order: the
+// swap of a replacement (the old copy goes once the new one has its
+// chunks), the relations its text states (legalTextRelationsAfterParse),
+// then the hooks (the pending link candidates naming the document:
+// LegalPushService.LegalTextParsed). Each is best effort and cheap for a
+// knowledge that is no legal document's copy.
+func (s *knowledgeService) legalAfterParse(ctx context.Context, knowledgeID string) {
+	if s == nil {
+		return
+	}
+	if s.legalReplace != nil {
+		s.legalReplace(ctx, knowledgeID)
+	}
+	s.legalTextRelationsAfterParse(ctx, knowledgeID)
+	for _, fn := range s.legalParsed {
+		fn(ctx, knowledgeID)
+	}
+}
+
 // legalTextRelationsAfterParse runs LegalTextRelationsOfKnowledge once
 // processChunks has written the knowledge's chunks. Best effort: a failure
 // is logged and never fails the parse (the nightly rebuild catches up).

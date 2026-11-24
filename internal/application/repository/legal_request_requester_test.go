@@ -14,7 +14,7 @@ func newRequesterRepo(t *testing.T) *legalRequestRepository {
 	t.Helper()
 	repo, db := newLegalRequestRepo(t)
 	require.NoError(t, db.AutoMigrate(&types.UserNotification{}))
-	require.NoError(t, db.Exec(`ALTER TABLE knowledges ADD COLUMN parse_status TEXT`).Error)
+	// knowledges.parse_status comes with newLegalRequestRepo
 	require.NoError(t, db.Exec(`ALTER TABLE knowledges ADD COLUMN updated_at DATETIME`).Error)
 	require.NoError(t, db.Exec(`CREATE TABLE sessions (id TEXT, deleted_at DATETIME)`).Error)
 	require.NoError(t, db.Exec(`CREATE TABLE document_workspaces (id TEXT, session_id TEXT, word_file_id TEXT,

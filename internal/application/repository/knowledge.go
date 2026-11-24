@@ -345,6 +345,11 @@ func (r *knowledgeRepository) UpdateKnowledge(ctx context.Context, knowledge *ty
 	if knowledge.CustomMetadata == nil {
 		omit = append(append([]string{}, omitFieldsOnUpdate...), "custom_metadata")
 	}
+	if types.KnowledgeMetadataReadOnly(ctx) {
+		// a parse or enrichment task saving the row it loaded minutes ago:
+		// metadata written meanwhile by others must not be reverted
+		omit = append(append([]string{}, omit...), "metadata", "custom_metadata")
+	}
 	err := r.db.WithContext(ctx).Omit(omit...).Save(knowledge).Error
 	return err
 }

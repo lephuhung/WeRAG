@@ -89,6 +89,12 @@ type knowledgeService struct {
 	// legalDB re-reads the text relations of a legal document once its
 	// approved copy is parsed (SetLegalCatalogDB; nil: not done)
 	legalDB *gorm.DB
+	// legalParsed are the other legal follow-ups of a parsed copy, run in
+	// order after the text relations (AddLegalParsedHook; legalAfterParse)
+	legalParsed []func(ctx context.Context, knowledgeID string)
+	// legalReplace swaps a parsed replacement in before anything else
+	// (SetLegalReplaceHook; legalAfterParse)
+	legalReplace func(ctx context.Context, knowledgeID string)
 }
 
 const (
