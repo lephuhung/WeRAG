@@ -54,6 +54,10 @@ export function LegalLookupView() {
   const [result, setResult] = useState<LegalValidityLookup | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // the mapped document's own card, when the results above do not hold it
+  // (a deep link without ?q=, or a card clicked on the map)
+  const [focusNumber, setFocusNumber] = useState<{ id: string; number: string } | null>(null);
+  const [focusMatch, setFocusMatch] = useState<LegalValidityMatch | null>(null);
 
   useEffect(() => {
     setInput(q);
@@ -164,6 +168,19 @@ export function LegalLookupView() {
     if (doc) mapRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [doc]);
 
+  const focusInResults = !!result?.matches.some((m) => m.id === doc);
+  useEffect(() => {
+    setFocusMatch((prev) => (prev && prev.id === doc ? prev : null));
+    if (!doc || !ready || focusInResults || !focusNumber || focusNumber.id !== doc || !focusNumber.number) return;
+    const ctrl = new AbortController();
+    lookupLegalValidity(focusNumber.number, { isGuest, signal: ctrl.signal })
+      .then((res) => setFocusMatch(res.matches.find((m) => m.id === doc) ?? null))
+      .catch(() => {
+        /* the map still shows the document; the card is extra */
+      });
+    return () => ctrl.abort();
+  }, [doc, ready, isGuest, focusInResults, focusNumber]);
+
   const sharedNumber = result?.by === "number" && result.matches.length > 1;
 
   /* The status line, notes and result cards: under the search box, or in
@@ -209,7 +226,8 @@ export function LegalLookupView() {
             </p>
           )}
           <ul className="flex flex-col gap-3">
-            {result.matches.map((m) => (
+            {/* the mapped document leads: with a shared number it may sit far down */}
+            {[...result.matches].sort((x, y) => Number(y.id === doc) - Number(x.id === doc)).map((m) => (
               <li key={m.id}>
                 <MatchCard m={m} mapOpen={doc === m.id} onMap={() => showMap(m.id)} />
               </li>
@@ -299,18 +317,25 @@ export function LegalLookupView() {
 
       {doc && (
         <div className="@container mx-auto w-full max-w-[1680px] px-4 pb-10 sm:px-8">
-        <div className="flex flex-col gap-6 @[1000px]:flex-row @[1000px]:items-start">
+        <div className="flex flex-col gap-6 @[720px]:flex-row @[720px]:items-start @[720px]:gap-4 @[1100px]:gap-6">
           <div ref={mapRef} className="min-w-0 flex-1 scroll-mt-4">
             <LegalMap
               docId={doc}
               depth={depth}
               onFocus={(d: LegalGraphDoc) => showMap(d.id)}
               onDepthChange={(dp) => router.replace(hrefWith({ depth: dp }))}
+              onLoaded={(f: LegalGraphDoc) => setFocusNumber({ id: f.id, number: f.document_number })}
             />
           </div>
           {/* the results sit right of the map (scrolling on their own) when
-          the column is wide, under it otherwise */}
-          <aside className="w-full shrink-0 @[1000px]:sticky @[1000px]:top-4 @[1000px]:max-h-[min(82dvh,820px)] @[1000px]:w-[340px] @[1000px]:overflow-y-auto @[1000px]:pr-1 @[1360px]:w-[380px]">
+          the column is wide enough for both (laptops included), under it
+          otherwise */}
+          <aside className="w-full shrink-0 @[720px]:sticky @[720px]:top-4 @[720px]:max-h-[min(82dvh,820px)] @[720px]:w-[270px] @[720px]:overflow-y-auto @[720px]:pr-1 @[960px]:w-[300px] @[1100px]:w-[340px] @[1360px]:w-[380px]">
+            {focusMatch && focusMatch.id === doc && !focusInResults && (
+              <div className={result ? "mb-6" : ""}>
+                <MatchCard m={focusMatch} mapOpen onMap={() => mapRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })} />
+              </div>
+            )}
             {resultsBlock}
           </aside>
         </div>

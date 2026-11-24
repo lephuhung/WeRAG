@@ -38,7 +38,7 @@ export function DocPreviewModal({
   const [error, setError] = useState("");
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
-  const [previewKind, setPreviewKind] = useState<"image" | "pdf" | "markdown" | "code" | "unsupported">("unsupported");
+  const [previewKind, setPreviewKind] = useState<"image" | "pdf" | "markdown" | "html" | "code" | "unsupported">("unsupported");
 
   useEffect(() => {
     if (!source) {
@@ -69,6 +69,7 @@ export function DocPreviewModal({
         const isImage = mime.startsWith("image/") || /\.(png|jpe?g|gif|svg|webp|bmp|ico)$/.test(name);
         const isPdf = mime.includes("pdf") || name.endsWith(".pdf");
         const isMd = name.endsWith(".md") || name.endsWith(".markdown");
+        const isHtml = mime.includes("text/html") || /\.html?$/.test(name);
         const isCodeOrText =
           mime.startsWith("text/") ||
           mime.includes("json") ||
@@ -83,6 +84,12 @@ export function DocPreviewModal({
           if (active) {
             setTextContent(text);
             setPreviewKind("markdown");
+          }
+        } else if (isHtml) {
+          const text = await blob.text();
+          if (active) {
+            setTextContent(text);
+            setPreviewKind("html");
           }
         } else if (isCodeOrText) {
           const text = await blob.text();
@@ -157,6 +164,10 @@ export function DocPreviewModal({
           <div className="flex shrink-0 items-center justify-end gap-2">
             {blobUrl && (
               <>
+                {/* an HTML or SVG blob opened in a tab runs its scripts on
+                 * this origin (and could read the session): those stay in
+                 * the sandboxed preview only */}
+                {previewKind !== "html" && !/svg/i.test(`${displayName} ${source.fileType ?? ""}`) && (
                 <button
                   onClick={handleOpenExternal}
                   className="btn btn-outline btn-sm"
@@ -164,6 +175,7 @@ export function DocPreviewModal({
                 >
                   <IconExternal className="h-3.5 w-3.5" /> {t("preview.open")}
                 </button>
+                )}
                 {canDownloadOriginal && (
                   <button
                     onClick={handleDownload}
@@ -219,6 +231,12 @@ export function DocPreviewModal({
               <div className="mx-auto max-w-[800px]">
                 <Markdown text={textContent} />
               </div>
+            </div>
+          ) : previewKind === "html" && textContent !== null ? (
+            /* rendered, not shown as source: an empty sandbox runs no
+             * script, submits no form and gets no access to this origin */
+            <div className="flex-1 bg-white">
+              <iframe srcDoc={textContent} sandbox="" title={displayName} className="h-full w-full border-0" />
             </div>
           ) : previewKind === "code" && textContent !== null ? (
             <div className="flex-1 overflow-auto bg-surface-card p-6">

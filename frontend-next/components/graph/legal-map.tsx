@@ -38,11 +38,14 @@ export function LegalMap({
   depth,
   onFocus,
   onDepthChange,
+  onLoaded,
 }: {
   docId: string;
   depth: number;
   onFocus: (doc: LegalGraphDoc) => void;
   onDepthChange: (depth: number) => void;
+  /** The focus document of each map drawn, so the page can show its card. */
+  onLoaded?: (focus: LegalGraphDoc) => void;
 }) {
   const { t } = useT();
   const { ready } = useAuth();
@@ -70,6 +73,7 @@ export function LegalMap({
     getLegalGraphExplore(docId, { depth, isGuest, signal: ctrl.signal })
       .then((r) => {
         setData(r.data);
+        onLoaded?.(r.data.focus);
         setTrail((tr) => (tr.some((d) => d.id === r.data.focus.id) ? tr : [...tr, r.data.focus].slice(-12)));
       })
       .catch((e) => {
@@ -80,6 +84,8 @@ export function LegalMap({
       })
       .finally(() => !ctrl.signal.aborted && setLoading(false));
     return () => ctrl.abort();
+    // onLoaded is a fresh closure each render: the fetch must not follow it
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, depth, isGuest, ready]);
 
   // Esc leaves full screen.
