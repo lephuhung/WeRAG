@@ -131,7 +131,9 @@ func (s *LegalFeedService) FinishReplacement(ctx context.Context, newID string) 
 			})
 			continue
 		}
-		s.carryReview(ctx, old, newID)
+		if err := s.carryReview(ctx, old, newID); err != nil {
+			return false, err // before the old link is dropped: the sweep retries
+		}
 		if err := s.retireReplacedLink(ctx, old, newID); err != nil {
 			return false, err
 		}
@@ -197,30 +199,42 @@ func (s *LegalFeedService) replaceStarted(ctx context.Context, newID string) leg
 
 // carryReview copies a reviewer's decision on the old copy's link to the
 // new copy's (made after the replacement started, or missing).
-func (s *LegalFeedService) carryReview(ctx context.Context, oldID, newID string) {
+// A failure is returned: the swap stops before the old link (the only
+// place the decision lives) is dropped.
+func (s *LegalFeedService) carryReview(ctx context.Context, oldID, newID string) error {
 	if s.Reviews == nil {
-		return
+		return nil
 	}
 	old, err := s.Reviews.GetLink(ctx, oldID)
-	if err != nil || !legalHumanReview(old) {
-		return
+	if err != nil {
+		return fmt.Errorf("link of %s: %w", oldID, err)
+	}
+	if !legalHumanReview(old) {
+		return nil
 	}
 	cur, err := s.Reviews.GetLink(ctx, newID)
-	if err != nil || legalHumanReview(cur) {
-		return
+	if err != nil {
+		return fmt.Errorf("link of %s: %w", newID, err)
+	}
+	if legalHumanReview(cur) {
+		return nil
 	}
 	link := *old
 	if cur != nil {
 		if cur.LegalDocumentID != old.LegalDocumentID {
-			return // the new text was identified otherwise: its own review stands
+			// the new text was identified otherwise: its own review stands
+			logger.Warnf(ctx, "[LegalFeed] review of %s (%s by %s) not carried to %s: linked to %s, not %s",
+				oldID, old.ReviewStatus, old.ReviewedBy, newID, cur.LegalDocumentID, old.LegalDocumentID)
+			return nil
 		}
 		link = *cur
 		link.ReviewStatus, link.ReviewedBy, link.ReviewedAt = old.ReviewStatus, old.ReviewedBy, old.ReviewedAt
 	}
 	link.KnowledgeID = newID
 	if err := s.Reviews.SaveLink(ctx, &link); err != nil {
-		logger.Warnf(ctx, "[LegalFeed] carrying the review of %s to %s: %v", oldID, newID, err)
+		return fmt.Errorf("carrying the review of %s to %s: %w", oldID, newID, err)
 	}
+	return nil
 }
 
 // retireReplacedLink drops the legal_document_links row of a replaced copy,

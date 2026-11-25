@@ -58,6 +58,77 @@ type vbplDocument struct {
 	HasHTML *bool `json:"has_html"`
 	// HTMLMD5 is the hash of the published full text ("" when none).
 	HTMLMD5 string `json:"html_md5"`
+	// FetchFailed marks a list-only row of a document in the crawl scope
+	// whose detail never came and failed several runs in a row
+	// (crawl_vbpl.py FETCH_FAILED_RUNS): asked of another source like a
+	// document without full text.
+	FetchFailed bool `json:"fetch_failed"`
+}
+
+// importSets sorts the documents of an import by what the portal gave.
+type importSets struct {
+	ids, listOnly, noFullText, hasHTML map[string]bool
+	htmlMD5                            map[string]string
+	// fetchFailed counts the list-only rows also in noFullText.
+	fetchFailed int
+}
+
+func newImportSets() *importSets {
+	return &importSets{ids: map[string]bool{}, listOnly: map[string]bool{}, noFullText: map[string]bool{},
+		hasHTML: map[string]bool{}, htmlMD5: map[string]string{}}
+}
+
+// add files one row; false for a row without id or a repeat. A
+// fetch_failed row is list-only (its metadata handled as any list row) and
+// also without full text, so enqueueNoFullText's rules decide on it.
+func (s *importSets) add(d vbplDocument) bool {
+	if strings.TrimSpace(d.ID) == "" || s.ids[d.ID] {
+		return false
+	}
+	s.ids[d.ID] = true
+	if d.MetadataOnly {
+		s.listOnly[d.ID] = true
+		if d.FetchFailed {
+			s.noFullText[d.ID] = true
+			s.fetchFailed++
+		}
+	} else if d.HasHTML != nil {
+		if *d.HasHTML {
+			s.hasHTML[d.ID] = true
+			s.htmlMD5[d.ID] = d.HTMLMD5
+		} else {
+			s.noFullText[d.ID] = true
+		}
+	}
+	return true
+}
+
+// catalogRow is the catalogue row of an imported document.
+func catalogRow(d vbplDocument, snap time.Time) *types.LegalDocument {
+	return &types.LegalDocument{
+		ID:              d.ID,
+		Source:          "vbpl",
+		DocumentNumber:  legalcatalog.CleanVBPLNumber(d.SoKyHieu),
+		NumberKey:       vietnamese_legal.CatalogNumberKey(legalcatalog.CleanVBPLNumber(d.SoKyHieu)),
+		Title:           strings.Join(strings.Fields(d.Title), " "), // the portal's titles hold line breaks
+		DocType:         strings.TrimSpace(d.LoaiVanBan),
+		Issuer:          strings.TrimSpace(d.CoQuanBanHanh),
+		Signer:          strings.TrimSpace(d.NguoiKy),
+		SignerTitle:     strings.TrimSpace(d.ChucDanh),
+		Field:           strings.TrimSpace(d.LinhVuc),
+		IssuedOn:        parseVNDate(d.NgayBanHanh),
+		EffectiveOn:     parseVNDate(d.NgayCoHieuLuc),
+		ExpiredOn:       parseVNDate(d.NgayHetHieuLuc),
+		Status:          strings.TrimSpace(d.TinhTrangHieuLuc),
+		SourceUpdatedAt: &snap,
+	}
+}
+
+// noFullTextPool is what enqueueNoFullText picks from: the imported rows
+// and the list-only rows already catalogued (kept out of docs, so a
+// fetch_failed document catalogued on an earlier night is still asked for).
+func noFullTextPool(docs, listRows []*types.LegalDocument) []*types.LegalDocument {
+	return append(append(make([]*types.LegalDocument, 0, len(docs)+len(listRows)), docs...), listRows...)
 }
 
 type vbplRelation struct {
@@ -118,49 +189,23 @@ func main() {
 	stat("snapshot", *snapshot)
 
 	var docs []*types.LegalDocument
-	ids := map[string]bool{}
-	listOnly := map[string]bool{}
-	noFullText, hasHTML, htmlMD5 := map[string]bool{}, map[string]bool{}, map[string]string{}
+	sets := newImportSets()
 	if err := readJSONL(*docsPath, func(raw []byte) error {
 		var d vbplDocument
 		if err := json.Unmarshal(raw, &d); err != nil {
 			return err
 		}
-		if strings.TrimSpace(d.ID) == "" || ids[d.ID] {
-			return nil
+		if sets.add(d) {
+			docs = append(docs, catalogRow(d, snap))
 		}
-		ids[d.ID] = true
-		if d.MetadataOnly {
-			listOnly[d.ID] = true
-		} else if d.HasHTML != nil {
-			if *d.HasHTML {
-				hasHTML[d.ID] = true
-				htmlMD5[d.ID] = d.HTMLMD5
-			} else {
-				noFullText[d.ID] = true
-			}
-		}
-		docs = append(docs, &types.LegalDocument{
-			ID:              d.ID,
-			Source:          "vbpl",
-			DocumentNumber:  legalcatalog.CleanVBPLNumber(d.SoKyHieu),
-			NumberKey:       vietnamese_legal.CatalogNumberKey(legalcatalog.CleanVBPLNumber(d.SoKyHieu)),
-			Title:           strings.Join(strings.Fields(d.Title), " "), // the portal's titles hold line breaks
-			DocType:         strings.TrimSpace(d.LoaiVanBan),
-			Issuer:          strings.TrimSpace(d.CoQuanBanHanh),
-			Signer:          strings.TrimSpace(d.NguoiKy),
-			SignerTitle:     strings.TrimSpace(d.ChucDanh),
-			Field:           strings.TrimSpace(d.LinhVuc),
-			IssuedOn:        parseVNDate(d.NgayBanHanh),
-			EffectiveOn:     parseVNDate(d.NgayCoHieuLuc),
-			ExpiredOn:       parseVNDate(d.NgayHetHieuLuc),
-			Status:          strings.TrimSpace(d.TinhTrangHieuLuc),
-			SourceUpdatedAt: &snap,
-		})
 		return nil
 	}); err != nil {
 		log.Fatalf("read documents: %v", err)
 	}
+	ids, listOnly, noFullText, hasHTML, htmlMD5 := sets.ids, sets.listOnly, sets.noFullText, sets.hasHTML, sets.htmlMD5
+	log.Printf("%d list-only documents the crawl failed to fetch for several runs, asked of another source like those without full text",
+		sets.fetchFailed)
+	stat("fetch_failed_no_full_text", sets.fetchFailed)
 
 	// A list-only row never replaces a row already in the catalogue: that
 	// one came from a full detail (an earlier snapshot or crawl) and the
@@ -344,7 +389,7 @@ func main() {
 	if *enqueueNoText {
 		// The catalogue is already imported: a queue problem is not worth
 		// failing the night's sync (and skipping its MinIO push).
-		if n, err := enqueueNoFullText(ctx, db, docs, catalogued, noFullText, time.Now()); err != nil {
+		if n, err := enqueueNoFullText(ctx, db, noFullTextPool(docs, listRows), catalogued, noFullText, time.Now()); err != nil {
 			warnf("queue documents without full text: %v", err)
 		} else {
 			log.Printf("%d documents without full text added to the request queue", n)

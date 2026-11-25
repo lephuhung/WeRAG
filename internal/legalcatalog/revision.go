@@ -25,5 +25,9 @@ package legalcatalog
 // moves the requesters and logs what it drops, text edges stored by
 // difference. 5: a copy whose parse failed holds nothing (heldInPublicKB,
 // PublicKnowledgeByExternalIDs). 6: a replacement in flight (the portal's
-// bytes already held by a copy still parsing) is not queued again.
-const ImporterRevision = 7
+// bytes already held by a copy still parsing) is not queued again. 7: a
+// text update request carries the crawl file hash it was queued for (queued
+// once per file), a replaced copy loses its links. 8: a list stub with
+// fetch_failed (a kept document the crawl failed to fetch for several runs)
+// is queued as no-full-text.
+const ImporterRevision = 8

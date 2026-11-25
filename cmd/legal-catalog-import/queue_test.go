@@ -442,6 +442,19 @@ func TestQueueChangedTextQueuesACrawlFileOnce(t *testing.T) {
 	if n := reopened(); n != 2 {
 		t.Errorf("%d reopen logs after the third run, want 2", n)
 	}
+
+	// the worker refused 20's update (the portal answered without a text):
+	// the same crawl file is tried again, the stamp does not settle it
+	if err := db.Exec(`UPDATE legal_document_requests SET status = ?, decided_by = 'system:legal-auto-ingest', decided_at = ?
+		WHERE legal_document_id = '20'`, types.LegalRequestRejected, now).Error; err != nil {
+		t.Fatal(err)
+	}
+	if n, err := queueChangedText(ctx, db, docs, sums, now); err != nil || n != 1 {
+		t.Fatalf("fourth run (20 refused) queued = %d, %v; want 1", n, err)
+	}
+	if got, r := stamp("20"); got != "crawl20" || r.Status != types.LegalRequestAutoIngest {
+		t.Errorf("refused request: stamp %q, %+v", got, r)
+	}
 }
 
 func TestReopenedDetailStampsTheCrawlHash(t *testing.T) {
@@ -454,5 +467,86 @@ func TestReopenedDetailStampsTheCrawlHash(t *testing.T) {
 	}
 	if got, _ := reopenedDetail(types.JSON(`{"changed_html_md5":"old"}`), nil, false, ""); changedMD5(got) != "old" {
 		t.Errorf("a move without a hash must keep the stamp: %s", got)
+	}
+}
+
+// A kept document the crawl failed to fetch for several runs comes as a list
+// stub with fetch_failed: it is list-only for its metadata and asked of
+// another source under enqueueNoFullText's rules, whether it is new or
+// catalogued on an earlier night (kept out of docs, in listRows). When a
+// later night's fetch brings its full text, the waiting request moves to
+// auto-ingest.
+func TestFetchFailedStubsAreQueuedAsNoFullText(t *testing.T) {
+	db := queueTestDB(t)
+	ctx := context.Background()
+	now := time.Now()
+	snap := time.Date(2026, 11, 25, 0, 0, 0, 0, time.UTC)
+	for _, stmt := range []string{
+		`INSERT INTO knowledge_bases (id, owner_tenant_id) VALUES ('kb', 0)`,
+		`INSERT INTO knowledges (id, knowledge_base_id, metadata) VALUES ('k1', 'kb', '{"external_id":"5"}')`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	stub := func(id, number, status string, failed bool) string {
+		raw, _ := json.Marshal(map[string]any{"id": id, "so_ky_hieu": number, "loai_van_ban": "Nghị định",
+			"tinh_trang_hieu_luc": status, "has_html": false, "metadata_only": true, "fetch_failed": failed})
+		return string(raw)
+	}
+	lines := []string{
+		stub("1", "1/2026/NĐ-CP", "Còn hiệu lực", true),         // new in force: queued
+		stub("2", "2/2026/NĐ-CP", "Còn hiệu lực", true),         // catalogued earlier (listRows): queued
+		stub("3", "3/2026/NĐ-CP", "Hết hiệu lực toàn bộ", true), // fully expired: not queued
+		stub("4", "4/2026/NĐ-CP", "Còn hiệu lực", false),        // plain list stub: not queued
+		stub("5", "5/2026/NĐ-CP", "Còn hiệu lực", true),         // a public KB holds it: not queued
+		stub("6", "", "Còn hiệu lực", true),                     // no number to search by: not queued
+	}
+	sets := newImportSets()
+	var docs, listRows []*types.LegalDocument
+	for _, line := range lines {
+		var d vbplDocument
+		if err := json.Unmarshal([]byte(line), &d); err != nil {
+			t.Fatal(err)
+		}
+		if !sets.add(d) {
+			t.Fatalf("row %s refused", d.ID)
+		}
+		if d.ID == "2" {
+			listRows = append(listRows, catalogRow(d, snap))
+		} else {
+			docs = append(docs, catalogRow(d, snap))
+		}
+	}
+	if len(sets.listOnly) != 6 || sets.fetchFailed != 5 || len(sets.noFullText) != 5 || len(sets.hasHTML) != 0 {
+		t.Fatalf("sets: list-only %d, fetch failed %d, no full text %d, html %d",
+			len(sets.listOnly), sets.fetchFailed, len(sets.noFullText), len(sets.hasHTML))
+	}
+	n, err := enqueueNoFullText(ctx, db, noFullTextPool(docs, listRows), listRows, sets.noFullText, now)
+	if err != nil || n != 2 {
+		t.Fatalf("added = %d, err = %v, want 2", n, err)
+	}
+	var rows []types.LegalDocumentRequest
+	if err := db.Order("legal_document_id").Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].LegalDocumentID != "1" || rows[1].LegalDocumentID != "2" ||
+		rows[0].Source != types.LegalRequestSourceNoFullText || rows[0].Status != types.LegalRequestRequested {
+		t.Fatalf("requests = %+v", rows)
+	}
+
+	// A later night fetches document 1 with its full text.
+	next := newImportSets()
+	has := true
+	full := vbplDocument{ID: "1", SoKyHieu: "1/2026/NĐ-CP", TinhTrangHieuLuc: "Còn hiệu lực", HasHTML: &has, HTMLMD5: "x"}
+	next.add(full)
+	added, moved, err := queueAutoIngest(ctx, db, []*types.LegalDocument{catalogRow(full, snap)}, nil, next.hasHTML, now)
+	if err != nil || added != 0 || moved != 1 {
+		t.Fatalf("added = %d, moved = %d, err = %v", added, moved, err)
+	}
+	var r types.LegalDocumentRequest
+	db.Take(&r, "legal_document_id = ?", "1")
+	if r.Status != types.LegalRequestAutoIngest || r.Source != types.LegalRequestSourceHTML {
+		t.Errorf("request after the fetch = %+v", r)
 	}
 }

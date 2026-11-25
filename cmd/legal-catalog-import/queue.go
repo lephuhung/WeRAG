@@ -404,7 +404,7 @@ func reopenedDetail(detail types.JSON, previous map[string]any, update bool, cha
 // against the crawl's). Only copies from the portal count: a copy pushed from
 // another source has other bytes by nature. Each request queued carries the
 // crawl's hash (types.LegalRequestDetailChangedHTMLMD5): a document whose
-// request already carries the current hash, whatever its status, was handed
+// request already carries the current hash and is added or still with the worker was handed
 // to the worker for this very file and decided from the live portal text,
 // so it is not queued again (the portal can change a page without its
 // updatedDate: the crawler keeps an older file than the copy the worker
@@ -470,7 +470,12 @@ func queueChangedText(
 	var todo []*types.LegalDocument
 	handed := 0
 	for _, d := range changed {
-		if r, ok := requests[d.NumberKey+"\x00"+d.ID]; ok && htmlMD5[d.ID] != "" && changedMD5(r.Detail) == htmlMD5[d.ID] {
+		// only a request the worker closed as added, or still has, counts: one
+		// it refused (the portal answered without a text that time) is tried
+		// again every night, as before the stamp
+		r, ok := requests[d.NumberKey+"\x00"+d.ID]
+		settled := ok && (r.Status == types.LegalRequestAdded || r.Status == types.LegalRequestAutoIngest)
+		if settled && htmlMD5[d.ID] != "" && changedMD5(r.Detail) == htmlMD5[d.ID] {
 			handed++
 			continue
 		}

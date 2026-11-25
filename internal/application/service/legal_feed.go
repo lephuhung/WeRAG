@@ -374,6 +374,12 @@ func (s *LegalFeedService) IngestHTML(
 		if e.Replaces != "" || slices.Contains(types.LegalCopyNotHeldStatuses, e.ParseStatus) {
 			// an earlier replacement still waiting for its swap, or a copy whose
 			// parse failed: nothing readable to keep, the newer text supersedes it
+			// (a reviewer's decision on its link still carries over)
+			if s.Reviews != nil && doc.priorLink == nil {
+				if old, err := s.Reviews.GetLink(ctx, e.ID); err == nil && old != nil && legalHumanReview(old) {
+					doc.priorLink = old
+				}
+			}
 			if err := s.knowledge.DeleteKnowledge(ctx, e.ID); err != nil {
 				return nil, fmt.Errorf("failed to delete the superseded copy %s: %w", e.ID, err)
 			}

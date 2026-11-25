@@ -11,6 +11,7 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+import urllib.error
 from contextlib import redirect_stdout
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -22,13 +23,16 @@ TEXT = "<p>" + "Điều 1. Nội dung. " * 20 + "</p>"
 
 
 class FakeClient:
-    """Answers the detail of each id from docs: {id: (status, content)}."""
+    """Answers the detail of each id from docs: {id: (status, content)};
+    an id whose value is an exception raises it."""
 
     def __init__(self, docs):
         self.docs = docs
 
     def fetch(self, url, headers=None, **_):
         doc_id = url.rsplit("/", 1)[1]
+        if isinstance(self.docs[doc_id], Exception):
+            raise self.docs[doc_id]
         status, content = self.docs[doc_id]
         return json.dumps({"success": True, "data": {
             "id": doc_id, "title": doc_id, "effStatus": {"name": status},
@@ -117,6 +121,116 @@ class CrawlRemovalTest(unittest.TestCase):
             open(os.path.join(self.html, f"{i}.html"), "w").close()
         self.assertEqual(crawl.mass_expiry_limit(self.args(), self.html), 240)
         self.assertEqual(crawl.mass_expiry_limit(self.args(max_expired_removals=5), self.html), 5)
+
+
+OLD_SCHEMA = """
+CREATE TABLE docs (id TEXT PRIMARY KEY, list_sig TEXT NOT NULL, list_item TEXT NOT NULL, kept INTEGER NOT NULL,
+    fetched_sig TEXT, detail TEXT, diagram TEXT, fetched_at TEXT, error TEXT);
+CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+INSERT INTO docs (id, list_sig, list_item, kept) VALUES ('a', 's', '{}', 1);
+"""
+
+
+def list_item(doc_id):
+    return json.dumps({"id": doc_id, "title": doc_id, "docNum": f"{doc_id}/2026/NĐ-CP",
+                       "docType": {"name": "Nghị định"}, "effStatus": {"name": "Còn hiệu lực"}})
+
+
+class FetchFailedTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp()
+        os.makedirs(os.path.join(self.dir, "html"))
+        self.db = crawl.open_state(sqlite3.connect(os.path.join(self.dir, "state.sqlite")))
+        self.orig_rsc = crawl.rsc_object
+        crawl.rsc_object = lambda text, key: {}
+
+    def tearDown(self):
+        crawl.rsc_object = self.orig_rsc
+
+    def args(self, **kw):
+        a = argparse.Namespace(out_dir=self.dir, refetch_all=False, limit=0, max_expired_removals=None,
+                               allow_mass_expiry=False, all_central=True, min_year=2010, no_stubs=False,
+                               province=[])
+        for k, v in kw.items():
+            setattr(a, k, v)
+        return a
+
+    def add(self, doc_id, kept=1, detail=None):
+        with self.db:
+            self.db.execute("INSERT INTO docs (id, list_sig, list_item, kept, detail, diagram) VALUES (?, 's', ?, ?, ?, '{}')",
+                            (doc_id, list_item(doc_id), kept, detail))
+
+    def runs(self, doc_id):
+        return self.db.execute("SELECT fail_runs FROM docs WHERE id=?", (doc_id,)).fetchone()[0]
+
+    def crawl(self, docs):
+        with redirect_stdout(io.StringIO()):
+            return crawl.crawl_documents(FakeClient(docs), self.db, "act", self.args())
+
+    def export(self, **kw):
+        with redirect_stdout(io.StringIO()):
+            res = crawl.export(self.db, self.args(**kw))
+        with open(os.path.join(self.dir, "documents.jsonl"), encoding="utf-8") as f:
+            rows = {r["id"]: r for r in map(json.loads, f)}
+        return res, rows
+
+    def test_an_old_state_file_upgrades_in_place(self):
+        path = os.path.join(self.dir, "old.sqlite")
+        old = sqlite3.connect(path)
+        old.executescript(OLD_SCHEMA)
+        old.close()
+        db = crawl.open_state(sqlite3.connect(path))
+        self.assertEqual(db.execute("SELECT id, fail_runs FROM docs").fetchall(), [("a", 0)])
+        crawl.open_state(db)  # idempotent
+        cols = [r[1] for r in db.execute("PRAGMA table_info(docs)")]
+        self.assertEqual(cols.count("fail_runs"), 1)
+
+    def test_fail_runs_count_up_and_reset_on_a_fetch(self):
+        self.add("a")
+        broken = {"a": urllib.error.HTTPError("u", 500, "boom", {}, None)}
+        for n in (1, 2, 3):
+            res = self.crawl(broken)
+            self.assertEqual(res["fetch_failed"], 1)
+            self.assertEqual(self.runs("a"), n)
+        self.assertIn("500", self.db.execute("SELECT error FROM docs WHERE id='a'").fetchone()[0])
+        self.crawl({"a": ("Còn hiệu lực", TEXT)})
+        self.assertEqual(self.runs("a"), 0)
+        self.assertIsNone(self.db.execute("SELECT error FROM docs WHERE id='a'").fetchone()[0])
+
+    def test_the_deferred_expiry_resets_fail_runs(self):
+        self.add("a", detail="{}")
+        with open(os.path.join(self.dir, "html", "a.html"), "w", encoding="utf-8") as f:
+            f.write(TEXT)
+        with self.db:
+            self.db.execute("UPDATE docs SET fail_runs=4 WHERE id='a'")
+        res = self.crawl({"a": (crawl.EXPIRED_STATUS, "")})
+        self.assertEqual(res["expired_html_removed"], 1)
+        self.assertEqual(self.runs("a"), 0)
+
+    def test_export_flags_a_kept_document_failing_two_runs_without_detail(self):
+        detail = json.dumps({"id": "held", "title": "held"})
+        self.add("once")       # one bad night
+        self.add("twice")      # two: flagged
+        self.add("held", detail=detail)  # fetched earlier: exported from its detail
+        self.add("out", kept=0)          # outside the crawl scope
+        with self.db:
+            self.db.execute("UPDATE docs SET fail_runs=1 WHERE id='once'")
+            self.db.execute("UPDATE docs SET fail_runs=2 WHERE id IN ('twice', 'held', 'out')")
+        res, rows = self.export()
+        self.assertTrue(rows["twice"]["fetch_failed"])
+        self.assertTrue(rows["twice"]["metadata_only"])
+        self.assertFalse(rows["twice"]["has_html"])
+        for doc_id in ("once", "out"):
+            self.assertNotIn("fetch_failed", rows[doc_id], doc_id)
+            self.assertTrue(rows[doc_id]["metadata_only"], doc_id)
+        self.assertNotIn("fetch_failed", rows["held"])
+        self.assertNotIn("metadata_only", rows["held"])
+        self.assertEqual(res["exported_fetch_failed"], 1)
+        self.assertEqual(res["exported_metadata_only"], 3)
+        # --no-stubs still exports the flagged kept document
+        res, rows = self.export(no_stubs=True)
+        self.assertEqual(sorted(rows), ["held", "twice"])
+        self.assertEqual(res["exported_fetch_failed"], 1)
 
 
 class MainExitTest(unittest.TestCase):

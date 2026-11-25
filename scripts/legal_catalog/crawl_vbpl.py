@@ -24,7 +24,10 @@ After crawling, the full set is exported:
   documents.jsonl  one row per kept document, HF metadata field names
                    (read by cmd/legal-catalog-import), then every other
                    central document with its list metadata only
-                   ("metadata_only": true; translations left out)
+                   ("metadata_only": true; translations left out); a
+                   kept document whose detail never came and failed
+                   FETCH_FAILED_RUNS runs in a row also has
+                   "fetch_failed": true (queued for another source)
   relations.jsonl  raw portal relations {doc_id, other_doc_id, relationship},
                    doc_id acting on other_doc_id with the portal label
   html/<id>.html   full text as published on vbpl.vn, except for documents
@@ -137,10 +140,20 @@ CREATE TABLE IF NOT EXISTS docs (
     detail     TEXT,
     diagram    TEXT,
     fetched_at TEXT,
-    error      TEXT
+    error      TEXT,
+    fail_runs  INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
+# Columns added after the first crawls: the state file comes back from MinIO
+# every night, so an older one gains them in place (open_state).
+UPGRADES = (
+    ("fail_runs", "ALTER TABLE docs ADD COLUMN fail_runs INTEGER NOT NULL DEFAULT 0"),
+)
+# Consecutive failed fetch runs after which a never-fetched kept document is
+# exported with "fetch_failed": true, so the importer queues it for another
+# source (the operators' / TVPL extension queue). One bad night queues nothing.
+FETCH_FAILED_RUNS = 2
 
 
 class Client:
@@ -191,6 +204,17 @@ class Client:
             "Content-Type": "text/plain;charset=UTF-8",
             "Origin": SITE,
         })
+
+
+def open_state(db):
+    """Create the state schema, or bring an older state file up to date."""
+    db.executescript(SCHEMA)
+    have = {row[1] for row in db.execute("PRAGMA table_info(docs)")}
+    with db:
+        for column, stmt in UPGRADES:
+            if column not in have:
+                db.execute(stmt)
+    return db
 
 
 def log(msg):
@@ -348,7 +372,7 @@ def mass_expiry_limit(args, html_dir):
 def save_fetched(db, doc_id, detail, diagram, sig):
     with db:
         db.execute(
-            "UPDATE docs SET detail=?, diagram=?, fetched_sig=?, fetched_at=?, error=NULL WHERE id=?",
+            "UPDATE docs SET detail=?, diagram=?, fetched_sig=?, fetched_at=?, error=NULL, fail_runs=0 WHERE id=?",
             (json.dumps(detail, ensure_ascii=False), json.dumps(diagram, ensure_ascii=False),
              sig, dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), doc_id))
 
@@ -384,7 +408,7 @@ def crawl_documents(client, db, action, args):
                 raise ValueError("diagram: unexpected response")
         except (urllib.error.URLError, ValueError, TimeoutError, ConnectionError) as e:
             with db:
-                db.execute("UPDATE docs SET error=? WHERE id=?", (str(e)[:500], doc_id))
+                db.execute("UPDATE docs SET error=?, fail_runs=fail_runs+1 WHERE id=?", (str(e)[:500], doc_id))
             log(f"  {doc_id}: {e}")
             failed += 1
             continue
@@ -532,19 +556,31 @@ def export(db, args):
         # Every other central document goes in with its list metadata only,
         # so the catalogue still knows it (an old law someone asks about,
         # the target of a "căn cứ" or "hướng dẫn" edge). Translations are
-        # copies of documents already listed.
-        stubs = 0
-        if not args.no_stubs:
-            for doc_id, item in db.execute("SELECT id, list_item FROM docs ORDER BY id"):
-                item = json.loads(item)
-                if doc_id in exported or (item.get("docType") or {}).get("name") in STUB_SKIP_TYPES:
-                    continue
-                fd.write(json.dumps(list_row(item, bool(args.province)), ensure_ascii=False) + "\n")
-                stubs += 1
+        # copies of documents already listed. A kept document whose detail
+        # failed FETCH_FAILED_RUNS runs in a row and never came is flagged
+        # "fetch_failed" (exported even with --no-stubs: it is in scope), so
+        # the importer asks another source for its text.
+        stubs = fetch_failed = 0
+        for doc_id, item, kept, has_detail, fail_runs in db.execute(
+                "SELECT id, list_item, kept, detail IS NOT NULL, fail_runs FROM docs ORDER BY id"):
+            item = json.loads(item)
+            if doc_id in exported or (item.get("docType") or {}).get("name") in STUB_SKIP_TYPES:
+                continue
+            failed = bool(kept) and not has_detail and fail_runs >= FETCH_FAILED_RUNS
+            if args.no_stubs and not failed:
+                continue
+            row = list_row(item, bool(args.province))
+            if failed:
+                row["fetch_failed"] = True
+                fetch_failed += 1
+            fd.write(json.dumps(row, ensure_ascii=False) + "\n")
+            stubs += 1
     for name in ("documents.jsonl", "relations.jsonl"):
         os.replace(os.path.join(out_dir, name + ".tmp"), os.path.join(out_dir, name))
-    log(f"exported {docs} documents, {stubs} metadata-only documents and {rels} relations to {out_dir}")
-    return {"exported_documents": docs, "exported_metadata_only": stubs, "exported_relations": rels}
+    log(f"exported {docs} documents, {stubs} metadata-only documents ({fetch_failed} of them kept but "
+        f"failing to fetch for {FETCH_FAILED_RUNS}+ runs) and {rels} relations to {out_dir}")
+    return {"exported_documents": docs, "exported_metadata_only": stubs, "exported_fetch_failed": fetch_failed,
+            "exported_relations": rels}
 
 
 def main():
@@ -560,7 +596,8 @@ def main():
     ap.add_argument("--skip-list", action="store_true", help="reuse the stored list, only fetch and export")
     ap.add_argument("--export-only", action="store_true")
     ap.add_argument("--no-stubs", action="store_true",
-                    help="export only the kept documents, not the list metadata of the other central ones")
+                    help="export only the kept documents (a fetch_failed one as its list stub), "
+                         "not the list metadata of the other central ones")
     ap.add_argument("--province", action="append", default=[], metavar="UNIT_ID",
                     help="crawl local documents of this province (vbpl administrative unit id; repeatable)")
     ap.add_argument("--list-action", help="server action id of the catalogue search")
@@ -575,8 +612,7 @@ def main():
     summary = {}
 
     os.makedirs(args.out_dir, exist_ok=True)
-    db = sqlite3.connect(os.path.join(args.out_dir, "state.sqlite"))
-    db.executescript(SCHEMA)
+    db = open_state(sqlite3.connect(os.path.join(args.out_dir, "state.sqlite")))
     if not args.export_only:
         client = Client(args.delay, args.retries)
         list_action, diagram_action = args.list_action, args.diagram_action
