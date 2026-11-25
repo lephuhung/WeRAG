@@ -109,6 +109,9 @@ type LegalInvariantItem struct {
 //	copies.no_chunks               approved completed copies without chunks (info)
 //	links.dangling_knowledge       approved links to a deleted/missing knowledge
 //	                               (rule: growth over legalInvariantsDanglingGrowth)
+//	links.dangling_superseded      of those, links whose document also has an
+//	                               approved link on a live knowledge: leftovers
+//	                               of a replacement (rule: must be 0)
 //	links.dangling_catalogue       approved links to a missing catalogue row
 //	links.kb_mismatch              links whose KB is not the knowledge's (info)
 //	provisions.total|<source>      legal_provision_links
@@ -123,6 +126,8 @@ type LegalInvariantSnapshot struct {
 	StuckCopies       []LegalInvariantItem `json:"stuck_copies,omitempty"`
 	DanglingKnowledge []string             `json:"dangling_knowledge,omitempty"`
 	DanglingCatalogue []string             `json:"dangling_catalogue,omitempty"`
+	// DanglingSuperseded: the old copies' ids of links.dangling_superseded.
+	DanglingSuperseded []string `json:"dangling_superseded,omitempty"`
 }
 
 // legalInvariantsKnownSources are always in the relation and catalogue
@@ -434,6 +439,15 @@ func legalInvariantQueries(postgres bool, now time.Time) []legalInvariantQuery {
 	LEFT JOIN LATERAL (SELECT 1 AS one FROM chunks c WHERE c.knowledge_id = k.id AND c.deleted_at IS NULL LIMIT 1) c ON TRUE
 	WHERE l.review_status = 'approved' AND c.one IS NULL`
 	}
+	// a dangling approved link whose document has an approved link on a
+	// live copy: the old copy's link left behind by a replacement (a live
+	// link a reviewer rejected does not count: that row is history)
+	const danglingSuperseded = `
+	LEFT JOIN knowledges k ON k.id = l.knowledge_id
+	WHERE l.review_status = 'approved' AND (k.id IS NULL OR k.deleted_at IS NOT NULL)
+	  AND EXISTS (SELECT 1 FROM legal_document_links l2
+	    JOIN knowledges k2 ON k2.id = l2.knowledge_id AND k2.deleted_at IS NULL
+	    WHERE l2.legal_document_id = l.legal_document_id AND l2.review_status = 'approved')`
 	return []legalInvariantQuery{
 		{"relations.list", `SELECT COUNT(*) AS n FROM legal_document_relations WHERE source_label <> ?`,
 			[]any{types.LegalRelationSourceText}},
@@ -469,6 +483,9 @@ func legalInvariantQueries(postgres bool, now time.Time) []legalInvariantQuery {
 		{"links.dangling_knowledge.list", `SELECT l.knowledge_id AS kb FROM legal_document_links l
 	LEFT JOIN knowledges k ON k.id = l.knowledge_id
 	WHERE l.review_status = 'approved' AND (k.id IS NULL OR k.deleted_at IS NOT NULL)
+	ORDER BY l.knowledge_id LIMIT ` + strconv.Itoa(legalInvariantsListMax), nil},
+		{"links.dangling_superseded", `SELECT COUNT(*) AS n FROM legal_document_links l` + danglingSuperseded, nil},
+		{"links.dangling_superseded.list", `SELECT l.knowledge_id AS kb FROM legal_document_links l` + danglingSuperseded + `
 	ORDER BY l.knowledge_id LIMIT ` + strconv.Itoa(legalInvariantsListMax), nil},
 		{"links.dangling_catalogue", `SELECT COUNT(*) AS n FROM legal_document_links l
 	LEFT JOIN legal_documents d ON d.id = l.legal_document_id
@@ -588,15 +605,18 @@ func legalInvariantsApply(s *LegalInvariantSnapshot, name string, rows []legalIn
 		} else {
 			s.FailedCopies = items
 		}
-	case "links.dangling_knowledge.list", "links.dangling_catalogue.list":
+	case "links.dangling_knowledge.list", "links.dangling_catalogue.list", "links.dangling_superseded.list":
 		ids := make([]string, 0, len(rows))
 		for _, r := range rows {
 			ids = append(ids, r.KB)
 		}
-		if name == "links.dangling_knowledge.list" {
+		switch name {
+		case "links.dangling_knowledge.list":
 			s.DanglingKnowledge = ids
-		} else {
+		case "links.dangling_catalogue.list":
 			s.DanglingCatalogue = ids
+		default:
+			s.DanglingSuperseded = ids
 		}
 	case "provisions":
 		for _, r := range rows {
@@ -637,6 +657,7 @@ func legalInvariantGuarded(key string) bool {
 const (
 	legalInvariantRankZero = iota
 	legalInvariantRankDangling
+	legalInvariantRankSuperseded
 	legalInvariantRankDrop
 	legalInvariantRankDanglingGrowth
 	legalInvariantRankFailed
@@ -697,6 +718,11 @@ func legalInvariantRules(cur, prev *LegalInvariantSnapshot, l legalInvariantLimi
 		vs = append(vs, legalInvariantViolation{legalInvariantRankDangling, n,
 			fmt.Sprintf("%s liên kết đã duyệt trỏ tới văn bản không có trong danh mục (mã bản sao): %s", legalFormatInt(n),
 				legalInvariantList(cur.DanglingCatalogue, n))})
+	}
+	if n := cur.Counts["links.dangling_superseded"]; n > 0 {
+		vs = append(vs, legalInvariantViolation{legalInvariantRankSuperseded, n,
+			fmt.Sprintf("%s liên kết đã duyệt còn trỏ tới bản toàn văn đã thay (mã bản sao cũ): %s", legalFormatInt(n),
+				legalInvariantList(cur.DanglingSuperseded, n))})
 	}
 	if n := cur.Counts["copies.failed"]; n > 0 {
 		vs = append(vs, legalInvariantViolation{legalInvariantRankFailed, n,

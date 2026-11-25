@@ -59,6 +59,7 @@ export interface LegalInvariantSnapshot {
   stuck_copies?: LegalInvariantItem[];
   dangling_knowledge?: string[];
   dangling_catalogue?: string[];
+  dangling_superseded?: string[];
 }
 
 /** The previous check a data check compared with (summary "previous"). */

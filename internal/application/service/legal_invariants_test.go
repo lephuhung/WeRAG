@@ -156,6 +156,15 @@ func TestLegalInvariantsSnapshot(t *testing.T) {
 	e.copy("gone", "kb-tt", types.ParseStatusCompleted, time.Hour, "v1", true)
 	e.exec(`UPDATE knowledges SET deleted_at = ? WHERE id = 'gone'`, time.Now())
 	e.copy("k7", "kb-tt", types.ParseStatusCompleted, time.Hour, "nowhere", false)
+	// "gone" left its link next to v1's live approved copy k1: superseded.
+	// A deleted copy whose document has no live copy is only dangling; so is
+	// one whose live copy's link a reviewer rejected (that row is history).
+	e.copy("gone2", "kb-tt", types.ParseStatusCompleted, time.Hour, "t1", true)
+	e.copy("gone3", "kb-tt", types.ParseStatusCompleted, time.Hour, "d1", true)
+	e.exec(`UPDATE knowledges SET deleted_at = ? WHERE id IN ('gone2', 'gone3')`, time.Now())
+	e.copy("k8", "kb-own", types.ParseStatusCompleted, time.Hour, "", true)
+	require.NoError(t, e.db.Create(&types.LegalDocumentLink{KnowledgeID: "k8", KnowledgeBaseID: "kb-own",
+		LegalDocumentID: "d1", ReviewStatus: types.LegalReviewRejected}).Error)
 
 	s, err := LegalInvariantsSnapshot(context.Background(), e.db, time.Now())
 	require.NoError(t, err)
@@ -179,8 +188,10 @@ func TestLegalInvariantsSnapshot(t *testing.T) {
 	require.EqualValues(t, 1, c["copies.stuck"])
 	require.Equal(t, "k5", s.StuckCopies[0].ID)
 	require.EqualValues(t, 1, c["copies.no_chunks"])
-	require.EqualValues(t, 1, c["links.dangling_knowledge"])
-	require.Equal(t, []string{"gone"}, s.DanglingKnowledge)
+	require.EqualValues(t, 3, c["links.dangling_knowledge"])
+	require.Equal(t, []string{"gone", "gone2", "gone3"}, s.DanglingKnowledge)
+	require.EqualValues(t, 1, c["links.dangling_superseded"], "only the one next to a live approved link")
+	require.Equal(t, []string{"gone"}, s.DanglingSuperseded)
 	require.EqualValues(t, 1, c["links.dangling_catalogue"])
 	require.Equal(t, []string{"k7"}, s.DanglingCatalogue)
 	require.EqualValues(t, 0, c["links.kb_mismatch"])
@@ -262,6 +273,16 @@ func TestLegalInvariantRules(t *testing.T) {
 	require.Equal(t, []string{"Liên kết đã duyệt trỏ tới toàn văn đã xóa: 242 → 900 (thêm 658)"},
 		legalInvariantRules(snap(map[string]int64{"links.dangling_knowledge": 900}), dPrev, limits))
 	require.Equal(t, "x", legalInvariantErrorText([]string{"x"}))
+
+	// a replacement's leftover link is a rule of its own: any one fails,
+	// with or without a previous check; the total alone does not
+	require.Empty(t, legalInvariantRules(snap(map[string]int64{"links.dangling_knowledge": 242,
+		"links.dangling_superseded": 0}), dPrev, limits))
+	sup := snap(map[string]int64{"links.dangling_knowledge": 243, "links.dangling_superseded": 1})
+	sup.DanglingSuperseded = []string{"old1"}
+	want := []string{"1 liên kết đã duyệt còn trỏ tới bản toàn văn đã thay (mã bản sao cũ): old1"}
+	require.Equal(t, want, legalInvariantRules(sup, dPrev, limits))
+	require.Equal(t, want, legalInvariantRules(sup, nil, limits))
 	// a long list is cut in the message
 	require.Equal(t, "a, b, c, d, e, …", legalInvariantList([]string{"a", "b", "c", "d", "e", "f"}, 40))
 }

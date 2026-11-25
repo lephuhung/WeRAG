@@ -111,6 +111,7 @@ const COUNT_LABEL: Record<string, LocaleKey> = {
   kept: "lsync.count.kept",
   up_to_date: "lsync.count.up_to_date",
   last_fetch_failed: "lsync.count.last_fetch_failed",
+  exported_fetch_failed: "lsync.count.exported_fetch_failed",
   // import
   snapshot: "lsync.count.snapshot",
   documents: "lsync.count.documents",
@@ -124,6 +125,7 @@ const COUNT_LABEL: Record<string, LocaleKey> = {
   knowledge_validity_updated: "lsync.count.knowledge_validity_updated",
   knowledge_linked: "lsync.count.knowledge_linked",
   queued_no_full_text: "lsync.count.queued_no_full_text",
+  fetch_failed_no_full_text: "lsync.count.fetch_failed_no_full_text",
   queued_auto_ingest: "lsync.count.queued_auto_ingest",
   requests_moved_to_auto_ingest: "lsync.count.requests_moved_to_auto_ingest",
   queued_text_changed: "lsync.count.queued_text_changed",
@@ -214,6 +216,7 @@ const INVARIANT_FIXED_LABEL: Record<string, LocaleKey> = {
   "copies.no_chunks": "lsync.inv.copies.no_chunks",
   "links.dangling_knowledge": "lsync.inv.links.dangling_knowledge",
   "links.dangling_catalogue": "lsync.inv.links.dangling_catalogue",
+  "links.dangling_superseded": "lsync.inv.links.dangling_superseded",
   "links.kb_mismatch": "lsync.inv.links.kb_mismatch",
   "provisions.total": "lsync.inv.provisions.total",
   "provisions.orphan": "lsync.inv.provisions.orphan",
@@ -832,6 +835,7 @@ function InvariantsTable({
     { label: t("lsync.inv.copies.stuck"), items: (snapshot.stuck_copies ?? []).map((i) => i.title || i.id) },
     { label: t("lsync.inv.links.dangling_knowledge"), items: snapshot.dangling_knowledge ?? [] },
     { label: t("lsync.inv.links.dangling_catalogue"), items: snapshot.dangling_catalogue ?? [] },
+    { label: t("lsync.inv.links.dangling_superseded"), items: snapshot.dangling_superseded ?? [] },
   ].filter((l) => l.items.length > 0);
   return (
     <div>
