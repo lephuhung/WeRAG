@@ -189,6 +189,14 @@ const LegalRequestParseFailureMax = 3
 // worker: {status, by, at, note, knowledge_id, reopened_at}.
 const LegalRequestDetailPreviousDecision = "previous_decision"
 
+// LegalRequestDetailChangedHTMLMD5 (detail key) is the md5 of the crawler's
+// stored vbpl.vn HTML that made the catalogue import queue the request as a
+// changed text. The worker decides from the live portal text; the import
+// does not queue the same crawler file again (the portal can change a page
+// without its updatedDate, so the crawler's file may stay older than the
+// copy the worker fetched), only a refetched one with another hash.
+const LegalRequestDetailChangedHTMLMD5 = "changed_html_md5"
+
 // LegalExpiredRetentionDefaultDays is that setting's default.
 const LegalExpiredRetentionDefaultDays = 15
 

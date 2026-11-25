@@ -122,13 +122,15 @@ func enqueueNoFullText(
 			len(fresh), maxNoFullTextRequests, len(fresh)-maxNoFullTextRequests)
 		fresh = fresh[:maxNoFullTextRequests]
 	}
-	return insertRequests(ctx, db, fresh, nil, types.LegalRequestSourceNoFullText, types.LegalRequestRequested, now)
+	return insertRequests(ctx, db, fresh, nil, nil, types.LegalRequestSourceNoFullText, types.LegalRequestRequested, now)
 }
 
 // insertRequests adds rows nobody asked for (request_count 0). kbIDs names
-// the public KB holding a document's current copy, if any.
+// the public KB holding a document's current copy, if any; details a new
+// row's detail JSON, if any.
 func insertRequests(
-	ctx context.Context, db *gorm.DB, fresh []*types.LegalDocument, kbIDs map[string]string, source, status string, now time.Time,
+	ctx context.Context, db *gorm.DB, fresh []*types.LegalDocument, kbIDs map[string]string, details map[string]types.JSON,
+	source, status string, now time.Time,
 ) (int, error) {
 	added := 0
 	err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -136,10 +138,11 @@ func insertRequests(
 			// Raw: gorm would turn the zero request_count into its default 1.
 			res := tx.Exec(`INSERT INTO legal_document_requests
 				(id, number_key, document_number, doc_type, title, legal_document_id, knowledge_base_id, source, status,
-				 request_count, first_requested_at, last_requested_at, created_at, updated_at)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
+				 request_count, detail, first_requested_at, last_requested_at, created_at, updated_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?)
 				ON CONFLICT (number_key, legal_document_id) DO NOTHING`,
-				uuid.NewString(), d.NumberKey, d.DocumentNumber, d.DocType, d.Title, d.ID, kbIDs[d.ID], source, status, now, now, now, now)
+				uuid.NewString(), d.NumberKey, d.DocumentNumber, d.DocType, d.Title, d.ID, kbIDs[d.ID], source, status,
+				details[d.ID], now, now, now, now)
 			if res.Error != nil {
 				return res.Error
 			}
@@ -277,7 +280,7 @@ func queueAutoIngest(
 		// An added request here is one whose document no public KB holds any
 		// more (its text was removed when it expired, the portal has it in
 		// force again).
-		n, err := moveToAutoIngest(ctx, db, r, "", false, now)
+		n, err := moveToAutoIngest(ctx, db, r, "", false, "", now)
 		if err != nil {
 			return added, moved, err
 		}
@@ -287,7 +290,7 @@ func queueAutoIngest(
 		log.Printf("%d documents to ingest are over the limit of %d a night: the rest wait", len(fresh), maxNoFullTextRequests)
 		fresh = fresh[:maxNoFullTextRequests]
 	}
-	added, err = insertRequests(ctx, db, fresh, nil, types.LegalRequestSourceHTML, types.LegalRequestAutoIngest, now)
+	added, err = insertRequests(ctx, db, fresh, nil, nil, types.LegalRequestSourceHTML, types.LegalRequestAutoIngest, now)
 	return added, moved, err
 }
 
@@ -298,8 +301,12 @@ func queueAutoIngest(
 // rejection or give-up, which was about adding it, does not stop it. The
 // decision a reopened request carried (status, by, at, note) is kept in its
 // detail under previous_decision and in a legal_feed_log row, so it does not
-// vanish with the reset fields.
-func moveToAutoIngest(ctx context.Context, db *gorm.DB, r requestRow, kbID string, update bool, now time.Time) (int, error) {
+// vanish with the reset fields. changedMD5 (a text update: the crawler's
+// file hash that showed the change) is stamped in the detail under
+// types.LegalRequestDetailChangedHTMLMD5 by the same write that moves it.
+func moveToAutoIngest(
+	ctx context.Context, db *gorm.DB, r requestRow, kbID string, update bool, changedMD5 string, now time.Time,
+) (int, error) {
 	held := r.ClaimedBy != "" && r.ClaimedAt != nil && now.Sub(*r.ClaimedAt) < types.LegalRequestClaimLease
 	added := r.Status == types.LegalRequestAdded || (update && r.Status == types.LegalRequestRejected)
 	if (r.Status != types.LegalRequestRequested && !added) || held || (!update && autoIngestSkipped(r.Detail)) {
@@ -320,8 +327,8 @@ func moveToAutoIngest(ctx context.Context, db *gorm.DB, r requestRow, kbID strin
 			previous["at"] = r.DecidedAt.UTC().Format(time.RFC3339)
 		}
 	}
-	if previous != nil || (update && autoIngestSkipped(r.Detail)) {
-		detail, err := reopenedDetail(r.Detail, previous, update)
+	if previous != nil || (update && autoIngestSkipped(r.Detail)) || changedMD5 != "" {
+		detail, err := reopenedDetail(r.Detail, previous, update, changedMD5)
 		if err != nil {
 			return 0, fmt.Errorf("request %s detail: %w", r.ID, err)
 		}
@@ -361,9 +368,10 @@ func moveToAutoIngest(ctx context.Context, db *gorm.DB, r requestRow, kbID strin
 }
 
 // reopenedDetail is a request's detail with previous (when not nil) under
-// types.LegalRequestDetailPreviousDecision and, for a text update, the
+// types.LegalRequestDetailPreviousDecision, changedMD5 (when not empty)
+// under types.LegalRequestDetailChangedHTMLMD5 and, for a text update, the
 // worker's give-up marker removed; the other keys stay.
-func reopenedDetail(detail types.JSON, previous map[string]any, update bool) (types.JSON, error) {
+func reopenedDetail(detail types.JSON, previous map[string]any, update bool, changedMD5 string) (types.JSON, error) {
 	d := map[string]json.RawMessage{}
 	if len(detail) > 0 && string(detail) != "null" {
 		if err := json.Unmarshal(detail, &d); err != nil {
@@ -380,6 +388,13 @@ func reopenedDetail(detail types.JSON, previous map[string]any, update bool) (ty
 		}
 		d[types.LegalRequestDetailPreviousDecision] = raw
 	}
+	if changedMD5 != "" {
+		raw, err := json.Marshal(changedMD5)
+		if err != nil {
+			return nil, err
+		}
+		d[types.LegalRequestDetailChangedHTMLMD5] = raw
+	}
 	raw, err := json.Marshal(d)
 	return types.JSON(raw), err
 }
@@ -387,7 +402,14 @@ func reopenedDetail(detail types.JSON, previous map[string]any, update bool) (ty
 // queueChangedText hands the worker the documents whose full text on the
 // portal is no longer the one a public KB holds (the knowledge's file hash
 // against the crawl's). Only copies from the portal count: a copy pushed from
-// another source has other bytes by nature. Returns the documents queued.
+// another source has other bytes by nature. Each request queued carries the
+// crawl's hash (types.LegalRequestDetailChangedHTMLMD5): a document whose
+// request already carries the current hash, whatever its status, was handed
+// to the worker for this very file and decided from the live portal text,
+// so it is not queued again (the portal can change a page without its
+// updatedDate: the crawler keeps an older file than the copy the worker
+// fetched, and would reopen the request every night); a refetched file
+// (another hash) queues it again. Returns the documents queued.
 func queueChangedText(
 	ctx context.Context, db *gorm.DB, docs []*types.LegalDocument, htmlMD5 map[string]string, now time.Time,
 ) (int, error) {
@@ -441,28 +463,61 @@ func queueChangedText(
 			changed = append(changed, d)
 		}
 	}
-	if len(changed) > maxNoFullTextRequests {
-		log.Printf("%d documents with a changed text are over the limit of %d a night: the rest wait", len(changed), maxNoFullTextRequests)
-		changed = changed[:maxNoFullTextRequests]
-	}
 	requests, err := loadRequests(ctx, db, changed)
 	if err != nil {
 		return 0, err
 	}
-	var fresh []*types.LegalDocument
-	queued := 0
+	var todo []*types.LegalDocument
+	handed := 0
 	for _, d := range changed {
+		if r, ok := requests[d.NumberKey+"\x00"+d.ID]; ok && htmlMD5[d.ID] != "" && changedMD5(r.Detail) == htmlMD5[d.ID] {
+			handed++
+			continue
+		}
+		todo = append(todo, d)
+	}
+	if handed > 0 {
+		log.Printf("%d documents with a changed text not queued again: the worker already had this crawl's file of them", handed)
+	}
+	if len(todo) > maxNoFullTextRequests {
+		log.Printf("%d documents with a changed text are over the limit of %d a night: the rest wait", len(todo), maxNoFullTextRequests)
+		todo = todo[:maxNoFullTextRequests]
+	}
+	var fresh []*types.LegalDocument
+	details := map[string]types.JSON{}
+	queued := 0
+	for _, d := range todo {
+		sum := htmlMD5[d.ID]
 		r, ok := requests[d.NumberKey+"\x00"+d.ID]
 		if !ok {
+			detail, err := reopenedDetail(nil, nil, true, sum)
+			if err != nil {
+				return queued, err
+			}
+			details[d.ID] = detail
 			fresh = append(fresh, d)
 			continue
 		}
-		n, err := moveToAutoIngest(ctx, db, r, copyKB[d.ID], true, now)
+		n, err := moveToAutoIngest(ctx, db, r, copyKB[d.ID], true, sum, now)
 		if err != nil {
 			return queued, err
 		}
 		queued += n
 	}
-	n, err := insertRequests(ctx, db, fresh, copyKB, types.LegalRequestSourceHTML, types.LegalRequestAutoIngest, now)
+	n, err := insertRequests(ctx, db, fresh, copyKB, details, types.LegalRequestSourceHTML, types.LegalRequestAutoIngest, now)
 	return queued + n, err
+}
+
+// changedMD5 is the crawl's hash a text update was queued for
+// (types.LegalRequestDetailChangedHTMLMD5), "" when none.
+func changedMD5(detail types.JSON) string {
+	var d map[string]json.RawMessage
+	if len(detail) == 0 || json.Unmarshal(detail, &d) != nil {
+		return ""
+	}
+	var sum string
+	if json.Unmarshal(d[types.LegalRequestDetailChangedHTMLMD5], &sum) != nil {
+		return ""
+	}
+	return sum
 }

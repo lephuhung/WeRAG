@@ -377,6 +377,10 @@ func (s *LegalFeedService) IngestHTML(
 			if err := s.knowledge.DeleteKnowledge(ctx, e.ID); err != nil {
 				return nil, fmt.Errorf("failed to delete the superseded copy %s: %w", e.ID, err)
 			}
+			// its own link goes with it (the new copy gets one below)
+			if err := s.db.WithContext(ctx).Exec(`DELETE FROM legal_document_links WHERE knowledge_id = ?`, e.ID).Error; err != nil {
+				logger.Warnf(ctx, "[LegalFeed] %s: link of the superseded copy %s: %v", vbplID, e.ID, err)
+			}
 			logger.Infof(ctx, "[LegalFeed] %s: superseded copy %s (%s) deleted", vbplID, e.ID, e.ParseStatus)
 			continue
 		}

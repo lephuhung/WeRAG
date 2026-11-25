@@ -26,4 +26,4 @@ package legalcatalog
 // difference. 5: a copy whose parse failed holds nothing (heldInPublicKB,
 // PublicKnowledgeByExternalIDs). 6: a replacement in flight (the portal's
 // bytes already held by a copy still parsing) is not queued again.
-const ImporterRevision = 6
+const ImporterRevision = 7

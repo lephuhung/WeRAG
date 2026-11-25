@@ -88,9 +88,10 @@ func (s *LegalFeedService) taskCtx(ctx context.Context, kbID string) (context.Co
 
 // FinishReplacement swaps a parsed replacement in: for each old copy it names
 // (still there), a reviewer's decision on the old link carries over to the
-// new link, the requests pointing at the old copy point at the new one, and
-// the old copy is deleted; then the marker is cleared and "ingest_replaced"
-// logged (by whoever cleared it). Idempotent: a copy without the marker,
+// new link, the old link is dropped once the new copy has one
+// (retireReplacedLink), the requests pointing at the old copy point at the
+// new one, and the old copy is deleted; then the marker is cleared and
+// "ingest_replaced" logged (by whoever cleared it). Idempotent: a copy without the marker,
 // not readable yet, or whose old copies are gone already, is fine. Returns
 // whether a swap was done.
 func (s *LegalFeedService) FinishReplacement(ctx context.Context, newID string) (bool, error) {
@@ -131,6 +132,9 @@ func (s *LegalFeedService) FinishReplacement(ctx context.Context, newID string) 
 			continue
 		}
 		s.carryReview(ctx, old, newID)
+		if err := s.retireReplacedLink(ctx, old, newID); err != nil {
+			return false, err
+		}
 		if err := s.db.WithContext(ctx).Exec(`UPDATE legal_document_requests SET knowledge_id = ?, updated_at = ? WHERE knowledge_id = ?`,
 			newID, time.Now(), old).Error; err != nil {
 			return false, fmt.Errorf("requests of %s: %w", old, err)
@@ -219,8 +223,44 @@ func (s *LegalFeedService) carryReview(ctx context.Context, oldID, newID string)
 	}
 }
 
+// retireReplacedLink drops the legal_document_links row of a replaced copy,
+// which would otherwise point at a deleted knowledge after the swap. The new
+// copy keeps the document linked: it normally has its own link from the
+// ingest (saveReviewLink) carrying the reviewer's decision (carryReview runs
+// first); when it has none, the old link is copied to it. The delete itself
+// only runs while the new copy has a link, so an approved document is never
+// left without one. A failure stops the swap before the old copy is
+// deleted, so the sweep retries it.
+func (s *LegalFeedService) retireReplacedLink(ctx context.Context, oldID, newID string) error {
+	if s.Reviews != nil {
+		cur, err := s.Reviews.GetLink(ctx, newID)
+		if err != nil {
+			return fmt.Errorf("link of %s: %w", newID, err)
+		}
+		if cur == nil {
+			old, err := s.Reviews.GetLink(ctx, oldID)
+			if err != nil {
+				return fmt.Errorf("link of %s: %w", oldID, err)
+			}
+			if old != nil {
+				link := *old
+				link.KnowledgeID, link.CreatedAt, link.UpdatedAt = newID, time.Time{}, time.Time{}
+				if err := s.Reviews.SaveLink(ctx, &link); err != nil {
+					return fmt.Errorf("link of %s from %s: %w", newID, oldID, err)
+				}
+			}
+		}
+	}
+	if err := s.db.WithContext(ctx).Exec(`DELETE FROM legal_document_links WHERE knowledge_id = ?
+		AND EXISTS (SELECT 1 FROM legal_document_links n WHERE n.knowledge_id = ?)`, oldID, newID).Error; err != nil {
+		return fmt.Errorf("drop the link of the replaced copy %s: %w", oldID, err)
+	}
+	return nil
+}
+
 // cleanFailedCopy deletes a copy whose parse failed (or a replacement stuck
-// parsing): the old copy of a replacement stays readable. It is logged
+// parsing) with its own legal_document_links row (the ingest linked it): the
+// old copy of a replacement stays readable and linked. It is logged
 // (replace_failed / ingest_failed, with the parse error) and each request
 // closed with it goes back to its queue: the worker's (auto_ingest) for a
 // vbpl.vn document, the operators' (requested) for another; after
@@ -239,6 +279,10 @@ func (s *LegalFeedService) cleanFailedCopy(ctx context.Context, c *legalCopyRow,
 		FROM legal_document_requests r LEFT JOIN legal_documents d ON d.id = r.legal_document_id
 		WHERE r.knowledge_id = ?`, c.ID).Scan(&reqs).Error; err != nil {
 		return fmt.Errorf("requests of %s: %w", c.ID, err)
+	}
+	// before the knowledge: a failure here leaves the copy for the sweep to retry
+	if err := s.db.WithContext(ctx).Exec(`DELETE FROM legal_document_links WHERE knowledge_id = ?`, c.ID).Error; err != nil {
+		return fmt.Errorf("drop the link of the failed copy %s: %w", c.ID, err)
 	}
 	if err := s.knowledge.DeleteKnowledge(dctx, c.ID); err != nil {
 		return fmt.Errorf("delete the failed copy %s: %w", c.ID, err)

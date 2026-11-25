@@ -351,3 +351,108 @@ func TestQueueChangedTextSkipsAReplacementInFlight(t *testing.T) {
 		t.Fatalf("queued = %v", queued)
 	}
 }
+
+// The crawler can keep an older file than the copy the worker fetched live
+// (the portal changed the page without its updatedDate): the night queues a
+// crawl file once, stamping its hash on the request, and does not reopen the
+// request for the same file after the worker found the live text unchanged;
+// a refetched file (another hash) queues it again.
+func TestQueueChangedTextQueuesACrawlFileOnce(t *testing.T) {
+	db := queueTestDB(t)
+	ctx := context.Background()
+	now := time.Now()
+	for _, stmt := range []string{
+		`ALTER TABLE knowledges ADD COLUMN file_hash TEXT DEFAULT ''`,
+		`INSERT INTO knowledge_bases (id, owner_tenant_id) VALUES ('kb', 0)`,
+		`INSERT INTO knowledges (id, knowledge_base_id, metadata, file_hash, parse_status) VALUES
+			('c10', 'kb', '{"external_id":"10","source":"vbpl"}', 'live10', 'completed'),
+			('c20', 'kb', '{"external_id":"20","source":"vbpl"}', 'live20', 'completed')`,
+	} {
+		if err := db.Exec(stmt).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	added := types.LegalDocumentRequest{ID: "r10", NumberKey: "k10", LegalDocumentID: "10", Status: types.LegalRequestAdded,
+		KnowledgeID: "c10", KnowledgeBaseID: "kb", DecidedBy: "x", DecidedAt: &now, Detail: types.JSON(`{"keep":1}`),
+		FirstRequestedAt: now, LastRequestedAt: now}
+	if err := db.Create(&added).Error; err != nil {
+		t.Fatal(err)
+	}
+	docs := []*types.LegalDocument{queueDoc("10", "k10"), queueDoc("20", "k20")}
+	stamp := func(docID string) (string, types.LegalDocumentRequest) {
+		t.Helper()
+		var r types.LegalDocumentRequest
+		if err := db.Take(&r, "legal_document_id = ?", docID).Error; err != nil {
+			t.Fatal(err)
+		}
+		return changedMD5(r.Detail), r
+	}
+	reopened := func() int64 {
+		var n int64
+		db.Raw(`SELECT COUNT(*) FROM legal_feed_log WHERE action = ?`, requestReopenedAction).Scan(&n)
+		return n
+	}
+	// the worker: live text unchanged, the requests closed again (detail kept)
+	workerUnchanged := func() {
+		t.Helper()
+		if err := db.Exec(`UPDATE legal_document_requests SET status = ?, knowledge_id = 'c' || legal_document_id,
+			decided_by = 'system:legal-auto-ingest', decided_at = ?`, types.LegalRequestAdded, now).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	sums := map[string]string{"10": "crawl10", "20": "crawl20"}
+	if n, err := queueChangedText(ctx, db, docs, sums, now); err != nil || n != 2 {
+		t.Fatalf("first run queued = %d, %v; want 2", n, err)
+	}
+	if got, r := stamp("10"); got != "crawl10" || r.Status != types.LegalRequestAutoIngest ||
+		!strings.Contains(string(r.Detail), `"keep"`) || !strings.Contains(string(r.Detail), `"previous_decision"`) {
+		t.Errorf("reopened request: stamp %q, %+v", got, r)
+	}
+	if got, r := stamp("20"); got != "crawl20" || r.Status != types.LegalRequestAutoIngest {
+		t.Errorf("fresh request: stamp %q, %+v", got, r)
+	}
+	if n := reopened(); n != 1 {
+		t.Fatalf("%d reopen logs after the first run, want 1", n)
+	}
+
+	workerUnchanged()
+	if n, err := queueChangedText(ctx, db, docs, sums, now); err != nil || n != 0 {
+		t.Fatalf("second run (same crawl files) queued = %d, %v; want 0", n, err)
+	}
+	for _, id := range []string{"10", "20"} {
+		if _, r := stamp(id); r.Status != types.LegalRequestAdded {
+			t.Errorf("request of %s reopened for the same crawl file: %s", id, r.Status)
+		}
+	}
+	if n := reopened(); n != 1 {
+		t.Errorf("%d reopen logs after the second run, want still 1", n)
+	}
+
+	sums["10"] = "crawl10-refetched"
+	if n, err := queueChangedText(ctx, db, docs, sums, now); err != nil || n != 1 {
+		t.Fatalf("third run (10 refetched) queued = %d, %v; want 1", n, err)
+	}
+	if got, r := stamp("10"); got != "crawl10-refetched" || r.Status != types.LegalRequestAutoIngest {
+		t.Errorf("refetched: stamp %q, %+v", got, r)
+	}
+	if _, r := stamp("20"); r.Status != types.LegalRequestAdded {
+		t.Errorf("request of 20 = %s, want still added", r.Status)
+	}
+	if n := reopened(); n != 2 {
+		t.Errorf("%d reopen logs after the third run, want 2", n)
+	}
+}
+
+func TestReopenedDetailStampsTheCrawlHash(t *testing.T) {
+	got, err := reopenedDetail(types.JSON(`{"auto_ingest_skip":"x","changed_html_md5":"old","keep":1}`), nil, true, "new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changedMD5(got) != "new" || autoIngestSkipped(got) || !strings.Contains(string(got), `"keep":1`) {
+		t.Errorf("detail = %s", got)
+	}
+	if got, _ := reopenedDetail(types.JSON(`{"changed_html_md5":"old"}`), nil, false, ""); changedMD5(got) != "old" {
+		t.Errorf("a move without a hash must keep the stamp: %s", got)
+	}
+}

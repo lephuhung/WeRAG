@@ -27,7 +27,7 @@ func newReplaceFixture(t *testing.T) *replaceFixture {
 	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&types.Knowledge{}, &types.KnowledgeBase{}, &types.LegalDocument{},
-		&types.LegalDocumentRequest{}, &types.LegalRequestRequester{}))
+		&types.LegalDocumentRequest{}, &types.LegalRequestRequester{}, &types.LegalDocumentLink{}))
 	require.NoError(t, db.Exec(`CREATE TABLE legal_feed_log (id INTEGER PRIMARY KEY, action TEXT, vbpl_id TEXT, knowledge_id TEXT,
 		knowledge_base_id TEXT, document_number TEXT, reason TEXT, actor_endpoint_id TEXT, actor_tenant_id INTEGER, detail TEXT,
 		created_at DATETIME)`).Error)
@@ -275,4 +275,93 @@ func TestLegalAutoIngestRecordsTheSweep(t *testing.T) {
 	require.Equal(t, 1, runs.runs[0].summary[legalAutoIngestSwapped])
 	require.Equal(t, 0, runs.runs[0].summary["tried"])
 	require.Equal(t, types.LegalSyncOK, runs.runs[0].status)
+}
+
+func (f *replaceFixture) link(t *testing.T, knowledgeID, doc string, status types.LegalReviewStatus, by string) {
+	t.Helper()
+	at := f.now
+	require.NoError(t, f.db.Create(&types.LegalDocumentLink{KnowledgeID: knowledgeID, KnowledgeBaseID: "kb", LegalDocumentID: doc,
+		ReviewStatus: status, ReviewedBy: by, ReviewedAt: &at}).Error)
+}
+
+func (f *replaceFixture) links(t *testing.T) map[string]types.LegalDocumentLink {
+	t.Helper()
+	var rows []types.LegalDocumentLink
+	require.NoError(t, f.db.Find(&rows).Error)
+	out := map[string]types.LegalDocumentLink{}
+	for _, l := range rows {
+		out[l.KnowledgeID] = l
+	}
+	return out
+}
+
+// The swap drops the link of the copy it deletes (no link to a deleted
+// knowledge is left behind); the new copy keeps its own, carrying the
+// reviewer's decision.
+func TestLegalSwapDropsTheReplacedCopysLink(t *testing.T) {
+	f := newReplaceFixture(t)
+	ctx := context.Background()
+	f.feed.Reviews = repository.NewLegalReviewRepository(f.db)
+	f.copy(t, "old", "9", types.ParseStatusCompleted, "enabled", "", "", 48*time.Hour)
+	f.copy(t, "new", "9", types.ParseStatusCompleted, "enabled", "old", "", time.Minute)
+	f.link(t, "old", "9", types.LegalReviewApproved, "u-rev")
+	f.link(t, "new", "9", types.LegalReviewApproved, types.LegalReviewerVBPL)
+
+	done, err := f.feed.FinishReplacement(ctx, "new")
+	require.NoError(t, err)
+	require.True(t, done)
+	require.False(t, f.alive(t, "old"))
+	links := f.links(t)
+	require.Len(t, links, 1)
+	require.Equal(t, "u-rev", links["new"].ReviewedBy, "the reviewer's decision carried over first")
+	require.Equal(t, types.LegalReviewApproved, links["new"].ReviewStatus)
+}
+
+// A new copy without a link (its ingest could not write one) is given the
+// old copy's before that one goes: the document stays linked. Without a way
+// to give it one, the old link is kept rather than leaving none.
+func TestLegalSwapNeverLeavesTheDocumentUnlinked(t *testing.T) {
+	f := newReplaceFixture(t)
+	ctx := context.Background()
+	f.feed.Reviews = repository.NewLegalReviewRepository(f.db)
+	f.copy(t, "old", "9", types.ParseStatusCompleted, "enabled", "", "", 48*time.Hour)
+	f.copy(t, "new", "9", types.ParseStatusCompleted, "enabled", "old", "", time.Minute)
+	f.link(t, "old", "9", types.LegalReviewApproved, types.LegalReviewerVBPL)
+
+	done, err := f.feed.FinishReplacement(ctx, "new")
+	require.NoError(t, err)
+	require.True(t, done)
+	links := f.links(t)
+	require.Len(t, links, 1)
+	require.Equal(t, "9", links["new"].LegalDocumentID)
+	require.Equal(t, types.LegalReviewApproved, links["new"].ReviewStatus)
+
+	g := newReplaceFixture(t) // no review repository: nothing to give the new copy
+	g.copy(t, "old", "9", types.ParseStatusCompleted, "enabled", "", "", 48*time.Hour)
+	g.copy(t, "new", "9", types.ParseStatusCompleted, "enabled", "old", "", time.Minute)
+	g.link(t, "old", "9", types.LegalReviewApproved, types.LegalReviewerVBPL)
+	done, err = g.feed.FinishReplacement(ctx, "new")
+	require.NoError(t, err)
+	require.True(t, done)
+	require.Contains(t, g.links(t), "old", "no link for the new copy: the old one is not dropped")
+}
+
+// A failed new copy goes with the link its ingest gave it; the old copy and
+// its link stay.
+func TestLegalSweepDropsTheFailedCopysLink(t *testing.T) {
+	f := newReplaceFixture(t)
+	ctx := context.Background()
+	f.copy(t, "old", "9", types.ParseStatusCompleted, "enabled", "", "", 48*time.Hour)
+	f.copy(t, "new", "9", types.ParseStatusFailed, "disabled", "old", "docreader: timeout", time.Hour)
+	f.request(t, "r9", "9", "new", "")
+	f.link(t, "old", "9", types.LegalReviewApproved, "u-rev")
+	f.link(t, "new", "9", types.LegalReviewApproved, types.LegalReviewerVBPL)
+
+	_, cleaned, lastErr := f.feed.SweepIngests(ctx, f.now, 5)
+	require.Empty(t, lastErr)
+	require.Equal(t, 1, cleaned)
+	require.False(t, f.alive(t, "new"))
+	links := f.links(t)
+	require.Len(t, links, 1)
+	require.Equal(t, "u-rev", links["old"].ReviewedBy)
 }

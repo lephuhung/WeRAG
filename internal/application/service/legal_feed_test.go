@@ -276,7 +276,7 @@ func TestLegalFeedReplaceKeepsDisplayTitleAndRecordsEdits(t *testing.T) {
 	} {
 		require.NoError(t, db.Exec(ddl).Error)
 	}
-	require.NoError(t, db.AutoMigrate(&types.LegalDocument{}, &types.LegalDocumentRequest{}))
+	require.NoError(t, db.AutoMigrate(&types.LegalDocument{}, &types.LegalDocumentRequest{}, &types.LegalDocumentLink{}))
 	know := &feedKnowledgeDeleting{db: db}
 	feed := NewLegalFeedService(db, know, &feedRequests{})
 	ctx := context.Background()
