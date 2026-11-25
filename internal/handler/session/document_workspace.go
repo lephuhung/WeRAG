@@ -712,19 +712,62 @@ func (h *DocumentWorkspaceHandler) ReviewDocumentSpelling(c *gin.Context) {
 	}})
 }
 
-// SpellingVerdictRequest is the user's "not a mistake" on one underline of
-// the live spellcheck: the paragraph's text, the underlined text, the
-// model's correction and which instance of the text it was.
+// SpellingVerdictRequest is the user's verdict on one underline of the
+// live spellcheck: the paragraph's text, the underlined text, the model's
+// correction and which instance of the text it was. Verdict "" or
+// not_error is the spelling list's "not a mistake"; accepted (the user
+// typed the suggestion over the text) and fixed (the user typed Correction
+// instead) are sent by the editor after an edit, with the paragraph as it
+// was BEFORE the edit (the one that contained Wrong).
 type SpellingVerdictRequest struct {
 	Paragraph      string `json:"paragraph"`
 	Wrong          string `json:"wrong"`
 	Suggestion     string `json:"suggestion"`
 	TextOccurrence int    `json:"text_occurrence"`
+	Verdict        string `json:"verdict"`
+	Correction     string `json:"correction"`
 }
 
-// RecordSpellingVerdict stores that an underlined text is no mistake
-// (training data for the spell-check model); it is not underlined again in
-// a paragraph with the same text.
+// spellingCorrectionMaxRunes bounds Wrong, Suggestion and Correction (the
+// VARCHAR(255) columns).
+const spellingCorrectionMaxRunes = 255
+
+// normalize trims the request and reports whether it is valid; Verdict ""
+// becomes not_error and Correction is cleared unless the verdict is fixed.
+func (req *SpellingVerdictRequest) normalize() bool {
+	req.Wrong, req.Suggestion = strings.TrimSpace(req.Wrong), strings.TrimSpace(req.Suggestion)
+	req.Verdict, req.Correction = strings.TrimSpace(req.Verdict), strings.TrimSpace(req.Correction)
+	if req.Verdict == "" {
+		req.Verdict = types.SpellingVerdictNotError
+	}
+	if strings.TrimSpace(req.Paragraph) == "" || req.Wrong == "" || !strings.Contains(req.Paragraph, req.Wrong) ||
+		utf8.RuneCountInString(req.Paragraph) > tools.LiveSpellMaxRunes ||
+		utf8.RuneCountInString(req.Wrong) > spellingCorrectionMaxRunes ||
+		utf8.RuneCountInString(req.Suggestion) > spellingCorrectionMaxRunes ||
+		!types.ValidSpellingVerdict(req.Verdict) {
+		return false
+	}
+	switch req.Verdict {
+	case types.SpellingVerdictAccepted:
+		if req.Suggestion == "" {
+			return false
+		}
+		req.Correction = ""
+	case types.SpellingVerdictFixed:
+		if req.Correction == "" || req.Correction == req.Wrong ||
+			utf8.RuneCountInString(req.Correction) > spellingCorrectionMaxRunes {
+			return false
+		}
+	default:
+		req.Correction = ""
+	}
+	return true
+}
+
+// RecordSpellingVerdict stores the user's verdict on an underlined text
+// (training data for the spell-check model). After "not a mistake" the text
+// is not underlined again in a paragraph with the same text; accepted and
+// fixed verdicts only add positive samples.
 // POST /sessions/:session_id/documents/:doc_id/spelling/feedback
 func (h *DocumentWorkspaceHandler) RecordSpellingVerdict(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -734,20 +777,14 @@ func (h *DocumentWorkspaceHandler) RecordSpellingVerdict(c *gin.Context) {
 		return
 	}
 	var req SpellingVerdictRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.Error(apperrors.NewBadRequestError("invalid spelling feedback"))
-		return
-	}
-	req.Wrong, req.Suggestion = strings.TrimSpace(req.Wrong), strings.TrimSpace(req.Suggestion)
-	if strings.TrimSpace(req.Paragraph) == "" || req.Wrong == "" || !strings.Contains(req.Paragraph, req.Wrong) ||
-		utf8.RuneCountInString(req.Paragraph) > tools.LiveSpellMaxRunes ||
-		utf8.RuneCountInString(req.Wrong) > 255 || utf8.RuneCountInString(req.Suggestion) > 255 {
+	if err := c.ShouldBindJSON(&req); err != nil || !req.normalize() {
 		c.Error(apperrors.NewBadRequestError("invalid spelling feedback"))
 		return
 	}
 	err := h.precheck.RecordSpellingVerdict(ctx, c.GetUint64(types.TenantIDContextKey.String()), sessionID,
 		documentIDParam(c), service.SpellingVerdict{
 			Paragraph: req.Paragraph, Wrong: req.Wrong, Suggestion: req.Suggestion, TextOccurrence: req.TextOccurrence,
+			Verdict: req.Verdict, Correction: req.Correction,
 		})
 	if err != nil {
 		h.fail(c, err, "Failed to record spelling feedback")

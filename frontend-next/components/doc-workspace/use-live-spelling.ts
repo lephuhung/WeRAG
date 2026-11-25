@@ -14,6 +14,8 @@ import {
 import { recordSpellingVerdict, reviewDocumentSpelling } from "@/lib/api/document-workspace";
 import {
   dismissOps,
+  editedParagraphPairs,
+  editVerdicts,
   goToResult,
   IDLE_SPELLING,
   mistakesByParagraph,
@@ -121,6 +123,10 @@ export function useLiveSpelling({
   const attemptsRef = useRef(new Map<string, number>());
   // the server said the live spellcheck does not apply to this document
   const offRef = useRef(false);
+  // the texts of the last read, to see what the user did with an underline
+  const previousTextsRef = useRef<string[] | null>(null);
+  // edit verdicts already sent for this document
+  const sentVerdictsRef = useRef(new Set<string>());
   const live = useRef({ sessionId, documentId, origin, isReady, enabled });
   live.current = { sessionId, documentId, origin, isReady, enabled };
 
@@ -133,6 +139,8 @@ export function useLiveSpelling({
     awaitingRef.current.clear();
     attemptsRef.current.clear();
     offRef.current = false;
+    previousTextsRef.current = null;
+    sentVerdictsRef.current = new Set();
     setBatches([]);
   }, [documentId]);
 
@@ -237,6 +245,11 @@ export function useLiveSpelling({
     try {
       const texts = await readTexts();
       if (!texts || live.current.documentId !== docId) return;
+      // what the user typed over an underline: training data, sent in the
+      // background (the review below does not wait for it)
+      const verdicts = editVerdicts(editedParagraphPairs(previousTextsRef.current, texts), foundRef.current, sentVerdictsRef.current);
+      previousTextsRef.current = texts;
+      for (const v of verdicts) void recordSpellingVerdict(live.current.sessionId, docId, v).catch(() => undefined);
       // whether the document has text is reported even with spelling off:
       // the chat offers an NĐ30 draft for an empty document
       const empty = texts.every((t) => !t.trim());

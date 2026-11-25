@@ -94,17 +94,23 @@ func (p *DocumentFormatPrecheck) ReviewSpelling(
 }
 
 // SpellingVerdict is the user's verdict on one underlined mistake of the
-// live spellcheck (the spelling list's "not a mistake").
+// live spellcheck: the spelling list's "not a mistake" (Verdict "" or
+// not_error), or what the editor saw the user do with the underlined text
+// (accepted: replaced by Suggestion; fixed: replaced by Correction).
+// Paragraph is the paragraph that contained Wrong (before the edit).
 type SpellingVerdict struct {
 	Paragraph      string
 	Wrong          string
 	Suggestion     string
 	TextOccurrence int
+	Verdict        string
+	Correction     string
 }
 
-// RecordSpellingVerdict stores that an underlined text of a document the
-// user owns is no mistake: it is kept as training data and not underlined
-// again in a paragraph with the same text.
+// RecordSpellingVerdict stores the user's verdict on an underlined text of
+// a document the user owns as training data. A not_error verdict also
+// keeps the text from being underlined again in a paragraph with the same
+// text; accepted/fixed do not.
 func (p *DocumentFormatPrecheck) RecordSpellingVerdict(
 	ctx context.Context, tenantID uint64, sessionID, documentID string, v SpellingVerdict,
 ) error {
@@ -131,6 +137,15 @@ func (p *DocumentFormatPrecheck) RecordSpellingVerdict(
 		TextOccurrence: max(1, v.TextOccurrence),
 		Verdict:        types.SpellingVerdictNotError,
 		Source:         types.SpellingFeedbackSourceUser,
+	}
+	if v.Verdict != "" {
+		if !types.ValidSpellingVerdict(v.Verdict) {
+			return errors.New("invalid spelling verdict " + v.Verdict)
+		}
+		row.Verdict = v.Verdict
+	}
+	if row.Verdict == types.SpellingVerdictFixed {
+		row.Correction = v.Correction
 	}
 	if agent := p.agent(ctx); agent != nil {
 		if m := p.model(ctx, "spellcheck", agent.Config.SpellcheckModelID, agent.Config.ModelID); m != nil {

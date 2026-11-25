@@ -269,3 +269,131 @@ export function writeFound(store: KV | null | undefined, documentId: string, fou
     /* storage full / disabled */
   }
 }
+
+/** One paragraph the user edited between two reads of the document: its
+ * text before and after, and their hashes (keys of the found map). */
+export type EditedParagraphPair = { key: string; oldKey: string; oldText: string; newText: string };
+
+/** The paragraphs that changed between two reads (`previous` null: the
+ * first read, nothing changed). The unchanged paragraphs at the start and
+ * the end are skipped; the ones in between are paired by position only
+ * when their count did not change (a paragraph typed in place). When
+ * paragraphs were added or removed in that range (Enter, a deleted
+ * paragraph, a paste) nothing is paired: the old and new texts of a
+ * position may then be different paragraphs. */
+export function editedParagraphPairs(previous: readonly string[] | null, current: readonly string[]): EditedParagraphPair[] {
+  if (!previous) return [];
+  const prev = previous.map(normalizeAnchorText);
+  const next = current.map(normalizeAnchorText);
+  let head = 0;
+  while (head < prev.length && head < next.length && prev[head] === next[head]) head++;
+  let tail = 0;
+  while (
+    tail < prev.length - head &&
+    tail < next.length - head &&
+    prev[prev.length - 1 - tail] === next[next.length - 1 - tail]
+  ) tail++;
+  if (prev.length !== next.length) return [];
+  const out: EditedParagraphPair[] = [];
+  for (let i = head; i < next.length - tail; i++) {
+    if (!prev[i] || !next[i] || prev[i] === next[i]) continue;
+    out.push({ key: textKey(next[i]), oldKey: textKey(prev[i]), oldText: previous[i], newText: current[i] });
+  }
+  return out;
+}
+
+/** What the user did with an underlined mistake, seen after an edit. */
+export type EditedMistake = { mistake: LiveMistake; verdict: "accepted" | "fixed"; correction: string };
+
+/** Server bound of a correction (code points). */
+const CORRECTION_MAX = 255;
+
+/** The textOccurrence-th (1-based, non-overlapping) instance of text in
+ * paragraph, as a UTF-16 index like mistakeContext; -1 when missing. */
+function spanStart(paragraph: string, text: string, textOccurrence = 1): number {
+  let at = -1;
+  for (let n = Math.max(1, textOccurrence), from = 0; n > 0; n--) {
+    at = paragraph.indexOf(text, from);
+    if (at < 0) return -1;
+    from = at + text.length;
+  }
+  return at;
+}
+
+/** The verdicts of an edit of one paragraph (oldText → newText) on its
+ * underlined mistakes: accepted when the user typed the suggestion over
+ * the flagged text, fixed (correction = what they typed) when something
+ * else. Only a local edit counts: the text before and after the flagged
+ * span must be unchanged. Nothing is returned for a mistake left as it
+ * was, deleted, extended by words typed next to it, or in a paragraph
+ * rewritten as a whole. Each mistake is checked on its own against the
+ * same texts, so when two spans of the paragraph changed in one edit
+ * neither matches (no verdict: acceptable, they are not guessed). Indexes
+ * are UTF-16 throughout; only the length bound counts code points. */
+export function resolveEditedMistakes(oldText: string, newText: string, mistakes: readonly LiveMistake[]): EditedMistake[] {
+  const out: EditedMistake[] = [];
+  if (oldText === newText) return out;
+  for (const m of mistakes) {
+    if (!m.text) continue;
+    const at = spanStart(oldText, m.text, m.textOccurrence);
+    if (at < 0) continue;
+    const prefix = oldText.slice(0, at);
+    const suffix = oldText.slice(at + m.text.length);
+    if (newText.length < prefix.length + suffix.length || !newText.startsWith(prefix) || !newText.endsWith(suffix)) continue;
+    const replacement = newText.slice(prefix.length, newText.length - suffix.length);
+    const trimmed = replacement.trim();
+    if (!trimmed || trimmed === m.text.trim()) continue;
+    // words typed next to the untouched mistake, not a correction of it
+    if (/\s/.test(replacement) && (replacement.startsWith(m.text) || replacement.endsWith(m.text))) {
+      const rest = replacement.startsWith(m.text) ? replacement.slice(m.text.length) : replacement.slice(0, -m.text.length);
+      if (/^\s/.test(rest) || /\s$/.test(rest)) continue;
+    }
+    if (m.suggestion && trimmed === m.suggestion.trim()) {
+      out.push({ mistake: m, verdict: "accepted", correction: "" });
+      continue;
+    }
+    if (/[\r\n\v\f\u2028\u2029]/.test(replacement) || Array.from(trimmed).length > CORRECTION_MAX) continue;
+    out.push({ mistake: m, verdict: "fixed", correction: trimmed });
+  }
+  return out;
+}
+
+/** One verdict to send for an edit (recordSpellingVerdict's argument). */
+export type EditVerdict = {
+  paragraph: string;
+  wrong: string;
+  suggestion?: string;
+  textOccurrence?: number;
+  verdict: "accepted" | "fixed";
+  correction?: string;
+};
+
+/** The verdicts of the edited paragraphs on their underlined mistakes
+ * (found: per paragraph hash, as before the edit), each sent once: `sent`
+ * keeps the ones already returned (per document) and is updated. The
+ * paragraph sent is the text before the edit, which contains the mistake. */
+export function editVerdicts(
+  pairs: readonly EditedParagraphPair[],
+  found: ReadonlyMap<string, readonly LiveMistake[]>,
+  sent: Set<string>,
+): EditVerdict[] {
+  const out: EditVerdict[] = [];
+  for (const pair of pairs) {
+    const mistakes = found.get(pair.oldKey);
+    if (!mistakes?.length) continue;
+    for (const r of resolveEditedMistakes(pair.oldText, pair.newText, mistakes)) {
+      const id = JSON.stringify([pair.oldKey, r.mistake.text, r.mistake.textOccurrence ?? 1, pair.newText]);
+      if (sent.has(id)) continue;
+      sent.add(id);
+      out.push({
+        paragraph: pair.oldText,
+        wrong: r.mistake.text,
+        ...(r.mistake.suggestion ? { suggestion: r.mistake.suggestion } : {}),
+        ...(r.mistake.textOccurrence ? { textOccurrence: r.mistake.textOccurrence } : {}),
+        verdict: r.verdict,
+        ...(r.correction ? { correction: r.correction } : {}),
+      });
+    }
+  }
+  return out;
+}

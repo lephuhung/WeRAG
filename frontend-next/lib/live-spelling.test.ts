@@ -4,6 +4,9 @@ import assert from "node:assert/strict";
 
 import {
   dismissOps,
+  editedParagraphPairs,
+  editVerdicts,
+  resolveEditedMistakes,
   goToResult,
   sameMistake,
   LIVE_SPELL_MAX_PARAGRAPHS,
@@ -120,5 +123,96 @@ describe("dismissOps", () => {
     ]);
     assert.ok(sameMistake(qua, { ...qua }));
     assert.ok(!sameMistake(qua, { ...qua, textOccurrence: 1 }));
+  });
+});
+
+describe("editedParagraphPairs", () => {
+  it("pairs paragraphs edited in place, skipping unchanged and empty ones", () => {
+    const pairs = editedParagraphPairs(["A", "quyết đinh", "", "C"], ["A", "quyết định", "", "C"]);
+    assert.deepEqual(pairs, [
+      { key: textKey("quyết định"), oldKey: textKey("quyết đinh"), oldText: "quyết đinh", newText: "quyết định" },
+    ]);
+  });
+  it("pairs nothing on the first read or when paragraphs were added", () => {
+    assert.deepEqual(editedParagraphPairs(null, ["A"]), []);
+    assert.deepEqual(editedParagraphPairs(["A", "B"], ["A", "B2", "new"]), []);
+  });
+  it("ignores whitespace-only changes", () => {
+    assert.deepEqual(editedParagraphPairs(["Kính gửi:  Sở"], ["Kính gửi: Sở"]), []);
+  });
+});
+
+describe("resolveEditedMistakes", () => {
+  const old = "Ủy ban ban hành quyết đinh số 5 về quyết đinh khác.";
+  const m = (text: string, suggestion?: string, textOccurrence?: number) => ({
+    paragraph: old, text, ...(suggestion ? { suggestion } : {}), ...(textOccurrence ? { textOccurrence } : {}),
+  });
+
+  it("accepted: the suggestion typed over the mistake", () => {
+    const mk = m("đinh", "định");
+    assert.deepEqual(resolveEditedMistakes(old, old.replace("đinh", "định"), [mk]), [
+      { mistake: mk, verdict: "accepted", correction: "" },
+    ]);
+  });
+  it("fixed: something else typed, kept as the correction", () => {
+    const mk = m("đinh", "đỉnh");
+    assert.deepEqual(resolveEditedMistakes(old, old.replace("đinh", "định"), [mk]), [
+      { mistake: mk, verdict: "fixed", correction: "định" },
+    ]);
+  });
+  it("nothing when the mistake is unchanged, deleted or extended by typed words", () => {
+    const mk = m("đinh", "định");
+    const elsewhere = old.replace("Ủy ban", "UBND");
+    assert.deepEqual(resolveEditedMistakes(old, elsewhere, [mk]), []);
+    assert.deepEqual(resolveEditedMistakes(old, old.replace("đinh ", ""), [mk]), []);
+    assert.deepEqual(resolveEditedMistakes(old, old.replace("đinh", "đinh này"), [mk]), []);
+  });
+  it("nothing when the paragraph was rewritten", () => {
+    assert.deepEqual(resolveEditedMistakes(old, "Một đoạn hoàn toàn khác.", [m("đinh", "định")]), []);
+  });
+  it("finds the second occurrence of the text", () => {
+    const mk = m("đinh", "định", 2);
+    const edited = "Ủy ban ban hành quyết đinh số 5 về quyết định khác.";
+    assert.deepEqual(resolveEditedMistakes(old, edited, [mk]), [{ mistake: mk, verdict: "accepted", correction: "" }]);
+    // the first instance changed: not this mistake
+    assert.deepEqual(resolveEditedMistakes(old, old.replace("đinh", "định"), [mk]), []);
+  });
+  it("two mistakes, one changed: only that one", () => {
+    const a = m("Ủy", "Uỷ");
+    const b = m("đinh", "định");
+    assert.deepEqual(resolveEditedMistakes(old, old.replace("Ủy", "Uỷ"), [a, b]), [
+      { mistake: a, verdict: "accepted", correction: "" },
+    ]);
+    // both changed at once: neither (prefix/suffix no longer match)
+    assert.deepEqual(resolveEditedMistakes(old, old.replace("Ủy", "Uỷ").replace("đinh", "định"), [a, b]), []);
+  });
+  it("Unicode: diacritics and astral characters before the span", () => {
+    const p = "Tôi 😀 đi hoc về";
+    const mk = { paragraph: p, text: "hoc", suggestion: "học" };
+    assert.deepEqual(resolveEditedMistakes(p, "Tôi 😀 đi học về", [mk]), [{ mistake: mk, verdict: "accepted", correction: "" }]);
+    // another word than the suggestion: fixed, kept as typed
+    assert.deepEqual(resolveEditedMistakes(p, "Tôi 😀 đi hóc về", [mk]), [{ mistake: mk, verdict: "fixed", correction: "hóc" }]);
+  });
+  it("skips a correction over 255 code points or with a line break", () => {
+    const mk = { paragraph: "a sai b", text: "sai", suggestion: "đúng" };
+    assert.deepEqual(resolveEditedMistakes("a sai b", "a " + "ố".repeat(256) + " b", [mk]), []);
+    assert.deepEqual(resolveEditedMistakes("a sai b", "a x\ny b", [mk]), []);
+    assert.equal(resolveEditedMistakes("a sai b", "a " + "😀".repeat(255) + " b", [mk]).length, 1);
+  });
+});
+
+describe("editVerdicts", () => {
+  it("sends each verdict once, with the paragraph before the edit", () => {
+    const before = "Ban hành quyết đinh số 5";
+    const after = "Ban hành quyết định số 5";
+    const found = new Map([[textKey(before), [{ paragraph: before, text: "đinh", suggestion: "định" }]]]);
+    const sent = new Set<string>();
+    const pairs = editedParagraphPairs([before], [after]);
+    assert.deepEqual(editVerdicts(pairs, found, sent), [
+      { paragraph: before, wrong: "đinh", suggestion: "định", verdict: "accepted" },
+    ]);
+    assert.deepEqual(editVerdicts(pairs, found, sent), []);
+    // no underline in that paragraph: nothing
+    assert.deepEqual(editVerdicts(editedParagraphPairs(["x sai"], ["x đúng"]), found, new Set()), []);
   });
 });

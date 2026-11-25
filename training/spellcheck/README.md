@@ -216,6 +216,38 @@ psql "$DSN" -Atc "select row_to_json(f) from abbreviation_typo_feedback f order 
 python export_gate_feedback.py $R/feedback.jsonl --out $R/gate_pairs.jsonl
 ```
 
+## Real labels from the label page
+
+The document assistant records what users did with its live-spelling
+underlines in `document_spelling_feedback`: "Không phải lỗi" (`not_error`),
+and, seen by the editor after an edit, the suggestion typed over the word
+(`accepted`) or another correction (`fixed`, kept in `correction`, migration
+000202). Verifier-model rejections are rows with source `verifier`.
+Reviewers confirm or correct them on the label page "Nhãn chính tả và thể
+thức" (review columns, migration 000201).
+
+1. On the label page set Loại = Chính tả, Trạng thái duyệt = Đã duyệt, then
+   Xuất JSONL (API: `GET /api/v1/document-labels/export?kind=spelling&review=reviewed`).
+2. Convert: reviewed `error` rows become findings (flagged text → reviewed
+   correction), reviewed `not_error` rows negatives, `skip` rows are dropped.
+   `--include-unreviewed` also uses unreviewed `accepted`/`fixed`/user
+   `not_error` rows; `--include-verifier` adds verifier rejections as
+   negatives. Labels on one paragraph are merged into one row.
+3. Build with `--pairs`.
+
+```bash
+python3 -I export_label_feedback.py $R/labels.jsonl --out $R/label_pairs.jsonl \
+    --holdout 50 --holdout-out $R/label_eval.jsonl --protect-out $R/label_protect.txt
+python build_dataset.py ... --pairs $R/label_pairs.jsonl --protect-words $R/label_protect.txt
+python3 -m unittest test_export_label_feedback   # converter tests
+```
+
+Negatives are paragraph-level: a row without findings means "this span is
+no mistake" (its `protect` field), but `build_dataset.py` ignores `protect`
+and treats the whole paragraph as clean (and may noise it). Audit those rows
+before training; `--protect-out` collects their words for `--protect-words`
+so the noiser leaves them alone. The script prints counts per `src`.
+
 ## Serving
 
 Serve `runs/<run>/merged` (or the base model plus `--lora-modules

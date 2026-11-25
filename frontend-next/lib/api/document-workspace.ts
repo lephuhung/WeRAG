@@ -415,13 +415,24 @@ export async function reviewDocumentSpelling(
   }
 }
 
-/** The user's "not a mistake" on one underline of the live spellcheck:
- * kept as training data, and the text is not underlined again in a
- * paragraph with the same text. */
+/** The user's verdict on one underline of the live spellcheck, kept as
+ * training data: "not a mistake" (the text is not underlined again in a
+ * paragraph with the same text), or what the user typed over it after an
+ * edit (accepted: the suggestion; fixed: their own correction). */
 export async function recordSpellingVerdict(
   sessionId: string,
   documentId: string,
-  verdict: { paragraph: string; wrong: string; suggestion?: string; textOccurrence?: number },
+  verdict: {
+    paragraph: string;
+    wrong: string;
+    suggestion?: string;
+    textOccurrence?: number;
+    /** Unset: "not a mistake". accepted/fixed: what the user typed over
+     * the underline (paragraph = its text before the edit). */
+    verdict?: "not_error" | "accepted" | "fixed";
+    /** The user's own replacement (verdict fixed). */
+    correction?: string;
+  },
 ): Promise<void> {
   try {
     await apiPost<Envelope<unknown>>(`${base(sessionId, documentId)}/spelling/feedback`, {
@@ -429,6 +440,8 @@ export async function recordSpellingVerdict(
       wrong: verdict.wrong,
       suggestion: verdict.suggestion ?? "",
       text_occurrence: verdict.textOccurrence ?? 1,
+      ...(verdict.verdict ? { verdict: verdict.verdict } : {}),
+      ...(verdict.correction ? { correction: verdict.correction } : {}),
     }, sessionRequestOptions(sessionId));
   } catch (err) {
     throw toWorkspaceError(err);
