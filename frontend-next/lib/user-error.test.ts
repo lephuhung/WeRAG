@@ -46,9 +46,9 @@ describe("classifyUserError", () => {
   it("maps backend codes that name their failure, whatever the status", () => {
     assert.deepEqual(classifyUserError(new ApiError(409, "tenant exists", envelope(2001, "tenant exists"))), { kind: "key", key: "err.tenantExists" });
     assert.deepEqual(classifyUserError(new ApiError(403, "x", envelope(2005, "x"))), { kind: "key", key: "err.tenantCreationDisabled" });
-    assert.deepEqual(classifyUserError(new ApiError(503, "x", envelope(2105, "x", { reason: "public_lookup_no_knowledge" }))), {
+    assert.deepEqual(classifyUserError(new ApiError(503, "x", envelope(2105, "x", { reason: "public_lookup_off" }))), {
       kind: "key",
-      key: "chat.err.publicLookup.noKnowledge",
+      key: "chat.err.publicLookup.off",
     });
     assert.deepEqual(classifyUserError(new ApiError(403, "x", { error: "need tenant", code: "TENANT_REQUIRED" })), { kind: "key", key: "chat.err.tenantRequired" });
     assert.deepEqual(classifyUserError(new ApiError(403, "x", { error: "disabled", code: "ACCOUNT_DISABLED" })), { kind: "key", key: "auth.accountDisabled" });

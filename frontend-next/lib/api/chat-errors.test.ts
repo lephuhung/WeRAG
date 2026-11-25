@@ -40,18 +40,19 @@ describe("chatErrorKey", () => {
     assert.equal(chatErrorKey(new ApiError(404, msg, body)), "chat.err.agentUnavailable");
     assert.equal(chatErrorKey(new ChatStreamError(404, 1003, "Session not found")), "chat.err.notFound");
   });
-  it("tells a Guest the public lookup cannot run, not to pick another assistant", () => {
-    const msg = "Hiện không có kho tri thức công khai nào để trả lời.";
+  it("tells a Guest its assistant is switched off", () => {
+    const msg = "Trợ lý này đang tạm tắt. Hãy thử lại sau, hoặc chọn trợ lý khác để tiếp tục.";
     assert.equal(
-      chatErrorKey(new ChatStreamError(503, ERR_PUBLIC_LOOKUP_UNAVAILABLE, msg, "public_lookup_no_knowledge")),
-      "chat.err.publicLookup.noKnowledge",
-    );
-    assert.equal(
-      chatErrorKey(new ChatStreamError(503, ERR_PUBLIC_LOOKUP_UNAVAILABLE, "tạm tắt", "public_lookup_off")),
+      chatErrorKey(new ChatStreamError(503, ERR_PUBLIC_LOOKUP_UNAVAILABLE, msg, "public_lookup_off")),
       "chat.err.publicLookup.off",
     );
-    const body = { success: false, error: { code: 2105, message: msg, details: { reason: "public_lookup_no_knowledge" } } };
-    assert.equal(chatErrorKey(new ApiError(503, msg, body)), "chat.err.publicLookup.noKnowledge");
+    // the retired no-knowledge reason (an older server) reads the same
+    assert.equal(
+      chatErrorKey(new ChatStreamError(503, ERR_PUBLIC_LOOKUP_UNAVAILABLE, msg, "public_lookup_no_knowledge")),
+      "chat.err.publicLookup.off",
+    );
+    const body = { success: false, error: { code: 2105, message: msg, details: { reason: "public_lookup_off" } } };
+    assert.equal(chatErrorKey(new ApiError(503, msg, body)), "chat.err.publicLookup.off");
     assert.equal(chatErrorTextKey("chat.err.publicLookup.off", true), "chat.err.publicLookup.off");
     assert.equal(chatErrorKey(new ChatStreamError(503, 1008, "busy")), "chat.err.unavailable");
   });

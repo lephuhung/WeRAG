@@ -193,9 +193,9 @@ export function classifyUserError(e: unknown, opts: { anonymous?: boolean } = {}
   // a code that names its failure, whatever status carries it
   const stringCodeKey = lookup(STRING_CODE_KEYS, env.errorCode);
   if (stringCodeKey) return { kind: "key", key: stringCodeKey };
-  if (env.code === 2105) {
-    return { kind: "key", key: env.reason === "public_lookup_no_knowledge" ? "chat.err.publicLookup.noKnowledge" : "chat.err.publicLookup.off" };
-  }
+  // a Guest's assistant is switched off (the code's name is from the retired
+  // public-lookup assistant)
+  if (env.code === 2105) return { kind: "key", key: "chat.err.publicLookup.off" };
   const codeKey = lookup(CODE_KEYS, env.code);
   if (codeKey) return { kind: "key", key: codeKey };
   const usageKey = status === 429 ? lookup(USAGE_REASON_KEYS, env.reason) : undefined;

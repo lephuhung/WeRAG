@@ -1,7 +1,8 @@
-/* Shown in a guest's chat (signed in, no organization): the assistant only
- * looks up public legal documents, and an organization unlocks the full
- * assistant — with a link to create one where this deployment allows it,
- * otherwise a pointer to ask for an invitation. */
+/* Shown in a guest's chat (signed in, no organization): the assistants read
+ * public legal documents plus the guest's own uploads and documents, within
+ * its usage package; an organization adds its own knowledge bases — with a
+ * link to create one where this deployment allows it, otherwise a pointer to
+ * ask for an invitation. */
 "use client";
 
 import Link from "next/link";

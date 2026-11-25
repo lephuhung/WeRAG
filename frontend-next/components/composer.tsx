@@ -208,8 +208,9 @@ export function Composer({
     const before = v.slice(0, cursor);
     const at = before.lastIndexOf("@");
     // Mirror onInput: @ opens the menu, space closes it, text after @ filters.
-    // A guest has nothing to mention (no KBs, files, MCP or skills).
-    if (!isGuest && at >= 0 && !before.slice(at + 1).includes(" ") && !before.slice(at + 1).includes("\n")) {
+    // A guest mentions only the session's own documents (no KBs, files,
+    // tags, MCP or skills), so the menu opens only when there is one.
+    if ((!isGuest || documents.length > 0) && at >= 0 && !before.slice(at + 1).includes(" ") && !before.slice(at + 1).includes("\n")) {
       setMentionAnchor(at);
       setMentionKeyword(before.slice(at + 1));
       setMentionOpen(true);
@@ -311,10 +312,10 @@ export function Composer({
   };
 
   const imageCapable = selectedAgent?.config?.image_upload_enabled === true;
-  const websearchOn = WEB_SEARCH_IN_COMPOSER && settings.webSearchEnabled;
-  const placeholder = isGuest
-    ? t("guest.composerPlaceholder")
-    : documents.length > 1 && documentMentions.length === 0
+  const showWebControl = WEB_SEARCH_IN_COMPOSER && !isGuest;
+  const websearchOn = showWebControl && settings.webSearchEnabled;
+  const placeholder =
+    documents.length > 1 && documentMentions.length === 0
       ? t("docws.mentionHint")
       : selectedAgent && !selectedAgent.is_builtin
       ? selectedAgent.description || t("composer.askAgent", { name: selectedAgent.name })
@@ -322,7 +323,9 @@ export function Composer({
         ? t("composer.askContext")
         : websearchOn
           ? t("composer.askAnyWeb")
-          : t("composer.askAny");
+          : isGuest
+            ? t("guest.composerPlaceholder")
+            : t("composer.askAny");
 
   /* The composer grows with the text: a wrapped paragraph must not scroll
    * inside a one-row field. The height is measured (scrollHeight) and
@@ -383,15 +386,7 @@ export function Composer({
    * is worse than no button. */
   const showStop = Boolean(isReplying && onStop);
 
-  const agentControl = isGuest ? (
-    // fixed: a guest chats with the public-lookup assistant only
-    <span
-      className="flex h-7 min-w-0 max-w-[160px] items-center rounded-full bg-accent-surface px-2.5 text-[12.5px] font-medium text-accent @min-[400px]:h-8 @min-[560px]:max-w-[260px]"
-      title={t("guest.agentLocked")}
-    >
-      <span className="min-w-0 truncate">{selectedAgent?.name ?? t("guest.agentName")}</span>
-    </span>
-  ) : (
+  const agentControl = (
     <div className={`relative min-w-0 [&>button]:max-w-full ${uploadsBecomeSources ? "" : "max-w-[160px] @min-[560px]:max-w-[240px]"}`}>
       <AgentModeButton locked={!!agentLockFileName} onOpen={() => { closePopups(); setAgentOpen(true); }} />
       {agentLockFileName ? (
@@ -624,7 +619,7 @@ export function Composer({
           placeholder={placeholder}
           className={`relative max-h-[160px] w-full flex-1 resize-none break-words bg-transparent ${compact ? "py-1.5 text-[13px]" : "py-2 text-[14px]"} leading-relaxed ${documentMentions.length > 0 ? "text-transparent caret-ink" : "text-ink"} outline-none placeholder:text-muted-soft`}
         />
-        {!isGuest && <MentionPicker
+        <MentionPicker
           open={mentionOpen}
           keyword={mentionKeyword}
           activeIndex={mentionIndex}
@@ -633,7 +628,8 @@ export function Composer({
           onClose={() => setMentionOpen(false)}
           onItems={setMentionList}
           documents={documents}
-        />}
+          documentsOnly={isGuest}
+        />
       </div>
 
       <div data-composer-toolbar className="flex items-center gap-1.5 @min-[400px]:gap-2" onClick={(e) => e.stopPropagation()}>
@@ -641,13 +637,11 @@ export function Composer({
             left the send button floating between the two). On a narrow phone
             the agent name truncates and Web shows only its globe. */}
         <div className={uploadsBecomeSources ? "flex shrink-0 items-center gap-1.5 @min-[560px]:gap-2" : "flex min-w-0 flex-1 flex-nowrap items-center gap-1 @min-[560px]:gap-2"}>
-          {isGuest ? (
-            // no web search, attachments or images for a guest
-            <>{agentControl}{!toolbarStartInMenu && toolbarStart}</>
-          ) : uploadsBecomeSources ? (
-            <>{attachmentControl}{WEB_SEARCH_IN_COMPOSER && webControl}{!toolbarStartInMenu && toolbarStart}</>
+          {/* no web search for a guest; its uploads and images stay */}
+          {uploadsBecomeSources ? (
+            <>{attachmentControl}{showWebControl && webControl}{!toolbarStartInMenu && toolbarStart}</>
           ) : (
-            <>{agentControl}{WEB_SEARCH_IN_COMPOSER && webControl}{attachmentControl}{!toolbarStartInMenu && toolbarStart}</>
+            <>{agentControl}{showWebControl && webControl}{attachmentControl}{!toolbarStartInMenu && toolbarStart}</>
           )}
 
           <DictationButton

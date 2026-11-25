@@ -12,8 +12,9 @@ export const ERR_TURN_RUNNING = 1005;
  * apply to your Tổ chức" (HTTP 404, "Tổ chức áp dụng"). */
 export const ERR_AGENT_UNAVAILABLE = 2104;
 
-/** Backend error code for "a Guest's public lookup cannot run now" (HTTP
- * 503): switched off, or no public knowledge base to read (details.reason). */
+/** Backend error code for "the assistant a Guest named is switched off"
+ * (HTTP 503, details.reason "public_lookup_off"; the name is from the
+ * retired public-lookup assistant). */
 export const ERR_PUBLIC_LOOKUP_UNAVAILABLE = 2105;
 
 export type ChatErrorKey =
@@ -30,7 +31,6 @@ export type ChatErrorKey =
   | "chat.err.notFound"
   | "chat.err.agentUnavailable"
   | "chat.err.publicLookup.off"
-  | "chat.err.publicLookup.noKnowledge"
   | "chat.err.tooMany"
   | "chat.err.tooLarge"
   | "chat.err.server"
@@ -136,14 +136,12 @@ const USAGE_REASON_KEYS: Record<string, ChatErrorKey> = {
  * status carries it, or null for a generic code. Checked before the status
  * so a specific refusal sent with 5xx (or 4xx) is not read as "server
  * unavailable" or "not found". */
-function byCode(code?: number, reason?: string): ChatErrorKey | null {
+function byCode(code?: number): ChatErrorKey | null {
   if (code === ERR_TURN_RUNNING) return "chat.err.turnRunning";
   // the conversation is fine; its assistant is gone for this Tổ chức
   if (code === ERR_AGENT_UNAVAILABLE) return "chat.err.agentUnavailable";
-  // a Guest's lookup: nothing to pick instead, only to wait
-  if (code === ERR_PUBLIC_LOOKUP_UNAVAILABLE) {
-    return reason === "public_lookup_no_knowledge" ? "chat.err.publicLookup.noKnowledge" : "chat.err.publicLookup.off";
-  }
+  // a Guest's assistant is switched off: wait, or pick another one
+  if (code === ERR_PUBLIC_LOOKUP_UNAVAILABLE) return "chat.err.publicLookup.off";
   return null;
 }
 
@@ -151,7 +149,7 @@ function byStatus(status: number, code?: number, reason?: string, errorCode?: st
   // a Guest (or a stale organization) on an organization-only route; checked
   // before the 409 default below, as the flat body carries no number code
   if (errorCode === TENANT_REQUIRED || errorCode === TENANT_MEMBERSHIP_REQUIRED) return "chat.err.tenantRequired";
-  const known = byCode(code, reason);
+  const known = byCode(code);
   if (known) return known;
   if (status === 409 && code === undefined) return "chat.err.turnRunning";
   if (status === 429 && reason && USAGE_REASON_KEYS[reason]) return USAGE_REASON_KEYS[reason];
@@ -213,7 +211,7 @@ export type ChatErrorTextKey =
 
 /** The text key for a chat error key as this account reads it. A guest has
  * no organization admin to contact: its usage refusals get their own texts
- * (daily allowance used up; public lookup not available for the account).
+ * (allowance used up; chat not available for the account).
  * Members keep the usage texts as they are. */
 export function chatErrorTextKey(key: ChatErrorKey, isGuest: boolean): ChatErrorTextKey;
 export function chatErrorTextKey(key: ChatErrorKey | null, isGuest: boolean): ChatErrorTextKey | null;

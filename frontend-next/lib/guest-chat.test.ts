@@ -3,7 +3,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { BUILTIN_PUBLIC_LOOKUP_ID, guestChatSettings, guestSessionSurvives, isGuestAccount, shouldRefreshAccount } from "./guest-chat.ts";
+import { guestChatSettings, guestSessionSurvives, isGuestAccount, shouldRefreshAccount } from "./guest-chat.ts";
 import { ChatStreamError } from "./api/chat-errors.ts";
 import { ApiError } from "./api-client.ts";
 
@@ -33,21 +33,32 @@ describe("guestChatSettings", () => {
     localBrowserEnabled: true,
     selectedChatModelId: "m1",
   };
-  it("runs the public-lookup agent unscoped", () => {
-    assert.deepEqual(guestChatSettings(stored), {
-      selectedKnowledgeBases: [],
-      selectedFiles: [],
-      selectedFileKbMap: {},
-      selectedTags: [],
-      selectedMCPServices: [],
-      selectedSkills: [],
-      isAgentEnabled: true,
-      selectedAgentId: BUILTIN_PUBLIC_LOOKUP_ID,
-      webSearchEnabled: false,
-      localBrowserEnabled: false,
-      selectedChatModelId: "",
-    });
-    assert.equal(BUILTIN_PUBLIC_LOOKUP_ID, "builtin-public-lookup");
+  const unscoped = {
+    selectedKnowledgeBases: [],
+    selectedFiles: [],
+    selectedFileKbMap: {},
+    selectedTags: [],
+    selectedMCPServices: [],
+    selectedSkills: [],
+    isAgentEnabled: true,
+    webSearchEnabled: false,
+    localBrowserEnabled: false,
+    selectedChatModelId: "",
+  };
+  const listed = ["builtin-smart-reasoning", "builtin-document-assistant", "addon-hkd-tax"];
+  it("keeps the guest's assistant pick, without organization scope or model", () => {
+    assert.deepEqual(guestChatSettings(stored, listed), { ...unscoped, selectedAgentId: "builtin-document-assistant" });
+    assert.equal(guestChatSettings({ ...stored, selectedAgentId: "addon-hkd-tax" }, listed).selectedAgentId, "addon-hkd-tax");
+  });
+  it("falls back to smart reasoning for an assistant not listed for the guest", () => {
+    // an organization's agent left in this browser, or the retired public lookup
+    for (const id of ["org-custom-agent", "builtin-public-lookup", ""]) {
+      assert.equal(guestChatSettings({ ...stored, selectedAgentId: id }, listed).selectedAgentId, "builtin-smart-reasoning");
+    }
+  });
+  it("allows the two basic assistants while the list is not loaded", () => {
+    assert.equal(guestChatSettings(stored).selectedAgentId, "builtin-document-assistant");
+    assert.equal(guestChatSettings({ ...stored, selectedAgentId: "addon-hkd-tax" }).selectedAgentId, "builtin-smart-reasoning");
   });
   it("leaves the stored member settings untouched", () => {
     guestChatSettings(stored);

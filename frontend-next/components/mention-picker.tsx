@@ -19,7 +19,7 @@ export type MentionResolved = MentionRequestItem;
 
 export type PickerItem = MentionRequestItem & { description?: string; count?: number; file_type?: string };
 
-function useMentionData(open: boolean, keyword: string, documents: MentionRequestItem[]) {
+function useMentionData(open: boolean, keyword: string, documents: MentionRequestItem[], documentsOnly: boolean) {
   const ctx = useChatContext();
   const [items, setItems] = useState<PickerItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -48,6 +48,12 @@ function useMentionData(open: boolean, keyword: string, documents: MentionReques
         }));
       // open documents and KBs are local: list them before the searches return
       setItems([...docItems, ...kbItems]);
+      // a guest names only the session's documents: the file and tag
+      // searches are organization routes
+      if (documentsOnly) {
+        if (seq.current === my) setLoading(false);
+        return;
+      }
       let fileItems: PickerItem[] = [];
       try {
         const params = new URLSearchParams({
@@ -108,7 +114,7 @@ function useMentionData(open: boolean, keyword: string, documents: MentionReques
       setLoading(false);
     };
     void run();
-  }, [open, keyword, ctx.knowledgeBases, ctx.mcpServices, ctx.skills, documents]);
+  }, [open, keyword, ctx.knowledgeBases, ctx.mcpServices, ctx.skills, documents, documentsOnly]);
 
   return { items, loading };
 }
@@ -133,6 +139,7 @@ export function MentionPicker({
   onClose,
   onItems,
   documents = NO_DOCUMENTS,
+  documentsOnly = false,
 }: {
   open: boolean;
   keyword: string;
@@ -144,11 +151,13 @@ export function MentionPicker({
   onItems?: (items: PickerItem[]) => void;
   /** The session's open documents (document assistant), listed first. */
   documents?: MentionRequestItem[];
+  /** List only `documents` (a guest: no knowledge files or tags to search). */
+  documentsOnly?: boolean;
 }) {
   const { t } = useT();
   const [search, setSearch] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
-  const { items, loading } = useMentionData(open, keyword || search, documents);
+  const { items, loading } = useMentionData(open, keyword || search, documents, documentsOnly);
   const listRef = useRef<HTMLDivElement>(null);
 
   // Focus stays in the composer: typing after @ filters, arrows move and

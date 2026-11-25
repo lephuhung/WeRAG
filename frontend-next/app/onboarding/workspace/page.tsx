@@ -85,8 +85,8 @@ function WorkspaceOnboardingForm() {
             {busy ? t("onb.creating") : t("tnp.create")}
           </button>
         </form>
-        {/* without an organization the account is a Guest: it can still
-            chat with the public-lookup assistant */}
+        {/* without an organization the account is a Guest: it still chats
+            with the basic assistants, on public knowledge and its own files */}
         <p className="caption mt-5 text-center">
           <Link href="/platform/creatChat" className="text-muted underline underline-offset-2 hover:text-ink">
             {t("guest.onboardingSkip")}

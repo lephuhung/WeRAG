@@ -367,8 +367,9 @@ function ChatBody({ id }: { id: string }) {
     handoffCacheRef.current.resolved,
   );
   const ctx = useChatContext();
-  // Guest chat (no organization): public-lookup assistant only — no
-  // documents, forks, follow-ups or other organization-only calls.
+  // Guest chat (no organization): the basic assistants with documents,
+  // uploads and sub-chats, but no forks, follow-up suggestions or other
+  // organization-only calls.
   const guest = ctx.isGuest;
   const { t: tr } = useT();
   const { user, refreshMe, selectedTenantId, tenant } = useAuth();
@@ -547,8 +548,7 @@ function ChatBody({ id }: { id: string }) {
     [id],
   );
   useEffect(() => {
-    // a guest's session holds no document (and the route needs an organization)
-    if (id === "new" || guest) return;
+    if (id === "new") return;
     let alive = true;
     getDocumentWorkspace(id)
       .then((v) => {
@@ -560,7 +560,7 @@ function ChatBody({ id }: { id: string }) {
     return () => {
       alive = false;
     };
-  }, [id, noteSessionDocument, guest]);
+  }, [id, noteSessionDocument]);
   useEffect(() => {
     if (docFileName && ctx.hydrated && ctx.settings.selectedAgentId !== BUILTIN_DOCUMENT_ASSISTANT_ID) {
       if (ctx.isMobile) ctx.hydrateSessionState({ agent_id: BUILTIN_DOCUMENT_ASSISTANT_ID, agent_enabled: true });
@@ -2333,19 +2333,11 @@ function ChatBody({ id }: { id: string }) {
   );
   const runChoicePick = useCallback(
     async (option: ChoiceOption) => {
-      if (option.handoff) {
-        // a hand-off opens a Word file with the document assistant, which
-        // needs an organization
-        if (guest) {
-          toast.info(tr("chat.err.tenantRequired"));
-          return;
-        }
-        return runHandoff(option);
-      }
+      if (option.handoff) return runHandoff(option);
       const blank = { attachments: [], imageFiles: [], mentionedItems: [], modelId: "" };
       void sendRef.current({ query: option.resend, ...blank });
     },
-    [runHandoff, guest, toast, tr],
+    [runHandoff],
   );
   // "Không phải?": the question goes again and the gate asks about the
   // words it had read on its own
@@ -2523,7 +2515,7 @@ function ChatBody({ id }: { id: string }) {
     isDocumentAssistant && !formatCheck && id !== "new" &&
     (spellingStatus?.phase === "done" || spellingStatus?.phase === "failed");
   // the legal basis check needs a working document open in a tab
-  const legalBasisTrigger = isDocumentAssistant && id !== "new" && !guest && !!formatCheckDoc;
+  const legalBasisTrigger = isDocumentAssistant && id !== "new" && !!formatCheckDoc;
 
   const templatePicker = (
     <DocumentTemplatePicker

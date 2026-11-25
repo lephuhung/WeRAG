@@ -96,7 +96,7 @@ function RegisterForm() {
       // this deployment lets users create organizations (onboarding offers
       // to skip to the chat). Otherwise a new account stays a Guest until a
       // SuperAdmin or Tenant Admin adds it to an organization, and meanwhile
-      // chats with the public-lookup assistant.
+      // chats with the basic assistants in the public portal.
       const me = await apiGet<{
         success: boolean;
         data?: { tenant?: unknown; capabilities?: { can_create_tenant?: boolean } };

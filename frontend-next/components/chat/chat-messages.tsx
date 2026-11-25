@@ -629,8 +629,9 @@ const AssistantMessage = memo(function AssistantMessage({
   index: number;
   /** The question this turn answers (names the .docx download). */
   question?: string;
-  /** Guest chat: no fork, follow-up suggestions, abbreviation or memory
-   * cards — their routes need an organization. */
+  /** Guest chat: no fork, follow-up suggestions or abbreviation cards, and
+   * only the saved (not the pending) memories — those routes need an
+   * organization; taking a saved memory back does not. */
   guest?: boolean;
   /** Sends the message of a picked option (choice list under the answer). */
   onChoicePick?: (option: ChoiceOption) => Promise<void>;
@@ -724,7 +725,9 @@ const AssistantMessage = memo(function AssistantMessage({
         {hasPeopleCard && (
           <PeopleCard people={m.peopleData!} isLoadingMore={m.streaming} />
         )}
-        {!guest && (m.savedMemories?.length ?? 0) > 0 && <SavedMemoryNotice memories={m.savedMemories!} compact={compact} />}
+        {(m.savedMemories?.length ?? 0) > 0 && (
+          <SavedMemoryNotice memories={guest ? m.savedMemories!.filter((x) => !x.pending) : m.savedMemories!} compact={compact} />
+        )}
         {/* the card itself sits above the composer (see pendingScopeCard) */}
         {!m.streaming && m.scopeCard && scopeCardActive && (
           <p className="caption mt-2 text-muted-soft">{t("docws.scopeCard.pickBelow")}</p>

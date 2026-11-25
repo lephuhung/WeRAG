@@ -1,18 +1,26 @@
 /* Guest chat: a signed-in account with no active organization membership
- * (GET /auth/me membership_state "guest") may chat with one assistant only,
- * the public-lookup assistant, which answers from the platform's public
- * legal knowledge bases. The server forces the agent and strips every other
- * scope for a guest; the UI offers none of it either, and keeps a guest's
- * calls inside the tenantless chat routes (sessions, agent-chat, messages,
- * GET /agents, GET /me/usage) and the personal-package /billing routes.
+ * (GET /auth/me membership_state "guest") chats in the public portal with
+ * the same basic assistants as a member (smart reasoning, document
+ * assistant) plus any add-on assistant it bought; its usage package is the
+ * limit. It reads platform public knowledge bases plus its own uploads and
+ * documents: no organization knowledge bases, files or tags, MCP, skills,
+ * web or browser search, and no model override. The server strips those for
+ * a guest; the UI offers none of them either, and keeps a guest's calls
+ * inside the routes open to it (see internal/middleware/guest_chat.go).
  *
  * Shared with the Word add-in (scripts/shared-files.json there). */
 
 import { TENANT_MEMBERSHIP_REQUIRED, TENANT_REQUIRED } from "./auth-recovery.ts";
 import { errorStatusAndCode } from "./api/chat-errors.ts";
 
-/** Built-in agent a guest chats with ("Tra cứu văn bản công khai"). */
-export const BUILTIN_PUBLIC_LOOKUP_ID = "builtin-public-lookup";
+/** The assistant a guest's turn runs when its pick is not listed for it
+ * (an organization's agent left in this browser, an old public-lookup
+ * session). */
+const GUEST_FALLBACK_AGENT_ID = "builtin-smart-reasoning";
+
+/** The assistants a guest always has, used while GET /agents has not
+ * answered yet. */
+const GUEST_BASIC_AGENT_IDS = [GUEST_FALLBACK_AGENT_ID, "builtin-document-assistant"];
 
 /** Whether the account is a Guest. Only meaningful once /auth/me answered:
  * before that the membership state defaults to "guest". A SuperAdmin is
@@ -40,11 +48,15 @@ type ScopedChatSettings = {
   selectedChatModelId: string;
 };
 
-/** A guest's effective chat settings: the public-lookup agent on the agent
- * pipeline and nothing else — no knowledge bases, files, tags, MCP, skills,
- * web or browser search, and no model override. The stored settings (a
- * member's choices left in this browser) are kept untouched. */
-export function guestChatSettings<T extends ScopedChatSettings>(stored: T): T {
+/** A guest's effective chat settings: its own assistant pick when GET
+ * /agents lists it for the guest (the two basic assistants while the list is
+ * not loaded), else smart reasoning; on the agent pipeline, without
+ * organization knowledge bases, files or tags, MCP, skills, web or browser
+ * search, or a model override. Its own uploads and documents travel outside
+ * these settings. The stored settings (a member's choices left in this
+ * browser) are kept untouched. */
+export function guestChatSettings<T extends ScopedChatSettings>(stored: T, listedAgentIds: readonly string[] = []): T {
+  const allowed = listedAgentIds.length > 0 ? listedAgentIds : GUEST_BASIC_AGENT_IDS;
   return {
     ...stored,
     selectedKnowledgeBases: [],
@@ -54,7 +66,7 @@ export function guestChatSettings<T extends ScopedChatSettings>(stored: T): T {
     selectedMCPServices: [],
     selectedSkills: [],
     isAgentEnabled: true,
-    selectedAgentId: BUILTIN_PUBLIC_LOOKUP_ID,
+    selectedAgentId: allowed.includes(stored.selectedAgentId) ? stored.selectedAgentId : GUEST_FALLBACK_AGENT_ID,
     webSearchEnabled: false,
     localBrowserEnabled: false,
     selectedChatModelId: "",
