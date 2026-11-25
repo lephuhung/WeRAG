@@ -112,11 +112,18 @@ const COUNT_LABEL: Record<string, LocaleKey> = {
   up_to_date: "lsync.count.up_to_date",
   last_fetch_failed: "lsync.count.last_fetch_failed",
   exported_fetch_failed: "lsync.count.exported_fetch_failed",
+  empty_content_kept: "lsync.count.empty_content_kept",
+  expired_html_removed: "lsync.count.expired_html_removed",
+  mass_expiry_held: "lsync.count.mass_expiry_held",
   // import
   snapshot: "lsync.count.snapshot",
   documents: "lsync.count.documents",
   relations: "lsync.count.relations",
   relations_skipped: "lsync.count.relations_skipped",
+  relations_added: "lsync.count.relations_added",
+  relations_removed: "lsync.count.relations_removed",
+  relations_relabelled: "lsync.count.relations_relabelled",
+  relations_unchanged: "lsync.count.relations_unchanged",
   list_only: "lsync.count.list_only",
   twins_attached: "lsync.count.twins_attached",
   reviewed_updated_from_portal: "lsync.count.reviewed_updated_from_portal",
@@ -163,6 +170,9 @@ const COUNT_LABEL: Record<string, LocaleKey> = {
   // invariants
   violations: "lsync.count.violations",
   baseline: "lsync.count.baseline",
+  // the image a container worker ran from
+  image_commit: "lsync.count.image_commit",
+  importer_revision: "lsync.count.importer_revision",
 };
 const REQUEST_SOURCE_LABEL: Record<string, LocaleKey> = {
   vbpl_no_text: "lsync.reqSource.vbpl_no_text",
