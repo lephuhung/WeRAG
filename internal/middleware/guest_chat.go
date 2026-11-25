@@ -14,18 +14,23 @@ import (
 )
 
 // Guest chat: a Guest (a signed-in human with no active membership anywhere)
-// chats with the public-lookup agent in the public portal tenant. Auth puts
-// the Guest there, with no tenant role, on exactly the routes below; every
-// other tenant route still answers TENANT_REQUIRED. The GuestChat route
-// guard (RequireMemberOrPortalGuest) admits the portal session on the same
-// routes, and the chat handler forces the public-lookup agent.
+// chats in the public portal tenant with the basic agents (smart reasoning,
+// document assistant) and the add-ons they bought; their usage plan is the
+// limit. Auth puts the Guest there, with no tenant role, on exactly the
+// routes below; every other tenant route still answers TENANT_REQUIRED. The
+// GuestChat route guard (RequireMemberOrPortalGuest) admits the portal
+// session on the same routes, and the chat handler holds the Guest to
+// platform public knowledge plus their own uploads and documents.
 //
-// Left out on purpose: attachments, fork, steer, pin, sub-chats, documents,
-// sandbox, artifacts, suggestions and the knowledge search — a Guest reads
-// public knowledge bases through their own tenant-optional read routes.
+// Their own material is reachable: session attachments, sub-chats, the
+// document workspaces of the document assistant, message artifacts, the
+// abbreviation suggestion retry and taking back a saved memory.
+// Left out on purpose: fork, steer, pin, sandbox, the session artifact
+// lists, suggestions and the knowledge search — a Guest reads public
+// knowledge bases through their own tenant-optional read routes.
 // /knowledge-chat is left out too: it runs the quick-answer pipeline, not
-// the agent, so the forced public-lookup agent would not govern the turn;
-// the web and the Word add-in send a Guest's turns to /agent-chat.
+// the agent, so the portal boundary on the agent would not govern the
+// turn; the web and the Word add-in send a Guest's turns to /agent-chat.
 
 // guestChatRoute is one guest chat shape. Segments after /api/v1 are matched
 // one by one; "*" matches any single non-empty segment.
@@ -50,6 +55,52 @@ var guestChatRoutes = []guestChatRoute{
 	{http.MethodDelete, []string{"messages", "*", "*"}},
 	{http.MethodPut, []string{"messages", "*", "*", "feedback"}},
 	{http.MethodGet, []string{"sessions", "*", "messages", "*", "export.docx"}},
+	// the Guest's own uploads (session-scoped attachments)
+	{http.MethodPost, []string{"sessions", "*", "attachments"}},
+	{http.MethodGet, []string{"sessions", "*", "attachments"}},
+	{http.MethodGet, []string{"sessions", "*", "attachments", "*"}},
+	{http.MethodGet, []string{"sessions", "*", "attachments", "*", "preview"}},
+	{http.MethodDelete, []string{"sessions", "*", "attachments", "*"}},
+	// "chat nhỏ" of a document-assistant session
+	{http.MethodGet, []string{"sessions", "*", "sub-chats"}},
+	{http.MethodPost, []string{"sessions", "*", "sub-chats"}},
+	{http.MethodPost, []string{"sessions", "*", "abbreviation-clarifications", "*", "retry-suggestions"}},
+	// files the agent produced for one answer
+	{http.MethodGet, []string{"sessions", "*", "messages", "*", "artifacts"}},
+	{http.MethodGet, []string{"sessions", "*", "messages", "*", "artifacts", "*", "download"}},
+	// document workspaces of the document assistant (RegisterDocumentWorkspaceRoutes)
+	{http.MethodPost, []string{"sessions", "*", "document"}},
+	{http.MethodGet, []string{"sessions", "*", "document"}},
+	{http.MethodPost, []string{"sessions", "*", "document", "forcesave"}},
+	{http.MethodGet, []string{"sessions", "*", "document", "download"}},
+	{http.MethodGet, []string{"sessions", "*", "document", "revisions"}},
+	{http.MethodPost, []string{"sessions", "*", "document", "revisions", "*", "restore"}},
+	{http.MethodPost, []string{"sessions", "*", "document", "snapshot"}},
+	{http.MethodGet, []string{"sessions", "*", "documents"}},
+	{http.MethodPost, []string{"sessions", "*", "documents"}},
+	{http.MethodGet, []string{"sessions", "*", "documents", "*"}},
+	{http.MethodDelete, []string{"sessions", "*", "documents", "*"}},
+	{http.MethodPut, []string{"sessions", "*", "documents", "scope"}},
+	{http.MethodPost, []string{"sessions", "*", "documents", "*", "activate"}},
+	{http.MethodPost, []string{"sessions", "*", "documents", "*", "role"}},
+	{http.MethodPost, []string{"sessions", "*", "documents", "*", "forcesave"}},
+	{http.MethodGet, []string{"sessions", "*", "documents", "*", "download"}},
+	{http.MethodGet, []string{"sessions", "*", "documents", "*", "revisions"}},
+	{http.MethodGet, []string{"sessions", "*", "documents", "*", "format-check"}},
+	{http.MethodPost, []string{"sessions", "*", "documents", "*", "format-check"}},
+	{http.MethodPost, []string{"sessions", "*", "documents", "*", "format-check", "marks"}},
+	{http.MethodPost, []string{"sessions", "*", "documents", "*", "format-check", "feedback"}},
+	{http.MethodPost, []string{"sessions", "*", "documents", "*", "legal-basis-check"}},
+	{http.MethodPost, []string{"sessions", "*", "documents", "*", "word-file"}},
+	{http.MethodPost, []string{"sessions", "*", "documents", "*", "revisions", "*", "restore"}},
+	{http.MethodPost, []string{"sessions", "*", "documents", "*", "snapshot"}},
+	{http.MethodPost, []string{"sessions", "*", "documents", "*", "spelling"}},
+	{http.MethodPost, []string{"sessions", "*", "documents", "*", "spelling", "feedback"}},
+	{http.MethodPost, []string{"sessions", "*", "documents", "*", "content"}},
+	{http.MethodPost, []string{"sessions", "*", "documents", "*", "template"}},
+	{http.MethodPost, []string{"sessions", "*", "documents", "*", "proposals", "apply"}},
+	// take back a memory the assistant just said it saved
+	{http.MethodPost, []string{"memory", "items", "*", "reject"}},
 	{http.MethodGet, []string{"agents"}},
 	{http.MethodGet, []string{"me", "usage"}},
 	// A Guest's own package: billingScope refuses them the tenant scope.

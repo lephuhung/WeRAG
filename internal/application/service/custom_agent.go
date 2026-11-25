@@ -293,12 +293,17 @@ func (s *customAgentService) GetAgentByID(ctx context.Context, id string) (*type
 		return nil, errors.New("agent ID cannot be empty")
 	}
 
-	// A Guest in the public portal runs the public-lookup agent and nothing
-	// else: every other id reads as not found.
-	if types.InPublicPortal(ctx) && id != types.BuiltinPublicLookupID {
+	// A Guest in the public portal runs the basic agents, the add-ons they
+	// bought, and (old sessions only) the retired public-lookup agent: every
+	// other id reads as not found.
+	portal := types.InPublicPortal(ctx)
+	if portal && types.IsBuiltinAgentID(id) && !portalBuiltinAgent(id) {
 		return nil, ErrAgentNotFound
 	}
 	agent, err := s.getAgentByID(ctx, id)
+	if err == nil && agent != nil && portal && !portalMayUseAgent(agent) {
+		return nil, ErrAgentNotFound
+	}
 	if err != nil || agent == nil || agent.ID != types.BuiltinPublicLookupID {
 		return agent, err
 	}
@@ -308,6 +313,28 @@ func (s *customAgentService) GetAgentByID(ctx context.Context, id string) (*type
 		s.inheritPublicLookupModels(ctx, agent)
 	}
 	return agent, nil
+}
+
+// portalBuiltinAgent reports a built-in id a Guest in the public portal may
+// resolve: the basic agents, and the retired public-lookup agent so an old
+// session naming it still loads (the chat handler runs its turns with the
+// smart-reasoning agent).
+func portalBuiltinAgent(id string) bool {
+	return id == types.BuiltinPublicLookupID || slices.Contains(types.PortalBuiltinAgentIDs(), id)
+}
+
+// portalMayUseAgent reports whether a Guest in the public portal may use an
+// agent the visibility rule already let through: a portal built-in, or an
+// add-on (the rule shows an add-on only when the Guest's own package holds
+// it). A "basic" or "internal" custom agent is a Tổ chức's, not a Guest's.
+func portalMayUseAgent(agent *types.CustomAgent) bool {
+	if agent == nil {
+		return false
+	}
+	if types.IsBuiltinAgentID(agent.ID) {
+		return portalBuiltinAgent(agent.ID)
+	}
+	return types.NormalizeAgentDistribution(agent.Distribution) == types.AgentDistributionAddon
 }
 
 // inheritPublicLookupModels fills the public-lookup agent's empty chat and
@@ -439,17 +466,14 @@ func (s *customAgentService) listAgents(ctx context.Context, includeDisabled boo
 
 	// Build result: built-in agents first, then custom agents
 	builtinIDs := types.GetAllBuiltinAgentIDs()
-	switch {
-	case types.InPublicPortal(ctx):
-		// A Guest picks nothing: the public-lookup agent is all there is.
-		builtinIDs = []string{types.BuiltinPublicLookupID}
+	if types.InPublicPortal(ctx) {
+		// A Guest picks from the basic agents and the add-ons they bought.
+		// The retired public-lookup agent is in no picker (not even the
+		// SuperAdmin's); it only resolves for old sessions.
+		builtinIDs = types.PortalBuiltinAgentIDs()
 		allAgents = slices.DeleteFunc(allAgents, func(a *types.CustomAgent) bool {
-			return a.ID != types.BuiltinPublicLookupID
+			return !portalMayUseAgent(a) || a.ID == types.BuiltinPublicLookupID
 		})
-	case ignoresAgentTenantScope(ctx):
-		// Members never see the guest agent in their picker; the SuperAdmin
-		// does, to switch it off or give it its own models.
-		builtinIDs = append(slices.Clone(builtinIDs), types.BuiltinPublicLookupID)
 	}
 	result := make([]*types.CustomAgent, 0, len(allAgents)+len(builtinIDs))
 

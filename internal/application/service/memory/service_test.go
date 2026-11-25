@@ -332,19 +332,17 @@ func TestWorkspaceSwitchOffDisablesReadAndWrite(t *testing.T) {
 	require.ErrorIs(t, err, ErrMemoryDisabled)
 }
 
-// A Guest in the public portal neither saves nor recalls memory: the memory
-// routes that would let them see or delete it are Member-only.
-func TestPublicPortalHasNoMemory(t *testing.T) {
+// A Guest in the public portal has memory like everyone else (2026-11-25):
+// it is saved and recalled under their own subject, and they can take a
+// saved item back (POST /memory/items/:id/reject is a guest chat route).
+func TestPublicPortalHasMemory(t *testing.T) {
 	svc, _, tenantRepo := newMemoryHarness(t)
 	ctx := enabledCtx(t, tenantRepo, 1, "alice")
-	_, err := svc.Remember(ctx, types.MemoryItem{Kind: types.MemoryKindFact, Content: "điều đã ghi nhớ"})
-	require.NoError(t, err)
-
 	portalCtx := context.WithValue(ctx, types.TenantInfoContextKey,
 		&types.Tenant{ID: 1, Kind: types.TenantKindPublicPortal})
-	require.Empty(t, svc.Recall(portalCtx, "điều đã ghi nhớ").Prompt)
-	_, err = svc.Remember(portalCtx, types.MemoryItem{Kind: types.MemoryKindFact, Content: "điều mới"})
-	require.ErrorIs(t, err, ErrMemoryDisabled)
+	_, err := svc.Remember(portalCtx, types.MemoryItem{Kind: types.MemoryKindFact, Content: "điều đã ghi nhớ"})
+	require.NoError(t, err)
+	require.Contains(t, svc.Recall(portalCtx, "điều đã ghi nhớ").Prompt, "điều đã ghi nhớ")
 }
 
 // Memory is a platform setting: a per-user opt-out stored before that change

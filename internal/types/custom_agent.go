@@ -30,23 +30,26 @@ const (
 	BuiltinWikiFixerID = "builtin-wiki-fixer"
 	// BuiltinSkillInstallerID is the ID for the built-in skill installer agent
 	BuiltinSkillInstallerID = "builtin-skill-installer"
-	// BuiltinPublicLookupID is the public-lookup agent of guest chat: the
-	// only agent a Guest runs, in the public portal, and it reads platform
-	// public knowledge bases only (KBSelectionModePublic).
+	// BuiltinPublicLookupID was the public-lookup agent of guest chat.
+	// Retired 2026-11-25 (switched off in builtin_agents.yaml, in no
+	// picker): a Guest now runs the basic agents (PortalBuiltinAgentIDs).
+	// The id still resolves so old sessions that name it keep loading; the
+	// chat handler runs such a turn with the smart-reasoning agent.
 	BuiltinPublicLookupID = "builtin-public-lookup"
 )
+
+// PortalBuiltinAgentIDs are the built-in agents a Guest in the public portal
+// picks from: the same two basic agents every member gets. Add-on agents the
+// Guest bought come on top (the ordinary visibility rule); the usage plan is
+// what limits them, not the agent.
+func PortalBuiltinAgentIDs() []string {
+	return []string{BuiltinSmartReasoningID, BuiltinDocumentAssistantID}
+}
 
 // KBSelectionModePublic limits an agent to the platform public knowledge
 // bases (owner_tenant_id 0, visibility public): never the caller's own,
 // published, invited or granted ones, and never an @-mentioned one.
 const KBSelectionModePublic = "public"
-
-// PublicLookupNoKnowledgeMessage answers a Guest's turn when no platform
-// public knowledge base can be read (none published, none fit the
-// public-lookup agent's tools, or the listing failed): the public lookup
-// never answers without one.
-const PublicLookupNoKnowledgeMessage = "Hiện không có kho tri thức công khai nào để trả lời. " +
-	"Hãy thử lại sau, hoặc tham gia một Tổ chức để dùng trợ lý đầy đủ."
 
 // AgentMode constants for agent running mode
 const (

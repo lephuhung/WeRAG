@@ -90,6 +90,33 @@ func TestUsageGuardGuestKeepsOwnPackage(t *testing.T) {
 	require.Empty(t, plans.closed)
 }
 
+// The sign-up gift (a personal plan granted at registration) governs a
+// Guest in the portal, not the guest plan: the guest plan's daily cap,
+// already reached, does not refuse the turn (Guests run the basic agents,
+// their package is the only limit).
+func TestUsageGuardGuestSignupGiftGovernsPortal(t *testing.T) {
+	gift := &types.UsagePlan{ID: "plan-gift", Code: "qua-tang", ScopeKind: "user", Mode: "pool",
+		Limits: types.UsageLimits{{Metric: types.UsageMetricQuestions, Period: types.UsagePeriodDay, Limit: 100}}}
+	plans := &rolePlanRepo{adminPlanRepo: adminPlanRepo{
+		fakeUsagePlanRepo: fakeUsagePlanRepo{active: map[string]*types.UsageSubscription{
+			"user/guest-1": {ID: "sub-gift", PlanID: "plan-gift", ScopeType: types.UsageScopeUser, ScopeID: "guest-1",
+				Mode: "pool", Status: "active", Plan: gift},
+		}},
+		plans: []*types.UsagePlan{gift, guestPlan()},
+	}}
+	counters := &countingRepo{rows: map[string][]*types.UsageCounter{
+		"guest/guest-1": {{Metric: "questions", PeriodKey: "2026-10-13", Value: 10}},
+	}}
+	g := guestGuard(plans, counters)
+	require.NoError(t, checkTurn(g, portalCtx(), testPortalID, "guest-1"))
+	ent, err := g.Entitlement(portalCtx(), testPortalID, "guest-1")
+	require.NoError(t, err)
+	require.Equal(t, "qua-tang", ent.PlanCode)
+	require.Equal(t, types.UsageScopeUser, ent.CountedScope)
+	require.Empty(t, plans.closed)
+	require.Equal(t, "plan-gift", plans.active["user/guest-1"].PlanID)
+}
+
 // Outside the portal a guest-plan subscription counts for nothing: a Guest
 // who joined a Tổ chức without a package is refused, not given 10 a day.
 func TestUsageGuardGuestPackageIgnoredOutsidePortal(t *testing.T) {

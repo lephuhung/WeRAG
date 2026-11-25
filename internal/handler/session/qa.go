@@ -170,12 +170,11 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		logger.Error(ctx, "Failed to parse request data", err)
 		return nil, nil, errors.NewBadRequestError(err.Error())
 	}
-	// A Guest in the public portal runs the public lookup and nothing else.
+	// A Guest in the public portal runs the basic agents (or a bought
+	// add-on) over platform public knowledge and their own uploads.
 	portal := types.InPublicPortal(ctx)
 	if portal {
 		restrictPublicPortalRequest(ctx, &request)
-		// a Guest cannot see or delete memory: none is recalled or saved
-		ctx = types.WithMemoryDisabled(ctx)
 	}
 
 	// Validate query content
@@ -229,13 +228,9 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 	// A session that holds an editable document belongs to the document
 	// assistant: another agent has no tools for the document, so a request
 	// from a stale tab or the API naming one is run by the assistant.
-	// The portal has no document routes, so it never pins.
-	documents := sessionDocuments{known: true}
-	if !portal {
-		var pinnedAgentID string
-		pinnedAgentID, documents = h.pinDocumentAssistantForTurn(ctx, session, request.AgentID)
-		request.AgentID = pinnedAgentID
-	}
+	// A Guest's session pins the same way (the portal has document routes).
+	pinnedAgentID, documents := h.pinDocumentAssistantForTurn(ctx, session, request.AgentID)
+	request.AgentID = pinnedAgentID
 
 	// Get custom agent if agent_id is provided.
 	customAgent, effectiveTenantID := h.resolveAgent(ctx, c, request.AgentID)
@@ -243,13 +238,10 @@ func (h *Handler) parseQARequest(c *gin.Context, logPrefix string) (*qaRequestCo
 		return nil, nil, h.explainEndedAddon(ctx, request.AgentID, err)
 	}
 	if portal {
-		if err := publicLookupUnavailable(customAgent); err != nil {
+		if err := portalAgentUnavailable(customAgent); err != nil {
 			return nil, nil, err
 		}
-		customAgent = enforcePublicLookupConfig(customAgent)
-		if err := h.publicLookupWithoutKnowledge(ctx, customAgent); err != nil {
-			return nil, nil, err
-		}
+		customAgent = enforcePortalAgentConfig(customAgent)
 	}
 
 	// Merge @mentioned items into knowledge_base_ids and knowledge_ids

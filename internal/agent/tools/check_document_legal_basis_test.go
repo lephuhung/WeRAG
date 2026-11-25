@@ -123,15 +123,18 @@ func TestCheckDocumentLegalBasisToolRefusals(t *testing.T) {
 	if res.Success || !strings.Contains(res.Error, "tổ chức") {
 		t.Errorf("no tenant: %+v", res)
 	}
-	// a Guest of the public portal
-	guest := context.WithValue(lbToolCtx(), types.TenantInfoContextKey, &types.Tenant{ID: 5, Kind: types.TenantKindPublicPortal})
-	ran := false
-	res, _ = NewCheckDocumentLegalBasisTool(newFakeWorkspace(nil), func(context.Context, uint64, string, string) (*LegalBasisReport, error) {
-		ran = true
+	// a Guest of the public portal checks their own working document too
+	// (2026-11-25: Guests run the document assistant)
+	guest := context.WithValue(context.Background(), types.TenantIDContextKey, uint64(10012))
+	guest = context.WithValue(guest, types.TenantInfoContextKey, &types.Tenant{ID: 10012, Kind: types.TenantKindPublicPortal})
+	guest = types.WithCaller(guest, types.Caller{TenantID: 10012, UserID: "guest-1"})
+	var ranTenant uint64
+	res, _ = NewCheckDocumentLegalBasisTool(newFakeWorkspace(nil), func(_ context.Context, tenantID uint64, _, _ string) (*LegalBasisReport, error) {
+		ranTenant = tenantID
 		return lbToolReport(), nil
 	}, "s-1").Execute(guest, nil)
-	if res.Success || ran || !strings.Contains(res.Error, "đã đăng nhập") {
-		t.Errorf("guest: ran=%v %+v", ran, res)
+	if !res.Success || ranTenant != 10012 {
+		t.Errorf("guest: ran in tenant %d %+v", ranTenant, res)
 	}
 	// the service refuses (a closed document, the catalogue down)
 	failing := func(context.Context, uint64, string, string) (*LegalBasisReport, error) {

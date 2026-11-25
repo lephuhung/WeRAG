@@ -49,6 +49,7 @@ func newGuestChatEngine(t *testing.T, tenant *types.Tenant, role types.TenantRol
 	RegisterChatRoutes(g, &session.Handler{}, guards)
 	RegisterMessageRoutes(g, &handler.MessageHandler{}, guards)
 	RegisterCustomAgentRoutes(g, &handler.CustomAgentHandler{}, guards)
+	RegisterMemoryRoutes(g, &handler.MemoryHandler{}, guards)
 	return r
 }
 
@@ -76,29 +77,41 @@ var guestChatCases = []struct{ method, path string }{
 	{http.MethodPut, "/api/v1/messages/s1/m1/feedback"},
 	{http.MethodGet, "/api/v1/sessions/s1/messages/m1/export.docx"},
 	{http.MethodGet, "/api/v1/agents"},
+	// the Guest's own material (2026-11-25: basic agents for Guests)
+	{http.MethodPost, "/api/v1/sessions/s1/attachments"},
+	{http.MethodGet, "/api/v1/sessions/s1/attachments"},
+	{http.MethodGet, "/api/v1/sessions/s1/attachments/a1"},
+	{http.MethodGet, "/api/v1/sessions/s1/attachments/a1/preview"},
+	{http.MethodDelete, "/api/v1/sessions/s1/attachments/a1"},
+	{http.MethodGet, "/api/v1/sessions/s1/sub-chats"},
+	{http.MethodPost, "/api/v1/sessions/s1/sub-chats"},
+	{http.MethodPost, "/api/v1/sessions/s1/abbreviation-clarifications/r1/retry-suggestions"},
+	{http.MethodGet, "/api/v1/sessions/s1/messages/m1/artifacts"},
+	{http.MethodGet, "/api/v1/sessions/s1/messages/m1/artifacts/0/download"},
+	{http.MethodPost, "/api/v1/sessions/s1/documents"},
+	{http.MethodGet, "/api/v1/sessions/s1/documents"},
+	{http.MethodPut, "/api/v1/sessions/s1/documents/scope"},
+	{http.MethodDelete, "/api/v1/sessions/s1/documents/scope"},
+	{http.MethodPost, "/api/v1/sessions/s1/documents/d1/content"},
+	{http.MethodPost, "/api/v1/sessions/s1/documents/d1/word-file"},
+	{http.MethodPost, "/api/v1/sessions/s1/documents/d1/format-check"},
+	{http.MethodPost, "/api/v1/sessions/s1/documents/d1/legal-basis-check"},
+	{http.MethodPost, "/api/v1/sessions/s1/document"},
+	{http.MethodGet, "/api/v1/sessions/s1/document/revisions"},
+	{http.MethodPost, "/api/v1/memory/items/i1/reject"},
 }
 
 // memberOnlyChatCases stay Member+: a Guest never reaches them.
 var memberOnlyChatCases = []struct{ method, path string }{
 	{http.MethodDelete, "/api/v1/sessions/batch"},
 	{http.MethodDelete, "/api/v1/sessions/s1/messages"},
-	{http.MethodPost, "/api/v1/sessions/s1/attachments"},
-	{http.MethodGet, "/api/v1/sessions/s1/attachments"},
 	{http.MethodPost, "/api/v1/sessions/s1/fork"},
-	{http.MethodGet, "/api/v1/sessions/s1/sub-chats"},
-	{http.MethodPost, "/api/v1/sessions/s1/sub-chats"},
 	{http.MethodPost, "/api/v1/sessions/s1/steer"},
 	{http.MethodPost, "/api/v1/sessions/s1/pin"},
 	{http.MethodPost, "/api/v1/sessions/s1/sandbox/terminal-ticket"},
 	{http.MethodGet, "/api/v1/sessions/s1/artifacts"},
-	{http.MethodPost, "/api/v1/sessions/s1/documents"},
-	{http.MethodGet, "/api/v1/sessions/s1/documents"},
-	{http.MethodPost, "/api/v1/sessions/s1/documents/d1/content"},
-	{http.MethodPost, "/api/v1/sessions/s1/documents/d1/word-file"},
-	{http.MethodPost, "/api/v1/sessions/s1/documents/d1/format-check"},
-	{http.MethodPost, "/api/v1/sessions/s1/documents/d1/legal-basis-check"},
 	{http.MethodPost, "/api/v1/knowledge-search"},
-	// the quick-answer pipeline ignores the forced public-lookup agent
+	// the quick-answer pipeline ignores the portal boundary on the agent
 	{http.MethodPost, "/api/v1/knowledge-chat/s1"},
 	{http.MethodPost, "/api/v1/messages/search"},
 	{http.MethodGet, "/api/v1/agents/a1"},

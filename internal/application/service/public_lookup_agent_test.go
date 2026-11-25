@@ -8,28 +8,32 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Tencent/WeKnora/internal/application/repository"
-	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
 	"github.com/Tencent/WeKnora/internal/types/interfaces"
 )
 
 const lookupPortalID uint64 = 50
 
-// withPublicLookupBuiltins registers the smart-reasoning and public-lookup
-// built-ins as builtin_agents.yaml does (no model ids on either).
+// withPublicLookupBuiltins registers the smart-reasoning, document-assistant
+// and (retired, switched off) public-lookup built-ins as builtin_agents.yaml
+// does (no model ids on any).
 func withPublicLookupBuiltins(t *testing.T) {
 	t.Helper()
+	off := false
 	restore := types.OverrideBuiltinAgentEntriesForTest(map[string]*types.BuiltinAgentEntry{
 		types.BuiltinSmartReasoningID: {ID: types.BuiltinSmartReasoningID, IsBuiltin: true,
 			I18n:   map[string]types.BuiltinAgentI18n{"default": {Name: "Smart Reasoning"}},
 			Config: types.CustomAgentConfig{AgentMode: types.AgentModeSmartReasoning, KBSelectionMode: "all"}},
-		types.BuiltinPublicLookupID: {ID: types.BuiltinPublicLookupID, IsBuiltin: true,
+		types.BuiltinDocumentAssistantID: {ID: types.BuiltinDocumentAssistantID, IsBuiltin: true,
+			I18n:   map[string]types.BuiltinAgentI18n{"default": {Name: "Document Assistant"}},
+			Config: types.CustomAgentConfig{AgentMode: types.AgentModeSmartReasoning, KBSelectionMode: "all"}},
+		types.BuiltinPublicLookupID: {ID: types.BuiltinPublicLookupID, IsBuiltin: true, Enabled: &off,
 			I18n: map[string]types.BuiltinAgentI18n{"default": {Name: "Public Lookup"}},
 			Config: types.CustomAgentConfig{AgentMode: types.AgentModeSmartReasoning,
 				KBSelectionMode: types.KBSelectionModePublic}},
 	})
 	t.Cleanup(restore)
-	for _, id := range []string{types.BuiltinSmartReasoningID, types.BuiltinPublicLookupID} {
+	for _, id := range []string{types.BuiltinSmartReasoningID, types.BuiltinDocumentAssistantID, types.BuiltinPublicLookupID} {
 		id := id
 		if _, ok := types.BuiltinAgentRegistry[id]; ok {
 			continue
@@ -59,10 +63,16 @@ func newPublicLookupService(t *testing.T) *customAgentService {
 }
 
 func portalGuestCtx() context.Context {
+	return portalUserCtx("guest-1")
+}
+
+// portalUserCtx is a Guest (no tenant role) in the public portal.
+func portalUserCtx(userID string) context.Context {
 	ctx := context.WithValue(context.Background(), types.TenantIDContextKey, lookupPortalID)
+	ctx = context.WithValue(ctx, types.UserIDContextKey, userID)
 	ctx = context.WithValue(ctx, types.TenantInfoContextKey,
 		&types.Tenant{ID: lookupPortalID, Kind: types.TenantKindPublicPortal})
-	return types.WithCaller(ctx, types.Caller{TenantID: lookupPortalID, UserID: "guest-1"})
+	return types.WithCaller(ctx, types.Caller{TenantID: lookupPortalID, UserID: userID})
 }
 
 // The public-lookup agent runs without setup: its empty model ids come from
@@ -82,27 +92,54 @@ func TestPublicLookupInheritsSmartReasoningModels(t *testing.T) {
 	require.Empty(t, stored.Config.ModelID)
 }
 
-// A Guest in the portal resolves and lists the public-lookup agent only.
-func TestPublicPortalSeesOnlyPublicLookup(t *testing.T) {
+// A Guest in the portal resolves and lists the basic agents (smart
+// reasoning, document assistant) and the add-on their own package bought;
+// a Tổ chức's basic or internal custom agents stay hidden. The retired
+// public-lookup agent still resolves for old sessions but is in no picker.
+func TestPublicPortalSeesBasicAgentsAndBoughtAddon(t *testing.T) {
 	withPublicLookupBuiltins(t)
-	svc := newPublicLookupService(t)
-	for _, id := range []string{types.BuiltinSmartReasoningID, "everyone"} {
-		_, err := svc.GetAgentByID(portalGuestCtx(), id)
+	svc, db := addonFixtureDB(t)
+	require.NoError(t, db.Exec(`INSERT INTO tenants (id, name, kind, config_profile_id) VALUES
+		(50, 'Tra cứu công khai', 'public_portal', 9)`).Error)
+
+	buyer := portalUserCtx("u-personal")
+	for _, id := range []string{types.BuiltinSmartReasoningID, types.BuiltinDocumentAssistantID,
+		types.BuiltinPublicLookupID, "thue"} {
+		got, err := svc.GetAgentByID(buyer, id)
+		require.NoErrorf(t, err, "agent %s", id)
+		require.Equal(t, id, got.ID)
+	}
+	for _, id := range []string{"everyone", "group", types.BuiltinQuickAnswerID, types.BuiltinWikiFixerID} {
+		_, err := svc.GetAgentByID(buyer, id)
 		require.ErrorIsf(t, err, ErrAgentNotFound, "agent %s", id)
 	}
-	list, err := svc.ListAgents(portalGuestCtx())
+	list, err := svc.ListAgents(buyer)
 	require.NoError(t, err)
-	require.Len(t, list, 1)
-	require.Equal(t, types.BuiltinPublicLookupID, list[0].ID)
+	require.Equal(t, []string{types.BuiltinSmartReasoningID, types.BuiltinDocumentAssistantID, "thue"}, agentIDs(list))
 
-	// members never get it in their picker; the SuperAdmin page lists it
+	// a Guest who bought nothing: the two basic agents
+	_, err = svc.GetAgentByID(portalGuestCtx(), "thue")
+	require.ErrorIs(t, err, ErrAgentNotFound)
+	list, err = svc.ListAgents(portalGuestCtx())
+	require.NoError(t, err)
+	require.Equal(t, []string{types.BuiltinSmartReasoningID, types.BuiltinDocumentAssistantID}, agentIDs(list))
+
+	// members never get the retired agent in their picker, nor the SuperAdmin
 	member, err := svc.ListAgents(scopeMemberCtx(1))
 	require.NoError(t, err)
 	require.False(t, listedIDs(t, member)[types.BuiltinPublicLookupID])
 	require.True(t, listedIDs(t, member)[types.BuiltinSmartReasoningID])
 	all, err := svc.ListAllAgents(scopeSuperAdminCtx(9))
 	require.NoError(t, err)
-	require.True(t, listedIDs(t, all)[types.BuiltinPublicLookupID])
+	require.False(t, listedIDs(t, all)[types.BuiltinPublicLookupID])
+}
+
+func agentIDs(agents []*types.CustomAgent) []string {
+	ids := make([]string, 0, len(agents))
+	for _, a := range agents {
+		ids = append(ids, a.ID)
+	}
+	return ids
 }
 
 // KBSelectionModePublic keeps platform public bases only: never the
@@ -183,10 +220,10 @@ func (f failingKBList) ListKnowledgeBases(context.Context) ([]*types.KnowledgeBa
 	return nil, f.err
 }
 
-// In the public portal an empty public scope or a listing error fails the
-// turn: it never becomes an ungrounded pure-chat answer. Outside the portal
-// the old behaviour (an empty scope) stays.
-func TestResolveKnowledgeBasesPublicPortalFailsClosed(t *testing.T) {
+// In the public portal a listing error fails the turn closed; an empty
+// public scope runs it on the Guest's own uploads and documents only (no
+// knowledge base). Outside the portal an empty scope is what it always was.
+func TestResolveKnowledgeBasesPublicPortal(t *testing.T) {
 	agent := &types.CustomAgent{Config: types.CustomAgentConfig{
 		AgentMode: types.AgentModeSmartReasoning, KBSelectionMode: types.KBSelectionModePublic,
 		AllowedTools: []string{"search_knowledge"},
@@ -200,18 +237,19 @@ func TestResolveKnowledgeBasesPublicPortalFailsClosed(t *testing.T) {
 	require.ErrorContains(t, err, "db down")
 
 	svc = &sessionService{knowledgeBaseService: failingKBList{}}
-	_, _, err = svc.resolveKnowledgeBases(portal, &types.QARequest{Session: session, CustomAgent: agent})
-	var appErr *apperrors.AppError
-	require.ErrorAs(t, err, &appErr)
-	require.Equal(t, apperrors.ErrPublicLookupUnavailable, appErr.Code)
+	kbIDs, knowledgeIDs, err := svc.resolveKnowledgeBases(portal, &types.QARequest{Session: session, CustomAgent: agent})
+	require.NoError(t, err, "no public base: the turn runs on the Guest's own material")
+	require.Empty(t, kbIDs)
+	require.Empty(t, knowledgeIDs)
 
-	// a request id outside the public scope narrows it to nothing: refused too
+	// a request id outside the public scope narrows it to nothing, never widens it
 	svc = &sessionService{knowledgeBaseService: publicScopeKBList{}}
-	_, _, err = svc.resolveKnowledgeBases(portal, &types.QARequest{
+	kbIDs, _, err = svc.resolveKnowledgeBases(portal, &types.QARequest{
 		Session: session, CustomAgent: agent, KnowledgeBaseIDs: []string{"own"}})
-	require.ErrorAs(t, err, &appErr)
+	require.NoError(t, err)
+	require.Empty(t, kbIDs)
 
-	kbIDs, _, err := svc.resolveKnowledgeBases(portal, &types.QARequest{Session: session, CustomAgent: agent})
+	kbIDs, _, err = svc.resolveKnowledgeBases(portal, &types.QARequest{Session: session, CustomAgent: agent})
 	require.NoError(t, err)
 	require.Equal(t, []string{"pub-1", "pub-2"}, kbIDs)
 

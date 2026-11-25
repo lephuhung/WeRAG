@@ -15,7 +15,6 @@ import (
 	"github.com/Tencent/WeKnora/internal/agent/domainpacks"
 	"github.com/Tencent/WeKnora/internal/agent/skills"
 	"github.com/Tencent/WeKnora/internal/agent/tools"
-	"github.com/Tencent/WeKnora/internal/application/access"
 	"github.com/Tencent/WeKnora/internal/application/repository"
 	"github.com/Tencent/WeKnora/internal/browserskill"
 	"github.com/Tencent/WeKnora/internal/config"
@@ -1482,8 +1481,7 @@ func (s *agentService) registerTools(
 	// check_document_legal_basis rides on the editable document as the
 	// format check does: no model, the legal catalogue only. Not for an
 	// agent that may only read the document (its card underlines).
-	if docWorkspace != nil && !config.ReadOnlyDocuments && s.legalBasis != nil &&
-		!access.IsPublicPortalGuest(ctx, types.CallerFromContext(ctx)) {
+	if docWorkspace != nil && !config.ReadOnlyDocuments && s.legalBasis != nil {
 		registry.RegisterTool(tools.NewCheckDocumentLegalBasisTool(s.documentWorkspaces, s.legalBasis, sessionID))
 	}
 

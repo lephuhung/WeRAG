@@ -103,6 +103,9 @@ var guestChatPaths = []struct{ method, path string }{
 	{http.MethodGet, "/api/v1/billing/plans"},
 	{http.MethodPost, "/api/v1/billing/orders"},
 	{http.MethodGet, "/api/v1/billing/orders/WR123"},
+	{http.MethodPost, "/api/v1/sessions/s1/attachments"},
+	{http.MethodPost, "/api/v1/sessions/s1/documents"},
+	{http.MethodPost, "/api/v1/memory/items/i1/reject"},
 }
 
 // A Guest with no tenant at all chats in the public portal, role-less; the
@@ -116,8 +119,6 @@ func TestGuestChatTenantlessGuestServedInPortal(t *testing.T) {
 		}
 	}
 	for _, rt := range []struct{ method, path string }{
-		{http.MethodPost, "/api/v1/sessions/s1/attachments"},
-		{http.MethodPost, "/api/v1/sessions/s1/documents"},
 		{http.MethodPost, "/api/v1/sessions/s1/fork"},
 		{http.MethodGet, "/api/v1/knowledge-bases"},
 		{http.MethodDelete, "/api/v1/sessions/batch"},
@@ -231,14 +232,26 @@ func TestIsGuestChatAPI(t *testing.T) {
 		{http.MethodPut, "/api/v1/messages/s1/m1/feedback"},
 		{http.MethodPost, "/api/v1/sessions/s1/generate_title"},
 		{http.MethodGet, "/api/v1/sessions/s1/messages/m1/export.docx"},
+		{http.MethodGet, "/api/v1/sessions/s1/documents"},
+		{http.MethodDelete, "/api/v1/sessions/s1/documents/scope"},
+		{http.MethodPost, "/api/v1/sessions/s1/documents/d1/legal-basis-check"},
+		{http.MethodGet, "/api/v1/sessions/s1/messages/m1/artifacts"},
+		{http.MethodGet, "/api/v1/sessions/s1/messages/m1/artifacts/0/download"},
+		{http.MethodDelete, "/api/v1/sessions/s1/attachments/a1"},
+		{http.MethodGet, "/api/v1/sessions/s1/sub-chats"},
+		{http.MethodPost, "/api/v1/sessions/s1/abbreviation-clarifications/r1/retry-suggestions"},
+		{http.MethodPost, "/api/v1/memory/items/i1/reject"},
 	}
 	no := []struct{ method, path string }{
 		{http.MethodDelete, "/api/v1/sessions/batch"},
 		{http.MethodGet, "/api/v1/sessions/"},
 		{http.MethodGet, "/api/v1/sessions//context-usage"},
 		{http.MethodPost, "/api/v1/agents"},
-		{http.MethodGet, "/api/v1/sessions/s1/documents"},
-		{http.MethodGet, "/api/v1/sessions/s1/messages/m1/artifacts"},
+		{http.MethodGet, "/api/v1/sessions/s1/artifacts"},
+		{http.MethodPost, "/api/v1/sessions/s1/fork"},
+		{http.MethodPost, "/api/v1/sessions/batch/attachments/a1/preview"},
+		{http.MethodGet, "/api/v1/memory/items"},
+		{http.MethodDelete, "/api/v1/memory/items/i1"},
 		{http.MethodPost, "/api/v1/sessions/s1/messages/m1/export.docx"},
 		{http.MethodPost, "/api/v1/agent-chat"},
 		{http.MethodGet, "/api/v2/sessions"},

@@ -225,15 +225,14 @@ builtin_agents:
       rerank_top_k: 10
       rerank_threshold: 0.3
 
-  # Guest chat (migration 000172): the only agent a Guest gets, in the public
-  # portal. kb_selection_mode "public" = platform public knowledge bases
-  # only; the server forces this agent for portal callers and drops their
-  # KB/mention/attachment/MCP/skill/web-search choices. No model ids here:
-  # empty ones are taken from builtin-smart-reasoning at run time, so it
-  # works without setup; a SuperAdmin can still set its own.
+  # Guest chat (migration 000172): retired 2026-11-25, kept for old sessions.
+  # Guests now run the basic agents (smart reasoning + document assistant);
+  # a turn of an old session naming this id runs with builtin-smart-reasoning.
+  # Switched off so no picker (not even the SuperAdmin's) lists it.
   - id: "builtin-public-lookup"
     avatar: "⚖️"
     is_builtin: true
+    enabled: false
     i18n:
       default:
         name: "Public Lookup"

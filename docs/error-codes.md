@@ -70,7 +70,7 @@ Một số endpoint cũ trả `{"success":false,"message":"…"}` không có `er
 | 2102 | 400 | `NewAgentInvalidMaxIterationsError()` | số vòng lặp tối đa phải là số nguyên dương, hoặc -1 nếu không giới hạn |
 | 2103 | 400 | `NewAgentInvalidTemperatureError()` | tham số temperature phải nằm trong khoảng 0-2 |
 | 2104 | 404 | `NewAgentUnavailableError()` | trợ lý không tồn tại hoặc không áp dụng cho Tổ chức của người gọi (lượt chat; đã xoá, id sai, ngoài "Tổ chức áp dụng", hoặc agent Chuyên ngành chưa mua / quyền dùng đã hết hạn đều cùng mã) |
-| 2105 | 503 | `NewPublicLookupUnavailableError()` | chat khách: tra cứu công khai đang tắt (`details.reason` = `public_lookup_off`) hoặc không có kho tri thức công khai nào để đọc (`public_lookup_no_knowledge`); lượt bị từ chối không bị tính vào hạn mức |
+| 2105 | 503 | `NewPublicLookupUnavailableError()` | chat khách (tài khoản chưa thuộc Tổ chức): trợ lý được chọn đang bị SuperAdmin tắt (`details.reason` = `public_lookup_off`); lượt bị từ chối không bị tính vào hạn mức. Từ 2026-11-25 không còn gửi `public_lookup_no_knowledge`: không có kho công khai nào thì lượt vẫn chạy trên tệp/văn bản của chính người dùng |
 
 ### 2.4 Kho vector và mô hình (2200–2300)
 

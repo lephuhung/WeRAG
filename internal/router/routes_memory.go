@@ -39,6 +39,7 @@ func RegisterMemoryRoutes(r *gin.RouterGroup, memoryHandler *handler.MemoryHandl
 	// The one thing every user may do with their memory: take back a memory
 	// the assistant just announced it saved ("I just saved ... — not right?").
 	// The scope comes from the caller, so only the caller's own item can go.
-	correction := g.apiKeyGroup(r.Group("/memory", g.Member()), apiKeyFullAccess())
+	// A guest chat route: a Guest in the public portal has memory too.
+	correction := g.apiKeyGroup(r.Group("/memory", g.GuestChat()), apiKeyFullAccess())
 	correction.POST("/items/:id/reject", memoryHandler.RejectItem)
 }

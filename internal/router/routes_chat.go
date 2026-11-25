@@ -68,19 +68,28 @@ func RegisterSessionRoutes(
 		guestSessions.POST("/:session_id/continue", handler.ContinueSession)
 		// Tiếp tục nhận luồng đang hoạt động
 		guestSessions.GET("/continue-stream/:session_id", handler.ContinueStream)
+		// the caller's own uploads (session-scoped attachments)
+		guestSessions.POST("/:session_id/attachments", handler.UploadTemporaryDocument)
+		guestSessions.GET("/:id/attachments", handler.ListTemporaryDocuments)
+		guestSessions.GET("/:id/attachments/:attachment_id", handler.GetTemporaryDocument)
+		guestSessions.GET("/:id/attachments/:attachment_id/preview", handler.PreviewTemporaryDocument)
+		guestSessions.DELETE("/:id/attachments/:attachment_id", handler.DeleteTemporaryDocument)
+		guestSessions.GET("/:id/sub-chats", handler.ListSubChats)
+		guestSessions.POST("/:session_id/sub-chats", handler.OpenSubChat)
+		// Retry persisting abbreviation dictionary suggestions for a
+		// clarification turn. No QA/model side effects — same session
+		// authentication and chat capability as the QA routes.
+		guestSessions.POST("/:session_id/abbreviation-clarifications/:request_id/retry-suggestions", handler.RetryAbbreviationSuggestions)
+		// files the agent produced for one answer (bytes only through the
+		// download route; see the artifact note below)
+		guestSessions.GET("/:id/messages/:message_id/artifacts", handler.ListMessageArtifacts)
+		guestSessions.GET("/:id/messages/:message_id/artifacts/:index/download", handler.DownloadMessageArtifact)
 	}
 	sessions := g.apiKeyGroup(r.Group("/sessions", g.Member()), apiKeyChat(apiKeyFullAccess()))
 	{
 		sessions.DELETE("/batch", handler.BatchDeleteSessions)
 		sessions.DELETE("/:id/messages", handler.ClearSessionMessages)
-		sessions.POST("/:session_id/attachments", handler.UploadTemporaryDocument)
-		sessions.GET("/:id/attachments", handler.ListTemporaryDocuments)
-		sessions.GET("/:id/attachments/:attachment_id", handler.GetTemporaryDocument)
-		sessions.GET("/:id/attachments/:attachment_id/preview", handler.PreviewTemporaryDocument)
-		sessions.DELETE("/:id/attachments/:attachment_id", handler.DeleteTemporaryDocument)
 		sessions.POST("/:session_id/fork", handler.ForkSession)
-		sessions.GET("/:id/sub-chats", handler.ListSubChats)
-		sessions.POST("/:session_id/sub-chats", handler.OpenSubChat)
 		sessions.POST("/:session_id/sandbox/terminal-ticket", handler.IssueSandboxTerminalTicket)
 		sessions.POST("/:session_id/sandbox/desktop-ticket", handler.IssueSandboxDesktopTicket)
 		sessions.POST("/:session_id/sandbox/desktop/activity", handler.ReportSandboxDesktopActivity)
@@ -90,10 +99,6 @@ func RegisterSessionRoutes(
 		// currently generating. Accepts even when no run is live (the client
 		// then falls back to a normal send), mirroring StopSession's ownership
 		// rules.
-		// Retry persisting abbreviation dictionary suggestions for a
-		// clarification turn. No QA/model side effects — same session
-		// authentication and chat capability as the QA routes.
-		sessions.POST("/:session_id/abbreviation-clarifications/:request_id/retry-suggestions", handler.RetryAbbreviationSuggestions)
 		sessions.POST("/:session_id/steer", handler.SteerMessage)
 		sessions.GET("/:id/steer", handler.ListSteerMessages)
 		sessions.DELETE("/:id/steer/:steer_id", handler.DeleteSteerMessage)
@@ -124,8 +129,6 @@ func RegisterSessionRoutes(
 		// read the URL param via c.Param("session_id") with a fallback to
 		// c.Param("id") for exactly this reason.
 		sessions.GET("/:id/artifacts", handler.ListSessionArtifacts)
-		sessions.GET("/:id/messages/:message_id/artifacts", handler.ListMessageArtifacts)
-		sessions.GET("/:id/messages/:message_id/artifacts/:index/download", handler.DownloadMessageArtifact)
 	}
 
 	// Cross-session artifact library. Same guards as /sessions: the rows come
@@ -151,14 +154,16 @@ func RegisterAnswerExportRoutes(r *gin.RouterGroup, h *session.AnswerExportHandl
 // RegisterDocumentWorkspaceRoutes registers the document-assistant
 // workspaces of a session (the .docx files open in the embedded ONLYOFFICE
 // editor, one tab each).
-// Same guards as the attachment routes: Member + the API-key chat capability,
-// with per-session ownership enforced in the handler. Wildcard names follow
-// the per-verb radix trees of /sessions (POST uses :session_id, GET uses :id).
+// Same guards as the attachment routes: guest chat routes (Member, or a
+// Guest in the public portal working on their own documents) + the API-key
+// chat capability, with per-session ownership enforced in the handler.
+// Wildcard names follow the per-verb radix trees of /sessions (POST uses
+// :session_id, GET uses :id).
 func RegisterDocumentWorkspaceRoutes(r *gin.RouterGroup, handler *session.DocumentWorkspaceHandler, g *rbacGuards) {
 	if handler == nil {
 		return
 	}
-	sessions := g.apiKeyGroup(r.Group("/sessions", g.Member()), apiKeyChat(apiKeyFullAccess()))
+	sessions := g.apiKeyGroup(r.Group("/sessions", g.GuestChat()), apiKeyChat(apiKeyFullAccess()))
 	{
 		sessions.POST("/:session_id/document", handler.CreateDocumentWorkspace)
 		sessions.GET("/:id/document", handler.GetDocumentWorkspace)
@@ -228,7 +233,7 @@ func RegisterChatRoutes(r *gin.RouterGroup, handler *session.Handler, g *rbacGua
 	}
 
 	// Agent-based chat. A guest chat route: a Guest in the public portal
-	// runs the public-lookup agent there (the handler forces it).
+	// runs the basic agents there, held to public knowledge by the handler.
 	agentChat := g.apiKeyGroup(r.Group("/agent-chat", g.GuestChat()), apiKeyChat(apiKeyFullAccess()))
 	{
 		agentChat.POST("/:session_id", handler.AgentQA)

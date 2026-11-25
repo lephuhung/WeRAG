@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Tencent/WeKnora/internal/application/access"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
 )
@@ -67,11 +66,6 @@ func (t *CheckDocumentLegalBasisTool) Execute(ctx context.Context, args json.Raw
 		if err := json.Unmarshal(args, &in); err != nil {
 			return &types.ToolResult{Success: false, Error: "invalid arguments: " + err.Error()}, nil
 		}
-	}
-	// a Guest of the public portal has no working document; the check is
-	// never theirs to run, whatever the session holds
-	if access.IsPublicPortalGuest(ctx, types.CallerFromContext(ctx)) {
-		return &types.ToolResult{Success: false, Error: "Rà soát căn cứ pháp lý chỉ dùng được với tài khoản đã đăng nhập vào một tổ chức."}, nil
 	}
 	tenantID, ok := types.TenantIDFromContext(ctx)
 	if !ok || tenantID == 0 {

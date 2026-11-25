@@ -42,9 +42,10 @@ const (
 	// list). HTTP 404; one code for all three so it never tells them apart.
 	ErrAgentUnavailable ErrorCode = 2104
 	// ErrPublicLookupUnavailable: a Guest's turn cannot run because the
-	// public lookup is switched off or has no public knowledge base to
-	// read. HTTP 503 (try again later, nothing to pick instead), with
-	// details.reason PublicLookupReasonOff or PublicLookupReasonNoKnowledge.
+	// agent it names is switched off (a built-in that does not resolve
+	// would answer as plain chat outside the Guest's scope). HTTP 503, with
+	// details.reason PublicLookupReasonOff. The name is from the retired
+	// public-lookup agent; code and reason are kept for clients.
 	ErrPublicLookupUnavailable ErrorCode = 2105
 
 	// VectorStore binding related error codes (2200-2299).
@@ -177,7 +178,10 @@ func NewServiceUnavailableError(message string) *AppError {
 
 // Reasons of ErrPublicLookupUnavailable (details.reason).
 const (
-	PublicLookupReasonOff         = "public_lookup_off"
+	PublicLookupReasonOff = "public_lookup_off"
+	// PublicLookupReasonNoKnowledge is no longer sent (since 2026-11-25 a
+	// Guest's turn runs without public knowledge, on their own uploads);
+	// kept so older clients' mapping still compiles against the contract.
 	PublicLookupReasonNoKnowledge = "public_lookup_no_knowledge"
 )
 
