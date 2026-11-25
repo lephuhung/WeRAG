@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"strconv"
 	"time"
@@ -54,6 +55,15 @@ func (r *documentLabelRepository) filtered(ctx context.Context, model any, q *ty
 	}
 	if spelling && q.Source != "" {
 		db = db.Where("source = ?", q.Source)
+	}
+	switch q.Review {
+	case "":
+	case types.DocumentLabelUnreviewed:
+		db = db.Where("review_verdict = ''")
+	case types.DocumentLabelReviewed:
+		db = db.Where("review_verdict <> ''")
+	default:
+		db = db.Where("review_verdict = ?", q.Review)
 	}
 	return db
 }
@@ -233,4 +243,59 @@ func (r *documentLabelRepository) Models(ctx context.Context, tenantID uint64) (
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+func (r *documentLabelRepository) Review(ctx context.Context, kind string, id uint64, tenantID uint64, upd types.DocumentLabelReview) (*types.DocumentLabel, error) {
+	var model any
+	switch kind {
+	case types.DocumentLabelSpelling:
+		model = &types.DocumentSpellingFeedback{}
+	case types.DocumentLabelFormat:
+		model = &types.DocumentFormatFeedback{}
+	default:
+		return nil, interfaces.ErrDocumentLabelNotFound
+	}
+	// explicit map: empty strings and NULL are written too
+	cols := map[string]any{
+		"review_verdict": upd.Verdict, "review_correction": upd.Correction,
+		"review_note": upd.Note, "reviewed_by": upd.ReviewedBy, "reviewed_at": upd.At,
+	}
+	if upd.Verdict == "" {
+		cols = map[string]any{
+			"review_verdict": "", "review_correction": "", "review_note": "",
+			"reviewed_by": "", "reviewed_at": nil,
+		}
+	}
+	db := r.db.WithContext(ctx).Model(model).Where("id = ?", id)
+	if tenantID != 0 {
+		db = db.Where("tenant_id = ?", tenantID)
+	}
+	res := db.Updates(cols)
+	if res.Error != nil {
+		return nil, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return nil, interfaces.ErrDocumentLabelNotFound
+	}
+	var l types.DocumentLabel
+	if kind == types.DocumentLabelSpelling {
+		var row types.DocumentSpellingFeedback
+		if err := r.db.WithContext(ctx).First(&row, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, interfaces.ErrDocumentLabelNotFound
+			}
+			return nil, err
+		}
+		l = types.SpellingLabel(&row)
+	} else {
+		var row types.DocumentFormatFeedback
+		if err := r.db.WithContext(ctx).First(&row, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, interfaces.ErrDocumentLabelNotFound
+			}
+			return nil, err
+		}
+		l = types.FormatLabel(&row)
+	}
+	return &l, nil
 }

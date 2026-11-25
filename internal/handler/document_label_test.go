@@ -70,6 +70,7 @@ func newLabelRouter(t *testing.T) (*gin.Engine, *gorm.DB, *labelCaller) {
 	g.GET("", h.ListDocumentLabels)
 	g.GET("/facets", h.DocumentLabelFacets)
 	g.GET("/export", h.ExportDocumentLabels)
+	g.PATCH("/:id", h.ReviewDocumentLabel)
 	return r, db, who
 }
 
@@ -282,4 +283,125 @@ func TestDocumentLabelsTieOrder(t *testing.T) {
 	}
 	require.Equal(t, []string{"spelling:11", "spelling:10", "spelling:9", "spelling:8", "spelling:7", "spelling:6",
 		"spelling:5", "spelling:4", "spelling:3", "spelling:2", "spelling:1", "format:1"}, ids)
+}
+
+func labelPatch(t *testing.T, r *gin.Engine, id, body string) (int, map[string]any) {
+	t.Helper()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/document-labels/"+id, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	var out map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &out)
+	return w.Code, out
+}
+
+func TestDocumentLabelsReview(t *testing.T) {
+	r, db, who := newLabelRouter(t)
+	seedLabels(t, db)
+	who.tenantID, who.superAdmin = 1, true
+
+	// the SuperAdmin accepts the suggestion on the verifier row (id 2, "Ủy" → "Uỷ")
+	code, body := labelPatch(t, r, "spelling:2", `{"review_verdict":"error","review_correction":"Uỷ","review_note":" ok "}`)
+	require.Equal(t, http.StatusOK, code, body)
+	l := body["data"].(map[string]any)
+	require.Equal(t, "spelling:2", l["id"])
+	require.Equal(t, "error", l["review_verdict"])
+	require.Equal(t, "Uỷ", l["review_correction"])
+	require.Equal(t, "ok", l["review_note"])
+	require.Equal(t, "Sở Tư pháp", l["organization_name"])
+	require.NotNil(t, l["reviewed_at"])
+	require.NotContains(t, l, "reviewed_by")
+	var row types.DocumentSpellingFeedback
+	require.NoError(t, db.First(&row, 2).Error)
+	require.Equal(t, "error", row.ReviewVerdict)
+	require.Equal(t, "u-admin", row.ReviewedBy)
+	require.NotNil(t, row.ReviewedAt)
+
+	// the list shows it, and the review filters split it out
+	_, body = labelGet(t, r, "/api/v1/document-labels?review=reviewed")
+	items := labelItems(t, body)
+	require.Len(t, items, 1)
+	require.Equal(t, "Uỷ", items[0]["review_correction"])
+	_, body = labelGet(t, r, "/api/v1/document-labels?review=unreviewed")
+	require.EqualValues(t, 4, body["data"].(map[string]any)["total"])
+	for _, it := range labelItems(t, body) {
+		require.NotEqual(t, "spelling:2", it["id"])
+		require.Equal(t, "", it["review_verdict"])
+	}
+	_, body = labelGet(t, r, "/api/v1/document-labels?review=error")
+	require.Len(t, labelItems(t, body), 1)
+	code, _ = labelGet(t, r, "/api/v1/document-labels?review=maybe")
+	require.Equal(t, http.StatusBadRequest, code)
+
+	// the export carries the review but not who gave it
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/document-labels/export?review=reviewed", nil))
+	require.Equal(t, http.StatusOK, w.Code)
+	first := strings.SplitN(w.Body.String(), "\n", 2)[0]
+	var rec map[string]any
+	require.NoError(t, json.Unmarshal([]byte(first), &rec))
+	require.Equal(t, "error", rec["review_verdict"])
+	require.Equal(t, "Uỷ", rec["review_correction"])
+	require.NotContains(t, rec, "reviewed_by")
+	require.NotContains(t, w.Body.String(), "u-admin")
+
+	// a non-error verdict drops the correction
+	code, body = labelPatch(t, r, "format:1", `{"review_verdict":"not_error","review_correction":"13pt"}`)
+	require.Equal(t, http.StatusOK, code, body)
+	require.Equal(t, "", body["data"].(map[string]any)["review_correction"])
+
+	// "" clears the review
+	code, body = labelPatch(t, r, "spelling:2", `{"review_verdict":""}`)
+	require.Equal(t, http.StatusOK, code, body)
+	l = body["data"].(map[string]any)
+	require.Equal(t, "", l["review_verdict"])
+	require.Equal(t, "", l["review_correction"])
+	require.Nil(t, l["reviewed_at"])
+	var cleared types.DocumentSpellingFeedback
+	require.NoError(t, db.First(&cleared, 2).Error)
+	require.Equal(t, "", cleared.ReviewedBy)
+	require.Nil(t, cleared.ReviewedAt)
+
+	// bad input
+	for _, c := range []struct{ id, body string }{
+		{"spelling:1", `{"review_verdict":"error","review_correction":"  "}`},
+		{"format:1", `{"review_verdict":"error"}`},
+		{"spelling:1", `{"review_verdict":"maybe"}`},
+		{"spelling:1", `{"review_verdict":"error","review_correction":"` + strings.Repeat("a", 256) + `"}`},
+		{"spelling:x", `{"review_verdict":"skip"}`},
+		{"other:1", `{"review_verdict":"skip"}`},
+		{"1", `{"review_verdict":"skip"}`},
+	} {
+		code, _ := labelPatch(t, r, c.id, c.body)
+		require.Equal(t, http.StatusBadRequest, code, "%s %s", c.id, c.body)
+	}
+	code, _ = labelPatch(t, r, "spelling:99", `{"review_verdict":"skip"}`)
+	require.Equal(t, http.StatusNotFound, code)
+}
+
+func TestDocumentLabelsReviewScopedToOrganization(t *testing.T) {
+	r, db, who := newLabelRouter(t)
+	seedLabels(t, db)
+	who.tenantID, who.role = 1, types.TenantRoleAdmin
+
+	// spelling:3 belongs to organization 2
+	code, _ := labelPatch(t, r, "spelling:3", `{"review_verdict":"skip"}`)
+	require.Equal(t, http.StatusNotFound, code)
+	var row types.DocumentSpellingFeedback
+	require.NoError(t, db.First(&row, 3).Error)
+	require.Equal(t, "", row.ReviewVerdict, "untouched")
+
+	code, body := labelPatch(t, r, "spelling:1", `{"review_verdict":"skip"}`)
+	require.Equal(t, http.StatusOK, code, body)
+
+	// members and API keys are refused
+	for _, c := range []labelCaller{
+		{tenantID: 1, role: types.TenantRoleMember},
+		{tenantID: 1, role: types.TenantRoleAdmin, apiKey: true},
+	} {
+		*who = c
+		code, _ := labelPatch(t, r, "spelling:1", `{"review_verdict":"skip"}`)
+		require.Equal(t, http.StatusForbidden, code)
+	}
 }

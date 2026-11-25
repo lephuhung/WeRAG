@@ -19,4 +19,5 @@ func RegisterDocumentLabelRoutes(r *gin.RouterGroup, h *handler.DocumentLabelHan
 	grp.GET("", h.ListDocumentLabels)
 	grp.GET("/facets", h.DocumentLabelFacets)
 	grp.GET("/export", h.ExportDocumentLabels)
+	grp.PATCH("/:id", h.ReviewDocumentLabel)
 }

@@ -51,6 +51,12 @@ type DocumentFormatFeedback struct {
 	Model            string          `json:"model"`
 	Report           json.RawMessage `json:"report" gorm:"type:jsonb"`
 	CreatedAt        time.Time       `json:"created_at"`
+	// Review on the label page (see DocumentLabelReview*).
+	ReviewVerdict    string     `json:"review_verdict"`
+	ReviewCorrection string     `json:"review_correction"`
+	ReviewNote       string     `json:"review_note"`
+	ReviewedBy       string     `json:"reviewed_by"`
+	ReviewedAt       *time.Time `json:"reviewed_at"`
 }
 
 func (DocumentFormatFeedback) TableName() string { return "document_format_feedback" }

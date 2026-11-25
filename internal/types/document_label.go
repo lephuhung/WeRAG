@@ -14,6 +14,43 @@ const (
 	DocumentLabelFormat   = "format"   // document_format_feedback
 )
 
+// Review verdicts given on the label page (DocumentLabel.ReviewVerdict);
+// "" = not reviewed yet.
+const (
+	// DocumentLabelReviewError: a real mistake; ReviewCorrection holds the
+	// right form (spelling) or the right expected value (format).
+	DocumentLabelReviewError = "error"
+	// DocumentLabelReviewNotError: no mistake.
+	DocumentLabelReviewNotError = "not_error"
+	// DocumentLabelReviewSkip: an unusable sample, left out of training.
+	DocumentLabelReviewSkip = "skip"
+)
+
+// ValidDocumentLabelReview reports whether v is one of the review verdicts
+// above ("" is not: it clears a review and is handled by the caller).
+func ValidDocumentLabelReview(v string) bool {
+	switch v {
+	case DocumentLabelReviewError, DocumentLabelReviewNotError, DocumentLabelReviewSkip:
+		return true
+	}
+	return false
+}
+
+// Review filters (DocumentLabelQuery.Review) besides the verdicts.
+const (
+	DocumentLabelUnreviewed = "unreviewed"
+	DocumentLabelReviewed   = "reviewed"
+)
+
+// DocumentLabelReview is one review of a label. Verdict "" clears it.
+type DocumentLabelReview struct {
+	Verdict    string
+	Correction string
+	Note       string
+	ReviewedBy string
+	At         time.Time
+}
+
 // DocumentLabelQuery filters the labels the users and the spelling verifier
 // gave on the document assistant's spelling underlines and NĐ30 format
 // check reports. TenantID 0 means every organization (SuperAdmin only; the
@@ -24,10 +61,12 @@ type DocumentLabelQuery struct {
 	Verdict  string
 	Source   string // spelling: user | verifier; format rows are all "user"
 	Model    string
-	From     *time.Time
-	To       *time.Time
-	Offset   int
-	Limit    int
+	// Review: "" all, "unreviewed", "reviewed" or one review verdict.
+	Review string
+	From   *time.Time
+	To     *time.Time
+	Offset int
+	Limit  int
 }
 
 // DocumentLabel is one label, the same shape for both kinds: the paragraph
@@ -53,6 +92,9 @@ type DocumentLabel struct {
 	// Current is what the format checker measured (format only).
 	Current string `json:"current,omitempty"`
 	Verdict string `json:"verdict"`
+	// UserCorrection is what the user typed over the flagged text instead
+	// of the suggestion (spelling verdict fixed only).
+	UserCorrection string `json:"user_correction,omitempty"`
 	// Source is who gave the verdict: "user", or "verifier" for a spelling
 	// finding the verifier model rejected (a model label, not a human one).
 	Source string `json:"source"`
@@ -64,6 +106,12 @@ type DocumentLabel struct {
 	Scope        string `json:"scope,omitempty"`
 	Note         string `json:"note,omitempty"`
 	Model        string `json:"model"`
+	// The review given on the label page ("" = not reviewed). Who reviewed
+	// is not exported.
+	ReviewVerdict    string     `json:"review_verdict"`
+	ReviewCorrection string     `json:"review_correction"`
+	ReviewNote       string     `json:"review_note,omitempty"`
+	ReviewedAt       *time.Time `json:"reviewed_at"`
 }
 
 // SpellingLabel converts a spelling feedback row. The span is the
@@ -74,7 +122,9 @@ func SpellingLabel(r *DocumentSpellingFeedback) DocumentLabel {
 		ID: "spelling:" + strconv.FormatUint(r.ID, 10), Kind: DocumentLabelSpelling,
 		OrganizationID: r.TenantID, CreatedAt: r.CreatedAt,
 		Paragraph: r.Paragraph, FlaggedText: r.Wrong, Suggestion: r.Suggestion,
-		Verdict: r.Verdict, Source: r.Source, Note: r.Note, Model: r.Model,
+		Verdict: r.Verdict, UserCorrection: r.Correction, Source: r.Source, Note: r.Note, Model: r.Model,
+		ReviewVerdict: r.ReviewVerdict, ReviewCorrection: r.ReviewCorrection,
+		ReviewNote: r.ReviewNote, ReviewedAt: r.ReviewedAt,
 	}
 	l.SpanStart, l.SpanEnd = LabelSpan(r.Paragraph, r.Wrong, r.TextOccurrence)
 	return l
@@ -92,6 +142,8 @@ func FormatLabel(r *DocumentFormatFeedback) DocumentLabel {
 		Verdict: r.Verdict, Source: SpellingFeedbackSourceUser,
 		CheckID: r.CheckID, FindingID: r.FindingID, FindingTitle: r.FindingTitle,
 		DocumentType: r.DocumentType, Scope: r.Scope, Note: r.Note, Model: r.Model,
+		ReviewVerdict: r.ReviewVerdict, ReviewCorrection: r.ReviewCorrection,
+		ReviewNote: r.ReviewNote, ReviewedAt: r.ReviewedAt,
 	}
 	if r.FindingID == "" || len(r.Report) == 0 {
 		return l

@@ -115,8 +115,16 @@ type DocumentLabelRepository interface {
 	Each(ctx context.Context, q *types.DocumentLabelQuery, fn func(*types.DocumentLabel) error) error
 	// Models lists the model names stored on the labels in scope.
 	Models(ctx context.Context, tenantID uint64) ([]string, error)
+	// Review stores a review on one label (kind spelling or format) and
+	// returns the label; tenantID 0 = any organization (SuperAdmin), else
+	// the row must be that organization's (ErrDocumentLabelNotFound). An
+	// empty upd.Verdict clears the review.
+	Review(ctx context.Context, kind string, id uint64, tenantID uint64, upd types.DocumentLabelReview) (*types.DocumentLabel, error)
 }
 
 // ErrDocumentLabelPageTooDeep: a label list page beyond the depth the
 // review table pages to; the JSONL export has every row.
 var ErrDocumentLabelPageTooDeep = errors.New("label page too deep: narrow the filters or use the export")
+
+// ErrDocumentLabelNotFound: no label with this id in the caller's scope.
+var ErrDocumentLabelNotFound = errors.New("label not found")

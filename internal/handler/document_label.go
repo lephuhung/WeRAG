@@ -65,7 +65,7 @@ func labelScope(ctx context.Context, requested string) (uint64, error) {
 	return caller.TenantID, nil
 }
 
-// labelQuery reads the filters: kind, verdict, source, model, from and to
+// labelQuery reads the filters: kind, verdict, source, model, review, from and to
 // (YYYY-MM-DD in Vietnam time, both inclusive) and the organization.
 func labelQuery(c *gin.Context) (*types.DocumentLabelQuery, error) {
 	tenantID, err := labelScope(c.Request.Context(), c.Query("tenant_id"))
@@ -78,11 +78,19 @@ func labelQuery(c *gin.Context) (*types.DocumentLabelQuery, error) {
 		Verdict:  strings.TrimSpace(c.Query("verdict")),
 		Source:   strings.TrimSpace(c.Query("source")),
 		Model:    strings.TrimSpace(c.Query("model")),
+		Review:   strings.TrimSpace(c.Query("review")),
 	}
 	switch q.Kind {
 	case "", types.DocumentLabelSpelling, types.DocumentLabelFormat:
 	default:
 		return nil, errors.NewBadRequestError("kind must be spelling or format")
+	}
+	switch q.Review {
+	case "", types.DocumentLabelUnreviewed, types.DocumentLabelReviewed:
+	default:
+		if !types.ValidDocumentLabelReview(q.Review) {
+			return nil, errors.NewBadRequestError("review must be unreviewed, reviewed, error, not_error or skip")
+		}
 	}
 	switch q.Source {
 	case "", types.SpellingFeedbackSourceUser, types.SpellingFeedbackSourceVerifier:
@@ -155,6 +163,7 @@ func (h *DocumentLabelHandler) names(ctx context.Context, cache map[uint64]strin
 // @Param        verdict   query string false "not_error, false_alarm, not_nd30, wrong_type, other"
 // @Param        source    query string false "user or verifier"
 // @Param        model     query string false "Model name"
+// @Param        review    query string false "unreviewed, reviewed, error, not_error or skip"
 // @Param        tenant_id query int    false "Organization (SuperAdmin)"
 // @Param        from      query string false "YYYY-MM-DD (Vietnam time)"
 // @Param        to        query string false "YYYY-MM-DD, inclusive"
@@ -195,6 +204,84 @@ func (h *DocumentLabelHandler) ListDocumentLabels(c *gin.Context) {
 	}})
 }
 
+// documentLabelReviewBody is the PATCH body of one label's review.
+type documentLabelReviewBody struct {
+	ReviewVerdict    string `json:"review_verdict"`
+	ReviewCorrection string `json:"review_correction"`
+	ReviewNote       string `json:"review_note"`
+}
+
+// ReviewDocumentLabel godoc
+// @Summary      Review one spelling or format label
+// @Description  Stores the reviewer's verdict on a label for the training set:
+// @Description  error (a real mistake; review_correction = the right form or
+// @Description  expected value, required), not_error, skip (unusable sample),
+// @Description  or "" to clear the review. A Tenant Admin reviews their own
+// @Description  organization's labels, the SuperAdmin any. API keys are refused.
+// @Tags         Nhãn tài liệu
+// @Accept       json
+// @Produce      json
+// @Param        id   path string true "spelling:<id> or format:<id>"
+// @Param        body body documentLabelReviewBody true "Review"
+// @Success      200 {object} map[string]interface{} "The label"
+// @Failure      400 {object} map[string]interface{} "Invalid id or review"
+// @Failure      404 {object} map[string]interface{} "No such label in scope"
+// @Router       /document-labels/{id} [patch]
+func (h *DocumentLabelHandler) ReviewDocumentLabel(c *gin.Context) {
+	ctx := c.Request.Context()
+	tenantID, err := labelScope(ctx, "")
+	if err != nil {
+		c.Error(err)
+		return
+	}
+	kind, rawID, ok := strings.Cut(c.Param("id"), ":")
+	id, perr := strconv.ParseUint(rawID, 10, 64)
+	if !ok || perr != nil || id == 0 || (kind != types.DocumentLabelSpelling && kind != types.DocumentLabelFormat) {
+		c.Error(errors.NewBadRequestError("id must be spelling:<n> or format:<n>"))
+		return
+	}
+	var body documentLabelReviewBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.Error(errors.NewBadRequestError("invalid body"))
+		return
+	}
+	verdict := strings.TrimSpace(body.ReviewVerdict)
+	correction := strings.TrimSpace(body.ReviewCorrection)
+	note := strings.TrimSpace(body.ReviewNote)
+	if verdict != "" && !types.ValidDocumentLabelReview(verdict) {
+		c.Error(errors.NewBadRequestError("review_verdict must be error, not_error, skip or empty"))
+		return
+	}
+	if len(correction) > 255 || len(note) > 2000 {
+		c.Error(errors.NewBadRequestError("review_correction or review_note too long"))
+		return
+	}
+	if verdict == types.DocumentLabelReviewError {
+		if correction == "" {
+			c.Error(errors.NewBadRequestError("review_correction is required when review_verdict is error"))
+			return
+		}
+	} else {
+		correction = ""
+	}
+	uid, _ := types.UserIDFromContext(ctx)
+	label, err := h.repo.Review(ctx, kind, id, tenantID, types.DocumentLabelReview{
+		Verdict: verdict, Correction: correction, Note: note, ReviewedBy: uid, At: time.Now(),
+	})
+	if stderrors.Is(err, interfaces.ErrDocumentLabelNotFound) {
+		c.Error(errors.NewNotFoundError("label not found"))
+		return
+	}
+	if err != nil {
+		logger.ErrorWithFields(ctx, err, nil)
+		c.Error(errors.NewInternalServerError("could not save the review"))
+		return
+	}
+	one := []types.DocumentLabel{*label}
+	h.names(ctx, map[uint64]string{}, one)
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": one[0]})
+}
+
 // DocumentLabelFacets godoc
 // @Summary      Filter values for the label table
 // @Description  The model names stored on the labels in the caller's scope.
@@ -224,9 +311,13 @@ func (h *DocumentLabelHandler) DocumentLabelFacets(c *gin.Context) {
 // @Description  Streams every label matching the filters, one JSON object per
 // @Description  line: id, kind, organization_id, created_at, paragraph,
 // @Description  span_start, span_end (rune offsets, end exclusive), flagged_text,
-// @Description  suggestion, verdict, source, check_id, model and the format
-// @Description  finding's details. Same scope and filters as the list. The
-// @Description  last line of a complete file is {"_end":true,"rows":n}.
+// @Description  suggestion, verdict, source, check_id, model, the format
+// @Description  finding's details and the review: review_verdict ("" not
+// @Description  reviewed, error, not_error, skip), review_correction (the
+// @Description  right form when error), review_note, reviewed_at. Train on
+// @Description  reviewed rows (review=reviewed). Same scope and filters as
+// @Description  the list. The last line of a complete file is
+// @Description  {"_end":true,"rows":n}.
 // @Tags         Nhãn tài liệu
 // @Produce      application/x-ndjson
 // @Router       /document-labels/export [get]
