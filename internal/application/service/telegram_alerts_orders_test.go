@@ -291,7 +291,7 @@ func TestTelegramPersonalLinkOnly(t *testing.T) {
 	_, err := e.alerts.PollOnce(ctx, e.client, 0)
 	require.NoError(t, err)
 	answers := e.bot.callsOf("answerCallbackQuery")
-	require.Contains(t, answers[len(answers)-1].Body["text"], "Chỉ SuperAdmin đã liên kết Telegram của chính mình")
+	require.Contains(t, answers[len(answers)-1].Body["text"], "đang liên kết bằng mã thường nên chỉ nhận tin")
 	require.Empty(t, orders.confirmed)
 
 	code, err := e.alerts.CreateLinkCode(ctx, "admin2", true)

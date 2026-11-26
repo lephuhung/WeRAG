@@ -136,6 +136,20 @@ func (a *TelegramAlerts) telegramSuperAdmin(ctx context.Context, telegramUserID 
 	return u, nil
 }
 
+// receivesOnly reports whether the Telegram user's private chat is linked
+// by an active SuperAdmin with an ordinary code (it receives alerts but may
+// not act): the refusal then says how to link it with a personal code.
+func (a *TelegramAlerts) receivesOnly(ctx context.Context, telegramUserID int64) bool {
+	var chats []types.TelegramAlertChat
+	if err := a.db.WithContext(ctx).
+		Where("chat_id = ? AND chat_type = ? AND disabled_at IS NULL AND can_act = ?", telegramUserID, "private", false).
+		Limit(1).Find(&chats).Error; err != nil || len(chats) == 0 {
+		return false
+	}
+	admins, err := a.superAdmins(ctx)
+	return err == nil && admins[chats[0].LinkedBy]
+}
+
 func telegramUserName(u *types.User) string {
 	if u == nil {
 		return ""
@@ -188,6 +202,11 @@ func (a *TelegramAlerts) handleCallback(ctx context.Context, c *telegram.Client,
 	if admin == nil {
 		logger.Warnf(ctx, "[TelegramAlerts] order button %q refused: Telegram user %d in chat %d is not a linked SuperAdmin",
 			act, q.From.ID, chatID)
+		if a.receivesOnly(ctx, q.From.ID) {
+			// a SuperAdmin's chat linked with an ordinary code: say how to fix it
+			answer("Telegram này đang liên kết bằng mã thường nên chỉ nhận tin. Để duyệt đơn: Quản trị hệ thống → Thông báo → Telegram → \"Liên kết Telegram của tôi\", rồi bấm Start lại với bot.", true)
+			return
+		}
 		answer("Chỉ SuperAdmin đã liên kết Telegram của chính mình (mã \"Liên kết Telegram của tôi\") mới xử lý được đơn.", true)
 		return
 	}
