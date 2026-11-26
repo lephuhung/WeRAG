@@ -57,7 +57,7 @@ func (s *usageBillingService) BillingInfo(ctx context.Context) *types.UsageBilli
 		BankName:        strings.TrimSpace(s.settings.GetString(ctx, types.BillingBankNameSettingKey, "", "")),
 		BankAccountNo:   strings.TrimSpace(s.settings.GetString(ctx, types.BillingBankAccountNoSettingKey, "", "")),
 		BankAccountName: strings.TrimSpace(s.settings.GetString(ctx, types.BillingBankAccountNameSettingKey, "", "")),
-		OrderTTLHours:   s.settings.GetInt(ctx, types.BillingOrderTTLHoursSettingKey, "", 72),
+		OrderTTLMinutes: s.settings.GetInt(ctx, types.BillingOrderTTLMinutesSettingKey, "", types.DefaultBillingOrderTTLMinutes),
 		Contact:         strings.TrimSpace(s.settings.GetString(ctx, types.BillingContactSettingKey, "", "")),
 		SellerName:      strings.TrimSpace(s.settings.GetString(ctx, types.BillingSellerNameSettingKey, "", "")),
 		SellerTaxCode:   strings.TrimSpace(s.settings.GetString(ctx, types.BillingSellerTaxCodeSettingKey, "", "")),

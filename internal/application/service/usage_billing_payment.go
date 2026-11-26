@@ -12,6 +12,7 @@ import (
 
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/types"
+	"time"
 )
 
 // Incoming payments: see types.UsagePaymentWebhookRequest.
@@ -236,9 +237,10 @@ func (s *usageBillingService) settlePayment(
 	case o.Status == types.UsageOrderPending:
 		// still open, even if past expires_at: nothing has been released
 		// and the page still showed the QR code
-	case o.Status == types.UsageOrderExpired && (o.ExpiresAt == nil || !t.TransactedAt.After(*o.ExpiresAt)):
-		// paid in time, but the checker reported it after the order was
-		// expired: reopen it
+	case o.Status == types.UsageOrderExpired &&
+		(o.ExpiresAt == nil || !t.TransactedAt.After(o.ExpiresAt.Add(billingLatePaymentGrace))):
+		// paid in time (or within the grace), but the checker reported it
+		// after the order was expired: reopen it
 		revive = true
 	case o.Status == types.UsageOrderExpired:
 		t.Status, t.Reason = types.UsagePaymentOrderClosed, "transferred after the order expired"
@@ -395,6 +397,12 @@ func receivedAcrossSources(bySource map[string]int64) int64 {
 	}
 	return best
 }
+
+// billingLatePaymentGrace: a transfer booked this long after an order's
+// payment deadline still pays it (the order is reopened). The window is 30
+// minutes by default; a buyer who scans the QR code at the last minute is
+// often booked a few minutes later.
+const billingLatePaymentGrace = 15 * time.Minute
 
 // reopenExpiredOrder puts an expired order back to pending, taking back
 // the promo use that expiry released. The promo is not re-checked for

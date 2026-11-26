@@ -33,8 +33,11 @@ const (
 	BillingBankNameSettingKey        = "billing.bank_name"
 	BillingBankAccountNoSettingKey   = "billing.bank_account_no"
 	BillingBankAccountNameSettingKey = "billing.bank_account_name"
-	// BillingOrderTTLHoursSettingKey: pending orders expire after this.
-	BillingOrderTTLHoursSettingKey = "billing.order_ttl_hours"
+	// BillingOrderTTLMinutesSettingKey: pending orders expire after this
+	// many minutes (DefaultBillingOrderTTLMinutes; 0 = never). It replaced
+	// billing.order_ttl_hours (72) on 2026-11-26: a transfer by QR takes
+	// minutes, and an order kept open for days blocks the next one.
+	BillingOrderTTLMinutesSettingKey = "billing.order_ttl_minutes"
 	// BillingContactSettingKey: free text shown on the payment page.
 	BillingContactSettingKey = "billing.contact"
 	// The seller as receipts print it: legal name, tax code (mã số thuế)
@@ -278,6 +281,10 @@ type UsageQuote struct {
 	PricedSeats *int `json:"priced_seats,omitempty"`
 }
 
+// DefaultBillingOrderTTLMinutes is how long a pending order waits for its
+// transfer unless a SuperAdmin sets billing.order_ttl_minutes.
+const DefaultBillingOrderTTLMinutes = 30
+
 // UsageBillingInfo is what the payment page needs besides the order.
 type UsageBillingInfo struct {
 	// Enabled: a receiving account is configured, so orders can be paid.
@@ -286,7 +293,7 @@ type UsageBillingInfo struct {
 	BankName        string `json:"bank_name"`
 	BankAccountNo   string `json:"bank_account_no"`
 	BankAccountName string `json:"bank_account_name"`
-	OrderTTLHours   int64  `json:"order_ttl_hours"`
+	OrderTTLMinutes int64  `json:"order_ttl_minutes"`
 	Contact         string `json:"contact"`
 	// The seller printed on receipts (empty = left out).
 	SellerName    string `json:"seller_name"`

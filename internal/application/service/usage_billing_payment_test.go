@@ -246,3 +246,30 @@ func TestPaymentRequestFieldLengths(t *testing.T) {
 		AccountNo: long(64), AmountVND: 1})
 	require.Equal(t, types.UsagePaymentIgnored, res.Transaction.Status, "not the receiving account")
 }
+
+// A transfer booked within the grace after the deadline still pays the
+// order (a QR scanned at the last minute is booked a few minutes later);
+// one booked after the grace waits for a SuperAdmin.
+func TestPaymentWithinGraceAfterExpiryPaysOrder(t *testing.T) {
+	f := newBillingFixture(t)
+	ctx := context.Background()
+	inGrace := f.poolOrder(t)
+	tooLate, err := f.svc.CreateOrder(ctx, types.UsageQuoteRequest{ScopeType: "tenant", PlanID: "pool", Months: 1,
+		ConfirmDuplicate: true}, "10003", "u1")
+	require.NoError(t, err)
+	deadline := *f.repo.orders[inGrace.ID].ExpiresAt
+	f.svc.now = func() time.Time { return deadline.Add(time.Hour) }
+	_, err = f.svc.ListOrders(ctx, types.UsageOrderFilter{})
+	require.NoError(t, err)
+	require.Equal(t, types.UsageOrderExpired, f.repo.orders[inGrace.ID].Status)
+
+	at := deadline.Add(billingLatePaymentGrace - time.Minute)
+	res := f.pay(t, types.UsagePaymentWebhookRequest{TransactionID: "g1", AmountVND: 100_000, Content: inGrace.OrderCode, TransactedAt: &at})
+	require.Equal(t, types.UsagePaymentMatched, res.Transaction.Status)
+	require.Equal(t, types.UsageOrderPaid, f.repo.orders[inGrace.ID].Status)
+
+	late := deadline.Add(billingLatePaymentGrace + time.Minute)
+	res = f.pay(t, types.UsagePaymentWebhookRequest{TransactionID: "g2", AmountVND: 100_000, Content: tooLate.OrderCode, TransactedAt: &late})
+	require.Equal(t, types.UsagePaymentOrderClosed, res.Transaction.Status)
+	require.Equal(t, types.UsageOrderExpired, f.repo.orders[tooLate.ID].Status)
+}

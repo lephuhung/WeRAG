@@ -308,6 +308,8 @@ func telegramAlertIcon(alert TelegramAlert) string {
 		return "🔔"
 	case types.TelegramAlertOrderPaid:
 		return "💰"
+	case types.TelegramAlertOrderPaymentHeld:
+		return "⚠️"
 	case types.TelegramAlertOrderExpiring, types.TelegramAlertOrderExpired, types.TelegramAlertOrderUnderpaid:
 		return "⏰"
 	}

@@ -57,12 +57,20 @@ function errDetails(e: unknown): { reason?: string; order_code?: string; receive
 }
 
 type BankForm = {
-  bankBin: string; bankName: string; accountNo: string; accountName: string; orderTTLHours: string; contact: string;
+  bankBin: string; bankName: string; accountNo: string; accountName: string; orderTTLMinutes: string; contact: string;
   sellerName: string; sellerTaxCode: string; sellerAddress: string;
 };
 const emptyBank: BankForm = {
-  bankBin: "", bankName: "", accountNo: "", accountName: "", orderTTLHours: "72", contact: "",
+  bankBin: "", bankName: "", accountNo: "", accountName: "", orderTTLMinutes: "30", contact: "",
   sellerName: "", sellerTaxCode: "", sellerAddress: "",
+};
+
+/* The payment window in minutes as saved: 0 (orders never expire) or 5
+ * minutes to 7 days; 30 when the field is empty or not a number. */
+const orderTTLOf = (v: string) => {
+  const n = Math.round(Number(v.trim()));
+  if (v.trim() === "" || !Number.isFinite(n)) return 30;
+  return n <= 0 ? 0 : Math.min(10080, Math.max(5, n));
 };
 
 /* The order list filter: a status, "" (all), "awaiting" (the orders the
@@ -193,14 +201,14 @@ export default function AdminBilling() {
       const K = BILLING_SETTING_KEYS;
       const [bin, name, no, acct, ttl, contact, secret, sName, sTax, sAddr, pl, pr] = await Promise.all([
         getSystemSetting(K.bankBin), getSystemSetting(K.bankName), getSystemSetting(K.accountNo),
-        getSystemSetting(K.accountName), getSystemSetting(K.orderTTLHours), getSystemSetting(K.contact),
+        getSystemSetting(K.accountName), getSystemSetting(K.orderTTLMinutes), getSystemSetting(K.contact),
         getSystemSetting(K.webhookSecret), getSystemSetting(K.sellerName), getSystemSetting(K.sellerTaxCode),
         getSystemSetting(K.sellerAddress), listUsagePlans(true), listUsagePromos(true),
       ]);
       setSecretMasked(String(secret.value ?? ""));
       const bankForm: BankForm = {
         bankBin: String(bin.value ?? ""), bankName: String(name.value ?? ""), accountNo: String(no.value ?? ""),
-        accountName: String(acct.value ?? ""), orderTTLHours: String(ttl.value ?? "72"), contact: String(contact.value ?? ""),
+        accountName: String(acct.value ?? ""), orderTTLMinutes: String(ttl.value ?? "30"), contact: String(contact.value ?? ""),
         sellerName: String(sName.value ?? ""), sellerTaxCode: String(sTax.value ?? ""), sellerAddress: String(sAddr.value ?? ""),
       };
       setBank(bankForm);
@@ -274,14 +282,14 @@ export default function AdminBilling() {
       await updateSystemSetting(K.bankName, bank.bankName.trim());
       await updateSystemSetting(K.accountNo, bank.accountNo.trim());
       await updateSystemSetting(K.accountName, bank.accountName.trim());
-      await updateSystemSetting(K.orderTTLHours, Math.max(1, Number(bank.orderTTLHours) || 72));
+      await updateSystemSetting(K.orderTTLMinutes, orderTTLOf(bank.orderTTLMinutes));
       await updateSystemSetting(K.contact, bank.contact.trim());
       await updateSystemSetting(K.sellerName, bank.sellerName.trim());
       await updateSystemSetting(K.sellerTaxCode, normalizeTaxCode(bank.sellerTaxCode));
       await updateSystemSetting(K.sellerAddress, bank.sellerAddress.trim());
     });
     if (!ok) return false;
-    setBankBase({ ...bank, orderTTLHours: String(Math.max(1, Number(bank.orderTTLHours) || 72)), sellerTaxCode: normalizeTaxCode(bank.sellerTaxCode) });
+    setBankBase({ ...bank, orderTTLMinutes: String(orderTTLOf(bank.orderTTLMinutes)), sellerTaxCode: normalizeTaxCode(bank.sellerTaxCode) });
     toast.success(t("common.saved"));
     return true;
   };
@@ -685,7 +693,7 @@ export default function AdminBilling() {
           </div>
           <div className="min-w-0">
             <FieldLabel htmlFor="bank-ttl">{t("badm.ttl")}</FieldLabel>
-            <input id="bank-ttl" className="input w-full" type="number" min={1} value={bank.orderTTLHours} onChange={(e) => setBank({ ...bank, orderTTLHours: e.target.value })} />
+            <input id="bank-ttl" className="input w-full" type="number" min={0} max={10080} step={5} value={bank.orderTTLMinutes} onChange={(e) => setBank({ ...bank, orderTTLMinutes: e.target.value })} />
           </div>
           <div className="min-w-0">
             <FieldLabel htmlFor="bank-contact">{t("badm.contact")}</FieldLabel>

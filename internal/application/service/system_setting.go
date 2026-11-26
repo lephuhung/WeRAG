@@ -562,9 +562,10 @@ var registry = map[string]settingSpec{
 		Description: "Kiểm tra dữ liệu chỉ báo một lần giảm khi số dòng mất nhiều hơn mức này (cùng với ngưỡng phần trăm); " +
 			"một số liệu về 0 luôn bị báo.",
 	},
-	types.BillingOrderTTLHoursSettingKey: {
-		Type: "int", EnvName: "", Default: int64(72), Category: "billing",
-		Description: "Đơn hàng chưa thanh toán tự hết hạn sau số giờ này.",
+	types.BillingOrderTTLMinutesSettingKey: {
+		Type: "int", EnvName: "", Default: int64(types.DefaultBillingOrderTTLMinutes), Category: "billing",
+		Description: "Đơn hàng chưa thanh toán tự hủy sau số phút này (5 đến 10080, tức 7 ngày; 0 = không tự hủy). " +
+			"Áp dụng cho đơn tạo sau khi đổi; đơn đang chờ giữ hạn cũ.",
 	},
 	types.BillingContactSettingKey: {
 		Type: "string", EnvName: "", Default: "", Category: "billing",
@@ -1185,7 +1186,9 @@ func (s *systemSettingService) GetJSON(ctx context.Context, key string) (raw typ
 //   - asynq.concurrency: the old fixed-ratio aggregate.
 //   - auth.default_tenant_mode: sign-up no longer creates a personal
 //     organization; new accounts are always tenantless.
-var retiredSettingKeys = []string{"asynq.concurrency", "auth.default_tenant_mode"}
+//   - billing.order_ttl_hours: replaced by billing.order_ttl_minutes
+//     (2026-11-26); the old 72-hour row must not come back.
+var retiredSettingKeys = []string{"asynq.concurrency", "auth.default_tenant_mode", "billing.order_ttl_hours"}
 
 func (s *systemSettingService) List(ctx context.Context) ([]*types.SystemSetting, error) {
 	rows, err := s.repo.List(ctx)
@@ -1866,6 +1869,16 @@ func validateRegistryEntry(key string, rawValue any) error {
 			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
 				return errors.New("the webhook secret may only contain letters, digits, '-' and '_'")
 			}
+		}
+	case types.BillingOrderTTLMinutesSettingKey:
+		// a bank transfer needs a few minutes; a week is the most an order
+		// may hold the buyer's next order back
+		// the canonical value, whatever form it came in ("30", 30, 30.0)
+		var v int64
+		raw, err := encodeForType("int", rawValue)
+		ok := err == nil && json.Unmarshal(raw, &v) == nil
+		if ok && v != 0 && (v < 5 || v > 7*24*60) {
+			return errors.New("the payment window must be 0 (never expire) or 5 to 10080 minutes")
 		}
 	case types.TelegramAlertsBotTokenSettingKey:
 		// "" removes the token (bot off); anything else must look like a bot

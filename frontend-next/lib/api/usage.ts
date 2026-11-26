@@ -759,7 +759,8 @@ export interface UsageBillingInfo {
   bank_name: string;
   bank_account_no: string;
   bank_account_name: string;
-  order_ttl_hours: number;
+  /** Minutes a pending order waits for its transfer (0 = never expires). */
+  order_ttl_minutes: number;
   contact: string;
   seller_name?: string;
   seller_tax_code?: string;
@@ -963,7 +964,7 @@ export const BILLING_SETTING_KEYS = {
   bankName: "billing.bank_name",
   accountNo: "billing.bank_account_no",
   accountName: "billing.bank_account_name",
-  orderTTLHours: "billing.order_ttl_hours",
+  orderTTLMinutes: "billing.order_ttl_minutes",
   contact: "billing.contact",
   /** The seller printed on receipts (empty = left out). */
   sellerName: "billing.seller_name",

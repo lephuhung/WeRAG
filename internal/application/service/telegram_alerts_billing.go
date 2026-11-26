@@ -86,8 +86,36 @@ func (b *billingTelegramNotify) RecordPayment(
 				fmt.Sprintf("Đã nhận tổng cộng: %s / %s", formatVND(o.ReceivedVND), formatVND(o.TotalVND))),
 			Link: telegramOrderLink(o),
 		})
+	case types.UsagePaymentOrderClosed:
+		// money for an order that is closed (expired past the grace, paid,
+		// cancelled): it waits for a SuperAdmin
+		o := r.Order
+		b.alerts.Send(ctx, TelegramAlert{
+			Kind: types.TelegramAlertOrderPaymentHeld, Key: "order_payment_held:" + r.Transaction.ID,
+			Title: fmt.Sprintf("Có tiền chuyển vào đơn %s đã đóng — cần SuperAdmin xử lý", o.OrderCode),
+			Body: telegramOrderLines(o,
+				"Trạng thái đơn: "+telegramOrderStatusVN(o.Status),
+				fmt.Sprintf("Vừa nhận: %s", formatVND(r.Transaction.AmountVND)),
+				"Mở lại đơn (nút \"Mở lại\") để ghi nhận số tiền này, hoặc hoàn tiền cho người mua."),
+			Link: telegramOrderLink(o),
+		})
 	}
 	return r, err
+}
+
+// telegramOrderStatusVN names an order status in Vietnamese.
+func telegramOrderStatusVN(status string) string {
+	switch status {
+	case types.UsageOrderPending:
+		return "chờ thanh toán"
+	case types.UsageOrderPaid:
+		return "đã thanh toán"
+	case types.UsageOrderExpired:
+		return "quá hạn, đã tự hủy"
+	case types.UsageOrderCancelled:
+		return "đã hủy"
+	}
+	return status
 }
 
 func (b *billingTelegramNotify) paid(ctx context.Context, v *types.UsageOrderView, how string) {
@@ -150,8 +178,9 @@ type TelegramOrderWatch struct {
 }
 
 const (
-	// TelegramOrderWatchInterval is how often the watch looks.
-	TelegramOrderWatchInterval = 5 * time.Minute
+	// TelegramOrderWatchInterval is how often the watch looks: a payment
+	// window is 30 minutes by default, so a minute keeps the alerts on time.
+	TelegramOrderWatchInterval = time.Minute
 	// telegramOrderExpiredLookback: orders expired longer ago than this
 	// are not told (turning the bot on does not report old orders).
 	telegramOrderExpiredLookback = 24 * time.Hour
@@ -202,13 +231,26 @@ func (w *TelegramOrderWatch) Check(ctx context.Context) error {
 	type candidate struct {
 		ID        string
 		ExpiresAt *time.Time
+		CreatedAt time.Time
 	}
-	var expiring, expired []candidate
+	var soonish, expiring, expired []candidate
+	// the widest "about to expire" span is 12 hours; each order's own span
+	// is the last third of its window (created → deadline), whatever the
+	// setting says now
 	if err := w.db.WithContext(ctx).Model(&types.UsageOrder{}).
-		Where("status = ? AND total_vnd > 0 AND expires_at > ? AND expires_at <= ? AND created_at <= ?",
-			types.UsageOrderPending, now, now.Add(types.TelegramOrderExpiringWithin), now.Add(-types.TelegramOrderExpiringWithin)).
-		Order("expires_at").Limit(telegramOrderWatchScan).Select("id", "expires_at").Scan(&expiring).Error; err != nil {
+		Where("status = ? AND total_vnd > 0 AND expires_at > ? AND expires_at <= ?",
+			types.UsageOrderPending, now, now.Add(types.TelegramOrderExpiringWithin(0))).
+		Order("expires_at").Limit(telegramOrderWatchScan).Select("id", "expires_at", "created_at").Scan(&soonish).Error; err != nil {
 		return fmt.Errorf("listing orders about to expire: %w", err)
+	}
+	for _, c := range soonish {
+		if c.ExpiresAt == nil {
+			continue
+		}
+		within := types.TelegramOrderExpiringWithin(c.ExpiresAt.Sub(c.CreatedAt))
+		if c.ExpiresAt.Sub(now) <= within && now.Sub(c.CreatedAt) >= within {
+			expiring = append(expiring, c)
+		}
 	}
 	if err := w.db.WithContext(ctx).Model(&types.UsageOrder{}).
 		Where("status IN ? AND total_vnd > 0 AND expires_at <= ? AND expires_at > ?",

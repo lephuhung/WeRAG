@@ -519,3 +519,12 @@ func TestValidTelegramBotToken(t *testing.T) {
 	require.Error(t, validateRegistryEntry(types.TelegramAlertsMutedKindsSettingKey, "order_paid,nope"))
 	require.Error(t, validateRegistryEntry(types.TelegramAlertsBotTokenSettingKey, "••••••"))
 }
+
+func TestBillingOrderTTLMinutesValidation(t *testing.T) {
+	for _, ok := range []any{float64(0), float64(5), float64(30), int64(10080), "30"} {
+		require.NoError(t, validateRegistryEntry(types.BillingOrderTTLMinutesSettingKey, ok), ok)
+	}
+	for _, bad := range []any{float64(1), float64(4), float64(10081), int64(-5), "1", "999999", int32(2)} {
+		require.Error(t, validateRegistryEntry(types.BillingOrderTTLMinutesSettingKey, bad), bad)
+	}
+}

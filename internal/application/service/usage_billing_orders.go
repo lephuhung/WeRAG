@@ -22,11 +22,11 @@ func (s *usageBillingService) paymentDeadline(ctx context.Context, total int64, 
 	if total <= 0 {
 		return nil
 	}
-	ttl := s.settings.GetInt(ctx, types.BillingOrderTTLHoursSettingKey, "", 72)
+	ttl := s.settings.GetInt(ctx, types.BillingOrderTTLMinutesSettingKey, "", types.DefaultBillingOrderTTLMinutes)
 	if ttl <= 0 {
 		return nil
 	}
-	exp := now.Add(time.Duration(ttl) * time.Hour)
+	exp := now.Add(time.Duration(ttl) * time.Minute)
 	return &exp
 }
 

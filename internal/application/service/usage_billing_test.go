@@ -452,7 +452,7 @@ func newBillingFixture(t *testing.T) *billingFixture {
 			types.BillingBankAccountNoSettingKey:   "0011002233",
 			types.BillingBankAccountNameSettingKey: "CONG AN HUE",
 		},
-		ints: map[string]int64{types.BillingOrderTTLHoursSettingKey: 48},
+		ints: map[string]int64{types.BillingOrderTTLMinutesSettingKey: 48 * 60},
 	}
 	svc := NewUsageBillingService(repo, catalog, planRepo, nil, nil, settings).(*usageBillingService)
 	svc.now = func() time.Time { return billingNow }

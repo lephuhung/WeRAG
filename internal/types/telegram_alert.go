@@ -27,22 +27,35 @@ const (
 	// TelegramAlertOrderUnderpaid: a transfer brought less than the order
 	// asks.
 	TelegramAlertOrderUnderpaid = "order_underpaid"
-	// TelegramAlertOrderExpiring: a pending order expires within
-	// TelegramOrderExpiringWithin.
+	// TelegramAlertOrderExpiring: a pending order is in the last part of
+	// its payment window (TelegramOrderExpiringWithin).
 	TelegramAlertOrderExpiring = "order_expiring"
 	// TelegramAlertOrderExpired: a pending order passed its payment deadline
 	// and was cancelled.
 	TelegramAlertOrderExpired = "order_expired"
+	// TelegramAlertOrderPaymentHeld: a transfer came for an order that is
+	// closed (expired past the grace, cancelled, paid): a SuperAdmin decides.
+	TelegramAlertOrderPaymentHeld = "order_payment_held"
 	// TelegramAlertTest: "Gửi tin thử" (never muted).
 	TelegramAlertTest = "test"
 	// TelegramAlertLinked: the bot greets a chat just linked (never muted).
 	TelegramAlertLinked = "linked"
 )
 
-// TelegramOrderExpiringWithin: the "sắp hết hạn" alert goes out this long
-// before an order's payment deadline (only for an order at least this old,
-// so a short order TTL does not alert at creation).
-const TelegramOrderExpiringWithin = 12 * time.Hour
+// TelegramOrderExpiringWithin is how long before an order's payment
+// deadline the "sắp hết hạn" alert goes out: the last third of the payment
+// window (10 minutes of 30), at most 12 hours. Only an order at least that
+// old is told, so it never comes with the order's creation.
+func TelegramOrderExpiringWithin(window time.Duration) time.Duration {
+	if window <= 0 {
+		return 12 * time.Hour
+	}
+	within := window / 3
+	if within > 12*time.Hour {
+		within = 12 * time.Hour
+	}
+	return within
+}
 
 // TelegramAlertKind is one kind a SuperAdmin can mute, with its group in
 // the settings page.
@@ -65,6 +78,7 @@ func TelegramAlertKinds() []TelegramAlertKind {
 		{Kind: TelegramAlertOrderUnderpaid, Group: "billing", Label: "đơn chuyển thiếu tiền"},
 		{Kind: TelegramAlertOrderExpiring, Group: "billing", Label: "đơn sắp hết hạn thanh toán"},
 		{Kind: TelegramAlertOrderExpired, Group: "billing", Label: "đơn quá hạn đã tự hủy"},
+		{Kind: TelegramAlertOrderPaymentHeld, Group: "billing", Label: "tiền chuyển vào đơn đã đóng"},
 		{Kind: UserNotificationAbbreviationPending, Group: "review", Label: "từ viết tắt chờ duyệt", Resolvable: true},
 		{Kind: UserNotificationLegalRequestPending, Group: "review", Label: "văn bản pháp luật người dùng yêu cầu", Resolvable: true},
 		{Kind: UserNotificationLegalDraftReady, Group: "review", Label: "bản OCR chờ duyệt", Resolvable: true},
