@@ -9,7 +9,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useT } from "@/lib/i18n";
 import { RequireSystemAccess } from "@/components/require-system-access";
 import { Select } from "@/components/select";
-import { ADMIN_GROUPS, type AdminSection } from "@/components/admin/admin-sections";
+import { ADMIN_GROUPS, ADMIN_SECTION_ALIASES, type AdminSection } from "@/components/admin/admin-sections";
 import { adminSectionHref } from "@/components/admin/admin-routes";
 import { AWAITING_ORDERS_EVENT, getBillingAdminCounts, type BillingAdminCounts } from "@/lib/api/usage";
 
@@ -29,7 +29,8 @@ function AdminConsole() {
   const { t } = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const sectionParam = searchParams.get("section") ?? "dashboard";
+  const rawSection = searchParams.get("section") ?? "dashboard";
+  const sectionParam = ADMIN_SECTION_ALIASES[rawSection] ?? rawSection;
   const active = ALL_SECTIONS.find((s) => s.key === sectionParam) ?? ALL_SECTIONS[0];
 
   const label = (s: AdminSection) => (s.labelKey ? t(s.labelKey) : s.fallback);

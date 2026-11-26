@@ -18,7 +18,6 @@ import {
   IconOrg,
   IconPulse,
   IconSend,
-  IconChat,
   IconStorageEngine,
   IconThumbDown,
   IconUser,
@@ -32,8 +31,7 @@ const AdminLegalDocumentsPage = lazy(() => import("@/components/settings/pages/a
 const AdminDomainPacksPage = lazy(() => import("@/components/settings/pages/admin-domain-packs"));
 const AdminUsagePage = lazy(() => import("@/components/settings/pages/admin-usage"));
 const AdminBillingPage = lazy(() => import("@/components/settings/pages/admin-billing"));
-const AdminEmailPage = lazy(() => import("@/components/settings/pages/admin-email"));
-const AdminTelegramPage = lazy(() => import("@/components/settings/pages/admin-telegram"));
+const AdminNotificationsPage = lazy(() => import("@/components/settings/pages/admin-notifications"));
 const AdminQualityPage = lazy(() => import("@/components/settings/pages/admin-quality"));
 const RuntimeQueuesPage = lazy(() => import("@/components/settings/pages/runtime-queues"));
 const AdminBackupsPage = lazy(() => import("@/components/settings/pages/admin-backups"));
@@ -75,13 +73,19 @@ export const ADMIN_GROUPS: AdminSectionGroup[] = [
       { key: "domain-packs", labelKey: "systemNav.domainPacks", fallback: "Skill sets", icon: IconBook, render: () => <AdminDomainPacksPage />, route: `${SYS}/admin/domain-packs` },
       { key: "usage", labelKey: "systemNav.usage", fallback: "Usage packages", icon: IconIdCard, render: () => <AdminUsagePage />, route: `${SYS}/admin/usage` },
       { key: "billing", labelKey: "systemNav.billing", fallback: "Billing & promo codes", icon: IconCreditCard, render: () => <AdminBillingPage />, route: `${SYS}/admin/billing` },
-      { key: "email", labelKey: "systemNav.email", fallback: "Email", icon: IconSend, render: () => <AdminEmailPage />, route: `${SYS}/admin/email` },
-      { key: "telegram", labelKey: "systemNav.telegram", fallback: "Telegram", icon: IconChat, render: () => <AdminTelegramPage /> },
+      { key: "notifications", labelKey: "systemNav.notifications", fallback: "Notifications", icon: IconSend, render: () => <AdminNotificationsPage />, route: `${SYS}/admin/email` },
       { key: "queues", labelKey: "systemNav.queues", fallback: "Runtime queues", icon: IconClock, render: () => <RuntimeQueuesPage />, route: `${SYS}/engines/queues` },
       { key: "backups", labelKey: "systemNav.backups", fallback: "Backups", icon: IconStorageEngine, render: () => <AdminBackupsPage /> },
     ],
   },
 ];
+
+/* Section keys that moved into another section (old links, bookmarks):
+ * Email and Telegram are the two tabs of Notifications. */
+export const ADMIN_SECTION_ALIASES: Record<string, string> = {
+  email: "notifications",
+  telegram: "notifications",
+};
 
 /* Old /platform/system route → console section key. */
 export const ADMIN_SECTION_ROUTES: Record<string, string> = Object.fromEntries(

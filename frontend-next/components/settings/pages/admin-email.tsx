@@ -166,8 +166,8 @@ export default function AdminEmail() {
       loading={loading}
       loadingLabel={t("common.loading")}
     >
-      <div className="max-w-[720px] space-y-5 py-6">
-        <p className="caption text-muted">{t("email.desc")}</p>
+      <div className="space-y-5 py-6">
+        <p className="caption max-w-[860px] text-muted">{t("email.desc")}</p>
         {error && (
           <Notice
             tone="error"
@@ -181,93 +181,98 @@ export default function AdminEmail() {
           </Notice>
         )}
 
-        <div className="card flex items-center justify-between gap-4 px-4 py-3">
-          <div className="min-w-0">
-            <div className="text-[14px] font-medium text-ink">{t("email.enabled")}</div>
-            <div className="caption text-muted">{t("email.enabledDesc")}</div>
-          </div>
-          <Toggle checked={form.enabled} label={t("email.enabled")} onChange={(v) => setForm({ ...form, enabled: v })} disabled={busy} />
-        </div>
-
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="min-w-0">
-            <FieldLabel htmlFor="smtp-host">{t("email.host")}</FieldLabel>
-            <input id="smtp-host" className="input w-full" value={form.host} placeholder="smtp.gmail.com" autoComplete="off"
-              onChange={(e) => setForm({ ...form, host: e.target.value })} />
-          </div>
-          <div className="grid min-w-0 grid-cols-2 gap-3">
-            <div className="min-w-0">
-              <FieldLabel htmlFor="smtp-security">{t("email.security")}</FieldLabel>
-              <select id="smtp-security" className="input w-full" value={form.security} onChange={(e) => changeSecurity(e.target.value as SMTPSecurity)}>
-                <option value="starttls">STARTTLS</option>
-                <option value="tls">{t("email.securityTLS")}</option>
-                <option value="none">{t("email.securityNone")}</option>
-              </select>
-            </div>
-            <div className="min-w-0">
-              <FieldLabel htmlFor="smtp-port">{t("email.port")}</FieldLabel>
-              <input id="smtp-port" className="input w-full" type="number" min={1} max={65535} value={form.port}
-                onChange={(e) => setForm({ ...form, port: e.target.value })} />
-            </div>
-          </div>
-          <div className="min-w-0">
-            <FieldLabel htmlFor="smtp-username">{t("email.username")}</FieldLabel>
-            <input id="smtp-username" className="input w-full" value={form.username} autoComplete="off"
-              onChange={(e) => setForm({ ...form, username: e.target.value })} />
-          </div>
-          <div className="min-w-0">
-            <FieldLabel htmlFor="smtp-password">{t("email.password")}</FieldLabel>
-            <input id="smtp-password" className="input w-full" type="password" autoComplete="new-password" value={password}
-              placeholder={passwordMasked ? t("email.passwordKeep") : ""}
-              onChange={(e) => setPassword(e.target.value)} />
-            {passwordMasked && (
-              <div className="caption mt-1 flex items-center gap-2 text-muted">
-                <span>{t("email.passwordSet")}</span>
-                <button type="button" className="underline hover:text-ink" disabled={busy} onClick={() => void clearPassword()}>
-                  {t("email.passwordClear")}
-                </button>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="min-w-0 space-y-5">
+            <div className="card flex items-center justify-between gap-4 px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-[14px] font-medium text-ink">{t("email.enabled")}</div>
+                <div className="caption text-muted">{t("email.enabledDesc")}</div>
               </div>
+              <Toggle checked={form.enabled} label={t("email.enabled")} onChange={(v) => setForm({ ...form, enabled: v })} disabled={busy} />
+            </div>
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="min-w-0">
+                <FieldLabel htmlFor="smtp-host">{t("email.host")}</FieldLabel>
+                <input id="smtp-host" className="input w-full" value={form.host} placeholder="smtp.gmail.com" autoComplete="off"
+                  onChange={(e) => setForm({ ...form, host: e.target.value })} />
+              </div>
+              <div className="grid min-w-0 grid-cols-2 gap-3">
+                <div className="min-w-0">
+                  <FieldLabel htmlFor="smtp-security">{t("email.security")}</FieldLabel>
+                  <select id="smtp-security" className="input w-full" value={form.security} onChange={(e) => changeSecurity(e.target.value as SMTPSecurity)}>
+                    <option value="starttls">STARTTLS</option>
+                    <option value="tls">{t("email.securityTLS")}</option>
+                    <option value="none">{t("email.securityNone")}</option>
+                  </select>
+                </div>
+                <div className="min-w-0">
+                  <FieldLabel htmlFor="smtp-port">{t("email.port")}</FieldLabel>
+                  <input id="smtp-port" className="input w-full" type="number" min={1} max={65535} value={form.port}
+                    onChange={(e) => setForm({ ...form, port: e.target.value })} />
+                </div>
+              </div>
+              <div className="min-w-0">
+                <FieldLabel htmlFor="smtp-username">{t("email.username")}</FieldLabel>
+                <input id="smtp-username" className="input w-full" value={form.username} autoComplete="off"
+                  onChange={(e) => setForm({ ...form, username: e.target.value })} />
+              </div>
+              <div className="min-w-0">
+                <FieldLabel htmlFor="smtp-password">{t("email.password")}</FieldLabel>
+                <input id="smtp-password" className="input w-full" type="password" autoComplete="new-password" value={password}
+                  placeholder={passwordMasked ? t("email.passwordKeep") : ""}
+                  onChange={(e) => setPassword(e.target.value)} />
+                {passwordMasked && (
+                  <div className="caption mt-1 flex items-center gap-2 text-muted">
+                    <span>{t("email.passwordSet")}</span>
+                    <button type="button" className="underline hover:text-ink" disabled={busy} onClick={() => void clearPassword()}>
+                      {t("email.passwordClear")}
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0">
+                <FieldLabel htmlFor="smtp-from-address">{t("email.fromAddress")}</FieldLabel>
+                <input id="smtp-from-address" className="input w-full" type="email" value={form.fromAddress} placeholder="no-reply@example.com"
+                  onChange={(e) => setForm({ ...form, fromAddress: e.target.value })} />
+              </div>
+              <div className="min-w-0">
+                <FieldLabel htmlFor="smtp-from-name">{t("email.fromName")}</FieldLabel>
+                <input id="smtp-from-name" className="input w-full" value={form.fromName}
+                  onChange={(e) => setForm({ ...form, fromName: e.target.value })} />
+              </div>
+            </div>
+
+            {form.security === "none" && form.username.trim() !== "" && (
+              <Notice tone="warning">{t("email.noneWithUser")}</Notice>
+            )}
+
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <button type="button" className="btn btn-outline" disabled={busy || dirty || !base.enabled} title={dirty ? t("email.saveFirst") : undefined}
+                onClick={() => void sendTest()}>
+                {t("email.test")}
+              </button>
+              <button type="button" className="btn btn-primary" disabled={busy || !dirty} onClick={() => void save()}>
+                {t("common.save")}
+              </button>
+            </div>
+            {testResult && (
+              <Notice tone={testResult.ok ? "success" : "error"}>
+                <span className="break-words">{testResult.text}</span>
+                <TechnicalDetails detail={testResult.detail} />
+              </Notice>
             )}
           </div>
-          <div className="min-w-0">
-            <FieldLabel htmlFor="smtp-from-address">{t("email.fromAddress")}</FieldLabel>
-            <input id="smtp-from-address" className="input w-full" type="email" value={form.fromAddress} placeholder="no-reply@example.com"
-              onChange={(e) => setForm({ ...form, fromAddress: e.target.value })} />
-          </div>
-          <div className="min-w-0">
-            <FieldLabel htmlFor="smtp-from-name">{t("email.fromName")}</FieldLabel>
-            <input id="smtp-from-name" className="input w-full" value={form.fromName}
-              onChange={(e) => setForm({ ...form, fromName: e.target.value })} />
-          </div>
-        </div>
-
-        {form.security === "none" && form.username.trim() !== "" && (
-          <Notice tone="warning">{t("email.noneWithUser")}</Notice>
-        )}
-
-        <div className="flex flex-wrap items-center justify-end gap-3">
-          <button type="button" className="btn btn-outline" disabled={busy || dirty || !base.enabled} title={dirty ? t("email.saveFirst") : undefined}
-            onClick={() => void sendTest()}>
-            {t("email.test")}
-          </button>
-          <button type="button" className="btn btn-primary" disabled={busy || !dirty} onClick={() => void save()}>
-            {t("common.save")}
-          </button>
-        </div>
-        {testResult && (
-          <Notice tone={testResult.ok ? "success" : "error"}>
-            <span className="break-words">{testResult.text}</span>
-            <TechnicalDetails detail={testResult.detail} />
-          </Notice>
-        )}
-
-        <div className="card px-4 py-3">
-          <div className="mb-1 text-[14px] font-medium text-ink">{t("email.whatTitle")}</div>
-          <ul className="caption list-disc space-y-0.5 pl-5 text-muted">
-            <li>{t("email.whatOrder")}</li>
-            <li>{t("email.whatPaid")}</li>
-            <li>{t("email.whatExpiry")}</li>
-          </ul>
+          <aside className="min-w-0">
+            <div className="card px-4 py-3">
+              <div className="mb-1 text-[14px] font-medium text-ink">{t("email.whatTitle")}</div>
+              <ul className="caption list-disc space-y-0.5 pl-5 text-muted">
+                <li>{t("email.whatOrder")}</li>
+                <li>{t("email.whatPaid")}</li>
+                <li>{t("email.whatExpiry")}</li>
+              </ul>
+            </div>
+          </aside>
         </div>
       </div>
     </SystemSection>

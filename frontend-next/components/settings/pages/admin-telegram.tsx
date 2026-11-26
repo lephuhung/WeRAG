@@ -233,8 +233,8 @@ export default function AdminTelegram() {
 
   return (
     <SystemSection allowed={allowed} title={t("systemNav.telegram")} deniedMessage={t("tg.denied")} loading={loading} loadingLabel={t("common.loading")}>
-      <div className="max-w-[760px] space-y-5 py-6">
-        <p className="caption text-muted">{t("tg.desc")}</p>
+      <div className="space-y-5 py-6">
+        <p className="caption max-w-[860px] text-muted">{t("tg.desc")}</p>
         {loadError && (
           <Notice
             tone="error"
@@ -249,145 +249,154 @@ export default function AdminTelegram() {
         )}
         {actionError && <Notice tone="error">{actionError}</Notice>}
 
-        <div className="card flex items-center justify-between gap-4 px-4 py-3">
-          <div className="min-w-0">
-            <div className="text-[14px] font-medium text-ink">{t("tg.enabled")}</div>
-            <div className="caption text-muted">{t("tg.enabledDesc")}</div>
-          </div>
-          <Toggle checked={form.enabled} label={t("tg.enabled")} onChange={(v) => setForm({ ...form, enabled: v })} disabled={busy} />
-        </div>
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+          {/* left: the bot and what it sends */}
+          <div className="min-w-0 space-y-5">
+            <div className="card flex items-center justify-between gap-4 px-4 py-3">
+              <div className="min-w-0">
+                <div className="text-[14px] font-medium text-ink">{t("tg.enabled")}</div>
+                <div className="caption text-muted">{t("tg.enabledDesc")}</div>
+              </div>
+              <Toggle checked={form.enabled} label={t("tg.enabled")} onChange={(v) => setForm({ ...form, enabled: v })} disabled={busy} />
+            </div>
 
-        <div className="min-w-0">
-          <FieldLabel htmlFor="tg-token">{t("tg.token")}</FieldLabel>
-          <input id="tg-token" className="input w-full font-mono" type="password" autoComplete="off" value={token} disabled={busy}
-            placeholder={tokenMasked ? t("tg.tokenKeep") : "123456789:AAH…"}
-            onChange={(e) => setToken(e.target.value)} />
-          <div className="caption mt-1 text-muted">{t("tg.tokenHelp")}</div>
-          {tokenMasked && (
-            <div className="caption mt-1 flex items-center gap-2 text-muted">
-              <span>{t("tg.tokenSet")}</span>
-              <button type="button" className="underline hover:text-ink" disabled={busy} onClick={() => void clearToken()}>
-                {t("tg.tokenClear")}
+            <div className="min-w-0">
+              <FieldLabel htmlFor="tg-token">{t("tg.token")}</FieldLabel>
+              <input id="tg-token" className="input w-full font-mono" type="password" autoComplete="off" value={token} disabled={busy}
+                placeholder={tokenMasked ? t("tg.tokenKeep") : "123456789:AAH…"}
+                onChange={(e) => setToken(e.target.value)} />
+              <div className="caption mt-1 text-muted">{t("tg.tokenHelp")}</div>
+              {tokenMasked && (
+                <div className="caption mt-1 flex items-center gap-2 text-muted">
+                  <span>{t("tg.tokenSet")}</span>
+                  <button type="button" className="underline hover:text-ink" disabled={busy} onClick={() => void clearToken()}>
+                    {t("tg.tokenClear")}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {status?.has_token && (
+              status.bot_error ? (
+                <Notice tone="error">{status.bot_error}</Notice>
+              ) : status.bot_username ? (
+                <Notice tone="success">
+                  {t("tg.botOk", { name: status.bot_name || status.bot_username, username: status.bot_username })}
+                </Notice>
+              ) : null
+            )}
+
+            <div className="card px-4 py-3">
+              <div className="mb-2 text-[14px] font-medium text-ink">{t("tg.kindsTitle")}</div>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-1 2xl:grid-cols-3">
+                {GROUPS.map((g) => (
+                  <div key={g} className="min-w-0">
+                    <div className="caption mb-1 font-medium text-muted">{t(`tg.group.${g}` as LocaleKey)}</div>
+                    <div className="space-y-1">
+                      {(status?.kinds ?? []).filter((k) => k.group === g).map((k) => (
+                        <label key={k.kind} className="flex cursor-pointer items-start gap-2 text-[13px] text-ink">
+                          <input type="checkbox" className="mt-0.5" checked={!form.muted.includes(k.kind)} disabled={busy}
+                            onChange={(e) => toggleKind(k.kind, e.target.checked)} />
+                          <span className="min-w-0">{kindLabel(k.kind, k.label)}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <button type="button" className="btn btn-outline" disabled={busy || dirty || !base.enabled || !status?.has_token}
+                title={dirty ? t("tg.saveFirst") : undefined} onClick={() => void sendTest()}>
+                {t("tg.test")}
+              </button>
+              <button type="button" className="btn btn-primary" disabled={busy || !dirty} onClick={() => void save()}>
+                {t("common.save")}
               </button>
             </div>
-          )}
-        </div>
+            {result && (
+              <Notice tone={result.ok ? "success" : "error"}>
+                <span className="break-words">{result.text}</span>
+                <TechnicalDetails detail={result.detail} />
+              </Notice>
+            )}
 
-        {status?.has_token && (
-          status.bot_error ? (
-            <Notice tone="error">{status.bot_error}</Notice>
-          ) : status.bot_username ? (
-            <Notice tone="success">
-              {t("tg.botOk", { name: status.bot_name || status.bot_username, username: status.bot_username })}
-            </Notice>
-          ) : null
-        )}
+          </div>
 
-        <div className="card px-4 py-3">
-          <div className="mb-2 text-[14px] font-medium text-ink">{t("tg.kindsTitle")}</div>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {GROUPS.map((g) => (
-              <div key={g} className="min-w-0">
-                <div className="caption mb-1 font-medium text-muted">{t(`tg.group.${g}` as LocaleKey)}</div>
-                <div className="space-y-1">
-                  {(status?.kinds ?? []).filter((k) => k.group === g).map((k) => (
-                    <label key={k.kind} className="flex cursor-pointer items-start gap-2 text-[13px] text-ink">
-                      <input type="checkbox" className="mt-0.5" checked={!form.muted.includes(k.kind)} disabled={busy}
-                        onChange={(e) => toggleKind(k.kind, e.target.checked)} />
-                      <span className="min-w-0">{kindLabel(k.kind, k.label)}</span>
-                    </label>
-                  ))}
+          {/* right: the chats it writes to */}
+          <div className="min-w-0 space-y-3">
+            <div className="card space-y-3 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[14px] font-medium text-ink">{t("tg.chatsTitle")}</div>
+                  <div className="caption text-muted">{t("tg.chatsDesc")}</div>
                 </div>
+                <button type="button" className="btn btn-outline btn-sm" disabled={busy || !status?.has_token || dirty || !base.enabled}
+                  title={dirty ? t("tg.saveFirst") : !base.enabled ? t("tg.enableFirst") : undefined} onClick={() => void makeCode()}>
+                  {t("tg.makeCode")}
+                </button>
               </div>
-            ))}
-          </div>
-        </div>
 
-        <div className="flex flex-wrap items-center justify-end gap-3">
-          <button type="button" className="btn btn-outline" disabled={busy || dirty || !base.enabled || !status?.has_token}
-            title={dirty ? t("tg.saveFirst") : undefined} onClick={() => void sendTest()}>
-            {t("tg.test")}
-          </button>
-          <button type="button" className="btn btn-primary" disabled={busy || !dirty} onClick={() => void save()}>
-            {t("common.save")}
-          </button>
-        </div>
-        {result && (
-          <Notice tone={result.ok ? "success" : "error"}>
-            <span className="break-words">{result.text}</span>
-            <TechnicalDetails detail={result.detail} />
-          </Notice>
-        )}
+              {code && (
+                <div className="rounded-lg border border-hairline bg-canvas px-3 py-3 text-[13px] text-ink">
+                  <div className="flex flex-wrap items-baseline gap-2">
+                    <span>{t("tg.codeLabel")}</span>
+                    <code className="rounded bg-surface px-2 py-0.5 font-mono text-[15px] tracking-wider">{code.code}</code>
+                    <span className="caption text-muted">{t("tg.codeExpires", { at: formatDateTime(code.expires_at, locale) })}</span>
+                  </div>
+                  <ol className="caption mt-2 list-decimal space-y-1 pl-5 text-muted">
+                    <li>
+                      {t("tg.stepPrivate")}{" "}
+                      <a className="underline hover:text-ink" href={code.private_link} target="_blank" rel="noreferrer">{t("tg.openPrivate")}</a>
+                    </li>
+                    <li>
+                      {t("tg.stepGroup")}{" "}
+                      <a className="underline hover:text-ink" href={code.group_link} target="_blank" rel="noreferrer">{t("tg.openGroup")}</a>
+                    </li>
+                    <li>{t("tg.stepManual", { code: code.code })}</li>
+                  </ol>
+                  <div className="caption mt-2 text-warning">{t("tg.groupWarning")}</div>
+                </div>
+              )}
 
-        <div className="card space-y-3 px-4 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-[14px] font-medium text-ink">{t("tg.chatsTitle")}</div>
-              <div className="caption text-muted">{t("tg.chatsDesc")}</div>
+              {chats.length === 0 ? (
+                <div className="caption text-muted">{t("tg.noChats")}</div>
+              ) : (
+                <ul className="divide-y divide-hairline">
+                  {chats.map((c) => {
+                    const st = chatState(c);
+                    return (
+                      <li key={c.id} className="flex items-center justify-between gap-3 py-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-[14px] text-ink">
+                            {c.title || t("tg.untitled")}{" "}
+                            <span className="caption text-muted">· {c.chat_type === "private" ? t("tg.typePrivate") : t("tg.typeGroup")}</span>
+                          </div>
+                          <div className="caption text-muted">
+                            {t("tg.linkedBy", { name: c.linked_by_name || c.linked_by, at: formatDateTime(c.linked_at, locale) })}
+                          </div>
+                          <div className={`caption break-words ${st.tone}`}>{st.text}</div>
+                        </div>
+                        <button type="button" className="btn btn-outline btn-sm shrink-0" onClick={() => void removeChat(c)}>
+                          {t("tg.remove")}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
-            <button type="button" className="btn btn-outline btn-sm" disabled={busy || !status?.has_token || dirty || !base.enabled}
-              title={dirty ? t("tg.saveFirst") : !base.enabled ? t("tg.enableFirst") : undefined} onClick={() => void makeCode()}>
-              {t("tg.makeCode")}
-            </button>
-          </div>
 
-          {code && (
-            <div className="rounded-lg border border-hairline bg-canvas px-3 py-3 text-[13px] text-ink">
-              <div className="flex flex-wrap items-baseline gap-2">
-                <span>{t("tg.codeLabel")}</span>
-                <code className="rounded bg-surface px-2 py-0.5 font-mono text-[15px] tracking-wider">{code.code}</code>
-                <span className="caption text-muted">{t("tg.codeExpires", { at: formatDateTime(code.expires_at, locale) })}</span>
+            {status && (
+              <div className="caption flex flex-wrap gap-x-4 gap-y-1 text-muted">
+                <span>{t("tg.pending", { n: status.pending })}</span>
+                {status.failed_24h > 0 && <span className="text-warning">{t("tg.failed", { n: status.failed_24h })}</span>}
+                {status.last_sent_at && <span>{t("tg.lastSent", { at: formatDateTime(status.last_sent_at, locale) })}</span>}
               </div>
-              <ol className="caption mt-2 list-decimal space-y-1 pl-5 text-muted">
-                <li>
-                  {t("tg.stepPrivate")}{" "}
-                  <a className="underline hover:text-ink" href={code.private_link} target="_blank" rel="noreferrer">{t("tg.openPrivate")}</a>
-                </li>
-                <li>
-                  {t("tg.stepGroup")}{" "}
-                  <a className="underline hover:text-ink" href={code.group_link} target="_blank" rel="noreferrer">{t("tg.openGroup")}</a>
-                </li>
-                <li>{t("tg.stepManual", { code: code.code })}</li>
-              </ol>
-              <div className="caption mt-2 text-warning">{t("tg.groupWarning")}</div>
-            </div>
-          )}
-
-          {chats.length === 0 ? (
-            <div className="caption text-muted">{t("tg.noChats")}</div>
-          ) : (
-            <ul className="divide-y divide-hairline">
-              {chats.map((c) => {
-                const st = chatState(c);
-                return (
-                  <li key={c.id} className="flex items-center justify-between gap-3 py-2">
-                    <div className="min-w-0">
-                      <div className="truncate text-[14px] text-ink">
-                        {c.title || t("tg.untitled")}{" "}
-                        <span className="caption text-muted">· {c.chat_type === "private" ? t("tg.typePrivate") : t("tg.typeGroup")}</span>
-                      </div>
-                      <div className="caption text-muted">
-                        {t("tg.linkedBy", { name: c.linked_by_name || c.linked_by, at: formatDateTime(c.linked_at, locale) })}
-                      </div>
-                      <div className={`caption break-words ${st.tone}`}>{st.text}</div>
-                    </div>
-                    <button type="button" className="btn btn-outline btn-sm shrink-0" onClick={() => void removeChat(c)}>
-                      {t("tg.remove")}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-
-        {status && (
-          <div className="caption flex flex-wrap gap-x-4 gap-y-1 text-muted">
-            <span>{t("tg.pending", { n: status.pending })}</span>
-            {status.failed_24h > 0 && <span className="text-warning">{t("tg.failed", { n: status.failed_24h })}</span>}
-            {status.last_sent_at && <span>{t("tg.lastSent", { at: formatDateTime(status.last_sent_at, locale) })}</span>}
+            )}
           </div>
-        )}
+        </div>
       </div>
     </SystemSection>
   );
