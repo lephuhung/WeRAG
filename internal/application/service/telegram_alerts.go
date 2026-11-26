@@ -423,19 +423,25 @@ func (a *TelegramAlerts) sendDigest(ctx context.Context, n types.UserNotificatio
 	}
 }
 
+// latestTelegramMessage is the newest message of q, nil when none (Find,
+// not Take: an empty result is normal here and must not log as an error).
+func latestTelegramMessage(q *gorm.DB) (*types.TelegramAlertMessage, error) {
+	var rows []types.TelegramAlertMessage
+	if err := q.Order("created_at DESC").Limit(1).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	return &rows[0], nil
+}
+
 // markResolved ends the episode of kind without telling anyone (the bot is
 // off or the kind muted): a chat-less marker row (chat 0, never sent).
 func (a *TelegramAlerts) markResolved(ctx context.Context, kind string) error {
-	var last types.TelegramAlertMessage
-	err := a.db.WithContext(ctx).Where("kind = ?", kind).Order("created_at DESC").Limit(1).Take(&last).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil
-	}
-	if err != nil {
+	last, err := latestTelegramMessage(a.db.WithContext(ctx).Where("kind = ?", kind))
+	if err != nil || last == nil || strings.HasPrefix(last.EventKey, "resolved:") {
 		return err
-	}
-	if strings.HasPrefix(last.EventKey, "resolved:") {
-		return nil
 	}
 	now := a.now()
 	return a.db.WithContext(ctx).Clauses(clause.OnConflict{
@@ -508,26 +514,23 @@ func (a *TelegramAlerts) resolve(ctx context.Context, k types.TelegramAlertKind)
 	// an alert older than the latest resolution (told, or a marker written
 	// while muted) is over already; read once, before this run adds any
 	var ended time.Time
-	var prev types.TelegramAlertMessage
-	err = a.db.WithContext(ctx).Where("kind = ? AND event_key LIKE ?", k.Kind, "resolved:%").
-		Order("created_at DESC").Limit(1).Take(&prev).Error
-	if err == nil {
-		ended = prev.CreatedAt
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	prev, err := latestTelegramMessage(a.db.WithContext(ctx).Where("kind = ? AND event_key LIKE ?", k.Kind, "resolved:%"))
+	if err != nil {
 		return err
 	}
+	if prev != nil {
+		ended = prev.CreatedAt
+	}
 	for _, c := range chats {
-		var last types.TelegramAlertMessage
-		err := a.db.WithContext(ctx).
+		last, err := latestTelegramMessage(a.db.WithContext(ctx).
 			Where("kind = ? AND chat_id = ? AND status IN ? AND created_at > ?", k.Kind, c.ChatID,
 				[]string{types.TelegramMessagePending, types.TelegramMessageSent},
-				a.now().Add(-telegramResolveWithin)).
-			Order("created_at DESC").Limit(1).Take(&last).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			continue
-		}
+				a.now().Add(-telegramResolveWithin)))
 		if err != nil {
 			return err
+		}
+		if last == nil {
+			continue
 		}
 		if strings.HasPrefix(last.EventKey, "resolved:") || !last.CreatedAt.After(ended) {
 			continue
@@ -1277,12 +1280,12 @@ func (a *TelegramAlerts) Status(ctx context.Context) (*types.TelegramAlertStatus
 		Count(&st.Failed24h).Error; err != nil {
 		return nil, err
 	}
-	var last types.TelegramAlertMessage
-	err := a.db.WithContext(ctx).Where("status = ?", types.TelegramMessageSent).Order("sent_at DESC").Limit(1).Take(&last).Error
-	if err == nil {
-		st.LastSent = last.SentAt
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+	var rows []types.TelegramAlertMessage
+	if err := a.db.WithContext(ctx).Where("status = ?", types.TelegramMessageSent).Order("sent_at DESC").Limit(1).Find(&rows).Error; err != nil {
 		return nil, err
+	}
+	if len(rows) > 0 {
+		st.LastSent = rows[0].SentAt
 	}
 	return st, nil
 }
