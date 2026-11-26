@@ -10,6 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+
 	"github.com/Tencent/WeKnora/internal/alerting/telegram"
 	apperrors "github.com/Tencent/WeKnora/internal/errors"
 	"github.com/Tencent/WeKnora/internal/logger"
@@ -376,4 +379,162 @@ func (a *TelegramAlerts) auditOrder(ctx context.Context, action types.AuditActio
 	}); err != nil {
 		logger.Warnf(ctx, "[TelegramAlerts] audit of %s: %v", o.OrderCode, err)
 	}
+}
+
+// CloseOrderButtons takes the buttons of order o off every alert that
+// carries them, once the order is no longer pending (paid, cancelled,
+// expired — from Telegram, the web page, the payment checker or expiry),
+// so nobody presses them again: the order's row is removed (a digest keeps
+// the rows of its other orders) and a line tells what happened. Alerts
+// still queued lose the row before they are sent. Runs in the background.
+func (a *TelegramAlerts) CloseOrderButtons(ctx context.Context, o *types.UsageOrderView) {
+	if a == nil || o == nil || o.UsageOrder == nil || o.OrderCode == "" {
+		return
+	}
+	cp := *o
+	order := *o.UsageOrder
+	cp.UsageOrder = &order
+	a.Run(ctx, "closing the buttons of "+order.OrderCode, func(ctx context.Context) error {
+		return a.closeOrderButtons(ctx, order.OrderCode, a.telegramOrderState(ctx, &cp))
+	})
+}
+
+func (a *TelegramAlerts) closeOrderButtons(ctx context.Context, code, state string) error {
+	// one close at a time: two orders of one digest decided together must
+	// not write over each other's version of the message
+	a.closeMu.Lock()
+	defer a.closeMu.Unlock()
+	var ids []string
+	if err := a.db.WithContext(ctx).Model(&types.TelegramAlertMessage{}).
+		Where("status IN ? AND CAST(buttons AS TEXT) LIKE ?",
+			[]string{types.TelegramMessageSent, types.TelegramMessagePending}, "%\""+tgActConfirmAsk+":"+code+"\"%").
+		Pluck("id", &ids).Error; err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	token := a.token(ctx)
+	var failed []string
+	for _, id := range ids {
+		if err := a.closeOneMessage(ctx, token, id, code, state); err != nil {
+			failed = append(failed, err.Error())
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("%d alert(s) of %s not updated: %s", len(failed), code, strings.Join(failed, "; "))
+	}
+	return nil
+}
+
+// closeOneMessage re-reads one alert (row-locked on Postgres, so another
+// instance's close waits) and removes the order's row from it.
+func (a *TelegramAlerts) closeOneMessage(ctx context.Context, token, id, code, state string) error {
+	return a.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		q := tx.Where("id = ?", id)
+		if tx.Dialector.Name() == "postgres" {
+			q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+		}
+		var m types.TelegramAlertMessage
+		if err := q.Take(&m).Error; err != nil {
+			return err
+		}
+		var rows [][]telegram.Button
+		if json.Unmarshal(m.Buttons, &rows) != nil {
+			return nil
+		}
+		kept := make([][]telegram.Button, 0, len(rows))
+		for _, row := range rows {
+			if !telegramRowOf(row, code) {
+				kept = append(kept, row)
+			}
+		}
+		if len(kept) == len(rows) {
+			return nil // closed meanwhile
+		}
+		text := telegramAppendLine(m.Text, "— "+code+": "+state)
+		if m.Status == types.TelegramMessageSent && m.MessageID != nil && token != "" {
+			if err := a.editWithRetry(ctx, token, m.ChatID, *m.MessageID, text, kept); err != nil {
+				return err
+			}
+		}
+		var raw types.JSON
+		if len(kept) > 0 {
+			b, _ := json.Marshal(kept)
+			raw = types.JSON(b)
+		}
+		return tx.Model(&types.TelegramAlertMessage{}).Where("id = ?", m.ID).
+			Updates(map[string]any{"text": text, "buttons": raw}).Error
+	})
+}
+
+// editWithRetry edits a sent alert; a message Telegram no longer has (or
+// already shows so) counts as done, a flood wait is waited out once.
+func (a *TelegramAlerts) editWithRetry(ctx context.Context, token string, chatID, msgID int64, text string, rows [][]telegram.Button) error {
+	c := a.client(token)
+	for attempt := 0; ; attempt++ {
+		err := c.EditMessage(ctx, chatID, msgID, text, rows)
+		api := telegram.AsAPIError(err)
+		switch {
+		case err == nil:
+			return nil
+		case api != nil && (api.ChatGone() || telegramNothingToEdit(api.Description)):
+			return nil
+		case api != nil && api.RetryAfter > 0 && api.RetryAfter <= 30*time.Second && attempt == 0:
+			sleepCtx(ctx, api.RetryAfter+time.Second)
+			continue
+		}
+		return err
+	}
+}
+
+func telegramNothingToEdit(description string) bool {
+	d := strings.ToLower(description)
+	return strings.Contains(d, "message is not modified") || strings.Contains(d, "message to edit not found") ||
+		strings.Contains(d, "message can't be edited")
+}
+
+// telegramAppendLine adds line under text, cutting the body (not the new
+// line) when the message would be too long.
+func telegramAppendLine(text, line string) string {
+	room := telegram.MaxTextRunes - len([]rune(line)) - 2
+	if body := []rune(text); len(body) > room {
+		text = string(body[:room-1]) + "…"
+	}
+	return text + "\n" + line
+}
+
+// telegramRowOf: the button row belongs to order code.
+func telegramRowOf(row []telegram.Button, code string) bool {
+	for _, b := range row {
+		if b.Data == tgActConfirmAsk+":"+code || b.Data == tgActCancelAsk+":"+code {
+			return true
+		}
+	}
+	return false
+}
+
+// telegramOrderState is the line an order's alerts get once it is decided:
+// "✅ đã thanh toán (an, 15h07 - 26/11/2026)".
+func (a *TelegramAlerts) telegramOrderState(ctx context.Context, o *types.UsageOrderView) string {
+	at := a.now()
+	switch o.Status {
+	case types.UsageOrderPaid:
+		if o.PaidAt != nil {
+			at = *o.PaidAt
+		}
+		who := "tự khớp chuyển khoản"
+		if by := o.ConfirmedBy; by != "" && !strings.HasPrefix(by, paymentConfirmedByPrefix) {
+			who = by
+			if u, err := a.users.GetUserByID(ctx, by); err == nil && u != nil {
+				who = telegramUserName(u)
+			}
+		}
+		return fmt.Sprintf("✅ đã thanh toán (%s, %s)", who, formatDateTimeVN(at))
+	case types.UsageOrderCancelled:
+		return fmt.Sprintf("✖ đã hủy (%s)", formatDateTimeVN(at))
+	case types.UsageOrderExpired:
+		return "⌛ quá hạn, đã tự hủy"
+	}
+	return telegramOrderStatusVN(o.Status)
 }

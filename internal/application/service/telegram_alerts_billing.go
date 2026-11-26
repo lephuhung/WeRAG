@@ -52,6 +52,15 @@ func (b *billingTelegramNotify) ConfirmOrder(ctx context.Context, id, confirmedB
 	return v, err
 }
 
+// CancelOrder: the cancelled order's buttons go (web page, buyer, Telegram).
+func (b *billingTelegramNotify) CancelOrder(ctx context.Context, id string, force bool) (*types.UsageOrderView, error) {
+	v, err := b.UsageBillingService.CancelOrder(ctx, id, force)
+	if err == nil && v != nil && v.UsageOrder != nil && v.Status == types.UsageOrderCancelled {
+		b.alerts.CloseOrderButtons(ctx, v)
+	}
+	return v, err
+}
+
 func (b *billingTelegramNotify) ReopenOrder(ctx context.Context, id string, force bool) (*types.UsageOrderView, error) {
 	v, err := b.UsageBillingService.ReopenOrder(ctx, id, force)
 	if err == nil {
@@ -123,6 +132,7 @@ func (b *billingTelegramNotify) paid(ctx context.Context, v *types.UsageOrderVie
 	if v == nil || v.UsageOrder == nil || v.Status != types.UsageOrderPaid {
 		return
 	}
+	b.alerts.CloseOrderButtons(ctx, v)
 	extra := []string{}
 	if how != "" {
 		extra = append(extra, "Cách xác nhận: "+how)
@@ -307,9 +317,6 @@ func (w *TelegramOrderWatch) tell(ctx context.Context, id string, expired bool) 
 	if expired {
 		kind, prefix = types.TelegramAlertOrderExpired, "order_expired"
 	}
-	if w.alerts.muted(ctx, kind) {
-		return
-	}
 	// read through the billing service: a due order is expired by the read
 	o, err := w.billing.GetOrder(ctx, id)
 	if err != nil || o == nil || o.UsageOrder == nil {
@@ -323,6 +330,14 @@ func (w *TelegramOrderWatch) tell(ctx context.Context, id string, expired bool) 
 	deadline := ""
 	if o.ExpiresAt != nil {
 		deadline = formatDateTimeVN(*o.ExpiresAt)
+	}
+	if o.Status != types.UsageOrderPending {
+		// decided meanwhile (expired by this read, or elsewhere): its buttons
+		// go, whether or not the alert of the kind is muted
+		w.alerts.CloseOrderButtons(ctx, o)
+	}
+	if w.alerts.muted(ctx, kind) {
+		return
 	}
 	switch {
 	case expired && o.Status == types.UsageOrderExpired:

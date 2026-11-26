@@ -379,3 +379,85 @@ func TestTelegramRelinkKeepsCanAct(t *testing.T) {
 	require.NoError(t, e.db.Where("chat_id = ?", 1001).Take(&c2).Error)
 	require.False(t, c2.CanAct)
 }
+
+// Once an order is decided its buttons leave every alert: a digest of two
+// orders keeps the other one's row, and a line says what happened.
+func TestTelegramDecidedOrderLosesItsButtons(t *testing.T) {
+	e, orders, _ := newButtonEnv(t)
+	ctx := context.Background()
+	payload, _ := json.Marshal(types.UserNotificationQueuePayload{Count: 2, Items: []types.UserNotificationQueueItem{
+		{Ref: "WRAA000001"}, {Ref: "WRBB000002"},
+	}})
+	e.alerts.sendDigest(ctx, types.UserNotification{Kind: types.UserNotificationPaymentOrderPending,
+		Title: "Có 2 đơn hàng mới chờ xác nhận thanh toán", Payload: types.JSON(payload)})
+	_, err := e.alerts.SendBatch(ctx, e.client)
+	require.NoError(t, err)
+	require.Len(t, e.bot.sent(), 2) // private chat + group
+
+	b := NewBillingTelegramAlerts(orders, e.alerts)
+	orders.orders["WRAA000001"].ConfirmedBy = "admin1"
+	_, err = b.ConfirmOrder(ctx, "o1", "admin1")
+	require.NoError(t, err)
+	e.alerts.wg.Wait()
+	edits := e.bot.callsOf("editMessageText")
+	require.Len(t, edits, 2, "both chats' alerts")
+	for _, ed := range edits {
+		require.Contains(t, ed.Body["text"], "— WRAA000001: ✅ đã thanh toán (an,")
+		rows := ed.Body["reply_markup"].(map[string]any)["inline_keyboard"].([]any)
+		require.Len(t, rows, 1)
+		require.Equal(t, "oc:WRBB000002", rows[0].([]any)[0].(map[string]any)["callback_data"])
+	}
+
+	// the other order cancelled (web page): no buttons left, both lines kept
+	_, err = b.CancelOrder(ctx, "o2", false)
+	require.NoError(t, err)
+	e.alerts.wg.Wait()
+	edits = e.bot.callsOf("editMessageText")
+	require.Len(t, edits, 4)
+	last := edits[3].Body
+	require.Contains(t, last["text"], "— WRAA000001: ✅ đã thanh toán")
+	require.Contains(t, last["text"], "— WRBB000002: ✖ đã hủy")
+	require.Empty(t, last["reply_markup"].(map[string]any)["inline_keyboard"])
+	var stored []types.TelegramAlertMessage
+	require.NoError(t, e.db.Find(&stored).Error)
+	for _, m := range stored {
+		require.Empty(t, m.Buttons, "nothing left to press")
+	}
+	// deciding again finds nothing to edit
+	e.alerts.CloseOrderButtons(ctx, orders.orders["WRAA000001"])
+	e.alerts.wg.Wait()
+	require.Len(t, e.bot.callsOf("editMessageText"), 4)
+}
+
+// Two orders of one digest decided at the same time: neither's buttons
+// come back (closes are serialised and re-read the message).
+func TestTelegramConcurrentClosesKeepBothDecided(t *testing.T) {
+	e, orders, _ := newButtonEnv(t)
+	ctx := context.Background()
+	payload, _ := json.Marshal(types.UserNotificationQueuePayload{Count: 2, Items: []types.UserNotificationQueueItem{
+		{Ref: "WRAA000001"}, {Ref: "WRBB000002"},
+	}})
+	e.alerts.sendDigest(ctx, types.UserNotification{Kind: types.UserNotificationPaymentOrderPending,
+		Title: "Có 2 đơn", Payload: types.JSON(payload)})
+	// not sent yet: a queued alert loses the rows before it goes out
+	for _, code := range []string{"WRAA000001", "WRBB000002"} {
+		o := orders.orders[code]
+		o.Status = types.UsageOrderExpired
+		e.alerts.CloseOrderButtons(ctx, o)
+	}
+	e.alerts.wg.Wait()
+	_, err := e.alerts.SendBatch(ctx, e.client)
+	require.NoError(t, err)
+	for _, s := range e.bot.sent() {
+		require.Nil(t, s.Body["reply_markup"], "sent without buttons")
+		require.Contains(t, s.Body["text"], "— WRAA000001: ⌛ quá hạn, đã tự hủy")
+		require.Contains(t, s.Body["text"], "— WRBB000002: ⌛ quá hạn, đã tự hủy")
+	}
+}
+
+func TestTelegramAppendLineKeepsTheLine(t *testing.T) {
+	long := strings.Repeat("a", telegram.MaxTextRunes)
+	out := telegramAppendLine(long, "— WR1: ✅")
+	require.LessOrEqual(t, len([]rune(out)), telegram.MaxTextRunes)
+	require.True(t, strings.HasSuffix(out, "\n— WR1: ✅"))
+}

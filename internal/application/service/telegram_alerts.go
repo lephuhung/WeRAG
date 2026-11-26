@@ -70,6 +70,8 @@ type TelegramAlerts struct {
 	// the buttons are not offered
 	orders interfaces.UsageBillingService
 	audit  interfaces.AuditLogService
+	// closeMu serialises CloseOrderButtons (rows of one digest)
+	closeMu sync.Mutex
 
 	wake    chan struct{}
 	stopped bool
