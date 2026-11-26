@@ -255,3 +255,52 @@ Serve `runs/<run>/merged` (or the base model plus `--lora-modules
 off is sent by the backend as `chat_template_kwargs.enable_thinking=false`),
 add a `generic` model entry pointing at it in `config/builtin_models.yaml`
 and set `spellcheck_model_id` on the document assistant agent.
+
+## Round 5: real-word errors mined with protonx-legal-tc
+
+What v4 missed most were real-word diacritic errors in OCR'd and official text
+(kb_real detect F1 .733). `protonx-models/protonx-legal-tc` (ViT5-base text
+corrector, **non-commercial licence — internal data mining only, never in the
+product**) is much better exactly there, so its rewrites of the whole VBPL +
+Party corpus were turned into silver training pairs:
+
+1. `protonx_mine.py` (kept in /home/orca/models/spellcheck-data/protonx/) runs
+   the model over every paragraph (sentence pieces ≤ 120 tokens, bf16, beam 4)
+   and keeps the pieces it changed, in resumable shards.
+2. `protonx_filter.py` keeps one-to-one token replacements that only change
+   diacritics or ≤ 2 letters on ordinary syllables; drops words cut by the
+   chunker, codes, capitals, proper nouns, accepted variants, heavy rewrites
+   and any paragraph found in an eval file.
+3. `protonx_audit.py` asks Qwen3.6-35B (thinking off) whether each candidate
+   is a real error with the right fix, and writes the confirmed ones as
+   `--pairs` rows (`src: vbpl_protonx`). Qwen rejects accepted variants the
+   corrector "fixes" (hàng năm → hằng năm) and table-fragment noise; it also
+   rejects some real errors (Bán chính → Bản chính), which only costs recall.
+
+```bash
+M=/home/orca/models/spellcheck-data/protonx/mine; D=/home/orca/models/spellcheck-data
+python protonx_filter.py "$M/out/shard_*.jsonl" --out $M/cand_all.jsonl \
+    --exclude-eval $D/v4/eval_v4.jsonl --exclude-eval $D/eval.jsonl --exclude-eval $D/hf_compare.jsonl --exclude-eval $D/round3/eval_v3.jsonl
+python protonx_audit.py $M/cand_all.jsonl --api http://10.10.0.240:8000 --model-name Qwen/Qwen3.6-35B-A3B-AWQ \
+    --verdicts $M/verdicts_all.jsonl --pairs $M/pairs_all.jsonl
+# 1.35M paragraphs → 82,396 changed pieces → 14,964 candidates → 9,442 confirmed → 7,877 pairs (2,349 distinct wrong→correct)
+
+# v5 = continual round: 4,500 new samples + 2,000 replay samples from sft_v4, warm start from the v4 adapter
+python build_dataset.py --kb $D/v4/kb_audited.jsonl --kb-holdout 0 --kb-max-uses 3 --clean $D/v4/vbpl_audited.jsonl \
+    --pairs $M/pairs_all.jsonl --pairs $D/v4/sanng_teencode.jsonl@400 \
+    --mined $M/pairs_all.jsonl --mined $D/v4/mined.jsonl --confusion-weight 6 \
+    --queries $D/round3/queries_real_train.jsonl --queries $D/round3/queries_gen_train.jsonl --query-rate 0.15 --query-teen-rate 0.3 \
+    --mix 0.2 0.55 0.25 --n 4500 --val 200 --seed 5 --out $D/v5/sft_new
+# + shuf 2000 lines of v4/sft_v4/train.jsonl → v5/sft_v5/train.jsonl
+train_lora.py --model /models/gemma-4-E4B-it --data /models/spellcheck-data/v5/sft_v5 --out /models/spellcheck-gemma4-e4b-v5 \
+    --init-adapter /models/spellcheck-gemma4-e4b-v4/adapter --bs 2 --grad-accum 16 --epochs 1 --lr 5e-5 --save-every 50
+```
+
+Result (eval_v4 after its kb_clean labels were corrected, detect F1 / correct
+F1): ALL .904/.868 vs v4 .894/.857; kb_real .810/.790 vs .733/.702; vsec
+.886/.834 vs .877/.826; query and teencode unchanged within .01; clean false
+positives 0.5 %. v5 serves on 10.10.0.240:8001 since 2026-11-26. The eval
+set's kb_clean part had held 9 real errors labelled clean (để nghị, dấu đó,
+điện từ, chi thường, đề nhận tiền); they are gold now, and a document code
+(ND-CP) was made neutral. Gate for any continual round: no part drops by more
+than .01 and clean FP stays ≤ 1 %.
