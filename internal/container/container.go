@@ -245,6 +245,10 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	// in-app notifications; people who asked for a legal document are
 	// notified once it is added
 	must(container.Provide(repository.NewUserNotificationRepository))
+	// the system alert bot on Telegram (SuperAdmins): relays the SuperAdmin
+	// digests (a decorator of the notification store) and the order events
+	must(container.Provide(service.NewTelegramAlerts))
+	must(container.Provide(service.NewTelegramOrderWatch))
 	must(container.Provide(repository.NewAnswerQualityRepository))
 	must(container.Provide(service.NewLegalRequestNotifier))
 	must(container.Provide(service.NewAbbreviationReviewNotifier))
@@ -615,6 +619,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Provide(handler.NewDocumentLabelHandler))
 	must(container.Provide(handler.NewUsageBillingHandler))
 	must(container.Provide(handler.NewEmailHandler))
+	must(container.Provide(handler.NewTelegramAlertHandler))
 	must(container.Provide(handler.NewEvaluationHandler))
 	must(container.Provide(handler.NewInitializationHandler))
 	must(container.Provide(handler.NewAuthHandler))
@@ -760,6 +765,7 @@ func BuildContainer(container *dig.Container) *dig.Container {
 	must(container.Invoke(startSuperAdminQueueNotices))
 	// SuperAdmin digest when a backup job fails or is overdue
 	must(container.Invoke(startBackupMonitor))
+	must(container.Invoke(startTelegramAlerts))
 	// hourly warning while the BM25 keyword index is fragmented
 	must(container.Invoke(startSearchIndexHealth))
 	// SuperAdmin digest when the legal data workers (nightly vbpl.vn sync,
@@ -973,11 +979,14 @@ func registerChatLocalImageResolver(
 // decorate with one of these lists, and a type that needs several wrappers
 // gets one composing decorator (container_decorators_test.go checks both).
 var (
-	// notificationDecorators: the billing service mails new and paid orders
-	// and writes the SuperAdmins' order digests; the legal request service
+	// notificationDecorators: the billing service mails new and paid orders,
+	// tells the Telegram bot and writes the SuperAdmins' order digests; the
+	// in-app notification store relays the SuperAdmin digests to the
+	// Telegram bot; the legal request service
 	// tells the people who asked once a document is added and closes the
 	// SuperAdmins' request digests
-	notificationDecorators = []any{service.NewBillingNotifications, service.NewLegalRequestNotifications}
+	notificationDecorators = []any{service.NewBillingNotifications, service.NewLegalRequestNotifications,
+		service.NewTelegramDigestRelay}
 	// subChatDecorators: sub-chats ("chat nhỏ") work on their root chat's
 	// documents and uploads
 	subChatDecorators = []any{service.NewSubChatUploads, service.NewSubChatWorkspaces}
@@ -1938,6 +1947,18 @@ func startSearchIndexHealth(h *service.SearchIndexHealth, cleaner interfaces.Res
 	stop := service.StartSearchIndexHealth(h, service.SearchIndexHealthInterval)
 	cleaner.RegisterWithName("SearchIndexHealth", func() error {
 		stop()
+		return nil
+	})
+}
+
+// startTelegramAlerts runs the alert bot (sender, command poller) and the
+// order watch; they idle while the bot is off.
+func startTelegramAlerts(a *service.TelegramAlerts, w *service.TelegramOrderWatch, cleaner interfaces.ResourceCleaner) {
+	stopAlerts := a.Start()
+	stopWatch := w.Start(service.TelegramOrderWatchInterval)
+	cleaner.RegisterWithName("TelegramAlerts", func() error {
+		stopWatch()
+		stopAlerts()
 		return nil
 	})
 }

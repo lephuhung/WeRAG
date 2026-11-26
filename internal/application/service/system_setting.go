@@ -626,6 +626,21 @@ var registry = map[string]settingSpec{
 		Enum:        []string{types.SMTPSecurityNone, types.SMTPSecuritySTARTTLS, types.SMTPSecurityTLS},
 		Description: "Mã hóa kết nối: none (không), starttls hoặc tls (TLS ngay từ đầu).",
 	},
+	// The system alert bot on Telegram (SuperAdmins only), read per send and
+	// per poll, so a change applies within seconds. Nothing is sent while the
+	// switch is off or no token is saved.
+	types.TelegramAlertsEnabledSettingKey: {
+		Type: "bool", Default: false, Category: "telegram",
+		Description: "Bật bot Telegram gửi cảnh báo cho SuperAdmin (đơn thanh toán, hàng chờ duyệt, sự cố). Có hiệu lực ngay.",
+	},
+	types.TelegramAlertsBotTokenSettingKey: {
+		Type: "string", Default: "", Category: "telegram", Secret: true,
+		Description: "Token của bot cảnh báo (lấy từ @BotFather). Dùng bot riêng cho cảnh báo, không dùng chung với bot hỏi đáp của Tổ chức. Không bao giờ hiện lại sau khi lưu.",
+	},
+	types.TelegramAlertsMutedKindsSettingKey: {
+		Type: "string", Default: "", Category: "telegram",
+		Description: "Các loại cảnh báo không gửi lên Telegram, cách nhau bằng dấu phẩy. Để trống = gửi tất cả.",
+	},
 	// chat.web_search_enabled gates web search (network providers and the
 	// local-browser tool) platform-wide. The per-agent / per-request switches
 	// and the tenant provider config stay in place but are neutralised while
@@ -1850,6 +1865,27 @@ func validateRegistryEntry(key string, rawValue any) error {
 		for _, r := range v {
 			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
 				return errors.New("the webhook secret may only contain letters, digits, '-' and '_'")
+			}
+		}
+	case types.TelegramAlertsBotTokenSettingKey:
+		// "" removes the token (bot off); anything else must look like a bot
+		// token, which also refuses the masked value saved back.
+		v, _ := rawValue.(string)
+		if v == "" {
+			return nil
+		}
+		if !types.ValidTelegramBotToken(v) {
+			return errors.New("the bot token must look like 123456789:AA… (the token @BotFather gives)")
+		}
+	case types.TelegramAlertsMutedKindsSettingKey:
+		v, _ := rawValue.(string)
+		for _, k := range strings.Split(v, ",") {
+			k = strings.TrimSpace(k)
+			if k == "" {
+				continue
+			}
+			if _, ok := types.TelegramAlertKindOf(k); !ok {
+				return fmt.Errorf("unknown alert kind %q", k)
 			}
 		}
 	case types.SMTPPasswordSettingKey:

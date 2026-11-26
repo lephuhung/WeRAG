@@ -471,6 +471,79 @@ export function sendTestEmail(): Promise<EmailTestResult> {
   return apiPost("/api/v1/system/admin/email/test", {});
 }
 
+/* The system alert bot on Telegram (SuperAdmin "Telegram" page). The
+ * token is a secret: reads return it masked. */
+export const TELEGRAM_SETTING_KEYS = {
+  enabled: "telegram_alerts.enabled",
+  token: "telegram_alerts.bot_token",
+  muted: "telegram_alerts.muted_kinds",
+} as const;
+
+export type TelegramAlertGroup = "billing" | "review" | "incident";
+
+export interface TelegramAlertKind {
+  kind: string;
+  group: TelegramAlertGroup;
+  /** Vietnamese name (the page uses its own dictionary keyed by kind). */
+  label: string;
+  resolvable: boolean;
+}
+
+export interface TelegramAlertStatus {
+  enabled: boolean;
+  has_token: boolean;
+  bot_username: string;
+  bot_name: string;
+  bot_error?: string;
+  pending: number;
+  failed_24h: number;
+  last_sent_at: string | null;
+  kinds: TelegramAlertKind[];
+  muted_kinds: string[];
+}
+
+export interface TelegramAlertChat {
+  id: string;
+  chat_type: "private" | "group" | "supergroup" | string;
+  title: string;
+  linked_by: string;
+  linked_by_name: string;
+  linked_at: string;
+  disabled_at: string | null;
+  last_error: string;
+  active: boolean;
+}
+
+export interface TelegramLinkCode {
+  code: string;
+  private_link: string;
+  group_link: string;
+  expires_at: string;
+}
+
+type Wrapped<T> = { success: boolean; data: T };
+
+export async function getTelegramAlertStatus(): Promise<TelegramAlertStatus> {
+  return (await apiGet<Wrapped<TelegramAlertStatus>>("/api/v1/system/admin/telegram")).data;
+}
+
+export async function createTelegramLinkCode(): Promise<TelegramLinkCode> {
+  return (await apiPost<Wrapped<TelegramLinkCode>>("/api/v1/system/admin/telegram/link-code", {})).data;
+}
+
+export async function listTelegramAlertChats(): Promise<TelegramAlertChat[]> {
+  return (await apiGet<Wrapped<TelegramAlertChat[]>>("/api/v1/system/admin/telegram/chats")).data ?? [];
+}
+
+export function deleteTelegramAlertChat(id: string): Promise<void> {
+  return apiDel(`/api/v1/system/admin/telegram/chats/${encodeURIComponent(id)}`);
+}
+
+/** Queues a test message to every chat that gets alerts; returns how many. */
+export async function sendTelegramTest(): Promise<number> {
+  return (await apiPost<Wrapped<{ chats: number }>>("/api/v1/system/admin/telegram/test", {})).data.chats;
+}
+
 /** Reset to ENV/built-in default by deleting the DB override. Idempotent. */
 export function resetSystemSetting(key: string): Promise<void> {
   return apiDel(`/api/v1/system/admin/settings/${encodeURIComponent(key)}`);

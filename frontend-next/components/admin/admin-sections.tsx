@@ -18,6 +18,7 @@ import {
   IconOrg,
   IconPulse,
   IconSend,
+  IconChat,
   IconStorageEngine,
   IconThumbDown,
   IconUser,
@@ -32,6 +33,7 @@ const AdminDomainPacksPage = lazy(() => import("@/components/settings/pages/admi
 const AdminUsagePage = lazy(() => import("@/components/settings/pages/admin-usage"));
 const AdminBillingPage = lazy(() => import("@/components/settings/pages/admin-billing"));
 const AdminEmailPage = lazy(() => import("@/components/settings/pages/admin-email"));
+const AdminTelegramPage = lazy(() => import("@/components/settings/pages/admin-telegram"));
 const AdminQualityPage = lazy(() => import("@/components/settings/pages/admin-quality"));
 const RuntimeQueuesPage = lazy(() => import("@/components/settings/pages/runtime-queues"));
 const AdminBackupsPage = lazy(() => import("@/components/settings/pages/admin-backups"));
@@ -74,6 +76,7 @@ export const ADMIN_GROUPS: AdminSectionGroup[] = [
       { key: "usage", labelKey: "systemNav.usage", fallback: "Usage packages", icon: IconIdCard, render: () => <AdminUsagePage />, route: `${SYS}/admin/usage` },
       { key: "billing", labelKey: "systemNav.billing", fallback: "Billing & promo codes", icon: IconCreditCard, render: () => <AdminBillingPage />, route: `${SYS}/admin/billing` },
       { key: "email", labelKey: "systemNav.email", fallback: "Email", icon: IconSend, render: () => <AdminEmailPage />, route: `${SYS}/admin/email` },
+      { key: "telegram", labelKey: "systemNav.telegram", fallback: "Telegram", icon: IconChat, render: () => <AdminTelegramPage /> },
       { key: "queues", labelKey: "systemNav.queues", fallback: "Runtime queues", icon: IconClock, render: () => <RuntimeQueuesPage />, route: `${SYS}/engines/queues` },
       { key: "backups", labelKey: "systemNav.backups", fallback: "Backups", icon: IconStorageEngine, render: () => <AdminBackupsPage /> },
     ],

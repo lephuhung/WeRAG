@@ -76,7 +76,8 @@ type RouterParams struct {
 	TenantUsageHandler          *handler.TenantUsageHandler
 	DocumentLabelHandler        *handler.DocumentLabelHandler `optional:"true"`
 	UsageBillingHandler         *handler.UsageBillingHandler
-	EmailHandler                *handler.EmailHandler `optional:"true"`
+	EmailHandler                *handler.EmailHandler         `optional:"true"`
+	TelegramAlertHandler        *handler.TelegramAlertHandler `optional:"true"`
 	EvaluationHandler           *handler.EvaluationHandler
 	AuthHandler                 *handler.AuthHandler
 	InitializationHandler       *handler.InitializationHandler
@@ -354,6 +355,7 @@ func NewRouter(params RouterParams) *gin.Engine {
 		RegisterSystemRoutes(v1, params.SystemHandler, rbacGuards)
 		RegisterSystemAdminRoutes(v1, params.SystemHandler, params.StatsHandler, params.AuditLogHandler, params.UsageAdminHandler, rbacGuards)
 		RegisterEmailAdminRoutes(v1, params.EmailHandler, rbacGuards)
+		RegisterTelegramAlertRoutes(v1, params.TelegramAlertHandler, rbacGuards)
 		RegisterBackupStatusRoutes(v1, params.BackupStatusHandler, rbacGuards)
 		RegisterMCPServiceRoutes(v1, params.MCPServiceHandler, params.MCPCredentialsHandler, params.MCPOAuthHandler, rbacGuards)
 		RegisterWebSearchRoutes(v1, params.WebSearchHandler, rbacGuards)

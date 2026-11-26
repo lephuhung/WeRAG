@@ -21,12 +21,12 @@ type billingQueueNotify struct {
 }
 
 // NewBillingNotifications is the one decorator of the billing service
-// (dig takes one per type): the order emails inside, the SuperAdmins'
-// order digests outside.
+// (dig takes one per type): the order emails inside, then the Telegram
+// order alerts, the SuperAdmins' order digests outside.
 func NewBillingNotifications(
-	inner interfaces.UsageBillingService, email *EmailNotifier, notices *SuperAdminQueueNotifier,
+	inner interfaces.UsageBillingService, email *EmailNotifier, notices *SuperAdminQueueNotifier, alerts *TelegramAlerts,
 ) interfaces.UsageBillingService {
-	return NewBillingQueueNotifications(NewBillingEmailNotifications(inner, email), notices)
+	return NewBillingQueueNotifications(NewBillingTelegramAlerts(NewBillingEmailNotifications(inner, email), alerts), notices)
 }
 
 // NewBillingQueueNotifications wraps the billing service with the order

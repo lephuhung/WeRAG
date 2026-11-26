@@ -40,6 +40,9 @@ func TestContainerDecoratesOnlyThroughLists(t *testing.T) {
 
 type stubBilling struct{ interfaces.UsageBillingService }
 type stubLegalRequests struct{ interfaces.LegalRequestService }
+type stubNotifications struct {
+	interfaces.UserNotificationRepository
+}
 
 // The composed decorators resolve with the real constructors and wrap the
 // provided services.
@@ -52,9 +55,17 @@ func TestContainerNotificationDecoratorsResolve(t *testing.T) {
 	require.NoError(t, c.Provide(func() *service.EmailNotifier { return nil }))
 	require.NoError(t, c.Provide(func() *service.LegalRequestNotifier { return nil }))
 	require.NoError(t, c.Provide(func() *service.SuperAdminQueueNotifier { return nil }))
+	notes := &stubNotifications{}
+	require.NoError(t, c.Provide(func() interfaces.UserNotificationRepository { return notes }))
+	require.NoError(t, c.Provide(func() *service.TelegramAlerts {
+		return service.NewTelegramAlerts(nil, nil, nil, nil, nil)
+	}))
 	decorate(c, notificationDecorators)
-	require.NoError(t, c.Invoke(func(b interfaces.UsageBillingService, r interfaces.LegalRequestService) {
+	require.NoError(t, c.Invoke(func(b interfaces.UsageBillingService, r interfaces.LegalRequestService,
+		n interfaces.UserNotificationRepository,
+	) {
 		require.NotSame(t, inner, b, "billing decorated")
 		require.NotSame(t, requests, r, "legal requests decorated")
+		require.NotSame(t, notes, n, "notification store decorated (Telegram relay)")
 	}))
 }
