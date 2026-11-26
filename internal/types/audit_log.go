@@ -15,6 +15,13 @@ const (
 	// new tenant_members row. The actor is the inviter; the target is
 	// the invited user.
 	AuditActionMemberAdded AuditAction = "rbac.member_added"
+	// AuditActionOrderConfirmedTelegram / AuditActionOrderCancelledTelegram
+	// fire when a SuperAdmin confirms or cancels a payment order with the
+	// buttons of the Telegram alert bot (no web session, no 2FA: the
+	// account is the one that linked the presser's own Telegram chat).
+	// Details: order_code, total_vnd, telegram_user_id, chat_id.
+	AuditActionOrderConfirmedTelegram AuditAction = "billing.order_confirmed_telegram"
+	AuditActionOrderCancelledTelegram AuditAction = "billing.order_cancelled_telegram"
 	// AuditActionMemberRemoved fires when an Owner / Admin removes a
 	// tenant_members row. Distinct from MemberLeft so an audit reader
 	// can tell "kicked out" from "left voluntarily".

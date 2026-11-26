@@ -112,7 +112,10 @@ type TelegramAlertChat struct {
 	LinkedBy   string     `json:"linked_by"   gorm:"type:varchar(36);not null"`
 	LinkedAt   time.Time  `json:"linked_at"`
 	DisabledAt *time.Time `json:"disabled_at"`
-	LastError  string     `json:"last_error"  gorm:"type:text;not null;default:''"`
+	// CanAct: the chat is LinkedBy's own Telegram account (a personal code,
+	// private chat): presses from it may confirm or cancel orders.
+	CanAct    bool   `json:"can_act" gorm:"not null;default:false"`
+	LastError string `json:"last_error"  gorm:"type:text;not null;default:''"`
 }
 
 // TableName returns the table name.
@@ -130,19 +133,21 @@ const (
 
 // TelegramAlertMessage is one alert to one chat (the outbox).
 type TelegramAlertMessage struct {
-	ID            string     `gorm:"type:varchar(36);primaryKey"`
-	ChatID        int64      `gorm:"not null;uniqueIndex:idx_telegram_alert_messages_chat_event,priority:1"`
-	Kind          string     `gorm:"type:varchar(64);not null"`
-	EventKey      string     `gorm:"type:varchar(200);not null;index;uniqueIndex:idx_telegram_alert_messages_chat_event,priority:2"`
-	Text          string     `gorm:"type:text;not null"`
-	Silent        bool       `gorm:"not null;default:false"`
-	Status        string     `gorm:"type:varchar(16);not null;default:'pending'"`
-	Attempts      int        `gorm:"not null;default:0"`
-	NextAttemptAt time.Time  `gorm:"not null"`
-	MessageID     *int64     `gorm:""`
-	LastError     string     `gorm:"type:text;not null;default:''"`
-	CreatedAt     time.Time  `gorm:"not null"`
-	SentAt        *time.Time `gorm:""`
+	ID            string    `gorm:"type:varchar(36);primaryKey"`
+	ChatID        int64     `gorm:"not null;uniqueIndex:idx_telegram_alert_messages_chat_event,priority:1"`
+	Kind          string    `gorm:"type:varchar(64);not null"`
+	EventKey      string    `gorm:"type:varchar(200);not null;index;uniqueIndex:idx_telegram_alert_messages_chat_event,priority:2"`
+	Text          string    `gorm:"type:text;not null"`
+	Silent        bool      `gorm:"not null;default:false"`
+	Status        string    `gorm:"type:varchar(16);not null;default:'pending'"`
+	Attempts      int       `gorm:"not null;default:0"`
+	NextAttemptAt time.Time `gorm:"not null"`
+	// Buttons: the inline keyboard, rows of telegram.Button (JSON).
+	Buttons   JSON       `gorm:"type:jsonb"`
+	MessageID *int64     `gorm:""`
+	LastError string     `gorm:"type:text;not null;default:''"`
+	CreatedAt time.Time  `gorm:"not null"`
+	SentAt    *time.Time `gorm:""`
 }
 
 // TableName returns the table name.
@@ -179,6 +184,9 @@ type TelegramAlertStatus struct {
 // TelegramLinkCode is a one-time code that links a chat to the bot.
 type TelegramLinkCode struct {
 	Code string `json:"code"`
+	// Personal: the code links the SuperAdmin's own Telegram account
+	// (private chat only), which may then act on orders; GroupLink is empty.
+	Personal bool `json:"personal"`
 	// PrivateLink opens a private chat with the bot; GroupLink adds the bot
 	// to a group. Both carry the code.
 	PrivateLink string    `json:"private_link"`

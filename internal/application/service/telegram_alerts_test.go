@@ -358,7 +358,7 @@ func groupChat(t *testing.T, db *gorm.DB) types.TelegramAlertChat {
 func TestTelegramLinkCodeFlow(t *testing.T) {
 	e := newTelegramEnv(t)
 	ctx := context.Background()
-	code, err := e.alerts.CreateLinkCode(ctx, "admin1")
+	code, err := e.alerts.CreateLinkCode(ctx, "admin1", false)
 	require.NoError(t, err)
 	require.Len(t, code.Code, telegramLinkCodeRunes)
 	require.Equal(t, "https://t.me/werag_alert_bot?start="+code.Code, code.PrivateLink)
@@ -389,7 +389,7 @@ func TestTelegramLinkCodeFlow(t *testing.T) {
 	require.Contains(t, sent[1].Body["text"], "không đúng hoặc đã hết hạn")
 
 	// a code of an account that lost SuperAdmin links nothing
-	code2, err := e.alerts.CreateLinkCode(ctx, "member")
+	code2, err := e.alerts.CreateLinkCode(ctx, "member", false)
 	require.NoError(t, err)
 	e.bot.push(msg(88, "private", "/start "+code2.Code))
 	// /stop in the group: a plain member is refused, a group admin is not
@@ -409,7 +409,7 @@ func TestTelegramLinkCodeFlow(t *testing.T) {
 	require.NotNil(t, chats[0].DisabledAt)
 
 	// the bot removed from a chat disables it too; linking again revives it
-	code3, _ := e.alerts.CreateLinkCode(ctx, "admin2")
+	code3, _ := e.alerts.CreateLinkCode(ctx, "admin2", false)
 	e.bot.push(msg(-500, "group", "/link@werag_alert_bot "+code3.Code))
 	_, err = e.alerts.PollOnce(ctx, e.client, 0)
 	require.NoError(t, err)

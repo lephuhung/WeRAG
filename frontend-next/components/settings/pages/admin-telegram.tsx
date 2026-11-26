@@ -56,8 +56,10 @@ export default function AdminTelegram() {
   const [status, setStatus] = useState<TelegramAlertStatus | null>(null);
   const [chats, setChats] = useState<TelegramAlertChat[]>([]);
   const [code, setCode] = useState<TelegramLinkCode | null>(null);
-  /* the active chats when the code was made: one more = it was used */
+  /* the chats when the code was made: one more active, or one more that can
+   * act (a personal code on a chat linked before) = it was used */
   const activeAtCode = useRef(0);
+  const actingAtCode = useRef(0);
   /* t changes with the locale; a ref keeps load (and the form) stable */
   const tRef = useRef(t);
   tRef.current = t;
@@ -114,7 +116,8 @@ export default function AdminTelegram() {
         .then((list) => {
           setChats(list);
           // linked: the one-time code is spent
-          if (list.filter((c) => c.active).length > activeAtCode.current) setCode(null);
+          if (list.filter((c) => c.active).length > activeAtCode.current ||
+            list.filter((c) => c.active && c.can_act).length > actingAtCode.current) setCode(null);
         })
         .catch(() => undefined);
     }, 4000);
@@ -167,12 +170,13 @@ export default function AdminTelegram() {
     await refreshQuietly();
   };
 
-  const makeCode = async () => {
+  const makeCode = async (personal: boolean) => {
     setBusy(true);
     setResult(null);
     try {
-      const c = await createTelegramLinkCode();
+      const c = await createTelegramLinkCode(personal);
       activeAtCode.current = chats.filter((x) => x.active).length;
+      actingAtCode.current = chats.filter((x) => x.active && x.can_act).length;
       setCode(c);
     } catch (e) {
       setResult({ ok: false, text: userErrorMessage(e, t, "tg.codeFailed", { prefix: true }), detail: technicalErrorDetail(e) });
@@ -331,9 +335,16 @@ export default function AdminTelegram() {
                 <div className="min-w-0">
                   <div className="text-[14px] font-medium text-ink">{t("tg.chatsTitle")}</div>
                   <div className="caption text-muted">{t("tg.chatsDesc")}</div>
+                  <div className="caption mt-1 text-muted">{t("tg.actionsNote")}</div>
                 </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="btn btn-primary btn-sm" disabled={busy || !status?.has_token || dirty || !base.enabled}
+                  title={dirty ? t("tg.saveFirst") : !base.enabled ? t("tg.enableFirst") : t("tg.makeCodePersonalHint")} onClick={() => void makeCode(true)}>
+                  {t("tg.makeCodePersonal")}
+                </button>
                 <button type="button" className="btn btn-outline btn-sm" disabled={busy || !status?.has_token || dirty || !base.enabled}
-                  title={dirty ? t("tg.saveFirst") : !base.enabled ? t("tg.enableFirst") : undefined} onClick={() => void makeCode()}>
+                  title={dirty ? t("tg.saveFirst") : !base.enabled ? t("tg.enableFirst") : t("tg.makeCodeOtherHint")} onClick={() => void makeCode(false)}>
                   {t("tg.makeCode")}
                 </button>
               </div>
@@ -345,18 +356,33 @@ export default function AdminTelegram() {
                     <code className="rounded bg-surface px-2 py-0.5 font-mono text-[15px] tracking-wider">{code.code}</code>
                     <span className="caption text-muted">{t("tg.codeExpires", { at: formatDateTime(code.expires_at, locale) })}</span>
                   </div>
-                  <ol className="caption mt-2 list-decimal space-y-1 pl-5 text-muted">
-                    <li>
-                      {t("tg.stepPrivate")}{" "}
-                      <a className="underline hover:text-ink" href={code.private_link} target="_blank" rel="noreferrer">{t("tg.openPrivate")}</a>
-                    </li>
-                    <li>
-                      {t("tg.stepGroup")}{" "}
-                      <a className="underline hover:text-ink" href={code.group_link} target="_blank" rel="noreferrer">{t("tg.openGroup")}</a>
-                    </li>
-                    <li>{t("tg.stepManual", { code: code.code })}</li>
-                  </ol>
-                  <div className="caption mt-2 text-warning">{t("tg.groupWarning")}</div>
+                  {code.personal ? (
+                    <>
+                      <ol className="caption mt-2 list-decimal space-y-1 pl-5 text-muted">
+                        <li>
+                          {t("tg.stepPersonal")}{" "}
+                          <a className="underline hover:text-ink" href={code.private_link} target="_blank" rel="noreferrer">{t("tg.openPrivate")}</a>
+                        </li>
+                        <li>{t("tg.stepManualPersonal", { code: code.code })}</li>
+                      </ol>
+                      <div className="caption mt-2 text-warning">{t("tg.personalWarning")}</div>
+                    </>
+                  ) : (
+                    <>
+                      <ol className="caption mt-2 list-decimal space-y-1 pl-5 text-muted">
+                        <li>
+                          {t("tg.stepPrivate")}{" "}
+                          <a className="underline hover:text-ink" href={code.private_link} target="_blank" rel="noreferrer">{t("tg.openPrivate")}</a>
+                        </li>
+                        <li>
+                          {t("tg.stepGroup")}{" "}
+                          <a className="underline hover:text-ink" href={code.group_link} target="_blank" rel="noreferrer">{t("tg.openGroup")}</a>
+                        </li>
+                        <li>{t("tg.stepManual", { code: code.code })}</li>
+                      </ol>
+                      <div className="caption mt-2 text-warning">{t("tg.groupWarning")}</div>
+                    </>
+                  )}
                 </div>
               )}
 
@@ -372,6 +398,7 @@ export default function AdminTelegram() {
                           <div className="truncate text-[14px] text-ink">
                             {c.title || t("tg.untitled")}{" "}
                             <span className="caption text-muted">· {c.chat_type === "private" ? t("tg.typePrivate") : t("tg.typeGroup")}</span>
+                            {c.can_act && <span className="badge-pill ml-2 text-[11px]">{t("tg.canAct")}</span>}
                           </div>
                           <div className="caption text-muted">
                             {t("tg.linkedBy", { name: c.linked_by_name || c.linked_by, at: formatDateTime(c.linked_at, locale) })}

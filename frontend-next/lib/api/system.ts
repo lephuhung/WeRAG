@@ -512,10 +512,14 @@ export interface TelegramAlertChat {
   disabled_at: string | null;
   last_error: string;
   active: boolean;
+  /** The linking SuperAdmin's own Telegram (personal code): may confirm or cancel orders. */
+  can_act: boolean;
 }
 
 export interface TelegramLinkCode {
   code: string;
+  /** Links the SuperAdmin's own Telegram (private chat only, may act on orders); no group link. */
+  personal: boolean;
   private_link: string;
   group_link: string;
   expires_at: string;
@@ -527,8 +531,8 @@ export async function getTelegramAlertStatus(): Promise<TelegramAlertStatus> {
   return (await apiGet<Wrapped<TelegramAlertStatus>>("/api/v1/system/admin/telegram")).data;
 }
 
-export async function createTelegramLinkCode(): Promise<TelegramLinkCode> {
-  return (await apiPost<Wrapped<TelegramLinkCode>>("/api/v1/system/admin/telegram/link-code", {})).data;
+export async function createTelegramLinkCode(personal: boolean): Promise<TelegramLinkCode> {
+  return (await apiPost<Wrapped<TelegramLinkCode>>("/api/v1/system/admin/telegram/link-code", { personal })).data;
 }
 
 export async function listTelegramAlertChats(): Promise<TelegramAlertChat[]> {

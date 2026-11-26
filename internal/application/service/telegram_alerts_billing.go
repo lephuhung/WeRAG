@@ -84,7 +84,8 @@ func (b *billingTelegramNotify) RecordPayment(
 			Body: telegramOrderLines(o,
 				fmt.Sprintf("Vừa nhận: %s", formatVND(r.Transaction.AmountVND)),
 				fmt.Sprintf("Đã nhận tổng cộng: %s / %s", formatVND(o.ReceivedVND), formatVND(o.TotalVND))),
-			Link: telegramOrderLink(o),
+			Link:    telegramOrderLink(o),
+			Buttons: b.alerts.orderButtons(o.OrderCode),
 		})
 	case types.UsagePaymentOrderClosed:
 		// money for an order that is closed (expired past the grace, paid,
@@ -338,6 +339,7 @@ func (w *TelegramOrderWatch) tell(ctx context.Context, id string, expired bool) 
 			extra = append(extra, fmt.Sprintf("Đã nhận: %s / %s", formatVND(o.ReceivedVND), formatVND(o.TotalVND)))
 		}
 		alert.Body = telegramOrderLines(o, extra...)
+		alert.Buttons = w.alerts.orderButtons(o.OrderCode)
 	default:
 		return // paid, cancelled or reopened meanwhile
 	}

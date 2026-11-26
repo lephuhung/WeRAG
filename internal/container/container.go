@@ -1953,7 +1953,12 @@ func startSearchIndexHealth(h *service.SearchIndexHealth, cleaner interfaces.Res
 
 // startTelegramAlerts runs the alert bot (sender, command poller) and the
 // order watch; they idle while the bot is off.
-func startTelegramAlerts(a *service.TelegramAlerts, w *service.TelegramOrderWatch, cleaner interfaces.ResourceCleaner) {
+func startTelegramAlerts(a *service.TelegramAlerts, w *service.TelegramOrderWatch, cleaner interfaces.ResourceCleaner,
+	billing interfaces.UsageBillingService, audit interfaces.AuditLogService,
+) {
+	// the order buttons (confirm / cancel from the alert) act through the
+	// decorated billing service, as the web page does
+	a.SetOrderActions(billing, audit)
 	stopAlerts := a.Start()
 	stopWatch := w.Start(service.TelegramOrderWatchInterval)
 	cleaner.RegisterWithName("TelegramAlerts", func() error {

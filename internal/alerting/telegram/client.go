@@ -133,17 +133,45 @@ type ChatMemberUpdated struct {
 	} `json:"new_chat_member"`
 }
 
+// CallbackQuery is a press on an inline button of a bot message.
+type CallbackQuery struct {
+	ID      string   `json:"id"`
+	From    User     `json:"from"`
+	Message *Message `json:"message"`
+	Data    string   `json:"data"`
+}
+
 // Update is one incoming update.
 type Update struct {
-	UpdateID     int64              `json:"update_id"`
-	Message      *Message           `json:"message"`
-	MyChatMember *ChatMemberUpdated `json:"my_chat_member"`
+	UpdateID      int64              `json:"update_id"`
+	Message       *Message           `json:"message"`
+	MyChatMember  *ChatMemberUpdated `json:"my_chat_member"`
+	CallbackQuery *CallbackQuery     `json:"callback_query"`
+}
+
+// Button is an inline button: Data comes back in a CallbackQuery (at most
+// 64 bytes), or URL opens a page.
+type Button struct {
+	Text string `json:"text"`
+	Data string `json:"callback_data,omitempty"`
+	URL  string `json:"url,omitempty"`
 }
 
 // SendOptions are the options of SendMessage.
 type SendOptions struct {
 	// Silent delivers without a sound.
 	Silent bool
+	// Buttons are rows of inline buttons under the message.
+	Buttons [][]Button
+	// ReplyTo answers that message of the chat (0 = none).
+	ReplyTo int64
+}
+
+func keyboard(rows [][]Button) map[string]any {
+	if rows == nil {
+		rows = [][]Button{}
+	}
+	return map[string]any{"inline_keyboard": rows}
 }
 
 // GetMe returns the bot.
@@ -166,6 +194,12 @@ func (c *Client) SendMessage(ctx context.Context, chatID int64, text string, opt
 	if opt.Silent {
 		body["disable_notification"] = true
 	}
+	if len(opt.Buttons) > 0 {
+		body["reply_markup"] = keyboard(opt.Buttons)
+	}
+	if opt.ReplyTo != 0 {
+		body["reply_parameters"] = map[string]any{"message_id": opt.ReplyTo, "allow_sending_without_reply": true}
+	}
 	var m Message
 	if err := c.call(ctx, "sendMessage", body, &m); err != nil {
 		return 0, err
@@ -178,9 +212,29 @@ func (c *Client) GetUpdates(ctx context.Context, offset int64, timeout int) ([]U
 	var ups []Update
 	err := c.call(ctx, "getUpdates", map[string]any{
 		"offset": offset, "timeout": timeout,
-		"allowed_updates": []string{"message", "my_chat_member"},
+		"allowed_updates": []string{"message", "my_chat_member", "callback_query"},
 	}, &ups)
 	return ups, err
+}
+
+// EditMessage replaces the text and the buttons of a message (nil buttons
+// = none).
+func (c *Client) EditMessage(ctx context.Context, chatID, messageID int64, text string, buttons [][]Button) error {
+	return c.call(ctx, "editMessageText", map[string]any{
+		"chat_id": chatID, "message_id": messageID, "text": CutText(text),
+		"disable_web_page_preview": true, "reply_markup": keyboard(buttons),
+	}, nil)
+}
+
+// AnswerCallback ends the spinner of a button press; text is shown as a
+// toast, or as a dialog when alert.
+func (c *Client) AnswerCallback(ctx context.Context, id, text string, alert bool) error {
+	body := map[string]any{"callback_query_id": id}
+	if text != "" {
+		body["text"] = text
+		body["show_alert"] = alert
+	}
+	return c.call(ctx, "answerCallbackQuery", body, nil)
 }
 
 // IsChatAdmin reports whether userID administers chatID (false on any
@@ -196,12 +250,15 @@ func (c *Client) IsChatAdmin(ctx context.Context, chatID, userID int64) bool {
 }
 
 // CutText bounds text to MaxTextRunes characters.
-func CutText(text string) string {
+func CutText(text string) string { return CutTextTo(text, MaxTextRunes) }
+
+// CutTextTo bounds text to n characters (a button answer holds 200).
+func CutTextTo(text string, n int) string {
 	r := []rune(text)
-	if len(r) <= MaxTextRunes {
+	if len(r) <= n {
 		return text
 	}
-	return string(r[:MaxTextRunes-1]) + "…"
+	return string(r[:n-1]) + "…"
 }
 
 func (c *Client) call(ctx context.Context, method string, body any, result any) error {

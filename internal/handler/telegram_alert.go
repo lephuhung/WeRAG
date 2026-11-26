@@ -50,7 +50,7 @@ func (h *TelegramAlertHandler) Status(c *gin.Context) {
 
 // CreateLinkCode godoc
 // @Summary      Tạo mã liên kết Telegram
-// @Description  Mã dùng một lần trong 10 phút: gửi /start <mã> cho bot (chat riêng) hoặc thêm bot vào nhóm bằng liên kết nhóm.
+// @Description  Mã dùng một lần trong 10 phút: gửi /start <mã> cho bot (chat riêng) hoặc thêm bot vào nhóm bằng liên kết nhóm. Body {"personal": true}: mã liên kết Telegram của chính SuperAdmin (chỉ chat riêng; chat đó bấm được nút duyệt / hủy đơn).
 // @Tags         system
 // @Produce      json
 // @Success      200  {object}  types.TelegramLinkCode
@@ -60,7 +60,12 @@ func (h *TelegramAlertHandler) CreateLinkCode(c *gin.Context) {
 	if user == nil {
 		return
 	}
-	code, err := h.alerts.CreateLinkCode(c.Request.Context(), user.ID)
+	// personal: link the caller's own Telegram account (may act on orders)
+	var req struct {
+		Personal bool `json:"personal"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	code, err := h.alerts.CreateLinkCode(c.Request.Context(), user.ID, req.Personal)
 	if err != nil {
 		c.Error(err)
 		return

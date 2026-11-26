@@ -66,6 +66,10 @@ type TelegramAlerts struct {
 	pollErr string
 	// digests: the digest writes being gathered, per kind
 	digests map[string]*telegramDigestBatch
+	// orders and audit serve the order buttons (SetOrderActions); nil =
+	// the buttons are not offered
+	orders interfaces.UsageBillingService
+	audit  interfaces.AuditLogService
 
 	wake    chan struct{}
 	stopped bool
@@ -74,7 +78,7 @@ type TelegramAlerts struct {
 }
 
 type telegramLinkEntry struct {
-	userID  string
+	value   string
 	expires time.Time
 }
 
@@ -105,6 +109,8 @@ type TelegramAlert struct {
 	// ChatIDs restricts the alert to these Telegram chats (test messages);
 	// nil = every active chat.
 	ChatIDs []int64
+	// Buttons: rows of inline buttons under the message.
+	Buttons [][]telegram.Button
 }
 
 const (
@@ -261,8 +267,14 @@ func (a *TelegramAlerts) Enqueue(ctx context.Context, alert TelegramAlert) (int,
 	now := a.now()
 	queued := 0
 	for _, c := range chats {
+		var buttons types.JSON
+		if len(alert.Buttons) > 0 {
+			raw, _ := json.Marshal(alert.Buttons)
+			buttons = types.JSON(raw)
+		}
 		msg := &types.TelegramAlertMessage{
-			ID: uuid.NewString(), ChatID: c.ChatID, Kind: alert.Kind, EventKey: alert.Key, Text: text,
+			Buttons: buttons,
+			ID:      uuid.NewString(), ChatID: c.ChatID, Kind: alert.Kind, EventKey: alert.Key, Text: text,
 			Silent: alert.Silent, Status: types.TelegramMessagePending, NextAttemptAt: now, CreatedAt: now,
 		}
 		// the same alert from two callers or instances: one row per chat
@@ -419,7 +431,7 @@ func (a *TelegramAlerts) sendDigest(ctx context.Context, n types.UserNotificatio
 	day := a.now().In(types.UsageLocation()).Format("20060102")
 	if _, err := a.Enqueue(run, TelegramAlert{
 		Kind: n.Kind, Key: "digest:" + n.Kind + ":" + day + ":" + hex.EncodeToString(sum[:8]),
-		Title: n.Title, Body: n.Body, Link: n.Link,
+		Title: n.Title, Body: n.Body, Link: n.Link, Buttons: a.digestButtons(n),
 	}); err != nil {
 		logger.Warnf(run, "[TelegramAlerts] relaying the %s digest: %v", n.Kind, err)
 	}
@@ -738,7 +750,11 @@ func (a *TelegramAlerts) SendBatch(ctx context.Context, c *telegram.Client) (int
 		if claim.RowsAffected == 0 {
 			continue
 		}
-		id, err := c.SendMessage(ctx, m.ChatID, m.Text, telegram.SendOptions{Silent: m.Silent})
+		var buttons [][]telegram.Button
+		if len(m.Buttons) > 0 {
+			_ = json.Unmarshal(m.Buttons, &buttons)
+		}
+		id, err := c.SendMessage(ctx, m.ChatID, m.Text, telegram.SendOptions{Silent: m.Silent, Buttons: buttons})
 		lastTo[m.ChatID] = time.Now()
 		if err == nil {
 			a.finish(ctx, m, types.TelegramMessageSent, "", &id)
@@ -1002,6 +1018,10 @@ func (a *TelegramAlerts) handleUpdate(ctx context.Context, c *telegram.Client, u
 			logger.Errorf(ctx, "[TelegramAlerts] handling update %d panicked: %v", u.UpdateID, r)
 		}
 	}()
+	if q := u.CallbackQuery; q != nil {
+		a.handleCallback(ctx, c, q)
+		return
+	}
 	if m := u.MyChatMember; m != nil {
 		if s := m.NewChatMember.Status; s == "left" || s == "kicked" {
 			a.disableChat(ctx, m.Chat.ID, "Bot đã bị chặn hoặc bị xóa khỏi chat")
@@ -1028,10 +1048,10 @@ func (a *TelegramAlerts) handleUpdate(ctx context.Context, c *telegram.Client, u
 				reply("Chat này đang nhận cảnh báo của WeRAG. Gõ /stop để ngừng nhận.")
 				return
 			}
-			reply("Bot này chỉ dành cho quản trị hệ thống WeRAG. Để nhận cảnh báo, SuperAdmin mở Quản trị hệ thống → Telegram, bấm \"Tạo mã liên kết\" rồi gửi /start <mã> tại đây.")
+			reply("Bot này chỉ dành cho quản trị hệ thống WeRAG. Để nhận cảnh báo, SuperAdmin mở Quản trị hệ thống → Telegram, bấm \"Liên kết Telegram của tôi\" (hoặc \"Liên kết nhóm hoặc người nhận khác\") rồi gửi /start <mã> tại đây.")
 			return
 		}
-		userID, ok := a.consumeLinkCode(ctx, arg)
+		userID, personal, ok := a.consumeLinkCode(ctx, arg)
 		if !ok {
 			reply("Mã liên kết không đúng hoặc đã hết hạn (mã dùng một lần trong 10 phút). Hãy tạo mã mới trong trang Quản trị hệ thống → Telegram.")
 			return
@@ -1041,7 +1061,11 @@ func (a *TelegramAlerts) handleUpdate(ctx context.Context, c *telegram.Client, u
 			reply("Tài khoản tạo mã không còn là SuperAdmin; chat này chưa được liên kết.")
 			return
 		}
-		if err := a.linkChat(ctx, m.Chat, userID); err != nil {
+		if personal && m.Chat.Type != "private" {
+			reply("Mã này là mã liên kết Telegram của riêng bạn, chỉ dùng trong chat riêng với bot, nên đã bị hủy. Hãy tạo mã mới; để thêm nhóm, dùng mã \"Liên kết nhóm hoặc người nhận khác\".")
+			return
+		}
+		if err := a.linkChat(ctx, m.Chat, userID, personal); err != nil {
 			logger.Warnf(ctx, "[TelegramAlerts] linking a chat: %v", err)
 			reply("Không liên kết được chat này, hãy thử lại sau.")
 			return
@@ -1050,7 +1074,11 @@ func (a *TelegramAlerts) handleUpdate(ctx context.Context, c *telegram.Client, u
 		if m.Chat.Type == "group" || m.Chat.Type == "supergroup" {
 			where = "nhóm này (mọi thành viên trong nhóm đều đọc được cảnh báo)"
 		}
-		reply("Đã liên kết " + where + " với WeRAG. Từ giờ bot gửi cảnh báo cho SuperAdmin tại đây: đơn thanh toán, hàng chờ duyệt, sự cố hệ thống. Gõ /stop để ngừng nhận.")
+		text := "Đã liên kết " + where + " với WeRAG. Từ giờ bot gửi cảnh báo cho SuperAdmin tại đây: đơn thanh toán, hàng chờ duyệt, sự cố hệ thống. Gõ /stop để ngừng nhận."
+		if personal {
+			text += "\n\nĐây là Telegram của chính bạn: bạn bấm được nút \"Đã nhận tiền\" / \"Hủy đơn\" trên tin đơn hàng, ở đây và trong các nhóm đã liên kết."
+		}
+		reply(text)
 	case "stop":
 		if !a.chatLinked(ctx, m.Chat.ID) {
 			reply("Chat này không nhận cảnh báo của WeRAG.")
@@ -1108,7 +1136,7 @@ func (a *TelegramAlerts) chatLinked(ctx context.Context, chatID int64) bool {
 	return n > 0
 }
 
-func (a *TelegramAlerts) linkChat(ctx context.Context, chat telegram.Chat, userID string) error {
+func (a *TelegramAlerts) linkChat(ctx context.Context, chat telegram.Chat, userID string, canAct bool) error {
 	title := chat.Name()
 	return a.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var cur types.TelegramAlertChat
@@ -1116,15 +1144,20 @@ func (a *TelegramAlerts) linkChat(ctx context.Context, chat telegram.Chat, userI
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return tx.Create(&types.TelegramAlertChat{
 				ID: uuid.NewString(), ChatID: chat.ID, ChatType: chat.Type, Title: title,
-				LinkedBy: userID, LinkedAt: a.now(),
+				LinkedBy: userID, LinkedAt: a.now(), CanAct: canAct,
 			}).Error
 		}
 		if err != nil {
 			return err
 		}
+		// an ordinary code from the same SuperAdmin keeps the right a
+		// personal code gave (a re-link, not a hand-over)
+		if !canAct && cur.CanAct && cur.LinkedBy == userID {
+			canAct = true
+		}
 		return tx.Model(&types.TelegramAlertChat{}).Where("id = ?", cur.ID).Updates(map[string]any{
 			"chat_type": chat.Type, "title": title, "linked_by": userID, "linked_at": a.now(),
-			"disabled_at": nil, "last_error": "",
+			"disabled_at": nil, "last_error": "", "can_act": canAct,
 		}).Error
 	})
 }
@@ -1175,8 +1208,10 @@ func newTelegramLinkCode() (string, error) {
 }
 
 // CreateLinkCode makes a one-time code (10 minutes) that links the chat it
-// is sent from to the bot on behalf of userID (a SuperAdmin).
-func (a *TelegramAlerts) CreateLinkCode(ctx context.Context, userID string) (*types.TelegramLinkCode, error) {
+// is sent from to the bot on behalf of userID (a SuperAdmin). A personal
+// code links that SuperAdmin's own Telegram account: private chat only, and
+// the chat may then confirm or cancel orders (the order buttons).
+func (a *TelegramAlerts) CreateLinkCode(ctx context.Context, userID string, personal bool) (*types.TelegramLinkCode, error) {
 	token := a.token(ctx)
 	if token == "" {
 		return nil, apperrors.NewBadRequestError("Chưa lưu token của bot Telegram.")
@@ -1194,29 +1229,27 @@ func (a *TelegramAlerts) CreateLinkCode(ctx context.Context, userID string) (*ty
 		return nil, err
 	}
 	expires := a.now().Add(telegramLinkCodeTTL)
-	key := telegramCodeHash(code)
-	if a.rdb != nil {
-		if err := a.rdb.Set(ctx, telegramLinkRedisKey+key, userID, telegramLinkCodeTTL).Err(); err != nil {
-			return nil, fmt.Errorf("saving the link code: %w", err)
-		}
-	} else {
-		a.mu.Lock()
-		for k, e := range a.codes {
-			if a.now().After(e.expires) {
-				delete(a.codes, k)
-			}
-		}
-		a.codes[key] = telegramLinkEntry{userID: userID, expires: expires}
-		a.mu.Unlock()
+	value := userID
+	if personal {
+		value += telegramPersonalSuffix
+	}
+	if err := a.putEphemeral(ctx, telegramLinkRedisKey+telegramCodeHash(code), value, telegramLinkCodeTTL); err != nil {
+		return nil, fmt.Errorf("saving the link code: %w", err)
 	}
 	bot := info.user.Username
-	return &types.TelegramLinkCode{
-		Code:        code,
+	out := &types.TelegramLinkCode{
+		Code: code, Personal: personal,
 		PrivateLink: "https://t.me/" + bot + "?start=" + code,
-		GroupLink:   "https://t.me/" + bot + "?startgroup=" + code,
 		ExpiresAt:   expires,
-	}, nil
+	}
+	if !personal {
+		out.GroupLink = "https://t.me/" + bot + "?startgroup=" + code
+	}
+	return out, nil
 }
+
+// telegramPersonalSuffix marks a personal link code's stored value.
+const telegramPersonalSuffix = "|personal"
 
 func errOr(err error) error {
 	if err == nil {
@@ -1225,15 +1258,56 @@ func errOr(err error) error {
 	return err
 }
 
-// consumeLinkCode returns the SuperAdmin of code and forgets it.
-func (a *TelegramAlerts) consumeLinkCode(ctx context.Context, code string) (string, bool) {
-	key := telegramCodeHash(code)
+// consumeLinkCode returns the SuperAdmin of code (and whether it is a
+// personal code) and forgets it.
+func (a *TelegramAlerts) consumeLinkCode(ctx context.Context, code string) (userID string, personal, ok bool) {
+	v, ok := a.takeEphemeral(ctx, telegramLinkRedisKey+telegramCodeHash(code))
+	if !ok || v == "" {
+		return "", false, false
+	}
+	userID, personal = strings.CutSuffix(v, telegramPersonalSuffix)
+	return userID, personal, userID != ""
+}
+
+// putEphemeral stores a short-lived value (link codes, order questions):
+// Redis when there is one, else this instance's memory.
+func (a *TelegramAlerts) putEphemeral(ctx context.Context, key, value string, ttl time.Duration) error {
 	if a.rdb != nil {
-		userID, err := a.rdb.GetDel(ctx, telegramLinkRedisKey+key).Result()
-		if err != nil || userID == "" {
-			return "", false
+		return a.rdb.Set(ctx, key, value, ttl).Err()
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	now := a.now()
+	for k, e := range a.codes {
+		if now.After(e.expires) {
+			delete(a.codes, k)
 		}
-		return userID, true
+	}
+	a.codes[key] = telegramLinkEntry{value: value, expires: now.Add(ttl)}
+	return nil
+}
+
+// peekEphemeral reads a value without consuming it.
+func (a *TelegramAlerts) peekEphemeral(ctx context.Context, key string) (string, bool) {
+	if a.rdb != nil {
+		v, err := a.rdb.Get(ctx, key).Result()
+		return v, err == nil
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	e, ok := a.codes[key]
+	if !ok || a.now().After(e.expires) {
+		return "", false
+	}
+	return e.value, true
+}
+
+// takeEphemeral reads a value and forgets it (once: concurrent takes get
+// it at most once).
+func (a *TelegramAlerts) takeEphemeral(ctx context.Context, key string) (string, bool) {
+	if a.rdb != nil {
+		v, err := a.rdb.GetDel(ctx, key).Result()
+		return v, err == nil && v != ""
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -1242,7 +1316,7 @@ func (a *TelegramAlerts) consumeLinkCode(ctx context.Context, code string) (stri
 	if !ok || a.now().After(e.expires) {
 		return "", false
 	}
-	return e.userID, true
+	return e.value, true
 }
 
 // ── the settings page ──

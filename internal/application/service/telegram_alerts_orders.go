@@ -1,0 +1,360 @@
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"regexp"
+
+	"strings"
+	"time"
+
+	"github.com/Tencent/WeKnora/internal/alerting/telegram"
+	apperrors "github.com/Tencent/WeKnora/internal/errors"
+	"github.com/Tencent/WeKnora/internal/logger"
+	"github.com/Tencent/WeKnora/internal/types"
+	"github.com/Tencent/WeKnora/internal/types/interfaces"
+)
+
+// Order buttons on the Telegram alerts: a SuperAdmin who checked the bank
+// account confirms a pending order as paid (or cancels it) from the alert.
+//
+// The press acts without a web session or 2FA, so it is guarded:
+//   - the presser must have linked their own Telegram account with a
+//     personal code (private chat, can_act) to an account that is still an
+//     active SuperAdmin; anyone else (a group member, a colleague who only
+//     receives alerts) is refused, also for "Thôi". The order records that
+//     SuperAdmin as its confirmer, and an audit row (billing.order_*_telegram)
+//     records the Telegram user and chat;
+//   - every action is asked again: the question carries a one-time nonce
+//     (10 minutes) bound to the presser, the chat and the question message,
+//     so "Chắc chắn" cannot be sent without the question, by someone else,
+//     or onto another message;
+//   - the press must come from a chat that still gets alerts.
+//
+// Callback data: "oc:<code>" / "ox:<code>" ask to confirm / cancel;
+// "ocy:<nonce>" / "oxy:<nonce>" do it, "no:<nonce>" dismisses the question.
+
+const (
+	tgActConfirmAsk = "oc"
+	tgActConfirm    = "ocy"
+	tgActCancelAsk  = "ox"
+	tgActCancel     = "oxy"
+	tgActDismiss    = "no"
+
+	telegramAskTTL      = 10 * time.Minute
+	telegramAskRedisKey = "telegram_alerts:ask:"
+)
+
+var (
+	telegramOrderCodeRe = regexp.MustCompile(`^[A-Z0-9]{4,24}$`)
+	telegramNonceRe     = regexp.MustCompile(`^[A-Z0-9]{10}$`)
+)
+
+// telegramAsk is a pending question: what it does, to which order, and the
+// one press it accepts (Telegram user, chat, question message).
+type telegramAsk struct {
+	Act  string `json:"act"`
+	Code string `json:"code"`
+	User int64  `json:"user"`
+	Chat int64  `json:"chat"`
+	Msg  int64  `json:"msg"`
+}
+
+// SetOrderActions lets the bot act on orders (the order buttons); without
+// it the alerts carry no buttons. Set at startup: the billing service is
+// decorated with the bot itself, so it cannot be a constructor argument.
+func (a *TelegramAlerts) SetOrderActions(orders interfaces.UsageBillingService, audit interfaces.AuditLogService) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.orders, a.audit = orders, audit
+}
+
+func (a *TelegramAlerts) orderService() interfaces.UsageBillingService {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.orders
+}
+
+// orderButtons is the button row of a pending order, nil when the bot
+// cannot act on orders.
+func (a *TelegramAlerts) orderButtons(code string) [][]telegram.Button {
+	if a == nil || code == "" || a.orderService() == nil {
+		return nil
+	}
+	return [][]telegram.Button{telegramOrderRow(code)}
+}
+
+func telegramOrderRow(code string) []telegram.Button {
+	return []telegram.Button{
+		{Text: "✅ Đã nhận tiền " + code, Data: tgActConfirmAsk + ":" + code},
+		{Text: "✖ Hủy đơn", Data: tgActCancelAsk + ":" + code},
+	}
+}
+
+// digestButtons: the new-orders digest gets one row per order it names.
+func (a *TelegramAlerts) digestButtons(n types.UserNotification) [][]telegram.Button {
+	if n.Kind != types.UserNotificationPaymentOrderPending || a.orderService() == nil || len(n.Payload) == 0 {
+		return nil
+	}
+	var p types.UserNotificationQueuePayload
+	if json.Unmarshal(n.Payload, &p) != nil {
+		return nil
+	}
+	var rows [][]telegram.Button
+	for _, it := range p.Items {
+		if it.Untitled || it.Ref == "" {
+			continue
+		}
+		rows = append(rows, telegramOrderRow(it.Ref))
+	}
+	return rows
+}
+
+// telegramSuperAdmin is the SuperAdmin a Telegram user acts as: the
+// account whose personal code linked that user's private chat with the bot
+// (can_act), while it is an active SuperAdmin. nil when none.
+func (a *TelegramAlerts) telegramSuperAdmin(ctx context.Context, telegramUserID int64) (*types.User, error) {
+	var chats []types.TelegramAlertChat
+	if err := a.db.WithContext(ctx).
+		Where("chat_id = ? AND chat_type = ? AND disabled_at IS NULL AND can_act = ?", telegramUserID, "private", true).
+		Limit(1).Find(&chats).Error; err != nil {
+		return nil, err
+	}
+	if len(chats) == 0 {
+		return nil, nil
+	}
+	admins, err := a.superAdmins(ctx)
+	if err != nil || !admins[chats[0].LinkedBy] {
+		return nil, err
+	}
+	u, err := a.users.GetUserByID(ctx, chats[0].LinkedBy)
+	if err != nil || u == nil {
+		return nil, err
+	}
+	return u, nil
+}
+
+func telegramUserName(u *types.User) string {
+	if u == nil {
+		return ""
+	}
+	if u.Username != "" {
+		return u.Username
+	}
+	return u.Email
+}
+
+// handleCallback serves a press on an order button.
+func (a *TelegramAlerts) handleCallback(ctx context.Context, c *telegram.Client, q *telegram.CallbackQuery) {
+	answer := func(text string, alert bool) {
+		if err := c.AnswerCallback(ctx, q.ID, telegram.CutTextTo(text, 200), alert); err != nil {
+			logger.Warnf(ctx, "[TelegramAlerts] answering a button press: %v", err)
+		}
+	}
+	if q.Message == nil {
+		answer("", false)
+		return
+	}
+	chatID, msgID := q.Message.Chat.ID, q.Message.MessageID
+	act, arg, _ := strings.Cut(q.Data, ":")
+	valid := false
+	switch act {
+	case tgActConfirmAsk, tgActCancelAsk:
+		valid = telegramOrderCodeRe.MatchString(arg)
+	case tgActConfirm, tgActCancel, tgActDismiss:
+		valid = telegramNonceRe.MatchString(arg)
+	}
+	if !valid {
+		answer("", false)
+		return
+	}
+	orders := a.orderService()
+	if orders == nil {
+		answer("Bot chưa sẵn sàng xử lý đơn hàng.", true)
+		return
+	}
+	if !a.chatLinked(ctx, chatID) {
+		answer("Chat này không còn nhận cảnh báo của WeRAG.", true)
+		return
+	}
+	admin, err := a.telegramSuperAdmin(ctx, q.From.ID)
+	if err != nil {
+		logger.Warnf(ctx, "[TelegramAlerts] who pressed: %v", err)
+		answer("Không kiểm tra được quyền, hãy thử lại.", true)
+		return
+	}
+	if admin == nil {
+		logger.Warnf(ctx, "[TelegramAlerts] order button %q refused: Telegram user %d in chat %d is not a linked SuperAdmin",
+			act, q.From.ID, chatID)
+		answer("Chỉ SuperAdmin đã liên kết Telegram của chính mình (mã \"Liên kết Telegram của tôi\") mới xử lý được đơn.", true)
+		return
+	}
+	name := telegramUserName(admin)
+	if act == tgActConfirmAsk || act == tgActCancelAsk {
+		a.askOrder(ctx, c, q, orders, act, arg, name, answer)
+		return
+	}
+
+	// the second press: the question's nonce, for this presser, chat and message
+	key := telegramAskRedisKey + arg
+	raw, ok := a.peekEphemeral(ctx, key)
+	var ask telegramAsk
+	if !ok || json.Unmarshal([]byte(raw), &ask) != nil {
+		answer("Câu hỏi này đã hết hạn hoặc đã được trả lời. Hãy bấm lại nút trên tin đơn hàng.", true)
+		return
+	}
+	if ask.User != q.From.ID || ask.Chat != chatID || ask.Msg != msgID {
+		answer("Câu hỏi này là của người khác. Hãy bấm nút trên tin đơn hàng để tự xác nhận.", true)
+		return
+	}
+	if _, ok := a.takeEphemeral(ctx, key); !ok { // answered meanwhile
+		answer("Câu hỏi này đã được trả lời.", true)
+		return
+	}
+	edit := func(text string) {
+		if err := c.EditMessage(ctx, chatID, msgID, text, nil); err != nil {
+			logger.Warnf(ctx, "[TelegramAlerts] editing a question: %v", err)
+		}
+	}
+	code := ask.Code
+	if act == tgActDismiss {
+		edit(fmt.Sprintf("Đã bỏ qua, đơn %s giữ nguyên.", code))
+		answer("", false)
+		return
+	}
+	if (act == tgActConfirm) != (ask.Act == tgActConfirmAsk) {
+		answer("", false)
+		return
+	}
+	// the question is spent: a failure below says so on it (no dead buttons)
+	failed := func(text string) {
+		edit(text + " Hãy bấm lại nút trên tin đơn hàng.")
+		answer(text, true)
+	}
+	o, err := orders.GetOrderByCode(ctx, code)
+	if err != nil || o == nil || o.UsageOrder == nil {
+		failed("Không tìm thấy đơn " + code + ".")
+		return
+	}
+	if o.Status != types.UsageOrderPending {
+		state := fmt.Sprintf("Đơn %s %s.", code, telegramOrderStatusVN(o.Status))
+		edit(state)
+		answer(state, true)
+		return
+	}
+	switch act {
+	case tgActConfirm:
+		if _, err := orders.ConfirmOrder(ctx, o.ID, admin.ID); err != nil {
+			logger.Warnf(ctx, "[TelegramAlerts] confirming order %s for %s: %v", code, admin.ID, err)
+			failed("Không xác nhận được đơn " + code + " (lỗi tạm thời hoặc đơn vừa thay đổi).")
+			return
+		}
+		a.auditOrder(ctx, types.AuditActionOrderConfirmedTelegram, admin, o, q)
+		edit(fmt.Sprintf("✅ Đơn %s đã được %s xác nhận đã thanh toán lúc %s (trên Telegram).", code, name, formatDateTimeVN(a.now())))
+		answer("Đã xác nhận đơn "+code+".", false)
+	case tgActCancel:
+		if _, err := orders.CancelOrder(ctx, o.ID, false); err != nil {
+			logger.Warnf(ctx, "[TelegramAlerts] cancelling order %s for %s: %v", code, admin.ID, err)
+			if telegramPaymentReceived(err) {
+				msg := "Đơn " + code + " đã nhận tiền nên không hủy được. Hãy xử lý trên trang Thanh toán."
+				edit(msg)
+				answer(msg, true)
+				return
+			}
+			failed("Không hủy được đơn " + code + " (lỗi tạm thời hoặc đơn vừa thay đổi).")
+			return
+		}
+		a.auditOrder(ctx, types.AuditActionOrderCancelledTelegram, admin, o, q)
+		edit(fmt.Sprintf("✖ Đơn %s đã được %s hủy lúc %s (trên Telegram).", code, name, formatDateTimeVN(a.now())))
+		answer("Đã hủy đơn "+code+".", false)
+	}
+}
+
+// askOrder sends the question of a confirm / cancel press, with a one-time
+// nonce bound to the presser, the chat and the question message.
+func (a *TelegramAlerts) askOrder(ctx context.Context, c *telegram.Client, q *telegram.CallbackQuery,
+	orders interfaces.UsageBillingService, act, code, name string, answer func(string, bool),
+) {
+	chatID := q.Message.Chat.ID
+	o, err := orders.GetOrderByCode(ctx, code)
+	if err != nil || o == nil || o.UsageOrder == nil {
+		answer("Không tìm thấy đơn "+code+".", true)
+		return
+	}
+	if o.Status != types.UsageOrderPending {
+		answer(fmt.Sprintf("Đơn %s %s.", code, telegramOrderStatusVN(o.Status)), true)
+		return
+	}
+	nonce, err := newTelegramLinkCode()
+	if err != nil {
+		answer("Không tạo được câu hỏi xác nhận, hãy thử lại.", true)
+		return
+	}
+	lines := []string{}
+	if o.ReceivedVND > 0 {
+		lines = append(lines, fmt.Sprintf("Đã nhận qua chuyển khoản: %s / %s", formatVND(o.ReceivedVND), formatVND(o.TotalVND)))
+	}
+	question, yes, yesAct := fmt.Sprintf("Xác nhận đơn %s đã nhận đủ tiền?", code), "✅ Chắc chắn, đã nhận tiền", tgActConfirm
+	if act == tgActCancelAsk {
+		question, yes, yesAct = fmt.Sprintf("Hủy đơn %s?", code), "✖ Hủy đơn này", tgActCancel
+	}
+	text := question + "\n" + telegramOrderLines(o, lines...) + "\nNgười bấm: " + name +
+		"\n(Chỉ người bấm trả lời được, trong 10 phút.)"
+	msgID, err := c.SendMessage(ctx, chatID, text, telegram.SendOptions{
+		ReplyTo: q.Message.MessageID,
+		Buttons: [][]telegram.Button{{
+			{Text: yes, Data: yesAct + ":" + nonce},
+			{Text: "Thôi", Data: tgActDismiss + ":" + nonce},
+		}},
+	})
+	if err != nil {
+		logger.Warnf(ctx, "[TelegramAlerts] asking about order %s: %v", code, err)
+		answer("Không gửi được câu hỏi xác nhận, hãy thử lại.", true)
+		return
+	}
+	raw, _ := json.Marshal(telegramAsk{Act: act, Code: code, User: q.From.ID, Chat: chatID, Msg: msgID})
+	if err := a.putEphemeral(ctx, telegramAskRedisKey+nonce, string(raw), telegramAskTTL); err != nil {
+		logger.Warnf(ctx, "[TelegramAlerts] saving the question about order %s: %v", code, err)
+		_ = c.EditMessage(ctx, chatID, msgID, "Không lưu được câu hỏi xác nhận đơn "+code+", hãy bấm lại.", nil)
+		answer("", false)
+		return
+	}
+	answer("", false)
+}
+
+// telegramPaymentReceived: the billing service refused to cancel because the
+// order holds money.
+func telegramPaymentReceived(err error) bool {
+	var app *apperrors.AppError
+	if !errors.As(err, &app) {
+		return false
+	}
+	d, ok := app.Details.(map[string]interface{})
+	return ok && d["reason"] == "payment_received"
+}
+
+func (a *TelegramAlerts) auditOrder(ctx context.Context, action types.AuditAction, admin *types.User,
+	o *types.UsageOrderView, q *telegram.CallbackQuery,
+) {
+	logger.Infof(ctx, "[TelegramAlerts] %s: order %s by %s (telegram user %d)", action, o.OrderCode, admin.ID, q.From.ID)
+	a.mu.Lock()
+	audit := a.audit
+	a.mu.Unlock()
+	if audit == nil {
+		return
+	}
+	details, _ := json.Marshal(map[string]any{
+		"order_code": o.OrderCode, "total_vnd": o.TotalVND,
+		"telegram_user_id": q.From.ID, "chat_id": q.Message.Chat.ID,
+	})
+	if err := audit.Log(ctx, &types.AuditLog{
+		TenantID: types.PlatformTenantID, ActorUserID: admin.ID, ActorRole: "system_admin",
+		Action: action, ScopeType: "billing", ScopeID: o.ScopeID,
+		TargetType: "usage_order", TargetID: o.ID, Outcome: types.AuditOutcomeSuccess,
+		Details: types.JSON(details),
+	}); err != nil {
+		logger.Warnf(ctx, "[TelegramAlerts] audit of %s: %v", o.OrderCode, err)
+	}
+}
