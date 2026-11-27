@@ -127,8 +127,16 @@ func TestLegalLookupIsTenantOptional(t *testing.T) {
 	if !isTenantOptionalAPI("/api/v1/legal-lookup", http.MethodGet) {
 		t.Fatal("GET /legal-lookup must be reachable without an organization (Guests)")
 	}
-	if isTenantOptionalAPI("/api/v1/legal-lookup", http.MethodPost) || isTenantOptionalAPI("/api/v1/legal-lookup/x", http.MethodGet) {
-		t.Fatal("only GET /legal-lookup is tenant-optional")
+	if !isTenantOptionalAPI("/api/v1/legal-lookup/suggest", http.MethodGet) {
+		t.Fatal("GET /legal-lookup/suggest (type-ahead) must be reachable without an organization (Guests)")
+	}
+	if !isTenantOptionalAPI("/api/v1/legal-graph/explore", http.MethodGet) {
+		t.Fatal("GET /legal-graph/explore (catalogue map of a lookup result) must be reachable without an organization (Guests)")
+	}
+	if isTenantOptionalAPI("/api/v1/legal-lookup", http.MethodPost) || isTenantOptionalAPI("/api/v1/legal-lookup/x", http.MethodGet) ||
+		isTenantOptionalAPI("/api/v1/legal-lookup/suggest", http.MethodPost) ||
+		isTenantOptionalAPI("/api/v1/legal-graph/explore", http.MethodPost) || isTenantOptionalAPI("/api/v1/legal-graph/explore/x", http.MethodGet) {
+		t.Fatal("only GET /legal-lookup, GET /legal-lookup/suggest and GET /legal-graph/explore are tenant-optional")
 	}
 }
 
