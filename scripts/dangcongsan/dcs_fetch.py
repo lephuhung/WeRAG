@@ -40,6 +40,7 @@ SITES = {
 }
 UA = "Mozilla/5.0 (X11; Linux x86_64) WeRAG-legal-catalogue/1.0"
 MAX_FILE = 60 << 20
+LISTING_COLUMNS = {"number": "Số hiệu", "title": "Trích yếu", "issued": "Ngày ban hành"}
 META_FIELDS = {
     "Trích yếu": "summary",
     "Số hiệu": "number",
@@ -147,19 +148,33 @@ def parse_listing(html: str) -> list[dict]:
     table = s.select_one(".list-legal-document-table table")
     if table is None or table.find("tbody") is None:
         return []
+    # columns are found by their header, not their position: tulieu added a
+    # leading "STT" column on 2026-11-25 and the positional read lost every row
+    col = {"number": 0, "title": 1, "issued": 2}
+    heads = [clean(th.get_text(" ")) for th in table.select("thead th")]
+    if heads:
+        found = {}
+        for i, h in enumerate(heads):
+            for key, label in LISTING_COLUMNS.items():
+                if h == label and key not in found:
+                    found[key] = i
+        if len(found) < len(LISTING_COLUMNS):
+            return []  # a layout we do not know: fail the run, do not guess
+        col = found
+    need = max(col.values()) + 1
     rows = []
     for tr in table.find("tbody").find_all("tr", recursive=False):
         tds = tr.find_all("td", recursive=False)
-        if len(tds) < 3:
+        if len(tds) < need:
             continue
-        a = tds[1].find("a", href=True)
+        a = tds[col["title"]].find("a", href=True)
         if a is None:
             continue
         rows.append({
-            "number": clean(tds[0].get_text(" ")),
+            "number": clean(tds[col["number"]].get_text(" ")),
             "href": a["href"],
             "title": clean(a.get_text(" ")),
-            "issued": clean(tds[2].get_text()),
+            "issued": clean(tds[col["issued"]].get_text()),
         })
     return rows
 

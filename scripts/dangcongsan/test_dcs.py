@@ -71,6 +71,27 @@ class Html(unittest.TestCase):
         self.assertNotIn("prov-", plain)
 
 
+class Listing(unittest.TestCase):
+    ROW = ('<tr>{stt}<td>128-KL/TW</td><td><a href="/van-ban/kl-128.html"><p>Về Vân Phong</p></a></td>'
+           '<td>20/11/2026</td><td>20/11/2026</td><td></td></tr>')
+    HEAD = '<th>Số hiệu</th><th>Trích yếu</th><th>Ngày ban hành</th><th>Ngày hiệu lực</th><th>Tập tin</th>'
+
+    def page(self, head, row):
+        return ('<div class="list-legal-document-table"><table><thead><tr>' + head + '</tr></thead><tbody>'
+                + row + '</tbody></table></div>')
+
+    def test_columns_by_header(self):
+        want = [{"number": "128-KL/TW", "href": "/van-ban/kl-128.html", "title": "Về Vân Phong", "issued": "20/11/2026"}]
+        self.assertEqual(f.parse_listing(self.page(self.HEAD, self.ROW.format(stt=""))), want)
+        # tulieu added a leading STT column on 2026-11-25
+        stt = self.page("<th>STT</th>" + self.HEAD, self.ROW.format(stt="<td>1</td>"))
+        self.assertEqual(f.parse_listing(stt), want)
+
+    def test_unknown_layout_gives_no_rows(self):
+        head = self.HEAD.replace("Số hiệu", "Ký hiệu")
+        self.assertEqual(f.parse_listing(self.page(head, self.ROW.format(stt=""))), [])
+
+
 class Fetch(unittest.TestCase):
     def test_quote(self):
         self.assertEqual(f.quote_url("https://h/upload/QĐ 1.pdf"), "https://h/upload/Q%C4%90%201.pdf")
