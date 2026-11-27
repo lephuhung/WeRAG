@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -766,6 +767,7 @@ func (a *TelegramAlerts) SendBatch(ctx context.Context, c *telegram.Client) (int
 		lastTo[m.ChatID] = time.Now()
 		if err == nil {
 			a.finish(ctx, m, types.TelegramMessageSent, "", &id)
+			a.catchUpSent(ctx, c, m, id)
 			sent++
 			continue
 		}
@@ -777,6 +779,29 @@ func (a *TelegramAlerts) SendBatch(ctx context.Context, c *telegram.Client) (int
 		a.failed(ctx, m, err)
 	}
 	return sent, nil
+}
+
+// catchUpSent edits a message just sent when its row changed meanwhile: an
+// order decided while the message was on its way had its buttons taken off
+// the row only (it had no message id yet), so the sent copy still shows
+// them. Read after finish: a close that runs later sees the message id and
+// edits it itself; one that ran before (or held the row lock) is seen here.
+func (a *TelegramAlerts) catchUpSent(ctx context.Context, c *telegram.Client, m *types.TelegramAlertMessage, msgID int64) {
+	var cur types.TelegramAlertMessage
+	if err := a.db.WithContext(ctx).Select("text", "buttons").Where("id = ?", m.ID).Take(&cur).Error; err != nil {
+		logger.Warnf(ctx, "[TelegramAlerts] re-reading message %s: %v", m.ID, err)
+		return
+	}
+	var was, now [][]telegram.Button
+	_ = json.Unmarshal(m.Buttons, &was)
+	_ = json.Unmarshal(cur.Buttons, &now)
+	if cur.Text == m.Text && reflect.DeepEqual(was, now) {
+		return
+	}
+	err := c.EditMessageHTML(ctx, m.ChatID, msgID, cur.Text, now)
+	if api := telegram.AsAPIError(err); err != nil && !(api != nil && (api.ChatGone() || telegramNothingToEdit(api.Description))) {
+		logger.Warnf(ctx, "[TelegramAlerts] updating message %s sent while it changed: %v", m.ID, err)
+	}
 }
 
 func (a *TelegramAlerts) finish(ctx context.Context, m *types.TelegramAlertMessage, status, reason string, msgID *int64) {

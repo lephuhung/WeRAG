@@ -31,8 +31,11 @@ type fakeBot struct {
 	calls   []fakeBotCall
 	updates []telegram.Update
 	refuse  func(chatID int64) (int, string, map[string]any)
-	nextID  int64
-	srv     *httptest.Server
+	// beforeSend runs as a sendMessage arrives, before it is answered (the
+	// message is on its way: something may change its row meanwhile)
+	beforeSend func(chatID int64)
+	nextID     int64
+	srv        *httptest.Server
 }
 
 type fakeBotCall struct {
@@ -52,6 +55,9 @@ func newFakeBot(t *testing.T) *fakeBot {
 		method := strings.TrimPrefix(r.URL.Path, prefix)
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		if hook := b.beforeSendHook(); hook != nil && method == "sendMessage" {
+			hook(int64(body["chat_id"].(float64)))
+		}
 		b.mu.Lock()
 		b.calls = append(b.calls, fakeBotCall{Method: method, Body: body})
 		write := func(v any) {
@@ -92,6 +98,12 @@ func newFakeBot(t *testing.T) *fakeBot {
 	return b
 }
 
+func (b *fakeBot) beforeSendHook() func(int64) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.beforeSend
+}
+
 func (b *fakeBot) sent() []fakeBotCall {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -124,6 +136,13 @@ func newTelegramEnv(t *testing.T) *telegramEnv {
 	db, err := gorm.Open(sqlite.Open("file:"+uuid.NewString()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&types.TelegramAlertChat{}, &types.TelegramAlertMessage{}))
+	// one connection: writes from the background work (an alert queued while
+	// another one's buttons close) wait for each other as rows do on
+	// Postgres; several connections to a shared-cache memory database fail
+	// at once with "database table is locked" instead
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
 	settings := &mailSettings{values: map[string]any{
 		types.TelegramAlertsEnabledSettingKey:  true,
 		types.TelegramAlertsBotTokenSettingKey: testBotToken,

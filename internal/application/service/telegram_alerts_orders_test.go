@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -476,4 +477,45 @@ func TestTelegramAppendLineNeverBreaksHTML(t *testing.T) {
 		require.False(t, strings.HasSuffix(head, "&") || strings.HasSuffix(head, "&am"), head[len(head)-10:])
 		require.Equal(t, strings.Count(head, "&"), strings.Count(head, ";"))
 	}
+}
+
+// An order decided while its alert is on its way: the close finds the row
+// still pending (no message id) and changes the row only; the sender sees
+// the change once the message is sent and edits it, so no copy keeps the
+// decided order's buttons.
+func TestTelegramOrderDecidedWhileAlertIsSent(t *testing.T) {
+	e, _, _ := newButtonEnv(t)
+	ctx := context.Background()
+	payload, _ := json.Marshal(types.UserNotificationQueuePayload{Count: 2, Items: []types.UserNotificationQueueItem{
+		{Ref: "WRAA000001"}, {Ref: "WRBB000002"},
+	}})
+	e.alerts.sendDigest(ctx, types.UserNotification{Kind: types.UserNotificationPaymentOrderPending,
+		Title: "Có 2 đơn hàng mới chờ xác nhận thanh toán", Payload: types.JSON(payload)})
+	var once sync.Once
+	e.bot.mu.Lock()
+	e.bot.beforeSend = func(int64) {
+		once.Do(func() { require.NoError(t, e.alerts.closeOrderButtons(ctx, "WRAA000001", "✅ đã thanh toán")) })
+	}
+	e.bot.mu.Unlock()
+
+	n, err := e.alerts.SendBatch(ctx, e.client)
+	require.NoError(t, err)
+	require.Equal(t, 2, n)
+	edits := e.bot.callsOf("editMessageText")
+	require.Len(t, edits, 2, "both copies were sent with the old buttons and are edited")
+	for _, ed := range edits {
+		require.Equal(t, "HTML", ed.Body["parse_mode"])
+		require.Contains(t, ed.Body["text"], "— WRAA000001: ✅ đã thanh toán")
+		rows := ed.Body["reply_markup"].(map[string]any)["inline_keyboard"].([]any)
+		require.Len(t, rows, 1)
+		require.Equal(t, "oc:WRBB000002", rows[0].([]any)[0].(map[string]any)["callback_data"])
+	}
+
+	// nothing changed during a send: no edit
+	before := len(e.bot.callsOf("editMessageText"))
+	_, err = e.alerts.Enqueue(ctx, TelegramAlert{Kind: types.TelegramAlertOrderPaid, Key: "plain", Title: "x"})
+	require.NoError(t, err)
+	_, err = e.alerts.SendBatch(ctx, e.client)
+	require.NoError(t, err)
+	require.Len(t, e.bot.callsOf("editMessageText"), before)
 }
