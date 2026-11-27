@@ -165,6 +165,9 @@ type SendOptions struct {
 	Buttons [][]Button
 	// ReplyTo answers that message of the chat (0 = none).
 	ReplyTo int64
+	// HTML sends text in parse mode HTML (made with EscapeHTML and Link):
+	// a link shows as its label, not as a bare URL.
+	HTML bool
 }
 
 func keyboard(rows [][]Button) map[string]any {
@@ -183,13 +186,17 @@ func (c *Client) GetMe(ctx context.Context) (*User, error) {
 	return &u, nil
 }
 
-// SendMessage sends plain text (no parse mode: alert text needs no
-// escaping) and returns the message id.
+// SendMessage sends text, plain unless opt.HTML, and returns the message
+// id.
 func (c *Client) SendMessage(ctx context.Context, chatID int64, text string, opt SendOptions) (int64, error) {
 	body := map[string]any{
 		"chat_id":                  chatID,
 		"text":                     CutText(text),
 		"disable_web_page_preview": true,
+	}
+	if opt.HTML {
+		body["text"] = CutHTML(text, MaxTextRunes)
+		body["parse_mode"] = "HTML"
 	}
 	if opt.Silent {
 		body["disable_notification"] = true
@@ -217,13 +224,26 @@ func (c *Client) GetUpdates(ctx context.Context, offset int64, timeout int) ([]U
 	return ups, err
 }
 
-// EditMessage replaces the text and the buttons of a message (nil buttons
-// = none).
+// EditMessage replaces the text (plain) and the buttons of a message (nil
+// buttons = none).
 func (c *Client) EditMessage(ctx context.Context, chatID, messageID int64, text string, buttons [][]Button) error {
-	return c.call(ctx, "editMessageText", map[string]any{
-		"chat_id": chatID, "message_id": messageID, "text": CutText(text),
+	return c.editMessage(ctx, chatID, messageID, CutText(text), "", buttons)
+}
+
+// EditMessageHTML is EditMessage with text in parse mode HTML.
+func (c *Client) EditMessageHTML(ctx context.Context, chatID, messageID int64, text string, buttons [][]Button) error {
+	return c.editMessage(ctx, chatID, messageID, CutHTML(text, MaxTextRunes), "HTML", buttons)
+}
+
+func (c *Client) editMessage(ctx context.Context, chatID, messageID int64, text, parseMode string, buttons [][]Button) error {
+	body := map[string]any{
+		"chat_id": chatID, "message_id": messageID, "text": text,
 		"disable_web_page_preview": true, "reply_markup": keyboard(buttons),
-	}, nil)
+	}
+	if parseMode != "" {
+		body["parse_mode"] = parseMode
+	}
+	return c.call(ctx, "editMessageText", body, nil)
 }
 
 // AnswerCallback ends the spinner of a button press; text is shown as a
@@ -259,6 +279,40 @@ func CutTextTo(text string, n int) string {
 		return text
 	}
 	return string(r[:n-1]) + "…"
+}
+
+var (
+	htmlText = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;")
+	htmlAttr = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;")
+)
+
+// EscapeHTML makes s safe as text of a parse-mode HTML message.
+func EscapeHTML(s string) string { return htmlText.Replace(s) }
+
+// Link is an HTML link: label shows, href opens (both escaped here).
+func Link(href, label string) string {
+	return `<a href="` + htmlAttr.Replace(href) + `">` + EscapeHTML(label) + `</a>`
+}
+
+// CutHTML bounds HTML text (made with EscapeHTML and Link) to n
+// characters without breaking it: a cut never ends inside a tag or an
+// entity, and a link cut through is left out whole.
+func CutHTML(text string, n int) string {
+	r := []rune(text)
+	if len(r) <= n {
+		return text
+	}
+	cut := string(r[:n-1])
+	if lt := strings.LastIndex(cut, "<"); lt > strings.LastIndex(cut, ">") {
+		cut = cut[:lt] // inside a tag
+	}
+	if amp := strings.LastIndex(cut, "&"); amp > strings.LastIndex(cut, ";") {
+		cut = cut[:amp] // inside an entity
+	}
+	if open := strings.LastIndex(cut, "<a "); open >= 0 && !strings.Contains(cut[open:], "</a>") {
+		cut = cut[:open] // a link without its end
+	}
+	return cut + "…"
 }
 
 func (c *Client) call(ctx context.Context, method string, body any, result any) error {

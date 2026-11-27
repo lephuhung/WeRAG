@@ -461,3 +461,19 @@ func TestTelegramAppendLineKeepsTheLine(t *testing.T) {
 	require.LessOrEqual(t, len([]rune(out)), telegram.MaxTextRunes)
 	require.True(t, strings.HasSuffix(out, "\n— WR1: ✅"))
 }
+
+func TestTelegramAppendLineNeverBreaksHTML(t *testing.T) {
+	link := `<a href="https://ai.example.vn/x">🔗 Xem chi tiết</a>`
+	for _, body := range []string{
+		strings.Repeat("a", telegram.MaxTextRunes-30) + "\n\n" + link, // the cut lands in the link
+		strings.Repeat("&amp;", telegram.MaxTextRunes/5+1),            // and in an entity
+	} {
+		out := telegramAppendLine(body, "— WR1: ✅")
+		require.LessOrEqual(t, len([]rune(out)), telegram.MaxTextRunes)
+		require.True(t, strings.HasSuffix(out, "…\n— WR1: ✅"))
+		head := strings.TrimSuffix(out, "…\n— WR1: ✅")
+		require.NotContains(t, head, "<a ", "a link cut through is left out")
+		require.False(t, strings.HasSuffix(head, "&") || strings.HasSuffix(head, "&am"), head[len(head)-10:])
+		require.Equal(t, strings.Count(head, "&"), strings.Count(head, ";"))
+	}
+}

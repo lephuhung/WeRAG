@@ -452,7 +452,7 @@ func (a *TelegramAlerts) closeOneMessage(ctx context.Context, token, id, code, s
 		if len(kept) == len(rows) {
 			return nil // closed meanwhile
 		}
-		text := telegramAppendLine(m.Text, "— "+code+": "+state)
+		text := telegramAppendLine(m.Text, telegram.EscapeHTML("— "+code+": "+state))
 		if m.Status == types.TelegramMessageSent && m.MessageID != nil && token != "" {
 			if err := a.editWithRetry(ctx, token, m.ChatID, *m.MessageID, text, kept); err != nil {
 				return err
@@ -473,7 +473,7 @@ func (a *TelegramAlerts) closeOneMessage(ctx context.Context, token, id, code, s
 func (a *TelegramAlerts) editWithRetry(ctx context.Context, token string, chatID, msgID int64, text string, rows [][]telegram.Button) error {
 	c := a.client(token)
 	for attempt := 0; ; attempt++ {
-		err := c.EditMessage(ctx, chatID, msgID, text, rows)
+		err := c.EditMessageHTML(ctx, chatID, msgID, text, rows)
 		api := telegram.AsAPIError(err)
 		switch {
 		case err == nil:
@@ -494,14 +494,11 @@ func telegramNothingToEdit(description string) bool {
 		strings.Contains(d, "message can't be edited")
 }
 
-// telegramAppendLine adds line under text, cutting the body (not the new
-// line) when the message would be too long.
+// telegramAppendLine adds line under text (both HTML), cutting the body
+// (not the new line) when the message would be too long.
 func telegramAppendLine(text, line string) string {
 	room := telegram.MaxTextRunes - len([]rune(line)) - 2
-	if body := []rune(text); len(body) > room {
-		text = string(body[:room-1]) + "…"
-	}
-	return text + "\n" + line
+	return telegram.CutHTML(text, room) + "\n" + line
 }
 
 // telegramRowOf: the button row belongs to order code.

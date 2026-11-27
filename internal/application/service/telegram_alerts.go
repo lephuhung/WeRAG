@@ -294,7 +294,13 @@ func (a *TelegramAlerts) Enqueue(ctx context.Context, alert TelegramAlert) (int,
 	return queued, nil
 }
 
-// render makes the plain text of alert.
+// telegramLinkLabel is the text of an alert's link to its page (the URL
+// itself is long and only clutters the message).
+const telegramLinkLabel = "🔗 Xem chi tiết"
+
+// render makes the text of alert in parse mode HTML (every alert in the
+// outbox is HTML): title and body escaped, the page link as a labelled
+// link. A long text is cut before the link, so the link is never cut off.
 func (a *TelegramAlerts) render(alert TelegramAlert) string {
 	var b strings.Builder
 	b.WriteString(telegramAlertIcon(alert))
@@ -304,13 +310,13 @@ func (a *TelegramAlerts) render(alert TelegramAlert) string {
 		b.WriteString("\n")
 		b.WriteString(body)
 	}
+	link := ""
 	if alert.Link != "" {
 		if base := a.baseURL(); base != "" {
-			b.WriteString("\n\n")
-			b.WriteString(base + alert.Link)
+			link = "\n\n" + telegram.Link(base+alert.Link, telegramLinkLabel)
 		}
 	}
-	return telegram.CutText(b.String())
+	return telegram.CutHTML(telegram.EscapeHTML(b.String()), telegram.MaxTextRunes-len([]rune(link))) + link
 }
 
 func telegramAlertIcon(alert TelegramAlert) string {
@@ -756,7 +762,7 @@ func (a *TelegramAlerts) SendBatch(ctx context.Context, c *telegram.Client) (int
 		if len(m.Buttons) > 0 {
 			_ = json.Unmarshal(m.Buttons, &buttons)
 		}
-		id, err := c.SendMessage(ctx, m.ChatID, m.Text, telegram.SendOptions{Silent: m.Silent, Buttons: buttons})
+		id, err := c.SendMessage(ctx, m.ChatID, m.Text, telegram.SendOptions{Silent: m.Silent, Buttons: buttons, HTML: true})
 		lastTo[m.ChatID] = time.Now()
 		if err == nil {
 			a.finish(ctx, m, types.TelegramMessageSent, "", &id)
@@ -1429,6 +1435,7 @@ func (a *TelegramAlerts) SendTest(ctx context.Context, user *types.User) (int, e
 	n, err := a.Enqueue(ctx, TelegramAlert{
 		Kind: types.TelegramAlertTest, Key: "test:" + uuid.NewString(),
 		Title: "Tin thử từ WeRAG", Body: "SuperAdmin " + who + " vừa gửi tin thử lúc " + formatDateTimeVN(a.now()) + ". Bot cảnh báo đang hoạt động.",
+		Link: "/platform/admin?section=notifications&tab=telegram",
 	})
 	if err != nil {
 		return 0, err

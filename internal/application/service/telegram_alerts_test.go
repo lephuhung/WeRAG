@@ -172,7 +172,8 @@ func TestTelegramEnqueueOnlyActiveSuperAdminChats(t *testing.T) {
 	msgs := e.messages(t)
 	require.Len(t, msgs, 1)
 	require.Equal(t, int64(1001), msgs[0].ChatID)
-	require.Equal(t, "💰 Đơn WR1 đã thanh toán\nTổ chức A\n\nhttps://ai.example.vn/platform/admin?section=billing&status=paid", msgs[0].Text)
+	require.Equal(t, "💰 Đơn WR1 đã thanh toán\nTổ chức A\n\n"+
+		`<a href="https://ai.example.vn/platform/admin?section=billing&amp;status=paid">🔗 Xem chi tiết</a>`, msgs[0].Text)
 
 	// the same key is not queued twice
 	n, err = e.alerts.Enqueue(ctx, TelegramAlert{Kind: types.TelegramAlertOrderPaid, Key: "order_paid:o1", Title: "x"})
@@ -527,4 +528,36 @@ func TestBillingOrderTTLMinutesValidation(t *testing.T) {
 	for _, bad := range []any{float64(1), float64(4), float64(10081), int64(-5), "1", "999999", int32(2)} {
 		require.Error(t, validateRegistryEntry(types.BillingOrderTTLMinutesSettingKey, bad), bad)
 	}
+}
+
+func TestTelegramAlertTextIsHTML(t *testing.T) {
+	e := newTelegramEnv(t)
+	ctx := context.Background()
+	e.link(t, 1001, "admin1")
+	_, err := e.alerts.Enqueue(ctx, TelegramAlert{Kind: types.TelegramAlertOrderPaid, Key: "k1",
+		Title: "Lỗi <b>& thử", Body: "a < b", Link: "/platform/admin?section=x&y=\"z\""})
+	require.NoError(t, err)
+	msgs := e.messages(t)
+	require.Len(t, msgs, 1)
+	require.Equal(t, "💰 Lỗi &lt;b&gt;&amp; thử\na &lt; b\n\n"+
+		`<a href="https://ai.example.vn/platform/admin?section=x&amp;y=&quot;z&quot;">🔗 Xem chi tiết</a>`, msgs[0].Text)
+
+	n, err := e.alerts.SendBatch(ctx, e.client)
+	require.NoError(t, err)
+	require.Equal(t, 1, n)
+	sent := e.bot.sent()
+	require.Len(t, sent, 1)
+	require.Equal(t, "HTML", sent[0].Body["parse_mode"])
+	require.Equal(t, msgs[0].Text, sent[0].Body["text"])
+}
+
+func TestTelegramLongAlertKeepsItsLink(t *testing.T) {
+	e := newTelegramEnv(t)
+	e.link(t, 1001, "admin1")
+	_, err := e.alerts.Enqueue(context.Background(), TelegramAlert{Kind: types.TelegramAlertOrderPaid, Key: "k2",
+		Title: "Dài", Body: strings.Repeat("& ", telegram.MaxTextRunes), Link: "/platform/admin"})
+	require.NoError(t, err)
+	text := e.messages(t)[0].Text
+	require.LessOrEqual(t, len([]rune(text)), telegram.MaxTextRunes)
+	require.True(t, strings.HasSuffix(text, `<a href="https://ai.example.vn/platform/admin">🔗 Xem chi tiết</a>`), text[len(text)-80:])
 }
