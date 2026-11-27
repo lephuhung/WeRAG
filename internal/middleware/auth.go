@@ -120,6 +120,12 @@ var tenantOptionalRoutes = []tenantOptionalRoute{
 	// Validity lookup in the platform legal catalogue: public law, the same
 	// for everyone, so a Guest looks it up too (LegalLookupAccess limits it).
 	{scope: routeScopeIdentity, path: "/api/v1/legal-lookup", methods: []string{http.MethodGet}},
+	// Its type-ahead, under the same guard and limits.
+	{scope: routeScopeIdentity, path: "/api/v1/legal-lookup/suggest", methods: []string{http.MethodGet}},
+	// The catalogue map drawn from a lookup result: the whole public legal
+	// catalogue, same audience and limits (its KB copies are filtered to
+	// readable KBs downstream, so a Guest sees platform public ones only).
+	{scope: routeScopeIdentity, path: "/api/v1/legal-graph/explore", methods: []string{http.MethodGet}},
 	{scope: routeScopeIdentity, path: "/api/v1/auth/logout", methods: []string{http.MethodPost}},
 	{scope: routeScopeIdentity, path: "/api/v1/auth/change-password", methods: []string{http.MethodPost}},
 	{scope: routeScopeIdentity, path: "/api/v1/auth/validate", methods: []string{http.MethodGet}},
