@@ -219,14 +219,14 @@ export function KbSettingsModal({
       {loading ? (
         <p className="caption text-muted">{t("kbSettings.loading")}</p>
       ) : draft ? (
-        <div className="flex min-h-[420px] gap-6">
-          {/* section nav */}
-          <div className="w-[170px] shrink-0 border-r border-hairline pr-4">
+        <div className="flex min-h-[420px] flex-col gap-4 sm:flex-row sm:gap-6">
+          {/* section nav: a scrolling strip on phones, a side rail from sm */}
+          <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-hairline pb-2 sm:block sm:w-[170px] sm:overflow-visible sm:border-b-0 sm:border-r sm:pb-0 sm:pr-4">
             {sections.map((s) => (
               <button
                 key={s.id}
                 onClick={() => setSection(s.id)}
-                className={`nav-item mb-0.5 ${section === s.id ? "active" : ""}`}
+                className={`nav-item w-auto shrink-0 whitespace-nowrap sm:mb-0.5 sm:w-full ${section === s.id ? "active" : ""}`}
               >
                 {t(s.i18nKey)}
               </button>
@@ -235,7 +235,6 @@ export function KbSettingsModal({
 
           {/* panel */}
           <div className="min-w-0 flex-1 overflow-y-auto pr-1">
-            {error && <p className="caption mb-3 text-error">{error}</p>}
 
             {section === "basic" && (
               <div className="flex flex-col gap-4">
@@ -360,10 +359,10 @@ export function KbSettingsModal({
                   onChange={(v) => patch("auto_tag_config", { ...draft.auto_tag_config, enabled: v })}
                 />
                 {draft.auto_tag_config.enabled && (
-                  <label className="flex items-center justify-between gap-8 py-4">
-                    <span className="title-sm">{t("kbSettings.autoTagMaxTags")}</span>
+                  <label className="flex items-center justify-between gap-4 py-4 sm:gap-8">
+                    <span className="title-sm min-w-0">{t("kbSettings.autoTagMaxTags")}</span>
                     <input
-                      className="input w-[120px]"
+                      className="input w-[120px] min-w-0"
                       type="number"
                       min={1}
                       max={10}
@@ -382,8 +381,8 @@ export function KbSettingsModal({
 
             {section === "chunking" && (
               <div className="flex flex-col gap-4">
-                <div className="flex gap-4">
-                  <label className="block flex-1">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <label className="block">
                     <span className="caption mb-1.5 block text-muted">{t("kbSettings.chunkSize")}</span>
                     <input
                       className="input"
@@ -393,7 +392,7 @@ export function KbSettingsModal({
                       onChange={(e) => patch("chunking_config", { ...draft.chunking_config, chunk_size: Number(e.target.value) })}
                     />
                   </label>
-                  <label className="block flex-1">
+                  <label className="block">
                     <span className="caption mb-1.5 block text-muted">{t("kbSettings.chunkOverlap")}</span>
                     <input
                       className="input"

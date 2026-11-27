@@ -205,7 +205,7 @@ export function FormulaEditor({
           <legend className="caption-uppercase mb-2 text-muted">{t("dpk.formula.variables")}</legend>
           <div className="space-y-2">
             {draft.variables.map((v, i) => (
-              <div key={v.name} className="grid grid-cols-1 gap-2 sm:grid-cols-[150px_1fr_110px_130px] sm:items-center">
+              <div key={v.name} className="grid grid-cols-1 gap-2 sm:grid-cols-[140px_1fr_96px_160px] sm:items-center">
                 <code className="break-all text-[13px] text-ink">{v.name}</code>
                 <input
                   className="input"
@@ -244,7 +244,7 @@ export function FormulaEditor({
           </datalist>
           <div className="space-y-2">
             {draft.basis.map((b, i) => (
-              <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2">
+              <div key={i} className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[1fr_1fr_auto]">
                 <input
                   className="input"
                   aria-label={t("dpk.edit.number")}
@@ -260,7 +260,7 @@ export function FormulaEditor({
                   value={b.article}
                   onChange={(e) => set({ basis: draft.basis.map((x, j) => (j === i ? { ...x, article: e.target.value } : x)) })}
                 />
-                <button type="button" className="btn btn-outline btn-sm" onClick={() => set({ basis: draft.basis.filter((_, j) => j !== i) })}>
+                <button type="button" className="btn btn-ghost btn-sm justify-self-end" onClick={() => set({ basis: draft.basis.filter((_, j) => j !== i) })}>
                   {t("dpk.edit.remove")}
                 </button>
               </div>
@@ -307,7 +307,7 @@ export function FormulaEditor({
                 <div className="caption mb-1 mt-3 text-muted">{t("dpk.edit.expected")}</div>
                 <div className="space-y-2">
                   {ex.expected.map((p, k) => (
-                    <div key={k} className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                    <div key={k} className="grid grid-cols-1 items-center gap-2 sm:grid-cols-[1fr_1fr_auto]">
                       <input
                         className="input font-mono"
                         aria-label={t("dpk.edit.output")}
@@ -325,7 +325,7 @@ export function FormulaEditor({
                       />
                       <button
                         type="button"
-                        className="btn btn-ghost btn-sm"
+                        className="btn btn-ghost btn-sm justify-self-end"
                         onClick={() => setExample(i, { ...ex, expected: ex.expected.filter((_, j) => j !== k) })}
                       >
                         {t("dpk.edit.remove")}

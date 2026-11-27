@@ -569,7 +569,7 @@ function DecisionDialog({
         </div>
 
         {action === "ingest" && !pdfOnly && (
-          <div className="flex flex-col gap-1">
+          <div>
             <FieldLabel htmlFor="lreq-kb">{t("lreq.f.kb")}</FieldLabel>
             {kbs === null ? (
               <span className="caption text-muted">{t("common.loading")}</span>
@@ -590,7 +590,7 @@ function DecisionDialog({
                 ))}
               </select>
             )}
-            <span className="caption text-muted-soft">{t("lreq.ingestHint")}</span>
+            <span className="caption mt-1 block text-muted-soft">{t("lreq.ingestHint")}</span>
           </div>
         )}
 
@@ -613,7 +613,7 @@ function DecisionDialog({
         )}
 
         {action !== "ingest" && (
-          <div className="flex flex-col gap-1">
+          <div>
             <FieldLabel htmlFor="lreq-note" required={action === "reject"}>
               {action === "reject" ? t("lreq.f.noteRequired") : t("lreq.f.noteOptional")}
             </FieldLabel>
@@ -627,18 +627,18 @@ function DecisionDialog({
               onChange={(e) => setNote(e.target.value)}
             />
             {action === "reject" && note.trim() === "" && (
-              <span className="caption text-error">{t("common.required")}</span>
+              <span className="caption mt-1 block text-error">{t("common.required")}</span>
             )}
-            {action === "reject" && <span className="caption text-muted-soft">{t("lreq.rejectHint")}</span>}
+            {action === "reject" && <span className="caption mt-1 block text-muted-soft">{t("lreq.rejectHint")}</span>}
           </div>
         )}
 
         {action === "added" && (
-          <div className="flex flex-col gap-1">
+          <div>
             <FieldLabel htmlFor="lreq-knowledge-id">{t("lreq.f.knowledgeId")}</FieldLabel>
             <input
               id="lreq-knowledge-id"
-              className="input h-9 font-mono text-[13px]"
+              className="input h-9 py-0 font-mono text-[13px]"
               value={knowledgeId}
               onChange={(e) => setKnowledgeId(e.target.value)}
             />

@@ -250,7 +250,7 @@ function CreateKeyModal({ onClose, onCreated }: {
 
   return (
     <Modal open title={t("apiKeys.create")} onClose={onClose} width="w-[600px]">
-      <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto pr-1">
+      <div className="flex flex-col gap-4">
         {error && <Notice tone="error">{error}</Notice>}
         <label className="block">
           <span className="caption mb-1.5 block text-muted">{t("apiKeys.nameLabel")}</span>

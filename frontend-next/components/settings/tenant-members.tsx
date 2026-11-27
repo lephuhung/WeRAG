@@ -583,7 +583,7 @@ export function TenantMembers() {
         title={t("mem.rbacTitle")}
         onClose={() => setRbacModalOpen(false)}
       >
-        <div className="space-y-4 text-sm max-h-[60vh] overflow-y-auto pr-1">
+        <div className="space-y-4 text-sm">
           {ROLES.map((r) => (
             <div key={r.id} className="rounded-xl border border-hairline p-4 space-y-1.5">
               <div className="flex items-center gap-2">

@@ -85,12 +85,14 @@ function OverlayModal({
         style={{ "--modal-w": cssLength(width) } as React.CSSProperties}
         className="card relative z-50 h-full w-full max-w-none overflow-y-auto rounded-none p-4 sm:h-auto sm:max-h-[calc(100dvh-3rem)] sm:w-[var(--modal-w)] sm:max-w-[calc(100vw-3rem)] sm:rounded-[16px] sm:p-6"
       >
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="title-md">{title}</h2>
+        {/* A long title (a document name, "Đổi gói · <tổ chức>") wraps
+         * instead of squeezing the close button into an oval. */}
+        <div className="mb-5 flex items-start justify-between gap-3">
+          <h2 className="title-md min-w-0 break-words pt-1">{title}</h2>
           <button
             onClick={onClose}
             aria-label={t("common.close")}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-strong hover:text-ink"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-strong hover:text-ink"
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
               <path d="M6 6l12 12M18 6L6 18" />

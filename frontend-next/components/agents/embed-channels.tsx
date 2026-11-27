@@ -306,7 +306,7 @@ function EmbedChannelForm({ agentId, channel, onClose, onSaved }: {
       onClose={onClose}
       width="w-[640px]"
     >
-      <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto pr-1">
+      <div className="flex flex-col gap-4">
         {error && <p className="caption text-error">{error}</p>}
         <div className="flex flex-col gap-4 sm:flex-row">
           <label className="block flex-1">
@@ -358,7 +358,7 @@ function EmbedChannelForm({ agentId, channel, onClose, onSaved }: {
         <div className="flex gap-6">
           <ToggleRow label={t("embedPublish.showSuggested")} checked={draft.show_suggested_questions} onChange={(v) => patch("show_suggested_questions", v)} />
         </div>
-        <div className="flex gap-6">
+        <div className="flex flex-wrap gap-x-6 gap-y-3">
           <ToggleRow label={t("embedPublish.allowWebSearch")} checked={draft.allow_web_search} onChange={(v) => patch("allow_web_search", v)} />
           <ToggleRow label={t("embedPublish.allowFileUpload")} checked={draft.allow_file_upload} onChange={(v) => patch("allow_file_upload", v)} />
         </div>

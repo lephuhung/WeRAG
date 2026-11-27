@@ -504,7 +504,7 @@ export function SkillsSettings() {
                             setTargetSandboxIds(targetSandboxIds.filter((id) => id !== sb.id));
                           }
                         }}
-                        className="rounded accent-ink"
+                        className="h-4 w-4 shrink-0 accent-primary"
                       />
                       <div>
                         <span className="font-medium text-sm text-ink block">{sb.name}</span>
@@ -544,8 +544,8 @@ export function SkillsSettings() {
           title={t("skillc.filesTitle", { name: viewFilesSkill?.name || "Skill" })}
           onClose={() => setViewFilesSkill(null)}
         >
-          <div className="flex gap-4 h-96">
-            <div className="w-1/3 border-r border-hairline pr-3 overflow-y-auto space-y-1">
+          <div className="flex h-96 flex-col gap-4 sm:flex-row">
+            <div className="max-h-40 w-full shrink-0 space-y-1 overflow-y-auto border-b border-hairline pb-3 sm:max-h-none sm:w-1/3 sm:border-b-0 sm:border-r sm:pb-0 sm:pr-3">
               {files.map((f) => (
                 <button
                   key={f.path}
@@ -562,7 +562,7 @@ export function SkillsSettings() {
               ))}
             </div>
 
-            <div className="w-2/3 overflow-auto bg-surface-strong/30 rounded-lg p-3 font-mono text-xs text-ink whitespace-pre-wrap">
+            <div className="min-h-0 min-w-0 flex-1 overflow-auto bg-surface-strong/30 rounded-lg p-3 font-mono text-xs text-ink whitespace-pre-wrap">
               {loadingFiles ? (
                 <Loading label={t("skillc.loadingFile")} />
               ) : (

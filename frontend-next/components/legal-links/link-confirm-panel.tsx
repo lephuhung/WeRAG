@@ -102,7 +102,7 @@ export function LinkConfirmPanel({
   };
 
   return (
-    <Modal open title={editing ? t("llink.dialog.title") : t("llink.panel.title")} onClose={onClose} width="w-[1040px]">
+    <Modal open title={editing ? t("llink.dialog.title") : t("llink.panel.title")} onClose={onClose} width={editing ? "w-[560px]" : "w-[1040px]"}>
       {editing ? (
         <CorrectionForm
           c={c}
@@ -171,7 +171,7 @@ export function LinkConfirmPanel({
                     .join(", ")}
                 </div>
               )}
-              <a href={c.feed_url} target="_blank" rel="noreferrer" className="caption mt-auto text-link hover:underline">
+              <a href={c.feed_url} target="_blank" rel="noreferrer" className="caption mt-auto text-primary underline underline-offset-2">
                 {t("llink.text.sourcePage")}
               </a>
             </section>
@@ -387,7 +387,7 @@ function CorrectionForm({ c, onCancel, onDone }: { c: LegalLinkCandidate; onCanc
           <div className="caption mt-0.5 whitespace-pre-wrap text-body">{c.note}</div>
         </div>
       )}
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col">
         <FieldLabel htmlFor="llink-amender-search">{t("llink.f.amender")}</FieldLabel>
         {amender && (
           <div className="flex items-center gap-2 rounded-[10px] border border-hairline px-3 py-2">
@@ -398,7 +398,7 @@ function CorrectionForm({ c, onCancel, onDone }: { c: LegalLinkCandidate; onCanc
           </div>
         )}
         {!amender && (
-          <>
+          <div className="flex flex-col gap-1">
             <input
               id="llink-amender-search"
               className="input h-9 text-[13px]"
@@ -437,10 +437,10 @@ function CorrectionForm({ c, onCancel, onDone }: { c: LegalLinkCandidate; onCanc
             {!searching && query.trim().length >= 2 && results.length === 0 && (
               <span className="caption text-muted">{t("llink.f.noResults")}</span>
             )}
-          </>
+          </div>
         )}
       </div>
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col">
         <FieldLabel htmlFor="llink-source-path">{t("llink.f.sourcePath")}</FieldLabel>
         <ProvisionPicker
           key={amender?.id ?? ""}
@@ -453,7 +453,7 @@ function CorrectionForm({ c, onCancel, onDone }: { c: LegalLinkCandidate; onCanc
           }}
         />
       </div>
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col">
         <FieldLabel htmlFor="llink-target-path">{t("llink.f.targetPath")}</FieldLabel>
         <ProvisionPicker
           id="llink-target-path"
@@ -465,7 +465,7 @@ function CorrectionForm({ c, onCancel, onDone }: { c: LegalLinkCandidate; onCanc
           }}
         />
       </div>
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col">
         <FieldLabel htmlFor="llink-note">{t("llink.f.note")}</FieldLabel>
         <textarea
           id="llink-note"

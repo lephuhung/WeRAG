@@ -898,17 +898,17 @@ function SystemModels() {
             onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
           />
         </div>
-        <div className="flex gap-3">
-          <button className="btn btn-primary" onClick={() => void save()} disabled={saving}>
-            {saving ? t("memp.saving") : t("common.save")}
+        <div className="flex justify-end gap-2">
+          <button className="btn btn-outline" onClick={() => setModalOpen(false)}>
+            {t("common.cancel")}
           </button>
           {editing && (
             <button className="btn btn-outline" onClick={() => void test()} disabled={testing}>
               {testing ? t("vstore.testing") : t("mdl.testConn")}
             </button>
           )}
-          <button className="btn btn-outline" onClick={() => setModalOpen(false)}>
-            {t("common.cancel")}
+          <button className="btn btn-primary" onClick={() => void save()} disabled={saving}>
+            {saving ? t("memp.saving") : t("common.save")}
           </button>
         </div>
         {testMsg && <p className="caption mt-3 text-muted">{testMsg}</p>}
@@ -920,12 +920,12 @@ function SystemModels() {
       {/* Delete Confirmation Modal */}
       <Modal open={deleting !== null} title={t("mdl.deleteTitle")} onClose={() => setDeleting(null)}>
         <p className="body-sm mb-6 text-body">{t("mdl.deleteBody", { name: deleting?.name ?? "" })}</p>
-        <div className="flex gap-3">
-          <button type="button" className="btn btn-danger" onClick={() => void remove()}>
-            {t("common.delete")}
-          </button>
+        <div className="flex justify-end gap-2">
           <button className="btn btn-outline" onClick={() => setDeleting(null)}>
             {t("common.cancel")}
+          </button>
+          <button type="button" className="btn btn-danger" onClick={() => void remove()}>
+            {t("common.delete")}
           </button>
         </div>
       </Modal>

@@ -599,11 +599,11 @@ export function AgentEditorModal({
         )}
 
         {/* Tab switcher */}
-        <div className="flex items-center gap-1 rounded-full bg-surface-strong p-1 w-fit">
+        <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-full bg-surface-strong p-1 w-fit">
           <button
             type="button"
             onClick={() => setTab("basic")}
-            className={`rounded-full px-3.5 py-1.5 font-medium transition-colors ${
+            className={`shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 font-medium transition-colors ${
               tab === "basic" ? "bg-surface-card text-ink shadow-sm" : "text-muted hover:text-ink"
             }`}
           >
@@ -612,7 +612,7 @@ export function AgentEditorModal({
           <button
             type="button"
             onClick={() => setTab("knowledge")}
-            className={`rounded-full px-3.5 py-1.5 font-medium transition-colors ${
+            className={`shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 font-medium transition-colors ${
               tab === "knowledge" ? "bg-surface-card text-ink shadow-sm" : "text-muted hover:text-ink"
             }`}
           >
@@ -621,7 +621,7 @@ export function AgentEditorModal({
           <button
             type="button"
             onClick={() => setTab("tools")}
-            className={`rounded-full px-3.5 py-1.5 font-medium transition-colors ${
+            className={`shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 font-medium transition-colors ${
               tab === "tools" ? "bg-surface-card text-ink shadow-sm" : "text-muted hover:text-ink"
             }`}
           >
@@ -630,7 +630,7 @@ export function AgentEditorModal({
           <button
             type="button"
             onClick={() => setTab("multimodal")}
-            className={`rounded-full px-3.5 py-1.5 font-medium transition-colors ${
+            className={`shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 font-medium transition-colors ${
               tab === "multimodal" ? "bg-surface-card text-ink shadow-sm" : "text-muted hover:text-ink"
             }`}
           >
@@ -803,7 +803,7 @@ export function AgentEditorModal({
                     </span>
                   </span>
                   {rerankModels.length === 0 && (
-                    <span className="caption text-amber-600 text-[10px]">{t("ui.ae.noRerank")}</span>
+                    <span className="caption text-warning">{t("ui.ae.noRerank")}</span>
                   )}
                 </div>
                 <Select
@@ -834,7 +834,7 @@ export function AgentEditorModal({
               </label>
             </div>
 
-            <div className="rounded-[10px] border border-hairline bg-surface-strong/40 px-3 py-2 text-[11.5px] text-muted flex items-center gap-2">
+            <div className="rounded-[10px] border border-hairline bg-surface-strong/40 px-3 py-2 text-[11.5px] text-muted flex items-start gap-2">
               <span className="text-primary font-bold">ℹ</span>
               <span>
                 <strong>Embedding &amp; ReRank:</strong> {t("ui.ae.rerankNote")}
@@ -903,7 +903,7 @@ export function AgentEditorModal({
                   disabled={readOnly}
                   onChange={(e) => patch("citation_enabled", e.target.checked)}
                 />
-                <span>{t("ui.ae.citations")}</span>
+                <span className="text-[13px]">{t("ui.ae.citations")}</span>
               </label>
 
               <label className="flex items-center gap-2 text-ink cursor-pointer select-none">
@@ -914,7 +914,7 @@ export function AgentEditorModal({
                   disabled={readOnly}
                   onChange={(e) => patch("thinking", e.target.checked)}
                 />
-                <span>{t("agent.thinking")}</span>
+                <span className="text-[13px]">{t("agent.thinking")}</span>
               </label>
             </div>
 
@@ -987,7 +987,7 @@ export function AgentEditorModal({
                       disabled={readOnly}
                       onChange={(e) => patch("ask_scope_for_long_documents", e.target.checked)}
                     />
-                    <span>{t("agent.docAssist.askScope")}</span>
+                    <span className="text-[13px]">{t("agent.docAssist.askScope")}</span>
                   </label>
                   <label
                     className={`flex items-start gap-2 select-none ${
@@ -1001,7 +1001,7 @@ export function AgentEditorModal({
                       disabled={readOnly || !draft.web_search_enabled}
                       onChange={(e) => patch("web_search_default_on", e.target.checked)}
                     />
-                    <span>
+                    <span className="text-[13px]">
                       {t("agent.docAssist.webDefault")}
                       {!draft.web_search_enabled && (
                         <span className="caption block text-muted">{t("agent.docAssist.webDefaultHint")}</span>
@@ -1124,7 +1124,7 @@ export function AgentEditorModal({
                           <span className="text-[13px] text-ink">{t("agent.addonSale.active")}</span>
                         </label>
                         {addonRow && addonRow.agent_available === false && (
-                          <p className="caption text-amber-600">{t("agent.addonSale.wasOff")}</p>
+                          <p className="caption text-warning">{t("agent.addonSale.wasOff")}</p>
                         )}
                       </div>
                     )}
@@ -1214,7 +1214,7 @@ export function AgentEditorModal({
                   <p className="caption mt-0.5 text-muted">{t("agent.kbMode.publicHint")}</p>
                 </div>
               ) : (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {(["all", "selected", "none"] as const).map((mode) => (
                   <button
                     key={mode}
@@ -1270,15 +1270,16 @@ export function AgentEditorModal({
             {draft.kb_selection_mode !== "none" && (
               <>
                 <div className="rounded-[10px] border border-hairline p-3">
-                  <label className={`flex items-center gap-2.5 text-ink select-none ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}>
+                  <label className={`flex items-start gap-2.5 text-ink select-none ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}>
                     <input
                       type="checkbox"
+                      className="mt-0.5"
                       checked={draft.retrieve_kb_only_when_mentioned}
                       disabled={readOnly}
                       onChange={(e) => patch("retrieve_kb_only_when_mentioned", e.target.checked)}
                     />
                     <div>
-                      <div className="font-medium text-ink">{t("agent.retrieveOnlyWhenMentioned")}</div>
+                      <div className="text-[13px] font-medium text-ink">{t("agent.retrieveOnlyWhenMentioned")}</div>
                       <div className="caption text-muted">
                         {t("ui.ae.mentionOnlyHint")}
                       </div>
@@ -1350,9 +1351,10 @@ export function AgentEditorModal({
         {tab === "multimodal" && (
           <div className="space-y-3.5">
             <div className="rounded-[12px] border border-hairline p-3">
-              <label className={`flex items-center gap-2.5 select-none ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}>
+              <label className={`flex items-start gap-2.5 select-none ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}>
                 <input
                   type="checkbox"
+                  className="mt-0.5"
                   checked={draft.image_upload_enabled}
                   disabled={readOnly}
                   onChange={(e) => patch("image_upload_enabled", e.target.checked)}
@@ -1400,9 +1402,10 @@ export function AgentEditorModal({
                 </label>
 
                 <div className="rounded-[12px] border border-hairline p-3">
-                  <label className={`flex items-center gap-2.5 select-none ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}>
+                  <label className={`flex items-start gap-2.5 select-none ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}>
                     <input
                       type="checkbox"
+                      className="mt-0.5"
                       checked={draft.attachment_image_understanding}
                       disabled={readOnly}
                       onChange={(e) => patch("attachment_image_understanding", e.target.checked)}
@@ -1415,10 +1418,10 @@ export function AgentEditorModal({
                 </div>
 
                 {draft.attachment_image_understanding && (
-                  <label className="block w-40">
+                  <label className="block">
                     <span className="caption mb-1.5 block text-muted">{t("agent.ocrMaxPages")}</span>
                     <input
-                      className="input w-full"
+                      className="input w-40"
                       type="number"
                       min={0}
                       max={64}
@@ -1451,9 +1454,10 @@ export function AgentEditorModal({
             )}
 
             <div className="rounded-[12px] border border-hairline p-3">
-              <label className={`flex items-center gap-2.5 select-none ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}>
+              <label className={`flex items-start gap-2.5 select-none ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}>
                 <input
                   type="checkbox"
+                  className="mt-0.5"
                   checked={draft.audio_upload_enabled}
                   disabled={readOnly}
                   onChange={(e) => patch("audio_upload_enabled", e.target.checked)}
@@ -1496,10 +1500,10 @@ export function AgentEditorModal({
               </label>
             )}
 
-            <label className="block w-40">
+            <label className="block">
               <span className="caption mb-1.5 block text-muted">{t("agent.parseWaitTimeout")}</span>
               <input
-                className="input w-full"
+                className="input w-40"
                 type="number"
                 min={0}
                 max={600}
@@ -1511,7 +1515,7 @@ export function AgentEditorModal({
               <p className="caption text-muted mt-1">{t("agent.parseWaitTimeoutDesc")}</p>
             </label>
 
-            <div className="rounded-[10px] border border-hairline bg-surface-strong/40 px-3 py-2 text-[11.5px] text-muted flex items-center gap-2">
+            <div className="rounded-[10px] border border-hairline bg-surface-strong/40 px-3 py-2 text-[11.5px] text-muted flex items-start gap-2">
               <span className="text-primary font-bold">ℹ</span>
               <span>{t("agent.multimodalReuploadHint")}</span>
             </div>
@@ -1605,9 +1609,10 @@ export function AgentEditorModal({
 
 
             <div className="rounded-[12px] border border-hairline p-3">
-              <label className={`flex items-center gap-2.5 select-none ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}>
+              <label className={`flex items-start gap-2.5 select-none ${readOnly ? "opacity-75 cursor-default" : "cursor-pointer"}`}>
                 <input
                   type="checkbox"
+                  className="mt-0.5"
                   checked={draft.web_search_enabled}
                   disabled={readOnly}
                   onChange={(e) => patch("web_search_enabled", e.target.checked)}
@@ -1623,7 +1628,7 @@ export function AgentEditorModal({
 
             <div>
               <span className="caption mb-1.5 block text-muted">MCP Tool Services</span>
-              <div className="flex gap-2 mb-3">
+              <div className="flex flex-wrap gap-2 mb-3">
                 {(["all", "selected", "none"] as const).map((mode) => (
                   <button
                     key={mode}

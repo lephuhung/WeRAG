@@ -30,8 +30,10 @@ import { userErrorMessage } from "@/lib/user-error";
  * never see the parse-settings dialog. The editor mirrors the dialog's
  * sections so the same mental model applies. Rendered full-page at
  * /platform/system/engines/parse-defaults and inside a modal from the
- * knowledge-bases page — callers must gate on is_system_admin. */
-export function ParseDefaultsEditor() {
+ * knowledge-bases page — callers must gate on is_system_admin. `inModal`
+ * drops the title (the modal header shows it) and the top Save button (the
+ * footer one stays). */
+export function ParseDefaultsEditor({ inModal = false }: { inModal?: boolean } = {}) {
   const { t } = useT();
   const [enabled, setEnabled] = useState(false);
   const [state, setState] = useState<ParseUIState | null>(null);
@@ -207,22 +209,24 @@ export function ParseDefaultsEditor() {
       <section className="card mb-4 p-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="min-w-0">
-            <h2 className="title-sm text-ink">{t("pd.title")}</h2>
-            <p className="caption mt-1 text-muted">{t("pd.desc")}</p>
+            {!inModal && <h2 className="title-sm text-ink">{t("pd.title")}</h2>}
+            <p className={`caption text-muted${inModal ? "" : " mt-1"}`}>{t("pd.desc")}</p>
           </div>
           <div className="flex items-center gap-4 shrink-0">
             <div className="flex items-center gap-2">
               <span className="caption font-medium text-ink">{t("pd.enableLabel")}</span>
               <Toggle checked={enabled} onChange={setEnabled} label={t("pd.enableLabel")} />
             </div>
-            <button
-              type="button"
-              className="btn btn-primary btn-sm"
-              onClick={() => void save()}
-              disabled={!canSave}
-            >
-              {saving ? t("pd.saving") : t("common.save")}
-            </button>
+            {!inModal && (
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => void save()}
+                disabled={!canSave}
+              >
+                {saving ? t("pd.saving") : t("common.save")}
+              </button>
+            )}
           </div>
         </div>
         {saved && (

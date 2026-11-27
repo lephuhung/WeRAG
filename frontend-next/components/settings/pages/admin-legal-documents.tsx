@@ -709,7 +709,7 @@ export function ReviewDialog({
             <div className="relative flex-1">
               <IconSearch className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-soft" />
               <input
-                className="input h-9 pl-9 text-[13px]"
+                className="input h-9 py-0 pl-9 text-[13px]"
                 aria-label={t("lrev.searchPh")}
                 placeholder={t("lrev.searchPh")}
                 value={query}
@@ -717,7 +717,7 @@ export function ReviewDialog({
                 onKeyDown={(e) => e.key === "Enter" && void search()}
               />
             </div>
-            <button className="btn btn-outline btn-sm" onClick={() => void search()} disabled={searching}>
+            <button className="btn btn-outline h-9 shrink-0" onClick={() => void search()} disabled={searching}>
               {searching ? t("common.loading") : t("lrev.search")}
             </button>
           </div>
@@ -819,7 +819,7 @@ function Field({
     <label className="flex flex-col gap-1">
       <span className="caption text-muted">{label}</span>
       <input
-        className={`input h-9 text-[13px] ${mono ? "font-mono" : ""}`}
+        className={`input h-9 py-0 text-[13px] ${mono ? "font-mono" : ""}`}
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}

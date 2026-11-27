@@ -535,7 +535,7 @@ export default function KnowledgeBaseList() {
         onClose={() => setPdOpen(false)}
         width="w-[1240px]"
       >
-        <ParseDefaultsEditor />
+        <ParseDefaultsEditor inModal />
       </Modal>
     </div>
   );

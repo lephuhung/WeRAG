@@ -438,7 +438,7 @@ export default function AdminTenants() {
                   <form className="flex min-w-0 flex-1 items-center gap-2" onSubmit={submitRename}>
                     <input
                       autoFocus
-                      className="input h-8 min-w-0 flex-1"
+                      className="input h-8 min-w-0 flex-1 py-0"
                       aria-label={t("tnp.name")}
                       aria-invalid={nameError ? true : undefined}
                       required
@@ -474,6 +474,11 @@ export default function AdminTenants() {
                 <button className="btn btn-outline btn-sm ml-auto shrink-0" onClick={() => setAddOpen(true)}>
                   <IconPlus className="h-3.5 w-3.5" /> {t("tnp.addMember")}
                 </button>
+                {renameTo !== null && nameError && (
+                  <p role="alert" className="caption -mt-1 basis-full text-error">
+                    {nameError}
+                  </p>
+                )}
               </div>
               <p className="caption mb-4 font-mono text-muted-soft">#{selected.id}</p>
               {error && (
@@ -490,11 +495,6 @@ export default function AdminTenants() {
                 </Notice>
               )}
               <h4 className="mb-3 border-t border-hairline pt-4 text-[14px] font-medium text-ink">{t("tnp.members")}{!membersLoading && ` (${members.length})`}</h4>
-              {renameTo !== null && nameError && (
-                <p role="alert" className="caption -mt-2 mb-3 text-error">
-                  {nameError}
-                </p>
-              )}
               {membersLoading ? (
                 <Loading />
               ) : members.length === 0 ? (

@@ -241,7 +241,7 @@ export function EnvVarsSettings() {
                     required
                     aria-required="true"
                     type="password"
-                    className="input h-9 w-full text-[13px]"
+                    className="input w-full"
                     placeholder={t("envv.valuePh")}
                     value={editingVar.value}
                     onChange={(e) =>

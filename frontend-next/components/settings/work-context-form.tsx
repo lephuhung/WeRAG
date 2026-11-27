@@ -4,7 +4,7 @@
  * province reuses. Used by the profile settings and by WorkContextPrompt. */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
 import { useT } from "@/lib/i18n";
 import { getProvinces, updateMyPreferences, type Province } from "@/lib/api/auth";
@@ -14,7 +14,17 @@ import { Notice } from "@/components/settings/notice";
 import { FieldLabel } from "@/components/settings/field";
 import { userErrorMessage } from "@/lib/user-error";
 
-export function WorkContextForm({ onSaved, compact = false }: { onSaved?: () => void; compact?: boolean }) {
+/* `extraActions` (opt-in) go before Save in one right-aligned row, e.g. a
+ * "Later" button of a prompt dialog; without it the row is unchanged. */
+export function WorkContextForm({
+  onSaved,
+  compact = false,
+  extraActions,
+}: {
+  onSaved?: () => void;
+  compact?: boolean;
+  extraActions?: ReactNode;
+}) {
   const { t } = useT();
   const auth = useAuth();
   const toast = useToast();
@@ -94,7 +104,8 @@ export function WorkContextForm({ onSaved, compact = false }: { onSaved?: () => 
           searchPlaceholder={t("workCtx.provinceSearch")}
         />
       </div>
-      <div className="flex items-center gap-3">
+      <div className={extraActions ? "flex items-center justify-end gap-2" : "flex items-center gap-3"}>
+        {extraActions}
         <button className="btn btn-primary btn-sm" onClick={() => void save()} disabled={saving || !dirty}>
           {saving ? "…" : t("common.save")}
         </button>

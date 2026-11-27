@@ -115,7 +115,7 @@ export function McpServiceForm({ service, onClose, onSaved }: {
 
   return (
     <Modal open title={service ? t("mcp.editService") : t("mcp.addService")} onClose={onClose} width="w-[620px]">
-      <div className="flex max-h-[70vh] flex-col gap-4 overflow-y-auto pr-1">
+      <div className="flex flex-col gap-4">
         {error && <p className="caption text-error">{error}</p>}
         {error && <TechnicalDetails detail={testDetail} />}
         <div className="flex gap-4">
@@ -219,7 +219,7 @@ export function McpServiceForm({ service, onClose, onSaved }: {
                 {testing ? "…" : t("mcp.test")}
               </button>
               {testResult && (
-                <span className={`caption ${testResult.success ? "text-success" : "text-error"}`}>
+                <span className={`caption min-w-0 break-words ${testResult.success ? "text-success" : "text-error"}`}>
                   {testResult.success
                     ? `${t("mcp.testOk")} · ${(testResult.tools ?? []).length} tools`
                     : testResult.message || t("mcp.testFail")}

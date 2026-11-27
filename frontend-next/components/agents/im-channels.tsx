@@ -261,7 +261,7 @@ function IMChannelFields({ agentId, agents, channel, onClose, onSaved }: {
       <div className="flex flex-col gap-4">
         {error && <p className="caption text-error">{error}</p>}
 
-        <div className="flex gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row">
           <label className="block flex-1">
             <span className="caption mb-1.5 block text-muted">{t("agentEditor.im.platform")}</span>
             <Select
@@ -302,7 +302,7 @@ function IMChannelFields({ agentId, agents, channel, onClose, onSaved }: {
         <div className="border-t border-hairline pt-4">
           <div className="caption-uppercase mb-2 text-muted">{t("agentEditor.im.sectionAccess")}</div>
           <div className="mb-3 flex gap-4">
-            <span className="title-sm flex items-center">{t("agentEditor.im.mode")}</span>
+            <span className="title-sm flex w-28 shrink-0 items-center">{t("agentEditor.im.mode")}</span>
             <PillToggle
               value={mode}
               onChange={setMode}
@@ -313,7 +313,7 @@ function IMChannelFields({ agentId, agents, channel, onClose, onSaved }: {
             />
           </div>
           <div className="flex gap-4">
-            <span className="title-sm flex items-center">{t("agentEditor.im.outputMode")}</span>
+            <span className="title-sm flex w-28 shrink-0 items-center">{t("agentEditor.im.outputMode")}</span>
             <PillToggle
               value={outputMode}
               onChange={setOutputMode}
@@ -329,7 +329,7 @@ function IMChannelFields({ agentId, agents, channel, onClose, onSaved }: {
         <div className="border-t border-hairline pt-4">
           <div className="caption-uppercase mb-2 text-muted">{t("agentEditor.im.sectionSession")}</div>
           <div className="flex gap-4">
-            <span className="title-sm flex items-center">{t("agentEditor.im.sessionMode")}</span>
+            <span className="title-sm flex w-28 shrink-0 items-center">{t("agentEditor.im.sessionMode")}</span>
             <PillToggle
               value={sessionMode}
               onChange={setSessionMode}
@@ -439,7 +439,7 @@ export function IMChannelForm(props: Parameters<typeof IMChannelFields>[0]) {
       onClose={props.onClose}
       width="w-[560px]"
     >
-      <div className="flex max-h-[70vh] flex-col overflow-y-auto pr-1">
+      <div className="flex flex-col">
         <IMChannelFields {...props} />
       </div>
     </Modal>

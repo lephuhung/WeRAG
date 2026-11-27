@@ -47,12 +47,15 @@ export function WorkContextPrompt() {
   return (
     <Modal open={open} title={t("workCtx.title")} onClose={later}>
       <p className="body-sm mb-4 text-muted">{t("workCtx.why")}</p>
-      <WorkContextForm compact onSaved={() => setOpen(false)} />
-      <div className="mt-4 flex justify-end">
-        <button className="btn btn-tertiary btn-sm" onClick={later}>
-          {t("workCtx.later")}
-        </button>
-      </div>
+      <WorkContextForm
+        compact
+        onSaved={() => setOpen(false)}
+        extraActions={
+          <button className="btn btn-tertiary btn-sm" onClick={later}>
+            {t("workCtx.later")}
+          </button>
+        }
+      />
     </Modal>
   );
 }

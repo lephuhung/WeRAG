@@ -192,7 +192,7 @@ export function InviteMemberModal({
                         setTimeout(() => setLinkCopied(false), 2000);
                       }
                     }}
-                    className="btn btn-primary shrink-0 text-xs"
+                    className="btn btn-primary h-10 shrink-0 text-xs"
                   >
                     {linkCopied ? t("ui.invm.copied") : t("mem.copyLink")}
                   </button>

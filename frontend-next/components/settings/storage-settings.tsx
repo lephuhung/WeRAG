@@ -263,7 +263,7 @@ export function StorageSettings() {
                 aria-required="true"
                 aria-invalid={nameError ? true : undefined}
                 aria-describedby={nameError ? "storage-name-error" : undefined}
-                className="input h-9 w-full text-[13px]"
+                className="input w-full"
                 placeholder={t("stor.namePh")}
                 value={formData.name}
                 onChange={(e) => {
@@ -282,7 +282,7 @@ export function StorageSettings() {
               <FieldLabel htmlFor="storage-provider">{t("stor.provider")}</FieldLabel>
               <Select
                 id="storage-provider"
-                className="h-9 w-full text-[13px]"
+                className="w-full"
                 value={formData.provider}
                 onChange={(v) => setFormData({ ...formData, provider: v })}
                 options={[
@@ -298,7 +298,7 @@ export function StorageSettings() {
                   <FieldLabel htmlFor="storage-endpoint">{t("stor.endpoint")}</FieldLabel>
                   <input
                     id="storage-endpoint"
-                    className="input h-9 w-full text-[13px]"
+                    className="input w-full"
                     placeholder="http://minio:9000"
                     value={formData.endpoint}
                     onChange={(e) => setFormData({ ...formData, endpoint: e.target.value })}
@@ -309,7 +309,7 @@ export function StorageSettings() {
                     <FieldLabel htmlFor="storage-bucket">{t("stor.bucketName")}</FieldLabel>
                     <input
                       id="storage-bucket"
-                      className="input h-9 w-full text-[13px]"
+                      className="input w-full"
                       placeholder="my-bucket"
                       value={formData.bucket_name}
                       onChange={(e) => setFormData({ ...formData, bucket_name: e.target.value })}
@@ -319,7 +319,7 @@ export function StorageSettings() {
                     <FieldLabel htmlFor="storage-region">{t("stor.region")}</FieldLabel>
                     <input
                       id="storage-region"
-                      className="input h-9 w-full text-[13px]"
+                      className="input w-full"
                       placeholder="us-east-1"
                       value={formData.region}
                       onChange={(e) => setFormData({ ...formData, region: e.target.value })}
@@ -331,7 +331,7 @@ export function StorageSettings() {
                     <FieldLabel htmlFor="storage-access-key">{t("stor.accessKey")}</FieldLabel>
                     <input
                       id="storage-access-key"
-                      className="input h-9 w-full text-[13px]"
+                      className="input w-full"
                       type="password"
                       value={formData.access_key_id}
                       onChange={(e) => setFormData({ ...formData, access_key_id: e.target.value })}
@@ -341,7 +341,7 @@ export function StorageSettings() {
                     <FieldLabel htmlFor="storage-secret-key">{t("stor.secretKey")}</FieldLabel>
                     <input
                       id="storage-secret-key"
-                      className="input h-9 w-full text-[13px]"
+                      className="input w-full"
                       type="password"
                       value={formData.secret_access_key}
                       onChange={(e) => setFormData({ ...formData, secret_access_key: e.target.value })}
