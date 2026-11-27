@@ -48,6 +48,7 @@ import {
   formatPriceVND,
   listAgentAddons,
   planPrice,
+  planPriceForMonths,
   type UsageAgentAddonCatalogue,
 } from "@/lib/api/usage";
 import { addonsForPlan, planIncludedAgents, togglePlanId } from "@/lib/agent-addon-catalogue";
@@ -61,7 +62,7 @@ const emptyPlan: UsagePlanInput = {
   description: "",
   scope_kind: "tenant",
   mode: "pool",
-  limits: [{ metric: "questions", period: "month", limit: 0 }],
+  limits: [{ metric: "tokens", period: "month", limit: 0 }],
   features: {},
   price_label: "",
   price_vnd: 0,
@@ -129,6 +130,126 @@ function notStarted(sub: { starts_at: string }): boolean {
   return !Number.isNaN(d.getTime()) && d.getTime() > Date.now();
 }
 
+/* Calendar arithmetic on YYYY-MM-DD strings, in UTC so no zone drifts a day. */
+function addDays(d: string, days: number): string {
+  const [y, m, day] = d.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, day + days)).toISOString().slice(0, 10);
+}
+
+/* The last day of a subscription of `months` months starting on `start`,
+ * as the server computes it (types.SubscriptionEndVN): the same day of the
+ * month `months` later, clamped to that month's last day. 27/11 + 1 month
+ * runs through 27/12; 31/01 + 1 month through 28/02. */
+function endForMonths(start: string, months: number): string {
+  const [y, m, day] = start.split("-").map(Number);
+  const lastDay = new Date(Date.UTC(y, m - 1 + months + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(y, m - 1 + months, Math.min(day, lastDay))).toISOString().slice(0, 10);
+}
+
+/* Whole months and leftover days from start to end (end inclusive);
+ * null when the span is empty or open-ended. Leftover days count from the
+ * last whole month's end, or from the start day itself when under a month. */
+function subscriptionSpan(start: string, end: string): { months: number; days: number } | null {
+  if (!start || !end || end < start) return null;
+  let months = 0;
+  while (months < 1200 && endForMonths(start, months + 1) <= end) months++;
+  const from = months > 0 ? endForMonths(start, months) : addDays(start, -1);
+  const days = Math.round((Date.parse(end) - Date.parse(from)) / 86_400_000);
+  return { months, days };
+}
+
+/* The month rate used for leftover days and for month counts no priced
+ * term fits: the monthly price, else the quarter or year price spread. */
+function monthlyRate(plan: UsagePlan): number {
+  if (plan.price_vnd > 0) return plan.price_vnd;
+  if (plan.price_quarter_vnd > 0) return plan.price_quarter_vnd / 3;
+  if (plan.price_year_vnd > 0) return plan.price_year_vnd / 12;
+  return 0;
+}
+
+const DAYS_PER_MONTH = 30; // usage_billing.go usageProrationDaysPerMonth
+
+/* Reference price of one unit (one seat, or the whole pool) for a span:
+ * whole months as checkout prices them (year/quarter/month terms),
+ * leftover days at the month rate per 30 days, rounded up like the
+ * server's seat proration. */
+function spanPrice(plan: UsagePlan, months: number, days: number): { total: number; term: "month" | "quarter" | "year" | null } {
+  const rate = monthlyRate(plan);
+  const whole = months > 0 ? planPriceForMonths(plan, months) : null;
+  const wholeTotal = months > 0 ? (whole?.total ?? Math.ceil(rate * months)) : 0;
+  // never more than a whole month: 01/12–31/12 (31 days) must not cost
+  // more than 01/12–01/01 (one month)
+  const dayTotal = days > 0 ? Math.min(Math.ceil(rate), Math.ceil((rate * days) / DAYS_PER_MONTH)) : 0;
+  return { total: wholeTotal + dayTotal, term: whole?.term ?? null };
+}
+
+const SUB_LENGTHS = [1, 3, 6, 12];
+
+/* Live reference price of the subscription being assigned: unit price,
+ * seats, length and total, re-computed on every change in the modal.
+ * Assigning here creates no order; this is what checkout would charge. */
+function SubPriceSummary({ plan, seatMode, seats, start, end }: { plan: UsagePlan | undefined; seatMode: boolean; seats: number; start: string; end: string }) {
+  const { t } = useT();
+  if (!plan) return null;
+  // A seat subscription pays the list price per seat, even on a plan
+  // listed as a pool: the admin chose to sell it by seat.
+  const perSeat = seatMode;
+  const rate = monthlyRate(plan);
+  if (rate <= 0) {
+    return (
+      <div className="rounded-lg border border-hairline bg-surface-strong px-4 py-3">
+        <p className="caption text-muted">{plan.price_label ? t("usg.priceLabelOnly", { label: plan.price_label }) : t("usg.priceNone")}</p>
+      </div>
+    );
+  }
+  const n = seatMode ? Math.max(0, seats) : 1;
+  const span = subscriptionSpan(start, end);
+  const unit = plan.price_vnd > 0 ? plan.price_vnd : rate;
+  const termName = (term: "quarter" | "year", months: number) => {
+    const k = term === "year" ? months / 12 : months / 3;
+    if (k > 1) return t(term === "year" ? "bill.termYearN" : "bill.termQuarterN", { n: k });
+    return term === "year" ? t("bill.termYear") : t("bill.termQuarter");
+  };
+  let lengthText = t("usg.priceOpenEnded");
+  let total: number | null = null;
+  let saving = 0;
+  if (span) {
+    const priced = spanPrice(plan, span.months, span.days);
+    total = priced.total * n;
+    const parts: string[] = [];
+    if (span.months > 0) {
+      parts.push(t("bill.monthsN", { n: span.months }));
+      if (priced.term === "quarter" || priced.term === "year") parts.push(termName(priced.term, span.months));
+    }
+    if (span.days > 0) parts.push(t("usg.priceDaysN", { n: span.days }));
+    lengthText = parts.join(" · ");
+    if (plan.price_vnd > 0 && span.months > 0 && priced.term && priced.term !== "month") {
+      saving = Math.max(0, plan.price_vnd * span.months - (planPriceForMonths(plan, span.months)?.total ?? 0)) * n;
+    }
+  }
+  const row = (label: string, value: React.ReactNode) => (
+    <div className="flex items-baseline justify-between gap-3">
+      <span className="text-muted">{label}</span>
+      <span className="text-right text-ink">{value}</span>
+    </div>
+  );
+  return (
+    <div className="space-y-1.5 rounded-lg border border-hairline bg-surface-strong px-4 py-3 text-[14px]" aria-live="polite">
+      <div className="caption font-medium uppercase tracking-wide text-muted-soft">{t("usg.priceSummary")}</div>
+      {row(t("usg.priceUnit"), `${formatPriceVND(unit)}${perSeat ? t("usg.perSeatMonth") : t("usg.perMonth")}`)}
+      {seatMode && row(t("usg.seats"), `× ${n}`)}
+      {row(t("usg.priceLength"), lengthText)}
+      <div className="border-t border-hairline pt-1.5">
+        {total != null
+          ? row(t("usg.priceTotal"), <span className="text-base font-semibold">{formatPriceVND(total)}</span>)
+          : row(t("usg.pricePerMonth"), <span className="text-base font-semibold">{formatPriceVND(Math.ceil(rate * n))}</span>)}
+        {saving > 0 && <div className="caption text-right text-success">{t("usg.saving", { price: formatPriceVND(saving) })}</div>}
+      </div>
+      <p className="caption text-muted-soft">{t("usg.priceNoOrder")}</p>
+    </div>
+  );
+}
+
 function LimitsEditor({ value, onChange }: { value: UsageLimit[]; onChange: (v: UsageLimit[]) => void }) {
   const { t } = useT();
   const set = (i: number, patch: Partial<UsageLimit>) =>
@@ -137,15 +258,21 @@ function LimitsEditor({ value, onChange }: { value: UsageLimit[]; onChange: (v: 
     <div className="space-y-2">
       {value.map((l, i) => (
         <div key={i} className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:flex">
-          <select
-            className="input h-9 min-w-0 py-0 sm:w-36"
-            aria-label={l.metric === "tokens" ? t("usg.metricTokens") : t("usg.metricQuestions")}
-            value={l.metric}
-            onChange={(e) => set(i, { metric: e.target.value as UsageLimit["metric"] })}
-          >
-            <option value="questions">{t("usg.metricQuestions")}</option>
-            <option value="tokens">{t("usg.metricTokens")}</option>
-          </select>
+          {/* Quotas count tokens; question limits are legacy (the old guest
+           * plan) and only offered so such a row can be switched to tokens. */}
+          {l.metric === "tokens" ? (
+            <span className="input flex h-9 min-w-0 items-center py-0 text-muted sm:w-36">{t("usg.metricTokens")}</span>
+          ) : (
+            <select
+              className="input h-9 min-w-0 py-0 sm:w-36"
+              aria-label={t("usg.metricQuestions")}
+              value={l.metric}
+              onChange={(e) => set(i, { metric: e.target.value as UsageLimit["metric"] })}
+            >
+              <option value="questions">{t("usg.metricQuestions")}</option>
+              <option value="tokens">{t("usg.metricTokens")}</option>
+            </select>
+          )}
           <span className="caption text-muted">/</span>
           <select
             className="input h-9 min-w-0 py-0 sm:w-28"
@@ -241,8 +368,6 @@ interface SubForm {
   custom_start: boolean;
   ends_at: string;
   note: string;
-  override: boolean;
-  limits: UsageLimit[];
 }
 
 function subFormFrom(sub: UsageSubscriptionView | null | undefined, plans: UsagePlan[], kind: UsageScopeKind): SubForm {
@@ -256,8 +381,6 @@ function subFormFrom(sub: UsageSubscriptionView | null | undefined, plans: Usage
       custom_start: false,
       ends_at: "",
       note: "",
-      override: false,
-      limits: [],
     };
   }
   return {
@@ -268,8 +391,6 @@ function subFormFrom(sub: UsageSubscriptionView | null | undefined, plans: Usage
     custom_start: true,
     ends_at: dateFromEndsAt(sub.ends_at),
     note: sub.note,
-    override: sub.limits_override != null,
-    limits: sub.limits_override ?? sub.plan?.limits ?? [],
   };
 }
 
@@ -503,7 +624,11 @@ export default function AdminUsage() {
           : undefined,
       ends_at: endsAtFromDate(subForm.ends_at),
       note: subForm.note,
-      limits_override: subForm.override ? subForm.limits : null,
+      // Limits come from the plan (token quotas); a per-subscription
+      // override is no longer offered. An old one is kept as it is while
+      // the plan stays, and dropped with a plan change (a new subscription).
+      limits_override:
+        subTarget.existing && subTarget.existing.plan_id === subForm.plan_id ? (subTarget.existing.limits_override ?? null) : null,
       status: "active",
     };
     const ok = await run(async () => {
@@ -557,7 +682,15 @@ export default function AdminUsage() {
   }, [userPickOpen, userQ]);
 
   const planByID = (id: string) => plans.find((p) => p.id === id);
-  const endsBeforeStart = !!subForm.ends_at && !!subForm.starts_at && subForm.ends_at < subForm.starts_at;
+  // the start the server will use (as submitSub sends it): the picked
+  // date, else the kept start of the same plan, else today
+  const subExisting = subTarget?.existing;
+  const subStart = subForm.custom_start
+    ? subForm.starts_at || todayVN()
+    : subExisting && subExisting.plan_id === subForm.plan_id
+      ? dateFromStartsAt(subExisting.starts_at) || todayVN()
+      : todayVN();
+  const endsBeforeStart = !!subForm.ends_at && subForm.ends_at < subStart;
   const selectablePlans = plans.filter((p) => p.scope_kind === (subTarget?.kind ?? "tenant") && (p.is_active || p.id === subForm.plan_id));
   const filteredTenants = tenants.filter((x) => !q || x.tenant_name.toLowerCase().includes(q.toLowerCase()));
 
@@ -761,7 +894,9 @@ export default function AdminUsage() {
                         )}
                         {sub.limits_override && <span className="badge-pill text-[11px]">{t("usg.overridden")}</span>}
                       </div>
-                      <LimitStatusList items={sub.limit_status} />
+                      <div className="mt-1.5">
+                        <LimitStatusList items={sub.limit_status} variant="ring" />
+                      </div>
                       {sub.ends_at && <div className="caption text-muted-soft">{t("usg.endsAt", { date: dateFromEndsAt(sub.ends_at) })}</div>}
                     </>
                   ) : (
@@ -806,10 +941,16 @@ export default function AdminUsage() {
         {personal.length === 0 ? (
           <p className="caption text-muted-soft">{t("usg.noPersonal")}</p>
         ) : (
-          <div className="divide-y divide-hairline">
+          /* One grid for the whole list (rows are subgrids) so the usage
+           * and action columns line up even when a row has no buttons
+           * (cancelled) or only one (implicit guest). */
+          <div className="divide-y divide-hairline sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(220px,auto)_auto_auto] sm:gap-x-6">
             {personal.map((sub) => (
-              <div key={sub.id || `implicit-${sub.scope_id}`} className={`flex flex-wrap items-start gap-3 py-2.5 text-[14px] ${ROW_HOVER}`}>
-                <div className="min-w-0 flex-1">
+              <div
+                key={sub.id || `implicit-${sub.scope_id}`}
+                className={`flex flex-wrap items-center gap-3 py-2.5 text-[14px] sm:col-span-4 sm:grid sm:grid-cols-subgrid sm:gap-x-2 ${ROW_HOVER}`}
+              >
+                <div className="min-w-0 flex-1 sm:pr-4">
                   <div className="truncate font-medium text-ink">{sub.scope_name}</div>
                   <div className="caption text-muted">
                     {sub.plan?.name ?? sub.plan_id}
@@ -818,21 +959,25 @@ export default function AdminUsage() {
                     {sub.ends_at ? ` · ${t("usg.endsAt", { date: dateFromEndsAt(sub.ends_at) })}` : ""}
                   </div>
                 </div>
-                <div className="min-w-[220px] flex-1">
-                  <LimitStatusList items={sub.limit_status} />
+                <div className="min-w-0">
+                  <LimitStatusList items={sub.limit_status} variant="ring" />
                 </div>
-                {sub.status === "active" && (
-                  <>
-                    <button type="button" className="btn btn-row btn-soft" disabled={busy} onClick={() => openAssign("user", sub.scope_id, sub.scope_name, sub)}>
+                {/* Each button owns a grid column, so "Đổi gói" sits in the
+                 * same place on every row; empty cells keep the slot. */}
+                <div className="sm:ml-4">
+                  {sub.status === "active" && (
+                    <button type="button" className="btn btn-row btn-soft w-full min-w-[86px]" disabled={busy} onClick={() => openAssign("user", sub.scope_id, sub.scope_name, sub)}>
                       {t("usg.changePlan")}
                     </button>
-                    {!sub.implicit && (
-                      <button type="button" className="btn btn-row btn-soft-danger" disabled={busy} onClick={() => void cancelSub(sub)}>
-                        {t("usg.cancelSub")}
-                      </button>
-                    )}
-                  </>
-                )}
+                  )}
+                </div>
+                <div>
+                  {sub.status === "active" && !sub.implicit && (
+                    <button type="button" className="btn btn-row btn-soft-danger w-full min-w-[86px]" disabled={busy} onClick={() => void cancelSub(sub)}>
+                      {t("usg.cancelSub")}
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -873,6 +1018,14 @@ export default function AdminUsage() {
                 </select>
               </div>
             )}
+          </div>
+          {/* pool/seat only exist for organization plans */}
+          {planForm.scope_kind === "tenant" && (
+            <p className="caption text-muted-soft">{planForm.mode === "seat" ? t("usg.modeSeatHint") : t("usg.modePoolHint")}</p>
+          )}
+          {/* The three prices on one row of their own: sharing a grid with
+           * scope/mode split them over two rows (one or two per row). */}
+          <div className="grid gap-3 sm:grid-cols-3">
             <div className="block">
               <FieldLabel htmlFor="plan-price">{t("usg.planPrice")}</FieldLabel>
               <PriceInput id="plan-price" value={planForm.price_vnd} onChange={(v) => setPlanForm({ ...planForm, price_vnd: v })} />
@@ -891,7 +1044,6 @@ export default function AdminUsage() {
               <span className="caption mt-1 block text-muted-soft">{termHint(planForm.price_year_vnd, planForm.price_vnd, 12)}</span>
             </div>
           </div>
-          <p className="caption text-muted-soft">{planForm.mode === "seat" && planForm.scope_kind === "tenant" ? t("usg.modeSeatHint") : t("usg.modePoolHint")}</p>
           <div>
             <span className="caption mb-2 block text-muted">{t("usg.planLimits")}</span>
             <LimitsEditor value={planForm.limits} onChange={(limits) => setPlanForm({ ...planForm, limits })} />
@@ -941,7 +1093,7 @@ export default function AdminUsage() {
             </div>
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={planForm.is_active} onChange={(e) => setPlanForm({ ...planForm, is_active: e.target.checked })} />
-              <span className="caption text-muted">{t("usg.planActive")}</span>
+              <span className="caption text-body">{t("usg.planActive")}</span>
             </label>
           </div>
           <div className="flex justify-end">
@@ -973,7 +1125,6 @@ export default function AdminUsage() {
                   ...subForm,
                   plan_id: e.target.value,
                   mode: p?.mode ?? subForm.mode,
-                  limits: subForm.override ? subForm.limits : (p?.limits ?? []),
                   custom_start: samePlan,
                   starts_at: samePlan ? dateFromStartsAt(ex.starts_at) || todayVN() : todayVN(),
                 });
@@ -1030,22 +1181,49 @@ export default function AdminUsage() {
               {endsBeforeStart && <span className="caption mt-1 block text-error">{t("usg.endsBeforeStart")}</span>}
             </div>
           </div>
+          {/* Quick lengths, full width so the two date fields stay level:
+           * each sets the end date from the start. */}
+          <div role="group" aria-labelledby="sub-length-label">
+            <span id="sub-length-label" className="caption mb-1.5 block text-muted">{t("usg.quickLength")}</span>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {SUB_LENGTHS.map((m) => {
+                const end = endForMonths(subStart, m);
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    aria-pressed={subForm.ends_at === end}
+                    className={`btn btn-row ${subForm.ends_at === end ? "btn-soft-accent" : "btn-soft"}`}
+                    onClick={() => setSubForm({ ...subForm, ends_at: end })}
+                  >
+                    {t("bill.monthsN", { n: m })}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                aria-pressed={!subForm.ends_at}
+                className={`btn btn-row ${!subForm.ends_at ? "btn-soft-accent" : "btn-soft"}`}
+                onClick={() => setSubForm({ ...subForm, ends_at: "" })}
+              >
+                {t("usg.priceOpenEnded")}
+              </button>
+            </div>
+          </div>
           <div className="block">
             <FieldLabel htmlFor="sub-note">{t("usg.note")}</FieldLabel>
             <input id="sub-note" className="input" value={subForm.note} onChange={(e) => setSubForm({ ...subForm, note: e.target.value })} />
           </div>
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={subForm.override}
-              onChange={(e) => setSubForm({ ...subForm, override: e.target.checked, limits: e.target.checked ? (subForm.limits.length ? subForm.limits : (planByID(subForm.plan_id)?.limits ?? [])) : subForm.limits })}
-            />
-            <span className="caption text-muted">{t("usg.overrideLimits")}</span>
-          </label>
-          {subForm.override && <LimitsEditor value={subForm.limits} onChange={(limits) => setSubForm({ ...subForm, limits })} />}
           {subTarget?.existing && subTarget.existing.plan_id !== subForm.plan_id && (
             <p className="caption text-muted-soft">{t("usg.changePlanHint")}</p>
           )}
+          <SubPriceSummary
+            plan={planByID(subForm.plan_id)}
+            seatMode={subTarget?.kind === "tenant" && subForm.mode === "seat"}
+            seats={subForm.seats}
+            start={subStart}
+            end={endsBeforeStart ? "" : subForm.ends_at}
+          />
           <div className="flex justify-end">
             <button type="submit" className="btn btn-primary" disabled={busy || !subDirty || !subForm.plan_id || endsBeforeStart || (subForm.mode === "seat" && subTarget?.kind === "tenant" && subForm.seats < 1)}>
               {t("common.save")}
@@ -1074,25 +1252,28 @@ export default function AdminUsage() {
                   key={u.id}
                   type="button"
                   disabled={!u.is_active}
-                  className={`flex w-full flex-wrap items-start justify-between gap-x-3 gap-y-1 px-2 py-2 text-left text-[14px] disabled:opacity-50 ${ROW_HOVER}`}
+                  className={`block w-full px-2 py-2 text-left text-[14px] disabled:opacity-50 ${ROW_HOVER}`}
                   onClick={() => {
                     setUserPickOpen(false);
                     openAssign("user", u.id, u.username || u.email, sub);
                   }}
                 >
-                  <span className="min-w-0 flex-1">
+                  {/* Name and e-mail get the full width; the badges go on
+                   * their own line (two uppercase badges beside them cut
+                   * the name down to a few letters in a 460px dialog). */}
+                  <span className="block min-w-0">
                     <span className="block truncate text-ink">{u.username || u.email}</span>
                     <span className="caption block truncate text-muted">
                       {u.email}
                       {unit ? ` · ${unit}` : ""}
                     </span>
                   </span>
-                  <span className="flex flex-wrap justify-end gap-1">
+                  <span className="mt-1 flex flex-wrap gap-1">
                     {u.is_system_admin ? (
                       <span className="badge-pill text-[11px]">{t("usg.kindSuperAdmin")}</span>
                     ) : orgs.length > 0 ? (
-                      <span className="badge-pill max-w-[220px] truncate text-[11px]" title={orgs.join(", ")}>
-                        {orgs.join(", ")}
+                      <span className="badge-pill max-w-[260px] text-[11px]" title={orgs.join(", ")}>
+                        <span className="min-w-0 truncate">{orgs.join(", ")}</span>
                       </span>
                     ) : (
                       <span className="badge-pill text-[11px]">{t("usg.kindGuest")}</span>

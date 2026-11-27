@@ -835,7 +835,11 @@ export default function AdminBilling() {
               <input id="promo-name" className="input" value={promoForm.name} onChange={(e) => setPromoForm({ ...promoForm, name: e.target.value })} />
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3">
+          {/* Two columns at most: in the 460px dialog a third column cut
+           * the type select ("Giảm số tiền cố định") and the long labels
+           * wrapped so the inputs sat at different heights. Hints go under
+           * the inputs, not in the labels. */}
+          <div className="grid gap-3 sm:grid-cols-2">
             <div className="block">
               <FieldLabel htmlFor="promo-type">{t("badm.type")}</FieldLabel>
               <select id="promo-type" className="input" value={promoForm.discount_type} onChange={(e) => setPromoForm({ ...promoForm, discount_type: e.target.value as "percent" | "amount" })}>
@@ -847,10 +851,6 @@ export default function AdminBilling() {
               <FieldLabel htmlFor="promo-value">{promoForm.discount_type === "percent" ? "%" : "VNĐ"}</FieldLabel>
               <input id="promo-value" className="input" type="number" min={1} max={promoForm.discount_type === "percent" ? 100 : undefined} value={promoForm.discount_value} onChange={(e) => setPromoForm({ ...promoForm, discount_value: Math.max(0, Number(e.target.value) || 0) })} />
             </div>
-            <div className="block">
-              <FieldLabel htmlFor="promo-max-uses">{t("badm.maxUses")}</FieldLabel>
-              <input id="promo-max-uses" className="input" type="number" min={0} value={promoForm.max_uses} onChange={(e) => setPromoForm({ ...promoForm, max_uses: Math.max(0, Number(e.target.value) || 0) })} />
-            </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="block">
@@ -860,19 +860,26 @@ export default function AdminBilling() {
             <div className="block">
               <FieldLabel htmlFor="promo-end">{t("badm.endsAt")}</FieldLabel>
               <input id="promo-end" className="input" type="date" value={promoForm.ends_at} onChange={(e) => setPromoForm({ ...promoForm, ends_at: e.target.value })} />
+              <span className="caption mt-1 block text-muted-soft">{t("badm.endsAtHint")}</span>
+            </div>
+            <div className="block">
+              <FieldLabel htmlFor="promo-max-uses">{t("badm.maxUses")}</FieldLabel>
+              <input id="promo-max-uses" className="input" type="number" min={0} value={promoForm.max_uses} onChange={(e) => setPromoForm({ ...promoForm, max_uses: Math.max(0, Number(e.target.value) || 0) })} />
+              <span className="caption mt-1 block text-muted-soft">{t("badm.maxUsesHint")}</span>
             </div>
           </div>
           <div>
             <span className="caption mb-1 block text-muted">{t("badm.plans")}</span>
             <div className="flex flex-wrap gap-x-4 gap-y-1">
               {plans.map((p) => (
-                <label key={p.id} className="flex items-center gap-1.5 text-[13.5px]">
+                <label key={p.id} className="caption flex items-center gap-1.5 text-body">
                   <input
                     type="checkbox"
                     checked={promoForm.plan_ids.includes(p.id)}
                     onChange={(e) => setPromoForm({ ...promoForm, plan_ids: e.target.checked ? [...promoForm.plan_ids, p.id] : promoForm.plan_ids.filter((x) => x !== p.id) })}
                   />
-                  {p.name}
+                  {/* the organization and personal plans share names */}
+                  {p.scope_kind === "user" ? t("badm.planPersonal", { name: p.name }) : p.name}
                 </label>
               ))}
             </div>
@@ -884,7 +891,7 @@ export default function AdminBilling() {
           </div>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={promoForm.is_active} onChange={(e) => setPromoForm({ ...promoForm, is_active: e.target.checked })} />
-            <span className="caption text-muted">{t("badm.active")}</span>
+            <span className="caption text-body">{t("badm.active")}</span>
           </label>
           <div className="flex justify-end">
             <button type="submit" className="btn btn-primary" disabled={busy || !promoForm.code.trim() || promoForm.discount_value <= 0}>{t("common.save")}</button>
